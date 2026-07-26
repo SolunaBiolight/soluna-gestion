@@ -1264,7 +1264,9 @@ export default async function handler(req, res) {
     if (action === "getProduccion") {
       const ref = db.collection("produccion").doc(uid);
       const snap = await ref.get();
-      if (!snap.exists) return res.json({ editores:["Val","Editor IA","Editor Video","Hector"], tandas:[], creativos:[], ideas:[] });
+      // Cuenta nueva sin doc de producción: arranca VACÍA — antes venía con
+      // editores de ejemplo hardcodeados que aparecían como miembros del equipo.
+      if (!snap.exists) return res.json({ editores:[], tandas:[], creativos:[], ideas:[] });
       const d = snap.data();
       delete d.updatedAt;
       return res.json(d);

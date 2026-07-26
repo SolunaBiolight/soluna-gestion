@@ -10458,7 +10458,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [matCatFilter, setMatCatFilter] = useState("");
   const [refSearch, setRefSearch] = useState("");
   // ── PRODUCCIÓN CREATIVA ──
-  const [produccion, setProduccion] = useState({editores:["Val","Editor IA","Editor Video","Hector"],tandas:[],creativos:[],ideas:[]});
+  const [produccion, setProduccion] = useState({editores:[],tandas:[],creativos:[],ideas:[]});
   const [prodLoading, setProdLoading] = useState(false);
   const [prodFilter, setProdFilter] = useState({tanda:"",editor:"",estado:"",tipo:"",etapa:""});
   // Modal Tanda
