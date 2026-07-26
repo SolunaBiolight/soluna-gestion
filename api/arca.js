@@ -503,8 +503,10 @@ function dentroDe10DiasCorridos(yyyymmdd) { return fechaValida(yyyymmdd).ok; }
 function condicionIvaReceptor(tipoCbte, docTipoClas) {
   // Factura A (1/2/3): receptor es siempre Responsable Inscripto
   if (tipoCbte === 1 || tipoCbte === 2 || tipoCbte === 3) return 1;
-  // Factura B (6/7/8) con CUIT: tipicamente Monotributista o Exento — usamos Monotributo (mayoría e-commerce)
-  if ((tipoCbte === 6 || tipoCbte === 7 || tipoCbte === 8) && docTipoClas === "CUIT") return 6;
+  // Factura B (6/7/8) con CUIT: AFIP NO acepta 1 (RI) ni 6 (Monotributo) en clase B
+  // (esos receptores corresponden a Factura A). Sin padrón para saber la condición
+  // real, el valor válido y neutro es 7 = Sujeto No Categorizado.
+  if ((tipoCbte === 6 || tipoCbte === 7 || tipoCbte === 8) && docTipoClas === "CUIT") return 7;
   // Factura C (11/12/13) con CUIT: receptor probablemente Resp. Inscripto que compra a monotributo
   if ((tipoCbte === 11 || tipoCbte === 12 || tipoCbte === 13) && docTipoClas === "CUIT") return 1;
   // Cualquier otro caso: Consumidor Final
