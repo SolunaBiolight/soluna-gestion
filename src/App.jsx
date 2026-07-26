@@ -25467,6 +25467,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   // chips que se expanden a demanda (antes eran bloques fijos que comían espacio).
   const [openInfo, setOpenInfo] = useState(null); // null | "alertas" | "avisos" | "fb" | "ab"
   const [fullNums, setFullNums] = useState(()=>{ try{return localStorage.getItem("growith_margenes_fullnums")==="1";}catch(_){return false;} });
+  const [viewMenu, setViewMenu] = useState(false); // menú "Vista" del topbar ($ completos + USD)
   const [canalSort, setCanalSort] = useState({k:null,dir:"desc"});
   // Persistencia de la personalización del dashboard (orden/visibilidad de cards,
   // secciones): localStorage para lectura instantánea + Firestore (users.margenesVis)
@@ -25767,15 +25768,36 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Dashboard" onHome={onHome}>
-        <button onClick={()=>setFullNums(f=>{const n=!f; try{localStorage.setItem("growith_margenes_fullnums",n?"1":"0");}catch(_){} return n;})} title={fullNums?"Ver números redondeados (K/M)":"Ver todos los números sin redondear"} style={{...InputStyle(T),fontSize:11,padding:"5px 10px",width:"auto",cursor:"pointer",fontWeight:fullNums?700:500,color:fullNums?T.accent:T.textMd,borderColor:fullNums?T.accent+"66":T.inputBorder}}>
-          {fullNums?"$ Completos":"$ 1,2K"}
-        </button>
-        <button onClick={()=>setUsdMode(f=>{const n=!f; try{localStorage.setItem("growith_margenes_usd",n?"1":"0");}catch(_){} return n;})}
-          disabled={!usdMode && !(usdRate>0)}
-          title={usdRate>0?`Ver el dashboard en dólares (cotización ${usdMode?"activa":"promedio del período"}: $${Math.round(usdRate).toLocaleString("es-AR")})`:"Sin cotización disponible todavía"}
-          style={{...InputStyle(T),fontSize:11,padding:"5px 10px",width:"auto",cursor:"pointer",fontWeight:usdMode?700:500,color:usdMode?T.green:T.textMd,borderColor:usdMode?T.green+"66":T.inputBorder}}>
-          {usdMode?"US$ Dólares":"ARS $"}
-        </button>
+        {/* Preferencias de vista unificadas: números completos + USD en un solo menú */}
+        <div style={{position:"relative"}}>
+          <button onClick={()=>setViewMenu(v=>!v)} title="Preferencias de vista"
+            style={{...InputStyle(T),fontSize:11,padding:"5px 10px",width:"auto",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,fontWeight:(fullNums||usdMode)?700:500,color:(fullNums||usdMode)?T.accent:T.textMd,borderColor:(fullNums||usdMode)?T.accent+"66":T.inputBorder}}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="20" cy="14" r="2"/></svg>
+            Vista{usdMode?" · US$":""}{fullNums?" · $ completos":""}
+          </button>
+          {viewMenu&&(
+            <>
+              <div onClick={()=>setViewMenu(false)} style={{position:"fixed",inset:0,zIndex:60}}/>
+              <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:6,minWidth:236,boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
+                {[
+                  {on:fullNums, t:"Números completos", d:"Mostrar sin redondeo K/M", fn:()=>setFullNums(f=>{const n=!f; try{localStorage.setItem("growith_margenes_fullnums",n?"1":"0");}catch(_){} return n;})},
+                  {on:usdMode, t:"Mostrar en dólares", d:usdRate>0?`Cotización promedio del período: $${Math.round(usdRate).toLocaleString("es-AR")}`:"Sin cotización disponible todavía", dis:!usdMode&&!(usdRate>0), fn:()=>setUsdMode(f=>{const n=!f; try{localStorage.setItem("growith_margenes_usd",n?"1":"0");}catch(_){} return n;})},
+                ].map((o,i)=>(
+                  <button key={i} onClick={o.dis?undefined:o.fn} disabled={o.dis}
+                    style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"8px 10px",background:"transparent",border:"none",borderRadius:8,cursor:o.dis?"default":"pointer",opacity:o.dis?0.5:1,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <span style={{width:30,height:17,borderRadius:9,background:o.on?T.accentSolid:T.surface,border:`1px solid ${o.on?T.accentSolid:T.border}`,position:"relative",flexShrink:0,transition:"background .15s"}}>
+                      <span style={{position:"absolute",top:1.5,left:o.on?14:2,width:12,height:12,borderRadius:"50%",background:"#fff",transition:"left .15s"}}/>
+                    </span>
+                    <span style={{flex:1}}>
+                      <span style={{display:"block",fontSize:12,fontWeight:600,color:T.text}}>{o.t}</span>
+                      <span style={{display:"block",fontSize:10,color:T.textSm,marginTop:1}}>{o.d}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         {/* Los presets (7/30/60/90d) viven DENTRO del selector de fechas — una
             sola fuente de período en el topbar, sin doble fila de controles. */}
         <DateRangePicker T={T}
@@ -26007,23 +26029,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
 
           {canalVista==="global" && (<>
 
-          {/* Resumen de ayer */}
-          {(()=>{
-            const hoyAr = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date());
-            const [y,m,d] = hoyAr.split("-").map(Number);
-            const ayerYmd = new Date(Date.UTC(y,m-1,d)-86400000).toISOString().slice(0,10);
-            const a = dailyRows.find(r=>r.Fecha===ayerYmd);
-            if (!a || !(a.Revenue>0 || a["Ad Spend"]>0)) return null;
-            return (
-              <div style={{display:"flex",alignItems:"center",gap:16,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 16px",marginBottom:16,flexWrap:"wrap"}}>
-                <span style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4}}>Ayer ({fmtDate(ayerYmd)})</span>
-                <span style={{fontSize:DS.font.base,color:T.textMd}}>Revenue <strong style={{color:T.text}}>{fmtM(a.Revenue)}</strong></span>
-                <span style={{fontSize:DS.font.base,color:T.textMd}}>Profit <strong style={{color:(a.Profit||0)>=0?T.green:T.red}}>{fmtM(a.Profit)}</strong></span>
-                <span style={{fontSize:DS.font.base,color:T.textMd}}>Órdenes <strong style={{color:T.text}}>{fmtInt(a["Ordenes > $0"])}</strong></span>
-                <span style={{fontSize:DS.font.base,color:T.textMd}}>ROAS <strong style={{color:(a.ROAS||0)>=metas.roas?T.green:T.text}}>{fmtX(a.ROAS)}</strong></span>
-              </div>
-            );
-          })()}
+          {/* (El resumen de ayer vive fusionado con la proyección en la tira de
+              stats debajo del gráfico — una sola franja, sin cajitas sueltas.) */}
 
           {/* Hero KPIs */}
           <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{width:8,height:8,borderRadius:"50%",background:T.accent,flexShrink:0}}/>Métricas Principales <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· general (Tienda + ML)</span><span style={{marginLeft:"auto",display:"inline-flex",gap:4,alignItems:"center"}}><button onClick={()=>{setEditMetas(s=>!s); setMetasDraft(metas);}} title="Configurar metas (ROAS y margen objetivo)" style={{background:editMetas?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editMetas?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H8a1.65 1.65 0 001-1.51V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V8a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button><button onClick={()=>setEditSecKpis(s=>!s)} title="Elegir qué KPIs se muestran" style={{background:editSecKpis?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editSecKpis?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button><EyeBtn k="sec"/><EyeBtn k="main"/></span></div>
@@ -26086,24 +26093,39 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {/* Gráfico principal de evolución */}
           {vis.main!==false && <RendChart T={T} rows={dailyRows} cv={cv} fmtM={fmtM} fmtDate={fmtDate}/>}
 
-          {/* Proyección y extremos del período */}
-          {vis.main!==false && dailyRows.length>=7 && (
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:18}}>
-              {[
-                {label:"Proyección Revenue 30d", val:fmtM(projRevenue), hint:"Al ritmo actual"},
-                {label:"Proyección Profit 30d",  val:fmtM(projProfit),  hint:"Al ritmo actual", color:projProfit>=0?T.green:T.red},
-                {label:"Proyección Ad Spend 30d",val:fmtM(projAdSpend), hint:"Al ritmo actual"},
-                ...(bestDay?[{label:"Mejor día",  val:fmtM(bestDay.Profit),  hint:fmtDate(bestDay.Fecha)+" · profit", color:T.green}]:[]),
-                ...(worstDay?[{label:"Peor día",  val:fmtM(worstDay.Profit), hint:fmtDate(worstDay.Fecha)+" · profit", color:worstDay.Profit<0?T.red:T.textMd}]:[]),
-              ].map(k=>(
-                <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
-                  <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</div>
-                  <div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.5,fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
-                  <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.hint}</div>
-                </div>
-              ))}
-            </div>
-          )}
+          {/* Tira de stats: Ayer + Proyección 30d + extremos — una sola franja
+              con separadores finos en lugar de una cajita por número. */}
+          {vis.main!==false && dailyRows.length>=2 && (()=>{
+            const hoyAr = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date());
+            const [yy,mm,dd] = hoyAr.split("-").map(Number);
+            const ayerYmd = new Date(Date.UTC(yy,mm-1,dd)-86400000).toISOString().slice(0,10);
+            const a = dailyRows.find(r=>r.Fecha===ayerYmd);
+            const items = [
+              ...((a&&(a.Revenue>0||a["Ad Spend"]>0))?[
+                {g:"Ayer", label:"Revenue", val:fmtM(a.Revenue)},
+                {g:"Ayer", label:"Profit",  val:fmtM(a.Profit), color:(a.Profit||0)>=0?T.green:T.red},
+                {g:"Ayer", label:"ROAS",    val:fmtX(a.ROAS), color:(a.ROAS||0)>=metas.roas?T.green:undefined},
+              ]:[]),
+              ...(dailyRows.length>=7?[
+                {g:"Proy. 30d", label:"Revenue",  val:fmtM(projRevenue)},
+                {g:"Proy. 30d", label:"Profit",   val:fmtM(projProfit), color:projProfit>=0?T.green:T.red},
+                {g:"Proy. 30d", label:"Ad Spend", val:fmtM(projAdSpend)},
+              ]:[]),
+              ...(bestDay?[{g:fmtDate(bestDay.Fecha), label:"Mejor día", val:fmtM(bestDay.Profit), color:T.green}]:[]),
+              ...(worstDay?[{g:fmtDate(worstDay.Fecha), label:"Peor día", val:fmtM(worstDay.Profit), color:worstDay.Profit<0?T.red:T.textMd}]:[]),
+            ];
+            if(!items.length) return null;
+            return (
+              <div style={{display:"flex",flexWrap:"wrap",alignItems:"stretch",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"4px 6px",marginBottom:18}}>
+                {items.map((k,i)=>(
+                  <div key={i} style={{flex:"1 1 108px",padding:"9px 14px",borderLeft:i>0?`1px solid ${T.borderL}`:"none",minWidth:0}}>
+                    <div style={{fontSize:9,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{k.g} · {k.label}</div>
+                    <div style={{fontSize:15,fontWeight:800,color:k.color||T.text,letterSpacing:-0.4,marginTop:3,fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           {/* Performance por día de semana */}
           {vis.main!==false && byDow.some(d=>d.days>0) && (()=>{
@@ -26200,14 +26222,14 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                         </tr>
                       </thead>
                       <tbody>
-                        {METRICS.map(([k,l,tp,opt={}])=>(
-                          <tr key={k} style={{borderBottom:`1px solid ${T.borderL}`}}>
-                            <td style={{padding:"8px 14px",color:T.textMd,fontWeight:600,whiteSpace:"nowrap"}}>{l}</td>
+                        {METRICS.map(([k,l,tp,opt={}],mi)=>(
+                          <tr key={k} style={{background:mi%2===1?T.surface+"66":"transparent"}}>
+                            <td style={{padding:"9px 14px",color:T.textMd,fontWeight:600,whiteSpace:"nowrap"}}>{l}</td>
                             {canales.map(ch=>{
                               const v = ch.c[k];
                               const col = opt.signColor ? ((v||0)>=0?T.green:T.red) : T.text;
                               return (
-                                <td key={ch.nombre} style={{padding:"8px 14px",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",fontWeight:opt.bold?800:500,color:col}}>
+                                <td key={ch.nombre} style={{padding:"9px 14px",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",fontWeight:opt.bold?800:500,color:col}}>
                                   {F(tp,v)}
                                   {hasPrev && ch.cp && tp!=="p" && <span style={{marginLeft:8}}><DeltaBadge curr={v} prev={ch.cp[k]} invert={!!opt.inv}/></span>}
                                 </td>
