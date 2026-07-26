@@ -25364,23 +25364,42 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 // Gráfico principal de evolución (Revenue / Ad Spend / Profit) con hover.
 // Componente top-level (no inline en AppRendimiento) para que el estado de
 // hover sobreviva a los re-renders del dashboard.
-function RendChart({T, rows, cv, fmtM, fmtDate}) {
+function RendChart({T, rows, prevRows=[], cv, fmtM, fmtDate}) {
   const [hover, setHover] = useState(null);
+  // Métrica graficada: "todas" mantiene la vista clásica de 3 líneas; las
+  // vistas de una métrica suman la línea punteada del período anterior.
+  const [mode, setMode] = useState("todas");
   const wrapRef = useRef(null);
   const n = rows.length;
   if (n < 2) return null;
   const W=920, H=250, PL=8, PR=8, PT=12, PB=24;
-  const series = [
-    { k:"Revenue",  color:T.blue,   vals:rows.map(r=>cv(r.Revenue||0)) },
-    { k:"Ad Spend", color:T.orange, vals:rows.map(r=>cv(r["Ad Spend"]||0)) },
-    { k:"Profit",   color:T.green,  vals:rows.map(r=>cv(r.Profit||0)) },
+  const fmtN = v => Math.round(Number(v)||0).toLocaleString("es-AR");
+  const MODES = [
+    { id:"todas",  label:"Todas" },
+    { id:"rev",    label:"Revenue", key:"Revenue",       color:T.blue,  fmt:fmtM, conv:true },
+    { id:"profit", label:"Profit",  key:"Profit",        color:T.green, fmt:fmtM, conv:true },
+    { id:"ord",    label:"Órdenes", key:"Ordenes > $0",  color:T.accent,fmt:fmtN, conv:false },
   ];
-  const all = series.flatMap(s=>s.vals);
+  const mSel = MODES.find(m=>m.id===mode)||MODES[0];
+  const single = mSel.id!=="todas";
+  const val = (r,m) => m.conv ? cv(r[m.key]||0) : Number(r[m.key]||0);
+  const series = single
+    ? [{ k:mSel.label, color:mSel.color, vals:rows.map(r=>val(r,mSel)) }]
+    : [
+        { k:"Revenue",  color:T.blue,   vals:rows.map(r=>cv(r.Revenue||0)) },
+        { k:"Ad Spend", color:T.orange, vals:rows.map(r=>cv(r["Ad Spend"]||0)) },
+        { k:"Profit",   color:T.green,  vals:rows.map(r=>cv(r.Profit||0)) },
+      ];
+  const ghost = single && prevRows.length>=2 ? prevRows.map(r=>val(r,mSel)) : null;
+  const gn = ghost?ghost.length:0;
+  const all = series.flatMap(s=>s.vals).concat(ghost||[]);
   const min = Math.min(0, ...all), max = Math.max(...all, 1);
   const rng = max-min || 1;
   const X = i => PL + (i/(n-1))*(W-PL-PR);
+  const Xg = i => PL + (i/(gn-1))*(W-PL-PR);
   const Y = v => PT + (1-(v-min)/rng)*(H-PT-PB);
   const path = vals => vals.map((v,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  const pathG = vals => vals.map((v,i)=>`${i?"L":"M"}${Xg(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
   const zeroY = Y(0);
   const gridVals = [max, (max+min)/2, min];
   const onMove = e => {
@@ -25389,23 +25408,40 @@ function RendChart({T, rows, cv, fmtM, fmtDate}) {
     setHover(Math.max(0, Math.min(n-1, i)));
   };
   const hovRow = hover!=null ? rows[hover] : null;
+  const hovGhost = hover!=null && ghost ? ghost[Math.round(hover/(n-1)*(gn-1))] : null;
   const xLabelIdx = [];
   { const step = Math.max(1, Math.round((n-1)/6)); for(let i=0;i<n;i+=step) xLabelIdx.push(i); if(xLabelIdx[xLabelIdx.length-1]!==n-1) xLabelIdx.push(n-1); }
   return (
     <div ref={wrapRef} onMouseMove={onMove} onMouseLeave={()=>setHover(null)} style={{position:"relative",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"14px 14px 6px",marginBottom:18}}>
-      <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
-        {series.map(s=>(<span key={s.k} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:DS.font.sm,color:T.textMd,fontWeight:DS.w.semibold}}><span style={{width:10,height:3,borderRadius:2,background:s.color,display:"inline-block"}}/>{s.k}</span>))}
-        {hovRow && <span style={{marginLeft:"auto",fontSize:DS.font.sm,color:T.textSm}}>{fmtDate(hovRow.Fecha)} · Rev {fmtM(hovRow.Revenue)} · Ads {fmtM(hovRow["Ad Spend"])} · Profit <span style={{color:(hovRow.Profit||0)>=0?T.green:T.red,fontWeight:DS.w.bold}}>{fmtM(hovRow.Profit)}</span></span>}
+      <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
+        <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1,flexShrink:0}}>
+          {MODES.map(m=>(
+            <button key={m.id} onClick={()=>setMode(m.id)}
+              style={{padding:"4px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:mode===m.id?T.card:"transparent",color:mode===m.id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:mode===m.id?"0 1px 3px rgba(0,0,0,0.15)":"none",transition:"all 0.12s"}}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+        {!single && series.map(s=>(<span key={s.k} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:DS.font.sm,color:T.textMd,fontWeight:DS.w.semibold}}><span style={{width:10,height:3,borderRadius:2,background:s.color,display:"inline-block"}}/>{s.k}</span>))}
+        {single && (
+          <span style={{display:"inline-flex",alignItems:"center",gap:12,fontSize:DS.font.sm,color:T.textSm}}>
+            <span style={{display:"inline-flex",alignItems:"center",gap:6}}><span style={{width:12,height:0,borderTop:`2px solid ${mSel.color}`,display:"inline-block"}}/>Este período</span>
+            {ghost&&<span style={{display:"inline-flex",alignItems:"center",gap:6}}><span style={{width:12,height:0,borderTop:`2px dashed ${T.textSm}`,display:"inline-block"}}/>Período anterior</span>}
+          </span>
+        )}
+        {hovRow && !single && <span style={{marginLeft:"auto",fontSize:DS.font.sm,color:T.textSm}}>{fmtDate(hovRow.Fecha)} · Rev {fmtM(hovRow.Revenue)} · Ads {fmtM(hovRow["Ad Spend"])} · Profit <span style={{color:(hovRow.Profit||0)>=0?T.green:T.red,fontWeight:DS.w.bold}}>{fmtM(hovRow.Profit)}</span></span>}
+        {hovRow && single && <span style={{marginLeft:"auto",fontSize:DS.font.sm,color:T.textSm}}>{fmtDate(hovRow.Fecha)} · <span style={{color:T.text,fontWeight:DS.w.bold}}>{mSel.fmt(val(hovRow,mSel))}</span>{hovGhost!=null&&<> · ant. {mSel.fmt(hovGhost)}</>}</span>}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",display:"block"}}>
         {gridVals.map((v,i)=>(<line key={i} x1={PL} x2={W-PR} y1={Y(v)} y2={Y(v)} stroke={T.border} strokeWidth="1" strokeDasharray={i===2&&min<0?"":"3,4"}/>))}
         {min<0 && <line x1={PL} x2={W-PR} y1={zeroY} y2={zeroY} stroke={T.textSm} strokeWidth="1" strokeOpacity="0.5" strokeDasharray="2,3"/>}
-        <path d={`${path(series[0].vals)} L${X(n-1)},${Y(Math.max(0,min))} L${X(0)},${Y(Math.max(0,min))} Z`} fill={T.blue} fillOpacity="0.06" stroke="none"/>
-        {series.map(s=>(<path key={s.k} d={path(s.vals)} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>))}
+        {ghost && <path d={pathG(ghost)} fill="none" stroke={T.textSm} strokeWidth="1.5" strokeOpacity="0.7" strokeDasharray="5,5" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>}
+        <path d={`${path(series[0].vals)} L${X(n-1)},${Y(Math.max(0,min))} L${X(0)},${Y(Math.max(0,min))} Z`} fill={single?mSel.color:T.blue} fillOpacity="0.06" stroke="none"/>
+        {series.map(s=>(<path key={s.k} d={path(s.vals)} fill="none" stroke={s.color} strokeWidth={single?2.5:2} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>))}
         {hover!=null && <line x1={X(hover)} x2={X(hover)} y1={PT} y2={H-PB} stroke={T.textSm} strokeWidth="1" strokeOpacity="0.6"/>}
         {hover!=null && series.map(s=>(<circle key={s.k} cx={X(hover)} cy={Y(s.vals[hover])} r="3.5" fill={s.color} stroke={T.card} strokeWidth="1.5"/>))}
         {xLabelIdx.map(i=>(<text key={i} x={X(i)} y={H-7} textAnchor={i===0?"start":i===n-1?"end":"middle"} fontSize="11" fill={T.textSm} fontFamily="'Inter',system-ui,sans-serif">{fmtDate(rows[i].Fecha)}</text>))}
-        {gridVals.slice(0,2).map((v,i)=>(<text key={i} x={W-PR} y={Y(v)-4} textAnchor="end" fontSize="10" fill={T.textSm} fontFamily="'Inter',system-ui,sans-serif">{fmtM(v)}</text>))}
+        {gridVals.slice(0,2).map((v,i)=>(<text key={i} x={W-PR} y={Y(v)-4} textAnchor="end" fontSize="10" fill={T.textSm} fontFamily="'Inter',system-ui,sans-serif">{mSel.id==="ord"?fmtN(v):fmtM(v)}</text>))}
       </svg>
     </div>
   );
@@ -26091,7 +26127,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           })()}
 
           {/* Gráfico principal de evolución */}
-          {vis.main!==false && <RendChart T={T} rows={dailyRows} cv={cv} fmtM={fmtM} fmtDate={fmtDate}/>}
+          {vis.main!==false && <RendChart T={T} rows={dailyRows} prevRows={prevRows.filter(r=>r.Fecha)} cv={cv} fmtM={fmtM} fmtDate={fmtDate}/>}
 
           {/* Tira de stats: Ayer + Proyección 30d + extremos — una sola franja
               con separadores finos en lugar de una cajita por número. */}
