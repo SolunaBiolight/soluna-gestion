@@ -16604,13 +16604,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const _pctMonto = _mesMonto>0?Math.round(_billedMonto/_mesMonto*100):0;
                     if (_mesTotal===0) return null;
                     return (
-                      <div style={{padding:"10px 14px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,marginTop:10,marginBottom:20,display:"flex",gap:16,flexWrap:"wrap"}}>
+                      <div style={{padding:"8px 12px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,marginTop:10,marginBottom:14,display:"flex",gap:16,flexWrap:"wrap"}}>
                         <div style={{flex:1,minWidth:130}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
                             <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Ventas facturadas</span>
                             <span style={{fontSize:11,color:T.text,fontWeight:700}}>{_billed.length}<span style={{color:T.textSm,fontWeight:400}}>/{_mesTotal}</span> <span style={{color:_pctOrd>=80?T.green:_pctOrd>=50?T.yellow:T.textMd,fontWeight:700}}>{_pctOrd}%</span></span>
                           </div>
-                          <div style={{height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
+                          <div style={{height:4,background:T.border,borderRadius:3,overflow:"hidden"}}>
                             <div style={{height:"100%",width:`${_pctOrd}%`,background:_pctOrd>=80?T.green:_pctOrd>=50?T.yellow:T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
                           </div>
                         </div>
@@ -16619,7 +16619,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Monto facturado</span>
                             <span style={{fontSize:11,color:T.text,fontWeight:700}}>$ {_billedMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}<span style={{color:T.textSm,fontWeight:400}}> / $ {_mesMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span> <span style={{color:_pctMonto>=80?T.green:_pctMonto>=50?T.yellow:T.textMd,fontWeight:700}}>{_pctMonto}%</span></span>
                           </div>
-                          <div style={{height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
+                          <div style={{height:4,background:T.border,borderRadius:3,overflow:"hidden"}}>
                             <div style={{height:"100%",width:`${_pctMonto}%`,background:_pctMonto>=80?T.green:_pctMonto>=50?T.yellow:T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
                           </div>
                         </div>
@@ -16662,17 +16662,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <span style={{fontSize:11,color:T.textSm}}>–</span>
                       <input type="number" placeholder="sin límite" value={montoMax} onChange={e=>setMontoMax(e.target.value)} style={{...iS,width:90,padding:"6px 8px",fontSize:12}}/>
                     </div>
-                    {(metodoPagoSel!=="todos"||montoMin||montoMax||busquedaPend)&&(
-                      <button onClick={()=>{setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");setBusquedaPend("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red}}>
-                        ✕ Limpiar filtros
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Buscador libre — matchea nombre del cliente, ID de orden
-                      Shopify/TN/ML, email, o cualquier substring relevante. */}
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-                    <div style={{position:"relative",flex:1}}>
+                    {/* Buscador libre en la misma fila — matchea nombre del cliente,
+                        ID de orden Shopify/TN/ML, email, o cualquier substring relevante. */}
+                    <div style={{position:"relative",flex:1,minWidth:180}}>
                       <svg style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",color:T.textSm}} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                       <input
                         type="text"
@@ -16682,8 +16674,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         style={{...iS,width:"100%",padding:"7px 12px 7px 32px",fontSize:12,boxSizing:"border-box"}}
                       />
                     </div>
-                    {busquedaPend && (
-                      <button onClick={()=>setBusquedaPend("")} style={{background:"transparent",border:"1px solid "+T.borderL,color:T.textMd,borderRadius:6,padding:"6px 10px",fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                    {(metodoPagoSel!=="todos"||montoMin||montoMax||busquedaPend)&&(
+                      <button onClick={()=>{setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");setBusquedaPend("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red,flexShrink:0}}>
+                        ✕ Limpiar
+                      </button>
                     )}
                   </div>
 
@@ -16847,7 +16841,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </>
                         )}
                         {/* Barra de herramientas */}
-                        <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,flexWrap:"wrap",opacity:tnLoading?0.7:1,transition:"opacity 0.2s"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,flexWrap:"wrap",opacity:tnLoading?0.7:1,transition:"opacity 0.2s",position:"sticky",top:105,zIndex:5,boxShadow:`0 2px 8px ${T.bg}`}}>
                           {/* Checkbox "seleccionar todas" */}
                           <div onClick={()=>{
                             const ns={...tnSelected};itemsSelectables.forEach(([id])=>ns[id]=!allSel);setTnSelected(ns);
@@ -16873,7 +16867,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             {mesTotal>0&&<span style={{fontSize:11,color:T.textSm}}>{mesTotal} órd. en el período</span>}
                           </div>
                         </div>
-                        <div style={{maxHeight:420,overflowY:"auto",opacity:tnLoading?0.35:1,transition:"opacity 0.25s"}}>
+                        {/* Lista de altura completa — scrollea la página, no un recuadro anidado */}
+                        <div style={{opacity:tnLoading?0.35:1,transition:"opacity 0.25s"}}>
                           {items.map(([id,o])=>{
                             const billed = !!o._billed;
                             const wasAnulada = !billed && !!o._was_anulada;
@@ -16948,6 +16943,27 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             Facturar {selectedCount>0?selectedCount:""} {selectedCount>0?"→":""}
                           </button>
                         </div>
+
+                        {/* Barra flotante de facturación — aparece apenas hay ≥1 venta tildada
+                            y queda siempre a la vista sin importar el scroll (la lista ya no
+                            tiene scroll interno, puede ser larga). Portal a body para escapar
+                            del stacking del card. */}
+                        {selectedCount>0&&ReactDOM.createPortal(
+                          <div className="arca-fab" style={{position:"fixed",left:"50%",transform:"translateX(-50%)",bottom:20,zIndex:80,display:"flex",alignItems:"center",gap:12,background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"10px 12px 10px 18px",boxShadow:"0 12px 40px rgba(0,0,0,0.35)",maxWidth:"calc(100vw - 20px)",animation:"growith-fadeInFast 0.2s ease",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                            <div style={{display:"flex",alignItems:"baseline",gap:7,whiteSpace:"nowrap",minWidth:0,overflow:"hidden"}}>
+                              <span style={{fontSize:14,fontWeight:800,color:T.text}}>{selectedCount}</span>
+                              <span style={{fontSize:12,color:T.textSm}}>seleccionada{selectedCount!==1?"s":""}</span>
+                              <span style={{fontSize:13,fontWeight:700,color:T.accent}}>$ {selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span>
+                            </div>
+                            <button onClick={()=>{const ns={...tnSelected};itemsSelectables.forEach(([id])=>{ns[id]=false;});setTnSelected(ns);}} style={{...BtnSecondary(T),padding:"8px 12px",fontSize:12,flexShrink:0}}>
+                              Destildar
+                            </button>
+                            <button onClick={facturarSeleccionadas} disabled={tnLoading||tnRevalidando} title={tnRevalidando?"Esperá a que terminen de actualizarse las ventas":undefined} style={{background:"linear-gradient(135deg,"+T.green+",#15803d)",border:"none",color:"#fff",borderRadius:10,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:(tnLoading||tnRevalidando)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(tnLoading||tnRevalidando)?0.45:1,display:"flex",alignItems:"center",gap:6,flexShrink:0,boxShadow:(!tnLoading&&!tnRevalidando)?"0 4px 14px "+T.green+"40":"none",transition:"all 0.15s"}}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+                              Facturar {selectedCount} →
+                            </button>
+                          </div>,
+                        document.body)}
                       </div>
                     );
                   })()}
@@ -17008,6 +17024,22 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </div>
                         ))}
                       </div>
+                      {/* Reintentar solo las que fallaron: vuelve a la fase de preview con
+                          el subset fallido, sin tener que buscarlas de nuevo en la lista. */}
+                      {(()=>{
+                        const failed = resultados.filter(r=>!r.ok&&ordenes&&ordenes[r.orden_id]);
+                        if(failed.length===0) return null;
+                        return (
+                          <button onClick={()=>{
+                            const sub={};
+                            failed.forEach(r=>{ sub[r.orden_id]=ordenes[r.orden_id]; });
+                            setOrdenes(sub); setResultados(null); setPdfs([]); setDuplicatesInModal(null);
+                          }} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px 18px",background:T.orange,border:"none",color:"#fff",borderRadius:DS.r.md,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                            Reintentar {failed.length===1?"la venta que falló":`las ${failed.length} con error`}
+                          </button>
+                        );
+                      })()}
                       <div style={{display:"flex",gap:10,marginTop:4}}>
                         {pdfs.length>0&&(
                           <button onClick={downloadCurrentBatchZip} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px 18px",background:T.green,border:"none",color:"#fff",borderRadius:DS.r.md,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flex:1,boxShadow:"0 4px 14px rgba(22,163,74,0.3)"}}>
@@ -26959,6 +26991,7 @@ export default function App() {
         .main-content{padding-bottom:68px!important;}
         .kpi-grid{grid-template-columns:repeat(2,1fr)!important;}
         .home-wrap{padding:16px 14px 80px!important;}
+        .arca-fab{bottom:74px!important;left:10px!important;right:10px!important;transform:none!important;max-width:none!important;}
       }
       @media(min-width:769px){
         .main-content{padding-bottom:0!important;}
