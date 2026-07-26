@@ -6920,77 +6920,68 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </div>
                 </div>
 
-                {/* Botón Generar PDF — mismo diseño que Descargar */}
-                {found.length>0&&!skuBlob&&!skuGenerating&&(
-                  <div style={{background:`linear-gradient(135deg,${T.accentSolid}18,${T.accentSolid}08)`,border:`2px solid ${T.accentSolid}66`,borderRadius:14,padding:"18px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,animation:"growith-fadeIn 0.4s ease"}}>
-                    <div style={{width:44,height:44,borderRadius:12,background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:15,fontWeight:800,color:T.accent,marginBottom:3}}>Resultados listos</div>
-                      <div style={{fontSize:12,color:T.textSm}}>{found.length} rótulos encontrados{notFound.length>0?` · ${notFound.length} sin match`:""}</div>
+                {/* PASO 1 — Generar / Descargar el PDF con SKUs. UNA sola card en un
+                    lugar FIJO: cambia el botón según el estado, así la acción
+                    principal nunca salta de posición al terminar de procesar. */}
+                {found.length>0&&!skuGenerating&&(
+                  <div style={{background:skuBlob?`linear-gradient(135deg,${T.green}14,${T.green}06)`:`linear-gradient(135deg,${T.accentSolid}14,${T.accentSolid}06)`,border:`1.5px solid ${(skuBlob?T.green:T.accentSolid)}55`,borderRadius:14,padding:"16px 20px",marginBottom:12,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",animation:"growith-fadeIn 0.3s ease"}}>
+                    <div style={{flex:1,minWidth:220}}>
+                      <div style={{fontSize:10,fontWeight:800,letterSpacing:0.8,textTransform:"uppercase",color:skuBlob?T.green:T.accent,marginBottom:4}}>Paso 1 · PDF con SKUs</div>
+                      <div style={{fontSize:14,fontWeight:800,color:T.text,marginBottom:2}}>{skuBlob?"PDF listo para descargar":"Resultados listos"}</div>
+                      <div style={{fontSize:12,color:T.textSm}}>{found.length} rótulos {skuBlob?"con SKUs escritos":"encontrados"}{notFound.length>0?` · ${notFound.length} sin match`:""}</div>
                     </div>
-                    <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}}
-                      style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"12px 24px",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8,flexShrink:0,boxShadow:`0 4px 16px ${T.accentSolid}44`}}>
-                      Generar PDF con SKUs
-                    </AsyncButton>
+                    {skuBlob
+                      ? <button onClick={()=>{
+                          const url=URL.createObjectURL(skuBlob);
+                          const a=document.createElement("a");
+                          a.href=url;a.download=`rotulos-con-sku-${new Date().toISOString().slice(0,10)}.pdf`;a.click();
+                          URL.revokeObjectURL(url);
+                        }} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"12px 24px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8,flexShrink:0,boxShadow:`0 4px 16px ${T.green}44`}}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          Descargar PDF
+                        </button>
+                      : <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}}
+                          style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"12px 24px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8,flexShrink:0,boxShadow:`0 4px 16px ${T.accentSolid}44`}}>
+                          Generar PDF con SKUs
+                        </AsyncButton>}
                   </div>
                 )}
-                {/* Enviar seguimientos desde el MISMO PDF — antes había que
-                    volver a subir el mismo archivo en el tab Seguimientos */}
+                {/* PASO 2 — Enviar seguimientos desde el MISMO PDF. Siempre debajo
+                    del Paso 1, siempre en el mismo lugar. */}
                 {(()=>{
                   const pend=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]);
                   const okCount=Object.values(trackingSent).filter(v=>v==="ok"||v==="warn").length;
                   if(!pdfResults.length) return null;
+                  const done=pend.length===0&&okCount>0;
                   return (
-                    <div style={{background:`linear-gradient(135deg,${T.green}14,${T.green}06)`,border:`2px solid ${T.green}55`,borderRadius:14,padding:"16px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+                    <div style={{background:T.card,border:`1.5px solid ${done?T.green+"55":T.blue+"44"}`,borderRadius:14,padding:"16px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
                       <div style={{flex:1,minWidth:220}}>
-                        <div style={{fontSize:14,fontWeight:800,color:T.green,marginBottom:3}}>Seguimientos del mismo PDF</div>
-                        <div style={{fontSize:12,color:T.textSm}}>{pend.length>0?`${pend.length} tracking(s) listos para subir a Tienda Nube (avisa al cliente y activa el seguimiento automático)`:okCount>0?`✓ ${okCount} seguimientos enviados — ver estado en el tab Seguimientos`:"Sin trackings pendientes"}</div>
+                        <div style={{fontSize:10,fontWeight:800,letterSpacing:0.8,textTransform:"uppercase",color:done?T.green:T.blue,marginBottom:4}}>Paso 2 · Avisar a los clientes</div>
+                        <div style={{fontSize:14,fontWeight:800,color:T.text,marginBottom:2}}>{done?"Seguimientos enviados":"Enviar seguimientos a Tienda Nube"}</div>
+                        <div style={{fontSize:12,color:T.textSm}}>{pend.length>0?`${pend.length} tracking(s) del mismo PDF, listos para subir (avisa al cliente y activa el seguimiento automático)`:done?`${okCount} enviados — ver estado en la pestaña Seguimientos`:"Sin trackings pendientes"}</div>
                       </div>
                       {pend.length>0&&(
-                        <AsyncButton onClick={sendAllTracking} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"12px 22px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,boxShadow:`0 4px 16px ${T.green}44`}}>
-                          📨 Enviar {pend.length} seguimiento{pend.length!==1?"s":""}
+                        <AsyncButton onClick={sendAllTracking} style={{background:T.blue,border:"none",color:"#fff",borderRadius:10,padding:"12px 22px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,boxShadow:`0 4px 16px ${T.blue}44`}}>
+                          Enviar {pend.length} seguimiento{pend.length!==1?"s":""}
                         </AsyncButton>
                       )}
                     </div>
                   );
                 })()}
-                {/* Exportar resumen */}
-                {Object.keys(skuTotals).length>0&&(
-                  <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
-                    <button onClick={()=>{
-                      const lines=["RESUMEN SKU DESPACHADOS","Fecha: "+new Date().toLocaleDateString("es-AR"),"","DETALLE:",""];
-                      Object.entries(skuTotals).sort().forEach(([k,v])=>lines.push(`${k}: ${v}u`));
-                      const a=document.createElement("a");
-                      a.href="data:text/plain;charset=utf-8,"+encodeURIComponent(lines.join("\n"));
-                      a.download="resumen-sku.txt";a.click();
-                    }} style={{...BtnSecondary(T),padding:"8px 16px",fontSize:12}}>
-                      Exportar resumen
-                    </button>
-                  </div>
-                )}
-
-                {/* Botón de descarga prominente cuando está listo */}
-                {skuBlob&&!skuGenerating&&(
-                  <div style={{background:`linear-gradient(135deg,${T.green}18,${T.green}08)`,border:`2px solid ${T.green}66`,borderRadius:14,padding:"18px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,animation:"growith-fadeIn 0.4s ease"}}>
-                    <StatusIcon type="success" size={44}/>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:15,fontWeight:800,color:T.green,marginBottom:3}}>¡PDF listo para descargar!</div>
-                      <div style={{fontSize:12,color:T.textSm}}>{found.length} rótulos con SKUs escritos{notFound.length>0?` · ${notFound.length} sin match`:""}</div>
-                    </div>
-                    <button onClick={()=>{
-                      const url=URL.createObjectURL(skuBlob);
-                      const a=document.createElement("a");
-                      a.href=url;a.download=`rotulos-con-sku-${new Date().toISOString().slice(0,10)}.pdf`;a.click();
-                      URL.revokeObjectURL(url);
-                    }} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"12px 24px",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8,flexShrink:0,boxShadow:`0 4px 16px ${T.green}44`}}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                      Descargar PDF
-                    </button>
-                  </div>
-                )}
                 {Object.keys(skuTotals).length>0&&(
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
-                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:12}}>Resumen despacho</div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                      <span style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Resumen despacho</span>
+                      <button onClick={()=>{
+                        const lines=["RESUMEN SKU DESPACHADOS","Fecha: "+new Date().toLocaleDateString("es-AR"),"","DETALLE:",""];
+                        Object.entries(skuTotals).sort().forEach(([k,v])=>lines.push(`${k}: ${v}u`));
+                        const a=document.createElement("a");
+                        a.href="data:text/plain;charset=utf-8,"+encodeURIComponent(lines.join("\n"));
+                        a.download="resumen-sku.txt";a.click();
+                      }} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:11}}>
+                        Exportar
+                      </button>
+                    </div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
                       {Object.entries(skuTotals).sort((a,b)=>b[1]-a[1]).map(([sku,qty])=>(
                         <div key={sku} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 12px",display:"flex",alignItems:"center",gap:8}}>
