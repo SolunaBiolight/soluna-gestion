@@ -2688,7 +2688,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.icon} {s.title}</span> — {s.desc}</span>
+                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
                 </div>
               ))}
             </div>
@@ -3904,7 +3904,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.icon} {s.title}</span> — {s.desc}</span>
+                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
                 </div>
               ))}
             </div>
@@ -4103,7 +4103,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         </div>
                         <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
                           {c.linkInstagram&&<a href={c.linkInstagram.startsWith("http")?c.linkInstagram:"https://instagram.com/"+c.linkInstagram.replace("@","")} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"#E1306C",textDecoration:"none",background:"#E1306C18",border:"1px solid #E1306C33",borderRadius:6,padding:"3px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3}}>📸 Instagram</a>}
-                          {c.telefono&&<a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.green,textDecoration:"none",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:6,padding:"3px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3}}>💬 WA</a>}
+                          {c.telefono&&<a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.green,textDecoration:"none",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:6,padding:"3px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3}}><GhI n="wa" size={13}/> WA</a>}
                         </div>
                       </div>
                     </div>
@@ -4507,7 +4507,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           <span>{inf.red||"Instagram"}</span>
                         </div>
                       </div>
-                      <button onClick={()=>{setEditInfluencer(inf);setInfForm({nombre:inf.nombre||"",usuario:inf.usuario||"",red:inf.red||"Instagram",codigoDescuento:inf.codigoDescuento||"",descuentoPct:inf.descuentoPct||"",comisionPct:inf.comisionPct||"",email:inf.email||"",telefono:inf.telefono||"",notas:inf.notas||""});setShowInfluencerForm(true);}} style={{padding:"4px 8px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontSize:11,fontFamily:"'Inter',system-ui,sans-serif"}}>✏️</button>
+                      <button onClick={()=>{setEditInfluencer(inf);setInfForm({nombre:inf.nombre||"",usuario:inf.usuario||"",red:inf.red||"Instagram",codigoDescuento:inf.codigoDescuento||"",descuentoPct:inf.descuentoPct||"",comisionPct:inf.comisionPct||"",email:inf.email||"",telefono:inf.telefono||"",notas:inf.notas||""});setShowInfluencerForm(true);}} style={{padding:"4px 8px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontSize:11,fontFamily:"'Inter',system-ui,sans-serif"}}><GhI n="edit" size={12}/></button>
                     </div>
                     {/* Datos comerciales */}
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12,background:T.surface,borderRadius:10,padding:"10px 12px"}}>
@@ -4539,7 +4539,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     {(inf.email||inf.telefono)&&(
                       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
                         {inf.email&&<a href={"mailto:"+inf.email} style={{fontSize:11,color:T.accent,textDecoration:"none"}}>✉️ {inf.email}</a>}
-                        {inf.telefono&&<a href={"https://wa.me/"+inf.telefono.replace(/\D/g,"")} target="_blank" rel="noreferrer" style={{fontSize:11,color:T.green,textDecoration:"none"}}>💬 WA</a>}
+                        {inf.telefono&&<a href={"https://wa.me/"+inf.telefono.replace(/\D/g,"")} target="_blank" rel="noreferrer" style={{fontSize:11,color:T.green,textDecoration:"none"}}><GhI n="wa" size={13}/> WA</a>}
                       </div>
                     )}
                     {inf.notas&&<div style={{fontSize:11,color:T.textSm,borderTop:`1px solid ${T.borderL}`,paddingTop:8,marginTop:4,lineHeight:1.5}}>{inf.notas}</div>}
@@ -6428,7 +6428,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   ].map(s=>(
                     <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                       <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                      <span><span style={{color:T.textMd,fontWeight:500}}>{s.icon} {s.title}</span> — {s.desc}</span>
+                      <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
                     </div>
                   ))}
                 </div>
@@ -10116,7 +10116,7 @@ function RefCard({T, refData, colabMode, onEdit, onDelete}) {
           </div>
           {!colabMode&&(
             <div style={{display:"flex",gap:2,opacity:h?1:0,transition:"opacity 0.15s"}}>
-              <button onClick={()=>onEdit(refData)} title="Editar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"4px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✏️</button>
+              <button onClick={()=>onEdit(refData)} title="Editar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"4px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}><GhI n="edit" size={12}/></button>
               <button onClick={()=>onDelete(refData.id)} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"4px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
             </div>
           )}
@@ -10132,17 +10132,17 @@ function RefCard({T, refData, colabMode, onEdit, onDelete}) {
 
 // ── MATERIAL DE TRABAJO — links compartidos del equipo (Drive, plantillas, guías) ──
 const MAT_TIPOS = {
-  drive:      { icon:"📁", label:"Drive",      color:"#34a853" },
-  doc:        { icon:"📄", label:"Google Doc", color:"#4285f4" },
-  sheet:      { icon:"📊", label:"Sheet",      color:"#0f9d58" },
-  figma:      { icon:"🎨", label:"Figma",      color:"#a259ff" },
-  canva:      { icon:"🖌️", label:"Canva",      color:"#00c4cc" },
-  notion:     { icon:"🗒️", label:"Notion",     color:"#8b95a5" },
-  dropbox:    { icon:"📦", label:"Dropbox",    color:"#0061ff" },
-  wetransfer: { icon:"📤", label:"WeTransfer", color:"#409fff" },
-  youtube:    { icon:"▶️", label:"YouTube",    color:"#ff0000" },
-  instagram:  { icon:"📷", label:"Instagram",  color:"#e1306c" },
-  link:       { icon:"🔗", label:"Link",       color:"#8b95a5" },
+  drive:      { gi:"folder",  label:"Drive",      color:"#34a853" },
+  doc:        { gi:"file",    label:"Google Doc", color:"#4285f4" },
+  sheet:      { gi:"table",   label:"Sheet",      color:"#0f9d58" },
+  figma:      { gi:"palette", label:"Figma",      color:"#a259ff" },
+  canva:      { gi:"palette", label:"Canva",      color:"#00c4cc" },
+  notion:     { gi:"file",    label:"Notion",     color:"#8b95a5" },
+  dropbox:    { gi:"box",     label:"Dropbox",    color:"#0061ff" },
+  wetransfer: { gi:"upload",  label:"WeTransfer", color:"#409fff" },
+  youtube:    { gi:"play",    label:"YouTube",    color:"#ff0000" },
+  instagram:  { gi:"camera",  label:"Instagram",  color:"#e1306c" },
+  link:       { gi:"link",    label:"Link",       color:"#8b95a5" },
 };
 function matDetectTipo(url) {
   const u = (url||"").toLowerCase();
@@ -10158,12 +10158,39 @@ function matDetectTipo(url) {
   if (u.includes("instagram.")) return "instagram";
   return "link";
 }
+// GhI — set de íconos de línea (heredan currentColor) para reemplazar emojis en UI
+function GhI({n, size=13, style}) {
+  const p={width:size,height:size,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2,strokeLinecap:"round",strokeLinejoin:"round",style:{flexShrink:0,display:"inline-block",verticalAlign:"-2px",...style}};
+  switch(n){
+    case "edit":     return <svg {...p}><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>;
+    case "refresh":  return <svg {...p}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>;
+    case "chat":     return <svg {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
+    case "copy":     return <svg {...p}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>;
+    case "link":     return <svg {...p}><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1L11 5"/><path d="M14 11a5 5 0 0 0-7.1 0l-2 2a5 5 0 0 0 7.1 7.1L13 19"/></svg>;
+    case "mail":     return <svg {...p}><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>;
+    case "folder":   return <svg {...p}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>;
+    case "search":   return <svg {...p}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>;
+    case "check":    return <svg {...p} strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>;
+    case "ban":      return <svg {...p}><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>;
+    case "clip":     return <svg {...p}><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>;
+    case "box":      return <svg {...p}><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>;
+    case "play":     return <svg {...p}><polygon points="5 3 19 12 5 21 5 3"/></svg>;
+    case "camera":   return <svg {...p}><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="0.5" fill="currentColor"/></svg>;
+    case "file":     return <svg {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>;
+    case "table":    return <svg {...p}><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>;
+    case "palette":  return <svg {...p}><path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2v-1c0-.55.45-1 1-1h2a5 5 0 0 0 5-5c0-6.08-4.92-11-10-11z"/><circle cx="7.5" cy="11.5" r="1" fill="currentColor"/><circle cx="12" cy="7.5" r="1" fill="currentColor"/><circle cx="16.5" cy="11.5" r="1" fill="currentColor"/></svg>;
+    case "upload":   return <svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
+    case "chart":    return <svg {...p}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>;
+    case "wa":       return <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" style={{flexShrink:0,display:"inline-block",verticalAlign:"-2px",...style}}><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>;
+    default: return null;
+  }
+}
 const MAT_CATS = [
-  { id:"fotos",      label:"Fotos",      icon:"📷" },
-  { id:"videos",     label:"Videos",     icon:"🎬" },
-  { id:"plantillas", label:"Plantillas", icon:"🎨" },
-  { id:"guias",      label:"Guías",      icon:"📘" },
-  { id:"otros",      label:"Otros",      icon:"📎" },
+  { id:"fotos",      label:"Fotos" },
+  { id:"videos",     label:"Videos" },
+  { id:"plantillas", label:"Plantillas" },
+  { id:"guias",      label:"Guías" },
+  { id:"otros",      label:"Otros" },
 ];
 function MatCard({T, mat, colabMode, onEdit, onDelete}) {
   const [h,setH]=React.useState(false);
@@ -10172,7 +10199,7 @@ function MatCard({T, mat, colabMode, onEdit, onDelete}) {
     <div onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
       style={{position:"relative",background:T.card,border:`1px solid ${h?meta.color+"55":T.border}`,borderRadius:DS.r.xl,transition:`all 0.15s ${DS.ease}`,transform:h?"translateY(-2px)":"none",boxShadow:h?"0 8px 24px rgba(0,0,0,0.18)":"0 1px 3px rgba(0,0,0,0.08)"}}>
       <a href={mat.url} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:12,padding:"13px 14px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
-        <span style={{display:"grid",placeItems:"center",width:36,height:36,borderRadius:10,background:meta.color+"1c",fontSize:17,flexShrink:0}}>{meta.icon}</span>
+        <span style={{display:"grid",placeItems:"center",width:36,height:36,borderRadius:10,background:meta.color+"1c",color:meta.color,flexShrink:0}}><GhI n={meta.gi} size={17}/></span>
         <span style={{flex:1,minWidth:0}}>
           <span style={{display:"block",fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{mat.nombre}</span>
           <span style={{display:"block",fontSize:DS.font.sm,color:T.textSm,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{mat.nota||meta.label}</span>
@@ -10181,7 +10208,7 @@ function MatCard({T, mat, colabMode, onEdit, onDelete}) {
       </a>
       {!colabMode&&h&&(
         <div style={{position:"absolute",top:6,right:6,display:"flex",gap:2,background:T.card,borderRadius:7,border:`1px solid ${T.border}`,padding:1}}>
-          <button onClick={e=>{e.preventDefault();onEdit(mat);}} title="Editar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"3px 6px",borderRadius:6,fontSize:12,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✏️</button>
+          <button onClick={e=>{e.preventDefault();onEdit(mat);}} title="Editar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"3px 6px",borderRadius:6,fontSize:12,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}><GhI n="edit" size={12}/></button>
           <button onClick={e=>{e.preventDefault();onDelete(mat.id);}} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"3px 6px",borderRadius:6,fontSize:12,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
         </div>
       )}
@@ -10465,7 +10492,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   }
 
   async function copyLink(token) {
-    try { await navigator.clipboard.writeText(colabLink(token)); toast("Link copiado 📋","success"); }
+    try { await navigator.clipboard.writeText(colabLink(token)); toast("Link copiado ✓","success"); }
     catch(e){ appAlert("Link: "+colabLink(token)); }
   }
   function whatsappLink(t, colab) {
@@ -10475,12 +10502,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   }
 
   const ESTADOS = {
-    pendiente:  {label:"⏳ Pendiente",  color:T.yellow,  bg:T.yellowBg},
-    en_proceso: {label:"🔄 En proceso", color:T.blue,    bg:T.blueBg},
-    bloqueada:  {label:"🚫 Bloqueada",  color:T.textMd,  bg:T.textMd+"18"},
-    entregado:  {label:"📦 Entregado",  color:T.orange||T.orange, bg:(T.orangeBg||T.orange+"20")},
-    aprobado:   {label:"✅ Aprobado",   color:T.green,   bg:T.greenBg},
-    revision:   {label:"🔁 A revisar",  color:T.red,     bg:T.redBg},
+    pendiente:  {label:"Pendiente",  color:T.yellow,  bg:T.yellowBg},
+    en_proceso: {label:"En proceso", color:T.blue,    bg:T.blueBg},
+    bloqueada:  {label:"Bloqueada",  color:T.textMd,  bg:T.textMd+"18"},
+    entregado:  {label:"Entregado",  color:T.orange||T.orange, bg:(T.orangeBg||T.orange+"20")},
+    aprobado:   {label:"Aprobado",   color:T.green,   bg:T.greenBg},
+    revision:   {label:"A revisar",  color:T.red,     bg:T.redBg},
   };
   const KANBAN_COLS = ["pendiente","en_proceso","bloqueada","revision","entregado","aprobado"];
 
@@ -10532,8 +10559,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const emailResults = d._emailResults||[];
     const sent = emailResults.filter(r=>r.ok);
     const failed = emailResults.filter(r=>!r.ok);
-    if(failed.length>0) toast(`⚠️ ${failed.length} email(s) no enviados: ${failed.map(r=>r.error||"error").join(" / ")}`,"warning");
-    else if(sent.length>0) toast("📧 Notificaciones enviadas ✓","success");
+    if(failed.length>0) toast(`${failed.length} email(s) no enviados: ${failed.map(r=>r.error||"error").join(" / ")}`,"warning");
+    else if(sent.length>0) toast("Notificaciones enviadas ✓","success");
     if(colab) setNotifPanel({tarea:d,colab});
   }
 
@@ -10573,7 +10600,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]}));
         setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
         toast("Miembro agregado ✓","success");
-        try { await navigator.clipboard.writeText(colabLink(d.token)); toast("Link copiado 📋","success"); } catch(_){}
+        try { await navigator.clipboard.writeText(colabLink(d.token)); toast("Link copiado ✓","success"); } catch(_){}
       } else {
         if((produccion?.editores||[]).includes(nombre)) { toast("Ya existe un miembro con ese nombre","error"); return; }
         const newProd = {...produccion, editores:[...(produccion?.editores||[]), nombre]};
@@ -10673,7 +10700,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const upd={publicado};
     setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,...upd}:t)}));
     if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,...upd}));
-    toast(publicado?"📤 Marcado como publicado ✓":"Quitado de publicados","success");
+    toast(publicado?"Marcado como publicado ✓":"Quitado de publicados","success");
   }
   async function crearEvento() {
     if(!nEventoData.nombre.trim()||!nEventoData.fecha) return appAlert("Completá nombre y fecha");
@@ -10877,7 +10904,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             {/* Alerta estado especial */}
             {(isBlocked||isRevision)&&(
               <div style={{marginTop:10,display:"flex",alignItems:"flex-start",gap:10,padding:"10px 14px",background:T.red+"10",border:"1px solid "+T.red+"35"+"",borderLeft:"3px solid "+T.red+"",borderRadius:DS.r.lg}}>
-                <span style={{fontSize:16,flexShrink:0}}>{isBlocked?"🚫":"🔁"}</span>
+                <span style={{flexShrink:0,display:"inline-flex"}}><GhI n={isBlocked?"ban":"refresh"} size={15}/></span>
                 <div>
                   <div style={{fontSize:12,fontWeight:600,color:T.red,marginBottom:isRevision&&t.feedbackActual?4:0}}>
                     {isBlocked?"Bloqueada — el equipo fue notificado":"El equipo revisó tu entrega y pidió cambios"}
@@ -11084,7 +11111,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             <div style={{marginBottom:16}}>
               <button onClick={()=>setShowBloqueoColab(p=>({...p,[t._id]:!p[t._id]}))}
                 style={{width:"100%",fontSize:12,padding:"8px 0",borderRadius:DS.r.lg,border:"1px solid "+T.red+"30"+"",background:T.red+"0a",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,textAlign:"center",display:"block",boxSizing:"border-box"}}>
-                🚫 Estoy bloqueada
+                <GhI n="ban" size={12}/> Estoy bloqueada
               </button>
               {showBloqueoColab[t._id]&&(
                 <div style={{marginTop:8,background:T.red+"10",borderRadius:DS.r.lg,padding:"12px",border:"1px solid "+T.red+"35"+""}}>
@@ -11143,7 +11170,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
           {t.tareaNumStr&&<span style={{fontSize:11,fontWeight:600,color:T.textSm,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 10px"}}>#{t.tareaNumStr}</span>}
           {t.leidoAt&&<span style={{fontSize:11,fontWeight:600,color:T.green,background:T.green+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.green}30`}}>Brief leído</span>}
-          {(t.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.red}30`}}>🔁 {t.correcciones} corrección{(t.correcciones||0)!==1?"es":""}</span>}
+          {(t.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.red}30`}}><GhI n="refresh" size={10}/> {t.correcciones} corrección{(t.correcciones||0)!==1?"es":""}</span>}
           {t.recurrente&&<span style={{fontSize:11,fontWeight:600,color:T.green,background:T.green+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.green}30`}}>Recurrente · {t.frecuenciaRecurrente||"semanal"}</span>}
           {t.tiempoEntregaDias&&t.estado==="aprobado"&&<span style={{fontSize:11,color:T.blue,background:T.blue+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.blue}30`}}>⏱ {t.tiempoEntregaDias}d</span>}
         </div>
@@ -11232,7 +11259,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:24}}>
             <AsyncButton onClick={async()=>{
               await tareasApi({action:"sendRecordatorio",tareaId:t._id});
-              toast(`📧 Recordatorio enviado a ${colab.nombre.split(" ")[0]}`,"success");
+              toast(`Recordatorio enviado a ${colab.nombre.split(" ")[0]}`,"success");
             }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,background:T.accent+"0a",border:"1px solid "+T.accent+"30"+"",color:T.accent,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
               Enviar recordatorio
@@ -11397,7 +11424,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         {slotDels.map((del,di)=>(
                           <div key={di} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",background:T.card,borderRadius:DS.r.md,border:`1px solid ${T.border}`}}>
                             <span style={{fontSize:10,color:T.textSm,flexShrink:0}}>{del.label||`v${di+1}`}</span>
-                            {del.link&&<a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:11,color:T.accent,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:"none"}}>🔗 {del.link.slice(0,40)}…</a>}
+                            {del.link&&<a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:11,color:T.accent,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:"none"}}><GhI n="link" size={11}/> {del.link.slice(0,40)}…</a>}
                             {del.nota&&<span style={{fontSize:10,color:T.textSm}}>{del.nota}</span>}
                             {del.parcial&&<span style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:4,background:T.orange+"18",color:T.orange}}>PARCIAL</span>}
                           </div>
@@ -11425,7 +11452,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   </div>
                   <button disabled={!todosCompletos}
                     style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px",opacity:todosCompletos?1:0.4,cursor:todosCompletos?"pointer":"not-allowed",display:"flex",alignItems:"center",gap:6}}>
-                    <span>📊</span> Sumar a campaña
+                    <GhI n="chart" size={12}/> Sumar a campaña
                   </button>
                 </div>
               )}
@@ -11496,11 +11523,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                     )}
                     <div style={{display:"flex",gap:8,marginTop:12,paddingTop:12,borderTop:`1px solid ${T.border}`,flexWrap:"wrap",alignItems:"center"}}>
                       {(!colabMode||colabMode.permisos?.verTareas)&&i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<>
-                        <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:13,padding:"9px 18px",borderRadius:9,background:T.green,color:"#fff",border:"none",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:6}}>✓ Aprobar entrega</AsyncButton>
-                        <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:!p[t._id]}))} style={{fontSize:13,padding:"9px 18px",borderRadius:9,background:showFeedback[t._id]?T.red+"18":"transparent",color:T.red,border:`1.5px solid ${T.red}55`,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:6}}>🔁 Pedir cambios</button>
-                        {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:12,padding:"8px 14px",borderRadius:9,color:T.green,border:"1px solid "+T.green+"44"+"",background:T.green+"10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>💬 WA</a>}
+                        <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:13,padding:"9px 18px",borderRadius:9,background:T.green,color:"#fff",border:"none",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:6}}><GhI n="check" size={13}/> Aprobar entrega</AsyncButton>
+                        <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:!p[t._id]}))} style={{fontSize:13,padding:"9px 18px",borderRadius:9,background:showFeedback[t._id]?T.red+"18":"transparent",color:T.red,border:`1.5px solid ${T.red}55`,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:6}}><GhI n="refresh" size={13}/> Pedir cambios</button>
+                        {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:12,padding:"8px 14px",borderRadius:9,color:T.green,border:"1px solid "+T.green+"44"+"",background:T.green+"10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}><GhI n="wa" size={13}/> WA</a>}
                       </>}
-                      {(!colabMode||colabMode.permisos?.verTareas)&&t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:12,padding:"8px 14px",borderRadius:9,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>✏️ Editar</button>}
+                      {(!colabMode||colabMode.permisos?.verTareas)&&t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:12,padding:"8px 14px",borderRadius:9,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}><GhI n="edit" size={12}/> Editar</button>}
                       {(!colabMode||colabMode.permisos?.verTareas)&&<AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:12,padding:"8px 14px",borderRadius:9,background:"transparent",color:T.textSm,border:`1px solid ${T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>Eliminar</AsyncButton>}
                       {colabMode&&i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<AsyncButton onClick={async()=>{
                         if(!await appConfirm(`¿Eliminar tu entrega "${del.label||`v${i+1}`}"?`,{danger:true,okLabel:"Eliminar"})) return;
@@ -11526,7 +11553,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                             <a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, sobre tu tarea "${t.titulo}":\n\n${feedbackText[t._id]}\n\nSubí la nueva versión en tu portal cuando esté lista 💪`)}`}
                               target="_blank" rel="noreferrer"
                               style={{fontSize:12,padding:"9px 16px",borderRadius:9,background:T.green+"12",color:T.green,border:"1px solid "+T.green+"44"+"",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
-                              💬 WA con este feedback
+                              <GhI n="wa" size={12}/> WA con este feedback
                             </a>
                           )}
                           <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:false}))} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px"}}>Cancelar</button>
@@ -11550,7 +11577,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             const nota=(colabEntregaNota[t._id]||"").trim();
             try{
               await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,label,nota,esFinal:true})});
-              toast(hasFinal?"📎 Documento agregado ✓":"✅ Entrega enviada","success");
+              toast(hasFinal?"Documento agregado ✓":"Entrega enviada ✓","success");
               setColabEntregaLink(p=>({...p,[t._id]:""}));
               setColabEntregaNombre(p=>({...p,[t._id]:""}));
               setColabEntregaNota(p=>({...p,[t._id]:""}));
@@ -11559,7 +11586,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           }
           if(!hasFinal) return (
             <div style={{marginBottom:14,padding:"12px 14px",background:T.green+"12",border:"1.5px solid "+T.green+"40"+"",borderRadius:DS.r.lg}}>
-              <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:8}}>📤 Subir entrega</div>
+              <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:8}}><GhI n="upload" size={12}/> Subir entrega</div>
               <input value={colabEntregaNombre[t._id]||""} onChange={e=>setColabEntregaNombre(p=>({...p,[t._id]:e.target.value}))}
                 placeholder="Nombre (ej: Fotos look invierno, Reel batch 2)" style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
               <input value={colabEntregaLink[t._id]||""} onChange={e=>setColabEntregaLink(p=>({...p,[t._id]:e.target.value}))}
@@ -11567,13 +11594,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               <input value={colabEntregaNota[t._id]||""} onChange={e=>setColabEntregaNota(p=>({...p,[t._id]:e.target.value}))}
                 placeholder="Nota para el equipo (opcional)" style={{...iS,fontSize:12,width:"100%",marginBottom:10}}/>
               <AsyncButton onClick={submitColabEntrega} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px",borderRadius:DS.r.lg,border:"none",background:T.green,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                ✅ Entregar
+                <GhI n="check" size={12}/> Entregar
               </AsyncButton>
             </div>
           );
           return (
             <div style={{marginBottom:14,padding:"10px 14px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg}}>
-              <div style={{fontSize:12,fontWeight:700,color:T.textMd,marginBottom:8}}>📎 Agregar documento a tu entrega</div>
+              <div style={{fontSize:12,fontWeight:700,color:T.textMd,marginBottom:8}}><GhI n="clip" size={12}/> Agregar documento a tu entrega</div>
               <input value={colabEntregaNombre[t._id]||""} onChange={e=>setColabEntregaNombre(p=>({...p,[t._id]:e.target.value}))}
                 placeholder="Nombre del documento (ej: Fotos adicionales, Archivo final corregido)" style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
               <input value={colabEntregaLink[t._id]||""} onChange={e=>setColabEntregaLink(p=>({...p,[t._id]:e.target.value}))}
@@ -11581,7 +11608,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               <input value={colabEntregaNota[t._id]||""} onChange={e=>setColabEntregaNota(p=>({...p,[t._id]:e.target.value}))}
                 placeholder="Nota (opcional)" style={{...iS,fontSize:12,width:"100%",marginBottom:10}}/>
               <AsyncButton onClick={submitColabEntrega} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",borderRadius:DS.r.lg,border:"1.5px solid "+T.accent+"50"+"",background:T.accent+"12",color:T.accent,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                📎 Agregar documento
+                <GhI n="clip" size={12}/> Agregar documento
               </AsyncButton>
             </div>
           );
@@ -11592,21 +11619,21 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             {t.estado==="bloqueada"?(
               <>
                 <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"linear-gradient(135deg,"+T.red+"14"+","+T.red+"08"+")",borderRadius:DS.r.lg,border:"1.5px solid "+T.red+"40"+"",marginBottom:8}}>
-                  <span style={{fontSize:16}}>🚫</span>
+                  <span style={{display:"inline-flex"}}><GhI n="ban" size={15}/></span>
                   <div style={{flex:1,fontSize:12,color:T.red,fontWeight:600}}>Bloqueada — el equipo ya fue notificado</div>
                 </div>
                 <AsyncButton onClick={async()=>{
                   await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicUpdateEstado",token:colabMode.token,tareaId:t._id,estado:"en_proceso",progresoLabel:"En proceso"})});
                   loadData(true);
                 }} style={{width:"100%",fontSize:12,padding:"8px 0",borderRadius:DS.r.lg,background:T.blue+"12",color:T.blue,border:"1px solid "+T.blue+"30"+"",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,textAlign:"center",display:"block",boxSizing:"border-box"}}>
-                  🔄 Retomé el trabajo
+                  <GhI n="refresh" size={12}/> Retomé el trabajo
                 </AsyncButton>
               </>
             ):(
               <>
                 <button onClick={()=>setShowBloqueoColab(p=>({...p,[t._id]:!p[t._id]}))}
                   style={{width:"100%",fontSize:11.5,padding:"6px 0",borderRadius:DS.r.lg,border:"1px solid "+T.red+"30"+"",background:T.red+"0a",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,textAlign:"center",display:"block",boxSizing:"border-box"}}>
-                  🚫 Estoy bloqueada
+                  <GhI n="ban" size={12}/> Estoy bloqueada
                 </button>
                 {showBloqueoColab[t._id]&&(
                   <div style={{marginTop:8,background:"linear-gradient(135deg,"+T.red+"12"+","+T.red+"08"+")",borderRadius:DS.r.lg,padding:"12px",border:"1.5px solid "+T.red+"40"+""}}>
@@ -11619,7 +11646,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         const motivo=(bloqueoMotivoColab[t._id]||"").trim();
                         if(!motivo) return toast("Contanos qué te está frenando","error");
                         await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicUpdateEstado",token:colabMode.token,tareaId:t._id,estado:"bloqueada",progresoLabel:"",motivo})});
-                        toast("🚫 Equipo notificado","success");
+                        toast("Equipo notificado ✓","success");
                         setShowBloqueoColab(p=>({...p,[t._id]:false}));
                         loadData(true);
                       }} style={{fontSize:12,padding:"7px 16px",borderRadius:8,background:T.red,color:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
@@ -11726,8 +11753,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         {(!colabMode||colabMode.permisos?.verTareas)&&(
           <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"space-between",paddingTop:16,borderTop:`1px solid ${T.border}`}}>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {colab&&<button onClick={()=>copyLink(colab.token)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>📋 Link colaborador</button>}
-              <AsyncButton onClick={()=>duplicateTarea(t._id)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>📋 Duplicar</AsyncButton>
+              {colab&&<button onClick={()=>copyLink(colab.token)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}><GhI n="copy" size={12}/> Link colaborador</button>}
+              <AsyncButton onClick={()=>duplicateTarea(t._id)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}><GhI n="copy" size={12}/> Duplicar</AsyncButton>
               {t.estado!=="pendiente"&&<AsyncButton onClick={()=>revertEstadoAdmin(t._id)} style={{fontSize:12,padding:"7px 12px",borderRadius:8,background:T.yellow+"0a",color:T.yellow,border:"1px solid "+T.yellow+"30"+"",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>↩ Revertir</AsyncButton>}
             </div>
             <div style={{display:"flex",gap:6}}>
@@ -11763,7 +11790,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         )}
         {view==="todo"&&!calendarView&&(!colabMode||colabMode.permisos?.verTareas)&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:13,padding:"8px 18px",fontWeight:700,letterSpacing:"0.01em"}}>+ Tarea</button>}
         {view==="equipo"&&!colabMode&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
-        {view==="equipo"&&!colabMode&&<button onClick={async()=>{setShowBoardModal(true);if(!boardToken){setBoardLinkLoading(true);try{const d=await tareasApi({action:"generateBoardToken"});setBoardTokenAdmin(d.token);}catch(e){toast("Error generando link","error");}finally{setBoardLinkLoading(false);}}}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>🔗 Tablero compartido</button>}
+        {view==="equipo"&&!colabMode&&<button onClick={async()=>{setShowBoardModal(true);if(!boardToken){setBoardLinkLoading(true);try{const d=await tareasApi({action:"generateBoardToken"});setBoardTokenAdmin(d.token);}catch(e){toast("Error generando link","error");}finally{setBoardLinkLoading(false);}}}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}><GhI n="link" size={12}/> Tablero compartido</button>}
         {view==="todo"&&colabMode&&!colabMode.permisos?.verTareas&&<button onClick={()=>setShowNTColab(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>+ Proponer tarea</button>}
       </AppTopbar>
 
@@ -11822,7 +11849,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginTop:6}}>
                 {kanbanSelected.asignadoNombre&&<span style={{fontSize:12,color:T.textSm}}>{kanbanSelected.asignadoNombre}</span>}
                 {kanbanSelected.creadoPor?.nombre&&kanbanSelected.creadoPor.nombre!=="Soluna"&&<span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"1px 7px",border:`1px solid ${T.border}`}}>Asignada por {kanbanSelected.creadoPor.nombre}</span>}
-                {(kanbanSelected.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:5,padding:"2px 8px"}}>🔁 {kanbanSelected.correcciones}ª corrección</span>}
+                {(kanbanSelected.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:5,padding:"2px 8px"}}><GhI n="refresh" size={10}/> {kanbanSelected.correcciones}ª corrección</span>}
               </div>
             )}
           </div>
@@ -11881,12 +11908,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       {n:2,icon:"🔄",title:"Estados",desc:"Las tareas pasan por: Pendiente → En proceso → Entregado → Aprobado. Tu equipo actualiza desde su portal, sin crear cuenta."},
                       {n:3,icon:"📦",title:"Revisar entregas",desc:"Cuando alguien entrega aparece en la sección naranja 'Para revisar'. Podés ver el trabajo, pedir correcciones o aprobar con un click."},
                       {n:4,icon:"🔁",title:"Correcciones",desc:"Al pedir cambios, escribí exactamente qué modificar. El texto le llega automáticamente por email al colaborador."},
-                      {n:5,icon:"📅",title:"Calendario",desc:"El botón '📅 Calendario' muestra todos los deadlines y eventos del mes. Agregá fechas clave como Hot Sale, lanzamientos y festividades."},
+                      {n:5,icon:"📅",title:"Calendario",desc:"El botón 'Calendario' muestra todos los deadlines y eventos del mes. Agregá fechas clave como Hot Sale, lanzamientos y festividades."},
                       {n:6,icon:"🔁",title:"Recurrentes",desc:"Activá 'Tarea recurrente' al crear. Cuando la aprobás, la siguiente se crea sola con el deadline desplazado automáticamente."},
                     ].map(s=>(
                       <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                         <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                        <span><span style={{color:T.textMd,fontWeight:500}}>{s.icon} {s.title}</span> — {s.desc}</span>
+                        <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
                       </div>
                     ))}
                   </div>
@@ -11944,7 +11971,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                             ))}
                             {data?.eventos.map(ev=>(
                               <div key={ev.id} style={{fontSize:9,fontWeight:600,color:TIPO_COLOR[ev.tipo]||T.textSm,background:(TIPO_COLOR[ev.tipo]||T.textSm)+"18",borderRadius:3,padding:"1px 4px",marginBottom:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                                📌 {ev.nombre}
+                                {ev.nombre}
                               </div>
                             ))}
                             {data?.tareas.length>2&&<div style={{fontSize:8,color:T.textSm}}>+{data.tareas.length-2}</div>}
@@ -12027,7 +12054,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                           </div>
                           <div style={{display:"flex",gap:6,flexShrink:0}}>
                             <button onClick={()=>setKanbanSelected(t)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>Ver</button>
-                            <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:12,padding:"6px 14px",borderRadius:8,border:"none",background:T.green,color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✓ Aprobar</AsyncButton>
+                            <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:12,padding:"6px 14px",borderRadius:8,border:"none",background:T.green,color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}><GhI n="check" size={12}/> Aprobar</AsyncButton>
                           </div>
                         </div>
                       );
@@ -12114,10 +12141,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                             </div>
                             <div style={{display:"flex",alignItems:"center",gap:5}}>
                               {isUrgente&&!isAprobado&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"12",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
-                              {correcciones>0&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:4,padding:"2px 7px"}}>🔁 {correcciones}</span>}
-                              {t.publicado&&<span style={{fontSize:9,fontWeight:700,color:"#06b6d4",background:"#06b6d412",borderRadius:4,padding:"2px 7px"}}>📤 Publicado</span>}
-                              {!t.publicado&&t.tipoContenido==="pauta"&&<span style={{fontSize:9,fontWeight:700,color:T.purple,background:T.purple+"12",borderRadius:4,padding:"2px 7px"}}>💰 Pauta</span>}
-                              {!t.publicado&&t.tipoContenido==="organico"&&<span style={{fontSize:9,fontWeight:700,color:T.green,background:T.green+"12",borderRadius:4,padding:"2px 7px"}}>📱 Redes</span>}
+                              {correcciones>0&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:4,padding:"2px 7px"}}><GhI n="refresh" size={9}/> {correcciones}</span>}
+                              {t.publicado&&<span style={{fontSize:9,fontWeight:700,color:"#06b6d4",background:"#06b6d412",borderRadius:4,padding:"2px 7px"}}>Publicado</span>}
+                              {!t.publicado&&t.tipoContenido==="pauta"&&<span style={{fontSize:9,fontWeight:700,color:T.purple,background:T.purple+"12",borderRadius:4,padding:"2px 7px"}}>Pauta</span>}
+                              {!t.publicado&&t.tipoContenido==="organico"&&<span style={{fontSize:9,fontWeight:700,color:T.green,background:T.green+"12",borderRadius:4,padding:"2px 7px"}}>Redes</span>}
                               {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:500}}>#{t.tareaNumStr}</span>}
                             </div>
                           </div>
@@ -12243,7 +12270,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
                             <span style={{fontSize:15,fontWeight:700,color:T.text}}>{tanda.nombre}</span>
                             <span style={{fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:20,background:ec.bg,color:ec.c}}>{ec.l}</span>
-                            {tanda.fecha_brief&&<span style={{fontSize:11,color:T.textSm}}>📅 {tanda.fecha_brief}</span>}
+                            {tanda.fecha_brief&&<span style={{fontSize:11,color:T.textSm}}>{tanda.fecha_brief}</span>}
                           </div>
                           {tanda.descripcion&&<div style={{fontSize:12,color:T.textMd,marginBottom:8,lineHeight:1.5}}>{tanda.descripcion}</div>}
                           {tc.length>0&&(
@@ -12261,7 +12288,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                             <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:6}}>
                               {tanda.recursos.map((r,ri)=>(
                                 <a key={ri} href={r.url} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,color:T.accent,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:6,padding:"3px 8px",textDecoration:"none"}}>
-                                  🔗 {r.nombre||"Recurso"}
+                                  <GhI n="link" size={11}/> {r.nombre||"Recurso"}
                                 </a>
                               ))}
                             </div>
@@ -12270,7 +12297,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
                           <button onClick={()=>{setProdTab("creativos");setProdFilter(f=>({...f,tanda:tanda.id}));}} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>Ver creativos</button>
                           <button onClick={()=>openCreativo(null,tanda.id)} style={{...BtnPrimary(T),fontSize:11,padding:"4px 10px"}}>+ Creativo</button>
-                          <button onClick={()=>openTanda(tanda)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>✏️ Editar</button>
+                          <button onClick={()=>openTanda(tanda)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}><GhI n="edit" size={12}/> Editar</button>
                           <AsyncButton onClick={()=>deleteTandaProd(tanda.id)} style={{...BtnDanger(T),fontSize:11,padding:"4px 10px"}}>Eliminar</AsyncButton>
                         </div>
                       </div>
@@ -12305,9 +12332,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   </select>
                   <select value={fTi} onChange={e=>setProdFilter(f=>({...f,tipo:e.target.value}))} style={{...iS,fontSize:12,padding:"5px 8px",width:"auto"}}>
                     <option value="">Todos los tipos</option>
-                    <option value="estatico">🖼 Estático</option>
-                    <option value="video-ugc">📱 Video UGC</option>
-                    <option value="video-normal">🎬 Video Normal</option>
+                    <option value="estatico">Estático</option>
+                    <option value="video-ugc">Video UGC</option>
+                    <option value="video-normal">Video Normal</option>
                   </select>
                   <select value={fEt} onChange={e=>setProdFilter(f=>({...f,etapa:e.target.value}))} style={{...iS,fontSize:12,padding:"5px 8px",width:"auto"}}>
                     <option value="">TOF/MOF/BOF</option>
@@ -12318,7 +12345,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                     <span style={{fontSize:11,color:T.textSm}}>{filtered.length} creativo{filtered.length!==1?"s":""}</span>
                     {filtered.length>0&&<button onClick={()=>exportCreativosCSV(filtered)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>⬇ CSV</button>}
                     <div style={{display:"flex",background:T.surface,borderRadius:6,border:`1px solid ${T.border}`,padding:2,gap:1}}>
-                      {[["tabla","☰ Tabla"],["tablero","⬛ Board"]].map(([v,ico])=>(
+                      {[["tabla","Tabla"],["tablero","Board"]].map(([v,ico])=>(
                         <button key={v} onClick={()=>setProdView(v)} style={{padding:"3px 9px",borderRadius:4,fontSize:11,fontWeight:600,border:"none",background:prodView===v?T.card:"transparent",color:prodView===v?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:prodView===v?"0 1px 2px rgba(0,0,0,0.1)":"none",whiteSpace:"nowrap"}}>{ico}</button>
                       ))}
                     </div>
@@ -12337,7 +12364,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:680}}>
                       <thead>
                         <tr style={{background:T.surface}}>
-                          {["Código","Ángulo / Persona","Tipo","Etapa","Editor","Estado","💰",""].map((h,i)=>(
+                          {["Código","Ángulo / Persona","Tipo","Etapa","Editor","Estado","$",""].map((h,i)=>(
                             <th key={i} style={{padding:"9px 10px",fontWeight:600,color:T.textSm,fontSize:11,borderBottom:`1px solid ${T.border}`,textAlign:"left",whiteSpace:"nowrap"}}>{h}</th>
                           ))}
                         </tr>
@@ -12353,14 +12380,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                                   <span style={{fontSize:10,fontWeight:700,color:T.accent,background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}30`,borderRadius:5,padding:"2px 7px"}}>{c.codigo}</span>
                                 </button>
                                 {tanda&&<div style={{fontSize:9,color:T.textSm,marginTop:2,maxWidth:80,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tanda.nombre}</div>}
-                                {(c.comentarios||[]).length>0&&<div style={{fontSize:9,color:T.textSm}}>💬 {(c.comentarios||[]).length}</div>}
+                                {(c.comentarios||[]).length>0&&<div style={{fontSize:9,color:T.textSm}}><GhI n="chat" size={9}/> {(c.comentarios||[]).length}</div>}
                               </td>
                               <td style={{padding:"8px 10px",maxWidth:200}}>
                                 <div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.text,fontWeight:500}}>{c.angulo||"—"}</div>
                                 <div style={{fontSize:10,color:T.textSm}}>{c.persona}</div>
                               </td>
                               <td style={{padding:"8px 10px",whiteSpace:"nowrap",color:T.textMd,fontSize:11}}>
-                                {c.tipo==="estatico"?"🖼 Est.":c.tipo==="video-ugc"?"📱 UGC":"🎬 Video"}
+                                {c.tipo==="estatico"?"Est.":c.tipo==="video-ugc"?"UGC":"Video"}
                               </td>
                               <td style={{padding:"8px 10px"}}>
                                 <span style={{fontSize:10,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:4,padding:"2px 6px"}}>{c.etapa}</span>
@@ -12383,12 +12410,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                                   const editorColab = colaboradores.find(col=>col.nombre===c.editor);
                                   return (
                                     <div style={{display:"flex",gap:4}}>
-                                      <button onClick={()=>setCreativoDetail(c)} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>💬</button>
-                                      <button onClick={()=>openCreativo(c)} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>✏️</button>
+                                      <button onClick={()=>setCreativoDetail(c)} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}><GhI n="chat" size={11}/></button>
+                                      <button onClick={()=>openCreativo(c)} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}><GhI n="edit" size={12}/></button>
                                       {editorColab?.email&&(
                                         <AsyncButton onClick={async()=>{
                                           const r = await tareasApi({action:"sendRecordatorio",to:editorColab.email,nombre:editorColab.nombre,titulo:c.angulo||c.codigo||"Creativo",codigo:c.codigo,estado:c.estado,deadline:c.deadline||null,nota:""});
-                                          if(r?.ok) toast(`📧 Recordatorio enviado a ${editorColab.nombre}`,"success");
+                                          if(r?.ok) toast(`Recordatorio enviado a ${editorColab.nombre}`,"success");
                                           else toast("Error al enviar: "+(r?.error||"desconocido"),"error");
                                         }} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px",color:T.yellow,border:`1px solid ${T.yellow}44`}} title={`Recordar a ${editorColab.nombre}`}>
                                           ⏰
@@ -12434,14 +12461,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                                   onMouseLeave={e=>e.currentTarget.style.boxShadow="0 1px 3px rgba(0,0,0,0.06)"}>
                                   <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:5}}>
                                     <span style={{fontSize:9,fontWeight:700,color:T.accent,background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}30`,borderRadius:4,padding:"1px 5px",flexShrink:0}}>{c.codigo}</span>
-                                    <span style={{fontSize:10,color:T.textSm,flexShrink:0}}>{c.tipo==="estatico"?"🖼":c.tipo==="video-ugc"?"📱":"🎬"}</span>
+                                    <span style={{fontSize:10,color:T.textSm,flexShrink:0}}>{c.tipo==="estatico"?"Est":c.tipo==="video-ugc"?"UGC":"Vid"}</span>
                                     <span style={{fontSize:9,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:3,padding:"1px 4px",flexShrink:0}}>{c.etapa}</span>
                                   </div>
                                   <div style={{fontSize:11,fontWeight:500,color:T.text,lineHeight:1.3,marginBottom:6,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{c.angulo||"Sin ángulo"}</div>
                                   <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
                                     {c.editor&&<span style={{fontSize:10,color:T.textSm,background:T.surface,borderRadius:4,padding:"1px 5px"}}>{c.editor}</span>}
                                     {tanda2&&<span style={{fontSize:9,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:80}}>{tanda2.nombre}</span>}
-                                    {(c.comentarios||[]).length>0&&<span style={{fontSize:10,color:T.textSm,marginLeft:"auto"}}>💬{(c.comentarios||[]).length}</span>}
+                                    {(c.comentarios||[]).length>0&&<span style={{fontSize:10,color:T.textSm,marginLeft:"auto"}}><GhI n="chat" size={9}/>{(c.comentarios||[]).length}</span>}
                                     {c.pagado&&<span style={{fontSize:9,color:T.green,fontWeight:600}}>✓</span>}
                                   </div>
                                 </div>
@@ -12490,7 +12517,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         </div>
                         <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
                           <AsyncButton onClick={()=>promoverIdea(idea)} style={{...BtnPrimary(T),fontSize:11,padding:"5px 10px"}}>▶ Promover</AsyncButton>
-                          <button onClick={()=>openIdea(idea)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>✏️ Editar</button>
+                          <button onClick={()=>openIdea(idea)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}><GhI n="edit" size={12}/> Editar</button>
                           <AsyncButton onClick={()=>deleteIdeaProd(idea.id)} style={{...BtnDanger(T),fontSize:11,padding:"5px 10px"}}>Eliminar</AsyncButton>
                         </div>
                       </div>
@@ -12541,13 +12568,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 };
                 return(
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"14px 16px",marginBottom:6}}>
-                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>📧 Notificaciones</div>
+                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>Notificaciones</div>
                     <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Estos emails reciben avisos de entregas, bloqueos y consultas de tu equipo.</div>
                     {notifEmails.length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8,fontStyle:"italic"}}>Sin emails extra configurados</div>}
                     {notifEmails.map((email,i)=>(
                       <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
                         <span style={{flex:1,fontSize:12,color:T.text,background:T.surface,borderRadius:DS.r.md,padding:"6px 10px",border:`1px solid ${T.border}`,fontFamily:"'Inter',system-ui,sans-serif"}}>{email}</span>
-                        <AsyncButton onClick={async()=>{try{await tareasApi({action:"sendTestEmail",to:email});toast(`✅ Email enviado a ${email}`,"success");}catch(e){toast("Error: "+e.message,"error");}}}
+                        <AsyncButton onClick={async()=>{try{await tareasApi({action:"sendTestEmail",to:email});toast(`Email enviado a ${email}`,"success");}catch(e){toast("Error: "+e.message,"error");}}}
                           style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",whiteSpace:"nowrap"}}>Probar</AsyncButton>
                         <button onClick={()=>saveNotifEmailsFn(notifEmails.filter((_,j)=>j!==i))}
                           style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textSm,padding:"5px 10px",cursor:"pointer",fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
@@ -12574,12 +12601,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       {n:1,icon:"➕",title:"Agregar miembro",desc:"Usá '+ Equipo'. Con email: recibe tareas, accede a su portal y recibe notificaciones. Sin email: solo producción de creativos."},
                       {n:2,icon:"🔗",title:"Portal sin cuenta",desc:"Cada colaborador recibe un link único. Desde ahí ve sus tareas, sube entregas y comenta. No necesita crear ninguna cuenta."},
                       {n:3,icon:"🔐",title:"Permisos",desc:"Clickeá 'Permisos' en la card para elegir qué puede ver en su portal: kanban de tareas, creativos, estado del equipo."},
-                      {n:4,icon:"✏️",title:"Editar datos",desc:"Expandí la card y usá '✏️ Editar datos' para cambiar nombre, rol y WhatsApp."},
-                      {n:5,icon:"📋",title:"Compartir acceso",desc:"Usá '📋 Copiar link' para enviar el acceso. También podés enviarlo directo por '💬 WhatsApp' desde la misma card."},
+                      {n:4,icon:"✏️",title:"Editar datos",desc:"Expandí la card y usá 'Editar datos' para cambiar nombre, rol y WhatsApp."},
+                      {n:5,icon:"📋",title:"Compartir acceso",desc:"Usá 'Copiar link' para enviar el acceso. También podés enviarlo directo por 'WhatsApp' desde la misma card."},
                     ].map(s=>(
                       <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                         <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                        <span><span style={{color:T.textMd,fontWeight:500}}>{s.icon} {s.title}</span> — {s.desc}</span>
+                        <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
                       </div>
                     ))}
                   </div>
@@ -12625,7 +12652,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                           {c?.rol&&<span style={{fontSize:10,fontWeight:600,color:T.accent,background:T.accentSolid+"18",borderRadius:20,padding:"1px 8px"}}>{c.rol}</span>}
                           {!c&&<span style={{fontSize:10,color:T.textSm,background:T.surface,borderRadius:20,padding:"1px 8px",border:`1px solid ${T.border}`}}>Sin email</span>}
                           {c?.permisos?.verTareas&&!(c?.rol||"").toLowerCase().includes("cm")&&<span style={{fontSize:10,fontWeight:700,background:T.purple+"22",color:T.purple,borderRadius:20,padding:"1px 8px"}}>CM</span>}
-                          {entregado>0&&<span style={{fontSize:10,fontWeight:700,color:T.orange,background:T.orange+"18",borderRadius:20,padding:"1px 8px"}}>📦 {entregado} para revisar</span>}
+                          {entregado>0&&<span style={{fontSize:10,fontWeight:700,color:T.orange,background:T.orange+"18",borderRadius:20,padding:"1px 8px"}}>{entregado} para revisar</span>}
                         </div>
                         <div style={{fontSize:12,color:T.textSm,display:"flex",gap:10,flexWrap:"wrap"}}>
                           {c&&pending>0&&<span style={{color:T.textMd}}>{pending} activa{pending!==1?"s":""}</span>}
@@ -12637,11 +12664,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       {/* Acciones rápidas siempre visibles + chevron */}
                       <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
                         {c&&<button onClick={()=>copyLink(c.token)}
-                          style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}>📋 Copiar link</button>}
+                          style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}><GhI n="copy" size={12}/> Copiar link</button>}
                         {!c&&portalLink&&<button onClick={()=>navigator.clipboard.writeText(portalLink).then(()=>toast("Link copiado","success"))}
-                          style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}>📋 Copiar link</button>}
+                          style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}><GhI n="copy" size={12}/> Copiar link</button>}
                         {waHref&&<a href={waHref} target="_blank" rel="noreferrer"
-                          style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px",textDecoration:"none",color:T.green,border:`1px solid ${T.green}33`}}>💬 WhatsApp</a>}
+                          style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px",textDecoration:"none",color:T.green,border:`1px solid ${T.green}33`}}><GhI n="wa" size={13}/> WhatsApp</a>}
                         <span onClick={e=>{e.stopPropagation();setExpandedEquipo(expanded?null:_key);setEditingMember(null);}}
                           style={{fontSize:11,color:T.textSm,marginLeft:2,cursor:"pointer",padding:"4px 6px"}}>{expanded?"▲":"▼"}</span>
                       </div>
@@ -12707,7 +12734,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         {/* Generar link (solo si no tiene link aún) */}
                         {!editing&&!c&&!portalLink&&(
                           <AsyncButton onClick={()=>generarLinkEditor(nombre)}
-                            style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>🔗 Generar link</AsyncButton>
+                            style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}><GhI n="link" size={12}/> Generar link</AsyncButton>
                         )}
 
                         {/* Formulario edición inline */}
@@ -12749,7 +12776,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                                     toast("Email agregado ✓","success");
                                   }catch(e){appAlert("Error: "+e.message);}
                                 }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",width:"100%",justifyContent:"flex-start"}}>
-                                  📧 Agregar email para habilitar tareas y portal
+                                  Agregar email para habilitar tareas y portal
                                 </button>
                               )}
                             </div>
@@ -12790,7 +12817,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         {!editing&&(
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8,borderTop:`1px solid ${T.border}`}}>
                             <button onClick={e=>{e.stopPropagation();setEditingMember(_key);setEditData({nombre:c?.nombre||nombre,rol:c?.rol||"",wa:c?.telefono||"",email:c?.email||""});}}
-                              style={{...BtnSecondary(T),fontSize:12,padding:"5px 12px"}}>✏️ Editar datos</button>
+                              style={{...BtnSecondary(T),fontSize:12,padding:"5px 12px"}}><GhI n="edit" size={12}/> Editar datos</button>
                             <AsyncButton onClick={async()=>{
                               if(c){
                                 await deleteColab(c._id);
@@ -12841,11 +12868,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               <div style={{padding:"16px 18px"}}>
                 {/* Meta chips */}
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
-                  <span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"3px 8px"}}>{c.tipo==="estatico"?"🖼 Estático":c.tipo==="video-ugc"?"📱 Video UGC":"🎬 Video Normal"}</span>
+                  <span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"3px 8px"}}>{c.tipo==="estatico"?"Estático":c.tipo==="video-ugc"?"Video UGC":"Video Normal"}</span>
                   <span style={{fontSize:11,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:4,padding:"3px 8px"}}>{c.etapa}</span>
                   <span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"3px 8px"}}>{c.persona}</span>
-                  {c.editor&&<span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"3px 8px"}}>👤 {c.editor}</span>}
-                  {tanda&&<span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"3px 8px"}}>📦 {tanda.nombre}</span>}
+                  {c.editor&&<span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"3px 8px"}}>{c.editor}</span>}
+                  {tanda&&<span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"3px 8px"}}><GhI n="box" size={10}/> {tanda.nombre}</span>}
                 </div>
                 {/* Estado */}
                 <div style={{marginBottom:14}}>
@@ -12862,12 +12889,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 {/* Performance */}
                 {(c.campana||c.roas!=null||c.cpa!=null)&&(
                   <div style={{marginBottom:14,background:T.surface,borderRadius:10,padding:"10px 14px"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>📊 Performance</div>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Performance</div>
                     <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12}}>
-                      {c.campana&&<span style={{color:T.textMd}}>📣 {c.campana}</span>}
+                      {c.campana&&<span style={{color:T.textMd}}>{c.campana}</span>}
                       {c.roas!=null&&<span style={{color:T.green,fontWeight:600}}>ROAS: {c.roas}x</span>}
                       {c.cpa!=null&&<span style={{color:T.blue,fontWeight:600}}>CPA: ${c.cpa}</span>}
-                      {c.performance&&c.performance!=="pendiente"&&<span style={{fontWeight:600,color:c.performance==="ganador"?T.green:T.red}}>{c.performance==="ganador"?"🏆 Ganador":"📉 Perdedor"}</span>}
+                      {c.performance&&c.performance!=="pendiente"&&<span style={{fontWeight:600,color:c.performance==="ganador"?T.green:T.red}}>{c.performance==="ganador"?"▲ Ganador":"▼ Perdedor"}</span>}
                     </div>
                   </div>
                 )}
@@ -12879,7 +12906,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 )}
                 {/* Pagado toggle */}
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"10px 14px",background:T.surface,borderRadius:10}}>
-                  <span style={{fontSize:12,color:T.textMd,flex:1}}>💰 Pago al editor</span>
+                  <span style={{fontSize:12,color:T.textMd,flex:1}}>Pago al editor</span>
                   <button onClick={()=>{togglePagado(c.id);setCreativoDetail(prev=>({...prev,pagado:!prev.pagado}));}}
                     style={{width:36,height:20,borderRadius:10,border:"none",cursor:"pointer",background:c.pagado?T.green:"#d1d5db",position:"relative",transition:"background 0.2s",padding:0,flexShrink:0}}>
                     <div style={{position:"absolute",top:3,left:c.pagado?18:3,width:14,height:14,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 2px rgba(0,0,0,0.2)"}}/>
@@ -12888,7 +12915,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 </div>
                 {/* Comentarios */}
                 <div style={{marginBottom:14}}>
-                  <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>💬 Comentarios</div>
+                  <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Comentarios</div>
                   {(c.comentarios||[]).length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Sin comentarios aún.</div>}
                   <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
                     {(c.comentarios||[]).map((com,i)=>(
@@ -12912,7 +12939,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 </div>
                 {/* Acciones */}
                 <div style={{display:"flex",gap:6,justifyContent:"flex-end",borderTop:`1px solid ${T.borderL}`,paddingTop:12}}>
-                  <button onClick={()=>{setCreativoDetail(null);openCreativo(produccion.creativos.find(cr=>cr.id===c.id)||c);}} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>✏️ Editar</button>
+                  <button onClick={()=>{setCreativoDetail(null);openCreativo(produccion.creativos.find(cr=>cr.id===c.id)||c);}} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}><GhI n="edit" size={12}/> Editar</button>
                   <AsyncButton onClick={async()=>{await deleteCreativoProd(c.id);setCreativoDetail(null);}} style={{...BtnDanger(T),fontSize:11,padding:"5px 12px"}}>Eliminar</AsyncButton>
                 </div>
               </div>
@@ -13011,7 +13038,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 <div style={{flex:1}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Tipo de contenido</div>
                   <div style={{display:"flex",borderRadius:DS.r.md,overflow:"hidden",border:`1px solid ${T.border}`}}>
-                    {[{v:"",emoji:"—",bg:T.surface,fg:T.text},{v:"organico",emoji:"📱 Redes",bg:T.green,fg:"#fff"},{v:"pauta",emoji:"💰 Pauta",bg:T.purple,fg:"#fff"}].map((opt,i)=>{
+                    {[{v:"",emoji:"—",bg:T.surface,fg:T.text},{v:"organico",emoji:"Redes",bg:T.green,fg:"#fff"},{v:"pauta",emoji:"Pauta",bg:T.purple,fg:"#fff"}].map((opt,i)=>{
                       const sel=ntTipoContenido===opt.v;
                       return(
                         <button key={opt.v} onClick={()=>setNtTipoContenido(opt.v)}
@@ -13071,7 +13098,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               </div>
             )}
             <div style={{display:"flex",gap:10,justifyContent:"space-between",marginTop:20,alignItems:"center"}}>
-              <button onClick={()=>setShowSaveTemplate(true)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>💾 Guardar plantilla</button>
+              <button onClick={()=>setShowSaveTemplate(true)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Guardar plantilla</button>
               <div style={{display:"flex",gap:10}}>
                 <button onClick={()=>setShowNT(false)} style={BtnSecondary(T)}>Cancelar</button>
                 <AsyncButton onClick={crearTarea} style={BtnPrimary(T)}>Crear tarea</AsyncButton>
@@ -13265,7 +13292,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           onClick={e=>{if(e.target===e.currentTarget)setShowNEvento(false);}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:400}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div style={{fontWeight:700,fontSize:16,color:T.text}}>📌 Nuevo evento</div>
+              <div style={{fontWeight:700,fontSize:16,color:T.text}}>Nuevo evento</div>
               <button onClick={()=>setShowNEvento(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:15}}>✕</button>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -13280,10 +13307,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               <div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Tipo</div>
                 <select value={nEventoData.tipo} onChange={e=>setNEventoData(p=>({...p,tipo:e.target.value}))} style={{...iS,fontSize:13,width:"100%"}}>
-                  <option value="lanzamiento">🚀 Lanzamiento</option>
-                  <option value="festividad">🎉 Festividad</option>
-                  <option value="promo">💥 Promo / Sale</option>
-                  <option value="otro">📌 Otro</option>
+                  <option value="lanzamiento">Lanzamiento</option>
+                  <option value="festividad">Festividad</option>
+                  <option value="promo">Promo / Sale</option>
+                  <option value="otro">Otro</option>
                 </select>
               </div>
               <div>
@@ -13305,7 +13332,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"24px 16px"}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div style={{fontWeight:700,fontSize:16,color:T.text}}>{editTanda?"✏️ Editar tanda":"📦 Nueva tanda"}</div>
+              <div style={{fontWeight:700,fontSize:16,color:T.text}}>{editTanda?"Editar tanda":"Nueva tanda"}</div>
               <button onClick={()=>setShowNT2(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -13360,7 +13387,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"24px 16px"}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:580,maxHeight:"90vh",overflowY:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div style={{fontWeight:700,fontSize:16,color:T.text}}>{editCreativo2?"✏️ Editar creativo":"🎬 Nuevo creativo"}</div>
+              <div style={{fontWeight:700,fontSize:16,color:T.text}}>{editCreativo2?"Editar creativo":"Nuevo creativo"}</div>
               <button onClick={()=>setShowNC2(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -13385,9 +13412,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 <div>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Tipo</div>
                   <select value={cTipo} onChange={e=>setCTipo(e.target.value)} style={{...iS,fontSize:12,width:"100%"}}>
-                    <option value="estatico">🖼 Estático</option>
-                    <option value="video-ugc">📱 Video UGC</option>
-                    <option value="video-normal">🎬 Video Normal</option>
+                    <option value="estatico">Estático</option>
+                    <option value="video-ugc">Video UGC</option>
+                    <option value="video-normal">Video Normal</option>
                   </select>
                 </div>
                 <div>
@@ -13443,9 +13470,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:4}}>Performance</div>
                       <select value={cPerformance} onChange={e=>setCPerformance(e.target.value)} style={{...iS,fontSize:12,width:"100%"}}>
                         <option value="pendiente">Pendiente</option>
-                        <option value="ganador">🏆 Ganador</option>
-                        <option value="neutro">➡️ Neutro</option>
-                        <option value="perdedor">❌ Perdedor</option>
+                        <option value="ganador">Ganador</option>
+                        <option value="neutro">Neutro</option>
+                        <option value="perdedor">Perdedor</option>
                       </select>
                     </div>
                   </div>
@@ -13469,7 +13496,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"24px 16px"}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:480}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div style={{fontWeight:700,fontSize:16,color:T.text}}>{editIdea?"✏️ Editar idea":"💡 Nueva idea"}</div>
+              <div style={{fontWeight:700,fontSize:16,color:T.text}}>{editIdea?"Editar idea":"Nueva idea"}</div>
               <button onClick={()=>setShowNI(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -13493,7 +13520,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 <div>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Prioridad</div>
                   <select value={iPrioridad} onChange={e=>setIPrioridad(e.target.value)} style={{...iS,fontSize:12,width:"100%"}}>
-                    <option value="alta">🔴 Alta</option><option value="media">🟡 Media</option><option value="baja">⬇️ Baja</option>
+                    <option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option>
                   </select>
                 </div>
               </div>
@@ -13519,7 +13546,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
 
       {/* ── TAB REFERENCIAS ── */}
       {!loading&&view==="referencias"&&(()=>{
-        const TIPO_META={meta:{icon:"📊",color:"#1877f2",label:"Meta Ads"},instagram:{icon:"📷",color:"#e1306c",label:"Instagram"},tiktok:{icon:"🎵",color:"#111",label:"TikTok"},web:{icon:"🌐",color:T.accent,label:"Website"},drive:{icon:"📁",color:"#34a853",label:"Drive"},youtube:{icon:"▶️",color:"#ff0000",label:"YouTube"},otro:{icon:"🔗",color:T.textMd,label:"Otro"}};
         return (
           <div style={{padding:"20px 24px"}}>
             {refLoading&&<div style={{textAlign:"center",padding:48}}><Spinner size={28} color={T.accent}/></div>}
@@ -13530,7 +13556,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   <div style={{marginBottom:32}}>
                     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
                       <div style={{flex:1}}>
-                        <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text}}>📁 Material de trabajo</div>
+                        <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text}}><GhI n="folder" size={15}/> Material de trabajo</div>
                         <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>Links a Drive, plantillas, guías de marca y todo lo que el equipo necesita para trabajar</div>
                       </div>
                       {!colabMode&&<button onClick={()=>openMatModal()} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px",fontWeight:700,flexShrink:0}}>+ Material</button>}
@@ -13544,11 +13570,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                             <React.Fragment>
                               {catsPresentes.length>=2&&(
                                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-                                  {[{id:"",label:"Todas",icon:""},...catsPresentes].map(c=>{
+                                  {[{id:"",label:"Todas"},...catsPresentes].map(c=>{
                                     const act=matCatFilter===c.id;
                                     return <button key={c.id||"all"} onClick={()=>setMatCatFilter(c.id)}
                                       style={{padding:"4px 12px",fontSize:11,fontWeight:act?700:500,borderRadius:99,border:`1.5px solid ${act?T.accentSolid:T.border}`,background:act?T.accentSolid:"transparent",color:act?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>
-                                      {c.icon?c.icon+" ":""}{c.label}
+                                      {c.label}
                                     </button>;
                                   })}
                                 </div>
@@ -13564,10 +13590,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 {/* ── MARCAS DE REFERENCIA ── */}
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
                   <div style={{flex:1}}>
-                    <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text}}>🔍 Marcas de referencia</div>
+                    <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text}}><GhI n="search" size={15}/> Marcas de referencia</div>
                     <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>Competencia e inspiración: sus redes, ads y sitios a un click</div>
                   </div>
-                  {referencias.length>3&&<input value={refSearch} onChange={e=>setRefSearch(e.target.value)} placeholder="🔍 Buscar marca..." style={{...iS,fontSize:12,width:180,flexShrink:0}}/>}
+                  {referencias.length>3&&<input value={refSearch} onChange={e=>setRefSearch(e.target.value)} placeholder="Buscar marca..." style={{...iS,fontSize:12,width:180,flexShrink:0}}/>}
                   {!colabMode&&<button onClick={()=>openRefModal()} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px",fontWeight:700,flexShrink:0}}>+ Marca</button>}
                 </div>
                 {referencias.length===0&&(
@@ -13635,7 +13661,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             <div style={{marginBottom:12}}>
               <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Link *</div>
               <input value={matUrl} onChange={e=>setMatUrl(e.target.value)} placeholder="https://drive.google.com/..." style={{...iS,width:"100%",fontSize:13}}/>
-              {matUrl.trim()&&(()=>{const tm=MAT_TIPOS[matDetectTipo(matUrl)]||MAT_TIPOS.link;return <div style={{fontSize:11,color:T.textSm,marginTop:5}}>{tm.icon} Detectado: <strong style={{color:T.textMd}}>{tm.label}</strong></div>;})()}
+              {matUrl.trim()&&(()=>{const tm=MAT_TIPOS[matDetectTipo(matUrl)]||MAT_TIPOS.link;return <div style={{fontSize:11,color:T.textSm,marginTop:5}}>Detectado: <strong style={{color:T.textMd}}>{tm.label}</strong></div>;})()}
             </div>
             <div style={{marginBottom:12}}>
               <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Descripción corta (opcional)</div>
@@ -13645,7 +13671,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Categoría (opcional)</div>
               <select value={matCat} onChange={e=>setMatCat(e.target.value)} style={{...iS,width:"100%",fontSize:13}}>
                 <option value="">Sin categoría</option>
-                {MAT_CATS.map(c=><option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
+                {MAT_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
               </select>
             </div>
             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
@@ -13690,7 +13716,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 return(
                 <div key={l.id||li} style={{display:"grid",gridTemplateColumns:esOtro?"140px 1fr 1fr auto":"140px 1fr auto",gap:6,marginBottom:8,alignItems:"center"}}>
                   <select value={l.tipo||"web"} onChange={e=>setRefLinks(p=>p.map((x,xi)=>xi===li?{...x,tipo:e.target.value}:x))} style={{...iS,fontSize:12,padding:"5px 8px"}}>
-                    {LINK_TIPOS.map(t=><option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+                    {LINK_TIPOS.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}
                   </select>
                   {esOtro&&<input value={l.label} onChange={e=>setRefLinks(p=>p.map((x,xi)=>xi===li?{...x,label:e.target.value}:x))} placeholder="Descripción (ej: @nikear)" style={{...iS,fontSize:12}}/>}
                   <input value={l.url} onChange={e=>setRefLinks(p=>p.map((x,xi)=>xi===li?{...x,url:e.target.value}:x))} placeholder="https://..." style={{...iS,fontSize:12}}/>
@@ -13713,7 +13739,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         <div style={{position:"fixed",bottom:24,right:24,zIndex:300,maxWidth:340,width:"100%",background:T.card,border:`1px solid ${T.green}55`,borderRadius:16,padding:18,boxShadow:"0 8px 32px rgba(0,0,0,0.22)",animation:"slideUp 0.25s ease"}}>
           <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,marginBottom:12}}>
             <div>
-              <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:3}}>✅ Tarea creada</div>
+              <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:3}}><GhI n="check" size={13}/> Tarea creada</div>
               <div style={{fontSize:12,color:T.textMd,lineHeight:1.4}}>
                 <strong style={{color:T.text}}>{notifPanel.tarea?.titulo}</strong>
                 {notifPanel.colab&&<> → {notifPanel.colab.nombre}</>}
@@ -13722,7 +13748,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             <button onClick={()=>setNotifPanel(null)} style={{fontSize:16,background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:0,lineHeight:1}}>✕</button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,padding:"7px 10px",background:T.green+"12",borderRadius:8}}>
-            <span style={{fontSize:12}}>📧</span>
+            <span style={{display:"inline-flex",color:T.green}}><GhI n="mail" size={12}/></span>
             <span style={{fontSize:12,color:T.green,fontWeight:500}}>Email enviado a {notifPanel.colab?.email}</span>
           </div>
           {notifPanel.colab?.telefono&&(
@@ -13786,7 +13812,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           <div onClick={()=>setShowBoardModal(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000}}/>
           <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:1001,width:"min(440px,92vw)",background:T.card,borderRadius:16,padding:"24px",boxShadow:"0 20px 60px rgba(0,0,0,0.3)",fontFamily:"'Inter',system-ui,sans-serif"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-              <div style={{fontSize:16,fontWeight:700,color:T.text}}>🔗 Tablero compartido</div>
+              <div style={{fontSize:16,fontWeight:700,color:T.text}}><GhI n="link" size={15}/> Tablero compartido</div>
               <button onClick={()=>setShowBoardModal(false)} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:20,lineHeight:1,padding:0}}>✕</button>
             </div>
             <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,marginBottom:16}}>
@@ -13800,7 +13826,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 <div style={{display:"flex",flexDirection:"column",gap:10}}>
                   <div style={{display:"flex",gap:8,alignItems:"center",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px"}}>
                     <div style={{flex:1,fontSize:12,color:T.text,wordBreak:"break-all",lineHeight:1.4}}>{boardLink}</div>
-                    <button onClick={async()=>{try{await navigator.clipboard.writeText(boardLink);toast("Link copiado 📋","success");}catch(e){toast("Link: "+boardLink,"info");}}} style={{...BtnPrimary(T),fontSize:12,padding:"5px 12px",whiteSpace:"nowrap",flexShrink:0}}>Copiar</button>
+                    <button onClick={async()=>{try{await navigator.clipboard.writeText(boardLink);toast("Link copiado ✓","success");}catch(e){toast("Link: "+boardLink,"info");}}} style={{...BtnPrimary(T),fontSize:12,padding:"5px 12px",whiteSpace:"nowrap",flexShrink:0}}>Copiar</button>
                   </div>
                   <div style={{display:"flex",gap:8}}>
                     <a href={boardLink} target="_blank" rel="noopener noreferrer" style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,...BtnSecondary(T),fontSize:12,textDecoration:"none"}}>
@@ -13808,17 +13834,17 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       Vista previa
                     </a>
                     <button onClick={async()=>{if(!await appConfirm("¿Regenerar el link? El link anterior dejará de funcionar.",{danger:true,okLabel:"Regenerar"})) return; setBoardLinkLoading(true); try{const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"generateBoardToken",uid:user?.uid,_forceNew:true})}); const d=await r.json(); if(d.token) setBoardTokenAdmin(d.token); toast("Link regenerado ✓","success");}catch(e){toast("Error","error");} setBoardLinkLoading(false);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>
-                      🔄 Regenerar
+                      <GhI n="refresh" size={12}/> Regenerar
                     </button>
                   </div>
                   <div style={{padding:"10px 12px",background:T.accent+"10",border:`1px solid ${T.accent}30`,borderRadius:8}}>
                     <div style={{fontSize:11,fontWeight:700,color:T.accent,marginBottom:4}}>¿Qué pueden hacer en el tablero?</div>
                     <div style={{fontSize:11,color:T.textMd,lineHeight:1.7}}>
-                      ✅ Ver todas las tareas del equipo<br/>
-                      🔄 Actualizar el estado de sus tareas<br/>
-                      📦 Entregar trabajo con link<br/>
-                      💬 Comentar en cualquier tarea<br/>
-                      🔒 No pueden crear ni eliminar tareas
+                      • Ver todas las tareas del equipo<br/>
+                      • Actualizar el estado de sus tareas<br/>
+                      • Entregar trabajo con link<br/>
+                      • Comentar en cualquier tarea<br/>
+                      • No pueden crear ni eliminar tareas
                     </div>
                   </div>
                 </div>
@@ -13947,7 +13973,7 @@ function EditorProduccionView({T, token}) {
                       <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7,flexWrap:"wrap"}}>
                         <span style={{fontSize:10,fontWeight:700,color:"#7c3aed",background:"#7c3aed15",border:"1px solid #7c3aed30",borderRadius:5,padding:"2px 7px"}}>{c.codigo}</span>
                         <span style={{fontSize:10,fontWeight:600,padding:"2px 6px",borderRadius:4,background:T.surface,border:`1px solid ${T.borderL}`,color:T.textMd}}>{c.etapa}</span>
-                        <span style={{fontSize:10,color:T.textSm}}>{c.tipo==="estatico"?"🖼 Est.":c.tipo==="video-ugc"?"📱 UGC":"🎬 Video"}</span>
+                        <span style={{fontSize:10,color:T.textSm}}>{c.tipo==="estatico"?"Est.":c.tipo==="video-ugc"?"UGC":"Video"}</span>
                         {tanda&&<span style={{fontSize:10,color:T.textSm}}>· {tanda.nombre}</span>}
                       </div>
                       <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:4,lineHeight:1.4}}>{c.angulo||"Sin ángulo"}</div>
@@ -13966,7 +13992,7 @@ function EditorProduccionView({T, token}) {
                     <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
                       {tanda.recursos.map((r,ri)=>(
                         <a key={ri} href={r.url} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,color:"#7c3aed",background:"#7c3aed10",border:"1px solid #7c3aed30",borderRadius:6,padding:"4px 8px",textDecoration:"none"}}>
-                          🔗 {r.nombre||"Recurso"}
+                          <GhI n="link" size={11}/> {r.nombre||"Recurso"}
                         </a>
                       ))}
                     </div>
@@ -14056,12 +14082,12 @@ function ColaboradorPublicView({T, token}) {
   },[token]);
 
   const ESTADOS = {
-    pendiente:  {label:"⏳ Pendiente",  color:T.yellow,bg:T.yellow+"20"},
-    en_proceso: {label:"🔄 En proceso", color:T.blue,bg:T.blue+"20"},
-    bloqueada:  {label:"🚫 Bloqueada",  color:T.textMd,bg:T.textMd+"18"},
-    entregado:  {label:"📦 Entregado",  color:T.orange,bg:T.orange+"20"},
-    aprobado:   {label:"✅ Aprobado",   color:T.green,bg:T.green+"20"},
-    revision:   {label:"🔁 A revisar",  color:T.red,bg:T.red+"20"},
+    pendiente:  {label:"Pendiente",  color:T.yellow,bg:T.yellow+"20"},
+    en_proceso: {label:"En proceso", color:T.blue,bg:T.blue+"20"},
+    bloqueada:  {label:"Bloqueada",  color:T.textMd,bg:T.textMd+"18"},
+    entregado:  {label:"Entregado",  color:T.orange,bg:T.orange+"20"},
+    aprobado:   {label:"Aprobado",   color:T.green,bg:T.green+"20"},
+    revision:   {label:"A revisar",  color:T.red,bg:T.red+"20"},
   };
 
   async function publicApi(body) {
@@ -14153,7 +14179,7 @@ function ColaboradorPublicView({T, token}) {
   }
 
   async function copyBrief(brief) {
-    try{await navigator.clipboard.writeText(brief);toast("Brief copiado 📋","success");}
+    try{await navigator.clipboard.writeText(brief);toast("Brief copiado ✓","success");}
     catch(e){appAlert(brief);}
   }
 
@@ -14572,7 +14598,7 @@ function ColaboradorPublicView({T, token}) {
                         {currentStep==="bloqueada"?(
                           <AsyncButton onClick={()=>publicSetEstado(t._id,"en_proceso","En proceso")}
                             style={{width:"100%",fontSize:12,padding:"7px 0",borderRadius:8,background:T.blue+"12",color:T.blue,border:"1px solid "+T.blue+"30"+"",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,textAlign:"center",display:"block",boxSizing:"border-box"}}>
-                            🔄 Retomé el trabajo
+                            <GhI n="refresh" size={12}/> Retomé el trabajo
                           </AsyncButton>
                         ):(
                           <button onClick={()=>setShowBloqueo(p=>({...p,[t._id]:!p[t._id]}))}
