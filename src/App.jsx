@@ -25491,8 +25491,13 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     </button>
   );
   const [revalidando, setRevalidando] = useState(false);
+  // Anti-carrera: si el usuario cambia el período mientras una carga (o sus
+  // reintentos) sigue en vuelo, la carga vieja no debe pisar la vista nueva.
+  const reqIdRef = React.useRef(0);
   async function loadData(overrideDays, overrideFrom, overrideTo, silent) {
     if(!uid){setError("Sin sesión");return;}
+    const myReq = ++reqIdRef.current;
+    const vigente = () => reqIdRef.current === myReq;
     setError(null);
     const d=overrideDays||days;
     const from=overrideFrom!=null?overrideFrom:(useCustom?dateFrom:"");
@@ -25513,26 +25518,39 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       try{
         const rc=await fetch(url+"&cache=only");
         const jc=await rc.json();
+        if(!vigente()) return;
         if(!jc.noCache&&!jc.error&&jc.totals){
           setRendData({...jc, _sig:periodSig, loadedAt:jc.cachedAt||new Date().toISOString()});
           setLoading(false); setRevalidando(true); pintado=true;
         }
       }catch(_){}
+      if(!vigente()) return;
       // Si cambió el período y no hay NINGÚN dato de ese rango, limpiar la vista:
       // dejar los números del período anterior con el filtro nuevo mentía (ej:
       // filtro "Hoy" mostrando el mes entero cuando el cálculo en vivo fallaba).
       if(!pintado) setRendData(prev => (prev && prev._sig && prev._sig!==periodSig) ? null : prev);
     }
-    // 2) Datos en vivo — el server los deja cacheados para la próxima carga.
-    try {
-      const r=await fetch(url);
-      const j=await r.json();
-      if(j.error) throw new Error(j.error);
-      const fresh={...j, _sig:periodSig, loadedAt:new Date().toISOString()};
-      setRendData(fresh);
-      if(j.totals) ghSwrSet(swrKey, fresh);
-    }catch(e){setError(e.message);}
-    finally{ setRevalidando(false); if(!silent) setLoading(false); }
+    // 2) Datos en vivo, con reintentos automáticos: TN tira 504 seguido cuando
+    //    está lenta — reintentamos 2 veces en silencio antes de mostrar error.
+    let lastErr=null;
+    for(let intento=0;intento<3;intento++){
+      if(intento>0) await new Promise(res=>setTimeout(res,intento===1?2500:6000));
+      if(!vigente()) return;
+      try {
+        const r=await fetch(url);
+        const j=await r.json();
+        if(!vigente()) return;
+        if(j.error) throw new Error(j.error);
+        const fresh={...j, _sig:periodSig, loadedAt:new Date().toISOString()};
+        setRendData(fresh);
+        if(j.totals) ghSwrSet(swrKey, fresh);
+        lastErr=null;
+        break;
+      }catch(e){ lastErr=e; }
+    }
+    if(!vigente()) return;
+    if(lastErr) setError(lastErr.message);
+    setRevalidando(false); if(!silent) setLoading(false);
   }
 
   // Carga automática al entrar + refresco silencioso cada 4 min. (No cada 60s:
@@ -25557,8 +25575,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     const mins = (Date.now()-last)/60000;
     if (last && mins < 5) { toast(`Esperá ${Math.ceil(5-mins)} min para volver a reprocesar.`, "warning"); return; }
     const ok = await appConfirm(
-      "¿Reprocesar los últimos 60 días?\n\n⚠️ Los costos que tenías cargados antes se REEMPLAZAN por los costos que están cargados AHORA (COGS, comisiones, envío, impuestos, dólar). Se recalcula todo el período con tu configuración actual.\n\nSe puede reprocesar una vez cada 5 minutos.",
-      { okLabel:"🔄 Reprocesar 60 días" }
+      "¿Reprocesar los últimos 60 días?\n\nLos costos que tenías cargados antes se REEMPLAZAN por los costos que están cargados AHORA (COGS, comisiones, envío, impuestos, dólar). Se recalcula todo el período con tu configuración actual.\n\nSe puede reprocesar una vez cada 5 minutos.",
+      { okLabel:"Reprocesar 60 días" }
     );
     if (!ok) return;
     try { localStorage.setItem(key, String(Date.now())); } catch(_) {}
@@ -25726,11 +25744,25 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     );
   };
 
-  if(loading&&!rendData)return(
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"80vh",gap:16,fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <Spinner size={28} color={T.accent}/><div style={{fontSize:13,color:T.textSm}}>Conectando con tus integraciones...</div>
-    </div>
-  );
+  // Skeleton en lugar de spinner: la página aparece con su forma final
+  // "pulsando", la carga se percibe mucho más corta y no hay salto de layout.
+  if(loading&&!rendData){
+    const Skel=({h=112,r=14})=>(<div style={{height:h,borderRadius:r,background:`linear-gradient(90deg, ${T.surface} 25%, ${T.card} 50%, ${T.surface} 75%)`,backgroundSize:"200% 100%",animation:"ghskel 1.4s ease infinite"}}/>);
+    return(
+      <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh"}}>
+        <AppTopbar T={T} section="Dashboard" onHome={onHome}/>
+        <MargenesTabsBar T={T} tab={tab||"dashboard"} setTab={setTab}/>
+        <div style={{maxWidth:1440,margin:"0 auto",padding:"20px 24px",width:"100%"}}>
+          <div style={{display:"flex",gap:6,marginBottom:18}}>{[90,110,120].map((w,i)=><div key={i} style={{width:w}}><Skel h={34} r={10}/></div>)}</div>
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${winW<520?2:4},1fr)`,gap:10,marginBottom:18}}>{[0,1,2,3].map(i=><Skel key={i}/>)}</div>
+          <Skel h={260} r={12}/>
+          <div style={{height:18}}/>
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${winW<520?2:4},1fr)`,gap:10}}>{[0,1,2,3].map(i=><Skel key={i} h={86}/>)}</div>
+          <style>{`@keyframes ghskel{0%{background-position:200% 0;}100%{background-position:-200% 0;}}`}</style>
+        </div>
+      </div>
+    );
+  }
 
   return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
@@ -25767,14 +25799,16 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       <MargenesTabsBar T={T} tab={tab||"dashboard"} setTab={setTab}/>
 
       {error && rendData && (
-        <div style={{background:T.red+"14",borderBottom:`1px solid ${T.red}44`,padding:"8px 24px",fontSize:12,color:T.red,fontWeight:600}}>
-          ⚠ La última actualización falló ({error}) — estás viendo datos de las {new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}. <button onClick={()=>loadData()} style={{background:"transparent",border:"none",color:T.red,textDecoration:"underline",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}>Reintentar</button>
+        <div style={{background:T.orange+"10",borderBottom:`1px solid ${T.orange}33`,padding:"7px 24px",fontSize:12,color:T.orange,fontWeight:600,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={{width:6,height:6,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
+          No pudimos actualizar en vivo (la tienda tardó en responder) — mostrando los últimos datos guardados ({new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}).
+          <button onClick={()=>loadData()} style={{background:"transparent",border:"none",color:T.orange,textDecoration:"underline",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}>Reintentar ahora</button>
         </div>
       )}
 
       {rendData?.meta?.metaTokenExpired && (
         <div style={{background:T.red+"18",borderBottom:`1px solid ${T.red}44`,padding:"10px 24px",display:"flex",alignItems:"center",gap:10,fontSize:13,color:T.text,flexWrap:"wrap"}}>
-          <span style={{fontSize:16}}>⚠️</span>
+          <span style={{width:8,height:8,borderRadius:"50%",background:T.red,flexShrink:0}}/>
           <span><strong>El token de Meta Ads venció.</strong> El Ad Spend y el ROAS pueden estar en 0. Reconectá Meta Ads desde <strong>Configuración → Integraciones</strong> para volver a traer la inversión publicitaria.</span>
         </div>
       )}
@@ -25812,7 +25846,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {/* Checklist de configuración inicial — sin costos cargados el profit es mentira */}
           {setupVacio && (
             <div style={{background:T.card,border:`1px solid ${T.accent}44`,borderRadius:DS.r.xl,padding:"18px 20px",marginBottom:20}}>
-              <div style={{fontSize:DS.font.lg,fontWeight:DS.w.black,color:T.text,marginBottom:4}}>⚙️ Configurá tus costos para que el Profit sea real</div>
+              <div style={{fontSize:DS.font.lg,fontWeight:DS.w.black,color:T.text,marginBottom:4}}>Configurá tus costos para que el Profit sea real</div>
               <div style={{fontSize:DS.font.md,color:T.textMd,marginBottom:12,lineHeight:1.6}}>Ahora mismo el dashboard muestra tus ventas, pero sin costos cargados el Profit está inflado. Son 4 pasos (~10 min):</div>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {[
@@ -25864,7 +25898,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
               {alerts.map((a,i)=>(
                 <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:(a.sev==="red"?T.red:T.orange)+"12",border:`1px solid ${(a.sev==="red"?T.red:T.orange)}33`,borderRadius:DS.r.lg,padding:"9px 14px",fontSize:DS.font.base,color:T.text}}>
-                  <span style={{fontSize:14,flexShrink:0}}>{a.sev==="red"?"🔴":"🟠"}</span>
+                  <span style={{width:8,height:8,borderRadius:"50%",background:a.sev==="red"?T.red:T.orange,flexShrink:0}}/>
                   <span>{a.msg}</span>
                 </div>
               ))}
@@ -25874,7 +25908,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {/* Calidad del dato — qué puede estar haciendo mentir a los números */}
           {openInfo==="avisos" && qItems.length>0 && (
             <div style={{background:T.yellow+"0E",border:`1px solid ${T.yellow}44`,borderRadius:DS.r.lg,padding:"10px 14px",marginBottom:16}}>
-              <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>⚠ Precisión de los datos</div>
+              <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Precisión de los datos</div>
               <div style={{display:"flex",flexDirection:"column",gap:5}}>
                 {qItems.map((it,i)=>(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textMd,lineHeight:1.5}}>
@@ -25940,7 +25974,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                 {(ab.feePct>0) && row(`+ Fee sobre pauta (${ab.feePct}%)`, fmtM(ab.feeMonto), "(configurado en Cotización Dólar)")}
                 {row("Ad Spend Meta total", fmtM(ab.total), "= la tarjeta AD SPEND", true)}
                 {(ab.diasSinCotiz>0) && (
-                  <div style={{fontSize:DS.font.sm,color:T.yellow,marginTop:6}}>⚠ {ab.diasSinCotiz} día{ab.diasSinCotiz>1?"s":""} sin cotización disponible — ese gasto quedó excluido del total.</div>
+                  <div style={{fontSize:DS.font.sm,color:T.yellow,marginTop:6}}>{ab.diasSinCotiz} día{ab.diasSinCotiz>1?"s":""} sin cotización disponible — ese gasto quedó excluido del total.</div>
                 )}
                 <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8,lineHeight:1.5,borderTop:`1px solid ${T.borderL}`,paddingTop:8}}>
                   {hayConv ? "Cada día se convierte con la cotización de ESE día (histórico), no con el dólar de hoy — por eso el total no cambia cuando se mueve el dólar. " : ""}{ab.feePct>0 ? "El fee sobre pauta suma el recargo real que pagás sobre lo que factura Meta (impuestos/tarjeta). Otras apps muestran el gasto sin ese recargo — por eso pueden mostrar un número más chico." : ""}
@@ -25954,7 +25988,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             const bc = rendData.byChannel||{};
             const esShop = bc.platform==="shopify";
             const opts = [
-              {id:"global", label:"🌐 Global"},
+              {id:"global", label:"Global", dot:T.accent},
               {id:"tienda", label: esShop?"Shopify":"Tienda Nube", brand: esShop?"shopify":"tiendanube"},
               ...(bc.hasMl?[{id:"ml", label:"Mercado Libre", brand:"mercadolibre"}]:[]),
             ];
@@ -26064,7 +26098,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               ].map(k=>(
                 <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
                   <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</div>
-                  <div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.5}}>{k.val}</div>
+                  <div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.5,fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
                   <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.hint}</div>
                 </div>
               ))}
@@ -26112,7 +26146,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             ].map(k=>(
               <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
                 <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</div>
-                <div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.5}}>{fmtM(k.val||0)}</div>
+                <div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.5,fontVariantNumeric:"tabular-nums"}}>{fmtM(k.val||0)}</div>
               </div>
             ))}
           </div>}
@@ -26202,7 +26236,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                 ].map(k=>(
                   <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
                     <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</div>
-                    <div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.5}}>{k.val}</div>
+                    <div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.5,fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
                     <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.hint}</div>
                   </div>
                 ))}
