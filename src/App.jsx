@@ -15107,7 +15107,7 @@ function ColaboradorBoardView({T, boardToken}) {
   );
   if(error) return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}>
-      <div style={{fontSize:32}}>🔒</div>
+      <div style={{display:"flex",justifyContent:"center",color:"inherit"}}><GhI n="ban" size={28}/></div>
       <div style={{fontSize:15,fontWeight:700,color:T.text}}>Tablero no encontrado</div>
       <div style={{fontSize:13,color:T.textSm}}>{error}</div>
     </div>
@@ -15186,7 +15186,7 @@ function ColaboradorBoardView({T, boardToken}) {
             return(
               <div key={col.id} style={{flex:1,minWidth:180}}>
                 <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,padding:"0 2px"}}>
-                  <span style={{fontSize:13}}>{col.icon}</span>
+                  <span style={{width:8,height:8,borderRadius:"50%",background:col.color,flexShrink:0}}/>
                   <span style={{fontSize:12,fontWeight:700,color:T.text,flex:1}}>{col.label}</span>
                   <span style={{minWidth:20,height:20,borderRadius:10,background:col.color+"22",color:col.color,fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{colTareas.length}</span>
                 </div>
@@ -15199,7 +15199,7 @@ function ColaboradorBoardView({T, boardToken}) {
                       <div key={t._id} onClick={()=>{setSelectedTask(t);setCommentText("");setEntregaLink("");setEntregaLabel("");setEntregaNota("");setShowEntregaForm(false);}}
                         style={{background:T.card,border:`1.5px solid ${mine?T.accent+"60":T.border}`,borderRadius:10,padding:"10px 11px",cursor:"pointer",transition:"box-shadow 0.12s",position:"relative"}}>
                         {mine&&<div style={{position:"absolute",top:0,left:0,width:3,bottom:0,borderRadius:"10px 0 0 10px",background:T.accent}}/>}
-                        {(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?(<div style={{display:"inline-flex",alignItems:"center",gap:3,background:T.red+"20",color:T.red,borderRadius:4,padding:"1px 5px",fontSize:10,fontWeight:700,marginBottom:5}}>🔴 URGENTE</div>):null;})()}
+                        {(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?(<div style={{display:"inline-flex",alignItems:"center",gap:3,background:T.red+"20",color:T.red,borderRadius:4,padding:"1px 5px",fontSize:10,fontWeight:700,marginBottom:5}}><span style={{width:5,height:5,borderRadius:"50%",background:T.red}}/> URGENTE</div>):null;})()}
                         <div style={{fontSize:12,fontWeight:600,color:T.text,lineHeight:1.4,marginBottom:7,paddingLeft:mine?6:0}}>{t.titulo}</div>
                         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:4,paddingLeft:mine?6:0}}>
                           <div style={{display:"flex"}}>
@@ -15208,7 +15208,7 @@ function ColaboradorBoardView({T, boardToken}) {
                             ))}
                           </div>
                           <div style={{display:"flex",alignItems:"center",gap:5}}>
-                            {(t.deliverables||[]).length>0&&<span style={{fontSize:10,color:T.textSm}}>📦{t.deliverables.length}</span>}
+                            {(t.deliverables||[]).length>0&&<span style={{fontSize:10,color:T.textSm}}><GhI n="box" size={9}/> {t.deliverables.length}</span>}
                             {dl&&<span style={{fontSize:10,fontWeight:600,color:dl.color}}>{dl.label}</span>}
                           </div>
                         </div>
@@ -15230,14 +15230,14 @@ function ColaboradorBoardView({T, boardToken}) {
         <div style={{padding:"12px 16px 32px"}}>
           <button onClick={()=>setShowAprobadas(p=>!p)} style={{display:"flex",alignItems:"center",gap:7,background:"transparent",border:"none",cursor:"pointer",color:T.textMd,fontSize:12,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",padding:"6px 0",marginBottom:showAprobadas?8:0}}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{transform:showAprobadas?"rotate(90deg)":"none",transition:"transform 0.2s"}}><polyline points="9 18 15 12 9 6"/></svg>
-            ✅ Aprobadas ({aprobadasTareas.length})
+            Aprobadas ({aprobadasTareas.length})
           </button>
           {showAprobadas&&(
             <div style={{display:"flex",flexWrap:"wrap",gap:7}}>
               {aprobadasTareas.map(t=>(
                 <div key={t._id} onClick={()=>{setSelectedTask(t);setCommentText("");setShowEntregaForm(false);}}
                   style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>
-                  <span style={{fontSize:11,color:T.green}}>✅</span>
+                  <span style={{color:T.green,display:"inline-flex"}}><GhI n="check" size={11}/></span>
                   <span style={{fontSize:12,color:T.textMd,fontWeight:500}}>{t.titulo}</span>
                   {getAssignees(t).map((a,i)=>(
                     <div key={a.email} style={{width:18,height:18,borderRadius:"50%",background:a.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:700,color:"#fff"}}>{a.initial}</div>
@@ -15313,7 +15313,7 @@ function ColaboradorBoardView({T, boardToken}) {
               <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10,flexShrink:0,background:T.card,position:"sticky",top:0,zIndex:1}}>
                 <button onClick={()=>setSelectedTask(null)} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:22,lineHeight:1,padding:0,flexShrink:0}}>←</button>
                 <div style={{flex:1,fontSize:13,fontWeight:700,color:T.text,lineHeight:1.3}}>{t.titulo}</div>
-                <span style={{padding:"3px 8px",background:est.bg,color:est.color,borderRadius:6,fontSize:11,fontWeight:600,flexShrink:0,whiteSpace:"nowrap"}}>{est.icon} {est.label}</span>
+                <span style={{padding:"3px 8px",background:est.bg,color:est.color,borderRadius:6,fontSize:11,fontWeight:600,flexShrink:0,whiteSpace:"nowrap"}}>{est.label}</span>
               </div>
 
               <div style={{padding:"16px 18px",display:"flex",flexDirection:"column",gap:14,flex:1}}>
@@ -15325,8 +15325,8 @@ function ColaboradorBoardView({T, boardToken}) {
                       <span style={{fontSize:12,color:T.text,fontWeight:500}}>{a.nombre}</span>
                     </div>
                   ))}
-                  {dl&&<div style={{padding:"4px 10px",background:dl.color+"20",borderRadius:20,fontSize:12,fontWeight:600,color:dl.color}}>📅 {dl.label}</div>}
-                  {(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?(<div style={{padding:"4px 10px",background:T.red+"20",borderRadius:20,fontSize:12,fontWeight:700,color:T.red}}>🔴 URGENTE</div>):null;})()}
+                  {dl&&<div style={{padding:"4px 10px",background:dl.color+"20",borderRadius:20,fontSize:12,fontWeight:600,color:dl.color}}>{dl.label}</div>}
+                  {(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?(<div style={{padding:"4px 10px",background:T.red+"20",borderRadius:20,fontSize:12,fontWeight:700,color:T.red,display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:6,height:6,borderRadius:"50%",background:T.red,display:"inline-block"}}/> URGENTE</div>):null;})()}
                   {t.tareaNumStr&&<div style={{padding:"4px 10px",background:T.surface,borderRadius:20,fontSize:11,color:T.textSm}}>#{t.tareaNumStr}</div>}
                 </div>
 
@@ -15345,7 +15345,7 @@ function ColaboradorBoardView({T, boardToken}) {
                 {(t.links||[]).length>0&&(
                   <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                     {(t.links||[]).map((l,i)=>{const url=typeof l==="string"?l:l.url;const name=typeof l==="string"?"Link":l.name||"Link";return(
-                      <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 10px",background:T.accent+"15",border:`1px solid ${T.accent}40`,borderRadius:6,fontSize:12,color:T.accent,textDecoration:"none",fontWeight:500}}>🔗 {name}</a>
+                      <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 10px",background:T.accent+"15",border:`1px solid ${T.accent}40`,borderRadius:6,fontSize:12,color:T.accent,textDecoration:"none",fontWeight:500}}><GhI n="link" size={11}/> {name}</a>
                     );})}
                   </div>
                 )}
@@ -15377,7 +15377,7 @@ function ColaboradorBoardView({T, boardToken}) {
                           {d.nota&&<div style={{fontSize:11,color:T.textSm,marginTop:3}}>{d.nota}</div>}
                           {t.feedbackActual&&i===t.deliverables.length-1&&(
                             <div style={{marginTop:6,padding:"6px 8px",background:T.red+"15",border:"1px solid "+T.red+"30"+"",borderRadius:6,fontSize:11,color:T.red}}>
-                              💬 Corrección: {t.feedbackActual}
+                              <GhI n="chat" size={11}/> Corrección: {t.feedbackActual}
                             </div>
                           )}
                         </div>
@@ -15396,7 +15396,7 @@ function ColaboradorBoardView({T, boardToken}) {
                         {Object.entries(ESTADOS).filter(([k])=>k!=="aprobado"&&k!==t.estado).map(([k,v])=>(
                           <button key={k} onClick={()=>changeStatus(k)} disabled={saving}
                             style={{padding:"4px 8px",background:v.bg,border:`1px solid ${v.color}50`,borderRadius:6,color:v.color,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:saving?0.5:1}}>
-                            {v.icon} {v.label}
+                            {v.label}
                           </button>
                         ))}
                       </div>
@@ -15404,7 +15404,7 @@ function ColaboradorBoardView({T, boardToken}) {
                     {!showEntregaForm?(
                       <button onClick={()=>setShowEntregaForm(true)}
                         style={{width:"100%",padding:"8px",background:T.accent,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                        📦 Entregar trabajo
+                        <GhI n="upload" size={12}/> Entregar trabajo
                       </button>
                     ):(
                       <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -15436,7 +15436,7 @@ function ColaboradorBoardView({T, boardToken}) {
                         return(
                           <div key={i} style={{background:isManager?T.accent+"10":T.surface,borderRadius:8,padding:"8px 11px",border:`1px solid ${isManager?T.accent+"30":T.border}`}}>
                             <div style={{fontSize:10,fontWeight:700,color:isManager?T.accent:colabColorMap[c.autorEmail]||T.textMd,marginBottom:3}}>
-                              {isManager?"👩‍💼 Manager":`💬 ${c.autor||"Colaborador"}`}
+                              {isManager?"Manager":(c.autor||"Colaborador")}
                             </div>
                             <div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{c.texto}</div>
                           </div>
