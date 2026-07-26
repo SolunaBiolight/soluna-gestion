@@ -3703,9 +3703,15 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
   // Chip de estado del envío Andreani (lo alimenta el cron track_all)
   function TrackingChip({c,size=9}){
-    if(!c?.tracking||!c?.trackingCat) return null;
+    if(!c?.tracking?.trim()) return null;
     const M={en_camino:["En camino",T.blue],en_sucursal:["En sucursal",T.yellow],entregado:["Entregado",T.green],visita_fallida:["Visita fallida",T.red],devolucion:["Devolución",T.red]};
-    const m=M[c.trackingCat]; if(!m) return null;
+    const m=M[c.trackingCat];
+    if(!m){
+      // Tracking cargado pero Andreani todavía no registró el paquete (o el
+      // estado no es clasificable): aún no ingresó a la red de distribución.
+      if(c.trackDone!==false) return null; // sin seguimiento activo (canje viejo cerrado)
+      return <span title={c.trackingEstado||"Sin movimientos en Andreani todavía"} style={{fontSize:size,fontWeight:700,color:T.textSm,background:T.textSm+"14",border:`1px solid ${T.textSm}33`,borderRadius:4,padding:"2px 7px",whiteSpace:"nowrap"}}>Pendiente de ingreso</span>;
+    }
     return <span title={c.trackingEstado||""} style={{fontSize:size,fontWeight:700,color:m[1],background:m[1]+"14",border:`1px solid ${m[1]}33`,borderRadius:4,padding:"2px 7px",whiteSpace:"nowrap"}}>{m[0]}</span>;
   }
 
