@@ -1287,7 +1287,19 @@ function AppPromptHost({ T }) {
 // --- DateRangePicker (dropdown con calendario inline + presets) ---
 function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
   const [open, setOpen] = React.useState(false);
+  // Posición fija calculada al abrir: el dropdown escapa de contenedores con
+  // overflow (topbar scrolleable en mobile) y se clampa a los bordes del viewport.
+  const [pos, setPos] = React.useState({top:0,right:10});
   const wrapRef = React.useRef(null);
+  const toggleOpen = () => setOpen(o=>{
+    const n=!o;
+    if(n&&wrapRef.current){
+      const r=wrapRef.current.getBoundingClientRect();
+      const w=Math.min(340,window.innerWidth-20);
+      setPos({top:r.bottom+6,right:Math.max(10,Math.min(window.innerWidth-r.right,window.innerWidth-w-10))});
+    }
+    return n;
+  });
   const [tmpStart, setTmpStart] = React.useState(null); // primera fecha al elegir custom
   const initialMonth = (() => {
     const d = since ? new Date(since + "T00:00:00") : new Date();
@@ -1372,11 +1384,11 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
     : "Período";
   return (
     <div ref={wrapRef} style={{position:"relative",display:"inline-block",fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <button onClick={()=>setOpen(o=>!o)} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"7px 14px",background:T.input,border:`1px solid ${open?T.accent+"66":T.inputBorder}`,borderRadius:10,fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <button onClick={toggleOpen} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"7px 14px",background:T.input,border:`1px solid ${open?T.accent+"66":T.inputBorder}`,borderRadius:10,fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
         <span>{label}</span> <span style={{color:T.textSm,fontSize:10}}>▾</span>
       </button>
       {open && (
-        <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:14,boxShadow:"0 14px 40px rgba(0,0,0,0.45)",minWidth:340}}>
+        <div className="gh-dropdown" style={{position:"fixed",top:pos.top,right:pos.right,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:14,boxShadow:"0 14px 40px rgba(0,0,0,0.45)",width:"min(340px,calc(100vw - 20px))",boxSizing:"border-box",maxHeight:"calc(100vh - 120px)",overflowY:"auto"}}>
           {/* Presets */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:6,marginBottom:10}}>
             {PRESETS.map(p => (
@@ -1913,7 +1925,7 @@ function AppTopbar({T, section, onHome, children, top=48}) {
   return (
     <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"e0",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",padding:"0 24px",position:"sticky",top,zIndex:30}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:52,gap:16,maxWidth:1400,margin:"0 auto"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
           <button onClick={onHome} className="mobile-only" style={{display:"none",alignItems:"center",gap:6,padding:"5px 10px",fontSize:DS.font.sm,fontWeight:DS.w.medium,borderRadius:DS.r.md,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
           </button>
@@ -1921,7 +1933,8 @@ function AppTopbar({T, section, onHome, children, top=48}) {
           <GrowithLogo size={20} variant="color"/>
           <span style={{fontWeight:DS.w.semibold,fontSize:14,color:T.text,letterSpacing:-0.2}}>{section}</span>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+        {/* En mobile la fila de controles no se corta: scrollea horizontal (sin barra) */}
+        <div className="no-scrollbar" style={{display:"flex",alignItems:"center",gap:6,overflowX:"auto",WebkitOverflowScrolling:"touch",maxWidth:"100%",minWidth:0}}>
           {children}
         </div>
       </div>
@@ -2995,7 +3008,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
       {/* === DRAWER PANEL LATERAL === */}
       {activeR&&(
-        <div style={{position:"fixed",right:0,top:105,bottom:0,width:440,background:T.card,borderLeft:`1px solid ${T.border}`,zIndex:35,overflowY:"auto",boxShadow:`-8px 0 32px rgba(0,0,0,0.12)`,animation:"slideInRight 0.22s cubic-bezier(0.4,0,0.2,1)",fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <div style={{position:"fixed",right:0,top:105,bottom:0,width:"min(440px,100vw)",background:T.card,borderLeft:`1px solid ${T.border}`,zIndex:35,overflowY:"auto",boxShadow:`-8px 0 32px rgba(0,0,0,0.12)`,animation:"slideInRight 0.22s cubic-bezier(0.4,0,0.2,1)",fontFamily:"'Inter',system-ui,sans-serif"}}>
           {/* Header */}
           <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",position:"sticky",top:0,zIndex:1}}>
             <div style={{flex:1,minWidth:0}}>
@@ -4151,7 +4164,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>Arrastrá las tarjetas para cambiar estado</span>
             </div>
 
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,alignItems:"start"}}>
+            <div className="stack-mobile" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,alignItems:"start"}}>
               {ESTADOS_C.map(estado=>{
                 const sc=getEstadoCC(T,estado);
                 const isDragOver=dragOverEstado===estado;
@@ -4338,7 +4351,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               return (
                 <div>
                   {/* Resumen global */}
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:20}}>
+                  <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:20}}>
                     {[
                       {label:"Codigos con uso",val:rows.length,color:T.textMd},
                       {label:"Ventas brutas",val:fmtARS(totalVentas),color:T.textMd},
@@ -6242,7 +6255,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {(seguimientoProgress.active||seguimientoProgress.done)&&ReactDOM.createPortal(
         <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}
           onClick={seguimientoProgress.done?()=>setSeguimientoProgress(p=>({...p,done:false})):undefined}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:380,maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.done?(seguimientoProgress.fail>0?T.orange+"55":T.green+"55"):T.green+"44"}`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.done?(seguimientoProgress.fail>0?T.orange+"55":T.green+"55"):T.green+"44"}`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
             onClick={e=>e.stopPropagation()}>
             {!seguimientoProgress.done ? (
               <>
@@ -6314,7 +6327,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {(exporting||!!exportDone)&&ReactDOM.createPortal(
         <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}
           onClick={exportDone?()=>{const d=exportDone;setExportDone(null);setExportProgress({step:"",pct:0,current:0,total:0});if(d.esquinas>0&&d.esquinaOrders?.length>0)setEsquinaModal({orders:d.esquinaOrders});}:undefined}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:380,maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${exportDone?T.green+"55":T.blue+"44"}`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${exportDone?T.green+"55":T.blue+"44"}`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
             onClick={e=>e.stopPropagation()}>
             {!exportDone ? (
               <>
@@ -9588,7 +9601,7 @@ function AppAdmin({T, user, onBack}) {
         <div style={{maxWidth:960,margin:"0 auto",padding:"0 20px"}}>
 
           {/* KPIs */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
+          <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
             {[
               {icon:"$",label:"MRR",value:stats.mrrUsdt?`$${stats.mrrUsdt} USDT`:"$0",sub:stats.mrrArs?`$${(stats.mrrArs).toLocaleString("es-AR")} ARS/mes`:"sin ingresos aún",color:stats.mrrUsdt?T.green:T.textSm},
               {icon:"u",label:"Suscripciones activas",value:totalPagando,sub:totalPrueba>0?`+ ${totalPrueba} prueba`:`${stats.totalUsuarios||0} usuarios totales`,color:totalPagando>0?T.blue:T.textSm},
@@ -17920,7 +17933,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       {/* ── MODAL PROGRESO EMISIÓN ARCA ── */}
       {(emitProgress.active||emitProgress.done)&&ReactDOM.createPortal(
         <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:380,maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${emitProgress.done?(emitProgress.fail>0?T.orange+"55":T.green+"55"):T.accentSolid+"44"}`}}>
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${emitProgress.done?(emitProgress.fail>0?T.orange+"55":T.green+"55"):T.accentSolid+"44"}`}}>
             {!emitProgress.done?(
               <>
                 <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
@@ -24367,7 +24380,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           <>
             {/* KPIs de stock/ventas — solo en tab Resumen */}
             {tab==="resumen" && (
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
+            <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
               {(()=>{
                 const prevU=dataPrev?.total_units||0;
                 const deltaU=prevU>0?((totalUnits-prevU)/prevU*100):null;
@@ -24403,7 +24416,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             {tab==="resumen"&&data&&avgRate>0&&(
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:6}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Proyección de demanda</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+                <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
                   {[{d:7,l:"Próximos 7 días"},{d:14,l:"Próximos 14 días"},{d:30,l:"Próximos 30 días"}].map(p=>{
                     const proj=Math.round(avgRate*p.d);
                     const projRev=proj*(totalRev/Math.max(1,totalUnits));
@@ -25504,6 +25517,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const [openInfo, setOpenInfo] = useState(null); // null | "alertas" | "avisos" | "fb" | "ab"
   const [fullNums, setFullNums] = useState(()=>{ try{return localStorage.getItem("growith_margenes_fullnums")==="1";}catch(_){return false;} });
   const [viewMenu, setViewMenu] = useState(false); // menú "Vista" del topbar ($ completos + USD)
+  const [viewMenuPos, setViewMenuPos] = useState({top:0,right:10}); // fijo: escapa del topbar scrolleable
   const [canalSort, setCanalSort] = useState({k:null,dir:"desc"});
   // Persistencia de la personalización del dashboard (orden/visibilidad de cards,
   // secciones): localStorage para lectura instantánea + Firestore (users.margenesVis)
@@ -25806,7 +25820,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       <AppTopbar T={T} section="Dashboard" onHome={onHome}>
         {/* Preferencias de vista unificadas: números completos + USD en un solo menú */}
         <div style={{position:"relative"}}>
-          <button onClick={()=>setViewMenu(v=>!v)} title="Preferencias de vista"
+          <button onClick={e=>{const r=e.currentTarget.getBoundingClientRect(); setViewMenuPos({top:r.bottom+6,right:Math.max(10,Math.min(window.innerWidth-r.right,window.innerWidth-246))}); setViewMenu(v=>!v);}} title="Preferencias de vista"
             style={{...InputStyle(T),fontSize:11,padding:"5px 10px",width:"auto",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,fontWeight:(fullNums||usdMode)?700:500,color:(fullNums||usdMode)?T.accent:T.textMd,borderColor:(fullNums||usdMode)?T.accent+"66":T.inputBorder}}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="20" cy="14" r="2"/></svg>
             Vista{usdMode?" · US$":""}{fullNums?" · $ completos":""}
@@ -25814,7 +25828,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {viewMenu&&(
             <>
               <div onClick={()=>setViewMenu(false)} style={{position:"fixed",inset:0,zIndex:60}}/>
-              <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:6,minWidth:236,boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
+              <div style={{position:"fixed",top:viewMenuPos.top,right:viewMenuPos.right,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:6,width:"min(236px,calc(100vw - 20px))",boxSizing:"border-box",boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
                 {[
                   {on:fullNums, t:"Números completos", d:"Mostrar sin redondeo K/M", fn:()=>setFullNums(f=>{const n=!f; try{localStorage.setItem("growith_margenes_fullnums",n?"1":"0");}catch(_){} return n;})},
                   {on:usdMode, t:"Mostrar en dólares", d:usdRate>0?`Cotización promedio del período: $${Math.round(usdRate).toLocaleString("es-AR")}`:"Sin cotización disponible todavía", dis:!usdMode&&!(usdRate>0), fn:()=>setUsdMode(f=>{const n=!f; try{localStorage.setItem("growith_margenes_usd",n?"1":"0");}catch(_){} return n;})},
