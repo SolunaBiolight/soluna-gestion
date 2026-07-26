@@ -2480,10 +2480,21 @@ export default async function handler(req, res) {
       const ordenes = {};
       let tnDebug = null; // diagnóstico: cuántas órdenes trajo TN por status
 
-      // ─── Tienda Nube ───
+      // Los tres canales se consultan EN PARALELO (antes era secuencial: TN,
+      // después Shopify, después ML — el tiempo total era la suma de los tres).
+      // Cada canal escribe en su propio mapa y al final se mergea en orden fijo
+      // para mantener determinismo en la respuesta.
       const tnStore = stores.find(s => s.type === "tiendanube");
-      if (tnStore?.accessToken && tnStore?.storeId) {
-        connections.push({ platform: "tiendanube", name: tnStore.storeName || "Tienda Nube", connected: true });
+      const shStore = stores.find(s => s.type === "shopify");
+      const mlStore = stores.find(s => s.type === "mercadolibre");
+      if (tnStore?.accessToken && tnStore?.storeId) connections.push({ platform: "tiendanube", name: tnStore.storeName || "Tienda Nube", connected: true });
+      if (shStore?.accessToken && shStore?.shop) connections.push({ platform: "shopify", name: shStore.storeName || shStore.shop, connected: true });
+      if (mlStore?.userId) connections.push({ platform: "mercadolibre", name: mlStore.nickname || `ML #${mlStore.userId}`, connected: true });
+      const ordTN = {}, ordSH = {}, ordML = {};
+      const fetchers = [];
+
+      // ─── Tienda Nube ───
+      if (tnStore?.accessToken && tnStore?.storeId) fetchers.push((async () => {
         const headers = {
           "Authentication": `bearer ${tnStore.accessToken}`,
           "User-Agent": "GrowithApp (soluna.biolight@gmail.com)",
@@ -2540,7 +2551,7 @@ export default async function handler(req, res) {
           const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
             || o.customer?.name || o.contact_name || "";
           const billed = billedMap.get(orderId);
-          ordenes[orderId] = {
+          ordTN[orderId] = {
             _platform: "tiendanube",
             _platform_label: "TN",
             _order_number: String(o.number || o.id),
@@ -2576,12 +2587,10 @@ export default async function handler(req, res) {
             })),
           };
         }
-      }
+      })().catch(e => console.error("[tn-pending] error:", e.message)));
 
       // ─── Shopify ───
-      const shStore = stores.find(s => s.type === "shopify");
-      if (shStore?.accessToken && shStore?.shop) {
-        connections.push({ platform: "shopify", name: shStore.storeName || shStore.shop, connected: true });
+      if (shStore?.accessToken && shStore?.shop) fetchers.push((async () => {
         const allSH = [];
         // Shopify usa cursor pagination con Link header. IMPORTANTE: ordenamos
         // por created_at DESC (más nuevas primero). Sin esto, Shopify devuelve las
@@ -2634,7 +2643,7 @@ export default async function handler(req, res) {
           // tiene customer_id, traemos el customer ACTUAL desde Shopify. Eso
           // refleja el CUIT que el merchant editó después de la venta —
           // billing/shipping_address de la orden son snapshots inmutables.
-          if (!docRaw && o.customer?.id) {
+          if (!docRaw && o.customer?.id && !billedMap.get(orderId)) {
             const fresh = await fetchCustomerFresh(o.customer.id);
             if (fresh) {
               // Re-armamos un "o fake" con customer enriquecido para reusar el extractor
@@ -2646,7 +2655,7 @@ export default async function handler(req, res) {
           const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
             || o.billing_address?.name || o.shipping_address?.name || "";
           const billed = billedMap.get(orderId);
-          ordenes[orderId] = {
+          ordSH[orderId] = {
             _platform: "shopify",
             _platform_label: "SH",
             _order_number: o.name || String(o.order_number || o.id),
@@ -2682,12 +2691,10 @@ export default async function handler(req, res) {
             })),
           };
         }
-      }
+      })().catch(e => console.error("[sh-pending] error:", e.message)));
 
       // ─── Mercado Libre ───
-      const mlStore = stores.find(s => s.type === "mercadolibre");
-      if (mlStore?.userId) {
-        connections.push({ platform: "mercadolibre", name: mlStore.nickname || `ML #${mlStore.userId}`, connected: true });
+      if (mlStore?.userId) fetchers.push((async () => {
         try {
           const { accessToken, userId } = await getValidMLToken(db, uid, await mlVentasAcc(db, uid)) || {};
           if (accessToken) {
@@ -2718,9 +2725,14 @@ export default async function handler(req, res) {
             // Fetch billing_info en paralelo (chunks de 5 para evitar 429)
             const billingByOrderId = {};
             let billingOk = 0, billingErr = 0;
-            const CHUNK = 5;
-            for (let i = 0; i < mlPaid.length; i += CHUNK) {
-              const chunk = mlPaid.slice(i, i + CHUNK);
+            // Solo pedimos billing_info de las órdenes SIN facturar: las ya
+            // facturadas se muestran en verde y no se re-emiten, así que no
+            // necesitan datos fiscales. En un período largo esto ahorra la
+            // enorme mayoría de los requests (el cuello de botella histórico).
+            const mlNeedBilling = mlPaid.filter(o => !billedMap.get("ML-" + String(o.id)));
+            const CHUNK = 10;
+            for (let i = 0; i < mlNeedBilling.length; i += CHUNK) {
+              const chunk = mlNeedBilling.slice(i, i + CHUNK);
               await Promise.all(chunk.map(async (o) => {
                 try {
                   const r = await fetch(`https://api.mercadolibre.com/orders/${o.id}/billing_info`, {
@@ -2744,7 +2756,7 @@ export default async function handler(req, res) {
                 }
               }));
             }
-            if (billingErr > 0) console.warn(`[ml-billing] ${billingErr}/${mlPaid.length} fallaron (ok=${billingOk})`);
+            if (billingErr > 0) console.warn(`[ml-billing] ${billingErr}/${mlNeedBilling.length} fallaron (ok=${billingOk})`);
 
             for (const o of mlPaid) {
               const orderId = "ML-" + String(o.id);
@@ -2781,7 +2793,7 @@ export default async function handler(req, res) {
                 comment,
               ].filter(Boolean).join(", ");
 
-              ordenes[orderId] = {
+              ordML[orderId] = {
                 _platform: "mercadolibre",
                 _platform_label: "ML",
                 _order_number: String(o.id),
@@ -2816,7 +2828,10 @@ export default async function handler(req, res) {
         } catch (e) {
           console.error("[ml] error trayendo órdenes:", e.message);
         }
-      }
+      })());
+
+      await Promise.all(fetchers);
+      Object.assign(ordenes, ordTN, ordSH, ordML);
 
       // Plataformas no conectadas (informativas)
       if (!stores.find(s => s.type === "tiendanube")) connections.push({ platform: "tiendanube", connected: false });

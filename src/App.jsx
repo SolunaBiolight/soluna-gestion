@@ -3680,30 +3680,34 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     }
   },[pendingCanje]);
 
-  // Polling Andreani para canjes con tracking
+  // Seguimiento Andreani de canjes — lo hace el cron track_all del servidor cada
+  // 30 min (persiste trackingCat/trackingEstado/trackingAviso en el doc del canje
+  // y manda email al dueño), así funciona aunque la app esté cerrada. Acá solo:
+  // (1) backfill de trackDone para canjes viejos que ya tenían tracking cargado,
+  // (2) toast de avisos no vistos que trae el snapshot en vivo.
+  const avisosToastRef = useRef(new Set());
   useEffect(()=>{
-    const conTracking = canjes.filter(c=>c.tracking?.trim()&&!["Rechazado"].includes(c.estado));
-    if(!conTracking.length) return;
-    async function checkCanjesAndreani() {
-      for(const canje of conTracking) {
-        try {
-          const res = await fetch(`/api/update-shipping?action=tracking&tracking=${encodeURIComponent(canje.tracking.trim())}`);
-          if(!res.ok) continue;
-          const d = await res.json();
-          const ea = d?.estado||d?.estadoActual||d?.ultimoEvento?.estado||"";
-          if(!ea) continue;
-          const eaN = ea.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
-          if(eaN.includes("sucursal")||eaN.includes("disponible")||eaN.includes("hop")||eaN.includes("para retirar")||eaN.includes("punto de retiro")||eaN.includes("en agencia"))
-            toast(`🏪 Canje ${canje.influencer}: paquete listo para retirar en sucursal (${canje.tracking})`, "info");
-          else if(eaN.includes("entregado")||eaN.includes("entrega realizada")||eaN.includes("retirado"))
-            toast(`✅ Canje ${canje.influencer}: paquete entregado (${canje.tracking})`, "success");
-        } catch(_){}
-      }
-    }
-    checkCanjesAndreani();
-    const iv = setInterval(checkCanjesAndreani, 30*60*1000);
-    return ()=>clearInterval(iv);
-  },[canjes.map(c=>`${c._docId}${c.tracking||""}${c.estado}`).join("|")]);
+    canjes.filter(c=>c.tracking?.trim() && c.trackDone===undefined && !["Rechazado","Cerrado"].includes(c.estado))
+      .slice(0,20)
+      .forEach(c=>{ updateDoc(doc(db,"canjes",c._docId),{trackDone:false}).catch(()=>{}); });
+    const AVISO_MSG = { en_sucursal:"listo para retirar en sucursal", entregado:"paquete entregado", devolucion:"el envío está volviendo (devolución)", visita_fallida:"visita fallida — reprogramá con Andreani" };
+    canjes.forEach(c=>{
+      const a=c.trackingAviso;
+      if(!a||a.visto) return;
+      const key=`${c._docId}:${a.at}`;
+      if(avisosToastRef.current.has(key)) return;
+      avisosToastRef.current.add(key);
+      toast(`Canje ${c.influencer}: ${AVISO_MSG[a.cat]||a.estado}`, a.cat==="entregado"?"success":"info", 6000);
+    });
+  },[canjes.map(c=>`${c._docId}${c.trackDone}${c.trackingAviso?.at||""}${c.trackingAviso?.visto??""}`).join("|")]);
+
+  // Chip de estado del envío Andreani (lo alimenta el cron track_all)
+  function TrackingChip({c,size=9}){
+    if(!c?.tracking||!c?.trackingCat) return null;
+    const M={en_camino:["En camino",T.blue],en_sucursal:["En sucursal",T.yellow],entregado:["Entregado",T.green],visita_fallida:["Visita fallida",T.red],devolucion:["Devolución",T.red]};
+    const m=M[c.trackingCat]; if(!m) return null;
+    return <span title={c.trackingEstado||""} style={{fontSize:size,fontWeight:700,color:m[1],background:m[1]+"14",border:`1px solid ${m[1]}33`,borderRadius:4,padding:"2px 7px",whiteSpace:"nowrap"}}>{m[0]}</span>;
+  }
 
   const emptyForm=()=>({
     _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"", linkInstagram:"", pedidoRef:"",
@@ -3738,6 +3742,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         comisionPct:form.comisionPct||"",
       };
       const prev=canjes.find(c=>c._docId===form._docId);
+      // Si el tracking es nuevo o cambió, (re)activar el seguimiento del cron
+      if((p.tracking||"").trim() && (p.tracking||"").trim()!==(prev?.tracking||"").trim()){
+        p.trackDone=false; p.trackingCat=""; p.trackingEstado=""; p.trackingAviso=null;
+      }
       if(form._docId) {
         await updateDoc(doc(db,"canjes",form._docId),{...p,updatedAt:serverTimestamp(),...(form.estado==="Cerrado"&&prev?.estado!=="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});
       } else {
@@ -4085,6 +4093,32 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           </>}
         </div>
 
+        {/* Avisos de seguimiento Andreani (los genera el cron del servidor) */}
+        {(viewTab==="kanban"||viewTab==="lista")&&(()=>{
+          const conAviso=canjes.filter(c=>c.trackingAviso&&!c.trackingAviso.visto);
+          if(!conAviso.length) return null;
+          const AVISO_TXT={en_sucursal:{txt:"listo para retirar en sucursal",color:T.yellow},entregado:{txt:"entregado",color:T.green},devolucion:{txt:"volviendo (devolución)",color:T.red},visita_fallida:{txt:"con visita fallida",color:T.red}};
+          return (
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14}}>
+              {conAviso.map(c=>{
+                const a=c.trackingAviso; const m=AVISO_TXT[a.cat]||{txt:a.estado,color:T.blue};
+                return (
+                  <div key={c._docId} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",background:m.color+"10",border:`1px solid ${m.color}44`,borderRadius:10,fontSize:12,flexWrap:"wrap"}}>
+                    <span style={{width:7,height:7,borderRadius:"50%",background:m.color,flexShrink:0}}/>
+                    <span style={{color:T.text,flex:1,minWidth:140}}>
+                      <strong>{c.influencer}</strong>: paquete <strong style={{color:m.color}}>{m.txt}</strong>
+                      {a.estado&&<span style={{color:T.textSm}}> · Andreani: "{a.estado}"</span>}
+                    </span>
+                    <a href={`https://www.andreani.com/#!/informacionEnvio/${(c.tracking||"").trim()}`} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.blue,textDecoration:"none",flexShrink:0}}>Ver →</a>
+                    <button onClick={()=>setDetail(c._docId)} style={{...BtnSecondary(T),padding:"4px 10px",fontSize:11,flexShrink:0}}>Abrir</button>
+                    <button onClick={async()=>{try{await updateDoc(doc(db,"canjes",c._docId),{"trackingAviso.visto":true});}catch(_){}}} title="Marcar visto" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:14,padding:"2px 6px",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+
         {/* LISTA */}
         {viewTab==="lista"&&<div key="lista" className="gh-tab-content" style={{paddingBottom:48,overflowX:"auto"}}>
           {filtered.length===0?(
@@ -4122,8 +4156,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     </div>
                     <span style={{fontSize:13,color:T.textMd}}>{c.red}</span>
                     <span style={{fontSize:13,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.producto||"--"}</span>
-                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                    <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>
                       <Badge T={T} colors={sc}>{c.estado==="Pendiente envío"?"Por enviar":c.estado}</Badge>
+                      <TrackingChip c={c} size={10}/>
                       {(()=>{
                         if(!c.fechaEnvio||(c.estado!=="Enviado"&&c.estado!=="Contenido pendiente")) return null;
                         const dias=Math.floor((Date.now()-new Date(c.fechaEnvio).getTime())/(1000*60*60*24));
@@ -4229,6 +4264,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                                 <span style={{fontSize:11,fontWeight:600,color:urgente?T.red:sc.text}}>{estado}</span>
                               </div>
                               <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                                <TrackingChip c={c}/>
                                 {urgente&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"12",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
                                 {diasEnvio!==null&&(c.estado==="Enviado"||c.estado==="Contenido pendiente")&&(
                                   <span style={{fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:4,background:diasEnvio>=15?T.redBg:diasEnvio>=7?T.orangeBg:T.greenBg,color:diasEnvio>=15?T.red:diasEnvio>=7?T.orange:T.green,border:`1px solid ${diasEnvio>=15?T.red:diasEnvio>=7?T.orange:T.green}33`}}>
@@ -4753,7 +4789,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
               {/* ── DATOS CLAVE en grilla 2 columnas ── */}
               <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
-                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:12}}>Datos del canje</div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                  <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Datos del canje</span>
+                  <TrackingChip c={c} size={10}/>
+                </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                   <Field label="WhatsApp" value={c.telefono} onSave={v=>save({telefono:v})} placeholder="5491155..."
                     href={c.telefono?"https://wa.me/"+c.telefono.replace(/\D/g,""):null}/>
@@ -4768,7 +4807,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   }} placeholder="@usuario o link de Instagram"
                     href={igHref}/>
                   <Field label="Nº de pedido" value={c.pedidoRef} onSave={v=>save({pedidoRef:v})} placeholder="12345"/>
-                  <Field label="Tracking Andreani" value={c.tracking} onSave={v=>save({tracking:v})} placeholder="3600029..."
+                  <Field label="Tracking Andreani" value={c.tracking} onSave={v=>save({tracking:v,...((v||"").trim()&&(v||"").trim()!==(c.tracking||"").trim()?{trackDone:false,trackingCat:"",trackingEstado:"",trackingAviso:null}:{})})} placeholder="3600029..."
                     href={c.tracking?"https://www.andreani.com/#!/informacionEnvio/"+c.tracking:null}/>
                   <div>
                     <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Fecha de envío</div>
@@ -15552,6 +15591,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // Búsqueda libre en pendientes — matchea nombre del cliente, ID de orden
   // Shopify/TN, número de operación ML, o cualquier substring del email.
   const [busquedaPend, setBusquedaPend] = useState("");
+  // Paginación de la lista de pendientes (50 por página). Se resetea al tocar
+  // cualquier filtro o cambiar el período para no quedar en una página vacía.
+  const [pendPage, setPendPage] = useState(1);
+  useEffect(()=>{ setPendPage(1); },[canalSel, metodoPagoSel, montoMin, montoMax, busquedaPend, periodoModo, fechaDesde, fechaHasta, cuitSel]);
   const [showManualUpload, setShowManualUpload] = useState(false);
 
   // Totales del mes corriente (fetch independiente del filtro del calendario)
@@ -16793,6 +16836,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     }
                     // items ya excluye facturadas (por ordenPasaFiltros) → itemsSelectables = items
                     const itemsSelectables = items;
+                    // Paginación: se renderizan 50 por página, pero la selección
+                    // ("Todas", "% auto", barra flotante) sigue operando sobre TODO
+                    // el filtrado — tildar "Todas" selecciona las 1134, no las 50 visibles.
+                    const PAGE_SIZE = 50;
+                    const totalPages = Math.max(1, Math.ceil(items.length/PAGE_SIZE));
+                    const page = Math.min(pendPage, totalPages);
+                    const pageItems = items.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE);
                     function seleccionarPorcentaje(pct) {
                       const pendientes = itemsSelectables.map(([id])=>id);
                       const count = Math.ceil(pendientes.length * pct / 100);
@@ -16869,7 +16919,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         </div>
                         {/* Lista de altura completa — scrollea la página, no un recuadro anidado */}
                         <div style={{opacity:tnLoading?0.35:1,transition:"opacity 0.25s"}}>
-                          {items.map(([id,o])=>{
+                          {pageItems.map(([id,o])=>{
                             const billed = !!o._billed;
                             const wasAnulada = !billed && !!o._was_anulada;
                             const sel = !billed && !!tnSelected[id];
@@ -16903,6 +16953,14 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             );
                           })}
                         </div>
+                        {/* Controles de página */}
+                        {totalPages>1&&(
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,padding:"12px 0 4px",flexWrap:"wrap"}}>
+                            <button disabled={page<=1} onClick={()=>setPendPage(page-1)} style={{...BtnSecondary(T),padding:"6px 14px",fontSize:12,opacity:page<=1?0.4:1,cursor:page<=1?"not-allowed":"pointer"}}>‹ Anterior</button>
+                            <span style={{fontSize:12,color:T.textSm}}>Página <strong style={{color:T.text}}>{page}</strong> de {totalPages} · {items.length.toLocaleString("es-AR")} ventas</span>
+                            <button disabled={page>=totalPages} onClick={()=>setPendPage(page+1)} style={{...BtnSecondary(T),padding:"6px 14px",fontSize:12,opacity:page>=totalPages?0.4:1,cursor:page>=totalPages?"not-allowed":"pointer"}}>Siguiente ›</button>
+                          </div>
+                        )}
                         {/* Sección colapsada: órdenes ya facturadas en el período */}
                         {itemsBilled.length>0&&(
                           <details style={{marginTop:8}}>

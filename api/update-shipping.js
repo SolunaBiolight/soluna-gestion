@@ -145,7 +145,74 @@ export default async function handler(req, res) {
           }));
         }
       }
-      return res.json({ ok: true, usuarios: usersSnap.size, revisados, actualizados });
+      // ── Canjes con tracking activo (colección top-level "canjes") ──
+      // trackDone=false lo setea el frontend al cargar o cambiar un tracking.
+      // Acá se persiste el estado en el doc del canje y, cuando el paquete llega
+      // a sucursal / se entrega / vuelve, se deja un aviso in-app (trackingAviso)
+      // y se manda email al dueño.
+      let canjesRevisados = 0, canjesActualizados = 0;
+      try {
+        const canjesSnap = await db.collection("canjes").where("trackDone", "==", false).limit(60).get();
+        const pendCanjes = canjesSnap.docs.filter(d => {
+          const c = d.data();
+          return c.tracking && String(c.tracking).trim() && (!c.trackingLastCheck || c.trackingLastCheck < staleCutoff);
+        }).slice(0, 30);
+        const emailCache = {};
+        const NOTABLES = {
+          en_sucursal:    { titulo: "Listo para retirar en sucursal", asunto: inf => `El canje de ${inf} está en sucursal para retirar` },
+          entregado:      { titulo: "Paquete entregado",              asunto: inf => `El canje de ${inf} fue entregado` },
+          devolucion:     { titulo: "Devolución en camino",           asunto: inf => `El envío del canje de ${inf} está volviendo` },
+          visita_fallida: { titulo: "Visita fallida",                 asunto: inf => `Visita fallida en el canje de ${inf}` },
+        };
+        for (let i = 0; i < pendCanjes.length; i += 5) {
+          await Promise.all(pendCanjes.slice(i, i + 5).map(async d => {
+            const c = d.data();
+            canjesRevisados++;
+            const out = await trackAndreani(c.tracking);
+            if (!out) { await d.ref.set({ trackingLastCheck: ahora }, { merge: true }); return; }
+            const cat = clasificarEstado(out.estado);
+            const upd = { trackingLastCheck: ahora, trackingEstado: out.estado, trackingCat: cat };
+            if (cat === "entregado") { upd.trackDone = true; upd.trackEntregadoAt = ahora; }
+            if (cat === "devolucion") upd.trackDone = true;
+            if (cat !== c.trackingCat && NOTABLES[cat]) {
+              upd.trackingAviso = { cat, estado: out.estado, at: ahora, visto: false };
+              try {
+                const ownerId = c.ownerId;
+                if (ownerId && process.env.RESEND_API_KEY) {
+                  if (!(ownerId in emailCache)) {
+                    const uSnap = await db.collection("users").doc(ownerId).get();
+                    emailCache[ownerId] = uSnap.data()?.email || null;
+                  }
+                  const to = emailCache[ownerId];
+                  if (to) {
+                    const n = NOTABLES[cat];
+                    const inf = c.influencer || "influencer";
+                    const nro = String(c.tracking).trim();
+                    const html = `<div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#6366f1,#a78bfa);padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
+    <div style="font-size:18px;font-weight:700;color:#fff">${n.titulo}</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px">Canje de ${inf}</div>
+  </div>
+  <p style="font-size:14px;color:#374151">Andreani informa: <strong>${out.estado}</strong></p>
+  <div style="margin:12px 0;padding:10px 14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #22c55e;font-size:13px;color:#374151">Tracking: <strong>${nro}</strong><br/><a href="https://www.andreani.com/#!/informacionEnvio/${nro}" style="color:#6366f1;font-size:12px">Ver seguimiento →</a></div>
+  ${cat === "en_sucursal" ? '<p style="font-size:13px;color:#374151">Avisale que ya puede pasar a retirarlo — los envíos a sucursal tienen unos días de plazo antes de volver.</p>' : ""}
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Seguimiento de canjes</p>
+</div>`;
+                    await fetch("https://api.resend.com/emails", {
+                      method: "POST",
+                      headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+                      body: JSON.stringify({ from: process.env.RESEND_FROM || "Growith <onboarding@resend.dev>", to, subject: n.asunto(inf), html }),
+                    });
+                  }
+                }
+              } catch (e) { console.error("[track_all canje] email:", e.message); }
+            }
+            await d.ref.set(upd, { merge: true });
+            canjesActualizados++;
+          }));
+        }
+      } catch (e) { console.error("[track_all canjes]:", e.message); }
+      return res.json({ ok: true, usuarios: usersSnap.size, revisados, actualizados, canjesRevisados, canjesActualizados });
     } catch (e) {
       console.error("track_all error:", e.message);
       return res.status(500).json({ error: e.message });
