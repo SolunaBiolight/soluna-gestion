@@ -3869,7 +3869,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     const alerts=[];
     canjes.forEach(c=>{
       if(c.recordatorio&&c.recordatorio<=hoy) alerts.push({tipo:"recordatorio",canje:c,msg:`Recordatorio vencido`});
-      if(c.fechaEnvioProgr&&c.fechaEnvioProgr<=hoy&&c.estado==="Por enviar")
+      // envioAlertDismissed guarda la fecha programada que se descartó: el aviso
+      // no vuelve a aparecer para esa fecha (sí si se reprograma para otro día).
+      if(c.fechaEnvioProgr&&c.fechaEnvioProgr<=hoy&&c.estado==="Por enviar"&&c.envioAlertDismissed!==c.fechaEnvioProgr)
         alerts.push({tipo:"envio_programado",canje:c,msg:`Hoy toca enviar este canje`});
       if(c.estado==="Enviado"&&c.fechaEnvio&&c.fechaEnvio<=hace15) alerts.push({tipo:"sinrespuesta",canje:c,msg:`Enviado hace +15 días sin respuesta`});
       if(c.estado==="Contenido pendiente"){
@@ -3925,11 +3927,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           {showGuia&&(
             <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
-                {n:1,icon:"",title:"Nuevo canje",desc:"Registrá el influencer, qué producto se envía y a cambio de qué contenido (post, story, reel, mención, etc)."},
-                {n:2,icon:"",title:"Seguimiento",desc:"Seguí el ciclo completo: producto enviado → contenido publicado → canje cumplido. Marcá cada etapa a medida que avanza."},
-                {n:3,icon:"",title:"Contenido pactado",desc:"Especificá exactamente qué contenido pediste (ej: 3 stories + 1 reel) para poder verificarlo cuando lo publiquen."},
-                {n:4,icon:"",title:"Análisis de resultados",desc:"Ves el historial de todos los canjes para calcular el costo real de esta estrategia y entender qué tipo de contenido funciona mejor."},
-                {n:5,icon:"",title:"Convertir a envío",desc:"Si el canje requiere mandar un producto, podés generar el envío Andreani directamente desde acá sin cambiar de sección."},
+                {n:1,title:"Perfiles",desc:"Creá el perfil del influencer con su código, % descuento y % comisión — se reutiliza en cada canje."},
+                {n:2,title:"Nuevo canje",desc:"Elegí el perfil (se autocompleta) o cargalo desde un pedido, productos, tracking y contenido acordado. El estado arranca en 'Por enviar'."},
+                {n:3,title:"Seguimiento automático",desc:"Con el tracking cargado, Growith sigue el envío en Andreani y te avisa cuando llega a sucursal o se entrega. Al entregarse pasa solo a 'Contenido pendiente'."},
+                {n:4,title:"Contenido",desc:"En el detalle marcás los contenidos entregados sobre los acordados. Si a los 5 días de entregado falta contenido, te llega un recordatorio por email."},
+                {n:5,title:"Pagos Cupones",desc:"En Historial cruzás las ventas reales de TN con cada código para calcular la comisión exacta a pagar."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -3938,6 +3940,23 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               ))}
             </div>
           )}
+        </div>
+
+        {/* ── Tabs internos — arriba de todo para no perderse entre stats y alertas ── */}
+        <div style={{display:"flex",gap:2,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:4,marginBottom:16,overflowX:"auto",alignItems:"center"}}>
+          {[
+            {id:"kanban",    label:"Canjes activos"},
+            {id:"comisiones",label:"Historial"},
+            {id:"perfiles",  label:"Influencers"},
+          ].map(t=>{
+            const isActive=viewTab===t.id;
+            return (
+              <button key={t.id} onClick={()=>setViewTab(t.id)}
+                style={{padding:"7px 16px",fontSize:12,fontWeight:isActive?700:500,borderRadius:DS.r.md,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:isActive?T.surface:"transparent",color:isActive?T.text:T.textSm,whiteSpace:"nowrap",transition:"all 0.15s",flexShrink:0}}>
+                {t.label}
+              </button>
+            );
+          })}
         </div>
         {/* Stats — mismo patrón de tiles clickeables que Tareas/Reclamos */}
         <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
@@ -3980,6 +3999,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                     Enviar WA
                   </a>}
+                  <button onClick={async()=>{try{await updateDoc(doc(db,"canjes",a.canje._docId),{envioAlertDismissed:a.canje.fechaEnvioProgr||""});}catch(_){}}} title="No mostrar más este aviso" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:15,padding:"2px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
                 </div>
               </div>
             ))}
@@ -3987,32 +4007,32 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               const otros=alertas.filter(a=>a.tipo!=="envio_programado");
               if(!otros.length) return null;
               const chipDefs=[
-                {tipo:"contenido", label:"Deben\ncontenido", color:T.orange},
-                {tipo:"sinrespuesta", label:"Sin respuesta\n+15 días", color:T.blue},
-                {tipo:"recordatorio", label:"Recordatorios\nvencidos", color:T.yellow},
+                {tipo:"contenido", label:"deben contenido", color:T.orange},
+                {tipo:"sinrespuesta", label:"sin respuesta +15 días", color:T.blue},
+                {tipo:"recordatorio", label:"recordatorios vencidos", color:T.yellow},
               ];
               return (
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                   {chipDefs.map(def=>{
                     const items=otros.filter(a=>a.tipo===def.tipo);
                     if(!items.length) return null;
                     const isOpen=openAlertDrop===def.tipo;
                     const col=def.color;
                     return (
-                      <div key={def.tipo} style={{flex:1,minWidth:0}}>
-                        {/* Chip */}
+                      <div key={def.tipo} style={{position:"relative"}}>
+                        {/* Pill compacta — el detalle se abre como dropdown flotante */}
                         <div onClick={()=>setOpenAlertDrop(isOpen?null:def.tipo)}
-                          style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:10,cursor:"pointer",
-                            border:`1.5px solid ${isOpen?col:col+"50"}`,
-                            background:isOpen?col+"20":col+"12",
-                            color:col,transition:"all 0.15s ease",userSelect:"none",width:"100%"}}>
-                          <span style={{fontSize:22,fontWeight:800,letterSpacing:-0.5,lineHeight:1,flexShrink:0}}>{items.length}</span>
-                          <span style={{fontSize:11,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.04em",lineHeight:1.35,opacity:.8,flex:1,whiteSpace:"pre-line"}}>{def.label}</span>
-                          <span style={{fontSize:10,opacity:isOpen?.8:.5,transition:"transform 0.2s",display:"inline-block",transform:isOpen?"rotate(180deg)":"rotate(0deg)",flexShrink:0}}>▼</span>
+                          style={{display:"inline-flex",alignItems:"center",gap:7,padding:"6px 13px",borderRadius:99,cursor:"pointer",
+                            border:`1px solid ${isOpen?col:col+"44"}`,
+                            background:isOpen?col+"1c":col+"10",
+                            color:col,transition:"all 0.15s ease",userSelect:"none",fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>
+                          <span style={{fontSize:13,fontWeight:800}}>{items.length}</span>
+                          <span>{def.label}</span>
+                          <span style={{fontSize:9,opacity:isOpen?.8:.5,transition:"transform 0.2s",display:"inline-block",transform:isOpen?"rotate(180deg)":"rotate(0deg)"}}>▼</span>
                         </div>
                         {/* Dropdown */}
                         {isOpen&&(
-                          <div style={{marginTop:4,background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
+                          <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:60,width:340,maxWidth:"calc(100vw - 48px)",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",boxShadow:"0 12px 32px rgba(0,0,0,0.35)"}}>
                             {items.map((a,i)=>{
                               const initials=(a.canje.influencer||"?").split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase();
                               return (
@@ -4045,44 +4065,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 </div>
               );
             })()}
-          </div>
-        )}
-
-        {/* ── Tabs internos ── */}
-        <div style={{display:"flex",gap:2,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:4,marginBottom:16,overflowX:"auto",alignItems:"center"}}>
-          {[
-            {id:"kanban",    label:"Canjes activos"},
-            {id:"comisiones",label:"Historial"},
-            {id:"perfiles",  label:"Influencers"},
-          ].map(t=>{
-            const isActive=viewTab===t.id;
-            return (
-              <button key={t.id} onClick={()=>setViewTab(t.id)}
-                style={{padding:"7px 16px",fontSize:12,fontWeight:isActive?700:500,borderRadius:DS.r.md,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:isActive?T.surface:"transparent",color:isActive?T.text:T.textSm,whiteSpace:"nowrap",transition:"all 0.15s",flexShrink:0}}>
-                {t.label}
-              </button>
-            );
-          })}
-          <div style={{marginLeft:"auto",flexShrink:0,paddingRight:4}}>
-            <button onClick={()=>setShowGuia(s=>!s)} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",fontSize:11,fontWeight:500,background:"transparent",border:`1px solid ${T.border}`,borderRadius:20,cursor:"pointer",color:showGuia?T.textMd:T.textSm,fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
-              <span style={{width:14,height:14,borderRadius:"50%",background:T.border,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:T.textMd,flexShrink:0}}>?</span>
-              {showGuia?"Cerrar":"Cómo funciona"}
-            </button>
-          </div>
-        </div>
-        {showGuia&&(
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",flexDirection:"column",gap:5}}>
-            {[
-              {n:"1",t:"Perfiles",d:"Creá el perfil del influencer con su código, % descuento y % comisión — se reutiliza en cada canje."},
-              {n:"2",t:"Nuevo canje",d:"Elegí el perfil (se autocompleta), productos y nicho. El estado arranca en 'Por enviar'."},
-              {n:"3",t:"Contenido",d:"En el detalle configurás reels/stories acordados y marcás los entregados. El semáforo indica si cumplió."},
-              {n:"4",t:"Pagos Cupones",d:"Cruzá las ventas reales de TN con cada código para calcular la comisión exacta a pagar."},
-            ].map(s=>(
-              <div key={s.n} style={{display:"flex",alignItems:"baseline",gap:8,fontSize:11,color:T.textMd,lineHeight:1.5}}>
-                <span style={{fontSize:10,fontWeight:700,color:T.textSm,width:14,flexShrink:0}}>{s.n}.</span>
-                <span><strong style={{color:T.text,fontWeight:600}}>{s.t}</strong> — {s.d}</span>
-              </div>
-            ))}
           </div>
         )}
 
@@ -4196,16 +4178,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         {/* KANBAN con drag-and-drop */}
         {viewTab==="kanban"&&(
           <div key="kanban" style={{paddingBottom:48}}>
-            {/* Barra de búsqueda/filtro encima del kanban */}
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-              <input type="text" placeholder="Buscar influencer..." value={search} onChange={e=>setSearch(e.target.value)}
-                style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",flex:"1 1 180px",maxWidth:260,outline:"none"}}/>
-              <select value={filterRed} onChange={e=>setFilterRed(e.target.value)} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                <option value="">Todas las redes</option>
-                {["Instagram","TikTok","YouTube","Twitter/X","Twitch"].map(r=><option key={r}>{r}</option>)}
-              </select>
-              <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>Arrastrá las tarjetas para cambiar estado</span>
-            </div>
+            {/* El buscador y los filtros viven en la fila de filtros de arriba —
+                acá solo queda el hint de drag para no duplicar controles */}
+            <div style={{textAlign:"right",fontSize:11,color:T.textSm,marginBottom:10}}>Arrastrá las tarjetas para cambiar estado</div>
 
             <div className="stack-mobile" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,alignItems:"start"}}>
               {ESTADOS_C.map(estado=>{
