@@ -514,7 +514,9 @@ function condicionIvaReceptor(tipoCbte, docTipoClas) {
 }
 
 async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCbte, wsfeUrl, monotributo = false, fechaImputacion = null, exento = false) {
-  const total = orden.total;
+  // AFIP acepta máximo 2 decimales: los totales de ML suelen llegar con arrastre
+  // de punto flotante (26999.999999999996) y el WS rechaza el ImpTotal.
+  const total = Math.round(Number(orden.total) * 100) / 100;
   const fecha = fechaImputacion || new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
   const docTipoClas = orden.doc_tipo;
@@ -542,8 +544,8 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
     <ar:Iva>
       <ar:AlicIva>
         <ar:Id>5</ar:Id>
-        <ar:BaseImp>${neto}</ar:BaseImp>
-        <ar:Importe>${iva}</ar:Importe>
+        <ar:BaseImp>${neto.toFixed(2)}</ar:BaseImp>
+        <ar:Importe>${iva.toFixed(2)}</ar:Importe>
       </ar:AlicIva>
     </ar:Iva>` : "";
 
@@ -562,12 +564,12 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
           <ar:CbteDesde>${cbteNro}</ar:CbteDesde>
           <ar:CbteHasta>${cbteNro}</ar:CbteHasta>
           <ar:CbteFch>${fecha}</ar:CbteFch>
-          <ar:ImpTotal>${total}</ar:ImpTotal>
+          <ar:ImpTotal>${total.toFixed(2)}</ar:ImpTotal>
           <ar:ImpTotConc>0</ar:ImpTotConc>
-          <ar:ImpNeto>${neto}</ar:ImpNeto>
-          <ar:ImpOpEx>${impOpEx}</ar:ImpOpEx>
+          <ar:ImpNeto>${neto.toFixed(2)}</ar:ImpNeto>
+          <ar:ImpOpEx>${impOpEx.toFixed(2)}</ar:ImpOpEx>
           <ar:ImpTrib>0</ar:ImpTrib>
-          <ar:ImpIVA>${iva}</ar:ImpIVA>
+          <ar:ImpIVA>${iva.toFixed(2)}</ar:ImpIVA>
           <ar:MonId>PES</ar:MonId>
           <ar:MonCotiz>1</ar:MonCotiz>
           <ar:CondicionIVAReceptorId>${condIva}</ar:CondicionIVAReceptorId>
@@ -686,7 +688,7 @@ async function emitirNotaCredito(token, sign, cuitNum, puntoVenta, cbteNcNro, fa
   const tipoFactura = parseInt(facturaOriginal.tipo) || 6;
   const tipoNC = tipoNCparaFactura(tipoFactura);
   const monotributo = tipoFactura === 11;
-  const total = parseFloat(facturaOriginal.total) || 0;
+  const total = Math.round((parseFloat(facturaOriginal.total) || 0) * 100) / 100;
   const fecha = new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
   const docTipoClas = facturaOriginal.doc_tipo;
@@ -718,8 +720,8 @@ async function emitirNotaCredito(token, sign, cuitNum, puntoVenta, cbteNcNro, fa
     <ar:Iva>
       <ar:AlicIva>
         <ar:Id>5</ar:Id>
-        <ar:BaseImp>${neto}</ar:BaseImp>
-        <ar:Importe>${iva}</ar:Importe>
+        <ar:BaseImp>${neto.toFixed(2)}</ar:BaseImp>
+        <ar:Importe>${iva.toFixed(2)}</ar:Importe>
       </ar:AlicIva>
     </ar:Iva>` : "";
 
@@ -750,12 +752,12 @@ async function emitirNotaCredito(token, sign, cuitNum, puntoVenta, cbteNcNro, fa
           <ar:CbteDesde>${cbteNcNro}</ar:CbteDesde>
           <ar:CbteHasta>${cbteNcNro}</ar:CbteHasta>
           <ar:CbteFch>${fecha}</ar:CbteFch>
-          <ar:ImpTotal>${total}</ar:ImpTotal>
+          <ar:ImpTotal>${total.toFixed(2)}</ar:ImpTotal>
           <ar:ImpTotConc>0</ar:ImpTotConc>
-          <ar:ImpNeto>${neto}</ar:ImpNeto>
+          <ar:ImpNeto>${neto.toFixed(2)}</ar:ImpNeto>
           <ar:ImpOpEx>0</ar:ImpOpEx>
           <ar:ImpTrib>0</ar:ImpTrib>
-          <ar:ImpIVA>${iva}</ar:ImpIVA>
+          <ar:ImpIVA>${iva.toFixed(2)}</ar:ImpIVA>
           <ar:MonId>PES</ar:MonId>
           <ar:MonCotiz>1</ar:MonCotiz>
           <ar:CondicionIVAReceptorId>${condIva}</ar:CondicionIVAReceptorId>
