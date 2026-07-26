@@ -10420,7 +10420,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [expandedEquipo, setExpandedEquipo] = useState(null);
   const [editingMember, setEditingMember] = useState(null);
   const [editData, setEditData] = useState({nombre:"",rol:"",wa:"",email:""});
-  const [permisosModal, setPermisosModal] = useState(null); // {colabId, nombre}
   const [ncNombre, setNcNombre] = useState("");
   const [ncEmail, setNcEmail] = useState("");
   const [ncRol, setNcRol] = useState("");
@@ -12668,12 +12667,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             ...colaboradores.map(c=>({_type:"colab",_key:c._id,data:c})),
             ...editoresLegacy.map(ed=>({_type:"editor",_key:"ed_"+ed,data:ed})),
           ];
+          {/* Mismas claves y nombres que los toggles de la card — una sola verdad.
+              ("comentarTareas" se eliminó: el backend nunca lo chequeaba, los
+              colaboradores siempre pueden comentar sus propias tareas.) */}
           const PERMISOS=[
-            {key:"verTareas",       label:"Tareas"},
+            {key:"verTareas",       label:"Gestión de tareas"},
+            {key:"verEquipo",       label:"Estado del equipo"},
             {key:"verCreativos",    label:"Creativos"},
-            {key:"verEquipo",       label:"Equipo"},
-            {key:"comentarTareas",  label:"Comentar"},
-            {key:"editorProduccion",label:"Producción"},
+            {key:"editorProduccion",label:"Editor de producción"},
           ];
           if(todos.length===0) return (
             <div style={{textAlign:"center",padding:"70px 0"}}>
@@ -12920,11 +12921,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         {/* Permisos inline */}
                         {!editing&&c&&(
                           <div style={{paddingTop:12,borderTop:`1px solid ${T.border}`,marginTop:8}}>
-                            <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>Acceso al portal</div>
+                            <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.06em"}}>Acceso al portal</div>
+                            <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Sin permisos activados, solo ve y actualiza <strong style={{color:T.textMd}}>sus propias tareas asignadas</strong>. Cada permiso suma acceso:</div>
                             {[
-                              {key:"verTareas",label:"Gestión de tareas",desc:"Crear, aprobar, pedir cambios y ver todo el kanban",badge:"CM"},
+                              {key:"verTareas",label:"Gestión de tareas",desc:"Ve TODO el tablero y puede crear, aprobar y pedir cambios — rol manager/CM",badge:"CM"},
+                              {key:"verEquipo",label:"Estado del equipo",desc:"Ve la pestaña Equipo con las tareas de todos, solo lectura"},
+                              {key:"verCreativos",label:"Creativos",desc:"Ve el tablero de producción de creativos"},
                               {key:"editorProduccion",label:"Editor de producción",desc:"Puede recibir creativos asignados"},
-                              {key:"verCreativos",label:"Board de creativos",desc:"Ve el tablero de producción de creativos"},
                             ].map(({key,label,desc,badge})=>{
                               const active=!!(c.permisos?.[key]);
                               return(
@@ -13374,48 +13377,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       )}
 
       {/* MODAL ⚙ Permisos */}
-      {permisosModal&&(()=>{
-        const colab=colaboradores.find(c=>c._id===permisosModal.colabId);
-        const PERMISOS_DEF=[
-          {key:"verTareas",       label:"Ver trabajo completo",   desc:"Kanban con todas las tareas — ideal para CM"},
-          {key:"verCreativos",    label:"Ver board de Creativos", desc:"Tablero de producción de creativos"},
-          {key:"verEquipo",       label:"Ver estado del equipo",  desc:"Tareas de todos, solo lectura"},
-          {key:"comentarTareas",  label:"Comentar en tareas",     desc:"Puede dejar notas en sus tareas"},
-          {key:"editorProduccion",label:"Editor de producción",   desc:"Puede recibir creativos asignados"},
-        ];
-        return (
-          <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
-            onClick={e=>{if(e.target===e.currentTarget)setPermisosModal(null);}}>
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:380}}>
-              <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <div>
-                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>Permisos · {permisosModal.nombre}</div>
-                  <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Lo que puede ver en su portal</div>
-                </div>
-                <button onClick={()=>setPermisosModal(null)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:15}}>✕</button>
-              </div>
-              <div style={{padding:"14px 18px",display:"flex",flexDirection:"column",gap:12}}>
-                {PERMISOS_DEF.map(({key,label,desc})=>{
-                  const val=!!(colab?.permisos||{})[key];
-                  return (
-                    <div key={key} style={{display:"flex",alignItems:"center",gap:12}}>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:13,fontWeight:500,color:T.text}}>{label}</div>
-                        <div style={{fontSize:11,color:T.textSm}}>{desc}</div>
-                      </div>
-                      <button onClick={()=>updateColabPermisos(permisosModal.colabId,key,!val)}
-                        style={{width:38,height:22,borderRadius:11,border:"none",cursor:"pointer",background:val?T.green:T.textMd,position:"relative",transition:"background 0.2s",padding:0,flexShrink:0}}>
-                        <div style={{position:"absolute",top:3,left:val?18:3,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.25)"}}/>
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
       {/* MODAL Nuevo Evento */}
       {showNEvento&&(
         <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"24px 16px"}}
