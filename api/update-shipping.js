@@ -60,7 +60,10 @@ async function trackAndreani(nroRaw) {
   ];
   for (const url of endpoints) {
     try {
-      const r = await fetch(url, { headers: BROWSER_HEADERS });
+      // Timeout duro por endpoint: los servidores de Andreani a veces dejan la
+      // conexión colgada y sin esto un solo tracking podía comerse el budget
+      // completo de la función (FUNCTION_INVOCATION_TIMEOUT en el cron).
+      const r = await fetch(url, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(6000) });
       const text = await r.text();
       if (text.startsWith('<') || text.startsWith('<!')) continue;
       let d;
@@ -117,6 +120,10 @@ export default async function handler(req, res) {
   if (req.query.action === 'track_all') {
     try {
       const db = initAdmin();
+      // Deadline global: si Andreani viene lento, cortamos antes del límite de
+      // la función (60s) y lo que quedó pendiente lo agarra la próxima corrida.
+      const deadline = Date.now() + 45000;
+      const quedaTiempo = () => Date.now() < deadline;
       const cutoff = new Date(Date.now() - 7 * 86400000).toISOString();
       const usersSnap = await db.collection("users").where("enviosTrackActivo", ">", cutoff).limit(10).get();
       let revisados = 0, actualizados = 0;
@@ -129,6 +136,7 @@ export default async function handler(req, res) {
           .filter(d => { const e = d.data(); return e.tracking && (!e.lastCheck || e.lastCheck < staleCutoff); })
           .slice(0, 30);
         for (let i = 0; i < pendientes.length; i += 5) {
+          if (!quedaTiempo()) break;
           await Promise.all(pendientes.slice(i, i + 5).map(async d => {
             const e = d.data();
             revisados++;
@@ -165,6 +173,7 @@ export default async function handler(req, res) {
           visita_fallida: { titulo: "Visita fallida",                 asunto: inf => `Visita fallida en el canje de ${inf}` },
         };
         for (let i = 0; i < pendCanjes.length; i += 5) {
+          if (!quedaTiempo()) break;
           await Promise.all(pendCanjes.slice(i, i + 5).map(async d => {
             const c = d.data();
             canjesRevisados++;
