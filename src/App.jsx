@@ -3432,7 +3432,7 @@ function DropdownChips({value, options, onSelect, placeholder, T, colorActive, b
           ))}
           {value&&<button onClick={()=>{ onSelect(""); setOpen(false); }}
             style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+T.border,background:"transparent",color:T.red,cursor:"pointer"}}>
-            \u2715 Quitar
+            ✕ Quitar
           </button>}
         </div>
       )}
@@ -3515,15 +3515,15 @@ function NotasInline({value, onSave, T, iS}) {
     <div onClick={()=>setEditing(true)}
       style={{background:value?T.yellowBg:T.bg,border:"1px dashed "+(value?T.yellow+"44":T.border),borderRadius:10,padding:"10px 14px",cursor:"text",minHeight:40,marginBottom:10}}>
       {value
-        ?<><div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:3}}>\ud83d\udcdd Notas</div>
+        ?<><div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:3}}>Notas</div>
            <div style={{fontSize:13,lineHeight:1.6,color:T.text}}>{value}</div></>
-        :<div style={{fontSize:13,color:T.textSm}}>\ud83d\udcdd Click para agregar notas...</div>
+        :<div style={{fontSize:13,color:T.textSm}}>Click para agregar notas...</div>
       }
     </div>
   );
   return (
     <div style={{marginBottom:10}}>
-      <div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:4}}>\ud83d\udcdd Notas</div>
+      <div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:4}}>Notas</div>
       <textarea autoFocus rows={3} value={val} onChange={e=>setVal(e.target.value)}
         style={{...iS,resize:"vertical",minHeight:70,fontSize:13,lineHeight:1.5,borderColor:T.yellow+"88",width:"100%"}}
         onBlur={async()=>{ setEditing(false); if(val!==(value||"")) await onSave(val); }}
@@ -3611,6 +3611,25 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     }
   }
   const [comData,setComData]=useState(null);
+  // Resultados del cupón del canje abierto (ROI) — se busca una vez por código
+  // al abrir el detalle, con las ventas TN desde la creación del canje.
+  const [cuponStats,setCuponStats]=useState({});
+  useEffect(()=>{
+    const c=detail?canjes.find(x=>x._docId===detail):null;
+    const code=(c?.codigoDescuento||"").toUpperCase().trim();
+    if(!code||cuponStats[code]) return;
+    setCuponStats(prev=>({...prev,[code]:{loading:true}}));
+    (async()=>{
+      try{
+        const desde=c.createdAt?.seconds?new Date(c.createdAt.seconds*1000).toISOString().slice(0,10):new Date(Date.now()-90*86400000).toISOString().slice(0,10);
+        const hasta=new Date().toISOString().slice(0,10);
+        const r=await fetch(`/api/orders?action=coupons&uid=${user?.uid||""}&desde=${desde}&hasta=${hasta}`);
+        const data=await r.json();
+        const cp=(data.coupons||[]).find(x=>String(x.code||"").toUpperCase()===code);
+        setCuponStats(prev=>({...prev,[code]:{loading:false,found:!!cp,usos:cp?.usosPeriodo||0,ventas:cp?.ventasPeriodo||0,descuento:cp?.descuentoPeriodo||0,desde}}));
+      }catch(_){ setCuponStats(prev=>({...prev,[code]:{loading:false,error:true}})); }
+    })();
+  },[detail]);
   const [comLoading,setComLoading]=useState(false);
   const [comError,setComError]=useState("");
   const [comFechaDesde,setComFechaDesde]=useState(()=>{const d=new Date();d.setDate(1);return d.toISOString().split("T")[0];});
@@ -3769,7 +3788,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             tracking:p.tracking||"", fechaEnvioProgr:p.fechaEnvioProgr,
             delayMs: msHasta,
           })}).catch(()=>{});
-          toast(`📅 Recordatorio de envío programado para el ${new Date(p.fechaEnvioProgr+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"long"})}`, "info", 4000);
+          toast(`Recordatorio de envío programado para el ${new Date(p.fechaEnvioProgr+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"long"})}`, "info", 4000);
         }
       }
       const editedId=form._docId;
@@ -3851,7 +3870,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     canjes.forEach(c=>{
       if(c.recordatorio&&c.recordatorio<=hoy) alerts.push({tipo:"recordatorio",canje:c,msg:`Recordatorio vencido`});
       if(c.fechaEnvioProgr&&c.fechaEnvioProgr<=hoy&&c.estado==="Por enviar")
-        alerts.push({tipo:"envio_programado",canje:c,msg:`Hoy toca enviar este canje 📦`});
+        alerts.push({tipo:"envio_programado",canje:c,msg:`Hoy toca enviar este canje`});
       if(c.estado==="Enviado"&&c.fechaEnvio&&c.fechaEnvio<=hace15) alerts.push({tipo:"sinrespuesta",canje:c,msg:`Enviado hace +15 días sin respuesta`});
       if(c.estado==="Contenido pendiente"){
         const cont=c.contenido||[];
@@ -3862,23 +3881,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     });
     return alerts;
   },[canjes]);
-
-  // Helper: genera mensaje de WhatsApp pre-armado para recordar retiro y acuerdos del canje
-  function waCanjeMsg(c) {
-    const nombre = c.influencer?.split(" ")[0] || "hola";
-    const productos = (c.productosCanje||[]).map(p=>p.nombre).filter(Boolean).join(", ") || c.producto || "tu canje";
-    const tracking = c.tracking?.trim();
-    const cont = (c.contenido||[]).filter(x=>(x.acordados||0)>0);
-    const acuerdos = cont.map(x=>`  • ${x.acordados} ${x.tipo}`).join("\n");
-    let msg = `Hola ${nombre}! 🌟\n\nYa despachamos tu canje de *${productos}*. 🎁`;
-    if(tracking) msg += `\n\n📦 Podés seguir el envío acá:\nhttps://www.andreani.com/#!/informacionEnvio/${tracking}`;
-    msg += `\n\nRecordamos los acuerdos:`;
-    if(acuerdos) msg += `\n${acuerdos}`;
-    else msg += `\n  • Contenido por acordar`;
-    if(c.codigoDescuento) msg += `\n\n🏷️ Tu código de descuento: *${c.codigoDescuento}*`;
-    msg += `\n\n¡Gracias y cualquier duda nos escribís! 🙏`;
-    return encodeURIComponent(msg);
-  }
 
   async function addNota(docId, texto) {
     if(!texto.trim()) return;
@@ -3923,11 +3925,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           {showGuia&&(
             <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
-                {n:1,icon:"➕",title:"Nuevo canje",desc:"Registrá el influencer, qué producto se envía y a cambio de qué contenido (post, story, reel, mención, etc)."},
-                {n:2,icon:"📊",title:"Seguimiento",desc:"Seguí el ciclo completo: producto enviado → contenido publicado → canje cumplido. Marcá cada etapa a medida que avanza."},
-                {n:3,icon:"📋",title:"Contenido pactado",desc:"Especificá exactamente qué contenido pediste (ej: 3 stories + 1 reel) para poder verificarlo cuando lo publiquen."},
-                {n:4,icon:"📈",title:"Análisis de resultados",desc:"Ves el historial de todos los canjes para calcular el costo real de esta estrategia y entender qué tipo de contenido funciona mejor."},
-                {n:5,icon:"🚚",title:"Convertir a envío",desc:"Si el canje requiere mandar un producto, podés generar el envío Andreani directamente desde acá sin cambiar de sección."},
+                {n:1,icon:"",title:"Nuevo canje",desc:"Registrá el influencer, qué producto se envía y a cambio de qué contenido (post, story, reel, mención, etc)."},
+                {n:2,icon:"",title:"Seguimiento",desc:"Seguí el ciclo completo: producto enviado → contenido publicado → canje cumplido. Marcá cada etapa a medida que avanza."},
+                {n:3,icon:"",title:"Contenido pactado",desc:"Especificá exactamente qué contenido pediste (ej: 3 stories + 1 reel) para poder verificarlo cuando lo publiquen."},
+                {n:4,icon:"",title:"Análisis de resultados",desc:"Ves el historial de todos los canjes para calcular el costo real de esta estrategia y entender qué tipo de contenido funciona mejor."},
+                {n:5,icon:"",title:"Convertir a envío",desc:"Si el canje requiere mandar un producto, podés generar el envío Andreani directamente desde acá sin cambiar de sección."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -3964,7 +3966,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
             {alertas.filter(a=>a.tipo==="envio_programado").map((a,i)=>(
               <div key={i} className="gh-accordion" style={{background:"linear-gradient(135deg,#6366f112,#a855f708)",border:"1.5px solid #6366f140",borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                <span style={{fontSize:20}}>📦</span>
+                <span style={{display:"inline-flex",color:"#6366f1"}}><GhI n="box" size={18}/></span>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:13,fontWeight:700,color:"#6366f1"}}>Hoy toca enviar: {a.canje.influencer}</div>
                   <div style={{fontSize:12,color:T.textMd}}>{a.canje.producto||((a.canje.productosCanje||[])[0]?.nombre)||""}
@@ -3973,7 +3975,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 </div>
                 <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
                   <button onClick={()=>setDetail(a.canje._docId)} style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:T.surface,border:`1px solid ${T.border}`,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ver canje</button>
-                  {a.canje.telefono&&<a href={`https://wa.me/${a.canje.telefono.replace(/\D/g,"")}?text=${waCanjeMsg(a.canje)}`} target="_blank" rel="noreferrer"
+                  {a.canje.telefono&&<a href={`https://wa.me/${a.canje.telefono.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
                     style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:T.green,color:"#fff",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                     Enviar WA
@@ -3985,9 +3987,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               const otros=alertas.filter(a=>a.tipo!=="envio_programado");
               if(!otros.length) return null;
               const chipDefs=[
-                {tipo:"contenido", icon:"📋", label:"Deben\ncontenido", color:T.orange},
-                {tipo:"sinrespuesta", icon:"💬", label:"Sin respuesta\n+15 días", color:T.blue},
-                {tipo:"recordatorio", icon:"🔔", label:"Recordatorios\nvencidos", color:T.yellow},
+                {tipo:"contenido", label:"Deben\ncontenido", color:T.orange},
+                {tipo:"sinrespuesta", label:"Sin respuesta\n+15 días", color:T.blue},
+                {tipo:"recordatorio", label:"Recordatorios\nvencidos", color:T.yellow},
               ];
               return (
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -4004,7 +4006,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                             border:`1.5px solid ${isOpen?col:col+"50"}`,
                             background:isOpen?col+"20":col+"12",
                             color:col,transition:"all 0.15s ease",userSelect:"none",width:"100%"}}>
-                          <span style={{fontSize:16,flexShrink:0}}>{def.icon}</span>
                           <span style={{fontSize:22,fontWeight:800,letterSpacing:-0.5,lineHeight:1,flexShrink:0}}>{items.length}</span>
                           <span style={{fontSize:11,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.04em",lineHeight:1.35,opacity:.8,flex:1,whiteSpace:"pre-line"}}>{def.label}</span>
                           <span style={{fontSize:10,opacity:isOpen?.8:.5,transition:"transform 0.2s",display:"inline-block",transform:isOpen?"rotate(180deg)":"rotate(0deg)",flexShrink:0}}>▼</span>
@@ -4088,13 +4089,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         <div style={{padding:"14px 0 8px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
           {viewTab!=="comisiones"&&<>
             <div style={{position:"relative",flex:"1 1 220px",minWidth:180}}>
-              <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,fontSize:14}}>🔍</span>
+              <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,display:"inline-flex"}}><GhI n="search" size={13}/></span>
               <input placeholder="Buscar influencer..." value={search} onChange={e=>setSearch(e.target.value)} style={{...iS,paddingLeft:36,fontSize:14}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
             </div>
             <select value={filterEstado} onChange={e=>setFilterEstado(e.target.value)} style={{...iS,width:"auto",flex:"0 1 170px",fontSize:13,color:filterEstado?T.accent:T.textMd}}><option value="">Estado</option>{ESTADOS_C.map(e=><option key={e}>{e}</option>)}</select>
             <select value={filterRed} onChange={e=>setFilterRed(e.target.value)} style={{...iS,width:"auto",flex:"0 1 130px",fontSize:13,color:filterRed?T.accent:T.textMd}}><option value="">Red</option>{REDES.map(r=><option key={r}>{r}</option>)}</select>
             <select value={filterNicho} onChange={e=>setFilterNicho(e.target.value)} style={{...iS,width:"auto",flex:"0 1 130px",fontSize:13,color:filterNicho?T.accent:T.textMd}}><option value="">Nicho</option>{NICHOS.map(n=><option key={n}>{n}</option>)}</select>
-            <button onClick={()=>setFilterSoloPendientes(p=>!p)} style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px",borderColor:filterSoloPendientes?T.orange:T.border,color:filterSoloPendientes?T.orange:T.textMd,background:filterSoloPendientes?T.orangeBg:T.card}}>⏳ Cont. pendiente</button>
+            <button onClick={()=>setFilterSoloPendientes(p=>!p)} style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px",borderColor:filterSoloPendientes?T.orange:T.border,color:filterSoloPendientes?T.orange:T.textMd,background:filterSoloPendientes?T.orangeBg:T.card}}>Cont. pendiente</button>
             <span style={{fontSize:12,color:T.textSm,marginLeft:"auto"}}>{filtered.length} canjes</span>
           </>}
         </div>
@@ -4155,7 +4156,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           {c.nicho&&<span style={{fontSize:10,background:T.purpleBg,color:T.purple,borderRadius:4,padding:"1px 6px",fontWeight:500}}>{c.nicho}</span>}
                         </div>
                         <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
-                          {c.linkInstagram&&<a href={c.linkInstagram.startsWith("http")?c.linkInstagram:"https://instagram.com/"+c.linkInstagram.replace("@","")} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"#E1306C",textDecoration:"none",background:"#E1306C18",border:"1px solid #E1306C33",borderRadius:6,padding:"3px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3}}>📸 Instagram</a>}
+                          {c.linkInstagram&&<a href={c.linkInstagram.startsWith("http")?c.linkInstagram:"https://instagram.com/"+c.linkInstagram.replace("@","")} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"#E1306C",textDecoration:"none",background:"#E1306C18",border:"1px solid #E1306C33",borderRadius:6,padding:"3px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3}}>Instagram</a>}
                           {c.telefono&&<a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.green,textDecoration:"none",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:6,padding:"3px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3}}><GhI n="wa" size={13}/> WA</a>}
                         </div>
                       </div>
@@ -4168,9 +4169,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       {(()=>{
                         if(!c.fechaEnvio||(c.estado!=="Enviado"&&c.estado!=="Contenido pendiente")) return null;
                         const dias=Math.floor((Date.now()-new Date(c.fechaEnvio).getTime())/(1000*60*60*24));
+                        if(!isFinite(dias)||dias<0||dias>=3650) return null;
                         const col=dias>=15?T.red:dias>=7?T.orange:T.green;
                         const bg=dias>=15?T.redBg:dias>=7?T.orangeBg:T.greenBg;
-                        return <span style={{fontSize:10,background:bg,color:col,borderRadius:4,padding:"2px 6px",fontWeight:700,whiteSpace:"nowrap"}}>📦 {dias}d</span>;
+                        return <span style={{fontSize:10,background:bg,color:col,borderRadius:4,padding:"2px 6px",fontWeight:700,whiteSpace:"nowrap"}}>{dias}d</span>;
                       })()}
                     </div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:4,alignItems:"flex-start"}}>
@@ -4196,7 +4198,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           <div key="kanban" style={{paddingBottom:48}}>
             {/* Barra de búsqueda/filtro encima del kanban */}
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-              <input type="text" placeholder="🔍 Buscar influencer..." value={search} onChange={e=>setSearch(e.target.value)}
+              <input type="text" placeholder="Buscar influencer..." value={search} onChange={e=>setSearch(e.target.value)}
                 style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",flex:"1 1 180px",maxWidth:260,outline:"none"}}/>
               <select value={filterRed} onChange={e=>setFilterRed(e.target.value)} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
                 <option value="">Todas las redes</option>
@@ -4250,7 +4252,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         const totalAcordado=cont.reduce((a,x)=>a+(x.acordados||0),0);
                         const totalEntregado=cont.reduce((a,x)=>a+(x.entregados||0),0);
                         const pctContenido=totalAcordado>0?Math.round((totalEntregado/totalAcordado)*100):null;
-                        const diasEnvio=c.fechaEnvio?Math.floor((Date.now()-new Date(c.fechaEnvio))/(86400000)):null;
+                        // Guard: una fecha de envío mal tipeada (ej. año 0026) daba badges
+                        // absurdos tipo "730538d" y marcaba la card como urgente.
+                        const _dRaw=c.fechaEnvio?Math.floor((Date.now()-new Date(c.fechaEnvio))/(86400000)):null;
+                        const diasEnvio=(_dRaw!==null&&isFinite(_dRaw)&&_dRaw>=0&&_dRaw<3650)?_dRaw:null;
                         const urgente=diasEnvio!==null&&diasEnvio>14&&(c.estado==="Enviado"||c.estado==="Contenido pendiente");
                         const prods=(c.productosCanje||[]);
                         return (
@@ -4520,14 +4525,14 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             {/* Header */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
               <div>
-                <div style={{fontSize:15,fontWeight:700,color:T.text}}>👤 Perfiles de Influencers</div>
+                <div style={{fontSize:15,fontWeight:700,color:T.text}}>Perfiles de Influencers</div>
                 <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{influencers.length} perfil{influencers.length!==1?"es":""} · datos de comisiones y códigos de descuento</div>
               </div>
               <button onClick={()=>{setEditInfluencer(null);setInfForm({nombre:"",usuario:"",red:"Instagram",codigoDescuento:"",descuentoPct:"",comisionPct:"",email:"",telefono:"",notas:""});setShowInfluencerForm(true);}} style={{...BtnPrimary(T),fontSize:13}}>+ Nuevo perfil</button>
             </div>
             {/* Search */}
             <div style={{position:"relative",marginBottom:16,maxWidth:340}}>
-              <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,fontSize:13}}>🔍</span>
+              <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,display:"inline-flex"}}><GhI n="search" size={12}/></span>
               <input placeholder="Buscar perfil..." value={infSearch} onChange={e=>setInfSearch(e.target.value)} style={{...iS,paddingLeft:36}}/>
             </div>
             {/* Grid de perfiles */}
@@ -4587,13 +4592,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,background:T.accentSolid+"10",borderRadius:8,padding:"7px 12px"}}>
                         <span style={{fontSize:11,color:T.textSm,fontWeight:600}}>CÓDIGO:</span>
                         <span style={{fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:14,fontWeight:800,color:T.accentSolid,letterSpacing:1,flex:1}}>{inf.codigoDescuento.toUpperCase()}</span>
-                        <button onClick={()=>{navigator.clipboard?.writeText(inf.codigoDescuento.toUpperCase());toast("Código copiado 📋","success");}} style={{padding:"2px 7px",borderRadius:5,border:`1px solid ${T.border}`,background:"transparent",cursor:"pointer",fontSize:10,color:T.textMd,fontFamily:"'Inter',system-ui,sans-serif"}}>Copiar</button>
+                        <button onClick={()=>{navigator.clipboard?.writeText(inf.codigoDescuento.toUpperCase());toast("Código copiado ✓","success");}} style={{padding:"2px 7px",borderRadius:5,border:`1px solid ${T.border}`,background:"transparent",cursor:"pointer",fontSize:10,color:T.textMd,fontFamily:"'Inter',system-ui,sans-serif"}}>Copiar</button>
                       </div>
                     )}
                     {/* Datos de contacto */}
                     {(inf.email||inf.telefono)&&(
                       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-                        {inf.email&&<a href={"mailto:"+inf.email} style={{fontSize:11,color:T.accent,textDecoration:"none"}}>✉️ {inf.email}</a>}
+                        {inf.email&&<a href={"mailto:"+inf.email} style={{fontSize:11,color:T.accent,textDecoration:"none"}}>{inf.email}</a>}
                         {inf.telefono&&<a href={"https://wa.me/"+inf.telefono.replace(/\D/g,"")} target="_blank" rel="noreferrer" style={{fontSize:11,color:T.green,textDecoration:"none"}}><GhI n="wa" size={13}/> WA</a>}
                       </div>
                     )}
@@ -4634,7 +4639,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             </div>
             {/* Datos comerciales */}
             <div style={{background:T.surface,borderRadius:10,padding:"14px 16px"}}>
-              <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:12}}>💰 Condiciones comerciales</div>
+              <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:12}}>Condiciones comerciales</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
                 <div>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Código descuento</div>
@@ -4651,7 +4656,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               </div>
               {(infForm.descuentoPct||infForm.comisionPct)&&(
                 <div style={{marginTop:10,padding:"8px 12px",background:T.accentSolid+"10",borderRadius:8,fontSize:12,color:T.text}}>
-                  👤 Con el código <strong>{infForm.codigoDescuento||"CODIGO"}</strong>{infForm.descuentoPct?` el público recibe un ${infForm.descuentoPct}% de descuento`:""}{infForm.comisionPct?` y ${infForm.nombre||"el/la influencer"} cobra un ${infForm.comisionPct}% de comisión`:""}.
+                  Con el código <strong>{infForm.codigoDescuento||"CODIGO"}</strong>{infForm.descuentoPct?` el público recibe un ${infForm.descuentoPct}% de descuento`:""}{infForm.comisionPct?` y ${infForm.nombre||"el/la influencer"} cobra un ${infForm.comisionPct}% de comisión`:""}.
                 </div>
               )}
             </div>
@@ -4763,15 +4768,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#E1306C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
                       {c.usuario?"@"+c.usuario.replace("@",""):"Instagram"}
                     </a>}
-                    {c.telefono&&<button onClick={()=>{
-                      const cont=(c.contenido||[]).filter(x=>(x.acordados||0)>0);
-                      const brief=`Hola ${c.influencer||c.usuario||""}! 👋\n\nTe mandamos el canje de Soluna Biolight:\n📦 Producto: ${(c.productosCanje||[]).map(p=>`${p.nombre}${p.cantidad>1?` x${p.cantidad}`:""}`).join(", ")||c.producto||"Anteojos"}\n${c.codigoDescuento?`🎁 Código: ${c.codigoDescuento}\n`:""}${c.comisionPct?`💰 Tu comisión: ${c.comisionPct}%\n`:""}\n${cont.length>0?`📸 Contenido acordado:\n${cont.map(x=>`• ${x.tipo}: ${x.acordados}`).join("\n")}\n\n`:""}✨ ¡Gracias por ser parte del equipo Soluna! 💬`;
-                      navigator.clipboard.writeText(brief);
-                      window.open(`https://wa.me/${c.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(brief)}`,"_blank");
-                    }} style={{...BtnSecondary(T),fontSize:12,padding:"5px 12px",color:T.green,borderColor:T.green+"44",gap:5}}>
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-                      Brief
-                    </button>}
                   </div>
                 </div>
               </div>
@@ -4815,7 +4811,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     <input type="date" value={c.fechaEnvio||""} style={{...iS,fontSize:12,padding:"6px 10px"}} onChange={e=>save({fechaEnvio:e.target.value})}/>
                   </div>
                   <div>
-                    <div style={{fontSize:10,fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>📅 Programar envío</div>
+                    <div style={{fontSize:10,fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Programar envío</div>
                     <input type="date" value={c.fechaEnvioProgr||""} style={{...iS,fontSize:12,padding:"6px 10px",borderColor:c.fechaEnvioProgr?"#6366f140":undefined}}
                       onChange={async e=>{
                         await save({fechaEnvioProgr:e.target.value});
@@ -4828,7 +4824,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                               influencer:c.influencer, producto:c.producto||((c.productosCanje||[])[0]?.nombre||""),
                               tracking:c.tracking||"", fechaEnvioProgr:e.target.value, delayMs:ms,
                             })}).catch(()=>{});
-                            toast(`📅 Programado para el ${d.toLocaleDateString("es-AR",{day:"2-digit",month:"long"})}`, "success", 3000);
+                            toast(`Programado para el ${d.toLocaleDateString("es-AR",{day:"2-digit",month:"long"})}`, "success", 3000);
                           }
                         }
                       }}/>
@@ -4870,7 +4866,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               {/* ── CONTENIDO COMPROMETIDO ── */}
               <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:"12px 16px",marginBottom:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6}}>🎬 Contenido</div>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6}}>Contenido</div>
                   {totalAcordados>0&&<span style={{fontSize:13,fontWeight:700,color:progreso===100?T.green:T.textMd}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>}
                 </div>
                 {totalAcordados>0&&<div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:8}}>
@@ -4948,6 +4944,44 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   );
                 })}
               </div>
+
+              {/* ── RESULTADOS DEL CUPÓN (ROI del canje) ── */}
+              {c.codigoDescuento&&(()=>{
+                const code=(c.codigoDescuento||"").toUpperCase().trim();
+                const st=cuponStats[code];
+                const neto=st?.found?(st.ventas-(st.descuento||0))*(1-mpComision/100):0;
+                const comision=neto*((parseFloat(c.comisionPct)||0)/100);
+                return (
+                  <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                      <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Resultados del cupón</span>
+                      <code style={{fontSize:11,fontWeight:700,color:T.purple,background:T.purpleBg,borderRadius:5,padding:"2px 8px"}}>{c.codigoDescuento}</code>
+                    </div>
+                    {!st||st.loading?(
+                      <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSm}}><Spinner size={12} color={T.textSm}/> Buscando ventas con el cupón…</div>
+                    ):st.error?(
+                      <div style={{fontSize:12,color:T.textSm}}>No se pudieron traer las ventas del cupón. Reintentá desde la pestaña Historial.</div>
+                    ):!st.found||st.usos===0?(
+                      <div style={{fontSize:12,color:T.textSm}}>Sin ventas con este cupón todavía (desde el {new Date(st.desde+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}).</div>
+                    ):(
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                        <div>
+                          <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:2}}>Pedidos</div>
+                          <div style={{fontSize:16,fontWeight:800,color:T.text}}>{st.usos}</div>
+                        </div>
+                        <div style={{borderLeft:`1px solid ${T.borderL}`,paddingLeft:12}}>
+                          <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:2}}>Ventas generadas</div>
+                          <div style={{fontSize:16,fontWeight:800,color:T.green}}>$ {Math.round(st.ventas).toLocaleString("es-AR")}</div>
+                        </div>
+                        <div style={{borderLeft:`1px solid ${T.borderL}`,paddingLeft:12}}>
+                          <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:2}}>Comisión estimada{c.comisionPct?` (${c.comisionPct}%)`:""}</div>
+                          <div style={{fontSize:16,fontWeight:800,color:T.text}}>{c.comisionPct?`$ ${Math.round(comision).toLocaleString("es-AR")}`:"—"}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* ── NOTAS + HISTORIAL en una sola card (antes eran dos bloques sueltos) ── */}
               <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
@@ -5181,7 +5215,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             {/* Fecha de envío programado — opcional */}
             <div style={{background:`${T.accentSolid}08`,border:`1px dashed ${T.accentSolid}40`,borderRadius:10,padding:"12px 14px"}}>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:T.accent,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>
-                📅 Programar fecha de envío <span style={{fontWeight:400,color:T.textSm,textTransform:"none",letterSpacing:0}}>(opcional)</span>
+                Programar fecha de envío <span style={{fontWeight:400,color:T.textSm,textTransform:"none",letterSpacing:0}}>(opcional)</span>
               </label>
               <input type="date" value={form.fechaEnvioProgr||""} style={{...iS,fontSize:13,borderColor:form.fechaEnvioProgr?T.accentSolid+"60":undefined}}
                 onChange={e=>setForm(f=>({...f,fechaEnvioProgr:e.target.value}))}/>
@@ -17208,7 +17242,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         {productos.length>0&&(
                           <details style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
                             <summary style={{cursor:"pointer",padding:"10px 14px",fontSize:12,fontWeight:600,color:T.text,listStyle:"none",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                              <span>📝 Nombre de productos <span style={{fontSize:11,color:T.textSm,fontWeight:400}}>({productos.length})</span></span>
+                              <span>Nombre de productos <span style={{fontSize:11,color:T.textSm,fontWeight:400}}>({productos.length})</span></span>
                               <span style={{fontSize:11,color:T.textSm}}>Click para personalizar ▾</span>
                             </summary>
                             <div style={{padding:"4px 14px 14px"}}>

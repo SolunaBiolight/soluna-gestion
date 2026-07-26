@@ -181,7 +181,12 @@ export default async function handler(req, res) {
             if (!out) { await d.ref.set({ trackingLastCheck: ahora }, { merge: true }); return; }
             const cat = clasificarEstado(out.estado);
             const upd = { trackingLastCheck: ahora, trackingEstado: out.estado, trackingCat: cat };
-            if (cat === "entregado") { upd.trackDone = true; upd.trackEntregadoAt = ahora; }
+            if (cat === "entregado") {
+              upd.trackDone = true; upd.trackEntregadoAt = ahora;
+              // Auto-avance del pipeline: al confirmarse la entrega, el canje pasa
+              // solo a "Contenido pendiente" y arranca el reloj del contenido.
+              if (["Por enviar", "Pendiente envío", "Enviado"].includes(c.estado)) upd.estado = "Contenido pendiente";
+            }
             if (cat === "devolucion") upd.trackDone = true;
             if (cat !== c.trackingCat && NOTABLES[cat]) {
               upd.trackingAviso = { cat, estado: out.estado, at: ahora, visto: false };
@@ -219,6 +224,49 @@ export default async function handler(req, res) {
             await d.ref.set(upd, { merge: true });
             canjesActualizados++;
           }));
+        }
+
+        // ── Recordatorio de contenido: 5 días después de la entrega, si el
+        // influencer todavía no completó el contenido acordado, un email al
+        // dueño para que le escriba. Se manda UNA sola vez (contentReminderAt).
+        const cutoffRem = new Date(Date.now() - 5 * 86400000).toISOString();
+        const remSnap = await db.collection("canjes").where("estado", "==", "Contenido pendiente").limit(100).get();
+        for (const d of remSnap.docs) {
+          if (!quedaTiempo()) break;
+          const c = d.data();
+          if (!c.trackEntregadoAt || c.trackEntregadoAt > cutoffRem || c.contentReminderAt) continue;
+          const cont = c.contenido || [];
+          const acordados = cont.reduce((s, x) => s + (x.acordados || 0), 0);
+          const entregados = cont.reduce((s, x) => s + (x.entregados || 0), 0);
+          if (acordados > 0 && entregados >= acordados) continue;
+          await d.ref.set({ contentReminderAt: ahora }, { merge: true });
+          try {
+            if (c.ownerId && process.env.RESEND_API_KEY) {
+              if (!(c.ownerId in emailCache)) {
+                const uSnap = await db.collection("users").doc(c.ownerId).get();
+                emailCache[c.ownerId] = uSnap.data()?.email || null;
+              }
+              const to = emailCache[c.ownerId];
+              if (to) {
+                const inf = c.influencer || "influencer";
+                const dias = Math.round((Date.now() - new Date(c.trackEntregadoAt).getTime()) / 86400000);
+                const html = `<div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#f59e0b,#f97316);padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
+    <div style="font-size:18px;font-weight:700;color:#fff">Contenido pendiente</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px">Canje de ${inf}</div>
+  </div>
+  <p style="font-size:14px;color:#374151">El paquete de <strong>${inf}</strong> se entregó hace <strong>${dias} días</strong> y todavía ${acordados > 0 ? `va ${entregados} de ${acordados} contenidos acordados` : "no marcaste contenido entregado"}.</p>
+  <p style="font-size:13px;color:#374151">Buen momento para escribirle y preguntarle cómo viene.</p>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Seguimiento de canjes</p>
+</div>`;
+                await fetch("https://api.resend.com/emails", {
+                  method: "POST",
+                  headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({ from: process.env.RESEND_FROM || "Growith <onboarding@resend.dev>", to, subject: `${inf} debe contenido — entregado hace ${dias} días`, html }),
+                });
+              }
+            }
+          } catch (e) { console.error("[canje-reminder] email:", e.message); }
         }
       } catch (e) { console.error("[track_all canjes]:", e.message); }
       return res.json({ ok: true, usuarios: usersSnap.size, revisados, actualizados, canjesRevisados, canjesActualizados });
