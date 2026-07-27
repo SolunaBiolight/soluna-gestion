@@ -19,7 +19,7 @@ function initAdmin() {
 
 // Sin fallback — se requiere uid válido con tienda conectada
 
-const TN_H  = t => ({ "Authentication":`bearer ${t}`, "User-Agent":"GrowithApp (soluna.biolight@gmail.com)" });
+const TN_H  = t => ({ "Authentication":`bearer ${t}`, "User-Agent":"GrowithApp (soporte@growith.app)" });
 const SH_H  = t => ({ "X-Shopify-Access-Token":t, "Content-Type":"application/json" });
 const ML_H  = t => ({ "Authorization":`Bearer ${t}` });
 const SH_URL = s => `https://${s}/admin/api/2024-10`;
@@ -525,10 +525,61 @@ export default async function handler(req, res) {
   if (action === "warm_all") {
     if (!guardCron(req, res)) return;
     const db = initAdmin();
-    const usersSnap = await db.collection("users").limit(50).get();
-    const targets = usersSnap.docs
-      .filter(d => (d.data().stores || []).some(s => s.accessToken))
-      .slice(0, 15).map(d => d.id);
+    // ── Rotación por antigüedad del último precalentado ──────────────────
+    // Antes: .limit(50) SIN orderBy → Firestore devuelve siempre las mismas 50
+    // (las primeras por id) y, con muchas cuentas, el resto no veía nunca un
+    // snapshot caliente. Ahora la cola se ordena por `stockWarmAt` ascendente:
+    // primero las que hace más tiempo no se calientan, y al procesarlas se
+    // reescribe la marca. orderBy sobre UN campo usa el índice de campo único
+    // que Firestore crea solo — NO hace falta índice compuesto.
+    const CANDIDATOS = 40, MAX_WARM = 15;
+
+    // Alta de cuentas nuevas en la rotación: las que no tienen `stockWarmAt` no
+    // aparecen en el orderBy, así que se las siembra con un barrido rotativo de
+    // la colección (100 documentos por corrida, con cursor guardado en
+    // system_warm/stock_seed — un doc del cron, una escritura cada 15 min, no
+    // un documento compartido por todas las cuentas). Al sembrarlas con la
+    // fecha 0 quedan a la cabeza de la cola y se calientan enseguida.
+    try {
+      const seedRef = db.collection("system_warm").doc("stock_seed");
+      const seedSnap = await seedRef.get();
+      const desde = seedSnap.exists ? (seedSnap.data().cursor || null) : null;
+      let q = db.collection("users").orderBy("__name__").limit(100).select("stockWarmAt");
+      // Con orderBy("__name__") el cursor tiene que ser una referencia de documento.
+      if (desde) q = q.startAfter(db.collection("users").doc(desde));
+      const barrido = await q.get();
+      if (barrido.empty) {
+        await seedRef.set({ cursor: null, at: new Date().toISOString() }); // volver a empezar
+      } else {
+        const wb = db.batch(); let n = 0;
+        for (const d of barrido.docs) {
+          if (d.data().stockWarmAt) continue;
+          wb.set(d.ref, { stockWarmAt: new Date(0).toISOString() }, { merge: true });
+          n++;
+        }
+        if (n) await wb.commit();
+        await seedRef.set({ cursor: barrido.docs[barrido.docs.length - 1].id, at: new Date().toISOString(), sembradas: n });
+      }
+    } catch (e) { console.error("[stock warm_all] alta de cuentas nuevas:", e.message); }
+
+    const rotSnap = await db.collection("users")
+      .orderBy("stockWarmAt").limit(CANDIDATOS).select("stores", "stockWarmAt").get();
+    const candidatos = rotSnap.docs.slice();
+    const targets = [], marcar = [];
+    for (const d of candidatos) {
+      const tieneTienda = (d.data().stores || []).some(s => s.accessToken);
+      // Las cuentas sin tienda conectada igual se marcan: si no, se quedan
+      // tapando la cabeza de la cola corrida tras corrida.
+      if (!tieneTienda) { marcar.push(d.ref); continue; }
+      if (targets.length >= MAX_WARM) break;
+      targets.push(d.id); marcar.push(d.ref);
+    }
+    try {
+      const wb = db.batch();
+      const ahoraIso = new Date().toISOString();
+      for (const ref of marcar.slice(0, 450)) wb.set(ref, { stockWarmAt: ahoraIso }, { merge: true });
+      if (marcar.length) await wb.commit();
+    } catch (e) { console.error("[stock warm_all] marca de rotación:", e.message); }
     const base = `https://${req.headers.host}`;
     const results = await Promise.allSettled(targets.map(u =>
       // El subrequest tiene que autenticarse igual que cualquier otro: reenvía el

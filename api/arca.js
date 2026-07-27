@@ -310,7 +310,14 @@ async function loginWSAA(cmsCms64, wsaaUrl) {
   const tokenMatch = text.match(/<token>([\s\S]*?)<\/token>/);
   const signMatch = text.match(/<sign>([\s\S]*?)<\/sign>/);
   if (tokenMatch && signMatch) {
-    return { token: tokenMatch[1].trim(), sign: signMatch[1].trim() };
+    // expirationTime del loginTicketResponse = hasta cuándo sirve este TA
+    // (AFIP da 12 horas). Se devuelve para poder cachearlo y NO pedir un login
+    // nuevo en cada request — WSAA rechaza los logins repetidos mientras el
+    // ticket siga vivo ("El CEE ya posee un TA válido").
+    const expMatch = text.match(/<expirationTime>([\s\S]*?)<\/expirationTime>/);
+    let exp = null;
+    if (expMatch) { const ms = Date.parse(expMatch[1].trim()); if (isFinite(ms)) exp = new Date(ms).toISOString(); }
+    return { token: tokenMatch[1].trim(), sign: signMatch[1].trim(), exp };
   }
 
   // No vino token → leer el SOAP Fault para dar un mensaje útil
@@ -351,6 +358,111 @@ async function loginWSAA(cmsCms64, wsaaUrl) {
   }
 
   throw new Error(mensaje + hint);
+}
+
+// ─── Cache del Ticket de Acceso (TA) de WSAA ───────────
+//
+// El TA que devuelve WSAA dura 12 HORAS y AFIP rechaza los logins repetidos
+// mientras siga vigente ("El CEE ya posee un TA válido"). Pedir uno nuevo en
+// cada request, además de sumar 2-4s de handshake legacy a cada emisión, hace
+// que con muchos CUITs facturando el servicio empiece a rebotar logins.
+//
+// Estrategia:
+//   1. Cache en memoria del contenedor caliente (ni siquiera lee Firestore).
+//   2. Cache persistente por CUIT + ambiente: users/{uid}/arca_ta/{cuit}_{amb}.
+//   3. Se renueva solo cuando faltan menos de 10 minutos para el vencimiento.
+//   4. Lock por transacción: dos requests simultáneos NO piden dos TAs — el que
+//      no toma el lock espera a que el otro publique el ticket.
+const TA_MARGEN_MS = 10 * 60000; // renovar si faltan menos de 10 min
+const TA_LOCK_MS   = 60000;      // un lock más viejo que esto se da por muerto
+const _taMem = new Map();        // "uid|cuit|amb" → { token, sign, exp }
+
+function taVigente(d) {
+  if (!d || !d.token || !d.sign || !d.exp) return false;
+  const ms = Date.parse(d.exp);
+  return isFinite(ms) && ms - Date.now() > TA_MARGEN_MS;
+}
+function taRef(db, uid, cuitNum, prod) {
+  return db.collection("users").doc(uid).collection("arca_ta").doc(`${cuitNum}_${prod ? "prod" : "homo"}`);
+}
+// Se llama cuando cambia el certificado o la clave: el TA viejo ya no aplica.
+async function invalidarTA(db, uid, cuitNum) {
+  _taMem.delete(`${uid}|${cuitNum}|prod`);
+  _taMem.delete(`${uid}|${cuitNum}|homo`);
+  try {
+    await Promise.all([
+      taRef(db, uid, cuitNum, true).delete(),
+      taRef(db, uid, cuitNum, false).delete(),
+    ]);
+  } catch (_) {}
+}
+
+async function obtenerTA(db, uid, cfg) {
+  const cuitNum = String(cfg.cuit).replace(/\D/g, "");
+  const prod = !!cfg.arca_prod;
+  const memKey = `${uid}|${cuitNum}|${prod ? "prod" : "homo"}`;
+
+  const enMem = _taMem.get(memKey);
+  if (taVigente(enMem)) return enMem;
+
+  const ref = taRef(db, uid, cuitNum, prod);
+  const { wsaa } = arcaUrls(prod);
+
+  // 1) ¿Hay uno guardado y todavía vigente?
+  try {
+    const snap = await ref.get();
+    const d = snap.exists ? snap.data() : null;
+    if (taVigente(d)) { _taMem.set(memKey, d); return d; }
+  } catch (_) { /* si Firestore falla seguimos: mejor pedir el TA que no facturar */ }
+
+  // 2) Tomar el lock (o descubrir que otro request ya lo publicó)
+  let lockMio = false;
+  try {
+    const r = await db.runTransaction(async tx => {
+      const s = await tx.get(ref);
+      const d = s.exists ? s.data() : null;
+      if (taVigente(d)) return { ta: d };
+      const lockMs = d?.lockAt ? Date.parse(d.lockAt) : 0;
+      if (lockMs && Date.now() - lockMs < TA_LOCK_MS) return { esperar: true };
+      tx.set(ref, { lockAt: new Date().toISOString() }, { merge: true });
+      return { lock: true };
+    });
+    if (r.ta) { _taMem.set(memKey, r.ta); return r.ta; }
+    if (r.esperar) {
+      // Otro request está pidiendo el TA en este momento: lo esperamos en vez
+      // de disparar un segundo login que AFIP rechazaría.
+      for (let i = 0; i < 12; i++) {
+        await new Promise(res => setTimeout(res, 1200));
+        const s = await ref.get();
+        const d = s.exists ? s.data() : null;
+        if (taVigente(d)) { _taMem.set(memKey, d); return d; }
+      }
+      // No apareció: el otro murió a mitad de camino, seguimos nosotros.
+    } else {
+      lockMio = !!r.lock;
+    }
+  } catch (_) { /* sin lock igual pedimos el TA: peor es no poder facturar */ }
+
+  // 3) Login real contra WSAA
+  try {
+    const cms = await firmarTRA(cfg.cert_pem, cfg.key_pem, prod);
+    const { token, sign, exp } = await loginWSAA(cms, wsaa);
+    const ta = {
+      token, sign,
+      // Si AFIP no mandó expirationTime, asumimos 11h (una hora menos que las
+      // 12 nominales) para no reusar un ticket ya vencido.
+      exp: exp || new Date(Date.now() + 11 * 3600000).toISOString(),
+      obtenidoAt: new Date().toISOString(),
+      lockAt: null,
+    };
+    _taMem.set(memKey, ta);
+    try { await ref.set(ta); } catch (_) {}
+    return ta;
+  } catch (e) {
+    // Liberar el lock: si no, la próxima emisión se queda esperando un minuto.
+    if (lockMio) { try { await ref.set({ lockAt: null }, { merge: true }); } catch (_) {} }
+    throw e;
+  }
 }
 
 // ─── Llamada WSFE ──────────────────────────────────────
@@ -1383,6 +1495,13 @@ async function loadCuitConfig(db, uid, cuit) {
 async function saveCuitConfig(db, uid, cuit, data) {
   await db.collection("users").doc(uid).collection("arca_cuits").doc(String(cuit)).set(data, { merge: true });
 }
+// Id de la marca de emisión de una orden. Los ids de orden traen prefijos y
+// caracteres que Firestore no acepta en un doc id (ej: "ML-2000/1"), así que se
+// normalizan. Colección: users/{uid}/arca_emisiones/{cuit}__{orden}
+function marcaEmisionId(cuit, ordenId) {
+  return `${String(cuit).replace(/\D/g, "")}__${String(ordenId).replace(/[^A-Za-z0-9_-]/g, "_")}`.slice(0, 380);
+}
+
 async function listCuits(db, uid) {
   const snap = await db.collection("users").doc(uid).collection("arca_cuits").get();
   return snap.docs.map(d => d.data());
@@ -1520,6 +1639,12 @@ export default async function handler(req, res) {
       else if (data.banner_b64) updated.banner_b64 = data.banner_b64;
 
       await saveCuitConfig(db, uid, cuitNum, updated);
+      // Si cambió el certificado, la clave o el ambiente, el Ticket de Acceso
+      // cacheado ya no corresponde: se descarta para que el próximo pedido
+      // vuelva a loguearse contra WSAA.
+      if (data.cert_pem || data.key_pem || data.arca_prod !== undefined) {
+        await invalidarTA(db, uid, cuitNum);
+      }
       return res.json({ ok: true, cuit: cuitNum, has_cert: Boolean(updated.cert_pem), has_key: Boolean(updated.key_pem) });
     }
 
@@ -1530,9 +1655,12 @@ export default async function handler(req, res) {
       const cfg = await loadCuitConfig(db, uid, cuit);
       if (!cfg?.cert_pem || !cfg?.key_pem) return res.status(400).json({ error: "Falta certificado o clave" });
 
-      const { wsaa, wsfe } = arcaUrls(cfg.arca_prod);
-      const cms = await firmarTRA(cfg.cert_pem, cfg.key_pem, cfg.arca_prod);
-      const { token, sign } = await loginWSAA(cms, wsaa);
+      const { wsfe } = arcaUrls(cfg.arca_prod);
+      // Validación local del par cert/key (donde falla el 90% de los casos) y
+      // después TA cacheado: forzar un login nuevo acá haría que ARCA rebote el
+      // pedido con "El CEE ya posee un TA válido".
+      await validarParCertKey(cfg.cert_pem, cfg.key_pem, cfg.arca_prod);
+      const { token, sign } = await obtenerTA(db, uid, cfg);
       const ultimoB = await getUltimoCbte(token, sign, parseInt(cfg.cuit), cfg.punto_venta, 6, wsfe);
 
       await saveCuitConfig(db, uid, cuit, { ...cfg, last_test: { ok: true, ts: new Date().toISOString(), ultimo_b: ultimoB } });
@@ -1544,6 +1672,7 @@ export default async function handler(req, res) {
     if (action === "delete_cuit" && req.method === "DELETE") {
       if (!cuit) return res.status(400).json({ error: "Falta cuit" });
       await db.collection("users").doc(uid).collection("arca_cuits").doc(String(cuit)).delete();
+      await invalidarTA(db, uid, String(cuit).replace(/\D/g, "")); // no dejar tickets colgados
       return res.json({ ok: true });
     }
 
@@ -1678,9 +1807,8 @@ export default async function handler(req, res) {
       const cfg = await loadCuitConfig(db, uid, cuitEmit);
       if (!cfg?.cert_pem || !cfg?.key_pem) return res.status(400).json({ error: "CUIT sin certificado configurado" });
       try {
-        const { wsaa, wsfe } = arcaUrls(cfg.arca_prod);
-        const cms = await firmarTRA(cfg.cert_pem, cfg.key_pem, cfg.arca_prod);
-        const { token, sign } = await loginWSAA(cms, wsaa);
+        const { wsfe } = arcaUrls(cfg.arca_prod);
+        const { token, sign } = await obtenerTA(db, uid, cfg);
         const cuitNum = parseInt(cfg.cuit);
         const pv = parseInt(cfg.punto_venta) || 1;
 
@@ -1826,9 +1954,8 @@ export default async function handler(req, res) {
       if (!cfg?.cert_pem || !cfg?.key_pem) return res.status(400).json({ error: "CUIT sin certificado configurado" });
 
       try {
-        const { wsaa, wsfe } = arcaUrls(cfg.arca_prod);
-        const cms = await firmarTRA(cfg.cert_pem, cfg.key_pem, cfg.arca_prod);
-        const { token, sign } = await loginWSAA(cms, wsaa);
+        const { wsfe } = arcaUrls(cfg.arca_prod);
+        const { token, sign } = await obtenerTA(db, uid, cfg);
         const cuitNum = parseInt(cfg.cuit);
         const pv = parseInt(cfg.punto_venta) || 1;
 
@@ -1984,11 +2111,11 @@ export default async function handler(req, res) {
       if (!cfg?.cert_pem || !cfg?.key_pem) return res.status(400).json({ error: "Falta certificado o clave para ese CUIT" });
 
       const isMonotributo = cfg.condicion_fiscal === "MONOTRIBUTO";
-      const { wsaa, wsfe } = arcaUrls(cfg.arca_prod);
+      const { wsfe } = arcaUrls(cfg.arca_prod);
 
-      // Autenticar
-      const cms = await firmarTRA(cfg.cert_pem, cfg.key_pem, cfg.arca_prod);
-      const { token, sign } = await loginWSAA(cms, wsaa);
+      // Autenticar — TA cacheado por CUIT (dura 12h; pedir uno nuevo por lote
+      // hace que ARCA rechace el login mientras el anterior siga vigente).
+      const { token, sign } = await obtenerTA(db, uid, cfg);
 
       // Numeradores — usa el punto de venta elegido (ej: PV físicos vs PV digitales
       // exento). Si el front no manda uno, cae al punto_venta por defecto del CUIT.
@@ -2001,7 +2128,66 @@ export default async function handler(req, res) {
       const resultados = [];
       const pdfs = []; // { nombre, bytes }
 
-      for (const [orderId, orden] of Object.entries(ordenes)) {
+      // ── Idempotencia del lote ──────────────────────────
+      // Emitir dos veces la misma factura en AFIP no se puede deshacer (hay que
+      // sacar nota de crédito). Si un lote se corta a la mitad — timeout de la
+      // función, red, el usuario que reintenta — las órdenes que YA salieron no
+      // se vuelven a emitir. Dos capas:
+      //   1. Pre-chequeo contra arca_comprobantes (lo ya facturado, histórico).
+      //   2. Una marca por orden en arca_emisiones ANTES de pegarle a AFIP, que
+      //      además frena dos requests simultáneos sobre la misma orden.
+      const ordenesEntries = Object.entries(ordenes);
+      const yaFacturadas = new Map(); // orden_id → comprobante existente
+      try {
+        const ids = ordenesEntries.map(([id]) => id);
+        // Misma query que usa check_duplicates (índice ya existente): "in"
+        // acepta 30 valores por consulta.
+        for (let i = 0; i < ids.length; i += 30) {
+          const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+            .where("cuit_emisor", "==", cuitEmit)
+            .where("orden_id", "in", ids.slice(i, i + 30))
+            .get();
+          snap.docs.forEach(d => { const x = d.data(); if (x.orden_id) yaFacturadas.set(String(x.orden_id), x); });
+        }
+      } catch (e) {
+        // Si el pre-chequeo falla NO se aborta la emisión (quedaría el merchant
+        // sin poder facturar): la marca por orden sigue protegiendo.
+        console.error("[arca emit] pre-chequeo de duplicados falló:", e.message);
+      }
+
+      for (const [orderId, orden] of ordenesEntries) {
+        // ¿Ya tiene factura? No se re-emite.
+        const previa = yaFacturadas.get(String(orderId));
+        if (previa) {
+          resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, total: orden.total,
+            obs: `Ya tiene factura ${previa.letra || ""} N° ${previa.nro || "?"} (CAE ${previa.cae || "?"}) — no se re-emite para no duplicarla en ARCA.` });
+          continue;
+        }
+        // Marca "en curso" antes de pegarle a AFIP.
+        const marcaRef = db.collection("users").doc(uid).collection("arca_emisiones").doc(marcaEmisionId(cuitEmit, orderId));
+        let marcaTomada = false;
+        try {
+          await marcaRef.create({ orden_id: orderId, cuit_emisor: cuitEmit, estado: "en_curso", at: new Date().toISOString() });
+          marcaTomada = true;
+        } catch (_) {
+          // Ya existía: o salió con CAE, o hay otra emisión en vuelo.
+          let m = null;
+          try { m = (await marcaRef.get()).data(); } catch (_) {}
+          const atMs = m?.at ? Date.parse(m.at) : 0;
+          if (m && m.estado === "emitido") {
+            resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, total: orden.total,
+              obs: `Ya facturada (CAE ${m.cae || "?"}) — no se re-emite para no duplicarla en ARCA.` });
+            continue;
+          }
+          if (m && atMs && Date.now() - atMs < 10 * 60000) {
+            resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, total: orden.total,
+              obs: "Hay otra emisión de esta orden en curso — no se re-emite. Revisá el resultado en unos minutos." });
+            continue;
+          }
+          // Marca vieja y sin CAE: la corrida anterior murió antes de emitir → se retoma.
+          try { await marcaRef.set({ estado: "en_curso", at: new Date().toISOString() }, { merge: true }); marcaTomada = true; } catch (_) {}
+        }
+
         // Aplicar mapeo de productos
         if (product_map) {
           for (const item of orden.items) {
@@ -2011,26 +2197,44 @@ export default async function handler(req, res) {
 
         let result, letra, tipoCbte, cbteNro;
 
-        if (isMonotributo) {
-          result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true, fechaImputacion, exento);
-          letra = "C"; tipoCbte = 11; cbteNro = cbteC;
-        } else {
-          const tieneCuit = orden.doc_tipo === "CUIT";
-          if (tieneCuit) {
-            result = await facturar(token, sign, cuitNum, pv, cbteA, orden, 1, wsfe, false, fechaImputacion, exento);
-            if (result.cae) { letra = "A"; tipoCbte = 1; cbteNro = cbteA; }
-            else {
-              // Fallback a B
+        // Un error de red/SOAP en UNA orden no puede tumbar el lote entero: si
+        // explota, se informa esa orden y se sigue con las demás. La marca queda
+        // en "en_curso" a propósito — no sabemos si ARCA llegó a dar el CAE, así
+        // que durante 10 minutos no se reintenta (duplicar es peor que demorar).
+        try {
+          if (isMonotributo) {
+            result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true, fechaImputacion, exento);
+            letra = "C"; tipoCbte = 11; cbteNro = cbteC;
+          } else {
+            const tieneCuit = orden.doc_tipo === "CUIT";
+            if (tieneCuit) {
+              result = await facturar(token, sign, cuitNum, pv, cbteA, orden, 1, wsfe, false, fechaImputacion, exento);
+              if (result.cae) { letra = "A"; tipoCbte = 1; cbteNro = cbteA; }
+              else {
+                // Fallback a B
+                result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
+                letra = "B"; tipoCbte = 6; cbteNro = cbteB;
+              }
+            } else {
               result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
               letra = "B"; tipoCbte = 6; cbteNro = cbteB;
             }
-          } else {
-            result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
-            letra = "B"; tipoCbte = 6; cbteNro = cbteB;
           }
+        } catch (e) {
+          console.error(`[arca emit] ${orderId} error de conexión:`, e.message);
+          resultados.push({ orden_id: orderId, ok: false, total: orden.total,
+            obs: `No se pudo confirmar con ARCA: ${e.message} — verificá en el historial de ARCA antes de reintentar (por si el comprobante salió igual).` });
+          continue;
         }
 
         if (result.cae) {
+          // Cerrar la marca ANTES de generar el PDF: si el PDF o el adjunto a ML
+          // fallan, la factura ya existe en ARCA y no debe re-emitirse nunca.
+          if (marcaTomada) {
+            try {
+              await marcaRef.set({ estado: "emitido", cae: result.cae, tipo_cbte: tipoCbte, nro: cbteNro, punto_venta: pv, at: new Date().toISOString() }, { merge: true });
+            } catch (e) { console.error("[arca emit] no se pudo cerrar la marca:", e.message); }
+          }
           // Generar PDF — usar la fecha que eligió el usuario (fechaImputacion),
           // NO new Date() que siempre pone hoy aunque ARCA tenga la fecha correcta.
           const fechaIso = fechaImputacion
@@ -2181,6 +2385,9 @@ export default async function handler(req, res) {
           // Transparencia para diagnóstico: qué comprobante intentamos y con qué
           // condición fiscal del emisor — sin esto, el "mismo error" de AFIP no
           // dice si el server usó la config nueva o la vieja.
+          // ARCA rechazó: no hay comprobante, así que se libera la marca para
+          // que el merchant pueda corregir los datos y reintentar.
+          if (marcaTomada) { try { await marcaRef.delete(); } catch (_) {} }
           const intento = `[Intenté Factura ${letra || (isMonotributo ? "C" : "?")} · PV ${pv} · emisor ${cfg.condicion_fiscal || "?"}] `;
           console.log(`[arca emit] ${orderId} RECHAZADA — tipo ${tipoCbte} pv ${pv} cond ${cfg.condicion_fiscal}: ${String(result.obs || "").slice(-180)}`);
           resultados.push({ orden_id: orderId, ok: false, obs: intento + result.obs, total: orden.total });
@@ -2506,7 +2713,7 @@ export default async function handler(req, res) {
       if (tnStore?.accessToken && tnStore?.storeId) fetchers.push((async () => {
         const headers = {
           "Authentication": `bearer ${tnStore.accessToken}`,
-          "User-Agent": "GrowithApp (soluna.biolight@gmail.com)",
+          "User-Agent": "GrowithApp (soporte@growith.app)",
         };
         // Llamada helper: trae TODAS las páginas de TN para un payment_status dado.
         const fetchTNStatus = async (status) => {
@@ -2745,7 +2952,7 @@ export default async function handler(req, res) {
               await Promise.all(chunk.map(async (o) => {
                 try {
                   const r = await fetch(`https://api.mercadolibre.com/orders/${o.id}/billing_info`, {
-                    headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "GrowithApp (soluna.biolight@gmail.com)" },
+                    headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "GrowithApp (soporte@growith.app)" },
                   });
                   if (r.ok) {
                     const data = await r.json();
@@ -2896,7 +3103,7 @@ export default async function handler(req, res) {
       // 2) Traer órdenes pagas del período seleccionado
       const headers = {
         "Authentication": `bearer ${tnStore.accessToken}`,
-        "User-Agent": "GrowithApp (soluna.biolight@gmail.com)",
+        "User-Agent": "GrowithApp (soporte@growith.app)",
       };
       const fetchLegacyStatus = async (status) => {
         const out = [];

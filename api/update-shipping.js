@@ -132,15 +132,57 @@ export default async function handler(req, res) {
       const deadline = Date.now() + 45000;
       const quedaTiempo = () => Date.now() < deadline;
       const cutoff = new Date(Date.now() - 7 * 86400000).toISOString();
-      const usersSnap = await db.collection("users").where("enviosTrackActivo", ">", cutoff).limit(10).get();
-      let revisados = 0, actualizados = 0;
       const ahora = new Date().toISOString();
       const staleCutoff = new Date(Date.now() - 25 * 60000).toISOString();
-      for (const uDoc of usersSnap.docs) {
+
+      // ── Rotación de cuentas por antigüedad del último chequeo ───────────
+      // Antes: where(enviosTrackActivo > cutoff).limit(10). Con muchas cuentas
+      // ese límite devuelve SIEMPRE las mismas 10 (el orden lo fija el índice)
+      // y el resto no se trackea nunca. Ahora la cola se ordena por
+      // `enviosTrackAt` — cuándo se revisó esa cuenta por última vez — y las que
+      // hace más tiempo no se miran van primero; al procesarlas se reescribe la
+      // marca y pasan al fondo. orderBy sobre UN solo campo usa el índice de
+      // campo único que Firestore crea solo: NO hace falta índice compuesto.
+      const CANDIDATOS   = 60; // cuentas que se miran por corrida
+      const MAX_CUENTAS  = 20; // cuántas de esas se trackean de verdad
+      const [rotSnap, actSnap] = await Promise.all([
+        db.collection("users").orderBy("enviosTrackAt").limit(CANDIDATOS).get(),
+        // Las cuentas que todavía NO tienen la marca (recién empezaron a usar
+        // Envíos) no aparecen en el orderBy — sin esta segunda query nunca
+        // entrarían a la rotación. Una sola desigualdad: tampoco pide índice.
+        db.collection("users").where("enviosTrackActivo", ">", cutoff).limit(CANDIDATOS).get(),
+      ]);
+      const candidatos = [], vistos = new Set();
+      for (const d of actSnap.docs) {           // primero las nuevas
+        if (d.data().enviosTrackAt) continue;
+        candidatos.push(d); vistos.add(d.id);
+      }
+      for (const d of rotSnap.docs) {           // después, por antigüedad
+        if (candidatos.length >= CANDIDATOS) break;
+        if (vistos.has(d.id)) continue;
+        candidatos.push(d); vistos.add(d.id);
+      }
+      // Solo se trackean las cuentas con actividad reciente en Envíos; las
+      // inactivas se marcan igual para que no tapen la cabeza de la cola.
+      const activos = [], marcarUsers = [];
+      for (const d of candidatos) {
+        const act = d.data().enviosTrackActivo || "";
+        if (!(act > cutoff)) { marcarUsers.push(d.ref); continue; }
+        if (activos.length >= MAX_CUENTAS) break;
+        activos.push(d);
+      }
+
+      let revisados = 0, actualizados = 0;
+      for (const uDoc of activos) {
+        if (!quedaTiempo()) break;
         // Envíos activos con tracking, no finalizados, sin chequear hace 25+ min.
         const envSnap = await uDoc.ref.collection("envios").where("activo", "==", true).limit(60).get();
         const pendientes = envSnap.docs
           .filter(d => { const e = d.data(); return e.tracking && (!e.lastCheck || e.lastCheck < staleCutoff); })
+          // Rotación también dentro de la cuenta: primero los que hace más
+          // tiempo no se miran (antes el orden lo daba Firestore y con 60
+          // envíos activos los últimos no se revisaban nunca).
+          .sort((a, b) => String(a.data().lastCheck || "").localeCompare(String(b.data().lastCheck || "")))
           .slice(0, 30);
         for (let i = 0; i < pendientes.length; i += 5) {
           if (!quedaTiempo()) break;
@@ -159,7 +201,16 @@ export default async function handler(req, res) {
             actualizados++;
           }));
         }
+        marcarUsers.push(uDoc.ref);
       }
+      // Marca de rotación de las cuentas consumidas (best-effort: si falla, la
+      // próxima corrida vuelve a agarrar las mismas — no se pierde nada).
+      try {
+        const wb = db.batch();
+        for (const ref of marcarUsers.slice(0, 450)) wb.set(ref, { enviosTrackAt: ahora }, { merge: true });
+        if (marcarUsers.length) await wb.commit();
+      } catch (e) { console.error("[track_all] marca de rotación:", e.message); }
+
       // ── Canjes con tracking activo (colección top-level "canjes") ──
       // trackDone=false lo setea el frontend al cargar o cambiar un tracking.
       // Acá se persiste el estado en el doc del canje y, cuando el paquete llega
@@ -167,9 +218,36 @@ export default async function handler(req, res) {
       // y se manda email al dueño.
       let canjesRevisados = 0, canjesActualizados = 0;
       try {
-        const canjesSnap = await db.collection("canjes").where("trackDone", "==", false).limit(60).get();
-        const pendCanjes = canjesSnap.docs.filter(d => {
+        // Rotación de canjes: mismo problema que con las cuentas — un limit(60)
+        // fijo sobre la colección global devuelve siempre los mismos y, con
+        // muchos tenants, la mayoría no se trackea nunca. Se ordena por
+        // `trackingLastCheck` ascendente dentro de los que siguen abiertos.
+        // ÍNDICE COMPUESTO NECESARIO en Firestore:
+        //   colección `canjes` → trackDone ASC, trackingLastCheck ASC
+        const CAND_CANJES = 60;
+        const [rotC, nuevosC] = await Promise.all([
+          db.collection("canjes").where("trackDone", "==", false).orderBy("trackingLastCheck").limit(CAND_CANJES).get(),
+          // Los canjes que nunca se chequearon no tienen el campo y quedan
+          // fuera del orderBy: entran por acá, y primero (son los más nuevos).
+          db.collection("canjes").where("trackDone", "==", false).limit(CAND_CANJES).get(),
+        ]);
+        const candC = [], vistosC = new Set();
+        for (const d of nuevosC.docs) {
+          if (d.data().trackingLastCheck) continue;
+          candC.push(d); vistosC.add(d.id);
+        }
+        for (const d of rotC.docs) {
+          if (candC.length >= CAND_CANJES) break;
+          if (vistosC.has(d.id)) continue;
+          candC.push(d); vistosC.add(d.id);
+        }
+        const pendCanjes = candC.filter(d => {
           const c = d.data();
+          // Multi-tenant: `ownerId` es la cuenta dueña del canje. El front lista
+          // canjes con where("ownerId","==",uid), así que un canje sin ownerId
+          // no le pertenece a nadie: no hay a quién avisarle y no debe tocarse
+          // (ni aparecer) desde otra cuenta. Se saltea.
+          if (!c.ownerId) return false;
           return c.tracking && String(c.tracking).trim() && (!c.trackingLastCheck || c.trackingLastCheck < staleCutoff);
         }).slice(0, 30);
         const emailCache = {};
@@ -190,6 +268,9 @@ export default async function handler(req, res) {
             const upd = { trackingLastCheck: ahora, trackingEstado: out.estado, trackingCat: cat };
             if (cat === "entregado") {
               upd.trackDone = true; upd.trackEntregadoAt = ahora;
+              // Deja el campo en null (no ausente) para que el recordatorio de
+              // contenido pueda buscarlo por índice en vez de barrer la colección.
+              if (c.contentReminderAt === undefined) upd.contentReminderAt = null;
               // Auto-avance del pipeline: al confirmarse la entrega, el canje pasa
               // solo a "Contenido pendiente" y arranca el reloj del contenido.
               if (["Por enviar", "Pendiente envío", "Enviado"].includes(c.estado)) upd.estado = "Contenido pendiente";
@@ -223,6 +304,7 @@ export default async function handler(req, res) {
                       method: "POST",
                       headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
                       body: JSON.stringify({ from: process.env.RESEND_FROM || "Growith <onboarding@resend.dev>", to, subject: n.asunto(inf), html }),
+                      signal: AbortSignal.timeout(8000), // un Resend lento no puede comerse el presupuesto del cron
                     });
                   }
                 }
@@ -237,27 +319,68 @@ export default async function handler(req, res) {
         // influencer todavía no completó el contenido acordado, un email al
         // dueño para que le escriba. Se manda UNA sola vez (contentReminderAt).
         const cutoffRem = new Date(Date.now() - 5 * 86400000).toISOString();
-        const remSnap = await db.collection("canjes").where("estado", "==", "Contenido pendiente").limit(100).get();
-        for (const d of remSnap.docs) {
-          if (!quedaTiempo()) break;
+        // Candidatos = canjes en "Contenido pendiente" a los que todavía NO se
+        // les mandó el recordatorio. Antes se traían los primeros 100 de la
+        // colección global: los ya recordados (contentReminderAt seteado) se
+        // quedaban para siempre ocupando la cabeza y, con muchos tenants, los
+        // canjes nuevos no entraban nunca.
+        // ÍNDICE COMPUESTO NECESARIO en Firestore:
+        //   colección `canjes` → estado ASC, contentReminderAt ASC
+        const CAND_REM = 60;
+        const remDocs = [];
+        try {
+          const rs = await db.collection("canjes")
+            .where("estado", "==", "Contenido pendiente")
+            .where("contentReminderAt", "==", null)
+            .limit(CAND_REM).get();
+          remDocs.push(...rs.docs);
+        } catch (e) { console.error("[canje-reminder] query indexada:", e.message); }
+        if (remDocs.length < CAND_REM) {
+          // Bootstrap / canjes viejos: los que no tienen el campo no matchean el
+          // "== null". Se los completa acá y se les deja el campo en null para
+          // que a partir de la próxima corrida entren por el índice.
+          const vistos = new Set(remDocs.map(d => d.id));
+          const legacy = await db.collection("canjes").where("estado", "==", "Contenido pendiente").limit(CAND_REM).get();
+          const wb = db.batch(); let nSemilla = 0;
+          for (const d of legacy.docs) {
+            if (vistos.has(d.id) || d.data().contentReminderAt !== undefined) continue;
+            wb.set(d.ref, { contentReminderAt: null }, { merge: true });
+            nSemilla++;
+            if (remDocs.length < CAND_REM) remDocs.push(d);
+          }
+          if (nSemilla) { try { await wb.commit(); } catch (_) {} }
+        }
+        // A quiénes hay que avisarles de verdad.
+        const aRecordar = [];
+        for (const d of remDocs) {
           const c = d.data();
+          // Sin ownerId el canje no pertenece a ninguna cuenta: no hay destinatario.
+          if (!c.ownerId) continue;
           if (!c.trackEntregadoAt || c.trackEntregadoAt > cutoffRem || c.contentReminderAt) continue;
           const cont = c.contenido || [];
           const acordados = cont.reduce((s, x) => s + (x.acordados || 0), 0);
           const entregados = cont.reduce((s, x) => s + (x.entregados || 0), 0);
           if (acordados > 0 && entregados >= acordados) continue;
-          await d.ref.set({ contentReminderAt: ahora }, { merge: true });
-          try {
-            if (c.ownerId && process.env.RESEND_API_KEY) {
-              if (!(c.ownerId in emailCache)) {
-                const uSnap = await db.collection("users").doc(c.ownerId).get();
-                emailCache[c.ownerId] = uSnap.data()?.email || null;
-              }
-              const to = emailCache[c.ownerId];
-              if (to) {
-                const inf = c.influencer || "influencer";
-                const dias = Math.round((Date.now() - new Date(c.trackEntregadoAt).getTime()) / 86400000);
-                const html = `<div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff">
+          aRecordar.push({ d, c, acordados, entregados });
+        }
+        // Envío en lotes concurrentes de 5 (no uno por uno): con muchas cuentas
+        // un `for` secuencial se comía el presupuesto de la función, y disparar
+        // todos de golpe rompe el rate limit de Resend. allSettled = un email
+        // fallado no tumba el resto.
+        for (let i = 0; i < aRecordar.length; i += 5) {
+          if (!quedaTiempo()) break;
+          await Promise.allSettled(aRecordar.slice(i, i + 5).map(async ({ d, c, acordados, entregados }) => {
+            await d.ref.set({ contentReminderAt: ahora }, { merge: true });
+            if (!c.ownerId || !process.env.RESEND_API_KEY) return;
+            if (!(c.ownerId in emailCache)) {
+              const uSnap = await db.collection("users").doc(c.ownerId).get();
+              emailCache[c.ownerId] = uSnap.data()?.email || null;
+            }
+            const to = emailCache[c.ownerId];
+            if (!to) return;
+            const inf = c.influencer || "influencer";
+            const dias = Math.round((Date.now() - new Date(c.trackEntregadoAt).getTime()) / 86400000);
+            const html = `<div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#f59e0b,#f97316);padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
     <div style="font-size:18px;font-weight:700;color:#fff">Contenido pendiente</div>
     <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px">Canje de ${inf}</div>
@@ -266,17 +389,16 @@ export default async function handler(req, res) {
   <p style="font-size:13px;color:#374151">Buen momento para escribirle y preguntarle cómo viene.</p>
   <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Seguimiento de canjes</p>
 </div>`;
-                await fetch("https://api.resend.com/emails", {
-                  method: "POST",
-                  headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-                  body: JSON.stringify({ from: process.env.RESEND_FROM || "Growith <onboarding@resend.dev>", to, subject: `${inf} debe contenido — entregado hace ${dias} días`, html }),
-                });
-              }
-            }
-          } catch (e) { console.error("[canje-reminder] email:", e.message); }
+            await fetch("https://api.resend.com/emails", {
+              method: "POST",
+              headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ from: process.env.RESEND_FROM || "Growith <onboarding@resend.dev>", to, subject: `${inf} debe contenido — entregado hace ${dias} días`, html }),
+              signal: AbortSignal.timeout(8000),
+            });
+          })).then(rs => rs.forEach(r => { if (r.status === "rejected") console.error("[canje-reminder]:", r.reason?.message || r.reason); }));
         }
       } catch (e) { console.error("[track_all canjes]:", e.message); }
-      return res.json({ ok: true, usuarios: usersSnap.size, revisados, actualizados, canjesRevisados, canjesActualizados });
+      return res.json({ ok: true, usuarios: activos.length, revisados, actualizados, canjesRevisados, canjesActualizados });
     } catch (e) {
       console.error("track_all error:", e.message);
       return res.status(500).json({ error: e.message });
@@ -354,7 +476,7 @@ export default async function handler(req, res) {
 
   const headers = {
     'Authentication': `bearer ${accessToken}`,
-    'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)',
+    'User-Agent': 'GrowithApp (soporte@growith.app)',
     'Content-Type': 'application/json',
   };
 

@@ -1119,81 +1119,58 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
 }
 
 // ─── Onboarding Wizard ───
+// Onboarding: una sola pantalla y todos los botones hacen algo. La versión
+// anterior tenía tres pasos, de los cuales dos ("Meta Ads" y "ARCA") solo
+// mostraban botones que avanzaban sin conectar nada, y no ofrecía Mercado Libre.
 function OnboardingWizard({T, user, onComplete}) {
-  const [step, setStep] = React.useState(1);
-  const totalSteps = 3;
+  const [yendo, setYendo] = React.useState("");
 
-  const steps = [
-    {
-      n:1,
-      icon:"",
-      title:"Conectá tu tienda online",
-      desc:"Vincula Tienda Nube o Shopify para sincronizar pedidos, productos y stock automáticamente.",
-      actions: (
-        <div style={{display:"flex",flexDirection:"column",gap:DS.sp.md}}>
-          <Btn T={T} variant="primary" size="lg" onClick={async()=>{
-            const clientId="30036";
-            const redirectUri=encodeURIComponent(`${window.location.origin}/api/tn-callback`);
-            // El state va FIRMADO por el servidor (evita que alguien complete el
-            // OAuth de su tienda contra la cuenta de otro).
-            const state=encodeURIComponent(await ghTnState(user?.uid));
-            window.location.href=`https://www.tiendanube.com/apps/${clientId}/authorize?state=${state}&redirect_uri=${redirectUri}`;
-          }}>
-            Conectar Tienda Nube
-          </Btn>
-          <Btn T={T} variant="secondary" size="lg" onClick={()=>onComplete("shopify")}>
-            Conectar Shopify
-          </Btn>
-        </div>
-      ),
-    },
-    {
-      n:2,
-      icon:"",
-      title:"Conectá Meta Ads",
-      desc:"Opcional. Conecta Facebook/Instagram Ads para ver el rendimiento de tus campañas y calcular ROAS real.",
-      actions: (
-        <div style={{display:"flex",gap:DS.sp.md}}>
-          <Btn T={T} variant="primary" size="lg" style={{flex:1}} onClick={()=>setStep(3)}>Configurar después</Btn>
-          <Btn T={T} variant="secondary" size="lg" style={{flex:1}} onClick={()=>setStep(3)}>Más tarde</Btn>
-        </div>
-      ),
-    },
-    {
-      n:3,
-      icon:"",
-      title:"Facturación electrónica (ARCA)",
-      desc:"Opcional. Configurá tu CUIT y certificado ARCA para emitir facturas automáticas. Podés saltearlo y configurarlo después.",
-      actions: (
-        <div style={{display:"flex",gap:DS.sp.md}}>
-          <Btn T={T} variant="primary" size="lg" style={{flex:1}} onClick={()=>onComplete("done")}>✓ Comenzar a usar Growith</Btn>
-        </div>
-      ),
-    },
+  async function conectarTN() {
+    setYendo("tn");
+    const clientId="30036";
+    const redirectUri=encodeURIComponent(`${window.location.origin}/api/tn-callback`);
+    // El state va FIRMADO por el servidor (evita que alguien complete el
+    // OAuth de su tienda contra la cuenta de otro).
+    const state=encodeURIComponent(await ghTnState(user?.uid));
+    window.location.href=`https://www.tiendanube.com/apps/${clientId}/authorize?state=${state}&redirect_uri=${redirectUri}`;
+  }
+  function irAConfig(){ onComplete("config"); }
+
+  const OPCIONES = [
+    {id:"tn",       nombre:"Tienda Nube",    desc:"Pedidos, productos y stock en tiempo real", onClick:conectarTN},
+    {id:"ml",       nombre:"Mercado Libre",  desc:"Publicaciones, ventas y comisiones",        onClick:irAConfig},
+    {id:"shopify",  nombre:"Shopify",        desc:"Pedidos y catálogo sincronizados",          onClick:irAConfig},
   ];
-  const current = steps[step-1];
 
   return (
-    <div className="gh-overlay" style={{position:"fixed",inset:0,background:T.bg,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:DS.sp.lg}}>
-      <div style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:DS.r["2xl"], padding:"40px 36px", maxWidth:520, width:"100%", boxShadow:DS.shadow.xl, animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}>
-        {/* Progress */}
-        <div style={{display:"flex",gap:6,marginBottom:DS.sp["3xl"]}}>
-          {[1,2,3].map(n=>(
-            <div key={n} style={{flex:1, height:4, borderRadius:DS.r.sm, background: n<=step ? T.accentSolid : T.borderL, transition:"background 0.3s"}}/>
+    <div className="gh-overlay" style={{position:"fixed",inset:0,background:T.bg,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:DS.sp.lg,overflowY:"auto"}}>
+      <div style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:DS.r["2xl"], padding:"36px 32px", maxWidth:520, width:"100%", boxShadow:DS.shadow.xl, animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}>
+        <div style={{marginBottom:DS.sp["2xl"]}}>
+          <div style={{fontSize:DS.font["2xl"], fontWeight:DS.w.bold, color:T.text, marginBottom:DS.sp.sm, letterSpacing:-0.5}}>Conectá tu tienda</div>
+          <div style={{fontSize:DS.font.lg, color:T.textMd, lineHeight:1.55}}>
+            Es lo único que Growith necesita para empezar a trabajar. Los pedidos, el stock y los números aparecen solos.
+            Meta Ads y la facturación de ARCA se agregan después desde Configuración.
+          </div>
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
+          {OPCIONES.map(o=>(
+            <button key={o.id} onClick={o.onClick} disabled={!!yendo}
+              style={{textAlign:"left",display:"flex",alignItems:"center",gap:DS.sp.md,padding:"14px 16px",borderRadius:DS.r.xl,border:`1px solid ${T.border}`,background:T.surface,cursor:yendo?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:yendo&&yendo!==o.id?0.5:1,transition:`all 0.15s ${DS.ease}`}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:DS.font.lg,fontWeight:DS.w.semibold,color:T.text}}>{o.nombre}</div>
+                <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:2}}>{o.desc}</div>
+              </div>
+              <span style={{fontSize:DS.font.lg,color:T.textSm,flexShrink:0}}>{yendo===o.id?"…":"→"}</span>
+            </button>
           ))}
         </div>
-        <div style={{textAlign:"center", marginBottom:DS.sp["2xl"]}}>
-          <div style={{fontSize:48, marginBottom:DS.sp.md}}>{current.icon}</div>
-          <div style={{fontSize:DS.font["2xl"], fontWeight:DS.w.bold, color:T.text, marginBottom:DS.sp.sm, letterSpacing:-0.5}}>{current.title}</div>
-          <div style={{fontSize:DS.font.lg, color:T.textMd, lineHeight:1.5}}>{current.desc}</div>
-        </div>
-        {current.actions}
-        <div style={{textAlign:"center", marginTop:DS.sp.lg}}>
-          <button onClick={()=>onComplete("skip")} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:DS.font.sm,padding:DS.sp.sm,fontFamily:"'Inter',system-ui,sans-serif"}}>
-            Saltar onboarding por ahora
+
+        <div style={{textAlign:"center", marginTop:DS.sp.xl}}>
+          <button onClick={()=>onComplete("skip")} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:DS.font.lg,padding:DS.sp.sm,fontFamily:"'Inter',system-ui,sans-serif"}}>
+            Mirar primero, conectar después
           </button>
         </div>
-        <div style={{textAlign:"center",fontSize:DS.font.xs,color:T.textSm,marginTop:DS.sp.md}}>Paso {step} de {totalSteps}</div>
       </div>
     </div>
   );
@@ -6774,11 +6751,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       ?<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
                       :<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>}
                 </div>
+                {/* Sin ningún pedido en la cuenta, "Todo empaquetado" es engañoso:
+                    no hay nada empaquetado, no hay nada. */}
                 <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>
-                  {tabEnvio==="buscar"?"Buscá por número, nombre o email":tabEnvio==="empaquetar"?"Todo empaquetado":"Sin pedidos para enviar"}
+                  {tabEnvio==="buscar"?"Buscá por número, nombre o email"
+                    :(orders||[]).length===0?"Todavía no llegaron pedidos"
+                    :tabEnvio==="empaquetar"?"Todo empaquetado":"Sin pedidos para enviar"}
                 </div>
-                <div style={{fontSize:12,color:T.textSm,maxWidth:300,margin:"0 auto"}}>
-                  {tabEnvio==="buscar"?"Escribí y presioná Enter o el botón Buscar":tabEnvio==="empaquetar"?"Los pedidos empaquetados van a Por enviar":"Marcá pedidos como empaquetados desde la pestaña Por empaquetar y van a aparecer acá"}
+                <div style={{fontSize:12,color:T.textSm,maxWidth:320,margin:"0 auto"}}>
+                  {tabEnvio==="buscar"?"Escribí y presioná Enter o el botón Buscar"
+                    :(orders||[]).length===0?"Cuando tu tienda registre una venta, el pedido aparece acá listo para empaquetar."
+                    :tabEnvio==="empaquetar"?"Los pedidos empaquetados van a Por enviar":"Marcá pedidos como empaquetados desde la pestaña Por empaquetar y van a aparecer acá"}
                 </div>
               </div>
             ):(
@@ -7612,7 +7595,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 // ===========================================
 // HOME SCREEN
 // ===========================================
-function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas, user, userPlan="free", planExpiry, isAdmin=false, darkMode, onToggleDark}) {
+function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas, user, userPlan="free", planExpiry, isAdmin=false, darkMode, onToggleDark, connectedStores={}}) {
+  // Cuenta recién creada: sin tienda conectada los KPIs muestran $0 y "todo en
+  // orden", que se lee como "la app no hace nada". Mostramos qué falta hacer.
+  const sinTienda = !connectedStores.tn && !connectedStores.shopify && !connectedStores.ml;
   const nombre = user?.displayName?.split(" ")[0] || "ahí";
   const hora = new Date().getHours();
   const saludo = hora < 12 ? "Buenos días" : hora < 19 ? "Buenas tardes" : "Buenas noches";
@@ -7812,6 +7798,29 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
         </div>
       )}
 
+      {/* Primeros pasos — solo mientras no haya una tienda conectada */}
+      {sinTienda&&(
+        <Card T={T} padding="lg" style={{border:`1px solid ${T.accentSolid}44`,marginBottom:DS.sp.lg}}>
+          <div style={{fontSize:DS.font.xl,fontWeight:DS.w.bold,color:T.text,marginBottom:4}}>Empecemos</div>
+          <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:DS.sp.lg,lineHeight:1.55}}>
+            Los números de arriba están en cero porque todavía no hay una tienda conectada. Con eso listo, Growith trae los pedidos solo.
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
+            {[
+              {n:1, hecho:false, txt:"Conectá Tienda Nube, Mercado Libre o Shopify", cta:"Conectar", go:"config"},
+              {n:2, hecho:false, txt:"Cargá los costos de tus productos para ver el margen real", cta:"Cargar costos", go:"margenes"},
+              {n:3, hecho:false, txt:"Configurá tu CUIT y certificado para facturar desde acá", cta:"Configurar ARCA", go:"arca"},
+            ].map(p=>(
+              <div key={p.n} style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:"10px 12px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg}}>
+                <span style={{width:22,height:22,borderRadius:DS.r.full,background:T.bg,border:`1px solid ${T.border}`,color:T.textSm,fontSize:DS.font.sm,fontWeight:DS.w.bold,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{p.n}</span>
+                <span style={{flex:1,fontSize:DS.font.base,color:T.text}}>{p.txt}</span>
+                <Btn T={T} variant={p.n===1?"primary":"secondary"} size="sm" onClick={()=>onNavigate(p.go)}>{p.cta}</Btn>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* KPIs */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:DS.sp.md,marginBottom:DS.sp["2xl"]}} className="kpi-grid">
         <KPI T={T} label="Facturado" value={fmtARS(curRevenue)} icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>} color={T.green}
@@ -7861,8 +7870,8 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
         {totalPendientes===0?(
           <div style={{textAlign:"center",padding:"28px 0"}}>
             <div style={{display:"flex",justifyContent:"center",marginBottom:DS.sp.sm}}><StatusIcon type="success" size={52}/></div>
-            <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,marginBottom:4}}>Todo en orden</div>
-            <div style={{fontSize:DS.font.sm,color:T.textSm}}>Sin alertas ni pendientes por ahora</div>
+            <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,marginBottom:4}}>{sinTienda?"Todavía no hay nada que mostrar":"Todo en orden"}</div>
+            <div style={{fontSize:DS.font.sm,color:T.textSm}}>{sinTienda?"Los pendientes aparecen acá cuando conectes tu tienda":"Sin alertas ni pendientes por ahora"}</div>
           </div>
         ):(
           <div style={{display:"flex",flexDirection:"column",gap:DS.sp.xl}}>
@@ -8742,128 +8751,6 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
       <div style={{maxWidth:960,margin:"0 auto",padding:"20px 24px 80px"}}>
 
-        {/* Perfil */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
-          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Cuenta</div>
-          <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:16,flexWrap:"wrap"}}>
-            {user?.photoURL?<img src={user.photoURL} style={{width:44,height:44,borderRadius:"50%",border:`2px solid ${T.border}`,flexShrink:0}} alt=""/>:<div style={{width:44,height:44,borderRadius:"50%",background:T.surface,border:`2px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:T.textSm}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>}
-            <div style={{minWidth:0,flex:1}}>
-              {editProfile ? (
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  <div>
-                    <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:3,textTransform:"uppercase",letterSpacing:0.4}}>Nombre</div>
-                    <input value={pNombre} onChange={e=>setPNombre(e.target.value)} placeholder="Tu nombre" style={{...InputStyle(T),fontSize:13,width:"100%",maxWidth:340}}/>
-                  </div>
-                  <div>
-                    <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:3,textTransform:"uppercase",letterSpacing:0.4}}>Email de contacto</div>
-                    <input value={pEmail} onChange={e=>setPEmail(e.target.value)} placeholder="tu@email.com" style={{...InputStyle(T),fontSize:13,width:"100%",maxWidth:340}}/>
-                    <div style={{fontSize:10,color:T.textSm,marginTop:4,lineHeight:1.5}}>Este nombre y email son los que ven los desarrolladores. Tu email de <strong style={{color:T.text}}>inicio de sesión</strong> no cambia (seguís entrando con el mismo).</div>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div style={{fontSize:15,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userDoc?.nombre||user?.displayName||"Usuario"}</div>
-                  <div style={{fontSize:12,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userDoc?.email||user?.email}</div>
-                  <div style={{fontSize:11,color:T.accent,marginTop:3,fontWeight:500}}>Plan {userDoc?.plan||"free"}</div>
-                </>
-              )}
-            </div>
-          </div>
-          {editProfile ? (
-            <div style={{display:"flex",gap:8}}>
-              <button onClick={saveProfile} disabled={pSaving} style={{...BtnPrimary(T),fontSize:12,justifyContent:"center",flex:1}}>{pSaving?"Guardando...":"Guardar"}</button>
-              <button onClick={()=>setEditProfile(false)} disabled={pSaving} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1}}>Cancelar</button>
-            </div>
-          ) : (
-            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              <button onClick={startEditProfile} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1,minWidth:140}}>✎ Editar nombre y mail</button>
-              <button onClick={handleSignOut} style={{...BtnSecondary(T),fontSize:12,color:T.red,border:`1px solid ${T.red}33`,justifyContent:"center",flex:1,minWidth:140}}>Cerrar sesión</button>
-            </div>
-          )}
-
-          {/* Cambiar email de INICIO DE SESIÓN (Firebase Auth) */}
-          <div style={{borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
-            {!showLoginEmail ? (
-              <button onClick={()=>{setNewLoginEmail("");setLoginPassword("");setShowLoginEmail(true);}} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",width:"100%",display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Cambiar email de inicio de sesión</button>
-            ) : (
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Login actual: <strong style={{color:T.text}}>{user?.email}</strong>. Te vamos a mandar un link al email nuevo — el cambio se aplica recién cuando lo confirmás ahí (hasta entonces seguís entrando con el actual).</div>
-                <input value={newLoginEmail} onChange={e=>setNewLoginEmail(e.target.value)} placeholder="Nuevo email de login" style={{...InputStyle(T),fontSize:13}}/>
-                {user?.providerData?.some(p=>p.providerId==="password") && (
-                  <input type="password" value={loginPassword} onChange={e=>setLoginPassword(e.target.value)} placeholder="Tu contraseña actual (para confirmar)" style={{...InputStyle(T),fontSize:13}}/>
-                )}
-                {user?.providerData?.some(p=>p.providerId==="google.com") && !user?.providerData?.some(p=>p.providerId==="password") && (
-                  <div style={{fontSize:10,color:T.textSm}}>Entraste con Google — te va a pedir confirmar con tu cuenta de Google.</div>
-                )}
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={changeLoginEmail} disabled={loginEmailChanging} style={{...BtnPrimary(T),fontSize:12,justifyContent:"center",flex:1}}>{loginEmailChanging?"Enviando...":"Enviar link de cambio"}</button>
-                  <button onClick={()=>setShowLoginEmail(false)} disabled={loginEmailChanging} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1}}>Cancelar</button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Cambio rápido de cuenta */}
-          {(()=>{ const _b=acctBump; const accts = ghReadAccounts().filter(a=>a.email!==user?.email); return (
-            <div style={{borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
-              <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:0.4}}>Cambiar de cuenta</div>
-              {accts.map(a=>(
-                <div key={a.email} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                  <button onClick={()=>ghSwitchAccount(a.email,a.provider)} style={{flex:1,display:"flex",alignItems:"center",gap:8,textAlign:"left",background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 10px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}>
-                    <div style={{width:26,height:26,borderRadius:"50%",background:T.accent+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:T.accent,flexShrink:0}}>{(a.nombre||a.email||"?")[0].toUpperCase()}</div>
-                    <div style={{minWidth:0,flex:1}}>
-                      <div style={{fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.nombre||a.email}</div>
-                      <div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.email}</div>
-                    </div>
-                    <span style={{fontSize:11,color:T.accent,fontWeight:600,flexShrink:0}}>Entrar →</span>
-                  </button>
-                  <button onClick={()=>{ghForgetAccount(a.email); setAcctBump(x=>x+1);}} title="Quitar de la lista" style={{background:"transparent",border:"none",color:T.textSm,fontSize:16,cursor:"pointer",padding:"0 4px"}}>×</button>
-                </div>
-              ))}
-              <button onClick={()=>ghSwitchAccount("","")} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",width:"100%",marginTop:4,display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Agregar / entrar a otra cuenta</button>
-            </div>
-          ); })()}
-        </div>
-
-        {/* Notificaciones de equipo */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
-          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14,display:"flex",alignItems:"center",gap:5}}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
-            Notificaciones (Tareas)
-          </div>
-
-          {/* Email info */}
-          <div style={{marginBottom:16,padding:"14px",background:T.surface,borderRadius:10,border:`1px solid ${T.borderL}`}}>
-            <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Sistema de emails</div>
-            <div style={{fontSize:11,color:T.textSm,lineHeight:1.8,marginBottom:10}}>
-              <div><strong style={{color:T.text}}>Desde:</strong> notificaciones@growith.app</div>
-              <div><strong style={{color:T.text}}>Vos recibís:</strong> entregas, consultas y actualizaciones → en <strong style={{color:T.accent}}>{userDoc?.email||user?.email}</strong></div>
-              <div><strong style={{color:T.text}}>Colaborador recibe:</strong> asignación, aprobación, correcciones y comentarios → en su email</div>
-            </div>
-            <AsyncButton onClick={async()=>{
-              if(!user?.email) return;
-              const r = await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"sendTestEmail",uid:user.uid,to:user.email})});
-              const d = await r.json();
-              if(!r.ok||d.error) {
-                appAlert(`Error al enviar: ${d.error||"desconocido"}${d.detail?.status?" (HTTP "+d.detail.status+")":""}\n\nVerificá:\n• RESEND_API_KEY en Vercel\n• Dominio growith.app verificado en Resend`);
-              } else {
-                toast("Email de prueba enviado a "+user.email+" (id: "+d.id+")","success");
-              }
-            }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>
-              Enviar email de prueba a {userDoc?.email||user?.email}
-            </AsyncButton>
-          </div>
-
-          {/* WhatsApp */}
-          <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:6,display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.7A2 2 0 012.18 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.16a16 16 0 006.93 6.93l1.42-1.42a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>Mi WhatsApp para notificaciones</div>
-          <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Cuando un colaborador entrega trabajo, el botón "Avisar por WA" te escribe directo a este número.</div>
-          <div style={{display:"flex",gap:8}}>
-            <input value={adminWaPhone} onChange={e=>setAdminWaPhone(e.target.value)} placeholder="Ej: 5491112345678 (con código de país, sin +)" style={{...InputStyle(T),fontSize:13,flex:1}}/>
-            <button onClick={saveAdminWaPhone} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",flexShrink:0}}>{waPhoneSaved?"✓ Guardado":"Guardar"}</button>
-          </div>
-          {adminWaPhone&&<div style={{fontSize:11,color:T.textSm,marginTop:6}}>✓ Los colaboradores van a escribirte a <strong>wa.me/{adminWaPhone.replace(/\D/g,"")}</strong></div>}
-        </div>
-
         {/* Tiendas */}
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Integraciones</div>
@@ -9035,6 +8922,128 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             </div>
           </details>
         )}
+
+        {/* Perfil */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Cuenta</div>
+          <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+            {user?.photoURL?<img src={user.photoURL} style={{width:44,height:44,borderRadius:"50%",border:`2px solid ${T.border}`,flexShrink:0}} alt=""/>:<div style={{width:44,height:44,borderRadius:"50%",background:T.surface,border:`2px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:T.textSm}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>}
+            <div style={{minWidth:0,flex:1}}>
+              {editProfile ? (
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  <div>
+                    <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:3,textTransform:"uppercase",letterSpacing:0.4}}>Nombre</div>
+                    <input value={pNombre} onChange={e=>setPNombre(e.target.value)} placeholder="Tu nombre" style={{...InputStyle(T),fontSize:13,width:"100%",maxWidth:340}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:3,textTransform:"uppercase",letterSpacing:0.4}}>Email de contacto</div>
+                    <input value={pEmail} onChange={e=>setPEmail(e.target.value)} placeholder="tu@email.com" style={{...InputStyle(T),fontSize:13,width:"100%",maxWidth:340}}/>
+                    <div style={{fontSize:10,color:T.textSm,marginTop:4,lineHeight:1.5}}>Este nombre y email son los que ven los desarrolladores. Tu email de <strong style={{color:T.text}}>inicio de sesión</strong> no cambia (seguís entrando con el mismo).</div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{fontSize:15,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userDoc?.nombre||user?.displayName||"Usuario"}</div>
+                  <div style={{fontSize:12,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userDoc?.email||user?.email}</div>
+                  <div style={{fontSize:11,color:T.accent,marginTop:3,fontWeight:500}}>Plan {userDoc?.plan||"free"}</div>
+                </>
+              )}
+            </div>
+          </div>
+          {editProfile ? (
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={saveProfile} disabled={pSaving} style={{...BtnPrimary(T),fontSize:12,justifyContent:"center",flex:1}}>{pSaving?"Guardando...":"Guardar"}</button>
+              <button onClick={()=>setEditProfile(false)} disabled={pSaving} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1}}>Cancelar</button>
+            </div>
+          ) : (
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button onClick={startEditProfile} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1,minWidth:140}}>✎ Editar nombre y mail</button>
+              <button onClick={handleSignOut} style={{...BtnSecondary(T),fontSize:12,color:T.red,border:`1px solid ${T.red}33`,justifyContent:"center",flex:1,minWidth:140}}>Cerrar sesión</button>
+            </div>
+          )}
+
+          {/* Cambiar email de INICIO DE SESIÓN (Firebase Auth) */}
+          <div style={{borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
+            {!showLoginEmail ? (
+              <button onClick={()=>{setNewLoginEmail("");setLoginPassword("");setShowLoginEmail(true);}} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",width:"100%",display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Cambiar email de inicio de sesión</button>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Login actual: <strong style={{color:T.text}}>{user?.email}</strong>. Te vamos a mandar un link al email nuevo — el cambio se aplica recién cuando lo confirmás ahí (hasta entonces seguís entrando con el actual).</div>
+                <input value={newLoginEmail} onChange={e=>setNewLoginEmail(e.target.value)} placeholder="Nuevo email de login" style={{...InputStyle(T),fontSize:13}}/>
+                {user?.providerData?.some(p=>p.providerId==="password") && (
+                  <input type="password" value={loginPassword} onChange={e=>setLoginPassword(e.target.value)} placeholder="Tu contraseña actual (para confirmar)" style={{...InputStyle(T),fontSize:13}}/>
+                )}
+                {user?.providerData?.some(p=>p.providerId==="google.com") && !user?.providerData?.some(p=>p.providerId==="password") && (
+                  <div style={{fontSize:10,color:T.textSm}}>Entraste con Google — te va a pedir confirmar con tu cuenta de Google.</div>
+                )}
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={changeLoginEmail} disabled={loginEmailChanging} style={{...BtnPrimary(T),fontSize:12,justifyContent:"center",flex:1}}>{loginEmailChanging?"Enviando...":"Enviar link de cambio"}</button>
+                  <button onClick={()=>setShowLoginEmail(false)} disabled={loginEmailChanging} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1}}>Cancelar</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Cambio rápido de cuenta */}
+          {(()=>{ const _b=acctBump; const accts = ghReadAccounts().filter(a=>a.email!==user?.email); return (
+            <div style={{borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
+              <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:0.4}}>Cambiar de cuenta</div>
+              {accts.map(a=>(
+                <div key={a.email} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <button onClick={()=>ghSwitchAccount(a.email,a.provider)} style={{flex:1,display:"flex",alignItems:"center",gap:8,textAlign:"left",background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 10px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}>
+                    <div style={{width:26,height:26,borderRadius:"50%",background:T.accent+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:T.accent,flexShrink:0}}>{(a.nombre||a.email||"?")[0].toUpperCase()}</div>
+                    <div style={{minWidth:0,flex:1}}>
+                      <div style={{fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.nombre||a.email}</div>
+                      <div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.email}</div>
+                    </div>
+                    <span style={{fontSize:11,color:T.accent,fontWeight:600,flexShrink:0}}>Entrar →</span>
+                  </button>
+                  <button onClick={()=>{ghForgetAccount(a.email); setAcctBump(x=>x+1);}} title="Quitar de la lista" style={{background:"transparent",border:"none",color:T.textSm,fontSize:16,cursor:"pointer",padding:"0 4px"}}>×</button>
+                </div>
+              ))}
+              <button onClick={()=>ghSwitchAccount("","")} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",width:"100%",marginTop:4,display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Agregar / entrar a otra cuenta</button>
+            </div>
+          ); })()}
+        </div>
+
+        {/* Notificaciones de equipo */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14,display:"flex",alignItems:"center",gap:5}}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
+            Notificaciones (Tareas)
+          </div>
+
+          {/* Email info */}
+          <div style={{marginBottom:16,padding:"14px",background:T.surface,borderRadius:10,border:`1px solid ${T.borderL}`}}>
+            <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Sistema de emails</div>
+            <div style={{fontSize:11,color:T.textSm,lineHeight:1.8,marginBottom:10}}>
+              <div><strong style={{color:T.text}}>Desde:</strong> notificaciones@growith.app</div>
+              <div><strong style={{color:T.text}}>Vos recibís:</strong> entregas, consultas y actualizaciones → en <strong style={{color:T.accent}}>{userDoc?.email||user?.email}</strong></div>
+              <div><strong style={{color:T.text}}>Colaborador recibe:</strong> asignación, aprobación, correcciones y comentarios → en su email</div>
+            </div>
+            <AsyncButton onClick={async()=>{
+              if(!user?.email) return;
+              const r = await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"sendTestEmail",uid:user.uid,to:user.email})});
+              const d = await r.json();
+              if(!r.ok||d.error) {
+                appAlert(`Error al enviar: ${d.error||"desconocido"}${d.detail?.status?" (HTTP "+d.detail.status+")":""}\n\nVerificá:\n• RESEND_API_KEY en Vercel\n• Dominio growith.app verificado en Resend`);
+              } else {
+                toast("Email de prueba enviado a "+user.email+" (id: "+d.id+")","success");
+              }
+            }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>
+              Enviar email de prueba a {userDoc?.email||user?.email}
+            </AsyncButton>
+          </div>
+
+          {/* WhatsApp */}
+          <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:6,display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.7A2 2 0 012.18 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.16a16 16 0 006.93 6.93l1.42-1.42a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>Mi WhatsApp para notificaciones</div>
+          <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Cuando un colaborador entrega trabajo, el botón "Avisar por WA" te escribe directo a este número.</div>
+          <div style={{display:"flex",gap:8}}>
+            <input value={adminWaPhone} onChange={e=>setAdminWaPhone(e.target.value)} placeholder="Ej: 5491112345678 (con código de país, sin +)" style={{...InputStyle(T),fontSize:13,flex:1}}/>
+            <button onClick={saveAdminWaPhone} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",flexShrink:0}}>{waPhoneSaved?"✓ Guardado":"Guardar"}</button>
+          </div>
+          {adminWaPhone&&<div style={{fontSize:11,color:T.textSm,marginTop:6}}>✓ Los colaboradores van a escribirte a <strong>wa.me/{adminWaPhone.replace(/\D/g,"")}</strong></div>}
+        </div>
 
         {/* Modal conectar Shopify */}
         {showShopifyModal && (
@@ -21729,7 +21738,7 @@ function CopilotText({T, text}) {
   );
 }
 
-function AppCopilot({T, user, onHome, onNavigate}) {
+function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
   const uid = user?.uid;
   const [msgs, setMsgs] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("growith_copilot_msgs") || "[]"); } catch (_) { return []; }
@@ -21759,11 +21768,14 @@ function AppCopilot({T, user, onHome, onNavigate}) {
       } catch (_) {}
       historyLoadedRef.current = true;
       // Resumen diario proactivo: la primera vez que abrís el Copilot cada día
-      // te recibe con el estado del negocio, sin que preguntes nada.
+      // te recibe con el estado del negocio, sin que preguntes nada. Sin tienda
+      // conectada no hay negocio del que hablar, así que no se dispara (y no se
+      // gasta una llamada al modelo para contestar "no tengo datos").
+      const _hayTienda = !!(connectedStores.tn || connectedStores.shopify || connectedStores.ml);
       try {
         const key = `growith_copilot_daily_${uid}`;
         const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
-        if (localStorage.getItem(key) !== hoy) {
+        if (_hayTienda && localStorage.getItem(key) !== hoy) {
           localStorage.setItem(key, hoy);
           setTimeout(() => sendRef.current?.("Dame el resumen diario de mi negocio"), 400);
         }
@@ -27599,7 +27611,7 @@ export default function App() {
   let pageContent = null;
   if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={planEfectivo} planExpiry={planExpiry} onBack={()=>setPage("home")} isTrialExpired={false} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
-  else if(page==="copilot") pageContent = <PageView T={T} pageKey="copilot"><AppCopilot T={T} user={user} onHome={()=>setPage("home")} onNavigate={setPage}/></PageView>;
+  else if(page==="copilot") pageContent = <PageView T={T} pageKey="copilot"><AppCopilot T={T} user={user} onHome={()=>setPage("home")} onNavigate={setPage} connectedStores={connectedStores}/></PageView>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
   else if(page==="margenes") pageContent = adminGate("margenes") || <PageView T={T} pageKey="margenes"><AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={setMargenesTab}/></PageView>;
   else if(page==="arca") pageContent = adminGate("arca") || planGate("plus") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
@@ -27622,6 +27634,7 @@ export default function App() {
           try{localStorage.setItem("growith_onb_done","1");localStorage.setItem(`growith_onb_done_${user.uid}`,"1");}catch(e){}
           updateDoc(doc(db,"users",user.uid),{onbDone:true}).catch(()=>{}); // persistir cross-dispositivo
           setOnboardingDone(true);
+          if(action==="config") setPage("config");
         }}/>
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>

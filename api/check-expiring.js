@@ -24,6 +24,8 @@ async function sendEmail({ to, subject, html }) {
       method: "POST",
       headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ from, to: [to], subject, html }),
+      // Sin timeout, un Resend colgado se come el presupuesto entero del cron.
+      signal: AbortSignal.timeout(10000),
     });
     const data = await r.json();
     if (!r.ok) { console.error("[check-expiring] email error:", data?.message); return { error: data?.message }; }
@@ -75,6 +77,10 @@ function emailHtml({ nombre, diasRestantes, isTrial, planesPlanesUrl }) {
 </html>`;
 }
 
+// Presupuesto de la función: se declara en vercel.json ("functions" →
+// api/check-expiring.js → maxDuration). Este cron pagina TODA la colección de
+// usuarios y manda emails, así que no le alcanza el default de Vercel.
+
 export default async function handler(req, res) {
   // Autorización del cron OBLIGATORIA. Antes era `if (cronSecret && ...)`: sin
   // la env var configurada el endpoint quedaba abierto a cualquiera (barrido de
@@ -87,13 +93,26 @@ export default async function handler(req, res) {
   const APP_URL = process.env.APP_URL || "https://www.growithapp.com";
   const planesUrl = `${APP_URL}/#/planes`;
 
-  const usersSnap = await db.collection("users").get();
-  const results = { sent: 0, skipped: 0, errors: 0 };
+  const results = { sent: 0, skipped: 0, errors: 0, revisados: 0, truncado: false };
 
-  await Promise.all(usersSnap.docs.map(async (doc) => {
+  // Deadline global: si Resend o Firestore vienen lentos cortamos antes de que
+  // Vercel mate la función en seco. Lo que quedó afuera se manda mañana (el
+  // aviso se dispara durante los 5 días previos al vencimiento, no un solo día).
+  const deadline = Date.now() + 50000;
+  const quedaTiempo = () => Date.now() < deadline;
+
+  // Un solo `.get()` de toda la colección no escala: con muchas cuentas se
+  // traen todos los documentos a memoria de una y se abren tantos envíos
+  // concurrentes como usuarios haya (rate limit de Resend + timeout seguro).
+  // Ahora: páginas de 200 por cursor de documento y emails de a 5 en paralelo.
+  const PAGINA = 200, CONCURRENCIA = 5, MAX_USUARIOS = 5000;
+  let cursor = null;
+
+  // Decide si a un usuario hay que avisarle y arma el email. Devuelve null si no.
+  const evaluar = (doc) => {
     const u = doc.data();
     const email = u.email;
-    if (!email) { results.skipped++; return; }
+    if (!email) return null;
 
     let diasRestantes = null;
     let isTrial = false;
@@ -114,31 +133,61 @@ export default async function handler(req, res) {
       isTrial = false;
     }
 
-    if (diasRestantes === null) { results.skipped++; return; }
+    if (diasRestantes === null) return null;
 
     // No mandar más de una advertencia por día para el mismo vencimiento
-    const expiryKey = (isTrial ? trialEnd : planExpiry)?.toDateString();
     const lastWarn = u.lastExpiryWarnAt?.toDate?.();
-    if (lastWarn && lastWarn.toDateString() === now.toDateString()) {
-      results.skipped++; return;
-    }
+    if (lastWarn && lastWarn.toDateString() === now.toDateString()) return null;
 
     const subject = isTrial
       ? (diasRestantes <= 1 ? "¡Hoy vence tu prueba gratuita de Growith!" : `Tu prueba gratuita vence en ${diasRestantes} días`)
       : (diasRestantes <= 1 ? "¡Hoy vence tu plan Growith!" : `Tu plan Growith vence en ${diasRestantes} días`);
 
     const html = emailHtml({ nombre: u.nombre || u.displayName || "", diasRestantes, isTrial, planesPlanesUrl: planesUrl });
-    const result = await sendEmail({ to: email, subject, html });
+    return { doc, email, subject, html, diasRestantes, isTrial };
+  };
 
-    if (result.ok) {
-      await doc.ref.update({ lastExpiryWarnAt: FieldValue.serverTimestamp() });
-      results.sent++;
-      console.log(`[check-expiring] ✓ email a ${email} (${diasRestantes}d, ${isTrial?"trial":"plan"})`);
-    } else {
+  // Manda un email y marca el aviso. Nunca lanza: un destinatario roto no puede
+  // cortar la corrida del resto.
+  const avisar = async (t) => {
+    try {
+      const result = await sendEmail({ to: t.email, subject: t.subject, html: t.html });
+      if (result.ok) {
+        await t.doc.ref.update({ lastExpiryWarnAt: FieldValue.serverTimestamp() });
+        results.sent++;
+        console.log(`[check-expiring] ✓ email a ${t.email} (${t.diasRestantes}d, ${t.isTrial?"trial":"plan"})`);
+      } else {
+        results.errors++;
+        console.error(`[check-expiring] ✗ ${t.email}:`, result.error);
+      }
+    } catch (e) {
       results.errors++;
-      console.error(`[check-expiring] ✗ ${email}:`, result.error);
+      console.error(`[check-expiring] ✗ ${t.email}:`, e.message);
     }
-  }));
+  };
+
+  while (results.revisados < MAX_USUARIOS) {
+    if (!quedaTiempo()) { results.truncado = true; break; }
+    let q = db.collection("users").orderBy("__name__").limit(PAGINA);
+    if (cursor) q = q.startAfter(cursor);
+    const snap = await q.get();
+    if (snap.empty) break;
+    cursor = snap.docs[snap.docs.length - 1];
+    results.revisados += snap.docs.length;
+
+    const objetivos = [];
+    for (const doc of snap.docs) {
+      const t = evaluar(doc);
+      if (t) objetivos.push(t); else results.skipped++;
+    }
+    // Lotes concurrentes acotados: ni secuencial (se pasa del tiempo de la
+    // función) ni todos de golpe (rate limit de Resend).
+    for (let i = 0; i < objetivos.length; i += CONCURRENCIA) {
+      if (!quedaTiempo()) { results.truncado = true; break; }
+      await Promise.all(objetivos.slice(i, i + CONCURRENCIA).map(avisar));
+    }
+    if (snap.docs.length < PAGINA) break;
+  }
 
   console.log("[check-expiring] resultado:", results);
   return res.json({ ok: true, ...results });
