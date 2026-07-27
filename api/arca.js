@@ -2715,7 +2715,7 @@ export default async function handler(req, res) {
       if (tnStore?.accessToken && tnStore?.storeId) fetchers.push((async () => {
         const headers = {
           "Authentication": `bearer ${tnStore.accessToken}`,
-          "User-Agent": "GrowithApp (soporte@growith.app)",
+          "User-Agent": "GrowithApp (contacto.growith@gmail.com)",
         };
         // Llamada helper: trae TODAS las páginas de TN para un payment_status dado.
         const fetchTNStatus = async (status) => {
@@ -2954,7 +2954,7 @@ export default async function handler(req, res) {
               await Promise.all(chunk.map(async (o) => {
                 try {
                   const r = await fetch(`https://api.mercadolibre.com/orders/${o.id}/billing_info`, {
-                    headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "GrowithApp (soporte@growith.app)" },
+                    headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "GrowithApp (contacto.growith@gmail.com)" },
                   });
                   if (r.ok) {
                     const data = await r.json();
@@ -3107,7 +3107,7 @@ export default async function handler(req, res) {
       // 2) Traer órdenes pagas del período seleccionado
       const headers = {
         "Authentication": `bearer ${tnStore.accessToken}`,
-        "User-Agent": "GrowithApp (soporte@growith.app)",
+        "User-Agent": "GrowithApp (contacto.growith@gmail.com)",
       };
       const fetchLegacyStatus = async (status) => {
         const out = [];

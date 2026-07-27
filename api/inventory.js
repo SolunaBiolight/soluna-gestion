@@ -243,7 +243,7 @@ export default async function handler(req, res) {
           for (let page = 1; page <= 5; page++) {
             try {
               const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/products?per_page=200&page=${page}`, {
-                headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp (soporte@growith.app)" },
+                headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp (contacto.growith@gmail.com)" },
               });
               if (!r.ok) {
                 const txt = await r.text().catch(()=>"");

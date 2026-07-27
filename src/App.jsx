@@ -27138,7 +27138,7 @@ export default function App() {
   const USDT_ADDRESS="TXGtDab6Lf3jtSRgq7uB2WbRfqdRA3PTCD"; // dirección TRC20 de Growith (cargada 22/jul/2026)
   // Datos de cobro y soporte. El pago hoy es solo USDT TRC20; cuando se habilite
   // transferencia en pesos van acá el CVU y el titular reales.
-  const SUPPORT_EMAIL="soporte@growith.app";
+  const SUPPORT_EMAIL="contacto.growith@gmail.com";
 
   const T = darkMode ? DARK : LIGHT;
 

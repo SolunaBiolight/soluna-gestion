@@ -19,7 +19,7 @@ function initAdmin() {
 
 // Sin fallback — se requiere uid válido con tienda conectada
 
-const TN_H  = t => ({ "Authentication":`bearer ${t}`, "User-Agent":"GrowithApp (soporte@growith.app)" });
+const TN_H  = t => ({ "Authentication":`bearer ${t}`, "User-Agent":"GrowithApp (contacto.growith@gmail.com)" });
 const SH_H  = t => ({ "X-Shopify-Access-Token":t, "Content-Type":"application/json" });
 const ML_H  = t => ({ "Authorization":`Bearer ${t}` });
 const SH_URL = s => `https://${s}/admin/api/2024-10`;

@@ -476,7 +476,7 @@ export default async function handler(req, res) {
 
   const headers = {
     'Authentication': `bearer ${accessToken}`,
-    'User-Agent': 'GrowithApp (soporte@growith.app)',
+    'User-Agent': 'GrowithApp (contacto.growith@gmail.com)',
     'Content-Type': 'application/json',
   };
 
