@@ -1296,30 +1296,28 @@ function AppPromptHost({ T }) {
   return ReactDOM.createPortal(
     <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:99999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}
       onClick={() => isConfirm ? closeWith(false) : (isPromptInput ? closeWith(null) : closeWith(true))}>
+      {/* Mismo lenguaje que el resto de los modales de la app: sin barra de
+          color, sin ícono gigante centrado, texto alineado a la izquierda y
+          acciones abajo a la derecha. */}
       <div onClick={e => e.stopPropagation()}
-        style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:20,width:"100%",maxWidth:420,boxShadow:`0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px ${accentColor}18`,animation:"growith-modalIn 0.28s cubic-bezier(0.34,1.4,0.64,1) both",overflow:"hidden"}}>
-        <div style={{height:4,background:accentBg}}/>
-        <div style={{padding:"28px 28px 24px"}}>
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",marginBottom:20}}>
-            <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:52,height:52,borderRadius:14,background:accentBg,boxShadow:`0 8px 24px ${accentColor}44`,marginBottom:14,animation:"growith-bounceIn 0.45s cubic-bezier(0.34,1.56,0.64,1) both",animationDelay:"0.08s"}}>
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none">{iconPath}</svg>
-            </div>
-            <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:6,letterSpacing:"-0.01em"}}>{s.title}</div>
-            <div style={{fontSize:13,color:T.textMd,lineHeight:1.65,whiteSpace:"pre-wrap"}}>{s.message}</div>
-          </div>
+        style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:400,boxShadow:"0 24px 64px rgba(0,0,0,0.45)",animation:"growith-modalIn 0.2s cubic-bezier(0.4,0,0.2,1) both",overflow:"hidden"}}>
+        <div style={{padding:"20px 22px 18px"}}>
+          <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:7,letterSpacing:"-0.01em"}}>{s.title}</div>
+          <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{s.message}</div>
           {isPromptInput && (
             <input autoFocus type="text" value={inputVal} onChange={e=>setInputVal(e.target.value)}
               placeholder={s.placeholder||""}
               onKeyDown={e=>{ if(e.key==="Enter") closeWith(inputVal); if(e.key==="Escape") closeWith(null); }}
-              style={{width:"100%",padding:"11px 14px",fontSize:14,borderRadius:10,border:`1.5px solid ${T.border}`,background:T.surface,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:16,outline:"none",boxSizing:"border-box"}} />
+              style={{width:"100%",padding:"9px 12px",fontSize:13,borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",marginTop:14,outline:"none",boxSizing:"border-box"}} />
           )}
-          <div style={{display:"flex",gap:10,justifyContent:"center"}}>
-            {(isConfirm || isPromptInput) && (
-              <button onClick={() => closeWith(isPromptInput ? null : false)} style={{flex:1,padding:"11px 16px",fontSize:13,fontWeight:600,border:`1.5px solid ${T.border}`,borderRadius:11,background:T.surface,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>{s.cancelLabel}</button>
-            )}
-            <button autoFocus={!isPromptInput} onClick={() => closeWith(isPromptInput ? inputVal : true)}
-              style={{flex:1,padding:"11px 16px",fontSize:13,fontWeight:700,border:`1.5px solid ${accentBorder}`,borderRadius:11,background:accentTint,color:accentText,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:`0 0 0 1px ${accentColor}15, 0 4px 20px ${accentColor}28`,transition:"all 0.15s"}}>{s.okLabel}</button>
-          </div>
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end",padding:"12px 22px 16px",borderTop:`1px solid ${T.borderL||T.border}`}}>
+          {(isConfirm || isPromptInput) && (
+            <button onClick={() => closeWith(isPromptInput ? null : false)}
+              style={{...BtnSecondary(T),fontSize:13,padding:"8px 16px"}}>{s.cancelLabel}</button>
+          )}
+          <button autoFocus={!isPromptInput} onClick={() => closeWith(isPromptInput ? inputVal : true)}
+            style={danger ? {...BtnDanger(T),fontSize:13,padding:"8px 18px",fontWeight:600} : {...BtnPrimary(T),fontSize:13,padding:"8px 18px"}}>{s.okLabel}</button>
         </div>
       </div>
     </div>,
@@ -5410,32 +5408,48 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
   // ── Marcar empaquetado en TN desde Growith (antes había que ir a TN) ──
   const [packing,setPacking]=useState({}); // numero -> true
-  async function marcarEmpaquetado(o){
-    if(!user?.uid||!o?.tnId) { toast("Este pedido no tiene ID de TN","error"); return; }
+  // Marca UN pedido. `silent` evita el toast individual: en el lote no queremos
+  // 75 carteles apilándose, sino un único resultado al final.
+  async function marcarEmpaquetado(o,{silent=false}={}){
+    if(!user?.uid||!o?.tnId) { if(!silent) toast("Este pedido no tiene ID de TN","error"); return false; }
     setPacking(p=>({...p,[o.numero]:true}));
     try{
       const r=await authFetch(`/api/update-shipping?action=pack&uid=${user.uid}&orderId=${o.tnId}`);
       const d=await r.json();
       if(!r.ok||d.error) throw new Error(d.error||"Error");
-      toast(`#${o.numero} empaquetado ✓`,"success");
+      if(!silent) toast(`#${o.numero} empaquetado ✓`,"success");
       // Actualización local optimista: sale de "empaquetar", entra a "enviar"
       setTabOrders(list=>list.map(x=>x.numero===o.numero?{...x,isPacked:true,estadoEnvio:"Por enviar"}:x));
       if(tabEnvio==="empaquetar") setTabOrders(list=>list.filter(x=>x.numero!==o.numero));
       setTabCounts(c=>({empaquetar:Math.max(0,(c.empaquetar||1)-1),enviar:(c.enviar||0)+1}));
       tabCacheRef.current={}; // invalida cache local para el próximo cambio de tab
-    }catch(e){ toast(`#${o.numero}: ${e.message}`,"error"); }
+      return true;
+    }catch(e){ if(!silent) toast(`#${o.numero}: ${e.message}`,"error"); return false; }
     finally{ setPacking(p=>{const n={...p};delete n[o.numero];return n;}); }
   }
   const [packingBatch,setPackingBatch]=useState(false);
+  const [packProgress,setPackProgress]=useState({done:0,total:0});
+  // Tienda Nube no tiene un endpoint para marcar varios pedidos de una: hay que
+  // pegarle uno por uno. Lo resolvemos de a 5 en paralelo y lo presentamos como
+  // UNA sola operación con progreso y un único resultado.
   async function marcarEmpaquetadosSel(){
     const sel=[...selected.values()].filter(o=>!o.isPacked);
     if(!sel.length) return;
-    const ok=await appConfirm(`¿Marcar ${sel.length} pedido(s) como empaquetados en Tienda Nube?`);
+    const ok=await appConfirm(`Se van a marcar ${sel.length} pedido${sel.length!==1?"s":""} como empaquetados en Tienda Nube.`,{title:"Marcar empaquetados",okLabel:"Marcar"});
     if(!ok) return;
     setPackingBatch(true);
-    for(const o of sel){ await marcarEmpaquetado(o); await new Promise(r=>setTimeout(r,350)); }
+    setPackProgress({done:0,total:sel.length});
+    let ok_=0, fail=0;
+    for(let i=0;i<sel.length;i+=5){
+      const res=await Promise.all(sel.slice(i,i+5).map(o=>marcarEmpaquetado(o,{silent:true})));
+      res.forEach(r=>r?ok_++:fail++);
+      setPackProgress({done:Math.min(i+5,sel.length),total:sel.length});
+    }
     setPackingBatch(false);
+    setPackProgress({done:0,total:0});
     setSelected(new Map());
+    if(fail===0) toast(`${ok_} pedido${ok_!==1?"s":""} marcado${ok_!==1?"s":""} como empaquetado${ok_!==1?"s":""} ✓`,"success");
+    else toast(`${ok_} marcados · ${fail} con error — revisá los que quedaron en la lista`,ok_?"warning":"error");
   }
 
   // ── Picking list imprimible: qué armar hoy, agrupado por SKU + por pedido ──
@@ -6717,7 +6731,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               </button>
               {tabEnvio==="empaquetar"&&selected.size>0&&(
                 <button onClick={marcarEmpaquetadosSel} disabled={packingBatch} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,borderColor:T.green+"66"}}>
-                  {packingBatch?<><Spinner size={11} color={T.green}/> Empaquetando…</>:`✓ Marcar ${selected.size} empaquetado${selected.size!==1?"s":""}`}
+                  {packingBatch
+                    ? <><Spinner size={11} color={T.green}/> Empaquetando {packProgress.done}/{packProgress.total}…</>
+                    : `Marcar ${selected.size} empaquetado${selected.size!==1?"s":""}`}
                 </button>
               )}
               {selected.size>0&&(
@@ -6756,7 +6772,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   {tabEnvio==="buscar"?"Buscá por número, nombre o email":tabEnvio==="empaquetar"?"Todo empaquetado":"Sin pedidos para enviar"}
                 </div>
                 <div style={{fontSize:12,color:T.textSm,maxWidth:300,margin:"0 auto"}}>
-                  {tabEnvio==="buscar"?"Escribí y presioná Enter o el botón Buscar":tabEnvio==="empaquetar"?"Los pedidos empaquetados van a Por enviar":"Marcá pedidos como empaquetados desde 'Por empaquetar' (botón ✓) y van a aparecer acá"}
+                  {tabEnvio==="buscar"?"Escribí y presioná Enter o el botón Buscar":tabEnvio==="empaquetar"?"Los pedidos empaquetados van a Por enviar":"Marcá pedidos como empaquetados desde la pestaña Por empaquetar y van a aparecer acá"}
                 </div>
               </div>
             ):(
@@ -6802,14 +6818,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                         <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{o.medioEnvio||"--"}</span>
                         {o.esSucursal&&o.pickupDetails&&<svg title="Puede requerir confirmar sucursal al exportar" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
                       </div>}
-                      {!hiddenCols.has("total")&&<span style={{fontSize:13,fontWeight:700,color:T.text,display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end"}}>
+                      {/* El ✓ por fila se sacó: ensuciaba la tabla y empujaba a
+                          marcar de a uno. Se marca en lote con los tildados. */}
+                      {!hiddenCols.has("total")&&<span style={{fontSize:13,fontWeight:700,color:T.text,display:"flex",alignItems:"center",justifyContent:"flex-end"}}>
                         {fmtMoney(o.total)}
-                        {tabEnvio==="empaquetar"&&(
-                          <button onClick={e=>{e.stopPropagation();marcarEmpaquetado(o);}} disabled={!!packing[o.numero]} title="Marcar como empaquetado en Tienda Nube"
-                            style={{border:`1px solid ${T.green}55`,background:T.green+"12",color:T.green,borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
-                            {packing[o.numero]?"…":"✓"}
-                          </button>
-                        )}
                       </span>}
                     </div>
                   );
