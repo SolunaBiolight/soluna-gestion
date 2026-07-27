@@ -175,7 +175,7 @@ async function shopifyOauthCallback(req, res, db) {
       storeEmail: shopEmail,
       connectedAt: new Date().toISOString(),
     });
-    const extra = snap.exists ? {} : { uid, email: shopEmail || "", nombre: shopName || "", createdAt: new Date().toISOString(), plan: "free", trialEnd: new Date(Date.now() + 7 * 864e5).toISOString() };
+    const extra = snap.exists ? {} : { uid, email: shopEmail || "", nombre: shopName || "", createdAt: new Date(), plan: "free", trialEnd: new Date(Date.now() + 14 * 864e5) };
     await userRef.set({ ...extra, stores }, { merge: true });
   } catch (e) {
     console.error("[shopify-callback] save error:", e.message);
@@ -324,7 +324,7 @@ async function mercadolibreOauthCallback(req, res, db) {
       email,
       connectedAt: new Date().toISOString(),
     });
-    const extra = snap.exists ? {} : { uid, email: email || "", nombre: nickname || (email || "").split("@")[0] || "", createdAt: new Date().toISOString(), plan: "free", trialEnd: new Date(Date.now() + 7 * 864e5).toISOString() };
+    const extra = snap.exists ? {} : { uid, email: email || "", nombre: nickname || (email || "").split("@")[0] || "", createdAt: new Date(), plan: "free", trialEnd: new Date(Date.now() + 14 * 864e5) };
     await userRef.set({ ...extra, stores }, { merge: true });
   } catch (e) {
     console.error("[ml-callback] save error:", e.message);

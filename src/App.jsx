@@ -19,6 +19,14 @@ const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
 const auth = getAuth(fbApp);
 
+// Clave de localStorage por cuenta. Sin esto, dos cuentas que usan el mismo
+// navegador comparten configuración (medidas de caja, comisiones, columnas,
+// historial de exportaciones), y la segunda hereda los datos de la primera.
+function ghKey(base) {
+  const uid = auth.currentUser?.uid;
+  return uid ? `${base}_${uid}` : base;
+}
+
 // fetch con identidad: adjunta el ID token de Firebase. Los endpoints con
 // datos personales de clientes (listados de pedidos, tracking, rótulos) lo
 // exigen — sin token válido devuelven 401.
@@ -106,8 +114,6 @@ const googleProvider = new GoogleAuthProvider();
 // permiso de Drive lo pide _requestDriveToken() a demanda, solo cuando alguien
 // usa el botón de Drive (Canjes), no en el login.
 
-// Owner email for existing data migration
-const OWNER_EMAIL = "soluna.biolight@gmail.com";
 
 // --- Theme ---
 const DARK = {
@@ -1214,10 +1220,25 @@ function DSBadge({T, color, children, size="md"}) {
 }
 
 // --- Constants ---
-const MOTIVOS_R = ["Producto dañado","Color incorrecto","No cumple expectativas","Problema con el lente","Error en el pedido","Armazón roto","Otro"];
+const MOTIVOS_R = ["Producto dañado","Producto incorrecto","No cumple expectativas","Talle o medida incorrecta","Error en el pedido","Llegó incompleto","Se rompió con el uso","Otro"];
 const ESTADOS_R = ["Nuevo","Contactado","Esperando producto","Producto recibido","Envío en camino","Resuelto","Rechazado"];
 const TIPOS_R = ["Cambio","Devolución"];
-const PRODUCTOS = ["Amarillo - Marco Negro","Amarillo - M. Transparente","Naranja - Marco Negro","Naranja - M. Transparente","Rojo - Marco Negro","Rojo - M. Transparente","Clip-On","Líquido Limpia Cristales"];
+// El catálogo de productos NO se hardcodea: sale de los pedidos reales de cada
+// cuenta. Los campos de producto son texto libre con sugerencias (datalist),
+// así funcionan igual para una óptica, una marca de ropa o un kiosco.
+function catalogoProductos(orders=[]) {
+  const set=new Set();
+  for(const o of orders||[]) for(const p of (o.productos||[])) {
+    const n=nombreProducto(p?.nombre);
+    if(n) set.add(n);
+  }
+  return [...set].sort((a,b)=>a.localeCompare(b,"es")).slice(0,200);
+}
+// Nombre legible de producto: saca paréntesis y espacios de más. Antes acá
+// había un regex que borraba el prefijo de un producto puntual de Soluna.
+function nombreProducto(n) {
+  return String(n||"").replace(/[()]/g," ").replace(/\s+/g," ").trim();
+}
 const SKU_LENTE = { "AMARILLO-NN":"Amarillo","AMARILLO-TT":"Amarillo","NARAN-NN":"Naranja","NARAN-TT":"Naranja","ROJ-NN":"Rojo","ROJ-TT":"Rojo","N-N":"Negro","N-R":"Negro/Rojo","R-R":"Rojo/Rojo","CLIP-ON":"Clip-On","LIQ":"Líquido" };
 // Colores FIJOS de producto (representan el color físico del lente, no un estado
 // de UI) — a propósito NO usan tokens del tema; además es scope de módulo, sin T.
@@ -1225,8 +1246,9 @@ const LENTE_DOT = { Amarillo:"#eab308",Naranja:"#f97316",Rojo:"#ef4444",Negro:"#
 const ESTADOS_C = ["Por enviar","Enviado","Contenido pendiente","Cerrado"];
 const REDES = ["Instagram","TikTok","YouTube","Twitter/X","Otro"];
 const ACTIVIDADES = ["Story","Reel","UGC","Review","Unboxing","Exp. Personal"];
-const NICHOS = ["Fitness","Biohacking","Nutrición","Lifestyle","Wellness","Tech","Futbolista","Streamer","Otro"];
-const PRODUCTOS_CANJE = ["Amarillo - Marco Negro","Amarillo - M. Transparente","Naranja - Marco Negro","Naranja - M. Transparente","Rojo - Marco Negro","Rojo - M. Transparente","Clip-On","Kit Completo","A elección"];
+const NICHOS = ["Fitness","Belleza","Moda","Nutrición","Lifestyle","Wellness","Tech","Gaming","Hogar","Maternidad","Deportes","Otro"];
+// Opciones genéricas que se suman al catálogo real de la cuenta en Canjes.
+const EXTRAS_CANJE = ["Kit completo","A elección"];
 
 // --- In-app modal de confirm/alert (reemplaza window.confirm/alert) ---
 let _appPromptState = null; // { kind:"confirm"|"alert", title, message, danger, okLabel, cancelLabel }
@@ -2235,7 +2257,7 @@ function OrderSearchField({T, orders, onSelect, uid}) {
                 </div>
                 <span style={{fontSize:12,color:T.textSm,flexShrink:0}}>{fmtDate(o.fecha)}</span>
               </div>
-              {o.productos?.length>0&&<div style={{fontSize:12,color:T.textSm,marginTop:3}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</div>}
+              {o.productos?.length>0&&<div style={{fontSize:12,color:T.textSm,marginTop:3}}>{o.productos.map(p=>nombreProducto(p.nombre)).join(', ')}</div>}
               {o.email&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{o.email}</div>}
             </div>
           ))}
@@ -2252,6 +2274,8 @@ function OrderSearchField({T, orders, onSelect, uid}) {
 // APP RECLAMOS
 // ===========================================
 function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHome, totalOrdersCount, onGenerarCanje, view:viewProp, setView:setViewProp}) {
+  // Sugerencias de producto tomadas de los pedidos reales de la cuenta.
+  const catalogoProd=useMemo(()=>catalogoProductos(orders),[orders]);
   const [reclamos,setReclamos]=useState([]);
   const [view,setViewState]=useState(viewProp||"reclamos"); // reclamos | config
   React.useEffect(()=>{ if(viewProp!==undefined&&viewProp!==view) setViewState(viewProp); },[viewProp]);
@@ -2308,7 +2332,9 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       data.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
       setReclamos(data);
     },(err)=>{ console.error("[reclamos] snapshot error:", err); });
-    const unsub2=onSnapshot(doc(db,"config","plantillas"),snap=>{
+    // Config por cuenta. Antes era un único doc global "config/plantillas":
+    // el SLA de un cliente le pisaba el de todos los demás.
+    const unsub2=onSnapshot(doc(db,"users",user.uid,"config","plantillas"),snap=>{
       if(snap.exists()&&snap.data().sla) setSlaConfig(snap.data().sla);
     },()=>{});
     return ()=>{unsub1();unsub2();};
@@ -2565,7 +2591,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   }
 
   async function saveSLA(dias) {
-    try { await setDoc(doc(db,"config","plantillas"),{sla:{dias}},{merge:true}); } catch(e){}
+    try { await setDoc(doc(db,"users",user.uid,"config","plantillas"),{sla:{dias}},{merge:true}); } catch(e){}
     setSlaConfig({dias});
   }
 
@@ -2834,9 +2860,9 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                     <div style={{flex:1,minWidth:0}}>
                       <span style={{fontWeight:700,fontSize:14,color:T.text}}>{o.comprador}</span>
                       <span style={{fontSize:13,color:T.accent,marginLeft:8}}>#{o.numero}</span>
-                      <div style={{fontSize:12,color:T.textSm,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(o.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(' · ')}</div>
+                      <div style={{fontSize:12,color:T.textSm,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(o.productos||[]).map(p=>nombreProducto(p.nombre)).join(' · ')}</div>
                     </div>
-                    <button onClick={()=>{setReclamoForm(emptyForm(o.numero,{nombre:o.comprador,email:o.email,telefono:o.telefono,productos:(o.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,"").replace(/[()]/g,"").trim()).filter(Boolean),total:o.total}));setSearch("");}} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0,marginLeft:12}}>+ Reclamo</button>
+                    <button onClick={()=>{setReclamoForm(emptyForm(o.numero,{nombre:o.comprador,email:o.email,telefono:o.telefono,productos:(o.productos||[]).map(p=>nombreProducto(p.nombre)).filter(Boolean),total:o.total}));setSearch("");}} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0,marginLeft:12}}>+ Reclamo</button>
                   </div>
                 ))}
               </div>
@@ -3091,7 +3117,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 const nombre=activeR.clienteNombre||activeOrder?.comprador||"--";
                 const email=activeR.clienteEmail||activeOrder?.email||"";
                 const tel=activeR.clienteTelefono||activeOrder?.telefono||"";
-                const prods=activeR.clienteProductos?.length>0?activeR.clienteProductos:(activeOrder?.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim());
+                const prods=activeR.clienteProductos?.length>0?activeR.clienteProductos:(activeOrder?.productos||[]).map(p=>nombreProducto(p.nombre));
                 const total=activeR.clienteTotal||activeOrder?.total||"";
                 return(
                   <div>
@@ -3116,7 +3142,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Productos comprados</div>
                 {activeOrder.productos.map((p,i)=>(
                   <div key={i} style={{fontSize:13,color:T.text,padding:"4px 0",borderBottom:i<activeOrder.productos.length-1?`1px solid ${T.borderL}`:"none",display:"flex",justifyContent:"space-between"}}>
-                    <span>{p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'')}</span><span style={{color:T.textSm}}>x{p.cantidad}</span>
+                    <span>{nombreProducto(p.nombre)}</span><span style={{color:T.textSm}}>x{p.cantidad}</span>
                   </div>
                 ))}
               </div>
@@ -3215,7 +3241,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                     clienteNombre:o?.comprador||f.clienteNombre||"",
                     clienteEmail:o?.email||f.clienteEmail||"",
                     clienteTelefono:o?.telefono||f.clienteTelefono||"",
-                    clienteProductos:o?(o.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim()).filter(Boolean):f.clienteProductos||[],
+                    clienteProductos:o?(o.productos||[]).map(p=>nombreProducto(p.nombre)).filter(Boolean):f.clienteProductos||[],
                     clienteTotal:o?.total||f.clienteTotal||"",
                   }));
                 }}/>
@@ -3227,7 +3253,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
               const nombre=reclamoForm.clienteNombre||o?.comprador||"";
               const email=reclamoForm.clienteEmail||o?.email||"";
               const tel=reclamoForm.clienteTelefono||o?.telefono||"";
-              const prods=(reclamoForm.clienteProductos||[]).length>0?reclamoForm.clienteProductos:(o?.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim()).filter(Boolean);
+              const prods=(reclamoForm.clienteProductos||[]).length>0?reclamoForm.clienteProductos:(o?.productos||[]).map(p=>nombreProducto(p.nombre)).filter(Boolean);
               const total=reclamoForm.clienteTotal||o?.total||"";
               return (
                 <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
@@ -3257,13 +3283,14 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
               {reclamoForm.tipo==="Cambio"&&(
                 <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:14,marginBottom:12}}>
                   <div style={{fontSize:11,textTransform:"uppercase",color:T.purple,fontWeight:700,letterSpacing:0.5,marginBottom:10,display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>Detalle del cambio</div>
+                  <datalist id="gh-catalogo-prod">{catalogoProd.map(p=><option key={p} value={p}/>)}</datalist>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
                     {["productosRecibe","productosEnvia"].map((key,side)=>(
                       <div key={key}>
                         <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase"}}>{side===0?"Nos devuelve":"Le enviamos"}</div>
                         {(reclamoForm[key]||[]).map((item,i)=>(
                           <div key={i} style={{display:"flex",gap:4,marginBottom:6,alignItems:"center"}}>
-                            <select style={{...iS,flex:1,fontSize:12,padding:"7px 8px"}} value={item.producto} onChange={e=>{const arr=[...reclamoForm[key]];arr[i]={...arr[i],producto:e.target.value};setReclamoForm(f=>({...f,[key]:arr}));}}><option value="">-</option>{PRODUCTOS.map(p=><option key={p}>{p}</option>)}</select>
+                            <input list="gh-catalogo-prod" placeholder="Producto" style={{...iS,flex:1,fontSize:12,padding:"7px 8px"}} value={item.producto} onChange={e=>{const arr=[...reclamoForm[key]];arr[i]={...arr[i],producto:e.target.value};setReclamoForm(f=>({...f,[key]:arr}));}}/>
                             <input type="number" min={1} value={item.cantidad} onChange={e=>{const arr=[...reclamoForm[key]];arr[i]={...arr[i],cantidad:parseInt(e.target.value)||1};setReclamoForm(f=>({...f,[key]:arr}));}} style={{...iS,width:48,textAlign:"center",fontSize:12,padding:"7px 4px",flexShrink:0}}/>
                             {reclamoForm[key].length>1&&<button onClick={()=>setReclamoForm(f=>({...f,[key]:f[key].filter((_,j)=>j!==i)}))} style={{...BtnDanger(T),padding:"4px 6px",fontSize:12,flexShrink:0}}>✕</button>}
                           </div>
@@ -3576,6 +3603,8 @@ function NotasInline({value, onSave, T, iS}) {
 
 
 function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje, initialDetail, onClearInitialDetail, tab: tabProp, setTab: setTabProp, orders=[]}) {
+  // Catálogo real de la cuenta (sale de sus propios pedidos) + opciones genéricas.
+  const catalogoCanje=useMemo(()=>[...catalogoProductos(orders),...EXTRAS_CANJE],[orders]);
   const [canjes,setCanjes]=useState([]);
   const [form,setForm]=useState(null);
   const [detail,setDetail]=useState(null);
@@ -3618,15 +3647,15 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   }
   // Comisiones UGC - overrides guardados en localStorage + Firestore
   const [comisionOverrides,setComisionOverrides]=useState(()=>{
-    try{return JSON.parse(localStorage.getItem("growith_comisionOverrides")||"{}");}catch(_){return {};}
+    try{return JSON.parse(localStorage.getItem(ghKey("growith_comisionOverrides"))||"{}");}catch(_){return {};}
   });
   const [mpComision,setMpComision]=useState(()=>{
-    try{return parseFloat(localStorage.getItem("growith_mpComision")||"12");}catch(_){return 12;}
+    try{return parseFloat(localStorage.getItem(ghKey("growith_mpComision"))||"12");}catch(_){return 12;}
   });
   function saveMpComision(val){
     const pct=parseFloat(val)||0;
     setMpComision(pct);
-    try{localStorage.setItem("growith_mpComision",String(pct));}catch(_){}
+    try{localStorage.setItem(ghKey("growith_mpComision"),String(pct));}catch(_){}
     // Recalcular comData si existe
     if(comData){
       const enriched=comData.coupons.map(c=>{
@@ -3639,7 +3668,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   function saveComisionOverride(code,pct){
     const updated={...comisionOverrides,[code]:pct};
     setComisionOverrides(updated);
-    try{localStorage.setItem("growith_comisionOverrides",JSON.stringify(updated));}catch(_){}
+    try{localStorage.setItem(ghKey("growith_comisionOverrides"),JSON.stringify(updated));}catch(_){}
     // Re-calcular comData si existe
     if(comData){
       const enriched=comData.coupons.map(c=>{
@@ -3705,28 +3734,14 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   useEffect(()=>{
     if(pendingCanje) {
       // Si ya viene con productosCanje formateados (desde Envíos), usarlos directo
-      // Si viene con productos como strings (desde Reclamos), hacer fuzzy match con PRODUCTOS_CANJE
+      // Si viene con productos como strings (desde Reclamos), normalizar el nombre
       let prodsCanje = pendingCanje.productosCanje || [];
       if(!prodsCanje.length && (pendingCanje.productos||[]).length) {
         prodsCanje = (pendingCanje.productos||[]).map(p => {
           const nombre = typeof p === "string" ? p : (p.nombre||"");
-          // Fuzzy match: buscar el producto de PRODUCTOS_CANJE que más se parece
-          const normalizar = s => s.toLowerCase()
-            .replace(/anteojos soluna.*?blocker\s*/i,"")
-            .replace(/[()]/g,"")
-            .replace(/[---]/g," ")
-            .replace(/\s+/g," ")
-            .trim();
-          const n = normalizar(nombre);
-          const match = PRODUCTOS_CANJE.find(pc => {
-            const pcN = normalizar(pc);
-            // Coincidencia exacta normalizada
-            if(n === pcN) return true;
-            // Coincidencia por palabras clave (ej: "amarillo" + "negro")
-            const palabras = n.split(" ").filter(w=>w.length>3);
-            return palabras.every(w => pcN.includes(w));
-          });
-          return { nombre: match || nombre, cantidad: parseInt(p.cantidad)||1 };
+          // Se usa el nombre real del pedido: antes se forzaba el encaje
+          // contra un catálogo fijo que solo servía para un cliente.
+          return { nombre: nombreProducto(nombre), cantidad: parseInt(p.cantidad)||1 };
         }).filter(p=>p.nombre);
       }
       setForm({...emptyForm(),...pendingCanje,_docId:null,
@@ -4875,7 +4890,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   e.target.value="";
                 }} defaultValue="" style={{...iS,fontSize:12,padding:"7px 10px",color:T.textSm}}>
                   <option value="">+ Agregar producto...</option>
-                  {PRODUCTOS_CANJE.map(pr=><option key={pr} value={pr}>{pr}</option>)}
+                  {catalogoCanje.map(pr=><option key={pr} value={pr}>{pr}</option>)}
                 </select>
               </div>
 
@@ -5045,19 +5060,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               </div>
               <OrderSearchField T={T} orders={orders} uid={user?.uid} onSelect={(num, orden)=>{
                 const o=orden||orders.find(o=>o.numero===String(num));
-                // Fuzzy match: mismo algoritmo que pendingCanje
-                const normalizar=s=>s.toLowerCase().replace(/anteojos soluna.*?blocker\s*/i,"").replace(/[()]/g,"").replace(/[---]/g," ").replace(/\s+/g," ").trim();
-                const prodsCanje=(o?.productos||[]).map(p=>{
-                  const nombre=typeof p==="string"?p:(p.nombre||"");
-                  const n=normalizar(nombre);
-                  const match=PRODUCTOS_CANJE.find(pc=>{
-                    const pcN=normalizar(pc);
-                    if(n===pcN) return true;
-                    const palabras=n.split(" ").filter(w=>w.length>3);
-                    return palabras.length>0&&palabras.every(w=>pcN.includes(w));
-                  });
-                  return {nombre:match||nombre,cantidad:parseInt(p.cantidad)||1};
-                }).filter(p=>p.nombre);
+                const prodsCanje=(o?.productos||[]).map(p=>({
+                  nombre:nombreProducto(typeof p==="string"?p:(p.nombre||"")),
+                  cantidad:parseInt(p.cantidad)||1,
+                })).filter(p=>p.nombre);
                 setForm(f=>({...f,
                   influencer:f.influencer||(o?.comprador||""),
                   email:f.email||(o?.email||""),
@@ -5142,7 +5148,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       }}
                       style={{...iS,flex:1,padding:"8px 10px",fontSize:13}}>
                       <option value="">Elegir producto...</option>
-                      {PRODUCTOS_CANJE.map(p=><option key={p} value={p}>{p}</option>)}
+                      {catalogoCanje.map(p=><option key={p} value={p}>{p}</option>)}
                     </select>
                     <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
                       <button type="button" onClick={()=>{const upd=(form.productosCanje||[]).map((p,j)=>j===i?{...p,cantidad:Math.max(1,(parseInt(p.cantidad)||1)-1)}:p);setForm(f=>({...f,productosCanje:upd}));}} style={{width:28,height:28,borderRadius:6,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>−</button>
@@ -5308,13 +5314,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [exportDone,setExportDone]=useState(null); // null | {count,esquinas}
   const [exportCfg,setExportCfg]=useState(()=>{
     try {
-      const saved=localStorage.getItem("growith_exportCfg");
+      const saved=localStorage.getItem(ghKey("growith_exportCfg"));
       if(saved) return {...{peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000"},...JSON.parse(saved)};
     } catch(e) {}
     return {peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000"};
   });
   // Guardar config cuando cambia
-  useEffect(()=>{ try{localStorage.setItem("growith_exportCfg",JSON.stringify(exportCfg));}catch(e){} },[exportCfg]);
+  useEffect(()=>{ try{localStorage.setItem(ghKey("growith_exportCfg"),JSON.stringify(exportCfg));}catch(e){} },[exportCfg]);
   const [tabEnvio,setTabEnvio]=useState("empaquetar");
   const [searchEnvios,setSearchEnvios]=useState("");
   const [searchLibre,setSearchLibre]=useState(false);
@@ -5348,9 +5354,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [buscarLoading,setBuscarLoading]=useState(false);
   const [compactMode,setCompactMode]=useState(false);
   // Columnas ocultas persistidas (antes se perdían al recargar)
-  const [hiddenCols,setHiddenCols]=useState(()=>{try{return new Set(JSON.parse(localStorage.getItem("growith_envios_cols")||"[]"));}catch(_){return new Set();}});
+  const [hiddenCols,setHiddenCols]=useState(()=>{try{return new Set(JSON.parse(localStorage.getItem(ghKey("growith_envios_cols"))||"[]"));}catch(_){return new Set();}});
   const [showColMenu,setShowColMenu]=useState(false);
-  function toggleCol(col){setHiddenCols(s=>{const n=new Set(s);n.has(col)?n.delete(col):n.add(col);try{localStorage.setItem("growith_envios_cols",JSON.stringify([...n]));}catch(_){}return n;});}
+  function toggleCol(col){setHiddenCols(s=>{const n=new Set(s);n.has(col)?n.delete(col):n.add(col);try{localStorage.setItem(ghKey("growith_envios_cols"),JSON.stringify([...n]));}catch(_){}return n;});}
   const [orderPage,setOrderPage]=useState(0);
   const [showPagePicker,setShowPagePicker]=useState(false);
   // SKU tab
@@ -5516,7 +5522,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const exportadoMap=useMemo(()=>{
     const m={};
     for(const [n,e] of Object.entries(enviosFs)) if(e.creado) m[n]=e.creado;
-    try{ for(const h of JSON.parse(localStorage.getItem("growith_exportHistory")||"[]")) for(const n of (h.pedidos||[])) if(!m[n]) m[n]=h.fecha; }catch(_){}
+    try{ for(const h of JSON.parse(localStorage.getItem(ghKey("growith_exportHistory"))||"[]")) for(const n of (h.pedidos||[])) if(!m[n]) m[n]=h.fecha; }catch(_){}
     return m;
   },[enviosFs,exportDone]);
   // Prefijo común de los nombres de producto → se recorta en la columna
@@ -5880,9 +5886,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+total+'" uniqueCount="'+total+'">'+newSsItems+'</sst>');
     return zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
   }
-  const locationOverridesRef=useRef((()=>{try{return JSON.parse(localStorage.getItem("growith_locOverrides")||"{}");}catch(_){return {};}})());
-  const sucursalOverridesRef=useRef((()=>{try{return JSON.parse(localStorage.getItem("growith_sucOverrides")||"{}");}catch(_){return {};}})());
-  function persistOverrides(){try{localStorage.setItem("growith_locOverrides",JSON.stringify(locationOverridesRef.current));localStorage.setItem("growith_sucOverrides",JSON.stringify(sucursalOverridesRef.current));}catch(_){}}
+  const locationOverridesRef=useRef((()=>{try{return JSON.parse(localStorage.getItem(ghKey("growith_locOverrides"))||"{}");}catch(_){return {};}})());
+  const sucursalOverridesRef=useRef((()=>{try{return JSON.parse(localStorage.getItem(ghKey("growith_sucOverrides"))||"{}");}catch(_){return {};}})());
+  function persistOverrides(){try{localStorage.setItem(ghKey("growith_locOverrides"),JSON.stringify(locationOverridesRef.current));localStorage.setItem(ghKey("growith_sucOverrides"),JSON.stringify(sucursalOverridesRef.current));}catch(_){}}
 
   // Atajos de teclado
   useEffect(()=>{
@@ -6086,15 +6092,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       a.download='EnvioMasivoExcelPaquetes-'+date+'.xlsx';
       a.click();
       try{
-        const hist=JSON.parse(localStorage.getItem("growith_exportHistory")||"[]");
+        const hist=JSON.parse(localStorage.getItem(ghKey("growith_exportHistory"))||"[]");
         hist.unshift({fecha:new Date().toISOString(),cantidad:finalOrders.length,pedidos:finalOrders.map(o=>o.numero)});
-        localStorage.setItem("growith_exportHistory",JSON.stringify(hist.slice(0,50)));
+        localStorage.setItem(ghKey("growith_exportHistory"),JSON.stringify(hist.slice(0,50)));
       }catch(_){}
       setExportProgress({step:"¡Listo!",pct:100,current:finalOrders.length,total:finalOrders.length});
       setSelected(new Map());
       setExportSingleOrder(null);
       locationOverridesRef.current={}; sucursalOverridesRef.current={};
-      try{localStorage.removeItem("growith_locOverrides");localStorage.removeItem("growith_sucOverrides");}catch(_){}
+      try{localStorage.removeItem(ghKey("growith_locOverrides"));localStorage.removeItem(ghKey("growith_sucOverrides"));}catch(_){}
       setExportDone({count:finalOrders.length, esquinas:esquinaOrders.length, esquinaOrders});
       logUsage("etiquetas", finalOrders.length);
       registrarEnviosFs(finalOrders); // historial compartido en Firestore (fire-and-forget)
@@ -6236,7 +6242,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       });
       setSkuProgress(40);
       let cfg={x:10,y:10,fontSize:4,sortBy:"sin"};
-      try{const s=localStorage.getItem("growith_skuCfg");if(s)cfg={...cfg,...JSON.parse(s)};}catch(_){}
+      try{const s=localStorage.getItem(ghKey("growith_skuCfg"));if(s)cfg={...cfg,...JSON.parse(s)};}catch(_){}
       // Ordenar páginas agrupadas por SKU principal para que las del mismo SKU salgan juntas
       const sortedResults=[...results].sort((a,b)=>{
         const sA=a.skuLines?.[0]||""; const sB=b.skuLines?.[0]||"";
@@ -6860,13 +6866,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         {/* -- HISTORIAL DE EXPORTACIONES -- */}
         {tab==="panel"&&(()=>{
           let hist=[];
-          try{hist=JSON.parse(localStorage.getItem("growith_exportHistory")||"[]").slice(0,5);}catch(e){}
+          try{hist=JSON.parse(localStorage.getItem(ghKey("growith_exportHistory"))||"[]").slice(0,5);}catch(e){}
           if(!hist.length) return null;
           return (
             <div style={{marginTop:24,borderTop:`0.5px solid ${T.borderL}`,paddingTop:20}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em"}}>Últimas exportaciones</div>
-                <button onClick={()=>{localStorage.removeItem("growith_exportHistory");setTabCounts(c=>({...c}));/* fuerza re-render: antes el bloque quedaba visible */}} style={{fontSize:11,color:T.textSm,background:"none",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar</button>
+                <button onClick={()=>{localStorage.removeItem(ghKey("growith_exportHistory"));setTabCounts(c=>({...c}));/* fuerza re-render: antes el bloque quedaba visible */}} style={{fontSize:11,color:T.textSm,background:"none",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar</button>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 {hist.map((h,i)=>{
@@ -7513,7 +7519,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           const selOrders=exportSingleOrder?[exportSingleOrder]:[...selected.values()];
           const domCount=selOrders.filter(o=>!isSucursalOrder(o)).length;
           const sucCount=selOrders.filter(o=>isSucursalOrder(o)).length;
-          let hist=[];try{hist=JSON.parse(localStorage.getItem("growith_exportHistory")||"[]");}catch(_){}
+          let hist=[];try{hist=JSON.parse(localStorage.getItem(ghKey("growith_exportHistory"))||"[]");}catch(_){}
           const yaExportados=selOrders.filter(o=>hist.some(h=>h.pedidos?.includes(o.numero)));
           return (
         <div>
@@ -9279,7 +9285,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 // ===========================================
 // APP PLANES - Página de suscripción
 // ===========================================
-function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAGO, ALIAS_PAGO, TITULAR_PAGO, SUPPORT_EMAIL, isTrialExpired=false}) {
+function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT_EMAIL, isTrialExpired=false}) {
   const iS=InputStyle(T);
   const [step,setStep]=useState("planes");
   const [metodo,setMetodo]=useState(null);
@@ -9555,6 +9561,7 @@ function AppAdmin({T, user, onBack}) {
   const [uUnidad,   setUUnidad]   = useState({});
   const [uDias,     setUDias]     = useState({});
   const [usageByUid, setUsageByUid] = useState({}); // {uid: {loading, usage:[], totales}}
+  const [userLimit, setUserLimit] = useState(50); // se pinta de a 50: con cientos de cuentas la lista entera traba el navegador
 
   async function loadUsage(targetUid) {
     setUsageByUid(prev=>({...prev,[targetUid]:{...(prev[targetUid]||{}),loading:true}}));
@@ -9620,8 +9627,12 @@ function AppAdmin({T, user, onBack}) {
     return Math.ceil((d - new Date()) / 86400000);
   }
 
-  const PLAN_C  = {free:T.textSm, plus:T.blue, full:T.purple};
-  const PLAN_BG = {free:T.surface, plus:T.blueBg, full:T.purpleBg};
+  // Un solo plan de pago: "plus" es el id en Firestore, se muestra como "Pro".
+  // "full" quedó de una etapa anterior con dos planes; se sigue reconociendo
+  // para no romper cuentas viejas, pero no se ofrece en ningún lado.
+  const PLAN_C  = {free:T.textSm, plus:T.blue, full:T.blue};
+  const PLAN_BG = {free:T.surface, plus:T.blueBg, full:T.blueBg};
+  const planLabel = p => (p==="plus"||p==="full") ? "Pro" : "Free";
 
   const { pagos=[], usuarios=[], stats={} } = datos;
   const pagosPendientes = pagos.filter(p => p.estado === "pendiente");
@@ -9643,16 +9654,25 @@ function AppAdmin({T, user, onBack}) {
 
   const usuariosFiltrados = usuarios
     .filter(u => {
-      if (filterPlan === "todos") return true;
+      if (filterPlan === "todos" || filterPlan === "vencidas") return true;
       if (filterPlan === "prueba") return u.isTrial;
+      if (filterPlan === "pagas")  return (u.plan||"free") !== "free" && !u.isTrial;
       return (u.plan||"free") === filterPlan;
     })
     .filter(u => !search || (u.email||"").toLowerCase().includes(search.toLowerCase()) || (u.nombre||"").toLowerCase().includes(search.toLowerCase()))
+    .filter(u => {
+      if (filterPlan !== "vencidas") return true;
+      const d = daysUntil(u.planExpiry);
+      return d !== null && d < 0;
+    })
     .sort((a,b) => {
-      const planOrder = {full:0, plus:1, free:2};
-      const pa = planOrder[a.plan||"free"] ?? 2;
-      const pb = planOrder[b.plan||"free"] ?? 2;
-      return pa !== pb ? pa - pb : (a.email||"").localeCompare(b.email||"");
+      // Primero lo que requiere atención: vencidos, después por vencer, después el resto.
+      const da = daysUntil(a.planExpiry), db_ = daysUntil(b.planExpiry);
+      const rank = d => d===null ? 3 : d<0 ? 0 : d<=7 ? 1 : 2;
+      const ra = rank(da), rb = rank(db_);
+      if (ra !== rb) return ra - rb;
+      if (ra<=1) return (da??0) - (db_??0);
+      return (a.email||"").localeCompare(b.email||"");
     });
 
   async function confirmarPago(p) {
@@ -9754,9 +9774,9 @@ function AppAdmin({T, user, onBack}) {
       <div style={{maxWidth:960,margin:"0 auto",padding:"16px 20px 0"}}>
         <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:0,marginBottom:20,width:"fit-content"}}>
           {[
-            ["resumen", pagosPendientes.length>0 ? `Resumen  ·${pagosPendientes.length}` : "Resumen"],
-            ["usuarios", "Usuarios"],
-            ["secciones", "Secciones"],
+            ["resumen", pagosPendientes.length>0 ? `Cobros · ${pagosPendientes.length}` : "Cobros"],
+            ["usuarios", "Cuentas"],
+            ["secciones", "Accesos"],
           ].map(([id,label])=>(
             <button key={id} onClick={()=>setTab(id)} style={tabStyle(id)}>{label}</button>
           ))}
@@ -9803,7 +9823,7 @@ function AppAdmin({T, user, onBack}) {
                     <div style={{flex:1,minWidth:200}}>
                       <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>{u?.email||p.email||p.uid}</div>
                       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                        <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{p.plan}</span>
+                        <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{planLabel(p.plan)}</span>
                         {p.method&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:T.blueBg,color:p.method==="cripto"?T.green:T.blue}}>{p.method==="cripto"?"₮ USDT":"ARS"}</span>}
                         {p.transferRef&&<span style={{fontSize:11,color:T.textSm}}>Ref: <strong style={{color:T.text}}>{p.transferRef}</strong></span>}
                         {p.txHash&&<span style={{fontSize:11,color:T.textSm,fontFamily:"monospace"}}>TX: {p.txHash.slice(0,16)}…</span>}
@@ -9835,7 +9855,7 @@ function AppAdmin({T, user, onBack}) {
                   <div key={u._id} style={{padding:"12px 18px",borderBottom:i<vencenProximos.length-1?`1px solid ${T.borderL}`:"none",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                     <div style={{flex:1}}>
                       <span style={{fontSize:13,fontWeight:600,color:T.text,marginRight:8}}>{u.email||u.nombre}</span>
-                      <span style={{fontSize:11,padding:"1px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[u.plan]||T.surface,color:PLAN_C[u.plan]||T.textSm,marginRight:8}}>{u.plan}</span>
+                      <span style={{fontSize:11,padding:"1px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[u.plan]||T.surface,color:PLAN_C[u.plan]||T.textSm,marginRight:8}}>{planLabel(u.plan)}</span>
                       <span style={{fontSize:12,color:days<=3?T.red:T.yellow}}>vence en {days} día{days!==1?"s":""} — {fmtDate(u.planExpiry)}</span>
                     </div>
                     <div style={{display:"flex",gap:6}}>
@@ -9848,31 +9868,16 @@ function AppAdmin({T, user, onBack}) {
             </div>
           )}
 
-          {/* Ingresos resumen */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px"}}>
-              <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Total recaudado</div>
-              <div style={{fontSize:22,fontWeight:700,color:T.green,marginBottom:4}}>${(stats.totalUSDT||0).toLocaleString("en-US")} USDT</div>
-              <div style={{fontSize:18,fontWeight:600,color:T.blue,marginBottom:6}}>${(stats.totalARS||0).toLocaleString("es-AR")} ARS</div>
-              <div style={{fontSize:11,color:T.textSm}}>{pagosReales.length} pago{pagosReales.length!==1?"s":""} confirmados · {stats.countPruebas||0} prueba{(stats.countPruebas||0)!==1?"s":""}</div>
+          {/* Ingresos resumen — un solo plan, así que no hay distribución que mostrar */}
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px",marginBottom:20,display:"flex",gap:32,flexWrap:"wrap",alignItems:"flex-end"}}>
+            <div>
+              <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Total recaudado</div>
+              <div style={{fontSize:24,fontWeight:700,color:T.green}}>${(stats.totalUSDT||0).toLocaleString("en-US")} USDT</div>
+              {(stats.totalARS||0)>0&&<div style={{fontSize:16,fontWeight:600,color:T.blue,marginTop:2}}>${(stats.totalARS||0).toLocaleString("es-AR")} ARS</div>}
             </div>
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px"}}>
-              <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Distribución de planes</div>
-              {[
-                {plan:"full",label:"Scale",paid:stats.usuariosFull||0,trial:stats.usuariosFull_trial||0,price:"$89 USDT/mes"},
-                {plan:"plus",label:"Pro",paid:stats.usuariosPlus||0,trial:stats.usuariosPlus_trial||0,price:"$49 USDT/mes"},
-              ].map(({plan,label,paid,trial,price})=>(
-                <div key={plan} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-                  <div>
-                    <span style={{fontSize:13,fontWeight:600,color:PLAN_C[plan],marginRight:8}}>{label}</span>
-                    <span style={{fontSize:11,color:T.textSm}}>{price}</span>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <span style={{fontSize:16,fontWeight:700,color:T.text}}>{paid}</span>
-                    {trial>0&&<span style={{fontSize:11,color:T.yellow,marginLeft:6}}>+{trial} prueba</span>}
-                  </div>
-                </div>
-              ))}
+            <div style={{fontSize:12,color:T.textSm,lineHeight:1.7,paddingBottom:2}}>
+              {pagosReales.length} pago{pagosReales.length!==1?"s":""} confirmado{pagosReales.length!==1?"s":""}<br/>
+              {stats.countPruebas||0} prueba{(stats.countPruebas||0)!==1?"s":""} otorgada{(stats.countPruebas||0)!==1?"s":""}
             </div>
           </div>
 
@@ -9920,7 +9925,7 @@ function AppAdmin({T, user, onBack}) {
                     <div key={p._id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",borderBottom:i<recent.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
                       <span style={{fontSize:11,width:22,textAlign:"center",flexShrink:0,fontWeight:700,color:p.isTrial?T.yellow:est==="confirmado"?T.green:est==="rechazado"?T.red:T.textSm}}>{p.isTrial?"P":est==="confirmado"?"✓":est==="rechazado"?"✕":"·"}</span>
                       <span style={{flex:1,fontSize:12,color:T.text,minWidth:130}}>{u?.email||p.email||p.uid}</span>
-                      <span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{p.plan}</span>
+                      <span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{planLabel(p.plan)}</span>
                       {!p.isTrial&&Number(p.amount)>0&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.currency==="USDT"?T.greenBg:T.blueBg,color:p.currency==="USDT"?T.green:T.blue}}>${Number(p.amount).toFixed(p.currency==="USDT"?2:0)} {p.currency}</span>}
                       {p.txHash&&<a href={`https://tronscan.org/#/transaction/${encodeURIComponent(p.txHash)}`} target="_blank" rel="noreferrer" title={p.txHash} style={{fontSize:10,color:T.accent,textDecoration:"none",fontFamily:"monospace",background:T.surface,border:`1px solid ${T.border}`,borderRadius:4,padding:"2px 7px"}}>Tx {String(p.txHash).slice(0,8)}… ↗</a>}
                       {p.isTrial&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:T.yellowBg,color:T.yellow}}>prueba</span>}
@@ -9946,11 +9951,11 @@ function AppAdmin({T, user, onBack}) {
           </div>
           <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
             {[
-              ["todos","Todos",usuarios.length],
-              ["full","Scale",usuarios.filter(u=>u.plan==="full"&&!u.isTrial).length],
-              ["plus","Pro",usuarios.filter(u=>u.plan==="plus"&&!u.isTrial).length],
-              ["prueba","Prueba",usuarios.filter(u=>u.isTrial).length],
-              ["free","Free",usuarios.filter(u=>(u.plan||"free")==="free"&&!u.isTrial).length],
+              ["todos","Todas",usuarios.length],
+              ["pagas","Pagas",usuarios.filter(u=>(u.plan||"free")!=="free"&&!u.isTrial).length],
+              ["prueba","En prueba",usuarios.filter(u=>u.isTrial).length],
+              ["vencidas","Vencidas",usuarios.filter(u=>{const d=daysUntil(u.planExpiry);return d!==null&&d<0;}).length],
+              ["free","Sin plan",usuarios.filter(u=>(u.plan||"free")==="free"&&!u.isTrial).length],
             ].map(([id,label,count])=>(
               <button key={id} onClick={()=>setFilterPlan(id)} style={pillStyle(filterPlan===id)}>
                 {label} <span style={{opacity:0.7,fontSize:11}}>({count})</span>
@@ -9958,13 +9963,13 @@ function AppAdmin({T, user, onBack}) {
             ))}
           </div>
 
-          {usuariosFiltrados.length===0&&<div style={{textAlign:"center",padding:40,color:T.textSm}}>Sin usuarios en este filtro.</div>}
-          {usuariosFiltrados.map(u=>{
+          {usuariosFiltrados.length===0&&<div style={{textAlign:"center",padding:40,color:T.textSm}}>Sin cuentas en este filtro.</div>}
+          {usuariosFiltrados.slice(0,userLimit).map(u=>{
             const expanded = expandedUser===u._id;
             const days = daysUntil(u.planExpiry);
             const expiryColor = days===null||u.plan==="free" ? T.textSm : days<3 ? T.red : days<7 ? T.yellow : days>30 ? T.green : T.textMd;
             const userPagos = pagos.filter(p=>p.uid===u._id).sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0));
-            const selPlan = uPlan[u._id] || (u.plan!=="free"?u.plan:"plus");
+            const selPlan = "plus"; // plan único
             const selDias = uDias[u._id] || "";
             return (
               <div key={u._id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,marginBottom:8,overflow:"hidden"}}>
@@ -9977,7 +9982,7 @@ function AppAdmin({T, user, onBack}) {
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email||u.nombre}</div>
                     <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                      <span style={{fontSize:11,padding:"1px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[u.plan||"free"]||T.surface,color:PLAN_C[u.plan||"free"]||T.textSm}}>{u.plan||"free"}</span>
+                      <span style={{fontSize:11,padding:"1px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[u.plan||"free"]||T.surface,color:PLAN_C[u.plan||"free"]||T.textSm}}>{planLabel(u.plan)}</span>
                       {u.isTrial&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:4,fontWeight:700,background:T.yellowBg,color:T.yellow}}>prueba</span>}
                       {u.planExpiry&&u.plan!=="free"&&days!==null&&(
                         <span style={{fontSize:11,color:expiryColor}}>
@@ -10004,7 +10009,7 @@ function AppAdmin({T, user, onBack}) {
                         <span style={{fontSize:13,color:T.textSm}}>Plan gratuito — sin suscripción activa</span>
                       ):(
                         <>
-                          <span style={{fontSize:14,fontWeight:700,color:PLAN_C[u.plan]}}>{u.plan==="plus"?"Pro":"Scale"}</span>
+                          <span style={{fontSize:14,fontWeight:700,color:PLAN_C[u.plan]}}>{planLabel(u.plan)}</span>
                           {u.isTrial&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:4,fontWeight:700,background:T.yellowBg,color:T.yellow}}>PRUEBA</span>}
                           {days!==null&&<span style={{fontSize:13,fontWeight:600,color:expiryColor}}>{days<0?`Vencido hace ${Math.abs(days)}d`:days===0?"Vence hoy":`${days}d restantes`}</span>}
                           {u.planExpiry&&<span style={{fontSize:12,color:T.textSm}}>hasta {fmtDate(u.planExpiry)}</span>}
@@ -10072,11 +10077,7 @@ function AppAdmin({T, user, onBack}) {
                     <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.borderL}`}}>
                       <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:10}}>Gestionar suscripción</div>
                       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:u.plan!=="free"?10:0}}>
-                        <select value={selPlan} onChange={e=>setUPlan(prev=>({...prev,[u._id]:e.target.value}))}
-                          style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
-                          <option value="plus">Pro</option>
-                          <option value="full">Scale</option>
-                        </select>
+                        <span style={{fontSize:12,color:T.textMd}}>Pro por</span>
                         <input type="number" min="1" value={uCantidad[u._id]||"1"}
                           onChange={e=>setUCantidad(prev=>({...prev,[u._id]:e.target.value}))}
                           style={{...iS,fontSize:12,width:60,textAlign:"center"}}/>
@@ -10086,7 +10087,7 @@ function AppAdmin({T, user, onBack}) {
                           <option value="dias">día(s)</option>
                         </select>
                         <AsyncButton onClick={()=>gestionarPlan(u._id, selPlan, uCantidad[u._id]||1, uUnidad[u._id]||"meses", false)}
-                          style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px",background:selPlan==="plus"?T.blue:T.purple}}>
+                          style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>
                           Activar
                         </AsyncButton>
                         <AsyncButton onClick={()=>gestionarPlan(u._id, selPlan, uCantidad[u._id]||1, uUnidad[u._id]||"meses", true)}
@@ -10098,7 +10099,7 @@ function AppAdmin({T, user, onBack}) {
                         <div className="gh-accordion" style={{borderTop:`1px solid ${T.borderL}`,paddingTop:10}}>
                           <div style={{fontSize:11,color:T.textSm,marginBottom:6}}>Ajustar días al vencimiento:</div>
                           <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-                            {[-30,-14,-7,-3,-1,1,3,7,14,30].map(d=>(
+                            {[-30,-7,-1,1,7,30].map(d=>(
                               <AsyncButton key={d} onClick={()=>ajustarDias(u._id,d)}
                                 style={{...BtnSecondary(T),fontSize:11,padding:"3px 9px",color:d<0?T.red:T.green}}>
                                 {d>0?"+":""}{d}d
@@ -10169,7 +10170,7 @@ function AppAdmin({T, user, onBack}) {
                         ? <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin pagos registrados</div>
                         : userPagos.map(p=>(
                           <div key={p._id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:11,padding:"7px 10px",background:T.surface,borderRadius:8,marginBottom:6}}>
-                            <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{p.plan}</span>
+                            <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{planLabel(p.plan)}</span>
                             {p.isTrial
                               ? <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:T.yellowBg,color:T.yellow}}>prueba</span>
                               : Number(p.amount)>0&&<span style={{color:T.textMd,fontWeight:600}}>${p.amount} {p.currency}</span>
@@ -10187,6 +10188,13 @@ function AppAdmin({T, user, onBack}) {
               </div>
             );
           })}
+          {usuariosFiltrados.length>userLimit&&(
+            <div style={{textAlign:"center",padding:"14px 0"}}>
+              <button onClick={()=>setUserLimit(n=>n+50)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 18px"}}>
+                Ver 50 más ({usuariosFiltrados.length-userLimit} restantes)
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -18703,10 +18711,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // Drill-down: array de breadcrumbs [{level, id, name}]
   const [aDrill,setADrill]=useState([]); // ej [{level:"campaign",id:"123",name:"Camp 1"}]
   // ROAS break-even configurable (persiste en localStorage)
-  const [aRoasBe,setARoasBe]=useState(()=>{ try { return parseFloat(localStorage.getItem("growith_meta_roas_be"))||2; } catch(_) { return 2; } });
+  const [aRoasBe,setARoasBe]=useState(()=>{ try { return parseFloat(localStorage.getItem(ghKey("growith_meta_roas_be")))||2; } catch(_) { return 2; } });
   // Columnas visibles (persiste)
   const DEFAULT_COLS = ["spend","purchases","purchase_value","roas","cpa","ctr","cpm","cpc","frequency","impressions","reach"];
-  const [aCols,setACols]=useState(()=>{ try { const s=JSON.parse(localStorage.getItem("growith_meta_cols")||"null"); return Array.isArray(s)&&s.length?s:DEFAULT_COLS; } catch(_) { return DEFAULT_COLS; }});
+  const [aCols,setACols]=useState(()=>{ try { const s=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols"))||"null"); return Array.isArray(s)&&s.length?s:DEFAULT_COLS; } catch(_) { return DEFAULT_COLS; }});
   const [aColsOpen,setAColsOpen]=useState(false);
   const [aSort,setASort]=useState({key:"spend",dir:"desc"});
   const [aQuery,setAQuery]=useState("");
@@ -19125,8 +19133,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   }
 
   // Persistir ROAS BE y columnas
-  useEffect(()=>{ try { localStorage.setItem("growith_meta_roas_be", String(aRoasBe)); } catch(_) {} }, [aRoasBe]);
-  useEffect(()=>{ try { localStorage.setItem("growith_meta_cols", JSON.stringify(aCols)); } catch(_) {} }, [aCols]);
+  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_roas_be"), String(aRoasBe)); } catch(_) {} }, [aRoasBe]);
+  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_cols"), JSON.stringify(aCols)); } catch(_) {} }, [aCols]);
 
   async function toggleStatus(row) {
     const targetStatus = row.effective_status === "ACTIVE" ? "PAUSED" : "ACTIVE";
@@ -25685,7 +25693,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const [dateTo, setDateTo] = useState("");
   // Modo USD: convierte todo el dashboard con el dólar del período (serie
   // histórica de Ads) — con inflación, comparar en ARS nominal engaña.
-  const [usdMode, setUsdMode] = useState(()=>{ try{return localStorage.getItem("growith_margenes_usd")==="1";}catch(_){return false;} });
+  const [usdMode, setUsdMode] = useState(()=>{ try{return localStorage.getItem(ghKey("growith_margenes_usd"))==="1";}catch(_){return false;} });
   // Vista por canal estilo Escalafy: Global / solo Tienda / solo ML.
   const [canalVista, setCanalVista] = useState("global");
   // Metas del negocio (umbrales de "bueno/malo" en los KPIs) — configurables,
@@ -25727,7 +25735,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   // Desplegables compactos: alertas, precisión de datos y desgloses viven en
   // chips que se expanden a demanda (antes eran bloques fijos que comían espacio).
   const [openInfo, setOpenInfo] = useState(null); // null | "alertas" | "avisos" | "fb" | "ab"
-  const [fullNums, setFullNums] = useState(()=>{ try{return localStorage.getItem("growith_margenes_fullnums")==="1";}catch(_){return false;} });
+  const [fullNums, setFullNums] = useState(()=>{ try{return localStorage.getItem(ghKey("growith_margenes_fullnums"))==="1";}catch(_){return false;} });
   const [viewMenu, setViewMenu] = useState(false); // menú "Vista" del topbar ($ completos + USD)
   const [viewMenuPos, setViewMenuPos] = useState({top:0,right:10}); // fijo: escapa del topbar scrolleable
   const [canalSort, setCanalSort] = useState({k:null,dir:"desc"});
@@ -26042,8 +26050,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               <div onClick={()=>setViewMenu(false)} style={{position:"fixed",inset:0,zIndex:60}}/>
               <div style={{position:"fixed",top:viewMenuPos.top,right:viewMenuPos.right,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:6,width:"min(236px,calc(100vw - 20px))",boxSizing:"border-box",boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
                 {[
-                  {on:fullNums, t:"Números completos", d:"Mostrar sin redondeo K/M", fn:()=>setFullNums(f=>{const n=!f; try{localStorage.setItem("growith_margenes_fullnums",n?"1":"0");}catch(_){} return n;})},
-                  {on:usdMode, t:"Mostrar en dólares", d:usdRate>0?`Cotización promedio del período: $${Math.round(usdRate).toLocaleString("es-AR")}`:"Sin cotización disponible todavía", dis:!usdMode&&!(usdRate>0), fn:()=>setUsdMode(f=>{const n=!f; try{localStorage.setItem("growith_margenes_usd",n?"1":"0");}catch(_){} return n;})},
+                  {on:fullNums, t:"Números completos", d:"Mostrar sin redondeo K/M", fn:()=>setFullNums(f=>{const n=!f; try{localStorage.setItem(ghKey("growith_margenes_fullnums"),n?"1":"0");}catch(_){} return n;})},
+                  {on:usdMode, t:"Mostrar en dólares", d:usdRate>0?`Cotización promedio del período: $${Math.round(usdRate).toLocaleString("es-AR")}`:"Sin cotización disponible todavía", dis:!usdMode&&!(usdRate>0), fn:()=>setUsdMode(f=>{const n=!f; try{localStorage.setItem(ghKey("growith_margenes_usd"),n?"1":"0");}catch(_){} return n;})},
                 ].map((o,i)=>(
                   <button key={i} onClick={o.dis?undefined:o.fn} disabled={o.dis}
                     style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"8px 10px",background:"transparent",border:"none",borderRadius:8,cursor:o.dis?"default":"pointer",opacity:o.dis?0.5:1,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -27090,7 +27098,6 @@ export default function App() {
   const [canjesCount,setCanjesCount]=useState(0);
   const [alertas,setAlertas]=useState([]);
   const [darkMode,setDarkMode]=useState(()=>{ try { return localStorage.getItem("growith_theme")!=="light"; } catch(e){ return true; } });
-  const [migrated,setMigrated]=useState(false);
   const [userPlan,setUserPlan]=useState("free"); // free | plus | full
   const [planExpiry,setPlanExpiry]=useState(null); // Date or null
   const [trialEnd,setTrialEnd]=useState(null);    // Date or null — fin del período de prueba
@@ -27099,10 +27106,9 @@ export default function App() {
 
   const ADMIN_UIDS=["WJH3ArqDPQcNLha9lOinvkVi9uJ2","ADMIN_UID_2"]; // ADMIN_UID_2: completar cuando tengas el segundo
   const USDT_ADDRESS="TXGtDab6Lf3jtSRgq7uB2WbRfqdRA3PTCD"; // dirección TRC20 de Growith (cargada 22/jul/2026)
-  const CVU_PAGO="0000000000000000000000"; // ← completar: CVU para transferencias ARS
-  const ALIAS_PAGO="growith.pagos.ar"; // ← completar: alias CBU
-  const TITULAR_PAGO="Soluna Biolight"; // ← completar: titular de la cuenta
-  const SUPPORT_EMAIL="xxxxxx@gmail.com";
+  // Datos de cobro y soporte. El pago hoy es solo USDT TRC20; cuando se habilite
+  // transferencia en pesos van acá el CVU y el titular reales.
+  const SUPPORT_EMAIL="soporte@growith.app";
 
   const T = darkMode ? DARK : LIGHT;
 
@@ -27218,11 +27224,9 @@ export default function App() {
           const done=localStorage.getItem(k)==="1";
           setOnboardingDone(done);
         }catch(e){setOnboardingDone(true);}
-        // Migrate legacy data for owner account
-        if(u.email===OWNER_EMAIL && !migrated) {
-          await migrateLegacyData(u.uid);
-          setMigrated(true);
-        }
+        // (Se eliminó la migración de datos legacy: recorría las colecciones
+        // completas sin filtrar por cuenta y le asignaba el ownerId al primero
+        // que entrara. Con multi-tenant eso puede apropiarse de datos ajenos.)
         // Load plan from Firestore
         try {
           const userRef=doc(db,"users",u.uid);
@@ -27263,29 +27267,6 @@ export default function App() {
     });
     return ()=>unsub();
   },[]);
-
-  // Migrate existing data to owner's uid
-  async function migrateLegacyData(uid) {
-    try {
-      // Check reclamos without ownerId
-      const recSnap = await getDocs(query(collection(db,"reclamos"), where("ownerId","==",uid)));
-      if(recSnap.empty) {
-        // Assign ownerId to all existing reclamos
-        const allRec = await getDocs(collection(db,"reclamos"));
-        for(const d of allRec.docs) {
-          if(!d.data().ownerId) await updateDoc(d.ref,{ownerId:uid});
-        }
-      }
-      // Same for canjes
-      const canSnap = await getDocs(query(collection(db,"canjes"), where("ownerId","==",uid)));
-      if(canSnap.empty) {
-        const allCan = await getDocs(collection(db,"canjes"));
-        for(const d of allCan.docs) {
-          if(!d.data().ownerId) await updateDoc(d.ref,{ownerId:uid});
-        }
-      }
-    } catch(e){}
-  }
 
   async function fetchOrders(uid, tab) {
     const targetUid = uid || user?.uid;
@@ -27575,6 +27556,10 @@ export default function App() {
   const planDaysLeft = (userPlan !== "free" && planExpiry && planExpiry > _now)
     ? Math.max(0, Math.ceil((planExpiry - _now) / (1000*60*60*24)))
     : null;
+  // Plan pago con fecha de vencimiento pasada = sin acceso. Antes la fecha era
+  // decorativa: quien no renovaba seguía usando todo indefinidamente.
+  const planVencido = !!(userPlan !== "free" && planExpiry && planExpiry < _now);
+  const planEfectivo = planVencido ? "free" : userPlan;
   const planExpiring  = planDaysLeft !== null && planDaysLeft <= 5;
   const trialExpiring = isInTrial && trialDaysLeft <= 5;
   const showExpiryWarning = planExpiring || trialExpiring;
@@ -27591,7 +27576,7 @@ export default function App() {
   const PLAN_LEVEL = {free:0, plus:1, full:2};
   const planGate = (req) => {
     if (isInTrial) return null; // trial = acceso completo a todo
-    if ((PLAN_LEVEL[userPlan]??0) < (PLAN_LEVEL[req]??0))
+    if ((PLAN_LEVEL[planEfectivo]??0) < (PLAN_LEVEL[req]??0))
       return <UpgradeWall T={T} requiredPlan={req} onNavigate={setPage}/>;
     return null;
   };
@@ -27608,11 +27593,11 @@ export default function App() {
     return null;
   };
 
-  // Paywall: trial vencido sin plan pago
-  if(trialExpired&&!isAdmin) return(<><AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>{}} isTrialExpired={true} USDT_ADDRESS={USDT_ADDRESS} CVU_PAGO={CVU_PAGO} ALIAS_PAGO={ALIAS_PAGO} TITULAR_PAGO={TITULAR_PAGO} SUPPORT_EMAIL={SUPPORT_EMAIL}/><AppPromptHost T={T}/></>);
+  // Paywall: trial vencido sin plan pago, o plan pago vencido sin renovar
+  if((trialExpired||planVencido)&&!isAdmin) return(<><AppPlanes T={T} user={user} userPlan={planEfectivo} planExpiry={planExpiry} onBack={()=>{}} isTrialExpired={true} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/><AppPromptHost T={T}/></>);
 
   let pageContent = null;
-  if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} isTrialExpired={false} USDT_ADDRESS={USDT_ADDRESS} CVU_PAGO={CVU_PAGO} ALIAS_PAGO={ALIAS_PAGO} TITULAR_PAGO={TITULAR_PAGO} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
+  if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={planEfectivo} planExpiry={planExpiry} onBack={()=>setPage("home")} isTrialExpired={false} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
   else if(page==="copilot") pageContent = <PageView T={T} pageKey="copilot"><AppCopilot T={T} user={user} onHome={()=>setPage("home")} onNavigate={setPage}/></PageView>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
@@ -27751,7 +27736,7 @@ export default function App() {
             <div style={{fontSize:52,marginBottom:16}}>⏰</div>
             <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:8}}>Tu prueba gratuita terminó</div>
             <div style={{fontSize:14,color:T.textMd,lineHeight:1.6,marginBottom:28}}>
-              Espero que hayas disfrutado los 7 días. Para seguir usando Growith elegí el plan que mejor te queda.
+              Esperamos que hayas aprovechado los 14 días. Para seguir usando Growith, activá el plan Pro.
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               <button onClick={()=>setPage("planes")}

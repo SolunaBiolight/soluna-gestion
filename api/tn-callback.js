@@ -126,7 +126,7 @@ export default async function handler(req, res) {
       const storeRes = await fetch(`https://api.tiendanube.com/v1/${user_id}/store`, {
         headers: {
           "Authentication": `bearer ${access_token}`,
-          "User-Agent": "GrowithApp (soluna.biolight@gmail.com)",
+          "User-Agent": "GrowithApp (soporte@growith.app)",
         },
       });
       if (storeRes.ok) {

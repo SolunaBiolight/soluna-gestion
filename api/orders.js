@@ -146,7 +146,7 @@ function computeRendDow(rows) {
 async function fetchPage(storeId, accessToken, extraParams, page, perPage=200) {
   const headers = {
     'Authentication': `bearer ${accessToken}`,
-    'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)'
+    'User-Agent': 'GrowithApp (soporte@growith.app)'
   };
   const url = `https://api.tiendanube.com/v1/${storeId}/orders?per_page=${perPage}&page=${page}${extraParams ? "&" + extraParams : ""}`;
   const res = await fetch(url, { headers });
@@ -162,7 +162,7 @@ async function fetchPage(storeId, accessToken, extraParams, page, perPage=200) {
 async function fetchTNCount(storeId, accessToken, extraParams = "") {
   const headers = {
     'Authentication': `bearer ${accessToken}`,
-    'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)'
+    'User-Agent': 'GrowithApp (soporte@growith.app)'
   };
   const url = `https://api.tiendanube.com/v1/${storeId}/orders?per_page=1&page=1${extraParams ? "&" + extraParams : ""}`;
   const res = await fetch(url, { headers });
@@ -1409,7 +1409,7 @@ export default async function handler(req, res) {
     // TN no soporta búsqueda por número de orden — hay que paginar y filtrar local.
     if (tab === 'bulk_lookup') {
       if (platform === 'shopify') return res.status(200).json([]);
-      const tnHeaders = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
+      const tnHeaders = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soporte@growith.app)' };
       const page = parseInt(req.query.page) || 1;
       const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?per_page=200&page=${page}`, { headers: tnHeaders });
       if (!r.ok) return res.status(200).json([]);
@@ -1677,7 +1677,7 @@ export default async function handler(req, res) {
       const desdeISO = desde ? `${desde}T00:00:00${tzOffset}` : null;
       const hastaISO = hasta ? `${hasta}T23:59:59${tzOffset}` : null;
       if (platform !== 'tiendanube') return res.status(200).json({ coupons: [], totalPedidosAnalizados: 0, periodo: { desde: desdeISO, hasta: hastaISO } });
-      const tnHeaders = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
+      const tnHeaders = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soporte@growith.app)' };
       let allOrders = []; let page = 1;
       while (page <= 25) {
         let url = `https://api.tiendanube.com/v1/${storeId}/orders?payment_status=paid&per_page=200&page=${page}`;
