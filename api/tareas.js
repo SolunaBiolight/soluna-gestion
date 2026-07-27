@@ -1524,9 +1524,13 @@ export default async function handler(req, res) {
       }
 
       if (action === "adminGetData") {
+        // Topes: sin límite, con cientos de cuentas y miles de pagos esto se
+        // vuelve una respuesta de varios MB que tarda y traba el navegador.
+        // Los pagos van por fecha descendente, así que el corte deja afuera los
+        // más viejos (los pendientes, que son los accionables, siempre entran).
         const [pagSnap, usSnap] = await Promise.all([
-          db.collection("pagos").orderBy("createdAt", "desc").get(),
-          db.collection("users").get(),
+          db.collection("pagos").orderBy("createdAt", "desc").limit(1000).get(),
+          db.collection("users").limit(2000).get(),
         ]);
         const pagos = pagSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
         const usuarios = usSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
@@ -1594,18 +1598,50 @@ export default async function handler(req, res) {
 
       if (action === "confirmarPago") {
         const { pagoId, targetUid, plan, meses = 1 } = body;
-        const userDoc = await db.collection("users").doc(targetUid).get();
-        const userData = userDoc.data() || {};
-        let base = adminNow;
-        if (userData.planExpiry) {
-          const cur = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
-          if (cur > adminNow) base = cur;
+        // Idempotente: dos clicks (o dos pestañas) sobre el mismo pago sumaban
+        // los meses dos veces. La transacción marca el pago como confirmado y
+        // falla si otro ya lo confirmó.
+        const pagoRef = db.collection("pagos").doc(pagoId);
+        let expiry;
+        try {
+          expiry = await db.runTransaction(async tx => {
+            const [pagoSnap, userSnap] = await Promise.all([tx.get(pagoRef), tx.get(db.collection("users").doc(targetUid))]);
+            if (!pagoSnap.exists) throw new Error("PAGO_INEXISTENTE");
+            if ((pagoSnap.data().estado || "") !== "pendiente") throw new Error("PAGO_YA_PROCESADO");
+            const userData = userSnap.data() || {};
+            let base = adminNow;
+            if (userData.planExpiry) {
+              const cur = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
+              if (cur > adminNow) base = cur;
+            }
+            const exp = addMonths(base, meses);
+            tx.update(db.collection("users").doc(targetUid), { plan, planExpiry: exp, isTrial: false, planActivadoBy: uid, planActivadoAt: adminNow });
+            tx.update(pagoRef, { estado: "confirmado", mesesConfirmados: Number(meses), confirmadoBy: uid, confirmadoAt: adminNow });
+            return exp;
+          });
+        } catch (e) {
+          if (e.message === "PAGO_YA_PROCESADO") return res.status(409).json({ error: "Ese pago ya fue procesado." });
+          if (e.message === "PAGO_INEXISTENTE") return res.status(404).json({ error: "No se encontró el pago." });
+          throw e;
         }
-        const expiry = addMonths(base, meses);
-        await Promise.all([
-          db.collection("users").doc(targetUid).update({ plan, planExpiry: expiry, planActivadoBy: uid, planActivadoAt: adminNow }),
-          db.collection("pagos").doc(pagoId).update({ estado: "confirmado", mesesConfirmados: Number(meses), confirmadoBy: uid, confirmadoAt: adminNow }),
-        ]);
+        // Comprobante de activación al cliente (best-effort: si el mail falla,
+        // el plan igual quedó activado).
+        try {
+          const uSnap = await db.collection("users").doc(targetUid).get();
+          const email = (uSnap.data() || {}).email;
+          if (email) {
+            const hasta = expiry.toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" });
+            await sendEmail({
+              to: email,
+              subject: "Tu plan Pro está activo",
+              html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111">
+                <p>¡Listo! Confirmamos tu pago y tu plan <strong>Pro</strong> ya está activo.</p>
+                <p>Tenés acceso completo hasta el <strong>${hasta}</strong>. Te vamos a avisar unos días antes del vencimiento.</p>
+                <p>Gracias por usar Growith.</p>
+              </div>`,
+            });
+          }
+        } catch (e) { console.error("[confirmarPago] email:", e.message); }
         return res.json({ ok: true, expiry });
       }
 

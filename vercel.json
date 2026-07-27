@@ -2,11 +2,13 @@
   "functions": {
     "api/arca.js": { "maxDuration": 120 },
     "api/orders.js": { "maxDuration": 90 },
-    "api/stock.js": { "maxDuration": 60 },
+    "api/stock.js": { "maxDuration": 90 },
     "api/inventory.js": { "maxDuration": 90 },
     "api/meta.js": { "maxDuration": 60 },
     "api/copilot.js": { "maxDuration": 60 },
-    "api/update-shipping.js": { "maxDuration": 60 }
+    "api/update-shipping.js": { "maxDuration": 60 },
+    "api/check-expiring.js": { "maxDuration": 60 },
+    "api/tareas.js": { "maxDuration": 60 }
   },
   "rewrites": [
     { "source": "/__/auth/:path*", "destination": "https://soluna-gestion.firebaseapp.com/__/auth/:path*" },

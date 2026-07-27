@@ -19,6 +19,24 @@ const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
 const auth = getAuth(fbApp);
 
+// ── Fechas en hora Argentina ──────────────────────────────────────────────
+// new Date().toISOString() devuelve UTC. Argentina es UTC-3, así que a partir
+// de las 21:00 local el ISO ya está en el día siguiente: por eso los filtros de
+// "Hoy" y los rangos por defecto abarcaban dos días calendario en vez de uno.
+// Todo lo que sea una FECHA (no un instante) tiene que pasar por acá.
+const AR_TZ = "America/Argentina/Buenos_Aires";
+function fechaAR(d = new Date()) {
+  // "en-CA" da directamente YYYY-MM-DD.
+  return new Date(d).toLocaleDateString("en-CA", { timeZone: AR_TZ });
+}
+function hoyAR() { return fechaAR(); }
+// Suma (o resta, con n negativo) días a una fecha "YYYY-MM-DD" sin que la zona
+// horaria del navegador corra el resultado.
+function sumarDiasAR(fecha, n) {
+  const [y, m, d] = String(fecha).slice(0, 10).split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d) + n * 86400000).toISOString().slice(0, 10);
+}
+
 // Clave de localStorage por cuenta. Sin esto, dos cuentas que usan el mismo
 // navegador comparten configuración (medidas de caja, comisiones, columnas,
 // historial de exportaciones), y la segunda hereda los datos de la primera.
@@ -2573,13 +2591,13 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   }
 
   // Stats — solo reclamos abiertos (no Resuelto/Rechazado)
-  const hace3=new Date(Date.now()-slaConfig.dias*86400000).toISOString().split('T')[0];
+  const hace3=fechaAR(new Date(Date.now()-slaConfig.dias*86400000));
   const abiertos=reclamos.filter(r=>!["Resuelto","Rechazado"].includes(r.estado));
   const stats={
     pendientes:abiertos.length,
     cambios:abiertos.filter(r=>r.tipo==="Cambio").length,
     devoluciones:abiertos.filter(r=>r.tipo==="Devolución").length,
-    urgentes:abiertos.filter(r=>r.createdAt?.seconds&&new Date(r.createdAt.seconds*1000).toISOString().split('T')[0]<=hace3).length,
+    urgentes:abiertos.filter(r=>r.createdAt?.seconds&&fechaAR(new Date(r.createdAt.seconds*1000))<=hace3).length,
   };
 
   // Order search results for creating reclamos
@@ -2717,7 +2735,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           const headers=["Pedido","Cliente","Email","Tipo","Estado","Días abierto","Tracking cambio","Tracking devolución","Motivo","Notas"];
           const rows=reclamos.map(r=>{const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):"";;return[r.orderNum,r.clienteNombre||"",r.clienteEmail||"",r.tipo,r.estado,dias,r.trackingCambio||"",r.trackingDevolucion||"",(r.motivo||"").replace(/\n/g," "),(r.notasInternas||"").replace(/\n/g," ")];});
           const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
-          const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}));a.download=`reclamos_${new Date().toISOString().slice(0,10)}.csv`;a.click();
+          const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}));a.download=`reclamos_${hoyAR()}.csv`;a.click();
           toast("CSV exportado ✓","success");
         }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",gap:5,display:"flex",alignItems:"center"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>CSV</button>
         <button onClick={()=>setView("config")} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",color:T.textSm,gap:5,display:"flex",alignItems:"center"}} title="Configurar SLA"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>SLA</button>
@@ -3668,8 +3686,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     setCuponStats(prev=>({...prev,[code]:{loading:true}}));
     (async()=>{
       try{
-        const desde=c.createdAt?.seconds?new Date(c.createdAt.seconds*1000).toISOString().slice(0,10):new Date(Date.now()-90*86400000).toISOString().slice(0,10);
-        const hasta=new Date().toISOString().slice(0,10);
+        const desde=c.createdAt?.seconds?new Date(c.createdAt.seconds*1000).toISOString().slice(0,10):fechaAR(new Date(Date.now()-90*86400000));
+        const hasta=hoyAR();
         const r=await fetch(`/api/orders?action=coupons&uid=${user?.uid||""}&desde=${desde}&hasta=${hasta}`);
         const data=await r.json();
         const cp=(data.coupons||[]).find(x=>String(x.code||"").toUpperCase()===code);
@@ -3679,8 +3697,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   },[detail]);
   const [comLoading,setComLoading]=useState(false);
   const [comError,setComError]=useState("");
-  const [comFechaDesde,setComFechaDesde]=useState(()=>{const d=new Date();d.setDate(1);return d.toISOString().split("T")[0];});
-  const [comFechaHasta,setComFechaHasta]=useState(()=>new Date().toISOString().split("T")[0]);
+  const [comFechaDesde,setComFechaDesde]=useState(()=>{const d=new Date();d.setDate(1);return fechaAR(d);});
+  const [comFechaHasta,setComFechaHasta]=useState(()=>hoyAR());
   const iS=InputStyle(T);
   const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
   useEffect(()=>{
@@ -3897,8 +3915,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
   // Alertas
   const alertas=useMemo(()=>{
-    const hoy=new Date().toISOString().split('T')[0];
-    const hace15=new Date(Date.now()-15*86400000).toISOString().split('T')[0];
+    const hoy=hoyAR();
+    const hace15=fechaAR(new Date(Date.now()-15*86400000));
     const alerts=[];
     canjes.forEach(c=>{
       if(c.recordatorio&&c.recordatorio<=hoy) alerts.push({tipo:"recordatorio",canje:c,msg:`Recordatorio vencido`});
@@ -4368,9 +4386,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 </div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {[
-                    {label:"Este mes",fn:()=>{const d=new Date();d.setDate(1);setComFechaDesde(d.toISOString().split("T")[0]);setComFechaHasta(new Date().toISOString().split("T")[0]);}},
-                    {label:"Mes anterior",fn:()=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);const h=new Date(d);h.setMonth(h.getMonth()+1);h.setDate(0);setComFechaDesde(d.toISOString().split("T")[0]);setComFechaHasta(h.toISOString().split("T")[0]);}},
-                    {label:"Últimos 3 meses",fn:()=>{const d=new Date();d.setMonth(d.getMonth()-3);setComFechaDesde(d.toISOString().split("T")[0]);setComFechaHasta(new Date().toISOString().split("T")[0]);}},
+                    {label:"Este mes",fn:()=>{const d=new Date();d.setDate(1);setComFechaDesde(fechaAR(d));setComFechaHasta(hoyAR());}},
+                    {label:"Mes anterior",fn:()=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);const h=new Date(d);h.setMonth(h.getMonth()+1);h.setDate(0);setComFechaDesde(fechaAR(d));setComFechaHasta(fechaAR(h));}},
+                    {label:"Últimos 3 meses",fn:()=>{const d=new Date();d.setMonth(d.getMonth()-3);setComFechaDesde(fechaAR(d));setComFechaHasta(hoyAR());}},
                   ].map(s=>(
                     <button key={s.label} onClick={s.fn} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap"}}>{s.label}</button>
                   ))}
@@ -6063,7 +6081,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       setExportProgress({step:`Generando ${finalOrders.length} etiquetas...`,pct:60,current:finalOrders.length,total:finalOrders.length});
       const b=await generateAndreaniXlsx(finalOrders,locs);
       setExportProgress({step:"Descargando...",pct:90,current:finalOrders.length,total:finalOrders.length});
-      const date=new Date().toISOString().split('T')[0];
+      const date=hoyAR();
       const a=document.createElement('a');
       a.href=URL.createObjectURL(b);
       a.download='EnvioMasivoExcelPaquetes-'+date+'.xlsx';
@@ -6978,7 +6996,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       ? <button onClick={()=>{
                           const url=URL.createObjectURL(skuBlob);
                           const a=document.createElement("a");
-                          a.href=url;a.download=`rotulos-con-sku-${new Date().toISOString().slice(0,10)}.pdf`;a.click();
+                          a.href=url;a.download=`rotulos-con-sku-${hoyAR()}.pdf`;a.click();
                           URL.revokeObjectURL(url);
                         }} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"12px 24px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8,flexShrink:0,boxShadow:`0 4px 16px ${T.green}44`}}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -10990,7 +11008,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   async function generarLinkEditor(editorNombre){ const d=await tareasApi({action:"generateEditorToken",editorNombre}); const newToks={...(produccion.editorTokens||{}),[editorNombre]:d.token}; setProduccion(prev=>({...prev,editorTokens:newToks})); const link=`${window.location.origin}/#/editor-produccion/${d.token}`; try{await navigator.clipboard.writeText(link); toast("Link generado y copiado ✓","success");}catch(e){toast("Link: "+link,"success");} return d.token; }
   function editorPortalLink(editorNombre){ const tok=produccion.editorTokens?.[editorNombre]; return tok?`${window.location.origin}/#/editor-produccion/${tok}`:null; }
   // Export CSV
-  function exportCreativosCSV(creativos){ const LABELS={idea:"Idea","brief-enviado":"Brief enviado","en-produccion":"En producción",entregado:"Entregado",publicado:"Publicado",archivado:"Archivado"}; const headers=["Código","Tanda","Ángulo","Tipo","Persona","Etapa","Editor","Estado","Pagado","ROAS","CPA","Performance","Notas"]; const rows=[headers,...creativos.map(c=>{const tanda=produccion.tandas.find(t=>t.id===c.tanda_id)?.nombre||"";return[c.codigo,tanda,c.angulo,c.tipo,c.persona,c.etapa,c.editor||"",LABELS[c.estado]||c.estado,c.pagado?"Sí":"No",c.roas!=null?c.roas:"",c.cpa!=null?c.cpa:"",c.performance||"",c.notas||""];})]; const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n"); const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}); const url=URL.createObjectURL(blob); const a=document.createElement("a");a.href=url;a.download=`creativos-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(url); toast("CSV exportado ✓","success"); }
+  function exportCreativosCSV(creativos){ const LABELS={idea:"Idea","brief-enviado":"Brief enviado","en-produccion":"En producción",entregado:"Entregado",publicado:"Publicado",archivado:"Archivado"}; const headers=["Código","Tanda","Ángulo","Tipo","Persona","Etapa","Editor","Estado","Pagado","ROAS","CPA","Performance","Notas"]; const rows=[headers,...creativos.map(c=>{const tanda=produccion.tandas.find(t=>t.id===c.tanda_id)?.nombre||"";return[c.codigo,tanda,c.angulo,c.tipo,c.persona,c.etapa,c.editor||"",LABELS[c.estado]||c.estado,c.pagado?"Sí":"No",c.roas!=null?c.roas:"",c.cpa!=null?c.cpa:"",c.performance||"",c.notas||""];})]; const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n"); const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}); const url=URL.createObjectURL(blob); const a=document.createElement("a");a.href=url;a.download=`creativos-${hoyAR()}.csv`;a.click();URL.revokeObjectURL(url); toast("CSV exportado ✓","success"); }
 
   // ── FUNCIONES WORKSPACE ──
   async function quickUpdateTareaEstado(tareaId, estado) {
@@ -12132,7 +12150,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 const TIPO_COLOR={lanzamiento:T.accent,festividad:T.green,promo:T.orange,otro:T.textSm};
                 const daysInMonth=new Date(calMonth.y,calMonth.m+1,0).getDate();
                 const firstDay=new Date(calMonth.y,calMonth.m,1).getDay();
-                const todayStr=new Date().toISOString().slice(0,10);
+                const todayStr=hoyAR();
                 const dayData={};
                 tareas.filter(t=>t.deadline).forEach(t=>{
                   const d=t.deadline._seconds?new Date(t.deadline._seconds*1000):new Date(t.deadline);
@@ -15764,7 +15782,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       const nowArg = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
       const pad = n => String(n).padStart(2,"0");
       return `${nowArg.getFullYear()}-${pad(nowArg.getMonth()+1)}-${pad(nowArg.getDate())}`;
-    } catch { return new Date().toISOString().slice(0,10); }
+    } catch { return hoyAR(); }
   });
   const [resultados, setResultados] = useState(null);
   const [pdfs, setPdfs] = useState([]);
@@ -16014,7 +16032,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     if(periodoModo === "custom") {
       if(!fechaDesde) return;
       params.since = fechaDesde;
-      params.until = fechaHasta || new Date().toISOString().slice(0,10);
+      params.until = fechaHasta || hoyAR();
     } else {
       params.days = parseInt(periodoModo);
     }
@@ -16287,7 +16305,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const blob = await zip.generateAsync({type:"blob"});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `growith-facturas-${new Date().toISOString().slice(0,10)}.zip`;
+    a.download = `growith-facturas-${hoyAR()}.zip`;
     a.click();
     setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
   }
@@ -16332,7 +16350,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       descuento: 0,
       envio: 0,
       estado_pago: "paid",
-      fecha: new Date().toISOString().slice(0,10),
+      fecha: hoyAR(),
       ciudad: "", provincia: "",
       metodo_pago: "Manual",
       items: itemsValid.map(it => ({
@@ -18712,8 +18730,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   // Estado del tab Análisis (Ads Manager)
   const [aLevel,setALevel]=useState("campaign"); // campaign | adset | ad
-  const [aSince,setASince]=useState(()=>new Date(Date.now()-7*86400000).toISOString().slice(0,10));
-  const [aUntil,setAUntil]=useState(()=>new Date().toISOString().slice(0,10));
+  const [aSince,setASince]=useState(()=>fechaAR(new Date(Date.now()-7*86400000)));
+  const [aUntil,setAUntil]=useState(()=>hoyAR());
   const [aRows,setARows]=useState([]);
   const [aLoading,setALoading]=useState(false);
   const [aError,setAError]=useState(null);
@@ -18742,8 +18760,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [libFilterStatus,setLibFilterStatus]=useState("all"); // all | active | paused
   const [inlinePlayingId,setInlinePlayingId]=useState(null); // ad.id que está reproduciendo inline
   const [libVisibleCount,setLibVisibleCount]=useState(30); // paginación incremental — 30 cards iniciales, +30 por click
-  const [libSince,setLibSince]=useState(()=>new Date(Date.now()-7*86400000).toISOString().slice(0,10));
-  const [libUntil,setLibUntil]=useState(()=>new Date().toISOString().slice(0,10));
+  const [libSince,setLibSince]=useState(()=>fechaAR(new Date(Date.now()-7*86400000)));
+  const [libUntil,setLibUntil]=useState(()=>hoyAR());
   const [analyzingId,setAnalyzingId]=useState(null);
   const [expandedAdId,setExpandedAdId]=useState(null);
   const [previewingAd,setPreviewingAd]=useState(null); // ad object para modal HD
@@ -22816,7 +22834,7 @@ function CostosPanel({ T, uid }) {
           <div style={{fontSize:13,fontWeight:700,color:T.text}}>Gasto de Mercado Ads (por período)</div>
           <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cargá lo que gastaste (o vas a gastar) en publicidad de ML en cada rango — podés poner fechas a futuro. Se promedia por día y el dashboard descuenta el promedio diario según los días que se solapen, así el gasto fijo se va imputando solo día a día. Ej: del 01/06 al 30/06 $3.000.000 = $100.000/día.</div>
         </div>
-        {(()=>{ const today=new Date().toISOString().slice(0,10);
+        {(()=>{ const today=hoyAR();
         const maxFut=new Date(Date.now()+730*86400000).toISOString().slice(0,10); // permite cargar a futuro (hasta ~2 años)
         const fmtF=f=>{ try { return new Date(f+"T00:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}); } catch(_) { return f; } };
         const dias=(a,b)=>{ if(!a||!b||b<a) return 0; return Math.round((new Date(b)-new Date(a))/86400000)+1; };
@@ -23739,7 +23757,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href=url; a.download=`growith-stock-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    a.href=url; a.download=`growith-stock-${hoyAR()}.csv`; a.click();
     URL.revokeObjectURL(url);
     toast("CSV exportado ✓","success");
   }
@@ -24270,7 +24288,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           </div>
           {entries.map(([date,val],i)=>{
             const pct=val/max;
-            const isToday=date===new Date().toISOString().slice(0,10);
+            const isToday=date===hoyAR();
             const isTop=top5.includes(i);
             return (
               <div key={date} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",cursor:"default"}}
@@ -24567,8 +24585,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           ))}
           <DateRangePicker
             T={T}
-            since={useCustomDate ? dateFrom : new Date(Date.now()-days*86400000).toISOString().slice(0,10)}
-            until={useCustomDate ? dateTo : new Date().toISOString().slice(0,10)}
+            since={useCustomDate ? dateFrom : fechaAR(new Date(Date.now()-days*86400000))}
+            until={useCustomDate ? dateTo : hoyAR()}
             onChange={(s,u)=>{
               setUseCustomDate(true);
               setDateFrom(s); setDateTo(u);
@@ -25173,7 +25191,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       const csv=[cols.join(","),...rows].join("\n");
                       const a=document.createElement("a");
                       a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}));
-                      a.download=`movimientos_stock_${new Date().toISOString().slice(0,10)}.csv`;
+                      a.download=`movimientos_stock_${hoyAR()}.csv`;
                       a.click();
                     }} style={{padding:"6px 12px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:4}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exportar CSV</button>
                   </div>
@@ -26088,8 +26106,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             {id:"7d",label:"Últimos 7 días",days:7},{id:"30d",label:"Últimos 30 días",days:30},
             {id:"60d",label:"Últimos 60 días",days:60},{id:"90d",label:"Últimos 90 días",days:90},
           ]}
-          since={useCustom?dateFrom:new Date(Date.now()-days*86400000).toISOString().slice(0,10)}
-          until={useCustom?dateTo:new Date().toISOString().slice(0,10)}
+          since={useCustom?dateFrom:fechaAR(new Date(Date.now()-days*86400000))}
+          until={useCustom?dateTo:hoyAR()}
           onPreset={(d)=>{ setUseCustom(false); setDateFrom(""); setDateTo(""); setDays(d); loadData(d,"",""); }}
           onChange={(s,u)=>{ setUseCustom(true); setDateFrom(s); setDateTo(u); const diff=Math.round((new Date(u)-new Date(s))/86400000)+1; setDays(diff); loadData(0,s,u); }}/>
         <button onClick={reprocesar60} disabled={reproc||loading} title="Re-sincroniza las ventas de los últimos 60 días desde las plataformas" style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>
@@ -27454,8 +27472,8 @@ export default function App() {
       setCanjesCount(canjesData.length);
       getDoc(doc(db,"users",user.uid)).then(userSnap=>{
         const alertasCfg=userSnap.data()?.alertas||{recordatorio:true,sinrespuesta:true,contenido:true};
-        const hoy=new Date().toISOString().split('T')[0];
-        const hace15=new Date(Date.now()-15*86400000).toISOString().split('T')[0];
+        const hoy=hoyAR();
+        const hace15=fechaAR(new Date(Date.now()-15*86400000));
         const alerts=[];
         canjesData.forEach(c=>{
           if(alertasCfg.recordatorio!==false&&c.recordatorio&&c.recordatorio<=hoy) alerts.push({tipo:"recordatorio",canje:c,msg:`Recordatorio vencido`});

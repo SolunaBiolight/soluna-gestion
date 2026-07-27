@@ -86,6 +86,12 @@ async function fetchDolarHistorico(casa) {
 // Cotización de una fecha puntual: exacta si existe, sino el día hábil
 // anterior más cercano (fines de semana/feriados no siempre tienen registro
 // para oficial/blue/mep — cripto cotiza todos los días).
+// Id de documento para el registro del warmer. Firestore no admite "/" en los
+// ids, y las claves de caché pueden traer fechas y separadores.
+function warmDocId(uid, key) {
+  return `${uid}__${String(key||"").replace(/[^\w.-]/g, "_")}`.slice(0, 400);
+}
+
 function dolarDeFecha(map, fecha) {
   if (map.has(fecha)) return map.get(fecha);
   let d = fecha;
@@ -1261,16 +1267,18 @@ export default async function handler(req, res) {
       try {
         const nowIso = new Date().toISOString();
         await cacheRef.set({ body: JSON.stringify(responseBody), cachedAt: nowIso, ts: Date.now() });
-        await db.collection("system").doc("margenes_warm").set({
-          entries: { [`${uid}|${cacheKey}`]: {
-            uid, key: cacheKey,
-            days: req.query.date_from ? null : days,
-            date_from: req.query.date_from || null, date_to: req.query.date_to || null,
-            // lastAccess solo lo actualizan los requests de usuarios reales — el
-            // warmer no se retroalimenta a sí mismo para siempre.
-            ...(req.query.warm === "1" ? {} : { lastAccess: nowIso }),
-            lastWarm: nowIso,
-          } },
+        // Un documento por rango, NO un mapa dentro de un único doc global.
+        // Antes todas las cuentas escribían en system/margenes_warm: Firestore
+        // admite ~1 escritura por segundo por documento y tiene un techo de 1 MB
+        // por doc — con cientos de cuentas eso se traba y después revienta.
+        await db.collection("system_warm_margenes").doc(warmDocId(uid, cacheKey)).set({
+          uid, key: cacheKey,
+          days: req.query.date_from ? null : days,
+          date_from: req.query.date_from || null, date_to: req.query.date_to || null,
+          // lastAccess solo lo actualizan los requests de usuarios reales — el
+          // warmer no se retroalimenta a sí mismo para siempre.
+          ...(req.query.warm === "1" ? {} : { lastAccess: nowIso }),
+          lastWarm: nowIso,
         }, { merge: true });
       } catch(e) { console.error("margenes cache set error:", e.message); }
       return res.json(responseBody);
@@ -1278,29 +1286,67 @@ export default async function handler(req, res) {
   }
 
   // ── Warmer del dashboard Márgenes (cron cada 5 min) ──
-  // Recalcula EN VIVO el rango más desactualizado que algún usuario haya mirado
-  // en las últimas 48h y refresca su caché. Uno solo por corrida: el cálculo
-  // tarda 30-50s y el presupuesto de la función no da para más — con la corrida
-  // cada 5 min, los rangos activos rotan y la caché queda siempre a minutos.
+  // Recalcula EN VIVO los rangos más desactualizados que algún usuario haya
+  // mirado en las últimas 48h y refresca su caché. Antes hacía UNO por corrida:
+  // con 300 cuentas eso son 25 horas de vuelta, o sea nunca. Ahora va un lote
+  // en paralelo, con rotación por lastWarm (el que hace más tiempo no se
+  // recalcula va primero) y respetando el presupuesto de tiempo de la función.
   if (action === 'warm_margenes') {
+    const t0 = Date.now();
+    const DEADLINE = 55000;
     try {
       const db = initAdmin();
-      const regSnap = await db.collection("system").doc("margenes_warm").get();
-      const entries = Object.values((regSnap.data()||{}).entries || {});
       const hace48h = new Date(Date.now() - 48*3600000).toISOString();
-      const activos = entries.filter(e => e && e.uid && (e.lastAccess||"") >= hace48h);
-      if (!activos.length) return res.json({ ok: true, warmed: null, motivo: "sin rangos activos en 48h" });
+      let activos = [];
+      try {
+        // orderBy de un solo campo → usa el índice automático, sin índice compuesto.
+        const snap = await db.collection("system_warm_margenes").orderBy("lastWarm", "asc").limit(200).get();
+        activos = snap.docs.map(d => d.data()).filter(e => e && e.uid && (e.lastAccess||"") >= hace48h);
+      } catch(e) { console.error("warm_margenes query error:", e.message); }
+
+      // Compatibilidad: migrar el registro viejo (un único doc con un mapa
+      // "entries") a la colección nueva, de a poco y sin bloquear la corrida.
+      if (!activos.length) {
+        try {
+          const legacy = await db.collection("system").doc("margenes_warm").get();
+          const entries = Object.values((legacy.data()||{}).entries || {});
+          const vivos = entries.filter(e => e && e.uid && (e.lastAccess||"") >= hace48h);
+          if (vivos.length) {
+            const batch = db.batch();
+            for (const e of vivos.slice(0, 400)) {
+              batch.set(db.collection("system_warm_margenes").doc(warmDocId(e.uid, e.key)), e, { merge: true });
+            }
+            await batch.commit();
+            activos = vivos;
+          }
+        } catch(e) { console.error("warm_margenes migracion error:", e.message); }
+      }
+
+      if (!activos.length) return res.json({ ok: true, warmed: [], motivo: "sin rangos activos en 48h" });
       activos.sort((a,b) => String(a.lastWarm||"").localeCompare(String(b.lastWarm||"")));
-      const e = activos[0];
-      const url = new URL(`https://${req.headers.host}/api/orders`);
-      url.searchParams.set("action","daily_metrics"); url.searchParams.set("uid", e.uid); url.searchParams.set("warm","1");
-      if (e.date_from && e.date_to) { url.searchParams.set("date_from", e.date_from); url.searchParams.set("date_to", e.date_to); }
-      else url.searchParams.set("days", String(e.days || 30));
-      // Subrequest server→server con el mismo CRON_SECRET: el warmer recalcula
-      // la caché de uids ajenos y no tiene (ni debe tener) token de usuario.
-      const r = await fetch(url.toString(), { headers: { host: req.headers.host, Authorization: `Bearer ${process.env.CRON_SECRET || ''}` } });
-      const j = await r.json().catch(() => ({}));
-      return res.json({ ok: r.ok && !j.error, warmed: `${e.uid}|${e.key}`, error: j.error || null });
+
+      // Cada recálculo tarda 30-50s, así que van en paralelo. El tope es bajo a
+      // propósito: son subrequests reales contra la propia función.
+      const LOTE = 4;
+      const tanda = activos.slice(0, LOTE);
+      const resultados = await Promise.all(tanda.map(async e => {
+        if (Date.now() - t0 > DEADLINE) return { key: `${e.uid}|${e.key}`, ok: false, error: "sin tiempo" };
+        try {
+          const url = new URL(`https://${req.headers.host}/api/orders`);
+          url.searchParams.set("action","daily_metrics"); url.searchParams.set("uid", e.uid); url.searchParams.set("warm","1");
+          if (e.date_from && e.date_to) { url.searchParams.set("date_from", e.date_from); url.searchParams.set("date_to", e.date_to); }
+          else url.searchParams.set("days", String(e.days || 30));
+          // Subrequest server→server con el mismo CRON_SECRET: el warmer recalcula
+          // la caché de uids ajenos y no tiene (ni debe tener) token de usuario.
+          const r = await fetch(url.toString(), {
+            headers: { host: req.headers.host, Authorization: `Bearer ${process.env.CRON_SECRET || ''}` },
+            signal: AbortSignal.timeout(50000),
+          });
+          const j = await r.json().catch(() => ({}));
+          return { key: `${e.uid}|${e.key}`, ok: r.ok && !j.error, error: j.error || null };
+        } catch(err) { return { key: `${e.uid}|${e.key}`, ok: false, error: err.message }; }
+      }));
+      return res.json({ ok: true, pendientes: activos.length, warmed: resultados, ms: Date.now()-t0 });
     } catch(e) { console.error("warm_margenes error:", e.message); return res.status(500).json({ error: e.message }); }
   }
 

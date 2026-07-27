@@ -181,11 +181,13 @@ async function mlOrders(sellerId, tok, days, sinceDateISO, untilDateISO) {
     fromISO = sinceDateISO;
     toISO   = untilDateISO || new Date().toISOString();
   } else {
-    // Default: rango [hoy - N días, ahora] en zona AR.
-    const nowArg = new Date();
-    const dToday = new Date(nowArg.toISOString().slice(0,10) + "T23:59:59-03:00");
-    const dFrom  = new Date(dToday.getTime() - (days - 1) * 86400000);
-    fromISO = dFrom.toISOString().slice(0,10) + "T00:00:00-03:00";
+    // Default: rango [hoy - N días, fin de hoy] en zona AR. Ojo: el día hay que
+    // sacarlo del calendario ARGENTINO, no de toISOString() (que es UTC y a
+    // partir de las 21:00 local ya devuelve el día siguiente).
+    const argYmd = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
+    const hoyArg = argYmd(new Date());
+    const dToday = new Date(`${hoyArg}T23:59:59-03:00`);
+    fromISO = `${argYmd(new Date(Date.now() - (days - 1) * 86400000))}T00:00:00-03:00`;
     toISO   = dToday.toISOString();
   }
   // ML pagina de a 50; iteramos con offset hasta 2000 (40 páginas).

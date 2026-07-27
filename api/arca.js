@@ -2664,8 +2664,10 @@ export default async function handler(req, res) {
         sinceDate = String(req.query.since).slice(0, 10);
         untilDate = req.query.until ? String(req.query.until).slice(0, 10) : argYmd(new Date());
       } else {
+        // "days" es la cantidad de días INCLUIDO hoy: days=1 es solo el día de hoy
+        // en Argentina. Antes restaba days completos, así que "Hoy" traía ayer y hoy.
         const days = Math.min(parseInt(req.query.days) || 7, 365);
-        sinceDate = argYmd(new Date(Date.now() - days * 86400000));
+        sinceDate = argYmd(new Date(Date.now() - (days - 1) * 86400000));
         untilDate = argYmd(new Date());
       }
 
@@ -3089,9 +3091,11 @@ export default async function handler(req, res) {
         sinceDate = String(req.query.since).slice(0, 10);
         untilDate = req.query.until ? String(req.query.until).slice(0, 10) : argYmd(new Date());
       } else {
+        // "days" incluye el día de hoy: days=1 es solo hoy en Argentina. Antes
+        // restaba days completos y "Hoy" devolvía ayer + hoy.
         const days = Math.min(parseInt(req.query.days) || 7, 365);
-        sinceDate = argYmd(new Date(Date.now() - days * 86400000));
-        untilDate = null;
+        sinceDate = argYmd(new Date(Date.now() - (days - 1) * 86400000));
+        untilDate = argYmd(new Date());
       }
 
       // 1) Leer la store TN del user
