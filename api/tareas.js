@@ -826,7 +826,28 @@ export default async function handler(req, res) {
     // Antes alcanzaba con mandar cualquier uid por el body: se podían leer y
     // escribir tareas, colaboradores y tokens de portal de cualquier cuenta.
     if (!uid) return res.status(403).json({ error: "No autorizado" });
-    if (!(await guardUid(req, res, uid))) return;
+
+    // Identidad alternativa: token de portal de colaborador. El portal no tiene
+    // sesión de Firebase (se entra por link), así que el token del colaborador
+    // vale como credencial — pero SOLO sobre la cuenta dueña de ese token y con
+    // el alcance de sus permisos. Sin esto, el blindaje por token de Firebase
+    // dejó a todo el portal recibiendo "Sesión inválida".
+    let colabAuth = null;
+    if (body.colabToken) {
+      const cs = await db.collection("colaboradores").where("token", "==", String(body.colabToken)).limit(1).get();
+      const c = cs.empty ? null : cs.docs[0].data();
+      if (!c || c.uid !== uid) return res.status(403).json({ error: "No autorizado" });
+      colabAuth = { permisos: c.permisos || {}, email: (c.email || "").toLowerCase(), nombre: c.nombre || "" };
+      const esCM = !!colabAuth.permisos.verTareas;
+      // CM (verTareas) gestiona tareas; el resto solo lee lo suyo. Nada de
+      // acciones de equipo/tokens/emails de aviso por esta vía.
+      const ACCIONES_CM = ["getData","getProduccion","createTarea","updateTarea","updateEstado","quickUpdateTareaEstado","revertEstado","duplicateTarea","deleteTarea","addComment","addSlotEntrega","updateDeliverable","deleteDeliverable","sendRecordatorio","logUsage"];
+      const ACCIONES_LECTURA = ["getData","getProduccion","logUsage"];
+      if (!(esCM ? ACCIONES_CM : ACCIONES_LECTURA).includes(action))
+        return res.status(403).json({ error: "Tu permiso no alcanza para esta acción." });
+    } else {
+      if (!(await guardUid(req, res, uid))) return;
+    }
 
     // Pertenencia por documento: las acciones que operan por id (tareaId /
     // colabId) tocaban cualquier documento con solo conocer el id, incluso de
@@ -865,9 +886,32 @@ export default async function handler(req, res) {
         db.collection("tareas").where("uid","==",uid).get(),
         db.collection("users").doc(uid).get(),
       ]);
+      const todasTareas = ts.docs.map(d=>({_id:d.id,...d.data()})).sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0));
+      // Vista de colaborador: sin tokens de portal ajenos, sin boardToken, sin
+      // emails de aviso. Un no-CM recibe solo sus tareas; con verEquipo se suma
+      // un resumen de solo lectura del estado de todos.
+      if (colabAuth) {
+        const esCM = !!colabAuth.permisos.verTareas;
+        const colabsSinToken = cs.docs.map(d=>{ const { token:_t, ...rest } = d.data(); return { _id:d.id, ...rest }; })
+          .sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||"","es"));
+        const tareasScoped = esCM ? todasTareas
+          : todasTareas.filter(t => (t.asignadosEmails || [t.asignadoEmail]).map(e=>(e||"").toLowerCase()).includes(colabAuth.email));
+        let equipoTareas = null;
+        if (colabAuth.permisos.verEquipo) {
+          const nombrePor = {}; colabsSinToken.forEach(c => { nombrePor[(c.email||"").toLowerCase()] = c.nombre || c.email; });
+          const porColab = {};
+          todasTareas.forEach(t => {
+            const email = (t.asignadoEmail || "sin-asignar").toLowerCase();
+            if (!porColab[email]) porColab[email] = { nombre: nombrePor[email] || t.asignadoNombre || email, email, tareas: [] };
+            porColab[email].tareas.push({ _id:t._id, titulo:t.titulo, estado:t.estado, prioridad:t.prioridad||null, deadline:t.deadline||null, correcciones:t.correcciones||0 });
+          });
+          equipoTareas = Object.values(porColab).sort((a,b)=>a.nombre.localeCompare(b.nombre,"es"));
+        }
+        return res.json({ colaboradores: colabsSinToken, tareas: tareasScoped, equipoTareas, boardToken: null, notifEmails: [] });
+      }
       return res.json({
         colaboradores: cs.docs.map(d=>({_id:d.id,...d.data()})).sort((a,b)=>a.nombre.localeCompare(b.nombre,"es")),
-        tareas:        ts.docs.map(d=>({_id:d.id,...d.data()})).sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0)),
+        tareas:        todasTareas,
         boardToken:    userSnap.exists ? (userSnap.data().boardToken || null) : null,
         notifEmails:   userSnap.exists ? (userSnap.data().notifEmails || []) : [],
       });
@@ -1396,6 +1440,13 @@ export default async function handler(req, res) {
       if (!snap.exists) return res.json({ editores:[], tandas:[], creativos:[], ideas:[] });
       const d = snap.data();
       delete d.updatedAt;
+      // Colaborador por token: los creativos solo con permiso, y los tokens de
+      // los editores nunca viajan por esta vía.
+      if (colabAuth) {
+        if (!colabAuth.permisos.verCreativos && !colabAuth.permisos.verTareas)
+          return res.json({ editores:[], tandas:[], creativos:[], ideas:[] });
+        delete d.editorTokens;
+      }
       return res.json(d);
     }
 

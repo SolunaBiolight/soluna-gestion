@@ -10586,7 +10586,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [notifEmails, setNotifEmails] = useState([]);
   const [newNotifEmail, setNewNotifEmail] = useState("");
   async function tareasApi(body) {
-    const r = await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
+    // En el portal, el token del colaborador ES la credencial (no hay sesión de
+    // Firebase): el backend lo valida contra la cuenta y aplica sus permisos.
+    const extra = colabMode ? { colabToken: colabMode.token } : {};
+    const r = await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,...extra,uid:user.uid})});
     const d = await r.json();
     if(!r.ok||d.error) throw new Error(d.error||"Error");
     return d;
@@ -12019,7 +12022,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         <div style={{display:"flex",padding:"8px 24px"}}>
           <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1}}>
             {[["todo","Tareas"],["equipo","Equipo"],["referencias","Referencias"]].filter(([id])=>{
-              if(!colabMode||colabMode.permisos?.verTareas) return true;
+              if(!colabMode) return true;
+              // La pestaña Equipo la habilita SOLO el permiso "Estado del equipo".
+              // Antes cualquier CM (verTareas) la veía aunque el permiso estuviera
+              // apagado, y encima adentro se renderizaba el gestor de admin.
               if(id==="equipo") return !!colabMode.permisos?.verEquipo;
               return true;
             }).map(([id,label])=>{
@@ -12763,8 +12769,43 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         </div>
         )}
 
-        {/* ── TAB EQUIPO ── */}
-        {!loading&&tab==="equipo"&&(()=>{
+        {/* ── TAB EQUIPO (colaborador con verEquipo): estado de todos, solo lectura ── */}
+        {!loading&&tab==="equipo"&&colabMode&&(()=>{
+          const grupos=datos.equipoTareas||[];
+          const ECOLOR={pendiente:T.textMd,en_proceso:T.orange,bloqueada:T.red,entregado:T.yellow,aprobado:T.green,revision:T.red};
+          const ELABEL={pendiente:"Pendiente",en_proceso:"En proceso",bloqueada:"Bloqueado",entregado:"Entregado",aprobado:"Aprobado",revision:"En revisión"};
+          if(!grupos.length) return (
+            <div style={{padding:"20px 24px"}}>
+              <DSEmpty T={T} icon="👥" title="Sin actividad del equipo" subtitle="Cuando haya tareas asignadas vas a ver el estado de cada integrante acá."/>
+            </div>
+          );
+          return (
+            <div style={{padding:"20px 24px",maxWidth:860}}>
+              <div style={{fontSize:12,color:T.textSm,marginBottom:14}}>Estado del equipo · solo lectura</div>
+              {grupos.map(g=>{
+                const abiertas=g.tareas.filter(t=>t.estado!=="aprobado");
+                return (
+                  <Card T={T} key={g.email} padding="lg" style={{marginBottom:10}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:abiertas.length?10:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:T.text,flex:1}}>{g.nombre}</div>
+                      <DSBadge T={T} color={abiertas.length?T.orange:T.green} size="sm">{abiertas.length?`${abiertas.length} en curso`:"Al día"}</DSBadge>
+                    </div>
+                    {abiertas.map(t=>(
+                      <div key={t._id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderTop:`1px solid ${T.borderL}`}}>
+                        <span style={{flex:1,fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</span>
+                        {t.deadline&&<span style={{fontSize:11,color:T.textSm,flexShrink:0}}>{(t.deadline._seconds?new Date(t.deadline._seconds*1000):new Date(t.deadline)).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}</span>}
+                        <span style={{fontSize:11,fontWeight:600,color:ECOLOR[t.estado]||T.textSm,flexShrink:0}}>{ELABEL[t.estado]||t.estado}</span>
+                      </div>
+                    ))}
+                  </Card>
+                );
+              })}
+            </div>
+          );
+        })()}
+
+        {/* ── TAB EQUIPO (admin): gestión de miembros y permisos ── */}
+        {!loading&&tab==="equipo"&&!colabMode&&(()=>{
           const editoresLegacy=(produccion?.editores||[]).filter(ed=>!colaboradores.some(c=>c.nombre===ed));
           const todos=[
             ...colaboradores.map(c=>({_type:"colab",_key:c._id,data:c})),
