@@ -10,7 +10,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { createHmac } from "crypto";
-import { verifyAuth } from "./_auth.js";
+import { guardUid } from "./_auth.js";
 
 const APP_URL = "https://www.growithapp.com";
 export const GADS_REDIRECT = `${APP_URL}/api/google-ads-callback`;
@@ -42,8 +42,10 @@ export default async function handler(req, res) {
   const action = req.query?.action;
   const uid = req.query?.uid;
   if (!uid) return res.status(400).json({ error: "Falta uid" });
-  const authUser = await verifyAuth(req);
-  if (!authUser) return res.status(401).json({ error: "Sesión inválida. Cerrá sesión y volvé a entrar." });
+  // El token tiene que pertenecer al uid pedido (o a su equipo / a un admin):
+  // con verifyAuth a secas, cualquier cliente logueado podía firmar un state de
+  // OAuth para otra cuenta o desconectarle Google Ads.
+  if (!(await guardUid(req, res, uid))) return;
 
   try {
     const db = initAdmin();

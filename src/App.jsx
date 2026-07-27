@@ -32,6 +32,47 @@ async function authFetch(url, opts = {}) {
   } catch (_) {}
   return fetch(url, opts);
 }
+
+// ── Identidad automática en TODAS las llamadas a /api/ ──────────────────────
+// El backend ahora exige que el token de Firebase corresponda a la cuenta cuyos
+// datos se piden (multi-tenant real). En vez de recordar poner el header en cada
+// uno de los ~90 fetch de la app — donde uno olvidado rompe una sección entera —
+// se adjunta acá, una sola vez. Sin sesión (portal de colaborador, que se
+// autentica por token propio) no agrega nada y el request sale igual.
+if (typeof window !== "undefined" && !window.__ghFetchAuth) {
+  window.__ghFetchAuth = true;
+  const _rawFetch = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    try {
+      const url = typeof input === "string" ? input : (input && input.url) || "";
+      const esApi = url.startsWith("/api/") || url.includes(`${window.location.origin}/api/`);
+      if (esApi && auth.currentUser) {
+        const h = new Headers((init && init.headers) || (typeof input === "object" && input && input.headers) || undefined);
+        if (!h.has("Authorization")) {
+          h.set("Authorization", `Bearer ${await auth.currentUser.getIdToken()}`);
+          init = { ...(init || {}), headers: h };
+        }
+      }
+    } catch (_) {}
+    return _rawFetch(input, init);
+  };
+}
+// Pide al servidor el `state` firmado para el OAuth de Tienda Nube. Si algo
+// falla, devuelve el uid pelado: el callback lo sigue aceptando como legacy,
+// así una caída del endpoint no deja a nadie sin poder conectar su tienda.
+async function ghTnState(uid) {
+  try {
+    const r = await fetch(`/api/integrations?platform=tiendanube&action=oauth_start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uid }),
+    });
+    const d = await r.json();
+    if (d?.state) return d.state;
+  } catch (_) {}
+  return uid || "";
+}
+
 // ── Multi-cuenta: recordar cuentas usadas (email/nombre, NO contraseñas) para
 // cambio rápido. El switch desloguea y deja un flag para pre-cargar el login. ──
 // Tras un deploy, una pestaña abierta con el HTML viejo pide chunks que ya no
@@ -1084,10 +1125,12 @@ function OnboardingWizard({T, user, onComplete}) {
       desc:"Vincula Tienda Nube o Shopify para sincronizar pedidos, productos y stock automáticamente.",
       actions: (
         <div style={{display:"flex",flexDirection:"column",gap:DS.sp.md}}>
-          <Btn T={T} variant="primary" size="lg" onClick={()=>{
+          <Btn T={T} variant="primary" size="lg" onClick={async()=>{
             const clientId="30036";
             const redirectUri=encodeURIComponent(`${window.location.origin}/api/tn-callback`);
-            const state=encodeURIComponent(user?.uid||"");
+            // El state va FIRMADO por el servidor (evita que alguien complete el
+            // OAuth de su tienda contra la cuenta de otro).
+            const state=encodeURIComponent(await ghTnState(user?.uid));
             window.location.href=`https://www.tiendanube.com/apps/${clientId}/authorize?state=${state}&redirect_uri=${redirectUri}`;
           }}>
             Conectar Tienda Nube
@@ -8542,7 +8585,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   async function connectTiendaNube() {
     const clientId = "30036";
     const redirectUri = encodeURIComponent(`${window.location.origin}/api/tn-callback`);
-    const state = encodeURIComponent(user.uid);
+    const state = encodeURIComponent(await ghTnState(user.uid));
     const url = `https://www.tiendanube.com/apps/${clientId}/authorize?state=${state}&redirect_uri=${redirectUri}`;
     window.open(url, "_blank");
     setMsg("Completá la autorización en la ventana que se abrió. Una vez autorizado, tu tienda aparecerá conectada.");

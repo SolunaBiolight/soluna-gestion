@@ -6,6 +6,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getValidMLToken } from "./integrations.js";
+import { guardUid } from "./_auth.js";
 
 // Con varias cuentas de ML conectadas, las publicaciones/gestión de ML usan la
 // cuenta elegida para VENTAS de ML (margenesMlVentas). Vacío = primera (1 solo ML).
@@ -172,11 +173,19 @@ async function pushItemStock(db, uid, item, stores, settings) {
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, PATCH");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") return res.status(200).end();
+  // El front manda el ID token de Firebase — sin Authorization acá el preflight
+  // del browser corta la request antes de que llegue al handler.
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") return res.status(200).end(); // el preflight nunca lleva credenciales
 
   const { action, uid } = req.query;
   if (!uid) return res.status(401).json({ error: "Falta uid" });
+
+  // Autorización multi-tenant: el uid solo no prueba nada. Este guard cubre TODAS
+  // las acciones del handler — lectura (list_items, stats, settings_get, …) y sobre
+  // todo escritura (adjust_stock, save_item, delete_item, sync_push_all,
+  // ml_bulk_update, ml_item_update/pictures, …), que además escriben en TN/ML.
+  if (!(await guardUid(req, res, uid))) return;
 
   const db = initAdmin();
 

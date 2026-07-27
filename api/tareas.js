@@ -1,8 +1,13 @@
 // api/tareas.js — Gestión de tareas y colaboradores externos
-// Autenticación dual: uid (manager) o token (colaborador público)
+// Autenticación dual:
+//  - dueño de la cuenta: ID token de Firebase atado al uid (guardUid)
+//  - colaborador externo: token de portal, con alcance a lo suyo (acciones public*)
+//  - administración de la plataforma: requireAdmin, que sale del TOKEN (nunca
+//    de un uid mandado por el cliente, que era el agujero anterior)
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { guardUid, requireAdmin, guardCron } from "./_auth.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -15,9 +20,10 @@ function initAdmin() {
 }
 
 // ─── Admin constants (antiguo admin.js) ──────────────────────────────────
-const ADMIN_UIDS = ["WJH3ArqDPQcNLha9lOinvkVi9uJ2"];
-const PLAN_PRICE_USDT = { plus: 29, full: 79 };
-const PLAN_PRICE_ARS  = { plus: 35000, full: 95000 };
+// Precios REALES de venta (deben coincidir con los de AppPlanes en el frontend;
+// antes el MRR del panel se calculaba con valores viejos y salía ~63% bajo).
+const PLAN_PRICE_USDT = { plus: 79 };
+const PLAN_PRICE_ARS  = { plus: 79000 };
 const CONFIG_DOC = "growith_app_config";
 function addMonths(date, n) { const d = new Date(date); d.setMonth(d.getMonth() + Number(n)); return d; }
 // ─── fin Admin constants ──────────────────────────────────────────────────
@@ -330,6 +336,7 @@ export default async function handler(req, res) {
     //     notifEmails); los colaboradores/editores nunca lo reciben.
     // Idempotente: remPreAt / remVencidaAt en la tarea, tareasWeeklyAt en el user.
     if (action === "cron_deadlines") {
+      if (!guardCron(req, res)) return;
       const ahora = new Date();
       const en36h = new Date(ahora.getTime() + 36 * 3600000);
       const desde = new Date(ahora.getTime() - 14 * 86400000);
@@ -366,12 +373,16 @@ export default async function handler(req, res) {
       const vencidasPorUid = {};
       for (const t of pendTareas) {
         const dl = dlOf(t);
+        // Enviar PRIMERO y marcar DESPUÉS: al revés, si la función se cortaba a
+        // mitad del loop (timeout), las tareas quedaban marcadas como "ya
+        // notificadas" sin que el mail hubiera salido, y el recordatorio se
+        // perdía para siempre. Peor un mail repetido que uno que nunca llega.
         if (dl > ahora && dl <= en36h && !t.remPreAt) {
-          await t._ref.set({ remPreAt: now }, { merge: true });
           await mailColab(t, true); pre++;
+          await t._ref.set({ remPreAt: now }, { merge: true });
         } else if (dl < ahora && !t.remVencidaAt) {
-          await t._ref.set({ remVencidaAt: now }, { merge: true });
           await mailColab(t, false); venc++;
+          await t._ref.set({ remVencidaAt: now }, { merge: true });
           (vencidasPorUid[t.uid] = vencidasPorUid[t.uid] || []).push(t);
         }
       }
@@ -811,9 +822,26 @@ export default async function handler(req, res) {
       return res.json({ posts:gd.posts||[], referencias:gd.referencias||[], materiales:gd.materiales||[] });
     }
 
-    // ── ACCIONES AUTENTICADAS (uid requerido) ─────────────────────────────────
-
+    // ── ACCIONES AUTENTICADAS (uid + token de Firebase atado a ese uid) ───────
+    // Antes alcanzaba con mandar cualquier uid por el body: se podían leer y
+    // escribir tareas, colaboradores y tokens de portal de cualquier cuenta.
     if (!uid) return res.status(403).json({ error: "No autorizado" });
+    if (!(await guardUid(req, res, uid))) return;
+
+    // Pertenencia por documento: las acciones que operan por id (tareaId /
+    // colabId) tocaban cualquier documento con solo conocer el id, incluso de
+    // otra cuenta. Se valida una sola vez acá para cubrir todas las ramas.
+    // (Las acciones public*/board* devuelven antes de este punto: se validan
+    // por su propio token.)
+    if (body.tareaId) {
+      const s = await db.collection("tareas").doc(String(body.tareaId)).get();
+      if (!s.exists || s.data().uid !== uid) return res.status(403).json({ error: "No autorizado" });
+    }
+    const _colabId = body.colabId;
+    if (_colabId) {
+      const s = await db.collection("colaboradores").doc(String(_colabId)).get();
+      if (!s.exists || s.data().uid !== uid) return res.status(403).json({ error: "No autorizado" });
+    }
 
     // Registro de uso diario por usuario (contadores incrementales)
     if (action === "logUsage") {
@@ -944,8 +972,11 @@ export default async function handler(req, res) {
       for (const email of todosEmails) {
         let colab = colabsByEmail[email.toLowerCase()];
         if (!colab) {
-          // Fallback: buscar por email sin filtro de uid (datos inconsistentes de tests anteriores)
-          const byEmail = await db.collection("colaboradores").where("email","==",email.toLowerCase()).limit(1).get();
+          // Fallback acotado a ESTA cuenta. Sin el filtro por uid, un mismo email
+          // (un freelancer que trabaja para varias marcas) resolvía al
+          // colaborador de otro tenant y le mandaba la tarea y su link de portal.
+          const byEmail = await db.collection("colaboradores")
+            .where("uid","==",uid).where("email","==",email.toLowerCase()).limit(1).get();
           if (!byEmail.empty) { colab = byEmail.docs[0].data(); console.log(`[email] colab found by email-only: ${email}`); }
         }
         if (!colab) { console.warn(`[email] colaborador no encontrado para: ${email}`); emailResults.push({email,ok:false,error:"colab_not_found"}); continue; }
@@ -1477,12 +1508,12 @@ export default async function handler(req, res) {
     // Acciones solo-admin
     const adminActions = ["setSectionsConfig","adminGetData","adminGetUsage","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin"];
     if (adminActions.includes(action)) {
-      if (!ADMIN_UIDS.includes(uid)) {
-        try {
-          const adminSnap = await db.collection("users").doc(uid).get();
-          if (!adminSnap.exists || !adminSnap.data()?.isAdmin) return res.status(403).json({ error: "No autorizado" });
-        } catch(_) { return res.status(403).json({ error: "No autorizado" }); }
-      }
+      // La identidad del admin sale del TOKEN verificado, no del uid del body.
+      // Antes bastaba con mandar el uid del dueño (que estaba publicado en el
+      // bundle del front) para activarse el plan, hacerse admin o bajarse la
+      // base entera de usuarios y pagos.
+      const adm = await requireAdmin(req);
+      if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
       const adminNow = new Date();
 
       if (action === "setSectionsConfig") {
@@ -1731,7 +1762,10 @@ export default async function handler(req, res) {
       return res.json({
         workspace: { nombre: userData.nombre || userData.displayName || "Equipo" },
         tareas,
-        colaboradores: colaboradores.map(c=>({ _id:c._id, nombre:c.nombre, email:c.email, rol:c.rol||"", token:c.token })),
+        // Sin `token`: el tablero compartido es un link para pasarle a cualquiera,
+        // y devolvía el token de portal PERSONAL de cada colaborador (con el que
+        // se puede operar como esa persona). Se manda solo lo que el board pinta.
+        colaboradores: colaboradores.map(c=>({ _id:c._id, nombre:c.nombre, email:c.email, rol:c.rol||"" })),
         posts: general.posts || [],
         referencias: general.referencias || [],
         materiales: general.materiales || [],

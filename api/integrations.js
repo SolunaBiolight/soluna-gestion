@@ -7,6 +7,8 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { guardUid } from "./_auth.js";
+import { signState } from "./tn-callback.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -60,6 +62,9 @@ async function shopifyOauthStart(req, res, db) {
   if (!uid || !shopRaw || !client_id || !client_secret) {
     return res.status(400).json({ error: "Faltan uid, shop, client_id o client_secret" });
   }
+  // Sin esto, cualquiera podía arrancar un OAuth y dejar credenciales +
+  // conexión de Shopify colgando de un uid ajeno.
+  if (!(await guardUid(req, res, uid))) return;
 
   const shop = normalizeShop(shopRaw);
   if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop)) {
@@ -184,6 +189,7 @@ async function shopifyDisconnect(req, res, db) {
   const body = JSON.parse((await readBody(req)).toString());
   const { uid } = body;
   if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
 
   const userRef = db.collection("users").doc(uid);
   const snap = await userRef.get();
@@ -204,6 +210,7 @@ async function mercadolibreOauthStart(req, res, db) {
   const body = JSON.parse((await readBody(req)).toString());
   const { uid } = body;
   if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
   if (!ML_CLIENT_ID || !ML_CLIENT_SECRET) {
     return res.status(500).json({ error: "ML_CLIENT_ID / ML_CLIENT_SECRET no configurados en el servidor." });
   }
@@ -331,6 +338,7 @@ async function mercadolibreDisconnect(req, res, db) {
   const body = JSON.parse((await readBody(req)).toString());
   const { uid } = body;
   if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
 
   const userRef = db.collection("users").doc(uid);
   const snap = await userRef.get();
@@ -401,6 +409,8 @@ const PLATFORMS = ["shopify", "tiendanube", "mercadolibre"];
 async function mpProbe(req, res, db) {
   const { uid, from, to } = req.query;
   if (!uid) return res.status(400).json({ error: "Falta uid" });
+  // Devuelve pagos de MP y tokens de checkout de Shopify del tenant: exige binding.
+  if (!(await guardUid(req, res, uid))) return;
   let tok;
   try { tok = await getValidMLToken(db, uid); } catch (e) { return res.json({ ok:false, step:"token", error:e.message }); }
   if (!tok?.accessToken) return res.json({ ok:false, step:"token", error:"Sin token ML/MP — conectá Mercado Libre" });
@@ -450,6 +460,7 @@ async function mpProbe(req, res, db) {
 async function mlAdsProbe(req, res, db) {
   const { uid, from, to } = req.query;
   if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
   let tok;
   try { tok = await getValidMLToken(db, uid); } catch (e) { return res.json({ ok:false, step:"token", error:e.message }); }
   if (!tok?.accessToken) return res.json({ ok:false, step:"token", error:"Sin token ML — conectá Mercado Libre" });
@@ -491,6 +502,8 @@ async function mlAdsProbe(req, res, db) {
 async function mlShipProbe(req, res, db) {
   const { uid } = req.query;
   if (!uid) return res.status(400).json({ error: "Falta uid" });
+  // Devuelve dirección y teléfono del comprador (PII): exige binding con el uid.
+  if (!(await guardUid(req, res, uid))) return;
   let tok;
   try { tok = await getValidMLToken(db, uid); } catch (e) { return res.json({ ok:false, step:"token", error:e.message }); }
   if (!tok?.accessToken) return res.json({ ok:false, error:"Sin token ML — conectá Mercado Libre" });
@@ -543,8 +556,8 @@ async function mlShipProbe(req, res, db) {
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") return res.status(200).end();
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") return res.status(200).end(); // preflight sin auth
 
   const { platform, action } = req.query;
 
@@ -564,6 +577,18 @@ export default async function handler(req, res) {
       // detectamos por el code así no depende del param reservado "action".
       if (req.method === "GET" && (action === "callback" || req.query.code)) return shopifyOauthCallback(req, res, db);
       if (action === "disconnect" && req.method === "POST") return shopifyDisconnect(req, res, db);
+    }
+
+    if (platform === "tiendanube") {
+      // Devuelve el `state` FIRMADO para el OAuth de TN. El frontend no puede
+      // firmarlo (el secreto es del servidor), así que lo pide acá ya
+      // autenticado: sin esto, el state era el uid en claro y cualquiera podía
+      // completar el flujo con la cuenta de otro (CSRF de vinculación).
+      if (action === "oauth_start" && req.method === "POST") {
+        const uid = req.body?.uid || req.query.uid;
+        if (!(await guardUid(req, res, uid))) return;
+        return res.json({ state: `${uid}.${signState(uid)}` });
+      }
     }
 
     if (platform === "mercadolibre") {

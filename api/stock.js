@@ -5,6 +5,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getValidMLToken } from "./integrations.js";
+import { guardUid, guardCron, isCronRequest } from "./_auth.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -511,7 +512,10 @@ function buildResponse(platform, products, analytics, days) {
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin","*");
   res.setHeader("Access-Control-Allow-Methods","GET, OPTIONS");
-  if(req.method==="OPTIONS") return res.status(200).end();
+  // El front ahora manda el ID token de Firebase — sin este header el preflight
+  // del browser rechaza la request antes de que llegue acá.
+  res.setHeader("Access-Control-Allow-Headers","Content-Type, Authorization");
+  if(req.method==="OPTIONS") return res.status(200).end(); // el preflight nunca lleva credenciales
 
   const {uid, action, days:dRaw, date_from, date_to}=req.query;
 
@@ -519,9 +523,7 @@ export default async function handler(req, res) {
   // los usuarios con tienda conectada. Así la PRIMERA carga del día también es
   // instantánea (cache=only), no solo las siguientes (SWR local).
   if (action === "warm_all") {
-    if ((req.headers.authorization || "") !== `Bearer ${process.env.CRON_SECRET}`) {
-      return res.status(401).json({ error: "No autorizado" });
-    }
+    if (!guardCron(req, res)) return;
     const db = initAdmin();
     const usersSnap = await db.collection("users").limit(50).get();
     const targets = usersSnap.docs
@@ -529,7 +531,12 @@ export default async function handler(req, res) {
       .slice(0, 15).map(d => d.id);
     const base = `https://${req.headers.host}`;
     const results = await Promise.allSettled(targets.map(u =>
-      fetch(`${base}/api/stock?action=products&uid=${u}&days=7`, { signal: AbortSignal.timeout(50000) }).then(r => r.status)
+      // El subrequest tiene que autenticarse igual que cualquier otro: reenvía el
+      // CRON_SECRET para que el guard de abajo lo reconozca como cron (isCronRequest).
+      fetch(`${base}/api/stock?action=products&uid=${u}&days=7`, {
+        headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+        signal: AbortSignal.timeout(50000),
+      }).then(r => r.status)
     ));
     return res.json({ ok: true, warmed: targets.length, statuses: results.map(r => r.status === "fulfilled" ? r.value : "err") });
   }
@@ -573,6 +580,13 @@ export default async function handler(req, res) {
   }
 
   if(!uid) return res.status(401).json({ error: "uid requerido" });
+
+  // Autorización multi-tenant: el uid ya no alcanza como identidad — hay que
+  // probar que el token pertenece a esa cuenta (o a su equipo/un admin). Única
+  // excepción: el cron interno (warm_all), que se identifica con CRON_SECRET.
+  // Cubre TODAS las acciones de acá para abajo (products, cache=only, el guardado
+  // del snapshot en users/{uid}/stock_cache, y cualquier acción futura).
+  if (!isCronRequest(req) && !(await guardUid(req, res, uid))) return;
 
   let platform="tiendanube", storeId, accessToken, shop, mlSellerId, mlToken;
   let dbRef;

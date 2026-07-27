@@ -11,7 +11,7 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { verifyAuth } from "./_auth.js";
+import { guardUid } from "./_auth.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -33,6 +33,15 @@ const GEMINI_MODEL = "gemini-2.5-flash";
 // falta, el campo queda en null y el prompt le dice al modelo qué significa.
 
 const n2 = (v) => (typeof v === "number" && isFinite(v)) ? +v.toFixed(2) : 0;
+
+// Los errores de fetch pueden arrastrar la URL llamada, y la URL de Gemini lleva
+// la GOOGLE_AI_KEY como query param. Nunca mandamos el mensaje crudo al cliente.
+function safeErr(msg) {
+  const k = process.env.GOOGLE_AI_KEY;
+  let s = String(msg || "Error inesperado");
+  if (k) s = s.split(k).join("***");
+  return s.replace(/([?&]key=)[^&\s]+/gi, "$1***");
+}
 
 function resumenDeRows(rows, desdeIdx) {
   // rows del caché de Márgenes: keys tipo "Fecha", "Revenue", "Ad Spend", "Profit"
@@ -308,8 +317,11 @@ export default async function handler(req, res) {
   const { uid } = req.query;
   if (!uid) return res.status(401).json({ error: "Falta uid" });
 
-  const authUser = await verifyAuth(req);
-  if (!authUser) return res.status(401).json({ error: "Sesión inválida. Cerrá sesión y volvé a entrar." });
+  // El snapshot que se le arma al modelo es TODO el negocio del uid pedido
+  // (facturación, envíos, campañas, colaboradores). Con verifyAuth a secas
+  // bastaba estar logueado en cualquier cuenta para pedir el snapshot ajeno:
+  // guardUid exige que el token pertenezca a ese tenant (o a su equipo/admin).
+  if (!(await guardUid(req, res, uid))) return;
 
   const apiKey = process.env.GOOGLE_AI_KEY;
   if (!apiKey) return res.status(500).json({ error: "Falta GOOGLE_AI_KEY en Vercel" });
@@ -402,7 +414,7 @@ export default async function handler(req, res) {
       return res.end();
     } catch (e) {
       console.error("[copilot stream]", e.message);
-      try { res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`); } catch (_) {}
+      try { res.write(`data: ${JSON.stringify({ error: safeErr(e.message) })}\n\n`); } catch (_) {}
       return res.end();
     }
   }
@@ -427,6 +439,6 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error("[copilot]", e.message);
-    return res.status(500).json({ error: e.message });
+    return res.status(500).json({ error: safeErr(e.message) });
   }
 }

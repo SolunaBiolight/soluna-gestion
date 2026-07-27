@@ -1,6 +1,6 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { verifyAuth } from "./_auth.js";
+import { guardUid, guardCron } from "./_auth.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -95,6 +95,11 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   // ── action=tracking: proxy Andreani para evitar CORS (solo lectura) ──
+  // SIN auth a propósito: se llama con `fetch` plano (sin Authorization) desde
+  // Reclamos y desde el poller global de Andreani. Solo reenvía a los endpoints
+  // públicos de tracking de Andreani con un número que ya trae el llamador: no
+  // toca Firestore ni expone datos de la cuenta. Si algún día los llamadores
+  // pasan a authFetch, acá va un verifyAuth.
   if (req.query.action === 'tracking') {
     const { tracking } = req.query;
     if (!tracking) return res.status(400).json({ error: 'tracking requerido' });
@@ -117,7 +122,9 @@ export default async function handler(req, res) {
   // el estado Andreani de sus envíos no finalizados y lo persiste en
   // users/{uid}/envios/{docId}. Las vistas leen Firestore: el tracking deja
   // de depender de que alguien tenga la pestaña abierta.
+  // Solo el cron: recorre cuentas ajenas, escribe en Firestore y manda emails.
   if (req.query.action === 'track_all') {
+    if (!guardCron(req, res)) return;
     try {
       const db = initAdmin();
       // Deadline global: si Andreani viene lento, cortamos antes del límite de
@@ -276,12 +283,13 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── Acciones de ESCRITURA sobre la tienda: requieren usuario autenticado ──
-  const authUser = await verifyAuth(req);
-  if (!authUser) return res.status(401).json({ error: "Sesión inválida. Recargá la página e iniciá sesión de nuevo." });
-
+  // ── Todo lo que sigue opera sobre los datos de UNA cuenta (historial de
+  // envíos en Firestore, credenciales de Tienda Nube, fulfillment de pedidos):
+  // exige token válido Y atado al uid pedido. Antes alcanzaba con estar
+  // logueado con cualquier cuenta y mandar el uid ajeno por query.
   const { uid, orderId, tracking } = req.query;
   if (!uid) return res.status(401).json({ error: "uid requerido" });
+  if (!(await guardUid(req, res, uid))) return;
 
   // ── Historial de envíos en Firestore (vía Admin SDK — no depende de las
   // reglas de seguridad del cliente, que no cubren subcolecciones nuevas) ──

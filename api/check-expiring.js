@@ -3,6 +3,7 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { guardCron } from "./_auth.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -75,12 +76,10 @@ function emailHtml({ nombre, diasRestantes, isTrial, planesPlanesUrl }) {
 }
 
 export default async function handler(req, res) {
-  // Verificar autorización del cron (Vercel pone el header automáticamente)
-  const authHeader = req.headers["authorization"];
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return res.status(401).json({ error: "No autorizado" });
-  }
+  // Autorización del cron OBLIGATORIA. Antes era `if (cronSecret && ...)`: sin
+  // la env var configurada el endpoint quedaba abierto a cualquiera (barrido de
+  // toda la colección users + envío de emails).
+  if (!guardCron(req, res)) return;
 
   const db = initAdmin();
   const now = new Date();

@@ -12,6 +12,7 @@
 // Verificacion: si algun SKU no entra, escalar font o usar mas columnas.
 
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { verifyAuth } from './_auth.js';
 
 export const config = { api: { bodyParser: false } };
 
@@ -98,9 +99,14 @@ function calcLayout(skuLines, zoneW, zoneH, maxFontSize = 6.5, minFontSize = 4.0
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.status(200).end(); // preflight sin auth
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  // No hay datos de tenant acá, pero sí parseo de PDFs arbitrarios (DoS):
+  // con exigir una sesión válida alcanza.
+  const user = await verifyAuth(req);
+  if (!user) return res.status(401).json({ error: 'Sesión inválida. Recargá la página e iniciá sesión de nuevo.' });
 
   try {
     const body = await readBody(req);

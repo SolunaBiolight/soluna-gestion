@@ -1,6 +1,7 @@
 // api/tn-callback.js
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { createHmac, timingSafeEqual } from "crypto";
 
 const TN_CLIENT_ID     = process.env.TN_CLIENT_ID     || "30036";
 const TN_CLIENT_SECRET = process.env.TN_CLIENT_SECRET;
@@ -16,6 +17,37 @@ function initAdmin() {
     }),
   });
   return getFirestore();
+}
+
+// Firma del state — mismo patrón que meta-callback.js y google-ads-callback.js.
+export function signState(uid) {
+  return createHmac("sha256", TN_CLIENT_SECRET || "").update(String(uid)).digest("hex").slice(0, 32);
+}
+
+// state = "uid.firma". Sin firma, cualquiera podía completar el OAuth de SU
+// tienda con state=<uid víctima> y escribirle el accessToken (CSRF de vinculación).
+//
+// TOLERANTE por ahora: el state todavía lo arma el frontend con el uid en claro
+// (src/App.jsx:1090 y :8545). Mientras esos dos lugares no manden `uid.firma`,
+// aceptamos también el formato viejo. Cuando el front esté actualizado, borrar
+// el bloque marcado LEGACY y devolver null.
+function verifyState(stateRaw) {
+  const raw = decodeURIComponent(String(stateRaw || ""));
+  const dot = raw.lastIndexOf(".");
+  if (dot > 0) {
+    const uid = raw.slice(0, dot);
+    const gotSig = raw.slice(dot + 1);
+    const expSig = signState(uid);
+    try {
+      const a = Buffer.from(gotSig), b = Buffer.from(expSig);
+      if (a.length === b.length && timingSafeEqual(a, b)) return uid;
+    } catch (_) {}
+    return null; // venía con formato firmado pero la firma no valida
+  }
+  // LEGACY: state = uid en claro (frontend sin actualizar). Borrar cuando el
+  // front firme el state — hasta entonces el CSRF de vinculación sigue abierto.
+  console.warn("[tn-callback] state sin firma (frontend legacy)");
+  return raw || null;
 }
 
 export default async function handler(req, res) {
@@ -55,7 +87,11 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Faltan parámetros" });
   }
 
-  const uid = decodeURIComponent(state);
+  const uid = verifyState(state);
+  if (!uid) {
+    console.error("[tn-callback] state con firma inválida");
+    return res.redirect(`${APP_URL}?tn_error=bad_state`);
+  }
 
   try {
     // 1. Intercambiar code por access_token

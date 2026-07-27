@@ -9,6 +9,7 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { XMLParser } from "fast-xml-parser";
 import { getValidMLToken } from "./integrations.js";
+import { guardUid } from "./_auth.js";
 
 // Con varios ML conectados, la facturación usa la cuenta elegida para VENTAS de
 // ML (margenesMlVentas). Vacío = primera cuenta (1 solo ML, como siempre).
@@ -1434,11 +1435,19 @@ function parseMultipart(body, boundary) {
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const { action, uid, cuit } = req.query;
   if (!uid) return res.status(401).json({ error: "Falta uid" });
+
+  // Gate único de autorización: TODAS las acciones de este endpoint (emitir en
+  // AFIP, guardar/borrar certificados fiscales, leer PII de compradores, etc.)
+  // pasan por acá. El uid viaja por query y no es secreto: hay que exigir que
+  // el token pertenezca a esa cuenta (o a su equipo / a un admin).
+  // Incluye el camino multipart (save_cuit / parse), que también resuelve el
+  // uid desde la query string y manda el Authorization en el header.
+  if (!(await guardUid(req, res, uid))) return;
 
   const db = initAdmin();
 

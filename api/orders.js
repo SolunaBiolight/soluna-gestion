@@ -1,7 +1,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getValidMLToken } from "./integrations.js";
-import { verifyAuth } from "./_auth.js";
+import { guardUid, guardCron, isCronRequest } from "./_auth.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -229,25 +229,32 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { uid, tab, countOnly, q, action } = req.query;
+  // `countOnly` llega como '1' desde unos llamadores y como 'true' desde otros:
+  // se normaliza UNA vez y todas las ramas cortan por esta variable. (Antes el
+  // gate de auth miraba '1' y las ramas comparaban con 'true', así que un
+  // countOnly=1 sin sesión devolvía el listado completo de pedidos con PII.)
+  const _countOnly = countOnly === 'true' || countOnly === '1';
 
-  // ── Autenticación para endpoints con PII ──
-  // Los listados de pedidos exponen nombre/DNI/teléfono/dirección de clientes:
-  // exigen un ID token válido de Firebase (cualquier usuario autenticado de la
-  // app — el equipo opera con sus propios logins). Va ANTES del cache de tabs
-  // para que tampoco se sirvan respuestas cacheadas sin sesión. Exentos:
-  // counts (solo cantidades), stats/coupons (agregados) y tab=total (ids fake).
-  const _piiTabs = ['cobrar','empaquetar','enviar','bulk_lookup','ml_envios'];
-  const _needsAuth = (q != null && q !== '') || (_piiTabs.includes(tab) && !(countOnly === 'true' || countOnly === '1')) || (!tab && !action && (q == null || q === ''));
-  if (_needsAuth) {
-    const _authUser = await verifyAuth(req);
-    if (!_authUser) return res.status(401).json({ error: "Sesión inválida. Recargá la página e iniciá sesión de nuevo." });
+  // ── Autorización ──
+  // Todo lo que devuelve este endpoint pertenece a UNA cuenta: pedidos con
+  // nombre/DNI/teléfono/dirección, métricas, cupones. Se exige token válido Y
+  // atado al uid pedido, sin excepciones por tab/acción/countOnly. Va ANTES
+  // del cache de tabs para que tampoco se sirvan respuestas cacheadas.
+  // Único camino sin sesión de usuario: los crons, que corren server-side con
+  // CRON_SECRET y necesitan operar sobre uids ajenos (warm_margenes recalcula
+  // la caché de Márgenes llamándose a sí mismo con action=daily_metrics).
+  if (action === 'warm_margenes') {
+    if (!guardCron(req, res)) return;
+  } else if (!isCronRequest(req)) {
+    if (!uid) return res.status(401).json({ error: "uid requerido" });
+    if (!(await guardUid(req, res, uid))) return;
   }
 
   // Cache 60s para los tabs de listado. `fresh=1` (botón Sincronizar) lo saltea.
   const _cacheableTabs = ['total', 'cobrar', 'empaquetar', 'enviar'];
   const _fresh = req.query.fresh === '1' || req.query.fresh === 'true';
   const _cacheKey = (!action && !q && uid && _cacheableTabs.includes(tab))
-    ? `${uid}|${tab}|${countOnly || ''}|${req.query.quick || ''}`
+    ? `${uid}|${tab}|${_countOnly ? '1' : ''}|${req.query.quick || ''}`
     : null;
   if (_cacheKey && !_fresh) {
     const hit = tabCacheGet(_cacheKey);
@@ -319,7 +326,10 @@ export default async function handler(req, res) {
         stockUrl.searchParams.set("uid", uid); stockUrl.searchParams.set("action", "products");
         stockUrl.searchParams.set("date_from", from); stockUrl.searchParams.set("date_to", to);
         let r;
-        try { r = await fetch(stockUrl.toString(), { headers: { host: req.headers.host } }); }
+        // /api/stock exige auth: este subrequest es server→server, así que va
+        // con el CRON_SECRET (que stock.js acepta vía isCronRequest). El uid ya
+        // fue validado contra el token del usuario en el gate de arriba.
+        try { r = await fetch(stockUrl.toString(), { headers: { host: req.headers.host, Authorization: `Bearer ${process.env.CRON_SECRET || ''}` } }); }
         catch (e) { throw new Error("No se pudieron traer las ventas (red). Reintentá en unos segundos."); }
         if (!r.ok) throw new Error(`No se pudieron traer las ventas (HTTP ${r.status}). Reintentá en unos segundos.`);
         const j = await r.json();
@@ -1286,7 +1296,9 @@ export default async function handler(req, res) {
       url.searchParams.set("action","daily_metrics"); url.searchParams.set("uid", e.uid); url.searchParams.set("warm","1");
       if (e.date_from && e.date_to) { url.searchParams.set("date_from", e.date_from); url.searchParams.set("date_to", e.date_to); }
       else url.searchParams.set("days", String(e.days || 30));
-      const r = await fetch(url.toString(), { headers: { host: req.headers.host } });
+      // Subrequest server→server con el mismo CRON_SECRET: el warmer recalcula
+      // la caché de uids ajenos y no tiene (ni debe tener) token de usuario.
+      const r = await fetch(url.toString(), { headers: { host: req.headers.host, Authorization: `Bearer ${process.env.CRON_SECRET || ''}` } });
       const j = await r.json().catch(() => ({}));
       return res.json({ ok: r.ok && !j.error, warmed: `${e.uid}|${e.key}`, error: j.error || null });
     } catch(e) { console.error("warm_margenes error:", e.message); return res.status(500).json({ error: e.message }); }
@@ -1573,16 +1585,16 @@ export default async function handler(req, res) {
       if (platform === 'shopify') {
         const orders = await shopifyFetchOrders("financial_status=pending,partially_paid");
         const filtered = orders.filter(o => !o.cancelled_at).map(shopifyToTNFormat);
-        if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
+        if (_countOnly) return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
         return res.status(200).json(filtered);
       }
-      if (countOnly === 'true') {
+      if (_countOnly) {
         let n = null;
         try { n = await fetchTNCount(storeId, accessToken, "payment_status=pending,partially_paid&status=open"); } catch (_) {}
         if (n !== null) return res.status(200).json(Array.from({length: n}, (_,i) => ({id:i})));
       }
       const orders = await fetchAllPages(storeId, accessToken, "payment_status=pending,partially_paid&status=open");
-      if (countOnly === 'true') return res.status(200).json(Array.from({length: orders.length}, (_,i) => ({id:i})));
+      if (_countOnly) return res.status(200).json(Array.from({length: orders.length}, (_,i) => ({id:i})));
       return res.status(200).json(orders);
     }
 
@@ -1591,11 +1603,11 @@ export default async function handler(req, res) {
       if (platform === 'shopify') {
         const orders = await shopifyFetchOrders("financial_status=paid&fulfillment_status=unfulfilled,partial");
         const filtered = orders.filter(o => !o.cancelled_at).map(shopifyToTNFormat);
-        if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
+        if (_countOnly) return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
         return res.status(200).json(filtered);
       }
       const EMP_PARAMS = "payment_status=paid&shipping_status=unpacked&status=open";
-      if (countOnly === 'true') {
+      if (_countOnly) {
         let n = null;
         try { n = await fetchTNCount(storeId, accessToken, EMP_PARAMS); } catch (_) {}
         if (n !== null) return res.status(200).json(Array.from({length: n}, (_,i) => ({id:i})));
@@ -1606,7 +1618,7 @@ export default async function handler(req, res) {
         return res.status(200).json(first);
       }
       const orders = await fetchAllPagesFast(storeId, accessToken, EMP_PARAMS);
-      if (countOnly === 'true') return res.status(200).json(Array.from({length: orders.length}, (_,i) => ({id:i})));
+      if (_countOnly) return res.status(200).json(Array.from({length: orders.length}, (_,i) => ({id:i})));
       return res.status(200).json(orders);
     }
 
@@ -1616,7 +1628,7 @@ export default async function handler(req, res) {
         // Shopify no tiene "PACKED" — tomamos partial como ready-to-ship aproximado.
         const orders = await shopifyFetchOrders("financial_status=paid&fulfillment_status=partial");
         const filtered = orders.filter(o => !o.cancelled_at).map(shopifyToTNFormat);
-        if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
+        if (_countOnly) return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
         return res.status(200).json(filtered);
       }
       // Vía rápida: filtro nativo shipping_status=unfulfilled de TN = empaquetadas
@@ -1636,7 +1648,7 @@ export default async function handler(req, res) {
         for (const pg of pages) { all = all.concat(pg); if (pg.length < 200) break; }
         return all.filter(o => o.fulfillments?.some(f => f.status === 'PACKED'));
       };
-      if (countOnly === 'true') {
+      if (_countOnly) {
         let n = null;
         try { n = await fetchTNCount(storeId, accessToken, PACKED_PARAMS); } catch (_) {}
         if (n === null || n === 0) n = (await scanPacked(true)).length; // verificar 0 con el scan liviano

@@ -10,7 +10,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { createHmac } from "crypto";
-import { verifyAuth } from "./_auth.js";
+import { guardUid, guardCron } from "./_auth.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -219,6 +219,20 @@ function safeAccount(cfg) {
   safe.token_expires_at = cfg.token_expires_at || null;
   safe.token_refreshed_at = cfg.token_refreshed_at || null;
   return safe;
+}
+
+// /me/accounts devuelve un access_token POR PÁGINA. Ese token es un secreto de
+// larga vida (permite publicar como la página): nunca sale en una respuesta HTTP.
+// Se usa server-side y se guarda en Firestore, pero al cliente va sin token.
+function safePages(pages) {
+  return (pages || []).map(p => {
+    const { access_token, ...rest } = p || {};
+    return { ...rest, has_page_token: Boolean(access_token) };
+  });
+}
+// Igual que safePages pero para el objeto completo de metaIntrospect.
+function safeIntrospect(intros) {
+  return { ...intros, pages: safePages(intros?.pages) };
 }
 
 function creativesCol(db, uid) {
@@ -1024,13 +1038,9 @@ export default async function handler(req, res) {
   // ── CRON: reglas + mantenimiento de tokens para TODOS los users ──
   // Lo dispara Vercel Cron (Bearer CRON_SECRET) sin uid.
   if (action === "cron_run_all" && req.method === "GET") {
-    const expected = process.env.CRON_SECRET;
-    const got = req.headers.authorization || "";
     // CRON_SECRET es OBLIGATORIO — sin la env var, el cron no corre en vez de
-    // quedar abierto a internet (antes el chequeo era opcional).
-    if (!expected || got !== `Bearer ${expected}`) {
-      return res.status(401).json({ error: "Unauthorized cron" });
-    }
+    // quedar abierto a internet (guardCron devuelve false si no está seteada).
+    if (!guardCron(req, res)) return;
     try {
       // 1) Renovación proactiva de long-lived tokens OAuth (~60 días de vida).
       // El exchange fb_exchange_token funciona mientras el token siga válido,
@@ -1099,15 +1109,13 @@ export default async function handler(req, res) {
 
   if (!uid) return res.status(401).json({ error: "Falta uid" });
 
-  // ── AUTH: todo lo demás exige sesión válida de Firebase (Bearer ID token).
-  // Antes el único "auth" era conocer el uid por query string — cualquiera
-  // podía leer insights, pausar campañas o exfiltrar el access_token de Meta.
-  // Mismo patrón que orders.js / update-shipping.js (equipo multi-login: se
-  // valida que el token sea válido, no que token.uid === uid).
-  const authUser = await verifyAuth(req);
-  if (!authUser) {
-    return res.status(401).json({ error: "Sesión inválida. Cerrá sesión y volvé a entrar." });
-  }
+  // ── AUTH: todo lo demás exige sesión válida de Firebase (Bearer ID token)
+  // LIGADA al uid pedido. Con verifyAuth a secas alcanzaba con estar logueado
+  // en cualquier cuenta: el uid viaja por query string y no es secreto, así que
+  // cualquier cliente podía leer insights, pausar campañas o exfiltrar el
+  // access_token de Meta de otro tenant. guardUid exige token.uid === uid
+  // (o membresía de equipo / admin de plataforma).
+  if (!(await guardUid(req, res, uid))) return;
 
   try {
 
@@ -1162,7 +1170,16 @@ export default async function handler(req, res) {
       if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
       const cfg = await loadMetaAccount(db, uid, acc_id);
       if (!cfg?.access_token || !cfg?.ad_account_id) return res.status(400).json({ error: "Cuenta sin token o ad_account_id" });
+      // El token se devuelve SOLO al dueño de la cuenta: guardUid ya garantiza
+      // que quien pide es esa cuenta (antes cualquier usuario logueado se
+      // llevaba el token de Meta de otro tenant, que era la fuga real).
+      // Se usa para subir creativos directo del browser a Meta: los videos
+      // llegan a 60 MB y no entran por el server (tope de 4,5 MB de body en
+      // Vercel). Pendiente de endurecer: upload resumable server-side por
+      // chunks para dejar de exponerlo al navegador.
       return res.json({
+        ok: true,
+        connected: true,
         access_token: cfg.access_token,
         ad_account_id: cfg.ad_account_id,
         api_version: META_V,
@@ -1179,7 +1196,7 @@ export default async function handler(req, res) {
         const intros = await metaIntrospect(cfg.access_token);
         return res.json({
           ad_accounts: intros.ad_accounts || [],
-          pages: intros.pages || [],
+          pages: safePages(intros.pages),
         });
       } catch (e) {
         return res.status(500).json({ error: e.message });
@@ -1215,7 +1232,7 @@ export default async function handler(req, res) {
         return res.json({
           me: intros.me,
           ad_accounts,
-          pages,
+          pages: safePages(pages),
           ig_accounts,
           pixels_by_account: pixelsByAccount,
           active: {
@@ -1243,14 +1260,24 @@ export default async function handler(req, res) {
         access_token, created_at: existing.created_at || new Date().toISOString(),
         last_test: { ok: true, ts: new Date().toISOString(), msg: "Token válido" } };
       await saveMetaAccount(db, uid, accId, cfg);
-      return res.json({ ok: true, id: accId, account: safeAccount(cfg), ad_accounts: intros.ad_accounts, pages: intros.pages });
+      return res.json({ ok: true, id: accId, account: safeAccount(cfg), ad_accounts: intros.ad_accounts, pages: safePages(intros.pages) });
     }
 
     if (action === "select" && req.method === "POST") {
       if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
       const cfg = await loadMetaAccount(db, uid, acc_id);
       if (!cfg) return res.status(404).json({ error: "Cuenta no encontrada" });
-      const { ad_account_id, ad_account_name, page_id, page_name, page_access_token, ig_account_id, ig_username, pixel_id, currency, timezone_name } = req.body || {};
+      const { ad_account_id, ad_account_name, page_id, page_name, ig_account_id, ig_username, pixel_id, currency, timezone_name } = req.body || {};
+      // El page_access_token ya NO viaja por el body (el cliente no lo recibe más):
+      // se resuelve server-side contra Meta con el token de la cuenta. Si falla,
+      // se conserva el que ya estaba guardado para esa misma página.
+      let page_access_token = (page_id && page_id === cfg.page_id) ? (cfg.page_access_token ?? null) : null;
+      if (page_id && !page_access_token) {
+        try {
+          const intros = await metaIntrospect(cfg.access_token);
+          page_access_token = (intros.pages || []).find(p => String(p.id) === String(page_id))?.access_token ?? null;
+        } catch (_) {}
+      }
       // Si no nos pasaron currency, intentamos pedírsela a Meta
       let resolvedCurrency = currency;
       let resolvedTz = timezone_name;
@@ -2367,7 +2394,7 @@ export default async function handler(req, res) {
       if (cfg.ad_account_id) {
         try { const px = await metaGet(`${cfg.ad_account_id}/adspixels`, { fields: "id,name", limit: 50 }, cfg.access_token); pixels = px.data || []; } catch (_) {}
       }
-      return res.json({ ...intros, pixels });
+      return res.json({ ...safeIntrospect(intros), pixels });
     }
 
     // ── CAMPAÑAS ─────────────────────────────────────────
