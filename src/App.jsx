@@ -26073,7 +26073,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     const d=delta(curr,prev);
     if(d===null)return null;
     const good=invert?d<0:d>=0;
-    return <span style={{fontSize:11,fontWeight:700,color:good?MC.green:MC.red}}>{good?"↑":"↓"}{Math.abs(d).toFixed(1)}%</span>;
+    // Discreto a propósito: solo la flecha lleva color; el porcentaje va en gris
+    // para no competir con el número principal de la card.
+    return <span title={`${Math.abs(d).toFixed(1)}% ${good?"mejor":"peor"} que el período anterior`} style={{fontSize:10,fontWeight:600,color:T.textSm,display:"inline-flex",alignItems:"center",gap:2,cursor:"default"}}><span style={{color:good?MC.green:MC.red,fontWeight:800}}>{good?"↑":"↓"}</span>{Math.abs(d)>=100?Math.round(Math.abs(d)):Math.abs(d).toFixed(1)}%</span>;
   };
 
   const rows=rendData?.rows||[];
@@ -26168,19 +26170,12 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     const visibleCards = filter ? ordered.filter(filter) : ordered;
     const n = visibleCards.length;
     if (!n) return null;
-    // Columnas balanceadas: máx. 4 (desktop) / 3 / 2 (mobile); las filas se
-    // reparten parejas y la última fila estira sus cards para cerrar el ancho.
+    // Columnas fijas: máx. 4 (desktop) / 3 / 2 (mobile). La última fila NO se
+    // estira para cerrar el ancho — una card inflada al lado de las normales se
+    // veía peor que el hueco en blanco.
     const maxCols = winW<520?2:winW<900?3:4;
-    let cols = Math.min(maxCols, Math.max(1,n));
-    const rows = Math.ceil(n/cols);
-    cols = Math.ceil(n/rows);
-    const rem = n % cols;
-    const lastStart = rem===0 ? n : n-rem;
-    const spanFor = (i) => {
-      if (rem===0 || i<lastStart) return 1;
-      const base = Math.floor(cols/rem), extra = cols%rem, idx = i-lastStart;
-      return idx<extra ? base+1 : base;
-    };
+    const cols = Math.min(maxCols, Math.max(1,n));
+    const spanFor = () => 1;
     return (
       <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},minmax(0,1fr))`,gap:10,marginBottom:18}}>
         {visibleCards.map((k,ci)=>(
@@ -26189,7 +26184,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             onDrop={e=>{e.preventDefault(); cardsReorder(cards, orderKey, dragKpi, k.label); setDragKpi(null);}}
             onClick={k.onClick}
             title={k.onClick?"Ver las ventas que componen este número":undefined}
-            style={{gridColumn:`span ${spanFor(ci)}`,background:T.card,border:`1px solid ${k.bad?MC.red+"44":T.border}`,borderRadius:14,padding:"14px 16px 12px",position:"relative",overflow:"hidden",minHeight:112,display:"flex",flexDirection:"column",opacity:dragKpi===k.label?0.4:1,transition:"opacity .12s",cursor:k.onClick?"pointer":"default"}}>
+            className={k.onClick?"gh-card-click":undefined}
+            style={{gridColumn:`span ${spanFor(ci)}`,background:T.card,border:`1px solid ${k.bad?MC.red+"44":T.border}`,borderRadius:12,padding:k.hero?"16px 18px 14px":"12px 14px 10px",position:"relative",overflow:"hidden",minHeight:k.hero?122:92,display:"flex",flexDirection:"column",opacity:dragKpi===k.label?0.4:1,transition:"opacity .12s",cursor:k.onClick?"pointer":"default"}}>
             <span draggable
               onDragStart={e=>{ setDragKpi(k.label); try{e.dataTransfer.effectAllowed="move";}catch(_){} }}
               onDragEnd={()=>setDragKpi(null)}
@@ -26199,12 +26195,12 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {k.accent && <span style={{width:6,height:6,borderRadius:"50%",background:k.accent,display:"inline-block",flexShrink:0}}/>}
               {k.label}
             </div>
-            <div style={{fontSize:22,fontWeight:800,color:k.valColor||(k.bad?MC.red:T.text),letterSpacing:-0.8,lineHeight:1,marginBottom:5,fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
+            <div style={{fontSize:k.hero?28:19,fontWeight:800,color:k.valColor||(k.bad?MC.red:T.text),letterSpacing:k.hero?-1:-0.6,lineHeight:1,marginBottom:5,fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:k.spk?8:0}}>
-              <span style={{fontSize:9,color:T.textSm}}>{k.hint}</span>
+              <span style={{fontSize:10,color:T.textSm}}>{k.hint}</span>
               {hasPrev && k.c!=null && k.p!=null && <DeltaBadge curr={k.c} prev={k.p} invert={k.inv}/>}
             </div>
-            {k.spk && <div style={{marginTop:"auto"}}><Spk vals={k.spk} color={k.accent||T.textSm} h={28} w={140} showZero={k.zero}/></div>}
+            {k.spk && <div style={{marginTop:"auto",opacity:k.hero?1:0.55}}><Spk vals={k.spk} color={k.accent||T.textSm} h={k.hero?28:16} w={140} showZero={k.zero}/></div>}
           </div>
         ))}
       </div>
@@ -26325,6 +26321,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       )}
 
       <div style={{maxWidth:1440,margin:"0 auto",padding:"20px 24px 64px",width:"100%"}}>
+        {/* Hover solo en lo clickeable — también sirve para descubrir que
+            Revenue y Órdenes se pueden tocar. */}
+        <style>{`.gh-card-click{transition:box-shadow .15s,transform .15s,opacity .12s;}.gh-card-click:hover{box-shadow:0 4px 16px rgba(0,0,0,0.22);transform:translateY(-1px);}`}</style>
 
         {!rendData&&!loading&&(
           <div style={{textAlign:"center",padding:"80px 24px"}}>
@@ -26383,16 +26382,24 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             const fbOk = fb0 && fb0.bruto>0 && ((fb0.descuento||0)+(fb0.envioCliente||0)) >= (fb0.neto||0)*0.002;
             const ab0 = rendData?.adSpendBreakdown;
             const abOk = ab0 && ab0.total>0 && (Object.entries(ab0.porMoneda||{}).some(([k,v])=>k!=="ARS"&&v>0) || ab0.feePct>0);
+            // Solo las alertas y avisos son chips con color (son avisos reales).
+            // Los desgloses son links de texto discretos: informativos, no urgentes.
             const chips = [
               alerts.length>0 && {id:"alertas", color:alerts.some(a=>a.sev==="red")?T.red:T.orange, label:`${alerts.length} alerta${alerts.length>1?"s":""}`},
               qItems.length>0 && {id:"avisos", color:T.yellow, label:`${qItems.length} aviso${qItems.length>1?"s":""} de precisión`},
-              fbOk && {id:"fb", color:T.blue, label:"Desglose facturación"},
-              abOk && {id:"ab", color:T.orange, label:"Desglose inversión"},
+              fbOk && {id:"fb", plain:true, label:"Desglose facturación"},
+              abOk && {id:"ab", plain:true, label:"Desglose inversión"},
             ].filter(Boolean);
             if (!chips.length) return null;
             return (
               <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
-                {chips.map(c=>(
+                {chips.map(c=>c.plain?(
+                  <button key={c.id} onClick={()=>setOpenInfo(o=>o===c.id?null:c.id)}
+                    style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 8px",fontSize:DS.font.sm,fontWeight:openInfo===c.id?DS.w.bold:DS.w.medium,border:"none",background:"transparent",color:openInfo===c.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>
+                    {c.label}
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{transform:openInfo===c.id?"rotate(180deg)":"none",transition:`transform .15s ${DS.ease}`}}><path d="M6 9l6 6 6-6"/></svg>
+                  </button>
+                ):(
                   <button key={c.id} onClick={()=>setOpenInfo(o=>o===c.id?null:c.id)}
                     style={{display:"inline-flex",alignItems:"center",gap:7,padding:"5px 12px",fontSize:DS.font.sm,fontWeight:DS.w.bold,border:`1px solid ${c.color}${openInfo===c.id?"88":"44"}`,borderRadius:DS.r.full,background:openInfo===c.id?c.color+"22":c.color+"0E",color:c.color,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                     <span style={{width:6,height:6,borderRadius:"50%",background:c.color,display:"inline-block"}}/>
@@ -26522,7 +26529,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               stats debajo del gráfico — una sola franja, sin cajitas sueltas.) */}
 
           {/* Hero KPIs */}
-          <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{width:8,height:8,borderRadius:"50%",background:T.accent,flexShrink:0}}/>Métricas Principales <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· general (Tienda + ML)</span><span style={{marginLeft:"auto",display:"inline-flex",gap:4,alignItems:"center"}}><button onClick={()=>{setEditMetas(s=>!s); setMetasDraft(metas);}} title="Configurar metas (ROAS y margen objetivo)" style={{background:editMetas?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editMetas?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H8a1.65 1.65 0 001-1.51V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V8a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button><button onClick={()=>setEditSecKpis(s=>!s)} title="Elegir qué KPIs se muestran" style={{background:editSecKpis?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editSecKpis?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button><EyeBtn k="sec"/><EyeBtn k="main"/></span></div>
+          <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}>Métricas Principales <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· general (Tienda + ML)</span><span style={{marginLeft:"auto",display:"inline-flex",gap:4,alignItems:"center"}}><button onClick={()=>{setEditMetas(s=>!s); setMetasDraft(metas);}} title="Configurar metas (ROAS y margen objetivo)" style={{background:editMetas?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editMetas?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H8a1.65 1.65 0 001-1.51V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V8a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button><button onClick={()=>setEditSecKpis(s=>!s)} title="Elegir qué KPIs se muestran" style={{background:editSecKpis?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editSecKpis?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button><EyeBtn k="sec"/><EyeBtn k="main"/></span></div>
           {editMetas && (
             <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10,background:T.card,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"12px 14px"}}>
               <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Metas del negocio — los umbrales definen cuándo un KPI se marca en rojo; las metas del mes ($) habilitan el apartado de progreso:</span>
@@ -26544,9 +26551,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {(()=>{
             const CARDS=[
               {label:"Profit",      val:fmtM(tot.profit),    c:tot.profit,     p:prevTot.profit,     hero:true, accent:(tot.profit||0)>=0?MC.green:MC.red, valColor:(tot.profit||0)>=0?MC.green:MC.red, hint:(tot.profit||0)>=0?"Ganancia neta":"Pérdida neta", spk:dailyRows.map(r=>r.Profit), zero:true},
-              {label:"Revenue",     val:fmtM(tot.revenue),   c:tot.revenue,    p:prevTot.revenue,    hero:true, accent:MC.blue,   hint:"Facturación total",      spk:dailyRows.map(r=>r.Revenue), onClick:irAVentas},
-              {label:"Ad Spend",    val:fmtM(tot.adSpend),   c:tot.adSpend,    p:prevTot.adSpend,    hero:true, accent:MC.gold,   hint:"Inversión publicitaria", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
-              {label:"Net Revenue", val:fmtM(tot.netRevenue),c:tot.netRevenue, p:prevTot.netRevenue, hero:true, accent:MC.violet, hint:"Todo descontado, antes de pauta", spk:dailyRows.map(r=>r["Net Revenue"])},
+              {label:"Revenue",     val:fmtM(tot.revenue),   c:tot.revenue,    p:prevTot.revenue,    hero:true, hint:"Facturación total",      spk:dailyRows.map(r=>r.Revenue), onClick:irAVentas},
+              {label:"Ad Spend",    val:fmtM(tot.adSpend),   c:tot.adSpend,    p:prevTot.adSpend,    hero:true, hint:"Inversión publicitaria", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
+              {label:"Net Revenue", val:fmtM(tot.netRevenue),c:tot.netRevenue, p:prevTot.netRevenue, hero:true, hint:"Todo descontado, antes de pauta", spk:dailyRows.map(r=>r["Net Revenue"])},
               {label:"Órdenes",     val:fmtInt(tot.orders),  c:tot.orders,     p:prevTot.orders,     hint:"Con revenue",            spk:dailyRows.map(r=>r["Ordenes > $0"]), bad:!((tot.orders||0)>0), onClick:irAVentas},
               {label:"ROAS",        val:fmtX(tot.roas),      c:tot.roas,       p:prevTot.roas,       hint:`meta ≥ ${metas.roas}x`,  spk:dailyRows.map(r=>r.ROAS||0), bad:(tot.roas||0)<metas.roas},
               {label:"True ROAS",   val:fmtX(tot.trueRoas),  c:tot.trueRoas,   p:prevTot.trueRoas,   hint:`meta ≥ ${metas.trueRoas}x`, spk:dailyRows.map(r=>r["True ROAS"]||0), bad:(tot.trueRoas||0)<metas.trueRoas},
@@ -26695,7 +26702,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           })()}
 
           {/* Desglose de costos — estilo Escalafy */}
-          <div style={{fontSize:13,fontWeight:800,color:T.text,letterSpacing:-0.2,marginBottom:8,display:"flex",alignItems:"center",gap:8}}><span style={{width:8,height:8,borderRadius:"50%",background:T.orange,flexShrink:0}}/>Costos<span style={{marginLeft:"auto"}}><EyeBtn k="costos"/></span></div>
+          <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"26px 0 10px",display:"flex",alignItems:"center",gap:8}}>Costos<span style={{marginLeft:"auto"}}><EyeBtn k="costos"/></span></div>
           {vis.costos!==false && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:18}}>
             {[
               {label:"Costos de Productos",  val:tot.costoProductos},
@@ -26789,7 +26796,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {/* Clientes y caja */}
           {(clientes || (cashflow.liberado||0)>0 || (cashflow.retenido||0)>0) && (
             <div style={{marginBottom:18}}>
-              <div style={{fontSize:13,fontWeight:800,color:T.text,letterSpacing:-0.2,marginBottom:8,display:"flex",alignItems:"center",gap:8}}><span style={{width:8,height:8,borderRadius:"50%",background:T.accent,flexShrink:0}}/>Clientes y Caja</div>
+              <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"26px 0 10px",display:"flex",alignItems:"center",gap:8}}>Clientes y Caja</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
                 {clientes && [
                   {label:"Clientes nuevos",      val:fmtInt(clientes.nuevos),      hint:"No compraron en el período anterior"},
@@ -26917,10 +26924,10 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                 const orderKey = esMl?"cardsOrderMl":"cardsOrderTienda";
                 const visMap = vis[visKey]||{};
                 const CANAL_CARDS = [
-                {label:"Profit",      val:fmtM(cSel.profit),    c:cSel.profit,     p:cPrev?.profit,     accent:(cSel.profit||0)>=0?MC.green:MC.red, valColor:(cSel.profit||0)>=0?MC.green:MC.red, hint:(cSel.profit||0)>=0?"Ganancia neta del canal":"Pérdida neta del canal", spk:canalRows.map(r=>r.Profit), zero:true},
-                {label:"Revenue",     val:fmtM(cSel.revenue),   c:cSel.revenue,    p:cPrev?.revenue,    accent:MC.blue,   hint:"Facturación del canal", spk:canalRows.map(r=>r.Revenue)},
-                {label:"Ad Spend",    val:fmtM(cSel.adSpend),   c:cSel.adSpend,    p:cPrev?.adSpend,    accent:MC.gold,   hint:esMl?(rendData?.meta?.mlAdsFuente==="auto"?"Mercado Ads (real, API)":"Mercado Ads (manual)"):((rendData?.totals?.adSpendGoogle||0)>0?"Meta + Google Ads":"Meta Ads"), spk:canalRows.map(r=>r["Ad Spend"]), inv:true},
-                {label:"Net Revenue", val:fmtM(cSel.netRevenue),c:cSel.netRevenue, p:cPrev?.netRevenue, accent:MC.violet, hint:"Todo descontado, antes de pauta", spk:canalRows.map(r=>r["Net Revenue"])},
+                {label:"Profit",      val:fmtM(cSel.profit),    c:cSel.profit,     p:cPrev?.profit,     hero:true, accent:(cSel.profit||0)>=0?MC.green:MC.red, valColor:(cSel.profit||0)>=0?MC.green:MC.red, hint:(cSel.profit||0)>=0?"Ganancia neta del canal":"Pérdida neta del canal", spk:canalRows.map(r=>r.Profit), zero:true},
+                {label:"Revenue",     val:fmtM(cSel.revenue),   c:cSel.revenue,    p:cPrev?.revenue,    hero:true, hint:"Facturación del canal", spk:canalRows.map(r=>r.Revenue)},
+                {label:"Ad Spend",    val:fmtM(cSel.adSpend),   c:cSel.adSpend,    p:cPrev?.adSpend,    hero:true, hint:esMl?(rendData?.meta?.mlAdsFuente==="auto"?"Mercado Ads (real, API)":"Mercado Ads (manual)"):((rendData?.totals?.adSpendGoogle||0)>0?"Meta + Google Ads":"Meta Ads"), spk:canalRows.map(r=>r["Ad Spend"]), inv:true},
+                {label:"Net Revenue", val:fmtM(cSel.netRevenue),c:cSel.netRevenue, p:cPrev?.netRevenue, hero:true, hint:"Todo descontado, antes de pauta", spk:canalRows.map(r=>r["Net Revenue"])},
                 {label:"Órdenes",     val:fmtInt(cSel.orders),  c:cSel.orders,     p:cPrev?.orders,     hint:"Con revenue", spk:canalRows.map(r=>r["Ordenes > $0"]), bad:!((cSel.orders||0)>0)},
                 {label:"ROAS",        val:fmtX(cSel.roas),      c:cSel.roas,       p:cPrev?.roas,       hint:`meta ≥ ${metas.roas}x`, bad:(cSel.adSpend>0)&&(cSel.roas||0)<metas.roas},
                 {label:"True ROAS",   val:fmtX(cSel.trueRoas),  c:cSel.trueRoas,   p:cPrev?.trueRoas,   hint:`meta ≥ ${metas.trueRoas}x`, bad:(cSel.adSpend>0)&&(cSel.trueRoas||0)<metas.trueRoas},
@@ -26954,7 +26961,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {/* Gráfico del canal */}
               <RendChart T={T} rows={canalRows} cv={cv} fmtM={fmtM} fmtDate={fmtDate}/>
               {/* Costos del canal */}
-              <div style={{fontSize:13,fontWeight:800,color:T.text,letterSpacing:-0.2,marginBottom:8,display:"flex",alignItems:"center",gap:8}}><span style={{width:8,height:8,borderRadius:"50%",background:T.orange,flexShrink:0}}/>Costos del canal</div>
+              <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"26px 0 10px",display:"flex",alignItems:"center",gap:8}}>Costos del canal</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:18}}>
                 {[
                   {label:"Costos de Productos",  val:cSel.costoProductos},
