@@ -3696,6 +3696,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     })();
   },[detail]);
   const [comLoading,setComLoading]=useState(false);
+  // La pestaña Cupones carga sola al entrar (rango: mes en curso). Antes había
+  // que apretar "Cargar códigos" y la pestaña parecía vacía/rota.
+  const comAutoRef=useRef(false);
+  useEffect(()=>{
+    if(viewTab==="comisiones"&&!comAutoRef.current&&!comData&&!comLoading){ comAutoRef.current=true; fetchComisiones(); }
+    // eslint-disable-next-line
+  },[viewTab]);
   const [comError,setComError]=useState("");
   const [comFechaDesde,setComFechaDesde]=useState(()=>{const d=new Date();d.setDate(1);return fechaAR(d);});
   const [comFechaHasta,setComFechaHasta]=useState(()=>hoyAR());
@@ -3997,7 +4004,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         <div style={{display:"flex",gap:2,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:4,marginBottom:16,overflowX:"auto",alignItems:"center"}}>
           {[
             {id:"kanban",    label:"Canjes activos"},
-            {id:"comisiones",label:"Historial"},
+            {id:"comisiones",label:"Cupones"},
             {id:"perfiles",  label:"Influencers"},
           ].map(t=>{
             const isActive=viewTab===t.id;
@@ -4546,13 +4553,33 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         )}
 
         {/* ── TAB PERFILES ── */}
-        {viewTab==="perfiles"&&(
+        {viewTab==="perfiles"&&(()=>{
+          // Cada persona con un canje ES un influencer: los que no tienen perfil
+          // creado a mano aparecen igual, derivados de sus canjes, con un botón
+          // para completar el perfil (código, comisión, contacto).
+          const nombresManual=new Set(influencers.map(i=>(i.nombre||"").trim().toLowerCase()).filter(Boolean));
+          const derivados=Object.values(canjes.reduce((acc,c)=>{
+            const n=(c.influencer||"").trim();
+            if(!n) return acc;
+            const k=n.toLowerCase();
+            if(nombresManual.has(k)) return acc;
+            if(!acc[k]) acc[k]={nombre:n,usuario:(c.usuario||"").replace("@",""),red:c.red||"Instagram",canjes:[]};
+            acc[k].canjes.push(c);
+            if(!acc[k].usuario&&c.usuario) acc[k].usuario=(c.usuario||"").replace("@","");
+            return acc;
+          },{})).sort((a,b)=>b.canjes.length-a.canjes.length);
+          const derivadosFiltrados=derivados.filter(d=>{
+            if(!infSearch) return true;
+            const s=infSearch.toLowerCase();
+            return d.nombre.toLowerCase().includes(s)||d.usuario.toLowerCase().includes(s);
+          });
+          return (
           <div key="perfiles" style={{paddingBottom:48}}>
             {/* Header */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
               <div>
                 <div style={{fontSize:15,fontWeight:700,color:T.text}}>Perfiles de Influencers</div>
-                <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{influencers.length} perfil{influencers.length!==1?"es":""} · datos de comisiones y códigos de descuento</div>
+                <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{influencers.length} perfil{influencers.length!==1?"es":""}{derivados.length>0?` · ${derivados.length} más desde canjes sin perfil`:""}</div>
               </div>
               <button onClick={()=>{setEditInfluencer(null);setInfForm({nombre:"",usuario:"",red:"Instagram",codigoDescuento:"",descuentoPct:"",comisionPct:"",email:"",telefono:"",notas:""});setShowInfluencerForm(true);}} style={{...BtnPrimary(T),fontSize:13}}>+ Nuevo perfil</button>
             </div>
@@ -4562,11 +4589,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <input placeholder="Buscar perfil..." value={infSearch} onChange={e=>setInfSearch(e.target.value)} style={{...iS,paddingLeft:36}}/>
             </div>
             {/* Grid de perfiles */}
-            {influencers.length===0&&(
+            {influencers.length===0&&derivados.length===0&&(
               <div style={{textAlign:"center",padding:"60px 20px",background:T.surface,borderRadius:14,border:`1px dashed ${T.border}`}}>
                 <div style={{fontSize:36,marginBottom:10}}>👤</div>
-                <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>Sin perfiles aún</div>
-                <div style={{fontSize:13,color:T.textSm,marginBottom:20}}>Creá perfiles para guardar el código, comisión y datos de cada influencer</div>
+                <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>Sin influencers aún</div>
+                <div style={{fontSize:13,color:T.textSm,marginBottom:20}}>Cuando crees un canje, la persona aparece acá automáticamente. También podés crear un perfil a mano.</div>
                 <button onClick={()=>{setEditInfluencer(null);setInfForm({nombre:"",usuario:"",red:"Instagram",codigoDescuento:"",descuentoPct:"",comisionPct:"",email:"",telefono:"",notas:""});setShowInfluencerForm(true);}} style={{...BtnPrimary(T)}}>+ Crear primer perfil</button>
               </div>
             )}
@@ -4638,9 +4665,32 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   </div>
                 );
               })}
+              {/* Derivados de canjes — sin perfil creado todavía */}
+              {derivadosFiltrados.map(d=>(
+                <div key={"deriv-"+d.nombre} style={{background:T.card,border:`1px dashed ${T.border}`,borderRadius:12,padding:"18px 18px 14px",display:"flex",flexDirection:"column",gap:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                    <div style={{width:42,height:42,borderRadius:"50%",background:T.surface,border:`2px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:T.textMd,flexShrink:0}}>
+                      {(d.nombre||"?")[0].toUpperCase()}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:14,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.nombre}</div>
+                      <div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        {d.usuario&&<span>@{d.usuario} · </span>}<span>{d.red}</span>
+                      </div>
+                    </div>
+                    <DSBadge T={T} color={T.textSm} size="sm">Desde canjes</DSBadge>
+                  </div>
+                  <div style={{fontSize:12,color:T.textMd,marginBottom:12}}>{d.canjes.length} canje{d.canjes.length!==1?"s":""} · sin perfil todavía (código y comisión sin cargar)</div>
+                  <div style={{display:"flex",gap:8,marginTop:"auto"}}>
+                    <button onClick={()=>{setEditInfluencer(null);setInfForm({nombre:d.nombre,usuario:d.usuario||"",red:d.red||"Instagram",codigoDescuento:"",descuentoPct:"",comisionPct:"",email:"",telefono:"",notas:""});setShowInfluencerForm(true);}} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>Completar perfil</button>
+                    <button onClick={()=>{setInfSearch("");setViewTab("lista");setSearch(d.nombre);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>Ver canjes</button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        )}
+          );
+        })()}
 
       </div>
       {/* Modal: Crear / Editar perfil de influencer */}
@@ -25769,7 +25819,10 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const [canalVista, setCanalVista] = useState("global");
   // Metas del negocio (umbrales de "bueno/malo" en los KPIs) — configurables,
   // guardadas en Firestore (margenesMetas). Antes estaban hardcodeadas.
-  const METAS_DEF = { roas: 2, trueRoas: 1.2, margen: 5 };
+  // revenueMes/profitMes: metas mensuales en $ (0 = sin meta). Se muestran en
+  // un apartado discreto colapsable, no como card principal.
+  const METAS_DEF = { roas: 2, trueRoas: 1.2, margen: 5, revenueMes: 0, profitMes: 0 };
+  const [metasOpen, setMetasOpen] = useState(false);
   const [metas, setMetas] = useState(METAS_DEF);
   const [editMetas, setEditMetas] = useState(false);
   const [metasDraft, setMetasDraft] = useState(METAS_DEF);
@@ -25777,17 +25830,26 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     if(!uid) return;
     getDoc(doc(db,"users",uid)).then(s=>{
       const m = s.data()?.margenesMetas;
-      if (m) { const v = {...METAS_DEF, roas:parseFloat(m.roas)||METAS_DEF.roas, trueRoas:parseFloat(m.trueRoas)||METAS_DEF.trueRoas, margen:parseFloat(m.margen)||METAS_DEF.margen}; setMetas(v); setMetasDraft(v); }
+      if (m) { const v = {...METAS_DEF, roas:parseFloat(m.roas)||METAS_DEF.roas, trueRoas:parseFloat(m.trueRoas)||METAS_DEF.trueRoas, margen:parseFloat(m.margen)||METAS_DEF.margen, revenueMes:parseFloat(m.revenueMes)||0, profitMes:parseFloat(m.profitMes)||0}; setMetas(v); setMetasDraft(v); }
     }).catch(()=>{});
   },[uid]);
   async function saveMetas() {
-    const v = { roas:parseFloat(metasDraft.roas)||METAS_DEF.roas, trueRoas:parseFloat(metasDraft.trueRoas)||METAS_DEF.trueRoas, margen:parseFloat(metasDraft.margen)||METAS_DEF.margen };
+    const v = { roas:parseFloat(metasDraft.roas)||METAS_DEF.roas, trueRoas:parseFloat(metasDraft.trueRoas)||METAS_DEF.trueRoas, margen:parseFloat(metasDraft.margen)||METAS_DEF.margen, revenueMes:parseFloat(metasDraft.revenueMes)||0, profitMes:parseFloat(metasDraft.profitMes)||0 };
     setMetas(v); setEditMetas(false);
     try { await setDoc(doc(db,"users",uid), { margenesMetas: v }, { merge:true }); toast("Metas guardadas ✓","success"); }
     catch(_) { toast("No se pudieron guardar las metas","error"); }
   }
   // Drill-down: id de la venta expandida en la tabla venta-por-venta.
   const [expandedSale, setExpandedSale] = useState(null);
+  // Auditoría de un click: Revenue y Órdenes llevan a la tabla venta-por-venta,
+  // donde cada pedido del período está listado y el total cierra con la card.
+  const [ventasFlash, setVentasFlash] = useState(false);
+  function irAVentas() {
+    const el = document.getElementById("gh-ventas-tabla");
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    setVentasFlash(true); setTimeout(()=>setVentasFlash(false), 1600);
+  }
   // Filtros y orden de la tabla venta-por-venta
   const [salesQ, setSalesQ] = useState("");
   const [salesCanal, setSalesCanal] = useState("todos");
@@ -25809,6 +25871,67 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const [fullNums, setFullNums] = useState(()=>{ try{return localStorage.getItem(ghKey("growith_margenes_fullnums"))==="1";}catch(_){return false;} });
   const [viewMenu, setViewMenu] = useState(false); // menú "Vista" del topbar ($ completos + USD)
   const [viewMenuPos, setViewMenuPos] = useState({top:0,right:10}); // fijo: escapa del topbar scrolleable
+  const [extraMenu, setExtraMenu] = useState(false); // menú ⋯ (compartir / reprocesar)
+  const [extraMenuPos, setExtraMenuPos] = useState({top:0,right:10});
+
+  // Imagen del resumen del período (canvas propio, sin librerías): 4 números
+  // hero + curva de profit diario, lista para WhatsApp. En mobile usa el share
+  // nativo; en desktop descarga el PNG.
+  async function compartirResumen() {
+    if (!rendData) return;
+    try {
+      const W=1200, H=630, cv2=document.createElement("canvas");
+      cv2.width=W; cv2.height=H;
+      const ctx=cv2.getContext("2d");
+      const F="'Inter',system-ui,sans-serif";
+      ctx.fillStyle="#0d1117"; ctx.fillRect(0,0,W,H);
+      // Header
+      ctx.fillStyle="#818cf8"; ctx.font=`800 30px ${F}`; ctx.fillText("Growith",64,78);
+      ctx.fillStyle="#8b949e"; ctx.font=`500 21px ${F}`;
+      const desde=dailyRows[0]?.Fecha||"", hasta=dailyRows[dailyRows.length-1]?.Fecha||"";
+      const fmtF=f=>{const [y,m,d]=String(f).split("-");return d&&m?`${d}/${m}`:f;};
+      ctx.fillText(desde===hasta?`Resumen del ${fmtF(desde)}`:`Resumen del ${fmtF(desde)} al ${fmtF(hasta)}`,64,112);
+      // 4 números hero
+      const nums=[
+        {l:"PROFIT",v:fmtM(tot.profit),c:(tot.profit||0)>=0?"#3fb950":"#f85149"},
+        {l:"REVENUE",v:fmtM(tot.revenue),c:"#e6edf3"},
+        {l:"AD SPEND",v:fmtM(tot.adSpend),c:"#e6edf3"},
+        {l:"ROAS",v:fmtX(tot.roas),c:"#e6edf3"},
+      ];
+      nums.forEach((n,i)=>{
+        const x=64+i*272;
+        ctx.fillStyle="#8b949e"; ctx.font=`700 17px ${F}`; ctx.fillText(n.l,x,190);
+        ctx.fillStyle=n.c; ctx.font=`800 46px ${F}`; ctx.fillText(n.v,x,242);
+      });
+      // Curva de profit diario
+      const vals=dailyRows.map(r=>r.Profit||0);
+      if(vals.length>1){
+        const gx=64,gy=300,gw=W-128,gh=240;
+        const mn=Math.min(0,...vals), mx=Math.max(1,...vals);
+        const xy=(v,i)=>[gx+i/(vals.length-1)*gw, gy+gh-((v-mn)/(mx-mn||1))*gh];
+        // línea de cero
+        const [,y0]=xy(0,0);
+        ctx.strokeStyle="#30363d"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(gx,y0); ctx.lineTo(gx+gw,y0); ctx.stroke();
+        // área + línea
+        ctx.beginPath(); vals.forEach((v,i)=>{const [px,py]=xy(v,i); i?ctx.lineTo(px,py):ctx.moveTo(px,py);});
+        ctx.strokeStyle="#3fb950"; ctx.lineWidth=3.5; ctx.lineJoin="round"; ctx.stroke();
+        ctx.lineTo(gx+gw,gy+gh); ctx.lineTo(gx,gy+gh); ctx.closePath();
+        const grad=ctx.createLinearGradient(0,gy,0,gy+gh); grad.addColorStop(0,"rgba(63,185,80,0.28)"); grad.addColorStop(1,"rgba(63,185,80,0)");
+        ctx.fillStyle=grad; ctx.fill();
+        ctx.fillStyle="#8b949e"; ctx.font=`600 15px ${F}`; ctx.fillText("Profit por día",gx,gy-14);
+      }
+      ctx.fillStyle="#484f58"; ctx.font=`500 16px ${F}`;
+      ctx.fillText(`Generado con Growith · ${new Date().toLocaleDateString("es-AR")}`,64,H-40);
+      const blob=await new Promise(res=>cv2.toBlob(res,"image/png"));
+      if(!blob) throw new Error("no blob");
+      const file=new File([blob],`growith-resumen-${hoyAR()}.png`,{type:"image/png"});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){
+        try{ await navigator.share({files:[file],title:"Resumen Growith"}); return; }catch(e){ if(e?.name==="AbortError") return; }
+      }
+      const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=file.name; a.click(); URL.revokeObjectURL(a.href);
+      toast("Imagen del resumen descargada ✓","success");
+    } catch(e){ toast("No se pudo generar la imagen","error"); }
+  }
   const [canalSort, setCanalSort] = useState({k:null,dir:"desc"});
   // Persistencia de la personalización del dashboard (orden/visibilidad de cards,
   // secciones): localStorage para lectura instantánea + Firestore (users.margenesVis)
@@ -26064,7 +26187,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           <div key={k.label}
             onDragOver={e=>e.preventDefault()}
             onDrop={e=>{e.preventDefault(); cardsReorder(cards, orderKey, dragKpi, k.label); setDragKpi(null);}}
-            style={{gridColumn:`span ${spanFor(ci)}`,background:T.card,border:`1px solid ${k.bad?MC.red+"44":T.border}`,borderRadius:14,padding:"14px 16px 12px",position:"relative",overflow:"hidden",minHeight:112,display:"flex",flexDirection:"column",opacity:dragKpi===k.label?0.4:1,transition:"opacity .12s"}}>
+            onClick={k.onClick}
+            title={k.onClick?"Ver las ventas que componen este número":undefined}
+            style={{gridColumn:`span ${spanFor(ci)}`,background:T.card,border:`1px solid ${k.bad?MC.red+"44":T.border}`,borderRadius:14,padding:"14px 16px 12px",position:"relative",overflow:"hidden",minHeight:112,display:"flex",flexDirection:"column",opacity:dragKpi===k.label?0.4:1,transition:"opacity .12s",cursor:k.onClick?"pointer":"default"}}>
             <span draggable
               onDragStart={e=>{ setDragKpi(k.label); try{e.dataTransfer.effectAllowed="move";}catch(_){} }}
               onDragEnd={()=>setDragKpi(null)}
@@ -26151,21 +26276,44 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           until={useCustom?dateTo:hoyAR()}
           onPreset={(d)=>{ setUseCustom(false); setDateFrom(""); setDateTo(""); setDays(d); loadData(d,"",""); }}
           onChange={(s,u)=>{ setUseCustom(true); setDateFrom(s); setDateTo(u); const diff=Math.round((new Date(u)-new Date(s))/86400000)+1; setDays(diff); loadData(0,s,u); }}/>
-        <button onClick={reprocesar60} disabled={reproc||loading} title="Re-sincroniza las ventas de los últimos 60 días desde las plataformas" style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>
-          {reproc?<><Spinner size={11} color={T.textMd}/> Reprocesando…</>:"⟳ Reprocesar 60 días"}
-        </button>
         <button onClick={()=>loadData()} disabled={loading} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>
           {loading?<Spinner size={11} color="#fff"/>:"↻"} Actualizar
         </button>
+        {/* Acciones secundarias en un menú ⋯ — "Reprocesar" es mantenimiento y
+            asusta/confunde como botón permanente; "Compartir" es ocasional. */}
+        <div style={{position:"relative"}}>
+          <button onClick={e=>{const r=e.currentTarget.getBoundingClientRect(); setExtraMenuPos({top:r.bottom+6,right:Math.max(10,window.innerWidth-r.right)}); setExtraMenu(v=>!v);}} title="Más acciones"
+            style={{...InputStyle(T),fontSize:14,padding:"5px 9px",width:"auto",cursor:"pointer",lineHeight:1,color:T.textMd,fontWeight:700}}>⋯</button>
+          {extraMenu&&(
+            <>
+              <div onClick={()=>setExtraMenu(false)} style={{position:"fixed",inset:0,zIndex:60}}/>
+              <div style={{position:"fixed",top:extraMenuPos.top,right:extraMenuPos.right,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:6,width:"min(258px,calc(100vw - 20px))",boxSizing:"border-box",boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
+                {[
+                  {t:"Compartir resumen",d:"Genera una imagen del período para mandar por WhatsApp",dis:!rendData,fn:()=>{setExtraMenu(false);compartirResumen();}},
+                  {t:reproc?"Reprocesando…":"Reprocesar 60 días",d:"Re-sincroniza las ventas desde las plataformas (tarda un rato)",dis:reproc||loading,fn:()=>{setExtraMenu(false);reprocesar60();}},
+                ].map((o,i)=>(
+                  <button key={i} onClick={o.dis?undefined:o.fn} disabled={o.dis}
+                    style={{display:"block",width:"100%",padding:"8px 10px",background:"transparent",border:"none",borderRadius:8,cursor:o.dis?"default":"pointer",opacity:o.dis?0.5:1,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <span style={{display:"block",fontSize:12,fontWeight:600,color:T.text}}>{o.t}</span>
+                    <span style={{display:"block",fontSize:10,color:T.textSm,marginTop:1}}>{o.d}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </AppTopbar>
 
       <MargenesTabsBar T={T} tab={tab||"dashboard"} setTab={setTab}/>
 
+      {/* Flotante (no empuja el contenido): antes esta franja entraba en el
+          flujo y toda la página saltaba cuando aparecía. */}
       {error && rendData && (
-        <div style={{background:T.orange+"10",borderBottom:`1px solid ${T.orange}33`,padding:"7px 24px",fontSize:12,color:T.orange,fontWeight:600,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{position:"fixed",top:118,left:"50%",transform:"translateX(-50%)",zIndex:55,maxWidth:"min(680px,calc(100vw - 32px))",background:T.card,border:`1px solid ${T.orange}55`,borderRadius:12,boxShadow:"0 12px 32px rgba(0,0,0,0.35)",padding:"9px 16px",fontSize:12,color:T.orange,fontWeight:600,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <span style={{width:6,height:6,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
-          No pudimos actualizar en vivo (la tienda tardó en responder) — mostrando los últimos datos guardados ({new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}).
-          <button onClick={()=>loadData()} style={{background:"transparent",border:"none",color:T.orange,textDecoration:"underline",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}>Reintentar ahora</button>
+          No pudimos actualizar en vivo — mostrando los últimos datos guardados ({new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}).
+          <button onClick={()=>loadData()} style={{background:"transparent",border:"none",color:T.orange,textDecoration:"underline",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}>Reintentar</button>
+          <button onClick={()=>setError(null)} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",padding:"0 2px"}}>✕</button>
         </div>
       )}
 
@@ -26377,8 +26525,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{width:8,height:8,borderRadius:"50%",background:T.accent,flexShrink:0}}/>Métricas Principales <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· general (Tienda + ML)</span><span style={{marginLeft:"auto",display:"inline-flex",gap:4,alignItems:"center"}}><button onClick={()=>{setEditMetas(s=>!s); setMetasDraft(metas);}} title="Configurar metas (ROAS y margen objetivo)" style={{background:editMetas?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editMetas?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H8a1.65 1.65 0 001-1.51V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V8a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button><button onClick={()=>setEditSecKpis(s=>!s)} title="Elegir qué KPIs se muestran" style={{background:editSecKpis?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editSecKpis?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button><EyeBtn k="sec"/><EyeBtn k="main"/></span></div>
           {editMetas && (
             <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10,background:T.card,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"12px 14px"}}>
-              <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Metas del negocio — definen cuándo un KPI se marca en rojo:</span>
-              {[["roas","ROAS objetivo (x)"],["trueRoas","True ROAS objetivo (x)"],["margen","Margen objetivo (%)"]].map(([k,l])=>(
+              <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Metas del negocio — los umbrales definen cuándo un KPI se marca en rojo; las metas del mes ($) habilitan el apartado de progreso:</span>
+              {[["roas","ROAS objetivo (x)"],["trueRoas","True ROAS objetivo (x)"],["margen","Margen objetivo (%)"],["revenueMes","Revenue del mes ($)"],["profitMes","Profit del mes ($)"]].map(([k,l])=>(
                 <label key={k} style={{display:"flex",flexDirection:"column",gap:4,fontSize:10,color:T.textSm,fontWeight:600}}>
                   {l}
                   <input type="number" step="0.1" value={metasDraft[k]} onChange={e=>setMetasDraft(p=>({...p,[k]:e.target.value}))} style={{...InputStyle(T),fontSize:12,padding:"6px 10px",width:120}}/>
@@ -26396,10 +26544,10 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {(()=>{
             const CARDS=[
               {label:"Profit",      val:fmtM(tot.profit),    c:tot.profit,     p:prevTot.profit,     hero:true, accent:(tot.profit||0)>=0?MC.green:MC.red, valColor:(tot.profit||0)>=0?MC.green:MC.red, hint:(tot.profit||0)>=0?"Ganancia neta":"Pérdida neta", spk:dailyRows.map(r=>r.Profit), zero:true},
-              {label:"Revenue",     val:fmtM(tot.revenue),   c:tot.revenue,    p:prevTot.revenue,    hero:true, accent:MC.blue,   hint:"Facturación total",      spk:dailyRows.map(r=>r.Revenue)},
+              {label:"Revenue",     val:fmtM(tot.revenue),   c:tot.revenue,    p:prevTot.revenue,    hero:true, accent:MC.blue,   hint:"Facturación total",      spk:dailyRows.map(r=>r.Revenue), onClick:irAVentas},
               {label:"Ad Spend",    val:fmtM(tot.adSpend),   c:tot.adSpend,    p:prevTot.adSpend,    hero:true, accent:MC.gold,   hint:"Inversión publicitaria", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
               {label:"Net Revenue", val:fmtM(tot.netRevenue),c:tot.netRevenue, p:prevTot.netRevenue, hero:true, accent:MC.violet, hint:"Todo descontado, antes de pauta", spk:dailyRows.map(r=>r["Net Revenue"])},
-              {label:"Órdenes",     val:fmtInt(tot.orders),  c:tot.orders,     p:prevTot.orders,     hint:"Con revenue",            spk:dailyRows.map(r=>r["Ordenes > $0"]), bad:!((tot.orders||0)>0)},
+              {label:"Órdenes",     val:fmtInt(tot.orders),  c:tot.orders,     p:prevTot.orders,     hint:"Con revenue",            spk:dailyRows.map(r=>r["Ordenes > $0"]), bad:!((tot.orders||0)>0), onClick:irAVentas},
               {label:"ROAS",        val:fmtX(tot.roas),      c:tot.roas,       p:prevTot.roas,       hint:`meta ≥ ${metas.roas}x`,  spk:dailyRows.map(r=>r.ROAS||0), bad:(tot.roas||0)<metas.roas},
               {label:"True ROAS",   val:fmtX(tot.trueRoas),  c:tot.trueRoas,   p:prevTot.trueRoas,   hint:`meta ≥ ${metas.trueRoas}x`, spk:dailyRows.map(r=>r["True ROAS"]||0), bad:(tot.trueRoas||0)<metas.trueRoas},
               {label:"CPA real",    val:fmtM(tot.cpa),       c:tot.cpa,        p:prevTot.cpa,        hint:"Ad Spend / Órdenes",     spk:dailyRows.map(r=>r.CPA||0), inv:true},
@@ -26427,6 +26575,60 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               )}
               {vis.main!==false && renderCards(CARDS, "cardsOrder", k=> vis.secKpis[k.label]!==false && (k.hero || vis.sec!==false))}
             </>);
+          })()}
+
+          {/* Metas del mes — apartado discreto y colapsable; solo existe si el
+              usuario cargó una meta mensual en $ desde el panel de metas. */}
+          {vis.main!==false && ((metas.revenueMes||0)>0 || (metas.profitMes||0)>0) && (()=>{
+            const hoy = hoyAR();
+            const primerDia = hoy.slice(0,7)+"-01";
+            const diaN = parseInt(hoy.slice(8,10),10);
+            const diasMes = new Date(parseInt(hoy.slice(0,4)),parseInt(hoy.slice(5,7)),0).getDate();
+            const pctMes = diaN/diasMes;
+            // El progreso solo es real si el rango elegido cubre el mes desde el día 1.
+            const cubre = dailyRows.some(r=>r.Fecha===primerDia) || (dailyRows[0]?.Fecha||"9") <= primerDia;
+            const mtd = dailyRows.filter(r=>r.Fecha>=primerDia && r.Fecha<=hoy);
+            const mtdRev = mtd.reduce((a,r)=>a+(r.Revenue||0),0);
+            const mtdProf = mtd.reduce((a,r)=>a+(r.Profit||0),0);
+            const filas = [
+              ...((metas.revenueMes||0)>0?[{label:"Revenue",actual:mtdRev,meta:metas.revenueMes,color:MC.blue}]:[]),
+              ...((metas.profitMes||0)>0?[{label:"Profit",actual:mtdProf,meta:metas.profitMes,color:MC.green}]:[]),
+            ];
+            return (
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,marginBottom:18,overflow:"hidden"}}>
+                <button onClick={()=>setMetasOpen(o=>!o)} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"10px 16px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <span style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Metas del mes</span>
+                  {!metasOpen&&cubre&&filas[0]&&(
+                    <span style={{fontSize:11,color:T.textMd}}>· {filas[0].label} al {Math.min(999,Math.round(filas[0].actual/filas[0].meta*100))}%</span>
+                  )}
+                  <span style={{marginLeft:"auto",fontSize:11,color:T.textSm}}>{metasOpen?"▲":"▼"}</span>
+                </button>
+                {metasOpen&&(
+                  <div style={{padding:"2px 16px 14px"}}>
+                    {!cubre&&<div style={{fontSize:11,color:T.textSm,marginBottom:8}}>Elegí un rango que incluya el mes completo (ej. "Últimos 30 días") para ver el progreso real del mes.</div>}
+                    {cubre&&filas.map(f=>{
+                      const pct = Math.min(1, f.actual/f.meta);
+                      const alRitmo = f.actual >= f.meta*pctMes;
+                      return (
+                        <div key={f.label} style={{marginBottom:10}}>
+                          <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:5}}>
+                            <span style={{fontSize:12,fontWeight:700,color:T.text}}>{f.label}</span>
+                            <span style={{fontSize:12,color:T.textMd,fontVariantNumeric:"tabular-nums"}}>{fmtM(f.actual)} de {fmtM(f.meta)}</span>
+                            <span style={{marginLeft:"auto",fontSize:11,fontWeight:700,color:alRitmo?T.green:T.orange}}>
+                              {Math.round(pct*100)}% · {alRitmo?"al ritmo":"por debajo"} ({Math.round(pctMes*100)}% del mes transcurrido)
+                            </span>
+                          </div>
+                          <div style={{height:8,borderRadius:4,background:T.surface,overflow:"hidden",position:"relative"}}>
+                            <div style={{position:"absolute",left:`${pctMes*100}%`,top:0,bottom:0,width:1.5,background:T.textSm,opacity:0.5}} title="Ritmo esperado a hoy"/>
+                            <div style={{height:"100%",width:`${pct*100}%`,background:f.color,borderRadius:4,transition:"width .3s"}}/>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
           })()}
 
           {/* Gráfico principal de evolución */}
@@ -26458,7 +26660,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               <div style={{display:"flex",flexWrap:"wrap",alignItems:"stretch",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"4px 6px",marginBottom:18}}>
                 {items.map((k,i)=>(
                   <div key={i} style={{flex:"1 1 108px",padding:"9px 14px",borderLeft:i>0?`1px solid ${T.borderL}`:"none",minWidth:0}}>
-                    <div style={{fontSize:9,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{k.g} · {k.label}</div>
+                    <div style={{fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{k.g} · {k.label}</div>
                     <div style={{fontSize:15,fontWeight:800,color:k.color||T.text,letterSpacing:-0.4,marginTop:3,fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
                   </div>
                 ))}
@@ -26859,7 +27061,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="costos_por_venta_growith.csv"; a.click(); URL.revokeObjectURL(a.href);
             };
             return (
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+              <div id="gh-ventas-tabla" style={{background:T.card,border:`1px solid ${ventasFlash?T.accentSolid:T.border}`,boxShadow:ventasFlash?`0 0 0 3px ${T.accentSolid}33`:"none",transition:"border-color .3s, box-shadow .3s",borderRadius:12,overflow:"hidden",scrollMarginTop:120}}>
                 <div style={{padding:"10px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                   <span style={{fontSize:11,color:T.textSm,fontWeight:600}}>{sales.length}{sales.length!==salesAll.length?` de ${salesAll.length}`:""} ventas · costos reales por orden (sin Ad Spend, que es a nivel cuenta)</span>
                   <span style={{marginLeft:"auto",display:"inline-flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
