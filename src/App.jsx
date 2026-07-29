@@ -26406,7 +26406,6 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {label:"CPA Break Even", val:fmtM(tot.cpaBreakEven), c:tot.cpaBreakEven, p:prevTot.cpaBreakEven, hint:"CPA máx. antes de perder"},
               {label:"AOV",         val:fmtM(tot.aov),       c:tot.aov,        p:prevTot.aov,        hint:"Ticket promedio"},
               {label:"Margen",      val:fmtPct(tot.profitMargin), c:tot.profitMargin, p:prevTot.profitMargin, hint:`meta > ${metas.margen}%`, bad:(tot.profitMargin||0)<=metas.margen/100},
-              {label:"MER %",       val:fmtPct(tot.mer),     c:tot.mer,        p:prevTot.mer,        hint:"Ad Spend / Revenue", inv:true},
               {label:"Break Even",  val:fmtX(tot.breakEvenRoas), c:tot.breakEvenRoas, p:prevTot.breakEvenRoas, hint:"ROAS de equilibrio", inv:true},
             ];
             return (<>
@@ -26728,7 +26727,6 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                 {label:"AOV",         val:fmtM(cSel.aov),       c:cSel.aov,        p:cPrev?.aov,        hint:"Ticket promedio"},
                 {label:"AOV Neto",    val:fmtM(cSel.aovNeto),   c:cSel.aovNeto,    p:cPrev?.aovNeto,    hint:"Ticket neto promedio"},
                 {label:"Margen",      val:fmtPct(cSel.margin),  c:cSel.margin,     p:cPrev?.margin,     hint:`meta > ${metas.margen}%`, bad:(cSel.margin||0)<=metas.margen/100},
-                {label:"MER %",       val:fmtPct(cSel.mer),     c:cSel.mer,        p:cPrev?.mer,        hint:"Ad Spend / Revenue", inv:true},
                 {label:"Break Even",  val:fmtX(cSel.breakEvenRoas), c:cSel.breakEvenRoas, p:cPrev?.breakEvenRoas, hint:"ROAS de equilibrio", inv:true},
                 ];
                 return (<>
