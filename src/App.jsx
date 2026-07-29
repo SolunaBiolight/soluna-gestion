@@ -26408,7 +26408,6 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {label:"Margen",      val:fmtPct(tot.profitMargin), c:tot.profitMargin, p:prevTot.profitMargin, hint:`meta > ${metas.margen}%`, bad:(tot.profitMargin||0)<=metas.margen/100},
               {label:"MER %",       val:fmtPct(tot.mer),     c:tot.mer,        p:prevTot.mer,        hint:"Ad Spend / Revenue", inv:true},
               {label:"Break Even",  val:fmtX(tot.breakEvenRoas), c:tot.breakEvenRoas, p:prevTot.breakEvenRoas, hint:"ROAS de equilibrio", inv:true},
-              {label:"Días profit", val:`${profitDays}/${dailyRows.length}`, hint:"Días positivos", bad:profitDays<lossDays},
             ];
             return (<>
               {editSecKpis && (
