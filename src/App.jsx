@@ -9467,7 +9467,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
 
   const FAQS=[
     {q:"¿Hay renovación automática?", a:"No. Pagás mes a mes manualmente, sin débito automático. Te avisamos antes de que venza."},
-    {q:"¿En cuánto tiempo se activa?", a:"En menos de 24 horas hábiles después de confirmar el pago. Generalmente mucho antes."},
+    {q:"¿En cuánto tiempo se activa?", a:"Automáticamente: detectamos tu pago en la blockchain y el plan se activa solo, normalmente en menos de 15 minutos. Si algo no matchea, lo revisamos a mano en el día."},
     {q:"¿Puedo cancelar cuando quiero?", a:"Sí. No hay contrato ni penalidad. Tu cuenta sigue activa hasta fin del período pagado."},
     {q:"¿Qué pasa con mis datos si no renuevo?", a:"Todos tus datos quedan guardados. Si volvés a suscribirte, todo sigue igual donde lo dejaste."},
   ];
@@ -9510,8 +9510,9 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         <div style={{display:"flex",justifyContent:"center",marginBottom:20}}><StatusIcon type="success" size={72}/></div>
         <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:8}}>¡Pago enviado!</div>
         <div style={{fontSize:14,color:T.textMd,marginBottom:8,lineHeight:1.6}}>
-          {metodo==="cripto"?"Verificaremos tu transacción y activaremos tu plan ":"Confirmaremos tu transferencia y activaremos tu plan "}
-          <strong>{PLAN.nombre}</strong> en las próximas horas.
+          {metodo==="cripto"
+            ?<>Verificamos tu transacción <strong>automáticamente en la blockchain</strong> — tu plan <strong>{PLAN.nombre}</strong> se activa solo en unos minutos.</>
+            :<>Confirmaremos tu transferencia y activaremos tu plan <strong>{PLAN.nombre}</strong> en las próximas horas.</>}
         </div>
         <div style={{fontSize:13,color:T.textSm,marginBottom:24}}>Te notificamos a <strong>{user?.email}</strong>.</div>
         <button onClick={onBack} style={{...BtnPrimary(T),justifyContent:"center",width:"100%"}}>Volver al inicio</button>
@@ -9556,7 +9557,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         <AsyncButton onClick={enviarPago} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"13px"}}>
           Enviar comprobante
         </AsyncButton>
-        <div style={{textAlign:"center",fontSize:12,color:T.textSm,marginTop:10}}>Tu plan se activa en menos de 24hs hábiles.</div>
+        <div style={{textAlign:"center",fontSize:12,color:T.textSm,marginTop:10}}>Detectamos el pago en la blockchain y tu plan se activa solo, normalmente en menos de 15 minutos.</div>
       </div>
     </div>
   );
