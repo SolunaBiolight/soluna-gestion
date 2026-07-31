@@ -451,7 +451,13 @@ export default async function handler(req, res) {
       // Desglose del Ad Spend del período ACTUAL (para el panel "cómo se compone
       // la inversión" del dashboard): gasto original por moneda según Meta,
       // convertido a ARS, cotización promedio usada y días sin cotización.
-      const adsBd = { porMoneda:{}, convertido:0, sinCotiz:0, rateSum:0, rateDias:0 };
+      const adsBd = { porMoneda:{}, convertido:0, sinCotiz:0, rateSum:0, rateDias:0, feeMonto:0 };
+      // Fee adicional POR CUENTA de Meta (recargo tarjeta/agencia). margenesMetaAdFees
+      // = { adAccountId: % }. Migración: si no hay % por cuenta, se usa el fee global
+      // legacy (margenesDolar.feeAdSpend) para TODAS las cuentas — así nadie pierde su %.
+      const metaFees = (userData.margenesMetaAdFees && typeof userData.margenesMetaAdFees==="object" && !Array.isArray(userData.margenesMetaAdFees)) ? userData.margenesMetaAdFees : {};
+      const legacyMetaFeePct = parseFloat(userData.margenesDolar?.feeAdSpend)||0;
+      const metaFeeFor = (accId) => { const bare=String(accId).replace(/^act_/,""); const v = (metaFees[bare]!=null)?metaFees[bare]:(metaFees["act_"+bare]!=null?metaFees["act_"+bare]:null); return ((v!=null?parseFloat(v):legacyMetaFeePct)||0)/100; };
       async function fetchMetaAll(s, u, eRef, bdCollect) {
         if (!metaAccounts.length) return {};
         const token = metaAccounts[0].access_token;
@@ -508,6 +514,10 @@ export default async function handler(req, res) {
               bdCollect.convertido += v.spend||0;
             }
           }
+          // Fee adicional POR CUENTA sobre el spend ya convertido a ARS. Se hornea
+          // acá; el feeAd global queda en 0 para no duplicar.
+          const accFee = metaFeeFor(a.id);
+          if (accFee) for (const v of Object.values(bd)) { const add=(v.spend||0)*accFee; if(bdCollect) bdCollect.feeMonto += add; v.spend=(v.spend||0)+add; }
           return bd;
         }));
         const merged = {};
@@ -704,7 +714,7 @@ export default async function handler(req, res) {
         for (const [k,v] of Object.entries(metodosImpNorm)) { if (k && (k.includes(np) || np.includes(k))) return v; }
         return pctImp;
       }
-      const feeAd     = (parseFloat(dolarCfg.feeAdSpend)||0)/100;
+      const feeAd     = 0; // el fee adicional ahora es POR CUENTA (horneado en fetchMetaAll)
 
       function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio, mlAdsAuto, gAdsAuto) {
         // COGS = unidades vendidas × costo cargado por producto/variante ($ fijo o % del precio).
@@ -1242,8 +1252,8 @@ export default async function handler(req, res) {
         cotizAjuste: +(dolarAdsAjuste*100).toFixed(2),
         cotizProm: adsBd.rateDias>0 ? +(adsBd.rateSum/adsBd.rateDias).toFixed(2) : null,
         diasSinCotiz: adsBd.sinCotiz,
-        feePct: +(feeAd*100).toFixed(2),
-        feeMonto: +(adsBd.convertido*feeAd).toFixed(2),
+        feePct: adsBd.convertido>0 ? +(adsBd.feeMonto/adsBd.convertido*100).toFixed(2) : 0,
+        feeMonto: +adsBd.feeMonto.toFixed(2),
         total: +(adsBd.convertido*(1+feeAd)).toFixed(2),
       } : null;
 

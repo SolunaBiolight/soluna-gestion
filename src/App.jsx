@@ -22717,6 +22717,8 @@ function CostosPanel({ T, uid }) {
   const [fijos, setFijos] = React.useState([]);
   const [varios, setVarios] = React.useState([]); // costos variables: % de la facturación
   const [metaSel, setMetaSel] = React.useState([]); // cuentas de Meta elegidas para el margen ([]=todas)
+  const [metaFees, setMetaFees] = React.useState({}); // fee % adicional por cuenta de Meta {accId: pct}
+  const [legacyMetaFee, setLegacyMetaFee] = React.useState(""); // fee global viejo (migración)
   const [mlAccounts, setMlAccounts] = React.useState([]); // cuentas de ML conectadas
   const [mlMp, setMlMp] = React.useState("");             // ML usado para comisiones de MP
   const [mlVentas, setMlVentas] = React.useState("");     // ML usado para ventas de ML
@@ -22744,6 +22746,8 @@ function CostosPanel({ T, uid }) {
         setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
         setVarios(Array.isArray(d.margenesCostosVar) ? d.margenesCostosVar : []);
         setMetaSel(Array.isArray(d.margenesMetaAdAccounts) ? d.margenesMetaAdAccounts.map(String) : (d.margenesMetaAdAccount ? [String(d.margenesMetaAdAccount)] : []));
+        setMetaFees(d.margenesMetaAdFees && typeof d.margenesMetaAdFees==="object" && !Array.isArray(d.margenesMetaAdFees) ? d.margenesMetaAdFees : {});
+        setLegacyMetaFee(d.margenesDolar?.feeAdSpend != null ? String(d.margenesDolar.feeAdSpend) : "");
         setMlAccounts((Array.isArray(d.stores)?d.stores:[]).filter(s=>s.type==="mercadolibre"||s.type==="meli").map(s=>({userId:String(s.userId||""),nombre:s.nickname||s.email||("ML #"+(s.userId||""))})).filter(s=>s.userId));
         setMlMp(String(d.margenesMlMp || ""));
         setMlVentas(String(d.margenesMlVentas || ""));
@@ -22795,7 +22799,10 @@ function CostosPanel({ T, uid }) {
   async function save() {
     setSaving(true);
     try {
-      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesEnvioCfg: { modoTienda: envioModo, mlFlex: mlFlex===""?"":(parseFloat(mlFlex)||0), fulfillment: parseFloat(fulfillment)||0 }, margenesCogs: costos, margenesMetaAdAccounts: (metaSel||[]).map(String), margenesMetaAdAccount: "" }, { merge: true });
+      // Fee % por cuenta de Meta (limpiamos vacíos/0). Nota: NO tocamos
+      // margenesDolar.feeAdSpend (queda como fallback de migración en el backend).
+      const feesClean = Object.fromEntries(Object.entries(metaFees).filter(([,v])=>String(v).trim()!=="" && parseFloat(v)!==0).map(([k,v])=>[String(k), parseFloat(v)||0]));
+      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesEnvioCfg: { modoTienda: envioModo, mlFlex: mlFlex===""?"":(parseFloat(mlFlex)||0), fulfillment: parseFloat(fulfillment)||0 }, margenesCogs: costos, margenesMetaAdAccounts: (metaSel||[]).map(String), margenesMetaAdAccount: "", margenesMetaAdFees: feesClean }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
@@ -23001,17 +23008,24 @@ function CostosPanel({ T, uid }) {
       {metaAdAccts.length > 0 && (
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
           <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Cuentas de Meta Ads para el margen</div>
-          <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Tildá las cuentas publicitarias de <strong style={{color:T.text}}>esta</strong> tienda — el Ad Spend del margen suma SOLO esas. Si no tildás ninguna, toma <strong style={{color:T.text}}>todas</strong> (se mezcla entre tiendas).</div>
+          <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Tildá las cuentas publicitarias de <strong style={{color:T.text}}>esta</strong> tienda — el Ad Spend del margen suma SOLO esas. Si no tildás ninguna, toma <strong style={{color:T.text}}>todas</strong>. El <strong style={{color:T.text}}>fee %</strong> de la derecha (recargo de tarjeta / agencia) se suma al Ad Spend de <strong style={{color:T.text}}>esa</strong> cuenta.</div>
           <div style={{display:"flex",flexDirection:"column",gap:2}}>
             <label style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,cursor:"pointer",background:metaSel.length===0?T.accent+"14":"transparent",border:`1px solid ${metaSel.length===0?T.accent+"55":T.borderL}`}}>
               <input type="checkbox" checked={metaSel.length===0} onChange={()=>setMetaSel([])} style={{width:15,height:15}}/>
               <span style={{fontSize:13,color:T.text,fontWeight:600}}>Todas las cuentas (suma todo)</span>
             </label>
-            {metaAdAccts.map(a => { const id = String(a.account_id || (a.id||"").replace(/^act_/,"")); const on = metaSel.includes(id); return (
-              <label key={a.id||id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,cursor:"pointer",background:on?T.accent+"14":"transparent",border:`1px solid ${on?T.accent+"55":T.borderL}`}}>
-                <input type="checkbox" checked={on} onChange={()=>setMetaSel(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id])} style={{width:15,height:15}}/>
-                <span style={{fontSize:13,color:T.text}}>{(a.name||a.id)} <span style={{color:T.textSm,fontSize:11}}>({a.currency||"—"})</span></span>
-              </label>
+            {metaAdAccts.map(a => { const id = String(a.account_id || (a.id||"").replace(/^act_/,"")); const on = metaSel.includes(id); const feeVal = metaFees[id]!=null ? metaFees[id] : legacyMetaFee; return (
+              <div key={a.id||id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,background:on?T.accent+"14":"transparent",border:`1px solid ${on?T.accent+"55":T.borderL}`}}>
+                <label style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0,cursor:"pointer"}}>
+                  <input type="checkbox" checked={on} onChange={()=>setMetaSel(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id])} style={{width:15,height:15,flexShrink:0}}/>
+                  <span style={{fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(a.name||a.id)} <span style={{color:T.textSm,fontSize:11}}>({a.currency||"—"})</span></span>
+                </label>
+                <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}} title="Fee % adicional (recargo tarjeta / fee de agencia) que se suma al Ad Spend de ESTA cuenta">
+                  <span style={{fontSize:10,color:T.textSm}}>fee</span>
+                  <input type="number" step="0.1" min="0" value={feeVal} onChange={e=>setMetaFees(prev=>({...prev,[id]:e.target.value}))} placeholder={legacyMetaFee||"0"} style={{...InputStyle(T),width:54,fontSize:12,textAlign:"right",padding:"4px 6px"}}/>
+                  <span style={{fontSize:11,color:T.textSm}}>%</span>
+                </div>
+              </div>
             ); })}
           </div>
         </div>
@@ -23395,15 +23409,10 @@ function DolarPanel({ T, uid }) {
         </div>
       </div>
 
-      {/* Fee del dólar para Ad Spend */}
+      {/* Fee adicional del dólar → ahora es POR CUENTA de Meta (en Costos) */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
         <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Fee adicional del dólar para Meta Ads</div>
-        <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Un % extra encima de todo lo anterior (recargo de la tarjeta, fee de la agencia, etc.) — se suma al Ad Spend final del Dashboard.</div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:13,color:T.textSm,flex:1}}>% que se suma al Ad Spend</span>
-          <input type="number" step="0.5" min="0" value={fee} onChange={e=>setFee(e.target.value)} placeholder="0" style={{...InputStyle(T),width:90,fontSize:14,padding:"10px 12px",textAlign:"right"}}/>
-          <span style={{fontSize:14,color:T.textSm}}>%</span>
-        </div>
+        <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>El recargo de tarjeta / fee de agencia ahora se configura <strong style={{color:T.text}}>por cada cuenta publicitaria</strong> (cada una puede tener su %), en <strong style={{color:T.accent}}>Márgenes → Costos → "Cuentas de Meta Ads"</strong>. {fee!==""&&fee!=="0"?`Tu % anterior (${fee}%) se mantiene aplicado a todas tus cuentas hasta que lo ajustes ahí.`:""}</div>
       </div>
     </div>
   );
