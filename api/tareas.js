@@ -1600,6 +1600,8 @@ export default async function handler(req, res) {
         const stats = {
           totalUsuarios: usuarios.length,
           usuariosPlus: usuarios.filter(u => u.plan==="plus" && !u.isTrial).length,
+          usuariosFact: usuarios.filter(u => u.plan==="facturador" && !u.isTrial).length,
+          usuariosFact_trial: usuarios.filter(u => u.plan==="facturador" && u.isTrial).length,
           usuariosFull: usuarios.filter(u => u.plan==="full" && !u.isTrial).length,
           usuariosPlus_trial: usuarios.filter(u => u.plan==="plus" && u.isTrial).length,
           usuariosFull_trial: usuarios.filter(u => u.plan==="full" && u.isTrial).length,
@@ -1682,12 +1684,13 @@ export default async function handler(req, res) {
           const email = (uSnap.data() || {}).email;
           if (email) {
             const hasta = expiry.toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" });
+            const planNombre = plan === "facturador" ? "Facturador" : "Pro";
             await sendEmail({
               to: email,
-              subject: "Tu plan Pro está activo",
+              subject: `Tu plan ${planNombre} está activo`,
               html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111">
-                <p>¡Listo! Confirmamos tu pago y tu plan <strong>Pro</strong> ya está activo.</p>
-                <p>Tenés acceso completo hasta el <strong>${hasta}</strong>. Te vamos a avisar unos días antes del vencimiento.</p>
+                <p>¡Listo! Confirmamos tu pago y tu plan <strong>${planNombre}</strong> ya está activo.</p>
+                <p>Tenés acceso hasta el <strong>${hasta}</strong>. Te vamos a avisar unos días antes del vencimiento.</p>
                 <p>Gracias por usar Growith.</p>
               </div>`,
             });

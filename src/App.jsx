@@ -983,7 +983,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
               }
               <div style={{flex:1,minWidth:0,textAlign:"left"}}>
                 <div style={{fontSize:DS.font.md,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.displayName||user?.email?.split("@")[0]}</div>
-                <div style={{fontSize:DS.font.xs,color:T.textSm}}>{userPlan==="plus"||userPlan==="full"?"Pro":isInTrial?"Prueba gratis":"Trial vencido"}</div>
+                <div style={{fontSize:DS.font.xs,color:T.textSm}}>{userPlan==="plus"||userPlan==="full"?"Pro":userPlan==="facturador"?"Facturador":isInTrial?"Prueba gratis":"Trial vencido"}</div>
               </div>
               <span style={{color:T.textSm,fontSize:11,flexShrink:0}}>{acctOpen?"▾":"⇅"}</span>
             </button>
@@ -1890,10 +1890,10 @@ function PageView({children, pageKey, T}) {
 
 // ─── UpgradeWall — pantalla de upgrade cuando el plan no alcanza ──────────────
 function UpgradeWall({T, requiredPlan, onNavigate}) {
-  // Plan único Pro (id Firestore: "plus") — requiredPlan queda por compatibilidad
+  // Se muestra cuando el plan no alcanza (hoy: usuarios Facturador entrando a secciones Pro)
   const info = {
     nombre:"Pro", icon:"", color:"#6366f1",
-    precio_usdt:79, precio_ars:79000,
+    precio_usdt:69, precio_ars:69000,
     features:[
       "Stock multi-canal (Tienda Nube + Shopify + ML)",
       "Facturación ARCA / AFIP completa",
@@ -7983,6 +7983,19 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
           </div>
         )}
 
+        {userPlan==="facturador"&&(
+          <div onClick={()=>onNavigate("planes")}
+            style={{marginTop:DS.sp.lg,padding:"11px 14px",background:`linear-gradient(135deg,#10b98110,transparent)`,border:`1px solid #10b98133`,borderRadius:DS.r.md,cursor:"pointer",transition:`all 0.15s ${DS.ease}`,display:"flex",alignItems:"center",gap:10}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor="#10b98166"}
+            onMouseLeave={e=>e.currentTarget.style.borderColor="#10b98133"}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><polyline points="20 6 9 17 4 12"/></svg>
+            <div style={{flex:1}}>
+              <div style={{fontSize:DS.font.xs,color:"#10b981",fontWeight:DS.w.bold}}>Plan Facturador activo</div>
+              <div style={{fontSize:DS.font.xs,color:T.textSm}}>¿Querés Dashboard, Envíos y Stock? Pasate a Pro →</div>
+            </div>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5"><path d="M9 18l6-6-6-6"/></svg>
+          </div>
+        )}
         {userPlan==="free"&&(
           <div onClick={()=>onNavigate("planes")}
             style={{marginTop:DS.sp.lg,padding:"11px 14px",background:`linear-gradient(135deg,${T.accentSolid}10,transparent)`,border:`1px solid ${T.accentSolid}33`,borderRadius:DS.r.md,cursor:"pointer",transition:`all 0.15s ${DS.ease}`,display:"flex",alignItems:"center",gap:10}}
@@ -8170,23 +8183,43 @@ function LandingPage({T, onLogin}) {
 
       {/* Pricing */}
       <div style={{background:T.surface+"66",borderTop:`1px solid ${T.borderL}`,borderBottom:`1px solid ${T.borderL}`,padding:"64px 20px"}}>
-        <h2 style={secTitle}>Un solo plan, todo incluido</h2>
-        <p style={secSub}>Sin niveles, sin funciones bloqueadas. Probás gratis 14 días con absolutamente todo.</p>
-        <div style={{maxWidth:420,margin:"0 auto",background:T.card,border:`2px solid #6366f1`,borderRadius:18,padding:"28px 28px",textAlign:"center",position:"relative"}}>
-          <div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:T.green,color:"#fff",fontSize:11,fontWeight:800,borderRadius:20,padding:"3px 14px",whiteSpace:"nowrap",letterSpacing:0.3}}>OFERTA DE LANZAMIENTO — 20% OFF</div>
-          <div style={{fontSize:15,fontWeight:800,color:"#6366f1",marginTop:6,marginBottom:10}}>Plan Pro</div>
-          <div style={{fontSize:14,color:T.textSm,textDecoration:"line-through",fontWeight:600}}>$99 USD/mes</div>
-          <div style={{fontSize:46,fontWeight:900,letterSpacing:-1.5,lineHeight:1.1}}>$79 <span style={{fontSize:15,fontWeight:500,color:T.textSm}}>USD/mes</span></div>
-          <div style={{fontSize:12,color:T.textSm,marginTop:4,marginBottom:18}}>o $65 USD/mes pagando anual</div>
-          <div style={{textAlign:"left",display:"flex",flexDirection:"column",gap:7,marginBottom:22}}>
-            {["Tiendas y envíos ilimitados","Dashboard de rentabilidad en tiempo real","Stock cruzado entre canales","Facturación ARCA/AFIP","Meta Ads + Google Ads + Mercado Ads","Copilot IA y gestión de equipo"].map(x=>(
-              <div key={x} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:T.textMd}}>
-                <span style={{color:T.green,fontWeight:800,flexShrink:0}}>✓</span>{x}
-              </div>
-            ))}
+        <h2 style={secTitle}>Planes simples, sin letra chica</h2>
+        <p style={secSub}>Probás gratis 14 días con absolutamente todo. Después elegís lo que necesitás.</p>
+        <div style={{maxWidth:760,margin:"0 auto",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:18,alignItems:"start"}}>
+          {/* Facturador */}
+          <div style={{background:T.card,border:`2px solid ${T.border}`,borderRadius:18,padding:"26px 24px",textAlign:"center",position:"relative"}}>
+            <div style={{fontSize:15,fontWeight:800,color:"#10b981",marginBottom:2}}>Plan Facturador</div>
+            <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Solo el facturador ARCA, ilimitado</div>
+            <div style={{fontSize:14,color:T.textSm,textDecoration:"line-through",fontWeight:600}}>$29 USD/mes</div>
+            <div style={{fontSize:42,fontWeight:900,letterSpacing:-1.5,lineHeight:1.1}}>$19 <span style={{fontSize:14,fontWeight:500,color:T.textSm}}>USD/mes</span></div>
+            <div style={{fontSize:12,color:T.textSm,marginTop:4,marginBottom:16}}>o $16 USD/mes pagando anual</div>
+            <div style={{textAlign:"left",display:"flex",flexDirection:"column",gap:7,marginBottom:20}}>
+              {["Facturación ARCA/AFIP ilimitada","Facturación automática de órdenes de Tienda Nube","Facturas y notas de crédito manuales","Monotributo y Responsable Inscripto","Múltiples puntos de venta y CUITs"].map(x=>(
+                <div key={x} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:T.textMd}}>
+                  <span style={{color:"#10b981",fontWeight:800,flexShrink:0}}>✓</span>{x}
+                </div>
+              ))}
+            </div>
+            <button onClick={onLogin} style={{...BtnSecondary(T),width:"100%",justifyContent:"center",fontSize:14,padding:"12px",color:"#10b981",border:"1.5px solid #10b981"}}>Probar gratis 14 días</button>
           </div>
-          <button onClick={onLogin} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"13px"}}>Probar gratis 14 días</button>
-          <div style={{fontSize:11,color:T.textSm,marginTop:10}}>Sin tarjeta · Sin renovación automática · Cancelás cuando quieras</div>
+          {/* Pro */}
+          <div style={{background:T.card,border:`2px solid #6366f1`,borderRadius:18,padding:"26px 24px",textAlign:"center",position:"relative"}}>
+            <div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:T.green,color:"#fff",fontSize:11,fontWeight:800,borderRadius:20,padding:"3px 14px",whiteSpace:"nowrap",letterSpacing:0.3}}>RECOMENDADO — TODO INCLUIDO</div>
+            <div style={{fontSize:15,fontWeight:800,color:"#6366f1",marginTop:6,marginBottom:2}}>Plan Pro</div>
+            <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Todo Growith para tu e-commerce</div>
+            <div style={{fontSize:14,color:T.textSm,textDecoration:"line-through",fontWeight:600}}>$99 USD/mes</div>
+            <div style={{fontSize:42,fontWeight:900,letterSpacing:-1.5,lineHeight:1.1}}>$69 <span style={{fontSize:14,fontWeight:500,color:T.textSm}}>USD/mes</span></div>
+            <div style={{fontSize:12,color:T.textSm,marginTop:4,marginBottom:16}}>o $57 USD/mes pagando anual</div>
+            <div style={{textAlign:"left",display:"flex",flexDirection:"column",gap:7,marginBottom:20}}>
+              {["Todo lo del plan Facturador","Dashboard de rentabilidad en tiempo real","Tiendas y envíos ilimitados","Stock cruzado entre canales","Meta Ads + Google Ads + Mercado Ads","Copilot IA y gestión de equipo"].map((x,i)=>(
+                <div key={x} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:i===0?T.text:T.textMd,fontWeight:i===0?700:400}}>
+                  <span style={{color:T.green,fontWeight:800,flexShrink:0}}>✓</span>{x}
+                </div>
+              ))}
+            </div>
+            <button onClick={onLogin} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"13px"}}>Probar gratis 14 días</button>
+            <div style={{fontSize:11,color:T.textSm,marginTop:10}}>Sin tarjeta · Sin renovación automática · Cancelás cuando quieras</div>
+          </div>
         </div>
       </div>
 
@@ -9314,24 +9347,28 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
           {/* Plan ÚNICO (Pro) — todo incluido. La prueba gratis de 14 días con
               todo habilitado arranca sola al crear la cuenta (ensureUserDoc). */}
           {(()=>{
-            const isPago = userDoc?.plan==="plus"||userDoc?.plan==="full";
+            const esFact = userDoc?.plan==="facturador";
+            const isPago = userDoc?.plan==="plus"||userDoc?.plan==="full"||esFact;
+            const planColor = esFact?"#10b981":"#6366f1";
             const te = userDoc?.trialEnd;
             const trialEnd = te?.toDate ? te.toDate() : (te?.seconds ? new Date(te.seconds*1000) : (te ? new Date(te) : null));
             const diasTrial = trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime()-Date.now())/86400000)) : 0;
             const enTrial = !isPago && diasTrial>0;
             return (
-              <div style={{border:`2px solid ${isPago?"#6366f1":(enTrial?T.green:T.border)}`,borderRadius:12,padding:"20px 22px",position:"relative",background:isPago?"#6366f10a":(enTrial?T.green+"08":T.bg),maxWidth:480}}>
-                <div style={{position:"absolute",top:-10,left:16,background:isPago?"#6366f1":(enTrial?T.green:T.textSm),color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>
-                  {isPago?"PLAN PRO ACTIVO":(enTrial?"PRUEBA GRATIS":"PRUEBA FINALIZADA")}
+              <div style={{border:`2px solid ${isPago?planColor:(enTrial?T.green:T.border)}`,borderRadius:12,padding:"20px 22px",position:"relative",background:isPago?planColor+"0a":(enTrial?T.green+"08":T.bg),maxWidth:480}}>
+                <div style={{position:"absolute",top:-10,left:16,background:isPago?planColor:(enTrial?T.green:T.textSm),color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>
+                  {isPago?(esFact?"PLAN FACTURADOR ACTIVO":"PLAN PRO ACTIVO"):(enTrial?"PRUEBA GRATIS":"PRUEBA FINALIZADA")}
                 </div>
                 <div style={{display:"flex",alignItems:"baseline",gap:10,marginTop:6,marginBottom:4,flexWrap:"wrap"}}>
-                  <span style={{fontSize:18,fontWeight:800,color:T.text}}>Plan Pro</span>
-                  <span style={{fontSize:13,color:T.textSm,textDecoration:"line-through"}}>$99</span>
-                  <span style={{fontSize:22,fontWeight:800,color:T.text}}>$79 <span style={{fontSize:12,fontWeight:400,color:T.textSm}}>USD/mes</span></span>
-                  <span style={{fontSize:10,fontWeight:800,color:T.green,background:T.green+"18",border:"1px solid "+T.green+"44"+"",borderRadius:12,padding:"2px 8px"}}>20% OFF lanzamiento</span>
+                  <span style={{fontSize:18,fontWeight:800,color:T.text}}>Plan {esFact?"Facturador":"Pro"}</span>
+                  <span style={{fontSize:13,color:T.textSm,textDecoration:"line-through"}}>${esFact?29:99}</span>
+                  <span style={{fontSize:22,fontWeight:800,color:T.text}}>${esFact?19:69} <span style={{fontSize:12,fontWeight:400,color:T.textSm}}>USD/mes</span></span>
+                  <span style={{fontSize:10,fontWeight:800,color:T.green,background:T.green+"18",border:"1px solid "+T.green+"44"+"",borderRadius:12,padding:"2px 8px"}}>Precio de lanzamiento</span>
                 </div>
                 <div style={{fontSize:12,color:T.textMd,marginBottom:12,lineHeight:1.6}}>
-                  Un solo plan con <strong style={{color:T.text}}>todo incluido</strong>: Dashboard financiero, Envíos, Stock multicanal, Facturador ARCA, Meta Ads y Google Ads, Copilot IA, tiendas y equipo ilimitados.
+                  {esFact
+                    ? <>Solo el <strong style={{color:T.text}}>facturador ARCA ilimitado</strong>. ¿Querés Dashboard, Envíos, Stock, Meta Ads y Copilot IA? Pasate al plan Pro.</>
+                    : <>Todo incluido: Dashboard financiero, Envíos, Stock multicanal, Facturador ARCA, Meta Ads y Google Ads, Copilot IA, tiendas y equipo ilimitados.</>}
                 </div>
                 {enTrial && (
                   <div style={{fontSize:13,color:T.green,fontWeight:700,marginBottom:12}}>
@@ -9344,8 +9381,11 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                   </div>
                 )}
                 {isPago
-                  ?<AsyncButton onClick={async()=>{if(await appConfirm("¿Cancelar tu suscripción Pro?",{danger:true,okLabel:"Cancelar plan"}))await updateDoc(doc(db,"users",user.uid),{plan:"free"});}} style={{...BtnDanger(T),justifyContent:"center",fontSize:12}}>Cancelar suscripción</AsyncButton>
-                  :<button onClick={()=>onNavigate("planes")} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:13}}>{enTrial?"Suscribirme ahora →":"Reactivar con el Plan Pro →"}</button>
+                  ?<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    {esFact&&<button onClick={()=>onNavigate("planes")} style={{...BtnPrimary(T),justifyContent:"center",fontSize:12}}>Pasar al plan Pro →</button>}
+                    <AsyncButton onClick={async()=>{if(await appConfirm(`¿Cancelar tu suscripción ${esFact?"Facturador":"Pro"}?`,{danger:true,okLabel:"Cancelar plan"}))await updateDoc(doc(db,"users",user.uid),{plan:"free"});}} style={{...BtnDanger(T),justifyContent:"center",fontSize:12}}>Cancelar suscripción</AsyncButton>
+                  </div>
+                  :<button onClick={()=>onNavigate("planes")} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:13}}>{enTrial?"Suscribirme ahora →":"Ver planes y reactivar →"}</button>
                 }
               </div>
             );
@@ -9376,25 +9416,45 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   // TxID venga mal o falte. Se generan una vez por sesión de pago.
   const [centavosId]=useState(()=>Math.floor(Math.random()*99)+1);
 
-  // Plan único — Pro (id Firestore: "plus", NO cambiar)
-  const PLAN={
-    id:"plus", nombre:"Pro", color:"#6366f1", icon:"",
-    precio_usdt:79, precio_ars:79000,
-    precio_usdt_anual:65, precio_ars_anual:65000,
-    precio_normal:99,
-    features:[
-      "Envíos ilimitados + etiquetas PDF con SKU",
-      "Auto-tracking Andreani y reclamos ilimitados",
-      "Facturación ARCA / AFIP integrada",
-      "Márgenes, profit y costos por venta en tiempo real",
-      "Stock cruzado TN + Mercado Libre + Shopify",
-      "Meta Ads — campañas y métricas",
-      "Google Ads y Mercado Ads en el profit",
-      "Gestión de equipo + tareas ilimitadas",
-      "Canjes e influencers ilimitados",
-      "Tiendas ilimitadas",
-    ],
-  };
+  // Dos planes: Facturador (solo ARCA) y Pro (todo). Ids Firestore: "facturador" y "plus" (NO cambiar).
+  const PLANES=[
+    {
+      id:"facturador", nombre:"Facturador", color:"#10b981", icon:"",
+      precio_usdt:19, precio_ars:19000,
+      precio_usdt_anual:16, precio_ars_anual:16000,
+      precio_normal:29,
+      tagline:"Solo el facturador ARCA, ilimitado",
+      features:[
+        "Facturación ARCA / AFIP ilimitada",
+        "Facturación automática de tus órdenes de Tienda Nube",
+        "Facturas y notas de crédito manuales",
+        "Monotributo y Responsable Inscripto",
+        "Múltiples puntos de venta y CUITs",
+        "Historial completo y comprobantes descargables",
+      ],
+    },
+    {
+      id:"plus", nombre:"Pro", color:"#6366f1", icon:"", destacado:true,
+      precio_usdt:69, precio_ars:69000,
+      precio_usdt_anual:57, precio_ars_anual:57000,
+      precio_normal:99,
+      tagline:"Todo Growith para gestionar tu e-commerce",
+      features:[
+        "Todo lo del plan Facturador",
+        "Márgenes, profit y costos por venta en tiempo real",
+        "Envíos ilimitados + etiquetas PDF con SKU",
+        "Auto-tracking Andreani y reclamos ilimitados",
+        "Stock cruzado TN + Mercado Libre + Shopify",
+        "Meta Ads, Google Ads y Mercado Ads en el profit",
+        "Copilot IA sobre tus datos reales",
+        "Gestión de equipo + tareas ilimitadas",
+        "Canjes e influencers ilimitados",
+        "Tiendas ilimitadas",
+      ],
+    },
+  ];
+  const [selPlanId,setSelPlanId]=useState("plus");
+  const PLAN=PLANES.find(p=>p.id===selPlanId)||PLANES[1];
 
   const FAQS=[
     {q:"¿Hay renovación automática?", a:"No. Pagás mes a mes manualmente, sin débito automático. Te avisamos antes de que venza."},
@@ -9405,7 +9465,11 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
 
   const precioU=anual?PLAN.precio_usdt_anual:PLAN.precio_usdt;
   const precioARS=anual?PLAN.precio_ars_anual:PLAN.precio_ars;
-  const isPago=userPlan==="plus"||userPlan==="full";
+  // Pago anual = 12 meses juntos (el precio anual es el "por mes equivalente")
+  const mesesPago=anual?12:1;
+  const totalU=+(precioU*mesesPago).toFixed(2);
+  const isPago=userPlan==="plus"||userPlan==="full"||userPlan==="facturador";
+  const esFacturador=userPlan==="facturador";
 
   async function enviarPago() {
     if(metodo==="cripto"&&!txHash.trim()) return appAlert("Pegá el hash de transacción (TxID)");
@@ -9417,7 +9481,9 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         plan: PLAN.id,
         method: metodo,
         currency: metodo==="cripto"?"USDT":"ARS",
-        amount: metodo==="cripto"?+(precioU+centavosId/100).toFixed(2):precioARS,
+        amount: metodo==="cripto"?+(totalU+centavosId/100).toFixed(2):precioARS*mesesPago,
+        meses: mesesPago,
+        periodo: anual?"anual":"mensual",
         txHash: metodo==="cripto"?txHash.trim():"",
         transferRef: metodo==="transfer"?transferRef.trim():"",
         nota: nota.trim(),
@@ -9454,12 +9520,13 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
         <div style={{background:T.card,border:`0.5px solid ${PLAN.color}44`,borderLeft:`3px solid ${PLAN.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
           <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan seleccionado</div>
-          <div style={{fontSize:17,fontWeight:700,color:PLAN.color}}>{PLAN.nombre}</div>
-          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${(precioU+centavosId/100).toFixed(2)} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>USDT/mes</span></div>
+          <div style={{fontSize:17,fontWeight:700,color:PLAN.color}}>{PLAN.nombre}{anual?" · Anual":""}</div>
+          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${(totalU+centavosId/100).toFixed(2)} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>{anual?"USDT/año (12 meses)":"USDT/mes"}</span></div>
+          {anual&&<div style={{fontSize:12,color:T.green,fontWeight:600,marginTop:2}}>Equivale a ${precioU} USD/mes</div>}
           <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Los centavos (,{String(centavosId).padStart(2,"0")}) identifican tu pago — enviá el monto exacto.</div>
         </div>
         <div style={{marginBottom:20}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Enviá exactamente ${(precioU+centavosId/100).toFixed(2)} USDT (TRC20) a:</div>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Enviá exactamente ${(totalU+centavosId/100).toFixed(2)} USDT (TRC20) a:</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
             <code style={{flex:1,fontSize:12,color:T.text,wordBreak:"break-all",fontFamily:"monospace"}}>{USDT_ADDRESS}</code>
             <button onClick={()=>{navigator.clipboard.writeText(USDT_ADDRESS);toast("Dirección copiada","success");}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0,display:"flex",alignItems:"center"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
@@ -9496,7 +9563,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         <span style={{fontWeight:700,fontSize:15,color:T.text}}>Suscripción</span>
       </div>
 
-      <div style={{maxWidth:560,margin:"0 auto",padding:"40px 20px 0"}}>
+      <div style={{maxWidth:840,margin:"0 auto",padding:"40px 20px 0"}}>
 
         {/* Banner trial vencido o hero normal */}
         {isTrialExpired?(
@@ -9522,13 +9589,13 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
 
         {/* Plan activo */}
         {isPago&&(
-          <div style={{background:"#6366f110",border:"1px solid #6366f140",borderRadius:12,padding:"12px 18px",display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <div style={{background:(esFacturador?"#10b981":"#6366f1")+"10",border:`1px solid ${esFacturador?"#10b981":"#6366f1"}40`,borderRadius:12,padding:"12px 18px",display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={esFacturador?"#10b981":"#6366f1"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
             <div style={{flex:1}}>
-              <span style={{fontSize:13,fontWeight:700,color:"#6366f1"}}>Plan Pro activo</span>
+              <span style={{fontSize:13,fontWeight:700,color:esFacturador?"#10b981":"#6366f1"}}>Plan {esFacturador?"Facturador":"Pro"} activo</span>
               {planExpiry&&<span style={{fontSize:12,color:T.textSm,marginLeft:10}}>· Vence: {planExpiry.toLocaleDateString("es-AR",{day:"2-digit",month:"long"})}</span>}
             </div>
-            <span style={{fontSize:12,color:T.textSm}}>Para renovar, completá el pago abajo →</span>
+            <span style={{fontSize:12,color:T.textSm}}>{esFacturador?"¿Querés todo Growith? Pasate a Pro abajo →":"Para renovar, completá el pago abajo →"}</span>
           </div>
         )}
 
@@ -9545,44 +9612,53 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
           </div>
         </div>
 
-        {/* Card plan único */}
-        <div style={{background:T.card,border:`2px solid #6366f1`,borderRadius:20,padding:"28px 28px 24px",boxShadow:"0 8px 32px #6366f118",position:"relative",marginBottom:28}}>
-          <div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:"linear-gradient(135deg,#6366f1,#818cf8)",color:"#fff",fontSize:10,fontWeight:800,padding:"3px 16px",borderRadius:20,whiteSpace:"nowrap",letterSpacing:"0.05em"}}>
-            PLAN PRO
-          </div>
+        {/* Cards de planes (Facturador + Pro) */}
+        <div className="gh-planes-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:20,marginBottom:28,alignItems:"start"}}>
+          {PLANES.map(pl=>{
+            const pU=anual?pl.precio_usdt_anual:pl.precio_usdt;
+            const esActual = (userPlan===pl.id) || (pl.id==="plus"&&userPlan==="full");
+            return (
+              <div key={pl.id} style={{background:T.card,border:`2px solid ${pl.destacado?pl.color:T.border}`,borderRadius:20,padding:"26px 24px 22px",boxShadow:pl.destacado?`0 8px 32px ${pl.color}18`:"none",position:"relative"}}>
+                {pl.destacado&&(
+                  <div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:`linear-gradient(135deg,${pl.color},#818cf8)`,color:"#fff",fontSize:10,fontWeight:800,padding:"3px 16px",borderRadius:20,whiteSpace:"nowrap",letterSpacing:"0.05em"}}>
+                    RECOMENDADO
+                  </div>
+                )}
 
-          {/* Precio */}
-          <div style={{textAlign:"center",marginBottom:22,marginTop:8}}>
-            <div style={{display:"inline-flex",alignItems:"center",gap:6,background:T.green+"18",border:"1px solid "+T.green+"44"+"",borderRadius:20,padding:"3px 12px",marginBottom:8}}>
-              <span style={{fontSize:11,fontWeight:800,color:T.green,letterSpacing:"0.03em"}}>🔥 OFERTA DE LANZAMIENTO — 20% OFF</span>
-            </div>
-            <div style={{fontSize:14,color:T.textSm,textDecoration:"line-through",marginBottom:2,fontWeight:600}}>${PLAN.precio_normal} USD/mes</div>
-            <div style={{display:"flex",alignItems:"flex-end",justifyContent:"center",gap:4}}>
-              <span style={{fontSize:52,fontWeight:900,color:T.text,lineHeight:1}}>${precioU}</span>
-              <span style={{fontSize:15,color:T.textSm,marginBottom:10}}>USD/mes</span>
-            </div>
-            <div style={{fontSize:13,color:T.textSm}}>Pago con USDT (red TRC20)</div>
-            {anual&&<div style={{fontSize:12,color:T.green,fontWeight:600,marginTop:4}}>Ahorrás ${(PLAN.precio_usdt-PLAN.precio_usdt_anual)*12} USD al año pagando anual</div>}
-            {!anual&&<div style={{fontSize:11,color:"#6366f1",fontWeight:600,marginTop:6}}>o ${PLAN.precio_usdt_anual} USD/mes pagando anual</div>}
-          </div>
+                {/* Nombre + precio */}
+                <div style={{textAlign:"center",marginBottom:18,marginTop:pl.destacado?6:0}}>
+                  <div style={{fontSize:15,fontWeight:800,color:pl.color,marginBottom:2}}>Plan {pl.nombre}</div>
+                  <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>{pl.tagline}</div>
+                  <div style={{fontSize:13,color:T.textSm,textDecoration:"line-through",marginBottom:2,fontWeight:600}}>${pl.precio_normal} USD/mes</div>
+                  <div style={{display:"flex",alignItems:"flex-end",justifyContent:"center",gap:4}}>
+                    <span style={{fontSize:44,fontWeight:900,color:T.text,lineHeight:1}}>${pU}</span>
+                    <span style={{fontSize:14,color:T.textSm,marginBottom:8}}>USD/mes</span>
+                  </div>
+                  {anual
+                    ?<div style={{fontSize:11,color:T.green,fontWeight:600,marginTop:4}}>${pU*12} USD/año · ahorrás ${(pl.precio_usdt-pl.precio_usdt_anual)*12} USD</div>
+                    :<div style={{fontSize:11,color:pl.color,fontWeight:600,marginTop:4}}>o ${pl.precio_usdt_anual} USD/mes pagando anual</div>}
+                </div>
 
-          {/* CTA */}
-          <button onClick={()=>{setMetodo("cripto");setStep("pago_cripto");}}
-            style={{width:"100%",padding:"14px",borderRadius:12,fontSize:15,fontWeight:800,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:"linear-gradient(135deg,#6366f1,#818cf8)",color:"#fff",marginBottom:24,transition:"opacity 0.15s",letterSpacing:"0.01em"}}
-            onMouseEnter={e=>e.currentTarget.style.opacity="0.88"}
-            onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-            {isPago?"Renovar suscripción →":"Suscribirme →"}
-          </button>
+                {/* CTA */}
+                <button onClick={()=>{setSelPlanId(pl.id);setMetodo("cripto");setStep("pago_cripto");}}
+                  style={{width:"100%",padding:"12px",borderRadius:12,fontSize:14,fontWeight:800,border:pl.destacado?"none":`1.5px solid ${pl.color}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:pl.destacado?`linear-gradient(135deg,${pl.color},#818cf8)`:pl.color+"14",color:pl.destacado?"#fff":pl.color,marginBottom:20,transition:"opacity 0.15s",letterSpacing:"0.01em"}}
+                  onMouseEnter={e=>e.currentTarget.style.opacity="0.85"}
+                  onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                  {esActual?"Renovar suscripción →":(esFacturador&&pl.id==="plus")?"Pasar a Pro →":"Suscribirme →"}
+                </button>
 
-          {/* Features */}
-          <div style={{borderTop:`1px solid ${T.borderL}`,paddingTop:20,display:"flex",flexDirection:"column",gap:10}}>
-            {PLAN.features.map((f,i)=>(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:10,fontSize:13,color:T.textMd}}>
-                <span style={{color:"#6366f1",fontWeight:700,flexShrink:0}}>✓</span>
-                {f}
+                {/* Features */}
+                <div style={{borderTop:`1px solid ${T.borderL}`,paddingTop:16,display:"flex",flexDirection:"column",gap:9}}>
+                  {pl.features.map((f,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:9,fontSize:12.5,color:i===0&&pl.id==="plus"?T.text:T.textMd,fontWeight:i===0&&pl.id==="plus"?700:400}}>
+                      <span style={{color:pl.color,fontWeight:700,flexShrink:0}}>✓</span>
+                      {f}
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
 
         {/* Trust pills */}
@@ -9593,7 +9669,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         </div>
 
         {/* FAQ */}
-        <div style={{marginBottom:36}}>
+        <div style={{marginBottom:36,maxWidth:560,marginLeft:"auto",marginRight:"auto"}}>
           <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:14,textAlign:"center"}}>Preguntas frecuentes</div>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
             {FAQS.map((faq,i)=>(
@@ -9704,12 +9780,12 @@ function AppAdmin({T, user, onBack}) {
     return Math.ceil((d - new Date()) / 86400000);
   }
 
-  // Un solo plan de pago: "plus" es el id en Firestore, se muestra como "Pro".
-  // "full" quedó de una etapa anterior con dos planes; se sigue reconociendo
+  // Planes de pago: "plus" = Pro y "facturador" = Facturador (solo ARCA).
+  // "full" quedó de una etapa anterior; se sigue reconociendo como Pro
   // para no romper cuentas viejas, pero no se ofrece en ningún lado.
-  const PLAN_C  = {free:T.textSm, plus:T.blue, full:T.blue};
-  const PLAN_BG = {free:T.surface, plus:T.blueBg, full:T.blueBg};
-  const planLabel = p => (p==="plus"||p==="full") ? "Pro" : "Free";
+  const PLAN_C  = {free:T.textSm, plus:T.blue, full:T.blue, facturador:T.green};
+  const PLAN_BG = {free:T.surface, plus:T.blueBg, full:T.blueBg, facturador:T.greenBg};
+  const planLabel = p => (p==="plus"||p==="full") ? "Pro" : p==="facturador" ? "Facturador" : "Free";
 
   const { pagos=[], usuarios=[], stats={} } = datos;
   const pagosPendientes = pagos.filter(p => p.estado === "pendiente");
@@ -9753,7 +9829,7 @@ function AppAdmin({T, user, onBack}) {
     });
 
   async function confirmarPago(p) {
-    const meses = Number(confirmMeses[p._id] || 1);
+    const meses = Number(confirmMeses[p._id] || p.meses || 1);
     const d = await adminApi({action:"confirmarPago", pagoId:p._id, targetUid:p.uid, plan:p.plan, meses});
     setDatos(prev => ({
       ...prev,
@@ -9788,7 +9864,7 @@ function AppAdmin({T, user, onBack}) {
   async function gestionarPlan(uid, plan, cantidad, unidad, isTrial) {
     const cant = Number(cantidad);
     if (!cant || cant < 1) return appAlert("Ingresá una cantidad válida (mínimo 1)");
-    const label = `${cant} ${unidad==="dias"?`día${cant>1?"s":""}`:cant===1?"mes":"meses"} de ${plan}`;
+    const label = `${cant} ${unidad==="dias"?`día${cant>1?"s":""}`:cant===1?"mes":"meses"} de ${plan==="facturador"?"Facturador":"Pro"}`;
     if (!await appConfirm(
       isTrial ? `¿Activar ${label} como PRUEBA (no cuenta como ingreso)?` : `¿Activar ${label}?`,
       {okLabel: isTrial ? "Activar prueba" : "Activar"}
@@ -9864,8 +9940,8 @@ function AppAdmin({T, user, onBack}) {
 
       {/* ===== TAB RESUMEN ===== */}
       {!loading&&tab==="resumen"&&(()=>{
-        const totalPagando = (stats.usuariosPlus||0) + (stats.usuariosFull||0);
-        const totalPrueba  = (stats.usuariosPlus_trial||0) + (stats.usuariosFull_trial||0);
+        const totalPagando = (stats.usuariosPlus||0) + (stats.usuariosFull||0) + (stats.usuariosFact||0);
+        const totalPrueba  = (stats.usuariosPlus_trial||0) + (stats.usuariosFull_trial||0) + (stats.usuariosFact_trial||0);
         return (
         <div style={{maxWidth:960,margin:"0 auto",padding:"0 20px"}}>
 
@@ -9901,6 +9977,8 @@ function AppAdmin({T, user, onBack}) {
                       <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>{u?.email||p.email||p.uid}</div>
                       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                         <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{planLabel(p.plan)}</span>
+                        {p.periodo==="anual"&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:800,background:T.accentSolid+"22",color:T.accent}}>ANUAL (12m)</span>}
+                        {p.amount>0&&<span style={{fontSize:11,fontWeight:700,color:T.text}}>${p.amount}</span>}
                         {p.method&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:T.blueBg,color:p.method==="cripto"?T.green:T.blue}}>{p.method==="cripto"?"₮ USDT":"ARS"}</span>}
                         {p.transferRef&&<span style={{fontSize:11,color:T.textSm}}>Ref: <strong style={{color:T.text}}>{p.transferRef}</strong></span>}
                         {p.txHash&&<span style={{fontSize:11,color:T.textSm,fontFamily:"monospace"}}>TX: {p.txHash.slice(0,16)}…</span>}
@@ -9908,7 +9986,7 @@ function AppAdmin({T, user, onBack}) {
                       </div>
                     </div>
                     <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
-                      <select value={confirmMeses[p._id]||"1"}
+                      <select value={confirmMeses[p._id]||String(p.meses||1)}
                         onChange={e=>setConfirmMeses(prev=>({...prev,[p._id]:e.target.value}))}
                         style={{...iS,padding:"6px 10px",fontSize:12,width:"auto"}}>
                         {["1","2","3","6","12"].map(m=><option key={m} value={m}>{m}m</option>)}
@@ -10030,6 +10108,7 @@ function AppAdmin({T, user, onBack}) {
             {[
               ["todos","Todas",usuarios.length],
               ["pagas","Pagas",usuarios.filter(u=>(u.plan||"free")!=="free"&&!u.isTrial).length],
+              ["facturador","Facturador",usuarios.filter(u=>u.plan==="facturador"&&!u.isTrial).length],
               ["prueba","En prueba",usuarios.filter(u=>u.isTrial).length],
               ["vencidas","Vencidas",usuarios.filter(u=>{const d=daysUntil(u.planExpiry);return d!==null&&d<0;}).length],
               ["free","Sin plan",usuarios.filter(u=>(u.plan||"free")==="free"&&!u.isTrial).length],
@@ -10046,7 +10125,7 @@ function AppAdmin({T, user, onBack}) {
             const days = daysUntil(u.planExpiry);
             const expiryColor = days===null||u.plan==="free" ? T.textSm : days<3 ? T.red : days<7 ? T.yellow : days>30 ? T.green : T.textMd;
             const userPagos = pagos.filter(p=>p.uid===u._id).sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0));
-            const selPlan = "plus"; // plan único
+            const selPlan = uPlan[u._id] || (u.plan==="facturador" ? "facturador" : "plus");
             const selDias = uDias[u._id] || "";
             return (
               <div key={u._id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,marginBottom:8,overflow:"hidden"}}>
@@ -10154,7 +10233,12 @@ function AppAdmin({T, user, onBack}) {
                     <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.borderL}`}}>
                       <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:10}}>Gestionar suscripción</div>
                       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:u.plan!=="free"?10:0}}>
-                        <span style={{fontSize:12,color:T.textMd}}>Pro por</span>
+                        <select value={selPlan} onChange={e=>setUPlan(prev=>({...prev,[u._id]:e.target.value}))}
+                          style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
+                          <option value="plus">Pro</option>
+                          <option value="facturador">Facturador</option>
+                        </select>
+                        <span style={{fontSize:12,color:T.textMd}}>por</span>
                         <input type="number" min="1" value={uCantidad[u._id]||"1"}
                           onChange={e=>setUCantidad(prev=>({...prev,[u._id]:e.target.value}))}
                           style={{...iS,fontSize:12,width:60,textAlign:"center"}}/>
@@ -27859,7 +27943,8 @@ export default function App() {
   // ─── Render page content ───
   // Plan gate: devuelve <UpgradeWall> si el plan no alcanza, o null si puede pasar
   // Durante el trial (isInTrial), todos los gates se bypasean — acceso completo
-  const PLAN_LEVEL = {free:0, plus:1, full:2};
+  // facturador = solo ARCA (nivel 1); plus/full = todo. El gate compara niveles.
+  const PLAN_LEVEL = {free:0, facturador:1, plus:2, full:3};
   const planGate = (req) => {
     if (isInTrial) return null; // trial = acceso completo a todo
     if ((PLAN_LEVEL[planEfectivo]??0) < (PLAN_LEVEL[req]??0))
@@ -27885,17 +27970,17 @@ export default function App() {
   let pageContent = null;
   if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={planEfectivo} planExpiry={planExpiry} onBack={()=>setPage("home")} isTrialExpired={false} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
-  else if(page==="copilot") pageContent = <PageView T={T} pageKey="copilot"><AppCopilot T={T} user={user} onHome={()=>setPage("home")} onNavigate={setPage} connectedStores={connectedStores}/></PageView>;
+  else if(page==="copilot") pageContent = planGate("plus") || <PageView T={T} pageKey="copilot"><AppCopilot T={T} user={user} onHome={()=>setPage("home")} onNavigate={setPage} connectedStores={connectedStores}/></PageView>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
-  else if(page==="margenes") pageContent = adminGate("margenes") || <PageView T={T} pageKey="margenes"><AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={setMargenesTab}/></PageView>;
-  else if(page==="arca") pageContent = adminGate("arca") || planGate("plus") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
+  else if(page==="margenes") pageContent = adminGate("margenes") || planGate("plus") || <PageView T={T} pageKey="margenes"><AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={setMargenesTab}/></PageView>;
+  else if(page==="arca") pageContent = adminGate("arca") || planGate("facturador") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
   else if(page==="stock") pageContent = adminGate("stock") || planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
   else if(page==="ml") pageContent = adminGate("ml") || planGate("plus") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={mlTab} setTab={setMlTab}/></PageView>;
   else if(page==="meta") pageContent = adminGate("meta") || planGate("plus") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
   else if(page==="tareas") pageContent = adminGate("tareas") || planGate("plus") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab} pendingOpenTaskId={pendingOpenTaskId} onPendingOpenTaskConsumed={()=>setPendingOpenTaskId(null)}/></PageView>;
-  else if(page==="reclamos") pageContent = adminGate("reclamos") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
-  else if(page==="canjes") pageContent = adminGate("canjes") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
-  else if(page==="envios") pageContent = adminGate("envios") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
+  else if(page==="reclamos") pageContent = adminGate("reclamos") || planGate("plus") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
+  else if(page==="canjes") pageContent = adminGate("canjes") || planGate("plus") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
+  else if(page==="envios") pageContent = adminGate("envios") || planGate("plus") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
   else pageContent = <HomeScreen T={T} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
     setPage(p);
