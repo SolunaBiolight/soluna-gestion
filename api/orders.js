@@ -1734,18 +1734,35 @@ export default async function handler(req, res) {
       const hastaISO = hasta ? `${hasta}T23:59:59${tzOffset}` : null;
       if (platform !== 'tiendanube') return res.status(200).json({ coupons: [], totalPedidosAnalizados: 0, periodo: { desde: desdeISO, hasta: hastaISO } });
       const tnHeaders = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)' };
-      let allOrders = []; let page = 1;
-      while (page <= 25) {
-        let url = `https://api.tiendanube.com/v1/${storeId}/orders?payment_status=paid&per_page=200&page=${page}`;
+      // Solo los campos que usa el cálculo (sin fields TN manda la orden completa
+      // y un mes entero se pasaba del timeout de la función → 504 al cliente).
+      const couponUrl = (p) => {
+        let url = `https://api.tiendanube.com/v1/${storeId}/orders?payment_status=paid&per_page=200&page=${p}&fields=id,coupon,total,discount_coupon`;
         if (desdeISO) url += `&created_at_min=${encodeURIComponent(desdeISO)}`;
         if (hastaISO) url += `&created_at_max=${encodeURIComponent(hastaISO)}`;
-        const r = await fetch(url, { headers: tnHeaders });
-        if (!r.ok) break;
-        const data = await r.json();
-        if (!Array.isArray(data) || data.length === 0) break;
-        allOrders = [...allOrders, ...data];
-        if (data.length < 200) break;
-        page++;
+        return url;
+      };
+      // Página con reintento ante 429/5xx (TN devuelve 404 cuando la página no existe)
+      const couponPage = async (p) => {
+        for (let intento = 0; intento < 3; intento++) {
+          try {
+            const r = await fetch(couponUrl(p), { headers: tnHeaders });
+            if (r.status === 404) return [];
+            if (r.status === 429 || r.status >= 500) { await new Promise(rs => setTimeout(rs, 500 * (intento + 1))); continue; }
+            if (!r.ok) return [];
+            const data = await r.json();
+            return Array.isArray(data) ? data : [];
+          } catch (_) { await new Promise(rs => setTimeout(rs, 500 * (intento + 1))); }
+        }
+        return [];
+      };
+      // Lotes de 5 páginas en paralelo (antes era secuencial: hasta 25 round-trips encadenados)
+      let allOrders = [];
+      for (let start = 1; start <= 25; start += 5) {
+        const chunk = await Promise.all([0, 1, 2, 3, 4].map(i => couponPage(start + i)));
+        let fin = false;
+        for (const pg of chunk) { allOrders = allOrders.concat(pg); if (pg.length < 200) { fin = true; break; } }
+        if (fin) break;
       }
       const couponMap = {};
       for (const o of allOrders) {

@@ -3865,8 +3865,17 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     setComLoading(true); setComError(""); setComData(null);
     try {
       const url=`/api/orders?action=coupons&uid=${user?.uid||""}&desde=${comFechaDesde}&hasta=${comFechaHasta}`;
-      const r = await fetch(url);
-      if(!r.ok) throw new Error("Error al conectar con TN: "+r.status);
+      // TN a veces tarda y la función devuelve 504 — reintentamos solos antes de mostrar error
+      let r=null, lastErr=null;
+      for(let intento=0;intento<3;intento++){
+        if(intento>0) await new Promise(rs=>setTimeout(rs,1500*intento));
+        try{ r=await fetch(url); }catch(e){ lastErr=e; r=null; continue; }
+        if(r.ok){ lastErr=null; break; }
+        lastErr=new Error("Error al conectar con TN: "+r.status);
+        if(r.status<500&&r.status!==429) break; // 4xx no se reintenta
+        r=null;
+      }
+      if(lastErr) throw lastErr;
       const data = await r.json();
 
       if(!data.coupons||data.coupons.length===0){
@@ -3902,7 +3911,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       });
 
       setComData({coupons: enriched, totalPedidos: data.totalPedidosAnalizados});
-    } catch(e){ setComError("Error: "+e.message); }
+    } catch(e){ setComError("Error: "+e.message); comAutoRef.current=false; /* re-intenta solo al volver al tab */ }
     setComLoading(false);
   }
 
