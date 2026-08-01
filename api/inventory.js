@@ -89,7 +89,7 @@ async function pushTN(db, uid, tn, link, item, stock, mode) {
   const pid = link.product_id.replace(/^TN-/, "");
   const base = { item_id: item.id, item_name: item.nombre, link_id: link.product_id, platform: "tiendanube", to_qty: stock, mode };
   const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/products/${pid}/variants`, {
-    headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp" },
+    headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp" }, signal: AbortSignal.timeout(12000),
   });
   if (!r.ok) { const e = { ...base, ok: false, error: `TN HTTP ${r.status}${r.status===401||r.status===403?" — reconectá Tienda Nube (falta permiso de escritura)":""}` }; await syncLog(db, uid, e); return e; }
   const variants = await r.json();
@@ -102,7 +102,7 @@ async function pushTN(db, uid, tn, link, item, stock, mode) {
   if (mode === "simulacion") { const e = { ...base, from_qty: from, ok: true, simulated: true }; await syncLog(db, uid, e); return e; }
   const w = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/products/${pid}/variants/${v.id}`, {
     method: "PUT", headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp", "Content-Type": "application/json" },
-    body: JSON.stringify({ stock }),
+    body: JSON.stringify({ stock }), signal: AbortSignal.timeout(12000),
   });
   if (!w.ok) { const txt = await w.text().catch(()=>""); const e = { ...base, from_qty: from, ok: false, error: `TN PUT ${w.status}: ${txt.slice(0,120)}${w.status===401||w.status===403?" — reconectá TN (permiso de escritura)":""}` }; await syncLog(db, uid, e); return e; }
   const e = { ...base, from_qty: from, ok: true }; await syncLog(db, uid, e); return e;
@@ -116,7 +116,7 @@ async function pushML(db, uid, link, item, stock, mode) {
   const tokenInfo = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
   if (!tokenInfo?.accessToken) { const e = { ...base, ok: false, error: "Sin token válido de ML — reconectá Mercado Libre" }; await syncLog(db, uid, e); return e; }
   const r = await fetch(`https://api.mercadolibre.com/items/${mlId}?attributes=id,status,available_quantity,variations`, {
-    headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
+    headers: { Authorization: `Bearer ${tokenInfo.accessToken}` }, signal: AbortSignal.timeout(12000),
   });
   if (!r.ok) { const e = { ...base, ok: false, error: `ML HTTP ${r.status}` }; await syncLog(db, uid, e); return e; }
   const it = await r.json();
@@ -138,7 +138,7 @@ async function pushML(db, uid, link, item, stock, mode) {
   if (mode === "simulacion") { const e = { ...base, from_qty: from, ok: true, simulated: true }; await syncLog(db, uid, e); return e; }
   const w = await fetch(`https://api.mercadolibre.com/items/${mlId}`, {
     method: "PUT", headers: { Authorization: `Bearer ${tokenInfo.accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body), signal: AbortSignal.timeout(12000),
   });
   if (!w.ok) { const txt = await w.text().catch(()=>""); const e = { ...base, from_qty: from, ok: false, error: `ML PUT ${w.status}: ${txt.slice(0,120)}${w.status===403?" — habilitá 'Publicación y sincronización' en tu app de ML y reconectá":""}` }; await syncLog(db, uid, e); return e; }
   const e = { ...base, from_qty: from, ok: true }; await syncLog(db, uid, e); return e;
@@ -171,7 +171,7 @@ async function pushItemStock(db, uid, item, stores, settings) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||_o.endsWith("-soluna1.vercel.app")||_o.startsWith("http://localhost"))?_o:"https://www.growithapp.com"); } // allowlist CORS
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, PATCH");
   // El front manda el ID token de Firebase — sin Authorization acá el preflight
   // del browser corta la request antes de que llegue al handler.
@@ -837,15 +837,25 @@ export default async function handler(req, res) {
       if (!item_id) return res.status(400).json({ error: "Falta item_id" });
 
       const ref = db.collection("users").doc(uid).collection("inventory_items").doc(item_id);
-      const snap = await ref.get();
-      if (!snap.exists) return res.status(404).json({ error: "Item no encontrado" });
-      const current = snap.data();
-      const oldStock = current.stock_total || 0;
-      const newStock = new_stock !== undefined && new_stock !== null
-        ? parseInt(new_stock)
-        : oldStock + (parseInt(change) || 0);
-
-      await ref.update({ stock_total: newStock, updated_at: new Date().toISOString() });
+      // Transacción: un doble click (o retry) con `change` ya no descuenta dos
+      // veces — el read-modify-write viejo era carrera abierta y se propagaba a TN/ML.
+      let current, oldStock, newStock;
+      try {
+        ({ current, oldStock, newStock } = await db.runTransaction(async tx => {
+          const snap = await tx.get(ref);
+          if (!snap.exists) throw new Error("ITEM_INEXISTENTE");
+          const cur = snap.data();
+          const old = cur.stock_total || 0;
+          const nue = new_stock !== undefined && new_stock !== null
+            ? parseInt(new_stock)
+            : old + (parseInt(change) || 0);
+          tx.update(ref, { stock_total: nue, updated_at: new Date().toISOString() });
+          return { current: cur, oldStock: old, newStock: nue };
+        }));
+      } catch (e) {
+        if (e.message === "ITEM_INEXISTENTE") return res.status(404).json({ error: "Item no encontrado" });
+        throw e;
+      }
       await logMovement(db, uid, {
         item_id, item_name: current.nombre,
         change: newStock - oldStock,

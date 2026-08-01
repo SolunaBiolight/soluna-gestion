@@ -133,7 +133,44 @@ export default async function handler(req, res) {
       isTrial = false;
     }
 
-    if (diasRestantes === null) return null;
+    // ── Ciclo de vida (solo si no corresponde aviso de vencimiento) ──
+    if (diasRestantes === null) {
+      const createdAt = u.createdAt?.toDate?.();
+      const diasCuenta = createdAt ? (now - createdAt) / 86400000 : null;
+      const esFree = u.plan === "free" || !u.plan;
+      const btn = (txt) => `<table cellpadding="0" cellspacing="0"><tr><td><a href="${planesPlanesUrl.replace("/#/planes","")}" style="display:inline-block;padding:12px 28px;background:#6366f1;color:#fff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:700;">${txt} →</a></td></tr></table>`;
+      const wrap = (titulo, cuerpo, cta) => `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111;max-width:520px"><div style="font-size:20px;font-weight:800;margin-bottom:12px">${titulo}</div><p style="color:#444">${cuerpo}</p>${cta}<p style="font-size:13px;color:#888;margin-top:24px">El equipo de Growith</p></div>`;
+      const nombre = (u.nombre || u.displayName || "").split(" ")[0];
+
+      // 1) Bienvenida: cuenta creada hace <2 días, sin mail previo
+      if (diasCuenta !== null && diasCuenta < 2 && !u.welcomeSentAt) {
+        return { doc, email, flag: "welcomeSentAt", diasRestantes: 0, isTrial: true,
+          subject: "Te damos la bienvenida a Growith 👋",
+          html: wrap(`¡Hola${nombre?` ${nombre}`:""}! Ya tenés 14 días con todo incluido`,
+            "Para ver tus números reales hoy mismo: 1) conectá tu tienda (Tienda Nube, Shopify o Mercado Libre) desde Configuración → Integraciones, 2) cargá tu CUIT si querés facturar con ARCA, 3) mirá el Dashboard. En 5 minutos está andando.",
+            btn("Entrar a Growith")) };
+      }
+      // 2) Empujón día 3: trial activo pero sin tienda conectada
+      if (diasCuenta !== null && diasCuenta >= 3 && diasCuenta < 7 && esFree && trialEnd && trialEnd > now
+          && !(Array.isArray(u.stores) && u.stores.length) && !u.connectNudgeSentAt) {
+        return { doc, email, flag: "connectNudgeSentAt", diasRestantes: 0, isTrial: true,
+          subject: "Tu cuenta de Growith está vacía — conectá tu tienda en 2 minutos",
+          html: wrap("Todavía no conectaste tu tienda",
+            "Growith trabaja con tus datos reales: hasta que no conectes Tienda Nube, Shopify o Mercado Libre, no hay nada para mostrarte. Es un click con OAuth (no te pedimos contraseñas) y al instante ves ventas, márgenes y stock.",
+            btn("Conectar mi tienda")) };
+      }
+      // 3) Win-back: venció (trial o plan) hace 2-6 días
+      const vencioEl = esFree ? trialEnd : planExpiry;
+      const diasVencido = vencioEl && vencioEl < now ? (now - vencioEl) / 86400000 : null;
+      if (diasVencido !== null && diasVencido >= 2 && diasVencido < 7 && !u.winbackSentAt) {
+        return { doc, email, flag: "winbackSentAt", diasRestantes: 0, isTrial: esFree,
+          subject: "Tus datos de Growith te están esperando",
+          html: wrap(`${esFree ? "Tu prueba terminó" : "Tu plan venció"} hace unos días`,
+            "Todo lo tuyo sigue guardado exactamente donde lo dejaste: órdenes, márgenes, facturas y configuración. Reactivá cuando quieras y seguís desde el mismo punto. Si algo no te cerró del producto, respondé este mail y contanos — lo leemos de verdad.",
+            btn("Reactivar mi cuenta")) };
+      }
+      return null;
+    }
 
     // No mandar más de una advertencia por día para el mismo vencimiento
     const lastWarn = u.lastExpiryWarnAt?.toDate?.();
@@ -153,7 +190,7 @@ export default async function handler(req, res) {
     try {
       const result = await sendEmail({ to: t.email, subject: t.subject, html: t.html });
       if (result.ok) {
-        await t.doc.ref.update({ lastExpiryWarnAt: FieldValue.serverTimestamp() });
+        await t.doc.ref.update({ [t.flag || "lastExpiryWarnAt"]: FieldValue.serverTimestamp() });
         results.sent++;
         console.log(`[check-expiring] ✓ email a ${t.email} (${t.diasRestantes}d, ${t.isTrial?"trial":"plan"})`);
       } else {

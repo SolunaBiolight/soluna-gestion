@@ -29,9 +29,13 @@ function addMonths(date, n) { const d = new Date(date); d.setMonth(d.getMonth() 
 // ─── fin Admin constants ──────────────────────────────────────────────────
 
 function randomToken(len = 24) {
+  // PRNG criptográfico (webcrypto global): estos tokens son credenciales bearer
+  // del portal colaborador/tablero — con Math.random() eran predecibles.
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = new Uint8Array(len);
+  crypto.getRandomValues(bytes);
   let t = "";
-  for (let i = 0; i < len; i++) t += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < len; i++) t += chars[bytes[i] % chars.length];
   return t;
 }
 
@@ -302,7 +306,7 @@ function normalizeLinks(links) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||_o.endsWith("-soluna1.vercel.app")||_o.startsWith("http://localhost"))?_o:"https://www.growithapp.com"); } // allowlist CORS
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -523,7 +527,7 @@ export default async function handler(req, res) {
       const prevEstado = t.data().estado;
       const prevProgresoLabel = t.data().progresoLabel || "";
       const managerEmailPub = t.data().managerEmail;
-      const tareaLink = `${origin||"https://soluna-gestion.vercel.app"}/#/tareas`;
+      const tareaLink = `${origin||"https://www.growithapp.com"}/#/tareas`;
 
       if (estado==="bloqueada" && motivo) {
         // Add motivo as a comment so admin sees it
@@ -622,7 +626,7 @@ export default async function handler(req, res) {
       // Notificar al manager por email
       notifyManagers(db, t.data().uid, t.data().managerEmail,
         `💬 Actualización de ${colab.nombre} — ${t.data().titulo}`,
-        emailNuevoComentario({ colab, tarea:t.data(), comentario:texto.trim(), link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }));
+        emailNuevoComentario({ colab, tarea:t.data(), comentario:texto.trim(), link:`${origin||"https://www.growithapp.com"}/#/tareas` }));
       return res.json({ ok:true, comment });
     }
 
@@ -640,7 +644,7 @@ export default async function handler(req, res) {
       // Notificar al manager por email
       notifyManagers(db, t.data().uid, t.data().managerEmail,
         `❓ Consulta de ${colab.nombre} — ${t.data().titulo}`,
-        emailConsultaRecibida({ colab, tarea:t.data(), texto:texto.trim(), link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }));
+        emailConsultaRecibida({ colab, tarea:t.data(), texto:texto.trim(), link:`${origin||"https://www.growithapp.com"}/#/tareas` }));
       return res.json({ ok:true, comment });
     }
 
@@ -674,8 +678,8 @@ export default async function handler(req, res) {
           ? `📎 Entrega actualizada — ${colab.nombre} agregó un documento en "${t.data().titulo}"`
           : `📦 Entrega de ${colab.nombre} — ${t.data().titulo}`,
         hasFinalDelivery
-          ? emailEntregaActualizada({ colab, tarea:t.data(), entrega, link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` })
-          : emailEntregaRecibida({ colab, tarea:t.data(), entrega, link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }));
+          ? emailEntregaActualizada({ colab, tarea:t.data(), entrega, link:`${origin||"https://www.growithapp.com"}/#/tareas` })
+          : emailEntregaRecibida({ colab, tarea:t.data(), entrega, link:`${origin||"https://www.growithapp.com"}/#/tareas` }));
       return res.json({ ok: true, entrega });
     }
 
@@ -1629,17 +1633,27 @@ export default async function handler(req, res) {
         return res.json({ usage: rows, totales });
       }
 
+      // Helper transaccional: dos clicks del admin ya no suman meses dos veces
+      // (lee planExpiry y escribe la extensión de forma atómica).
+      const extenderTx = async (targetUid, updates, calcExpiry) => {
+        const ref = db.collection("users").doc(targetUid);
+        return db.runTransaction(async tx => {
+          const snap = await tx.get(ref);
+          const userData = snap.data() || {};
+          let base = adminNow;
+          if (userData.planExpiry) {
+            const cur = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
+            if (cur > adminNow) base = cur;
+          }
+          const expiry = calcExpiry(base, userData);
+          tx.update(ref, { ...updates, planExpiry: expiry });
+          return expiry;
+        });
+      };
+
       if (action === "activarPlan") {
         const { targetUid, plan, meses = 1 } = body;
-        const userDoc = await db.collection("users").doc(targetUid).get();
-        const userData = userDoc.data() || {};
-        let base = adminNow;
-        if (userData.planExpiry) {
-          const cur = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
-          if (cur > adminNow) base = cur;
-        }
-        const expiry = addMonths(base, meses);
-        await db.collection("users").doc(targetUid).update({ plan, planExpiry: expiry, planActivadoBy: uid, planActivadoAt: adminNow });
+        const expiry = await extenderTx(targetUid, { plan, planActivadoBy: uid, planActivadoAt: adminNow }, base => addMonths(base, meses));
         return res.json({ ok: true, expiry });
       }
 
@@ -1668,7 +1682,7 @@ export default async function handler(req, res) {
               if (cur > adminNow) base = cur;
             }
             const exp = addMonths(base, meses);
-            tx.update(db.collection("users").doc(targetUid), { plan, planExpiry: exp, isTrial: false, planActivadoBy: uid, planActivadoAt: adminNow });
+            tx.update(db.collection("users").doc(targetUid), { plan, planExpiry: exp, isTrial: false, cancelAtPeriodEnd: false, planActivadoBy: uid, planActivadoAt: adminNow });
             tx.update(pagoRef, { estado: "confirmado", mesesConfirmados: Number(meses), confirmadoBy: uid, confirmadoAt: adminNow });
             return exp;
           });
@@ -1713,31 +1727,16 @@ export default async function handler(req, res) {
 
       if (action === "extenderPlan") {
         const { targetUid, meses = 1 } = body;
-        const userDoc = await db.collection("users").doc(targetUid).get();
-        const userData = userDoc.data() || {};
-        let base = adminNow;
-        if (userData.planExpiry) {
-          const cur = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
-          if (cur > adminNow) base = cur;
-        }
-        const expiry = addMonths(base, meses);
-        await db.collection("users").doc(targetUid).update({ planExpiry: expiry, planExtendidoBy: uid, planExtendidoAt: adminNow });
+        const expiry = await extenderTx(targetUid, { planExtendidoBy: uid, planExtendidoAt: adminNow }, base => addMonths(base, meses));
         return res.json({ ok: true, expiry });
       }
 
       if (action === "gestionarPlan") {
         const { targetUid, plan, cantidad, unidad = "meses", isTrial = false } = body;
-        const userDoc = await db.collection("users").doc(targetUid).get();
-        const userData = userDoc.data() || {};
-        let base = adminNow;
-        if (userData.planExpiry) {
-          const cur = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
-          if (cur > adminNow) base = cur;
-        }
-        let expiry;
-        if (unidad === "dias") { expiry = new Date(base); expiry.setDate(expiry.getDate() + Number(cantidad)); }
-        else { expiry = addMonths(base, Number(cantidad)); }
-        await db.collection("users").doc(targetUid).update({ plan, planExpiry: expiry, isTrial: !!isTrial, planActivadoBy: uid, planActivadoAt: adminNow });
+        const expiry = await extenderTx(targetUid, { plan, isTrial: !!isTrial, planActivadoBy: uid, planActivadoAt: adminNow }, base => {
+          if (unidad === "dias") { const d = new Date(base); d.setDate(d.getDate() + Number(cantidad)); return d; }
+          return addMonths(base, Number(cantidad));
+        });
         if (isTrial) {
           await db.collection("pagos").add({ uid: targetUid, plan, method: "prueba", currency: "—", amount: 0, isTrial: true, cantidad: Number(cantidad), unidad, estado: "confirmado", confirmadoBy: uid, confirmadoAt: adminNow, createdAt: adminNow, nota: `Prueba: ${cantidad} ${unidad} de ${plan}` });
         }
@@ -1746,29 +1745,24 @@ export default async function handler(req, res) {
 
       if (action === "activarPrueba") {
         const { targetUid, plan, meses = 1 } = body;
-        const userDoc = await db.collection("users").doc(targetUid).get();
-        const userData = userDoc.data() || {};
-        let base = adminNow;
-        if (userData.planExpiry) {
-          const cur = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
-          if (cur > adminNow) base = cur;
-        }
-        const expiry = addMonths(base, meses);
-        await Promise.all([
-          db.collection("users").doc(targetUid).update({ plan, planExpiry: expiry, isTrial: true, planActivadoBy: uid, planActivadoAt: adminNow }),
-          db.collection("pagos").add({ uid: targetUid, plan, method: "prueba", currency: "—", amount: 0, isTrial: true, mesesConfirmados: Number(meses), estado: "confirmado", confirmadoBy: uid, confirmadoAt: adminNow, createdAt: adminNow, nota: `Plan de prueba (${meses}m) activado por admin` }),
-        ]);
+        const expiry = await extenderTx(targetUid, { plan, isTrial: true, planActivadoBy: uid, planActivadoAt: adminNow }, base => addMonths(base, meses));
+        await db.collection("pagos").add({ uid: targetUid, plan, method: "prueba", currency: "—", amount: 0, isTrial: true, mesesConfirmados: Number(meses), estado: "confirmado", confirmadoBy: uid, confirmadoAt: adminNow, createdAt: adminNow, nota: `Plan de prueba (${meses}m) activado por admin` });
         return res.json({ ok: true, expiry });
       }
 
       if (action === "ajustarDias") {
         const { targetUid, dias } = body;
         if (!targetUid || dias === undefined) return res.status(400).json({ error: "Faltan parámetros" });
-        const userDoc = await db.collection("users").doc(targetUid).get();
-        const userData = userDoc.data() || {};
-        let base = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
-        const expiry = new Date(base); expiry.setDate(expiry.getDate() + Number(dias));
-        await db.collection("users").doc(targetUid).update({ planExpiry: expiry, planAjustadoBy: uid, planAjustadoAt: adminNow, planAjusteDias: Number(dias) });
+        // Ajuste sobre el vencimiento ACTUAL (aunque esté en el pasado), atómico
+        const ref = db.collection("users").doc(targetUid);
+        const expiry = await db.runTransaction(async tx => {
+          const snap = await tx.get(ref);
+          const userData = snap.data() || {};
+          const base = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
+          const d = new Date(base); d.setDate(d.getDate() + Number(dias));
+          tx.update(ref, { planExpiry: d, planAjustadoBy: uid, planAjustadoAt: adminNow, planAjusteDias: Number(dias) });
+          return d;
+        });
         return res.json({ ok: true, expiry });
       }
 

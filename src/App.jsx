@@ -897,7 +897,10 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
 
       {/* Nav */}
       <nav style={{flex:1,padding:DS.sp.sm,display:"flex",flexDirection:"column",gap:2,overflowY:"auto"}}>
-        {GROUPS.filter(item=>!(adminOnlySections||[]).includes(item.id)||isAdmin).map((item,i)=>{
+        {GROUPS.filter(item=>!(adminOnlySections||[]).includes(item.id)||isAdmin)
+          // Plan Facturador (sin trial): solo ve Inicio y Facturador — el resto ni aparece
+          .filter(item=>{ if(userPlan!=="facturador"||isInTrial) return true; return item.group ? item.group==="FINANZAS" : ["home","arca"].includes(item.id); })
+          .map((item,i)=>{
           if(item.group) {
             if(collapsed) return null;
             return (
@@ -1154,10 +1157,23 @@ function OnboardingWizard({T, user, onComplete}) {
   }
   function irAConfig(){ onComplete("config"); }
 
+  async function conectarML() {
+    setYendo("ml");
+    try {
+      const r = await fetch("/api/integrations?platform=mercadolibre&action=oauth_start", {
+        method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ uid: user?.uid }),
+      });
+      const d = await r.json();
+      if (d.url) { window.location.href = d.url; return; }
+    } catch(e) {}
+    setYendo(""); irAConfig(); // si el OAuth directo falla, al menos lo llevamos a Config
+  }
+
   const OPCIONES = [
     {id:"tn",       nombre:"Tienda Nube",    desc:"Pedidos, productos y stock en tiempo real", onClick:conectarTN},
-    {id:"ml",       nombre:"Mercado Libre",  desc:"Publicaciones, ventas y comisiones",        onClick:irAConfig},
+    {id:"ml",       nombre:"Mercado Libre",  desc:"Publicaciones, ventas y comisiones",        onClick:conectarML},
     {id:"shopify",  nombre:"Shopify",        desc:"Pedidos y catálogo sincronizados",          onClick:irAConfig},
+    {id:"arca",     nombre:"Solo quiero facturar",  desc:"Cargá tu CUIT y facturá con ARCA — la tienda la conectás después", onClick:()=>onComplete("arca")},
   ];
 
   return (
@@ -1893,13 +1909,13 @@ function UpgradeWall({T, requiredPlan, onNavigate}) {
   // Se muestra cuando el plan no alcanza (hoy: usuarios Facturador entrando a secciones Pro)
   const info = {
     nombre:"Pro", icon:"", color:"#6366f1",
-    precio_usdt:69, precio_ars:69000,
+    precio_usdt:69, precio_ars:0,
     features:[
+      "Dashboard de rentabilidad en tiempo real",
       "Stock multi-canal (Tienda Nube + Shopify + ML)",
-      "Facturación ARCA / AFIP completa",
       "Envíos ilimitados + etiquetas PDF con SKU",
       "Reclamos ilimitados + auto-tracking Andreani",
-      "Meta Ads, Google Ads y Mercado Ads en el profit",
+      "Meta Ads y Mercado Ads en el profit",
       "Gestión de equipo + tareas ilimitadas",
       "Tiendas ilimitadas",
     ],
@@ -1945,9 +1961,8 @@ function UpgradeWall({T, requiredPlan, onNavigate}) {
             <span style={{fontSize:DS.font["3xl"],fontWeight:DS.w.black,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>u$s {info.precio_usdt}</span>
             <span style={{fontSize:DS.font.sm,color:T.textSm,fontFamily:"'Inter',system-ui,sans-serif"}}> / mes</span>
           </div>
-          <div style={{color:T.border,fontSize:DS.font["2xl"],lineHeight:1}}>·</div>
           <div style={{fontSize:DS.font.sm,color:T.textSm,fontFamily:"'Inter',system-ui,sans-serif"}}>
-            ${info.precio_ars.toLocaleString("es-AR")} ARS
+            en pesos o USDT
           </div>
         </div>
         {/* CTA */}
@@ -8220,7 +8235,7 @@ function LandingPage({T, onLogin}) {
             <div style={{fontSize:42,fontWeight:900,letterSpacing:-1.5,lineHeight:1.1}}>$69 <span style={{fontSize:14,fontWeight:500,color:T.textSm}}>USD/mes</span></div>
             <div style={{fontSize:12,color:T.textSm,marginTop:4,marginBottom:16}}>o $57 USD/mes pagando anual</div>
             <div style={{textAlign:"left",display:"flex",flexDirection:"column",gap:7,marginBottom:20}}>
-              {["Todo lo del plan Facturador","Dashboard de rentabilidad en tiempo real","Tiendas y envíos ilimitados","Stock cruzado entre canales","Meta Ads + Google Ads + Mercado Ads","Copilot IA y gestión de equipo"].map((x,i)=>(
+              {["Todo lo del plan Facturador","Dashboard de rentabilidad en tiempo real","Envíos con etiquetas Andreani (Tienda Nube)","Stock cruzado entre canales","Meta Ads + Mercado Ads (Google Ads próximamente)","Copilot IA y gestión de equipo"].map((x,i)=>(
                 <div key={x} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:i===0?T.text:T.textMd,fontWeight:i===0?700:400}}>
                   <span style={{color:T.green,fontWeight:800,flexShrink:0}}>✓</span>{x}
                 </div>
@@ -9392,7 +9407,9 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                 {isPago
                   ?<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                     {esFact&&<button onClick={()=>onNavigate("planes")} style={{...BtnPrimary(T),justifyContent:"center",fontSize:12}}>Pasar al plan Pro →</button>}
-                    <AsyncButton onClick={async()=>{if(await appConfirm(`¿Cancelar tu suscripción ${esFact?"Facturador":"Pro"}?`,{danger:true,okLabel:"Cancelar plan"}))await updateDoc(doc(db,"users",user.uid),{plan:"free"});}} style={{...BtnDanger(T),justifyContent:"center",fontSize:12}}>Cancelar suscripción</AsyncButton>
+                    {userDoc?.cancelAtPeriodEnd
+                      ?<AsyncButton onClick={async()=>{await updateDoc(doc(db,"users",user.uid),{cancelAtPeriodEnd:false});toast("Renovación reactivada ✓","success");}} style={{...BtnSecondary(T),justifyContent:"center",fontSize:12}}>Reactivar renovación</AsyncButton>
+                      :<AsyncButton onClick={async()=>{if(await appConfirm(`¿Cancelar tu suscripción ${esFact?"Facturador":"Pro"}? Seguís con acceso completo hasta el final del período pagado — solo no se renueva.`,{danger:true,okLabel:"Cancelar renovación"})){await updateDoc(doc(db,"users",user.uid),{cancelAtPeriodEnd:true});toast("Listo — tu plan sigue activo hasta el vencimiento","success");}}} style={{...BtnDanger(T),justifyContent:"center",fontSize:12}}>Cancelar suscripción</AsyncButton>}
                   </div>
                   :<button onClick={()=>onNavigate("planes")} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:13}}>{enTrial?"Suscribirme ahora →":"Ver planes y reactivar →"}</button>
                 }
@@ -9451,10 +9468,10 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       features:[
         "Todo lo del plan Facturador",
         "Márgenes, profit y costos por venta en tiempo real",
-        "Envíos ilimitados + etiquetas PDF con SKU",
+        "Envíos + etiquetas Andreani con SKU (Tienda Nube)",
         "Auto-tracking Andreani y reclamos ilimitados",
         "Stock cruzado TN + Mercado Libre + Shopify",
-        "Meta Ads, Google Ads y Mercado Ads en el profit",
+        "Meta Ads y Mercado Ads en el profit (Google Ads próximamente)",
         "Copilot IA sobre tus datos reales",
         "Gestión de equipo + tareas ilimitadas",
         "Canjes e influencers ilimitados",
@@ -9464,6 +9481,9 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   ];
   const [selPlanId,setSelPlanId]=useState("plus");
   const PLAN=PLANES.find(p=>p.id===selPlanId)||PLANES[1];
+  // Datos bancarios para transferencia en ARS — completar cuando Soluna pase alias/titular reales
+  const ALIAS_PAGO="XXXX";
+  const TITULAR_PAGO="XXXX";
 
   const FAQS=[
     {q:"¿Hay renovación automática?", a:"No. Pagás mes a mes manualmente, sin débito automático. Te avisamos antes de que venza."},
@@ -9489,8 +9509,8 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         email: user.email,
         plan: PLAN.id,
         method: metodo,
-        currency: metodo==="cripto"?"USDT":"ARS",
-        amount: metodo==="cripto"?+(totalU+centavosId/100).toFixed(2):precioARS*mesesPago,
+        currency: metodo==="cripto"?"USDT":"USD",
+        amount: metodo==="cripto"?+(totalU+centavosId/100).toFixed(2):totalU,
         meses: mesesPago,
         periodo: anual?"anual":"mensual",
         txHash: metodo==="cripto"?txHash.trim():"",
@@ -9562,7 +9582,76 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
     </div>
   );
 
-  // (pantallas de transferencia ARS y selector de método eliminadas — pago SOLO con USDT TRC20 hasta nuevo aviso)
+  /* ── Pantalla: elegir método de pago ── */
+  if(step==="metodo") return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"e8",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",padding:"0 20px",height:52,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
+        <button onClick={()=>setStep("planes")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
+        <span style={{fontWeight:700,fontSize:15,color:T.text}}>¿Cómo querés pagar?</span>
+      </div>
+      <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
+        <div style={{background:T.card,border:`0.5px solid ${PLAN.color}44`,borderLeft:`3px solid ${PLAN.color}`,borderRadius:12,padding:"14px 20px",marginBottom:24}}>
+          <span style={{fontSize:13,color:T.textSm}}>Plan </span><span style={{fontSize:14,fontWeight:700,color:PLAN.color}}>{PLAN.nombre}{anual?" · Anual":""}</span>
+          <span style={{fontSize:14,fontWeight:800,color:T.text,marginLeft:10}}>${totalU} USD{anual?"/año":"/mes"}</span>
+        </div>
+        {[
+          {id:"transfer",titulo:"Transferencia bancaria (pesos)",desc:"Transferís en ARS al alias de Growith. Lo confirmamos en el día.",icon:"🏦"},
+          {id:"cripto",titulo:"USDT (red TRC20)",desc:"Se acredita solo en menos de 15 minutos, sin intermediarios.",icon:"₮"},
+        ].map(m=>(
+          <button key={m.id} onClick={()=>{setMetodo(m.id);setStep(m.id==="cripto"?"pago_cripto":"pago_transfer");}}
+            style={{width:"100%",textAlign:"left",display:"flex",gap:14,alignItems:"center",background:T.card,border:`1.5px solid ${T.border}`,borderRadius:14,padding:"18px 20px",marginBottom:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"border-color 0.15s"}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor=PLAN.color}
+            onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+            <span style={{fontSize:24,flexShrink:0}}>{m.icon}</span>
+            <span>
+              <span style={{display:"block",fontSize:14,fontWeight:700,color:T.text,marginBottom:3}}>{m.titulo}</span>
+              <span style={{display:"block",fontSize:12,color:T.textSm,lineHeight:1.5}}>{m.desc}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  /* ── Pantalla: transferencia en pesos ── */
+  if(step==="pago_transfer") return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"e8",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",padding:"0 20px",height:52,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
+        <button onClick={()=>setStep("metodo")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
+        <span style={{fontWeight:700,fontSize:15,color:T.text}}>Pago por transferencia</span>
+      </div>
+      <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
+        <div style={{background:T.card,border:`0.5px solid ${PLAN.color}44`,borderLeft:`3px solid ${PLAN.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
+          <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan seleccionado</div>
+          <div style={{fontSize:17,fontWeight:700,color:PLAN.color}}>{PLAN.nombre}{anual?" · Anual":""}</div>
+          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${totalU} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>USD {anual?"por año (12 meses)":"por mes"}</span></div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Se paga el equivalente en pesos al dólar del día — al confirmar te llega el comprobante por mail.</div>
+        </div>
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Transferí al alias:</div>
+          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",marginBottom:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+              <code style={{flex:1,fontSize:15,fontWeight:700,color:T.text,fontFamily:"monospace"}}>{ALIAS_PAGO}</code>
+              <button onClick={()=>{navigator.clipboard.writeText(ALIAS_PAGO);toast("Alias copiado","success");}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0}}>Copiar</button>
+            </div>
+            <div style={{fontSize:12,color:T.textSm}}>Titular: <strong style={{color:T.text}}>{TITULAR_PAGO}</strong></div>
+          </div>
+        </div>
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>N° de comprobante o referencia *</div>
+          <input style={{...iS,fontSize:13}} placeholder="El número de operación de tu banco/billetera..." value={transferRef} onChange={e=>setTransferRef(e.target.value)}/>
+        </div>
+        <div style={{marginBottom:28}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Nota adicional (opcional)</div>
+          <textarea style={{...iS,minHeight:70,resize:"vertical",fontSize:13}} placeholder="Alguna aclaración..." value={nota} onChange={e=>setNota(e.target.value)}/>
+        </div>
+        <AsyncButton onClick={enviarPago} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"13px"}}>
+          Enviar comprobante
+        </AsyncButton>
+        <div style={{textAlign:"center",fontSize:12,color:T.textSm,marginTop:10}}>Confirmamos tu transferencia y activamos el plan en el día.</div>
+      </div>
+    </div>
+  );
 
   /* ── Pantalla principal ── */
   return (
@@ -9580,7 +9669,8 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
           <div style={{background:T.red+"12",border:"1px solid "+T.red+"40"+"",borderRadius:14,padding:"18px 22px",marginBottom:32,textAlign:"center"}}>
             <div style={{display:"flex",justifyContent:"center",marginBottom:8}}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
             <div style={{fontSize:18,fontWeight:800,color:T.red,marginBottom:6}}>Tu prueba gratuita terminó</div>
-            <div style={{fontSize:13,color:T.textMd,lineHeight:1.6}}>Suscribite para seguir usando Growith y no perder tus datos.</div>
+            <div style={{fontSize:13,color:T.textMd,lineHeight:1.6}}>Suscribite para seguir usando Growith. Tus datos y facturas siguen guardados intactos.</div>
+            <div style={{fontSize:12,color:T.textSm,marginTop:8}}>¿Necesitás exportar tus facturas o datos? Escribinos a <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:T.accent,fontWeight:600}}>{SUPPORT_EMAIL}</a> y te los mandamos en el día.</div>
           </div>
         ):(
           <div style={{textAlign:"center",marginBottom:32}}>
@@ -9650,7 +9740,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
                 </div>
 
                 {/* CTA */}
-                <button onClick={()=>{setSelPlanId(pl.id);setMetodo("cripto");setStep("pago_cripto");}}
+                <button onClick={()=>{setSelPlanId(pl.id);setStep("metodo");}}
                   style={{width:"100%",padding:"12px",borderRadius:12,fontSize:14,fontWeight:800,border:pl.destacado?"none":`1.5px solid ${pl.color}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:pl.destacado?`linear-gradient(135deg,${pl.color},#818cf8)`:pl.color+"14",color:pl.destacado?"#fff":pl.color,marginBottom:20,transition:"opacity 0.15s",letterSpacing:"0.01em"}}
                   onMouseEnter={e=>e.currentTarget.style.opacity="0.85"}
                   onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
@@ -9673,7 +9763,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
 
         {/* Trust pills */}
         <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap",marginBottom:36}}>
-          {["Sin renovación automática","Activación en menos de 24hs","Soporte por WhatsApp"].map((t,i)=>(
+          {["Sin renovación automática","Pagás en pesos o USDT","Activación en el día"].map((t,i)=>(
             <div key={i} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"6px 14px",fontSize:11,color:T.textMd}}>{t}</div>
           ))}
         </div>
@@ -9989,7 +10079,7 @@ function AppAdmin({T, user, onBack}) {
                         <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{planLabel(p.plan)}</span>
                         {p.periodo==="anual"&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:800,background:T.accentSolid+"22",color:T.accent}}>ANUAL (12m)</span>}
                         {p.amount>0&&<span style={{fontSize:11,fontWeight:700,color:T.text}}>${p.amount}</span>}
-                        {p.method&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:T.blueBg,color:p.method==="cripto"?T.green:T.blue}}>{p.method==="cripto"?"₮ USDT":"ARS"}</span>}
+                        {p.method&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:T.blueBg,color:p.method==="cripto"?T.green:T.blue}}>{p.method==="cripto"?"₮ USDT":"🏦 Transf."}</span>}
                         {p.transferRef&&<span style={{fontSize:11,color:T.textSm}}>Ref: <strong style={{color:T.text}}>{p.transferRef}</strong></span>}
                         {p.txHash&&<span style={{fontSize:11,color:T.textSm,fontFamily:"monospace"}}>TX: {p.txHash.slice(0,16)}…</span>}
                         <span style={{fontSize:11,color:T.textSm}}>{fmtDateFull(p.createdAt)}</span>
@@ -27697,7 +27787,7 @@ export default function App() {
       const shopify=d.stores?.find(s=>s.type==="shopify");
       const ml=d.stores?.find(s=>s.type==="mercadolibre"||s.type==="meli");
       const meta=(d.metaAccounts||[]).length>0;
-      setConnectedStores({tn:!!tn,shopify:!!shopify,ml:!!ml,meta});
+      setConnectedStores({tn:!!tn,shopify:!!shopify,ml:!!ml,meta,loaded:true});
       const newId=tn?.storeId||null;
       if(prevTnRef.current!==null && prevTnRef.current!==newId) {
         try{ localStorage.removeItem(`growith_orders_${user.uid}`); }catch(e){}
@@ -27961,6 +28051,16 @@ export default function App() {
       return <UpgradeWall T={T} requiredPlan={req} onNavigate={setPage}/>;
     return null;
   };
+  // requiereTN — Envíos y Reclamos trabajan sobre pedidos de Tienda Nube; si no
+  // hay TN conectada, guía honesta en vez de una pantalla vacía que confunde.
+  const requiereTN = (nombre) => (connectedStores.loaded && !connectedStores.tn) ? (
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"60vh",gap:14,padding:24,fontFamily:"'Inter',system-ui,sans-serif",textAlign:"center",background:T.bg}}>
+      <div style={{fontSize:40}}>🏬</div>
+      <div style={{fontSize:19,fontWeight:800,color:T.text}}>{nombre} funciona con Tienda Nube</div>
+      <div style={{fontSize:13,color:T.textMd,maxWidth:420,lineHeight:1.6}}>Esta sección trabaja con los pedidos de tu Tienda Nube (etiquetas Andreani, seguimientos y reclamos). Conectala y aparece todo solo. El soporte para Shopify y Mercado Libre está en desarrollo.</div>
+      <button onClick={()=>setPage("config")} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 24px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Conectar Tienda Nube →</button>
+    </div>
+  ) : null;
   // adminGate — bloquea acceso a secciones admin-only para usuarios sin admin
   const adminGate = (pageId) => {
     if (adminOnlySections.includes(pageId) && !isAdmin) return (
@@ -27988,9 +28088,9 @@ export default function App() {
   else if(page==="ml") pageContent = adminGate("ml") || planGate("plus") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={mlTab} setTab={setMlTab}/></PageView>;
   else if(page==="meta") pageContent = adminGate("meta") || planGate("plus") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
   else if(page==="tareas") pageContent = adminGate("tareas") || planGate("plus") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab} pendingOpenTaskId={pendingOpenTaskId} onPendingOpenTaskConsumed={()=>setPendingOpenTaskId(null)}/></PageView>;
-  else if(page==="reclamos") pageContent = adminGate("reclamos") || planGate("plus") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
+  else if(page==="reclamos") pageContent = adminGate("reclamos") || planGate("plus") || requiereTN("Reclamos") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
   else if(page==="canjes") pageContent = adminGate("canjes") || planGate("plus") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
-  else if(page==="envios") pageContent = adminGate("envios") || planGate("plus") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
+  else if(page==="envios") pageContent = adminGate("envios") || planGate("plus") || requiereTN("Envíos") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
   else pageContent = <HomeScreen T={T} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
     setPage(p);
@@ -28004,6 +28104,7 @@ export default function App() {
           updateDoc(doc(db,"users",user.uid),{onbDone:true}).catch(()=>{}); // persistir cross-dispositivo
           setOnboardingDone(true);
           if(action==="config") setPage("config");
+          else if(action==="arca") setPage("arca");
         }}/>
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>

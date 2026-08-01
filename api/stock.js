@@ -512,7 +512,7 @@ function buildResponse(platform, products, analytics, days) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin","*");
+  { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||_o.endsWith("-soluna1.vercel.app")||_o.startsWith("http://localhost"))?_o:"https://www.growithapp.com"); } // allowlist CORS
   res.setHeader("Access-Control-Allow-Methods","GET, OPTIONS");
   // El front ahora manda el ID token de Firebase — sin este header el preflight
   // del browser rechaza la request antes de que llegue acá.
@@ -565,14 +565,21 @@ export default async function handler(req, res) {
     } catch (e) { console.error("[stock warm_all] alta de cuentas nuevas:", e.message); }
 
     const rotSnap = await db.collection("users")
-      .orderBy("stockWarmAt").limit(CANDIDATOS).select("stores", "stockWarmAt").get();
+      .orderBy("stockWarmAt").limit(CANDIDATOS).select("stores", "stockWarmAt", "plan", "planExpiry", "trialEnd").get();
     const candidatos = rotSnap.docs.slice();
     const targets = [], marcar = [];
+    const ahora = new Date();
     for (const d of candidatos) {
-      const tieneTienda = (d.data().stores || []).some(s => s.accessToken);
-      // Las cuentas sin tienda conectada igual se marcan: si no, se quedan
+      const u = d.data();
+      const tieneTienda = (u.stores || []).some(s => s.accessToken);
+      // Solo cuentas con plan vigente o trial activo: calentar cuentas free o
+      // vencidas quema cuota de TN/ML y presupuesto de Vercel en gente que no paga.
+      const exp = u.planExpiry?.toDate?.() || null;
+      const trial = u.trialEnd?.toDate?.() || null;
+      const activo = (u.plan && u.plan !== "free" && (!exp || exp > ahora)) || (trial && trial > ahora);
+      // Las cuentas que no aplican igual se marcan: si no, se quedan
       // tapando la cabeza de la cola corrida tras corrida.
-      if (!tieneTienda) { marcar.push(d.ref); continue; }
+      if (!tieneTienda || !activo) { marcar.push(d.ref); continue; }
       if (targets.length >= MAX_WARM) break;
       targets.push(d.id); marcar.push(d.ref);
     }

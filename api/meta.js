@@ -1026,7 +1026,7 @@ Analizá el anuncio FULL y devolvé el JSON. Sé específico y útil — no des 
 export const config = { api: { bodyParser: { sizeLimit: "50mb" } } };
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||_o.endsWith("-soluna1.vercel.app")||_o.startsWith("http://localhost"))?_o:"https://www.growithapp.com"); } // allowlist CORS
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -1047,16 +1047,24 @@ export default async function handler(req, res) {
       // así que re-extendemos a los 40 días y el token nunca llega a vencer.
       // System User Tokens (pegados a mano) no vencen — se saltean.
       const tokensRefreshed = [];
+      // Deadline global: con cientos de cuentas el loop secuencial viejo no
+      // terminaba nunca dentro del maxDuration y dejaba de evaluar reglas en silencio.
+      const cronDeadline = Date.now() + 48000;
       try {
         const accsSnap = await db.collectionGroup("meta_accounts").get();
         const now = Date.now();
-        for (const d of accsSnap.docs) {
+        const aRefrescar = accsSnap.docs.filter(d => {
           const a = d.data() || {};
-          if (!a.access_token || a.token_invalid) continue;
+          if (!a.access_token || a.token_invalid) return false;
           const isOauth = a.oauth === true || String(a.last_test?.msg || "").includes("OAuth");
-          if (!isOauth) continue;
+          if (!isOauth) return false;
           const baseTs = Date.parse(a.token_refreshed_at || a.connected_at || a.created_at || "") || 0;
-          if (!baseTs || (now - baseTs) < 40 * 86400000) continue;
+          return baseTs && (now - baseTs) >= 40 * 86400000;
+        });
+        // Lotes de 5 en paralelo (antes: uno por uno)
+        for (let i = 0; i < aRefrescar.length && Date.now() < cronDeadline; i += 5) {
+          await Promise.all(aRefrescar.slice(i, i + 5).map(async d => {
+          const a = d.data() || {};
           try {
             const r = await fetch(
               `https://graph.facebook.com/${META_V}/oauth/access_token?grant_type=fb_exchange_token&client_id=${process.env.META_APP_ID}&client_secret=${process.env.META_APP_SECRET}&fb_exchange_token=${a.access_token}`,
@@ -1076,6 +1084,7 @@ export default async function handler(req, res) {
               await d.ref.set({ token_invalid: true, last_test: { ok: false, ts: new Date().toISOString(), msg: `Token vencido: ${j.error.message}`.slice(0, 200) } }, { merge: true });
             }
           } catch (e) { console.warn("[cron-token-refresh]", d.ref.path, e.message); }
+          }));
         }
       } catch (e) { console.warn("[cron-token-refresh] sweep failed:", e.message); }
 
@@ -1088,7 +1097,11 @@ export default async function handler(req, res) {
         if (data.acc_id) tasks.set(`${ownerUid}|${data.acc_id}`, { uid: ownerUid, accId: data.acc_id });
       });
       const summary = [];
-      for (const { uid: u, accId } of tasks.values()) {
+      const lista = [...tasks.values()];
+      // Lotes de 4 en paralelo con deadline (antes: secuencial y sin corte)
+      for (let i = 0; i < lista.length; i += 4) {
+        if (Date.now() > cronDeadline) { summary.push({ truncado: true, sinEvaluar: lista.length - i }); break; }
+        await Promise.all(lista.slice(i, i + 4).map(async ({ uid: u, accId }) => {
         try {
           const r = await evaluateRulesForAccount(db, u, accId);
           summary.push({ uid: u, accId, ...r });
@@ -1100,6 +1113,7 @@ export default async function handler(req, res) {
         } catch (e) {
           summary.push({ uid: u, accId, error: e.message });
         }
+        }));
       }
       return res.json({ ok: true, ran: tasks.size, tokens_refreshed: tokensRefreshed.length, summary });
     } catch (e) {

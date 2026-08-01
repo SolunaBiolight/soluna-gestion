@@ -148,7 +148,7 @@ export default async function handler(req, res) {
         const cur = toDate(u.planExpiry);
         if (cur && cur > now) base = cur;
         const exp = addMonths(base, meses);
-        tx.update(userRef, { plan, planExpiry: exp, isTrial: false, planActivadoBy: "auto-tron", planActivadoAt: now });
+        tx.update(userRef, { plan, planExpiry: exp, isTrial: false, cancelAtPeriodEnd: false, planActivadoBy: "auto-tron", planActivadoAt: now });
         tx.update(p.ref, { estado: "confirmado", mesesConfirmados: meses, confirmadoBy: "auto-tron", confirmadoAt: now, txMatch: match.txid, txFrom: match.from });
         return exp;
       });

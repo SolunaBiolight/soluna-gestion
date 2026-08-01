@@ -44,10 +44,10 @@ function verifyState(stateRaw) {
     } catch (_) {}
     return null; // venía con formato firmado pero la firma no valida
   }
-  // LEGACY: state = uid en claro (frontend sin actualizar). Borrar cuando el
-  // front firme el state — hasta entonces el CSRF de vinculación sigue abierto.
-  console.warn("[tn-callback] state sin firma (frontend legacy)");
-  return raw || null;
+  // El formato legacy (state = uid en claro) queda RECHAZADO: permitía CSRF de
+  // vinculación (completar el OAuth de tu tienda contra la cuenta de otro).
+  console.warn("[tn-callback] state sin firma — rechazado");
+  return null;
 }
 
 export default async function handler(req, res) {
@@ -79,8 +79,7 @@ export default async function handler(req, res) {
 
   console.log("[tn-callback] method:", req.method);
   console.log("[tn-callback] url:", req.url);
-  console.log("[tn-callback] code:", code ? code.slice(0,8)+"..." : "MISSING");
-  console.log("[tn-callback] state:", state ? state.slice(0,12)+"..." : "MISSING");
+  console.log("[tn-callback] code:", code ? "presente" : "MISSING", "state:", state ? "presente" : "MISSING");
 
   if (!code || !state) {
     console.error("[tn-callback] Faltan parámetros — query:", JSON.stringify(req.query), "url:", req.url);
@@ -107,7 +106,8 @@ export default async function handler(req, res) {
     });
 
     const tokenText = await tokenRes.text();
-    console.log("[tn-callback] token status:", tokenRes.status, "body:", tokenText.slice(0,300));
+    // OJO: no loguear el body — contiene el access_token de la tienda en claro
+    console.log("[tn-callback] token status:", tokenRes.status);
 
     if (!tokenRes.ok) {
       return res.redirect(`${APP_URL}?tn_error=token_failed&status=${tokenRes.status}`);
