@@ -695,7 +695,7 @@ function NewOrgModal({T, onClose, onCreate, existingCount, userPlan}) {
         ) : (
           <>
             <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:5}}>Nombre</label>
-            <input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder='Ej. "Inditropic" o "Soluna"'
+            <input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder='Ej. "Mi Tienda" o "Mi Marca"'
               maxLength={40}
               style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:10,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",marginBottom:16}}/>
 
@@ -2104,9 +2104,13 @@ function Badge({T, colors, children, small}) {
 }
 
 function LensDots({productos}) {
+  // Mapa de SKUs específico de Soluna: si ningún producto matchea (cualquier
+  // otro cliente), no se renderiza nada — cero ruido multi-tenant.
+  const colors = getLensColors(productos);
+  if (!colors.length) return null;
   return (
     <span style={{display:"inline-flex",gap:4,alignItems:"center"}}>
-      {getLensColors(productos).map((c,i)=>(
+      {colors.map((c,i)=>(
         <span key={i} style={{width:10,height:10,borderRadius:"50%",background:LENTE_DOT[c]||"#888"}} title={c}/>
       ))}
     </span>
@@ -2194,7 +2198,7 @@ function BtnPurple(T) { return {border:`1.5px solid ${T.purple}55`,borderRadius:
 // Botón ✕ estándar para cerrar modales y drawers
 function ModalCloseBtn({T, onClick, disabled}) {
   return (
-    <button onClick={onClick} disabled={disabled} style={{background:"transparent",border:"none",color:T.textMd,cursor:disabled?"not-allowed":"pointer",fontSize:18,padding:"4px 6px",lineHeight:1,borderRadius:6,flexShrink:0,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",transition:"color 0.15s"}}
+    <button onClick={onClick} disabled={disabled} aria-label="Cerrar" title="Cerrar" style={{background:"transparent",border:"none",color:T.textMd,cursor:disabled?"not-allowed":"pointer",fontSize:18,padding:"4px 6px",lineHeight:1,borderRadius:6,flexShrink:0,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",transition:"color 0.15s"}}
       onMouseEnter={e=>e.currentTarget.style.color=T.text}
       onMouseLeave={e=>e.currentTarget.style.color=T.textMd}>✕</button>
   );
@@ -3168,13 +3172,13 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 </div>
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6}}>Tracking envío (al cliente)</div>
                 <div style={{display:"flex",gap:8,marginBottom:6}}>
-                  <input style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px"}} value={activeR.trackingCambio||""} placeholder="Código Andreani..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingCambio:e.target.value,updatedAt:serverTimestamp()});}}/>
+                  <input key={activeR._docId+"_tc"} style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px"}} defaultValue={activeR.trackingCambio||""} placeholder="Código Andreani..." onBlur={async e=>{const v=e.target.value;if(v!==(activeR.trackingCambio||""))await updateDoc(doc(db,"reclamos",activeR._docId),{trackingCambio:v,updatedAt:serverTimestamp()});}}/>
                   {activeR.trackingCambio&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingCambio}`} target="_blank" rel="noopener noreferrer" style={{...BtnPurple(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,display:"inline-flex",alignItems:"center",gap:5}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Ver</a>}
                 </div>
                 {activeR.trackingCambio&&(<AsyncButton onClick={async()=>{const r=await authFetch(`/api/update-shipping?uid=${user?.uid}&orderId=${activeR.orderNum}&tracking=${activeR.trackingCambio}`);const d=await r.json();if(r.ok)appAlert("Tracking actualizado en TN");else appAlert("Error: "+(d.error||""));}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,marginBottom:8}}>↑ Subir a TN</AsyncButton>)}
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0018 9h-1.26A8 8 0 103 16.29"/></svg>Tracking devolución (cliente → nosotros)</div>
                 <div style={{display:"flex",gap:8}}>
-                  <input style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px",borderColor:activeR.trackingDevolucion?T.green+"88":InputStyle(T).borderColor}} value={activeR.trackingDevolucion||""} placeholder="Código Andreani del cliente..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingDevolucion:e.target.value,updatedAt:serverTimestamp()});}}/>
+                  <input key={activeR._docId+"_td1"} style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px",borderColor:activeR.trackingDevolucion?T.green+"88":InputStyle(T).borderColor}} defaultValue={activeR.trackingDevolucion||""} placeholder="Código Andreani del cliente..." onBlur={async e=>{const v=e.target.value;if(v!==(activeR.trackingDevolucion||""))await updateDoc(doc(db,"reclamos",activeR._docId),{trackingDevolucion:v,updatedAt:serverTimestamp()});}}/>
                   {activeR.trackingDevolucion&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,color:T.green,display:"inline-flex",alignItems:"center",gap:4}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Ver</a>}
                 </div>
                 {!activeR.trackingDevolucion&&<div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",alignItems:"center",gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Te avisamos cuando llegue a sucursal</div>}
@@ -3194,7 +3198,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 </div>
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0018 9h-1.26A8 8 0 103 16.29"/></svg>Tracking devolución</div>
                 <div style={{display:"flex",gap:8}}>
-                  <input style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px",borderColor:activeR.trackingDevolucion?T.green+"88":InputStyle(T).borderColor}} value={activeR.trackingDevolucion||""} placeholder="Código Andreani..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingDevolucion:e.target.value,updatedAt:serverTimestamp()});}}/>
+                  <input key={activeR._docId+"_td2"} style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px",borderColor:activeR.trackingDevolucion?T.green+"88":InputStyle(T).borderColor}} defaultValue={activeR.trackingDevolucion||""} placeholder="Código Andreani..." onBlur={async e=>{const v=e.target.value;if(v!==(activeR.trackingDevolucion||""))await updateDoc(doc(db,"reclamos",activeR._docId),{trackingDevolucion:v,updatedAt:serverTimestamp()});}}/>
                   {activeR.trackingDevolucion&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,color:T.green,display:"inline-flex",alignItems:"center",gap:4}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Ver</a>}
                 </div>
               </div>
@@ -4457,7 +4461,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   {/* Resumen global */}
                   <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:20}}>
                     {[
-                      {label:"Codigos con uso",val:rows.length,color:T.textMd},
+                      {label:"Códigos con uso",val:rows.length,color:T.textMd},
                       {label:"Ventas brutas",val:fmtARS(totalVentas),color:T.textMd},
                       {label:"Descuentos otorgados",val:"-"+fmtARS(totalDescuentos),color:T.red},
                       {label:`Neto (-MP ${mpComision}%)`,val:fmtARS(totalNeto),color:T.green},
@@ -4473,15 +4477,15 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   {/* Tabla principal */}
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflowY:"hidden",overflowX:"auto",WebkitOverflowScrolling:"touch",marginBottom:16}}>
                     <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8,minWidth:800}}>
-                      <span style={{fontSize:12,fontWeight:700,color:T.text}}>Codigos detectados en pedidos · mayor a menor usos</span>
+                      <span style={{fontSize:12,fontWeight:700,color:T.text}}>Códigos detectados en pedidos · mayor a menor usos</span>
                       <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{rows.length} codigos · {comData.totalPedidos} pedidos analizados</span>
                     </div>
                     {/* Header */}
                     <div style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 80px 110px",gap:8,padding:"9px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>
-                      <span>Codigo</span><span>Descuento TN</span><span>Usos</span><span>Influencer</span><span>Bruto</span><span style={{color:T.green}}>Neto (-MP {mpComision}%)</span><span>Comision %</span><span style={{color:T.orange}}>A pagar</span>
+                      <span>Código</span><span>Descuento TN</span><span>Usos</span><span>Influencer</span><span>Bruto</span><span style={{color:T.green}}>Neto (-MP {mpComision}%)</span><span>Comisión %</span><span style={{color:T.orange}}>A pagar</span>
                     </div>
                     {rows.map((r,i)=>{
-                      const descLabel=r.type==="percentage"?`${r.value}%`:r.type==="absolute"?`$${r.value}`:"Envio gratis";
+                      const descLabel=r.type==="percentage"?`${r.value}%`:r.type==="absolute"?`$${r.value}`:"Envío gratis";
                       return (
                         <div key={r.code} style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 80px 110px",gap:8,padding:"12px 18px",borderBottom:i<rows.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:r.usosPeriodo>0?T.green+"05":"transparent",transition:"background 0.15s"}}
                           onMouseEnter={e=>e.currentTarget.style.background=T.surface}
@@ -4504,7 +4508,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           <div style={{fontSize:13,fontWeight:700,color:r.netoRecibido>0?T.green:T.textSm}}>
                             {r.netoRecibido>0?fmtARS(r.netoRecibido):"--"}
                           </div>
-                          {/* Comision % - solo el input */}
+                          {/* Comisión % - solo el input */}
                           <div style={{display:"flex",alignItems:"center",gap:4}}>
                             <input
                               type="number" min="0" max="100" step="0.5"
@@ -4557,8 +4561,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
                   {/* Exportar CSV */}
                   <button onClick={()=>{
-                    const csvRows=rows.map(r=>`${r.code},${r.type==="percentage"?r.value+"%":r.type==="absolute"?"$"+r.value:"Envio gratis"},${r.usosPeriodo},${r.influencer||""},${r.usuario||""},${Math.round(r.ventasPeriodo)},${Math.round(r.descuentoPeriodo||0)},${Math.round(r.netoRecibido||0)},${r.comisionPct||""},${Math.round(r.comisionPagar)||""}`);
-                    const header="Codigo,Descuento TN,Usos,Influencer,Usuario,Bruto ($),Descuento cupon ($),Neto ($),Comision %,Comision a pagar ($)";
+                    const csvRows=rows.map(r=>`${r.code},${r.type==="percentage"?r.value+"%":r.type==="absolute"?"$"+r.value:"Envío gratis"},${r.usosPeriodo},${r.influencer||""},${r.usuario||""},${Math.round(r.ventasPeriodo)},${Math.round(r.descuentoPeriodo||0)},${Math.round(r.netoRecibido||0)},${r.comisionPct||""},${Math.round(r.comisionPagar)||""}`);
+                    const header="Codigo,Descuento TN,Usos,Influencer,Usuario,Bruto ($),Descuento cupon ($),Neto ($),Comisión %,Comision a pagar ($)";
                     const csv=[header,...csvRows].join("\n");
                     const a=document.createElement("a");
                     a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);
@@ -7609,7 +7613,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             </div>
             {yaExportados.length>0&&(
               <div style={{marginTop:10,padding:"8px 10px",background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:8,fontSize:12,color:T.yellow}}>
-                Atencion: {yaExportados.length} pedido{yaExportados.length>1?"s":""} ya exportado{yaExportados.length>1?"s":""}: {yaExportados.slice(0,3).map(o=>`#${o.numero}`).join(", ")}{yaExportados.length>3?` y ${yaExportados.length-3} mas`:""}
+                Atención: {yaExportados.length} pedido{yaExportados.length>1?"s":""} ya exportado{yaExportados.length>1?"s":""}: {yaExportados.slice(0,3).map(o=>`#${o.numero}`).join(", ")}{yaExportados.length>3?` y ${yaExportados.length-3} mas`:""}
               </div>
             )}
           </div>
@@ -11008,7 +11012,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const colab = primerColab;
     const linksArr = ntLinks.filter(l=>l.url.trim());
     const checkArr = ntChecklist.filter(i=>i.text.trim());
-    const creadoPor=colabMode?{email:colabMode.email,nombre:colabMode.nombre}:{email:user?.email||"",nombre:"Soluna"};
+    const creadoPor=colabMode?{email:colabMode.email,nombre:colabMode.nombre}:{email:user?.email||"",nombre:user?.displayName||user?.email?.split("@")[0]||""};
     const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,tipoContenido:ntTipoContenido||null,creadoPor,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
     setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:"",asignadoEmail:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtTipoContenido(""); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]);
@@ -11494,10 +11498,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         </a>
                       ))}
                       {!final&&(
-                        <button onClick={()=>{
-                          const link=window.prompt("Link de entrega:");
+                        <button onClick={async()=>{
+                          const link=await appPrompt("Link de entrega:");
                           if(!link?.trim()) return;
-                          const nota=window.prompt("Nota opcional:")||"";
+                          const nota=(await appPrompt("Nota opcional:"))||"";
                           tareasApi({action:"addSlotEntrega",tareaId:t._id,slotId:slot.id,link:link.trim(),nota,esFinal:true})
                             .then(()=>{toast("Entrega enviada","success");loadData(true);})
                             .catch(e=>toast("Error: "+e.message,"error"));
@@ -11889,10 +11893,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       </div>
                     )}
                     {!slotFinal&&colabMode&&slot.asignadoEmail===colabMode.email&&(
-                      <button onClick={()=>{
-                        const link=window.prompt("Link de entrega (Drive, Dropbox, etc.):");
+                      <button onClick={async()=>{
+                        const link=await appPrompt("Link de entrega (Drive, Dropbox, etc.):");
                         if(!link?.trim()) return;
-                        const nota=window.prompt("Nota opcional:")||"";
+                        const nota=(await appPrompt("Nota opcional:"))||"";
                         tareasApi({action:"addSlotEntrega",tareaId:t._id,slotId:slot.id,link:link.trim(),nota,esFinal:true})
                           .then(()=>{toast("Entrega enviada ✓","success");loadData(true);})
                           .catch(e=>toast("Error: "+e.message,"error"));
@@ -12308,7 +12312,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             {!editModeDetalle&&(
               <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginTop:6}}>
                 {kanbanSelected.asignadoNombre&&<span style={{fontSize:12,color:T.textSm}}>{kanbanSelected.asignadoNombre}</span>}
-                {kanbanSelected.creadoPor?.nombre&&kanbanSelected.creadoPor.nombre!=="Soluna"&&<span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"1px 7px",border:`1px solid ${T.border}`}}>Asignada por {kanbanSelected.creadoPor.nombre}</span>}
+                {kanbanSelected.creadoPor?.nombre&&kanbanSelected.creadoPor.nombre!==(user?.displayName||user?.email?.split("@")[0])&&<span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"1px 7px",border:`1px solid ${T.border}`}}>Asignada por {kanbanSelected.creadoPor.nombre}</span>}
                 {(kanbanSelected.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:5,padding:"2px 8px"}}><GhI n="refresh" size={10}/> {kanbanSelected.correcciones}ª corrección</span>}
               </div>
             )}
@@ -13274,7 +13278,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                               </>}
                               {!c&&(
                                 <button onClick={async()=>{
-                                  const email=prompt("Email del miembro:");
+                                  const email=await appPrompt("Email del miembro:");
                                   if(!email?.trim()) return;
                                   try{
                                     const d=await tareasApi({action:"createColaborador",nombre:nombre,email:email.trim().toLowerCase(),rol:"",telefono:""});
@@ -27606,7 +27610,7 @@ export default function App() {
     // Viewport meta for mobile
     let meta=document.querySelector('meta[name="viewport"]');
     if(!meta){meta=document.createElement("meta");meta.name="viewport";document.head.appendChild(meta);}
-    meta.content="width=device-width, initial-scale=1, maximum-scale=1";
+    meta.content="width=device-width, initial-scale=1"; // sin maximum-scale: bloquear el pinch-zoom es un problema de accesibilidad
     // Global responsive styles
     const style=document.createElement("style");
     style.textContent=`
