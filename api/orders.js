@@ -1254,7 +1254,7 @@ export default async function handler(req, res) {
         diasSinCotiz: adsBd.sinCotiz,
         feePct: adsBd.convertido>0 ? +(adsBd.feeMonto/adsBd.convertido*100).toFixed(2) : 0,
         feeMonto: +adsBd.feeMonto.toFixed(2),
-        total: +(adsBd.convertido*(1+feeAd)).toFixed(2),
+        total: +(adsBd.convertido + adsBd.feeMonto).toFixed(2), // convertido + fees por cuenta (feeAd global ya no aplica)
       } : null;
 
       // engineV: versión del motor de métricas. Se sube cuando cambia la DEFINICIÓN
