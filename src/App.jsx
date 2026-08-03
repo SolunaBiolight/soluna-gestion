@@ -15958,6 +15958,15 @@ function ColaboradorBoardView({T, boardToken}) {
 // ===========================================
 // APP ARCA — Facturación electrónica AFIP
 // ===========================================
+// Colores/labels de plataforma — único lugar donde viven estos hex (antes duplicados por todo AppArca)
+const PLATFORM = {
+  tiendanube:   { color: "#2D8DF2", label: "Tienda Nube",   abbr: "TN" },
+  shopify:      { color: "#96BF48", label: "Shopify",       abbr: "SH" },
+  mercadolibre: { color: "#FFE600", label: "Mercado Libre", abbr: "ML" },
+};
+// Compat: ids viejos de tab (pendientes/manual/historico/metricas/cuits) → ids nuevos
+const ARCA_TAB_MAP = { pendientes: "facturar", manual: "facturar", historico: "registros", metricas: "resumen", cuits: "config" };
+
 function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [cuits, setCuits] = useState([]);
   const [cuitSel, setCuitSel] = useState(null);
@@ -15997,7 +16006,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   // Test conexión con ARCA del CUIT activo
   const [testingConn, setTestingConn] = useState(false);
-  const [testConnResult, setTestConnResult] = useState(null);
 
   // Dashboard del CUIT activo (stats del mes)
   const [dashboardStats, setDashboardStats] = useState(null);
@@ -16025,15 +16033,23 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // cualquier filtro o cambiar el período para no quedar en una página vacía.
   const [pendPage, setPendPage] = useState(1);
   useEffect(()=>{ setPendPage(1); },[canalSel, metodoPagoSel, montoMin, montoMax, busquedaPend, periodoModo, fechaDesde, fechaHasta, cuitSel]);
-  const [showManualUpload, setShowManualUpload] = useState(false);
 
-  // Totales del mes corriente (fetch independiente del filtro del calendario)
-
-  // Historial de batches (facturaciones recientes)
+  // Registros: lotes de facturación + notas de crédito del mes navegado
   const [batches, setBatches] = useState([]);
+  const [batchesLoading, setBatchesLoading] = useState(false);
+  const [ncs, setNcs] = useState([]);
   const [expandedBatch, setExpandedBatch] = useState(null);
   const [batchPdfs, setBatchPdfs] = useState({}); // {batchId: [pdfs]}
   const [loadingBatchPdfs, setLoadingBatchPdfs] = useState(null);
+  // Filtros y vista de Registros
+  const [regView, setRegView] = useState("lotes");      // "lotes" | "comprobantes"
+  const [regSub, setRegSub] = useState("facturas");     // "facturas" | "ncs"
+  const [regLetra, setRegLetra] = useState("");         // "" | "A" | "B" | "C"
+  const [regPv, setRegPv] = useState("");               // "" | número de PV
+  const [regOrigen, setRegOrigen] = useState("");       // "" | "tn" | "ml" | "manual" | "recuperado"
+  const [regBusq, setRegBusq] = useState("");
+  // "Adjuntar pendientes a ML" tiene su propio flag (antes compartía `emitting`)
+  const [attachingML, setAttachingML] = useState(false);
 
   // Modal facturación manual (mayoristas, etc)
   const [showManual, setShowManual] = useState(false);
@@ -16053,13 +16069,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [testResult, setTestResult] = useState(null);
 
   // Facturar
-  const [archivo, setArchivo] = useState(null);
-  const [parsing, setParsing] = useState(false);
   const [ordenes, setOrdenes] = useState(null);
   const [productos, setProductos] = useState([]);
   const [productMap, setProductMap] = useState({});
   const [emitting, setEmitting] = useState(false);
   const [resyncing, setResyncing] = useState(false); // "Recuperar desde AFIP" en curso
+  const [resyncMsg, setResyncMsg] = useState(""); // progreso por ronda (AFIP tarda ~1min por ronda)
   const [showEmitModal, setShowEmitModal] = useState(false);
   const [duplicatesInModal, setDuplicatesInModal] = useState(null); // array|null
   const [emitProgress, setEmitProgress] = useState({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
@@ -16079,6 +16094,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   useEffect(()=>{ setPvEmit(null); }, [cuitSel]); // reset al cambiar de CUIT
 
   const uid = user?.uid;
+  // Tab activo normalizado: ids viejos (pendientes/manual/historico/metricas/cuits)
+  // se mapean a los nuevos (facturar/registros/resumen/config) para compat.
+  const tab = ARCA_TAB_MAP[sidebarTab] || sidebarTab || "facturar";
   const cuitActivo = cuits.find(c => c.cuit === cuitSel);
   // Puntos de venta disponibles: el físico (por defecto) + los adicionales cargados.
   const pvsDisponibles = cuitActivo ? [
@@ -16124,13 +16142,18 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   },[uid]);
 
   useEffect(()=>{
-    if(!uid || !cuitSel) { setDashboardStats(null); setBatches([]); setTnData(null); return; }
+    if(!uid || !cuitSel) { setDashboardStats(null); setBatches([]); setNcs([]); setTnData(null); return; }
     api("dashboard_stats","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}).then(d=>{
       if(!d.error) setDashboardStats(d);
     });
-    api("list_batches","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}).then(d=>{
-      if(!d.error) setBatches(d.batches||[]);
-    });
+    setBatchesLoading(true);
+    Promise.all([
+      api("list_batches","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}),
+      api("list_ncs","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}),
+    ]).then(([b,n])=>{
+      if(!b.error) setBatches(b.batches||[]);
+      if(!n.error) setNcs(n.ncs||[]);
+    }).finally(()=>setBatchesLoading(false));
   },[uid, cuitSel, dashMonth, dashYear]);
 
 
@@ -16555,6 +16578,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     if(!d.error) setDashboardStats(d);
     const b = await api("list_batches","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
     if(!b.error) setBatches(b.batches||[]);
+    const n = await api("list_ncs","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
+    if(!n.error) setNcs(n.ncs||[]);
   }
 
   // Recuperar desde AFIP los comprobantes emitidos que no quedaron registrados
@@ -16570,6 +16595,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       let total = 0, rondas = 0, d = null, cursor = null;
       const porPv = {};
       do {
+        setResyncMsg(`Consultando AFIP — ronda ${rondas+1}${total?` · ${total} recuperados`:""}…`);
         d = await api("resync_afip","POST",{cuit:cuitSel, ...(cursor?{cursor}:{})});
         if(d.error){ toast("Error: "+d.error,"error"); return; }
         total += d.recuperados||0; rondas++;
@@ -16589,7 +16615,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       }
     } catch(e) {
       toast("Error: "+(e?.message||"no se pudo consultar AFIP"),"error");
-    } finally { setResyncing(false); }
+    } finally { setResyncing(false); setResyncMsg(""); }
   }
 
   async function loadBatchPdfs(batch) {
@@ -16636,23 +16662,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   async function handleTestConnection() {
     if(!cuitSel) return toast("Seleccioná un CUIT primero","warning");
-    setTestingConn(true); setTestConnResult(null);
+    setTestingConn(true);
     const d = await api("test_cuit","POST",null,{cuit:cuitSel});
-    if(d.error){
-      setTestConnResult({ok:false, msg:d.error});
-      toast("Error de conexión","error");
-    } else {
-      setTestConnResult({ok:true, msg:`Último comprobante B autorizado: ${d.ultimo_b}`});
-      toast("Conexión con ARCA OK ✓","success");
-    }
+    if(d.error) toast("Error de conexión: "+d.error,"error");
+    else toast(`Conexión con ARCA OK ✓ · Último comprobante B: ${d.ultimo_b}`,"success");
     setTestingConn(false);
-    setTimeout(()=>setTestConnResult(null), 8000);
-  }
-
-  function resetManual() {
-    setShowManual(false); setManualNombre(""); setManualDocTipo("CUIT");
-    setManualDocNro(""); setManualItems([{nombre:"",cantidad:1,precio:0}]);
-    setManualResult(null);
   }
 
   async function handleEmitManual() {
@@ -16692,18 +16706,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     if(r?.ok) { toast(`Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")} emitida ✓`,"success"); refreshDashboard(); itemsValid.forEach(it=>saveConcepto(it.nombre.trim())); }
     else toast("Error: "+(r?.obs||"falló la emisión"),"error");
     setEmittingManual(false);
-  }
-
-  async function handleParseFile() {
-    if(!archivo) return toast("Seleccioná un archivo","warning");
-    if(!cuitSel) return toast("Seleccioná un CUIT emisor","warning");
-    setParsing(true); setOrdenes(null); setResultados(null); setPdfs([]);
-    const fd = new FormData(); fd.append("file", archivo);
-    const d = await fetch(`/api/arca?action=parse&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
-    if(d.error){toast(d.error,"error");setParsing(false);return;}
-    setOrdenes(d.ordenes); setProductos(d.productos||[]);
-    setProductMap(Object.fromEntries((d.productos||[]).map(p=>[p,""])));
-    toast(d.total+" órdenes listas para facturar","success"); setParsing(false);
   }
 
   async function handleEmit(skipDupCheck=false) {
@@ -16783,8 +16785,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
 
   function downloadPDF(pdf) { const a=document.createElement("a"); a.href="data:application/pdf;base64,"+pdf.bytes; a.download=pdf.nombre; a.click(); }
-  function downloadAllPDFs() { pdfs.forEach((pdf,i)=>setTimeout(()=>downloadPDF(pdf),i*300)); }
-  function closeModal() { setShowEmitModal(false); setOrdenes(null); setResultados(null); setPdfs([]); setArchivo(null); setDuplicatesInModal(null); }
+  function closeModal() { setShowEmitModal(false); setOrdenes(null); setResultados(null); setPdfs([]); setDuplicatesInModal(null); }
 
   if(loading) return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
@@ -16918,7 +16919,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 {[
                   {step:"1",title:"Tocá 'Conectar CUIT' y completá tus datos",desc:"El wizard te pide CUIT, razón social, condición frente al IVA (Responsable Inscripto o Monotributista) y punto de venta. Necesitás clave fiscal nivel 3 en ARCA y estar inscripto como RI o Monotributo (no Consumidor Final).",color:T.accent},
                   {step:"2",title:"Generá tu certificado (modo automático)",desc:"Growith genera por vos un par RSA-2048 directamente en tu navegador — la clave privada nunca sale de tu computadora hasta que termines. Te da un CSR para copiar/pegar en ARCA (Administración de Certificados Digitales → Nuevo) y guardás el .key como backup. ARCA te devuelve un .crt que subís en el wizard, y listo. Si ya tenés tus archivos, hay modo manual para subir .crt y .key directo.",color:T.blue},
-                  {step:"3",title:"Subí tus ventas para facturar",desc:"Descargá el reporte de ventas desde tu plataforma: en Mercado Libre es un archivo Excel (.xlsx) que bajás desde Ventas → Facturación, y en Shopify es un CSV que exportás desde Orders. Arrastrá ese archivo en la zona de carga y Growith lo procesa automáticamente: identifica cada cliente, el monto, y prepara las facturas.",color:T.yellow},
+                  {step:"3",title:"Elegí las ventas a facturar",desc:"Conectá Tienda Nube, Shopify o Mercado Libre desde Config y Growith trae solo tus ventas pagas automáticamente — sin subir archivos. En la pestaña Facturar las ves unificadas con cliente, CUIT/DNI y monto ya detectados: tildás las que querés y listo. También podés emitir una factura manual para ventas por fuera de tus tiendas.",color:T.yellow},
                   {step:"4",title:"Emití y descargá los PDFs",desc:"Revisá la previsualización de las facturas. Podés renombrar los productos si querés que aparezcan distinto en el comprobante. Tocá 'Emitir' y en segundos tenés todas las facturas con CAE válido emitidas en ARCA. Descargá los PDFs uno por uno o todos juntos en un click.",color:T.green},
                 ].map(s=>(
                   <div key={s.step} style={{display:"flex",gap:12,padding:18,background:T.card,borderRadius:12,border:"1px solid "+T.border}}>
@@ -16944,8 +16945,19 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           <>
             {/* ══ CON CUITs → PANEL PRINCIPAL ══ */}
 
+            {/* ── Tabs internos (componente estándar) ── */}
+            <div style={{marginBottom:20}}>
+              <AppTabs T={T} active={tab} onChange={id=>setSidebarTab&&setSidebarTab(id)}
+                tabs={[
+                  {id:"facturar",  label:"Facturar"},
+                  {id:"registros", label:"Registros"},
+                  {id:"resumen",   label:"Resumen"},
+                  {id:"config",    label:"Configuración"},
+                ]}/>
+            </div>
+
             {/* GUÍA ¿Cómo funciona? — mismo patrón chico y discreto que el resto de las secciones */}
-            <div style={{marginBottom:16,display:(sidebarTab==="metricas"||sidebarTab==="pendientes"||!sidebarTab)?"block":"none"}}>
+            <div style={{marginBottom:16,display:(tab==="resumen"||tab==="facturar")?"block":"none"}}>
               <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
               </button>
@@ -16954,11 +16966,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:20}}>
                     {[
                       {step:"1",title:"Conectá tus tiendas y tu CUIT",desc:"Desde Config conectá Tienda Nube, Shopify y Mercado Libre — Growith trae las órdenes pagas automáticamente, sin necesidad de subir Excel. Después, arriba a la derecha: selector de CUIT → '+ Conectar nuevo CUIT'. El wizard de 3 pasos te guía con tus datos fiscales, generación del certificado (Growith arma el par RSA, te da el CSR para subir a ARCA → ARCA te devuelve un .crt que cargás acá) y verificación. Si ya tenés un certificado emitido con su clave privada, hay un modo manual para pegarlos directo.",color:T.accent},
-                      {step:"2",title:"Revisá las ventas pendientes",desc:"En la pestaña 'Pendientes' aparecen unificadas todas las ventas de TN, Shopify y ML que todavía no facturaste. Filtrá por canal, período (mes actual o anterior, retroactivo), rango de monto o estado de pago. Growith ya detectó CUIT/DNI, dirección, productos y armó la condición IVA del receptor (RG 5616, obligatorio desde 01/06/2026). Tildá las que querés facturar — el ✓ verde marca las que ya están emitidas.",color:T.blue},
-                      {step:"3",title:"Ajustá lo que necesites",desc:"Antes de emitir podés cambiar el nombre de los productos como van a aparecer en el PDF, editar la dirección del cliente, sobreescribir el tipo de comprobante (A/B/C) o imputar al mes anterior si llegaste tarde. Para Mercado Libre, el PDF se sube automáticamente como documento fiscal de la venta apenas se emite (también desde 'Adjuntar pendientes en ML' en el historial).",color:T.yellow},
-                      {step:"4",title:"Emití y descargá",desc:"Tocá 'Emitir' y Growith se conecta directo con ARCA por WSAA+WSFE: comprobante con CAE válido en segundos. Cada PDF sale con el número de CAE, su fecha de vencimiento y el QR oficial de ARCA — el cliente lo escanea con la cámara y ve en la web de ARCA que la factura está aprobada y es real. Descarga uno por uno o en zip; todo el lote queda en el historial para descargar de nuevo cuando quieras.",color:T.green},
-                      {step:"5",title:"Adjunto automático en Mercado Libre",desc:"Apenas se emite una factura de una venta de ML, Growith sube el PDF como documento fiscal de esa orden directo a Mercado Libre — el comprador ya lo ve en su detalle de compra y vos cumplís la obligación sin tocar nada. Si fallara la subida (token vencido o ML caído), podés reintentar desde 'Adjuntar pendientes en ML' en el historial.",color:T.orange||T.yellow},
-                      {step:"6",title:"¿Te equivocaste? Anulá con Nota de Crédito",desc:"Si emitiste una factura con un error (CUIT mal, monto distinto, producto cambiado), andá a 'Registros' y al lado de cada comprobante tenés el botón para emitir la Nota de Crédito que la cancela. La NC sale por el mismo monto, mismo cliente y referencia el CAE original — ARCA la deja firme y queda en tu historial enlazada a la factura original. Después podés volver a Pendientes y emitir la factura corregida.",color:T.red},
+                      {step:"2",title:"Revisá las ventas pendientes",desc:"En la pestaña 'Facturar' aparecen unificadas todas las ventas de TN, Shopify y ML que todavía no facturaste. Filtrá por canal, período (mes actual o anterior, retroactivo), rango de monto o estado de pago. Growith ya detectó CUIT/DNI, dirección, productos y armó la condición IVA del receptor (RG 5616, obligatorio desde 01/06/2026). Tildá las que querés facturar — el ✓ verde marca las que ya están emitidas.",color:T.blue},
+                      {step:"3",title:"Ajustá lo que necesites",desc:"Antes de emitir podés cambiar el nombre de los productos como van a aparecer en el PDF, editar la dirección del cliente, sobreescribir el tipo de comprobante (A/B/C) o imputar al mes anterior si llegaste tarde. Para Mercado Libre, el PDF se sube automáticamente como documento fiscal de la venta apenas se emite (también desde 'Adjuntar pendientes a ML' en Configuración).",color:T.yellow},
+                      {step:"4",title:"Emití y descargá",desc:"Tocá 'Emitir' y Growith se conecta directo con ARCA por WSAA+WSFE: comprobante con CAE válido en segundos. Cada PDF sale con el número de CAE, su fecha de vencimiento y el QR oficial de ARCA — el cliente lo escanea con la cámara y ve en la web de ARCA que la factura está aprobada y es real. Descarga uno por uno o en zip; todo queda en Registros para descargar de nuevo cuando quieras.",color:T.green},
+                      {step:"5",title:"Adjunto automático en Mercado Libre",desc:"Apenas se emite una factura de una venta de ML, Growith sube el PDF como documento fiscal de esa orden directo a Mercado Libre — el comprador ya lo ve en su detalle de compra y vos cumplís la obligación sin tocar nada. Si fallara la subida (token vencido o ML caído), podés reintentar desde 'Adjuntar pendientes a ML' en Configuración.",color:T.orange||T.yellow},
+                      {step:"6",title:"¿Te equivocaste? Anulá con Nota de Crédito",desc:"Si emitiste una factura con un error (CUIT mal, monto distinto, producto cambiado), andá a 'Registros' y al lado de cada comprobante tenés el botón para emitir la Nota de Crédito que la cancela. La NC sale por el mismo monto, mismo cliente y referencia el CAE original — ARCA la deja firme y queda en Registros enlazada a la factura original. Después podés volver a Facturar y emitir la factura corregida.",color:T.red},
                     ].map(s=>(
                       <div key={s.step} style={{display:"flex",gap:12,padding:16,background:T.bg,borderRadius:10,border:"1px solid "+T.border}}>
                         <div style={{width:32,height:32,borderRadius:8,background:s.color+"18",border:"1px solid "+s.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:s.color,flexShrink:0}}>{s.step}</div>
@@ -16980,8 +16992,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               )}
             </div>
 
-            {/* Navegador de meses del dashboard */}
-            {sidebarTab==="metricas"&&(
+            {/* Navegador de meses — compartido entre Resumen y Registros */}
+            {(tab==="resumen"||tab==="registros")&&(
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
                 <button onClick={()=>navMes(-1)} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:13}}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -16997,10 +17009,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             )}
 
             {/* Dashboard del mes */}
-            {sidebarTab==="metricas"&&(
+            {tab==="resumen"&&(
               <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:24}}>
                 {/* KPIs fila 1 */}
-                <div style={{display:"grid",gridTemplateColumns:esRI?"repeat(4,1fr)":"repeat(3,1fr)",gap:12}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
                   <KPI T={T} icon="💰" label={`Facturado · ${mesActual}`} color={T.green}
                     value={dashboardStats?"$ "+dashboardStats.total_facturado.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0}):"$ 0"}
                     sub="IVA incluido"/>
@@ -17015,52 +17027,27 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       ?`A: ${dashboardStats.por_letra.A} · B: ${dashboardStats.por_letra.B} · C: ${dashboardStats.por_letra.C}`
                       :"Sin facturas este mes"}/>
                   {(()=>{
-                    const pendCount=tnData?Object.values(tnData.ordenes||{}).filter(o=>!o.facturada).length:null;
-                    const pendTotal=tnData?Object.values(tnData.ordenes||{}).filter(o=>!o.facturada).reduce((a,o)=>a+(o.total||0),0):null;
+                    const pendCount=tnData?Object.values(tnData.ordenes||{}).filter(o=>!o._billed).length:null;
+                    const pendTotal=tnData?Object.values(tnData.ordenes||{}).filter(o=>!o._billed).reduce((a,o)=>a+(o.total||0),0):null;
                     return (
                       <KPI T={T} icon="⏳" label="Sin facturar ahora"
                         color={pendCount>0?(T.yellow||T.yellow):T.textSm}
                         accent={pendCount>0}
                         value={tnData?String(pendCount):"—"}
-                        sub={pendTotal!=null&&pendTotal>0?`$ ${pendTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})} · Tocá para facturar`:"Cargá Pendientes para ver"}
-                        onClick={pendCount>0?()=>setSidebarTab&&setSidebarTab("pendientes"):undefined}/>
+                        sub={pendTotal!=null&&pendTotal>0?`$ ${pendTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})} · Tocá para facturar`:"Cargá Facturar para ver"}
+                        onClick={pendCount>0?()=>setSidebarTab&&setSidebarTab("facturar"):undefined}/>
                     );
                   })()}
                 </div>
               </div>
             )}
 
-            {/* ── Tabs internos ── */}
-            {(()=>{
-              const TABS=[
-                {id:"pendientes", label:"Pendientes"},
-                {id:"metricas",   label:"Métricas"},
-                {id:"manual",     label:"Factura manual"},
-                {id:"historico",  label:"Registros"},
-                {id:"cuits",      label:"CUITs"},
-              ];
-              const activeTab = sidebarTab||"pendientes";
-              return (
-                <div style={{display:"flex",gap:2,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:4,marginBottom:20,overflowX:"auto"}}>
-                  {TABS.map(t=>{
-                    const isActive = activeTab===t.id;
-                    return (
-                      <button key={t.id} onClick={()=>setSidebarTab&&setSidebarTab(t.id)}
-                        style={{padding:"7px 16px",fontSize:12,fontWeight:isActive?700:500,borderRadius:DS.r.md,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:isActive?T.surface:"transparent",color:isActive?T.text:T.textSm,whiteSpace:"nowrap",transition:"all 0.15s",flexShrink:0}}>
-                        {t.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-
             {/* Zona de facturación — wrapper contiene Pendientes y Manual */}
             <div style={{display:"flex",flexDirection:"column",gap:20}}>
-              <div style={{display:(!sidebarTab||sidebarTab==="pendientes")?"block":"none"}}>
+              <div style={{display:tab==="facturar"?"block":"none"}}>
                 {/* Upload */}
                 {/* ══ VENTAS PENDIENTES (desde integraciones conectadas) ══ */}
-                <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"22px 24px",marginBottom:16}}>
+                <Card T={T} padding="xl" style={{marginBottom:16}}>
                   {/* Header */}
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:14,flexWrap:"wrap"}}>
                     <div>
@@ -17077,6 +17064,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       </div>
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                      <Btn T={T} variant="secondary" size="md" onClick={()=>setShowManual(s=>!s)}>{showManual?"✕ Cerrar factura manual":"+ Factura manual"}</Btn>
                       <DateRangePicker T={T} since={fechaDesde} until={fechaHasta} onChange={(s,u)=>{ setPeriodoModo("custom"); setFechaDesde(s); setFechaHasta(u); }}
                         presets={[
                           {id:"7d",  label:"Últimos 7 días",  days:7},
@@ -17140,15 +17128,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
                     {/* Pills de canal — selección exclusiva (un canal a la vez) */}
                     {(()=>{
-                      const canales=[
-                        {id:"tiendanube", label:"Tienda Nube", color:"#2D8DF2"},
-                        {id:"shopify", label:"Shopify", color:"#96BF48"},
-                        {id:"mercadolibre", label:"Mercado Libre", color:"#FFE600", textColor:"#1a1a1a"},
-                      ].filter(c => tienePlat(c.id));
+                      const canales=Object.entries(PLATFORM).map(([id,p])=>({id,label:p.label,color:p.color})).filter(c => tienePlat(c.id));
                       return (<>
                         {canales.map(c=>{
                           const active=canalSel===c.id;
-                          const abbr=c.id==="tiendanube"?"TN":c.id==="mercadolibre"?"ML":"SH";
+                          const abbr=PLATFORM[c.id].abbr;
                           return (
                             <button key={c.id} onClick={()=>setCanalSel(c.id)} style={{padding:"5px 12px 5px 8px",fontSize:12,fontWeight:active?700:500,borderRadius:8,border:`1.5px solid ${active?c.color:T.border}`,background:active?c.color+"18":"transparent",color:active?c.color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:7,flexShrink:0}}>
                               <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:20,height:20,borderRadius:4,background:active?c.color:c.color+"28",color:active?(c.id==="mercadolibre"?"#7a6500":"#fff"):c.color,fontSize:9,fontWeight:800,letterSpacing:0,flexShrink:0}}>{abbr}</span>
@@ -17242,9 +17226,16 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   );})()}
 
                   {tnLoading && !tnData ? (
-                    <div style={{padding:"40px 20px",textAlign:"center"}}>
-                      <Spinner size={18} color={T.accent}/>
-                      <div style={{fontSize:12,color:T.textSm,marginTop:12}}>Trayendo tus ventas...</div>
+                    <div style={{position:"relative",overflow:"hidden",borderRadius:10}}>
+                      {[1,2,3,4,5].map(i=>(
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderBottom:`1px solid ${T.borderL}`}}>
+                          <div style={{width:14,height:14,background:T.surface,borderRadius:4,flexShrink:0}}/>
+                          <div style={{height:10,width:60,background:T.surface,borderRadius:4,flexShrink:0}}/>
+                          <div style={{height:10,flex:1,background:T.surface,borderRadius:4}}/>
+                          <div style={{height:10,width:70,background:T.surface,borderRadius:4,flexShrink:0}}/>
+                        </div>
+                      ))}
+                      <div style={{position:"absolute",inset:0,background:`linear-gradient(90deg, transparent, ${T.border}40, transparent)`,backgroundSize:"200% 100%",animation:"growith-shimmer 1.6s infinite"}}/>
                     </div>
                   ) : !tnData?.connected ? (
                     <div style={{padding:"20px 16px",background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:8,display:"flex",alignItems:"flex-start",gap:10}}>
@@ -17272,24 +17263,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               <div style={{fontSize:28,marginBottom:8}}>✅</div>
                               <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>Todo facturado en el período</div>
                               <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>{itemsBilled.length} {itemsBilled.length===1?"venta facturada":"ventas facturadas"} · cambiá el período para ver más</div>
-                              <details style={{textAlign:"left"}}>
-                                <summary style={{cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600,padding:"8px 12px",background:T.card,borderRadius:8,border:`1px solid ${T.border}`,listStyle:"none",display:"inline-flex",alignItems:"center",gap:6}}>
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-                                  Ver {itemsBilled.length} ya facturadas
-                                </summary>
-                                <div style={{marginTop:8,borderRadius:10,border:`1px solid ${T.border}`,overflow:"hidden"}}>
-                                  {itemsBilled.map(([id,o])=>(
-                                    <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`,background:T.green+"08"}}>
-                                      <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:14,height:14,borderRadius:4,background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
-                                      <div style={{flex:1,minWidth:0}}>
-                                        <div style={{fontSize:12,fontWeight:600,color:T.green,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>#{id} · {o.nombre||"sin nombre"}</div>
-                                        <div style={{fontSize:10,color:T.textSm}}>Factura {o._billed_info?.letra} N°{String(o._billed_info?.nro||"").padStart(8,"0")}</div>
-                                      </div>
-                                      <div style={{fontSize:12,fontWeight:700,color:T.green,flexShrink:0}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </details>
+                              <button onClick={()=>setSidebarTab&&setSidebarTab("registros")} style={{background:"transparent",border:"none",cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",padding:0}}>
+                                Ver las {itemsBilled.length} facturadas en Registros →
+                              </button>
                             </>
                           ) : (
                             <>
@@ -17329,7 +17305,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const billedMonto = itemsBilled.reduce((s,[,o])=>s+(o.total||0),0);
                     const pctOrdenes  = mesTotal > 0 ? Math.round(itemsBilled.length / mesTotal * 100) : 0;
                     const pctMonto    = mesMonto > 0 ? Math.round(billedMonto / mesMonto * 100) : 0;
-                    const badgeColor = (plat) => plat === "shopify" ? "#96BF48" : plat === "mercadolibre" ? "#FFE600" : T.blue;
+                    const badgeColor = (plat) => PLATFORM[plat]?.color || T.blue;
                     const badgeTextColor = (plat) => plat === "mercadolibre" ? "#333" : "#fff";
                     const fmtFechaHora = (iso) => {
                       if (!iso) return "—";
@@ -17392,7 +17368,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             const fechaHora = fmtFechaHora(o.fecha);
                             const tipoFact = esMono ? "C" : (o.doc_tipo === "CUIT" ? "A" : "B");
                             const plat = o._platform;
-                            const label = o._platform_label || (plat==="tiendanube"?"TN":plat==="shopify"?"SH":plat==="mercadolibre"?"ML":"—");
+                            const label = o._platform_label || PLATFORM[plat]?.abbr || "—";
                             const bg = billed ? T.green+"18" : wasAnulada ? T.textSm+"15" : sel ? T.accentSolid+"10" : "transparent";
                             const bord = billed ? "1px solid "+T.green+"33" : wasAnulada ? "1px solid "+T.textSm+"33" : "1px solid "+T.borderL;
                             return (
@@ -17427,28 +17403,15 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <button disabled={page>=totalPages} onClick={()=>setPendPage(page+1)} style={{...BtnSecondary(T),padding:"6px 14px",fontSize:12,opacity:page>=totalPages?0.4:1,cursor:page>=totalPages?"not-allowed":"pointer"}}>Siguiente ›</button>
                           </div>
                         )}
-                        {/* Sección colapsada: órdenes ya facturadas en el período */}
+                        {/* Ya facturadas del período: el detalle vive en Registros */}
                         {itemsBilled.length>0&&(
-                          <details style={{marginTop:8}}>
-                            <summary style={{cursor:"pointer",display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:T.green+"0d",border:`1px solid ${T.green}33`,borderRadius:8,listStyle:"none",fontSize:12,fontWeight:600,color:T.green,userSelect:"none"}}>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-                              {itemsBilled.length} ya facturadas en el período
-                              <span style={{marginLeft:"auto",fontSize:11,fontWeight:400,color:T.textSm}}>$ {itemsBilled.reduce((s,[,o])=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span>
-                            </summary>
-                            <div style={{borderRadius:"0 0 8px 8px",border:`1px solid ${T.border}`,borderTop:"none",overflow:"hidden",maxHeight:280,overflowY:"auto"}}>
-                              {itemsBilled.map(([id,o])=>(
-                                <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`,background:T.green+"06",opacity:0.85}}>
-                                  <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:14,height:14,borderRadius:4,background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
-                                  <span style={{fontSize:10,color:T.textSm,minWidth:64}}>{fmtFechaHora(o.fecha)}</span>
-                                  <div style={{flex:1,minWidth:0}}>
-                                    <div style={{fontSize:12,fontWeight:600,color:T.green,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>#{id} · {o.nombre||"sin nombre"}</div>
-                                    <div style={{fontSize:10,color:T.textSm}}>F{o._billed_info?.letra} N°{String(o._billed_info?.nro||"").padStart(8,"0")}</div>
-                                  </div>
-                                  <div style={{fontSize:12,fontWeight:700,color:T.green,flexShrink:0}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </details>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8,padding:"8px 12px",background:T.green+"0d",border:`1px solid ${T.green}33`,borderRadius:8,fontSize:12}}>
+                            <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:14,height:14,borderRadius:4,background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
+                            <span style={{color:T.green,fontWeight:600}}>{itemsBilled.length} ya facturadas en el período · $ {itemsBilled.reduce((s,[,o])=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span>
+                            <button onClick={()=>setSidebarTab&&setSidebarTab("registros")} style={{marginLeft:"auto",background:"transparent",border:"none",cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",padding:0,whiteSpace:"nowrap"}}>
+                              Ver las {itemsBilled.length} facturadas en Registros →
+                            </button>
+                          </div>
                         )}
 
 
@@ -17492,7 +17455,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     );
                   })()}
 
-                </div>
+                </Card>
 
               </div>
 
@@ -17718,19 +17681,22 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             )}
             </div>
 
-            {/* ══ FACTURA MANUAL — formulario inline (sólo tab Manual) ══ */}
-            <div style={{display:sidebarTab==="manual"?"block":"none",marginTop:0}}>
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"22px 26px"}}>
-                <div style={{marginBottom:18}}>
-                  <div style={{fontSize:18,fontWeight:800,color:T.text}}>Emitir factura manual</div>
-                  <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Para ventas fuera de tus integraciones (mayoristas, venta directa, etc.)</div>
+            {/* ══ FACTURA MANUAL — panel colapsable dentro de Facturar ══ */}
+            <div style={{display:(tab==="facturar"&&showManual)?"block":"none",marginTop:0}}>
+              <Card T={T} padding="xl" style={{marginTop:16}}>
+                <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:18}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:18,fontWeight:800,color:T.text}}>Emitir factura manual</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Para ventas fuera de tus integraciones (mayoristas, venta directa, etc.)</div>
+                  </div>
+                  <ModalCloseBtn T={T} onClick={()=>setShowManual(false)} disabled={emittingManual}/>
                 </div>
 
                 {!manualResult ? (
                   <>
                     {/* Cliente */}
                     <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+T.borderL}}>Cliente</div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:8}}>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12,marginBottom:8}}>
                       <div>
                         <label style={labelS}>Nombre / Razón social</label>
                         <input value={manualNombre} onChange={e=>setManualNombre(e.target.value)} placeholder="Distribuidora SRL" style={iS}/>
@@ -17826,106 +17792,350 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </div>
                   </>
                 )}
-              </div>
+              </Card>
             </div>
 
             {/* ══ REGISTROS — sólo tab Registros ══ */}
             {/* Se renderiza aunque no haya lotes: si faltan registros (guardado
-                post-CAE fallido) el botón "Recuperar desde AFIP" es la salida. */}
+                post-CAE fallido) el link "Recuperar desde AFIP" del empty state es la salida. */}
             {cuitSel && (
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"20px 22px",marginTop:24,display:sidebarTab==="historico"?"block":"none"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
-                  <div>
-                    <div style={{fontSize:14,fontWeight:700,color:T.text}}>📚 Registros</div>
-                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Cada lote es un apartado. Click para ver el detalle, descargar PDFs o anular con Nota de Crédito.</div>
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:14}}>
-                    <button onClick={recuperarDesdeAfip} disabled={resyncing||!cuitSel} title="Consulta AFIP y reconstruye los comprobantes emitidos que no figuren en Registros (no pisa ni duplica nada)" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",cursor:resyncing?"wait":"pointer"}}>
-                      {resyncing ? <><Spinner size={11} color={T.text}/> Consultando AFIP…</> : "↺ Recuperar desde AFIP"}
-                    </button>
-                    <button onClick={async()=>{
-                      if(!cuitSel) return;
-                      if(!await appConfirm("Esto va a regenerar el PDF de cada factura de ML pendiente y subirla a la venta en Mercado Libre. ¿Continuar?",{okLabel:"Continuar"})) return;
-                      setEmitting(true);
-                      const d = await api("attach_ml_pending","POST",{cuit:cuitSel});
-                      setEmitting(false);
-                      if(d.error){toast("Error: "+d.error,"error");return;}
-                      if(d.total === 0){toast(d.message||"Sin facturas pendientes","info");return;}
-                      const errMsg = d.errors?.length>0 ? ` · ${d.errors.length} con error` : "";
-                      toast(`${d.uploaded}/${d.total} facturas adjuntadas en ML${errMsg}`, d.errors?.length>0?"warning":"success");
-                      refreshDashboard();
-                    }} disabled={emitting||!cuitSel} title="Adjuntar a ML las facturas que todavía no se subieron" style={{background:"#FFE600",border:"1px solid #FFE60055",color:"#333",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:emitting?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
-                      🟡 Adjuntar pendientes a ML
-                    </button>
-                    <div style={{textAlign:"right"}}>
-                      <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.4}}>Total facturado · histórico</div>
-                      <div style={{fontSize:16,fontWeight:800,color:T.text}}>$ {batches.reduce((s,b)=>s+(b.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
-                    </div>
-                  </div>
-                </div>
-                {batches.length===0 && (
-                  <div style={{fontSize:12,color:T.textSm,padding:"10px 2px"}}>No hay registros para este mes. Si emitiste facturas y no aparecen acá, tocá «↺ Recuperar desde AFIP» para reconstruirlas desde ARCA.</div>
-                )}
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(380px, 1fr))",gap:14}}>
-                  {batches.map(b=>{
-                    const fechaStr = b.emitido_at ? new Date(b.emitido_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
-                    const isExpanded = expandedBatch === b.batch_id;
-                    return (
-                      <div key={b.batch_id} style={{border:`1px solid ${isExpanded?T.accent+"55":T.border}`,borderRadius:14,overflow:"hidden",background:isExpanded?T.surface:T.card,transition:"all 0.18s ease",boxShadow:isExpanded?`0 4px 18px ${T.accentSolid}22`:"0 1px 3px rgba(0,0,0,0.08)"}}>
-                        <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 16px",cursor:"pointer"}} onClick={()=>setExpandedBatch(isExpanded ? null : b.batch_id)}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:isExpanded?"rotate(90deg)":"none",transition:"transform 0.15s",flexShrink:0}}><path d="M9 18l6-6-6-6"/></svg>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{fechaStr}</div>
-                            <div style={{fontSize:11,color:T.textSm}}>{b.cantidad} factura{b.cantidad===1?"":"s"} · {b.batch_id}</div>
-                          </div>
-                          <div style={{fontSize:14,fontWeight:700,color:T.text,marginRight:8}}>$ {(b.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
-                          <button onClick={(e)=>{e.stopPropagation();anularLoteCompleto(b);}} title="Emite NC por cada factura del lote para anularlas todas" style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
-                            🔄 Anular lote
-                          </button>
-                          <button onClick={(e)=>{e.stopPropagation();downloadBatchZip(b);}} style={{background:T.accent,border:"none",color:"#fff",borderRadius:6,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>
-                            {loadingBatchPdfs===b.batch_id ? <><Spinner size={10} color="#fff"/> ZIP</> : "⬇ ZIP"}
-                          </button>
+              <div style={{marginTop:0,display:tab==="registros"?"block":"none"}}>
+                {(()=>{
+                  // ── Origen derivado de orden_id ──
+                  const origenDe = (r) => {
+                    const oid = String(r.orden_id||"");
+                    if (r.recuperado_afip || !r.orden_id || oid.startsWith("N° ")) return "recuperado";
+                    if (oid.startsWith("ML-")) return "ml";
+                    if (oid.startsWith("MANUAL-")) return "manual";
+                    return "tn";
+                  };
+                  const ORIGENES = [
+                    {id:"tn",         label:PLATFORM.tiendanube.label,   color:PLATFORM.tiendanube.color},
+                    {id:"ml",         label:PLATFORM.mercadolibre.label, color:PLATFORM.mercadolibre.color},
+                    {id:"manual",     label:"Manual",                    color:T.purple},
+                    {id:"recuperado", label:"Recuperado",                color:T.textMd},
+                  ];
+                  const busqPasa = (campos) => {
+                    const q = regBusq.trim().toLowerCase();
+                    if (!q) return true;
+                    return campos.filter(v=>v!=null&&v!=="").map(String).join(" ").toLowerCase().includes(q);
+                  };
+                  const rowPasa = (r) => {
+                    if (regLetra && r.letra !== regLetra) return false;
+                    if (regPv && String(r.punto_venta||"") !== String(regPv)) return false;
+                    if (regOrigen && origenDe(r) !== regOrigen) return false;
+                    return busqPasa([r.comprobante, String(r.comprobante).padStart(8,"0"), r.cae, r.cliente, r.doc_nro, r.orden_id]);
+                  };
+                  const ncPasa = (n) => {
+                    if (regLetra && n.letra !== regLetra) return false;
+                    if (regPv && String(n.punto_venta||"") !== String(regPv)) return false;
+                    return busqPasa([n.comprobante, String(n.comprobante||"").padStart(8,"0"), n.cae, n.cliente, n.doc_nro, n.factura_origen?.comprobante]);
+                  };
+                  const flat = batches.flatMap(b=>(b.resumen||[]).map((r,i)=>({...r,_b:b,_bi:i})));
+                  const rows = flat.filter(rowPasa);
+                  const ncRows = ncs.filter(ncPasa);
+                  const activas = rows.filter(r=>!r.anulada);
+                  const totNeto = activas.reduce((s,r)=>s+(r.neto||0),0);
+                  const totIva = activas.reduce((s,r)=>s+(r.iva||0),0);
+                  const totTotal = activas.reduce((s,r)=>s+(r.total||0),0);
+                  const ncTotal = ncRows.reduce((s,n)=>s+(n.total||0),0);
+                  const filtBatches = batches
+                    .map(b=>({b, rows:(b.resumen||[]).map((r,i)=>({...r,_b:b,_bi:i})).filter(rowPasa)}))
+                    .filter(x=>x.rows.length>0);
+                  const filtrosActivos = !!(regLetra||regPv||regOrigen||regBusq.trim());
+                  const fmtFechaCbte = (r) => r.fecha_cbte
+                    ? `${r.fecha_cbte.slice(8,10)}/${r.fecha_cbte.slice(5,7)}/${r.fecha_cbte.slice(0,4)}`
+                    : (r._b?.emitido_at ? new Date(r._b.emitido_at).toLocaleDateString("es-AR") : "—");
+                  const fmtMonto = (v) => "$ " + (v||0).toLocaleString("es-AR",{minimumFractionDigits:2});
+                  const exportCsv = () => {
+                    const esc = (v)=>`"${String(v??"").replace(/"/g,'""')}"`;
+                    let headers, lineas, nombre;
+                    if (regSub==="ncs") {
+                      headers = ["Fecha","Tipo","PV","N°","Cliente","Doc","Total","CAE","Factura origen","Recuperada AFIP"];
+                      lineas = ncRows.map(n=>[
+                        n.fecha?new Date(n.fecha).toLocaleDateString("es-AR"):"", `NC ${n.letra||""}`.trim(), n.punto_venta||"", String(n.comprobante||"").padStart(8,"0"),
+                        n.cliente||"", n.doc_nro||"", (n.total||0).toFixed(2).replace(".",","), n.cae||"",
+                        n.factura_origen?`${n.factura_origen.tipo||""} N° ${String(n.factura_origen.comprobante||"").padStart(8,"0")}`:"", n.recuperado_afip?"sí":"",
+                      ]);
+                      nombre = "notas-credito";
+                    } else {
+                      headers = ["Fecha","Tipo","PV","N°","Cliente","Doc","Neto","IVA","Total","Origen","Orden","CAE","Vto CAE","Anulada","Recuperada AFIP"];
+                      lineas = rows.map(r=>[
+                        fmtFechaCbte(r), `F${r.letra||""}`, r.punto_venta||"", String(r.comprobante||"").padStart(8,"0"),
+                        r.cliente||"", r.doc_nro?`${r.doc_tipo||""} ${r.doc_nro}`.trim():"",
+                        (r.neto||0).toFixed(2).replace(".",","), (r.iva||0).toFixed(2).replace(".",","), (r.total||0).toFixed(2).replace(".",","),
+                        ORIGENES.find(o=>o.id===origenDe(r))?.label||"", r.orden_id||"", r.cae||"", r.cae_vto||"",
+                        r.anulada?"sí":"", r.recuperado_afip?"sí":"",
+                      ]);
+                      nombre = "registros";
+                    }
+                    const csv = "﻿" + [headers.map(esc).join(";"), ...lineas.map(l=>l.map(esc).join(";"))].join("\n");
+                    const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `growith-${nombre}-${dashYear}-${String(dashMonth).padStart(2,"0")}.csv`;
+                    a.click();
+                    setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+                  };
+                  const pillS = (active,color) => ({padding:"5px 12px",fontSize:12,fontWeight:active?700:500,borderRadius:8,border:`1.5px solid ${active?color:T.border}`,background:active?color+"18":"transparent",color:active?color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",flexShrink:0,whiteSpace:"nowrap"});
+                  // Badges reutilizados en las dos vistas
+                  const BadgeAnulada = () => <span title="Anulada con Nota de Crédito" style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.red+"18",color:T.red,fontWeight:700,border:`1px solid ${T.red}44`,whiteSpace:"nowrap",flexShrink:0}}>ANULADA</span>;
+                  const BadgeRecuperada = () => <span title="reconstruida desde AFIP — sin detalle de items" style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.textSm+"18",color:T.textMd,fontWeight:700,border:`1px solid ${T.textSm}44`,whiteSpace:"nowrap",flexShrink:0}}>Recuperada de AFIP</span>;
+                  const OrigenBadge = ({r}) => {
+                    const o = ORIGENES.find(x=>x.id===origenDe(r));
+                    if (!o) return null;
+                    const dark = o.id==="ml";
+                    return <span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:o.color+"1a",color:dark?"#92620c":o.color,fontWeight:700,border:`1px solid ${o.color}44`,whiteSpace:"nowrap",flexShrink:0}}>{o.label}</span>;
+                  };
+                  const btnPdfS = {background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
+                  const btnAnularS = {background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
+                  const descargarPdfDe = async (r) => {
+                    const list = await loadBatchPdfs(r._b);
+                    if (!list) return;
+                    const pdf = list[r._bi];
+                    if (pdf) downloadPDF(pdf);
+                    else toast("No se pudo regenerar el PDF de este comprobante","warning");
+                  };
+                  const vacio = batches.length===0 && ncs.length===0;
+                  return (
+                    <Card T={T} padding="lg">
+                      {/* Header */}
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
+                        <div>
+                          <div style={{fontSize:14,fontWeight:700,color:T.text}}>📚 Registros · <span style={{textTransform:"capitalize"}}>{mesActual}</span></div>
+                          <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Todos los comprobantes emitidos del mes. Descargá PDFs, exportá CSV o anulá con Nota de Crédito.</div>
                         </div>
-                        {isExpanded && (
-                          <div className="gh-accordion" style={{borderTop:"1px solid "+T.borderL,background:T.card}}>
-                            {(b.resumen||[]).map((r,i)=>(
-                              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:i<b.resumen.length-1?"1px solid "+T.borderL:"none"}}>
-                                <div style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:"1px solid "+T.accent+"44",color:T.accent,background:T.accent+"11",flexShrink:0}}>F{r.letra}</div>
-                                <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
-                                  <div style={{fontSize:12,fontWeight:500,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.orden_id}</div>
-                                  <div style={{fontSize:11,color:T.textSm}}>N° {String(r.comprobante).padStart(8,"0")} · CAE {r.cae}</div>
-                                </div>
-                                <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>$ {(r.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
-                                <button onClick={async()=>{
-                                  const list = await loadBatchPdfs(b);
-                                  if(!list) return;
-                                  const pdf = list[i];
-                                  if(pdf) downloadPDF(pdf);
-                                }} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
-                                  ⬇ PDF
-                                </button>
-                                {String(r.orden_id||"").startsWith("ML-") && (
-                                  <a href={`https://www.mercadolibre.com.ar/ventas/${String(r.orden_id).replace("ML-","")}/detalle`} target="_blank" rel="noopener" title="Abrí la venta en Mercado Libre para borrar la factura adjunta a mano (3 puntitos del documento → Eliminar)" style={{background:"#FFE600",border:"1px solid #FFE60055",color:"#333",borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap",textDecoration:"none"}}>
-                                    🔗 Ver en ML
-                                  </a>
-                                )}
-                                <button onClick={()=>anularUnaFactura(r, b)} title="Emite NC para anular esta factura" style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"}}>
-                                  🔄 Anular
-                                </button>
-                              </div>
-                            ))}
-                          </div>
+                        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                          {/* Toggle de vista Lotes / Comprobantes */}
+                          {regSub==="facturas" && (
+                            <div style={{display:"inline-flex",background:T.bg,borderRadius:8,padding:2,border:"1px solid "+T.border,gap:2}}>
+                              {[{id:"lotes",label:"Lotes"},{id:"comprobantes",label:"Comprobantes"}].map(v=>(
+                                <button key={v.id} onClick={()=>setRegView(v.id)} style={{padding:"5px 12px",fontSize:11,fontWeight:regView===v.id?700:500,borderRadius:6,border:"none",background:regView===v.id?T.card:"transparent",color:regView===v.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>{v.label}</button>
+                              ))}
+                            </div>
+                          )}
+                          <Btn T={T} variant="secondary" size="sm" onClick={exportCsv} disabled={regSub==="ncs"?ncRows.length===0:rows.length===0}>⬇ Exportar CSV</Btn>
+                        </div>
+                      </div>
+
+                      {/* Sub-división Facturas | Notas de crédito */}
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:12}}>
+                        {[{id:"facturas",label:`Facturas${rows.length?` (${rows.length})`:""}`},{id:"ncs",label:`Notas de crédito${ncRows.length?` (${ncRows.length})`:""}`}].map(s=>(
+                          <button key={s.id} onClick={()=>setRegSub(s.id)} style={pillS(regSub===s.id, T.accent)}>{s.label}</button>
+                        ))}
+                      </div>
+
+                      {/* Barra de filtros */}
+                      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
+                        {["A","B","C"].map(l=>(
+                          <button key={l} onClick={()=>setRegLetra(regLetra===l?"":l)} style={pillS(regLetra===l, T.accent)}>{l}</button>
+                        ))}
+                        {pvsDisponibles.length>1 && (
+                          <select value={regPv} onChange={e=>setRegPv(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
+                            <option value="">Todos los PV</option>
+                            {pvsDisponibles.map(p=>(<option key={p.numero} value={p.numero}>{p.nombre} · PV {String(p.numero).padStart(5,"0")}</option>))}
+                          </select>
+                        )}
+                        {regSub==="facturas" && ORIGENES.map(o=>(
+                          <button key={o.id} onClick={()=>setRegOrigen(regOrigen===o.id?"":o.id)} style={pillS(regOrigen===o.id, o.id==="ml"?"#92620c":o.color)}>{o.label}</button>
+                        ))}
+                        <div style={{position:"relative",flex:1,minWidth:180}}>
+                          <svg style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",color:T.textSm}} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                          <input type="text" placeholder="Buscar por N°, CAE, cliente, doc o orden…" value={regBusq} onChange={e=>setRegBusq(e.target.value)}
+                            style={{...iS,width:"100%",padding:"7px 12px 7px 32px",fontSize:12,boxSizing:"border-box"}}/>
+                        </div>
+                        {filtrosActivos && (
+                          <button onClick={()=>{setRegLetra("");setRegPv("");setRegOrigen("");setRegBusq("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red,flexShrink:0}}>✕ Limpiar</button>
                         )}
                       </div>
-                    );
-                  })}
-                </div>
+
+                      {/* Contenido */}
+                      {batchesLoading ? (
+                        <div style={{position:"relative",overflow:"hidden",borderRadius:10}}>
+                          {[1,2,3,4].map(i=>(
+                            <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",borderBottom:`1px solid ${T.borderL}`}}>
+                              <div style={{width:26,height:14,background:T.surface,borderRadius:4,flexShrink:0}}/>
+                              <div style={{height:10,flex:1,background:T.surface,borderRadius:4}}/>
+                              <div style={{height:10,width:90,background:T.surface,borderRadius:4,flexShrink:0}}/>
+                            </div>
+                          ))}
+                          <div style={{position:"absolute",inset:0,background:`linear-gradient(90deg, transparent, ${T.border}40, transparent)`,backgroundSize:"200% 100%",animation:"growith-shimmer 1.6s infinite"}}/>
+                        </div>
+                      ) : vacio ? (
+                        <DSEmpty T={T} icon="🧾" title={`Sin registros en ${mesActual}`}
+                          subtitle="No hay comprobantes emitidos este mes. Si emitiste facturas y no aparecen acá, podés reconstruirlas desde AFIP."
+                          action={
+                            <button onClick={recuperarDesdeAfip} disabled={resyncing} style={{background:"transparent",border:"none",cursor:resyncing?"wait":"pointer",fontSize:13,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",padding:0,display:"inline-flex",alignItems:"center",gap:6}}>
+                              {resyncing ? <><Spinner size={12} color={T.accent}/> {resyncMsg||"Consultando AFIP…"}</> : "↺ Recuperar desde AFIP"}
+                            </button>
+                          }/>
+                      ) : regSub==="ncs" ? (
+                        /* ── NOTAS DE CRÉDITO ── */
+                        ncRows.length===0 ? (
+                          <DSEmpty T={T} icon="🧾" title="Sin notas de crédito"
+                            subtitle={filtrosActivos?"Ninguna NC coincide con los filtros aplicados.":`No emitiste notas de crédito en ${mesActual}.`}/>
+                        ) : (
+                          <>
+                            <div style={{overflowX:"auto"}}>
+                              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:720}}>
+                                <thead>
+                                  <tr style={{borderBottom:`1px solid ${T.border}`}}>
+                                    {["Fecha","Tipo","PV","N°","Cliente","Total","CAE","Factura origen",""].map((h,i)=>(
+                                      <th key={i} style={{textAlign:i===5?"right":"left",padding:"8px 10px",fontSize:10,textTransform:"uppercase",letterSpacing:0.4,color:T.textSm,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {ncRows.map((n,i)=>(
+                                    <tr key={i} style={{borderBottom:`1px solid ${T.borderL}`}}>
+                                      <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap"}}>{n.fecha?new Date(n.fecha).toLocaleDateString("es-AR"):"—"}</td>
+                                      <td style={{padding:"8px 10px"}}><span style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:"1px solid "+T.red+"44",color:T.red,background:T.red+"11",whiteSpace:"nowrap"}}>NC {n.letra||"—"}</span></td>
+                                      <td style={{padding:"8px 10px",color:T.textMd}}>{n.punto_venta?String(n.punto_venta).padStart(4,"0"):"—"}</td>
+                                      <td style={{padding:"8px 10px",color:T.text,fontWeight:600,whiteSpace:"nowrap"}}>{String(n.comprobante||"").padStart(8,"0")}</td>
+                                      <td style={{padding:"8px 10px",color:T.textMd,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.cliente||"—"}</td>
+                                      <td style={{padding:"8px 10px",color:T.text,fontWeight:600,textAlign:"right",whiteSpace:"nowrap"}}>{fmtMonto(n.total)}</td>
+                                      <td style={{padding:"8px 10px",color:T.textSm,fontFamily:"monospace",fontSize:11,whiteSpace:"nowrap"}}>{n.cae||"—"}</td>
+                                      <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap"}}>{n.factura_origen?`N° ${String(n.factura_origen.comprobante||"").padStart(8,"0")}${n.factura_origen.punto_venta?` · PV ${n.factura_origen.punto_venta}`:""}`:"—"}</td>
+                                      <td style={{padding:"8px 10px"}}>{n.recuperado_afip&&<BadgeRecuperada/>}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                            <div style={{display:"flex",alignItems:"center",gap:14,marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL}`,fontSize:12,flexWrap:"wrap"}}>
+                              <span style={{color:T.textSm}}>Total de <span style={{textTransform:"capitalize"}}>{mesActual}</span>{filtrosActivos?" (filtrado)":""}:</span>
+                              <span style={{color:T.text,fontWeight:700}}>{ncRows.length} NC{ncRows.length!==1?"s":""}</span>
+                              <span style={{marginLeft:"auto",color:T.red,fontWeight:800,fontSize:13}}>− {fmtMonto(ncTotal)}</span>
+                            </div>
+                          </>
+                        )
+                      ) : rows.length===0 ? (
+                        <DSEmpty T={T} icon="🔍" title="Sin comprobantes"
+                          subtitle={filtrosActivos?"Ningún comprobante coincide con los filtros aplicados.":`No hay facturas emitidas en ${mesActual}.`}/>
+                      ) : regView==="comprobantes" ? (
+                        /* ── VISTA COMPROBANTES (tabla plana) ── */
+                        <>
+                          <div style={{overflowX:"auto"}}>
+                            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:860}}>
+                              <thead>
+                                <tr style={{borderBottom:`1px solid ${T.border}`}}>
+                                  {["Fecha","Tipo","N°","Cliente","Doc","Neto","IVA","Total","Origen","CAE",""].map((h,i)=>(
+                                    <th key={i} style={{textAlign:[5,6,7].includes(i)?"right":"left",padding:"8px 10px",fontSize:10,textTransform:"uppercase",letterSpacing:0.4,color:T.textSm,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {rows.map((r,i)=>(
+                                  <tr key={i} style={{borderBottom:`1px solid ${T.borderL}`,opacity:r.anulada?0.6:1}}>
+                                    <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap"}}>{fmtFechaCbte(r)}</td>
+                                    <td style={{padding:"8px 10px"}}>
+                                      <span style={{display:"inline-flex",alignItems:"center",gap:5}}>
+                                        <span style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:"1px solid "+T.accent+"44",color:T.accent,background:T.accent+"11",whiteSpace:"nowrap"}}>F{r.letra}</span>
+                                        {r.anulada&&<BadgeAnulada/>}
+                                        {r.recuperado_afip&&<BadgeRecuperada/>}
+                                      </span>
+                                    </td>
+                                    <td style={{padding:"8px 10px",color:T.text,fontWeight:600,whiteSpace:"nowrap"}}>{String(r.comprobante).padStart(8,"0")}</td>
+                                    <td style={{padding:"8px 10px",color:T.textMd,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.cliente||""}>{r.cliente||"—"}</td>
+                                    <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap"}}>{r.doc_nro?`${r.doc_tipo||""} ${r.doc_nro}`.trim():"CF"}</td>
+                                    <td style={{padding:"8px 10px",color:T.textMd,textAlign:"right",whiteSpace:"nowrap"}}>{fmtMonto(r.neto)}</td>
+                                    <td style={{padding:"8px 10px",color:T.textMd,textAlign:"right",whiteSpace:"nowrap"}}>{fmtMonto(r.iva)}</td>
+                                    <td style={{padding:"8px 10px",color:T.text,fontWeight:700,textAlign:"right",whiteSpace:"nowrap"}}>{fmtMonto(r.total)}</td>
+                                    <td style={{padding:"8px 10px"}}><OrigenBadge r={r}/></td>
+                                    <td style={{padding:"8px 10px",color:T.textSm,fontFamily:"monospace",fontSize:11,whiteSpace:"nowrap"}} title={r.cae_vto?`Vto CAE ${r.cae_vto}`:undefined}>{r.cae||"—"}</td>
+                                    <td style={{padding:"8px 10px"}}>
+                                      <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
+                                        <button onClick={()=>descargarPdfDe(r)} style={btnPdfS}>⬇ PDF</button>
+                                        {!r.anulada&&(
+                                          <button onClick={()=>anularUnaFactura(r, r._b)} title="Emite NC para anular esta factura" style={btnAnularS}>🔄 Anular</button>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          {/* Totales del set filtrado */}
+                          <div style={{display:"flex",alignItems:"center",gap:14,marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL}`,fontSize:12,flexWrap:"wrap"}}>
+                            <span style={{color:T.textSm}}>Total de <span style={{textTransform:"capitalize"}}>{mesActual}</span>{filtrosActivos?" (filtrado)":""}:</span>
+                            <span style={{color:T.text,fontWeight:700}}>{activas.length} factura{activas.length!==1?"s":""}{rows.length!==activas.length?` (+${rows.length-activas.length} anulada${rows.length-activas.length!==1?"s":""})`:""}</span>
+                            <span style={{color:T.textMd}}>Neto {fmtMonto(totNeto)}</span>
+                            <span style={{color:T.textMd}}>IVA {fmtMonto(totIva)}</span>
+                            <span style={{marginLeft:"auto",color:T.text,fontWeight:800,fontSize:13}}>{fmtMonto(totTotal)}</span>
+                          </div>
+                        </>
+                      ) : (
+                        /* ── VISTA LOTES (cards) ── */
+                        <>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(380px, 1fr))",gap:14}}>
+                            {filtBatches.map(({b, rows: bRows})=>{
+                              const fechaStr = b.emitido_at ? new Date(b.emitido_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
+                              const isExpanded = expandedBatch === b.batch_id;
+                              return (
+                                <div key={b.batch_id} style={{border:`1px solid ${isExpanded?T.accent+"55":T.border}`,borderRadius:DS.r.xl,overflow:"hidden",background:isExpanded?T.surface:T.card,transition:"all 0.18s ease",boxShadow:isExpanded?`0 4px 18px ${T.accentSolid}22`:"0 1px 3px rgba(0,0,0,0.08)"}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 16px",cursor:"pointer",flexWrap:"wrap"}} onClick={()=>setExpandedBatch(isExpanded ? null : b.batch_id)}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:isExpanded?"rotate(90deg)":"none",transition:"transform 0.15s",flexShrink:0}}><path d="M9 18l6-6-6-6"/></svg>
+                                    <div style={{flex:1,minWidth:0}}>
+                                      <div style={{fontSize:13,fontWeight:600,color:T.text}}>{fechaStr}</div>
+                                      <div style={{fontSize:11,color:T.textSm}}>{b.cantidad} factura{b.cantidad===1?"":"s"}{filtrosActivos&&bRows.length!==b.cantidad?` · ${bRows.length} coinciden con el filtro`:""}</div>
+                                    </div>
+                                    <div style={{fontSize:14,fontWeight:700,color:T.text,marginRight:8}}>{fmtMonto(b.total)}</div>
+                                    <button onClick={(e)=>{e.stopPropagation();anularLoteCompleto(b);}} title="Emite NC por cada factura del lote para anularlas todas" style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+                                      🔄 Anular lote
+                                    </button>
+                                    <button onClick={(e)=>{e.stopPropagation();downloadBatchZip(b);}} style={{background:T.accent,border:"none",color:"#fff",borderRadius:6,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>
+                                      {loadingBatchPdfs===b.batch_id ? <><Spinner size={10} color="#fff"/> ZIP</> : "⬇ ZIP"}
+                                    </button>
+                                  </div>
+                                  {isExpanded && (
+                                    <div className="gh-accordion" style={{borderTop:"1px solid "+T.borderL,background:T.card,overflowX:"auto"}}>
+                                      {bRows.map((r,i)=>(
+                                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:i<bRows.length-1?"1px solid "+T.borderL:"none",minWidth:420,opacity:r.anulada?0.6:1}}>
+                                          <div style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:"1px solid "+T.accent+"44",color:T.accent,background:T.accent+"11",flexShrink:0}}>F{r.letra}</div>
+                                          {r.anulada&&<BadgeAnulada/>}
+                                          {r.recuperado_afip&&<BadgeRecuperada/>}
+                                          <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
+                                            <div style={{fontSize:12,fontWeight:500,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.orden_id}{r.cliente?` · ${r.cliente}`:""}</div>
+                                            <div style={{fontSize:11,color:T.textSm}}>N° {String(r.comprobante).padStart(8,"0")} · CAE {r.cae}</div>
+                                          </div>
+                                          <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>{fmtMonto(r.total)}</div>
+                                          <button onClick={()=>descargarPdfDe(r)} style={btnPdfS}>⬇ PDF</button>
+                                          {String(r.orden_id||"").startsWith("ML-") && (
+                                            <a href={`https://www.mercadolibre.com.ar/ventas/${String(r.orden_id).replace("ML-","")}/detalle`} target="_blank" rel="noopener" title="Abrí la venta en Mercado Libre para borrar la factura adjunta a mano (3 puntitos del documento → Eliminar)" style={{background:PLATFORM.mercadolibre.color,border:`1px solid ${PLATFORM.mercadolibre.color}55`,color:"#333",borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap",textDecoration:"none"}}>
+                                              🔗 Ver en ML
+                                            </a>
+                                          )}
+                                          {!r.anulada&&(
+                                            <button onClick={()=>anularUnaFactura(r, b)} title="Emite NC para anular esta factura" style={btnAnularS}>🔄 Anular</button>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {/* Totales del set filtrado */}
+                          <div style={{display:"flex",alignItems:"center",gap:14,marginTop:14,paddingTop:12,borderTop:`1px solid ${T.borderL}`,fontSize:12,flexWrap:"wrap"}}>
+                            <span style={{color:T.textSm}}>Total de <span style={{textTransform:"capitalize"}}>{mesActual}</span>{filtrosActivos?" (filtrado)":""}:</span>
+                            <span style={{color:T.text,fontWeight:700}}>{activas.length} factura{activas.length!==1?"s":""}{rows.length!==activas.length?` (+${rows.length-activas.length} anulada${rows.length-activas.length!==1?"s":""})`:""}</span>
+                            <span style={{color:T.textMd}}>Neto {fmtMonto(totNeto)}</span>
+                            <span style={{color:T.textMd}}>IVA {fmtMonto(totIva)}</span>
+                            <span style={{marginLeft:"auto",color:T.text,fontWeight:800,fontSize:13}}>{fmtMonto(totTotal)}</span>
+                          </div>
+                        </>
+                      )}
+                    </Card>
+                  );
+                })()}
               </div>
             )}
 
-            {/* ══ CUITs — gestión completa, sólo tab CUITs ══ */}
-            <div style={{display:sidebarTab==="cuits"?"block":"none",marginTop:0}}>
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"20px 22px"}}>
+            {/* ══ CONFIGURACIÓN — CUITs + Mantenimiento ══ */}
+            <div style={{display:tab==="config"?"block":"none",marginTop:0}}>
+              <Card T={T} padding="lg">
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
                   <div>
                     <div style={{fontSize:14,fontWeight:700,color:T.text}}>🪪 Mis CUITs</div>
@@ -17962,7 +18172,34 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     );
                   })}
                 </div>
-              </div>
+              </Card>
+
+              {/* ── Mantenimiento ── */}
+              <Card T={T} padding="lg" style={{marginTop:16}}>
+                <div style={{marginBottom:14}}>
+                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>🛠 Mantenimiento</div>
+                  <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Herramientas para dejar tus Registros al día con AFIP y Mercado Libre.</div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <button onClick={recuperarDesdeAfip} disabled={resyncing||!cuitSel} title="Consulta AFIP y reconstruye los comprobantes emitidos que no figuren en Registros (no pisa ni duplica nada)" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",cursor:resyncing?"wait":"pointer",opacity:!cuitSel?0.5:1}}>
+                    {resyncing ? <><Spinner size={11} color={T.text}/> {resyncMsg||"Consultando AFIP…"}</> : "↺ Recuperar desde AFIP"}
+                  </button>
+                  <button onClick={async()=>{
+                    if(!cuitSel) return;
+                    if(!await appConfirm("Esto va a regenerar el PDF de cada factura de ML pendiente y subirla a la venta en Mercado Libre. ¿Continuar?",{okLabel:"Continuar"})) return;
+                    setAttachingML(true);
+                    const d = await api("attach_ml_pending","POST",{cuit:cuitSel});
+                    setAttachingML(false);
+                    if(d.error){toast("Error: "+d.error,"error");return;}
+                    if(d.total === 0){toast(d.message||"Sin facturas pendientes","info");return;}
+                    const errMsg = d.errors?.length>0 ? ` · ${d.errors.length} con error` : "";
+                    toast(`${d.uploaded}/${d.total} facturas adjuntadas en ML${errMsg}`, d.errors?.length>0?"warning":"success");
+                    refreshDashboard();
+                  }} disabled={attachingML||!cuitSel} title="Adjuntar a ML las facturas que todavía no se subieron" style={{background:PLATFORM.mercadolibre.color,border:`1px solid ${PLATFORM.mercadolibre.color}55`,color:"#333",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:attachingML?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:!cuitSel?0.5:1}}>
+                    {attachingML ? <><Spinner size={11} color="#333"/> Adjuntando…</> : "🟡 Adjuntar pendientes a ML"}
+                  </button>
+                </div>
+              </Card>
             </div>
           </>
         )}
@@ -18029,7 +18266,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             {/* Step 1 (antes 0): Datos */}
             {wizStep===1&&(
               <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>
                   <div>
                     <label style={labelS}>CUIT (11 dígitos)</label>
                     <input value={wizCuit} onChange={e=>setWizCuit(e.target.value.replace(/\D/g,"").slice(0,11))} placeholder="20345678901" style={iS}/>
@@ -18050,7 +18287,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <label style={labelS}>Nombre de fantasía (opcional)</label>
                   <input value={wizNombreFantasia} onChange={e=>setWizNombreFantasia(e.target.value)} placeholder="Mi Tienda Online" style={iS}/>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>
                   <div>
                     <label style={labelS}>Condición frente al IVA</label>
                     <select value={wizCondicion} onChange={e=>setWizCondicion(e.target.value)} style={iS}>
@@ -18067,7 +18304,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <label style={labelS}>Domicilio comercial</label>
                   <input value={wizDomicilio} onChange={e=>setWizDomicilio(e.target.value)} placeholder="Av. Corrientes 1234, CABA" style={iS}/>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>
                   <div>
                     <label style={labelS}>Fecha inicio actividades</label>
                     <input value={wizFechaInicio} onChange={e=>setWizFechaInicio(e.target.value)} placeholder="01/02/2024" style={iS}/>
@@ -18215,7 +18452,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div>
                 <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:18,marginBottom:20}}>
                   <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:14}}>Resumen de tu CUIT</div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10}}>
                     {[
                       ["CUIT",formatCuit(wizCuit)],
                       ["Razón social",wizRazonSocial||"—"],
@@ -18381,193 +18618,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         document.body
       )}
 
-      {/* ══ MODAL FACTURACIÓN MANUAL ══ */}
-      {showManual && ReactDOM.createPortal(
-        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!emittingManual && resetManual()}>
-          <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:16,width:"100%",maxWidth:640,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
-              <div>
-                <div style={{fontSize:16,fontWeight:700,color:T.text}}>Emitir factura manual</div>
-                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Para ventas fuera de tus integraciones (mayoristas, venta directa, etc.)</div>
-              </div>
-              <button onClick={resetManual} disabled={emittingManual} style={{background:"transparent",border:"none",color:T.textMd,cursor:emittingManual?"wait":"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
-            </div>
-
-            {!manualResult ? (
-              <>
-                {/* Cliente */}
-                <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:8}}>Cliente</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:8}}>
-                  <div>
-                    <label style={labelS}>Nombre / Razón social</label>
-                    <input value={manualNombre} onChange={e=>setManualNombre(e.target.value)} placeholder="Distribuidora SRL" style={iS}/>
-                  </div>
-                  <div>
-                    <label style={labelS}>Tipo de documento</label>
-                    <select value={manualDocTipo} onChange={e=>setManualDocTipo(e.target.value)} style={iS}>
-                      <option value="CUIT">CUIT</option>
-                      <option value="DNI">DNI</option>
-                      <option value="CF">Consumidor Final (sin doc)</option>
-                    </select>
-                  </div>
-                </div>
-                {manualDocTipo !== "CF" && (
-                  <div style={{marginBottom:18}}>
-                    <label style={labelS}>{manualDocTipo === "CUIT" ? "CUIT del cliente" : "DNI del cliente"}</label>
-                    <input value={manualDocNro} onChange={e=>setManualDocNro(e.target.value.replace(/\D/g,""))} placeholder={manualDocTipo === "CUIT" ? "30712345678" : "12345678"} style={iS}/>
-                    {esRI && manualDocTipo === "CUIT" && <div style={{fontSize:10,color:T.textSm,marginTop:3}}>Si el cliente es Responsable Inscripto se emite Factura A, sino se reintenta como B</div>}
-                  </div>
-                )}
-
-                {/* Items */}
-                <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:8,marginTop:6}}>Ítems</div>
-                <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:8}}>
-                  {manualItems.map((it,i)=>{
-                    const suggestions = it.nombre.trim() ? getConceptos().filter(c=>c.toLowerCase().includes(it.nombre.trim().toLowerCase())&&c!==it.nombre.trim()) : getConceptos().slice(0,5);
-                    const showAc = conceptoAcIdx===`b${i}` && suggestions.length>0;
-                    return (
-                    <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 70px 110px 30px",gap:8,alignItems:"center"}}>
-                      <div style={{position:"relative"}}>
-                        <input value={it.nombre} onChange={e=>{const arr=[...manualItems];arr[i].nombre=e.target.value;setManualItems(arr);}} onFocus={()=>setConceptoAcIdx(`b${i}`)} onBlur={()=>setTimeout(()=>setConceptoAcIdx(null),150)} placeholder="Producto / servicio" style={{...iS,fontSize:12}}/>
-                        {showAc&&<div className="gh-dropdown" style={{position:"absolute",top:"100%",left:0,right:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,zIndex:50,boxShadow:"0 4px 16px rgba(0,0,0,0.25)",marginTop:2,overflow:"hidden"}}>
-                          {suggestions.map((s,si)=>(
-                            <div key={si} onMouseDown={()=>{const arr=[...manualItems];arr[i].nombre=s;setManualItems(arr);setConceptoAcIdx(null);}} style={{padding:"7px 10px",fontSize:12,cursor:"pointer",color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>{s}</div>
-                          ))}
-                        </div>}
-                      </div>
-                      <input value={it.cantidad} onChange={e=>{const arr=[...manualItems];arr[i].cantidad=parseInt(e.target.value.replace(/\D/g,""))||0;setManualItems(arr);}} placeholder="Cant." style={{...iS,fontSize:12,textAlign:"center"}}/>
-                      <input value={it.precio||""} onChange={e=>{const arr=[...manualItems];arr[i].precio=parseFloat(e.target.value)||0;setManualItems(arr);}} placeholder="Precio s/IVA" type="number" step="0.01" style={{...iS,fontSize:12,textAlign:"right"}}/>
-                      <button onClick={()=>setManualItems(manualItems.filter((_,j)=>j!==i))} disabled={manualItems.length===1} style={{background:"transparent",border:"none",cursor:manualItems.length===1?"not-allowed":"pointer",color:T.red,fontSize:14,opacity:manualItems.length===1?0.3:1}}>🗑</button>
-                    </div>
-                    );
-                  })}
-                </div>
-                <button onClick={()=>setManualItems([...manualItems,{nombre:"",cantidad:1,precio:0}])} style={{background:"transparent",border:"1px dashed "+T.border,color:T.textMd,borderRadius:8,padding:"7px 12px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",marginBottom:14}}>
-                  + Agregar ítem
-                </button>
-
-                {/* Total */}
-                <div style={{padding:"14px 16px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <div style={{fontSize:12,color:T.textMd}}>Total {esMono ? "(sin IVA discriminado)" : "(IVA incluido al 21%)"}</div>
-                  <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.5}}>
-                    ${manualItems.reduce((s,it)=>s+(it.cantidad||0)*(it.precio||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}
-                  </div>
-                </div>
-                <div style={{fontSize:11,color:T.textSm,marginBottom:18,lineHeight:1.5}}>
-                  Tipo de comprobante: <strong style={{color:T.text}}>
-                    {esMono ? "Factura C" : (manualDocTipo === "CUIT" ? "Factura A (con fallback a B)" : "Factura B")}
-                  </strong> · Punto de venta {String(cuitActivo?.punto_venta||1).padStart(5,"0")}
-                </div>
-
-                <div style={{display:"flex",gap:10}}>
-                  <button onClick={resetManual} disabled={emittingManual} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                    Cancelar
-                  </button>
-                  <div style={{flex:1}}/>
-                  <button onClick={handleEmitManual} disabled={emittingManual} style={{background:T.green,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
-                    {emittingManual?<><Spinner size={13} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir factura"}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                {/* Resultado */}
-                {manualResult.r?.ok ? (
-                  <div style={{padding:18,background:T.greenBg,border:"1px solid "+T.green+"33",borderRadius:10,marginBottom:14}}>
-                    <div style={{fontSize:14,fontWeight:700,color:T.green,marginBottom:6}}>✅ Factura emitida</div>
-                    <div style={{fontSize:12,color:T.text,lineHeight:1.7}}>
-                      Factura <strong>{manualResult.r.letra}</strong> N° <strong>{String(manualResult.r.comprobante).padStart(8,"0")}</strong><br/>
-                      CAE: <strong>{manualResult.r.cae}</strong> (vto. {manualResult.r.cae_vto})<br/>
-                      Total: <strong>${manualResult.r.total?.toLocaleString("es-AR",{minimumFractionDigits:2})}</strong>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{padding:14,background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:10,marginBottom:14,fontSize:12,color:T.red}}>
-                    {manualResult.r?.obs || "Error desconocido"}
-                  </div>
-                )}
-                <div style={{display:"flex",gap:10}}>
-                  <button onClick={resetManual} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                    Cerrar
-                  </button>
-                  <div style={{flex:1}}/>
-                  {manualResult.pdf && (
-                    <button onClick={()=>downloadPDF(manualResult.pdf)} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                      Descargar PDF
-                    </button>
-                  )}
-                  {manualResult.r?.ok && (
-                    <button onClick={()=>{setManualResult(null);setManualNombre("");setManualDocNro("");setManualItems([{nombre:"",cantidad:1,precio:0}]);}} style={{background:T.green,border:"none",color:"#fff",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      Emitir otra
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>,
-        document.body
-      )}
-      {/* ── MODAL PROGRESO EMISIÓN ARCA ── */}
-      {(emitProgress.active||emitProgress.done)&&ReactDOM.createPortal(
-        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${emitProgress.done?(emitProgress.fail>0?T.orange+"55":T.green+"55"):T.accentSolid+"44"}`}}>
-            {!emitProgress.done?(
-              <>
-                <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
-                  <div style={{width:44,height:44,borderRadius:12,background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    <div style={{width:22,height:22,border:`3px solid ${T.accentSolid}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>
-                  </div>
-                  <div>
-                    <div style={{fontSize:16,fontWeight:700,color:T.text}}>Emitiendo facturas en ARCA</div>
-                    <div style={{fontSize:13,color:T.textSm,marginTop:2}}>Esto puede tardar unos minutos...</div>
-                  </div>
-                </div>
-                <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:10}}>
-                  <div style={{height:"100%",width:`${Math.round((emitProgress.current/Math.max(1,emitProgress.total))*100)}%`,background:T.accentSolid,borderRadius:20,transition:"width 0.5s ease"}}/>
-                </div>
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:T.textSm}}>
-                  <span>Procesando {emitProgress.total} facturas...</span>
-                  <span style={{fontWeight:700,color:T.accent}}>{Math.round((emitProgress.current/Math.max(1,emitProgress.total))*100)}%</span>
-                </div>
-              </>
-            ):(
-              <>
-                <div style={{textAlign:"center",marginBottom:24}}>
-                  <div style={{marginBottom:16}}><StatusIcon type={emitProgress.fail===0?"success":emitProgress.ok===0?"error":"warning"} size={64}/></div>
-                  <div style={{fontSize:18,fontWeight:800,color:emitProgress.fail===0?T.green:emitProgress.ok===0?T.red:T.orange,marginBottom:6}}>
-                    {emitProgress.fail===0?"¡Listo! Todas las facturas emitidas":emitProgress.ok===0?"Error al emitir":`${emitProgress.ok} emitidas, ${emitProgress.fail} con error`}
-                  </div>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
-                  <div style={{background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
-                    <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-1}}>{emitProgress.ok}</div>
-                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Emitidas OK</div>
-                  </div>
-                  <div style={{background:emitProgress.fail>0?T.redBg:T.surface,border:`1px solid ${emitProgress.fail>0?T.red+"33":T.border}`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
-                    <div style={{fontSize:28,fontWeight:800,color:emitProgress.fail>0?T.red:T.textSm,letterSpacing:-1}}>{emitProgress.fail}</div>
-                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Con error</div>
-                  </div>
-                </div>
-                {emitProgress.errors.length>0&&(
-                  <div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px",marginBottom:16,maxHeight:120,overflowY:"auto"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:T.red,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Detalle de errores</div>
-                    {emitProgress.errors.map((e,i)=>(
-                      <div key={i} style={{fontSize:12,color:T.red,marginBottom:3}}>· {e.orden}: {e.msg}</div>
-                    ))}
-                  </div>
-                )}
-                <button onClick={()=>setEmitProgress({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]})}
-                  style={{width:"100%",background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"12px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  Cerrar
-                </button>
-              </>
-            )}
-          </div>
-        </div>,
-        document.body
-      )}
     </div>
   );
 }

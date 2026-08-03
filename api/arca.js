@@ -1768,6 +1768,8 @@ export default async function handler(req, res) {
       const porLetra = { A: 0, B: 0, C: 0 };
       for (const d of snap.docs) {
         const data = d.data();
+        // Anuladas con NC: no cuentan en los totales del mes (antes se borraban).
+        if (data.anulada) continue;
         // Prioridad: fecha_cbte (YYYY-MM-DD) > fecha_str parseado (DD/MM/YYYY) > emitido_at.
         // fecha_cbte se guarda desde el fix de julio 2026. fecha_str existe en todos los registros.
         // emitido_at es el timestamp del servidor — puede no coincidir con la fecha AFIP si se backdateó.
@@ -1948,24 +1950,38 @@ export default async function handler(req, res) {
               });
             } catch (e) {}
 
-            // Marcar orden anulada + remover de arca_comprobantes para que vuelva
-            // a aparecer como pendiente de facturar (con el CUIT correcto esta vez)
+            // Marcar orden anulada + marcar el comprobante como anulada:true en
+            // arca_comprobantes (NO se borra: queda visible en Registros con badge
+            // ANULADA). Todos los lectores tratan anulada:true como NO facturado,
+            // así la orden vuelve a aparecer como pendiente de facturar.
             let mlDetached = false;
             if (factura.order_id) {
               try {
                 await db.collection("users").doc(uid).collection("arca_facturadas").doc(String(factura.order_id))
                   .set({ anulada: true, anulada_at: new Date().toISOString(), nc_comprobante: ncNro }, { merge: true });
-                // Borrar todos los registros de arca_comprobantes asociados a esta orden
                 const compSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
                   .where("orden_id", "==", factura.order_id).get();
-                const batchDel = db.batch();
-                compSnap.docs.forEach(d => batchDel.delete(d.ref));
-                if (!compSnap.empty) await batchDel.commit();
+                const batchUpd = db.batch();
+                compSnap.docs.forEach(d => batchUpd.set(d.ref, { anulada: true, anulada_at: new Date().toISOString(), nc_nro: ncNro }, { merge: true }));
+                if (!compSnap.empty) await batchUpd.commit();
               } catch (_) {}
               // ML: desadjuntar factura original del pack/orden
               if (String(factura.order_id).startsWith("ML-")) {
                 const mlR = await desadjuntarFacturaML(db, uid, factura.order_id);
                 mlDetached = mlR.ok;
+              }
+            } else {
+              // Sin order_id (manual / recuperada de AFIP): marcar por docId.
+              // update() falla si el doc no existe — nunca crea registros fantasma.
+              const cuitDig = String(cuitEmit).replace(/\D/g, "");
+              const nro8 = String(factura.comprobante).padStart(8, "0");
+              const pvComp = parseInt(factura.punto_venta) || pv;
+              for (const docId of [`${cuitDig}_${tipoFactura}_${nro8}`, `${cuitDig}_${pvComp}_${tipoFactura}_${nro8}`]) {
+                try {
+                  await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
+                    .update({ anulada: true, anulada_at: new Date().toISOString(), nc_nro: ncNro });
+                  break;
+                } catch (_) {}
               }
             }
             results.push({
@@ -2101,8 +2117,10 @@ export default async function handler(req, res) {
           await db.collection("users").doc(uid).collection("arca_notas_credito").add(ncRecord);
         } catch (e) { /* no crítico */ }
 
-        // Si el factura original tiene un order_id, marcamos anulada + borramos
-        // de arca_comprobantes + DESADJUNTAMOS de ML para que vuelva a aparecer como pendiente
+        // Si el factura original tiene un order_id, marcamos anulada (en
+        // arca_facturadas y en el propio comprobante — NO se borra, queda en
+        // Registros con badge ANULADA y todos los lectores lo tratan como NO
+        // facturado) + DESADJUNTAMOS de ML para que vuelva a aparecer como pendiente
         let mlDetachedSingle = false;
         if (factura.order_id) {
           try {
@@ -2110,14 +2128,27 @@ export default async function handler(req, res) {
               .set({ anulada: true, anulada_at: new Date().toISOString(), nc_comprobante: ncNro }, { merge: true });
             const compSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
               .where("orden_id", "==", factura.order_id).get();
-            const batchDel = db.batch();
-            compSnap.docs.forEach(d => batchDel.delete(d.ref));
-            if (!compSnap.empty) await batchDel.commit();
+            const batchUpd = db.batch();
+            compSnap.docs.forEach(d => batchUpd.set(d.ref, { anulada: true, anulada_at: new Date().toISOString(), nc_nro: ncNro }, { merge: true }));
+            if (!compSnap.empty) await batchUpd.commit();
           } catch (e) {}
           // ML: desadjuntar la factura original del pack/orden
           if (String(factura.order_id).startsWith("ML-")) {
             const mlResult = await desadjuntarFacturaML(db, uid, factura.order_id);
             mlDetachedSingle = mlResult.ok;
+          }
+        } else {
+          // Sin order_id (manual / recuperada de AFIP): marcar por docId.
+          // update() falla si el doc no existe — nunca crea registros fantasma.
+          const cuitDig = String(cuitEmit).replace(/\D/g, "");
+          const nro8 = String(factura.comprobante).padStart(8, "0");
+          const pvComp = parseInt(factura.punto_venta) || pv;
+          for (const docId of [`${cuitDig}_${tipoFactura}_${nro8}`, `${cuitDig}_${pvComp}_${tipoFactura}_${nro8}`]) {
+            try {
+              await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
+                .update({ anulada: true, anulada_at: new Date().toISOString(), nc_nro: ncNro });
+              break;
+            } catch (_) {}
           }
         }
 
@@ -2212,7 +2243,7 @@ export default async function handler(req, res) {
             .where("cuit_emisor", "==", cuitEmit)
             .where("orden_id", "in", ids.slice(i, i + 30))
             .get();
-          snap.docs.forEach(d => { const x = d.data(); if (x.orden_id) yaFacturadas.set(String(x.orden_id), x); });
+          snap.docs.forEach(d => { const x = d.data(); if (x.orden_id && !x.anulada) yaFacturadas.set(String(x.orden_id), x); });
         }
       } catch (e) {
         // Si el pre-chequeo falla NO se aborta la emisión (quedaría el merchant
@@ -2540,7 +2571,7 @@ export default async function handler(req, res) {
 
       const pending = snap.docs
         .map(d => ({ ref: d.ref, ...d.data() }))
-        .filter(c => c.orden_id?.startsWith("ML-") && !c.ml_uploaded);
+        .filter(c => c.orden_id?.startsWith("ML-") && !c.ml_uploaded && !c.anulada);
 
       if (pending.length === 0) {
         return res.json({ ok: true, total: 0, uploaded: 0, errors: [], message: "No hay facturas pendientes de adjuntar a ML" });
@@ -2689,6 +2720,21 @@ export default async function handler(req, res) {
           comprobante: c.nro,
           cae: c.cae,
           total: c.total || 0,
+          // Detalle para la vista "Comprobantes" de Registros
+          tipo_cbte: c.tipo_cbte,
+          punto_venta: c.punto_venta || null,
+          doc_tipo: c.doc_tipo || "",
+          doc_nro: c.doc_nro || "",
+          cliente: c.cliente || "",
+          fecha_cbte: c.fecha_cbte || null,
+          neto: c.neto || 0,
+          iva: c.iva || 0,
+          cae_vto: c.cae_vto || null,
+          ml_uploaded: !!c.ml_uploaded,
+          recuperado_afip: !!c.recuperado_afip,
+          exento: !!c.exento,
+          anulada: !!c.anulada,
+          nc_nro: c.nc_nro || null,
         });
         current._lastTs = ts;
       }
@@ -2700,6 +2746,47 @@ export default async function handler(req, res) {
       });
 
       return res.json({ batches: out });
+    }
+
+    // ── HISTORIAL: notas de crédito del CUIT (misma auth y patrón que list_batches) ──
+    if (action === "list_ncs" && req.method === "GET") {
+      const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
+      if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
+
+      // Filtro opcional por mes/año (mismos params year/month que list_batches)
+      let filterStart = null, filterEnd = null;
+      if (req.query.month && req.query.year) {
+        const y = String(req.query.year);
+        const m = String(req.query.month).padStart(2, "0");
+        filterStart = `${y}-${m}-01T03:00:00.000Z`;
+        const nextM = parseInt(m) === 12 ? "01" : String(parseInt(m) + 1).padStart(2, "0");
+        const nextY = parseInt(m) === 12 ? String(parseInt(y) + 1) : y;
+        filterEnd = `${nextY}-${nextM}-01T03:00:00.000Z`;
+      }
+
+      // El campo `cuit` puede haberse guardado con o sin guiones según la época:
+      // se trae todo y se filtra normalizando a dígitos (colección chica).
+      const snap = await db.collection("users").doc(uid).collection("arca_notas_credito").get();
+      const ncs = snap.docs.map(d => d.data())
+        .filter(c => String(c.cuit || "").replace(/\D/g, "") === cuitParam)
+        .filter(c => !filterStart || (c.fecha >= filterStart && c.fecha < filterEnd))
+        .sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""))
+        .map(c => ({
+          tipo: c.tipo,
+          letra: c.letra || (c.tipo === 3 ? "A" : c.tipo === 8 ? "B" : c.tipo === 13 ? "C" : ""),
+          punto_venta: c.punto_venta || null,
+          comprobante: c.comprobante,
+          cae: c.cae || null,
+          total: c.total || 0,
+          fecha: c.fecha || null,
+          cliente: c.cliente || "",
+          doc_tipo: c.doc_tipo || "",
+          doc_nro: c.doc_nro || "",
+          factura_origen: c.factura_origen || null,
+          recuperado_afip: !!c.recuperado_afip,
+        }));
+
+      return res.json({ ncs });
     }
 
     // ── HISTORIAL: regenerar PDFs de un batch específico ──
@@ -2775,7 +2862,8 @@ export default async function handler(req, res) {
       const billedMap = new Map();
       for (const d of billedSnap.docs) {
         const data = d.data();
-        if (data.orden_id) billedMap.set(data.orden_id, { letra: data.letra, nro: data.nro, emitido_at: data.emitido_at });
+        // anulada:true = ya NO cuenta como facturada (la orden vuelve a ser facturable)
+        if (data.orden_id && !data.anulada) billedMap.set(data.orden_id, { letra: data.letra, nro: data.nro, emitido_at: data.emitido_at });
       }
       // IDs que fueron facturadas y luego ANULADAS con NC — para mostrar recordatorio
       // visual aunque ya no estén "facturadas" (porque borramos de arca_comprobantes al anular)
@@ -3225,7 +3313,7 @@ export default async function handler(req, res) {
       // 3) Filtrar las que ya están facturadas (cruzando con arca_comprobantes)
       const billedSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
         .where("cuit_emisor", "==", cuitParam).get();
-      const billedIds = new Set(billedSnap.docs.map(d => d.data().orden_id).filter(Boolean));
+      const billedIds = new Set(billedSnap.docs.map(d => { const x = d.data(); return x.anulada ? null : x.orden_id; }).filter(Boolean));
 
       // 4) Normalizar al schema interno
       const ordenes = {};
@@ -3296,12 +3384,11 @@ export default async function handler(req, res) {
           .where("cuit_emisor", "==", cuitParam)
           .where("orden_id", "in", chunk)
           .get();
-        snap.docs.forEach(d => dup.push({
-          orden_id: d.data().orden_id,
-          letra: d.data().letra,
-          nro: d.data().nro,
-          total: d.data().total,
-        }));
+        snap.docs.forEach(d => {
+          const x = d.data();
+          if (x.anulada) return; // anulada con NC → la orden es re-facturable, no es duplicado
+          dup.push({ orden_id: x.orden_id, letra: x.letra, nro: x.nro, total: x.total });
+        });
       }
       return res.json({ duplicates: dup });
     }
