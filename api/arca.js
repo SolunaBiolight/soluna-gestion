@@ -549,6 +549,52 @@ async function consultarComprobante(token, sign, cuitNum, puntoVenta, tipoCbte, 
   return { doc_tipo: docTipo, doc_nro: docNroRaw };
 }
 
+// Consulta COMPLETA de un comprobante autorizado (FECompConsultar) — para
+// reconstruir registros perdidos de arca_comprobantes desde AFIP (resync_afip).
+// Devuelve:
+//   null            → AFIP no tiene ese comprobante (código 602: número no emitido)
+//   { error }       → falla SOAP u otro error de ARCA
+//   { fecha, total, neto, iva, exento, cae, cae_vto, doc_tipo, doc_nro }
+async function consultarComprobanteCompleto(token, sign, cuitNum, puntoVenta, tipoCbte, cbteNro, wsfeUrl) {
+  const body = `${authXml(token, sign, cuitNum)}
+    <ar:FeCompConsReq>
+      <ar:CbteTipo>${tipoCbte}</ar:CbteTipo>
+      <ar:CbteNro>${cbteNro}</ar:CbteNro>
+      <ar:PtoVta>${puntoVenta}</ar:PtoVta>
+    </ar:FeCompConsReq>`;
+  let xml;
+  try { xml = await wsfeCall("FECompConsultar", body, wsfeUrl); }
+  catch (e) { return { error: `SOAP: ${e.message}` }; }
+  // Errores reales viven SOLO en <Errors> (los <Events> son avisos informativos).
+  const errBlock = (xml.match(/<Errors>([\s\S]*?)<\/Errors>/) || [])[1];
+  if (errBlock) {
+    const code = (errBlock.match(/<Code>(\d+)<\/Code>/) || [])[1] || "";
+    const msg = ((errBlock.match(/<Msg>([\s\S]*?)<\/Msg>/) || [])[1] || "").trim();
+    // 602 = "no existen datos ... para ese comprobante": hueco real en la numeración
+    if (code === "602" || /no existen datos/i.test(msg)) return null;
+    return { error: `ARCA ${code}: ${msg}` };
+  }
+  const g = (tag) => ((xml.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`)) || [])[1] || "").trim();
+  const resultado = g("Resultado");
+  if (resultado === "R") return null; // rechazado: nunca fue un comprobante válido
+  const fch = g("CbteFch"); // YYYYMMDD
+  if (!/^\d{8}$/.test(fch)) return { error: `respuesta sin CbteFch (raw: ${xml.replace(/\s+/g, " ").slice(0, 180)})` };
+  const total = parseFloat(g("ImpTotal")) || 0;
+  const neto = parseFloat(g("ImpNeto")) || 0;
+  const iva = parseFloat(g("ImpIVA")) || 0;
+  const opEx = parseFloat(g("ImpOpEx")) || 0;
+  const vto = g("FchVto");
+  const docTipoNum2 = parseInt(g("DocTipo") || "0");
+  return {
+    fecha: fch, total, neto, iva,
+    exento: opEx > 0 && iva === 0,
+    cae: g("CodAutorizacion") || null,
+    cae_vto: /^\d{8}$/.test(vto) ? `${vto.slice(6)}/${vto.slice(4, 6)}/${vto.slice(0, 4)}` : null,
+    doc_tipo: docTipoNum2 === 80 ? "CUIT" : docTipoNum2 === 96 ? "DNI" : "",
+    doc_nro: (g("DocNro") || "").replace(/\D/g, ""),
+  };
+}
+
 // Feriados nacionales AR 2026-2027 (hardcoded — actualizar a futuro).
 // Solo los inamovibles principales — los trasladables Buscan último día hábil.
 const FERIADOS_AR = new Set([
@@ -2084,7 +2130,11 @@ export default async function handler(req, res) {
 
     if (action === "emit" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString());
-      const { cuit: cuitEmit, ordenes, product_map, fecha_factura, punto_venta: pvSel, exento: exentoReq } = body;
+      const { cuit: cuitRaw, ordenes, product_map, fecha_factura, punto_venta: pvSel, exento: exentoReq } = body;
+      // Normalizar SIEMPRE a dígitos: cuit_emisor se guarda con este valor y el
+      // historial (list_batches / dashboard_stats) filtra con el cuit normalizado.
+      // Un cuit con guiones acá = comprobantes invisibles en Registros.
+      const cuitEmit = String(cuitRaw || "").replace(/\D/g, "");
       if (!cuitEmit || !ordenes) return res.status(400).json({ error: "Faltan cuit u ordenes" });
       const exento = exentoReq === true || exentoReq === "true"; // factura exenta (digitales/ebooks)
 
@@ -2252,15 +2302,69 @@ export default async function handler(req, res) {
             domicilio: cleanAddr([orden.direccion, orden.ciudad, orden.provincia]),
             total: orden.total, items: orden.items, exento, punto_venta: pv,
           };
-          const pdfBytes = await generarPDF(factData, cfg);
-          const nombreCliente = (orden.nombre || "Consumidor_Final").replace(/[^a-zA-Z0-9 \-_]/g, "").trim();
-          pdfs.push({ nombre: `F${letra} - ${nombreCliente} - ${String(cbteNro).padStart(8, "0")}.pdf`, bytes: Buffer.from(pdfBytes).toString("base64") });
+          // Persistir el comprobante en Firestore ANTES de los pasos best-effort
+          // (PDF, adjuntar a ML). La factura ya existe en AFIP: si el PDF explota
+          // o la función muere por timeout acá, el registro tiene que quedar —
+          // antes se guardaba al final y una falla intermedia lo hacía invisible
+          // en Registros para siempre.
+          const compRef = db.collection("users").doc(uid).collection("arca_comprobantes")
+            .doc(`${cuitEmit}_${tipoCbte}_${String(cbteNro).padStart(8, "0")}`);
+          let compGuardado = false;
+          const netoComp = (isMonotributo || exento) ? (exento ? 0 : orden.total) : Math.round((orden.total / 1.21) * 100) / 100;
+          const ivaComp = (isMonotributo || exento) ? 0 : Math.round((orden.total - netoComp) * 100) / 100;
+          const compData = {
+              cuit_emisor: cuitEmit,
+              tipo_cbte: tipoCbte,
+              letra,
+              nro: cbteNro,
+              punto_venta: pv,
+              exento,
+              fecha_str: factData.fecha,
+              fecha_cbte: factData.fecha_iso,
+              emitido_at: new Date().toISOString(),
+              cae: result.cae,
+              cae_vto: result.cae_vto,
+              cliente: orden.nombre || "Consumidor Final",
+              doc_tipo: orden.doc_tipo,
+              doc_nro: orden.doc_nro || orden.dni || "",
+              total: orden.total,
+              neto: netoComp,
+              iva: ivaComp,
+              orden_id: orderId,
+              // Items reales para re-imprimir el PDF con el detalle correcto
+              items: (orden.items || []).map(it => ({
+                nombre: it.nombre || it.nombre_original || "Producto",
+                cantidad: parseInt(it.cantidad) || 1,
+                precio: parseFloat(it.precio) || 0,
+                descuento_item: parseFloat(it.descuento_item) || 0,
+              })),
+              domicilio: cleanAddr([orden.direccion, orden.ciudad, orden.provincia]),
+              ml_uploaded: false,
+              ml_uploaded_at: null,
+          };
+          try {
+            await compRef.set(compData);
+            compGuardado = true;
+          } catch (e) {
+            console.error("[arca] no se pudo guardar comprobante:", e.message);
+          }
+
+          // PDF — best-effort: una falla acá NO puede tumbar el lote ni perder
+          // el registro (la factura ya salió y ya está guardada arriba).
+          let pdfBytes = null;
+          try {
+            pdfBytes = await generarPDF(factData, cfg);
+            const nombreCliente = (orden.nombre || "Consumidor_Final").replace(/[^a-zA-Z0-9 \-_]/g, "").trim();
+            pdfs.push({ nombre: `F${letra} - ${nombreCliente} - ${String(cbteNro).padStart(8, "0")}.pdf`, bytes: Buffer.from(pdfBytes).toString("base64") });
+          } catch (e) {
+            console.error(`[arca emit] ${orderId} no se pudo generar el PDF (la factura salió igual):`, e.message);
+          }
 
           // ── Auto-adjuntar factura a venta de ML ─────────────
           // 1) Consultamos pack_id real de la orden (a veces es distinto al order_id)
           // 2) Subimos PDF al endpoint /packs/{pack_id}/fiscal_documents
           let ml_uploaded = false, ml_upload_error = null;
-          if (orderId.startsWith("ML-")) {
+          if (orderId.startsWith("ML-") && pdfBytes) {
             try {
               const ml = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
               if (!ml?.accessToken) throw new Error("Sin access_token de ML");
@@ -2337,45 +2441,20 @@ export default async function handler(req, res) {
             }
           }
 
+          if (orderId.startsWith("ML-") && !pdfBytes && !ml_upload_error) ml_upload_error = "PDF no generado — adjuntalo después desde Registros";
+
           resultados.push({ orden_id: orderId, ok: true, letra, comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto, total: orden.total, ml_uploaded, ml_upload_error });
 
-          // Persistir comprobante en Firestore para el dashboard
+          // El comprobante ya se guardó ANTES del PDF/ML — acá solo se actualiza
+          // el flag de adjunto ML, o se reintenta el guardado completo si falló.
           try {
-            const neto = (isMonotributo || exento) ? (exento ? 0 : orden.total) : Math.round((orden.total / 1.21) * 100) / 100;
-            const iva = (isMonotributo || exento) ? 0 : Math.round((orden.total - neto) * 100) / 100;
-            await db.collection("users").doc(uid).collection("arca_comprobantes")
-              .doc(`${cuitEmit}_${tipoCbte}_${String(cbteNro).padStart(8, "0")}`).set({
-                cuit_emisor: cuitEmit,
-                tipo_cbte: tipoCbte,
-                letra,
-                nro: cbteNro,
-                punto_venta: pv,
-                exento,
-                fecha_str: factData.fecha,
-                fecha_cbte: factData.fecha_iso,
-                emitido_at: new Date().toISOString(),
-                cae: result.cae,
-                cae_vto: result.cae_vto,
-                cliente: orden.nombre || "Consumidor Final",
-                doc_tipo: orden.doc_tipo,
-                doc_nro: orden.doc_nro || orden.dni || "",
-                total: orden.total,
-                neto,
-                iva,
-                orden_id: orderId,
-                // Items reales para re-imprimir el PDF con el detalle correcto
-                items: (orden.items || []).map(it => ({
-                  nombre: it.nombre || it.nombre_original || "Producto",
-                  cantidad: parseInt(it.cantidad) || 1,
-                  precio: parseFloat(it.precio) || 0,
-                  descuento_item: parseFloat(it.descuento_item) || 0,
-                })),
-                domicilio: cleanAddr([orden.direccion, orden.ciudad, orden.provincia]),
-                ml_uploaded: ml_uploaded || false,
-                ml_uploaded_at: ml_uploaded ? new Date().toISOString() : null,
-              });
+            if (!compGuardado) {
+              await compRef.set({ ...compData, ml_uploaded: ml_uploaded || false, ml_uploaded_at: ml_uploaded ? new Date().toISOString() : null });
+            } else if (ml_uploaded) {
+              await compRef.set({ ml_uploaded: true, ml_uploaded_at: new Date().toISOString() }, { merge: true });
+            }
           } catch (e) {
-            console.error("[arca] no se pudo guardar comprobante:", e.message);
+            console.error("[arca] no se pudo guardar/actualizar comprobante:", e.message);
           }
 
           if (letra === "A") cbteA++;
@@ -3210,6 +3289,132 @@ export default async function handler(req, res) {
         }));
       }
       return res.json({ duplicates: dup });
+    }
+
+    // ── RECUPERAR REGISTROS DESDE AFIP (resync) ────────
+    // Reconstruye en arca_comprobantes los comprobantes que AFIP tiene
+    // autorizados pero que no quedaron guardados localmente (ej: la función
+    // murió después del CAE y antes del guardado, o un guardado que falló).
+    // Estrategia: FECompUltimoAutorizado por PV/tipo → se recorre la numeración
+    // hacia atrás y se consulta con FECompConsultar SOLO los números que faltan.
+    // Merge puro: create() nunca pisa un registro existente; los reconstruidos
+    // quedan marcados con recuperado_afip:true. No resucita facturas anuladas
+    // con NC (se cruzan contra arca_notas_credito.factura_origen).
+    // Params (body): cuit (obligatorio), pv (default: PV del CUIT),
+    //                tipo_cbte (opcional), desde_nro (opcional, con tipo_cbte).
+    // Presupuesto por corrida: 200 consultas a AFIP o ~90s — si queda numeración
+    // sin revisar devuelve pendientes:true (el front puede volver a llamar).
+    if (action === "resync_afip" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const cuitParam = String(body.cuit || "").replace(/\D/g, "");
+      if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
+      const cfg = await loadCuitConfig(db, uid, cuitParam);
+      if (!cfg?.cert_pem || !cfg?.key_pem) return res.status(400).json({ error: "Falta certificado o clave para ese CUIT" });
+
+      const { wsfe } = arcaUrls(cfg.arca_prod);
+      const { token, sign } = await obtenerTA(db, uid, cfg);
+      const cuitNum = parseInt(cfg.cuit);
+      const pv = parseInt(body.pv) || cfg.punto_venta || 1;
+      const isMonotributo = cfg.condicion_fiscal === "MONOTRIBUTO";
+      // Solo tipos que emite Growith (facturas — las NC viven en arca_notas_credito)
+      const tiposValidos = [1, 6, 11];
+      const tipoReq = parseInt(body.tipo_cbte) || null;
+      const tipos = tipoReq
+        ? (tiposValidos.includes(tipoReq) ? [tipoReq] : [])
+        : (isMonotributo ? [11] : [1, 6]);
+      if (!tipos.length) return res.status(400).json({ error: `tipo_cbte inválido (válidos: ${tiposValidos.join(", ")})` });
+      const desdeNro = parseInt(body.desde_nro) || null;
+
+      // Lo ya guardado para este CUIT — una sola query, se indexa en memoria.
+      // pv puede faltar en registros muy viejos: se asume el PV consultado para
+      // no re-crear duplicados de esos.
+      const compSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+        .where("cuit_emisor", "==", cuitParam).get();
+      const existentes = new Set();
+      compSnap.docs.forEach(d => {
+        const c = d.data();
+        existentes.add(`${parseInt(c.tipo_cbte)}|${parseInt(c.punto_venta) || pv}|${parseInt(c.nro)}`);
+      });
+      // Facturas anuladas con NC → no volver a mostrarlas en Registros
+      const anuladas = new Set();
+      try {
+        const ncSnap = await db.collection("users").doc(uid).collection("arca_notas_credito").get();
+        ncSnap.docs.forEach(d => {
+          const fo = d.data().factura_origen;
+          if (fo?.comprobante) anuladas.add(`${parseInt(fo.tipo)}|${parseInt(fo.punto_venta) || pv}|${parseInt(fo.comprobante)}`);
+        });
+      } catch (_) {}
+
+      const MAX_LOOKUPS = 200;              // consultas a AFIP por corrida
+      const DEADLINE = Date.now() + 90000;  // margen contra el maxDuration de 120s
+      const SCAN_MAX = 2000;                // números revisados por tipo
+      let lookups = 0, recuperados = 0, pendientes = false;
+      const detalle = [];
+
+      for (const tipoCbte of tipos) {
+        let ultimo;
+        try { ultimo = await getUltimoCbte(token, sign, cuitNum, pv, tipoCbte, wsfe); }
+        catch (e) { detalle.push({ tipo_cbte: tipoCbte, error: e.message }); continue; }
+        if (!ultimo) { detalle.push({ tipo_cbte: tipoCbte, ultimo: 0, recuperados: 0 }); continue; }
+
+        let start = ultimo;
+        if (desdeNro && tipoReq) start = Math.min(desdeNro, ultimo);
+        const floor = Math.max(1, start - SCAN_MAX + 1);
+        let recTipo = 0, corte = null;
+
+        for (let nro = start; nro >= floor; nro--) {
+          const key = `${tipoCbte}|${pv}|${nro}`;
+          if (existentes.has(key) || anuladas.has(key)) continue;
+          if (lookups >= MAX_LOOKUPS || Date.now() > DEADLINE) { pendientes = true; corte = nro; break; }
+          lookups++;
+          const afip = await consultarComprobanteCompleto(token, sign, cuitNum, pv, tipoCbte, nro, wsfe);
+          if (afip === null) continue; // AFIP tampoco lo tiene: hueco real, seguir
+          if (afip.error) { detalle.push({ tipo_cbte: tipoCbte, nro, error: afip.error }); continue; }
+
+          const letra = tipoCbte === 1 ? "A" : tipoCbte === 6 ? "B" : "C";
+          const fIso = `${afip.fecha.slice(0, 4)}-${afip.fecha.slice(4, 6)}-${afip.fecha.slice(6, 8)}`;
+          const docId = `${cuitParam}_${tipoCbte}_${String(nro).padStart(8, "0")}`;
+          try {
+            // create() falla si el doc ya existe → imposible pisar un registro real
+            await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId).create({
+              cuit_emisor: cuitParam,
+              tipo_cbte: tipoCbte,
+              letra,
+              nro,
+              punto_venta: pv,
+              exento: !!afip.exento,
+              fecha_str: `${fIso.slice(8, 10)}/${fIso.slice(5, 7)}/${fIso.slice(0, 4)}`,
+              fecha_cbte: fIso,
+              // Mediodía ART del día del comprobante: en Registros agrupa por día
+              emitido_at: `${fIso}T15:00:00.000Z`,
+              cae: afip.cae,
+              cae_vto: afip.cae_vto,
+              cliente: "",
+              doc_tipo: afip.doc_tipo,
+              doc_nro: afip.doc_nro,
+              total: afip.total,
+              neto: (isMonotributo && !afip.neto) ? afip.total : afip.neto,
+              iva: afip.iva,
+              orden_id: null,
+              items: [],
+              domicilio: "",
+              ml_uploaded: false,
+              recuperado_afip: true,
+              recuperado_at: new Date().toISOString(),
+            });
+            recuperados++; recTipo++;
+            existentes.add(key);
+          } catch (e) {
+            // ALREADY_EXISTS (carrera con otra corrida) u otro fallo: no cuenta
+            if (!/already.?exists/i.test(e.message || "")) detalle.push({ tipo_cbte: tipoCbte, nro, error: e.message });
+          }
+        }
+        detalle.push({ tipo_cbte: tipoCbte, ultimo, recuperados: recTipo, ...(corte ? { pendiente_desde: corte } : {}) });
+        if (pendientes) break;
+      }
+
+      console.log(`[arca resync] uid=${uid} cuit=${cuitParam} pv=${pv} tipos=${tipos.join(",")} consultas=${lookups} recuperados=${recuperados} pendientes=${pendientes}`);
+      return res.json({ ok: true, pv, tipos, consultados: lookups, recuperados, pendientes, detalle });
     }
 
     return res.status(404).json({ error: `Acción desconocida: ${action}` });

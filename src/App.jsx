@@ -16059,6 +16059,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [productos, setProductos] = useState([]);
   const [productMap, setProductMap] = useState({});
   const [emitting, setEmitting] = useState(false);
+  const [resyncing, setResyncing] = useState(false); // "Recuperar desde AFIP" en curso
   const [showEmitModal, setShowEmitModal] = useState(false);
   const [duplicatesInModal, setDuplicatesInModal] = useState(null); // array|null
   const [emitProgress, setEmitProgress] = useState({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
@@ -16554,6 +16555,31 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     if(!d.error) setDashboardStats(d);
     const b = await api("list_batches","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
     if(!b.error) setBatches(b.batches||[]);
+  }
+
+  // Recuperar desde AFIP los comprobantes emitidos que no quedaron registrados
+  // (ej: la emisión salió con CAE pero el guardado posterior falló). Llama a
+  // resync_afip por el CUIT/PV activo; si el backend devuelve pendientes:true
+  // (quedó numeración sin revisar por el presupuesto por corrida) re-invoca.
+  async function recuperarDesdeAfip() {
+    if(!cuitSel || resyncing) return;
+    setResyncing(true);
+    try {
+      let total = 0, rondas = 0, d = null;
+      do {
+        d = await api("resync_afip","POST",{cuit:cuitSel, pv:pvElegido?.numero});
+        if(d.error){ toast("Error: "+d.error,"error"); return; }
+        total += d.recuperados||0; rondas++;
+      } while(d.pendientes && rondas < 3);
+      if(total>0){
+        toast(`${total} comprobante${total===1?"":"s"} recuperado${total===1?"":"s"} desde AFIP ✓`,"success");
+        refreshDashboard();
+      } else {
+        toast(d?.pendientes ? "Sin faltantes por ahora — quedó numeración vieja sin revisar, volvé a tocar el botón" : "Registros al día — no hay comprobantes faltantes en AFIP","info");
+      }
+    } catch(e) {
+      toast("Error: "+(e?.message||"no se pudo consultar AFIP"),"error");
+    } finally { setResyncing(false); }
   }
 
   async function loadBatchPdfs(batch) {
@@ -17794,7 +17820,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             </div>
 
             {/* ══ REGISTROS — sólo tab Registros ══ */}
-            {batches.length > 0 && (
+            {/* Se renderiza aunque no haya lotes: si faltan registros (guardado
+                post-CAE fallido) el botón "Recuperar desde AFIP" es la salida. */}
+            {cuitSel && (
               <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"20px 22px",marginTop:24,display:sidebarTab==="historico"?"block":"none"}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
                   <div>
@@ -17802,6 +17830,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Cada lote es un apartado. Click para ver el detalle, descargar PDFs o anular con Nota de Crédito.</div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:14}}>
+                    <button onClick={recuperarDesdeAfip} disabled={resyncing||!cuitSel} title="Consulta AFIP y reconstruye los comprobantes emitidos que no figuren en Registros (no pisa ni duplica nada)" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",cursor:resyncing?"wait":"pointer"}}>
+                      {resyncing ? <><Spinner size={11} color={T.text}/> Consultando AFIP…</> : "↺ Recuperar desde AFIP"}
+                    </button>
                     <button onClick={async()=>{
                       if(!cuitSel) return;
                       if(!await appConfirm("Esto va a regenerar el PDF de cada factura de ML pendiente y subirla a la venta en Mercado Libre. ¿Continuar?",{okLabel:"Continuar"})) return;
@@ -17822,6 +17853,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </div>
                   </div>
                 </div>
+                {batches.length===0 && (
+                  <div style={{fontSize:12,color:T.textSm,padding:"10px 2px"}}>No hay registros para este mes. Si emitiste facturas y no aparecen acá, tocá «↺ Recuperar desde AFIP» para reconstruirlas desde ARCA.</div>
+                )}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(380px, 1fr))",gap:14}}>
                   {batches.map(b=>{
                     const fechaStr = b.emitido_at ? new Date(b.emitido_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
