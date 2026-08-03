@@ -9508,21 +9508,26 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
     if(metodo==="cripto"&&!txHash.trim()) return appAlert("Pegá el hash de transacción (TxID)");
     if(metodo==="transfer"&&!transferRef.trim()) return appAlert("Ingresá el número de comprobante o referencia de la transferencia");
     try {
-      await addDoc(collection(db,"pagos"),{
-        uid: user.uid,
-        email: user.email,
-        plan: PLAN.id,
-        method: metodo,
-        currency: metodo==="cripto"?"USDT":"USD",
-        amount: metodo==="cripto"?+(totalU+centavosId/100).toFixed(2):totalU,
-        meses: mesesPago,
-        periodo: anual?"anual":"mensual",
-        txHash: metodo==="cripto"?txHash.trim():"",
-        transferRef: metodo==="transfer"?transferRef.trim():"",
-        nota: nota.trim(),
-        estado: "pendiente",
-        createdAt: serverTimestamp(),
+      // Vía backend (Admin SDK): escribir `pagos` directo desde el navegador
+      // fallaba con "Missing or insufficient permissions" para clientes no-admin.
+      const r = await authFetch("/api/tareas", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          uid: user.uid, action: "crearPago",
+          email: user.email,
+          plan: PLAN.id,
+          method: metodo,
+          currency: metodo==="cripto"?"USDT":"USD",
+          amount: metodo==="cripto"?+(totalU+centavosId/100).toFixed(2):totalU,
+          meses: mesesPago,
+          periodo: anual?"anual":"mensual",
+          txHash: metodo==="cripto"?txHash.trim():"",
+          transferRef: metodo==="transfer"?transferRef.trim():"",
+          nota: nota.trim(),
+        }),
       });
+      const d = await r.json().catch(()=>({}));
+      if(!r.ok||d.error) throw new Error(d.error||"No pudimos registrar tu pago — probá de nuevo o escribinos a soporte");
       setStep("enviado");
     } catch(e){ appAlert("Error: "+e.message); }
   }

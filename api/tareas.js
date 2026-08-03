@@ -868,6 +868,32 @@ export default async function handler(req, res) {
       if (!s.exists || s.data().uid !== uid) return res.status(403).json({ error: "No autorizado" });
     }
 
+    // Comprobante de pago del cliente — vía backend con Admin SDK: las reglas
+    // de Firestore no dejan a un usuario común escribir en `pagos` desde el
+    // navegador (error "Missing or insufficient permissions" al suscribirse).
+    if (action === "crearPago") {
+      const { plan, method, currency = "", amount, txHash = "", transferRef = "", nota = "", meses = 1, periodo = "mensual", email = "" } = body;
+      if (!["facturador", "plus"].includes(plan)) return res.status(400).json({ error: "Plan inválido" });
+      if (!Number(amount) || Number(amount) <= 0) return res.status(400).json({ error: "Monto inválido" });
+      const metodo = method === "cripto" ? "cripto" : "transfer";
+      if (metodo === "cripto" && !String(txHash).trim()) return res.status(400).json({ error: "Falta el hash de transacción (TxID)" });
+      if (metodo === "transfer" && !String(transferRef).trim()) return res.status(400).json({ error: "Falta la referencia de la transferencia" });
+      const ref = await db.collection("pagos").add({
+        uid, email: String(email).slice(0, 120),
+        plan, method: metodo,
+        currency: String(currency).slice(0, 12),
+        amount: Number(amount),
+        txHash: String(txHash).trim().slice(0, 120),
+        transferRef: String(transferRef).trim().slice(0, 120),
+        nota: String(nota).slice(0, 500),
+        meses: Math.min(12, Math.max(1, Number(meses) || 1)),
+        periodo: periodo === "anual" ? "anual" : "mensual",
+        estado: "pendiente",
+        createdAt: now,
+      });
+      return res.json({ ok: true, id: ref.id });
+    }
+
     // Registro de uso diario por usuario (contadores incrementales)
     if (action === "logUsage") {
       const { metric, n = 1, section = "envios" } = body;
