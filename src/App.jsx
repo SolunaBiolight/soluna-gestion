@@ -13559,6 +13559,33 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              {/* Plantillas — arranque rápido, arriba de todo para elegir antes de tipear */}
+              {(!colabMode||(produccion.taskTemplates||[]).length>0)&&(
+                <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:DS.r.md,padding:"10px 12px"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:8}}>
+                    <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Empezar desde una plantilla</div>
+                    <button onClick={()=>setShowSaveTemplate(s=>!s)} title="Guarda el título y el brief actuales como plantilla para reutilizar"
+                      style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600,padding:0,fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>+ Guardar como plantilla</button>
+                  </div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {!colabMode&&(
+                      <button onClick={()=>{if(!ntTitulo.trim())setNtTitulo("Hacer guiones de canjes");setShowCanjesSec(true);loadCanjesTarea();}}
+                        style={{...BtnSecondary(T),fontSize:11,padding:"4px 12px",color:T.accent,borderColor:T.accentSolid+"55"}}>Guion de canjes</button>
+                    )}
+                    {(produccion.taskTemplates||[]).map(tmpl=>(
+                      <button key={tmpl.id} onClick={()=>{setNtTitulo(tmpl.titulo||"");setNtBrief(tmpl.brief||"");}}
+                        style={{...BtnSecondary(T),fontSize:11,padding:"4px 12px"}}>{tmpl.nombre}</button>
+                    ))}
+                  </div>
+                  {showSaveTemplate&&(
+                    <div style={{marginTop:8,display:"flex",gap:8}}>
+                      <input value={saveTemplateName} onChange={e=>setSaveTemplateName(e.target.value)} placeholder="Nombre de la plantilla (guarda el título y brief actuales)" style={{...iS,fontSize:12,flex:1}}/>
+                      <AsyncButton onClick={guardarTemplate} style={{...BtnPrimary(T),fontSize:12,padding:"5px 12px"}}>Guardar</AsyncButton>
+                      <button onClick={()=>setShowSaveTemplate(false)} style={{...BtnSecondary(T),fontSize:12,padding:"5px 8px"}}>✕</button>
+                    </div>
+                  )}
+                </div>
+              )}
               {/* Título */}
               <div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Título *</div>
@@ -13610,26 +13637,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                     </div>
                 }
               </div>}
-              {/* Deadline + Tipo contenido */}
-              <div style={{display:"flex",gap:10,alignItems:"flex-end"}}>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite</div>
-                  <input type="date" value={ntDeadline} onChange={e=>setNtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
-                </div>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Tipo de contenido</div>
-                  <div style={{display:"flex",borderRadius:DS.r.md,overflow:"hidden",border:`1px solid ${T.border}`}}>
-                    {[{v:"",emoji:"—",bg:T.surface,fg:T.text},{v:"organico",emoji:"Redes",bg:T.green,fg:"#fff"},{v:"pauta",emoji:"Pauta",bg:T.purple,fg:"#fff"}].map((opt,i)=>{
-                      const sel=ntTipoContenido===opt.v;
-                      return(
-                        <button key={opt.v} onClick={()=>setNtTipoContenido(opt.v)}
-                          style={{flex:1,padding:"7px 4px",fontSize:11,fontWeight:sel?700:400,background:sel?opt.bg:T.card,color:sel?opt.fg:T.textSm,border:"none",borderLeft:i>0?`1px solid ${T.border}`:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",whiteSpace:"nowrap"}}>
-                          {opt.emoji}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+              {/* Deadline */}
+              <div style={{width:"50%",minWidth:180}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite</div>
+                <input type="date" value={ntDeadline} onChange={e=>setNtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
               </div>
               {/* Brief — campo principal */}
               <div>
@@ -13713,38 +13724,24 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   </div>
                 ))}
               </div>
-            </div>
-            {/* Templates — "Guion de canjes" es una plantilla integrada que
-                habilita el selector de material de Canjes arriba del brief */}
-            {(!colabMode||(produccion.taskTemplates||[]).length>0)&&(
-              <div style={{marginBottom:4}}>
-                <div style={{fontSize:11,color:T.textSm,marginBottom:5}}>Cargar plantilla</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {!colabMode&&(
-                    <button onClick={()=>{if(!ntTitulo.trim())setNtTitulo("Hacer guiones de canjes");setShowCanjesSec(true);loadCanjesTarea();}}
-                      style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px",color:T.accent,borderColor:T.accentSolid+"55"}}>Guion de canjes</button>
-                  )}
-                  {(produccion.taskTemplates||[]).map(tmpl=>(
-                    <button key={tmpl.id} onClick={()=>{setNtTitulo(tmpl.titulo||"");setNtBrief(tmpl.brief||"");}}
-                      style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px"}}>{tmpl.nombre}</button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div style={{display:"flex",gap:10,justifyContent:"space-between",marginTop:20,alignItems:"center"}}>
-              <button onClick={()=>setShowSaveTemplate(true)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Guardar plantilla</button>
-              <div style={{display:"flex",gap:10}}>
-                <button onClick={()=>setShowNT(false)} style={BtnSecondary(T)}>Cancelar</button>
-                <AsyncButton onClick={crearTarea} style={BtnPrimary(T)}>Crear tarea</AsyncButton>
+              {/* Etiqueta de contenido — opcional y poco usada: chips discretos */}
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:11,color:T.textSm}}>Etiqueta <span style={{opacity:0.6}}>(opcional)</span>:</span>
+                {[{v:"organico",l:"Redes",c:T.green},{v:"pauta",l:"Pauta",c:T.purple}].map(o=>{
+                  const sel=ntTipoContenido===o.v;
+                  return (
+                    <button key={o.v} onClick={()=>setNtTipoContenido(sel?"":o.v)}
+                      style={{padding:"3px 12px",fontSize:11,fontWeight:sel?700:500,borderRadius:20,border:`1px solid ${sel?o.c:T.border}`,background:sel?o.c+"18":"transparent",color:sel?o.c:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>
+                      {o.l}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-            {showSaveTemplate&&(
-              <div style={{marginTop:8,padding:"10px 12px",background:T.surface,borderRadius:8,border:`1px solid ${T.border}`,display:"flex",gap:8}}>
-                <input value={saveTemplateName} onChange={e=>setSaveTemplateName(e.target.value)} placeholder="Nombre de la plantilla" style={{...iS,fontSize:12,flex:1}}/>
-                <AsyncButton onClick={guardarTemplate} style={{...BtnPrimary(T),fontSize:12,padding:"5px 12px"}}>Guardar</AsyncButton>
-                <button onClick={()=>setShowSaveTemplate(false)} style={{...BtnSecondary(T),fontSize:12,padding:"5px 8px"}}>✕</button>
-              </div>
-            )}
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20,alignItems:"center"}}>
+              <button onClick={()=>setShowNT(false)} style={BtnSecondary(T)}>Cancelar</button>
+              <AsyncButton onClick={crearTarea} style={BtnPrimary(T)}>Crear tarea</AsyncButton>
+            </div>
           </div>
         </div>
       )}
