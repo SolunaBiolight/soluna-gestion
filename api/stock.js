@@ -190,21 +190,37 @@ async function mlOrders(sellerId, tok, days, sinceDateISO, untilDateISO) {
     fromISO = `${argYmd(new Date(Date.now() - (days - 1) * 86400000))}T00:00:00-03:00`;
     toISO   = dToday.toISOString();
   }
-  // ML pagina de a 50; iteramos con offset hasta 2000 (40 páginas).
-  const all=[];
-  let complete=false;
-  for (let offset = 0; offset < 2000; offset += 50) {
-    const r = await fetchTR(
-      `https://api.mercadolibre.com/orders/search?seller=${sellerId}&order.status=paid&order.date_created.from=${encodeURIComponent(fromISO)}&order.date_created.to=${encodeURIComponent(toISO)}&limit=50&offset=${offset}&sort=date_desc`,
-      { headers: ML_H(tok) }
-    );
-    if (!r.ok) throw new Error(`ML orders HTTP ${r.status} (offset ${offset})`);
-    const d = await r.json();
-    const batch = d.results || [];
-    all.push(...batch);
-    if (batch.length < 50) { complete=true; break; }
+  // ML pagina de a 50, techo 2000 (40 páginas). Antes el for de offsets era
+  // secuencial (hasta 40 requests encadenados). Ahora: la PRIMERA página trae
+  // paging.total, y con eso los offsets restantes van en lotes de 4 en
+  // paralelo con stagger (mismo patrón que tnOrders). El array final se
+  // concatena POR OFFSET, no por orden de llegada.
+  const PP = 50, CAP = 2000, BATCH = 4, STAGGER = 400;
+  const urlDe = (offset) => `https://api.mercadolibre.com/orders/search?seller=${sellerId}&order.status=paid&order.date_created.from=${encodeURIComponent(fromISO)}&order.date_created.to=${encodeURIComponent(toISO)}&limit=${PP}&offset=${offset}&sort=date_desc`;
+  const r0 = await fetchTR(urlDe(0), { headers: ML_H(tok) });
+  if (!r0.ok) throw new Error(`ML orders HTTP ${r0.status} (offset 0)`);
+  const d0 = await r0.json();
+  const pages = [d0.results || []];
+  const totalReal = parseInt(d0.paging?.total) || pages[0].length;
+  const total = Math.min(totalReal, CAP);
+  if (pages[0].length >= PP && total > PP) {
+    const offsets = [];
+    for (let o = PP; o < total; o += PP) offsets.push(o);
+    for (let i = 0; i < offsets.length; i += BATCH) {
+      const lote = offsets.slice(i, i + BATCH);
+      const res = await Promise.all(lote.map(async (offset) => {
+        const r = await fetchTR(urlDe(offset), { headers: ML_H(tok) });
+        if (!r.ok) throw new Error(`ML orders HTTP ${r.status} (offset ${offset})`);
+        const d = await r.json();
+        return d.results || [];
+      }));
+      lote.forEach((offset, k) => { pages[offset / PP] = res[k]; });
+      if (i + BATCH < offsets.length) await new Promise(res => setTimeout(res, STAGGER));
+    }
   }
-  if (!complete) all.truncated = true; // techo de 2000 alcanzado — resultado parcial
+  const all = [];
+  for (const p of pages) if (Array.isArray(p)) all.push(...p);
+  if (totalReal > CAP) all.truncated = true; // techo de 2000 alcanzado — resultado parcial
   return all;
 }
 
@@ -695,6 +711,27 @@ export default async function handler(req, res) {
         .set({ ts: new Date().toISOString(), data: JSON.parse(s) });
     } catch (_) {}
   }
+  // ── Cache del catálogo TN (users/{uid}/stock_cache/tn_products, TTL 1h) ──
+  // La paginación completa del catálogo (secuencial, ~4s por página de 50) se
+  // repetía en CADA request aunque el catálogo casi nunca cambia. Con caché de
+  // 1h el stock mostrado puede quedar hasta 1h desfasado — las ventas/órdenes
+  // siguen siempre en vivo.
+  async function tnProductsCached(sid, tok) {
+    const ref = dbRef.collection("users").doc(uid).collection("stock_cache").doc("tn_products");
+    try {
+      const s = await ref.get();
+      if (s.exists) {
+        const c = s.data() || {};
+        if (c.cachedAt && (Date.now() - Date.parse(c.cachedAt)) < 3600000 && Array.isArray(c.items)) return c.items;
+      }
+    } catch (_) {}
+    const items = await tnProducts(sid, tok);
+    try {
+      const str = JSON.stringify(items);
+      if (str.length <= 850000) await ref.set({ cachedAt: new Date().toISOString(), items: JSON.parse(str) }); // guard 850KB — si no entra, no se cachea
+    } catch (_) {}
+    return items;
+  }
 
   // Techo duro para TODA la consulta de ventas — sin importar cuántas páginas
   // reintenten en cascada bajo una red inestable, esto garantiza una respuesta
@@ -766,7 +803,7 @@ export default async function handler(req, res) {
         return res.status(200).json(resp);
       } else {
         const [products, orders, mlAnalytics] = await withDeadline(Promise.all([
-          tnProducts(storeId, accessToken),
+          tnProductsCached(storeId, accessToken),
           tnOrders(storeId, accessToken, effectiveDays, sinceDate, untilDate),
           fetchML(),
         ]), "Tienda Nube/ML");

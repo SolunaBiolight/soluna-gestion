@@ -1403,6 +1403,9 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
     { id:"90d", label:"Últimos 90 días", days:90 },
   ];
   function applyPreset(p) {
+    // Presets con rango explícito ("Este mes", "Mes pasado"): la función range()
+    // devuelve [desde, hasta] ya resueltos — no se pueden expresar con days.
+    if (p.range) { const [s,u] = p.range(); onChange(s,u); setOpen(false); return; }
     // "Hoy" y "Últimos N días" via onPreset mantienen el modo days → pegan en la
     // caché del servidor (instantáneo) en vez de un rango custom calculado en vivo.
     if (onPreset && p.days >= 0) { onPreset(p.days === 0 ? 1 : p.days); setOpen(false); return; }
@@ -7706,7 +7709,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas, user, userPlan="free", planExpiry, isAdmin=false, darkMode, onToggleDark, connectedStores={}}) {
   // Cuenta recién creada: sin tienda conectada los KPIs muestran $0 y "todo en
   // orden", que se lee como "la app no hace nada". Mostramos qué falta hacer.
-  const sinTienda = !connectedStores.tn && !connectedStores.shopify && !connectedStores.ml;
+  // Solo con connectedStores.loaded: mientras carga (o si la carga falla) no se
+  // muestra — a un usuario con todo conectado le aparecía por la carrera.
+  const [startDismissed, setStartDismissed] = useState(()=>{ try{ return localStorage.getItem(`growith_home_start_${user?.uid}`)==="1"; }catch(_){ return false; } });
+  const sinTienda = !!connectedStores.loaded && !startDismissed && !connectedStores.tn && !connectedStores.shopify && !connectedStores.ml;
   const nombre = user?.displayName?.split(" ")[0] || "ahí";
   const hora = new Date().getHours();
   const saludo = hora < 12 ? "Buenos días" : hora < 19 ? "Buenas tardes" : "Buenas noches";
@@ -7908,7 +7914,10 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
 
       {/* Primeros pasos — solo mientras no haya una tienda conectada */}
       {sinTienda&&(
-        <Card T={T} padding="lg" style={{border:`1px solid ${T.accentSolid}44`,marginBottom:DS.sp.lg}}>
+        <Card T={T} padding="lg" style={{border:`1px solid ${T.accentSolid}44`,marginBottom:DS.sp.lg,position:"relative"}}>
+          <button onClick={()=>{ setStartDismissed(true); try{ localStorage.setItem(`growith_home_start_${user?.uid}`,"1"); }catch(_){} }}
+            title="Ocultar esta guía"
+            style={{position:"absolute",top:12,right:14,background:"transparent",border:"none",color:T.textSm,fontSize:15,cursor:"pointer",padding:4,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
           <div style={{fontSize:DS.font.xl,fontWeight:DS.w.bold,color:T.text,marginBottom:4}}>Empecemos</div>
           <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:DS.sp.lg,lineHeight:1.55}}>
             Los números de arriba están en cero porque todavía no hay una tienda conectada. Con eso listo, Growith trae los pedidos solo.
@@ -16077,9 +16086,20 @@ const PLATFORM = {
   mercadolibre: { color: "#FFE600", label: "Mercado Libre", abbr: "ML" },
 };
 // Compat: ids viejos de tab (pendientes/manual/historico/metricas/cuits) → ids nuevos
-const ARCA_TAB_MAP = { pendientes: "facturar", manual: "facturar", historico: "registros", metricas: "resumen", cuits: "config" };
+const ARCA_TAB_MAP = { pendientes: "facturar", manual: "facturar", historico: "registros", metricas: "registros", resumen: "registros", cuits: "config" };
 // Constantes estáticas — a nivel módulo para no reconstruirlas en cada render
 const mesesNombres = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+// Rango [desde, hasta] YYYY-MM-DD de un mes calendario completo, con offset en
+// meses respecto del actual (0 = este mes, -1 = mes pasado) — hora Argentina.
+const arcaMesRango = (offset=0) => {
+  const hoy = hoyAR();
+  let y = parseInt(hoy.slice(0,4)), m = parseInt(hoy.slice(5,7)) + offset; // m: 1-12 + offset
+  while (m < 1) { m += 12; y -= 1; }
+  while (m > 12) { m -= 12; y += 1; }
+  const mm = String(m).padStart(2,"0");
+  const last = new Date(y, m, 0).getDate();
+  return [`${y}-${mm}-01`, `${y}-${mm}-${String(last).padStart(2,"0")}`];
+};
 const CONDICIONES=[{id:"RESPONSABLE_INSCRIPTO",label:"Responsable Inscripto"},{id:"MONOTRIBUTO",label:"Monotributista"}];
 const TIPOS_PERSONA=[{id:"FISICA",label:"Persona física"},{id:"JURIDICA",label:"Persona jurídica"}];
 // Origen de un comprobante derivado de su orden_id (Registros) — función pura
@@ -16177,6 +16197,33 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // "Adjuntar pendientes a ML" tiene su propio flag (antes compartía `emitting`)
   const [attachingML, setAttachingML] = useState(false);
 
+  // Nota de débito: modal chico asociado a una factura de Registros
+  const [ndModal, setNdModal] = useState(null); // {r: fila resumen, b: batch} | null
+  const [ndMonto, setNdMonto] = useState("");
+  const [ndConcepto, setNdConcepto] = useState("");
+  const [ndEmitting, setNdEmitting] = useState(false);
+
+  // Config · Envío automático de la factura al cliente por email (por CUIT)
+  const [mailEnabled, setMailEnabled] = useState(false);
+  const [mailReplyTo, setMailReplyTo] = useState("");
+  const [savingMail, setSavingMail] = useState(false);
+  // Config · Alícuotas de IVA por producto (solo RI)
+  const [alicRows, setAlicRows] = useState([]); // [{nombre, alic}]
+  const [savingAlic, setSavingAlic] = useState(false);
+  // Config · Piloto automático de facturación
+  const [apCfg, setApCfg] = useState(null); // null = sin cargar todavía
+  const [apUltimo, setApUltimo] = useState(null); // ultimoResultado de la última corrida
+  const [apLoading, setApLoading] = useState(false);
+  const [apSaving, setApSaving] = useState(false);
+
+  // Sincronizar los campos de envío por mail y alícuotas con el CUIT activo
+  useEffect(()=>{
+    const c = cuits.find(x=>x.cuit===cuitSel);
+    setMailEnabled(!!c?.envio_mail?.enabled);
+    setMailReplyTo(c?.envio_mail?.reply_to||"");
+    setAlicRows(Object.entries(c?.alic_map||{}).map(([nombre,alic])=>({nombre, alic:String(alic)})));
+  },[cuitSel, cuits]);
+
   // Modal facturación manual (mayoristas, etc)
   const [showManual, setShowManual] = useState(false);
   // Las secciones se muestran/ocultan vía display CSS según sidebarTab.
@@ -16185,6 +16232,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [manualDocTipo, setManualDocTipo] = useState("CUIT");
   const [manualDocNro, setManualDocNro] = useState("");
   const [manualItems, setManualItems] = useState([{nombre:"",cantidad:1,precio:0}]);
+  const [manualPercep, setManualPercep] = useState([]); // hasta 3 percepciones {nombre, alicuota, base} — solo RI
   const [emittingManual, setEmittingManual] = useState(false);
   const [manualResult, setManualResult] = useState(null);
   const [conceptoAcIdx, setConceptoAcIdx] = useState(null);
@@ -16244,24 +16292,23 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     .map(p => p==="tiendanube"?"TN":p==="shopify"?"Shopify":p==="mercadolibre"?"ML":p).join("/");
   const iS = {width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",outline:"none"};
   const labelS = {fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,display:"block"};
-  // Mes navegado en el dashboard (default = mes actual ARG)
-  const _now = new Date();
-  const [dashMonth, setDashMonth] = useState(_now.getMonth()+1); // 1-12
-  const [dashYear, setDashYear] = useState(_now.getFullYear());
-  const mesActual = `${mesesNombres[dashMonth-1]} ${dashYear}`;
-  const esMesActualReal = dashMonth === _now.getMonth()+1 && dashYear === _now.getFullYear();
+  // Período navegado en Registros (default = mes actual completo, hora Argentina).
+  // Reemplaza al viejo navegador ‹ mes ›: los loads llaman con desde/hasta.
+  const [regDesde, setRegDesde] = useState(()=>arcaMesRango(0)[0]);
+  const [regHasta, setRegHasta] = useState(()=>arcaMesRango(0)[1]);
+  // Label del período: si es un mes calendario exacto muestra "agosto 2026",
+  // si no, el rango corto "01/08 – 15/08/2026".
+  const fmtRegFecha = (s) => s ? `${s.slice(8,10)}/${s.slice(5,7)}/${s.slice(0,4)}` : "";
+  const mesActual = (()=>{
+    const esMesExacto = regDesde.slice(0,7)===regHasta.slice(0,7) && regDesde.slice(8,10)==="01"
+      && regHasta.slice(8,10)===String(new Date(parseInt(regDesde.slice(0,4)), parseInt(regDesde.slice(5,7)), 0).getDate()).padStart(2,"0");
+    if (esMesExacto) return `${mesesNombres[parseInt(regDesde.slice(5,7))-1]} ${regDesde.slice(0,4)}`;
+    return `${regDesde.slice(8,10)}/${regDesde.slice(5,7)} – ${fmtRegFecha(regHasta)}`;
+  })();
   // Paginación de la vista Comprobantes de Registros (100 por página). Se resetea al
-  // tocar filtros, cambiar de vista/sub-pestaña o navegar de mes — mismo patrón que pendPage.
+  // tocar filtros, cambiar de vista/sub-pestaña o cambiar el período — mismo patrón que pendPage.
   const [regPage, setRegPage] = useState(1);
-  useEffect(()=>{ setRegPage(1); },[regLetra, regPv, regOrigen, regBusq, regSub, regView, dashMonth, dashYear, cuitSel]);
-  function navMes(delta) {
-    let m = dashMonth + delta, y = dashYear;
-    if (m < 1) { m = 12; y -= 1; }
-    if (m > 12) { m = 1; y += 1; }
-    // No permitir navegar a futuro
-    if (y > _now.getFullYear() || (y === _now.getFullYear() && m > _now.getMonth()+1)) return;
-    setDashMonth(m); setDashYear(y);
-  }
+  useEffect(()=>{ setRegPage(1); },[regLetra, regPv, regOrigen, regBusq, regSub, regView, regDesde, regHasta, cuitSel]);
 
   // Capa api con manejo de errores: red caída o respuesta no-JSON lanzan Error
   // con mensaje útil en vez de reventar en el .json() y dejar flags de carga prendidos.
@@ -16301,20 +16348,20 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   useEffect(()=>{
     if(!uid || !cuitSel) { setDashboardStats(null); setBatches([]); setNcs([]); setTnData(null); return; }
-    api("dashboard_stats","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}).then(d=>{
+    api("dashboard_stats","GET",null,{cuit:cuitSel,desde:regDesde,hasta:regHasta}).then(d=>{
       if(!d.error) setDashboardStats(d);
     }).catch(()=>{});
     setBatchesLoading(true);
     Promise.all([
-      api("list_batches","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}),
-      api("list_ncs","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}),
+      api("list_batches","GET",null,{cuit:cuitSel,desde:regDesde,hasta:regHasta}),
+      api("list_ncs","GET",null,{cuit:cuitSel,desde:regDesde,hasta:regHasta}),
     ]).then(([b,n])=>{
       if(!b.error) setBatches(b.batches||[]);
       if(!n.error) setNcs(n.ncs||[]);
     }).catch(e=>{
       toast("No se pudieron cargar los registros: "+(e?.message||"error de conexión"),"error");
     }).finally(()=>setBatchesLoading(false));
-  },[uid, cuitSel, dashMonth, dashYear]);
+  },[uid, cuitSel, regDesde, regHasta]);
 
   // ── Limpieza al cambiar de CUIT: nada del CUIT anterior debe quedar pintado ──
   const primeraLimpiezaCuit = useRef(true);
@@ -16328,12 +16375,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[cuitSel]);
 
-  // ── Limpieza al cambiar el mes navegado de Registros ──
+  // ── Limpieza al cambiar el período navegado de Registros ──
   useEffect(()=>{
     setRegPv(""); setRegBusq("");
     setExpandedBatch(null); setBatchPdfs({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[dashMonth, dashYear]);
+  },[regDesde, regHasta]);
 
 
   useEffect(()=>{
@@ -16558,6 +16605,115 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     } finally {
       setSavingEdit(false);
     }
+  }
+
+  // Guarda campos extra del CUIT (envio_mail, alic_map) reenviando también los
+  // datos actuales — save_cuit espera el payload completo (mismo patrón que Editar).
+  // Los campos extra van JSON-stringificados dentro del FormData.
+  async function saveCuitExtras(c, extras) {
+    const fd = new FormData();
+    fd.append("cuit", c.cuit);
+    fd.append("razon_social", c.razon_social||"");
+    fd.append("nombre_fantasia", c.nombre_fantasia||"");
+    fd.append("domicilio", c.domicilio||"");
+    fd.append("fecha_inicio", c.fecha_inicio||"");
+    fd.append("condicion_fiscal", c.condicion_fiscal||"RESPONSABLE_INSCRIPTO");
+    fd.append("punto_venta", String(c.punto_venta||1));
+    fd.append("puntos_venta", JSON.stringify(Array.isArray(c.puntos_venta)?c.puntos_venta:[]));
+    fd.append("arca_prod", String(c.arca_prod||false));
+    fd.append("ingresos_brutos", c.ingresos_brutos||"");
+    Object.entries(extras).forEach(([k,v])=>fd.append(k, JSON.stringify(v)));
+    const d = await fetch(`/api/arca?action=save_cuit&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
+    if(d.error) throw new Error(d.error);
+    const updated = await api("list_cuits");
+    if(updated.cuits) setCuits(updated.cuits);
+  }
+
+  async function handleSaveMail() {
+    if(!cuitActivo) return;
+    const rt = mailReplyTo.trim();
+    if(mailEnabled && rt && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rt)) return toast("El email de \"Responder a\" no parece válido","warning");
+    setSavingMail(true);
+    try {
+      await saveCuitExtras(cuitActivo, {envio_mail:{enabled:mailEnabled, reply_to:rt}});
+      toast(mailEnabled?"Envío automático al cliente activado ✓":"Envío automático guardado ✓","success");
+    } catch(e) {
+      toast("No se pudo guardar: "+(e?.message||"error de conexión"),"error");
+    } finally { setSavingMail(false); }
+  }
+
+  async function handleSaveAlic() {
+    if(!cuitActivo) return;
+    const map = {};
+    for(const row of alicRows){
+      const n = String(row.nombre||"").trim().toLowerCase();
+      if(!n) continue;
+      const v = parseFloat(row.alic);
+      map[n] = (v===10.5||v===21||v===0) ? v : 21;
+    }
+    setSavingAlic(true);
+    try {
+      await saveCuitExtras(cuitActivo, {alic_map: map});
+      toast("Alícuotas guardadas ✓","success");
+    } catch(e) {
+      toast("No se pudo guardar: "+(e?.message||"error de conexión"),"error");
+    } finally { setSavingAlic(false); }
+  }
+
+  // ── Piloto automático: carga al entrar a Config, guardado explícito ──
+  const AP_DEFAULT = {enabled:false, canales:[], soloPagadas:true, topeMonto:"", maxPorCorrida:40, frecuencia:"1h", hora:9, diasVentana:7};
+  useEffect(()=>{
+    if(tab!=="config" || !uid || !cuitSel) return;
+    let vivo = true;
+    setApLoading(true); setApCfg(null); setApUltimo(null);
+    api("get_autopilot","GET",null,{cuit:cuitSel}).then(d=>{
+      if(!vivo) return;
+      if(d.error){ setApCfg({...AP_DEFAULT}); return; }
+      const c = d.config || {};
+      setApCfg({
+        ...AP_DEFAULT,
+        ...c,
+        canales: Array.isArray(c.canales)?c.canales:[],
+        topeMonto: c.topeMonto!=null && c.topeMonto!=="" ? String(c.topeMonto) : "",
+      });
+      setApUltimo(d.ultimoResultado || c.ultimoResultado || null);
+    }).catch(()=>{ if(vivo) setApCfg({...AP_DEFAULT}); }).finally(()=>{ if(vivo) setApLoading(false); });
+    return ()=>{ vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[tab, uid, cuitSel]);
+
+  async function toggleAutopilot() {
+    if(!apCfg || apSaving) return;
+    if(!apCfg.enabled){
+      const ok = await appConfirm("El piloto automático emite facturas REALES con CAE sin confirmación previa, según estas reglas. ¿Activar?",{okLabel:"Activar", danger:true});
+      if(!ok) return;
+      setApCfg(p=>({...p, enabled:true}));
+    } else {
+      setApCfg(p=>({...p, enabled:false}));
+    }
+  }
+
+  async function handleSaveAutopilot() {
+    if(!cuitSel || !apCfg || apSaving) return;
+    const cfg = {
+      enabled: !!apCfg.enabled,
+      canales: apCfg.canales||[],
+      soloPagadas: !!apCfg.soloPagadas,
+      topeMonto: apCfg.topeMonto==="" ? null : (parseFloat(apCfg.topeMonto)||null),
+      maxPorCorrida: parseInt(apCfg.maxPorCorrida)||40,
+      frecuencia: apCfg.frecuencia==="diaria" ? "diaria" : "1h",
+      hora: Math.min(23, Math.max(0, parseInt(apCfg.hora)||0)),
+      diasVentana: parseInt(apCfg.diasVentana)||7,
+    };
+    if(cfg.enabled && cfg.canales.length===0) return toast("Elegí al menos un canal para que el piloto sepa qué facturar","warning");
+    setApSaving(true);
+    try {
+      const d = await api("save_autopilot","POST",{cuit:cuitSel, config:cfg});
+      if(d.error){ toast("Error: "+d.error,"error"); return; }
+      toast(cfg.enabled?"Piloto automático activado ✓":"Reglas del piloto guardadas ✓","success");
+    } catch(e) {
+      toast("No se pudieron guardar las reglas: "+(e?.message||"error de conexión"),"error");
+    } finally { setApSaving(false); }
   }
 
   async function loadPendingOrders() {
@@ -16899,13 +17055,54 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     } finally { setEmitting(false); }
   }
 
+  // ── Nota de débito: cobra un adicional asociado a una factura ya emitida ──
+  function abrirNd(r, b) {
+    setNdMonto(""); setNdConcepto("");
+    setNdModal({ r, b });
+  }
+  async function emitirNd() {
+    if (!ndModal || !cuitSel || ndEmitting) return;
+    const monto = parseFloat(String(ndMonto).replace(",", "."));
+    if (!(monto > 0)) return toast("Poné un monto mayor a 0", "warning");
+    if (!ndConcepto.trim()) return toast("Poné el concepto del cargo", "warning");
+    const { r, b } = ndModal;
+    setNdEmitting(true);
+    try {
+      const d = await api("emit_nd", "POST", {
+        cuit: cuitSel,
+        factura: {
+          punto_venta: r.punto_venta || b?.punto_venta || 1,
+          comprobante: r.comprobante,
+          letra: r.letra,
+          doc_tipo: r.doc_tipo || "",
+          doc_nro: r.doc_nro || "",
+          cliente: r.cliente || "",
+        },
+        monto,
+        concepto: ndConcepto.trim(),
+      });
+      if (d.error) { toast("Error ARCA: " + (d.detalle || d.error), "error"); return; }
+      if (d.pdf_b64) {
+        const a = document.createElement("a");
+        a.href = "data:application/pdf;base64," + d.pdf_b64;
+        a.download = `growith-nd-${d.nd?.letra || ""}-${String(d.nd?.nro || "").padStart(8, "0")}.pdf`;
+        a.click();
+      }
+      toast(`Nota de débito ${d.nd?.letra || ""} N° ${String(d.nd?.nro || "").padStart(8, "0")} emitida ✓`, "success");
+      setNdModal(null);
+      refreshDashboard();
+    } catch (e) {
+      toast("No se pudo emitir la ND — revisá tu conexión y verificá en Registros si salió", "error");
+    } finally { setNdEmitting(false); }
+  }
+
   async function refreshDashboard() {
     if(!cuitSel) return;
     try {
       const [d,b,n] = await Promise.all([
-        api("dashboard_stats","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}),
-        api("list_batches","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}),
-        api("list_ncs","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}),
+        api("dashboard_stats","GET",null,{cuit:cuitSel,desde:regDesde,hasta:regHasta}),
+        api("list_batches","GET",null,{cuit:cuitSel,desde:regDesde,hasta:regHasta}),
+        api("list_ncs","GET",null,{cuit:cuitSel,desde:regDesde,hasta:regHasta}),
       ]);
       if(!d.error) setDashboardStats(d);
       if(!b.error) setBatches(b.batches||[]);
@@ -17048,9 +17245,17 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       })),
     };
 
+    // Percepciones (solo RI, máx 3): filas válidas con nombre, alícuota y base > 0
+    const percepciones = esRI ? manualPercep
+      .map(p=>({nombre:String(p.nombre||"").trim(), alicuota:parseFloat(p.alicuota)||0, base:parseFloat(p.base)||0}))
+      .filter(p=>p.nombre && p.alicuota>0 && p.base>0)
+      .slice(0,3) : [];
+
     setEmittingManual(true); setManualResult(null);
     try {
-      // PV propio del panel manual (pvManualElegido) — NO hereda el del modal masivo
+      // PV propio del panel manual (pvManualElegido) — NO hereda el del modal masivo.
+      // Las percepciones viajan DENTRO de la orden (el backend las valida por orden).
+      if (percepciones.length) orden.percepciones = percepciones;
       const d = await api("emit","POST",{cuit:cuitSel, ordenes:{[orderId]:orden}, product_map:{}, punto_venta: pvManualElegido?.numero, exento: !!pvManualElegido?.exento});
       if(d.error){toast(d.error,"error");return;}
       const r = (d.resultados||[])[0];
@@ -17330,13 +17535,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 tabs={[
                   {id:"facturar",  label:"Facturar"},
                   {id:"registros", label:"Registros"},
-                  {id:"resumen",   label:"Resumen"},
                   {id:"config",    label:"Configuración"},
                 ]}/>
             </div>
 
             {/* GUÍA ¿Cómo funciona? — mismo patrón chico y discreto que el resto de las secciones */}
-            {(tab==="resumen"||tab==="facturar")&&(
+            {tab==="facturar"&&(
             <div style={{marginBottom:16}}>
               <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
@@ -17373,50 +17577,42 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             </div>
             )}
 
-            {/* Navegador de meses — compartido entre Resumen y Registros */}
-            {(tab==="resumen"||tab==="registros")&&(
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-                <button onClick={()=>navMes(-1)} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:13}}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-                </button>
-                <div style={{flex:1,textAlign:"center",padding:"8px 16px",background:T.card,border:"1px solid "+T.border,borderRadius:10}}>
-                  <div style={{fontSize:14,fontWeight:700,color:T.text,textTransform:"capitalize"}}>{mesActual}</div>
-                  {esMesActualReal&&<div style={{fontSize:10,color:T.green,fontWeight:600,marginTop:1}}>mes actual</div>}
+            {/* Selector de período + KPIs del período — header del tab Registros */}
+            {tab==="registros"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:16}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text}}>Período:</div>
+                  <DateRangePicker T={T} since={regDesde} until={regHasta} onChange={(s,u)=>{ setRegDesde(s); setRegHasta(u||s); }}
+                    presets={[
+                      {id:"mes",   label:"Este mes",         range:()=>arcaMesRango(0)},
+                      {id:"mes-1", label:"Mes pasado",       range:()=>arcaMesRango(-1)},
+                      {id:"3m",    label:"Últimos 3 meses",  range:()=>[arcaMesRango(-2)[0], hoyAR()]},
+                    ]}
+                  />
+                  <span style={{fontSize:12,color:T.textSm,textTransform:"capitalize"}}>{mesActual}</span>
                 </div>
-                <button onClick={()=>navMes(1)} disabled={esMesActualReal} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:13,opacity:esMesActualReal?0.35:1,cursor:esMesActualReal?"not-allowed":"pointer"}}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-                </button>
-              </div>
-            )}
-
-            {/* Dashboard del mes */}
-            {tab==="resumen"&&(
-              <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:24}}>
-                {/* KPIs fila 1 */}
+                {/* KPIs del período (lo que antes vivía en el tab Resumen, compacto en una fila) */}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-                  <KPI T={T} label={`Facturado · ${mesActual}`} color={T.green}
+                  <KPI T={T} label="Total facturado" color={T.green} compact
                     value={dashboardStats?"$ "+dashboardStats.total_facturado.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0}):"$ 0"}
                     sub="IVA incluido"/>
-                  {esRI&&(
-                    <KPI T={T} label={`IVA débito · ${mesActual}`} color={T.blue||T.blue}
-                      value={dashboardStats?"$ "+dashboardStats.iva_debito.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0}):"$ 0"}
-                      sub="Facturas A y B"/>
-                  )}
-                  <KPI T={T} label={`Emitidas · ${mesActual}`} color={T.text}
+                  <KPI T={T} label="Cantidad" color={T.text} compact
                     value={dashboardStats?String(dashboardStats.facturas_emitidas):"0"}
                     sub={dashboardStats&&(dashboardStats.por_letra.A+dashboardStats.por_letra.B+dashboardStats.por_letra.C)>0
                       ?`A: ${dashboardStats.por_letra.A} · B: ${dashboardStats.por_letra.B} · C: ${dashboardStats.por_letra.C}`
-                      :"Sin facturas este mes"}/>
+                      :"Sin facturas en el período"}/>
+                  {esRI&&(
+                    <KPI T={T} label="IVA débito" color={T.blue} compact
+                      value={dashboardStats?"$ "+dashboardStats.iva_debito.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0}):"$ 0"}
+                      sub="Facturas A y B"/>
+                  )}
                   {(()=>{
-                    const pendCount=tnData?Object.values(tnData.ordenes||{}).filter(o=>!o._billed).length:null;
-                    const pendTotal=tnData?Object.values(tnData.ordenes||{}).filter(o=>!o._billed).reduce((a,o)=>a+(o.total||0),0):null;
+                    const ncTotPeriodo = ncs.reduce((s,n)=>s+(n.total||0),0);
+                    const netoPeriodo = (dashboardStats?.total_facturado||0) - ncTotPeriodo;
                     return (
-                      <KPI T={T} icon="⏳" label="Sin facturar ahora"
-                        color={pendCount>0?(T.yellow||T.yellow):T.textSm}
-                        accent={pendCount>0}
-                        value={tnData?String(pendCount):"—"}
-                        sub={pendTotal!=null&&pendTotal>0?`$ ${pendTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})} · En el rango de la pestaña Facturar`:"En el rango de la pestaña Facturar"}
-                        onClick={pendCount>0?()=>setSidebarTab&&setSidebarTab("facturar"):undefined}/>
+                      <KPI T={T} label="Neto" color={T.accent} compact
+                        value={"$ "+netoPeriodo.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}
+                        sub={ncTotPeriodo>0?`Descontando $ ${ncTotPeriodo.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})} en NCs`:"Sin NCs en el período"}/>
                     );
                   })()}
                 </div>
@@ -18066,7 +18262,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <div style={{fontSize:18,fontWeight:800,color:T.text}}>Emitir factura manual</div>
                     <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Para ventas fuera de tus integraciones (mayoristas, venta directa, etc.)</div>
                   </div>
-                  <ModalCloseBtn T={T} onClick={()=>{setShowManual(false);setManualResult(null);}} disabled={emittingManual}/>
+                  <ModalCloseBtn T={T} onClick={()=>{setShowManual(false);setManualResult(null);setManualPercep([]);}} disabled={emittingManual}/>
                 </div>
 
                 {!manualResult ? (
@@ -18121,13 +18317,63 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       + Agregar ítem
                     </button>
 
-                    {/* Total */}
-                    <div style={{padding:"14px 16px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                      <div style={{fontSize:12,color:T.textMd}}>Total {pvManualElegido?.exento ? "(exento · sin IVA)" : esMono ? "(sin IVA discriminado)" : "(IVA incluido al 21%)"}</div>
-                      <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.5}}>
-                        ${manualItems.reduce((s,it)=>s+(it.cantidad||0)*(it.precio||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}
+                    {/* Percepciones (solo RI, hasta 3) */}
+                    {esRI && (
+                      <div style={{marginBottom:14}}>
+                        {manualPercep.length>0 && (
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 90px 130px 30px",gap:8,marginBottom:4}}>
+                            <span style={{fontSize:10,color:T.textSm,fontWeight:600}}>Percepción</span>
+                            <span style={{fontSize:10,color:T.textSm,fontWeight:600,textAlign:"center"}}>Alícuota %</span>
+                            <span style={{fontSize:10,color:T.textSm,fontWeight:600,textAlign:"right"}}>Base imponible $</span>
+                            <span/>
+                          </div>
+                        )}
+                        {manualPercep.map((p,i)=>(
+                          <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 90px 130px 30px",gap:8,alignItems:"center",marginBottom:8}}>
+                            <input value={p.nombre} onChange={e=>setManualPercep(prev=>prev.map((x,j)=>j===i?{...x,nombre:e.target.value}:x))} placeholder="Percepción IIBB ARBA" style={{...iS,fontSize:12}}/>
+                            <input type="number" step="0.01" min="0" value={p.alicuota} onChange={e=>setManualPercep(prev=>prev.map((x,j)=>j===i?{...x,alicuota:e.target.value}:x))} placeholder="%" style={{...iS,fontSize:12,textAlign:"center"}}/>
+                            <input type="number" step="0.01" min="0" value={p.base} onChange={e=>setManualPercep(prev=>prev.map((x,j)=>j===i?{...x,base:e.target.value}:x))} placeholder="Base $" style={{...iS,fontSize:12,textAlign:"right"}}/>
+                            <button onClick={()=>setManualPercep(prev=>prev.filter((_,j)=>j!==i))} title="Quitar percepción" style={{background:"transparent",border:"none",cursor:"pointer",color:T.red,fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                          </div>
+                        ))}
+                        {manualPercep.length<3 && (
+                          <button onClick={()=>{
+                            const subtotal = manualItems.reduce((s,it)=>s+(it.cantidad||0)*(it.precio||0),0);
+                            setManualPercep(prev=>[...prev,{nombre:"",alicuota:"",base:subtotal>0?String(subtotal):""}]);
+                          }} style={{background:"transparent",border:"none",color:T.accent,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:0}}>
+                            + Agregar percepción
+                          </button>
+                        )}
                       </div>
-                    </div>
+                    )}
+
+                    {/* Total */}
+                    {(()=>{
+                      const subtotal = manualItems.reduce((s,it)=>s+(it.cantidad||0)*(it.precio||0),0);
+                      const percTotal = esRI ? manualPercep.reduce((s,p)=>s+((parseFloat(p.base)||0)*(parseFloat(p.alicuota)||0)/100),0) : 0;
+                      return (
+                        <div style={{padding:"14px 16px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10,marginBottom:8}}>
+                          {percTotal>0 && (
+                            <>
+                              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:T.textMd,marginBottom:5}}>
+                                <span>Subtotal ítems</span>
+                                <span>${subtotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</span>
+                              </div>
+                              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:T.textMd,marginBottom:8,paddingBottom:8,borderBottom:"1px solid "+T.borderL}}>
+                                <span>Percepciones</span>
+                                <span>+ ${percTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</span>
+                              </div>
+                            </>
+                          )}
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <div style={{fontSize:12,color:T.textMd}}>Total {pvManualElegido?.exento ? "(exento · sin IVA)" : esMono ? "(sin IVA discriminado)" : "(IVA incluido al 21%)"}{percTotal>0?" + percepciones":""}</div>
+                            <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.5}}>
+                              ${(subtotal+percTotal).toLocaleString("es-AR",{minimumFractionDigits:2})}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                     {/* PV propio del panel manual — solo si el CUIT tiene más de un PV cargado */}
                     {pvsDisponibles.length>1 && (
                       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
@@ -18174,7 +18420,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           Descargar PDF
                         </button>
                       )}
-                      <button onClick={()=>{setManualResult(null);setManualNombre("");setManualDocTipo("CUIT");setManualDocNro("");setManualItems([{nombre:"",cantidad:1,precio:0}]);}} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <button onClick={()=>{setManualResult(null);setManualNombre("");setManualDocTipo("CUIT");setManualDocNro("");setManualItems([{nombre:"",cantidad:1,precio:0}]);setManualPercep([]);}} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                         Emitir otra
                       </button>
                     </div>
@@ -18210,33 +18456,30 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     ? `${r.fecha_cbte.slice(8,10)}/${r.fecha_cbte.slice(5,7)}/${r.fecha_cbte.slice(0,4)}`
                     : (r._b?.emitido_at ? new Date(r._b.emitido_at).toLocaleDateString("es-AR") : "—");
                   const fmtMonto = (v) => "$ " + (v||0).toLocaleString("es-AR",{minimumFractionDigits:2});
+                  // Export del período completo para el contador: facturas + ND (vienen en
+                  // list_batches) + NCs con montos en NEGATIVO — un solo archivo, sin
+                  // aplicar los filtros de pantalla. Separador ";" y BOM UTF-8 (Excel AR).
                   const exportCsv = () => {
                     const esc = (v)=>`"${String(v??"").replace(/"/g,'""')}"`;
-                    let headers, lineas, nombre;
-                    if (regSub==="ncs") {
-                      headers = ["Fecha","Tipo","PV","N°","Cliente","Doc","Total","CAE","Factura origen","Recuperada AFIP"];
-                      lineas = ncRows.map(n=>[
-                        n.fecha?new Date(n.fecha).toLocaleDateString("es-AR"):"", `NC ${n.letra||""}`.trim(), n.punto_venta||"", String(n.comprobante||"").padStart(8,"0"),
-                        n.cliente||"", n.doc_nro||"", (n.total||0).toFixed(2).replace(".",","), n.cae||"",
-                        n.factura_origen?`${n.factura_origen.tipo||""} N° ${String(n.factura_origen.comprobante||"").padStart(8,"0")}`:"", n.recuperado_afip?"sí":"",
-                      ]);
-                      nombre = "notas-credito";
-                    } else {
-                      headers = ["Fecha","Tipo","PV","N°","Cliente","Doc","Neto","IVA","Total","Origen","Orden","CAE","Vto CAE","Anulada","Recuperada AFIP"];
-                      lineas = rows.map(r=>[
-                        fmtFechaCbte(r), `F${r.letra||""}`, r.punto_venta||"", String(r.comprobante||"").padStart(8,"0"),
-                        r.cliente||"", r.doc_nro?`${r.doc_tipo||""} ${r.doc_nro}`.trim():"",
-                        (r.neto||0).toFixed(2).replace(".",","), (r.iva||0).toFixed(2).replace(".",","), (r.total||0).toFixed(2).replace(".",","),
-                        ORIGENES.find(o=>o.id===origenDe(r))?.label||"", r.orden_id||"", r.cae||"", r.cae_vto||"",
-                        r.anulada?"sí":"", r.recuperado_afip?"sí":"",
-                      ]);
-                      nombre = "registros";
-                    }
-                    const csv = "﻿" + [headers.map(esc).join(";"), ...lineas.map(l=>l.map(esc).join(";"))].join("\n");
+                    const num = (v)=>(v||0).toFixed(2).replace(".",",");
+                    const headers = ["Fecha","Tipo","PV","Número","Cliente","Doc","Neto","IVA","Total","CAE","Vto CAE"];
+                    const todasFacturas = batches.flatMap(b=>(b.resumen||[]).map((r,i)=>({...r,_b:b,_bi:i})));
+                    const lineasF = todasFacturas.map(r=>[
+                      fmtFechaCbte(r), r.nd?"ND":`F${r.letra||""}`, r.punto_venta||"", String(r.comprobante||"").padStart(8,"0"),
+                      r.cliente||"", r.doc_nro?`${r.doc_tipo||""} ${r.doc_nro}`.trim():"",
+                      num(r.neto), num(r.iva), num(r.total), r.cae||"", r.cae_vto||"",
+                    ]);
+                    const lineasN = ncs.map(n=>[
+                      n.fecha?new Date(n.fecha).toLocaleDateString("es-AR"):"", "NC", n.punto_venta||"", String(n.comprobante||"").padStart(8,"0"),
+                      n.cliente||"", n.doc_nro||"",
+                      n.neto!=null?num(-(n.neto||0)):"", n.iva!=null?num(-(n.iva||0)):"", num(-(n.total||0)),
+                      n.cae||"", n.cae_vto||"",
+                    ]);
+                    const csv = "﻿" + [headers.map(esc).join(";"), ...lineasF.map(l=>l.map(esc).join(";")), ...lineasN.map(l=>l.map(esc).join(";"))].join("\n");
                     const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
                     const a = document.createElement("a");
                     a.href = URL.createObjectURL(blob);
-                    a.download = `growith-${nombre}-${dashYear}-${String(dashMonth).padStart(2,"0")}.csv`;
+                    a.download = `growith-comprobantes-${regDesde}-${regHasta}.csv`;
                     a.click();
                     setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
                   };
@@ -18244,6 +18487,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   // Badges reutilizados en las dos vistas
                   const BadgeAnulada = () => <span title="Anulada con Nota de Crédito" style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.red+"18",color:T.red,fontWeight:700,border:`1px solid ${T.red}44`,whiteSpace:"nowrap",flexShrink:0}}>ANULADA</span>;
                   const BadgeRecuperada = () => <span title="reconstruida desde AFIP — sin detalle de items" style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.textSm+"18",color:T.textMd,fontWeight:700,border:`1px solid ${T.textSm}44`,whiteSpace:"nowrap",flexShrink:0}}>Recuperada de AFIP</span>;
+                  const BadgeND = ({r}) => <span title={`Nota de débito — cargo adicional${r?.factura_origen?` asociado a la factura N° ${String(r.factura_origen.comprobante||"").padStart(8,"0")}`:" asociado a una factura"}`} style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.purple+"18",color:T.purple,fontWeight:700,border:`1px solid ${T.purple}44`,whiteSpace:"nowrap",flexShrink:0}}>ND</span>;
                   const OrigenBadge = ({r}) => {
                     const o = ORIGENES.find(x=>x.id===origenDe(r));
                     if (!o) return null;
@@ -18252,6 +18496,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   };
                   const btnPdfS = {background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
                   const btnAnularS = {background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
+                  const btnNdS = {background:"transparent",border:`1px solid ${T.purple}55`,color:T.purple,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
                   const descargarPdfDe = async (r) => {
                     const list = await loadBatchPdfs(r._b);
                     if (!list) return;
@@ -18275,7 +18520,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
                         <div>
                           <div style={{fontSize:14,fontWeight:700,color:T.text}}>Registros · <span style={{textTransform:"capitalize"}}>{mesActual}</span></div>
-                          <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Todos los comprobantes emitidos del mes. Descargá PDFs, exportá CSV o anulá con Nota de Crédito.</div>
+                          <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Todos los comprobantes emitidos del período. Descargá PDFs, exportá el CSV para tu contador o anulá con Nota de Crédito.</div>
                         </div>
                         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                           {/* Toggle de vista Lotes / Comprobantes */}
@@ -18286,7 +18531,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               ))}
                             </div>
                           )}
-                          <Btn T={T} variant="secondary" size="sm" onClick={exportCsv} disabled={regSub==="ncs"?ncRows.length===0:rows.length===0}>Exportar CSV</Btn>
+                          <Btn T={T} variant="secondary" size="sm" onClick={exportCsv} disabled={batches.length===0&&ncs.length===0} title="Exporta TODAS las facturas, NCs y NDs del período en un solo CSV (NCs en negativo)">Exportar período (contador)</Btn>
                         </div>
                       </div>
 
@@ -18338,7 +18583,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         </div>
                       ) : vacio ? (
                         <DSEmpty T={T} title={`Sin registros en ${mesActual}`}
-                          subtitle="No hay comprobantes emitidos este mes. Si emitiste facturas y no aparecen acá, podés reconstruirlas desde AFIP."
+                          subtitle="No hay comprobantes emitidos en el período. Si emitiste facturas y no aparecen acá, podés reconstruirlas desde AFIP."
                           action={
                             <button onClick={recuperarDesdeAfip} disabled={resyncing} style={{background:"transparent",border:"none",cursor:resyncing?"wait":"pointer",fontSize:13,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",padding:0,display:"inline-flex",alignItems:"center",gap:6}}>
                               {resyncing ? <><Spinner size={12} color={T.accent}/> {resyncMsg||"Consultando AFIP…"}</> : "Recuperar desde AFIP"}
@@ -18405,7 +18650,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                     <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap"}}>{fmtFechaCbte(r)}</td>
                                     <td style={{padding:"8px 10px"}}>
                                       <span style={{display:"inline-flex",alignItems:"center",gap:5}}>
-                                        <span style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:"1px solid "+T.accent+"44",color:T.accent,background:T.accent+"11",whiteSpace:"nowrap"}}>F{r.letra}</span>
+                                        <span style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:"1px solid "+(r.nd?T.purple:T.accent)+"44",color:r.nd?T.purple:T.accent,background:(r.nd?T.purple:T.accent)+"11",whiteSpace:"nowrap"}}>{r.nd?"ND":"F"}{r.letra}</span>
+                                        {r.nd&&<BadgeND r={r}/>}
                                         {r.anulada&&<BadgeAnulada/>}
                                         {r.recuperado_afip&&<BadgeRecuperada/>}
                                       </span>
@@ -18421,8 +18667,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                     <td style={{padding:"8px 10px"}}>
                                       <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
                                         <button onClick={()=>descargarPdfDe(r)} style={btnPdfS}>PDF</button>
+                                        {!r.anulada&&!r.nd&&(
+                                          <button onClick={()=>abrirNd(r, r._b)} title="Emitir nota de débito — cobra un adicional asociado a esta factura" style={btnNdS}>ND</button>
+                                        )}
                                         {!r.anulada&&(
-                                          <button onClick={()=>{if(!r.recuperado_afip)anularUnaFactura(r, r._b);}} disabled={!!r.recuperado_afip} title={r.recuperado_afip?"Recuperado de AFIP sin detalle de items — anulalo desde una factura manual o contactanos":"Emite NC para anular esta factura"} style={{...btnAnularS,opacity:r.recuperado_afip?0.45:1,cursor:r.recuperado_afip?"not-allowed":"pointer"}}>Anular</button>
+                                          <button onClick={()=>{if(!r.recuperado_afip&&!r.nd)anularUnaFactura(r, r._b);}} disabled={!!r.recuperado_afip||!!r.nd} title={r.nd?"Las ND se revierten con una nota de crédito manual":r.recuperado_afip?"Recuperado de AFIP sin detalle de items — anulalo desde una factura manual o contactanos":"Emite NC para anular esta factura"} style={{...btnAnularS,opacity:(r.recuperado_afip||r.nd)?0.45:1,cursor:(r.recuperado_afip||r.nd)?"not-allowed":"pointer"}}>Anular</button>
                                         )}
                                       </div>
                                     </td>
@@ -18476,7 +18725,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                     <div className="gh-accordion" style={{borderTop:"1px solid "+T.borderL,background:T.card,overflowX:"auto"}}>
                                       {bRows.map((r,i)=>(
                                         <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:i<bRows.length-1?"1px solid "+T.borderL:"none",minWidth:420,opacity:r.anulada?0.6:1}}>
-                                          <div style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:"1px solid "+T.accent+"44",color:T.accent,background:T.accent+"11",flexShrink:0}}>F{r.letra}</div>
+                                          <div style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:"1px solid "+(r.nd?T.purple:T.accent)+"44",color:r.nd?T.purple:T.accent,background:(r.nd?T.purple:T.accent)+"11",flexShrink:0}}>{r.nd?"ND":"F"}{r.letra}</div>
+                                          {r.nd&&<BadgeND r={r}/>}
                                           {r.anulada&&<BadgeAnulada/>}
                                           {r.recuperado_afip&&<BadgeRecuperada/>}
                                           <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
@@ -18490,8 +18740,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                               Ver en ML
                                             </a>
                                           )}
+                                          {!r.anulada&&!r.nd&&(
+                                            <button onClick={()=>abrirNd(r, b)} title="Emitir nota de débito — cobra un adicional asociado a esta factura" style={btnNdS}>ND</button>
+                                          )}
                                           {!r.anulada&&(
-                                            <button onClick={()=>{if(!r.recuperado_afip)anularUnaFactura(r, b);}} disabled={!!r.recuperado_afip} title={r.recuperado_afip?"Recuperado de AFIP sin detalle de items — anulalo desde una factura manual o contactanos":"Emite NC para anular esta factura"} style={{...btnAnularS,opacity:r.recuperado_afip?0.45:1,cursor:r.recuperado_afip?"not-allowed":"pointer"}}>Anular</button>
+                                            <button onClick={()=>{if(!r.recuperado_afip&&!r.nd)anularUnaFactura(r, b);}} disabled={!!r.recuperado_afip||!!r.nd} title={r.nd?"Las ND se revierten con una nota de crédito manual":r.recuperado_afip?"Recuperado de AFIP sin detalle de items — anulalo desde una factura manual o contactanos":"Emite NC para anular esta factura"} style={{...btnAnularS,opacity:(r.recuperado_afip||r.nd)?0.45:1,cursor:(r.recuperado_afip||r.nd)?"not-allowed":"pointer"}}>Anular</button>
                                           )}
                                         </div>
                                       ))}
@@ -18557,6 +18810,161 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 </div>
               </Card>
 
+              {/* ── Piloto automático de facturación ── */}
+              {cuitActivo && (
+                <Card T={T} padding="lg" style={{marginTop:16}}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
+                    <div style={{flex:1,minWidth:240}}>
+                      <div style={{fontSize:14,fontWeight:700,color:T.text}}>Piloto automático de facturación</div>
+                      <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Growith factura solo tus ventas nuevas, sin que entres a la app.</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:4}}>CUIT activo: {formatCuit(cuitActivo.cuit)} · {cuitActivo.nombre_fantasia||cuitActivo.razon_social}</div>
+                    </div>
+                    {apLoading || !apCfg ? (
+                      <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSm}}><Spinner size={12} color={T.accent}/> Cargando…</div>
+                    ) : (
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <span style={{fontSize:12,fontWeight:700,color:apCfg.enabled?T.green:T.textMd}}>{apCfg.enabled?"Activado":"Desactivado"}</span>
+                        <DSToggle T={T} active={!!apCfg.enabled} onToggle={toggleAutopilot}/>
+                      </div>
+                    )}
+                  </div>
+                  {apCfg && apCfg.enabled && (
+                    <div style={{marginTop:16,display:"flex",flexDirection:"column",gap:14}}>
+                      {/* Canales */}
+                      <div>
+                        <label style={labelS}>Canales a facturar (solo los conectados)</label>
+                        <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                          {Object.entries(PLATFORM).filter(([id])=>tienePlat(id)).map(([id,p])=>(
+                            <label key={id} style={{display:"flex",alignItems:"center",gap:7,fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                              <input type="checkbox" checked={(apCfg.canales||[]).includes(id)}
+                                onChange={e=>setApCfg(prev=>({...prev, canales: e.target.checked ? [...(prev.canales||[]),id] : (prev.canales||[]).filter(x=>x!==id)}))}
+                                style={{cursor:"pointer"}}/>
+                              <BrandIcon name={id} size={15}/> {p.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Solo pagadas + tope */}
+                      <div style={{display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10}}>
+                          <DSToggle T={T} active={!!apCfg.soloPagadas} onToggle={()=>setApCfg(p=>({...p, soloPagadas:!p.soloPagadas}))}/>
+                          <span style={{fontSize:12,color:T.text}}>Solo ventas con pago acreditado</span>
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{fontSize:12,color:T.textMd}}>Tope por venta $</span>
+                          <input type="number" min="0" value={apCfg.topeMonto} onChange={e=>setApCfg(p=>({...p, topeMonto:e.target.value}))} placeholder="sin tope" style={{...iS,width:120,padding:"7px 10px",fontSize:12}}/>
+                        </div>
+                      </div>
+                      {/* Frecuencia + hora + ventana + máx por corrida */}
+                      <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{fontSize:12,color:T.textMd}}>Frecuencia</span>
+                          <select value={apCfg.frecuencia} onChange={e=>setApCfg(p=>({...p, frecuencia:e.target.value}))} style={{...iS,width:"auto",padding:"7px 10px",fontSize:12}}>
+                            <option value="1h">Cada hora</option>
+                            <option value="diaria">Una vez al día</option>
+                          </select>
+                        </div>
+                        {apCfg.frecuencia==="diaria" && (
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <span style={{fontSize:12,color:T.textMd}}>a las</span>
+                            <select value={apCfg.hora} onChange={e=>setApCfg(p=>({...p, hora:parseInt(e.target.value)}))} style={{...iS,width:"auto",padding:"7px 10px",fontSize:12}}>
+                              {Array.from({length:24},(_,h)=>h).map(h=><option key={h} value={h}>{String(h).padStart(2,"0")}:00</option>)}
+                            </select>
+                            <span style={{fontSize:11,color:T.textSm}}>hs Argentina</span>
+                          </div>
+                        )}
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{fontSize:12,color:T.textMd}}>Ventana</span>
+                          <select value={apCfg.diasVentana} onChange={e=>setApCfg(p=>({...p, diasVentana:parseInt(e.target.value)}))} style={{...iS,width:"auto",padding:"7px 10px",fontSize:12}}>
+                            {[3,7,15,30].map(d=><option key={d} value={d}>últimos {d} días</option>)}
+                          </select>
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{fontSize:12,color:T.textMd}}>Máximo por corrida</span>
+                          <input type="number" min="1" value={apCfg.maxPorCorrida} onChange={e=>setApCfg(p=>({...p, maxPorCorrida:e.target.value}))} style={{...iS,width:80,padding:"7px 10px",fontSize:12}}/>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {/* Última corrida */}
+                  {apUltimo && (()=>{
+                    const f = apUltimo.fecha || apUltimo.ts || apUltimo.at;
+                    const fechaStr = f ? new Date(f).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
+                    const emitidas = apUltimo.emitidas ?? apUltimo.ok ?? 0;
+                    const errores = apUltimo.errores ?? apUltimo.errors ?? 0;
+                    const col = errores>0 ? T.yellow : T.green;
+                    return (
+                      <div style={{marginTop:14,padding:"9px 12px",background:col+"12",border:`1px solid ${col}44`,borderRadius:8,fontSize:12,color:col,fontWeight:600}}>
+                        Última corrida: {fechaStr} — {emitidas} factura{emitidas===1?"":"s"} emitida{emitidas===1?"":"s"}{errores>0?`, ${errores} error${errores===1?"":"es"}`:""}
+                      </div>
+                    );
+                  })()}
+                  {apCfg && (
+                    <div style={{display:"flex",justifyContent:"flex-end",marginTop:14}}>
+                      <Btn T={T} variant="primary" size="sm" onClick={handleSaveAutopilot} disabled={apSaving}>{apSaving?"Guardando…":"Guardar reglas"}</Btn>
+                    </div>
+                  )}
+                </Card>
+              )}
+
+              {/* ── Envío automático al cliente ── */}
+              {cuitActivo && (
+                <Card T={T} padding="lg" style={{marginTop:16}}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
+                    <div style={{flex:1,minWidth:240}}>
+                      <div style={{fontSize:14,fontWeight:700,color:T.text}}>Envío automático al cliente</div>
+                      <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Cada factura emitida desde una venta se envía sola al email del comprador, con el PDF adjunto.</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:4}}>CUIT activo: {formatCuit(cuitActivo.cuit)} · {cuitActivo.nombre_fantasia||cuitActivo.razon_social}</div>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <span style={{fontSize:12,color:T.textMd,fontWeight:600}}>Enviar la factura al cliente por email</span>
+                      <DSToggle T={T} active={mailEnabled} onToggle={()=>setMailEnabled(v=>!v)}/>
+                    </div>
+                  </div>
+                  {mailEnabled && (
+                    <div style={{marginTop:14,maxWidth:360}}>
+                      <label style={labelS}>Responder a (email · opcional)</label>
+                      <input type="email" value={mailReplyTo} onChange={e=>setMailReplyTo(e.target.value)} placeholder="hola@mitienda.com" style={iS}/>
+                      <div style={{fontSize:10,color:T.textSm,marginTop:5,lineHeight:1.5}}>Si el cliente responde el mail de la factura, la respuesta llega a esta casilla.</div>
+                    </div>
+                  )}
+                  <div style={{display:"flex",justifyContent:"flex-end",marginTop:14}}>
+                    <Btn T={T} variant="primary" size="sm" onClick={handleSaveMail} disabled={savingMail}>{savingMail?"Guardando…":"Guardar"}</Btn>
+                  </div>
+                </Card>
+              )}
+
+              {/* ── Alícuotas de IVA por producto (solo RI) ── */}
+              {cuitActivo && cuitActivo.condicion_fiscal!=="MONOTRIBUTO" && (
+                <Card T={T} padding="lg" style={{marginTop:16}}>
+                  <div style={{marginBottom:12}}>
+                    <div style={{fontSize:14,fontWeight:700,color:T.text}}>Alícuotas de IVA</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Por defecto todo se factura al 21%. Si vendés productos con IVA reducido (10,5%) o exentos, mapealos acá.</div>
+                  </div>
+                  {alicRows.length===0 && (
+                    <div style={{fontSize:12,color:T.textSm,marginBottom:10}}>Sin productos mapeados — todo sale al 21%.</div>
+                  )}
+                  {alicRows.map((row,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+                      <input value={row.nombre} onChange={e=>setAlicRows(prev=>prev.map((r,j)=>j===i?{...r,nombre:e.target.value}:r))} placeholder="Nombre del producto" style={{...iS,flex:1,minWidth:180,fontSize:12}}/>
+                      <select value={row.alic} onChange={e=>setAlicRows(prev=>prev.map((r,j)=>j===i?{...r,alic:e.target.value}:r))} style={{...iS,width:"auto",padding:"8px 10px",fontSize:12}}>
+                        <option value="21">21%</option>
+                        <option value="10.5">10,5%</option>
+                        <option value="0">Exento</option>
+                      </select>
+                      <button onClick={()=>setAlicRows(prev=>prev.filter((_,j)=>j!==i))} title="Quitar producto" style={{background:"transparent",border:"none",cursor:"pointer",color:T.red,fontSize:14,padding:"4px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                    </div>
+                  ))}
+                  <button onClick={()=>setAlicRows(prev=>[...prev,{nombre:"",alic:"10.5"}])} style={{background:"transparent",border:"1px dashed "+T.border,color:T.textMd,borderRadius:8,padding:"7px 12px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",marginBottom:10}}>
+                    + Agregar producto
+                  </button>
+                  <div style={{fontSize:10,color:T.textSm,lineHeight:1.5,marginBottom:12}}>El nombre tiene que coincidir con el nombre del producto en tus ventas.</div>
+                  <div style={{display:"flex",justifyContent:"flex-end"}}>
+                    <Btn T={T} variant="primary" size="sm" onClick={handleSaveAlic} disabled={savingAlic}>{savingAlic?"Guardando…":"Guardar alícuotas"}</Btn>
+                  </div>
+                </Card>
+              )}
+
               {/* ── Mantenimiento ── */}
               <Card T={T} padding="lg" style={{marginTop:16}}>
                 <div style={{marginBottom:14}}>
@@ -18593,6 +19001,45 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           </>
         )}
       </div>
+
+      {/* ══ MODAL NOTA DE DÉBITO ══ */}
+      {ndModal && ReactDOM.createPortal(
+        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>{if(!ndEmitting)setNdModal(null);}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:420,maxHeight:"90vh",overflowY:"auto",padding:"24px 26px",display:"flex",flexDirection:"column",gap:14,fontFamily:"'Inter',system-ui,sans-serif"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:16,fontWeight:800,color:T.text}}>Emitir nota de débito</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cobra un adicional asociado a esta factura</div>
+              </div>
+              <ModalCloseBtn T={T} onClick={()=>setNdModal(null)} disabled={ndEmitting}/>
+            </div>
+            {/* Datos de la factura (solo lectura) */}
+            <div style={{padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,fontSize:12,display:"flex",flexDirection:"column",gap:4}}>
+              <div><span style={{color:T.textSm}}>Factura:</span> <strong style={{color:T.text}}>{ndModal.r.letra} N° {String(ndModal.r.comprobante||"").padStart(8,"0")}</strong> · PV {String(ndModal.r.punto_venta||ndModal.b?.punto_venta||1).padStart(4,"0")}</div>
+              <div><span style={{color:T.textSm}}>Cliente:</span> <span style={{color:T.text}}>{ndModal.r.cliente||"Consumidor Final"}</span>{ndModal.r.doc_nro?<span style={{color:T.textMd}}> · {ndModal.r.doc_tipo||""} {ndModal.r.doc_nro}</span>:null}</div>
+              <div><span style={{color:T.textSm}}>Total facturado:</span> <span style={{color:T.text,fontWeight:600}}>$ {(ndModal.r.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</span></div>
+            </div>
+            <div>
+              <label style={labelS}>Monto del cargo $</label>
+              <input type="number" step="0.01" min="0" value={ndMonto} onChange={e=>setNdMonto(e.target.value)} placeholder="0,00" disabled={ndEmitting} style={iS}/>
+            </div>
+            <div>
+              <label style={labelS}>Concepto</label>
+              <input value={ndConcepto} onChange={e=>setNdConcepto(e.target.value)} placeholder='Ej: "Diferencia de envío"' disabled={ndEmitting} style={iS}/>
+            </div>
+            <div style={{padding:"9px 12px",background:T.purple+"12",border:`1px solid ${T.purple}44`,borderRadius:8,fontSize:11,color:T.purple,lineHeight:1.5}}>
+              La ND se emite en ARCA con CAE y queda asociada a la factura.
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <Btn T={T} variant="secondary" onClick={()=>setNdModal(null)} disabled={ndEmitting} style={{flex:1,justifyContent:"center"}}>Cancelar</Btn>
+              <Btn T={T} variant="primary" onClick={emitirNd} disabled={ndEmitting||!(parseFloat(String(ndMonto).replace(",","."))>0)||!ndConcepto.trim()} style={{flex:1,justifyContent:"center"}}>
+                {ndEmitting?<><Spinner size={12} color={T.accent}/> Emitiendo…</>:"Emitir ND"}
+              </Btn>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* ══ WIZARD MODAL ══ */}
       {showWizard && (
@@ -26688,6 +27135,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     </button>
   );
   const [revalidando, setRevalidando] = useState(false);
+  // Rango sin caché en el server: el skeleton avisa que el primer cálculo tarda.
+  const [calcNuevo, setCalcNuevo] = useState(false);
   // Anti-carrera: si el usuario cambia el período mientras una carga (o sus
   // reintentos) sigue en vuelo, la carga vieja no debe pisar la vista nueva.
   const reqIdRef = React.useRef(0);
@@ -26706,7 +27155,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     //    llegan la caché del servidor y los datos en vivo.
     const periodSig = from&&to?`${from}_${to}`:`d${d}`;
     const swrKey=`growith_rend_cache_${uid}_${periodSig}`;
-    let pintado=false;
+    let pintado=false, noCacheRango=false;
     if(!silent){
       const local=ghSwrGet(swrKey);
       if(local?.totals){ setRendData({...local,_sig:periodSig}); setLoading(false); setRevalidando(true); pintado=true; }
@@ -26720,6 +27169,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           setRendData({...jc, _sig:periodSig, loadedAt:jc.cachedAt||new Date().toISOString()});
           setLoading(false); setRevalidando(true); pintado=true;
         }
+        if(jc.noCache) noCacheRango=true;
       }catch(_){}
       if(!vigente()) return;
       // Si cambió el período y no hay NINGÚN dato de ese rango, limpiar la vista:
@@ -26727,23 +27177,69 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       // filtro "Hoy" mostrando el mes entero cuando el cálculo en vivo fallaba).
       if(!pintado) setRendData(prev => (prev && prev._sig && prev._sig!==periodSig) ? null : prev);
     }
-    // 2) Datos en vivo, con reintentos automáticos: TN tira 504 seguido cuando
-    //    está lenta — reintentamos 2 veces en silencio antes de mostrar error.
     let lastErr=null;
-    for(let intento=0;intento<3;intento++){
-      if(intento>0) await new Promise(res=>setTimeout(res,intento===1?2500:6000));
-      if(!vigente()) return;
-      try {
-        const r=await fetch(url);
-        const j=await r.json();
-        if(!vigente()) return;
-        if(j.error) throw new Error(j.error);
-        const fresh={...j, _sig:periodSig, loadedAt:new Date().toISOString()};
+    const sleep=ms=>new Promise(res=>setTimeout(res,ms));
+    if(noCacheRango){
+      // 2a) Rango SIN caché en el server: reintentar el request pesado en loop
+      //     duplicaba el cálculo de ~1 min ×2-3 veces. Ahora: UNA sola request
+      //     en vivo al toque + polling liviano de cache=only cada 5s (máx 24 =
+      //     2 min) en paralelo — el server ya registró el rango en el warmer al
+      //     detectar el miss, así el cron lo calcula aunque la request en vivo
+      //     timeoutee. Gana el primero que traiga datos; el otro se descarta.
+      if(!pintado) setCalcNuevo(true);
+      let resuelto=false;
+      const usar=(j,deCache)=>{
+        if(resuelto||!vigente()) return false;
+        resuelto=true;
+        const fresh={...j, _sig:periodSig, loadedAt:(deCache&&j.cachedAt)||new Date().toISOString()};
         setRendData(fresh);
         if(j.totals) ghSwrSet(swrKey, fresh);
-        lastErr=null;
-        break;
-      }catch(e){ lastErr=e; }
+        return true;
+      };
+      const vivoP=(async()=>{
+        try{
+          const r=await fetch(url);
+          const j=await r.json();
+          if(j.error) throw new Error(j.error);
+          return usar(j,false);
+        }catch(e){ lastErr=e; return false; }
+      })();
+      const pollP=(async()=>{
+        for(let i=0;i<24 && !resuelto && vigente();i++){
+          // espera de 5s en pasos cortos: corta al instante si el vivo ya resolvió
+          for(let t=0;t<10 && !resuelto && vigente();t++) await sleep(500);
+          if(resuelto||!vigente()) return false;
+          try{
+            const rc=await fetch(url+"&cache=only");
+            const jc=await rc.json();
+            if(resuelto||!vigente()) return false;
+            if(!jc.noCache&&!jc.error&&jc.totals) return usar(jc,true);
+          }catch(_){}
+        }
+        return false;
+      })();
+      const [vivoOk,pollOk]=await Promise.all([vivoP,pollP]);
+      if(vivoOk||pollOk) lastErr=null;
+      else if(!lastErr) lastErr=new Error("El período nuevo está tardando más de lo normal. Volvé a intentar en un minuto — el cálculo sigue corriendo de fondo.");
+      if(vigente()) setCalcNuevo(false);
+    } else {
+      // 2b) Datos en vivo, con reintentos automáticos: TN tira 504 seguido cuando
+      //     está lenta — reintentamos 2 veces en silencio antes de mostrar error.
+      for(let intento=0;intento<3;intento++){
+        if(intento>0) await sleep(intento===1?2500:6000);
+        if(!vigente()) return;
+        try {
+          const r=await fetch(url);
+          const j=await r.json();
+          if(!vigente()) return;
+          if(j.error) throw new Error(j.error);
+          const fresh={...j, _sig:periodSig, loadedAt:new Date().toISOString()};
+          setRendData(fresh);
+          if(j.totals) ghSwrSet(swrKey, fresh);
+          lastErr=null;
+          break;
+        }catch(e){ lastErr=e; }
+      }
     }
     if(!vigente()) return;
     if(lastErr) setError(lastErr.message);
@@ -26760,7 +27256,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     if(!uid) return;
     loadRef.current();
     const iv = setInterval(()=>loadRef.current(undefined,undefined,undefined,true), 240000);
-    return ()=>clearInterval(iv);
+    // Al desmontar: invalidar la carga en vuelo (corta el polling de cache=only
+    // del rango nuevo y evita setState sobre un componente desmontado).
+    return ()=>{ clearInterval(iv); reqIdRef.current++; };
   },[uid]);
 
   const [reproc, setReproc] = useState(false);
@@ -26948,6 +27446,12 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
         <AppTopbar T={T} section="Dashboard" onHome={onHome}/>
         <MargenesTabsBar T={T} tab={tab||"dashboard"} setTab={setTab}/>
         <div style={{maxWidth:1440,margin:"0 auto",padding:"20px 24px",width:"100%"}}>
+          {calcNuevo&&(
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"10px 14px",borderRadius:10,border:`1px solid ${T.border}`,background:T.card,fontSize:13,color:T.textMd,fontWeight:500}}>
+              <Spinner size={14} color={T.accent}/>
+              Calculando período nuevo — puede tardar un minuto la primera vez…
+            </div>
+          )}
           <div style={{display:"flex",gap:6,marginBottom:18}}>{[90,110,120].map((w,i)=><div key={i} style={{width:w}}><Skel h={34} r={10}/></div>)}</div>
           <div style={{display:"grid",gridTemplateColumns:`repeat(${winW<520?2:4},1fr)`,gap:10,marginBottom:18}}>{[0,1,2,3].map(i=><Skel key={i}/>)}</div>
           <Skel h={260} r={12}/>

@@ -303,14 +303,30 @@ export default async function handler(req, res) {
       const cacheKey = req.query.date_from ? `${since}_${until}` : `d${days}`;
       const cacheRef = db.collection("users").doc(uid).collection("margenes_cache").doc(cacheKey);
       if (req.query.cache === "only") {
+        // Registrar el rango en el warmer APENAS se detecta el miss (antes se
+        // registraba recién al final del cálculo exitoso): así el cron
+        // warm_margenes (cada 5 min) calienta este rango aunque el primer
+        // intento en vivo timeoutee y nunca llegue a escribir la caché.
+        // lastWarm en época 0 lo pone al frente de la cola del warmer.
+        const registrarMiss = async () => {
+          try {
+            await db.collection("system_warm_margenes").doc(warmDocId(uid, cacheKey)).set({
+              uid, key: cacheKey,
+              days: req.query.date_from ? null : days,
+              date_from: req.query.date_from || null, date_to: req.query.date_to || null,
+              lastAccess: new Date().toISOString(),
+              lastWarm: new Date(0).toISOString(),
+            }, { merge: true });
+          } catch(e) { console.error("margenes warm miss set error:", e.message); }
+        };
         const cs = await cacheRef.get();
-        if (!cs.exists) return res.json({ noCache: true });
+        if (!cs.exists) { await registrarMiss(); return res.json({ noCache: true }); }
         const cd = cs.data() || {};
         try {
           const body = JSON.parse(cd.body || "{}");
           body.cachedAt = cd.cachedAt || null;
           return res.json(body);
-        } catch(_) { return res.json({ noCache: true }); }
+        } catch(_) { await registrarMiss(); return res.json({ noCache: true }); }
       }
       const userSnap = await db.collection("users").doc(uid).get();
       const userData = userSnap.data() || {};
@@ -331,15 +347,37 @@ export default async function handler(req, res) {
         const stockUrl = new URL(`https://${req.headers.host}/api/stock`);
         stockUrl.searchParams.set("uid", uid); stockUrl.searchParams.set("action", "products");
         stockUrl.searchParams.set("date_from", from); stockUrl.searchParams.set("date_to", to);
-        let r;
         // /api/stock exige auth: este subrequest es server→server, así que va
         // con el CRON_SECRET (que stock.js acepta vía isCronRequest). El uid ya
         // fue validado contra el token del usuario en el gate de arriba.
-        try { r = await fetch(stockUrl.toString(), { headers: { host: req.headers.host, Authorization: `Bearer ${process.env.CRON_SECRET || ''}` } }); }
-        catch (e) { throw new Error("No se pudieron traer las ventas (red). Reintentá en unos segundos."); }
-        if (!r.ok) throw new Error(`No se pudieron traer las ventas (HTTP ${r.status}). Reintentá en unos segundos.`);
-        const j = await r.json();
-        if (j.error) throw new Error(`Ventas: ${j.error}`);
+        const stockHeaders = { host: req.headers.host, Authorization: `Bearer ${process.env.CRON_SECRET || ''}` };
+        // Primero la caché del snapshot de stock (misma clave from_to que usa
+        // stock.js): un rango CERRADO (until < hoy AR — el período previo de
+        // cualquier rango siempre lo está) es inmutable, la caché sirve sin
+        // importar su edad; un rango que incluye hoy solo si tiene <10 min.
+        // Sin caché válida → cálculo en vivo como siempre. Esto le saca 15-50s
+        // ×2 períodos al camino crítico de daily_metrics.
+        let j = null;
+        try {
+          const cacheUrl = new URL(stockUrl); cacheUrl.searchParams.set("cache", "only");
+          const rc = await fetch(cacheUrl.toString(), { headers: stockHeaders });
+          if (rc.ok) {
+            const jc = await rc.json();
+            if (!jc.noCache && !jc.error && jc.daily_revenue) {
+              const rangoCerrado = String(to) < argToday;
+              const edadMs = jc.cachedAt ? (Date.now() - Date.parse(jc.cachedAt)) : Infinity;
+              if (rangoCerrado || (isFinite(edadMs) && edadMs < 10 * 60000)) j = jc;
+            }
+          }
+        } catch (_) { /* la caché es un atajo — si falla, se calcula en vivo */ }
+        if (!j) {
+          let r;
+          try { r = await fetch(stockUrl.toString(), { headers: stockHeaders }); }
+          catch (e) { throw new Error("No se pudieron traer las ventas (red). Reintentá en unos segundos."); }
+          if (!r.ok) throw new Error(`No se pudieron traer las ventas (HTTP ${r.status}). Reintentá en unos segundos.`);
+          j = await r.json();
+          if (j.error) throw new Error(`Ventas: ${j.error}`);
+        }
         // Combinar TN/Shopify + Mercado Libre (ML viene aparte en ml_data),
         // igual que el tab Análisis del front (mergeDaily). Antes se ignoraba ML
         // → facturación incompleta en el tab Márgenes.
@@ -531,11 +569,19 @@ export default async function handler(req, res) {
       // nativo sin AbortController) y puede colgarse sin límite si Meta responde
       // lento. Sin este freno, la función entera se cuelga hasta que Vercel la
       // mata en seco (0 bytes al cliente) en vez de devolver un error claro.
-      const [curr, prev, metaCurr, metaPrev, mpCommCurr, mpCommPrev] = await Promise.race([
+      // Mercado Ads y Google Ads (×2 períodos) no dependen de nada de la fase
+      // anterior: van dentro del MISMO Promise.all en vez de una segunda tanda
+      // secuencial. Ambas funciones (declaradas más abajo — hoisting) atrapan
+      // sus errores y devuelven null → el dashboard sale sin ese gasto, igual
+      // que antes.
+      const mlAdsDebug = {};
+      const [curr, prev, metaCurr, metaPrev, mpCommCurr, mpCommPrev, mlAdsAutoCurr, mlAdsAutoPrev, gAdsAutoCurr, gAdsAutoPrev] = await Promise.race([
         Promise.all([
           fetchStock(since, until), fetchStock(prevSince, prevUntil),
           fetchMetaAll(since, until, metaErr, adsBd), fetchMetaAll(prevSince, prevUntil),
           fetchMPCommission(since, until), fetchMPCommission(prevSince, prevUntil),
+          fetchMlAdsSpend(since, until, mlAdsDebug), fetchMlAdsSpend(prevSince, prevUntil),
+          fetchGoogleAdsAuto(since, until), fetchGoogleAdsAuto(prevSince, prevUntil),
         ]),
         new Promise((_, rej) => setTimeout(() => rej(new Error("Tiempo agotado trayendo métricas (55s) — la tienda, Meta o Mercado Libre están respondiendo muy lento. Reintentá en unos segundos.")), 55000)),
       ]);
@@ -807,18 +853,41 @@ export default async function handler(req, res) {
       const mlLogi = {};
       // Diagnóstico del costo de envío ML: cuántos shipments resolvieron por cada
       // fuente + una respuesta cruda de /costs de muestra (para auditar campos).
-      const mlEnvioDebug = { costsOk:0, costsFallback:0, flex:0, sumCost:0, sumSave:0, sample:null };
+      const mlEnvioDebug = { costsOk:0, costsFallback:0, flex:0, sumCost:0, sumSave:0, sample:null, cacheHits:0 };
       try {
         const tokML = mlVentasAcc === "__none__" ? null : await getValidMLToken(db, uid, mlVentasAcc); // cuenta de ventas ML
         if (tokML?.accessToken) {
-          const ids = [...new Set([
+          const allIds = [...new Set([
             ...(curr.raw?.ml_data?.ml_orders_detail||[]),
             ...(prev.raw?.ml_data?.ml_orders_detail||[]),
           ].map(o=>o.shippingId).filter(Boolean))].slice(0, 400);
+          // Caché persistente: el costo de un envío YA DESPACHADO es inmutable —
+          // se guarda {shippingId: {lt, cost}} en margenes_meta/ml_shipping_costs
+          // (doc único) y los ids conocidos se saltan por completo (0 requests).
+          const shipCostsRef = db.collection("users").doc(uid).collection("margenes_meta").doc("ml_shipping_costs");
+          let shipCostsKnown = {};
+          try { const scs = await shipCostsRef.get(); if (scs.exists) shipCostsKnown = (scs.data()||{}).map || {}; } catch(_) {}
+          const nuevos = {};
+          const ids = [];
+          for (const id of allIds) {
+            const k = shipCostsKnown[id];
+            if (k && typeof k === "object" && isFinite(parseFloat(k.cost))) {
+              mlLogi[id] = { lt: k.lt || null, cost: parseFloat(k.cost) || 0 };
+              mlEnvioDebug.cacheHits++;
+              if (mlLogi[id].lt === "self_service") mlEnvioDebug.flex++; else { mlEnvioDebug.costsOk++; mlEnvioDebug.sumCost += mlLogi[id].cost; }
+            } else ids.push(id);
+          }
           for (let i=0; i<ids.length; i+=20) {
             const rs = await Promise.all(ids.slice(i,i+20).map(async id => {
               try {
-                const r = await fetch(`https://api.mercadolibre.com/shipments/${id}`, { headers: { Authorization:`Bearer ${tokML.accessToken}` } });
+                // /shipments/{id} y /shipments/{id}/costs en PARALELO (antes iban
+                // encadenados por item — el lote tardaba el doble). Para Flex la
+                // respuesta de /costs no se usa; el costo extra es despreciable
+                // frente a la mitad de latencia por lote.
+                const [r, rc] = await Promise.all([
+                  fetch(`https://api.mercadolibre.com/shipments/${id}`, { headers: { Authorization:`Bearer ${tokML.accessToken}` } }),
+                  fetch(`https://api.mercadolibre.com/shipments/${id}/costs`, { headers: { Authorization:`Bearer ${tokML.accessToken}` } }).catch(()=>null),
+                ]);
                 if (!r.ok) return [id, null];
                 const j = await r.json();
                 const lt = j.logistic_type || null;
@@ -827,8 +896,7 @@ export default async function handler(req, res) {
                 else {
                   let ok = false;
                   try {
-                    const rc = await fetch(`https://api.mercadolibre.com/shipments/${id}/costs`, { headers: { Authorization:`Bearer ${tokML.accessToken}` } });
-                    if (rc.ok) {
+                    if (rc && rc.ok) {
                       const jc = await rc.json();
                       if (Array.isArray(jc.senders) && jc.senders.length) {
                         cost = jc.senders.reduce((s,x)=>s+(parseFloat(x.cost)||0),0);
@@ -841,10 +909,18 @@ export default async function handler(req, res) {
                   } catch(_) {}
                   if (ok) mlEnvioDebug.costsOk++; else mlEnvioDebug.costsFallback++;
                 }
+                // Solo se cachea lo inmutable: envíos ya despachados/entregados.
+                // Un envío pendiente puede cambiar de costo hasta el despacho.
+                if (/^(shipped|delivered|not_delivered)$/.test(String(j.status||""))) nuevos[id] = { lt, cost };
                 return [id, { lt, cost }];
               } catch(_) { return [id, null]; }
             }));
             for (const [id,v] of rs) if (v) mlLogi[id] = v;
+          }
+          // Escritura best-effort al final. Cap del doc: con ~8000 entradas
+          // (~400KB) deja de crecer — nunca acercarse al límite de 1MB/doc.
+          if (Object.keys(nuevos).length && Object.keys(shipCostsKnown).length < 8000) {
+            try { await shipCostsRef.set({ map: nuevos }, { merge: true }); } catch(_) {}
           }
         }
       } catch(_) {}
@@ -936,12 +1012,8 @@ export default async function handler(req, res) {
         } catch (e) { console.error("Google Ads spend error:", e.message); return null; }
       }
 
-      // Gasto real de Mercado Ads y Google Ads (API) para ambos períodos — fallback: manual.
-      const mlAdsDebug = {};
-      const [mlAdsAutoCurr, mlAdsAutoPrev, gAdsAutoCurr, gAdsAutoPrev] = await Promise.all([
-        fetchMlAdsSpend(since, until, mlAdsDebug), fetchMlAdsSpend(prevSince, prevUntil),
-        fetchGoogleAdsAuto(since, until), fetchGoogleAdsAuto(prevSince, prevUntil),
-      ]);
+      // Gasto real de Mercado Ads y Google Ads (API): ya se trajo en el
+      // Promise.all principal de arriba (mlAdsAutoCurr/Prev, gAdsAutoCurr/Prev).
       totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef),     mlEnvioTot(curr.raw), mlAdsAutoCurr, gAdsAutoCurr);
       prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev), mlEnvioTot(prev.raw), mlAdsAutoPrev, gAdsAutoPrev);
 
@@ -1276,7 +1348,22 @@ export default async function handler(req, res) {
       // falla acá, la respuesta en vivo sale igual).
       try {
         const nowIso = new Date().toISOString();
-        await cacheRef.set({ body: JSON.stringify(responseBody), cachedAt: nowIso, ts: Date.now() });
+        // Guard de tamaño (mismo criterio que saveStockCache en api/stock.js):
+        // Firestore rechaza docs >1MB y el catch de acá abajo se lo tragaba →
+        // los rangos grandes NUNCA quedaban cacheados y cada visita recalculaba
+        // en vivo. Si no entra completo, se cachea una versión recortada (sin
+        // byChannelDaily, byProduct a 50) que alcanza para pintar KPIs y filas.
+        let bodyStr = JSON.stringify(responseBody);
+        if (bodyStr.length > 850000) {
+          const trimmed = { ...responseBody, byProduct: (responseBody.byProduct || []).slice(0, 50), trimmed: true };
+          delete trimmed.byChannelDaily;
+          bodyStr = JSON.stringify(trimmed);
+        }
+        if (bodyStr.length > 850000) {
+          console.error(`margenes cache: rango ${cacheKey} no entra en Firestore ni recortado (${bodyStr.length} bytes) — no se cachea`);
+        } else {
+          await cacheRef.set({ body: bodyStr, cachedAt: nowIso, ts: Date.now() });
+        }
         // Un documento por rango, NO un mapa dentro de un único doc global.
         // Antes todas las cuentas escribían en system/margenes_warm: Firestore
         // admite ~1 escritura por segundo por documento y tiene un techo de 1 MB
