@@ -17132,10 +17132,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       return (<>
                         {canales.map(c=>{
                           const active=canalSel===c.id;
-                          const abbr=PLATFORM[c.id].abbr;
                           return (
                             <button key={c.id} onClick={()=>setCanalSel(c.id)} style={{padding:"5px 12px 5px 8px",fontSize:12,fontWeight:active?700:500,borderRadius:8,border:`1.5px solid ${active?c.color:T.border}`,background:active?c.color+"18":"transparent",color:active?c.color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:7,flexShrink:0}}>
-                              <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:20,height:20,borderRadius:4,background:active?c.color:c.color+"28",color:active?(c.id==="mercadolibre"?"#7a6500":"#fff"):c.color,fontSize:9,fontWeight:800,letterSpacing:0,flexShrink:0}}>{abbr}</span>
+                              <BrandIcon name={c.id} size={16} style={{opacity:active?1:0.75}}/>
                               {c.label}
                             </button>
                           );
@@ -17378,7 +17377,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                   : <input type="checkbox" checked={sel} readOnly style={{cursor:"pointer"}}/>
                                 }
                                 <span style={{fontSize:10,color:T.textSm,minWidth:68}}>{fechaHora}</span>
-                                <span style={{fontSize:10,padding:"2px 8px",borderRadius:5,background:badgeColor(plat)+"1a",color:plat==="mercadolibre"?"#92620c":plat==="shopify"?"#3b6b10":badgeColor(plat),fontWeight:700,border:`1px solid ${badgeColor(plat)}44`,letterSpacing:0.2,flexShrink:0,whiteSpace:"nowrap"}}>{label}</span>
+                                {PLATFORM[plat]
+                                  ? <span title={PLATFORM[plat].label} style={{display:"inline-flex",flexShrink:0}}><BrandIcon name={plat} size={17}/></span>
+                                  : <span style={{fontSize:10,padding:"2px 8px",borderRadius:5,background:badgeColor(plat)+"1a",color:badgeColor(plat),fontWeight:700,border:`1px solid ${badgeColor(plat)}44`,letterSpacing:0.2,flexShrink:0,whiteSpace:"nowrap"}}>{label}</span>}
                                 {wasAnulada&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.textSm+"22",color:T.textSm,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>ANULADA</span>}
                                 {o.estado_pago==="authorized"&&!billed&&<span title="Pago autorizado por MercadoPago — aún no liquidado. Podés facturarla igual." style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.yellow+"18",color:T.yellow,fontWeight:700,whiteSpace:"nowrap",flexShrink:0,border:"1px solid "+T.yellow+"33"+""}}>AUTORIZ.</span>}
                                 <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
@@ -17884,8 +17885,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   const OrigenBadge = ({r}) => {
                     const o = ORIGENES.find(x=>x.id===origenDe(r));
                     if (!o) return null;
-                    const dark = o.id==="ml";
-                    return <span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:o.color+"1a",color:dark?"#92620c":o.color,fontWeight:700,border:`1px solid ${o.color}44`,whiteSpace:"nowrap",flexShrink:0}}>{o.label}</span>;
+                    if (o.id==="tn"||o.id==="ml") return <span title={o.label} style={{display:"inline-flex",flexShrink:0}}><BrandIcon name={o.id} size={15}/></span>;
+                    return <span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:o.color+"1a",color:o.color,fontWeight:700,border:`1px solid ${o.color}44`,whiteSpace:"nowrap",flexShrink:0}}>{o.label}</span>;
                   };
                   const btnPdfS = {background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
                   const btnAnularS = {background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
@@ -17937,7 +17938,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </select>
                         )}
                         {regSub==="facturas" && ORIGENES.map(o=>(
-                          <button key={o.id} onClick={()=>setRegOrigen(regOrigen===o.id?"":o.id)} style={pillS(regOrigen===o.id, o.id==="ml"?"#92620c":o.color)}>{o.label}</button>
+                          <button key={o.id} onClick={()=>setRegOrigen(regOrigen===o.id?"":o.id)} style={{...pillS(regOrigen===o.id, o.id==="ml"?"#92620c":o.color),display:"inline-flex",alignItems:"center",gap:6}}>
+                            {(o.id==="tn"||o.id==="ml")&&<BrandIcon name={o.id} size={14} style={{opacity:regOrigen===o.id?1:0.75}}/>}
+                            {o.label}
+                          </button>
                         ))}
                         <div style={{position:"relative",flex:1,minWidth:180}}>
                           <svg style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",color:T.textSm}} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
