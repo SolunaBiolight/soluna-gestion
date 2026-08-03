@@ -1061,6 +1061,13 @@ function BrandIcon({name, size=20, style}) {
   }
 }
 
+// ── Meta OAuth — switch de disponibilidad ──
+// Mientras Meta re-verifica la app de Growith, el "Continuar con Facebook" NO
+// funciona para cuentas ajenas (la app queda en modo desarrollo y Meta rechaza
+// el login). El camino que SÍ funciona siempre es el System User Token, que no
+// depende de la verificación. Cuando Meta apruebe la app, volver esto a true.
+const META_OAUTH_OK = false;
+
 function CommandPalette({T, open, onClose, setPage, isAdmin}) {
   const [q, setQ] = React.useState("");
   const [selIdx, setSelIdx] = React.useState(0);
@@ -8519,7 +8526,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   const [connectingML,setConnectingML]=useState(false);
   const [connectingMeta,setConnectingMeta]=useState(false);
   const [showMetaModal,setShowMetaModal]=useState(false);
-  const [metaMode,setMetaMode]=useState("oauth"); // "oauth" | "token"
+  const [metaMode,setMetaMode]=useState(META_OAUTH_OK?"oauth":"token"); // "oauth" | "token"
   const [metaToken,setMetaToken]=useState("");
   const [adminWaPhone,setAdminWaPhone]=useState("");
   const [waPhoneSaved,setWaPhoneSaved]=useState(false);
@@ -9301,7 +9308,11 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               )}
 
               {metaMode==="token" && (<>
-              <button onClick={()=>setMetaMode("oauth")} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,padding:0,marginBottom:12,fontFamily:"'Inter',system-ui,sans-serif"}}>← Volver a conectar con 1 clic</button>
+              {META_OAUTH_OK
+                ? <button onClick={()=>setMetaMode("oauth")} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,padding:0,marginBottom:12,fontFamily:"'Inter',system-ui,sans-serif"}}>← Volver a conectar con 1 clic</button>
+                : <div style={{padding:"10px 14px",background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,fontSize:11,color:T.textMd,lineHeight:1.55,marginBottom:12}}>
+                    <strong style={{color:T.text}}>La conexión con 1 clic está temporalmente deshabilitada</strong> — Meta está re-verificando nuestra aplicación. Mientras tanto conectá con un System User Token: funciona exactamente igual, es el método que usan las agencias y el token no vence nunca.
+                  </div>}
               <div style={{padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,fontSize:11,color:T.textMd,lineHeight:1.65,marginBottom:14}}>
                 <div style={{fontWeight:700,color:T.text,marginBottom:8}}>Cómo generar tu System User Token (5-8 min)</div>
 
@@ -20479,7 +20490,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               <div style={{fontSize:12,color:T.textMd,marginTop:3,lineHeight:1.5}}>Sin token válido no se leen métricas, las reglas no operan y Márgenes no ve el gasto de ads. Reconectá para retomar — a partir de ahora Growith renueva el token solo antes de que venza.</div>
             </div>
             <div style={{display:"flex",gap:8,flexShrink:0,flexWrap:"wrap"}}>
-              <button onClick={async()=>{ try{ const d=await metaApi("oauth_start"); if(d.url) window.location.href=d.url; else toast(d.error||"No se pudo iniciar la conexión","error"); }catch(e){ toast("Error: "+(e?.message||""),"error"); } }} style={{...BtnPri,background:T.red}}>Reconectar con Facebook</button>
+              {META_OAUTH_OK
+                ? <button onClick={async()=>{ try{ const d=await metaApi("oauth_start"); if(d.url) window.location.href=d.url; else toast(d.error||"No se pudo iniciar la conexión","error"); }catch(e){ toast("Error: "+(e?.message||""),"error"); } }} style={{...BtnPri,background:T.red}}>Reconectar con Facebook</button>
+                : <button onClick={()=>setTab("cuenta")} style={{...BtnPri,background:T.red}}>Reconectar con token</button>}
               <button onClick={()=>setTab("cuenta")} style={BtnSec}>Ver cuenta</button>
             </div>
           </div>
@@ -21413,11 +21426,18 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     {accounts.length>0?"Agregar otra cuenta":"Conectar cuenta Meta"}
                   </div>
 
-                  {/* Opción 1: OAuth con Facebook (renovación automática del token) */}
+                  {/* Opción 1: OAuth con Facebook (renovación automática del token) —
+                      oculto mientras Meta re-verifica la app (META_OAUTH_OK) */}
+                  {META_OAUTH_OK ? (<>
                   <button onClick={async()=>{ try{ const d=await metaApi("oauth_start"); if(d.url) window.location.href=d.url; else toast(d.error||"No se pudo iniciar la conexión","error"); }catch(e){ toast("Error: "+(e?.message||""),"error"); } }} style={{...BtnPri,width:"100%",justifyContent:"center",marginBottom:10}}>
                     Conectar con Facebook (recomendado)
                   </button>
                   <div style={{fontSize:10,color:T.textSm,textAlign:"center",marginBottom:12,lineHeight:1.5}}>Un click, sin tokens a mano — Growith renueva la conexión automáticamente antes de que venza.<br/>¿Preferís un System User Token? Pegalo abajo.</div>
+                  </>) : (
+                  <div style={{padding:"10px 14px",background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,fontSize:11,color:T.textMd,lineHeight:1.55,marginBottom:12}}>
+                    <strong style={{color:T.text}}>La conexión con 1 clic está temporalmente deshabilitada</strong> — Meta está re-verificando nuestra aplicación. Conectá con un System User Token: funciona exactamente igual y el token no vence nunca. La guía de abajo te lleva paso a paso (5-8 min).
+                  </div>
+                  )}
 
                   {/* Botón mostrar/ocultar guía */}
                   <button onClick={()=>setShowGuide(s=>!s)} style={{...BtnSec,marginBottom:12,width:"100%",justifyContent:"center",fontSize:12}}>
