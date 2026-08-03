@@ -13,7 +13,7 @@
 // Lo que no matchea queda pendiente para confirmación manual en el panel Admin.
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { guardCron } from "./_auth.js";
 
 const WALLET = "TXGtDab6Lf3jtSRgq7uB2WbRfqdRA3PTCD"; // misma USDT_ADDRESS que muestra AppPlanes
@@ -105,7 +105,9 @@ export default async function handler(req, res) {
   const transfers = await fetchTransfers(minTs);
   if (transfers === null) return res.status(200).json({ ok: false, error: "trongrid", ...results });
 
-  const normHash = (h) => String(h || "").trim().toLowerCase().replace(/^0x/, "");
+  // Extrae el hash real de lo que sea que pegó el cliente (URL de tronscan,
+  // hash con 0x, espacios, mayúsculas). Si no hay 64 hex, devuelve "".
+  const normHash = (h) => (String(h || "").toLowerCase().match(/[0-9a-f]{64}/) || [""])[0];
 
   // ¿Esta transferencia ya acreditó otro pago? (txMatch es único por diseño)
   const txUsada = async (txid) => {
@@ -124,17 +126,36 @@ export default async function handler(req, res) {
         const t = transfers.find(t => normHash(t.txid) === normHash(p.txHash));
         if (t && Math.abs(t.monto - amount) <= 0.5) match = t;
       }
-      // 2) por monto exacto (centavos identificatorios) posterior al pedido
+      // 2) por monto exacto (centavos identificatorios). La transferencia puede
+      // ser ANTERIOR al comprobante (hasta 7 días): el caso real es "pagué,
+      // el envío del comprobante falló, lo reintenté al día siguiente".
+      const VENTANA = 7 * 86400000;
+      let ambiguo = false;
       if (!match) {
         const mismosCentavos = pendientes.filter(x => Math.abs(Number(x.amount) - amount) < 0.001);
         if (mismosCentavos.length === 1) {
-          const cand = transfers.filter(t => Math.abs(t.monto - amount) < 0.001 && t.ts >= creado - 30 * 60000);
+          const cand = transfers.filter(t => Math.abs(t.monto - amount) < 0.001 && t.ts >= creado - VENTANA);
           if (cand.length === 1) match = cand[0];
-          else if (cand.length > 1) { results.ambiguos++; continue; }
-        } else { results.ambiguos++; continue; }
+          else if (cand.length > 1) ambiguo = true;
+        } else ambiguo = true;
       }
-      if (!match) { results.sinMatch++; continue; }
-      if (await txUsada(match.txid)) { results.sinMatch++; continue; }
+      // 3) último recurso: monto aproximado (±0.6 USDT — gente que redondea,
+      // p.ej. mandó 19.50 cuando el pedido era 19.44), único de ambos lados.
+      if (!match && !ambiguo) {
+        const parecidosPend = pendientes.filter(x => Math.abs(Number(x.amount) - amount) <= 1.2);
+        const cand = transfers.filter(t => Math.abs(t.monto - amount) <= 0.6 && t.ts >= creado - VENTANA);
+        if (parecidosPend.length === 1 && cand.length === 1) match = cand[0];
+        else if (cand.length > 1) ambiguo = true;
+      }
+      if (match && await txUsada(match.txid)) match = null;
+      if (!match) {
+        if (ambiguo) results.ambiguos++; else results.sinMatch++;
+        // Anotar el motivo en el pago (solo si cambió) para que el Admin vea
+        // POR QUÉ el bot no lo acreditó, en vez de un pendiente mudo.
+        const motivo = ambiguo ? "ambiguo" : (p.txHash ? "txid_no_encontrado" : "sin_match");
+        if (p.autoCheckMotivo !== motivo) await p.ref.set({ autoCheckMotivo: motivo, autoCheckAt: now }, { merge: true }).catch(() => {});
+        continue;
+      }
 
       // Confirmación transaccional (misma semántica que confirmarPago del admin)
       const meses = Number(p.meses) || 1;
@@ -144,12 +165,16 @@ export default async function handler(req, res) {
         const [pagoSnap, userSnap] = await Promise.all([tx.get(p.ref), tx.get(userRef)]);
         if (!pagoSnap.exists || (pagoSnap.data().estado || "") !== "pendiente") throw new Error("YA_PROCESADO");
         const u = userSnap.data() || {};
+        // Si un admin ya activó el plan A MANO después de creado este pago,
+        // no volver a acreditar (sería un mes doble) — queda para revisión.
+        const actAt = toDate(u.planActivadoAt);
+        if (actAt && actAt > toDate(p.createdAt) && u.planActivadoBy && u.planActivadoBy !== "auto-tron") throw new Error("ACTIVADO_MANUAL");
         let base = now;
         const cur = toDate(u.planExpiry);
         if (cur && cur > now) base = cur;
         const exp = addMonths(base, meses);
         tx.update(userRef, { plan, planExpiry: exp, isTrial: false, cancelAtPeriodEnd: false, planActivadoBy: "auto-tron", planActivadoAt: now });
-        tx.update(p.ref, { estado: "confirmado", mesesConfirmados: meses, confirmadoBy: "auto-tron", confirmadoAt: now, txMatch: match.txid, txFrom: match.from });
+        tx.update(p.ref, { estado: "confirmado", mesesConfirmados: meses, confirmadoBy: "auto-tron", confirmadoAt: now, txMatch: match.txid, txFrom: match.from, autoCheckMotivo: FieldValue.delete() });
         return exp;
       });
       results.confirmados++;
@@ -161,9 +186,30 @@ export default async function handler(req, res) {
       const email = p.email || (await userRef.get()).data()?.email;
       if (email) await sendEmail({ to: email, subject: `Tu plan ${planNombre} está activo`, html: comprobanteHtml(planNombre, hasta) });
     } catch (e) {
-      if (e.message !== "YA_PROCESADO") { results.errores++; console.error(`[check-payments] ✗ ${p.id}:`, e.message); }
+      if (e.message === "ACTIVADO_MANUAL") {
+        results.sinMatch++;
+        if (p.autoCheckMotivo !== "ya_activado_manualmente") await p.ref.set({ autoCheckMotivo: "ya_activado_manualmente", autoCheckAt: now }, { merge: true }).catch(() => {});
+      } else if (e.message !== "YA_PROCESADO") { results.errores++; console.error(`[check-payments] ✗ ${p.id}:`, e.message); }
     }
   }
+
+  // Heartbeat: prueba de vida del cron consultable desde Firestore
+  await db.doc("system/pagos_check").set({ at: now, ...results }, { merge: false }).catch(() => {});
+
+  // Alerta a soporte: pagos que llevan >30 min pendientes sin que el bot pueda
+  // acreditarlos — para que un humano los mire HOY y el cliente no quede colgado.
+  try {
+    const colgados = pendientes.filter(p => !p.alertaAdminAt && (now - toDate(p.createdAt)) > 30 * 60000);
+    if (colgados.length) {
+      const filas = colgados.map(p => `<li>${p.email || p.uid} — $${p.amount} ${p.currency || ""} (${p.method}) — motivo bot: ${p.autoCheckMotivo || "sin revisar"}</li>`).join("");
+      const r = await sendEmail({
+        to: "contacto.growith@gmail.com",
+        subject: `⚠ ${colgados.length} pago(s) pendiente(s) sin acreditar — revisar en Admin`,
+        html: `<div style="font-family:system-ui,sans-serif;font-size:14px"><p>El bot no pudo acreditar estos pagos solos:</p><ul>${filas}</ul><p>Confirmalos o rechazalos desde Admin → Cobros.</p></div>`,
+      });
+      if (r.ok) await Promise.all(colgados.map(p => p.ref.set({ alertaAdminAt: now }, { merge: true }).catch(() => {})));
+    }
+  } catch (e) { console.warn("[check-payments] alerta admin:", e.message); }
 
   console.log("[check-payments] resultado:", results);
   return res.json({ ok: true, ...results });

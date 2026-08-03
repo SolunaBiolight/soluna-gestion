@@ -9444,7 +9444,10 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   // Centavos identificatorios: cada pago pide un monto único (ej: 79.37) para
   // poder matchear la transferencia en la blockchain con esta cuenta aunque el
   // TxID venga mal o falte. Se generan una vez por sesión de pago.
-  const [centavosId]=useState(()=>Math.floor(Math.random()*99)+1);
+  // Determinístico por cuenta (no aleatorio): si el cliente reintenta el
+  // comprobante otro día, el monto pedido es el MISMO y el bot matchea por
+  // monto exacto aunque el TxID venga mal.
+  const [centavosId]=useState(()=>{const s=String(user?.uid||"x");let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return (h%99)+1;});
 
   // Dos planes: Facturador (solo ARCA) y Pro (todo). Ids Firestore: "facturador" y "plus" (NO cambiar).
   const PLANES=[
@@ -9577,7 +9580,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         <div style={{marginBottom:16}}>
           <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Hash de transacción (TxID) *</div>
           <input style={{...iS,fontFamily:"monospace",fontSize:13}} placeholder="Pegá el TxID de tu wallet..." value={txHash} onChange={e=>setTxHash(e.target.value)}/>
-          <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Lo encontrás en tu wallet después de enviar. Suele empezar con 0x... o es una cadena larga.</div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Es el <strong>hash de 64 caracteres</strong> de la transacción. En exchanges figura en el detalle del retiro como "TxID" o "Hash" — ojo: <strong>no</strong> es el número de orden ni de retiro. También sirve pegar el link de tronscan.</div>
         </div>
         <div style={{marginBottom:28}}>
           <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Nota adicional (opcional)</div>
@@ -10092,6 +10095,7 @@ function AppAdmin({T, user, onBack}) {
                         {p.transferRef&&<span style={{fontSize:11,color:T.textSm}}>Ref: <strong style={{color:T.text}}>{p.transferRef}</strong></span>}
                         {p.txHash&&<span style={{fontSize:11,color:T.textSm,fontFamily:"monospace"}}>TX: {p.txHash.slice(0,16)}…</span>}
                         <span style={{fontSize:11,color:T.textSm}}>{fmtDateFull(p.createdAt)}</span>
+                        {p.method==="cripto"&&p.autoCheckMotivo&&<span title="El bot de acreditación automática revisó este pago y no pudo matchearlo con una transferencia" style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:T.orange+"18",color:T.orange}}>bot: {p.autoCheckMotivo==="txid_no_encontrado"?"TxID no está en la blockchain":p.autoCheckMotivo==="ambiguo"?"monto ambiguo, revisar a mano":p.autoCheckMotivo==="ya_activado_manualmente"?"ya activado a mano — rechazar este pago":"sin match"}</span>}
                       </div>
                     </div>
                     <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
