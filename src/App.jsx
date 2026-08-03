@@ -10737,6 +10737,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   function setNtAsignado(email){ setNtAsignados(email?[email]:[]); }
   const [ntDeadline, setNtDeadline] = useState("");
   const [ntTipoContenido, setNtTipoContenido] = useState(""); // "" | "pauta" | "organico"
+  // Material pedido de Canjes — adjunta al brief la lista de contenidos que cada
+  // influencer tiene pendiente de entregar, para no escribirla a mano
+  const [ntCanjesSel, setNtCanjesSel] = useState({});   // { canjeDocId: true }
+  const [canjesPend, setCanjesPend] = useState(null);   // null = sin cargar; [] = cargado
+  const [showCanjesSec, setShowCanjesSec] = useState(false);
   const [draggedTarea, setDraggedTarea] = useState(null);   // {id, fromColabKey}
   const [dragOverColab, setDragOverColab] = useState(null); // _key del card destino
   const [filterColab, setFilterColab] = useState(""); // email | "" = todos
@@ -11023,6 +11028,32 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     boxShadow:prodTab===id?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap",
   });
 
+  // Canjes con contenido pendiente de entrega (acordado > entregado), para
+  // adjuntar al brief de una tarea. Solo dueño (colabMode no tiene Firestore).
+  async function loadCanjesPendientes() {
+    if (canjesPend !== null || !user?.uid) return;
+    try {
+      const snap = await getDocs(query(collection(db,"canjes"), where("ownerId","==",user.uid)));
+      const list = [];
+      snap.forEach(d => {
+        const c = d.data();
+        if (c.estado === "Cerrado") return;
+        const pend = (c.contenido||[])
+          .filter(x => (+x.acordados||0) > (+x.entregados||0))
+          .map(x => ({ tipo:x.tipo, cant:(+x.acordados||0)-(+x.entregados||0) }));
+        if (!pend.length) return;
+        list.push({ id:d.id, influencer:c.influencer||"(sin nombre)", usuario:c.usuario||"", red:c.red||"", estado:c.estado||"", pendientes:pend });
+      });
+      list.sort((a,b)=>a.influencer.localeCompare(b.influencer,"es"));
+      setCanjesPend(list);
+    } catch(e) { setCanjesPend([]); toast("No se pudieron cargar los canjes","error"); }
+  }
+  const canjeLinea = (c) => {
+    const arroba = c.usuario ? "@"+String(c.usuario).replace(/^@/,"") : "";
+    const quien = [arroba, c.red].filter(Boolean).join(" · ");
+    return `${c.influencer}${quien?` (${quien})`:""}: ${c.pendientes.map(p=>`${p.cant} ${p.tipo}`).join(", ")}`;
+  };
+
   async function crearTarea() {
     const slotsLimpios = ntEsCampaña ? ntLinks.filter(l=>l.asignadoEmail).map(l=>({id:mkId(),tipo:"link",descripcion:l.name||"",asignadoEmail:l.asignadoEmail,asignadoNombre:colaboradores.find(c=>c.email===l.asignadoEmail)?.nombre||"",url:l.url||""})) : [];
     const todosAsignados = ntEsCampaña && slotsLimpios.length ? [...new Set(slotsLimpios.map(s=>s.asignadoEmail))] : ntAsignados;
@@ -11033,9 +11064,16 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const linksArr = ntLinks.filter(l=>l.url.trim());
     const checkArr = ntChecklist.filter(i=>i.text.trim());
     const creadoPor=colabMode?{email:colabMode.email,nombre:colabMode.nombre}:{email:user?.email||"",nombre:user?.displayName||user?.email?.split("@")[0]||""};
-    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,tipoContenido:ntTipoContenido||null,creadoPor,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
+    // Si se eligieron canjes, el material pendiente se agrega solo al brief
+    let briefFinal = ntBrief.trim();
+    const selCanjes = (canjesPend||[]).filter(c=>ntCanjesSel[c.id]);
+    if (selCanjes.length) {
+      const bloque = "Material pedido (Canjes):\n" + selCanjes.map(c=>"- "+canjeLinea(c)).join("\n");
+      briefFinal = briefFinal ? briefFinal + "\n\n" + bloque : bloque;
+    }
+    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:briefFinal,links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,tipoContenido:ntTipoContenido||null,creadoPor,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:"",asignadoEmail:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtTipoContenido(""); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]);
+    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:"",asignadoEmail:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtTipoContenido(""); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]); setNtCanjesSel({}); setShowCanjesSec(false);
     // Mostrar resultado de emails
     const emailResults = d._emailResults||[];
     const sent = emailResults.filter(r=>r.ok);
@@ -13592,6 +13630,37 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   placeholder="Detallá qué tiene que hacer: formato, duración, estilo, paleta de colores, referencias, entregables esperados..."
                   style={{...iS,fontSize:12,width:"100%",minHeight:130,resize:"vertical",lineHeight:1.6}}/>
               </div>
+              {/* Material pedido de Canjes — se agrega solo al brief al crear */}
+              {!colabMode&&(()=>{
+                const nSel = Object.values(ntCanjesSel).filter(Boolean).length;
+                return (
+                <div>
+                  <button onClick={()=>{setShowCanjesSec(s=>!s);loadCanjesPendientes();}}
+                    style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",width:"100%",justifyContent:"space-between",display:"flex",alignItems:"center"}}>
+                    <span>Adjuntar material pedido de Canjes{nSel?` · ${nSel} seleccionado${nSel>1?"s":""}`:""}</span>
+                    <span style={{color:T.textSm}}>{showCanjesSec?"▴":"▾"}</span>
+                  </button>
+                  {showCanjesSec&&(
+                    <div style={{marginTop:8,border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.surface,maxHeight:200,overflowY:"auto"}}>
+                      {canjesPend===null
+                        ? <div style={{padding:"14px 12px",fontSize:12,color:T.textSm,textAlign:"center"}}>Cargando canjes…</div>
+                        : canjesPend.length===0
+                        ? <div style={{padding:"14px 12px",fontSize:12,color:T.textSm,textAlign:"center"}}>No hay canjes con contenido pendiente de entrega.</div>
+                        : canjesPend.map(c=>(
+                          <label key={c.id} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer"}}>
+                            <input type="checkbox" checked={!!ntCanjesSel[c.id]} onChange={()=>setNtCanjesSel(p=>({...p,[c.id]:!p[c.id]}))} style={{cursor:"pointer",marginTop:2}}/>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:12,fontWeight:600,color:T.text}}>{c.influencer}{c.usuario?<span style={{color:T.textSm,fontWeight:400}}> · @{String(c.usuario).replace(/^@/,"")}{c.red?` · ${c.red}`:""}</span>:c.red?<span style={{color:T.textSm,fontWeight:400}}> · {c.red}</span>:null}</div>
+                              <div style={{fontSize:11,color:T.textMd}}>{c.pendientes.map(p=>`${p.cant} ${p.tipo}`).join(", ")} pendiente{c.pendientes.reduce((a,p)=>a+p.cant,0)>1?"s":""}</div>
+                            </div>
+                          </label>
+                        ))}
+                    </div>
+                  )}
+                  {nSel>0&&<div style={{fontSize:10,color:T.textSm,marginTop:5}}>La lista de material se va a agregar automáticamente al final del brief.</div>}
+                </div>
+                );
+              })()}
               {/* Links / Entregas — unified: simple=links, campaña=links con asignado */}
               <div>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
@@ -20418,20 +20487,24 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // Empty state unificado cuando no hay cuenta de Meta conectada — con CTA
   // directo al tab Cuenta (antes cada tab tenía un aviso distinto y sin botón).
   const NoAccount=()=>(
-    <DSEmpty T={T} icon="📣" title="Conectá tu cuenta de Meta"
+    <DSEmpty T={T} icon="" title="Conectá tu cuenta de Meta"
       subtitle="Para ver campañas, métricas y reglas necesitás conectar Meta. Se hace una sola vez desde el tab Cuenta."
       action={<Btn T={T} variant="primary" onClick={()=>setTab("cuenta")}>Ir a Cuenta →</Btn>}/>
   );
 
   const GuiaToken=()=>(
     <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
-      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:12}}>Cómo obtener tu System User Token (5 min)</div>
+      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:8}}>Cómo obtener tu System User Token (5-8 min)</div>
+      <div style={{background:T.yellowBg||(T.yellow+"15"),border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:11,color:T.textMd,lineHeight:1.5}}>
+        <strong style={{color:T.text}}>Antes de empezar</strong> necesitás una app propia en <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener noreferrer" style={{color:T.accent,textDecoration:"underline"}}>developers.facebook.com/apps</a>. Si no tenés: Crear aplicación → Otro → Negocio → cualquier nombre → Crear. Un minuto y listo.
+      </div>
       {[
-        {n:1,txt:"Entrá a",link:"https://business.facebook.com/settings/system-users",linkTxt:"business.facebook.com → Configuración → Usuarios → Usuarios del sistema"},
-        {n:2,txt:"Hacé click en + Agregar → Ponele un nombre (ej: Growith) → Rol: Administrador → Crear usuario del sistema"},
-        {n:3,txt:"Click en los 3 puntos del usuario creado → Asignar activos → Seleccioná tu Ad Account y tu Página → Permisos completos → Guardar"},
-        {n:4,txt:"Click en Generar token → Elegí la app Growith → Permisos: ads_management, ads_read, pages_show_list → Vencimiento: Nunca → Generar token"},
-        {n:5,txt:"Copiá el token y pegalo acá abajo"},
+        {n:1,txt:"Entrá a",link:"https://business.facebook.com/settings/system-users",linkTxt:"business.facebook.com → Configuración del negocio → Usuarios → Usuarios del sistema"},
+        {n:2,txt:"Click en + Agregar → Ponele un nombre (ej: Growith) → Rol: Administrador → Crear usuario del sistema"},
+        {n:3,txt:"Click en el usuario creado → Asignar activos → Seleccioná tu Cuenta publicitaria y tu Página → acceso completo → Guardar"},
+        {n:4,txt:"PASO CLAVE: en el mismo usuario, buscá \"Asignar apps\" → elegí TU app (la que creaste arriba) → permisos completos → Guardar. Si salteás esto, el paso siguiente no te va a dejar elegir la app."},
+        {n:5,txt:"Click en Generar token → elegí esa app → caducidad: Nunca → marcá los permisos ads_management, ads_read y business_management (obligatorios) + pages_show_list y pages_read_engagement → Generar token"},
+        {n:6,txt:"Copiá el token (empieza con EAA...) y pegalo acá abajo"},
       ].map(s=>(
         <div key={s.n} style={{display:"flex",gap:10,marginBottom:10}}>
           <div style={{width:22,height:22,borderRadius:"50%",background:T.accentSolid,color:"#fff",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}>{s.n}</div>
