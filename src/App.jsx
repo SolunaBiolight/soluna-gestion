@@ -525,7 +525,7 @@ function DriveOpenBtn({ T, url = "", size = "sm" }) {
 function DSEmpty({T, icon="", title, subtitle, action}) {
   return (
     <Card T={T} padding="xl" style={{textAlign:"center"}}>
-      <div style={{fontSize:42,marginBottom:DS.sp.md,opacity:0.8}}>{icon}</div>
+      {icon?<div style={{fontSize:42,marginBottom:DS.sp.md,opacity:0.8}}>{icon}</div>:null}
       <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:DS.sp.xs}}>{title}</div>
       {subtitle&&<div style={{fontSize:DS.font.md,color:T.textSm,marginBottom:action?DS.sp.lg:0,maxWidth:400,margin:"0 auto"}}>{subtitle}</div>}
       {action&&<div style={{marginTop:DS.sp.lg}}>{action}</div>}
@@ -4198,7 +4198,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         {viewTab==="lista"&&<div key="lista" className="gh-tab-content" style={{paddingBottom:48,overflowX:"auto"}}>
           {filtered.length===0?(
             <EmptyState T={T}
-              icon="🤝"
+              icon={<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>}
               title={canjes.length===0?"Sin canjes todavía":"Sin resultados"}
               description={canjes.length===0?"Creá tu primer canje para empezar a trackear influencers y contenido.":"Probá cambiando los filtros o el término de búsqueda."}
               action={canjes.length===0&&<button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:13,padding:"9px 20px"}}>+ Nuevo canje</button>}
@@ -4619,7 +4619,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             {/* Grid de perfiles */}
             {influencers.length===0&&derivados.length===0&&(
               <div style={{textAlign:"center",padding:"60px 20px",background:T.surface,borderRadius:14,border:`1px dashed ${T.border}`}}>
-                <div style={{fontSize:36,marginBottom:10}}>👤</div>
+                <div style={{marginBottom:10,display:"flex",justifyContent:"center"}}><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
                 <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>Sin influencers aún</div>
                 <div style={{fontSize:13,color:T.textSm,marginBottom:20}}>Cuando crees un canje, la persona aparece acá automáticamente. También podés crear un perfil a mano.</div>
                 <button onClick={()=>{setEditInfluencer(null);setInfForm({nombre:"",usuario:"",red:"Instagram",codigoDescuento:"",descuentoPct:"",comisionPct:"",email:"",telefono:"",notas:""});setShowInfluencerForm(true);}} style={{...BtnPrimary(T)}}>+ Crear primer perfil</button>
@@ -6806,7 +6806,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 )}
               </div>
               <button onClick={imprimirPicking} title={selected.size?`Picking list de los ${selected.size} seleccionados`:"Picking list de todos los pedidos visibles"} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px"}}>
-                🖨 Picking
+                Picking
               </button>
               {tabEnvio==="empaquetar"&&selected.size>0&&(
                 <button onClick={marcarEmpaquetadosSel} disabled={packingBatch} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,borderColor:T.green+"66"}}>
@@ -7291,7 +7291,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                           {sentState==="ok"
                             ? <span style={{fontSize:12,color:T.green,fontWeight:600}}>✓ Ok</span>
                             : sentState==="warn"
-                            ? <span title="El tracking se guardó pero TN no marcó la orden como enviada — el cliente no recibió el aviso" style={{fontSize:12,color:T.orange,fontWeight:600}}>⚠ Sin aviso</span>
+                            ? <span title="El tracking se guardó pero TN no marcó la orden como enviada — el cliente no recibió el aviso" style={{fontSize:12,color:T.orange,fontWeight:600}}>Sin aviso</span>
                             : sentState==="error"
                               ? <span style={{fontSize:12,color:T.red,fontWeight:600}}>✗ Error</span>
                               : sending
@@ -7333,7 +7333,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
                 {alertas.slice(0,8).map((a,i)=>(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:(a.sev==="red"?T.red:T.orange)+"12",border:`1px solid ${(a.sev==="red"?T.red:T.orange)}33`,borderRadius:DS.r.lg,padding:"8px 14px",fontSize:12,color:T.text}}>
-                    <span style={{flexShrink:0}}>{a.sev==="red"?"🔴":"🟠"}</span><span>{a.msg}</span>
+                    <span style={{flexShrink:0,width:8,height:8,borderRadius:"50%",background:a.sev==="red"?T.red:T.orange,display:"inline-block"}}/><span>{a.msg}</span>
                   </div>
                 ))}
               </div>
@@ -7342,7 +7342,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             {/* Modo despacho: escanear rótulo (lector USB/Bluetooth o tipeo) */}
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 16px",marginBottom:16}}>
               <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                <span style={{fontSize:12,fontWeight:700,color:T.text}}>📷 Modo despacho</span>
+                <span style={{fontSize:12,fontWeight:700,color:T.text}}>Modo despacho</span>
                 <input value={scanValue} onChange={e=>setScanValue(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")procesarScan();}}
                   placeholder="Escaneá el código del rótulo (o tipeá tracking / N° pedido) y Enter"
                   style={{...iS,flex:1,minWidth:220,fontSize:13}}/>
@@ -7373,7 +7373,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     <div key={e.numero||i} style={{display:"grid",gridTemplateColumns:"90px 1fr 150px 170px 90px",gap:8,padding:"10px 16px",borderBottom:`0.5px solid ${T.borderL}`,alignItems:"center",opacity:final?0.65:1}}>
                       <span style={{fontWeight:700,color:T.accent,fontSize:13}}>#{e.numero}</span>
                       <div style={{minWidth:0}}>
-                        <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.cliente||"—"}{e.verificado&&<span title="Verificado por escaneo" style={{marginLeft:6,fontSize:10,color:T.green}}>📷✓</span>}</div>
+                        <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.cliente||"—"}{e.verificado&&<span title="Verificado por escaneo" style={{marginLeft:6,fontSize:10,color:T.green}}>✓</span>}</div>
                         {e.tracking
                           ? <a href={`https://www.andreani.com/#!/informacionEnvio/${e.tracking}`} target="_blank" rel="noreferrer" style={{fontSize:10,color:T.textSm,textDecoration:"none"}}>{e.tracking} ↗</a>
                           : <span style={{fontSize:10,color:T.textSm}}>sin tracking aún</span>}
@@ -8346,7 +8346,7 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <button onClick={onToggleDark} style={{position:"fixed",top:20,right:20,background:"transparent",border:`1px solid ${T.border}`,borderRadius:7,padding:"5px 10px",fontSize:11,color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{darkMode?"☀︎ Claro":"◑ Oscuro"}</button>
+      <button onClick={onToggleDark} style={{position:"fixed",top:20,right:20,background:"transparent",border:`1px solid ${T.border}`,borderRadius:7,padding:"5px 10px",fontSize:11,color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{darkMode?"Claro":"Oscuro"}</button>
       {onBackToLanding&&<button onClick={onBackToLanding} style={{position:"fixed",top:20,left:20,background:"transparent",border:`1px solid ${T.border}`,borderRadius:7,padding:"5px 12px",fontSize:11,color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>← Volver al sitio</button>}
       <div style={{width:"100%",maxWidth:400}}>
         {/* Logo */}
@@ -8420,11 +8420,11 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
             Esta landing pública también la revisan Google (verificación de marca
             y Google Ads API) — tiene que explicar el producto y el uso de la API. */}
         <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"6px 14px",marginTop:22,fontSize:12,color:T.textSm}}>
-          <span>📊 Dashboard financiero</span>
-          <span>📦 Envíos y etiquetas</span>
-          <span>🧾 Facturación ARCA</span>
-          <span>📣 Métricas de publicidad</span>
-          <span>🗂 Stock multicanal</span>
+          <span>Dashboard financiero</span>
+          <span>Envíos y etiquetas</span>
+          <span>Facturación ARCA</span>
+          <span>Métricas de publicidad</span>
+          <span>Stock multicanal</span>
         </div>
         <div style={{maxWidth:660,margin:"28px auto 0",textAlign:"left"}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10}}>
@@ -8479,7 +8479,7 @@ class GhErrorBoundary extends React.Component {
     const T=this.props.T||{};
     return (
       <div style={{minHeight:"60vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14,padding:24,fontFamily:"'Inter',system-ui,sans-serif",background:T.bg||"#0b0d12",color:T.text||"#fff"}}>
-        <div style={{fontSize:40}}>🛠️</div>
+        <div style={{display:"flex"}}><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
         <div style={{fontSize:18,fontWeight:800}}>Algo se rompió en esta sección</div>
         <div style={{fontSize:12,color:T.textSm||"#9ca3af",maxWidth:560,textAlign:"center",wordBreak:"break-word",background:T.card||"#151922",border:`1px solid ${T.border||"#2a2f3a"}`,borderRadius:10,padding:"10px 14px",fontFamily:"monospace"}}>
           {String(this.state.err?.message||this.state.err).slice(0,300)}
@@ -9086,7 +9086,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             </div>
           ) : (
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              <button onClick={startEditProfile} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1,minWidth:140}}>✎ Editar nombre y mail</button>
+              <button onClick={startEditProfile} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1,minWidth:140}}>Editar nombre y mail</button>
               <button onClick={handleSignOut} style={{...BtnSecondary(T),fontSize:12,color:T.red,border:`1px solid ${T.red}33`,justifyContent:"center",flex:1,minWidth:140}}>Cerrar sesión</button>
             </div>
           )}
@@ -9196,7 +9196,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                       <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>read_customers</code>
                       <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>read_orders</code>
                       <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>write_orders</code>
-                      <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent,border:`1px solid ${T.yellow||T.yellow}55`}}>read_products ⚠</code>
+                      <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent,border:`1px solid ${T.yellow||T.yellow}55`}}>read_products</code>
                     </div>
                     <div style={{fontSize:9,color:T.textSm,marginTop:3}}><strong>read_products</strong> es indispensable para Stock y Análisis. Si tu app vieja no lo tenía, creá una versión nueva ahora y publicala.</div>
                   </li>
@@ -9214,7 +9214,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                   <input value={shopifyShop} onChange={e=>setShopifyShop(e.target.value)} placeholder="ej: tu-tienda-xx (solo el subdominio)" style={iS} disabled={connectingShopify} autoFocus/>
                   <div style={{fontSize:10,color:T.textSm,marginTop:4,lineHeight:1.5}}>
                     Tenés que poner el subdominio <strong style={{color:T.text}}>NATIVO</strong> de Shopify (ej: <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>asdf-sc.myshopify.com</code> → ponés solo <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>asdf-sc</code>).<br/>
-                    ⚠ <strong style={{color:T.text}}>NO uses tu dominio personalizado</strong> (ej: <code style={{color:T.red}}>tutienda.com</code>, <code style={{color:T.red}}>tutienda.com.ar</code>) — Shopify OAuth solo funciona con el .myshopify.com.<br/>
+                    <strong style={{color:T.text}}>NO uses tu dominio personalizado</strong> (ej: <code style={{color:T.red}}>tutienda.com</code>, <code style={{color:T.red}}>tutienda.com.ar</code>) — Shopify OAuth solo funciona con el .myshopify.com.<br/>
                     Para encontrarlo: andá al admin de Shopify → <strong style={{color:T.text}}>Configuración → Dominios</strong> → mirá cuál tiene el sello "Predeterminado de Shopify" (ese es el .myshopify.com).
                   </div>
                 </div>
@@ -9327,7 +9327,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                   <li>Click en <strong style={{color:T.text}}>+ Agregar</strong> → ponele un nombre (ej: "Growith") → rol: <strong style={{color:T.text}}>Administrador</strong> → Crear usuario del sistema</li>
                   <li>Click en el usuario que creaste → <strong style={{color:T.text}}>"Asignar activos"</strong> → seleccioná tu <strong style={{color:T.text}}>Cuenta publicitaria</strong> y tu <strong style={{color:T.text}}>Página</strong> → marcá <strong style={{color:T.text}}>todos los permisos (acceso completo)</strong> → Guardar</li>
                   <li style={{padding:"6px 8px",background:T.yellow+"15",border:`1px solid ${T.yellow}33`,borderRadius:6,marginLeft:-8,paddingLeft:14}}>
-                    <strong style={{color:T.text}}>⚠ PASO CLAVE — asignar la app al usuario:</strong> en el mismo lugar (el usuario abierto), buscá la sección <strong style={{color:T.text}}>"Apps asignadas"</strong> o click en <strong style={{color:T.text}}>"Asignar apps"</strong> → elegí tu app → permisos completos → Guardar.
+                    <strong style={{color:T.text}}>PASO CLAVE — asignar la app al usuario:</strong> en el mismo lugar (el usuario abierto), buscá la sección <strong style={{color:T.text}}>"Apps asignadas"</strong> o click en <strong style={{color:T.text}}>"Asignar apps"</strong> → elegí tu app → permisos completos → Guardar.
                   </li>
                   <li>Volvé al usuario → click en <strong style={{color:T.text}}>"Generar token"</strong> → elegí la app que asignaste → caducidad: <strong style={{color:T.text}}>Nunca</strong> → Siguiente</li>
                   <li style={{padding:"8px 10px",background:T.accent+"10",border:`1px solid ${T.accent}33`,borderRadius:6,marginLeft:-8,paddingLeft:14}}>
@@ -9607,7 +9607,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
           <span style={{fontSize:14,fontWeight:800,color:T.text,marginLeft:10}}>${totalU} USD{anual?"/año":"/mes"}</span>
         </div>
         {[
-          {id:"transfer",titulo:"Transferencia bancaria (pesos)",desc:"Transferís en ARS al alias de Growith. Lo confirmamos en el día.",icon:"🏦"},
+          {id:"transfer",titulo:"Transferencia bancaria (pesos)",desc:"Transferís en ARS al alias de Growith. Lo confirmamos en el día.",icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><path d="M5 22V11M9 22V11M15 22V11M19 22V11"/><path d="M12 2L2 8h20z"/></svg>},
           {id:"cripto",titulo:"USDT (red TRC20)",desc:"Se acredita solo en menos de 15 minutos, sin intermediarios.",icon:"₮"},
         ].map(m=>(
           <button key={m.id} onClick={()=>{setMetodo(m.id);setStep(m.id==="cripto"?"pago_cripto":"pago_transfer");}}
@@ -10032,7 +10032,7 @@ function AppAdmin({T, user, onBack}) {
             </span>
           )}
         </div>
-        <AsyncButton onClick={loadData} style={{...BtnSecondary(T),fontSize:12,padding:"5px 12px"}}>↺ Actualizar</AsyncButton>
+        <AsyncButton onClick={loadData} style={{...BtnSecondary(T),fontSize:12,padding:"5px 12px"}}>Actualizar</AsyncButton>
       </div>
 
       {/* Tabs */}
@@ -10091,7 +10091,7 @@ function AppAdmin({T, user, onBack}) {
                         <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{planLabel(p.plan)}</span>
                         {p.periodo==="anual"&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:800,background:T.accentSolid+"22",color:T.accent}}>ANUAL (12m)</span>}
                         {p.amount>0&&<span style={{fontSize:11,fontWeight:700,color:T.text}}>${p.amount}</span>}
-                        {p.method&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:T.blueBg,color:p.method==="cripto"?T.green:T.blue}}>{p.method==="cripto"?"₮ USDT":"🏦 Transf."}</span>}
+                        {p.method&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:T.blueBg,color:p.method==="cripto"?T.green:T.blue}}>{p.method==="cripto"?"₮ USDT":"Transf."}</span>}
                         {p.transferRef&&<span style={{fontSize:11,color:T.textSm}}>Ref: <strong style={{color:T.text}}>{p.transferRef}</strong></span>}
                         {p.txHash&&<span style={{fontSize:11,color:T.textSm,fontFamily:"monospace"}}>TX: {p.txHash.slice(0,16)}…</span>}
                         <span style={{fontSize:11,color:T.textSm}}>{fmtDateFull(p.createdAt)}</span>
@@ -10775,13 +10775,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [refColor, setRefColor] = useState(T.accent);
   const [refLinks, setRefLinks] = useState([]);
   const LINK_TIPOS = [
-    {id:"meta",      label:"Meta Ads",  icon:"📊", color:"#1877f2"},
-    {id:"instagram", label:"Instagram", icon:"📷", color:"#e1306c"},
-    {id:"tiktok",    label:"TikTok",    icon:"🎵", color:"#111"},
-    {id:"web",       label:"Website",   icon:"🌐", color:T.accent},
-    {id:"drive",     label:"Drive",     icon:"📁", color:"#34a853"},
-    {id:"youtube",   label:"YouTube",   icon:"▶️", color:"#ff0000"},
-    {id:"otro",      label:"Otro",      icon:"🔗", color:T.textMd},
+    {id:"meta",      label:"Meta Ads",  color:"#1877f2"},
+    {id:"instagram", label:"Instagram", color:"#e1306c"},
+    {id:"tiktok",    label:"TikTok",    color:"#111"},
+    {id:"web",       label:"Website",   color:T.accent},
+    {id:"drive",     label:"Drive",     color:"#34a853"},
+    {id:"youtube",   label:"YouTube",   color:"#ff0000"},
+    {id:"otro",      label:"Otro",      color:T.textMd},
   ];
   const REF_COLORS = [T.accent,T.orange,T.green,T.red,"#ec4899","#14b8a6",T.yellow,T.purple,T.blue,"#64748b"];
   // ── MATERIAL DE TRABAJO ──
@@ -10967,7 +10967,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   }
   function whatsappLink(t, colab) {
     if(!colab?.token) return null;
-    const msg = `Hola ${colab.nombre.split(" ")[0]} 👋, te asigné una tarea en Growith:\n\n*${t.titulo}*${t.deadline?`\n📅 Entrega: ${fmtDate(t.deadline)}`:""}${(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?"\n🔴 URGENTE":"";})()} \n\nPodés verla acá:\n${colabLink(colab.token)}`;
+    const msg = `Hola ${colab.nombre.split(" ")[0]}, te asigné una tarea en Growith:\n\n*${t.titulo}*${t.deadline?`\nEntrega: ${fmtDate(t.deadline)}`:""}${(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?"\nURGENTE":"";})()} \n\nPodés verla acá:\n${colabLink(colab.token)}`;
     return `https://wa.me/?text=${encodeURIComponent(msg)}`;
   }
 
@@ -11755,7 +11755,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           <div style={{marginBottom:24}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
               <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Brief / Instrucciones</div>
-              {!editModeDetalle&&(()=>{const dl=[...(t.brief?.matchAll(/https?:\/\/(?:drive\.google\.com|docs\.google\.com)[^\s)]+/g)||[])].map(m=>m[0]);return dl.length>0?<a href={dl[0]} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",textDecoration:"none"}}>📂 Abrir Drive</a>:null;})()}
+              {!editModeDetalle&&(()=>{const dl=[...(t.brief?.matchAll(/https?:\/\/(?:drive\.google\.com|docs\.google\.com)[^\s)]+/g)||[])].map(m=>m[0]);return dl.length>0?<a href={dl[0]} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",textDecoration:"none"}}>Abrir Drive</a>:null;})()}
             </div>
             {editModeDetalle
               ? <textarea value={etBrief} onChange={e=>setEtBrief(e.target.value)}
@@ -12020,7 +12020,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                           <AsyncButton onClick={()=>{if(!(feedbackText[t._id]||"").trim())return appAlert("Escribí el feedback para el colaborador — es obligatorio.");pedirCambios(t._id);}} style={{...BtnDanger(T),fontSize:13,padding:"9px 18px",fontWeight:700}}>Enviar pedido de cambios</AsyncButton>
                           {(feedbackText[t._id]||"").trim()&&colab?.telefono&&(
-                            <a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, sobre tu tarea "${t.titulo}":\n\n${feedbackText[t._id]}\n\nSubí la nueva versión en tu portal cuando esté lista 💪`)}`}
+                            <a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]}, sobre tu tarea "${t.titulo}":\n\n${feedbackText[t._id]}\n\nSubí la nueva versión en tu portal cuando esté lista`)}`}
                               target="_blank" rel="noreferrer"
                               style={{fontSize:12,padding:"9px 16px",borderRadius:9,background:T.green+"12",color:T.green,border:"1px solid "+T.green+"44"+"",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
                               <GhI n="wa" size={12}/> WA con este feedback
@@ -12369,7 +12369,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 <div style={{background:T.accentSolid+"12",border:`1px solid ${T.accentSolid}30`,borderRadius:DS.r.lg,padding:"10px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
                   <div style={{width:32,height:32,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:T.accent,flexShrink:0}}>{(colabMode.nombre[0]||"?").toUpperCase()}</div>
                   <div>
-                    <div style={{fontSize:13,fontWeight:600,color:T.text}}>Hola, {colabMode.nombre.split(" ")[0]} 👋</div>
+                    <div style={{fontSize:13,fontWeight:600,color:T.text}}>Hola, {colabMode.nombre.split(" ")[0]}</div>
                     <div style={{fontSize:11,color:T.textSm}}>Estas son tus tareas activas</div>
                   </div>
                 </div>
@@ -12382,12 +12382,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 {showGuia&&(
                   <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
                     {[
-                      {n:1,icon:"📝",title:"Crear tarea",desc:"Hacé click en '+ Tarea'. Completá título, asignado y deadline. El Brief es donde van las instrucciones o el link de Drive con el material."},
-                      {n:2,icon:"🔄",title:"Estados",desc:"Las tareas pasan por: Pendiente → En proceso → Entregado → Aprobado. Tu equipo actualiza desde su portal, sin crear cuenta."},
-                      {n:3,icon:"📦",title:"Revisar entregas",desc:"Cuando alguien entrega aparece en la sección naranja 'Para revisar'. Podés ver el trabajo, pedir correcciones o aprobar con un click."},
-                      {n:4,icon:"🔁",title:"Correcciones",desc:"Al pedir cambios, escribí exactamente qué modificar. El texto le llega automáticamente por email al colaborador."},
-                      {n:5,icon:"📅",title:"Calendario",desc:"El botón 'Calendario' muestra todos los deadlines y eventos del mes. Agregá fechas clave como Hot Sale, lanzamientos y festividades."},
-                      {n:6,icon:"🔁",title:"Recurrentes",desc:"Activá 'Tarea recurrente' al crear. Cuando la aprobás, la siguiente se crea sola con el deadline desplazado automáticamente."},
+                      {n:1,title:"Crear tarea",desc:"Hacé click en '+ Tarea'. Completá título, asignado y deadline. El Brief es donde van las instrucciones o el link de Drive con el material."},
+                      {n:2,title:"Estados",desc:"Las tareas pasan por: Pendiente → En proceso → Entregado → Aprobado. Tu equipo actualiza desde su portal, sin crear cuenta."},
+                      {n:3,title:"Revisar entregas",desc:"Cuando alguien entrega aparece en la sección naranja 'Para revisar'. Podés ver el trabajo, pedir correcciones o aprobar con un click."},
+                      {n:4,title:"Correcciones",desc:"Al pedir cambios, escribí exactamente qué modificar. El texto le llega automáticamente por email al colaborador."},
+                      {n:5,title:"Calendario",desc:"El botón 'Calendario' muestra todos los deadlines y eventos del mes. Agregá fechas clave como Hot Sale, lanzamientos y festividades."},
+                      {n:6,title:"Recurrentes",desc:"Activá 'Tarea recurrente' al crear. Cuando la aprobás, la siguiente se crea sola con el deadline desplazado automáticamente."},
                     ].map(s=>(
                       <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                         <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -13120,11 +13120,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 {showGuiaEquipo&&(
                   <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
                     {[
-                      {n:1,icon:"➕",title:"Agregar miembro",desc:"Usá '+ Equipo'. Con email: recibe tareas, accede a su portal y recibe notificaciones. Sin email: solo producción de creativos."},
-                      {n:2,icon:"🔗",title:"Portal sin cuenta",desc:"Cada colaborador recibe un link único. Desde ahí ve sus tareas, sube entregas y comenta. No necesita crear ninguna cuenta."},
-                      {n:3,icon:"🔐",title:"Permisos",desc:"Clickeá 'Permisos' en la card para elegir qué puede ver en su portal: kanban de tareas, creativos, estado del equipo."},
-                      {n:4,icon:"✏️",title:"Editar datos",desc:"Expandí la card y usá 'Editar datos' para cambiar nombre, rol y WhatsApp."},
-                      {n:5,icon:"📋",title:"Compartir acceso",desc:"Usá 'Copiar link' para enviar el acceso. También podés enviarlo directo por 'WhatsApp' desde la misma card."},
+                      {n:1,title:"Agregar miembro",desc:"Usá '+ Equipo'. Con email: recibe tareas, accede a su portal y recibe notificaciones. Sin email: solo producción de creativos."},
+                      {n:2,title:"Portal sin cuenta",desc:"Cada colaborador recibe un link único. Desde ahí ve sus tareas, sube entregas y comenta. No necesita crear ninguna cuenta."},
+                      {n:3,title:"Permisos",desc:"Clickeá 'Permisos' en la card para elegir qué puede ver en su portal: kanban de tareas, creativos, estado del equipo."},
+                      {n:4,title:"Editar datos",desc:"Expandí la card y usá 'Editar datos' para cambiar nombre, rol y WhatsApp."},
+                      {n:5,title:"Compartir acceso",desc:"Usá 'Copiar link' para enviar el acceso. También podés enviarlo directo por 'WhatsApp' desde la misma card."},
                     ].map(s=>(
                       <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                         <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -13149,9 +13149,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 const liveColab=c?colaboradores.find(x=>x._id===c._id):null;
                 const portalLink=c?colabLink(c.token):editorPortalLink(nombre);
                 const waHref=c
-                  ?(c.telefono?`https://wa.me/${c.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${nombre.split(" ")[0]} 👋, tu portal:\n${colabLink(c.token)}`)}`:
-                    `https://wa.me/?text=${encodeURIComponent(`Hola ${nombre.split(" ")[0]} 👋, tu portal:\n${colabLink(c.token)}`)}`)
-                  :(portalLink?`https://wa.me/?text=${encodeURIComponent(`Hola ${nombre.split(" ")[0]} 👋, tus creativos:\n${portalLink}`)}`:null);
+                  ?(c.telefono?`https://wa.me/${c.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${nombre.split(" ")[0]}, tu portal:\n${colabLink(c.token)}`)}`:
+                    `https://wa.me/?text=${encodeURIComponent(`Hola ${nombre.split(" ")[0]}, tu portal:\n${colabLink(c.token)}`)}`)
+                  :(portalLink?`https://wa.me/?text=${encodeURIComponent(`Hola ${nombre.split(" ")[0]}, tus creativos:\n${portalLink}`)}`:null);
                 const isDragOver=dragOverColab===_key&&draggedTarea?.fromColabKey!==_key;
                 return (
                   <div key={_key}
@@ -14235,7 +14235,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           </div>
           {notifPanel.colab?.telefono&&(
             <a
-              href={`https://wa.me/${(notifPanel.colab.telefono||"").replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${notifPanel.colab.nombre.split(" ")[0]} 👋, te asigné una tarea en Growith:\n\n*${notifPanel.tarea?.titulo||""}*${(()=>{const dl=notifPanel.tarea?.deadline;const d=dl?._seconds?new Date(dl._seconds*1000):dl?new Date(dl):null;return d&&Math.ceil((d-new Date())/86400000)<=1?"\n🔴 URGENTE":"";})()} \n\nPodés verla acá:\n${colabLink(notifPanel.colab.token)}`)}`}
+              href={`https://wa.me/${(notifPanel.colab.telefono||"").replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${notifPanel.colab.nombre.split(" ")[0]}, te asigné una tarea en Growith:\n\n*${notifPanel.tarea?.titulo||""}*${(()=>{const dl=notifPanel.tarea?.deadline;const d=dl?._seconds?new Date(dl._seconds*1000):dl?new Date(dl):null;return d&&Math.ceil((d-new Date())/86400000)<=1?"\nURGENTE":"";})()} \n\nPodés verla acá:\n${colabLink(notifPanel.colab.token)}`)}`}
               target="_blank" rel="noreferrer"
               onClick={()=>setNotifPanel(null)}
               style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,width:"100%",padding:"8px 0",borderRadius:8,background:T.green+"20",border:"1px solid "+T.green+"44"+"",color:T.green,fontWeight:600,fontSize:12,textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer"}}>
@@ -14596,7 +14596,7 @@ function ColaboradorPublicView({T, token}) {
     setEntregaLabel(prev=>({...prev,[tareaId]:""}));
     setEntregaNota(prev=>({...prev,[tareaId]:""}));
     setEntregaEnviada(prev=>({...prev,[tareaId]:{...d.entrega,esFinal}}));
-    toast(esFinal?"¡Entrega final enviada! ✓":"📦 Entrega parcial guardada","success");
+    toast(esFinal?"¡Entrega final enviada! ✓":"Entrega parcial guardada","success");
   }
 
   async function proponerTarea() {
@@ -15050,9 +15050,9 @@ function ColaboradorPublicView({T, token}) {
                   {/* ── SELECTOR DE PROGRESO ── */}
                   {!isAprobado&&t.estado!=="entregado"&&(()=>{
                     const STEPS=[
-                      {id:"pendiente",  label:"Sin empezar",  icon:"⏳", estado:"pendiente",  progresoLabel:""},
-                      {id:"en_proceso", label:"En proceso",   icon:"🔄", estado:"en_proceso", progresoLabel:"En proceso"},
-                      {id:"entregar",   label:"Entregar",     icon:"📤", isAction:true},
+                      {id:"pendiente",  label:"Sin empezar",  icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>, estado:"pendiente",  progresoLabel:""},
+                      {id:"en_proceso", label:"En proceso",   icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>, estado:"en_proceso", progresoLabel:"En proceso"},
+                      {id:"entregar",   label:"Entregar",     icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>, isAction:true},
                     ];
                     const currentStep = t.estado==="bloqueada"?"bloqueada"
                       : t.estado==="en_proceso"?"en_proceso"
@@ -15070,7 +15070,7 @@ function ColaboradorPublicView({T, token}) {
                                   else if(!active){publicSetEstado(t._id, step.estado, step.progresoLabel);}
                                 }}
                                 style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"12px 4px",borderRight:i<STEPS.length-1?`1px solid ${T.border}`:"none",background:active?step.id==="entregar"?T.green+"18":step.id==="en_proceso"?T.blue+"15":T.yellow+"15":"transparent",transition:"background 0.18s, opacity 0.18s",cursor:active&&!step.isAction?"default":"pointer",border:"none",borderRadius:0,outline:"none",opacity:active?1:0.55,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                                <span style={{fontSize:20,marginBottom:3}}>{step.icon}</span>
+                                <span style={{marginBottom:3,display:"flex",color:active?stepColor:T.textSm}}>{step.icon}</span>
                                 <span style={{fontSize:10,fontWeight:active?700:500,color:active?stepColor:T.textSm,textAlign:"center",lineHeight:1.3}}>{step.label}</span>
                                 {active&&<div style={{width:20,height:2.5,borderRadius:2,background:stepColor,marginTop:5}}/>}
                               </AsyncButton>
@@ -15140,7 +15140,7 @@ function ColaboradorPublicView({T, token}) {
                           <div style={{fontSize:12,color:T.textMd,marginBottom:14}}>{lastEntregaJustSent.esFinal===false?"Podés seguir subiendo más entregas cuando tengas más listo.":"El equipo va a revisarla y te avisamos pronto."}</div>
                           <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
                             <button onClick={()=>setEntregaEnviada(prev=>({...prev,[t._id]:null}))} style={{...BtnSecondary(T),fontSize:12}}>+ Subir otra entrega</button>
-                            <a href={`https://wa.me/${adminWa?adminWa.replace(/\D/g,""):""}?text=${encodeURIComponent(`Hola! Acabo de subir mi entrega para "${t.titulo}". Por favor revisala cuando puedas 👍`)}`} target="_blank" rel="noreferrer"
+                            <a href={`https://wa.me/${adminWa?adminWa.replace(/\D/g,""):""}?text=${encodeURIComponent(`Hola! Acabo de subir mi entrega para "${t.titulo}". Por favor revisala cuando puedas`)}`} target="_blank" rel="noreferrer"
                               style={{...BtnSecondary(T),fontSize:12,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5,color:T.green,border:"1px solid "+T.green+"44"+""}}>
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                               Avisar por WhatsApp{adminWa?"":" →"}
@@ -15394,11 +15394,11 @@ function ColaboradorPublicView({T, token}) {
 
         {/* ── SECCIÓN REFERENCIAS ── */}
         {referencias.length>0&&(()=>{
-          const TP={meta:{icon:"📊",color:"#1877f2"},instagram:{icon:"📷",color:"#e1306c"},tiktok:{icon:"🎵",color:"#111"},web:{icon:"🌐",color:"#6366f1"},drive:{icon:"📁",color:"#34a853"},youtube:{icon:"▶️",color:"#ff0000"},otro:{icon:"🔗",color:T.textMd}};
+          const TP={meta:{color:"#1877f2"},instagram:{color:"#e1306c"},tiktok:{color:"#111"},web:{color:"#6366f1"},drive:{color:"#34a853"},youtube:{color:"#ff0000"},otro:{color:T.textMd}};
           return (
             <div style={{marginTop:28}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,rgba(20,184,166,0.13),rgba(20,184,166,0.06))",borderRadius:12,border:"1.5px solid rgba(20,184,166,0.3)"}}>
-                <span style={{fontSize:18}}>🔍</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0d9488" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <div style={{flex:1}}>
                   <div style={{fontSize:13,fontWeight:700,color:"#0d9488"}}>Referencias</div>
                   <div style={{fontSize:11,color:T.textSm}}>{referencias.length} marca{referencias.length!==1?"s":""} de referencia</div>
@@ -15426,7 +15426,7 @@ function ColaboradorPublicView({T, token}) {
                           return (
                             <a key={li} href={l.url} target="_blank" rel="noreferrer"
                               style={{display:"flex",alignItems:"center",gap:7,fontSize:12,fontWeight:600,color:tp.color,background:`${tp.color}12`,border:`1px solid ${tp.color}30`,borderRadius:7,padding:"6px 10px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                              <span style={{fontSize:13,flexShrink:0}}>{tp.icon}</span>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1L11 5"/><path d="M14 11a5 5 0 0 0-7.1 0l-2 2a5 5 0 0 0 7.1 7.1L13 19"/></svg>
                               <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.label||tp.label}</span>
                               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{opacity:.4,flexShrink:0}}><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                             </a>
@@ -15554,7 +15554,7 @@ function ColaboradorBoardView({T, boardToken}) {
     const id={email:colab.email,nombre:colab.nombre};
     try{sessionStorage.setItem(`growith_board_id_${boardToken}`,JSON.stringify(id));}catch(e){}
     setIdentity(id);setShowIdModal(false);
-    showToast(`Hola ${colab.nombre.split(" ")[0]} 👋`);
+    showToast(`Hola ${colab.nombre.split(" ")[0]}`);
   }
 
   function isMyTask(t){
@@ -15775,7 +15775,7 @@ function ColaboradorBoardView({T, boardToken}) {
         async function addEntrega(){
           if(!entregaLink.trim()||!identity) return;
           setSaving(true);
-          try{await boardApi({action:"boardAddEntrega",colabEmail:identity.email,tareaId:t._id,link:entregaLink,label:entregaLabel,nota:entregaNota});setEntregaLink("");setEntregaLabel("");setEntregaNota("");setShowEntregaForm(false);await loadBoard(true);showToast("Entrega enviada ✓ 📦");}
+          try{await boardApi({action:"boardAddEntrega",colabEmail:identity.email,tareaId:t._id,link:entregaLink,label:entregaLabel,nota:entregaNota});setEntregaLink("");setEntregaLabel("");setEntregaNota("");setShowEntregaForm(false);await loadBoard(true);showToast("Entrega enviada ✓");}
           catch(e){showToast(e.message,"error");}
           finally{setSaving(false);}
         }
@@ -16444,12 +16444,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     if (!cuitSel) return;
     const cuitActivoData = cuits.find(c => c.cuit === cuitSel);
     const emisorInfo = cuitActivoData
-      ? `\n📋 CUIT emisor: ${formatCuit(cuitActivoData.cuit)} (${cuitActivoData.razon_social || ""})`
+      ? `\nCUIT emisor: ${formatCuit(cuitActivoData.cuit)} (${cuitActivoData.razon_social || ""})`
       : "";
     const msg = `¿Anular Factura ${resumen.letra} N° ${String(resumen.comprobante).padStart(8,"0")}?\n\n` +
       `Se emite una Nota de Crédito ${resumen.letra} por $${(resumen.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})} que revierte 100% la factura en ARCA. ` +
       `El IVA débito fiscal se descuenta de tu facturado del mes al cerrar el período.${emisorInfo}\n\n` +
-      `${resumen.orden_id?.startsWith?.("ML-") ? "📎 Se DESADJUNTA la factura original de Mercado Libre — la venta queda como no facturada.\n\n" : ""}` +
+      `${resumen.orden_id?.startsWith?.("ML-") ? "Se DESADJUNTA la factura original de Mercado Libre — la venta queda como no facturada.\n\n" : ""}` +
       `Esta acción no se puede deshacer.`;
     if (!await appConfirm(msg, { okLabel: "Emitir NC y anular", danger: true })) return;
     const factura = {
@@ -16498,7 +16498,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         return;
       }
       const mlFailed = d.nc.ml_detached === false && resumen.orden_id?.startsWith?.("ML-");
-      const mlMsg = mlFailed ? " · ⚠ borrá la factura en ML a mano (botón 🔗 Ver en ML)" : "";
+      const mlMsg = mlFailed ? " · borrá la factura en ML a mano (botón Ver en ML)" : "";
       toast(`NC ${d.nc.letra} N° ${String(d.nc.comprobante).padStart(8,"0")} emitida ✓${mlMsg}`, mlFailed ? "warning" : "success");
       if (d.nc.pdf_b64) {
         const a = document.createElement("a");
@@ -16509,7 +16509,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       if (mlFailed) {
         const link = `https://www.mercadolibre.com.ar/ventas/${String(resumen.orden_id).replace("ML-","")}/detalle`;
         window.open(link, "_blank", "noopener");
-        await appAlert(`La NC se emitió bien ✓, pero Mercado Libre no permitió desadjuntar la factura automáticamente.\n\nTe abrí la venta en una pestaña nueva. Para borrarla a mano:\n1. Andá a "Ver más detalles" de la venta\n2. Buscá la factura adjunta\n3. 3 puntitos del documento → Eliminar\n\nSi no se abrió la pestaña, usá el botón 🔗 Ver en ML de la factura.`);
+        await appAlert(`La NC se emitió bien ✓, pero Mercado Libre no permitió desadjuntar la factura automáticamente.\n\nTe abrí la venta en una pestaña nueva. Para borrarla a mano:\n1. Andá a "Ver más detalles" de la venta\n2. Buscá la factura adjunta\n3. 3 puntitos del documento → Eliminar\n\nSi no se abrió la pestaña, usá el botón Ver en ML de la factura.`);
       }
       refreshDashboard();
       // Recargar pendientes para que la venta vuelva a aparecer + pierda el verde
@@ -16521,7 +16521,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     if (!cuitSel || !batch?.resumen?.length) return;
     const cuitActivoData = cuits.find(c => c.cuit === cuitSel);
     const emisorInfo = cuitActivoData
-      ? `\n📋 CUIT emisor: ${formatCuit(cuitActivoData.cuit)} (${cuitActivoData.razon_social || ""})`
+      ? `\nCUIT emisor: ${formatCuit(cuitActivoData.cuit)} (${cuitActivoData.razon_social || ""})`
       : "";
     const totalLote = (batch.total||0).toLocaleString("es-AR",{minimumFractionDigits:2});
     const msg = `¿Anular las ${batch.cantidad} facturas del lote?\n\n` +
@@ -16549,7 +16549,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       if (d.error) { toast(`Error: ${d.error}`, "error"); return; }
       const mlFailResults = (d.results || []).filter(r => r.ok && r.ml_detached === false);
       const mlFails = mlFailResults.length;
-      const extraMsg = mlFails > 0 ? ` · ⚠ ${mlFails} sin desadjuntar de ML` : "";
+      const extraMsg = mlFails > 0 ? ` · ${mlFails} sin desadjuntar de ML` : "";
       toast(`${d.ok_count}/${d.total} NCs emitidas${d.errors?.length?` · ${d.errors.length} con error`:""}${extraMsg}`, (d.errors?.length || mlFails)?"warning":"success");
       // Mostrar errores detallados de ARCA si hay fallos
       if (d.errors?.length) {
@@ -16564,7 +16564,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           return oid.startsWith("ML-") ? `https://www.mercadolibre.com.ar/ventas/${oid.replace("ML-","")}/detalle` : null;
         }).filter(Boolean);
         if (links.length) {
-          await appAlert(`${links.length} factura(s) de Mercado Libre no se pudieron desadjuntar automáticamente.\n\nBorralas a mano: en cada venta andá a "Ver más detalles" → factura adjunta → 3 puntitos → Eliminar. Usá el botón 🔗 Ver en ML de cada factura, o estos links:\n\n${links.join("\n")}`);
+          await appAlert(`${links.length} factura(s) de Mercado Libre no se pudieron desadjuntar automáticamente.\n\nBorralas a mano: en cada venta andá a "Ver más detalles" → factura adjunta → 3 puntitos → Eliminar. Usá el botón Ver en ML de cada factura, o estos links:\n\n${links.join("\n")}`);
         }
       }
       refreshDashboard();
@@ -16860,10 +16860,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   </button>
                   <button onClick={(e)=>{e.stopPropagation();openEditCuit(c);}} title="Editar datos" style={{background:"transparent",border:"none",cursor:"pointer",padding:"6px",borderRadius:6,fontSize:13,color:T.textMd,display:"flex",alignItems:"center"}}
                     onMouseEnter={e=>e.currentTarget.style.background=T.bg}
-                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>✏️</button>
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
                   <button onClick={(e)=>{e.stopPropagation();handleDeleteCuit(c.cuit);}} title="Eliminar CUIT" style={{background:"transparent",border:"none",cursor:"pointer",padding:"6px",borderRadius:6,fontSize:13,color:T.red,display:"flex",alignItems:"center"}}
                     onMouseEnter={e=>e.currentTarget.style.background=T.redBg}
-                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>🗑</button>
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>
                 </div>
               ))}
               <div className="gh-accordion" style={{borderTop:"1px solid "+T.border,marginTop:4,paddingTop:4}}>
@@ -16903,7 +16903,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         {/* ══ SIN CUITs → ONBOARDING ══ */}
         {cuits.length===0 ? (
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"60px 24px",textAlign:"center"}}>
-            <div style={{width:72,height:72,borderRadius:18,background:T.surface,border:"1px solid "+T.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:34,marginBottom:24}}>🧾</div>
+            <div style={{width:72,height:72,borderRadius:18,background:T.surface,border:"1px solid "+T.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:34,marginBottom:24}}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
             <div style={{fontSize:20,fontWeight:800,color:T.text,marginBottom:8}}>Facturación electrónica con ARCA</div>
             <div style={{fontSize:14,color:T.textMd,maxWidth:520,lineHeight:1.7,marginBottom:28}}>
               Conectá tu CUIT con tu certificado digital de ARCA y empezá a emitir facturas electrónicas directo desde tus ventas de Mercado Libre, Shopify y Tienda Nube. El sistema detecta automáticamente el tipo de comprobante según tu condición fiscal y los datos de cada cliente.
@@ -16914,7 +16914,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
             {/* Guía inline en onboarding */}
             <div style={{marginTop:48,width:"100%",maxWidth:750,textAlign:"left"}}>
-              <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:20,textAlign:"center"}}>📖 ¿Cómo funciona?</div>
+              <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:20,textAlign:"center"}}>¿Cómo funciona?</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
                 {[
                   {step:"1",title:"Tocá 'Conectar CUIT' y completá tus datos",desc:"El wizard te pide CUIT, razón social, condición frente al IVA (Responsable Inscripto o Monotributista) y punto de venta. Necesitás clave fiscal nivel 3 en ARCA y estar inscripto como RI o Monotributo (no Consumidor Final).",color:T.accent},
@@ -16982,7 +16982,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     ))}
                   </div>
                   <div style={{marginTop:16,padding:14,background:T.purpleBg,border:"1px solid "+T.purple+"33",borderRadius:10}}>
-                    <div style={{fontSize:12,fontWeight:600,color:T.purple,marginBottom:6}}>💡 Tipos de factura según tu condición fiscal</div>
+                    <div style={{fontSize:12,fontWeight:600,color:T.purple,marginBottom:6}}>Tipos de factura según tu condición fiscal</div>
                     <div style={{fontSize:11,color:T.textMd,lineHeight:1.7}}>
                       <strong style={{color:T.text}}>Responsable Inscripto →</strong> Factura A (cliente RI con CUIT) o Factura B (consumidor final, cliente con DNI, o sin datos). Si ARCA rechaza una Factura A porque el CUIT del cliente no es RI, Growith reintenta como Factura B automáticamente.<br/>
                       <strong style={{color:T.text}}>Monotributista →</strong> Siempre Factura C, independientemente de quién sea el cliente. Los monotributistas no discriminan IVA.
@@ -17013,15 +17013,15 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:24}}>
                 {/* KPIs fila 1 */}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-                  <KPI T={T} icon="💰" label={`Facturado · ${mesActual}`} color={T.green}
+                  <KPI T={T} label={`Facturado · ${mesActual}`} color={T.green}
                     value={dashboardStats?"$ "+dashboardStats.total_facturado.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0}):"$ 0"}
                     sub="IVA incluido"/>
                   {esRI&&(
-                    <KPI T={T} icon="📊" label={`IVA débito · ${mesActual}`} color={T.blue||T.blue}
+                    <KPI T={T} label={`IVA débito · ${mesActual}`} color={T.blue||T.blue}
                       value={dashboardStats?"$ "+dashboardStats.iva_debito.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0}):"$ 0"}
                       sub="Facturas A y B"/>
                   )}
-                  <KPI T={T} icon="🧾" label={`Emitidas · ${mesActual}`} color={T.text}
+                  <KPI T={T} label={`Emitidas · ${mesActual}`} color={T.text}
                     value={dashboardStats?String(dashboardStats.facturas_emitidas):"0"}
                     sub={dashboardStats&&(dashboardStats.por_letra.A+dashboardStats.por_letra.B+dashboardStats.por_letra.C)>0
                       ?`A: ${dashboardStats.por_letra.A} · B: ${dashboardStats.por_letra.B} · C: ${dashboardStats.por_letra.C}`
@@ -17185,7 +17185,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     return (
                     <details style={{marginBottom:12}}>
                       <summary style={{cursor:"pointer",fontSize:12,fontWeight:600,color:T.text,padding:"10px 14px",background:T.yellowBg,border:"1px solid "+T.yellow+"44",borderRadius:8,listStyle:"none"}}>
-                        ⚠ ¿Las ventas de Shopify no traen DNI/CUIT? — Click para ver cómo configurar tu checkout
+                        ¿Las ventas de Shopify no traen DNI/CUIT? — Click para ver cómo configurar tu checkout
                       </summary>
                       <div style={{padding:"14px 16px",background:T.bg,border:"1px solid "+T.borderL,borderTop:"none",borderRadius:"0 0 8px 8px",fontSize:12,color:T.textMd,lineHeight:1.7}}>
                         <div style={{marginBottom:10}}>
@@ -17213,13 +17213,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         </ol>
 
                         <div style={{marginTop:12,padding:"10px 14px",background:T.greenBg,border:"1px solid "+T.green+"44",borderRadius:8,fontSize:11,color:T.textMd,lineHeight:1.6}}>
-                          ✅ <strong style={{color:T.green}}>Resultado:</strong> tus clientes verán un campo obligatorio "DNI o CUIT" en el checkout. Si ponen <strong style={{color:T.text}}>CUIT válido</strong> → Growith emite <strong style={{color:T.text}}>Factura A</strong>. Si ponen <strong style={{color:T.text}}>DNI</strong> → Growith emite <strong style={{color:T.text}}>Factura B</strong>. Si lo dejan vacío (no debería pasar si lo marcaste "Obligatorio") → Factura B a Consumidor Final.
+                          <strong style={{color:T.green}}>Resultado:</strong> tus clientes verán un campo obligatorio "DNI o CUIT" en el checkout. Si ponen <strong style={{color:T.text}}>CUIT válido</strong> → Growith emite <strong style={{color:T.text}}>Factura A</strong>. Si ponen <strong style={{color:T.text}}>DNI</strong> → Growith emite <strong style={{color:T.text}}>Factura B</strong>. Si lo dejan vacío (no debería pasar si lo marcaste "Obligatorio") → Factura B a Consumidor Final.
                         </div>
                         <div style={{marginTop:8,fontSize:10,color:T.textSm,fontStyle:"italic"}}>
                           Nota: las ventas anteriores a este cambio no van a tener el documento. Solo las nuevas. Para esas viejas, usá el botón "Factura manual" o cargá el doc de cada una.
                         </div>
                         <div style={{marginTop:8,fontSize:10,color:T.green,fontStyle:"italic"}}>
-                          🔄 Este aviso desaparece automáticamente en cuanto Growith detecte la primera venta de Shopify con DNI o CUIT cargado.
+                          Este aviso desaparece automáticamente en cuanto Growith detecte la primera venta de Shopify con DNI o CUIT cargado.
                         </div>
                       </div>
                     </details>
@@ -17260,7 +17260,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <div style={{padding:"24px 16px",textAlign:"center",background:T.bg,borderRadius:10}}>
                           {itemsBilled.length > 0 ? (
                             <>
-                              <div style={{fontSize:28,marginBottom:8}}>✅</div>
+                              <div style={{width:40,height:40,borderRadius:10,background:T.green+"18",border:"1px solid "+T.green+"33",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px"}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
                               <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>Todo facturado en el período</div>
                               <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>{itemsBilled.length} {itemsBilled.length===1?"venta facturada":"ventas facturadas"} · cambiá el período para ver más</div>
                               <button onClick={()=>setSidebarTab&&setSidebarTab("registros")} style={{background:"transparent",border:"none",cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",padding:0}}>
@@ -17269,7 +17269,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             </>
                           ) : (
                             <>
-                              <div style={{fontSize:22,marginBottom:6}}>🔍</div>
+                              <div style={{marginBottom:6,display:"flex",justifyContent:"center"}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
                               <div style={{fontSize:12,color:T.textSm}}>No hay ventas que coincidan con los filtros aplicados.</div>
                             </>
                           )}
@@ -17559,7 +17559,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     return (
                       <>
                         <div style={{display:"flex",alignItems:"center",gap:10}}>
-                          <div style={{fontSize:16,fontWeight:800,color:T.text,flex:1}}>🧾 Emitir {Object.keys(ordenes).length} factura{Object.keys(ordenes).length!==1?"s":""} en ARCA</div>
+                          <div style={{fontSize:16,fontWeight:800,color:T.text,flex:1}}>Emitir {Object.keys(ordenes).length} factura{Object.keys(ordenes).length!==1?"s":""} en ARCA</div>
                           <ModalCloseBtn T={T} onClick={closeModal}/>
                         </div>
 
@@ -17587,7 +17587,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         {/* Date picker */}
                         <div style={{padding:"12px 16px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
                           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                            <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,flexShrink:0}}>📅 Fecha de las facturas</span>
+                            <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,flexShrink:0}}>Fecha de las facturas</span>
                             <input type="date" value={fechaFactura} min={minIso} max={hoyIso} onChange={e=>setFechaFactura(e.target.value)}
                               style={{background:T.card,border:`1px solid ${T.borderL}`,color:T.text,borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                             {fechaLabel&&<span style={{fontSize:12,color:T.text,fontWeight:500,textTransform:"capitalize"}}>{fechaLabel}</span>}
@@ -17601,20 +17601,20 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         {pvsDisponibles.length>1 && (
                           <div style={{padding:"12px 16px",background:T.bg,border:`1px solid ${pvElegido?.exento?(T.yellow||T.yellow)+"66":T.borderL}`,borderRadius:10}}>
                             <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                              <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,flexShrink:0}}>🧾 Punto de venta</span>
+                              <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,flexShrink:0}}>Punto de venta</span>
                               <select value={pvElegido?.numero||""} onChange={e=>{const n=parseInt(e.target.value); setPvEmit(pvsDisponibles.find(p=>p.numero===n)||null);}}
                                 style={{background:T.card,border:`1px solid ${T.borderL}`,color:T.text,borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}>
                                 {pvsDisponibles.map(p=>(<option key={p.numero} value={p.numero}>{p.nombre} · PV {String(p.numero).padStart(5,"0")}{p.exento?" · EXENTO":""}</option>))}
                               </select>
                             </div>
-                            {pvElegido?.exento && <div style={{fontSize:11,color:(T.yellow||T.yellow),marginTop:6,fontWeight:600}}>⚠ Estas facturas saldrán SIN IVA (operación exenta). Usalo solo para productos digitales/exentos.</div>}
+                            {pvElegido?.exento && <div style={{fontSize:11,color:(T.yellow||T.yellow),marginTop:6,fontWeight:600}}>Estas facturas saldrán SIN IVA (operación exenta). Usalo solo para productos digitales/exentos.</div>}
                           </div>
                         )}
 
                         {/* Duplicate warning */}
                         {duplicatesInModal&&duplicatesInModal.length>0&&(
                           <div style={{padding:"12px 14px",background:T.orange+"10",border:`1.5px solid ${T.orange}44`,borderRadius:8}}>
-                            <div style={{fontSize:13,fontWeight:700,color:T.orange,marginBottom:6}}>⚠ {duplicatesInModal.length} órdenes ya fueron facturadas</div>
+                            <div style={{fontSize:13,fontWeight:700,color:T.orange,marginBottom:6}}>{duplicatesInModal.length} órdenes ya fueron facturadas</div>
                             <div style={{fontSize:11,color:T.textMd,marginBottom:10}}>
                               {duplicatesInModal.slice(0,3).join(", ")}{duplicatesInModal.length>3?` y ${duplicatesInModal.length-3} más`:""}.
                             </div>
@@ -17660,7 +17660,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
                         {/* Irreversible warning */}
                         <div style={{padding:"10px 14px",background:T.redBg,border:`1.5px solid ${T.red}44`,borderRadius:8,fontSize:12,color:T.red}}>
-                          ⚠ Esta acción es <strong>irreversible</strong> — ARCA emite los comprobantes con CAE y no pueden anularse desde Growith.
+                          Esta acción es <strong>irreversible</strong> — ARCA emite los comprobantes con CAE y no pueden anularse desde Growith.
                         </div>
 
                         {/* Actions */}
@@ -17668,7 +17668,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <button onClick={closeModal} style={{...BtnSecondary(T),flex:1,justifyContent:"center",fontSize:13,padding:"11px 0"}}>Cancelar</button>
                           <button onClick={()=>handleEmit(false)} disabled={!cuitSel}
                             style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px 0",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",borderRadius:DS.r.md,border:"none",cursor:!cuitSel?"not-allowed":"pointer",background:!cuitSel?"#166534":T.green,color:"#fff",boxShadow:!cuitSel?"none":"0 4px 18px rgba(22,163,74,0.35)",transition:"all 0.15s",opacity:!cuitSel?0.55:1}}>
-                            🧾 Confirmar y emitir
+                            Confirmar y emitir
                           </button>
                         </div>
                       </>
@@ -17735,7 +17735,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </div>
                           <input value={it.cantidad} onChange={e=>{const arr=[...manualItems];arr[i].cantidad=parseInt(e.target.value.replace(/\D/g,""))||0;setManualItems(arr);}} placeholder="Cant." style={{...iS,fontSize:12,textAlign:"center"}}/>
                           <input value={it.precio||""} onChange={e=>{const arr=[...manualItems];arr[i].precio=parseFloat(e.target.value)||0;setManualItems(arr);}} placeholder="Precio s/IVA" type="number" step="0.01" style={{...iS,fontSize:12,textAlign:"right"}}/>
-                          <button onClick={()=>setManualItems(manualItems.filter((_,j)=>j!==i))} disabled={manualItems.length===1} style={{background:"transparent",border:"none",cursor:manualItems.length===1?"not-allowed":"pointer",color:T.red,fontSize:14,opacity:manualItems.length===1?0.3:1}}>🗑</button>
+                          <button onClick={()=>setManualItems(manualItems.filter((_,j)=>j!==i))} disabled={manualItems.length===1} style={{background:"transparent",border:"none",cursor:manualItems.length===1?"not-allowed":"pointer",color:T.red,fontSize:14,opacity:manualItems.length===1?0.3:1}}>✕</button>
                         </div>
                         );
                       })}
@@ -17759,7 +17759,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
                     <div style={{display:"flex",justifyContent:"flex-end"}}>
                       <button onClick={handleEmitManual} disabled={emittingManual||!cuitSel} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"12px 28px",fontSize:14,fontWeight:700,cursor:emittingManual?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:(!cuitSel||emittingManual)?0.5:1}}>
-                        {emittingManual?<><Spinner size={13} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir factura"}
+                        {emittingManual?<><Spinner size={13} color="#fff"/> Emitiendo en ARCA...</>:"Emitir factura"}
                       </button>
                     </div>
                   </>
@@ -17767,7 +17767,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <>
                     {manualResult.r?.ok ? (
                       <div style={{padding:18,background:T.greenBg,border:"1px solid "+T.green+"33",borderRadius:10,marginBottom:14}}>
-                        <div style={{fontSize:14,fontWeight:700,color:T.green,marginBottom:6}}>✅ Factura emitida</div>
+                        <div style={{fontSize:14,fontWeight:700,color:T.green,marginBottom:6}}>Factura emitida</div>
                         <div style={{fontSize:12,color:T.text,lineHeight:1.7}}>
                           Factura <strong>{manualResult.r.letra}</strong> N° <strong>{String(manualResult.r.comprobante).padStart(8,"0")}</strong><br/>
                           CAE: <strong>{manualResult.r.cae}</strong> (vto. {manualResult.r.cae_vto})<br/>
@@ -17902,7 +17902,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       {/* Header */}
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
                         <div>
-                          <div style={{fontSize:14,fontWeight:700,color:T.text}}>📚 Registros · <span style={{textTransform:"capitalize"}}>{mesActual}</span></div>
+                          <div style={{fontSize:14,fontWeight:700,color:T.text}}>Registros · <span style={{textTransform:"capitalize"}}>{mesActual}</span></div>
                           <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Todos los comprobantes emitidos del mes. Descargá PDFs, exportá CSV o anulá con Nota de Crédito.</div>
                         </div>
                         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -17914,7 +17914,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               ))}
                             </div>
                           )}
-                          <Btn T={T} variant="secondary" size="sm" onClick={exportCsv} disabled={regSub==="ncs"?ncRows.length===0:rows.length===0}>⬇ Exportar CSV</Btn>
+                          <Btn T={T} variant="secondary" size="sm" onClick={exportCsv} disabled={regSub==="ncs"?ncRows.length===0:rows.length===0}>Exportar CSV</Btn>
                         </div>
                       </div>
 
@@ -17962,17 +17962,17 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <div style={{position:"absolute",inset:0,background:`linear-gradient(90deg, transparent, ${T.border}40, transparent)`,backgroundSize:"200% 100%",animation:"growith-shimmer 1.6s infinite"}}/>
                         </div>
                       ) : vacio ? (
-                        <DSEmpty T={T} icon="🧾" title={`Sin registros en ${mesActual}`}
+                        <DSEmpty T={T} title={`Sin registros en ${mesActual}`}
                           subtitle="No hay comprobantes emitidos este mes. Si emitiste facturas y no aparecen acá, podés reconstruirlas desde AFIP."
                           action={
                             <button onClick={recuperarDesdeAfip} disabled={resyncing} style={{background:"transparent",border:"none",cursor:resyncing?"wait":"pointer",fontSize:13,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",padding:0,display:"inline-flex",alignItems:"center",gap:6}}>
-                              {resyncing ? <><Spinner size={12} color={T.accent}/> {resyncMsg||"Consultando AFIP…"}</> : "↺ Recuperar desde AFIP"}
+                              {resyncing ? <><Spinner size={12} color={T.accent}/> {resyncMsg||"Consultando AFIP…"}</> : "Recuperar desde AFIP"}
                             </button>
                           }/>
                       ) : regSub==="ncs" ? (
                         /* ── NOTAS DE CRÉDITO ── */
                         ncRows.length===0 ? (
-                          <DSEmpty T={T} icon="🧾" title="Sin notas de crédito"
+                          <DSEmpty T={T} title="Sin notas de crédito"
                             subtitle={filtrosActivos?"Ninguna NC coincide con los filtros aplicados.":`No emitiste notas de crédito en ${mesActual}.`}/>
                         ) : (
                           <>
@@ -18010,7 +18010,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </>
                         )
                       ) : rows.length===0 ? (
-                        <DSEmpty T={T} icon="🔍" title="Sin comprobantes"
+                        <DSEmpty T={T} title="Sin comprobantes"
                           subtitle={filtrosActivos?"Ningún comprobante coincide con los filtros aplicados.":`No hay facturas emitidas en ${mesActual}.`}/>
                       ) : regView==="comprobantes" ? (
                         /* ── VISTA COMPROBANTES (tabla plana) ── */
@@ -18045,9 +18045,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                     <td style={{padding:"8px 10px",color:T.textSm,fontFamily:"monospace",fontSize:11,whiteSpace:"nowrap"}} title={r.cae_vto?`Vto CAE ${r.cae_vto}`:undefined}>{r.cae||"—"}</td>
                                     <td style={{padding:"8px 10px"}}>
                                       <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
-                                        <button onClick={()=>descargarPdfDe(r)} style={btnPdfS}>⬇ PDF</button>
+                                        <button onClick={()=>descargarPdfDe(r)} style={btnPdfS}>PDF</button>
                                         {!r.anulada&&(
-                                          <button onClick={()=>anularUnaFactura(r, r._b)} title="Emite NC para anular esta factura" style={btnAnularS}>🔄 Anular</button>
+                                          <button onClick={()=>anularUnaFactura(r, r._b)} title="Emite NC para anular esta factura" style={btnAnularS}>Anular</button>
                                         )}
                                       </div>
                                     </td>
@@ -18082,10 +18082,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                     </div>
                                     <div style={{fontSize:14,fontWeight:700,color:T.text,marginRight:8}}>{fmtMonto(b.total)}</div>
                                     <button onClick={(e)=>{e.stopPropagation();anularLoteCompleto(b);}} title="Emite NC por cada factura del lote para anularlas todas" style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
-                                      🔄 Anular lote
+                                      Anular lote
                                     </button>
                                     <button onClick={(e)=>{e.stopPropagation();downloadBatchZip(b);}} style={{background:T.accent,border:"none",color:"#fff",borderRadius:6,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>
-                                      {loadingBatchPdfs===b.batch_id ? <><Spinner size={10} color="#fff"/> ZIP</> : "⬇ ZIP"}
+                                      {loadingBatchPdfs===b.batch_id ? <><Spinner size={10} color="#fff"/> ZIP</> : "ZIP"}
                                     </button>
                                   </div>
                                   {isExpanded && (
@@ -18100,14 +18100,14 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                             <div style={{fontSize:11,color:T.textSm}}>N° {String(r.comprobante).padStart(8,"0")} · CAE {r.cae}</div>
                                           </div>
                                           <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>{fmtMonto(r.total)}</div>
-                                          <button onClick={()=>descargarPdfDe(r)} style={btnPdfS}>⬇ PDF</button>
+                                          <button onClick={()=>descargarPdfDe(r)} style={btnPdfS}>PDF</button>
                                           {String(r.orden_id||"").startsWith("ML-") && (
                                             <a href={`https://www.mercadolibre.com.ar/ventas/${String(r.orden_id).replace("ML-","")}/detalle`} target="_blank" rel="noopener" title="Abrí la venta en Mercado Libre para borrar la factura adjunta a mano (3 puntitos del documento → Eliminar)" style={{background:PLATFORM.mercadolibre.color,border:`1px solid ${PLATFORM.mercadolibre.color}55`,color:"#333",borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap",textDecoration:"none"}}>
-                                              🔗 Ver en ML
+                                              Ver en ML
                                             </a>
                                           )}
                                           {!r.anulada&&(
-                                            <button onClick={()=>anularUnaFactura(r, b)} title="Emite NC para anular esta factura" style={btnAnularS}>🔄 Anular</button>
+                                            <button onClick={()=>anularUnaFactura(r, b)} title="Emite NC para anular esta factura" style={btnAnularS}>Anular</button>
                                           )}
                                         </div>
                                       ))}
@@ -18138,7 +18138,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <Card T={T} padding="lg">
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
                   <div>
-                    <div style={{fontSize:14,fontWeight:700,color:T.text}}>🪪 Mis CUITs</div>
+                    <div style={{fontSize:14,fontWeight:700,color:T.text}}>Mis CUITs</div>
                     <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Gestioná los CUITs que emiten facturas. Tocá uno para editar datos o agregá uno nuevo.</div>
                   </div>
                   <button onClick={()=>setShowWizard(true)} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"9px 16px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -18161,7 +18161,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         </div>
                         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                           {!isActive && <button onClick={()=>setCuitSel(c.cuit)} style={{flex:1,minWidth:90,background:"transparent",border:`1px solid ${T.accent}55`,color:T.accent,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Activar</button>}
-                          <button onClick={()=>openEditCuit(c)} style={{flex:1,minWidth:80,background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✏ Editar</button>
+                          <button onClick={()=>openEditCuit(c)} style={{flex:1,minWidth:80,background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
                           <button onClick={async()=>{
                             const prev = cuitSel; setCuitSel(c.cuit);
                             setTimeout(async()=>{ await handleTestConnection(); if (prev !== c.cuit) setCuitSel(prev); }, 50);
@@ -18177,12 +18177,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               {/* ── Mantenimiento ── */}
               <Card T={T} padding="lg" style={{marginTop:16}}>
                 <div style={{marginBottom:14}}>
-                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>🛠 Mantenimiento</div>
+                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>Mantenimiento</div>
                   <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Herramientas para dejar tus Registros al día con AFIP y Mercado Libre.</div>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                   <button onClick={recuperarDesdeAfip} disabled={resyncing||!cuitSel} title="Consulta AFIP y reconstruye los comprobantes emitidos que no figuren en Registros (no pisa ni duplica nada)" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",cursor:resyncing?"wait":"pointer",opacity:!cuitSel?0.5:1}}>
-                    {resyncing ? <><Spinner size={11} color={T.text}/> {resyncMsg||"Consultando AFIP…"}</> : "↺ Recuperar desde AFIP"}
+                    {resyncing ? <><Spinner size={11} color={T.text}/> {resyncMsg||"Consultando AFIP…"}</> : "Recuperar desde AFIP"}
                   </button>
                   <button onClick={async()=>{
                     if(!cuitSel) return;
@@ -18196,7 +18196,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     toast(`${d.uploaded}/${d.total} facturas adjuntadas en ML${errMsg}`, d.errors?.length>0?"warning":"success");
                     refreshDashboard();
                   }} disabled={attachingML||!cuitSel} title="Adjuntar a ML las facturas que todavía no se subieron" style={{background:PLATFORM.mercadolibre.color,border:`1px solid ${PLATFORM.mercadolibre.color}55`,color:"#333",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:attachingML?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:!cuitSel?0.5:1}}>
-                    {attachingML ? <><Spinner size={11} color="#333"/> Adjuntando…</> : "🟡 Adjuntar pendientes a ML"}
+                    {attachingML ? <><Spinner size={11} color="#333"/> Adjuntando…</> : "Adjuntar pendientes a ML"}
                   </button>
                 </div>
               </Card>
@@ -18230,7 +18230,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             {wizStep===0&&(
               <div style={{display:"flex",flexDirection:"column",gap:14}}>
                 <div style={{background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,padding:"12px 14px",fontSize:12,color:T.textMd,lineHeight:1.55}}>
-                  <strong style={{color:T.yellow}}>⚠ Importante:</strong> antes de cargar el CUIT en Growith tenés que crear en ARCA un <strong style={{color:T.text}}>Punto de Venta del tipo "RECE para aplicativo y web services"</strong>. Los puntos de venta tipo "Factura en Línea" (manual) <strong style={{color:T.text}}>no funcionan</strong> con el web service que Growith usa para emitir.
+                  <strong style={{color:T.yellow}}>Importante:</strong> antes de cargar el CUIT en Growith tenés que crear en ARCA un <strong style={{color:T.text}}>Punto de Venta del tipo "RECE para aplicativo y web services"</strong>. Los puntos de venta tipo "Factura en Línea" (manual) <strong style={{color:T.text}}>no funcionan</strong> con el web service que Growith usa para emitir.
                 </div>
 
                 <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"16px 18px"}}>
@@ -18339,10 +18339,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           Tocá el botón y Growith genera tu CSR (Certificate Signing Request). Lo vas a descargar como <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>growith-{wizCuit||"CUIT"}.csr</code> para subirlo a ARCA en el paso siguiente.
                         </div>
                         <button onClick={generarCsrYKey} disabled={genLoading} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"12px 18px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:genLoading?0.7:1}}>
-                          {genLoading ? <><Spinner size={13} color="#fff"/> Generando (10-20 seg)...</> : "🔐 Generar mi archivo para ARCA"}
+                          {genLoading ? <><Spinner size={13} color="#fff"/> Generando (10-20 seg)...</> : "Generar mi archivo para ARCA"}
                         </button>
                         {genError && (
-                          <div style={{marginTop:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>⚠ {genError}</div>
+                          <div style={{marginTop:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>{genError}</div>
                         )}
                       </div>
                     )}
@@ -18355,11 +18355,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <div style={{fontSize:13,fontWeight:700,color:T.text}}>Subí el CSR a ARCA</div>
                         </div>
                         <div style={{fontSize:11,color:T.textMd,background:T.bg,border:"1px solid "+T.borderL,borderRadius:6,padding:"7px 10px",marginBottom:10,lineHeight:1.5}}>
-                          📎 ARCA te va a pedir <strong style={{color:T.text}}>subir un archivo</strong>. Ya descargamos tu <code style={{background:T.surface,padding:"1px 4px",borderRadius:3}}>growith-{wizCuit}.csr</code> al generar — buscalo en tu carpeta de Descargas.
+                          ARCA te va a pedir <strong style={{color:T.text}}>subir un archivo</strong>. Ya descargamos tu <code style={{background:T.surface,padding:"1px 4px",borderRadius:3}}>growith-{wizCuit}.csr</code> al generar — buscalo en tu carpeta de Descargas.
                         </div>
                         {!wizArcaProd && (
                           <div style={{fontSize:11,color:T.yellow,background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:6,padding:"7px 10px",marginBottom:10,lineHeight:1.5}}>
-                            ⚠ Elegiste ambiente <strong>Homologación</strong>. En "Administración de Certificados Digitales" buscá la opción de Homologación antes de agregar el alias — los certs de homologación no funcionan en producción.
+                            Elegiste ambiente <strong>Homologación</strong>. En "Administración de Certificados Digitales" buscá la opción de Homologación antes de agregar el alias — los certs de homologación no funcionan en producción.
                           </div>
                         )}
 
@@ -18399,7 +18399,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               <li>En el desplegable <strong style={{color:T.text}}>"Computador Fiscal"</strong> elegí el alias que creaste en la Parte A. Si no aparece, refrescá la página y volvé a entrar</li>
                             </ul>
                           </li>
-                          <li style={{color:T.red}}>⚠ <strong>NO confirmes sin haber cambiado el Representante</strong>. Si dejás "{(wizRazonSocial||"tu nombre").toUpperCase()} [Clave Fiscal Nivel 3]" (vos mismo), ARCA te tira error: "El dador de la autorización no debe ser igual al autorizado"</li>
+                          <li style={{color:T.red}}><strong>NO confirmes sin haber cambiado el Representante</strong>. Si dejás "{(wizRazonSocial||"tu nombre").toUpperCase()} [Clave Fiscal Nivel 3]" (vos mismo), ARCA te tira error: "El dador de la autorización no debe ser igual al autorizado"</li>
                           <li>Tocá <strong style={{color:T.text}}>"Confirmar"</strong> para guardar la relación</li>
                         </ol>
 
@@ -18422,7 +18422,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           style={{border:"2px dashed "+(certText?T.green:T.border),borderRadius:10,padding:"22px 18px",textAlign:"center",cursor:"pointer",background:certText?T.greenBg:"transparent",transition:"all 0.15s"}}>
                           {certText ? (
                             <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-                              <span style={{fontSize:22}}>📄</span>
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                               <div style={{textAlign:"left"}}>
                                 <div style={{fontSize:13,fontWeight:600,color:T.text}}>{certFileName||"certificado.crt"}</div>
                                 <div style={{fontSize:11,color:T.green}}>✓ Certificado válido cargado · Click para cambiar</div>
@@ -18431,7 +18431,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             </div>
                           ) : (
                             <>
-                              <span style={{fontSize:26,display:"block",marginBottom:6}}>📥</span>
+                              <span style={{display:"flex",justifyContent:"center",marginBottom:6}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
                               <div style={{fontSize:13,fontWeight:600,color:T.text}}>Arrastrá el .crt que descargaste de ARCA</div>
                               <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Acepta .crt, .pem o .cer</div>
                             </>
@@ -18439,7 +18439,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <input id="cert-file-input-auto" type="file" accept=".crt,.pem,.cer" onChange={e=>{const f=e.target.files[0];if(f)readPemFile(f,"cert",setCertText,setCertFileName,setCertFileError);e.target.value="";}} style={{display:"none"}}/>
                         </div>
                         {certFileError && (
-                          <div style={{marginTop:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>⚠ {certFileError}</div>
+                          <div style={{marginTop:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>{certFileError}</div>
                         )}
                       </div>
                     )}
@@ -18459,9 +18459,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       ["Fantasía",wizNombreFantasia||"—"],
                       ["Condición",wizCondicion==="MONOTRIBUTO"?"Monotributista (Factura C)":"Resp. Inscripto (Factura A/B)"],
                       ["Punto de venta",wizPuntoVenta],
-                      ["Ambiente",wizArcaProd?"⚠️ Producción (real)":"Homologación (pruebas)"],
-                      ["Certificado",certText.trim()?"✅ Cargado":"❌ Sin cargar"],
-                      ["Clave privada",keyText.trim()?"✅ Cargada":"❌ Sin cargar"],
+                      ["Ambiente",wizArcaProd?"Producción (real)":"Homologación (pruebas)"],
+                      ["Certificado",certText.trim()?"Cargado":"Sin cargar"],
+                      ["Clave privada",keyText.trim()?"Cargada":"Sin cargar"],
                     ].map(([k,v],i)=>(
                       <div key={i} style={{padding:"10px 12px",background:T.card,borderRadius:8,border:"1px solid "+T.borderL}}>
                         <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>{k}</div>
@@ -18472,11 +18472,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 </div>
                 {testResult&&(
                   <div style={{padding:14,borderRadius:8,marginBottom:16,background:testResult.ok?T.greenBg:T.redBg,border:"1px solid "+(testResult.ok?T.green:T.red)+"33",fontSize:12,color:testResult.ok?T.green:T.red,fontWeight:500}}>
-                    {testResult.ok?"✅ Conexión exitosa con ARCA":"❌ Error al conectar con ARCA"} — {testResult.msg}
+                    {testResult.ok?"Conexión exitosa con ARCA":"Error al conectar con ARCA"} — {testResult.msg}
                   </div>
                 )}
                 <button onClick={handleTestCuitWiz} disabled={testingCuit||!certText.trim()||!keyText.trim()} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"10px 16px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:12,opacity:(!certText.trim()||!keyText.trim())?0.5:1}}>
-                  {testingCuit?<><Spinner size={12} color={T.textMd}/> Testeando conexión...</>:"🔌 Testear conexión con ARCA (opcional)"}
+                  {testingCuit?<><Spinner size={12} color={T.textMd}/> Testeando conexión...</>:"Testear conexión con ARCA (opcional)"}
                 </button>
                 <div style={{fontSize:11,color:T.textSm,textAlign:"center",lineHeight:1.5}}>
                   El test guarda el CUIT temporalmente y verifica que ARCA responda. Si no querés testear, podés guardar directo.
@@ -18502,7 +18502,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 </button>
               ):(
                 <button onClick={handleSaveCuit} disabled={savingCuit} style={{background:T.green,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
-                  {savingCuit?<><Spinner size={13} color="#fff"/> Guardando...</>:"✅ Guardar CUIT"}
+                  {savingCuit?<><Spinner size={13} color="#fff"/> Guardando...</>:"Guardar CUIT"}
                 </button>
               )}
             </div>
@@ -18543,7 +18543,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 </div>
               </div>
               <div style={{border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",background:T.surface}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:3}}>🧾 Puntos de venta adicionales</div>
+                <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:3}}>Puntos de venta adicionales</div>
                 <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Si tenés otro punto de venta (ej: para digitales/ebooks con <strong>IVA exento</strong>), cargalo acá. Al facturar vas a poder elegir cuál usar. El de arriba es el de físicos (21%).</div>
                 {(editCuit.puntos_venta||[]).map((p,i)=>(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
@@ -18592,7 +18592,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </div>
                   )}
                   <label style={{padding:"7px 14px",border:`1px solid ${T.border}`,borderRadius:8,fontSize:12,fontWeight:600,color:T.text,cursor:"pointer",background:T.surface,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                    📷 {editCuit.banner_b64?"Cambiar imagen":"Subir imagen"}
+                    {editCuit.banner_b64?"Cambiar imagen":"Subir imagen"}
                     <input type="file" accept="image/png,image/jpeg" style={{display:"none"}} onChange={async e=>{
                       const f = e.target.files?.[0]; if (!f) return;
                       if (f.size > 600*1024) { toast("Imagen muy pesada (>600KB). Optimizala antes de subir.","warning"); return; }
