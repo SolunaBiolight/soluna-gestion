@@ -16128,6 +16128,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // DEBE avisarlo y bloquear la emisión: facturar sobre datos viejos es peligroso.
   const [tnRevalidando, setTnRevalidando] = useState(false);
   const [tnData, setTnData] = useState(null); // {connected, store_name, ordenes, total_pending}
+  const [tnError, setTnError] = useState(null); // error visible si el fetch de pendientes falló sin cache pintada
+  const loadReqRef = useRef(0); // guard contra respuestas obsoletas de loadPendingOrders
   const [tnSelected, setTnSelected] = useState({}); // {orderId: true|false}
   const [periodoModo, setPeriodoModo] = useState("7"); // "1"|"7"|"15"|"30"|"60"|"90"|"custom"
   // Fechas en zona Argentina (UTC-3) — antes se calculaban en UTC y corrían el
@@ -16203,6 +16205,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [resultados, setResultados] = useState(null);
   const [pdfs, setPdfs] = useState([]);
   const [pvEmit, setPvEmit] = useState(null); // PV elegido al facturar: {numero,exento,nombre} | null = físico
+  const [manualPv, setManualPv] = useState(null); // PV de la factura manual — independiente del modal masivo
   useEffect(()=>{ setPvEmit(null); }, [cuitSel]); // reset al cambiar de CUIT
 
   const uid = user?.uid;
@@ -16216,6 +16219,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     ...((Array.isArray(cuitActivo.puntos_venta)?cuitActivo.puntos_venta:[]).map(p=>({ numero:parseInt(p.numero)||0, exento:!!p.exento, nombre:p.nombre||`PV ${p.numero}` })).filter(p=>p.numero>0)),
   ] : [];
   const pvElegido = pvEmit || pvsDisponibles[0] || { numero:undefined, exento:false, nombre:"Físicos (21%)" };
+  // PV de la factura manual: NUNCA hereda el elegido en el modal masivo — usa el
+  // físico del CUIT salvo elección explícita en el select del panel manual.
+  const pvManualElegido = manualPv || pvsDisponibles[0] || { numero: parseInt(cuitActivo?.punto_venta)||1, exento:false, nombre:"Físicos (21%)" };
   // Plataformas conectadas — para no mostrar TN a quien usa Shopify ni viceversa.
   const platConectadas = (tnData?.connections||[]).filter(c=>c.connected).map(c=>c.platform);
   const tienePlat = (p) => platConectadas.length===0 || platConectadas.includes(p);
@@ -16239,25 +16245,47 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setDashMonth(m); setDashYear(y);
   }
 
-  const api = (action, method="GET", body=null, extra={}) => {
+  // Capa api con manejo de errores: red caída o respuesta no-JSON lanzan Error
+  // con mensaje útil en vez de reventar en el .json() y dejar flags de carga prendidos.
+  const api = async (action, method="GET", body=null, extra={}) => {
     const params = new URLSearchParams({action, uid, ...extra});
-    return fetch(`/api/arca?${params}`, {
-      method,
-      headers: method!=="GET"&&!(body instanceof FormData) ? {"Content-Type":"application/json"} : undefined,
-      body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
-    }).then(r=>r.json());
+    let r;
+    try {
+      r = await fetch(`/api/arca?${params}`, {
+        method,
+        headers: method!=="GET"&&!(body instanceof FormData) ? {"Content-Type":"application/json"} : undefined,
+        body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
+      });
+    } catch(e) {
+      throw new Error("Sin conexión con el servidor — revisá tu internet");
+    }
+    let d;
+    try { d = await r.json(); }
+    catch(e) { throw new Error(`Respuesta inválida del servidor (HTTP ${r.status})`); }
+    // Si el backend devolvió {error} los llamadores lo manejan con su propio mensaje;
+    // si vino un status de error sin cuerpo interpretable, lanzamos acá.
+    if(!r.ok && !(d && d.error)) throw new Error(`Error del servidor (HTTP ${r.status})`);
+    return d;
   };
 
-  useEffect(()=>{
+  // Error al cargar los CUITs: NO mostrar el onboarding "no tenés CUITs" (falso) —
+  // mostrar un estado de error con Reintentar.
+  const [cuitsError, setCuitsError] = useState(false);
+  function loadCuits() {
     if(!uid) return;
-    api("list_cuits").then(d=>{ if(d.cuits){ setCuits(d.cuits); if(d.cuits.length>0 && !cuitSel) setCuitSel(d.cuits[0].cuit); } }).finally(()=>setLoading(false));
-  },[uid]);
+    setLoading(true); setCuitsError(false);
+    api("list_cuits").then(d=>{
+      if(d.error){ setCuitsError(true); return; }
+      if(d.cuits){ setCuits(d.cuits); if(d.cuits.length>0) setCuitSel(prev=>prev||d.cuits[0].cuit); }
+    }).catch(()=>setCuitsError(true)).finally(()=>setLoading(false));
+  }
+  useEffect(()=>{ loadCuits(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ },[uid]);
 
   useEffect(()=>{
     if(!uid || !cuitSel) { setDashboardStats(null); setBatches([]); setNcs([]); setTnData(null); return; }
     api("dashboard_stats","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}).then(d=>{
       if(!d.error) setDashboardStats(d);
-    });
+    }).catch(()=>{});
     setBatchesLoading(true);
     Promise.all([
       api("list_batches","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}),
@@ -16265,8 +16293,29 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     ]).then(([b,n])=>{
       if(!b.error) setBatches(b.batches||[]);
       if(!n.error) setNcs(n.ncs||[]);
+    }).catch(e=>{
+      toast("No se pudieron cargar los registros: "+(e?.message||"error de conexión"),"error");
     }).finally(()=>setBatchesLoading(false));
   },[uid, cuitSel, dashMonth, dashYear]);
+
+  // ── Limpieza al cambiar de CUIT: nada del CUIT anterior debe quedar pintado ──
+  const primeraLimpiezaCuit = useRef(true);
+  useEffect(()=>{
+    if(primeraLimpiezaCuit.current){ primeraLimpiezaCuit.current = false; return; }
+    setTnData(null); setTnSelected({}); setTnError(null);
+    setBatches([]); setNcs([]); setDashboardStats(null);
+    setRegLetra(""); setRegPv(""); setRegOrigen(""); setRegBusq("");
+    setExpandedBatch(null); setBatchPdfs({});
+    setManualPv(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[cuitSel]);
+
+  // ── Limpieza al cambiar el mes navegado de Registros ──
+  useEffect(()=>{
+    setRegPv(""); setRegBusq("");
+    setExpandedBatch(null); setBatchPdfs({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[dashMonth, dashYear]);
 
 
   useEffect(()=>{
@@ -16345,6 +16394,28 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
+  // Backup de la clave privada generada en el navegador — si el usuario la pierde
+  // antes de guardar el CUIT tiene que rehacer todo el trámite en ARCA.
+  function descargarKey() {
+    if(!keyText) return;
+    const blob = new Blob([keyText], { type: "application/x-pem-file" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${wizCuit||"growith"}.key`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // Cerrar el wizard: si ya se generó la clave, pedir confirmación — cerrarlo
+  // la descarta y obliga a rehacer el trámite del certificado en ARCA.
+  async function cerrarWizard() {
+    if (csrPem) {
+      const ok = await appConfirm("Si cerrás ahora vas a perder la clave generada y tendrás que rehacer el trámite en ARCA. ¿Cerrar igual?", {danger:true, okLabel:"Cerrar igual"});
+      if (!ok) return;
+    }
+    resetWizard();
+  }
+
   async function copiarCsr() {
     if(!csrPem) return;
     try { await navigator.clipboard.writeText(csrPem); setCsrCopied(true); setTimeout(()=>setCsrCopied(false), 2000); }
@@ -16387,12 +16458,18 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     fd.append("arca_prod", String(wizArcaProd)); fd.append("ingresos_brutos", wizIngresosBrutos);
     if(certText.trim()) fd.append("cert_pem", certText.trim());
     if(keyText.trim()) fd.append("key_pem", keyText.trim());
-    const d = await fetch(`/api/arca?action=save_cuit&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
-    if(d.error){toast(d.error,"error");setSavingCuit(false);return;}
-    toast("CUIT guardado ✓","success");
-    const updated = await api("list_cuits");
-    if(updated.cuits){ setCuits(updated.cuits); setCuitSel(wizCuit); }
-    resetWizard(); setSavingCuit(false);
+    try {
+      const d = await fetch(`/api/arca?action=save_cuit&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
+      if(d.error){toast(d.error,"error");return;}
+      toast("CUIT guardado ✓","success");
+      const updated = await api("list_cuits");
+      if(updated.cuits){ setCuits(updated.cuits); setCuitSel(wizCuit); }
+      resetWizard();
+    } catch(e) {
+      toast("No se pudo guardar el CUIT — revisá tu conexión y probá de nuevo (la clave sigue en el wizard)","error");
+    } finally {
+      setSavingCuit(false);
+    }
   }
 
   async function handleTestCuitWiz() {
@@ -16405,11 +16482,17 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     fd.append("arca_prod", String(wizArcaProd));
     if(certText.trim()) fd.append("cert_pem", certText.trim());
     if(keyText.trim()) fd.append("key_pem", keyText.trim());
-    await fetch(`/api/arca?action=save_cuit&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
-    const d = await api("test_cuit","POST",null,{cuit:wizCuit});
-    if(d.error){ toast("Error: "+d.error,"error"); setTestResult({ok:false,msg:d.error}); }
-    else { toast("Conexión OK · Último F-B: "+d.ultimo_b,"success"); setTestResult({ok:true,msg:"Último comprobante: "+d.ultimo_b}); }
-    setTestingCuit(null);
+    try {
+      await fetch(`/api/arca?action=save_cuit&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
+      const d = await api("test_cuit","POST",null,{cuit:wizCuit});
+      if(d.error){ toast("Error: "+d.error,"error"); setTestResult({ok:false,msg:d.error}); }
+      else { toast("Conexión OK · Último F-B: "+d.ultimo_b,"success"); setTestResult({ok:true,msg:"Último comprobante: "+d.ultimo_b}); }
+    } catch(e) {
+      toast("No se pudo testear: "+(e?.message||"error de conexión"),"error");
+      setTestResult({ok:false,msg:e?.message||"error de conexión"});
+    } finally {
+      setTestingCuit(null);
+    }
   }
 
   async function handleDeleteCuit(cuitNum) {
@@ -16442,12 +16525,21 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     fd.append("ingresos_brutos", editCuit.ingresos_brutos||"");
     // Banner: si está vacío "" = quitar, si tiene contenido = guardar, si es undefined = no tocar
     if (editCuit.banner_b64 !== undefined) fd.append("banner_b64", editCuit.banner_b64);
-    const d = await fetch(`/api/arca?action=save_cuit&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
-    if(d.error){toast(d.error,"error");setSavingEdit(false);return;}
-    const updated = await api("list_cuits");
-    if(updated.cuits) setCuits(updated.cuits);
-    toast("CUIT actualizado ✓","success");
-    setShowEditCuit(false); setEditCuit(null); setSavingEdit(false);
+    // Renovación de certificado: solo se mandan si el usuario pegó algo nuevo
+    if ((editCuit._new_cert||"").trim()) fd.append("cert_pem", editCuit._new_cert.trim());
+    if ((editCuit._new_key||"").trim()) fd.append("key_pem", editCuit._new_key.trim());
+    try {
+      const d = await fetch(`/api/arca?action=save_cuit&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
+      if(d.error){toast(d.error,"error");return;}
+      const updated = await api("list_cuits");
+      if(updated.cuits) setCuits(updated.cuits);
+      toast("CUIT actualizado ✓","success");
+      setShowEditCuit(false); setEditCuit(null);
+    } catch(e) {
+      toast("No se pudieron guardar los cambios — revisá tu conexión","error");
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
   async function loadPendingOrders() {
@@ -16464,37 +16556,46 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     // contra TN/Shopify/ML — si el merchant corrigió un CUIL en su tienda,
     // necesita que el reload vea el dato nuevo, no uno cacheado de CDN.
     params._t = Date.now();
+    // Guard de respuestas obsoletas: si el usuario cambió CUIT/rango mientras
+    // este fetch estaba en vuelo, el resultado viejo NO debe pisar el nuevo.
+    const myReq = ++loadReqRef.current;
     // SWR: pintar al instante las pendientes de la última visita mientras se
     // refresca de fondo (el fetch en vivo contra TN/ML tarda varios segundos).
-    const swrKey = `growith_arca_pend_${uid}_${cuitSel}_${periodoModo}`;
+    // La key incluye el rango real de fechas — rangos custom distintos no comparten cache.
+    const swrKey = `growith_arca_pend_${uid}_${cuitSel}_${periodoModo==="custom"?`${fechaDesde}_${fechaHasta||hoyAR()}`:periodoModo}`;
     const cached = ghSwrGet(swrKey);
     const pintoCache = !!(cached && !tnData);
     if (pintoCache) setTnData(cached);
+    setTnError(null);
     setTnLoading(!pintoCache); // con cache pintada no bloqueamos la UI con spinner
     setTnRevalidando(true);    // ...pero SIEMPRE avisamos que se está actualizando en vivo
-    const d = await api("pending_orders","GET",null,params);
-    setTnLoading(false);
-    setTnRevalidando(false);
-    if(d.error) { toast("Error al actualizar las ventas: "+d.error,"error"); return; }
-    // Normalizar para mantener compat: connections es array, agregamos flag connected si hay al menos 1
-    d.connected = (d.connections||[]).some(c => c.connected);
-    setTnData(d);
-    ghSwrSet(swrKey, d);
-    // Auto-seleccionar la primera plataforma conectada si el usuario no eligió ninguna todavía.
-    // Impide que se muestre el mix de todos los canales, que causaba errores de conteo.
-    setCanalSel(prev => {
-      if(prev !== "todos") return prev; // ya tiene selección manual, no pisar
-      const first = (d.connections||[]).find(c => c.connected);
-      return first ? first.platform : prev;
-    });
-    // Mantener selecciones previas si las órdenes siguen ahí; las nuevas quedan deseleccionadas
-    // por default. Si una orden ya fue facturada (_billed), forzar deselección — así no
-    // aparece tildada cuando el usuario quiera facturar otra distinta.
-    const newSel = {};
-    Object.entries(d.ordenes||{}).forEach(([id,o]) => {
-      newSel[id] = !o._billed && (tnSelected[id] || false);
-    });
-    setTnSelected(newSel);
+    try {
+      const d = await api("pending_orders","GET",null,params);
+      if (myReq !== loadReqRef.current) return;
+      if(d.error) {
+        setTnError(d.error);
+        toast("Error al actualizar las ventas: "+d.error,"error");
+        return;
+      }
+      // Normalizar para mantener compat: connections es array, agregamos flag connected si hay al menos 1
+      d.connected = (d.connections||[]).some(c => c.connected);
+      setTnData(d);
+      ghSwrSet(swrKey, d);
+      // Mantener selecciones previas si las órdenes siguen ahí; las nuevas quedan deseleccionadas
+      // por default. Si una orden ya fue facturada (_billed), forzar deselección — así no
+      // aparece tildada cuando el usuario quiera facturar otra distinta.
+      const newSel = {};
+      Object.entries(d.ordenes||{}).forEach(([id,o]) => {
+        newSel[id] = !o._billed && (tnSelected[id] || false);
+      });
+      setTnSelected(newSel);
+    } catch(e) {
+      if (myReq !== loadReqRef.current) return;
+      setTnError(e?.message||"Error de conexión");
+      toast("No se pudieron actualizar las ventas: "+(e?.message||"revisá tu conexión"),"error");
+    } finally {
+      if (myReq === loadReqRef.current) { setTnLoading(false); setTnRevalidando(false); }
+    }
   }
 
   // Predicado de filtros visibles — MISMO criterio que la lista en pantalla
@@ -16515,8 +16616,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     return g;
   }
 
-  function ordenPasaFiltros(id, o) {
-    if (o._billed) return false; // las facturadas van a la sección colapsada, no a la lista principal
+  // Filtros comunes (canal + pago + monto + búsqueda) sin mirar _billed — se usan
+  // tanto para la lista de pendientes como para el contador de "ya facturadas",
+  // así ambos responden igual a los mismos filtros.
+  function pasaFiltrosComunes(id, o) {
     if (canalSel !== "todos" && o._platform !== canalSel) return false;
     if (metodoPagoSel !== "todos" && normPlatPago(o.plataforma_pago || o.metodo_pago) !== metodoPagoSel) return false;
     const minN = montoMin === "" ? null : parseFloat(montoMin);
@@ -16530,6 +16633,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       for (const t of busqTokens) if (!hay.includes(t)) return false;
     }
     return true;
+  }
+
+  function ordenPasaFiltros(id, o) {
+    if (o._billed) return false; // las facturadas van a la sección colapsada, no a la lista principal
+    return pasaFiltrosComunes(id, o);
   }
 
   function facturarSeleccionadas() {
@@ -16626,24 +16734,33 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       refreshDashboard();
       // Recargar pendientes para que la venta vuelva a aparecer + pierda el verde
       await loadPendingOrders();
+    } catch(e) {
+      toast("No se pudo emitir la NC — revisá tu conexión y verificá en Registros si salió","error");
     } finally { setEmitting(false); }
   }
 
-  async function anularLoteCompleto(batch) {
+  // filasFiltradas: si Registros tiene filtros activos, solo se anulan las filas
+  // visibles del lote (bRows). Siempre se excluyen las ya anuladas — antes se
+  // podían re-anular emitiendo NCs duplicadas.
+  async function anularLoteCompleto(batch, filasFiltradas) {
     if (!cuitSel || !batch?.resumen?.length) return;
+    const base = Array.isArray(filasFiltradas) ? filasFiltradas : (batch.resumen||[]);
+    const filas = base.filter(r=>!r.anulada);
+    if (filas.length === 0) return toast("No quedan facturas activas para anular en este lote (con los filtros aplicados)","info");
     const cuitActivoData = cuits.find(c => c.cuit === cuitSel);
     const emisorInfo = cuitActivoData
       ? `\nCUIT emisor: ${formatCuit(cuitActivoData.cuit)} (${cuitActivoData.razon_social || ""})`
       : "";
-    const totalLote = (batch.total||0).toLocaleString("es-AR",{minimumFractionDigits:2});
-    const msg = `¿Anular las ${batch.cantidad} facturas del lote?\n\n` +
-      `Se emite una Nota de Crédito por CADA factura del lote (mismo importe, mismo cliente). ` +
+    const totalAnular = filas.reduce((s,r)=>s+(r.total||0),0);
+    const totalLote = totalAnular.toLocaleString("es-AR",{minimumFractionDigits:2});
+    const msg = `¿Anular ${filas.length} de las ${batch.cantidad} facturas del lote?\n\n` +
+      `Se emite una Nota de Crédito por CADA una de esas ${filas.length} factura${filas.length===1?"":"s"} (mismo importe, mismo cliente). ` +
       `Total a revertir: $${totalLote}.\n\n` +
       `El IVA débito fiscal se descuenta de tu facturado del mes en ARCA al cerrar el período. ` +
       `Las facturas que estaban adjuntadas en Mercado Libre se DESADJUNTAN del pack para que cada venta quede como no facturada y puedas re-emitirla con el CUIT correcto.${emisorInfo}\n\n` +
       `Esta acción no se puede deshacer.`;
-    if (!await appConfirm(msg, { okLabel: `Emitir ${batch.cantidad} NCs`, danger: true })) return;
-    const facturas = (batch.resumen||[]).map(r => ({
+    if (!await appConfirm(msg, { okLabel: `Emitir ${filas.length} NC${filas.length===1?"":"s"}`, danger: true })) return;
+    const facturas = filas.map(r => ({
       tipo: r.tipo_cbte || (r.letra==="A"?1:r.letra==="C"?11:6),
       punto_venta: r.punto_venta || batch.punto_venta || 1,
       comprobante: r.comprobante,
@@ -16681,17 +16798,23 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       }
       refreshDashboard();
       await loadPendingOrders();
+    } catch(e) {
+      toast("No se pudieron emitir las NCs — revisá tu conexión y verificá en Registros cuáles salieron","error");
     } finally { setEmitting(false); }
   }
 
   async function refreshDashboard() {
     if(!cuitSel) return;
-    const d = await api("dashboard_stats","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
-    if(!d.error) setDashboardStats(d);
-    const b = await api("list_batches","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
-    if(!b.error) setBatches(b.batches||[]);
-    const n = await api("list_ncs","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
-    if(!n.error) setNcs(n.ncs||[]);
+    try {
+      const d = await api("dashboard_stats","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
+      if(!d.error) setDashboardStats(d);
+      const b = await api("list_batches","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
+      if(!b.error) setBatches(b.batches||[]);
+      const n = await api("list_ncs","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
+      if(!n.error) setNcs(n.ncs||[]);
+    } catch(e) {
+      toast("No se pudo refrescar el resumen: "+(e?.message||"error de conexión"),"error");
+    }
   }
 
   // Recuperar desde AFIP los comprobantes emitidos que no quedaron registrados
@@ -16718,6 +16841,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         const pvList = [...new Set(Object.keys(porPv).map(k=>parseInt(k.split("_")[0])))].sort((a,b)=>a-b);
         const desg = pvList.length ? ` (PV ${pvList.join(", ")})` : "";
         toast(`${total} comprobante${total===1?"":"s"} recuperado${total===1?"":"s"} desde AFIP${desg} ✓`,"success");
+        // El backend no informa en qué meses cayeron — avisar que pueden no estar en el mes navegado
+        toast("Revisá otros meses con el selector de Registros — los comprobantes se guardan en su mes original","info");
         refreshDashboard();
       }
       if(d?.pendientes){
@@ -16733,11 +16858,17 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   async function loadBatchPdfs(batch) {
     if(batchPdfs[batch.batch_id]) return batchPdfs[batch.batch_id];
     setLoadingBatchPdfs(batch.batch_id);
-    const d = await api("get_batch_pdfs","POST",{cuit:cuitSel, comprobante_ids:batch.comprobante_ids||[]});
-    setLoadingBatchPdfs(null);
-    if(d.error) { toast("Error al cargar PDFs: "+d.error,"error"); return null; }
-    setBatchPdfs(prev=>({...prev, [batch.batch_id]: d.pdfs||[]}));
-    return d.pdfs;
+    try {
+      const d = await api("get_batch_pdfs","POST",{cuit:cuitSel, comprobante_ids:batch.comprobante_ids||[]});
+      if(d.error) { toast("Error al cargar PDFs: "+d.error,"error"); return null; }
+      setBatchPdfs(prev=>({...prev, [batch.batch_id]: d.pdfs||[]}));
+      return d.pdfs;
+    } catch(e) {
+      toast("No se pudieron cargar los PDFs: "+(e?.message||"error de conexión"),"error");
+      return null;
+    } finally {
+      setLoadingBatchPdfs(null);
+    }
   }
 
   async function downloadBatchZip(batch) {
@@ -16772,13 +16903,21 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
   }
 
-  async function handleTestConnection() {
-    if(!cuitSel) return toast("Seleccioná un CUIT primero","warning");
-    setTestingConn(true);
-    const d = await api("test_cuit","POST",null,{cuit:cuitSel});
-    if(d.error) toast("Error de conexión: "+d.error,"error");
-    else toast(`Conexión con ARCA OK ✓ · Último comprobante B: ${d.ultimo_b}`,"success");
-    setTestingConn(false);
+  // Acepta cuitOverride para testear un CUIT puntual (botón "Probar" de Config)
+  // sin tocar cuitSel. testingConn guarda el CUIT en test (o false).
+  async function handleTestConnection(cuitOverride) {
+    const cuit = cuitOverride || cuitSel;
+    if(!cuit) return toast("Seleccioná un CUIT primero","warning");
+    setTestingConn(cuit);
+    try {
+      const d = await api("test_cuit","POST",null,{cuit});
+      if(d.error) toast("Error de conexión: "+d.error,"error");
+      else toast(`Conexión con ARCA OK ✓ · Último comprobante B: ${d.ultimo_b}`,"success");
+    } catch(e) {
+      toast("No se pudo probar la conexión: "+(e?.message||"revisá tu internet"),"error");
+    } finally {
+      setTestingConn(false);
+    }
   }
 
   async function handleEmitManual() {
@@ -16789,6 +16928,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
     const total = itemsValid.reduce((s,it)=>s + it.cantidad*it.precio, 0);
     const docNro = manualDocTipo === "CF" ? "" : manualDocNro.replace(/\D/g,"");
+    if(manualDocTipo === "CUIT" && docNro.length !== 11) return toast("El CUIT del cliente debe tener 11 dígitos","error");
+    if(manualDocTipo === "DNI" && (docNro.length < 7 || docNro.length > 8)) return toast("El DNI del cliente debe tener 7 u 8 dígitos","error");
     const orderId = "MANUAL-" + Date.now();
     const orden = {
       nombre: manualNombre.trim() || "Consumidor Final",
@@ -16810,90 +16951,109 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     };
 
     setEmittingManual(true); setManualResult(null);
-    const d = await api("emit","POST",{cuit:cuitSel, ordenes:{[orderId]:orden}, product_map:{}, punto_venta: pvElegido?.numero, exento: !!pvElegido?.exento});
-    if(d.error){toast(d.error,"error");setEmittingManual(false);return;}
-    const r = (d.resultados||[])[0];
-    const pdf = (d.pdfs||[])[0];
-    setManualResult({r, pdf});
-    if(r?.ok) { toast(`Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")} emitida ✓`,"success"); refreshDashboard(); itemsValid.forEach(it=>saveConcepto(it.nombre.trim())); }
-    else toast("Error: "+(r?.obs||"falló la emisión"),"error");
-    setEmittingManual(false);
+    try {
+      // PV propio del panel manual (pvManualElegido) — NO hereda el del modal masivo
+      const d = await api("emit","POST",{cuit:cuitSel, ordenes:{[orderId]:orden}, product_map:{}, punto_venta: pvManualElegido?.numero, exento: !!pvManualElegido?.exento});
+      if(d.error){toast(d.error,"error");return;}
+      const r = (d.resultados||[])[0];
+      const pdf = (d.pdfs||[])[0];
+      setManualResult({r, pdf});
+      if(r?.ok) { toast(`Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")} emitida ✓`,"success"); refreshDashboard(); itemsValid.forEach(it=>saveConcepto(it.nombre.trim())); }
+      else toast("Error: "+(r?.obs||"falló la emisión"),"error");
+    } catch(e) {
+      toast("No se pudo emitir — revisá tu conexión y verificá en Registros si salió antes de reintentar","error");
+    } finally {
+      setEmittingManual(false);
+    }
   }
 
   async function handleEmit(skipDupCheck=false) {
-    if(!ordenes||!cuitSel) return;
+    if(!ordenes||!cuitSel||emitting) return;
     const orderIds = Object.keys(ordenes);
-    // Chequeo de duplicados — si hay, mostrar aviso inline en el modal
-    if(!skipDupCheck) {
-      const dupRes = await api("check_duplicates","POST",{cuit:cuitSel, order_ids:orderIds});
-      const duplicates = dupRes?.duplicates || [];
-      if(duplicates.length > 0) { setDuplicatesInModal(duplicates); return; }
-    }
-    setDuplicatesInModal(null);
-    const total = orderIds.length;
+    // Bloquear YA el botón — un doble click durante el check de duplicados
+    // emitía dos veces todo el lote. El finally garantiza apagarlo en todo camino.
     setEmitting(true);
-    setEmitProgress({active:true,current:0,total,ok:0,fail:0,done:false,errors:[]});
-    // Progreso simulado mientras la API trabaja (~2s por factura)
-    let simCurrent = 0;
-    const simInterval = setInterval(()=>{
-      simCurrent = Math.min(simCurrent+1, Math.floor(total*0.85));
-      setEmitProgress(p=>({...p,current:simCurrent}));
-    }, Math.max(800, (total*1800)/total));
-    // Convertir YYYY-MM-DD del date picker a YYYYMMDD que espera el backend.
-    // SIEMPRE mandamos fecha_factura — el merchant la eligió explícitamente.
-    const fechaYYYYMMDD = (fechaFactura || "").replace(/-/g, "");
-    const d = await api("emit","POST",{
-      cuit: cuitSel,
-      ordenes,
-      product_map: productMap,
-      fecha_factura: fechaYYYYMMDD,
-      punto_venta: pvElegido?.numero,
-      exento: !!pvElegido?.exento,
-    });
-    clearInterval(simInterval);
-    if(d.error){
-      toast(d.error,"error");
-      setEmitting(false);
-      setEmitProgress({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
-      return;
-    }
-    const res = d.resultados||[];
-    const ok = res.filter(r=>r.ok).length;
-    const fail = res.filter(r=>!r.ok).length;
-    const errors = res.filter(r=>!r.ok).map(r=>({orden:r.orden_id,msg:r.obs||"Error"}));
-    setResultados(res); setPdfs(d.pdfs||[]);
-    setEmitProgress({active:false,current:total,total,ok,fail,done:true,errors});
-    setEmitting(false);
-
-    // ── Marcar inmediatamente las recién facturadas como _billed en el state local ──
-    // así aparecen verdes y NO seleccionables sin esperar al refetch del listado.
-    const billedOk = new Map();
-    res.filter(r=>r.ok).forEach(r=>{
-      billedOk.set(r.orden_id, { letra: r.letra, nro: r.comprobante });
-    });
-    if(billedOk.size > 0) {
-      setTnData(prev => {
-        if(!prev?.ordenes) return prev;
-        const next = {...prev, ordenes: {...prev.ordenes}};
-        for(const [id, info] of billedOk) {
-          if(next.ordenes[id]) {
-            next.ordenes[id] = {...next.ordenes[id], _billed: true, _billed_info: info};
-          }
+    setEmitProgress({active:true,current:0,total:orderIds.length,ok:0,fail:0,done:false,errors:[]});
+    let simInterval = null;
+    try {
+      // Chequeo de duplicados — si hay, mostrar aviso inline en el modal
+      if(!skipDupCheck) {
+        const dupRes = await api("check_duplicates","POST",{cuit:cuitSel, order_ids:orderIds});
+        const duplicates = dupRes?.duplicates || [];
+        if(duplicates.length > 0) {
+          setDuplicatesInModal(duplicates);
+          setEmitProgress({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
+          return;
         }
-        return next;
+      }
+      setDuplicatesInModal(null);
+      const total = orderIds.length;
+      // Progreso simulado mientras la API trabaja (~2s por factura)
+      let simCurrent = 0;
+      simInterval = setInterval(()=>{
+        simCurrent = Math.min(simCurrent+1, Math.floor(total*0.85));
+        setEmitProgress(p=>({...p,current:simCurrent}));
+      }, Math.max(800, (total*1800)/total));
+      // Convertir YYYY-MM-DD del date picker a YYYYMMDD que espera el backend.
+      // SIEMPRE mandamos fecha_factura — el merchant la eligió explícitamente.
+      const fechaYYYYMMDD = (fechaFactura || "").replace(/-/g, "");
+      const d = await api("emit","POST",{
+        cuit: cuitSel,
+        ordenes,
+        product_map: productMap,
+        fecha_factura: fechaYYYYMMDD,
+        punto_venta: pvElegido?.numero,
+        exento: !!pvElegido?.exento,
       });
-      // Destildar las recién facturadas
-      setTnSelected(prev => {
-        const next = {...prev};
-        for(const id of billedOk.keys()) next[id] = false;
-        return next;
-      });
-    }
+      clearInterval(simInterval); simInterval = null;
+      if(d.error){
+        toast(d.error,"error");
+        setEmitProgress({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
+        return;
+      }
+      const res = d.resultados||[];
+      const ok = res.filter(r=>r.ok).length;
+      const fail = res.filter(r=>!r.ok).length;
+      const errors = res.filter(r=>!r.ok).map(r=>({orden:r.orden_id,msg:r.obs||"Error"}));
+      setResultados(res); setPdfs(d.pdfs||[]);
+      setEmitProgress({active:false,current:total,total,ok,fail,done:true,errors});
 
-    refreshDashboard();
-    // Refetch con delay para dar tiempo a Firestore a propagar los nuevos arca_comprobantes.
-    // El update local (setTnData arriba) mantiene la UI correcta mientras tanto.
-    if(ok > 0) setTimeout(() => loadPendingOrders(), 1500);
+      // ── Marcar inmediatamente las recién facturadas como _billed en el state local ──
+      // así aparecen verdes y NO seleccionables sin esperar al refetch del listado.
+      const billedOk = new Map();
+      res.filter(r=>r.ok).forEach(r=>{
+        billedOk.set(r.orden_id, { letra: r.letra, nro: r.comprobante });
+      });
+      if(billedOk.size > 0) {
+        setTnData(prev => {
+          if(!prev?.ordenes) return prev;
+          const next = {...prev, ordenes: {...prev.ordenes}};
+          for(const [id, info] of billedOk) {
+            if(next.ordenes[id]) {
+              next.ordenes[id] = {...next.ordenes[id], _billed: true, _billed_info: info};
+            }
+          }
+          return next;
+        });
+        // Destildar las recién facturadas
+        setTnSelected(prev => {
+          const next = {...prev};
+          for(const id of billedOk.keys()) next[id] = false;
+          return next;
+        });
+      }
+
+      refreshDashboard();
+      // Refetch con delay para dar tiempo a Firestore a propagar los nuevos arca_comprobantes.
+      // El update local (setTnData arriba) mantiene la UI correcta mientras tanto.
+      if(ok > 0) setTimeout(() => loadPendingOrders(), 1500);
+    } catch(e) {
+      setEmitProgress({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
+      toast("No se pudo emitir — revisá tu conexión y NO reintentes sin verificar en Registros si salió","error");
+    } finally {
+      if(simInterval) clearInterval(simInterval);
+      setEmitting(false);
+    }
   }
 
   function downloadPDF(pdf) { const a=document.createElement("a"); a.href="data:application/pdf;base64,"+pdf.bytes; a.download=pdf.nombre; a.click(); }
@@ -17012,8 +17172,16 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
       <div style={{maxWidth:1280,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
 
-        {/* ══ SIN CUITs → ONBOARDING ══ */}
-        {cuits.length===0 ? (
+        {/* ══ ERROR AL CARGAR CUITs → NO mostrar el onboarding (sería falso) ══ */}
+        {cuitsError ? (
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"70px 24px",textAlign:"center"}}>
+            <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:8}}>No se pudieron cargar tus CUITs</div>
+            <div style={{fontSize:13,color:T.textMd,maxWidth:420,lineHeight:1.6,marginBottom:20}}>
+              Hubo un problema de conexión con el servidor. Tus CUITs y certificados están a salvo — reintentá en unos segundos.
+            </div>
+            <Btn T={T} variant="primary" onClick={loadCuits}>Reintentar</Btn>
+          </div>
+        ) : cuits.length===0 ? (
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"60px 24px",textAlign:"center"}}>
             <div style={{width:72,height:72,borderRadius:18,background:T.surface,border:"1px solid "+T.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:34,marginBottom:24}}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
             <div style={{fontSize:20,fontWeight:800,color:T.text,marginBottom:8}}>Facturación electrónica con ARCA</div>
@@ -17030,7 +17198,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
                 {[
                   {step:"1",title:"Tocá 'Conectar CUIT' y completá tus datos",desc:"El wizard te pide CUIT, razón social, condición frente al IVA (Responsable Inscripto o Monotributista) y punto de venta. Necesitás clave fiscal nivel 3 en ARCA y estar inscripto como RI o Monotributo (no Consumidor Final).",color:T.accent},
-                  {step:"2",title:"Generá tu certificado (modo automático)",desc:"Growith genera por vos un par RSA-2048 directamente en tu navegador — la clave privada nunca sale de tu computadora hasta que termines. Te da un CSR para copiar/pegar en ARCA (Administración de Certificados Digitales → Nuevo) y guardás el .key como backup. ARCA te devuelve un .crt que subís en el wizard, y listo. Si ya tenés tus archivos, hay modo manual para subir .crt y .key directo.",color:T.blue},
+                  {step:"2",title:"Generá tu certificado",desc:"Growith genera por vos un par RSA-2048 directamente en tu navegador — la clave privada nunca sale de tu computadora hasta que termines. Te da un CSR para subir en ARCA (Administración de Certificados Digitales → Nuevo); descargá y guardá tu clave con el botón Descargar clave. ARCA te devuelve un .crt que subís en el wizard, y listo.",color:T.blue},
                   {step:"3",title:"Elegí las ventas a facturar",desc:"Conectá Tienda Nube, Shopify o Mercado Libre desde Config y Growith trae solo tus ventas pagas automáticamente — sin subir archivos. En la pestaña Facturar las ves unificadas con cliente, CUIT/DNI y monto ya detectados: tildás las que querés y listo. También podés emitir una factura manual para ventas por fuera de tus tiendas.",color:T.yellow},
                   {step:"4",title:"Emití y descargá los PDFs",desc:"Revisá la previsualización de las facturas. Podés renombrar los productos si querés que aparezcan distinto en el comprobante. Tocá 'Emitir' y en segundos tenés todas las facturas con CAE válido emitidas en ARCA. Descargá los PDFs uno por uno o todos juntos en un click.",color:T.green},
                 ].map(s=>(
@@ -17077,7 +17245,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 <div style={{marginTop:12,padding:16,background:T.card,border:"1px solid "+T.border,borderRadius:12}}>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:20}}>
                     {[
-                      {step:"1",title:"Conectá tus tiendas y tu CUIT",desc:"Desde Config conectá Tienda Nube, Shopify y Mercado Libre — Growith trae las órdenes pagas automáticamente, sin necesidad de subir Excel. Después, arriba a la derecha: selector de CUIT → '+ Conectar nuevo CUIT'. El wizard de 3 pasos te guía con tus datos fiscales, generación del certificado (Growith arma el par RSA, te da el CSR para subir a ARCA → ARCA te devuelve un .crt que cargás acá) y verificación. Si ya tenés un certificado emitido con su clave privada, hay un modo manual para pegarlos directo.",color:T.accent},
+                      {step:"1",title:"Conectá tus tiendas y tu CUIT",desc:"Desde Config conectá Tienda Nube, Shopify y Mercado Libre — Growith trae las órdenes pagas automáticamente, sin necesidad de subir Excel. Después, arriba a la derecha: selector de CUIT → '+ Conectar nuevo CUIT'. El wizard de 3 pasos te guía con tus datos fiscales, generación del certificado (Growith arma el par RSA, te da el CSR para subir a ARCA → ARCA te devuelve un .crt que cargás acá — descargá y guardá tu clave con el botón Descargar clave) y verificación.",color:T.accent},
                       {step:"2",title:"Revisá las ventas pendientes",desc:"En la pestaña 'Facturar' aparecen unificadas todas las ventas de TN, Shopify y ML que todavía no facturaste. Filtrá por canal, período (mes actual o anterior, retroactivo), rango de monto o estado de pago. Growith ya detectó CUIT/DNI, dirección, productos y armó la condición IVA del receptor (RG 5616, obligatorio desde 01/06/2026). Tildá las que querés facturar — el ✓ verde marca las que ya están emitidas.",color:T.blue},
                       {step:"3",title:"Ajustá lo que necesites",desc:"Antes de emitir podés cambiar el nombre de los productos como van a aparecer en el PDF, editar la dirección del cliente, sobreescribir el tipo de comprobante (A/B/C) o imputar al mes anterior si llegaste tarde. Para Mercado Libre, el PDF se sube automáticamente como documento fiscal de la venta apenas se emite (también desde 'Adjuntar pendientes a ML' en Configuración).",color:T.yellow},
                       {step:"4",title:"Emití y descargá",desc:"Tocá 'Emitir' y Growith se conecta directo con ARCA por WSAA+WSFE: comprobante con CAE válido en segundos. Cada PDF sale con el número de CAE, su fecha de vencimiento y el QR oficial de ARCA — el cliente lo escanea con la cámara y ve en la web de ARCA que la factura está aprobada y es real. Descarga uno por uno o en zip; todo queda en Registros para descargar de nuevo cuando quieras.",color:T.green},
@@ -17146,7 +17314,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         color={pendCount>0?(T.yellow||T.yellow):T.textSm}
                         accent={pendCount>0}
                         value={tnData?String(pendCount):"—"}
-                        sub={pendTotal!=null&&pendTotal>0?`$ ${pendTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})} · Tocá para facturar`:"Cargá Facturar para ver"}
+                        sub={pendTotal!=null&&pendTotal>0?`$ ${pendTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})} · En el rango de la pestaña Facturar`:"En el rango de la pestaña Facturar"}
                         onClick={pendCount>0?()=>setSidebarTab&&setSidebarTab("facturar"):undefined}/>
                     );
                   })()}
@@ -17169,14 +17337,14 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           const totalPlat = Object.values(tnData?.ordenes||{}).filter(o=>canalSel==="todos"||o._platform===canalSel).length;
                           const pendPlat  = Object.values(tnData?.ordenes||{}).filter(o=>(canalSel==="todos"||o._platform===canalSel)&&!o._billed).length;
                           const canalLabel = canalSel==="tiendanube"?"TN":canalSel==="mercadolibre"?"ML":canalSel==="shopify"?"Shopify":"Todos";
-                          return tnData?._tn_debug
+                          return tnData
                             ? <>{canalLabel}: <strong style={{color:T.text}}>{totalPlat}</strong> en el período · <strong style={{color:T.accent}}>{pendPlat}</strong> pendientes de facturar</>
                             : "Seleccioná las que querés facturar y tocá \"Facturar\"";
                         })()}
                       </div>
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                      <Btn T={T} variant="secondary" size="md" onClick={()=>setShowManual(s=>!s)}>{showManual?"✕ Cerrar factura manual":"+ Factura manual"}</Btn>
+                      <Btn T={T} variant="secondary" size="md" onClick={()=>{if(showManual)setManualResult(null);setShowManual(!showManual);}}>{showManual?"✕ Cerrar factura manual":"+ Factura manual"}</Btn>
                       <DateRangePicker T={T} since={fechaDesde} until={fechaHasta} onChange={(s,u)=>{ setPeriodoModo("custom"); setFechaDesde(s); setFechaHasta(u); }}
                         presets={[
                           {id:"7d",  label:"Últimos 7 días",  days:7},
@@ -17238,10 +17406,14 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
                   {/* Fila 2: Canal (radio-pills) + Sin doc + Pago + Monto */}
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
-                    {/* Pills de canal — selección exclusiva (un canal a la vez) */}
+                    {/* Pills de canal — "Todos" + selección exclusiva (un canal a la vez) */}
                     {(()=>{
                       const canales=Object.entries(PLATFORM).map(([id,p])=>({id,label:p.label,color:p.color})).filter(c => tienePlat(c.id));
+                      const todosActive = canalSel==="todos";
                       return (<>
+                        <button onClick={()=>setCanalSel("todos")} style={{padding:"5px 12px",fontSize:12,fontWeight:todosActive?700:500,borderRadius:8,border:`1.5px solid ${todosActive?T.accent:T.border}`,background:todosActive?T.accent+"18":"transparent",color:todosActive?T.accent:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",flexShrink:0}}>
+                          Todos
+                        </button>
                         {canales.map(c=>{
                           const active=canalSel===c.id;
                           return (
@@ -17258,7 +17430,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       {/* Agrupado por PLATAFORMA de cobro (Pago Nube / Mercado Pago / Transferencia),
                           no por tipo de tarjeta — sirve para facturar a distintos CUITs según
                           por dónde entró la plata. Órdenes viejas sin el campo caen al método crudo. */}
-                      {(()=>{const set=new Set();Object.values(tnData?.ordenes||{}).forEach(o=>{const m=normPlatPago(o.plataforma_pago||o.metodo_pago);if(m)set.add(m);});return[...set].sort((a,b)=>a.localeCompare(b,"es")).map(m=><option key={m} value={m}>{m}</option>);})()}
+                      {(()=>{const set=new Set();Object.values(tnData?.ordenes||{}).filter(o=>canalSel==="todos"||o._platform===canalSel).forEach(o=>{const m=normPlatPago(o.plataforma_pago||o.metodo_pago);if(m)set.add(m);});return[...set].sort((a,b)=>a.localeCompare(b,"es")).map(m=><option key={m} value={m}>{m}</option>);})()}
                     </select>
                     <div style={{display:"flex",alignItems:"center",gap:6}}>
                       <span style={{fontSize:11,color:T.textSm,flexShrink:0}}>$ mín</span>
@@ -17278,8 +17450,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         style={{...iS,width:"100%",padding:"7px 12px 7px 32px",fontSize:12,boxSizing:"border-box"}}
                       />
                     </div>
-                    {(metodoPagoSel!=="todos"||montoMin||montoMax||busquedaPend)&&(
-                      <button onClick={()=>{setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");setBusquedaPend("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red,flexShrink:0}}>
+                    {(canalSel!=="todos"||metodoPagoSel!=="todos"||montoMin||montoMax||busquedaPend)&&(
+                      <button onClick={()=>{setCanalSel("todos");setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");setBusquedaPend("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red,flexShrink:0}}>
                         ✕ Limpiar
                       </button>
                     )}
@@ -17348,6 +17520,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       ))}
                       <div style={{position:"absolute",inset:0,background:`linear-gradient(90deg, transparent, ${T.border}40, transparent)`,backgroundSize:"200% 100%",animation:"growith-shimmer 1.6s infinite"}}/>
                     </div>
+                  ) : tnError && !tnData ? (
+                    <div style={{padding:"28px 16px",textAlign:"center",background:T.bg,borderRadius:10}}>
+                      <div style={{fontSize:13,fontWeight:600,color:T.red,marginBottom:4}}>No se pudieron cargar las ventas</div>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>{tnError}</div>
+                      <Btn T={T} variant="secondary" size="sm" onClick={loadPendingOrders}>Reintentar</Btn>
+                    </div>
                   ) : !tnData?.connected ? (
                     <div style={{padding:"20px 16px",background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:8,display:"flex",alignItems:"flex-start",gap:10}}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.yellow||T.yellow} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:1}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -17364,8 +17542,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const all = Object.entries(tnData.ordenes);
                     // items: pendientes (no facturadas, pasan filtros de canal/monto/búsqueda)
                     const items = all.filter(([id, o]) => ordenPasaFiltros(id, o));
-                    // itemsBilled: ya facturadas en el período para la sección colapsada
-                    const itemsBilled = all.filter(([id, o]) => o._billed && (canalSel === "todos" || o._platform === canalSel));
+                    // itemsBilled: ya facturadas en el período para la sección colapsada —
+                    // aplica los MISMOS filtros que items (canal, pago, monto, búsqueda)
+                    const itemsBilled = all.filter(([id, o]) => o._billed && pasaFiltrosComunes(id, o));
                     if (items.length === 0) {
                       return (
                         <div style={{padding:"24px 16px",textAlign:"center",background:T.bg,borderRadius:10}}>
@@ -17397,12 +17576,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const page = Math.min(pendPage, totalPages);
                     const pageItems = items.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE);
                     function seleccionarPorcentaje(pct) {
-                      const pendientes = itemsSelectables.map(([id])=>id);
-                      const count = Math.ceil(pendientes.length * pct / 100);
-                      const shuffled = [...pendientes].sort(()=>Math.random()-0.5);
-                      const selSet = new Set(shuffled.slice(0, count));
+                      // Determinístico: ordena por fecha ascendente (más antiguas primero)
+                      // y toma las primeras N — dos clicks del mismo % dan la misma selección.
+                      const ordenadas = [...itemsSelectables].sort((a,b)=>new Date(a[1].fecha||0)-new Date(b[1].fecha||0));
+                      const count = Math.ceil(ordenadas.length * pct / 100);
+                      const selSet = new Set(ordenadas.slice(0, count).map(([id])=>id));
                       const ns = {...tnSelected};
-                      pendientes.forEach(id=>{ ns[id] = selSet.has(id); });
+                      itemsSelectables.forEach(([id])=>{ ns[id] = selSet.has(id); });
                       setTnSelected(ns);
                     }
                     const allSel = itemsSelectables.length > 0 && itemsSelectables.every(([id])=>tnSelected[id]);
@@ -17455,7 +17635,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
 
                           {/* Selector de porcentaje a seleccionar */}
-                          <select onChange={e=>{const p=parseInt(e.target.value);if(p)seleccionarPorcentaje(p);e.target.value="";}} title="Seleccionar automáticamente un % de las órdenes pendientes" style={{...iS,padding:"4px 8px",fontSize:11,width:"auto",cursor:"pointer",fontWeight:600,flexShrink:0}}>
+                          <select onChange={e=>{const p=parseInt(e.target.value);if(p)seleccionarPorcentaje(p);e.target.value="";}} title="Selecciona el N% más antiguo de las ventas pendientes" style={{...iS,padding:"4px 8px",fontSize:11,width:"auto",cursor:"pointer",fontWeight:600,flexShrink:0}}>
                             <option value="">% auto</option>
                             {[10,20,30,40,50,60,70,80,90,100].map(p=><option key={p} value={p}>{p}%</option>)}
                           </select>
@@ -17773,14 +17953,14 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
                         {/* Irreversible warning */}
                         <div style={{padding:"10px 14px",background:T.redBg,border:`1.5px solid ${T.red}44`,borderRadius:8,fontSize:12,color:T.red}}>
-                          Esta acción es <strong>irreversible</strong> — ARCA emite los comprobantes con CAE y no pueden anularse desde Growith.
+                          Cada comprobante sale con <strong>CAE oficial de ARCA</strong>. Si te equivocás, podés anularlo después desde Registros con una nota de crédito.
                         </div>
 
                         {/* Actions */}
                         <div style={{display:"flex",gap:10}}>
                           <button onClick={closeModal} style={{...BtnSecondary(T),flex:1,justifyContent:"center",fontSize:13,padding:"11px 0"}}>Cancelar</button>
-                          <button onClick={()=>handleEmit(false)} disabled={!cuitSel}
-                            style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px 0",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",borderRadius:DS.r.md,border:"none",cursor:!cuitSel?"not-allowed":"pointer",background:!cuitSel?"#166534":T.green,color:"#fff",boxShadow:!cuitSel?"none":"0 4px 18px rgba(22,163,74,0.35)",transition:"all 0.15s",opacity:!cuitSel?0.55:1}}>
+                          <button onClick={()=>handleEmit(false)} disabled={!cuitSel||emitting}
+                            style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px 0",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",borderRadius:DS.r.md,border:"none",cursor:(!cuitSel||emitting)?"not-allowed":"pointer",background:(!cuitSel||emitting)?"#166534":T.green,color:"#fff",boxShadow:(!cuitSel||emitting)?"none":"0 4px 18px rgba(22,163,74,0.35)",transition:"all 0.15s",opacity:(!cuitSel||emitting)?0.55:1}}>
                             Confirmar y emitir
                           </button>
                         </div>
@@ -17802,7 +17982,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <div style={{fontSize:18,fontWeight:800,color:T.text}}>Emitir factura manual</div>
                     <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Para ventas fuera de tus integraciones (mayoristas, venta directa, etc.)</div>
                   </div>
-                  <ModalCloseBtn T={T} onClick={()=>setShowManual(false)} disabled={emittingManual}/>
+                  <ModalCloseBtn T={T} onClick={()=>{setShowManual(false);setManualResult(null);}} disabled={emittingManual}/>
                 </div>
 
                 {!manualResult ? (
@@ -17847,7 +18027,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             </div>}
                           </div>
                           <input value={it.cantidad} onChange={e=>{const arr=[...manualItems];arr[i].cantidad=parseInt(e.target.value.replace(/\D/g,""))||0;setManualItems(arr);}} placeholder="Cant." style={{...iS,fontSize:12,textAlign:"center"}}/>
-                          <input value={it.precio||""} onChange={e=>{const arr=[...manualItems];arr[i].precio=parseFloat(e.target.value)||0;setManualItems(arr);}} placeholder="Precio s/IVA" type="number" step="0.01" style={{...iS,fontSize:12,textAlign:"right"}}/>
+                          <input value={it.precio||""} onChange={e=>{const arr=[...manualItems];arr[i].precio=parseFloat(e.target.value)||0;setManualItems(arr);}} placeholder={esMono?"Precio":"Precio final (IVA incl.)"} type="number" step="0.01" style={{...iS,fontSize:12,textAlign:"right"}}/>
                           <button onClick={()=>setManualItems(manualItems.filter((_,j)=>j!==i))} disabled={manualItems.length===1} style={{background:"transparent",border:"none",cursor:manualItems.length===1?"not-allowed":"pointer",color:T.red,fontSize:14,opacity:manualItems.length===1?0.3:1}}>✕</button>
                         </div>
                         );
@@ -17859,15 +18039,26 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
                     {/* Total */}
                     <div style={{padding:"14px 16px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                      <div style={{fontSize:12,color:T.textMd}}>Total {esMono ? "(sin IVA discriminado)" : "(IVA incluido al 21%)"}</div>
+                      <div style={{fontSize:12,color:T.textMd}}>Total {pvManualElegido?.exento ? "(exento · sin IVA)" : esMono ? "(sin IVA discriminado)" : "(IVA incluido al 21%)"}</div>
                       <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.5}}>
                         ${manualItems.reduce((s,it)=>s+(it.cantidad||0)*(it.precio||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}
                       </div>
                     </div>
+                    {/* PV propio del panel manual — solo si el CUIT tiene más de un PV cargado */}
+                    {pvsDisponibles.length>1 && (
+                      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
+                        <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,flexShrink:0}}>Punto de venta</span>
+                        <select value={pvManualElegido?.numero||""} onChange={e=>{const n=parseInt(e.target.value); setManualPv(pvsDisponibles.find(p=>p.numero===n)||null);}}
+                          style={{background:T.card,border:`1px solid ${T.borderL}`,color:T.text,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                          {pvsDisponibles.map(p=>(<option key={p.numero} value={p.numero}>{p.nombre} · PV {String(p.numero).padStart(5,"0")}{p.exento?" · EXENTO":""}</option>))}
+                        </select>
+                        {pvManualElegido?.exento && <span style={{fontSize:11,color:(T.yellow||T.yellow),fontWeight:600}}>Sale SIN IVA (operación exenta)</span>}
+                      </div>
+                    )}
                     <div style={{fontSize:11,color:T.textSm,marginBottom:18,lineHeight:1.5}}>
                       Tipo de comprobante: <strong style={{color:T.text}}>
                         {esMono ? "Factura C" : (manualDocTipo === "CUIT" ? "Factura A (con fallback a B)" : "Factura B")}
-                      </strong> · Punto de venta {String(cuitActivo?.punto_venta||1).padStart(5,"0")} · CUIT emisor {cuitActivo ? formatCuit(cuitActivo.cuit) : "—"}
+                      </strong> · Punto de venta {String(pvManualElegido?.numero||cuitActivo?.punto_venta||1).padStart(5,"0")} · CUIT emisor {cuitActivo ? formatCuit(cuitActivo.cuit) : "—"}
                     </div>
 
                     <div style={{display:"flex",justifyContent:"flex-end"}}>
@@ -17899,7 +18090,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           Descargar PDF
                         </button>
                       )}
-                      <button onClick={()=>{setManualResult(null);setManualNombre("");setManualDocNro("");setManualItems([{nombre:"",cantidad:1,precio:0}]);}} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <button onClick={()=>{setManualResult(null);setManualNombre("");setManualDocTipo("CUIT");setManualDocNro("");setManualItems([{nombre:"",cantidad:1,precio:0}]);}} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                         Emitir otra
                       </button>
                     </div>
@@ -17955,7 +18146,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   const filtBatches = batches
                     .map(b=>({b, rows:(b.resumen||[]).map((r,i)=>({...r,_b:b,_bi:i})).filter(rowPasa)}))
                     .filter(x=>x.rows.length>0);
-                  const filtrosActivos = !!(regLetra||regPv||regOrigen||regBusq.trim());
+                  // Para NCs no cuenta regOrigen (ese filtro no aplica a NCs)
+                  const filtrosActivos = regSub==="ncs" ? !!(regLetra||regPv||regBusq.trim()) : !!(regLetra||regPv||regOrigen||regBusq.trim());
+                  // Desglose por letra y por PV del pie (sobre las activas filtradas)
+                  const porLetraTot = activas.reduce((acc,r)=>{const l=r.letra||"?";if(!acc[l])acc[l]={n:0,t:0};acc[l].n++;acc[l].t+=r.total||0;return acc;},{});
+                  const porPvTot = activas.reduce((acc,r)=>{const p=String(parseInt(r.punto_venta)||0);acc[p]=(acc[p]||0)+(r.total||0);return acc;},{});
+                  const pvKeys = Object.keys(porPvTot);
                   const fmtFechaCbte = (r) => r.fecha_cbte
                     ? `${r.fecha_cbte.slice(8,10)}/${r.fecha_cbte.slice(5,7)}/${r.fecha_cbte.slice(0,4)}`
                     : (r._b?.emitido_at ? new Date(r._b.emitido_at).toLocaleDateString("es-AR") : "—");
@@ -18010,6 +18206,15 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     else toast("No se pudo regenerar el PDF de este comprobante","warning");
                   };
                   const vacio = batches.length===0 && ncs.length===0;
+                  // Pie extra: desglose por letra / por PV + neto del mes descontando NCs
+                  const letrasLine = ["A","B","C"].filter(l=>porLetraTot[l]).map(l=>`${l}: ${porLetraTot[l].n} (${fmtMonto(porLetraTot[l].t)})`).join(" · ");
+                  const pieExtra = (
+                    <div style={{display:"flex",flexDirection:"column",gap:3,marginTop:6,fontSize:11,color:T.textSm}}>
+                      {letrasLine && <div>{letrasLine}</div>}
+                      {pvKeys.length>1 && <div>{pvKeys.sort((a,b)=>a-b).map(p=>`PV ${String(p).padStart(4,"0")}: ${fmtMonto(porPvTot[p])}`).join(" · ")}</div>}
+                      {ncTotal>0 && <div>Notas de crédito del mes: <span style={{color:T.red,fontWeight:600}}>− {fmtMonto(ncTotal)}</span> · Neto facturado: <strong style={{color:T.text}}>{fmtMonto(totTotal-ncTotal)}</strong></div>}
+                    </div>
+                  );
                   return (
                     <Card T={T} padding="lg">
                       {/* Header */}
@@ -18040,7 +18245,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
                       {/* Barra de filtros */}
                       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
-                        {["A","B","C"].map(l=>(
+                        {(esMono?["C"]:["A","B","C"]).map(l=>(
                           <button key={l} onClick={()=>setRegLetra(regLetra===l?"":l)} style={pillS(regLetra===l, T.accent)}>{l}</button>
                         ))}
                         {pvsDisponibles.length>1 && (
@@ -18163,7 +18368,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                       <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
                                         <button onClick={()=>descargarPdfDe(r)} style={btnPdfS}>PDF</button>
                                         {!r.anulada&&(
-                                          <button onClick={()=>anularUnaFactura(r, r._b)} title="Emite NC para anular esta factura" style={btnAnularS}>Anular</button>
+                                          <button onClick={()=>{if(!r.recuperado_afip)anularUnaFactura(r, r._b);}} disabled={!!r.recuperado_afip} title={r.recuperado_afip?"Recuperado de AFIP sin detalle de items — anulalo desde una factura manual o contactanos":"Emite NC para anular esta factura"} style={{...btnAnularS,opacity:r.recuperado_afip?0.45:1,cursor:r.recuperado_afip?"not-allowed":"pointer"}}>Anular</button>
                                         )}
                                       </div>
                                     </td>
@@ -18180,6 +18385,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <span style={{color:T.textMd}}>IVA {fmtMonto(totIva)}</span>
                             <span style={{marginLeft:"auto",color:T.text,fontWeight:800,fontSize:13}}>{fmtMonto(totTotal)}</span>
                           </div>
+                          {pieExtra}
                         </>
                       ) : (
                         /* ── VISTA LOTES (cards) ── */
@@ -18197,7 +18403,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                       <div style={{fontSize:11,color:T.textSm}}>{b.cantidad} factura{b.cantidad===1?"":"s"}{filtrosActivos&&bRows.length!==b.cantidad?` · ${bRows.length} coinciden con el filtro`:""}</div>
                                     </div>
                                     <div style={{fontSize:14,fontWeight:700,color:T.text,marginRight:8}}>{fmtMonto(b.total)}</div>
-                                    <button onClick={(e)=>{e.stopPropagation();anularLoteCompleto(b);}} title="Emite NC por cada factura del lote para anularlas todas" style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+                                    <button onClick={(e)=>{e.stopPropagation();anularLoteCompleto(b, bRows);}} title="Emite NC por cada factura activa del lote que pase los filtros" style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
                                       Anular lote
                                     </button>
                                     <button onClick={(e)=>{e.stopPropagation();downloadBatchZip(b);}} style={{background:T.accent,border:"none",color:"#fff",borderRadius:6,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>
@@ -18223,7 +18429,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                             </a>
                                           )}
                                           {!r.anulada&&(
-                                            <button onClick={()=>anularUnaFactura(r, b)} title="Emite NC para anular esta factura" style={btnAnularS}>Anular</button>
+                                            <button onClick={()=>{if(!r.recuperado_afip)anularUnaFactura(r, b);}} disabled={!!r.recuperado_afip} title={r.recuperado_afip?"Recuperado de AFIP sin detalle de items — anulalo desde una factura manual o contactanos":"Emite NC para anular esta factura"} style={{...btnAnularS,opacity:r.recuperado_afip?0.45:1,cursor:r.recuperado_afip?"not-allowed":"pointer"}}>Anular</button>
                                           )}
                                         </div>
                                       ))}
@@ -18241,6 +18447,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <span style={{color:T.textMd}}>IVA {fmtMonto(totIva)}</span>
                             <span style={{marginLeft:"auto",color:T.text,fontWeight:800,fontSize:13}}>{fmtMonto(totTotal)}</span>
                           </div>
+                          {pieExtra}
                         </>
                       )}
                     </Card>
@@ -18278,10 +18485,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                           {!isActive && <button onClick={()=>setCuitSel(c.cuit)} style={{flex:1,minWidth:90,background:"transparent",border:`1px solid ${T.accent}55`,color:T.accent,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Activar</button>}
                           <button onClick={()=>openEditCuit(c)} style={{flex:1,minWidth:80,background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
-                          <button onClick={async()=>{
-                            const prev = cuitSel; setCuitSel(c.cuit);
-                            setTimeout(async()=>{ await handleTestConnection(); if (prev !== c.cuit) setCuitSel(prev); }, 50);
-                          }} disabled={testingConn} style={{flex:1,minWidth:100,background:"transparent",border:`1px solid ${T.green}55`,color:T.green,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:testingConn?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>{testingConn&&cuitSel===c.cuit?<Spinner size={10} color={T.green}/>:<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>}{testingConn&&cuitSel===c.cuit?"Probando...":"Probar"}</button>
+                          <button onClick={()=>handleTestConnection(c.cuit)} disabled={!!testingConn} style={{flex:1,minWidth:100,background:"transparent",border:`1px solid ${T.green}55`,color:T.green,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:testingConn?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>{testingConn===c.cuit?<Spinner size={10} color={T.green}/>:<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>}{testingConn===c.cuit?"Probando...":"Probar"}</button>
                           <button onClick={()=>handleDeleteCuit(c.cuit)} style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:4}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>
                         </div>
                       </div>
@@ -18304,13 +18508,18 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     if(!cuitSel) return;
                     if(!await appConfirm("Esto va a regenerar el PDF de cada factura de ML pendiente y subirla a la venta en Mercado Libre. ¿Continuar?",{okLabel:"Continuar"})) return;
                     setAttachingML(true);
-                    const d = await api("attach_ml_pending","POST",{cuit:cuitSel});
-                    setAttachingML(false);
-                    if(d.error){toast("Error: "+d.error,"error");return;}
-                    if(d.total === 0){toast(d.message||"Sin facturas pendientes","info");return;}
-                    const errMsg = d.errors?.length>0 ? ` · ${d.errors.length} con error` : "";
-                    toast(`${d.uploaded}/${d.total} facturas adjuntadas en ML${errMsg}`, d.errors?.length>0?"warning":"success");
-                    refreshDashboard();
+                    try {
+                      const d = await api("attach_ml_pending","POST",{cuit:cuitSel});
+                      if(d.error){toast("Error: "+d.error,"error");return;}
+                      if(d.total === 0){toast(d.message||"Sin facturas pendientes","info");return;}
+                      const errMsg = d.errors?.length>0 ? ` · ${d.errors.length} con error` : "";
+                      toast(`${d.uploaded}/${d.total} facturas adjuntadas en ML${errMsg}`, d.errors?.length>0?"warning":"success");
+                      refreshDashboard();
+                    } catch(e) {
+                      toast("No se pudieron adjuntar: "+(e?.message||"error de conexión"),"error");
+                    } finally {
+                      setAttachingML(false);
+                    }
                   }} disabled={attachingML||!cuitSel} title="Adjuntar a ML las facturas que todavía no se subieron" style={{background:PLATFORM.mercadolibre.color,border:`1px solid ${PLATFORM.mercadolibre.color}55`,color:"#333",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:attachingML?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:!cuitSel?0.5:1}}>
                     {attachingML ? <><Spinner size={11} color="#333"/> Adjuntando…</> : "Adjuntar pendientes a ML"}
                   </button>
@@ -18323,11 +18532,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
       {/* ══ WIZARD MODAL ══ */}
       {showWizard && (
-        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={resetWizard}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={cerrarWizard}>
           <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:16,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto",animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both",padding:"28px 32px"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
               <div style={{fontSize:17,fontWeight:700,color:T.accent}}>Conectar nuevo CUIT a ARCA</div>
-              <button onClick={resetWizard} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
+              <button onClick={cerrarWizard} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
             </div>
 
             {/* Progress bar */}
@@ -18473,6 +18682,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <div style={{fontSize:11,color:T.textMd,background:T.bg,border:"1px solid "+T.borderL,borderRadius:6,padding:"7px 10px",marginBottom:10,lineHeight:1.5}}>
                           ARCA te va a pedir <strong style={{color:T.text}}>subir un archivo</strong>. Ya descargamos tu <code style={{background:T.surface,padding:"1px 4px",borderRadius:3}}>growith-{wizCuit}.csr</code> al generar — buscalo en tu carpeta de Descargas.
                         </div>
+                        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                          <Btn T={T} variant="secondary" size="sm" onClick={descargarCsr}>Descargar CSR de nuevo</Btn>
+                          <Btn T={T} variant="secondary" size="sm" onClick={descargarKey}>Descargar clave (.key)</Btn>
+                        </div>
+                        <div style={{fontSize:10,color:T.textSm,marginBottom:10,lineHeight:1.5}}>
+                          Guardá la clave (.key) en un lugar seguro: es tu backup por si cerrás esta ventana antes de terminar. No la compartas con nadie.
+                        </div>
                         {!wizArcaProd && (
                           <div style={{fontSize:11,color:T.yellow,background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:6,padding:"7px 10px",marginBottom:10,lineHeight:1.5}}>
                             Elegiste ambiente <strong>Homologación</strong>. En "Administración de Certificados Digitales" buscá la opción de Homologación antes de agregar el alias — los certs de homologación no funcionan en producción.
@@ -18607,7 +18823,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   ← Atrás
                 </button>
               ):(
-                <button onClick={resetWizard} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <button onClick={cerrarWizard} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                   Cancelar
                 </button>
               )}
@@ -18633,7 +18849,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
               <div>
                 <div style={{fontSize:16,fontWeight:700,color:T.text}}>Editar datos del CUIT</div>
-                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>CUIT {formatCuit(editCuit.cuit)} — el certificado y la clave no se modifican</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>CUIT {formatCuit(editCuit.cuit)} — el certificado y la clave solo cambian si pegás uno nuevo abajo</div>
               </div>
               <button onClick={()=>setShowEditCuit(false)} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
             </div>
@@ -18694,6 +18910,21 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <option value="homo">Homologación (pruebas)</option>
                   <option value="prod">Producción (facturas reales)</option>
                 </select>
+              </div>
+
+              {/* Renovar certificado vencido — pega el .crt nuevo (y la .key solo si cambió) */}
+              <div style={{border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",background:T.surface}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:3}}>Renovar certificado</div>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Solo pegá el certificado nuevo cuando lo renueves en ARCA. Si generaste el CSR desde Growith, la clave no cambia — dejala vacía.</div>
+                <label style={labelS}>Certificado nuevo (.crt · PEM)</label>
+                <textarea value={editCuit._new_cert||""} onChange={e=>setEditCuit({...editCuit,_new_cert:e.target.value})} placeholder="-----BEGIN CERTIFICATE-----" rows={3}
+                  style={{...iS,fontFamily:"monospace",fontSize:10,resize:"vertical",marginBottom:10}}/>
+                <label style={labelS}>Clave privada (.key · PEM) — opcional, solo si también cambió</label>
+                <textarea value={editCuit._new_key||""} onChange={e=>setEditCuit({...editCuit,_new_key:e.target.value})} placeholder="-----BEGIN PRIVATE KEY----- (dejar vacío si no cambió)" rows={3}
+                  style={{...iS,fontFamily:"monospace",fontSize:10,resize:"vertical"}}/>
+                {(editCuit._new_cert||"").trim() && !(editCuit._new_cert||"").includes("-----BEGIN CERTIFICATE-----") && (
+                  <div style={{marginTop:8,padding:"7px 10px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>El texto pegado no parece un certificado PEM válido (falta -----BEGIN CERTIFICATE-----)</div>
+                )}
               </div>
 
               {/* Banner opcional para PDF */}
