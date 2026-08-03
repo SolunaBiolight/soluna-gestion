@@ -9,7 +9,7 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldPath } from "firebase-admin/firestore";
 import { XMLParser } from "fast-xml-parser";
 import { getValidMLToken } from "./integrations.js";
-import { guardUid } from "./_auth.js";
+import { guardUid, guardCron } from "./_auth.js";
 
 // Con varios ML conectados, la facturación usa la cuenta elegida para VENTAS de
 // ML (margenesMlVentas). Vacío = primera cuenta (1 solo ML, como siempre).
@@ -748,7 +748,12 @@ function condicionIvaReceptor(tipoCbte, docTipoClas) {
   return 5;
 }
 
-async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCbte, wsfeUrl, monotributo = false, fechaImputacion = null, exento = false) {
+// opts: { alicMap, percepciones } — alícuotas múltiples por producto (feature
+// alic_map, solo RI) y percepciones IIBB de la factura manual (solo RI). Cuando
+// alguno aplica, el resultado trae `_fiscal` con el desglose real (neto, iva,
+// imp_trib, total final, bloques) para que procesarAprobada persista eso en vez
+// de recalcular con /1.21.
+async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCbte, wsfeUrl, monotributo = false, fechaImputacion = null, exento = false, opts = {}) {
   // AFIP acepta máximo 2 decimales: los totales de ML suelen llegar con arrastre
   // de punto flotante (26999.999999999996) y el WS rechaza el ImpTotal.
   const total = Math.round(Number(orden.total) * 100) / 100;
@@ -781,14 +786,44 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
   const condIva = condicionIvaReceptor(tipoCbte, docTipoClas);
   const impOpEx = (!monotributo && exento) ? total : 0; // monto exento (sin IVA)
 
-  const ivaXml = (!monotributo && !exento && iva > 0) ? `
-    <ar:Iva>
+  // ── Alícuotas por producto (alic_map, solo RI gravado con items) ──
+  let desglose = null;
+  if (!monotributo && !exento && opts.alicMap && Object.keys(opts.alicMap).length
+      && Array.isArray(orden.items) && orden.items.length) {
+    desglose = desgloseAlicuotas(total, orden.items, opts.alicMap);
+    if (desglose) { neto = desglose.neto; iva = desglose.iva; }
+  }
+
+  // ── Percepciones (factura manual RI): Tributos Id 7 (percepciones IIBB) ──
+  // El total original es neto+iva; las percepciones se SUMAN → ImpTotal final
+  // = neto + iva + ImpTrib (ya validadas/normalizadas en validarPercepciones).
+  const percepciones = (!monotributo && Array.isArray(opts.percepciones) && opts.percepciones.length)
+    ? opts.percepciones : null;
+  const impTrib = percepciones
+    ? Math.round(percepciones.reduce((s, p) => s + p.importe, 0) * 100) / 100 : 0;
+  const totalFinal = Math.round((total + impTrib) * 100) / 100;
+
+  const bloquesIva = (!monotributo && !exento && (desglose ? desglose.bloques.length > 0 : iva > 0))
+    ? (desglose ? desglose.bloques : [{ id: 5, base: neto, importe: iva }]) : null;
+  const ivaXml = bloquesIva ? `
+    <ar:Iva>${bloquesIva.map(b => `
       <ar:AlicIva>
-        <ar:Id>5</ar:Id>
-        <ar:BaseImp>${neto.toFixed(2)}</ar:BaseImp>
-        <ar:Importe>${iva.toFixed(2)}</ar:Importe>
-      </ar:AlicIva>
+        <ar:Id>${b.id}</ar:Id>
+        <ar:BaseImp>${b.base.toFixed(2)}</ar:BaseImp>
+        <ar:Importe>${b.importe.toFixed(2)}</ar:Importe>
+      </ar:AlicIva>`).join("")}
     </ar:Iva>` : "";
+
+  const tributosXml = percepciones ? `
+    <ar:Tributos>${percepciones.map(p => `
+      <ar:Tributo>
+        <ar:Id>7</ar:Id>
+        <ar:Desc>${p.nombre}</ar:Desc>
+        <ar:BaseImp>${p.base.toFixed(2)}</ar:BaseImp>
+        <ar:Alic>${p.alicuota.toFixed(2)}</ar:Alic>
+        <ar:Importe>${p.importe.toFixed(2)}</ar:Importe>
+      </ar:Tributo>`).join("")}
+    </ar:Tributos>` : "";
 
   const body = `${authXml(token, sign, cuitNum)}
     <ar:FeCAEReq>
@@ -805,22 +840,33 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
           <ar:CbteDesde>${cbteNro}</ar:CbteDesde>
           <ar:CbteHasta>${cbteNro}</ar:CbteHasta>
           <ar:CbteFch>${fecha}</ar:CbteFch>
-          <ar:ImpTotal>${total.toFixed(2)}</ar:ImpTotal>
+          <ar:ImpTotal>${totalFinal.toFixed(2)}</ar:ImpTotal>
           <ar:ImpTotConc>0</ar:ImpTotConc>
           <ar:ImpNeto>${neto.toFixed(2)}</ar:ImpNeto>
           <ar:ImpOpEx>${impOpEx.toFixed(2)}</ar:ImpOpEx>
-          <ar:ImpTrib>0</ar:ImpTrib>
+          <ar:ImpTrib>${impTrib.toFixed(2)}</ar:ImpTrib>
           <ar:ImpIVA>${iva.toFixed(2)}</ar:ImpIVA>
           <ar:MonId>PES</ar:MonId>
           <ar:MonCotiz>1</ar:MonCotiz>
           <ar:CondicionIVAReceptorId>${condIva}</ar:CondicionIVAReceptorId>
+          ${tributosXml}
           ${ivaXml}
         </ar:FECAEDetRequest>
       </ar:FeDetReq>
     </ar:FeCAEReq>`;
 
   const xml = await wsfeCall("FECAESolicitar", body, wsfeUrl, true);
-  return parseWsfeResultado(xml);
+  const parsed = parseWsfeResultado(xml);
+  // Desglose fiscal real solo cuando difiere del cálculo estándar (alic_map o
+  // percepciones): procesarAprobada lo persiste tal cual en el comprobante.
+  if (desglose || percepciones) {
+    parsed._fiscal = {
+      neto, iva, imp_trib: impTrib, total: totalFinal,
+      percepciones: percepciones || null,
+      alic_bloques: desglose ? desglose.bloques : null,
+    };
+  }
+  return parsed;
 }
 
 // ¿El rechazo de AFIP es por validación del RECEPTOR (CUIT inexistente,
@@ -1191,6 +1237,259 @@ async function emitirNotaCredito(token, sign, cuitNum, puntoVenta, cbteNcNro, fa
   return { ...parsed, tipo_nc: tipoNC, comprobante: cbteNcNro, neto, iva, total };
 }
 
+// ─── NOTA DE DÉBITO ───────────────────────────────────
+// Tipos AFIP: ND A=2, B=7, C=12. Mismo esquema que emitirNotaCredito: CbtesAsoc
+// a la factura original (con su PV real), sanitización numérica dura y fechas
+// en hora AR. IVA: RI no exenta → el monto INCLUYE IVA (neto = monto/1.21);
+// monotributo → sin IVA; factura original exenta → todo a ImpOpEx.
+function tipoNDparaFactura(tipoFactura) {
+  if (tipoFactura === 1) return 2;
+  if (tipoFactura === 11) return 12;
+  return 7; // default: ND B
+}
+
+async function emitirNotaDebito(token, sign, cuitNum, puntoVenta, cbteNdNro, facturaOriginal, wsfeUrl) {
+  // facturaOriginal: { tipo, punto_venta, comprobante, total(=monto de la ND), doc_tipo, doc_nro, exento }
+  const tipoFactura = parseInt(facturaOriginal.tipo) || 6;
+  const tipoND = tipoNDparaFactura(tipoFactura);
+  const monotributo = tipoFactura === 11;
+  const exento = !monotributo && facturaOriginal.exento === true;
+  const total = Math.round((parseFloat(facturaOriginal.total) || 0) * 100) / 100;
+  if (!(total > 0)) throw new Error("Monto de la ND inválido — no se envió a AFIP.");
+  const fecha = hoyARISO().replace(/-/g, "");
+  const nroAsoc = parseInt(facturaOriginal.comprobante);
+  const pvAsoc = parseInt(facturaOriginal.punto_venta) || parseInt(puntoVenta);
+  if (!Number.isFinite(nroAsoc) || !Number.isFinite(pvAsoc)) throw new Error("Número o punto de venta de la factura original inválido — la ND no se envió a AFIP.");
+  puntoVenta = parseInt(puntoVenta); cbteNdNro = parseInt(cbteNdNro);
+  if (![puntoVenta, cbteNdNro].every(Number.isFinite)) throw new Error("Punto de venta o número de la ND inválido — no se envió a AFIP.");
+
+  const docTipoClas = facturaOriginal.doc_tipo;
+  // ND A requiere SIEMPRE CUIT del receptor (igual que NC A)
+  if (tipoFactura === 1 || tipoFactura === 2 || tipoFactura === 3) {
+    if (docTipoClas !== "CUIT" || !facturaOriginal.doc_nro) {
+      return {
+        cae: null, cae_vto: null, resultado: "R",
+        obs: `La factura A original no tiene CUIT del receptor (doc_tipo="${docTipoClas || ""}"). ND A requiere CUIT obligatorio — completá los datos del receptor.`,
+        tipo_nd: tipoND, comprobante: cbteNdNro, neto: 0, iva: 0, total,
+      };
+    }
+  }
+  const nroDocNum = parseInt(String(facturaOriginal.doc_nro || "").replace(/\D/g, ""), 10);
+  let tipoDoc, nroDoc, neto, iva;
+  if (monotributo || exento) {
+    // Factura C: neto = total sin IVA. Exenta: todo a ImpOpEx (neto 0).
+    neto = exento ? 0 : total; iva = 0;
+  } else {
+    neto = Math.round((total / 1.21) * 100) / 100;
+    iva = Math.round((total - neto) * 100) / 100;
+  }
+  if (docTipoClas === "CUIT") { tipoDoc = 80; nroDoc = nroDocNum; }
+  else if (docTipoClas === "DNI") { tipoDoc = 96; nroDoc = nroDocNum; }
+  else { tipoDoc = 99; nroDoc = 0; }
+  if (tipoDoc !== 99 && !Number.isFinite(nroDoc)) throw new Error(`Documento del receptor inválido (${docTipoClas} "${facturaOriginal.doc_nro || ""}") — la ND no se envió a AFIP.`);
+
+  const condIva = condicionIvaReceptor(tipoND, docTipoClas);
+  const impOpEx = exento ? total : 0;
+  const ivaXml = (!monotributo && !exento && iva > 0) ? `
+    <ar:Iva>
+      <ar:AlicIva>
+        <ar:Id>5</ar:Id>
+        <ar:BaseImp>${neto.toFixed(2)}</ar:BaseImp>
+        <ar:Importe>${iva.toFixed(2)}</ar:Importe>
+      </ar:AlicIva>
+    </ar:Iva>` : "";
+
+  const cbtesAsocXml = `
+        <ar:CbtesAsoc>
+          <ar:CbteAsoc>
+            <ar:Tipo>${tipoFactura}</ar:Tipo>
+            <ar:PtoVta>${pvAsoc}</ar:PtoVta>
+            <ar:Nro>${nroAsoc}</ar:Nro>
+            <ar:Cuit>${parseInt(cuitNum)}</ar:Cuit>
+          </ar:CbteAsoc>
+        </ar:CbtesAsoc>`;
+
+  const body = `${authXml(token, sign, cuitNum)}
+    <ar:FeCAEReq>
+      <ar:FeCabReq>
+        <ar:CantReg>1</ar:CantReg>
+        <ar:PtoVta>${puntoVenta}</ar:PtoVta>
+        <ar:CbteTipo>${tipoND}</ar:CbteTipo>
+      </ar:FeCabReq>
+      <ar:FeDetReq>
+        <ar:FECAEDetRequest>
+          <ar:Concepto>1</ar:Concepto>
+          <ar:DocTipo>${tipoDoc}</ar:DocTipo>
+          <ar:DocNro>${nroDoc}</ar:DocNro>
+          <ar:CbteDesde>${cbteNdNro}</ar:CbteDesde>
+          <ar:CbteHasta>${cbteNdNro}</ar:CbteHasta>
+          <ar:CbteFch>${fecha}</ar:CbteFch>
+          <ar:ImpTotal>${total.toFixed(2)}</ar:ImpTotal>
+          <ar:ImpTotConc>0</ar:ImpTotConc>
+          <ar:ImpNeto>${neto.toFixed(2)}</ar:ImpNeto>
+          <ar:ImpOpEx>${impOpEx.toFixed(2)}</ar:ImpOpEx>
+          <ar:ImpTrib>0</ar:ImpTrib>
+          <ar:ImpIVA>${iva.toFixed(2)}</ar:ImpIVA>
+          <ar:MonId>PES</ar:MonId>
+          <ar:MonCotiz>1</ar:MonCotiz>
+          <ar:CondicionIVAReceptorId>${condIva}</ar:CondicionIVAReceptorId>
+          ${cbtesAsocXml}
+          ${ivaXml}
+        </ar:FECAEDetRequest>
+      </ar:FeDetReq>
+    </ar:FeCAEReq>`;
+
+  const xml = await wsfeCall("FECAESolicitar", body, wsfeUrl, true);
+  const parsed = parseWsfeResultado(xml);
+  return { ...parsed, tipo_nd: tipoND, comprobante: cbteNdNro, neto, iva, total };
+}
+
+// ─── Rango de fechas desde/hasta (list_batches / list_ncs / dashboard_stats) ──
+// Devuelve null si no vinieron los params, {error} si el formato es inválido,
+// o {desde, hasta} (YYYY-MM-DD, inclusive ambos). Si vienen, se ignora `mes`.
+function rangoFechas(q) {
+  const desde = q.desde, hasta = q.hasta;
+  if (!desde && !hasta) return null;
+  const re = /^\d{4}-\d{2}-\d{2}$/;
+  if (!re.test(String(desde || "")) || !re.test(String(hasta || ""))) {
+    return { error: "desde/hasta deben venir juntos en formato YYYY-MM-DD" };
+  }
+  return { desde: String(desde), hasta: String(hasta) };
+}
+
+// ─── Alícuotas múltiples por producto (cfg.alic_map) — solo RI gravado ──────
+// alicMap: { "<nombre en minúsculas>": 10.5 | 21 | 0 }. Productos sin entrada
+// van al 21%. El 0% se declara como AlicIva Id 3 (tasa 0, importe 0) — es lo
+// estándar para ítems gravados a tasa cero (NO ImpOpEx, que es para operaciones
+// exentas). El total de la orden se prorratea entre los ítems (mismo criterio
+// que el detalle del PDF) y se agrupa por alícuota; el redondeo residual se
+// ajusta en el bloque de mayor base para que ImpNeto+ImpIVA == ImpTotal exacto.
+function desgloseAlicuotas(total, items, alicMap) {
+  const netoItem = it => Math.max(0, (parseFloat(it.precio) || 0) * (parseInt(it.cantidad) || 1) - (parseFloat(it.descuento_item) || 0));
+  const sum = items.reduce((s, it) => s + netoItem(it), 0);
+  if (!(sum > 0)) return null;
+  const r2 = n => Math.round(n * 100) / 100;
+  const buckets = new Map(); // id AFIP → { id, alic, bruto }
+  for (const it of items) {
+    const nombre = String(it.nombre || it.nombre_original || "").trim().toLowerCase();
+    const raw = alicMap[nombre];
+    const alic = (raw === 0 || raw === 10.5 || raw === 21) ? raw : 21;
+    const id = alic === 0 ? 3 : alic === 10.5 ? 4 : 5;
+    const b = buckets.get(id) || { id, alic, bruto: 0 };
+    b.bruto += netoItem(it) * (total / sum);
+    buckets.set(id, b);
+  }
+  const bloques = [...buckets.values()].map(b => {
+    const base = r2(b.bruto / (1 + b.alic / 100));
+    return { id: b.id, alic: b.alic, base, importe: r2(b.bruto - base) };
+  });
+  let neto = r2(bloques.reduce((s, b) => s + b.base, 0));
+  const iva = r2(bloques.reduce((s, b) => s + b.importe, 0));
+  const diff = r2(total - neto - iva);
+  if (diff !== 0) {
+    const mayor = bloques.reduce((a, b) => (a.base >= b.base ? a : b));
+    mayor.base = r2(mayor.base + diff);
+    neto = r2(neto + diff);
+  }
+  return { bloques, neto, iva };
+}
+
+// ─── Percepciones en factura MANUAL (solo RI) ───────────────────────────────
+// Valida y normaliza `percepciones` en las órdenes del emit. Solo se aceptan en
+// órdenes MANUAL-* de un emisor RI (máx 3); en cualquier otro caso se descartan
+// en silencio (una orden de tienda jamás trae percepciones legítimas).
+// Muta las órdenes y devuelve un mensaje de error o null si todo ok.
+function validarPercepciones(ordenes, cfg) {
+  const esRI = cfg.condicion_fiscal !== "MONOTRIBUTO";
+  for (const [oid, o] of Object.entries(ordenes || {})) {
+    if (!o || !Array.isArray(o.percepciones) || !o.percepciones.length) { if (o) delete o.percepciones; continue; }
+    if (!esRI || !String(oid).startsWith("MANUAL-")) { delete o.percepciones; continue; }
+    if (o.percepciones.length > 3) return "Máximo 3 percepciones por factura.";
+    const norm = [];
+    for (const p of o.percepciones) {
+      const base = Math.round(Number(p?.base) * 100) / 100;
+      const alic = Math.round(Number(p?.alicuota) * 100) / 100;
+      // Nada no-numérico ni caracteres XML se interpolan en el request a AFIP
+      const nombre = String(p?.nombre || "").replace(/[<>&"']/g, "").trim().slice(0, 60) || "Percepción";
+      if (!Number.isFinite(base) || base <= 0) return `Percepción "${nombre}": base imponible inválida.`;
+      if (!Number.isFinite(alic) || alic <= 0 || alic > 100) return `Percepción "${nombre}": alícuota inválida (0-100).`;
+      norm.push({ nombre, alicuota: alic, base, importe: Math.round(base * alic) / 100 });
+    }
+    o.percepciones = norm;
+  }
+  return null;
+}
+
+// ─── Email de la factura al cliente (Resend) ────────────────────────────────
+// Mismo patrón que api/check-expiring.js: RESEND_API_KEY + RESEND_FROM y
+// timeout de 10s. Siempre best-effort: un fallo acá jamás toca la emisión.
+async function sendEmailResend({ to, subject, html, attachments, reply_to }) {
+  const key = process.env.RESEND_API_KEY;
+  if (!key || !to) return { error: "missing" };
+  const from = process.env.RESEND_FROM || "Growith <onboarding@resend.dev>";
+  try {
+    const payload = { from, to: [to], subject, html };
+    if (Array.isArray(attachments) && attachments.length) payload.attachments = attachments;
+    if (reply_to) payload.reply_to = reply_to;
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { console.error("[arca-mail] email error:", data?.message); return { error: data?.message }; }
+    return { ok: true, id: data.id };
+  } catch (e) {
+    console.error("[arca-mail] fetch error:", e.message);
+    return { error: e.message };
+  }
+}
+
+// Envía la factura recién emitida al comprador. pdfB64 opcional: si el PDF
+// falló, va el mail sin adjunto con la aclaración. Devuelve true/false.
+async function enviarFacturaEmail({ cfg, orden, orderId, letra, pv, nro, cae, total, pdfB64 }) {
+  const esc = s => String(s || "").replace(/[<>&]/g, "");
+  const nroFmt = `${String(pv).padStart(4, "0")}-${String(nro).padStart(8, "0")}`;
+  const subject = `Tu factura ${letra} ${nroFmt} · ${cfg.razon_social || "compra"}`;
+  const totalFmt = (Number(total) || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const nombre = esc((orden.nombre || "").split(" ")[0] || "");
+  const ordenLabel = esc(String(orderId || "").replace(/^(TN|ML|SH)-/, "#"));
+  const sinAdjunto = !pdfB64
+    ? `<p style="font-size:14px;color:#666;line-height:1.6;margin:0 0 16px;">No pudimos adjuntar el PDF esta vez. Pedila respondiendo este mail.</p>`
+    : "";
+  const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:'Inter',system-ui,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;"><tr><td align="center">
+    <table width="520" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;">
+      <tr><td style="padding:28px 32px 8px;">
+        <div style="font-size:18px;font-weight:700;color:#111;margin-bottom:12px;">${esc(cfg.nombre_fantasia || cfg.razon_social || "")}</div>
+        <p style="font-size:15px;color:#333;line-height:1.6;margin:0 0 16px;">
+          Hola${nombre ? ` ${nombre}` : ""},<br><br>
+          Te enviamos la factura de tu compra${ordenLabel ? ` ${ordenLabel}` : ""}.
+        </p>
+        <table cellpadding="0" cellspacing="0" style="width:100%;background:#f8f8fa;border-radius:8px;margin:0 0 16px;"><tr><td style="padding:14px 18px;">
+          <div style="font-size:13px;color:#666;">Factura ${letra} N° ${nroFmt}</div>
+          <div style="font-size:16px;font-weight:700;color:#111;margin-top:4px;">Total: $ ${totalFmt}</div>
+          <div style="font-size:12px;color:#888;margin-top:4px;">CAE: ${esc(cae)}</div>
+        </td></tr></table>
+        ${sinAdjunto}
+      </td></tr>
+      <tr><td style="padding:0 32px 24px;">
+        <p style="font-size:12px;color:#999;margin:0;border-top:1px solid #eee;padding-top:14px;">Emitida con Growith</p>
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body></html>`;
+  const attachments = pdfB64 ? [{ filename: `Factura-${letra}-${nro}.pdf`, content: pdfB64 }] : [];
+  const r = await sendEmailResend({
+    to: orden.email, subject, html, attachments,
+    reply_to: cfg.envio_mail?.reply_to || null,
+  });
+  return !!r.ok;
+}
+
 // ─── Parseo XLSX de Mercado Libre ─────────────────────
 
 function clasificarDoc(numStr) {
@@ -1459,7 +1758,14 @@ async function generarPDF(factData, config) {
   const isMonotributo = condicion_fiscal === "MONOTRIBUTO";
   const letra = factData.letra;
   const isNC = !!factData._is_nc; // nota de crédito: cambia título y código AFIP
+  const isND = !!factData._is_nd; // nota de débito: ídem (códigos 02/07/12)
   const total = factData.total;
+  // Percepciones (factura manual RI): total = neto+iva+imp_trib. El detalle de
+  // items se prorratea sobre el total SIN tributos.
+  const impTrib = Number(factData.imp_trib) || 0;
+  const percepciones = Array.isArray(factData.percepciones) ? factData.percepciones : [];
+  // Desglose por alícuota (alic_map): [{id, alic, base, importe}]
+  const alicBloques = Array.isArray(factData.alic_bloques) && factData.alic_bloques.length ? factData.alic_bloques : null;
   const exento = !!factData.exento; // factura sin IVA (digitales/ebooks)
   // Reimpresión: si el comprobante trae neto/iva persistidos (emitido bajo otra
   // condición fiscal del CUIT), se respetan en vez de recalcular con la actual.
@@ -1564,6 +1870,8 @@ async function generarPDF(factData, config) {
     draw(letra, MX + halfW + LW / 2, HY + 48, 44, true, "center", COL_ACCENT);
     const cod = isNC
       ? (letra === "A" ? "03" : letra === "B" ? "08" : "13")
+      : isND
+      ? (letra === "A" ? "02" : letra === "B" ? "07" : "12")
       : (letra === "A" ? "01" : letra === "B" ? "06" : "11");
     draw("COD. " + cod, MX + halfW + LW / 2, HY + 72, 7, true, "center", COL_GREY);
 
@@ -1595,7 +1903,7 @@ async function generarPDF(factData, config) {
 
     // Datos factura (derecha)
     const RX = MX + halfW + LW + 10;
-    draw(isNC ? "NOTA DE CRÉDITO " + letra : "FACTURA " + letra, RX, HY + 16, isNC ? 11 : 15, true, "left", COL_ACCENT);
+    draw(isNC ? "NOTA DE CRÉDITO " + letra : isND ? "NOTA DE DÉBITO " + letra : "FACTURA " + letra, RX, HY + 16, (isNC || isND) ? 11 : 15, true, "left", COL_ACCENT);
     // pequeña línea bajo el título
     line(RX, HY + 22, RX + halfW - 18, HY + 22, COL_ACCENT, 0.8);
     draw("Punto de Venta: " + String(punto_venta).padStart(5, "0"), RX, HY + 36, 8);
@@ -1627,7 +1935,7 @@ async function generarPDF(factData, config) {
     draw("Condición frente al IVA: " + condIVA, MX + 8, RY + 25, 7);
     draw("Domicilio: " + (factData.domicilio || "No informado"), MID + 8, RY + 25, 7);
     draw("Condición de venta: Contado", MX + 8, RY + 36, 7);
-    if (isNC && factData._cbte_asoc) {
+    if ((isNC || isND) && factData._cbte_asoc) {
       const pvAsocPdf = String(parseInt(factData._pv_asoc) || punto_venta).padStart(5, "0");
       draw("Comprobante asociado: Factura " + letra + " N° " + pvAsocPdf + "-" + String(factData._cbte_asoc).padStart(8, "0"), MID + 8, RY + 36, 7, true);
     }
@@ -1673,13 +1981,22 @@ async function generarPDF(factData, config) {
     // EXACTO el total. Es solo display: el total a ARCA siempre es orden.total.
     const netoItem = it => Math.max(0, (parseFloat(it.precio)||0)*(parseInt(it.cantidad)||1) - (parseFloat(it.descuento_item)||0));
     const sumNet = items.reduce((s, it) => s + netoItem(it), 0);
-    const escala = sumNet > 0 ? total / sumNet : 1;
+    // Con percepciones el total incluye tributos: el detalle prorratea solo neto+iva.
+    const escala = sumNet > 0 ? (total - impTrib) / sumNet : 1;
+    // Alícuota por ítem (alic_map): sin mapa, todo al 21% como siempre.
+    const alicMapPdf = (factData._alic_map && typeof factData._alic_map === "object") ? factData._alic_map : null;
+    const alicDeItem = (nombre) => {
+      if (!alicMapPdf) return 21;
+      const a = alicMapPdf[String(nombre || "").trim().toLowerCase()];
+      return (a === 0 || a === 10.5 || a === 21) ? a : 21;
+    };
     for (let idx = 0; idx < items.length; idx++) {
       const item = items[idx];
       const cant = parseInt(item.cantidad) || 1;
       const lineReal = netoItem(item) * escala; // monto real de esta línea (su descuento + prorrateo)
-      // Exento/Monotributo: no se divide por 1.21. RI gravado muestra el neto.
-      const subtotal = (isMonotributo || exento) ? Math.round(lineReal*100)/100 : Math.round((lineReal/1.21)*100)/100;
+      const alicItem = alicDeItem(item.nombre);
+      // Exento/Monotributo: no se divide por 1.21. RI gravado muestra el neto (según SU alícuota).
+      const subtotal = (isMonotributo || exento) ? Math.round(lineReal*100)/100 : Math.round((lineReal/(1 + alicItem/100))*100)/100;
       const precioUnit = Math.round((subtotal / cant) * 100) / 100;
       const bonif = 0; // el descuento ya está aplicado en el precio mostrado
       const nombreItem = (item.nombre || "Producto").length > 60 ? (item.nombre || "Producto").slice(0, 60) + "..." : (item.nombre || "Producto");
@@ -1690,7 +2007,7 @@ async function generarPDF(factData, config) {
         fmtAR(precioUnit),
         bonif > 0 ? fmtAR(bonif) : "0,00",
         fmtAR(subtotal),
-        ...(showIVA ? [exento ? "Exento" : "21,00%"] : []),
+        ...(showIVA ? [exento ? "Exento" : `${alicItem === 10.5 ? "10,50" : alicItem === 0 ? "0,00" : "21,00"}%`] : []),
       ];
 
       const rowH = 13;
@@ -1717,26 +2034,30 @@ async function generarPDF(factData, config) {
 
     // ─────── TOTALES ───────
     const totY = iy + 18;
-    const totH = showIVA ? 116 : 60;
+    // Cada percepción agrega una línea al bloque
+    const totH = (showIVA ? 116 : 60) + percepciones.length * 12;
     rect(MX, totY, UW, totH, { fill: rgb(0.985, 0.985, 0.99) });
     // Importes a la derecha
     const labelX = MX + UW - 140;
     const valX = MX + UW - 12;
     let ty2 = totY + 14;
     if (showIVA) {
+      // Desglose real por alícuota si la factura salió con alic_map
+      const ivaDe = (alic) => alicBloques ? (alicBloques.find(b => b.alic === alic)?.importe || 0) : null;
       // Discriminación IVA por alícuota. Si es exento, el monto va en "Op. Exentas".
       const rows = exento ? [
         ["Importe Neto Gravado:", "$ 0,00"],
         ["Importe Op. Exentas:", "$ " + fmtAR(total)],
         ["IVA 21%:", "$ 0,00"],
-        ["Importe Otros Tributos:", "$ 0,00"],
+        ["Importe Otros Tributos:", "$ " + fmtAR(impTrib)],
       ] : [
         ["Importe Neto Gravado:", "$ " + fmtAR(neto)],
         ["IVA 0%:", "$ 0,00"],
-        ["IVA 10,5%:", "$ 0,00"],
-        ["IVA 21%:", "$ " + fmtAR(iva21)],
+        ["IVA 10,5%:", "$ " + fmtAR(alicBloques ? ivaDe(10.5) : 0)],
+        ["IVA 21%:", "$ " + fmtAR(alicBloques ? ivaDe(21) : iva21)],
         ["IVA 27%:", "$ 0,00"],
-        ["Importe Otros Tributos:", "$ 0,00"],
+        ...percepciones.map(p => [`${p.nombre} (${fmtAR(p.alicuota)}%):`, "$ " + fmtAR(p.importe)]),
+        ["Importe Otros Tributos:", "$ " + fmtAR(impTrib)],
       ];
       for (const [l, v] of rows) {
         draw(l, labelX, ty2, 8, false, "right");
@@ -1820,6 +2141,1109 @@ async function listCuits(db, uid) {
   return snap.docs.map(d => d.data());
 }
 
+// ─── Núcleo de emisión (compartido: handler emit + piloto automático) ──────
+// Ejecuta el flujo COMPLETO de emisión de un conjunto de órdenes contra AFIP:
+// idempotencia con marcas, camino lote/individual, renovación de token,
+// recovery por timeout, PDF, adjunto a ML, persistencia de comprobantes y
+// batch. Extraído tal cual del handler emit para que cron_autopilot use
+// EXACTAMENTE el mismo camino (mismas garantías anti-duplicado).
+// deadline: timestamp absoluto opcional (el cron corre con menos presupuesto).
+async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, fechaImputacion, pvSel, exentoReq, deadline }) {
+      let exento = exentoReq === true;
+      const isMonotributo = cfg.condicion_fiscal === "MONOTRIBUTO";
+      const { wsfe } = arcaUrls(cfg.arca_prod);
+
+      // Autenticar — TA cacheado por CUIT (dura 12h; pedir uno nuevo por lote
+      // hace que ARCA rechace el login mientras el anterior siga vigente).
+      let { token, sign } = await obtenerTA(db, uid, cfg);
+
+      // Numeradores — usa el punto de venta elegido (ej: PV físicos vs PV digitales
+      // exento). Si el front no manda uno, cae al punto_venta por defecto del CUIT.
+      const cuitNum = parseInt(cfg.cuit);
+      const pv = parseInt(pvSel) || cfg.punto_venta;
+      // Exento: lo decide la CONFIG del punto de venta, no el front. Si hay
+      // puntos_venta configurados y el flag del front no coincide, gana la config.
+      if (Array.isArray(cfg.puntos_venta) && cfg.puntos_venta.length) {
+        exento = cfg.puntos_venta.find(p => String(p.numero) === String(pv))?.exento === true;
+      }
+      let cbteA = isMonotributo ? 0 : (await getUltimoCbte(token, sign, cuitNum, pv, 1, wsfe)) + 1;
+      let cbteB = isMonotributo ? 0 : (await getUltimoCbte(token, sign, cuitNum, pv, 6, wsfe)) + 1;
+      let cbteC = isMonotributo ? (await getUltimoCbte(token, sign, cuitNum, pv, 11, wsfe)) + 1 : 0;
+
+      const resultados = [];
+      const pdfs = []; // { nombre, bytes }
+
+      // ── Idempotencia del lote ──────────────────────────
+      // Emitir dos veces la misma factura en AFIP no se puede deshacer (hay que
+      // sacar nota de crédito). Si un lote se corta a la mitad — timeout de la
+      // función, red, el usuario que reintenta — las órdenes que YA salieron no
+      // se vuelven a emitir. Dos capas:
+      //   1. Pre-chequeo contra arca_comprobantes (lo ya facturado, histórico).
+      //   2. Una marca por orden en arca_emisiones ANTES de pegarle a AFIP, que
+      //      además frena dos requests simultáneos sobre la misma orden.
+      const ordenesEntries = Object.entries(ordenes);
+      const yaFacturadas = new Map(); // orden_id → comprobante existente
+      try {
+        const ids = ordenesEntries.map(([id]) => id);
+        // Misma query que usa check_duplicates (índice ya existente): "in"
+        // acepta 30 valores por consulta.
+        for (let i = 0; i < ids.length; i += 30) {
+          const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+            .where("cuit_emisor", "==", cuitEmit)
+            .where("orden_id", "in", ids.slice(i, i + 30))
+            .get();
+          snap.docs.forEach(d => { const x = d.data(); if (x.orden_id && !x.anulada) yaFacturadas.set(String(x.orden_id), x); });
+        }
+      } catch (e) {
+        // Si el pre-chequeo falla NO se aborta la emisión (quedaría el merchant
+        // sin poder facturar): la marca por orden sigue protegiendo.
+        console.error("[arca emit] pre-chequeo de duplicados falló:", e.message);
+      }
+
+      // Deadline global del lote (mismo patrón que el resync): si el tiempo se
+      // acaba, las órdenes restantes se devuelven como pendientes en vez de
+      // dejar que Vercel mate la función a mitad de una emisión.
+      const DEADLINE_EMIT = deadline || (Date.now() + 90000);
+      const pendientesIds = [];
+
+      // Alícuotas por producto (cfg.alic_map): solo RI gravado. Con el mapa
+      // activo se FUERZA el camino individual — facturar() es el único que sabe
+      // armar múltiples bloques <AlicIva>; facturarLote asume 21% plano y
+      // divergiría del comprobante real.
+      const alicMapActivo = !isMonotributo && !exento && cfg.alic_map && Object.keys(cfg.alic_map).length > 0;
+      // Opciones fiscales por orden para facturar(): mapa de alícuotas +
+      // percepciones (ya validadas en el handler para las manuales).
+      const optsFact = (orden) => ({
+        alicMap: alicMapActivo ? cfg.alic_map : null,
+        percepciones: orden.percepciones || null,
+      });
+      let taRenovado = false; // un solo re-login por lote ante token vencido
+
+      // Cuenta ML de ventas memoizada POR REQUEST (no a nivel módulo: la lambda
+      // caliente se comparte entre uids y un cache global cruzaría cuentas).
+      let _mlAccProm = null;
+      const mlAccEmit = () => { if (!_mlAccProm) _mlAccProm = mlVentasAcc(db, uid); return _mlAccProm; };
+
+      // Post-procesamiento de una emisión APROBADA — IDÉNTICO para el camino
+      // individual y el camino en lote (cerrar marca, guardar comprobante en
+      // Firestore, PDF, adjuntar a ML, resultado). Extraído del loop para que
+      // los dos caminos no puedan divergir.
+      const procesarAprobada = async (orderId, orden, letra, tipoCbte, cbteNro, result, marcaRef, marcaTomada) => {
+          // Cerrar la marca ANTES de generar el PDF: si el PDF o el adjunto a ML
+          // fallan, la factura ya existe en ARCA y no debe re-emitirse nunca.
+          if (marcaTomada) {
+            try {
+              await marcaRef.set({ estado: "emitido", cae: result.cae, tipo_cbte: tipoCbte, nro: cbteNro, punto_venta: pv, at: new Date().toISOString() }, { merge: true });
+            } catch (e) { console.error("[arca emit] no se pudo cerrar la marca:", e.message); }
+          }
+          // Generar PDF — usar la fecha que eligió el usuario (fechaImputacion),
+          // NO new Date() que siempre pone hoy aunque ARCA tenga la fecha correcta.
+          const fechaIso = fechaImputacion
+            ? `${fechaImputacion.slice(0,4)}-${fechaImputacion.slice(4,6)}-${fechaImputacion.slice(6,8)}`
+            : hoyARISO();
+          const fechaDisplay = new Date(fechaIso + "T12:00:00-03:00")
+            .toLocaleDateString("es-AR", { day:"2-digit", month:"2-digit", year:"numeric" });
+          // Desglose fiscal real (alic_map / percepciones): facturar() lo
+          // devuelve en _fiscal cuando difiere del cálculo estándar /1.21.
+          const fiscal = result._fiscal || null;
+          const totalComp = fiscal ? fiscal.total : orden.total;
+          const factData = {
+            comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto,
+            fecha: fechaDisplay,
+            fecha_iso: fechaIso,
+            cliente: orden.nombre || "Consumidor Final",
+            doc_tipo: orden.doc_tipo, doc_nro: orden.doc_nro || orden.dni || "",
+            letra, tipo_cbte: tipoCbte,
+            domicilio: cleanAddr([orden.direccion, orden.ciudad, orden.provincia]),
+            total: totalComp, items: orden.items, exento, punto_venta: pv,
+            ...(fiscal ? {
+              neto: fiscal.neto, iva: fiscal.iva,
+              imp_trib: fiscal.imp_trib || 0,
+              percepciones: fiscal.percepciones || null,
+              alic_bloques: fiscal.alic_bloques || null,
+              _alic_map: alicMapActivo ? cfg.alic_map : null,
+            } : {}),
+          };
+          // Persistir el comprobante en Firestore ANTES de los pasos best-effort
+          // (PDF, adjuntar a ML). La factura ya existe en AFIP: si el PDF explota
+          // o la función muere por timeout acá, el registro tiene que quedar —
+          // antes se guardaba al final y una falla intermedia lo hacía invisible
+          // en Registros para siempre.
+          // docId con punto de venta (mismo formato que el resync): dos PV con
+          // el mismo número de comprobante ya no se pisan entre sí.
+          const compRef = db.collection("users").doc(uid).collection("arca_comprobantes")
+            .doc(`${cuitEmit}_${pv}_${tipoCbte}_${String(cbteNro).padStart(8, "0")}`);
+          let compGuardado = false;
+          const netoComp = fiscal ? fiscal.neto
+            : (isMonotributo || exento) ? (exento ? 0 : orden.total) : Math.round((orden.total / 1.21) * 100) / 100;
+          const ivaComp = fiscal ? fiscal.iva
+            : (isMonotributo || exento) ? 0 : Math.round((orden.total - netoComp) * 100) / 100;
+          const compData = {
+              cuit_emisor: cuitEmit,
+              tipo_cbte: tipoCbte,
+              letra,
+              nro: cbteNro,
+              punto_venta: pv,
+              exento,
+              fecha_str: factData.fecha,
+              fecha_cbte: factData.fecha_iso,
+              emitido_at: new Date().toISOString(),
+              cae: result.cae,
+              cae_vto: result.cae_vto,
+              cliente: orden.nombre || "Consumidor Final",
+              doc_tipo: orden.doc_tipo,
+              doc_nro: orden.doc_nro || orden.dni || "",
+              total: totalComp,
+              neto: netoComp,
+              iva: ivaComp,
+              // Percepciones (manual RI) y desglose multi-alícuota, si aplicaron
+              ...(fiscal?.imp_trib ? { imp_trib: fiscal.imp_trib, percepciones: fiscal.percepciones } : {}),
+              ...(fiscal?.alic_bloques ? { alic_bloques: fiscal.alic_bloques } : {}),
+              orden_id: orderId,
+              // Items reales para re-imprimir el PDF con el detalle correcto
+              items: (orden.items || []).map(it => ({
+                nombre: it.nombre || it.nombre_original || "Producto",
+                cantidad: parseInt(it.cantidad) || 1,
+                precio: parseFloat(it.precio) || 0,
+                descuento_item: parseFloat(it.descuento_item) || 0,
+              })),
+              domicilio: cleanAddr([orden.direccion, orden.ciudad, orden.provincia]),
+              ml_uploaded: false,
+              ml_uploaded_at: null,
+              // Resultado=A con observaciones de AFIP: el comprobante es válido,
+              // pero las obs quedan registradas.
+              obs_codigo: result.obs_codigo || null,
+              obs_msg: result.obs_msg || "",
+          };
+          try {
+            await compRef.set(compData);
+            compGuardado = true;
+          } catch (e) {
+            console.error("[arca] no se pudo guardar comprobante:", e.message);
+          }
+
+          // PDF — best-effort: una falla acá NO puede tumbar el lote ni perder
+          // el registro (la factura ya salió y ya está guardada arriba).
+          let pdfBytes = null, pdfB64Mail = null;
+          try {
+            pdfBytes = await generarPDF(factData, cfg);
+            const nombreCliente = (orden.nombre || "Consumidor_Final").replace(/[^a-zA-Z0-9 \-_]/g, "").trim();
+            pdfB64Mail = Buffer.from(pdfBytes).toString("base64");
+            pdfs.push({ nombre: `F${letra} - ${nombreCliente} - ${String(cbteNro).padStart(8, "0")}.pdf`, bytes: pdfB64Mail });
+          } catch (e) {
+            console.error(`[arca emit] ${orderId} no se pudo generar el PDF (la factura salió igual):`, e.message);
+          }
+
+          // ── Auto-adjuntar factura a venta de ML ─────────────
+          // 1) Consultamos pack_id real de la orden (a veces es distinto al order_id)
+          // 2) Subimos PDF al endpoint /packs/{pack_id}/fiscal_documents
+          let ml_uploaded = false, ml_upload_error = null;
+          if (orderId.startsWith("ML-") && pdfBytes) {
+            try {
+              const ml = await getValidMLToken(db, uid, await mlAccEmit());
+              if (!ml?.accessToken) throw new Error("Sin access_token de ML");
+              const orderIdRaw = orderId.replace(/^ML-/, "");
+
+              // Conseguir pack_id real (si la orden esta en un pack)
+              let packId = orderIdRaw;
+              try {
+                const oRes = await fetch(`https://api.mercadolibre.com/orders/${orderIdRaw}?fields=pack_id`, {
+                  headers: { Authorization: `Bearer ${ml.accessToken}` },
+                });
+                if (oRes.ok) {
+                  const oData = await oRes.json();
+                  if (oData.pack_id) packId = String(oData.pack_id);
+                }
+              } catch (_) { /* fallback al order_id */ }
+
+              // Construir multipart manualmente (mas confiable que FormData/Blob en Vercel runtime)
+              const boundary = "----GrowithBoundary" + Date.now();
+              const pdfBuf = Buffer.from(pdfBytes);
+              const filename = `F${letra}-${String(cbteNro).padStart(8, "0")}.pdf`;
+              const head = Buffer.from(
+                `--${boundary}\r\n` +
+                `Content-Disposition: form-data; name="fiscal_document"; filename="${filename}"\r\n` +
+                `Content-Type: application/pdf\r\n\r\n`
+              );
+              const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+              const body = Buffer.concat([head, pdfBuf, tail]);
+
+              const tryUpload = async () => fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${ml.accessToken}`,
+                  "Content-Type": `multipart/form-data; boundary=${boundary}`,
+                  "Content-Length": String(body.length),
+                },
+                body,
+              });
+              let upRes = await tryUpload();
+              // 409 conflict = ya hay una factura adjunta (probablemente la vieja anulada).
+              // Limpiar y reintentar UNA vez.
+              if (upRes.status === 409) {
+                try {
+                  const listR = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
+                    headers: { Authorization: `Bearer ${ml.accessToken}` },
+                  });
+                  if (listR.ok) {
+                    const listJ = await listR.json().catch(() => ({}));
+                    const docs = Array.isArray(listJ) ? listJ : (listJ.results || listJ.fiscal_documents || []);
+                    for (const d of docs) {
+                      const did = d.id || d.fiscal_document_id;
+                      if (did) {
+                        await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents/${did}`, {
+                          method: "DELETE",
+                          headers: { Authorization: `Bearer ${ml.accessToken}` },
+                        }).catch(() => {});
+                      }
+                    }
+                    upRes = await tryUpload();
+                  }
+                } catch (_) {}
+              }
+
+              if (upRes.ok) {
+                ml_uploaded = true;
+              } else {
+                const txt = await upRes.text().catch(() => "");
+                // Solo status + primeros 80 chars (sin datos personales)
+                ml_upload_error = `HTTP ${upRes.status}: ${txt.slice(0, 80)}`;
+                console.error(`[ml-upload] ${orderId} pack=${packId}:`, ml_upload_error);
+              }
+            } catch (e) {
+              ml_upload_error = e.message;
+              console.error(`[ml-upload] ${orderId} error:`, e.message);
+            }
+          }
+
+          if (orderId.startsWith("ML-") && !pdfBytes && !ml_upload_error) ml_upload_error = "PDF no generado — adjuntalo después desde Registros";
+
+          // Con percepciones el total responde el importe FINAL (neto+iva+trib)
+          resultados.push({ orden_id: orderId, ok: true, letra, tipo_cbte: tipoCbte, comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto, total: totalComp, ...(fiscal?.imp_trib ? { imp_trib: fiscal.imp_trib } : {}), ml_uploaded, ml_upload_error });
+
+          // El comprobante ya se guardó ANTES del PDF/ML — acá solo se actualiza
+          // el flag de adjunto ML, o se reintenta el guardado completo si falló.
+          try {
+            if (!compGuardado) {
+              await compRef.set({ ...compData, ml_uploaded: ml_uploaded || false, ml_uploaded_at: ml_uploaded ? new Date().toISOString() : null });
+            } else if (ml_uploaded) {
+              await compRef.set({ ml_uploaded: true, ml_uploaded_at: new Date().toISOString() }, { merge: true });
+            }
+          } catch (e) {
+            console.error("[arca] no se pudo guardar/actualizar comprobante:", e.message);
+          }
+
+          // ── Envío de la factura al cliente por email (config envio_mail) ──
+          // SIEMPRE best-effort: un fallo de mail jamás toca la emisión (la
+          // factura ya salió y ya está guardada). La manual no manda mail (no
+          // hay email del receptor). Si el PDF falló, va sin adjunto con la
+          // aclaración de pedirla respondiendo el mail.
+          if (cfg.envio_mail?.enabled && orden.email && !String(orderId).startsWith("MANUAL-")) {
+            let mailOk = false;
+            try {
+              mailOk = await enviarFacturaEmail({
+                cfg, orden, orderId, letra, pv, nro: cbteNro,
+                cae: result.cae, total: totalComp, pdfB64: pdfB64Mail,
+              });
+            } catch (e) {
+              console.error(`[arca-mail] ${orderId} no se pudo enviar:`, e.message);
+            }
+            try { await compRef.set({ mail_enviado: mailOk }, { merge: true }); } catch (_) {}
+          }
+      };
+
+      // Registro de un RECHAZO de ARCA — mismo tratamiento en ambos caminos.
+      const registrarRechazo = async (orderId, orden, letra, tipoCbte, result, marcaRef, marcaTomada) => {
+          // Transparencia para diagnóstico: qué comprobante intentamos y con qué
+          // condición fiscal del emisor — sin esto, el "mismo error" de AFIP no
+          // dice si el server usó la config nueva o la vieja.
+          // ARCA rechazó: la marca NO se borra — queda en estado "rechazado"
+          // con timestamp, para frenar el doble-click inmediato pero permitir
+          // el reintento legítimo (con datos corregidos) a los 2 minutos.
+          if (marcaTomada) {
+            try {
+              await marcaRef.set({ estado: "rechazado", obs: String(result.obs || "").slice(0, 200), at: new Date().toISOString() }, { merge: true });
+            } catch (_) {}
+          }
+          const intento = `[Intenté Factura ${letra || (isMonotributo ? "C" : "?")} · PV ${pv} · emisor ${cfg.condicion_fiscal || "?"}] `;
+          // Sin el texto del obs en el log (puede traer el doc del receptor) — solo el código.
+          console.log(`[arca emit] ${orderId} RECHAZADA — tipo ${tipoCbte} pv ${pv} cond ${cfg.condicion_fiscal} code=${result.err_code || "?"}`);
+          resultados.push({ orden_id: orderId, ok: false, obs: intento + result.obs, total: orden.total });
+      };
+
+      // Órdenes hacia el camino individual. El lote marca consumida:true las
+      // que ya resolvió, y deja `marca` tomada en las que rebotaron para que el
+      // reintento individual la reuse en vez de re-crearla.
+      const individuales = ordenesEntries.map(([orderId, orden]) => ({ orderId, orden, marca: null, cbteNro: null, consumida: false, dudoso: false }));
+
+      // ── EMISIÓN EN LOTE ────────────────────────────────
+      // WSFEv1 acepta hasta 250 comprobantes por FECAESolicitar. Con más de 3
+      // órdenes del mismo tipo de comprobante previsto, se agrupan y se emiten
+      // en chunks de 25 con UN solo request SOAP por chunk (antes: un request
+      // por comprobante). Todo lo que no salga aprobado del lote — rechazos
+      // (incluidos los de receptor, que tienen fallback A→B), no procesadas por
+      // correlatividad y fallas estructurales — sigue por el loop individual de
+      // abajo, que además sabe renovar el token y hacer recovery por timeout.
+      // alic_map activo → NADA va por lote (ver comentario de alicMapActivo).
+      if (ordenesEntries.length > 3 && !alicMapActivo) {
+        const grupos = new Map(); // tipoCbte previsto → entries de `individuales`
+        for (const ent of individuales) {
+          const o = ent.orden;
+          // Lo que el lote no puede manejar queda para el camino individual
+          // (que reporta el error exactamente como hoy):
+          if (!Number.isFinite(Number(o.total)) || Number(o.total) <= 0) continue; // total inválido
+          if (yaFacturadas.get(String(ent.orderId))) continue;                     // ya facturada
+          if (Array.isArray(o.percepciones) && o.percepciones.length) continue;    // percepciones → solo camino individual (facturarLote no arma Tributos)
+          const nroDocNum = parseInt(String(o.doc_nro || o.dni || "").replace(/\D/g, ""), 10);
+          if ((o.doc_tipo === "CUIT" || o.doc_tipo === "DNI") && !Number.isFinite(nroDocNum)) continue; // doc inválido
+          const tipoPlan = isMonotributo ? 11 : (o.doc_tipo === "CUIT" ? 1 : 6);
+          if (!grupos.has(tipoPlan)) grupos.set(tipoPlan, []);
+          grupos.get(tipoPlan).push(ent);
+        }
+        for (const [tipoLote, entsLote] of grupos) {
+          if (entsLote.length <= 3) continue; // pocos comprobantes: no amortiza el camino batch
+          const letraLote = tipoLote === 1 ? "A" : tipoLote === 11 ? "C" : "B";
+          for (let ci = 0; ci < entsLote.length; ci += 25) {
+            if (Date.now() > DEADLINE_EMIT) break; // el loop individual reporta las pendientes
+            const chunk = entsLote.slice(ci, ci + 25);
+
+            // Pre-procesamiento POR ORDEN, idéntico al del loop individual:
+            // mapeo de productos + marca de idempotencia ANTES de pegarle a AFIP.
+            const prep = [];
+            for (const ent of chunk) {
+              if (product_map) {
+                for (const item of ent.orden.items || []) {
+                  if (product_map[item.nombre_original]) item.nombre = product_map[item.nombre_original];
+                }
+              }
+              const t = await tomarMarcaEmision(db, uid, cuitEmit, ent.orderId, ent.orden, resultados);
+              if (t.skip) { ent.consumida = true; continue; }
+              ent.marca = t;
+              prep.push(ent);
+            }
+            if (!prep.length) continue;
+
+            // Numeración correlativa CbteDesde..CbteHasta desde el numerador vigente
+            const nroBase = tipoLote === 1 ? cbteA : tipoLote === 11 ? cbteC : cbteB;
+            prep.forEach((ent, i) => { ent.cbteNro = nroBase + i; });
+
+            let lote = null, falloEstructural = null;
+            try {
+              lote = await facturarLote(prep.map(ent => ({ orden: ent.orden, cbteNro: ent.cbteNro })), {
+                token, sign, cuitNum, pv, tipoCbte: tipoLote, wsfeUrl: wsfe,
+                monotributo: isMonotributo, fechaImputacion, exento,
+              });
+            } catch (e) {
+              falloEstructural = e;
+              console.error(`[arca emit] lote tipo ${tipoLote} (${prep.length} órdenes) falló:`, e.message);
+            }
+
+            let maxAprobado = null;
+            if (falloEstructural || (lote && lote.porNro.size === 0 && !lote.err_code)) {
+              // Red/timeout o XML sin detalles: AFIP pudo haber procesado igual.
+              // Mismo recovery que el camino individual: consultar cada
+              // comprobante esperado antes de dar el chunk por fallido.
+              for (const ent of prep) {
+                let rec = null, consultaOk = false;
+                try {
+                  rec = await consultarComprobanteCompleto(token, sign, cuitNum, pv, tipoLote, ent.cbteNro, wsfe);
+                  consultaOk = !(rec && rec.error);
+                } catch (_) {}
+                if (rec && !rec.error && rec.cae) {
+                  await procesarAprobada(ent.orderId, ent.orden, letraLote, tipoLote, ent.cbteNro,
+                    { cae: rec.cae, cae_vto: rec.cae_vto, resultado: "A", obs: "", err_code: null, obs_codigo: null, obs_msg: "" },
+                    ent.marca.marcaRef, ent.marca.marcaTomada);
+                  ent.consumida = true;
+                  maxAprobado = ent.cbteNro;
+                } else if (!consultaOk) {
+                  // No se pudo confirmar si AFIP lo emitió: NO se reintenta (ni
+                  // acá ni por el camino individual — duplicar es peor que
+                  // demorar) y la marca queda "en_curso" frenando reintentos
+                  // 10 min. Mismo criterio que el camino individual ante un
+                  // timeout sin confirmación.
+                  ent.dudoso = true;
+                  ent.consumida = true;
+                  resultados.push({ orden_id: ent.orderId, ok: false, total: ent.orden.total,
+                    obs: `No se pudo confirmar con ARCA: ${falloEstructural?.message || "respuesta inesperada"} — verificá en el historial de ARCA antes de reintentar (por si el comprobante salió igual).` });
+                }
+                // rec === null (AFIP confirmó que NO lo tiene): sigue por el
+                // camino individual con la marca ya tomada.
+              }
+            } else if (lote.err_code && lote.porNro.size === 0) {
+              // AFIP rechazó el request ENTERO sin emitir nada (token 600/601,
+              // correlatividad, etc.): todo el chunk sigue por el camino
+              // individual, que sabe renovar el TA y resincronizar numeración.
+              console.error(`[arca emit] lote tipo ${tipoLote} rechazado por AFIP: ${lote.err_code} ${String(lote.err_msg || "").slice(0, 120)}`);
+            } else {
+              if (lote.err_code) console.error(`[arca emit] lote tipo ${tipoLote} con error global ${lote.err_code} pero ${lote.porNro.size} detalles — se procesan las aprobadas`);
+              // Respuesta por ítem. OJO semántica AFIP: si UN comprobante del
+              // lote es rechazado, AFIP rechaza ese y TODOS los siguientes del
+              // request (correlatividad) — las aprobadas son siempre un prefijo
+              // y los números rechazados NO se consumen.
+              for (const ent of prep) {
+                const r = lote.porNro.get(ent.cbteNro);
+                if (r && r.resultado === "A" && r.cae) {
+                  await procesarAprobada(ent.orderId, ent.orden, letraLote, tipoLote, ent.cbteNro, r,
+                    ent.marca.marcaRef, ent.marca.marcaTomada);
+                  ent.consumida = true;
+                  maxAprobado = ent.cbteNro;
+                }
+                // Rechazadas y no procesadas: reintento por el camino individual
+                // (con la marca ya tomada), que tiene el fallback A→B para los
+                // rechazos de validación del receptor.
+              }
+            }
+
+            // Avanzar el numerador hasta después de la última aprobada (los
+            // rechazos no consumen numeración en AFIP).
+            if (maxAprobado !== null) {
+              const sig = maxAprobado + 1;
+              if (tipoLote === 1) cbteA = sig; else if (tipoLote === 11) cbteC = sig; else cbteB = sig;
+            }
+          }
+        }
+      }
+
+      for (const ent of individuales) {
+        if (ent.consumida) continue; // ya resuelta por el camino en lote
+        const orderId = ent.orderId, orden = ent.orden;
+        if (Date.now() > DEADLINE_EMIT) {
+          pendientesIds.push(orderId);
+          // Marca tomada por el lote SIN riesgo de CAE en vuelo (AFIP respondió
+          // el rechazo, confirmó que no lo tiene, o nunca recibió el request):
+          // se libera para no bloquear el reintento 10 minutos.
+          if (ent.marca?.marcaTomada && !ent.dudoso) { try { await ent.marca.marcaRef.delete(); } catch (_) {} }
+          continue;
+        }
+        // Total inválido: no se toma marca ni se llama a AFIP.
+        if (!Number.isFinite(Number(orden.total)) || Number(orden.total) <= 0) {
+          resultados.push({ orden_id: orderId, ok: false, total: orden.total,
+            obs: `Total de la orden inválido (${orden.total}) — no se envió a AFIP.` });
+          continue;
+        }
+        // ¿Ya tiene factura? No se re-emite.
+        const previa = yaFacturadas.get(String(orderId));
+        if (previa) {
+          resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, total: orden.total,
+            obs: `Ya tiene factura ${previa.letra || ""} N° ${previa.nro || "?"} (CAE ${previa.cae || "?"}) — no se re-emite para no duplicarla en ARCA.` });
+          continue;
+        }
+        // Marca "en curso" antes de pegarle a AFIP. Si el camino en lote ya la
+        // tomó para esta orden, se reusa — re-crearla la haría rebotar como
+        // "otra emisión en curso".
+        let marcaRef, marcaTomada;
+        if (ent.marca) {
+          ({ marcaRef, marcaTomada } = ent.marca);
+        } else {
+          const t = await tomarMarcaEmision(db, uid, cuitEmit, orderId, orden, resultados);
+          if (t.skip) continue;
+          ({ marcaRef, marcaTomada } = t);
+        }
+
+        // Aplicar mapeo de productos
+        if (product_map) {
+          for (const item of orden.items) {
+            if (product_map[item.nombre_original]) item.nombre = product_map[item.nombre_original];
+          }
+        }
+
+        let result, letra, tipoCbte, cbteNro;
+
+        // Un error de red/SOAP en UNA orden no puede tumbar el lote entero: si
+        // explota, se informa esa orden y se sigue con las demás. La marca queda
+        // en "en_curso" a propósito — no sabemos si ARCA llegó a dar el CAE, así
+        // que durante 10 minutos no se reintenta (duplicar es peor que demorar).
+        try {
+          if (isMonotributo) {
+            letra = "C"; tipoCbte = 11; cbteNro = cbteC;
+            result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true, fechaImputacion, exento, optsFact(orden));
+          } else {
+            const tieneCuit = orden.doc_tipo === "CUIT";
+            if (tieneCuit) {
+              letra = "A"; tipoCbte = 1; cbteNro = cbteA;
+              result = await facturar(token, sign, cuitNum, pv, cbteA, orden, 1, wsfe, false, fechaImputacion, exento, optsFact(orden));
+              // Fallback A→B SOLO ante rechazo de validación del receptor —
+              // nunca por errores genéricos, de token (600/601) ni de
+              // correlatividad (10016).
+              if (!result.cae && esRechazoReceptor(result)) {
+                letra = "B"; tipoCbte = 6; cbteNro = cbteB;
+                result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento, optsFact(orden));
+              }
+            } else {
+              letra = "B"; tipoCbte = 6; cbteNro = cbteB;
+              result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento, optsFact(orden));
+            }
+          }
+        } catch (e) {
+          // Error de red/timeout: FECAESolicitar no se reintenta a ciegas. El
+          // pedido pudo procesarse igual, así que ANTES de darlo por fallido se
+          // consulta si el comprobante ya existe en AFIP con el número esperado.
+          let rec = null;
+          if (tipoCbte && cbteNro) {
+            try { rec = await consultarComprobanteCompleto(token, sign, cuitNum, pv, tipoCbte, cbteNro, wsfe); } catch (_) {}
+          }
+          if (rec && !rec.error && rec.cae) {
+            // AFIP SÍ lo emitió: se trata como éxito con los datos de la consulta.
+            result = { cae: rec.cae, cae_vto: rec.cae_vto, resultado: "A", obs: "", err_code: null, obs_codigo: null, obs_msg: "" };
+          } else {
+            console.error(`[arca emit] ${orderId} error de conexión:`, e.message);
+            resultados.push({ orden_id: orderId, ok: false, total: orden.total,
+              obs: `No se pudo confirmar con ARCA: ${e.message} — verificá en el historial de ARCA antes de reintentar (por si el comprobante salió igual).` });
+            continue;
+          }
+        }
+
+        // Token AFIP vencido a mitad de lote (600/601): renovar el TA UNA sola
+        // vez, re-sincronizar el numerador y reintentar este comprobante.
+        if (!result.cae && [600, 601].includes(result.err_code) && !taRenovado) {
+          taRenovado = true;
+          try {
+            await invalidarTA(db, uid, cuitEmit);
+            ({ token, sign } = await obtenerTA(db, uid, cfg));
+            cbteNro = (await getUltimoCbte(token, sign, cuitNum, pv, tipoCbte, wsfe)) + 1;
+            if (letra === "A") cbteA = cbteNro; else if (letra === "C") cbteC = cbteNro; else cbteB = cbteNro;
+            result = await facturar(token, sign, cuitNum, pv, cbteNro, orden, tipoCbte, wsfe, isMonotributo, fechaImputacion, exento, optsFact(orden));
+          } catch (e2) {
+            resultados.push({ orden_id: orderId, ok: false, total: orden.total,
+              obs: `Token de ARCA vencido y no se pudo renovar: ${e2.message}` });
+            continue;
+          }
+        }
+
+        if (result.cae) {
+          // Todo el post-procesamiento (marca, Firestore, PDF, ML, resultado)
+          // vive en procesarAprobada — compartido con el camino en lote.
+          await procesarAprobada(orderId, orden, letra, tipoCbte, cbteNro, result, marcaRef, marcaTomada);
+          if (letra === "A") cbteA++;
+          else if (letra === "C") cbteC++;
+          else cbteB++;
+        } else {
+          await registrarRechazo(orderId, orden, letra, tipoCbte, result, marcaRef, marcaTomada);
+        }
+      }
+
+      // Persistir el batch (lote de emisión) — solo metadata, NO los PDFs (se regeneran on-demand)
+      try {
+        const exitosos = resultados.filter(r => r.ok);
+        if (exitosos.length > 0) {
+          const batchId = "B_" + Date.now();
+          const totalBatch = exitosos.reduce((s, r) => s + (r.total || 0), 0);
+          await db.collection("users").doc(uid).collection("arca_batches").doc(batchId).set({
+            batch_id: batchId,
+            cuit_emisor: cuitEmit,
+            emitido_at: new Date().toISOString(),
+            cantidad: exitosos.length,
+            total: totalBatch,
+            comprobante_ids: exitosos.map(r => `${cuitEmit}_${pv}_${r.tipo_cbte || (isMonotributo ? 11 : (r.letra === "A" ? 1 : 6))}_${String(r.comprobante).padStart(8, "0")}`),
+            resumen: exitosos.map(r => ({
+              orden_id: r.orden_id,
+              letra: r.letra,
+              comprobante: r.comprobante,
+              cae: r.cae,
+              total: r.total,
+            })),
+          });
+        }
+      } catch (e) {
+        console.error("[arca] no se pudo guardar batch:", e.message);
+      }
+
+      return { resultados, pdfs, pendientesIds };
+}
+
+// ─── Núcleo de pending_orders (compartido: handler + piloto automático) ────
+// Trae de TN/Shopify/ML las órdenes pagas del rango de fechas con su estado de
+// facturación (_billed / _was_anulada) ya cruzado contra arca_comprobantes.
+// Extraído tal cual del handler pending_orders para que cron_autopilot obtenga
+// las pendientes con la MISMA lógica que ve el usuario en pantalla.
+async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate }) {
+      const userSnap = await db.collection("users").doc(uid).get();
+      if (!userSnap.exists) return { connections: [], ordenes: {}, tnDebug: null };
+      const stores = userSnap.data().stores || [];
+
+      // IDs ya facturadas (mantenemos para marcar visualmente, no para filtrar).
+      // .select(): solo los campos que se usan — sin items/domicilio/cliente,
+      // que son lo pesado de cada comprobante.
+      const billedSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+        .where("cuit_emisor", "==", cuitParam)
+        .select("orden_id", "letra", "nro", "emitido_at", "anulada", "anulada_at", "nc_nro")
+        .get();
+      const billedMap = new Map();
+      // IDs que fueron facturadas y luego ANULADAS con NC — recordatorio visual.
+      // Ya NO se lee arca_facturadas entera para esto: desde que las anuladas se
+      // MARCAN en arca_comprobantes (anulada:true + nc_nro, no se borran), la
+      // misma query de arriba trae la info. Solo anulaciones muy viejas (de
+      // cuando el comprobante se borraba al anular) pierden el badge.
+      const anuladaMap = new Map();
+      for (const d of billedSnap.docs) {
+        const data = d.data();
+        // anulada:true = ya NO cuenta como facturada (la orden vuelve a ser facturable)
+        if (!data.orden_id) continue;
+        if (!data.anulada) billedMap.set(data.orden_id, { letra: data.letra, nro: data.nro, emitido_at: data.emitido_at });
+        else anuladaMap.set(data.orden_id, { anulada_at: data.anulada_at || null, nc_comprobante: data.nc_nro || null });
+      }
+
+      const connections = [];
+      const ordenes = {};
+      let tnDebug = null; // diagnóstico: cuántas órdenes trajo TN por status
+
+      // Los tres canales se consultan EN PARALELO (antes era secuencial: TN,
+      // después Shopify, después ML — el tiempo total era la suma de los tres).
+      // Cada canal escribe en su propio mapa y al final se mergea en orden fijo
+      // para mantener determinismo en la respuesta.
+      const tnStore = stores.find(s => s.type === "tiendanube");
+      const shStore = stores.find(s => s.type === "shopify");
+      const mlStore = stores.find(s => s.type === "mercadolibre");
+      if (tnStore?.accessToken && tnStore?.storeId) connections.push({ platform: "tiendanube", name: tnStore.storeName || "Tienda Nube", connected: true });
+      if (shStore?.accessToken && shStore?.shop) connections.push({ platform: "shopify", name: shStore.storeName || shStore.shop, connected: true });
+      if (mlStore?.userId) connections.push({ platform: "mercadolibre", name: mlStore.nickname || `ML #${mlStore.userId}`, connected: true });
+      const ordTN = {}, ordSH = {}, ordML = {};
+      const fetchers = [];
+
+      // ─── Tienda Nube ───
+      if (tnStore?.accessToken && tnStore?.storeId) fetchers.push((async () => {
+        const headers = {
+          "Authentication": `bearer ${tnStore.accessToken}`,
+          "User-Agent": "GrowithApp (contacto.growith@gmail.com)",
+        };
+        // Llamada helper: trae TODAS las páginas de TN para un payment_status dado.
+        const fetchTNStatus = async (status) => {
+          const out = [];
+          // created_at: filtra por cuando se realizó la orden — coincide con el criterio
+          // estándar de TN y apps de referencia. En TN el pago es casi siempre inmediato
+          // al hacer el pedido, así que created_at ≈ fecha de pago en la práctica.
+          // sort_by=created_at+desc: las más recientes primero.
+          const baseParams = `per_page=200&payment_status=${status}&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00&sort_by=created_at&sort_direction=desc`;
+          for (let page = 1; page <= 10; page++) { // hasta 2000 órdenes por status
+            const url = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?${baseParams}&page=${page}`;
+            const r = await fetch(url, { headers });
+            if (!r.ok) { console.warn(`[tn-pending] ${status} page ${page} failed: ${r.status}`); break; }
+            const batch = await r.json();
+            if (!Array.isArray(batch) || batch.length === 0) break;
+            out.push(...batch);
+            if (batch.length < 200) break;
+          }
+          return out;
+        };
+        // Tres llamadas en paralelo: paid, authorized y partially_paid
+        // paid        → pago confirmado (siempre facturable)
+        // authorized  → MercadoPago aprobó, aún no liquidó (facturable)
+        // partially_paid → pago parcial recibido (facturable por el monto recibido)
+        const [paidBatch, authBatch, partialBatch] = await Promise.all([
+          fetchTNStatus("paid"),
+          fetchTNStatus("authorized"),
+          fetchTNStatus("partially_paid"),
+        ]);
+        // Mergear deduplicando por TN id interno
+        const tnById = new Map();
+        for (const o of [...paidBatch, ...authBatch, ...partialBatch]) {
+          tnById.set(String(o.id || o.number), o);
+        }
+        const allTN = [...tnById.values()];
+        // Diagnóstico: cuántos trajo TN por status
+        tnDebug = {
+          paid: paidBatch.length,
+          authorized: authBatch.length,
+          partially_paid: partialBatch.length,
+          total_raw: allTN.length,
+        };
+        console.log(`[tn-pending] raw fetched — paid:${tnDebug.paid} auth:${tnDebug.authorized} partial:${tnDebug.partially_paid} total:${tnDebug.total_raw} range:${sinceDate}→${untilDate}`);
+        for (const o of allTN) {
+          const orderId = "TN-" + String(o.number || o.id);
+          if ((o.status || "").toLowerCase() === "cancelled") continue;
+          const pStatus = (o.payment_status || "").toLowerCase();
+          if (!["paid", "authorized", "partially_paid"].includes(pStatus)) continue;
+          const docRaw = extractTNDoc(o);
+          const clas = clasificarDoc(docRaw);
+          const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
+            || o.customer?.name || o.contact_name || "";
+          const billed = billedMap.get(orderId);
+          ordTN[orderId] = {
+            _platform: "tiendanube",
+            _platform_label: "TN",
+            _order_number: String(o.number || o.id),
+            _billed: !!billed,
+            _billed_info: billed || null,
+            _was_anulada: !!anuladaMap.get(orderId),
+            _anulada_info: anuladaMap.get(orderId) || null,
+            nombre: customerName,
+            email: o.customer?.email || o.contact_email || "",
+            dni: docRaw, ...clas,
+            total: parseFloat(o.total) || 0,
+            subtotal: parseFloat(o.subtotal) || 0,
+            descuento: parseFloat(o.discount) || 0,
+            envio: parseFloat(o.shipping_cost_customer) || 0,
+            estado_pago: pStatus,
+            fecha: o.paid_at || o.created_at || "",
+            ciudad: o.shipping_address?.city || o.billing_city || "",
+            provincia: o.shipping_address?.province || o.billing_province || "",
+            // TN tiene address (calle), number, floor, locality. Combinamos todo.
+            direccion: [
+              o.shipping_address?.address || o.billing_address || "",
+              o.shipping_address?.number || o.billing_number || "",
+              o.shipping_address?.floor || o.billing_floor || "",
+            ].filter(Boolean).join(" ").trim(),
+            metodo_pago: o.payment_details?.method || "Pagado",
+            plataforma_pago: normPlataformaPago(o.gateway_name || o.gateway, o.payment_details?.method),
+            items: (o.products || []).map(p => ({
+              nombre: p.name || "Producto",
+              nombre_original: p.name || "Producto",
+              cantidad: parseInt(p.quantity) || 1,
+              precio: parseFloat(p.price) || 0,
+              descuento_item: 0,
+            })),
+          };
+        }
+      })().catch(e => console.error("[tn-pending] error:", e.message)));
+
+      // ─── Shopify ───
+      if (shStore?.accessToken && shStore?.shop) fetchers.push((async () => {
+        const allSH = [];
+        // Shopify usa cursor pagination con Link header. IMPORTANTE: ordenamos
+        // por created_at DESC (más nuevas primero). Sin esto, Shopify devuelve las
+        // más VIEJAS primero y, con el tope de páginas, nunca llegaban las ventas
+        // recientes → "no tomaba las ventas nuevas". El orden se preserva en el cursor.
+        let pageInfoUrl = `https://${shStore.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&order=created_at+desc&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
+        // Paginación COMPLETA (como Márgenes): seguimos el cursor hasta que no haya
+        // más páginas. El tope de 60 es solo un seguro anti-loop (60×250 = 15k).
+        for (let i = 0; i < 60; i++) {
+          if (!pageInfoUrl) break;
+          const shRes = await fetch(pageInfoUrl, {
+            headers: { "X-Shopify-Access-Token": shStore.accessToken },
+          });
+          if (!shRes.ok) break;
+          const data = await shRes.json();
+          const batch = data.orders || [];
+          allSH.push(...batch);
+          // Detectar next page por Link header
+          const linkHeader = shRes.headers.get("link") || shRes.headers.get("Link") || "";
+          const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+          pageInfoUrl = nextMatch ? nextMatch[1] : null;
+        }
+        // Cache de customer fetches para no pegar 200 veces al mismo customer
+        // dentro del mismo refresh. clave = customer.id, valor = customer JSON
+        // (o null si fail).
+        const customerCache = new Map();
+        async function fetchCustomerFresh(customerId) {
+          if (!customerId) return null;
+          if (customerCache.has(customerId)) return customerCache.get(customerId);
+          try {
+            const r = await fetch(`https://${shStore.shop}/admin/api/2024-10/customers/${customerId}.json`, {
+              headers: { "X-Shopify-Access-Token": shStore.accessToken },
+            });
+            if (!r.ok) { customerCache.set(customerId, null); return null; }
+            const d = await r.json();
+            customerCache.set(customerId, d?.customer || null);
+            return d?.customer || null;
+          } catch (_) { customerCache.set(customerId, null); return null; }
+        }
+
+        for (const o of allSH) {
+          const orderId = "SH-" + (o.name || String(o.order_number || o.id));
+          if (o.cancelled_at) continue;
+          // Filtros estrictos: solo pagadas (no pending, refunded, voided)
+          if ((o.financial_status || "").toLowerCase() !== "paid") continue;
+          // Extract con snapshot de la orden (rápido, sin requests extra).
+          let docRaw = extractShopifyDoc(o);
+
+          // FALLBACK: si el snapshot de la orden no trae doc, pero la orden
+          // tiene customer_id, traemos el customer ACTUAL desde Shopify. Eso
+          // refleja el CUIT que el merchant editó después de la venta —
+          // billing/shipping_address de la orden son snapshots inmutables.
+          if (!docRaw && o.customer?.id && !billedMap.get(orderId)) {
+            const fresh = await fetchCustomerFresh(o.customer.id);
+            if (fresh) {
+              // Re-armamos un "o fake" con customer enriquecido para reusar el extractor
+              docRaw = extractShopifyDoc({ ...o, customer: { ...o.customer, ...fresh } });
+            }
+          }
+
+          const clas = clasificarDoc(docRaw);
+          const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
+            || o.billing_address?.name || o.shipping_address?.name || "";
+          const billed = billedMap.get(orderId);
+          ordSH[orderId] = {
+            _platform: "shopify",
+            _platform_label: "SH",
+            _order_number: o.name || String(o.order_number || o.id),
+            _billed: !!billed,
+            _billed_info: billed || null,
+            _was_anulada: !!anuladaMap.get(orderId),
+            _anulada_info: anuladaMap.get(orderId) || null,
+            nombre: customerName,
+            email: o.email || o.customer?.email || "",
+            dni: docRaw, ...clas,
+            total: parseFloat(o.total_price) || 0,
+            subtotal: parseFloat(o.subtotal_price) || 0,
+            descuento: parseFloat(o.total_discounts) || 0,
+            envio: parseFloat(o.total_shipping_price_set?.shop_money?.amount) || 0,
+            estado_pago: "paid",
+            fecha: o.processed_at || o.created_at || "",
+            ciudad: o.billing_address?.city || o.shipping_address?.city || "",
+            provincia: o.billing_address?.province || o.shipping_address?.province || "",
+            direccion: [
+              o.billing_address?.address1 || o.shipping_address?.address1 || "",
+              o.billing_address?.address2 || o.shipping_address?.address2 || "",
+            ].filter(Boolean).join(", "),
+            metodo_pago: o.payment_gateway_names?.join(", ") || "Pagado",
+            plataforma_pago: o.payment_gateway_names?.join(", ") || "",
+            items: (o.line_items || []).map(li => ({
+              nombre: li.title || "Producto",
+              nombre_original: li.title || "Producto",
+              cantidad: parseInt(li.quantity) || 1,
+              precio: parseFloat(li.price) || 0,
+              // Descuento REAL asignado a esta línea (Shopify ya reparte los
+              // descuentos de orden/bundle por producto en discount_allocations).
+              descuento_item: (li.discount_allocations||[]).reduce((s,da)=>s+(parseFloat(da.amount)||0),0) || parseFloat(li.total_discount) || 0,
+            })),
+          };
+        }
+      })().catch(e => console.error("[sh-pending] error:", e.message)));
+
+      // ─── Mercado Libre ───
+      if (mlStore?.userId) fetchers.push((async () => {
+        try {
+          const { accessToken, userId } = await getValidMLToken(db, uid, await mlVentasAcc(db, uid)) || {};
+          if (accessToken) {
+            const allML = [];
+            for (let offset = 0; offset < 500; offset += 50) {
+              // date_closed = cuando la orden pasó a estado "paid" (más preciso que date_created para facturar)
+              const url = `https://api.mercadolibre.com/orders/search?seller=${userId}&order.status=paid&order.date_closed.from=${sinceDate}T00:00:00.000-03:00&order.date_closed.to=${untilDate}T23:59:59.999-03:00&limit=50&offset=${offset}&sort=date_desc`;
+              const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+              if (!r.ok) {
+                console.error("[ml] orders search failed", r.status, await r.text().catch(()=>""));
+                break;
+              }
+              const data = await r.json();
+              const batch = data.results || [];
+              allML.push(...batch);
+              if (batch.length < 50) break;
+            }
+
+            // Pre-filtrar las que NO van a entrar (canceladas/inválidas/refundeadas) para no gastar fetch billing_info
+            const mlPaid = allML.filter(o => {
+              const st = (o.status || "").toLowerCase();
+              if (["cancelled", "invalid", "partially_paid", "payment_required", "payment_in_process"].includes(st)) return false;
+              const validPayments = (o.payments || []).filter(p => !["refunded", "cancelled"].includes((p.status || "").toLowerCase()));
+              if ((o.payments || []).length > 0 && validPayments.length === 0) return false;
+              return true;
+            });
+
+            // Fetch billing_info en paralelo (chunks de 5 para evitar 429)
+            const billingByOrderId = {};
+            let billingOk = 0, billingErr = 0;
+            // Solo pedimos billing_info de las órdenes SIN facturar: las ya
+            // facturadas se muestran en verde y no se re-emiten, así que no
+            // necesitan datos fiscales. En un período largo esto ahorra la
+            // enorme mayoría de los requests (el cuello de botella histórico).
+            const mlNeedBilling = mlPaid.filter(o => !billedMap.get("ML-" + String(o.id)));
+            const CHUNK = 10;
+            for (let i = 0; i < mlNeedBilling.length; i += CHUNK) {
+              const chunk = mlNeedBilling.slice(i, i + CHUNK);
+              await Promise.all(chunk.map(async (o) => {
+                try {
+                  const r = await fetch(`https://api.mercadolibre.com/orders/${o.id}/billing_info`, {
+                    headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "GrowithApp (contacto.growith@gmail.com)" },
+                  });
+                  if (r.ok) {
+                    const data = await r.json();
+                    // Probar varios paths que ML usa según versión del endpoint
+                    billingByOrderId[o.id] = data.buyer?.billing_info || data.billing_info || (data.doc_number ? data : null);
+                    billingOk++;
+                  } else {
+                    billingErr++;
+                    // No loguear el body: billing_info trae datos personales del comprador
+                    if (billingErr <= 3) console.error(`[ml-billing] ${o.id} status=${r.status}`);
+                  }
+                } catch (e) {
+                  billingErr++;
+                  if (billingErr <= 3) console.error(`[ml-billing] ${o.id} error: ${e.message}`);
+                }
+              }));
+            }
+            if (billingErr > 0) console.warn(`[ml-billing] ${billingErr}/${mlNeedBilling.length} fallaron (ok=${billingOk})`);
+
+            for (const o of mlPaid) {
+              const orderId = "ML-" + String(o.id);
+              const buyer = o.buyer || {};
+              // Combinamos billing_info del endpoint específico Y del response de /orders/search
+              const bi = billingByOrderId[o.id] || buyer.billing_info || null;
+              const additional = (bi && Array.isArray(bi.additional_info)) ? bi.additional_info : [];
+              const getInfo = (type) => additional.find(a => a.type === type)?.value || "";
+
+              const businessName = getInfo("BUSINESS_NAME");
+              const biFirstName = getInfo("FIRST_NAME");
+              const biLastName = getInfo("LAST_NAME");
+              // Nombre con fallback en cascada: 1) razón social, 2) billing_info nombres,
+              // 3) buyer.first/last_name del search, 4) nickname, 5) "Consumidor Final"
+              const customerName = businessName
+                || [biFirstName, biLastName].filter(Boolean).join(" ").trim()
+                || [buyer.first_name, buyer.last_name].filter(Boolean).join(" ").trim()
+                || buyer.nickname
+                || "Consumidor Final";
+              // Doc: primero del billing_info dedicado, después del que vino en search
+              const docRaw = String(bi?.doc_number || buyer.billing_info?.doc_number || "").replace(/[.\-]/g, "");
+              const clas = clasificarDoc(docRaw);
+              const shipAddr = o.shipping?.receiver_address || {};
+              // billing_info también puede traer address (datos fiscales)
+              const biAddr = bi?.buyer?.billing_info?.address || bi?.address || {};
+              const billed = billedMap.get(orderId);
+
+              // Construir dirección con todos los datos posibles (calle + número + dpto)
+              const calle = shipAddr.street_name || biAddr.street_name || "";
+              const numero = shipAddr.street_number || biAddr.street_number || "";
+              const comment = shipAddr.comment || ""; // dpto, piso, etc
+              const direccionStr = [
+                [calle, numero].filter(Boolean).join(" "),
+                comment,
+              ].filter(Boolean).join(", ");
+
+              ordML[orderId] = {
+                _platform: "mercadolibre",
+                _platform_label: "ML",
+                _order_number: String(o.id),
+                _billed: !!billed,
+                _billed_info: billed || null,
+                nombre: customerName,
+                email: buyer.email || "",
+                dni: docRaw, ...clas,
+                // Facturar lo que REALMENTE paga el cliente: total_amount NO resta
+                // el cupón/descuento (el comprador paga total_amount − coupon.amount).
+                total: Math.max(0, (parseFloat(o.total_amount) || 0) - (parseFloat(o.coupon?.amount) || 0)),
+                subtotal: Math.max(0, (parseFloat(o.total_amount) || 0) - (parseFloat(o.coupon?.amount) || 0)),
+                descuento: parseFloat(o.coupon?.amount) || 0,
+                envio: parseFloat(o.shipping?.cost) || 0,
+                estado_pago: "paid",
+                fecha: o.date_closed || o.date_created || "",
+                ciudad: shipAddr.city?.name || biAddr.city_name || biAddr.city?.name || "",
+                provincia: shipAddr.state?.name || biAddr.state_name || biAddr.state?.name || "",
+                direccion: direccionStr,
+                metodo_pago: "Mercado Pago",
+                plataforma_pago: "Mercado Pago",
+                items: (o.order_items || []).map(it => ({
+                  nombre: it.item?.title || "Producto",
+                  nombre_original: it.item?.title || "Producto",
+                  cantidad: parseInt(it.quantity) || 1,
+                  precio: parseFloat(it.unit_price) || 0,
+                  descuento_item: 0,
+                })),
+              };
+            }
+          }
+        } catch (e) {
+          console.error("[ml] error trayendo órdenes:", e.message);
+        }
+      })());
+
+      await Promise.all(fetchers);
+      Object.assign(ordenes, ordTN, ordSH, ordML);
+
+      // Plataformas no conectadas (informativas)
+      if (!stores.find(s => s.type === "tiendanube")) connections.push({ platform: "tiendanube", connected: false });
+      if (!stores.find(s => s.type === "shopify")) connections.push({ platform: "shopify", connected: false });
+      if (!stores.find(s => s.type === "mercadolibre")) connections.push({ platform: "mercadolibre", connected: false });
+
+      return { connections, ordenes, tnDebug };
+}
+
+// ─── Piloto automático (cron_autopilot) ─────────────────────────────────────
+// Recorre las cuentas con piloto habilitado (colección top-level arca_autopilot,
+// docId `${uid}_${cuit}`), trae sus órdenes pendientes con obtenerPendientes y
+// las emite con ejecutarEmision — el MISMO camino interno del handler emit, con
+// las mismas marcas de idempotencia (si el usuario emite a mano al mismo
+// tiempo, las marcas frenan el duplicado). El envío de mail al cliente aplica
+// igual que en la emisión manual (cfg.envio_mail).
+async function cronAutopilot(req, res) {
+  const db = initAdmin();
+  const DEADLINE = Date.now() + 50000; // presupuesto global de la corrida
+  const argYmd = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
+  // Hora actual en Argentina (0-23) para las cuentas con frecuencia "diaria"
+  const horaAR = parseInt(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Argentina/Buenos_Aires", hour: "numeric", hour12: false,
+  }).format(new Date()), 10) % 24;
+
+  let snap;
+  try {
+    snap = await db.collection("arca_autopilot").where("enabled", "==", true).limit(50).get();
+  } catch (e) {
+    console.error("[arca autopilot] no se pudo leer la config:", e.message);
+    return res.status(500).json({ error: e.message });
+  }
+
+  let cuentas = 0, emitidasTot = 0;
+  const resumen = [];
+  for (const d of snap.docs) {
+    if (Date.now() > DEADLINE) { resumen.push({ truncado: true }); break; }
+    const ap = d.data() || {};
+    const apUid = String(ap.uid || "");
+    const apCuit = String(ap.cuit || "").replace(/\D/g, "");
+    if (!apUid || !apCuit) continue;
+    // "diaria": corre solo en la hora elegida (hora AR). "1h": corre siempre
+    // (la frecuencia real la da el cron de vercel.json).
+    if (ap.frecuencia === "diaria" && parseInt(ap.hora) !== horaAR) continue;
+    cuentas++;
+    const nowIso = new Date().toISOString();
+    // Un error en una cuenta NUNCA corta la corrida de las demás.
+    try {
+      const cfg = await loadCuitConfig(db, apUid, apCuit);
+      if (!cfg?.cert_pem || !cfg?.key_pem) throw new Error("CUIT sin certificado configurado");
+
+      const dias = Math.min(Math.max(parseInt(ap.diasVentana) || 7, 1), 30);
+      const sinceDate = argYmd(new Date(Date.now() - (dias - 1) * 86400000));
+      const untilDate = argYmd(new Date());
+      const { ordenes } = await obtenerPendientes(db, apUid, apCuit, { sinceDate, untilDate });
+
+      // Reglas del piloto: canales, solo pagas, tope de monto, datos mínimos.
+      const canales = (Array.isArray(ap.canales) && ap.canales.length) ? ap.canales : null;
+      const soloPagadas = ap.soloPagadas !== false;
+      const tope = (ap.topeMonto === null || ap.topeMonto === undefined) ? null : Number(ap.topeMonto);
+      const candidatas = Object.entries(ordenes || {}).filter(([, o]) => {
+        if (o._billed) return false;                                     // ya facturada
+        if (canales && !canales.includes(o._platform)) return false;     // canal excluido
+        if (soloPagadas && o.estado_pago !== "paid") return false;       // pago no acreditado (authorized/partially_paid quedan afuera)
+        if (!Number.isFinite(Number(o.total)) || Number(o.total) <= 0) return false; // sin total válido no se factura
+        if (Number.isFinite(tope) && tope !== null && Number(o.total) > tope) return false; // arriba del tope
+        return true;
+      }).sort(([, a], [, b]) => String(a.fecha || "").localeCompare(String(b.fecha || ""))); // más viejas primero
+
+      const max = Math.min(Math.max(parseInt(ap.maxPorCorrida) || 40, 1), 100);
+      const lote = Object.fromEntries(candidatas.slice(0, max));
+
+      let emitidas = 0, errores = 0;
+      const detalle = [];
+      if (Object.keys(lote).length) {
+        const r = await ejecutarEmision(db, apUid, cfg, {
+          cuitEmit: apCuit, ordenes: lote, product_map: null,
+          fechaImputacion: null, pvSel: null, exentoReq: false,
+          deadline: Math.min(Date.now() + 90000, DEADLINE + 30000),
+        });
+        for (const x of r.resultados) {
+          if (x.ok) { emitidas++; detalle.push({ orden_id: x.orden_id, ok: true, letra: x.letra, comprobante: x.comprobante }); }
+          else { errores++; detalle.push({ orden_id: x.orden_id, ok: false, obs: String(x.obs || "").slice(0, 140) }); }
+        }
+      }
+      emitidasTot += emitidas;
+      await d.ref.set({
+        ultimaCorrida: nowIso,
+        ultimoResultado: { at: nowIso, emitidas, errores, detalle: detalle.slice(0, 50) },
+      }, { merge: true });
+      resumen.push({ uid: apUid, cuit: apCuit, pendientes: candidatas.length, emitidas, errores });
+      console.log(`[arca autopilot] uid=${apUid} cuit=${apCuit} pendientes=${candidatas.length} emitidas=${emitidas} errores=${errores}`);
+    } catch (e) {
+      console.error(`[arca autopilot] uid=${apUid} cuit=${apCuit} falló:`, e.message);
+      try {
+        await d.ref.set({
+          ultimaCorrida: nowIso,
+          ultimoResultado: { at: nowIso, emitidas: 0, errores: 1, detalle: [{ error: String(e.message || "").slice(0, 140) }] },
+        }, { merge: true });
+      } catch (_) {}
+      resumen.push({ uid: apUid, cuit: apCuit, error: e.message });
+    }
+  }
+
+  return res.json({ ok: true, cuentas, emitidas: emitidasTot, resumen });
+}
+
 // ─── Handler principal ─────────────────────────────────
 
 export const config = {
@@ -1883,6 +3307,16 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const { action, uid, cuit } = req.query;
+
+  // ── PILOTO AUTOMÁTICO (cron) ───────────────────────────────────────────
+  // Se resuelve ANTES de guardUid: el cron no viene con token de usuario ni
+  // uid — se autoriza SOLO por CRON_SECRET (mismo patrón que api/meta.js /
+  // api/check-payments.js via guardCron).
+  if (action === "cron_autopilot") {
+    if (!guardCron(req, res)) return;
+    return cronAutopilot(req, res);
+  }
+
   if (!uid) return res.status(401).json({ error: "Falta uid" });
 
   // Gate único de autorización: TODAS las acciones de este endpoint (emitir en
@@ -1967,6 +3401,38 @@ export default async function handler(req, res) {
       if (data.banner_b64 === "") updated.banner_b64 = ""; // permitir borrar
       else if (data.banner_b64) updated.banner_b64 = data.banner_b64;
 
+      // Envío automático de la factura al cliente por email:
+      // envio_mail = { enabled: boolean, reply_to: string|null }
+      if (data.envio_mail !== undefined) {
+        try {
+          const em = typeof data.envio_mail === "string" ? JSON.parse(data.envio_mail) : data.envio_mail;
+          if (em && typeof em === "object" && !Array.isArray(em)) {
+            const reply = (typeof em.reply_to === "string" && em.reply_to.trim())
+              ? em.reply_to.trim().slice(0, 120) : null;
+            updated.envio_mail = { enabled: em.enabled === true || em.enabled === "true", reply_to: reply };
+          }
+        } catch (_) {}
+      }
+
+      // Alícuota de IVA por producto (solo tiene efecto en RI):
+      // alic_map = { "<nombre de producto en minúsculas>": 10.5 | 21 | 0 }
+      // (0 = tasa cero para ese ítem). Cualquier valor fuera de {0, 10.5, 21}
+      // se descarta. Mandar {} borra el mapa.
+      if (data.alic_map !== undefined) {
+        try {
+          const am = typeof data.alic_map === "string" ? JSON.parse(data.alic_map) : data.alic_map;
+          if (am && typeof am === "object" && !Array.isArray(am)) {
+            const clean = {};
+            for (const [k, v] of Object.entries(am)) {
+              const key = String(k).trim().toLowerCase().slice(0, 150);
+              const val = Number(v);
+              if (key && (val === 0 || val === 10.5 || val === 21)) clean[key] = val;
+            }
+            updated.alic_map = clean;
+          }
+        } catch (_) {}
+      }
+
       await saveCuitConfig(db, uid, cuitNum, updated);
       // Si cambió el certificado, la clave o el ambiente, el Ticket de Acceso
       // cacheado ya no corresponde: se descarta para que el próximo pedido
@@ -2009,11 +3475,72 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     }
 
+    // ── PILOTO AUTOMÁTICO: guardar configuración ───────
+    // Doc top-level arca_autopilot/${uid}_${cuit} — el uid SIEMPRE sale del
+    // auth (guardUid ya corrió), jamás del body.
+    if (action === "save_autopilot" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const cuitNorm = String(body.cuit || "").replace(/\D/g, "");
+      if (!cuitNorm) return res.status(400).json({ error: "Falta cuit" });
+      // El CUIT tiene que existir en la config de la cuenta
+      const cfgCuit = await loadCuitConfig(db, uid, cuitNorm);
+      if (!cfgCuit) return res.status(404).json({ error: "Ese CUIT no está configurado en esta cuenta" });
+
+      const c = body.config || {};
+      const CANALES_VALIDOS = ["tiendanube", "mercadolibre", "shopify"];
+      const canales = Array.isArray(c.canales) ? c.canales.filter(x => CANALES_VALIDOS.includes(x)) : [];
+      if (Array.isArray(c.canales) && canales.length !== c.canales.length) {
+        return res.status(400).json({ error: `Canal inválido (válidos: ${CANALES_VALIDOS.join(", ")})` });
+      }
+      const maxPorCorrida = parseInt(c.maxPorCorrida);
+      if (!(maxPorCorrida >= 1 && maxPorCorrida <= 100)) return res.status(400).json({ error: "maxPorCorrida debe estar entre 1 y 100" });
+      const diasVentana = parseInt(c.diasVentana);
+      if (!(diasVentana >= 1 && diasVentana <= 30)) return res.status(400).json({ error: "diasVentana debe estar entre 1 y 30" });
+      const frecuencia = c.frecuencia === "diaria" ? "diaria" : c.frecuencia === "1h" ? "1h" : null;
+      if (!frecuencia) return res.status(400).json({ error: 'frecuencia debe ser "1h" o "diaria"' });
+      const hora = parseInt(c.hora);
+      if (!(hora >= 0 && hora <= 23)) return res.status(400).json({ error: "hora debe estar entre 0 y 23" });
+      let topeMonto = null;
+      if (c.topeMonto !== null && c.topeMonto !== undefined && c.topeMonto !== "") {
+        topeMonto = Number(c.topeMonto);
+        if (!Number.isFinite(topeMonto) || topeMonto <= 0) return res.status(400).json({ error: "topeMonto debe ser un número positivo (o null)" });
+      }
+
+      const docAp = {
+        uid, // del auth, no del body
+        cuit: cuitNorm,
+        enabled: c.enabled === true,
+        canales,
+        soloPagadas: c.soloPagadas !== false,
+        topeMonto,
+        maxPorCorrida,
+        frecuencia,
+        hora,
+        diasVentana,
+        updatedAt: new Date().toISOString(),
+      };
+      // merge: preserva ultimaCorrida/ultimoResultado de corridas anteriores
+      await db.collection("arca_autopilot").doc(`${uid}_${cuitNorm}`).set(docAp, { merge: true });
+      return res.json({ ok: true, config: docAp });
+    }
+
+    // ── PILOTO AUTOMÁTICO: leer configuración ──────────
+    if (action === "get_autopilot" && req.method === "GET") {
+      const cuitNorm = String(req.query.cuit || "").replace(/\D/g, "");
+      if (!cuitNorm) return res.status(400).json({ error: "Falta cuit" });
+      const s = await db.collection("arca_autopilot").doc(`${uid}_${cuitNorm}`).get();
+      return res.json({ config: s.exists ? s.data() : null });
+    }
+
     // ── DASHBOARD: stats del mes actual para el CUIT activo ─
 
     if (action === "dashboard_stats" && req.method === "GET") {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
+
+      // Rango libre desde/hasta (YYYY-MM-DD, inclusive): si viene, pisa a month/year.
+      const rango = rangoFechas(req.query);
+      if (rango?.error) return res.status(400).json({ error: rango.error });
 
       // Filtro de mes — usa params month/year si vienen, sino el mes actual ARG.
       let argYear, argMonth;
@@ -2053,9 +3580,16 @@ export default async function handler(req, res) {
           const p = data.fecha_str.split("/");
           if (p.length === 3) dateKey = `${p[2]}-${p[1]}-${p[0]}`;
         }
-        const inMonth = dateKey
-          ? (dateKey >= `${argYear}-${argMonth}-01` && dateKey < `${nextYear}-${nextMonth}-01`)
-          : (!!data.emitido_at && data.emitido_at >= monthStart && data.emitido_at < monthEnd);
+        let inMonth;
+        if (rango) {
+          // Rango desde/hasta inclusive por fecha_cbte (fallback: emitido_at)
+          const key = dateKey || (data.emitido_at || "").slice(0, 10);
+          inMonth = key >= rango.desde && key <= rango.hasta;
+        } else {
+          inMonth = dateKey
+            ? (dateKey >= `${argYear}-${argMonth}-01` && dateKey < `${nextYear}-${nextMonth}-01`)
+            : (!!data.emitido_at && data.emitido_at >= monthStart && data.emitido_at < monthEnd);
+        }
         if (!inMonth) continue;
         facturas_emitidas++;
         iva_debito += data.iva || 0;
@@ -2064,9 +3598,9 @@ export default async function handler(req, res) {
         if (porLetra[data.letra] !== undefined) porLetra[data.letra]++;
       }
 
-      // Label del mes elegido
+      // Label del período elegido (rango libre o mes)
       const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
-      const mesLabel = `${meses[parseInt(argMonth)-1]} ${argYear}`;
+      const mesLabel = rango ? `${rango.desde} a ${rango.hasta}` : `${meses[parseInt(argMonth)-1]} ${argYear}`;
 
       return res.json({
         iva_debito: Math.round(iva_debito * 100) / 100,
@@ -2526,6 +4060,147 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── EMITIR NOTA DE DÉBITO (ajuste sobre una factura ya emitida) ──
+    // body: { cuit, factura:{punto_venta, comprobante, letra, doc_tipo, doc_nro, cliente}, monto, concepto }
+    // Tipos AFIP: ND A=2, B=7, C=12 (C si el emisor es monotributo). Sale por el
+    // MISMO PV que la factura original, con CbtesAsoc a esa factura. Se guarda
+    // en arca_comprobantes con nd:true → aparece en Registros y SUMA en
+    // dashboard_stats (correcto fiscalmente: la ND aumenta el débito).
+    if (action === "emit_nd" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const { cuit: cuitEmit, factura, monto: montoRaw, concepto } = body;
+      if (!cuitEmit || !factura) return res.status(400).json({ error: "Faltan cuit o factura" });
+      const monto = Math.round(Number(montoRaw) * 100) / 100;
+      if (!Number.isFinite(monto) || monto <= 0) return res.status(400).json({ error: "Monto de la ND inválido" });
+      const conceptoStr = String(concepto || "").replace(/[<>&"']/g, "").trim().slice(0, 120) || "Ajuste";
+      const cfg = await loadCuitConfig(db, uid, cuitEmit);
+      if (!cfg?.cert_pem || !cfg?.key_pem) return res.status(400).json({ error: "CUIT sin certificado configurado" });
+
+      try {
+        const isMonotributo = cfg.condicion_fiscal === "MONOTRIBUTO";
+        const letraFact = String(factura.letra || "").toUpperCase();
+        // Tipo de la factura original: por letra (monotributo siempre C)
+        const tipoFactura = isMonotributo ? 11 : letraFact === "A" ? 1 : letraFact === "C" ? 11 : 6;
+        const tipoND = tipoNDparaFactura(tipoFactura); // 2 / 7 / 12
+        const pv = parseInt(factura.punto_venta) || parseInt(cfg.punto_venta) || 1;
+
+        // ¿La factura original era exenta? El flag fiable sale del comprobante
+        // guardado (mismo lookup de docId que emit_nc), no del front.
+        let exento = false;
+        try {
+          const cuitDig = String(cuitEmit).replace(/\D/g, "");
+          const nro8 = String(factura.comprobante).padStart(8, "0");
+          for (const docId of [`${cuitDig}_${pv}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
+            const s = await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId).get();
+            if (s.exists) { exento = !!s.data().exento; break; }
+          }
+        } catch (_) {}
+
+        const { wsfe } = arcaUrls(cfg.arca_prod);
+        const { token, sign } = await obtenerTA(db, uid, cfg);
+        const cuitNum = parseInt(cfg.cuit);
+
+        const ultimoND = await getUltimoCbte(token, sign, cuitNum, pv, tipoND, wsfe);
+        const ndNro = ultimoND + 1;
+
+        const result = await emitirNotaDebito(token, sign, cuitNum, pv, ndNro, {
+          tipo: tipoFactura,
+          punto_venta: factura.punto_venta || pv,
+          comprobante: factura.comprobante,
+          total: monto,
+          doc_tipo: factura.doc_tipo,
+          doc_nro: factura.doc_nro,
+          exento,
+        }, wsfe);
+        if (result.resultado !== "A" || !result.cae) {
+          return res.status(502).json({ error: "ARCA rechazó la ND", detalle: result.obs, resultado: result.resultado });
+        }
+
+        const letra = tipoND === 2 ? "A" : tipoND === 7 ? "B" : "C";
+        const fechaIso = hoyARISO();
+        const fechaDisplay = `${fechaIso.slice(8, 10)}/${fechaIso.slice(5, 7)}/${fechaIso.slice(0, 4)}`;
+
+        // PDF — como el de NC pero "NOTA DE DÉBITO", códigos 02/07/12 y línea
+        // de comprobante asociado; el concepto va como ítem único.
+        const ndFactData = {
+          comprobante: ndNro,
+          cae: result.cae,
+          cae_vto: result.cae_vto,
+          fecha: fechaDisplay,
+          fecha_iso: fechaIso,
+          cliente: factura.cliente || "Consumidor Final",
+          doc_tipo: factura.doc_tipo,
+          doc_nro: factura.doc_nro || "",
+          letra,
+          tipo_cbte: tipoND,
+          punto_venta: pv,
+          domicilio: "",
+          total: monto,
+          neto: result.neto,
+          iva: result.iva,
+          exento,
+          items: [{ nombre: conceptoStr, cantidad: 1, precio: monto, descuento_item: 0 }],
+          _is_nd: true,
+          _cbte_asoc: factura.comprobante,
+          _pv_asoc: factura.punto_venta || pv,
+        };
+        let pdfB64 = null;
+        try {
+          const pdfBytes = await generarPDF(ndFactData, cfg);
+          pdfB64 = Buffer.from(pdfBytes).toString("base64");
+        } catch (e) {
+          console.error("[arca emit_nd] no se pudo generar el PDF (la ND salió igual):", e.message);
+        }
+
+        // Guardado como comprobante normal + nd:true → Registros y dashboard
+        const cuitDig = String(cuitEmit).replace(/\D/g, "");
+        const compData = {
+          cuit_emisor: cuitDig,
+          tipo_cbte: tipoND,
+          letra,
+          nro: ndNro,
+          punto_venta: pv,
+          exento,
+          fecha_str: fechaDisplay,
+          fecha_cbte: fechaIso,
+          emitido_at: new Date().toISOString(),
+          cae: result.cae,
+          cae_vto: result.cae_vto,
+          cliente: factura.cliente || "",
+          doc_tipo: factura.doc_tipo || "",
+          doc_nro: factura.doc_nro || "",
+          total: monto,
+          neto: result.neto,
+          iva: result.iva,
+          orden_id: null,
+          items: [{ nombre: conceptoStr, cantidad: 1, precio: monto, descuento_item: 0 }],
+          domicilio: "",
+          ml_uploaded: false,
+          nd: true,
+          factura_origen: {
+            letra: letraFact || letra,
+            punto_venta: parseInt(factura.punto_venta) || pv,
+            comprobante: parseInt(factura.comprobante) || null,
+          },
+        };
+        try {
+          await db.collection("users").doc(uid).collection("arca_comprobantes")
+            .doc(`${cuitDig}_${pv}_${tipoND}_${String(ndNro).padStart(8, "0")}`)
+            .set(compData);
+        } catch (e) {
+          console.error("[arca emit_nd] no se pudo guardar el comprobante:", e.message);
+        }
+
+        return res.json({
+          ok: true,
+          nd: { letra, nro: ndNro, punto_venta: pv, cae: result.cae, cae_vto: result.cae_vto },
+          pdf_b64: pdfB64,
+        });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+
     // ── EMITIR facturas ────────────────────────────────
 
     if (action === "emit" && req.method === "POST") {
@@ -2560,553 +4235,15 @@ export default async function handler(req, res) {
       const cfg = await loadCuitConfig(db, uid, cuitEmit);
       if (!cfg?.cert_pem || !cfg?.key_pem) return res.status(400).json({ error: "Falta certificado o clave para ese CUIT" });
 
-      const isMonotributo = cfg.condicion_fiscal === "MONOTRIBUTO";
-      const { wsfe } = arcaUrls(cfg.arca_prod);
+      // Percepciones (solo factura MANUAL de un RI): validación dura acá; el
+      // bloque <Tributos> se arma en facturar(). En órdenes no-manuales o
+      // monotributo se descartan en silencio.
+      const percErr = validarPercepciones(ordenes, cfg);
+      if (percErr) return res.status(400).json({ error: percErr });
 
-      // Autenticar — TA cacheado por CUIT (dura 12h; pedir uno nuevo por lote
-      // hace que ARCA rechace el login mientras el anterior siga vigente).
-      let { token, sign } = await obtenerTA(db, uid, cfg);
-
-      // Numeradores — usa el punto de venta elegido (ej: PV físicos vs PV digitales
-      // exento). Si el front no manda uno, cae al punto_venta por defecto del CUIT.
-      const cuitNum = parseInt(cfg.cuit);
-      const pv = parseInt(pvSel) || cfg.punto_venta;
-      // Exento: lo decide la CONFIG del punto de venta, no el front. Si hay
-      // puntos_venta configurados y el flag del front no coincide, gana la config.
-      if (Array.isArray(cfg.puntos_venta) && cfg.puntos_venta.length) {
-        exento = cfg.puntos_venta.find(p => String(p.numero) === String(pv))?.exento === true;
-      }
-      let cbteA = isMonotributo ? 0 : (await getUltimoCbte(token, sign, cuitNum, pv, 1, wsfe)) + 1;
-      let cbteB = isMonotributo ? 0 : (await getUltimoCbte(token, sign, cuitNum, pv, 6, wsfe)) + 1;
-      let cbteC = isMonotributo ? (await getUltimoCbte(token, sign, cuitNum, pv, 11, wsfe)) + 1 : 0;
-
-      const resultados = [];
-      const pdfs = []; // { nombre, bytes }
-
-      // ── Idempotencia del lote ──────────────────────────
-      // Emitir dos veces la misma factura en AFIP no se puede deshacer (hay que
-      // sacar nota de crédito). Si un lote se corta a la mitad — timeout de la
-      // función, red, el usuario que reintenta — las órdenes que YA salieron no
-      // se vuelven a emitir. Dos capas:
-      //   1. Pre-chequeo contra arca_comprobantes (lo ya facturado, histórico).
-      //   2. Una marca por orden en arca_emisiones ANTES de pegarle a AFIP, que
-      //      además frena dos requests simultáneos sobre la misma orden.
-      const ordenesEntries = Object.entries(ordenes);
-      const yaFacturadas = new Map(); // orden_id → comprobante existente
-      try {
-        const ids = ordenesEntries.map(([id]) => id);
-        // Misma query que usa check_duplicates (índice ya existente): "in"
-        // acepta 30 valores por consulta.
-        for (let i = 0; i < ids.length; i += 30) {
-          const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
-            .where("cuit_emisor", "==", cuitEmit)
-            .where("orden_id", "in", ids.slice(i, i + 30))
-            .get();
-          snap.docs.forEach(d => { const x = d.data(); if (x.orden_id && !x.anulada) yaFacturadas.set(String(x.orden_id), x); });
-        }
-      } catch (e) {
-        // Si el pre-chequeo falla NO se aborta la emisión (quedaría el merchant
-        // sin poder facturar): la marca por orden sigue protegiendo.
-        console.error("[arca emit] pre-chequeo de duplicados falló:", e.message);
-      }
-
-      // Deadline global del lote (mismo patrón que el resync): si el tiempo se
-      // acaba, las órdenes restantes se devuelven como pendientes en vez de
-      // dejar que Vercel mate la función a mitad de una emisión.
-      const DEADLINE_EMIT = Date.now() + 90000;
-      const pendientesIds = [];
-      let taRenovado = false; // un solo re-login por lote ante token vencido
-
-      // Cuenta ML de ventas memoizada POR REQUEST (no a nivel módulo: la lambda
-      // caliente se comparte entre uids y un cache global cruzaría cuentas).
-      let _mlAccProm = null;
-      const mlAccEmit = () => { if (!_mlAccProm) _mlAccProm = mlVentasAcc(db, uid); return _mlAccProm; };
-
-      // Post-procesamiento de una emisión APROBADA — IDÉNTICO para el camino
-      // individual y el camino en lote (cerrar marca, guardar comprobante en
-      // Firestore, PDF, adjuntar a ML, resultado). Extraído del loop para que
-      // los dos caminos no puedan divergir.
-      const procesarAprobada = async (orderId, orden, letra, tipoCbte, cbteNro, result, marcaRef, marcaTomada) => {
-          // Cerrar la marca ANTES de generar el PDF: si el PDF o el adjunto a ML
-          // fallan, la factura ya existe en ARCA y no debe re-emitirse nunca.
-          if (marcaTomada) {
-            try {
-              await marcaRef.set({ estado: "emitido", cae: result.cae, tipo_cbte: tipoCbte, nro: cbteNro, punto_venta: pv, at: new Date().toISOString() }, { merge: true });
-            } catch (e) { console.error("[arca emit] no se pudo cerrar la marca:", e.message); }
-          }
-          // Generar PDF — usar la fecha que eligió el usuario (fechaImputacion),
-          // NO new Date() que siempre pone hoy aunque ARCA tenga la fecha correcta.
-          const fechaIso = fechaImputacion
-            ? `${fechaImputacion.slice(0,4)}-${fechaImputacion.slice(4,6)}-${fechaImputacion.slice(6,8)}`
-            : hoyARISO();
-          const fechaDisplay = new Date(fechaIso + "T12:00:00-03:00")
-            .toLocaleDateString("es-AR", { day:"2-digit", month:"2-digit", year:"numeric" });
-          const factData = {
-            comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto,
-            fecha: fechaDisplay,
-            fecha_iso: fechaIso,
-            cliente: orden.nombre || "Consumidor Final",
-            doc_tipo: orden.doc_tipo, doc_nro: orden.doc_nro || orden.dni || "",
-            letra, tipo_cbte: tipoCbte,
-            domicilio: cleanAddr([orden.direccion, orden.ciudad, orden.provincia]),
-            total: orden.total, items: orden.items, exento, punto_venta: pv,
-          };
-          // Persistir el comprobante en Firestore ANTES de los pasos best-effort
-          // (PDF, adjuntar a ML). La factura ya existe en AFIP: si el PDF explota
-          // o la función muere por timeout acá, el registro tiene que quedar —
-          // antes se guardaba al final y una falla intermedia lo hacía invisible
-          // en Registros para siempre.
-          // docId con punto de venta (mismo formato que el resync): dos PV con
-          // el mismo número de comprobante ya no se pisan entre sí.
-          const compRef = db.collection("users").doc(uid).collection("arca_comprobantes")
-            .doc(`${cuitEmit}_${pv}_${tipoCbte}_${String(cbteNro).padStart(8, "0")}`);
-          let compGuardado = false;
-          const netoComp = (isMonotributo || exento) ? (exento ? 0 : orden.total) : Math.round((orden.total / 1.21) * 100) / 100;
-          const ivaComp = (isMonotributo || exento) ? 0 : Math.round((orden.total - netoComp) * 100) / 100;
-          const compData = {
-              cuit_emisor: cuitEmit,
-              tipo_cbte: tipoCbte,
-              letra,
-              nro: cbteNro,
-              punto_venta: pv,
-              exento,
-              fecha_str: factData.fecha,
-              fecha_cbte: factData.fecha_iso,
-              emitido_at: new Date().toISOString(),
-              cae: result.cae,
-              cae_vto: result.cae_vto,
-              cliente: orden.nombre || "Consumidor Final",
-              doc_tipo: orden.doc_tipo,
-              doc_nro: orden.doc_nro || orden.dni || "",
-              total: orden.total,
-              neto: netoComp,
-              iva: ivaComp,
-              orden_id: orderId,
-              // Items reales para re-imprimir el PDF con el detalle correcto
-              items: (orden.items || []).map(it => ({
-                nombre: it.nombre || it.nombre_original || "Producto",
-                cantidad: parseInt(it.cantidad) || 1,
-                precio: parseFloat(it.precio) || 0,
-                descuento_item: parseFloat(it.descuento_item) || 0,
-              })),
-              domicilio: cleanAddr([orden.direccion, orden.ciudad, orden.provincia]),
-              ml_uploaded: false,
-              ml_uploaded_at: null,
-              // Resultado=A con observaciones de AFIP: el comprobante es válido,
-              // pero las obs quedan registradas.
-              obs_codigo: result.obs_codigo || null,
-              obs_msg: result.obs_msg || "",
-          };
-          try {
-            await compRef.set(compData);
-            compGuardado = true;
-          } catch (e) {
-            console.error("[arca] no se pudo guardar comprobante:", e.message);
-          }
-
-          // PDF — best-effort: una falla acá NO puede tumbar el lote ni perder
-          // el registro (la factura ya salió y ya está guardada arriba).
-          let pdfBytes = null;
-          try {
-            pdfBytes = await generarPDF(factData, cfg);
-            const nombreCliente = (orden.nombre || "Consumidor_Final").replace(/[^a-zA-Z0-9 \-_]/g, "").trim();
-            pdfs.push({ nombre: `F${letra} - ${nombreCliente} - ${String(cbteNro).padStart(8, "0")}.pdf`, bytes: Buffer.from(pdfBytes).toString("base64") });
-          } catch (e) {
-            console.error(`[arca emit] ${orderId} no se pudo generar el PDF (la factura salió igual):`, e.message);
-          }
-
-          // ── Auto-adjuntar factura a venta de ML ─────────────
-          // 1) Consultamos pack_id real de la orden (a veces es distinto al order_id)
-          // 2) Subimos PDF al endpoint /packs/{pack_id}/fiscal_documents
-          let ml_uploaded = false, ml_upload_error = null;
-          if (orderId.startsWith("ML-") && pdfBytes) {
-            try {
-              const ml = await getValidMLToken(db, uid, await mlAccEmit());
-              if (!ml?.accessToken) throw new Error("Sin access_token de ML");
-              const orderIdRaw = orderId.replace(/^ML-/, "");
-
-              // Conseguir pack_id real (si la orden esta en un pack)
-              let packId = orderIdRaw;
-              try {
-                const oRes = await fetch(`https://api.mercadolibre.com/orders/${orderIdRaw}?fields=pack_id`, {
-                  headers: { Authorization: `Bearer ${ml.accessToken}` },
-                });
-                if (oRes.ok) {
-                  const oData = await oRes.json();
-                  if (oData.pack_id) packId = String(oData.pack_id);
-                }
-              } catch (_) { /* fallback al order_id */ }
-
-              // Construir multipart manualmente (mas confiable que FormData/Blob en Vercel runtime)
-              const boundary = "----GrowithBoundary" + Date.now();
-              const pdfBuf = Buffer.from(pdfBytes);
-              const filename = `F${letra}-${String(cbteNro).padStart(8, "0")}.pdf`;
-              const head = Buffer.from(
-                `--${boundary}\r\n` +
-                `Content-Disposition: form-data; name="fiscal_document"; filename="${filename}"\r\n` +
-                `Content-Type: application/pdf\r\n\r\n`
-              );
-              const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
-              const body = Buffer.concat([head, pdfBuf, tail]);
-
-              const tryUpload = async () => fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${ml.accessToken}`,
-                  "Content-Type": `multipart/form-data; boundary=${boundary}`,
-                  "Content-Length": String(body.length),
-                },
-                body,
-              });
-              let upRes = await tryUpload();
-              // 409 conflict = ya hay una factura adjunta (probablemente la vieja anulada).
-              // Limpiar y reintentar UNA vez.
-              if (upRes.status === 409) {
-                try {
-                  const listR = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
-                    headers: { Authorization: `Bearer ${ml.accessToken}` },
-                  });
-                  if (listR.ok) {
-                    const listJ = await listR.json().catch(() => ({}));
-                    const docs = Array.isArray(listJ) ? listJ : (listJ.results || listJ.fiscal_documents || []);
-                    for (const d of docs) {
-                      const did = d.id || d.fiscal_document_id;
-                      if (did) {
-                        await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents/${did}`, {
-                          method: "DELETE",
-                          headers: { Authorization: `Bearer ${ml.accessToken}` },
-                        }).catch(() => {});
-                      }
-                    }
-                    upRes = await tryUpload();
-                  }
-                } catch (_) {}
-              }
-
-              if (upRes.ok) {
-                ml_uploaded = true;
-              } else {
-                const txt = await upRes.text().catch(() => "");
-                // Solo status + primeros 80 chars (sin datos personales)
-                ml_upload_error = `HTTP ${upRes.status}: ${txt.slice(0, 80)}`;
-                console.error(`[ml-upload] ${orderId} pack=${packId}:`, ml_upload_error);
-              }
-            } catch (e) {
-              ml_upload_error = e.message;
-              console.error(`[ml-upload] ${orderId} error:`, e.message);
-            }
-          }
-
-          if (orderId.startsWith("ML-") && !pdfBytes && !ml_upload_error) ml_upload_error = "PDF no generado — adjuntalo después desde Registros";
-
-          resultados.push({ orden_id: orderId, ok: true, letra, tipo_cbte: tipoCbte, comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto, total: orden.total, ml_uploaded, ml_upload_error });
-
-          // El comprobante ya se guardó ANTES del PDF/ML — acá solo se actualiza
-          // el flag de adjunto ML, o se reintenta el guardado completo si falló.
-          try {
-            if (!compGuardado) {
-              await compRef.set({ ...compData, ml_uploaded: ml_uploaded || false, ml_uploaded_at: ml_uploaded ? new Date().toISOString() : null });
-            } else if (ml_uploaded) {
-              await compRef.set({ ml_uploaded: true, ml_uploaded_at: new Date().toISOString() }, { merge: true });
-            }
-          } catch (e) {
-            console.error("[arca] no se pudo guardar/actualizar comprobante:", e.message);
-          }
-      };
-
-      // Registro de un RECHAZO de ARCA — mismo tratamiento en ambos caminos.
-      const registrarRechazo = async (orderId, orden, letra, tipoCbte, result, marcaRef, marcaTomada) => {
-          // Transparencia para diagnóstico: qué comprobante intentamos y con qué
-          // condición fiscal del emisor — sin esto, el "mismo error" de AFIP no
-          // dice si el server usó la config nueva o la vieja.
-          // ARCA rechazó: la marca NO se borra — queda en estado "rechazado"
-          // con timestamp, para frenar el doble-click inmediato pero permitir
-          // el reintento legítimo (con datos corregidos) a los 2 minutos.
-          if (marcaTomada) {
-            try {
-              await marcaRef.set({ estado: "rechazado", obs: String(result.obs || "").slice(0, 200), at: new Date().toISOString() }, { merge: true });
-            } catch (_) {}
-          }
-          const intento = `[Intenté Factura ${letra || (isMonotributo ? "C" : "?")} · PV ${pv} · emisor ${cfg.condicion_fiscal || "?"}] `;
-          // Sin el texto del obs en el log (puede traer el doc del receptor) — solo el código.
-          console.log(`[arca emit] ${orderId} RECHAZADA — tipo ${tipoCbte} pv ${pv} cond ${cfg.condicion_fiscal} code=${result.err_code || "?"}`);
-          resultados.push({ orden_id: orderId, ok: false, obs: intento + result.obs, total: orden.total });
-      };
-
-      // Órdenes hacia el camino individual. El lote marca consumida:true las
-      // que ya resolvió, y deja `marca` tomada en las que rebotaron para que el
-      // reintento individual la reuse en vez de re-crearla.
-      const individuales = ordenesEntries.map(([orderId, orden]) => ({ orderId, orden, marca: null, cbteNro: null, consumida: false, dudoso: false }));
-
-      // ── EMISIÓN EN LOTE ────────────────────────────────
-      // WSFEv1 acepta hasta 250 comprobantes por FECAESolicitar. Con más de 3
-      // órdenes del mismo tipo de comprobante previsto, se agrupan y se emiten
-      // en chunks de 25 con UN solo request SOAP por chunk (antes: un request
-      // por comprobante). Todo lo que no salga aprobado del lote — rechazos
-      // (incluidos los de receptor, que tienen fallback A→B), no procesadas por
-      // correlatividad y fallas estructurales — sigue por el loop individual de
-      // abajo, que además sabe renovar el token y hacer recovery por timeout.
-      if (ordenesEntries.length > 3) {
-        const grupos = new Map(); // tipoCbte previsto → entries de `individuales`
-        for (const ent of individuales) {
-          const o = ent.orden;
-          // Lo que el lote no puede manejar queda para el camino individual
-          // (que reporta el error exactamente como hoy):
-          if (!Number.isFinite(Number(o.total)) || Number(o.total) <= 0) continue; // total inválido
-          if (yaFacturadas.get(String(ent.orderId))) continue;                     // ya facturada
-          const nroDocNum = parseInt(String(o.doc_nro || o.dni || "").replace(/\D/g, ""), 10);
-          if ((o.doc_tipo === "CUIT" || o.doc_tipo === "DNI") && !Number.isFinite(nroDocNum)) continue; // doc inválido
-          const tipoPlan = isMonotributo ? 11 : (o.doc_tipo === "CUIT" ? 1 : 6);
-          if (!grupos.has(tipoPlan)) grupos.set(tipoPlan, []);
-          grupos.get(tipoPlan).push(ent);
-        }
-        for (const [tipoLote, entsLote] of grupos) {
-          if (entsLote.length <= 3) continue; // pocos comprobantes: no amortiza el camino batch
-          const letraLote = tipoLote === 1 ? "A" : tipoLote === 11 ? "C" : "B";
-          for (let ci = 0; ci < entsLote.length; ci += 25) {
-            if (Date.now() > DEADLINE_EMIT) break; // el loop individual reporta las pendientes
-            const chunk = entsLote.slice(ci, ci + 25);
-
-            // Pre-procesamiento POR ORDEN, idéntico al del loop individual:
-            // mapeo de productos + marca de idempotencia ANTES de pegarle a AFIP.
-            const prep = [];
-            for (const ent of chunk) {
-              if (product_map) {
-                for (const item of ent.orden.items || []) {
-                  if (product_map[item.nombre_original]) item.nombre = product_map[item.nombre_original];
-                }
-              }
-              const t = await tomarMarcaEmision(db, uid, cuitEmit, ent.orderId, ent.orden, resultados);
-              if (t.skip) { ent.consumida = true; continue; }
-              ent.marca = t;
-              prep.push(ent);
-            }
-            if (!prep.length) continue;
-
-            // Numeración correlativa CbteDesde..CbteHasta desde el numerador vigente
-            const nroBase = tipoLote === 1 ? cbteA : tipoLote === 11 ? cbteC : cbteB;
-            prep.forEach((ent, i) => { ent.cbteNro = nroBase + i; });
-
-            let lote = null, falloEstructural = null;
-            try {
-              lote = await facturarLote(prep.map(ent => ({ orden: ent.orden, cbteNro: ent.cbteNro })), {
-                token, sign, cuitNum, pv, tipoCbte: tipoLote, wsfeUrl: wsfe,
-                monotributo: isMonotributo, fechaImputacion, exento,
-              });
-            } catch (e) {
-              falloEstructural = e;
-              console.error(`[arca emit] lote tipo ${tipoLote} (${prep.length} órdenes) falló:`, e.message);
-            }
-
-            let maxAprobado = null;
-            if (falloEstructural || (lote && lote.porNro.size === 0 && !lote.err_code)) {
-              // Red/timeout o XML sin detalles: AFIP pudo haber procesado igual.
-              // Mismo recovery que el camino individual: consultar cada
-              // comprobante esperado antes de dar el chunk por fallido.
-              for (const ent of prep) {
-                let rec = null, consultaOk = false;
-                try {
-                  rec = await consultarComprobanteCompleto(token, sign, cuitNum, pv, tipoLote, ent.cbteNro, wsfe);
-                  consultaOk = !(rec && rec.error);
-                } catch (_) {}
-                if (rec && !rec.error && rec.cae) {
-                  await procesarAprobada(ent.orderId, ent.orden, letraLote, tipoLote, ent.cbteNro,
-                    { cae: rec.cae, cae_vto: rec.cae_vto, resultado: "A", obs: "", err_code: null, obs_codigo: null, obs_msg: "" },
-                    ent.marca.marcaRef, ent.marca.marcaTomada);
-                  ent.consumida = true;
-                  maxAprobado = ent.cbteNro;
-                } else if (!consultaOk) {
-                  // No se pudo confirmar si AFIP lo emitió: NO se reintenta (ni
-                  // acá ni por el camino individual — duplicar es peor que
-                  // demorar) y la marca queda "en_curso" frenando reintentos
-                  // 10 min. Mismo criterio que el camino individual ante un
-                  // timeout sin confirmación.
-                  ent.dudoso = true;
-                  ent.consumida = true;
-                  resultados.push({ orden_id: ent.orderId, ok: false, total: ent.orden.total,
-                    obs: `No se pudo confirmar con ARCA: ${falloEstructural?.message || "respuesta inesperada"} — verificá en el historial de ARCA antes de reintentar (por si el comprobante salió igual).` });
-                }
-                // rec === null (AFIP confirmó que NO lo tiene): sigue por el
-                // camino individual con la marca ya tomada.
-              }
-            } else if (lote.err_code && lote.porNro.size === 0) {
-              // AFIP rechazó el request ENTERO sin emitir nada (token 600/601,
-              // correlatividad, etc.): todo el chunk sigue por el camino
-              // individual, que sabe renovar el TA y resincronizar numeración.
-              console.error(`[arca emit] lote tipo ${tipoLote} rechazado por AFIP: ${lote.err_code} ${String(lote.err_msg || "").slice(0, 120)}`);
-            } else {
-              if (lote.err_code) console.error(`[arca emit] lote tipo ${tipoLote} con error global ${lote.err_code} pero ${lote.porNro.size} detalles — se procesan las aprobadas`);
-              // Respuesta por ítem. OJO semántica AFIP: si UN comprobante del
-              // lote es rechazado, AFIP rechaza ese y TODOS los siguientes del
-              // request (correlatividad) — las aprobadas son siempre un prefijo
-              // y los números rechazados NO se consumen.
-              for (const ent of prep) {
-                const r = lote.porNro.get(ent.cbteNro);
-                if (r && r.resultado === "A" && r.cae) {
-                  await procesarAprobada(ent.orderId, ent.orden, letraLote, tipoLote, ent.cbteNro, r,
-                    ent.marca.marcaRef, ent.marca.marcaTomada);
-                  ent.consumida = true;
-                  maxAprobado = ent.cbteNro;
-                }
-                // Rechazadas y no procesadas: reintento por el camino individual
-                // (con la marca ya tomada), que tiene el fallback A→B para los
-                // rechazos de validación del receptor.
-              }
-            }
-
-            // Avanzar el numerador hasta después de la última aprobada (los
-            // rechazos no consumen numeración en AFIP).
-            if (maxAprobado !== null) {
-              const sig = maxAprobado + 1;
-              if (tipoLote === 1) cbteA = sig; else if (tipoLote === 11) cbteC = sig; else cbteB = sig;
-            }
-          }
-        }
-      }
-
-      for (const ent of individuales) {
-        if (ent.consumida) continue; // ya resuelta por el camino en lote
-        const orderId = ent.orderId, orden = ent.orden;
-        if (Date.now() > DEADLINE_EMIT) {
-          pendientesIds.push(orderId);
-          // Marca tomada por el lote SIN riesgo de CAE en vuelo (AFIP respondió
-          // el rechazo, confirmó que no lo tiene, o nunca recibió el request):
-          // se libera para no bloquear el reintento 10 minutos.
-          if (ent.marca?.marcaTomada && !ent.dudoso) { try { await ent.marca.marcaRef.delete(); } catch (_) {} }
-          continue;
-        }
-        // Total inválido: no se toma marca ni se llama a AFIP.
-        if (!Number.isFinite(Number(orden.total)) || Number(orden.total) <= 0) {
-          resultados.push({ orden_id: orderId, ok: false, total: orden.total,
-            obs: `Total de la orden inválido (${orden.total}) — no se envió a AFIP.` });
-          continue;
-        }
-        // ¿Ya tiene factura? No se re-emite.
-        const previa = yaFacturadas.get(String(orderId));
-        if (previa) {
-          resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, total: orden.total,
-            obs: `Ya tiene factura ${previa.letra || ""} N° ${previa.nro || "?"} (CAE ${previa.cae || "?"}) — no se re-emite para no duplicarla en ARCA.` });
-          continue;
-        }
-        // Marca "en curso" antes de pegarle a AFIP. Si el camino en lote ya la
-        // tomó para esta orden, se reusa — re-crearla la haría rebotar como
-        // "otra emisión en curso".
-        let marcaRef, marcaTomada;
-        if (ent.marca) {
-          ({ marcaRef, marcaTomada } = ent.marca);
-        } else {
-          const t = await tomarMarcaEmision(db, uid, cuitEmit, orderId, orden, resultados);
-          if (t.skip) continue;
-          ({ marcaRef, marcaTomada } = t);
-        }
-
-        // Aplicar mapeo de productos
-        if (product_map) {
-          for (const item of orden.items) {
-            if (product_map[item.nombre_original]) item.nombre = product_map[item.nombre_original];
-          }
-        }
-
-        let result, letra, tipoCbte, cbteNro;
-
-        // Un error de red/SOAP en UNA orden no puede tumbar el lote entero: si
-        // explota, se informa esa orden y se sigue con las demás. La marca queda
-        // en "en_curso" a propósito — no sabemos si ARCA llegó a dar el CAE, así
-        // que durante 10 minutos no se reintenta (duplicar es peor que demorar).
-        try {
-          if (isMonotributo) {
-            letra = "C"; tipoCbte = 11; cbteNro = cbteC;
-            result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true, fechaImputacion, exento);
-          } else {
-            const tieneCuit = orden.doc_tipo === "CUIT";
-            if (tieneCuit) {
-              letra = "A"; tipoCbte = 1; cbteNro = cbteA;
-              result = await facturar(token, sign, cuitNum, pv, cbteA, orden, 1, wsfe, false, fechaImputacion, exento);
-              // Fallback A→B SOLO ante rechazo de validación del receptor —
-              // nunca por errores genéricos, de token (600/601) ni de
-              // correlatividad (10016).
-              if (!result.cae && esRechazoReceptor(result)) {
-                letra = "B"; tipoCbte = 6; cbteNro = cbteB;
-                result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
-              }
-            } else {
-              letra = "B"; tipoCbte = 6; cbteNro = cbteB;
-              result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
-            }
-          }
-        } catch (e) {
-          // Error de red/timeout: FECAESolicitar no se reintenta a ciegas. El
-          // pedido pudo procesarse igual, así que ANTES de darlo por fallido se
-          // consulta si el comprobante ya existe en AFIP con el número esperado.
-          let rec = null;
-          if (tipoCbte && cbteNro) {
-            try { rec = await consultarComprobanteCompleto(token, sign, cuitNum, pv, tipoCbte, cbteNro, wsfe); } catch (_) {}
-          }
-          if (rec && !rec.error && rec.cae) {
-            // AFIP SÍ lo emitió: se trata como éxito con los datos de la consulta.
-            result = { cae: rec.cae, cae_vto: rec.cae_vto, resultado: "A", obs: "", err_code: null, obs_codigo: null, obs_msg: "" };
-          } else {
-            console.error(`[arca emit] ${orderId} error de conexión:`, e.message);
-            resultados.push({ orden_id: orderId, ok: false, total: orden.total,
-              obs: `No se pudo confirmar con ARCA: ${e.message} — verificá en el historial de ARCA antes de reintentar (por si el comprobante salió igual).` });
-            continue;
-          }
-        }
-
-        // Token AFIP vencido a mitad de lote (600/601): renovar el TA UNA sola
-        // vez, re-sincronizar el numerador y reintentar este comprobante.
-        if (!result.cae && [600, 601].includes(result.err_code) && !taRenovado) {
-          taRenovado = true;
-          try {
-            await invalidarTA(db, uid, cuitEmit);
-            ({ token, sign } = await obtenerTA(db, uid, cfg));
-            cbteNro = (await getUltimoCbte(token, sign, cuitNum, pv, tipoCbte, wsfe)) + 1;
-            if (letra === "A") cbteA = cbteNro; else if (letra === "C") cbteC = cbteNro; else cbteB = cbteNro;
-            result = await facturar(token, sign, cuitNum, pv, cbteNro, orden, tipoCbte, wsfe, isMonotributo, fechaImputacion, exento);
-          } catch (e2) {
-            resultados.push({ orden_id: orderId, ok: false, total: orden.total,
-              obs: `Token de ARCA vencido y no se pudo renovar: ${e2.message}` });
-            continue;
-          }
-        }
-
-        if (result.cae) {
-          // Todo el post-procesamiento (marca, Firestore, PDF, ML, resultado)
-          // vive en procesarAprobada — compartido con el camino en lote.
-          await procesarAprobada(orderId, orden, letra, tipoCbte, cbteNro, result, marcaRef, marcaTomada);
-          if (letra === "A") cbteA++;
-          else if (letra === "C") cbteC++;
-          else cbteB++;
-        } else {
-          await registrarRechazo(orderId, orden, letra, tipoCbte, result, marcaRef, marcaTomada);
-        }
-      }
-
-      // Persistir el batch (lote de emisión) — solo metadata, NO los PDFs (se regeneran on-demand)
-      try {
-        const exitosos = resultados.filter(r => r.ok);
-        if (exitosos.length > 0) {
-          const batchId = "B_" + Date.now();
-          const totalBatch = exitosos.reduce((s, r) => s + (r.total || 0), 0);
-          await db.collection("users").doc(uid).collection("arca_batches").doc(batchId).set({
-            batch_id: batchId,
-            cuit_emisor: cuitEmit,
-            emitido_at: new Date().toISOString(),
-            cantidad: exitosos.length,
-            total: totalBatch,
-            comprobante_ids: exitosos.map(r => `${cuitEmit}_${pv}_${r.tipo_cbte || (isMonotributo ? 11 : (r.letra === "A" ? 1 : 6))}_${String(r.comprobante).padStart(8, "0")}`),
-            resumen: exitosos.map(r => ({
-              orden_id: r.orden_id,
-              letra: r.letra,
-              comprobante: r.comprobante,
-              cae: r.cae,
-              total: r.total,
-            })),
-          });
-        }
-      } catch (e) {
-        console.error("[arca] no se pudo guardar batch:", e.message);
-      }
+      const { resultados, pdfs, pendientesIds } = await ejecutarEmision(db, uid, cfg, {
+        cuitEmit, ordenes, product_map, fechaImputacion, pvSel, exentoReq: exento,
+      });
 
       // Lotes grandes: los PDFs en base64 revientan el límite de respuesta de
       // Vercel — el front los regenera con get_batch_pdfs.
@@ -3162,6 +4299,14 @@ export default async function handler(req, res) {
             letra: c.letra, tipo_cbte: c.tipo_cbte,
             domicilio: c.domicilio || "",
             total: c.total, neto: c.neto, iva: c.iva, punto_venta: c.punto_venta, exento: !!c.exento,
+            // Percepciones / multi-alícuota / nota de débito: la re-impresión
+            // replica el comprobante original tal como salió.
+            imp_trib: c.imp_trib || 0,
+            percepciones: Array.isArray(c.percepciones) ? c.percepciones : null,
+            alic_bloques: Array.isArray(c.alic_bloques) ? c.alic_bloques : null,
+            _is_nd: !!c.nd,
+            _cbte_asoc: c.nd ? (c.factura_origen?.comprobante || null) : undefined,
+            _pv_asoc: c.nd ? (c.factura_origen?.punto_venta || c.punto_venta) : undefined,
             items: (Array.isArray(c.items) && c.items.length > 0)
               ? c.items
               : [{ nombre: "(Detalle no disponible)", cantidad: 1, precio: c.total, descuento_item: 0 }],
@@ -3246,9 +4391,14 @@ export default async function handler(req, res) {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
 
+      // Rango libre desde/hasta (YYYY-MM-DD inclusive, por fecha_cbte con
+      // fallback a emitido_at): si viene, se ignora month/year.
+      const rango = rangoFechas(req.query);
+      if (rango?.error) return res.status(400).json({ error: rango.error });
+
       // Filtro opcional por mes/año (mismo formato que dashboard_stats)
       let filterStart = null, filterEnd = null;
-      if (req.query.month && req.query.year) {
+      if (!rango && req.query.month && req.query.year) {
         const y = String(req.query.year);
         const m = String(req.query.month).padStart(2, "0");
         filterStart = `${y}-${m}-01T03:00:00.000Z`;
@@ -3263,13 +4413,20 @@ export default async function handler(req, res) {
         .where("cuit_emisor", "==", cuitParam)
         .select("emitido_at", "total", "orden_id", "nro", "letra", "cae", "cae_vto",
           "tipo_cbte", "punto_venta", "doc_tipo", "doc_nro", "cliente", "fecha_cbte",
-          "neto", "iva", "ml_uploaded", "recuperado_afip", "exento", "anulada", "nc_nro")
+          "neto", "iva", "ml_uploaded", "recuperado_afip", "exento", "anulada", "nc_nro",
+          "nd", "imp_trib")
         .get();
 
       // _docId: id REAL del documento (formato viejo sin PV o nuevo con PV) —
       // es lo que get_batch_pdfs necesita para reimprimir.
       const comprobantes = snap.docs.map(d => ({ _docId: d.id, ...d.data() }))
-        .filter(c => !filterStart || (c.emitido_at >= filterStart && c.emitido_at < filterEnd))
+        .filter(c => {
+          if (rango) {
+            const key = c.fecha_cbte || (c.emitido_at || "").slice(0, 10);
+            return key >= rango.desde && key <= rango.hasta;
+          }
+          return !filterStart || (c.emitido_at >= filterStart && c.emitido_at < filterEnd);
+        })
         .sort((a, b) => (b.emitido_at || "").localeCompare(a.emitido_at || ""));
 
       const GROUP_WINDOW_MS = 10 * 60 * 1000; // 10 minutos
@@ -3314,6 +4471,8 @@ export default async function handler(req, res) {
           exento: !!c.exento,
           anulada: !!c.anulada,
           nc_nro: c.nc_nro || null,
+          nd: !!c.nd,
+          imp_trib: c.imp_trib || 0,
         });
         current._lastTs = ts;
       }
@@ -3332,9 +4491,16 @@ export default async function handler(req, res) {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
 
+      // Rango libre desde/hasta (YYYY-MM-DD inclusive): si viene, se ignora
+      // month/year. Las NC no guardan fecha_cbte: se usa fecha_cbte si algún
+      // registro lo tuviera y sino el día de `fecha` (ISO) — para las
+      // recuperadas de AFIP ese día ES el del comprobante real.
+      const rango = rangoFechas(req.query);
+      if (rango?.error) return res.status(400).json({ error: rango.error });
+
       // Filtro opcional por mes/año (mismos params year/month que list_batches)
       let filterStart = null, filterEnd = null;
-      if (req.query.month && req.query.year) {
+      if (!rango && req.query.month && req.query.year) {
         const y = String(req.query.year);
         const m = String(req.query.month).padStart(2, "0");
         filterStart = `${y}-${m}-01T03:00:00.000Z`;
@@ -3348,7 +4514,13 @@ export default async function handler(req, res) {
       const snap = await db.collection("users").doc(uid).collection("arca_notas_credito").get();
       const ncs = snap.docs.map(d => d.data())
         .filter(c => String(c.cuit || "").replace(/\D/g, "") === cuitParam)
-        .filter(c => !filterStart || (c.fecha >= filterStart && c.fecha < filterEnd))
+        .filter(c => {
+          if (rango) {
+            const key = c.fecha_cbte || String(c.fecha || "").slice(0, 10);
+            return key >= rango.desde && key <= rango.hasta;
+          }
+          return !filterStart || (c.fecha >= filterStart && c.fecha < filterEnd);
+        })
         .sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""))
         .map(c => ({
           tipo: c.tipo,
@@ -3404,6 +4576,14 @@ export default async function handler(req, res) {
             tipo_cbte: c.tipo_cbte,
             domicilio: c.domicilio || "",
             total: c.total, neto: c.neto, iva: c.iva, punto_venta: c.punto_venta, exento: !!c.exento,
+            // Percepciones / multi-alícuota / nota de débito: la re-impresión
+            // replica el comprobante original tal como salió.
+            imp_trib: c.imp_trib || 0,
+            percepciones: Array.isArray(c.percepciones) ? c.percepciones : null,
+            alic_bloques: Array.isArray(c.alic_bloques) ? c.alic_bloques : null,
+            _is_nd: !!c.nd,
+            _cbte_asoc: c.nd ? (c.factura_origen?.comprobante || null) : undefined,
+            _pv_asoc: c.nd ? (c.factura_origen?.punto_venta || c.punto_venta) : undefined,
             // Items reales si fueron persistidos al emitir, sino fallback (facturas viejas)
             items: (Array.isArray(c.items) && c.items.length > 0)
               ? c.items
@@ -3441,391 +4621,7 @@ export default async function handler(req, res) {
         untilDate = argYmd(new Date());
       }
 
-      const userSnap = await db.collection("users").doc(uid).get();
-      if (!userSnap.exists) return res.json({ connections: [], ordenes: {} });
-      const stores = userSnap.data().stores || [];
-
-      // IDs ya facturadas (mantenemos para marcar visualmente, no para filtrar).
-      // .select(): solo los campos que se usan — sin items/domicilio/cliente,
-      // que son lo pesado de cada comprobante.
-      const billedSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
-        .where("cuit_emisor", "==", cuitParam)
-        .select("orden_id", "letra", "nro", "emitido_at", "anulada", "anulada_at", "nc_nro")
-        .get();
-      const billedMap = new Map();
-      // IDs que fueron facturadas y luego ANULADAS con NC — recordatorio visual.
-      // Ya NO se lee arca_facturadas entera para esto: desde que las anuladas se
-      // MARCAN en arca_comprobantes (anulada:true + nc_nro, no se borran), la
-      // misma query de arriba trae la info. Solo anulaciones muy viejas (de
-      // cuando el comprobante se borraba al anular) pierden el badge.
-      const anuladaMap = new Map();
-      for (const d of billedSnap.docs) {
-        const data = d.data();
-        // anulada:true = ya NO cuenta como facturada (la orden vuelve a ser facturable)
-        if (!data.orden_id) continue;
-        if (!data.anulada) billedMap.set(data.orden_id, { letra: data.letra, nro: data.nro, emitido_at: data.emitido_at });
-        else anuladaMap.set(data.orden_id, { anulada_at: data.anulada_at || null, nc_comprobante: data.nc_nro || null });
-      }
-
-      const connections = [];
-      const ordenes = {};
-      let tnDebug = null; // diagnóstico: cuántas órdenes trajo TN por status
-
-      // Los tres canales se consultan EN PARALELO (antes era secuencial: TN,
-      // después Shopify, después ML — el tiempo total era la suma de los tres).
-      // Cada canal escribe en su propio mapa y al final se mergea en orden fijo
-      // para mantener determinismo en la respuesta.
-      const tnStore = stores.find(s => s.type === "tiendanube");
-      const shStore = stores.find(s => s.type === "shopify");
-      const mlStore = stores.find(s => s.type === "mercadolibre");
-      if (tnStore?.accessToken && tnStore?.storeId) connections.push({ platform: "tiendanube", name: tnStore.storeName || "Tienda Nube", connected: true });
-      if (shStore?.accessToken && shStore?.shop) connections.push({ platform: "shopify", name: shStore.storeName || shStore.shop, connected: true });
-      if (mlStore?.userId) connections.push({ platform: "mercadolibre", name: mlStore.nickname || `ML #${mlStore.userId}`, connected: true });
-      const ordTN = {}, ordSH = {}, ordML = {};
-      const fetchers = [];
-
-      // ─── Tienda Nube ───
-      if (tnStore?.accessToken && tnStore?.storeId) fetchers.push((async () => {
-        const headers = {
-          "Authentication": `bearer ${tnStore.accessToken}`,
-          "User-Agent": "GrowithApp (contacto.growith@gmail.com)",
-        };
-        // Llamada helper: trae TODAS las páginas de TN para un payment_status dado.
-        const fetchTNStatus = async (status) => {
-          const out = [];
-          // created_at: filtra por cuando se realizó la orden — coincide con el criterio
-          // estándar de TN y apps de referencia. En TN el pago es casi siempre inmediato
-          // al hacer el pedido, así que created_at ≈ fecha de pago en la práctica.
-          // sort_by=created_at+desc: las más recientes primero.
-          const baseParams = `per_page=200&payment_status=${status}&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00&sort_by=created_at&sort_direction=desc`;
-          for (let page = 1; page <= 10; page++) { // hasta 2000 órdenes por status
-            const url = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?${baseParams}&page=${page}`;
-            const r = await fetch(url, { headers });
-            if (!r.ok) { console.warn(`[tn-pending] ${status} page ${page} failed: ${r.status}`); break; }
-            const batch = await r.json();
-            if (!Array.isArray(batch) || batch.length === 0) break;
-            out.push(...batch);
-            if (batch.length < 200) break;
-          }
-          return out;
-        };
-        // Tres llamadas en paralelo: paid, authorized y partially_paid
-        // paid        → pago confirmado (siempre facturable)
-        // authorized  → MercadoPago aprobó, aún no liquidó (facturable)
-        // partially_paid → pago parcial recibido (facturable por el monto recibido)
-        const [paidBatch, authBatch, partialBatch] = await Promise.all([
-          fetchTNStatus("paid"),
-          fetchTNStatus("authorized"),
-          fetchTNStatus("partially_paid"),
-        ]);
-        // Mergear deduplicando por TN id interno
-        const tnById = new Map();
-        for (const o of [...paidBatch, ...authBatch, ...partialBatch]) {
-          tnById.set(String(o.id || o.number), o);
-        }
-        const allTN = [...tnById.values()];
-        // Diagnóstico: cuántos trajo TN por status
-        tnDebug = {
-          paid: paidBatch.length,
-          authorized: authBatch.length,
-          partially_paid: partialBatch.length,
-          total_raw: allTN.length,
-        };
-        console.log(`[tn-pending] raw fetched — paid:${tnDebug.paid} auth:${tnDebug.authorized} partial:${tnDebug.partially_paid} total:${tnDebug.total_raw} range:${sinceDate}→${untilDate}`);
-        for (const o of allTN) {
-          const orderId = "TN-" + String(o.number || o.id);
-          if ((o.status || "").toLowerCase() === "cancelled") continue;
-          const pStatus = (o.payment_status || "").toLowerCase();
-          if (!["paid", "authorized", "partially_paid"].includes(pStatus)) continue;
-          const docRaw = extractTNDoc(o);
-          const clas = clasificarDoc(docRaw);
-          const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
-            || o.customer?.name || o.contact_name || "";
-          const billed = billedMap.get(orderId);
-          ordTN[orderId] = {
-            _platform: "tiendanube",
-            _platform_label: "TN",
-            _order_number: String(o.number || o.id),
-            _billed: !!billed,
-            _billed_info: billed || null,
-            _was_anulada: !!anuladaMap.get(orderId),
-            _anulada_info: anuladaMap.get(orderId) || null,
-            nombre: customerName,
-            email: o.customer?.email || o.contact_email || "",
-            dni: docRaw, ...clas,
-            total: parseFloat(o.total) || 0,
-            subtotal: parseFloat(o.subtotal) || 0,
-            descuento: parseFloat(o.discount) || 0,
-            envio: parseFloat(o.shipping_cost_customer) || 0,
-            estado_pago: pStatus,
-            fecha: o.paid_at || o.created_at || "",
-            ciudad: o.shipping_address?.city || o.billing_city || "",
-            provincia: o.shipping_address?.province || o.billing_province || "",
-            // TN tiene address (calle), number, floor, locality. Combinamos todo.
-            direccion: [
-              o.shipping_address?.address || o.billing_address || "",
-              o.shipping_address?.number || o.billing_number || "",
-              o.shipping_address?.floor || o.billing_floor || "",
-            ].filter(Boolean).join(" ").trim(),
-            metodo_pago: o.payment_details?.method || "Pagado",
-            plataforma_pago: normPlataformaPago(o.gateway_name || o.gateway, o.payment_details?.method),
-            items: (o.products || []).map(p => ({
-              nombre: p.name || "Producto",
-              nombre_original: p.name || "Producto",
-              cantidad: parseInt(p.quantity) || 1,
-              precio: parseFloat(p.price) || 0,
-              descuento_item: 0,
-            })),
-          };
-        }
-      })().catch(e => console.error("[tn-pending] error:", e.message)));
-
-      // ─── Shopify ───
-      if (shStore?.accessToken && shStore?.shop) fetchers.push((async () => {
-        const allSH = [];
-        // Shopify usa cursor pagination con Link header. IMPORTANTE: ordenamos
-        // por created_at DESC (más nuevas primero). Sin esto, Shopify devuelve las
-        // más VIEJAS primero y, con el tope de páginas, nunca llegaban las ventas
-        // recientes → "no tomaba las ventas nuevas". El orden se preserva en el cursor.
-        let pageInfoUrl = `https://${shStore.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&order=created_at+desc&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
-        // Paginación COMPLETA (como Márgenes): seguimos el cursor hasta que no haya
-        // más páginas. El tope de 60 es solo un seguro anti-loop (60×250 = 15k).
-        for (let i = 0; i < 60; i++) {
-          if (!pageInfoUrl) break;
-          const shRes = await fetch(pageInfoUrl, {
-            headers: { "X-Shopify-Access-Token": shStore.accessToken },
-          });
-          if (!shRes.ok) break;
-          const data = await shRes.json();
-          const batch = data.orders || [];
-          allSH.push(...batch);
-          // Detectar next page por Link header
-          const linkHeader = shRes.headers.get("link") || shRes.headers.get("Link") || "";
-          const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-          pageInfoUrl = nextMatch ? nextMatch[1] : null;
-        }
-        // Cache de customer fetches para no pegar 200 veces al mismo customer
-        // dentro del mismo refresh. clave = customer.id, valor = customer JSON
-        // (o null si fail).
-        const customerCache = new Map();
-        async function fetchCustomerFresh(customerId) {
-          if (!customerId) return null;
-          if (customerCache.has(customerId)) return customerCache.get(customerId);
-          try {
-            const r = await fetch(`https://${shStore.shop}/admin/api/2024-10/customers/${customerId}.json`, {
-              headers: { "X-Shopify-Access-Token": shStore.accessToken },
-            });
-            if (!r.ok) { customerCache.set(customerId, null); return null; }
-            const d = await r.json();
-            customerCache.set(customerId, d?.customer || null);
-            return d?.customer || null;
-          } catch (_) { customerCache.set(customerId, null); return null; }
-        }
-
-        for (const o of allSH) {
-          const orderId = "SH-" + (o.name || String(o.order_number || o.id));
-          if (o.cancelled_at) continue;
-          // Filtros estrictos: solo pagadas (no pending, refunded, voided)
-          if ((o.financial_status || "").toLowerCase() !== "paid") continue;
-          // Extract con snapshot de la orden (rápido, sin requests extra).
-          let docRaw = extractShopifyDoc(o);
-
-          // FALLBACK: si el snapshot de la orden no trae doc, pero la orden
-          // tiene customer_id, traemos el customer ACTUAL desde Shopify. Eso
-          // refleja el CUIT que el merchant editó después de la venta —
-          // billing/shipping_address de la orden son snapshots inmutables.
-          if (!docRaw && o.customer?.id && !billedMap.get(orderId)) {
-            const fresh = await fetchCustomerFresh(o.customer.id);
-            if (fresh) {
-              // Re-armamos un "o fake" con customer enriquecido para reusar el extractor
-              docRaw = extractShopifyDoc({ ...o, customer: { ...o.customer, ...fresh } });
-            }
-          }
-
-          const clas = clasificarDoc(docRaw);
-          const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
-            || o.billing_address?.name || o.shipping_address?.name || "";
-          const billed = billedMap.get(orderId);
-          ordSH[orderId] = {
-            _platform: "shopify",
-            _platform_label: "SH",
-            _order_number: o.name || String(o.order_number || o.id),
-            _billed: !!billed,
-            _billed_info: billed || null,
-            _was_anulada: !!anuladaMap.get(orderId),
-            _anulada_info: anuladaMap.get(orderId) || null,
-            nombre: customerName,
-            email: o.email || o.customer?.email || "",
-            dni: docRaw, ...clas,
-            total: parseFloat(o.total_price) || 0,
-            subtotal: parseFloat(o.subtotal_price) || 0,
-            descuento: parseFloat(o.total_discounts) || 0,
-            envio: parseFloat(o.total_shipping_price_set?.shop_money?.amount) || 0,
-            estado_pago: "paid",
-            fecha: o.processed_at || o.created_at || "",
-            ciudad: o.billing_address?.city || o.shipping_address?.city || "",
-            provincia: o.billing_address?.province || o.shipping_address?.province || "",
-            direccion: [
-              o.billing_address?.address1 || o.shipping_address?.address1 || "",
-              o.billing_address?.address2 || o.shipping_address?.address2 || "",
-            ].filter(Boolean).join(", "),
-            metodo_pago: o.payment_gateway_names?.join(", ") || "Pagado",
-            plataforma_pago: o.payment_gateway_names?.join(", ") || "",
-            items: (o.line_items || []).map(li => ({
-              nombre: li.title || "Producto",
-              nombre_original: li.title || "Producto",
-              cantidad: parseInt(li.quantity) || 1,
-              precio: parseFloat(li.price) || 0,
-              // Descuento REAL asignado a esta línea (Shopify ya reparte los
-              // descuentos de orden/bundle por producto en discount_allocations).
-              descuento_item: (li.discount_allocations||[]).reduce((s,da)=>s+(parseFloat(da.amount)||0),0) || parseFloat(li.total_discount) || 0,
-            })),
-          };
-        }
-      })().catch(e => console.error("[sh-pending] error:", e.message)));
-
-      // ─── Mercado Libre ───
-      if (mlStore?.userId) fetchers.push((async () => {
-        try {
-          const { accessToken, userId } = await getValidMLToken(db, uid, await mlVentasAcc(db, uid)) || {};
-          if (accessToken) {
-            const allML = [];
-            for (let offset = 0; offset < 500; offset += 50) {
-              // date_closed = cuando la orden pasó a estado "paid" (más preciso que date_created para facturar)
-              const url = `https://api.mercadolibre.com/orders/search?seller=${userId}&order.status=paid&order.date_closed.from=${sinceDate}T00:00:00.000-03:00&order.date_closed.to=${untilDate}T23:59:59.999-03:00&limit=50&offset=${offset}&sort=date_desc`;
-              const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-              if (!r.ok) {
-                console.error("[ml] orders search failed", r.status, await r.text().catch(()=>""));
-                break;
-              }
-              const data = await r.json();
-              const batch = data.results || [];
-              allML.push(...batch);
-              if (batch.length < 50) break;
-            }
-
-            // Pre-filtrar las que NO van a entrar (canceladas/inválidas/refundeadas) para no gastar fetch billing_info
-            const mlPaid = allML.filter(o => {
-              const st = (o.status || "").toLowerCase();
-              if (["cancelled", "invalid", "partially_paid", "payment_required", "payment_in_process"].includes(st)) return false;
-              const validPayments = (o.payments || []).filter(p => !["refunded", "cancelled"].includes((p.status || "").toLowerCase()));
-              if ((o.payments || []).length > 0 && validPayments.length === 0) return false;
-              return true;
-            });
-
-            // Fetch billing_info en paralelo (chunks de 5 para evitar 429)
-            const billingByOrderId = {};
-            let billingOk = 0, billingErr = 0;
-            // Solo pedimos billing_info de las órdenes SIN facturar: las ya
-            // facturadas se muestran en verde y no se re-emiten, así que no
-            // necesitan datos fiscales. En un período largo esto ahorra la
-            // enorme mayoría de los requests (el cuello de botella histórico).
-            const mlNeedBilling = mlPaid.filter(o => !billedMap.get("ML-" + String(o.id)));
-            const CHUNK = 10;
-            for (let i = 0; i < mlNeedBilling.length; i += CHUNK) {
-              const chunk = mlNeedBilling.slice(i, i + CHUNK);
-              await Promise.all(chunk.map(async (o) => {
-                try {
-                  const r = await fetch(`https://api.mercadolibre.com/orders/${o.id}/billing_info`, {
-                    headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "GrowithApp (contacto.growith@gmail.com)" },
-                  });
-                  if (r.ok) {
-                    const data = await r.json();
-                    // Probar varios paths que ML usa según versión del endpoint
-                    billingByOrderId[o.id] = data.buyer?.billing_info || data.billing_info || (data.doc_number ? data : null);
-                    billingOk++;
-                  } else {
-                    billingErr++;
-                    // No loguear el body: billing_info trae datos personales del comprador
-                    if (billingErr <= 3) console.error(`[ml-billing] ${o.id} status=${r.status}`);
-                  }
-                } catch (e) {
-                  billingErr++;
-                  if (billingErr <= 3) console.error(`[ml-billing] ${o.id} error: ${e.message}`);
-                }
-              }));
-            }
-            if (billingErr > 0) console.warn(`[ml-billing] ${billingErr}/${mlNeedBilling.length} fallaron (ok=${billingOk})`);
-
-            for (const o of mlPaid) {
-              const orderId = "ML-" + String(o.id);
-              const buyer = o.buyer || {};
-              // Combinamos billing_info del endpoint específico Y del response de /orders/search
-              const bi = billingByOrderId[o.id] || buyer.billing_info || null;
-              const additional = (bi && Array.isArray(bi.additional_info)) ? bi.additional_info : [];
-              const getInfo = (type) => additional.find(a => a.type === type)?.value || "";
-
-              const businessName = getInfo("BUSINESS_NAME");
-              const biFirstName = getInfo("FIRST_NAME");
-              const biLastName = getInfo("LAST_NAME");
-              // Nombre con fallback en cascada: 1) razón social, 2) billing_info nombres,
-              // 3) buyer.first/last_name del search, 4) nickname, 5) "Consumidor Final"
-              const customerName = businessName
-                || [biFirstName, biLastName].filter(Boolean).join(" ").trim()
-                || [buyer.first_name, buyer.last_name].filter(Boolean).join(" ").trim()
-                || buyer.nickname
-                || "Consumidor Final";
-              // Doc: primero del billing_info dedicado, después del que vino en search
-              const docRaw = String(bi?.doc_number || buyer.billing_info?.doc_number || "").replace(/[.\-]/g, "");
-              const clas = clasificarDoc(docRaw);
-              const shipAddr = o.shipping?.receiver_address || {};
-              // billing_info también puede traer address (datos fiscales)
-              const biAddr = bi?.buyer?.billing_info?.address || bi?.address || {};
-              const billed = billedMap.get(orderId);
-
-              // Construir dirección con todos los datos posibles (calle + número + dpto)
-              const calle = shipAddr.street_name || biAddr.street_name || "";
-              const numero = shipAddr.street_number || biAddr.street_number || "";
-              const comment = shipAddr.comment || ""; // dpto, piso, etc
-              const direccionStr = [
-                [calle, numero].filter(Boolean).join(" "),
-                comment,
-              ].filter(Boolean).join(", ");
-
-              ordML[orderId] = {
-                _platform: "mercadolibre",
-                _platform_label: "ML",
-                _order_number: String(o.id),
-                _billed: !!billed,
-                _billed_info: billed || null,
-                nombre: customerName,
-                email: buyer.email || "",
-                dni: docRaw, ...clas,
-                // Facturar lo que REALMENTE paga el cliente: total_amount NO resta
-                // el cupón/descuento (el comprador paga total_amount − coupon.amount).
-                total: Math.max(0, (parseFloat(o.total_amount) || 0) - (parseFloat(o.coupon?.amount) || 0)),
-                subtotal: Math.max(0, (parseFloat(o.total_amount) || 0) - (parseFloat(o.coupon?.amount) || 0)),
-                descuento: parseFloat(o.coupon?.amount) || 0,
-                envio: parseFloat(o.shipping?.cost) || 0,
-                estado_pago: "paid",
-                fecha: o.date_closed || o.date_created || "",
-                ciudad: shipAddr.city?.name || biAddr.city_name || biAddr.city?.name || "",
-                provincia: shipAddr.state?.name || biAddr.state_name || biAddr.state?.name || "",
-                direccion: direccionStr,
-                metodo_pago: "Mercado Pago",
-                plataforma_pago: "Mercado Pago",
-                items: (o.order_items || []).map(it => ({
-                  nombre: it.item?.title || "Producto",
-                  nombre_original: it.item?.title || "Producto",
-                  cantidad: parseInt(it.quantity) || 1,
-                  precio: parseFloat(it.unit_price) || 0,
-                  descuento_item: 0,
-                })),
-              };
-            }
-          }
-        } catch (e) {
-          console.error("[ml] error trayendo órdenes:", e.message);
-        }
-      })());
-
-      await Promise.all(fetchers);
-      Object.assign(ordenes, ordTN, ordSH, ordML);
-
-      // Plataformas no conectadas (informativas)
-      if (!stores.find(s => s.type === "tiendanube")) connections.push({ platform: "tiendanube", connected: false });
-      if (!stores.find(s => s.type === "shopify")) connections.push({ platform: "shopify", connected: false });
-      if (!stores.find(s => s.type === "mercadolibre")) connections.push({ platform: "mercadolibre", connected: false });
+      const { connections, ordenes, tnDebug } = await obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate });
 
       // Ordenar todas las órdenes por fecha desc (las más recientes primero), mezclando canales.
       const ordenadas = Object.fromEntries(
