@@ -10742,6 +10742,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [ntCanjesSel, setNtCanjesSel] = useState({});   // { canjeDocId: true }
   const [canjesPend, setCanjesPend] = useState(null);   // null = sin cargar; [] = cargado
   const [showCanjesSec, setShowCanjesSec] = useState(false);
+  const [ntCanjesBusq, setNtCanjesBusq] = useState("");
   const [draggedTarea, setDraggedTarea] = useState(null);   // {id, fromColabKey}
   const [dragOverColab, setDragOverColab] = useState(null); // _key del card destino
   const [filterColab, setFilterColab] = useState(""); // email | "" = todos
@@ -11028,30 +11029,37 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     boxShadow:prodTab===id?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap",
   });
 
-  // Canjes con contenido pendiente de entrega (acordado > entregado), para
-  // adjuntar al brief de una tarea. Solo dueño (colabMode no tiene Firestore).
-  async function loadCanjesPendientes() {
+  // Todos los canjes de la cuenta, para adjuntar su material al brief de una
+  // tarea. Solo dueño (colabMode no tiene Firestore).
+  async function loadCanjesTarea() {
     if (canjesPend !== null || !user?.uid) return;
     try {
       const snap = await getDocs(query(collection(db,"canjes"), where("ownerId","==",user.uid)));
       const list = [];
       snap.forEach(d => {
         const c = d.data();
-        if (c.estado === "Cerrado") return;
         const pend = (c.contenido||[])
           .filter(x => (+x.acordados||0) > (+x.entregados||0))
           .map(x => ({ tipo:x.tipo, cant:(+x.acordados||0)-(+x.entregados||0) }));
-        if (!pend.length) return;
-        list.push({ id:d.id, influencer:c.influencer||"(sin nombre)", usuario:c.usuario||"", red:c.red||"", estado:c.estado||"", pendientes:pend });
+        const acordado = (c.contenido||[])
+          .filter(x => (+x.acordados||0) > 0)
+          .map(x => ({ tipo:x.tipo, cant:+x.acordados||0 }));
+        list.push({ id:d.id, influencer:c.influencer||"(sin nombre)", usuario:c.usuario||"", red:c.red||"", estado:c.estado||"", pedidoRef:c.pedidoRef||"", producto:c.producto||"", pendientes:pend, acordado });
       });
-      list.sort((a,b)=>a.influencer.localeCompare(b.influencer,"es"));
+      // Los que tienen material pendiente primero, después alfabético
+      list.sort((a,b)=>(b.pendientes.length?1:0)-(a.pendientes.length?1:0) || a.influencer.localeCompare(b.influencer,"es"));
       setCanjesPend(list);
     } catch(e) { setCanjesPend([]); toast("No se pudieron cargar los canjes","error"); }
   }
+  // Texto del material: pendiente si hay; si no, lo acordado; si no, el producto
+  const canjeMaterial = (c) =>
+    c.pendientes.length ? c.pendientes.map(p=>`${p.cant} ${p.tipo}`).join(", ")
+    : c.acordado.length ? c.acordado.map(p=>`${p.cant} ${p.tipo}`).join(", ") + " (acordado)"
+    : c.producto || "sin material registrado";
   const canjeLinea = (c) => {
     const arroba = c.usuario ? "@"+String(c.usuario).replace(/^@/,"") : "";
-    const quien = [arroba, c.red].filter(Boolean).join(" · ");
-    return `${c.influencer}${quien?` (${quien})`:""}: ${c.pendientes.map(p=>`${p.cant} ${p.tipo}`).join(", ")}`;
+    const quien = [arroba, c.red, c.pedidoRef?`pedido #${c.pedidoRef}`:""].filter(Boolean).join(" · ");
+    return `${c.influencer}${quien?` (${quien})`:""}: ${canjeMaterial(c)}`;
   };
 
   async function crearTarea() {
@@ -11073,7 +11081,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     }
     const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:briefFinal,links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,tipoContenido:ntTipoContenido||null,creadoPor,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:"",asignadoEmail:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtTipoContenido(""); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]); setNtCanjesSel({}); setShowCanjesSec(false);
+    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:"",asignadoEmail:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtTipoContenido(""); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]); setNtCanjesSel({}); setShowCanjesSec(false); setNtCanjesBusq("");
     // Mostrar resultado de emails
     const emailResults = d._emailResults||[];
     const sent = emailResults.filter(r=>r.ok);
@@ -13635,26 +13643,42 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 const nSel = Object.values(ntCanjesSel).filter(Boolean).length;
                 return (
                 <div>
-                  <button onClick={()=>{setShowCanjesSec(s=>!s);loadCanjesPendientes();}}
+                  <button onClick={()=>{setShowCanjesSec(s=>!s);loadCanjesTarea();}}
                     style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",width:"100%",justifyContent:"space-between",display:"flex",alignItems:"center"}}>
                     <span>Adjuntar material pedido de Canjes{nSel?` · ${nSel} seleccionado${nSel>1?"s":""}`:""}</span>
                     <span style={{color:T.textSm}}>{showCanjesSec?"▴":"▾"}</span>
                   </button>
                   {showCanjesSec&&(
-                    <div style={{marginTop:8,border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.surface,maxHeight:200,overflowY:"auto"}}>
-                      {canjesPend===null
-                        ? <div style={{padding:"14px 12px",fontSize:12,color:T.textSm,textAlign:"center"}}>Cargando canjes…</div>
-                        : canjesPend.length===0
-                        ? <div style={{padding:"14px 12px",fontSize:12,color:T.textSm,textAlign:"center"}}>No hay canjes con contenido pendiente de entrega.</div>
-                        : canjesPend.map(c=>(
-                          <label key={c.id} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer"}}>
-                            <input type="checkbox" checked={!!ntCanjesSel[c.id]} onChange={()=>setNtCanjesSel(p=>({...p,[c.id]:!p[c.id]}))} style={{cursor:"pointer",marginTop:2}}/>
-                            <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:12,fontWeight:600,color:T.text}}>{c.influencer}{c.usuario?<span style={{color:T.textSm,fontWeight:400}}> · @{String(c.usuario).replace(/^@/,"")}{c.red?` · ${c.red}`:""}</span>:c.red?<span style={{color:T.textSm,fontWeight:400}}> · {c.red}</span>:null}</div>
-                              <div style={{fontSize:11,color:T.textMd}}>{c.pendientes.map(p=>`${p.cant} ${p.tipo}`).join(", ")} pendiente{c.pendientes.reduce((a,p)=>a+p.cant,0)>1?"s":""}</div>
-                            </div>
-                          </label>
-                        ))}
+                    <div style={{marginTop:8,border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.surface}}>
+                      <div style={{padding:"8px 10px",borderBottom:`1px solid ${T.borderL}`}}>
+                        <input type="text" value={ntCanjesBusq} onChange={e=>setNtCanjesBusq(e.target.value)}
+                          placeholder="Buscar canje por nombre, usuario o número de pedido…"
+                          style={{...iS,fontSize:12,width:"100%",padding:"7px 10px",boxSizing:"border-box"}}/>
+                      </div>
+                      <div style={{maxHeight:200,overflowY:"auto"}}>
+                        {(()=>{
+                          if (canjesPend===null) return <div style={{padding:"14px 12px",fontSize:12,color:T.textSm,textAlign:"center"}}>Cargando canjes…</div>;
+                          const q = ntCanjesBusq.trim().toLowerCase();
+                          const vis = !q ? canjesPend : canjesPend.filter(c=>[c.influencer,c.usuario,c.pedidoRef,c.producto].join(" ").toLowerCase().includes(q));
+                          if (!vis.length) return <div style={{padding:"14px 12px",fontSize:12,color:T.textSm,textAlign:"center"}}>{canjesPend.length===0?"No hay canjes cargados todavía.":"Ningún canje coincide con la búsqueda."}</div>;
+                          return vis.map(c=>(
+                            <label key={c.id} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer"}}>
+                              <input type="checkbox" checked={!!ntCanjesSel[c.id]} onChange={()=>setNtCanjesSel(p=>({...p,[c.id]:!p[c.id]}))} style={{cursor:"pointer",marginTop:2}}/>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{fontSize:12,fontWeight:600,color:T.text}}>
+                                  {c.influencer}
+                                  <span style={{color:T.textSm,fontWeight:400}}>
+                                    {c.usuario?` · @${String(c.usuario).replace(/^@/,"")}`:""}{c.red?` · ${c.red}`:""}{c.pedidoRef?` · #${c.pedidoRef}`:""}
+                                  </span>
+                                </div>
+                                <div style={{fontSize:11,color:c.pendientes.length?T.textMd:T.textSm}}>
+                                  {canjeMaterial(c)}{c.pendientes.length?" pendiente"+(c.pendientes.reduce((a,p)=>a+p.cant,0)>1?"s":""):""}{c.estado?` · ${c.estado}`:""}
+                                </div>
+                              </div>
+                            </label>
+                          ));
+                        })()}
+                      </div>
                     </div>
                   )}
                   {nSel>0&&<div style={{fontSize:10,color:T.textSm,marginTop:5}}>La lista de material se va a agregar automáticamente al final del brief.</div>}
