@@ -2756,18 +2756,21 @@ async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, f
 // facturación (_billed / _was_anulada) ya cruzado contra arca_comprobantes.
 // Extraído tal cual del handler pending_orders para que cron_autopilot obtenga
 // las pendientes con la MISMA lógica que ve el usuario en pantalla.
-async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate }) {
-      const userSnap = await db.collection("users").doc(uid).get();
-      if (!userSnap.exists) return { connections: [], ordenes: {}, tnDebug: null };
-      const stores = userSnap.data().stores || [];
-
+async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, force = false }) {
+      // El doc del user (tokens de stores) y el snapshot de facturadas son
+      // independientes → van EN PARALELO (antes era secuencial: user, después billed).
       // IDs ya facturadas (mantenemos para marcar visualmente, no para filtrar).
       // .select(): solo los campos que se usan — sin items/domicilio/cliente,
       // que son lo pesado de cada comprobante.
-      const billedSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
-        .where("cuit_emisor", "==", cuitParam)
-        .select("orden_id", "letra", "nro", "emitido_at", "anulada", "anulada_at", "nc_nro")
-        .get();
+      const [userSnap, billedSnap] = await Promise.all([
+        db.collection("users").doc(uid).get(),
+        db.collection("users").doc(uid).collection("arca_comprobantes")
+          .where("cuit_emisor", "==", cuitParam)
+          .select("orden_id", "letra", "nro", "emitido_at", "anulada", "anulada_at", "nc_nro")
+          .get(),
+      ]);
+      if (!userSnap.exists) return { connections: [], ordenes: {}, tnDebug: null };
+      const stores = userSnap.data().stores || [];
       const billedMap = new Map();
       // IDs que fueron facturadas y luego ANULADAS con NC — recordatorio visual.
       // Ya NO se lee arca_facturadas entera para esto: desde que las anuladas se
@@ -2787,16 +2790,46 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate }) {
       const ordenes = {};
       let tnDebug = null; // diagnóstico: cuántas órdenes trajo TN por status
 
-      // Los tres canales se consultan EN PARALELO (antes era secuencial: TN,
-      // después Shopify, después ML — el tiempo total era la suma de los tres).
-      // Cada canal escribe en su propio mapa y al final se mergea en orden fijo
-      // para mantener determinismo en la respuesta.
       const tnStore = stores.find(s => s.type === "tiendanube");
       const shStore = stores.find(s => s.type === "shopify");
       const mlStore = stores.find(s => s.type === "mercadolibre");
       if (tnStore?.accessToken && tnStore?.storeId) connections.push({ platform: "tiendanube", name: tnStore.storeName || "Tienda Nube", connected: true });
       if (shStore?.accessToken && shStore?.shop) connections.push({ platform: "shopify", name: shStore.storeName || shStore.shop, connected: true });
       if (mlStore?.userId) connections.push({ platform: "mercadolibre", name: mlStore.nickname || `ML #${mlStore.userId}`, connected: true });
+
+      // ─── CACHE POR RANGO (Firestore) ──────────────────────────────────────
+      // Guardamos SOLO la parte cara: las órdenes crudas ya normalizadas de
+      // TN/SH/ML, ANTES de cruzar con billedMap. El billedMap se calcula
+      // SIEMPRE fresco (query de arriba) y se cruza al final, así las marcas
+      // de "ya facturada" nunca quedan viejas aunque las órdenes vengan del cache.
+      //   - rango CERRADO (untilDate < hoy AR): el cache no vence — las ventas
+      //     de días pasados no cambian.
+      //   - rango que incluye hoy: cache válido 5 minutos.
+      //   - force=1 (botón "Actualizar"): saltea el cache y refresca.
+      const cacheCol = db.collection("users").doc(uid).collection("arca_cache");
+      const cacheId = `pend_${cuitParam}_${sinceDate}_${untilDate}`;
+      const CACHE_TTL_MS = 5 * 60 * 1000;
+      let rawOrdenes = null; // órdenes normalizadas SIN _billed/_anulada (del cache o del fetch vivo)
+      if (!force) {
+        try {
+          const cSnap = await cacheCol.doc(cacheId).get();
+          if (cSnap.exists) {
+            const c = cSnap.data() || {};
+            const rangoCerrado = untilDate < hoyARISO();
+            const fresco = Date.now() - (Number(c.ts) || 0) < CACHE_TTL_MS;
+            if (c.ordenes && typeof c.ordenes === "object" && (rangoCerrado || fresco)) {
+              rawOrdenes = c.ordenes;
+              tnDebug = c.tnDebug || null;
+            }
+          }
+        } catch (e) { console.warn("[arca-cache] lectura falló:", e.message); }
+      }
+
+      if (!rawOrdenes) {
+      // Los tres canales se consultan EN PARALELO (antes era secuencial: TN,
+      // después Shopify, después ML — el tiempo total era la suma de los tres).
+      // Cada canal escribe en su propio mapa y al final se mergea en orden fijo
+      // para mantener determinismo en la respuesta.
       const ordTN = {}, ordSH = {}, ordML = {};
       const fetchers = [];
 
@@ -2814,14 +2847,34 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate }) {
           // al hacer el pedido, así que created_at ≈ fecha de pago en la práctica.
           // sort_by=created_at+desc: las más recientes primero.
           const baseParams = `per_page=200&payment_status=${status}&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00&sort_by=created_at&sort_direction=desc`;
-          for (let page = 1; page <= 10; page++) { // hasta 2000 órdenes por status
+          const MAX_PAGES = 10; // hasta 2000 órdenes por status
+          const getPage = async (page) => {
             const url = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?${baseParams}&page=${page}`;
             const r = await fetch(url, { headers });
-            if (!r.ok) { console.warn(`[tn-pending] ${status} page ${page} failed: ${r.status}`); break; }
+            if (!r.ok) { console.warn(`[tn-pending] ${status} page ${page} failed: ${r.status}`); return { batch: null, total: null }; }
             const batch = await r.json();
-            if (!Array.isArray(batch) || batch.length === 0) break;
-            out.push(...batch);
-            if (batch.length < 200) break;
+            return { batch: Array.isArray(batch) ? batch : null, total: parseInt(r.headers.get("x-total-count")) || null };
+          };
+          // Página 1 primero: si trae el total (header X-Total-Count) sabemos
+          // cuántas páginas quedan; el resto va en lotes de 2 en paralelo con
+          // ~400ms entre lotes (TN rate-limitea ~2 req/s — conservador porque
+          // los 3 payment_status ya corren en paralelo entre sí).
+          const first = await getPage(1);
+          if (!first.batch || first.batch.length === 0) return out;
+          out.push(...first.batch);
+          if (first.batch.length < 200) return out;
+          const lastPage = first.total ? Math.min(MAX_PAGES, Math.ceil(first.total / 200)) : MAX_PAGES;
+          let fin = false;
+          for (let start = 2; start <= lastPage && !fin; start += 2) {
+            await new Promise(r => setTimeout(r, 400));
+            const nums = [start, start + 1].filter(p => p <= lastPage);
+            const lote = await Promise.all(nums.map(getPage));
+            // Concatenar por índice de página (Promise.all preserva el orden)
+            for (const { batch } of lote) {
+              if (!batch || batch.length === 0) { fin = true; break; }
+              out.push(...batch);
+              if (batch.length < 200) { fin = true; break; }
+            }
           }
           return out;
         };
@@ -2857,15 +2910,12 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate }) {
           const clas = clasificarDoc(docRaw);
           const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
             || o.customer?.name || o.contact_name || "";
-          const billed = billedMap.get(orderId);
+          // _billed/_anulada NO se setean acá: se cruzan al final contra el
+          // billedMap fresco (así el cache de órdenes nunca pisa esas marcas).
           ordTN[orderId] = {
             _platform: "tiendanube",
             _platform_label: "TN",
             _order_number: String(o.number || o.id),
-            _billed: !!billed,
-            _billed_info: billed || null,
-            _was_anulada: !!anuladaMap.get(orderId),
-            _anulada_info: anuladaMap.get(orderId) || null,
             nombre: customerName,
             email: o.customer?.email || o.contact_email || "",
             dni: docRaw, ...clas,
@@ -2961,15 +3011,10 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate }) {
           const clas = clasificarDoc(docRaw);
           const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
             || o.billing_address?.name || o.shipping_address?.name || "";
-          const billed = billedMap.get(orderId);
           ordSH[orderId] = {
             _platform: "shopify",
             _platform_label: "SH",
             _order_number: o.name || String(o.order_number || o.id),
-            _billed: !!billed,
-            _billed_info: billed || null,
-            _was_anulada: !!anuladaMap.get(orderId),
-            _anulada_info: anuladaMap.get(orderId) || null,
             nombre: customerName,
             email: o.email || o.customer?.email || "",
             dni: docRaw, ...clas,
@@ -3006,18 +3051,41 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate }) {
           const { accessToken, userId } = await getValidMLToken(db, uid, await mlVentasAcc(db, uid)) || {};
           if (accessToken) {
             const allML = [];
-            for (let offset = 0; offset < 500; offset += 50) {
-              // date_closed = cuando la orden pasó a estado "paid" (más preciso que date_created para facturar)
+            // date_closed = cuando la orden pasó a estado "paid" (más preciso que date_created para facturar)
+            const mlPage = async (offset) => {
               const url = `https://api.mercadolibre.com/orders/search?seller=${userId}&order.status=paid&order.date_closed.from=${sinceDate}T00:00:00.000-03:00&order.date_closed.to=${untilDate}T23:59:59.999-03:00&limit=50&offset=${offset}&sort=date_desc`;
               const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
               if (!r.ok) {
                 console.error("[ml] orders search failed", r.status, await r.text().catch(()=>""));
-                break;
+                return null;
               }
-              const data = await r.json();
-              const batch = data.results || [];
-              allML.push(...batch);
-              if (batch.length < 50) break;
+              return await r.json();
+            };
+            // Primera página trae paging.total → con eso calculamos los offsets
+            // restantes y los pedimos en lotes de 4 en paralelo (~400ms entre
+            // lotes). Antes era offset por offset con await encadenado.
+            const MAX_ML = 500; // cap existente: hasta 500 órdenes
+            const firstML = await mlPage(0);
+            if (firstML) {
+              allML.push(...(firstML.results || []));
+              const totalML = Math.min(parseInt(firstML.paging?.total) || 0, MAX_ML);
+              if ((firstML.results || []).length === 50 && totalML > 50) {
+                const offsets = [];
+                for (let off = 50; off < totalML; off += 50) offsets.push(off);
+                for (let i = 0; i < offsets.length; i += 4) {
+                  await new Promise(r => setTimeout(r, 400));
+                  const lote = await Promise.all(offsets.slice(i, i + 4).map(mlPage));
+                  // Concatenar por índice de offset (Promise.all preserva el orden)
+                  let corteML = false;
+                  for (const data of lote) {
+                    if (!data) { corteML = true; break; }
+                    const batch = data.results || [];
+                    allML.push(...batch);
+                    if (batch.length < 50) { corteML = true; break; }
+                  }
+                  if (corteML) break;
+                }
+              }
             }
 
             // Pre-filtrar las que NO van a entrar (canceladas/inválidas/refundeadas) para no gastar fetch billing_info
@@ -3087,7 +3155,6 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate }) {
               const shipAddr = o.shipping?.receiver_address || {};
               // billing_info también puede traer address (datos fiscales)
               const biAddr = bi?.buyer?.billing_info?.address || bi?.address || {};
-              const billed = billedMap.get(orderId);
 
               // Construir dirección con todos los datos posibles (calle + número + dpto)
               const calle = shipAddr.street_name || biAddr.street_name || "";
@@ -3102,8 +3169,6 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate }) {
                 _platform: "mercadolibre",
                 _platform_label: "ML",
                 _order_number: String(o.id),
-                _billed: !!billed,
-                _billed_info: billed || null,
                 nombre: customerName,
                 email: buyer.email || "",
                 dni: docRaw, ...clas,
@@ -3136,7 +3201,44 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate }) {
       })());
 
       await Promise.all(fetchers);
-      Object.assign(ordenes, ordTN, ordSH, ordML);
+      rawOrdenes = Object.assign({}, ordTN, ordSH, ordML);
+
+      // Escribir el cache best-effort: si no entra en ~850KB (límite Firestore
+      // 1MB por doc) no se cachea y listo — el fetch vivo siguió andando igual.
+      try {
+        const payload = { ts: Date.now(), ordenes: rawOrdenes, tnDebug: tnDebug || null };
+        if (JSON.stringify(payload).length <= 850 * 1024) {
+          await cacheCol.doc(cacheId).set(payload);
+          // Limpieza best-effort de caches viejos de este CUIT (> 30 días),
+          // por prefijo de documentId, SIN bloquear la respuesta (no await).
+          const cutoff = Date.now() - 30 * 86400000;
+          cacheCol
+            .where(FieldPath.documentId(), ">=", `pend_${cuitParam}_`)
+            .where(FieldPath.documentId(), "<", `pend_${cuitParam}_`)
+            .limit(20).get()
+            .then(snap => Promise.all(
+              snap.docs
+                .filter(d => (Number(d.data()?.ts) || 0) < cutoff)
+                .map(d => d.ref.delete().catch(() => {}))
+            ))
+            .catch(() => {});
+        }
+      } catch (e) { console.warn("[arca-cache] escritura falló:", e.message); }
+      } // fin fetch vivo (rawOrdenes ya poblado, del cache o en vivo)
+
+      // Cruce SIEMPRE fresco contra billedMap/anuladaMap — aunque las órdenes
+      // vengan del cache, las marcas de facturada/anulada salen de Firestore recién.
+      for (const [oid, o] of Object.entries(rawOrdenes)) {
+        const billed = billedMap.get(oid);
+        const anulada = anuladaMap.get(oid);
+        ordenes[oid] = {
+          ...o,
+          _billed: !!billed,
+          _billed_info: billed || null,
+          _was_anulada: !!anulada,
+          _anulada_info: anulada || null,
+        };
+      }
 
       // Plataformas no conectadas (informativas)
       if (!stores.find(s => s.type === "tiendanube")) connections.push({ platform: "tiendanube", connected: false });
@@ -4621,7 +4723,10 @@ export default async function handler(req, res) {
         untilDate = argYmd(new Date());
       }
 
-      const { connections, ordenes, tnDebug } = await obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate });
+      // force=1 (botón "Actualizar" del front): saltea el cache por rango de
+      // Firestore y refresca en vivo desde TN/SH/ML.
+      const force = String(req.query.force || "") === "1";
+      const { connections, ordenes, tnDebug } = await obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, force });
 
       // Ordenar todas las órdenes por fecha desc (las más recientes primero), mezclando canales.
       const ordenadas = Object.fromEntries(
@@ -4678,29 +4783,50 @@ export default async function handler(req, res) {
       };
       const fetchLegacyStatus = async (status) => {
         const out = [];
-        for (let page = 1; page <= 5; page++) {
+        const MAX_LEG = 5;
+        const getPage = async (page) => {
           let url = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&payment_status=${status}&created_at_min=${sinceDate}T00:00:00-03:00`;
           if (untilDate) url += `&created_at_max=${untilDate}T23:59:59-03:00`;
           const r = await fetch(url, { headers });
-          if (!r.ok) { console.warn(`[tn-legacy] ${status} page ${page} failed: ${r.status}`); break; }
+          if (!r.ok) { console.warn(`[tn-legacy] ${status} page ${page} failed: ${r.status}`); return null; }
           const batch = await r.json();
-          if (!Array.isArray(batch) || batch.length === 0) break;
-          out.push(...batch);
-          if (batch.length < 200) break;
+          return Array.isArray(batch) ? batch : null;
+        };
+        // Página 1 primero; las restantes en lotes de 2 en paralelo con ~400ms
+        // entre lotes (TN rate-limitea ~2 req/s y paid+authorized ya corren juntos).
+        const first = await getPage(1);
+        if (!first || first.length === 0) return out;
+        out.push(...first);
+        if (first.length < 200) return out;
+        let fin = false;
+        for (let start = 2; start <= MAX_LEG && !fin; start += 2) {
+          await new Promise(r => setTimeout(r, 400));
+          const nums = [start, start + 1].filter(p => p <= MAX_LEG);
+          const lote = await Promise.all(nums.map(getPage));
+          for (const batch of lote) { // orden por índice de página (Promise.all lo preserva)
+            if (!batch || batch.length === 0) { fin = true; break; }
+            out.push(...batch);
+            if (batch.length < 200) { fin = true; break; }
+          }
         }
         return out;
       };
-      const [paidLeg, authLeg] = await Promise.all([fetchLegacyStatus("paid"), fetchLegacyStatus("authorized")]);
+      // Las dos tandas de TN y el snapshot de facturadas son independientes →
+      // EN PARALELO (antes billedSnap esperaba a que terminara TN).
+      // .select(): solo se usan orden_id y anulada — no traer items/cliente/etc.
+      const [paidLeg, authLeg, billedSnap] = await Promise.all([
+        fetchLegacyStatus("paid"),
+        fetchLegacyStatus("authorized"),
+        db.collection("users").doc(uid).collection("arca_comprobantes")
+          .where("cuit_emisor", "==", cuitParam)
+          .select("orden_id", "anulada")
+          .get(),
+      ]);
       const legById = new Map();
       for (const o of [...paidLeg, ...authLeg]) legById.set(o.id ?? o.number, o);
       const allOrders = [...legById.values()];
 
       // 3) Filtrar las que ya están facturadas (cruzando con arca_comprobantes)
-      // .select(): solo se usan orden_id y anulada — no traer items/cliente/etc.
-      const billedSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
-        .where("cuit_emisor", "==", cuitParam)
-        .select("orden_id", "anulada")
-        .get();
       const billedIds = new Set(billedSnap.docs.map(d => { const x = d.data(); return x.anulada ? null : x.orden_id; }).filter(Boolean));
 
       // 4) Normalizar al schema interno
