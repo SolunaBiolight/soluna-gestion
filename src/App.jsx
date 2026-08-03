@@ -13638,18 +13638,19 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   placeholder="Detallá qué tiene que hacer: formato, duración, estilo, paleta de colores, referencias, entregables esperados..."
                   style={{...iS,fontSize:12,width:"100%",minHeight:130,resize:"vertical",lineHeight:1.6}}/>
               </div>
-              {/* Material pedido de Canjes — se agrega solo al brief al crear */}
-              {!colabMode&&(()=>{
+              {/* Material pedido de Canjes — solo aparece al elegir la plantilla
+                  "Guion de canjes" (abajo); se agrega solo al brief al crear */}
+              {!colabMode&&showCanjesSec&&(()=>{
                 const nSel = Object.values(ntCanjesSel).filter(Boolean).length;
                 return (
                 <div>
-                  <button onClick={()=>{setShowCanjesSec(s=>!s);loadCanjesTarea();}}
-                    style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",width:"100%",justifyContent:"space-between",display:"flex",alignItems:"center"}}>
-                    <span>Adjuntar material pedido de Canjes{nSel?` · ${nSel} seleccionado${nSel>1?"s":""}`:""}</span>
-                    <span style={{color:T.textSm}}>{showCanjesSec?"▴":"▾"}</span>
-                  </button>
-                  {showCanjesSec&&(
-                    <div style={{marginTop:8,border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.surface}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+                    <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Material pedido de Canjes{nSel?` · ${nSel} seleccionado${nSel>1?"s":""}`:""}</div>
+                    <button onClick={()=>{setShowCanjesSec(false);setNtCanjesSel({});setNtCanjesBusq("");}} title="Quitar material de canjes"
+                      style={{background:"transparent",border:"none",color:T.textSm,fontSize:13,cursor:"pointer",padding:0,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                  </div>
+                  {(
+                    <div style={{border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.surface}}>
                       <div style={{padding:"8px 10px",borderBottom:`1px solid ${T.borderL}`}}>
                         <input type="text" value={ntCanjesBusq} onChange={e=>setNtCanjesBusq(e.target.value)}
                           placeholder="Buscar canje por nombre, usuario o número de pedido…"
@@ -13713,11 +13714,16 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 ))}
               </div>
             </div>
-            {/* Templates */}
-            {(produccion.taskTemplates||[]).length>0&&(
+            {/* Templates — "Guion de canjes" es una plantilla integrada que
+                habilita el selector de material de Canjes arriba del brief */}
+            {(!colabMode||(produccion.taskTemplates||[]).length>0)&&(
               <div style={{marginBottom:4}}>
                 <div style={{fontSize:11,color:T.textSm,marginBottom:5}}>Cargar plantilla</div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {!colabMode&&(
+                    <button onClick={()=>{if(!ntTitulo.trim())setNtTitulo("Hacer guiones de canjes");setShowCanjesSec(true);loadCanjesTarea();}}
+                      style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px",color:T.accent,borderColor:T.accentSolid+"55"}}>Guion de canjes</button>
+                  )}
                   {(produccion.taskTemplates||[]).map(tmpl=>(
                     <button key={tmpl.id} onClick={()=>{setNtTitulo(tmpl.titulo||"");setNtBrief(tmpl.brief||"");}}
                       style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px"}}>{tmpl.nombre}</button>
