@@ -6,7 +6,7 @@
 // Instalá: npm install node-forge xlsx pdf-lib jszip
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldPath } from "firebase-admin/firestore";
 import { XMLParser } from "fast-xml-parser";
 import { getValidMLToken } from "./integrations.js";
 import { guardUid } from "./_auth.js";
@@ -520,6 +520,21 @@ async function getUltimoCbte(token, sign, cuitNum, puntoVenta, tipoCbte, wsfeUrl
   const xml = await wsfeCall("FECompUltimoAutorizado", body, wsfeUrl);
   const m = xml.match(/<CbteNro>(\d+)<\/CbteNro>/);
   return m ? parseInt(m[1]) : 0;
+}
+
+// Lista los puntos de venta reales del CUIT (FEParamGetPtosVenta). Incluye los
+// dados de baja o bloqueados: su numeración histórica sigue viva en AFIP (ej:
+// el PV viejo de Monotributo después de migrar a RI) y el resync la necesita.
+async function getPtosVenta(token, sign, cuitNum, wsfeUrl) {
+  const xml = await wsfeCall("FEParamGetPtosVenta", authXml(token, sign, cuitNum), wsfeUrl);
+  const nros = [];
+  const re = /<Nro>(\d+)<\/Nro>/g;
+  let m;
+  while ((m = re.exec(xml))) {
+    const n = parseInt(m[1]);
+    if (n && !nros.includes(n)) nros.push(n);
+  }
+  return nros;
 }
 
 // Consulta un comprobante ya emitido en ARCA y devuelve sus datos (receptor incluido).
@@ -3292,18 +3307,28 @@ export default async function handler(req, res) {
     }
 
     // ── RECUPERAR REGISTROS DESDE AFIP (resync) ────────
-    // Reconstruye en arca_comprobantes los comprobantes que AFIP tiene
-    // autorizados pero que no quedaron guardados localmente (ej: la función
-    // murió después del CAE y antes del guardado, o un guardado que falló).
-    // Estrategia: FECompUltimoAutorizado por PV/tipo → se recorre la numeración
-    // hacia atrás y se consulta con FECompConsultar SOLO los números que faltan.
+    // Reconstruye en arca_comprobantes (y arca_notas_credito) los comprobantes
+    // que AFIP tiene autorizados pero que no quedaron guardados localmente (ej:
+    // la función murió después del CAE y antes del guardado, o un guardado que
+    // falló, o se emitieron desde otro sistema antes de usar Growith).
+    // Estrategia: FEParamGetPtosVenta → por cada PV real del CUIT (incluidos los
+    // dados de baja: la numeración histórica sigue en AFIP), escanear SIEMPRE
+    // facturas A/B/C (1,6,11) y NC A/B/C (3,8,13) sin importar la condición
+    // fiscal ACTUAL — una migración Monotributo→RI deja PVs/tipos viejos que de
+    // otra forma nunca se revisarían. FECompUltimoAutorizado por PV/tipo → se
+    // recorre la numeración hacia atrás y se consulta con FECompConsultar SOLO
+    // los números que faltan.
     // Merge puro: create() nunca pisa un registro existente; los reconstruidos
     // quedan marcados con recuperado_afip:true. No resucita facturas anuladas
     // con NC (se cruzan contra arca_notas_credito.factura_origen).
-    // Params (body): cuit (obligatorio), pv (default: PV del CUIT),
-    //                tipo_cbte (opcional), desde_nro (opcional, con tipo_cbte).
+    // Params (body): cuit (obligatorio), pv (opcional: limita a ese PV),
+    //                tipo_cbte (opcional), desde_nro (opcional, con tipo_cbte+pv),
+    //                cursor (opcional: el devuelto por la corrida anterior).
     // Presupuesto por corrida: 200 consultas a AFIP o ~90s — si queda numeración
-    // sin revisar devuelve pendientes:true (el front puede volver a llamar).
+    // sin revisar devuelve pendientes:true + cursor {pv,tipo,nro,pvs} para que
+    // la próxima corrida retome exactamente donde quedó, sin re-escanear.
+    // Respuesta: { ok, pvs, tipos, consultados, recuperados, migrados,
+    //              pendientes, cursor, porPv: {"pv_tipo": n}, detalle }
     if (action === "resync_afip" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString());
       const cuitParam = String(body.cuit || "").replace(/\D/g, "");
@@ -3314,107 +3339,209 @@ export default async function handler(req, res) {
       const { wsfe } = arcaUrls(cfg.arca_prod);
       const { token, sign } = await obtenerTA(db, uid, cfg);
       const cuitNum = parseInt(cfg.cuit);
-      const pv = parseInt(body.pv) || cfg.punto_venta || 1;
-      const isMonotributo = cfg.condicion_fiscal === "MONOTRIBUTO";
-      // Solo tipos que emite Growith (facturas — las NC viven en arca_notas_credito)
-      const tiposValidos = [1, 6, 11];
+      let cursor = (body.cursor && typeof body.cursor === "object" && parseInt(body.cursor.pv)) ? body.cursor : null;
+
+      const compCol = db.collection("users").doc(uid).collection("arca_comprobantes");
+
+      // Migración de formato (solo la primera ronda, sin cursor): registros
+      // viejos guardaron cuit_emisor CON guiones → no matchean el filtro por
+      // dígitos y desaparecen del historial (y el resync los duplicaría).
+      // Normalizamos a solo dígitos, paginado de a 500.
+      let migrados = 0;
+      if (!cursor) {
+        let last = null;
+        while (true) {
+          let q = compCol.orderBy(FieldPath.documentId()).limit(500);
+          if (last) q = q.startAfter(last);
+          const page = await q.get();
+          if (page.empty) break;
+          const batch = db.batch();
+          let dirty = 0;
+          page.docs.forEach(d => {
+            const ce = d.data().cuit_emisor;
+            if (ce != null && /\D/.test(String(ce))) {
+              batch.set(d.ref, { cuit_emisor: String(ce).replace(/\D/g, "") }, { merge: true });
+              dirty++;
+            }
+          });
+          if (dirty) { await batch.commit(); migrados += dirty; }
+          last = page.docs[page.size - 1];
+          if (page.size < 500) break;
+        }
+      }
+
+      // Tipos a escanear: SIEMPRE facturas A/B/C y NC A/B/C, sin importar la
+      // condición fiscal actual (una migración de condición deja tipos viejos).
+      const NC_TIPOS = new Set([3, 8, 13]);
+      const tiposValidos = [1, 6, 11, 3, 8, 13];
       const tipoReq = parseInt(body.tipo_cbte) || null;
       const tipos = tipoReq
         ? (tiposValidos.includes(tipoReq) ? [tipoReq] : [])
-        : (isMonotributo ? [11] : [1, 6]);
+        : tiposValidos;
       if (!tipos.length) return res.status(400).json({ error: `tipo_cbte inválido (válidos: ${tiposValidos.join(", ")})` });
+      const pvReq = parseInt(body.pv) || null;
       const desdeNro = parseInt(body.desde_nro) || null;
 
+      // Puntos de venta: el pedido explícito manda; si no, TODOS los del CUIT
+      // según AFIP (el cursor los trae cacheados para no re-consultar). Fallback
+      // si FEParamGetPtosVenta falla o viene vacío: PV del cfg + 1..5.
+      let pvs;
+      if (pvReq) pvs = [pvReq];
+      else if (Array.isArray(cursor?.pvs) && cursor.pvs.length) pvs = cursor.pvs.map(n => parseInt(n)).filter(Boolean);
+      else {
+        try { pvs = await getPtosVenta(token, sign, cuitNum, wsfe); } catch (_) { pvs = []; }
+        if (!pvs.length) pvs = [...new Set([parseInt(cfg.punto_venta) || 0, 1, 2, 3, 4, 5].filter(Boolean))];
+      }
+      // Cursor que no matchea la lista actual (cambió pv/tipo pedido): ignorarlo
+      if (cursor && (!pvs.includes(parseInt(cursor.pv)) || !tipos.includes(parseInt(cursor.tipo)))) cursor = null;
+
       // Lo ya guardado para este CUIT — una sola query, se indexa en memoria.
-      // pv puede faltar en registros muy viejos: se asume el PV consultado para
-      // no re-crear duplicados de esos.
-      const compSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
-        .where("cuit_emisor", "==", cuitParam).get();
+      // Registros muy viejos pueden no tener punto_venta: clave comodín "*" que
+      // matchea cualquier PV, para no re-crear duplicados de esos.
+      const compSnap = await compCol.where("cuit_emisor", "==", cuitParam).get();
       const existentes = new Set();
       compSnap.docs.forEach(d => {
         const c = d.data();
-        existentes.add(`${parseInt(c.tipo_cbte)}|${parseInt(c.punto_venta) || pv}|${parseInt(c.nro)}`);
+        existentes.add(`${parseInt(c.tipo_cbte)}|${parseInt(c.punto_venta) || "*"}|${parseInt(c.nro)}`);
       });
-      // Facturas anuladas con NC → no volver a mostrarlas en Registros
+      // NC ya registradas (no re-crearlas) + facturas anuladas con NC (no
+      // volver a mostrarlas en Registros)
+      const ncExist = new Set();
       const anuladas = new Set();
       try {
         const ncSnap = await db.collection("users").doc(uid).collection("arca_notas_credito").get();
         ncSnap.docs.forEach(d => {
-          const fo = d.data().factura_origen;
-          if (fo?.comprobante) anuladas.add(`${parseInt(fo.tipo)}|${parseInt(fo.punto_venta) || pv}|${parseInt(fo.comprobante)}`);
+          const c = d.data();
+          const ncCuit = String(c.cuit || "").replace(/\D/g, "");
+          if (ncCuit && ncCuit !== cuitParam) return;
+          if (c.comprobante) ncExist.add(`${parseInt(c.tipo)}|${parseInt(c.punto_venta) || "*"}|${parseInt(c.comprobante)}`);
+          const fo = c.factura_origen;
+          if (fo?.comprobante) anuladas.add(`${parseInt(fo.tipo)}|${parseInt(fo.punto_venta) || "*"}|${parseInt(fo.comprobante)}`);
         });
       } catch (_) {}
+      const tiene = (set, tipo, pv, nro) => set.has(`${tipo}|${pv}|${nro}`) || set.has(`${tipo}|*|${nro}`);
 
       const MAX_LOOKUPS = 200;              // consultas a AFIP por corrida
       const DEADLINE = Date.now() + 90000;  // margen contra el maxDuration de 120s
-      const SCAN_MAX = 2000;                // números revisados por tipo
-      let lookups = 0, recuperados = 0, pendientes = false;
+      const SCAN_MAX = 2000;                // números revisados por PV/tipo
+      let lookups = 0, recuperados = 0, pendientes = false, nextCursor = null;
+      const porPv = {};
       const detalle = [];
+      // Retomando: saltear los pares (pv,tipo) anteriores al del cursor
+      let resuming = !!cursor;
 
-      for (const tipoCbte of tipos) {
-        let ultimo;
-        try { ultimo = await getUltimoCbte(token, sign, cuitNum, pv, tipoCbte, wsfe); }
-        catch (e) { detalle.push({ tipo_cbte: tipoCbte, error: e.message }); continue; }
-        if (!ultimo) { detalle.push({ tipo_cbte: tipoCbte, ultimo: 0, recuperados: 0 }); continue; }
-
-        let start = ultimo;
-        if (desdeNro && tipoReq) start = Math.min(desdeNro, ultimo);
-        const floor = Math.max(1, start - SCAN_MAX + 1);
-        let recTipo = 0, corte = null;
-
-        for (let nro = start; nro >= floor; nro--) {
-          const key = `${tipoCbte}|${pv}|${nro}`;
-          if (existentes.has(key) || anuladas.has(key)) continue;
-          if (lookups >= MAX_LOOKUPS || Date.now() > DEADLINE) { pendientes = true; corte = nro; break; }
-          lookups++;
-          const afip = await consultarComprobanteCompleto(token, sign, cuitNum, pv, tipoCbte, nro, wsfe);
-          if (afip === null) continue; // AFIP tampoco lo tiene: hueco real, seguir
-          if (afip.error) { detalle.push({ tipo_cbte: tipoCbte, nro, error: afip.error }); continue; }
-
-          const letra = tipoCbte === 1 ? "A" : tipoCbte === 6 ? "B" : "C";
-          const fIso = `${afip.fecha.slice(0, 4)}-${afip.fecha.slice(4, 6)}-${afip.fecha.slice(6, 8)}`;
-          const docId = `${cuitParam}_${tipoCbte}_${String(nro).padStart(8, "0")}`;
-          try {
-            // create() falla si el doc ya existe → imposible pisar un registro real
-            await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId).create({
-              cuit_emisor: cuitParam,
-              tipo_cbte: tipoCbte,
-              letra,
-              nro,
-              punto_venta: pv,
-              exento: !!afip.exento,
-              fecha_str: `${fIso.slice(8, 10)}/${fIso.slice(5, 7)}/${fIso.slice(0, 4)}`,
-              fecha_cbte: fIso,
-              // Mediodía ART del día del comprobante: en Registros agrupa por día
-              emitido_at: `${fIso}T15:00:00.000Z`,
-              cae: afip.cae,
-              cae_vto: afip.cae_vto,
-              cliente: "",
-              doc_tipo: afip.doc_tipo,
-              doc_nro: afip.doc_nro,
-              total: afip.total,
-              neto: (isMonotributo && !afip.neto) ? afip.total : afip.neto,
-              iva: afip.iva,
-              orden_id: null,
-              items: [],
-              domicilio: "",
-              ml_uploaded: false,
-              recuperado_afip: true,
-              recuperado_at: new Date().toISOString(),
-            });
-            recuperados++; recTipo++;
-            existentes.add(key);
-          } catch (e) {
-            // ALREADY_EXISTS (carrera con otra corrida) u otro fallo: no cuenta
-            if (!/already.?exists/i.test(e.message || "")) detalle.push({ tipo_cbte: tipoCbte, nro, error: e.message });
+      outer:
+      for (const pv of pvs) {
+        for (const tipoCbte of tipos) {
+          if (resuming) {
+            if (pv !== parseInt(cursor.pv) || tipoCbte !== parseInt(cursor.tipo)) continue;
+            resuming = false; // este es el par donde quedó la corrida anterior
           }
+          if (lookups >= MAX_LOOKUPS || Date.now() > DEADLINE) {
+            pendientes = true; nextCursor = { pv, tipo: tipoCbte, nro: null, pvs };
+            break outer;
+          }
+          let ultimo;
+          lookups++;
+          try { ultimo = await getUltimoCbte(token, sign, cuitNum, pv, tipoCbte, wsfe); }
+          catch (e) { detalle.push({ pv, tipo_cbte: tipoCbte, error: e.message }); continue; }
+          if (!ultimo) continue; // nada emitido nunca en este PV/tipo
+
+          let start = ultimo;
+          if (cursor && parseInt(cursor.pv) === pv && parseInt(cursor.tipo) === tipoCbte && parseInt(cursor.nro)) {
+            start = Math.min(parseInt(cursor.nro), ultimo);
+          } else if (desdeNro && tipoReq && pvReq) {
+            start = Math.min(desdeNro, ultimo);
+          }
+          const floor = Math.max(1, ultimo - SCAN_MAX + 1);
+          const esNC = NC_TIPOS.has(tipoCbte);
+          let recTipo = 0, corte = null;
+
+          for (let nro = start; nro >= floor; nro--) {
+            if (esNC ? tiene(ncExist, tipoCbte, pv, nro)
+                     : (tiene(existentes, tipoCbte, pv, nro) || tiene(anuladas, tipoCbte, pv, nro))) continue;
+            if (lookups >= MAX_LOOKUPS || Date.now() > DEADLINE) {
+              pendientes = true; corte = nro; nextCursor = { pv, tipo: tipoCbte, nro, pvs };
+              break;
+            }
+            lookups++;
+            const afip = await consultarComprobanteCompleto(token, sign, cuitNum, pv, tipoCbte, nro, wsfe);
+            if (afip === null) continue; // AFIP tampoco lo tiene: hueco real, seguir
+            if (afip.error) { detalle.push({ pv, tipo_cbte: tipoCbte, nro, error: afip.error }); continue; }
+
+            const letra = (tipoCbte === 1 || tipoCbte === 3) ? "A" : (tipoCbte === 6 || tipoCbte === 8) ? "B" : "C";
+            const fIso = `${afip.fecha.slice(0, 4)}-${afip.fecha.slice(4, 6)}-${afip.fecha.slice(6, 8)}`;
+            try {
+              if (esNC) {
+                // NC recuperada → a su colección propia (sin factura_origen:
+                // AFIP no informa qué factura anulaba)
+                const docId = `${cuitParam}_nc_${pv}_${tipoCbte}_${String(nro).padStart(8, "0")}`;
+                // create() falla si el doc ya existe → imposible pisar un registro real
+                await db.collection("users").doc(uid).collection("arca_notas_credito").doc(docId).create({
+                  cuit: cuitParam,
+                  tipo: tipoCbte,
+                  letra,
+                  punto_venta: pv,
+                  comprobante: nro,
+                  cae: afip.cae,
+                  cae_vto: afip.cae_vto,
+                  total: afip.total,
+                  doc_tipo: afip.doc_tipo,
+                  doc_nro: afip.doc_nro,
+                  // Mediodía ART del día del comprobante
+                  fecha: `${fIso}T15:00:00.000Z`,
+                  pdf_b64: null,
+                  recuperado_afip: true,
+                  recuperado_at: new Date().toISOString(),
+                });
+                ncExist.add(`${tipoCbte}|${pv}|${nro}`);
+              } else {
+                const docId = `${cuitParam}_${pv}_${tipoCbte}_${String(nro).padStart(8, "0")}`;
+                // create() falla si el doc ya existe → imposible pisar un registro real
+                await compCol.doc(docId).create({
+                  cuit_emisor: cuitParam,
+                  tipo_cbte: tipoCbte,
+                  letra,
+                  nro,
+                  punto_venta: pv,
+                  exento: !!afip.exento,
+                  fecha_str: `${fIso.slice(8, 10)}/${fIso.slice(5, 7)}/${fIso.slice(0, 4)}`,
+                  fecha_cbte: fIso,
+                  // Mediodía ART del día del comprobante: en Registros agrupa por día
+                  emitido_at: `${fIso}T15:00:00.000Z`,
+                  cae: afip.cae,
+                  cae_vto: afip.cae_vto,
+                  cliente: "",
+                  doc_tipo: afip.doc_tipo,
+                  doc_nro: afip.doc_nro,
+                  total: afip.total,
+                  // Factura C: WSFE no discrimina neto → neto = total
+                  neto: (tipoCbte === 11 && !afip.neto) ? afip.total : afip.neto,
+                  iva: afip.iva,
+                  orden_id: null,
+                  items: [],
+                  domicilio: "",
+                  ml_uploaded: false,
+                  recuperado_afip: true,
+                  recuperado_at: new Date().toISOString(),
+                });
+                existentes.add(`${tipoCbte}|${pv}|${nro}`);
+              }
+              recuperados++; recTipo++;
+              const pk = `${pv}_${tipoCbte}`;
+              porPv[pk] = (porPv[pk] || 0) + 1;
+            } catch (e) {
+              // ALREADY_EXISTS (carrera con otra corrida) u otro fallo: no cuenta
+              if (!/already.?exists/i.test(e.message || "")) detalle.push({ pv, tipo_cbte: tipoCbte, nro, error: e.message });
+            }
+          }
+          detalle.push({ pv, tipo_cbte: tipoCbte, ultimo, recuperados: recTipo, ...(corte ? { pendiente_desde: corte } : {}) });
+          if (pendientes) break outer;
         }
-        detalle.push({ tipo_cbte: tipoCbte, ultimo, recuperados: recTipo, ...(corte ? { pendiente_desde: corte } : {}) });
-        if (pendientes) break;
       }
 
-      console.log(`[arca resync] uid=${uid} cuit=${cuitParam} pv=${pv} tipos=${tipos.join(",")} consultas=${lookups} recuperados=${recuperados} pendientes=${pendientes}`);
-      return res.json({ ok: true, pv, tipos, consultados: lookups, recuperados, pendientes, detalle });
+      console.log(`[arca resync] uid=${uid} cuit=${cuitParam} pvs=${pvs.join(",")} tipos=${tipos.join(",")} consultas=${lookups} recuperados=${recuperados} migrados=${migrados} pendientes=${pendientes}${nextCursor ? ` cursor=${nextCursor.pv}/${nextCursor.tipo}/${nextCursor.nro}` : ""}`);
+      return res.json({ ok: true, pvs, tipos, consultados: lookups, recuperados, migrados, pendientes, cursor: nextCursor, porPv, detalle });
     }
 
     return res.status(404).json({ error: `Acción desconocida: ${action}` });

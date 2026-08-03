@@ -16558,24 +16558,34 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
 
   // Recuperar desde AFIP los comprobantes emitidos que no quedaron registrados
-  // (ej: la emisión salió con CAE pero el guardado posterior falló). Llama a
-  // resync_afip por el CUIT/PV activo; si el backend devuelve pendientes:true
-  // (quedó numeración sin revisar por el presupuesto por corrida) re-invoca.
+  // (ej: la emisión salió con CAE pero el guardado posterior falló, o son de un
+  // PV/tipo viejo previo a una migración de condición fiscal). Llama a
+  // resync_afip SIN pv: el backend barre TODOS los puntos de venta del CUIT y
+  // todos los tipos (A/B/C + NC). Si devuelve pendientes:true (presupuesto por
+  // corrida agotado) re-invoca pasando el cursor para retomar donde quedó.
   async function recuperarDesdeAfip() {
     if(!cuitSel || resyncing) return;
     setResyncing(true);
     try {
-      let total = 0, rondas = 0, d = null;
+      let total = 0, rondas = 0, d = null, cursor = null;
+      const porPv = {};
       do {
-        d = await api("resync_afip","POST",{cuit:cuitSel, pv:pvElegido?.numero});
+        d = await api("resync_afip","POST",{cuit:cuitSel, ...(cursor?{cursor}:{})});
         if(d.error){ toast("Error: "+d.error,"error"); return; }
         total += d.recuperados||0; rondas++;
-      } while(d.pendientes && rondas < 3);
+        Object.entries(d.porPv||{}).forEach(([k,n])=>{ porPv[k]=(porPv[k]||0)+n; });
+        cursor = d.cursor||null;
+      } while(d.pendientes && rondas < 8);
       if(total>0){
-        toast(`${total} comprobante${total===1?"":"s"} recuperado${total===1?"":"s"} desde AFIP ✓`,"success");
+        const pvList = [...new Set(Object.keys(porPv).map(k=>parseInt(k.split("_")[0])))].sort((a,b)=>a-b);
+        const desg = pvList.length ? ` (PV ${pvList.join(", ")})` : "";
+        toast(`${total} comprobante${total===1?"":"s"} recuperado${total===1?"":"s"} desde AFIP${desg} ✓`,"success");
         refreshDashboard();
-      } else {
-        toast(d?.pendientes ? "Sin faltantes por ahora — quedó numeración vieja sin revisar, volvé a tocar el botón" : "Registros al día — no hay comprobantes faltantes en AFIP","info");
+      }
+      if(d?.pendientes){
+        toast("Quedan más por revisar — tocá de nuevo para continuar","info");
+      } else if(total===0){
+        toast("Registros al día — no hay comprobantes faltantes en AFIP","info");
       }
     } catch(e) {
       toast("Error: "+(e?.message||"no se pudo consultar AFIP"),"error");
