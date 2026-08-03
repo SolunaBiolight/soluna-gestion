@@ -504,8 +504,15 @@ async function wsfeCall(action, bodyXml, wsfeUrl, noRetry = false) {
     const text = await r.text();
     if (r.ok) return text;
     if (!noRetry && r.status === 500 && intento < 2) {
-      await new Promise(res => setTimeout(res, (intento + 1) * 3000));
-      continue;
+      // SOAP Fault de autenticación (token vencido/firma/TA repetido): esperar y
+      // reintentar no lo arregla — se lanza directo para que el caller renueve el TA.
+      const low = text.toLowerCase();
+      const esFaultAuth = /faultstring|faultcode/.test(low)
+        && /(coe\.alreadyauthenticated|token|sign|\b601\b|\b600\b)/.test(low);
+      if (!esFaultAuth) {
+        await new Promise(res => setTimeout(res, (intento + 1) * 3000));
+        continue;
+      }
     }
     throw new Error(`WSFE HTTP ${r.status}: ${text.slice(0, 300)}`);
   }
@@ -825,6 +832,165 @@ function esRechazoReceptor(result) {
   if ([10013, 10015, 10018].includes(code)) return true;
   if ([600, 601, 10016].includes(code)) return false;
   return /DocNro|DocTipo|no se encuentra|condici[oó]n/i.test(String(result?.obs || ""));
+}
+
+// ─── Emisión en LOTE contra AFIP (FECAESolicitar con varios detalles) ───
+// WSFEv1 acepta hasta 250 <FECAEDetRequest> por request. Acá se arma UNO solo
+// para órdenes que comparten (pv, tipoCbte), con numeración correlativa
+// CbteDesde..CbteHasta. Los cálculos por orden (redondeo, doc receptor,
+// neto/IVA/exento, condición IVA) son EXACTAMENTE los de facturar() — si se
+// toca uno hay que tocar el otro.
+// ordenesPrep: [{ orden, cbteNro }] ya validadas (total > 0, doc numérico) y
+// ORDENADAS por cbteNro correlativo.
+// Devuelve { porNro: Map(cbteNro → resultado estilo parseWsfeResultado),
+//            err_code, err_msg } — err_code seteado = AFIP rechazó el request
+// entero sin emitir nada. Lanza si la llamada SOAP falla (red/timeout): en ese
+// caso el caller NO sabe si AFIP procesó y debe consultar comprobante por
+// comprobante antes de reintentar.
+async function facturarLote(ordenesPrep, ctx) {
+  const { token, sign, cuitNum, pv, tipoCbte, wsfeUrl, monotributo, fechaImputacion, exento } = ctx;
+  const pvN = parseInt(pv), tipoN = parseInt(tipoCbte);
+  if (![pvN, tipoN].every(Number.isFinite) || !ordenesPrep.length) throw new Error("Lote inválido (PV/tipo/órdenes) — no se envió a AFIP.");
+  const fecha = fechaImputacion || hoyARISO().replace(/-/g, "");
+
+  const dets = [];
+  for (const p of ordenesPrep) {
+    const orden = p.orden;
+    const cbteNro = parseInt(p.cbteNro);
+    const total = Math.round(Number(orden.total) * 100) / 100;
+    if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(cbteNro)) throw new Error(`Orden inválida en el lote (total=${orden.total}, nro=${p.cbteNro}) — no se envió a AFIP.`);
+
+    // Mismos cálculos que facturar():
+    const docTipoClas = orden.doc_tipo;
+    const nroDocNum = parseInt(String(orden.doc_nro || orden.dni || "").replace(/\D/g, ""), 10);
+    let tipoDoc, nroDoc, neto, iva;
+    if (monotributo) {
+      tipoDoc = docTipoClas === "CUIT" ? 80 : docTipoClas === "DNI" ? 96 : 99;
+      nroDoc = tipoDoc === 99 ? 0 : nroDocNum;
+      neto = total; iva = 0;
+    } else {
+      if (exento) { neto = 0; iva = 0; }
+      else { neto = Math.round((total / 1.21) * 100) / 100; iva = Math.round((total - neto) * 100) / 100; }
+      if (docTipoClas === "CUIT") { tipoDoc = 80; nroDoc = nroDocNum; }
+      else if (docTipoClas === "DNI") { tipoDoc = 96; nroDoc = nroDocNum; }
+      else { tipoDoc = 99; nroDoc = 0; }
+    }
+    if (tipoDoc !== 99 && !Number.isFinite(nroDoc)) throw new Error(`Documento del receptor inválido en el lote (${docTipoClas} "${orden.doc_nro || orden.dni || ""}") — no se envió a AFIP.`);
+
+    const condIva = condicionIvaReceptor(tipoN, docTipoClas);
+    const impOpEx = (!monotributo && exento) ? total : 0;
+    const ivaXml = (!monotributo && !exento && iva > 0) ? `
+          <ar:Iva>
+            <ar:AlicIva>
+              <ar:Id>5</ar:Id>
+              <ar:BaseImp>${neto.toFixed(2)}</ar:BaseImp>
+              <ar:Importe>${iva.toFixed(2)}</ar:Importe>
+            </ar:AlicIva>
+          </ar:Iva>` : "";
+
+    dets.push(`<ar:FECAEDetRequest>
+          <ar:Concepto>1</ar:Concepto>
+          <ar:DocTipo>${tipoDoc}</ar:DocTipo>
+          <ar:DocNro>${nroDoc}</ar:DocNro>
+          <ar:CbteDesde>${cbteNro}</ar:CbteDesde>
+          <ar:CbteHasta>${cbteNro}</ar:CbteHasta>
+          <ar:CbteFch>${fecha}</ar:CbteFch>
+          <ar:ImpTotal>${total.toFixed(2)}</ar:ImpTotal>
+          <ar:ImpTotConc>0</ar:ImpTotConc>
+          <ar:ImpNeto>${neto.toFixed(2)}</ar:ImpNeto>
+          <ar:ImpOpEx>${impOpEx.toFixed(2)}</ar:ImpOpEx>
+          <ar:ImpTrib>0</ar:ImpTrib>
+          <ar:ImpIVA>${iva.toFixed(2)}</ar:ImpIVA>
+          <ar:MonId>PES</ar:MonId>
+          <ar:MonCotiz>1</ar:MonCotiz>
+          <ar:CondicionIVAReceptorId>${condIva}</ar:CondicionIVAReceptorId>
+          ${ivaXml}
+        </ar:FECAEDetRequest>`);
+  }
+
+  const body = `${authXml(token, sign, cuitNum)}
+    <ar:FeCAEReq>
+      <ar:FeCabReq>
+        <ar:CantReg>${dets.length}</ar:CantReg>
+        <ar:PtoVta>${pvN}</ar:PtoVta>
+        <ar:CbteTipo>${tipoN}</ar:CbteTipo>
+      </ar:FeCabReq>
+      <ar:FeDetReq>
+        ${dets.join("\n        ")}
+      </ar:FeDetReq>
+    </ar:FeCAEReq>`;
+
+  const xml = await wsfeCall("FECAESolicitar", body, wsfeUrl, true);
+
+  // Respuesta por ítem: cada <FECAEDetResponse> trae CbteDesde, Resultado,
+  // CAE, CAEFchVto y Observaciones. Se indexa por número de comprobante.
+  const porNro = new Map();
+  for (const m of xml.matchAll(/<FECAEDetResponse>([\s\S]*?)<\/FECAEDetResponse>/g)) {
+    const b = m[1];
+    const g = (tag) => ((b.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`)) || [])[1] || "").trim();
+    const nro = parseInt(g("CbteDesde"));
+    if (!Number.isFinite(nro)) continue;
+    const resultado = g("Resultado") || null;
+    const caeRaw = g("CAE");
+    const cae = /^\d+$/.test(caeRaw) ? caeRaw : null;
+    let caeVto = g("CAEFchVto");
+    caeVto = /^\d{8}$/.test(caeVto) ? `${caeVto.slice(6)}/${caeVto.slice(4, 6)}/${caeVto.slice(0, 4)}` : null;
+    const obsBlock = (b.match(/<Observaciones>([\s\S]*?)<\/Observaciones>/) || [])[1] || "";
+    const obsCode = parseInt((obsBlock.match(/<Code>(\d+)<\/Code>/) || [])[1]) || null;
+    const obsMsgs = [...obsBlock.matchAll(/<Msg>([\s\S]*?)<\/Msg>/g)].map(x => x[1]).join(" ").trim();
+    porNro.set(nro, {
+      cae, cae_vto: caeVto, resultado,
+      // Resultado=A con obs: comprobante VÁLIDO, obs aparte (igual que parseWsfeResultado)
+      obs: resultado === "A" ? "" : obsMsgs,
+      err_code: resultado === "A" ? null : obsCode,
+      obs_codigo: resultado === "A" ? obsCode : null,
+      obs_msg: resultado === "A" ? obsMsgs : "",
+    });
+  }
+  // Errores globales del request (token vencido 600/601, correlatividad, etc.):
+  // el bloque <Errors> vive a nivel resultado, nunca dentro de los det.
+  const errBlock = (xml.match(/<Errors>([\s\S]*?)<\/Errors>/) || [])[1] || "";
+  const errCode = parseInt((errBlock.match(/<Code>(\d+)<\/Code>/) || [])[1]) || null;
+  const errMsgs = [...errBlock.matchAll(/<Msg>([\s\S]*?)<\/Msg>/g)].map(x => x[1]).join(" ").trim();
+  return { porNro, err_code: errCode, err_msg: errMsgs };
+}
+
+// Toma la marca de idempotencia de una orden ANTES de pegarle a AFIP (misma
+// lógica para el camino individual y el camino en lote). Si la orden ya salió,
+// está en curso o fue rechazada hace un momento, pushea el resultado y devuelve
+// { skip: true }. Si no, devuelve { marcaRef, marcaTomada }.
+async function tomarMarcaEmision(db, uid, cuitEmit, orderId, orden, resultados) {
+  const marcaRef = db.collection("users").doc(uid).collection("arca_emisiones").doc(marcaEmisionId(cuitEmit, orderId));
+  let marcaTomada = false;
+  try {
+    await marcaRef.create({ orden_id: orderId, cuit_emisor: cuitEmit, estado: "en_curso", at: new Date().toISOString() });
+    marcaTomada = true;
+  } catch (_) {
+    // Ya existía: o salió con CAE, o hay otra emisión en vuelo.
+    let m = null;
+    try { m = (await marcaRef.get()).data(); } catch (_) {}
+    const atMs = m?.at ? Date.parse(m.at) : 0;
+    if (m && m.estado === "emitido") {
+      resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, total: orden.total,
+        obs: `Ya facturada (CAE ${m.cae || "?"}) — no se re-emite para no duplicarla en ARCA.` });
+      return { skip: true };
+    }
+    // Rechazada hace menos de 2 minutos: frena el doble-click inmediato.
+    // Pasado ese rato, el reintento (con datos corregidos) es legítimo.
+    if (m && m.estado === "rechazado" && atMs && Date.now() - atMs < 2 * 60000) {
+      resultados.push({ orden_id: orderId, ok: false, total: orden.total,
+        obs: "ARCA rechazó esta orden hace un momento — esperá un par de minutos antes de reintentar." });
+      return { skip: true };
+    }
+    if (m && m.estado !== "rechazado" && atMs && Date.now() - atMs < 10 * 60000) {
+      resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, total: orden.total,
+        obs: "Hay otra emisión de esta orden en curso — no se re-emite. Revisá el resultado en unos minutos." });
+      return { skip: true };
+    }
+    // Marca vieja y sin CAE: la corrida anterior murió antes de emitir → se retoma.
+    try { await marcaRef.set({ estado: "en_curso", at: new Date().toISOString() }, { merge: true }); marcaTomada = true; } catch (_) {}
+  }
+  return { marcaRef, marcaTomada };
 }
 
 // ─── Helper: desadjuntar TODOS los documentos fiscales adjuntos a una venta ML ──
@@ -1661,11 +1827,23 @@ export const config = {
 };
 
 async function readBody(req) {
+  const MAX_BODY = 8 * 1024 * 1024; // 8 MB — ningún body legítimo de este endpoint se acerca
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on("data", c => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
+    let size = 0, aborted = false;
+    req.on("data", c => {
+      if (aborted) return;
+      size += c.length;
+      if (size > MAX_BODY) {
+        aborted = true;
+        reject(Object.assign(new Error("Body demasiado grande (máximo 8 MB)"), { statusCode: 413 }));
+        try { req.destroy(); } catch (_) {}
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => { if (!aborted) resolve(Buffer.concat(chunks)); });
+    req.on("error", e => { if (!aborted) reject(e); });
   });
 }
 
@@ -1854,8 +2032,11 @@ export default async function handler(req, res) {
       const nextYear = parseInt(argMonth) === 12 ? String(parseInt(argYear) + 1) : argYear;
       const monthEnd = `${nextYear}-${nextMonth}-01T03:00:00.000Z`;
 
+      // .select(): el cálculo solo usa estos campos — evita traer items/cliente/
+      // domicilio (lo pesado de cada comprobante) en una colección que crece sin tope.
       const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
         .where("cuit_emisor", "==", cuitParam)
+        .select("anulada", "fecha_cbte", "fecha_str", "emitido_at", "iva", "total", "neto", "letra")
         .get();
 
       let iva_debito = 0, total_facturado = 0, neto_total = 0, facturas_emitidas = 0;
@@ -2436,124 +2617,16 @@ export default async function handler(req, res) {
       const pendientesIds = [];
       let taRenovado = false; // un solo re-login por lote ante token vencido
 
-      for (const [orderId, orden] of ordenesEntries) {
-        if (Date.now() > DEADLINE_EMIT) { pendientesIds.push(orderId); continue; }
-        // Total inválido: no se toma marca ni se llama a AFIP.
-        if (!Number.isFinite(Number(orden.total)) || Number(orden.total) <= 0) {
-          resultados.push({ orden_id: orderId, ok: false, total: orden.total,
-            obs: `Total de la orden inválido (${orden.total}) — no se envió a AFIP.` });
-          continue;
-        }
-        // ¿Ya tiene factura? No se re-emite.
-        const previa = yaFacturadas.get(String(orderId));
-        if (previa) {
-          resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, total: orden.total,
-            obs: `Ya tiene factura ${previa.letra || ""} N° ${previa.nro || "?"} (CAE ${previa.cae || "?"}) — no se re-emite para no duplicarla en ARCA.` });
-          continue;
-        }
-        // Marca "en curso" antes de pegarle a AFIP.
-        const marcaRef = db.collection("users").doc(uid).collection("arca_emisiones").doc(marcaEmisionId(cuitEmit, orderId));
-        let marcaTomada = false;
-        try {
-          await marcaRef.create({ orden_id: orderId, cuit_emisor: cuitEmit, estado: "en_curso", at: new Date().toISOString() });
-          marcaTomada = true;
-        } catch (_) {
-          // Ya existía: o salió con CAE, o hay otra emisión en vuelo.
-          let m = null;
-          try { m = (await marcaRef.get()).data(); } catch (_) {}
-          const atMs = m?.at ? Date.parse(m.at) : 0;
-          if (m && m.estado === "emitido") {
-            resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, total: orden.total,
-              obs: `Ya facturada (CAE ${m.cae || "?"}) — no se re-emite para no duplicarla en ARCA.` });
-            continue;
-          }
-          // Rechazada hace menos de 2 minutos: frena el doble-click inmediato.
-          // Pasado ese rato, el reintento (con datos corregidos) es legítimo.
-          if (m && m.estado === "rechazado" && atMs && Date.now() - atMs < 2 * 60000) {
-            resultados.push({ orden_id: orderId, ok: false, total: orden.total,
-              obs: "ARCA rechazó esta orden hace un momento — esperá un par de minutos antes de reintentar." });
-            continue;
-          }
-          if (m && m.estado !== "rechazado" && atMs && Date.now() - atMs < 10 * 60000) {
-            resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, total: orden.total,
-              obs: "Hay otra emisión de esta orden en curso — no se re-emite. Revisá el resultado en unos minutos." });
-            continue;
-          }
-          // Marca vieja y sin CAE: la corrida anterior murió antes de emitir → se retoma.
-          try { await marcaRef.set({ estado: "en_curso", at: new Date().toISOString() }, { merge: true }); marcaTomada = true; } catch (_) {}
-        }
+      // Cuenta ML de ventas memoizada POR REQUEST (no a nivel módulo: la lambda
+      // caliente se comparte entre uids y un cache global cruzaría cuentas).
+      let _mlAccProm = null;
+      const mlAccEmit = () => { if (!_mlAccProm) _mlAccProm = mlVentasAcc(db, uid); return _mlAccProm; };
 
-        // Aplicar mapeo de productos
-        if (product_map) {
-          for (const item of orden.items) {
-            if (product_map[item.nombre_original]) item.nombre = product_map[item.nombre_original];
-          }
-        }
-
-        let result, letra, tipoCbte, cbteNro;
-
-        // Un error de red/SOAP en UNA orden no puede tumbar el lote entero: si
-        // explota, se informa esa orden y se sigue con las demás. La marca queda
-        // en "en_curso" a propósito — no sabemos si ARCA llegó a dar el CAE, así
-        // que durante 10 minutos no se reintenta (duplicar es peor que demorar).
-        try {
-          if (isMonotributo) {
-            letra = "C"; tipoCbte = 11; cbteNro = cbteC;
-            result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true, fechaImputacion, exento);
-          } else {
-            const tieneCuit = orden.doc_tipo === "CUIT";
-            if (tieneCuit) {
-              letra = "A"; tipoCbte = 1; cbteNro = cbteA;
-              result = await facturar(token, sign, cuitNum, pv, cbteA, orden, 1, wsfe, false, fechaImputacion, exento);
-              // Fallback A→B SOLO ante rechazo de validación del receptor —
-              // nunca por errores genéricos, de token (600/601) ni de
-              // correlatividad (10016).
-              if (!result.cae && esRechazoReceptor(result)) {
-                letra = "B"; tipoCbte = 6; cbteNro = cbteB;
-                result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
-              }
-            } else {
-              letra = "B"; tipoCbte = 6; cbteNro = cbteB;
-              result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
-            }
-          }
-        } catch (e) {
-          // Error de red/timeout: FECAESolicitar no se reintenta a ciegas. El
-          // pedido pudo procesarse igual, así que ANTES de darlo por fallido se
-          // consulta si el comprobante ya existe en AFIP con el número esperado.
-          let rec = null;
-          if (tipoCbte && cbteNro) {
-            try { rec = await consultarComprobanteCompleto(token, sign, cuitNum, pv, tipoCbte, cbteNro, wsfe); } catch (_) {}
-          }
-          if (rec && !rec.error && rec.cae) {
-            // AFIP SÍ lo emitió: se trata como éxito con los datos de la consulta.
-            result = { cae: rec.cae, cae_vto: rec.cae_vto, resultado: "A", obs: "", err_code: null, obs_codigo: null, obs_msg: "" };
-          } else {
-            console.error(`[arca emit] ${orderId} error de conexión:`, e.message);
-            resultados.push({ orden_id: orderId, ok: false, total: orden.total,
-              obs: `No se pudo confirmar con ARCA: ${e.message} — verificá en el historial de ARCA antes de reintentar (por si el comprobante salió igual).` });
-            continue;
-          }
-        }
-
-        // Token AFIP vencido a mitad de lote (600/601): renovar el TA UNA sola
-        // vez, re-sincronizar el numerador y reintentar este comprobante.
-        if (!result.cae && [600, 601].includes(result.err_code) && !taRenovado) {
-          taRenovado = true;
-          try {
-            await invalidarTA(db, uid, cuitEmit);
-            ({ token, sign } = await obtenerTA(db, uid, cfg));
-            cbteNro = (await getUltimoCbte(token, sign, cuitNum, pv, tipoCbte, wsfe)) + 1;
-            if (letra === "A") cbteA = cbteNro; else if (letra === "C") cbteC = cbteNro; else cbteB = cbteNro;
-            result = await facturar(token, sign, cuitNum, pv, cbteNro, orden, tipoCbte, wsfe, isMonotributo, fechaImputacion, exento);
-          } catch (e2) {
-            resultados.push({ orden_id: orderId, ok: false, total: orden.total,
-              obs: `Token de ARCA vencido y no se pudo renovar: ${e2.message}` });
-            continue;
-          }
-        }
-
-        if (result.cae) {
+      // Post-procesamiento de una emisión APROBADA — IDÉNTICO para el camino
+      // individual y el camino en lote (cerrar marca, guardar comprobante en
+      // Firestore, PDF, adjuntar a ML, resultado). Extraído del loop para que
+      // los dos caminos no puedan divergir.
+      const procesarAprobada = async (orderId, orden, letra, tipoCbte, cbteNro, result, marcaRef, marcaTomada) => {
           // Cerrar la marca ANTES de generar el PDF: si el PDF o el adjunto a ML
           // fallan, la factura ya existe en ARCA y no debe re-emitirse nunca.
           if (marcaTomada) {
@@ -2648,7 +2721,7 @@ export default async function handler(req, res) {
           let ml_uploaded = false, ml_upload_error = null;
           if (orderId.startsWith("ML-") && pdfBytes) {
             try {
-              const ml = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
+              const ml = await getValidMLToken(db, uid, await mlAccEmit());
               if (!ml?.accessToken) throw new Error("Sin access_token de ML");
               const orderIdRaw = orderId.replace(/^ML-/, "");
 
@@ -2726,7 +2799,7 @@ export default async function handler(req, res) {
 
           if (orderId.startsWith("ML-") && !pdfBytes && !ml_upload_error) ml_upload_error = "PDF no generado — adjuntalo después desde Registros";
 
-          resultados.push({ orden_id: orderId, ok: true, letra, comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto, total: orden.total, ml_uploaded, ml_upload_error });
+          resultados.push({ orden_id: orderId, ok: true, letra, tipo_cbte: tipoCbte, comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto, total: orden.total, ml_uploaded, ml_upload_error });
 
           // El comprobante ya se guardó ANTES del PDF/ML — acá solo se actualiza
           // el flag de adjunto ML, o se reintenta el guardado completo si falló.
@@ -2739,11 +2812,10 @@ export default async function handler(req, res) {
           } catch (e) {
             console.error("[arca] no se pudo guardar/actualizar comprobante:", e.message);
           }
+      };
 
-          if (letra === "A") cbteA++;
-          else if (letra === "C") cbteC++;
-          else cbteB++;
-        } else {
+      // Registro de un RECHAZO de ARCA — mismo tratamiento en ambos caminos.
+      const registrarRechazo = async (orderId, orden, letra, tipoCbte, result, marcaRef, marcaTomada) => {
           // Transparencia para diagnóstico: qué comprobante intentamos y con qué
           // condición fiscal del emisor — sin esto, el "mismo error" de AFIP no
           // dice si el server usó la config nueva o la vieja.
@@ -2759,6 +2831,254 @@ export default async function handler(req, res) {
           // Sin el texto del obs en el log (puede traer el doc del receptor) — solo el código.
           console.log(`[arca emit] ${orderId} RECHAZADA — tipo ${tipoCbte} pv ${pv} cond ${cfg.condicion_fiscal} code=${result.err_code || "?"}`);
           resultados.push({ orden_id: orderId, ok: false, obs: intento + result.obs, total: orden.total });
+      };
+
+      // Órdenes hacia el camino individual. El lote marca consumida:true las
+      // que ya resolvió, y deja `marca` tomada en las que rebotaron para que el
+      // reintento individual la reuse en vez de re-crearla.
+      const individuales = ordenesEntries.map(([orderId, orden]) => ({ orderId, orden, marca: null, cbteNro: null, consumida: false, dudoso: false }));
+
+      // ── EMISIÓN EN LOTE ────────────────────────────────
+      // WSFEv1 acepta hasta 250 comprobantes por FECAESolicitar. Con más de 3
+      // órdenes del mismo tipo de comprobante previsto, se agrupan y se emiten
+      // en chunks de 25 con UN solo request SOAP por chunk (antes: un request
+      // por comprobante). Todo lo que no salga aprobado del lote — rechazos
+      // (incluidos los de receptor, que tienen fallback A→B), no procesadas por
+      // correlatividad y fallas estructurales — sigue por el loop individual de
+      // abajo, que además sabe renovar el token y hacer recovery por timeout.
+      if (ordenesEntries.length > 3) {
+        const grupos = new Map(); // tipoCbte previsto → entries de `individuales`
+        for (const ent of individuales) {
+          const o = ent.orden;
+          // Lo que el lote no puede manejar queda para el camino individual
+          // (que reporta el error exactamente como hoy):
+          if (!Number.isFinite(Number(o.total)) || Number(o.total) <= 0) continue; // total inválido
+          if (yaFacturadas.get(String(ent.orderId))) continue;                     // ya facturada
+          const nroDocNum = parseInt(String(o.doc_nro || o.dni || "").replace(/\D/g, ""), 10);
+          if ((o.doc_tipo === "CUIT" || o.doc_tipo === "DNI") && !Number.isFinite(nroDocNum)) continue; // doc inválido
+          const tipoPlan = isMonotributo ? 11 : (o.doc_tipo === "CUIT" ? 1 : 6);
+          if (!grupos.has(tipoPlan)) grupos.set(tipoPlan, []);
+          grupos.get(tipoPlan).push(ent);
+        }
+        for (const [tipoLote, entsLote] of grupos) {
+          if (entsLote.length <= 3) continue; // pocos comprobantes: no amortiza el camino batch
+          const letraLote = tipoLote === 1 ? "A" : tipoLote === 11 ? "C" : "B";
+          for (let ci = 0; ci < entsLote.length; ci += 25) {
+            if (Date.now() > DEADLINE_EMIT) break; // el loop individual reporta las pendientes
+            const chunk = entsLote.slice(ci, ci + 25);
+
+            // Pre-procesamiento POR ORDEN, idéntico al del loop individual:
+            // mapeo de productos + marca de idempotencia ANTES de pegarle a AFIP.
+            const prep = [];
+            for (const ent of chunk) {
+              if (product_map) {
+                for (const item of ent.orden.items || []) {
+                  if (product_map[item.nombre_original]) item.nombre = product_map[item.nombre_original];
+                }
+              }
+              const t = await tomarMarcaEmision(db, uid, cuitEmit, ent.orderId, ent.orden, resultados);
+              if (t.skip) { ent.consumida = true; continue; }
+              ent.marca = t;
+              prep.push(ent);
+            }
+            if (!prep.length) continue;
+
+            // Numeración correlativa CbteDesde..CbteHasta desde el numerador vigente
+            const nroBase = tipoLote === 1 ? cbteA : tipoLote === 11 ? cbteC : cbteB;
+            prep.forEach((ent, i) => { ent.cbteNro = nroBase + i; });
+
+            let lote = null, falloEstructural = null;
+            try {
+              lote = await facturarLote(prep.map(ent => ({ orden: ent.orden, cbteNro: ent.cbteNro })), {
+                token, sign, cuitNum, pv, tipoCbte: tipoLote, wsfeUrl: wsfe,
+                monotributo: isMonotributo, fechaImputacion, exento,
+              });
+            } catch (e) {
+              falloEstructural = e;
+              console.error(`[arca emit] lote tipo ${tipoLote} (${prep.length} órdenes) falló:`, e.message);
+            }
+
+            let maxAprobado = null;
+            if (falloEstructural || (lote && lote.porNro.size === 0 && !lote.err_code)) {
+              // Red/timeout o XML sin detalles: AFIP pudo haber procesado igual.
+              // Mismo recovery que el camino individual: consultar cada
+              // comprobante esperado antes de dar el chunk por fallido.
+              for (const ent of prep) {
+                let rec = null, consultaOk = false;
+                try {
+                  rec = await consultarComprobanteCompleto(token, sign, cuitNum, pv, tipoLote, ent.cbteNro, wsfe);
+                  consultaOk = !(rec && rec.error);
+                } catch (_) {}
+                if (rec && !rec.error && rec.cae) {
+                  await procesarAprobada(ent.orderId, ent.orden, letraLote, tipoLote, ent.cbteNro,
+                    { cae: rec.cae, cae_vto: rec.cae_vto, resultado: "A", obs: "", err_code: null, obs_codigo: null, obs_msg: "" },
+                    ent.marca.marcaRef, ent.marca.marcaTomada);
+                  ent.consumida = true;
+                  maxAprobado = ent.cbteNro;
+                } else if (!consultaOk) {
+                  // No se pudo confirmar si AFIP lo emitió: NO se reintenta (ni
+                  // acá ni por el camino individual — duplicar es peor que
+                  // demorar) y la marca queda "en_curso" frenando reintentos
+                  // 10 min. Mismo criterio que el camino individual ante un
+                  // timeout sin confirmación.
+                  ent.dudoso = true;
+                  ent.consumida = true;
+                  resultados.push({ orden_id: ent.orderId, ok: false, total: ent.orden.total,
+                    obs: `No se pudo confirmar con ARCA: ${falloEstructural?.message || "respuesta inesperada"} — verificá en el historial de ARCA antes de reintentar (por si el comprobante salió igual).` });
+                }
+                // rec === null (AFIP confirmó que NO lo tiene): sigue por el
+                // camino individual con la marca ya tomada.
+              }
+            } else if (lote.err_code && lote.porNro.size === 0) {
+              // AFIP rechazó el request ENTERO sin emitir nada (token 600/601,
+              // correlatividad, etc.): todo el chunk sigue por el camino
+              // individual, que sabe renovar el TA y resincronizar numeración.
+              console.error(`[arca emit] lote tipo ${tipoLote} rechazado por AFIP: ${lote.err_code} ${String(lote.err_msg || "").slice(0, 120)}`);
+            } else {
+              if (lote.err_code) console.error(`[arca emit] lote tipo ${tipoLote} con error global ${lote.err_code} pero ${lote.porNro.size} detalles — se procesan las aprobadas`);
+              // Respuesta por ítem. OJO semántica AFIP: si UN comprobante del
+              // lote es rechazado, AFIP rechaza ese y TODOS los siguientes del
+              // request (correlatividad) — las aprobadas son siempre un prefijo
+              // y los números rechazados NO se consumen.
+              for (const ent of prep) {
+                const r = lote.porNro.get(ent.cbteNro);
+                if (r && r.resultado === "A" && r.cae) {
+                  await procesarAprobada(ent.orderId, ent.orden, letraLote, tipoLote, ent.cbteNro, r,
+                    ent.marca.marcaRef, ent.marca.marcaTomada);
+                  ent.consumida = true;
+                  maxAprobado = ent.cbteNro;
+                }
+                // Rechazadas y no procesadas: reintento por el camino individual
+                // (con la marca ya tomada), que tiene el fallback A→B para los
+                // rechazos de validación del receptor.
+              }
+            }
+
+            // Avanzar el numerador hasta después de la última aprobada (los
+            // rechazos no consumen numeración en AFIP).
+            if (maxAprobado !== null) {
+              const sig = maxAprobado + 1;
+              if (tipoLote === 1) cbteA = sig; else if (tipoLote === 11) cbteC = sig; else cbteB = sig;
+            }
+          }
+        }
+      }
+
+      for (const ent of individuales) {
+        if (ent.consumida) continue; // ya resuelta por el camino en lote
+        const orderId = ent.orderId, orden = ent.orden;
+        if (Date.now() > DEADLINE_EMIT) {
+          pendientesIds.push(orderId);
+          // Marca tomada por el lote SIN riesgo de CAE en vuelo (AFIP respondió
+          // el rechazo, confirmó que no lo tiene, o nunca recibió el request):
+          // se libera para no bloquear el reintento 10 minutos.
+          if (ent.marca?.marcaTomada && !ent.dudoso) { try { await ent.marca.marcaRef.delete(); } catch (_) {} }
+          continue;
+        }
+        // Total inválido: no se toma marca ni se llama a AFIP.
+        if (!Number.isFinite(Number(orden.total)) || Number(orden.total) <= 0) {
+          resultados.push({ orden_id: orderId, ok: false, total: orden.total,
+            obs: `Total de la orden inválido (${orden.total}) — no se envió a AFIP.` });
+          continue;
+        }
+        // ¿Ya tiene factura? No se re-emite.
+        const previa = yaFacturadas.get(String(orderId));
+        if (previa) {
+          resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, total: orden.total,
+            obs: `Ya tiene factura ${previa.letra || ""} N° ${previa.nro || "?"} (CAE ${previa.cae || "?"}) — no se re-emite para no duplicarla en ARCA.` });
+          continue;
+        }
+        // Marca "en curso" antes de pegarle a AFIP. Si el camino en lote ya la
+        // tomó para esta orden, se reusa — re-crearla la haría rebotar como
+        // "otra emisión en curso".
+        let marcaRef, marcaTomada;
+        if (ent.marca) {
+          ({ marcaRef, marcaTomada } = ent.marca);
+        } else {
+          const t = await tomarMarcaEmision(db, uid, cuitEmit, orderId, orden, resultados);
+          if (t.skip) continue;
+          ({ marcaRef, marcaTomada } = t);
+        }
+
+        // Aplicar mapeo de productos
+        if (product_map) {
+          for (const item of orden.items) {
+            if (product_map[item.nombre_original]) item.nombre = product_map[item.nombre_original];
+          }
+        }
+
+        let result, letra, tipoCbte, cbteNro;
+
+        // Un error de red/SOAP en UNA orden no puede tumbar el lote entero: si
+        // explota, se informa esa orden y se sigue con las demás. La marca queda
+        // en "en_curso" a propósito — no sabemos si ARCA llegó a dar el CAE, así
+        // que durante 10 minutos no se reintenta (duplicar es peor que demorar).
+        try {
+          if (isMonotributo) {
+            letra = "C"; tipoCbte = 11; cbteNro = cbteC;
+            result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true, fechaImputacion, exento);
+          } else {
+            const tieneCuit = orden.doc_tipo === "CUIT";
+            if (tieneCuit) {
+              letra = "A"; tipoCbte = 1; cbteNro = cbteA;
+              result = await facturar(token, sign, cuitNum, pv, cbteA, orden, 1, wsfe, false, fechaImputacion, exento);
+              // Fallback A→B SOLO ante rechazo de validación del receptor —
+              // nunca por errores genéricos, de token (600/601) ni de
+              // correlatividad (10016).
+              if (!result.cae && esRechazoReceptor(result)) {
+                letra = "B"; tipoCbte = 6; cbteNro = cbteB;
+                result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
+              }
+            } else {
+              letra = "B"; tipoCbte = 6; cbteNro = cbteB;
+              result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
+            }
+          }
+        } catch (e) {
+          // Error de red/timeout: FECAESolicitar no se reintenta a ciegas. El
+          // pedido pudo procesarse igual, así que ANTES de darlo por fallido se
+          // consulta si el comprobante ya existe en AFIP con el número esperado.
+          let rec = null;
+          if (tipoCbte && cbteNro) {
+            try { rec = await consultarComprobanteCompleto(token, sign, cuitNum, pv, tipoCbte, cbteNro, wsfe); } catch (_) {}
+          }
+          if (rec && !rec.error && rec.cae) {
+            // AFIP SÍ lo emitió: se trata como éxito con los datos de la consulta.
+            result = { cae: rec.cae, cae_vto: rec.cae_vto, resultado: "A", obs: "", err_code: null, obs_codigo: null, obs_msg: "" };
+          } else {
+            console.error(`[arca emit] ${orderId} error de conexión:`, e.message);
+            resultados.push({ orden_id: orderId, ok: false, total: orden.total,
+              obs: `No se pudo confirmar con ARCA: ${e.message} — verificá en el historial de ARCA antes de reintentar (por si el comprobante salió igual).` });
+            continue;
+          }
+        }
+
+        // Token AFIP vencido a mitad de lote (600/601): renovar el TA UNA sola
+        // vez, re-sincronizar el numerador y reintentar este comprobante.
+        if (!result.cae && [600, 601].includes(result.err_code) && !taRenovado) {
+          taRenovado = true;
+          try {
+            await invalidarTA(db, uid, cuitEmit);
+            ({ token, sign } = await obtenerTA(db, uid, cfg));
+            cbteNro = (await getUltimoCbte(token, sign, cuitNum, pv, tipoCbte, wsfe)) + 1;
+            if (letra === "A") cbteA = cbteNro; else if (letra === "C") cbteC = cbteNro; else cbteB = cbteNro;
+            result = await facturar(token, sign, cuitNum, pv, cbteNro, orden, tipoCbte, wsfe, isMonotributo, fechaImputacion, exento);
+          } catch (e2) {
+            resultados.push({ orden_id: orderId, ok: false, total: orden.total,
+              obs: `Token de ARCA vencido y no se pudo renovar: ${e2.message}` });
+            continue;
+          }
+        }
+
+        if (result.cae) {
+          // Todo el post-procesamiento (marca, Firestore, PDF, ML, resultado)
+          // vive en procesarAprobada — compartido con el camino en lote.
+          await procesarAprobada(orderId, orden, letra, tipoCbte, cbteNro, result, marcaRef, marcaTomada);
+          if (letra === "A") cbteA++;
+          else if (letra === "C") cbteC++;
+          else cbteB++;
+        } else {
+          await registrarRechazo(orderId, orden, letra, tipoCbte, result, marcaRef, marcaTomada);
         }
       }
 
@@ -2937,8 +3257,13 @@ export default async function handler(req, res) {
         filterEnd = `${nextY}-${nextM}-01T03:00:00.000Z`;
       }
 
+      // .select(): list_batches usa muchos campos pero NO los pesados (items,
+      // domicilio) — el ahorro es no traer el array de items de cada comprobante.
       const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
         .where("cuit_emisor", "==", cuitParam)
+        .select("emitido_at", "total", "orden_id", "nro", "letra", "cae", "cae_vto",
+          "tipo_cbte", "punto_venta", "doc_tipo", "doc_nro", "cliente", "fecha_cbte",
+          "neto", "iva", "ml_uploaded", "recuperado_afip", "exento", "anulada", "nc_nro")
         .get();
 
       // _docId: id REAL del documento (formato viejo sin PV o nuevo con PV) —
@@ -3049,40 +3374,49 @@ export default async function handler(req, res) {
       const body = JSON.parse((await readBody(req)).toString());
       const { cuit: cuitParam, comprobante_ids } = body;
       if (!cuitParam || !Array.isArray(comprobante_ids)) return res.status(400).json({ error: "Faltan cuit o comprobante_ids" });
+      if (comprobante_ids.length > 100) return res.status(400).json({ error: `Máximo 100 comprobantes por pedido (llegaron ${comprobante_ids.length}) — pedilos en tandas.` });
 
       const cfg = await loadCuitConfig(db, uid, cuitParam);
       if (!cfg) return res.status(404).json({ error: "CUIT no encontrado" });
 
+      // Una sola lectura batched (getAll) en vez de un .get() secuencial por doc
+      const compCol2 = db.collection("users").doc(uid).collection("arca_comprobantes");
+      const refs = comprobante_ids.filter(id => typeof id === "string" && id).map(id => compCol2.doc(id));
+      const snaps = refs.length ? await db.getAll(...refs) : [];
+      const comps = snaps.filter(s => s.exists).map(s => s.data());
+
+      // Generación de PDFs en paralelo, en tandas de 5 (pdf-lib es CPU-bound;
+      // más paralelismo no ayuda y arriesga memoria en la lambda).
       const pdfs = [];
-      for (const comprobanteId of comprobante_ids) {
-        const cSnap = await db.collection("users").doc(uid).collection("arca_comprobantes").doc(comprobanteId).get();
-        if (!cSnap.exists) continue;
-        const c = cSnap.data();
-        const factData = {
-          comprobante: c.nro,
-          cae: c.cae,
-          cae_vto: c.cae_vto,
-          fecha: c.fecha_str,
-          // fecha_cbte = fecha REAL del comprobante en AFIP (para el QR)
-          fecha_iso: c.fecha_cbte || c.emitido_at?.slice(0, 10),
-          cliente: c.cliente || "Consumidor Final",
-          doc_tipo: c.doc_tipo,
-          doc_nro: c.doc_nro || "",
-          letra: c.letra,
-          tipo_cbte: c.tipo_cbte,
-          domicilio: c.domicilio || "",
-          total: c.total, neto: c.neto, iva: c.iva, punto_venta: c.punto_venta, exento: !!c.exento,
-          // Items reales si fueron persistidos al emitir, sino fallback (facturas viejas)
-          items: (Array.isArray(c.items) && c.items.length > 0)
-            ? c.items
-            : [{ nombre: "(Detalle no disponible en re-impresión)", cantidad: 1, precio: c.total, descuento_item: 0 }],
-        };
-        const pdfBytes = await generarPDF(factData, cfg);
-        const nombreCliente = (c.cliente || "Consumidor_Final").replace(/[^a-zA-Z0-9 \-_]/g, "").trim();
-        pdfs.push({
-          nombre: `F${c.letra} - ${nombreCliente} - ${String(c.nro).padStart(8, "0")}.pdf`,
-          bytes: Buffer.from(pdfBytes).toString("base64"),
-        });
+      for (let i = 0; i < comps.length; i += 5) {
+        const tanda = await Promise.all(comps.slice(i, i + 5).map(async (c) => {
+          const factData = {
+            comprobante: c.nro,
+            cae: c.cae,
+            cae_vto: c.cae_vto,
+            fecha: c.fecha_str,
+            // fecha_cbte = fecha REAL del comprobante en AFIP (para el QR)
+            fecha_iso: c.fecha_cbte || c.emitido_at?.slice(0, 10),
+            cliente: c.cliente || "Consumidor Final",
+            doc_tipo: c.doc_tipo,
+            doc_nro: c.doc_nro || "",
+            letra: c.letra,
+            tipo_cbte: c.tipo_cbte,
+            domicilio: c.domicilio || "",
+            total: c.total, neto: c.neto, iva: c.iva, punto_venta: c.punto_venta, exento: !!c.exento,
+            // Items reales si fueron persistidos al emitir, sino fallback (facturas viejas)
+            items: (Array.isArray(c.items) && c.items.length > 0)
+              ? c.items
+              : [{ nombre: "(Detalle no disponible en re-impresión)", cantidad: 1, precio: c.total, descuento_item: 0 }],
+          };
+          const pdfBytes = await generarPDF(factData, cfg);
+          const nombreCliente = (c.cliente || "Consumidor_Final").replace(/[^a-zA-Z0-9 \-_]/g, "").trim();
+          return {
+            nombre: `F${c.letra} - ${nombreCliente} - ${String(c.nro).padStart(8, "0")}.pdf`,
+            bytes: Buffer.from(pdfBytes).toString("base64"),
+          };
+        }));
+        pdfs.push(...tanda);
       }
       return res.json({ pdfs });
     }
@@ -3111,25 +3445,27 @@ export default async function handler(req, res) {
       if (!userSnap.exists) return res.json({ connections: [], ordenes: {} });
       const stores = userSnap.data().stores || [];
 
-      // IDs ya facturadas (mantenemos para marcar visualmente, no para filtrar)
+      // IDs ya facturadas (mantenemos para marcar visualmente, no para filtrar).
+      // .select(): solo los campos que se usan — sin items/domicilio/cliente,
+      // que son lo pesado de cada comprobante.
       const billedSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
-        .where("cuit_emisor", "==", cuitParam).get();
+        .where("cuit_emisor", "==", cuitParam)
+        .select("orden_id", "letra", "nro", "emitido_at", "anulada", "anulada_at", "nc_nro")
+        .get();
       const billedMap = new Map();
+      // IDs que fueron facturadas y luego ANULADAS con NC — recordatorio visual.
+      // Ya NO se lee arca_facturadas entera para esto: desde que las anuladas se
+      // MARCAN en arca_comprobantes (anulada:true + nc_nro, no se borran), la
+      // misma query de arriba trae la info. Solo anulaciones muy viejas (de
+      // cuando el comprobante se borraba al anular) pierden el badge.
+      const anuladaMap = new Map();
       for (const d of billedSnap.docs) {
         const data = d.data();
         // anulada:true = ya NO cuenta como facturada (la orden vuelve a ser facturable)
-        if (data.orden_id && !data.anulada) billedMap.set(data.orden_id, { letra: data.letra, nro: data.nro, emitido_at: data.emitido_at });
+        if (!data.orden_id) continue;
+        if (!data.anulada) billedMap.set(data.orden_id, { letra: data.letra, nro: data.nro, emitido_at: data.emitido_at });
+        else anuladaMap.set(data.orden_id, { anulada_at: data.anulada_at || null, nc_comprobante: data.nc_nro || null });
       }
-      // IDs que fueron facturadas y luego ANULADAS con NC — para mostrar recordatorio
-      // visual aunque ya no estén "facturadas" (porque borramos de arca_comprobantes al anular)
-      const anuladaMap = new Map();
-      try {
-        const anulSnap = await db.collection("users").doc(uid).collection("arca_facturadas").get();
-        for (const d of anulSnap.docs) {
-          const data = d.data();
-          if (data.anulada) anuladaMap.set(d.id, { anulada_at: data.anulada_at, nc_comprobante: data.nc_comprobante });
-        }
-      } catch (_) {}
 
       const connections = [];
       const ordenes = {};
@@ -3564,8 +3900,11 @@ export default async function handler(req, res) {
       const allOrders = [...legById.values()];
 
       // 3) Filtrar las que ya están facturadas (cruzando con arca_comprobantes)
+      // .select(): solo se usan orden_id y anulada — no traer items/cliente/etc.
       const billedSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
-        .where("cuit_emisor", "==", cuitParam).get();
+        .where("cuit_emisor", "==", cuitParam)
+        .select("orden_id", "anulada")
+        .get();
       const billedIds = new Set(billedSnap.docs.map(d => { const x = d.data(); return x.anulada ? null : x.orden_id; }).filter(Boolean));
 
       // 4) Normalizar al schema interno
@@ -3628,15 +3967,20 @@ export default async function handler(req, res) {
       const body = JSON.parse((await readBody(req)).toString());
       const { cuit: cuitParam, order_ids } = body;
       if (!cuitParam || !Array.isArray(order_ids)) return res.status(400).json({ error: "Faltan cuit u order_ids" });
-      // Firestore "where in" limita a 30 valores — batchea si es necesario.
+      if (order_ids.length > 500) return res.status(400).json({ error: `Máximo 500 órdenes por chequeo (llegaron ${order_ids.length}) — chequealas en tandas.` });
+      // Firestore "where in" limita a 30 valores — batchea si es necesario, y las
+      // queries van EN PARALELO (antes era un await secuencial por chunk).
       // Sin filtro de fecha: detecta duplicados aunque la factura original sea de otro mes.
       const dup = [];
-      for (let i = 0; i < order_ids.length; i += 30) {
-        const chunk = order_ids.slice(i, i + 30);
-        const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+      const dupChunks = [];
+      for (let i = 0; i < order_ids.length; i += 30) dupChunks.push(order_ids.slice(i, i + 30));
+      const dupSnaps = await Promise.all(dupChunks.map(chunk =>
+        db.collection("users").doc(uid).collection("arca_comprobantes")
           .where("cuit_emisor", "==", cuitParam)
           .where("orden_id", "in", chunk)
-          .get();
+          .get()
+      ));
+      for (const snap of dupSnaps) {
         snap.docs.forEach(d => {
           const x = d.data();
           if (x.anulada) return; // anulada con NC → la orden es re-facturable, no es duplicado
@@ -3686,9 +4030,12 @@ export default async function handler(req, res) {
       // Migración de formato (solo la primera ronda, sin cursor): registros
       // viejos guardaron cuit_emisor CON guiones → no matchean el filtro por
       // dígitos y desaparecen del historial (y el resync los duplicaría).
-      // Normalizamos a solo dígitos, paginado de a 500.
+      // Normalizamos a solo dígitos, paginado de a 500. Corre UNA sola vez por
+      // CUIT: al completarla se marca migracion_cuit_done en la config y las
+      // corridas siguientes se la saltean (los registros nuevos ya se guardan
+      // normalizados en emit).
       let migrados = 0;
-      if (!cursor) {
+      if (!cursor && !cfg.migracion_cuit_done) {
         let last = null;
         while (true) {
           let q = compCol.orderBy(FieldPath.documentId()).limit(500);
@@ -3708,6 +4055,8 @@ export default async function handler(req, res) {
           last = page.docs[page.size - 1];
           if (page.size < 500) break;
         }
+        // Migración completa: no volver a recorrer toda la colección nunca más.
+        try { await saveCuitConfig(db, uid, cuitParam, { migracion_cuit_done: true }); } catch (_) {}
       }
 
       // Tipos a escanear: SIEMPRE facturas A/B/C y NC A/B/C, sin importar la
@@ -3763,6 +4112,11 @@ export default async function handler(req, res) {
 
       const MAX_LOOKUPS = 200;              // consultas a AFIP por corrida
       const DEADLINE = Date.now() + 90000;  // margen contra el maxDuration de 120s
+      // Escrituras de recuperados en paralelo (bulkWriter) en vez de un await
+      // secuencial por doc: el cuello de botella de la corrida son las consultas
+      // a AFIP, no hay por qué sumarle una espera de Firestore por cada una.
+      // create() sigue garantizando no pisar registros existentes.
+      const bw = db.bulkWriter();
       const SCAN_MAX = 2000;                // números revisados por PV/tipo
       let lookups = 0, recuperados = 0, pendientes = false, nextCursor = null;
       const porPv = {};
@@ -3811,13 +4165,19 @@ export default async function handler(req, res) {
 
             const letra = (tipoCbte === 1 || tipoCbte === 3) ? "A" : (tipoCbte === 6 || tipoCbte === 8) ? "B" : "C";
             const fIso = `${afip.fecha.slice(0, 4)}-${afip.fecha.slice(4, 6)}-${afip.fecha.slice(6, 8)}`;
-            try {
+            // El catch async del bulkWriter ajusta los contadores si la escritura
+            // falla (ALREADY_EXISTS por carrera con otra corrida u otro error).
+            const onWriteErr = (e) => {
+              recuperados--;
+              if (!/already.?exists/i.test(e.message || "")) detalle.push({ pv, tipo_cbte: tipoCbte, nro, error: e.message });
+            };
+            {
               if (esNC) {
                 // NC recuperada → a su colección propia (sin factura_origen:
                 // AFIP no informa qué factura anulaba)
                 const docId = `${cuitParam}_nc_${pv}_${tipoCbte}_${String(nro).padStart(8, "0")}`;
                 // create() falla si el doc ya existe → imposible pisar un registro real
-                await db.collection("users").doc(uid).collection("arca_notas_credito").doc(docId).create({
+                bw.create(db.collection("users").doc(uid).collection("arca_notas_credito").doc(docId), {
                   cuit: cuitParam,
                   tipo: tipoCbte,
                   letra,
@@ -3833,12 +4193,12 @@ export default async function handler(req, res) {
                   pdf_b64: null,
                   recuperado_afip: true,
                   recuperado_at: new Date().toISOString(),
-                });
+                }).catch(onWriteErr);
                 ncExist.add(`${tipoCbte}|${pv}|${nro}`);
               } else {
                 const docId = `${cuitParam}_${pv}_${tipoCbte}_${String(nro).padStart(8, "0")}`;
                 // create() falla si el doc ya existe → imposible pisar un registro real
-                await compCol.doc(docId).create({
+                bw.create(compCol.doc(docId), {
                   cuit_emisor: cuitParam,
                   tipo_cbte: tipoCbte,
                   letra,
@@ -3864,21 +4224,22 @@ export default async function handler(req, res) {
                   ml_uploaded: false,
                   recuperado_afip: true,
                   recuperado_at: new Date().toISOString(),
-                });
+                }).catch(onWriteErr);
                 existentes.add(`${tipoCbte}|${pv}|${nro}`);
               }
               recuperados++; recTipo++;
               const pk = `${pv}_${tipoCbte}`;
               porPv[pk] = (porPv[pk] || 0) + 1;
-            } catch (e) {
-              // ALREADY_EXISTS (carrera con otra corrida) u otro fallo: no cuenta
-              if (!/already.?exists/i.test(e.message || "")) detalle.push({ pv, tipo_cbte: tipoCbte, nro, error: e.message });
             }
           }
           detalle.push({ pv, tipo_cbte: tipoCbte, ultimo, recuperados: recTipo, ...(corte ? { pendiente_desde: corte } : {}) });
           if (pendientes) break outer;
         }
       }
+
+      // Esperar a que TODAS las escrituras pendientes terminen antes de responder
+      // (los .catch por doc ya ajustaron contadores si algo falló).
+      try { await bw.close(); } catch (_) {}
 
       console.log(`[arca resync] uid=${uid} cuit=${cuitParam} pvs=${pvs.join(",")} tipos=${tipos.join(",")} consultas=${lookups} recuperados=${recuperados} migrados=${migrados} pendientes=${pendientes}${nextCursor ? ` cursor=${nextCursor.pv}/${nextCursor.tipo}/${nextCursor.nro}` : ""}`);
       return res.json({ ok: true, pvs, tipos, consultados: lookups, recuperados, migrados, pendientes, cursor: nextCursor, porPv, detalle });
@@ -3888,6 +4249,6 @@ export default async function handler(req, res) {
 
   } catch (e) {
     console.error("[arca]", e.message);
-    return res.status(500).json({ error: e.message });
+    return res.status(e.statusCode === 413 ? 413 : 500).json({ error: e.message });
   }
 }
