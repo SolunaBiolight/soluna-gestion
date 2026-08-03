@@ -250,11 +250,11 @@ async function getArcaDispatcher() {
   return _arcaDispatcher;
 }
 
-async function arcaFetch(url, opts = {}) {
+async function arcaFetch(url, opts = {}, timeoutMs = 45000) {
   const { fetch: undiciFetch } = await import("undici");
   const dispatcher = await getArcaDispatcher();
   const controller = new AbortController();
-  const tid = setTimeout(() => controller.abort(), 45000);
+  const tid = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await undiciFetch(url, {
       ...opts,
@@ -467,7 +467,10 @@ async function obtenerTA(db, uid, cfg) {
 
 // ─── Llamada WSFE ──────────────────────────────────────
 
-async function wsfeCall(action, bodyXml, wsfeUrl) {
+// noRetry: FECAESolicitar NUNCA se reintenta a ciegas — un timeout no dice si
+// AFIP procesó o no el comprobante, y reintentar puede duplicarlo. El que llama
+// decide (consultando FECompConsultar) si el comprobante salió igual.
+async function wsfeCall(action, bodyXml, wsfeUrl, noRetry = false) {
   const soap = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
                   xmlns:ar="http://ar.gov.afip.dif.FEV1/">
@@ -478,6 +481,9 @@ async function wsfeCall(action, bodyXml, wsfeUrl) {
   </soapenv:Body>
 </soapenv:Envelope>`;
 
+  // FECAESolicitar con timeout más corto: un cuelgue no puede comerse el
+  // presupuesto de tiempo del lote entero.
+  const timeoutMs = action === "FECAESolicitar" ? 30000 : 45000;
   for (let intento = 0; intento < 3; intento++) {
     let r;
     try {
@@ -488,16 +494,16 @@ async function wsfeCall(action, bodyXml, wsfeUrl) {
           SOAPAction: `http://ar.gov.afip.dif.FEV1/${action}`,
         },
         body: soap,
-      });
+      }, timeoutMs);
     } catch (e) {
-      if (intento < 2) { await new Promise(res => setTimeout(res, (intento + 1) * 3000)); continue; }
+      if (!noRetry && intento < 2) { await new Promise(res => setTimeout(res, (intento + 1) * 3000)); continue; }
       const cause = e.cause?.code || e.cause?.message || "";
-      if (e.name === "AbortError") throw new Error("WSFE no respondió en 45 segundos. Probá de nuevo.");
+      if (e.name === "AbortError") throw new Error(`WSFE no respondió en ${Math.round(timeoutMs / 1000)} segundos. Probá de nuevo.`);
       throw new Error(`No se pudo conectar con WSFE: ${e.message}${cause ? " — " + cause : ""}`);
     }
     const text = await r.text();
     if (r.ok) return text;
-    if (r.status === 500 && intento < 2) {
+    if (!noRetry && r.status === 500 && intento < 2) {
       await new Promise(res => setTimeout(res, (intento + 1) * 3000));
       continue;
     }
@@ -505,19 +511,56 @@ async function wsfeCall(action, bodyXml, wsfeUrl) {
   }
 }
 
+// Escapado XML para todo string interpolado en los SOAP (defensa anti-inyección).
+const xmlEsc = s => String(s).replace(/[<>&'"]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[c]));
+
+// Separa los bloques de la respuesta de FECAESolicitar: <Errors> son errores
+// reales del request, <Observaciones>/<Obs> son motivos de rechazo o avisos del
+// detalle, y <Events> son informativos de AFIP (NUNCA deciden éxito/fallo).
+function parseWsfeResultado(xml) {
+  const caeM = xml.match(/<CAE>(\d+)<\/CAE>/);
+  const vtoM = xml.match(/<CAEFchVto>(\d{8})<\/CAEFchVto>/);
+  const resM = xml.match(/<Resultado>([AR])<\/Resultado>/);
+  const errBlock = (xml.match(/<Errors>([\s\S]*?)<\/Errors>/) || [])[1] || "";
+  const obsBlock = (xml.match(/<Observaciones>([\s\S]*?)<\/Observaciones>/) || [])[1] || "";
+  const errCode = parseInt((errBlock.match(/<Code>(\d+)<\/Code>/) || [])[1]) || null;
+  const errMsgs = [...errBlock.matchAll(/<Msg>([\s\S]*?)<\/Msg>/g)].map(m => m[1]).join(" ").trim();
+  const obsCode = parseInt((obsBlock.match(/<Code>(\d+)<\/Code>/) || [])[1]) || null;
+  const obsMsgs = [...obsBlock.matchAll(/<Msg>([\s\S]*?)<\/Msg>/g)].map(m => m[1]).join(" ").trim();
+  const resultado = resM?.[1] || null;
+  const cae = caeM?.[1] || null;
+  let caeVto = vtoM?.[1] || null;
+  if (caeVto) caeVto = `${caeVto.slice(6)}/${caeVto.slice(4, 6)}/${caeVto.slice(0, 4)}`;
+  return {
+    cae, cae_vto: caeVto, resultado,
+    // Resultado=A con Obs: el comprobante es VÁLIDO — las obs se guardan aparte.
+    obs: (errMsgs || (resultado === "A" ? "" : obsMsgs)).trim(),
+    err_code: errCode || (resultado === "R" ? obsCode : null),
+    obs_codigo: resultado === "A" ? obsCode : null,
+    obs_msg: resultado === "A" ? obsMsgs : "",
+  };
+}
+
 function authXml(token, sign, cuitNum) {
   return `<ar:Auth>
-    <ar:Token>${token}</ar:Token>
-    <ar:Sign>${sign}</ar:Sign>
-    <ar:Cuit>${cuitNum}</ar:Cuit>
+    <ar:Token>${xmlEsc(token)}</ar:Token>
+    <ar:Sign>${xmlEsc(sign)}</ar:Sign>
+    <ar:Cuit>${parseInt(cuitNum)}</ar:Cuit>
   </ar:Auth>`;
 }
 
 async function getUltimoCbte(token, sign, cuitNum, puntoVenta, tipoCbte, wsfeUrl) {
   const body = `${authXml(token, sign, cuitNum)}
-    <ar:PtoVta>${puntoVenta}</ar:PtoVta>
-    <ar:CbteTipo>${tipoCbte}</ar:CbteTipo>`;
+    <ar:PtoVta>${parseInt(puntoVenta)}</ar:PtoVta>
+    <ar:CbteTipo>${parseInt(tipoCbte)}</ar:CbteTipo>`;
   const xml = await wsfeCall("FECompUltimoAutorizado", body, wsfeUrl);
+  // Un error de ARCA acá NO es "cero comprobantes": devolver 0 haría arrancar
+  // la numeración de nuevo y AFIP rechazaría todo por correlatividad.
+  const errBlock = (xml.match(/<Errors>([\s\S]*?)<\/Errors>/) || [])[1];
+  if (errBlock && /<Code>\d+<\/Code>/.test(errBlock)) {
+    const msg = ((errBlock.match(/<Msg>([\s\S]*?)<\/Msg>/) || [])[1] || "").trim();
+    throw new Error("AFIP: " + (msg || "error consultando el último comprobante autorizado"));
+  }
   const m = xml.match(/<CbteNro>(\d+)<\/CbteNro>/);
   return m ? parseInt(m[1]) : 0;
 }
@@ -541,6 +584,8 @@ async function getPtosVenta(token, sign, cuitNum, wsfeUrl) {
 // Útil para recuperar doc_tipo/doc_nro cuando se perdieron en Firestore pero AFIP los tiene.
 // Devuelve { doc_tipo, doc_nro } si lo encontró, o { error } con el motivo del fallo.
 async function consultarComprobante(token, sign, cuitNum, puntoVenta, tipoCbte, cbteNro, wsfeUrl) {
+  tipoCbte = parseInt(tipoCbte); cbteNro = parseInt(cbteNro); puntoVenta = parseInt(puntoVenta);
+  if (![tipoCbte, cbteNro, puntoVenta].every(Number.isFinite)) return { error: "parámetros de consulta inválidos (PV/tipo/número)" };
   const body = `${authXml(token, sign, cuitNum)}
     <ar:FeCompConsReq>
       <ar:CbteTipo>${tipoCbte}</ar:CbteTipo>
@@ -571,6 +616,8 @@ async function consultarComprobante(token, sign, cuitNum, puntoVenta, tipoCbte, 
 //   { error }       → falla SOAP u otro error de ARCA
 //   { fecha, total, neto, iva, exento, cae, cae_vto, doc_tipo, doc_nro }
 async function consultarComprobanteCompleto(token, sign, cuitNum, puntoVenta, tipoCbte, cbteNro, wsfeUrl) {
+  tipoCbte = parseInt(tipoCbte); cbteNro = parseInt(cbteNro); puntoVenta = parseInt(puntoVenta);
+  if (![tipoCbte, cbteNro, puntoVenta].every(Number.isFinite)) return { error: "parámetros de consulta inválidos (PV/tipo/número)" };
   const body = `${authXml(token, sign, cuitNum)}
     <ar:FeCompConsReq>
       <ar:CbteTipo>${tipoCbte}</ar:CbteTipo>
@@ -623,6 +670,12 @@ const FERIADOS_AR = new Set([
   "2027-10-11","2027-11-22","2027-12-08","2027-12-25",
 ]);
 
+// "Hoy" en hora argentina (YYYY-MM-DD). Entre las 21 y las 24hs ART el día UTC
+// ya cambió: usar toISOString() para fechas de comprobantes corría el día.
+function hoyARISO() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date());
+}
+
 function esDiaHabil(date) {
   const dow = date.getUTCDay(); // 0=domingo, 6=sabado
   if (dow === 0 || dow === 6) return false;
@@ -656,8 +709,9 @@ function fechaValida(yyyymmdd) {
   const d = parseInt(yyyymmdd.slice(6, 8));
   if (!y || !m || !d || m > 12 || d > 31) return { ok: false, msg: "Fecha inválida." };
   const target = new Date(Date.UTC(y, m - 1, d));
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+  // Ventana N-5 calculada contra el "hoy" argentino, no el día UTC.
+  const [ty, tm, td] = hoyARISO().split("-").map(Number);
+  const today = new Date(Date.UTC(ty, tm - 1, td));
   const diffDays = (today.getTime() - target.getTime()) / (24 * 60 * 60 * 1000);
   if (diffDays < 0) return { ok: false, msg: "No podés emitir facturas con fecha futura." };
   if (diffDays > 5) return { ok: false, msg: `La fecha ${String(d).padStart(2,"0")}/${String(m).padStart(2,"0")}/${y} está fuera del rango ARCA (máximo 5 días corridos hacia atrás). ARCA rechaza comprobantes con fecha anterior a N-5 (error TN-3526).` };
@@ -691,25 +745,31 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
   // AFIP acepta máximo 2 decimales: los totales de ML suelen llegar con arrastre
   // de punto flotante (26999.999999999996) y el WS rechaza el ImpTotal.
   const total = Math.round(Number(orden.total) * 100) / 100;
-  const fecha = fechaImputacion || new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  if (!Number.isFinite(total) || total <= 0) throw new Error(`Total de la orden inválido (${orden.total}) — no se envió a AFIP.`);
+  // Nada no-numérico se interpola en el XML de AFIP.
+  puntoVenta = parseInt(puntoVenta); cbteNro = parseInt(cbteNro); tipoCbte = parseInt(tipoCbte);
+  if (![puntoVenta, cbteNro, tipoCbte].every(Number.isFinite)) throw new Error("Punto de venta, número o tipo de comprobante inválido — no se envió a AFIP.");
+  const fecha = fechaImputacion || hoyARISO().replace(/-/g, "");
 
   const docTipoClas = orden.doc_tipo;
+  const nroDocNum = parseInt(String(orden.doc_nro || orden.dni || "").replace(/\D/g, ""), 10);
   let tipoDoc, nroDoc, neto, iva;
 
   if (monotributo) {
     tipoCbte = 11;
     tipoDoc = docTipoClas === "CUIT" ? 80 : docTipoClas === "DNI" ? 96 : 99;
-    nroDoc = orden.doc_nro || orden.dni || 0;
+    nroDoc = tipoDoc === 99 ? 0 : nroDocNum;
     neto = total; iva = 0;
   } else {
     // Exento (ebooks/digitales, punto de venta exento): TODO el monto va como
     // operación exenta (ImpOpEx), sin neto gravado ni IVA. El resto (físicos) → 21%.
     if (exento) { neto = 0; iva = 0; }
     else { neto = Math.round((total / 1.21) * 100) / 100; iva = Math.round((total - neto) * 100) / 100; }
-    if (docTipoClas === "CUIT") { tipoDoc = 80; nroDoc = orden.doc_nro || orden.dni; }
-    else if (docTipoClas === "DNI") { tipoDoc = 96; nroDoc = orden.doc_nro || orden.dni; }
+    if (docTipoClas === "CUIT") { tipoDoc = 80; nroDoc = nroDocNum; }
+    else if (docTipoClas === "DNI") { tipoDoc = 96; nroDoc = nroDocNum; }
     else { tipoDoc = 99; nroDoc = 0; }
   }
+  if (tipoDoc !== 99 && !Number.isFinite(nroDoc)) throw new Error(`Documento del receptor inválido (${docTipoClas} "${orden.doc_nro || orden.dni || ""}") — no se envió a AFIP.`);
 
   const condIva = condicionIvaReceptor(tipoCbte, docTipoClas);
   const impOpEx = (!monotributo && exento) ? total : 0; // monto exento (sin IVA)
@@ -752,17 +812,19 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
       </ar:FeDetReq>
     </ar:FeCAEReq>`;
 
-  const xml = await wsfeCall("FECAESolicitar", body, wsfeUrl);
-  const caeM = xml.match(/<CAE>(\d+)<\/CAE>/);
-  const vtoM = xml.match(/<CAEFchVto>(\d{8})<\/CAEFchVto>/);
-  const resM = xml.match(/<Resultado>([AR])<\/Resultado>/);
-  const obsM = [...xml.matchAll(/<Msg>([\s\S]*?)<\/Msg>/g)].map(m => m[1]).join(" ");
+  const xml = await wsfeCall("FECAESolicitar", body, wsfeUrl, true);
+  return parseWsfeResultado(xml);
+}
 
-  const cae = caeM?.[1] || null;
-  let caeVto = vtoM?.[1] || null;
-  if (caeVto) caeVto = `${caeVto.slice(6)}/${caeVto.slice(4, 6)}/${caeVto.slice(0, 4)}`;
-
-  return { cae, cae_vto: caeVto, resultado: resM?.[1] || null, obs: obsM.trim() };
+// ¿El rechazo de AFIP es por validación del RECEPTOR (CUIT inexistente,
+// DocTipo/DocNro inválido, condición IVA)? Solo en ese caso tiene sentido el
+// fallback A→B. Nunca ante errores genéricos, de red, de correlatividad
+// (10016) ni de token (600/601).
+function esRechazoReceptor(result) {
+  const code = parseInt(result?.err_code) || 0;
+  if ([10013, 10015, 10018].includes(code)) return true;
+  if ([600, 601, 10016].includes(code)) return false;
+  return /DocNro|DocTipo|no se encuentra|condici[oó]n/i.test(String(result?.obs || ""));
 }
 
 // ─── Helper: desadjuntar TODOS los documentos fiscales adjuntos a una venta ML ──
@@ -862,8 +924,16 @@ async function emitirNotaCredito(token, sign, cuitNum, puntoVenta, cbteNcNro, fa
   const tipoFactura = parseInt(facturaOriginal.tipo) || 6;
   const tipoNC = tipoNCparaFactura(tipoFactura);
   const monotributo = tipoFactura === 11;
+  // Exento: la NC replica el esquema impositivo de la factura original (ImpOpEx)
+  const exento = !monotributo && facturaOriginal.exento === true;
   const total = Math.round((parseFloat(facturaOriginal.total) || 0) * 100) / 100;
-  const fecha = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const fecha = hoyARISO().replace(/-/g, "");
+  // Numéricos duros: nada no-numérico se interpola en el XML de AFIP
+  const nroAsoc = parseInt(facturaOriginal.comprobante);
+  const pvAsoc = parseInt(facturaOriginal.punto_venta) || parseInt(puntoVenta);
+  if (!Number.isFinite(nroAsoc) || !Number.isFinite(pvAsoc)) throw new Error("Número o punto de venta de la factura original inválido — la NC no se envió a AFIP.");
+  puntoVenta = parseInt(puntoVenta); cbteNcNro = parseInt(cbteNcNro);
+  if (![puntoVenta, cbteNcNro].every(Number.isFinite)) throw new Error("Punto de venta o número de la NC inválido — no se envió a AFIP.");
 
   const docTipoClas = facturaOriginal.doc_tipo;
   // Factura A → NC A requiere SIEMPRE CUIT del receptor (no se puede a Consumidor Final)
@@ -876,21 +946,30 @@ async function emitirNotaCredito(token, sign, cuitNum, puntoVenta, cbteNcNro, fa
       };
     }
   }
+  const nroDocNum = parseInt(String(facturaOriginal.doc_nro || "").replace(/\D/g, ""), 10);
   let tipoDoc, nroDoc, neto, iva;
   if (monotributo) {
     tipoDoc = docTipoClas === "CUIT" ? 80 : docTipoClas === "DNI" ? 96 : 99;
-    nroDoc = facturaOriginal.doc_nro || 0;
+    nroDoc = tipoDoc === 99 ? 0 : nroDocNum;
     neto = total; iva = 0;
+  } else if (exento) {
+    // Factura original exenta: la NC declara todo como ImpOpEx, sin neto ni IVA
+    neto = 0; iva = 0;
+    if (docTipoClas === "CUIT") { tipoDoc = 80; nroDoc = nroDocNum; }
+    else if (docTipoClas === "DNI") { tipoDoc = 96; nroDoc = nroDocNum; }
+    else { tipoDoc = 99; nroDoc = 0; }
   } else {
     neto = Math.round((total / 1.21) * 100) / 100;
     iva = Math.round((total - neto) * 100) / 100;
-    if (docTipoClas === "CUIT") { tipoDoc = 80; nroDoc = facturaOriginal.doc_nro; }
-    else if (docTipoClas === "DNI") { tipoDoc = 96; nroDoc = facturaOriginal.doc_nro; }
+    if (docTipoClas === "CUIT") { tipoDoc = 80; nroDoc = nroDocNum; }
+    else if (docTipoClas === "DNI") { tipoDoc = 96; nroDoc = nroDocNum; }
     else { tipoDoc = 99; nroDoc = 0; }
   }
+  if (tipoDoc !== 99 && !Number.isFinite(nroDoc)) throw new Error(`Documento del receptor inválido (${docTipoClas} "${facturaOriginal.doc_nro || ""}") — la NC no se envió a AFIP.`);
 
   const condIva = condicionIvaReceptor(tipoNC, docTipoClas);
-  const ivaXml = (!monotributo && iva > 0) ? `
+  const impOpEx = exento ? total : 0;
+  const ivaXml = (!monotributo && !exento && iva > 0) ? `
     <ar:Iva>
       <ar:AlicIva>
         <ar:Id>5</ar:Id>
@@ -905,9 +984,9 @@ async function emitirNotaCredito(token, sign, cuitNum, puntoVenta, cbteNcNro, fa
         <ar:CbtesAsoc>
           <ar:CbteAsoc>
             <ar:Tipo>${tipoFactura}</ar:Tipo>
-            <ar:PtoVta>${facturaOriginal.punto_venta || puntoVenta}</ar:PtoVta>
-            <ar:Nro>${facturaOriginal.comprobante}</ar:Nro>
-            <ar:Cuit>${cuitNum}</ar:Cuit>
+            <ar:PtoVta>${pvAsoc}</ar:PtoVta>
+            <ar:Nro>${nroAsoc}</ar:Nro>
+            <ar:Cuit>${parseInt(cuitNum)}</ar:Cuit>
           </ar:CbteAsoc>
         </ar:CbtesAsoc>`;
 
@@ -929,7 +1008,7 @@ async function emitirNotaCredito(token, sign, cuitNum, puntoVenta, cbteNcNro, fa
           <ar:ImpTotal>${total.toFixed(2)}</ar:ImpTotal>
           <ar:ImpTotConc>0</ar:ImpTotConc>
           <ar:ImpNeto>${neto.toFixed(2)}</ar:ImpNeto>
-          <ar:ImpOpEx>0</ar:ImpOpEx>
+          <ar:ImpOpEx>${impOpEx.toFixed(2)}</ar:ImpOpEx>
           <ar:ImpTrib>0</ar:ImpTrib>
           <ar:ImpIVA>${iva.toFixed(2)}</ar:ImpIVA>
           <ar:MonId>PES</ar:MonId>
@@ -941,15 +1020,9 @@ async function emitirNotaCredito(token, sign, cuitNum, puntoVenta, cbteNcNro, fa
       </ar:FeDetReq>
     </ar:FeCAEReq>`;
 
-  const xml = await wsfeCall("FECAESolicitar", body, wsfeUrl);
-  const caeM = xml.match(/<CAE>(\d+)<\/CAE>/);
-  const vtoM = xml.match(/<CAEFchVto>(\d{8})<\/CAEFchVto>/);
-  const resM = xml.match(/<Resultado>([AR])<\/Resultado>/);
-  const obsM = [...xml.matchAll(/<Msg>([\s\S]*?)<\/Msg>/g)].map(m => m[1]).join(" ");
-  const cae = caeM?.[1] || null;
-  let caeVto = vtoM?.[1] || null;
-  if (caeVto) caeVto = `${caeVto.slice(6)}/${caeVto.slice(4, 6)}/${caeVto.slice(0, 4)}`;
-  return { cae, cae_vto: caeVto, resultado: resM?.[1] || null, obs: obsM.trim(), tipo_nc: tipoNC, comprobante: cbteNcNro, neto, iva, total };
+  const xml = await wsfeCall("FECAESolicitar", body, wsfeUrl, true);
+  const parsed = parseWsfeResultado(xml);
+  return { ...parsed, tipo_nc: tipoNC, comprobante: cbteNcNro, neto, iva, total };
 }
 
 // ─── Parseo XLSX de Mercado Libre ─────────────────────
@@ -1175,7 +1248,7 @@ async function parsearCSVtn(buffer) {
 async function generarQrArca(factData, config) {
   const QRCode = (await import("qrcode")).default;
 
-  const fecha = factData.fecha_iso || new Date().toISOString().slice(0, 10);
+  const fecha = factData.fecha_iso || hoyARISO();
   const cuitNum = parseInt(String(config.cuit).replace(/\D/g, ""));
   const docTipoCode = factData.doc_tipo === "CUIT" ? 80 : factData.doc_tipo === "DNI" ? 96 : 99;
   const docNroNum = parseInt(String(factData.doc_nro || "0").replace(/\D/g, "")) || 0;
@@ -1219,10 +1292,15 @@ async function generarPDF(factData, config) {
   const punto_venta = factData.punto_venta || config.punto_venta; // PV REAL de la factura
   const isMonotributo = condicion_fiscal === "MONOTRIBUTO";
   const letra = factData.letra;
+  const isNC = !!factData._is_nc; // nota de crédito: cambia título y código AFIP
   const total = factData.total;
   const exento = !!factData.exento; // factura sin IVA (digitales/ebooks)
-  const neto = (isMonotributo || exento) ? (exento ? 0 : total) : Math.round((total / 1.21) * 100) / 100;
-  const iva21 = (isMonotributo || exento) ? 0 : Math.round((total - neto) * 100) / 100;
+  // Reimpresión: si el comprobante trae neto/iva persistidos (emitido bajo otra
+  // condición fiscal del CUIT), se respetan en vez de recalcular con la actual.
+  const neto = Number.isFinite(factData.neto) ? factData.neto
+    : (isMonotributo || exento) ? (exento ? 0 : total) : Math.round((total / 1.21) * 100) / 100;
+  const iva21 = Number.isFinite(factData.iva) ? factData.iva
+    : (isMonotributo || exento) ? 0 : Math.round((total - neto) * 100) / 100;
 
   // Generar QR una vez (mismo para las 3 copias)
   let qrImage = null;
@@ -1318,7 +1396,9 @@ async function generarPDF(factData, config) {
 
     // Letra grande en el centro
     draw(letra, MX + halfW + LW / 2, HY + 48, 44, true, "center", COL_ACCENT);
-    const cod = letra === "A" ? "01" : letra === "B" ? "06" : "11";
+    const cod = isNC
+      ? (letra === "A" ? "03" : letra === "B" ? "08" : "13")
+      : (letra === "A" ? "01" : letra === "B" ? "06" : "11");
     draw("COD. " + cod, MX + halfW + LW / 2, HY + 72, 7, true, "center", COL_GREY);
 
     // Emisor (izquierda) — banner si existe, sino nombre de fantasía
@@ -1349,7 +1429,7 @@ async function generarPDF(factData, config) {
 
     // Datos factura (derecha)
     const RX = MX + halfW + LW + 10;
-    draw("FACTURA " + letra, RX, HY + 16, 15, true, "left", COL_ACCENT);
+    draw(isNC ? "NOTA DE CRÉDITO " + letra : "FACTURA " + letra, RX, HY + 16, isNC ? 11 : 15, true, "left", COL_ACCENT);
     // pequeña línea bajo el título
     line(RX, HY + 22, RX + halfW - 18, HY + 22, COL_ACCENT, 0.8);
     draw("Punto de Venta: " + String(punto_venta).padStart(5, "0"), RX, HY + 36, 8);
@@ -1381,6 +1461,10 @@ async function generarPDF(factData, config) {
     draw("Condición frente al IVA: " + condIVA, MX + 8, RY + 25, 7);
     draw("Domicilio: " + (factData.domicilio || "No informado"), MID + 8, RY + 25, 7);
     draw("Condición de venta: Contado", MX + 8, RY + 36, 7);
+    if (isNC && factData._cbte_asoc) {
+      const pvAsocPdf = String(parseInt(factData._pv_asoc) || punto_venta).padStart(5, "0");
+      draw("Comprobante asociado: Factura " + letra + " N° " + pvAsocPdf + "-" + String(factData._cbte_asoc).padStart(8, "0"), MID + 8, RY + 36, 7, true);
+    }
 
     // ─────── TABLA ITEMS ───────
     const TY = RY + 58;
@@ -1549,12 +1633,14 @@ async function generarPDF(factData, config) {
 
 // ─── Helpers Firestore para config CUIT ───────────────
 
+// El docId de arca_cuits es SIEMPRE el CUIT normalizado a dígitos: un cuit con
+// guiones acá leería/escribiría un doc distinto al real.
 async function loadCuitConfig(db, uid, cuit) {
-  const snap = await db.collection("users").doc(uid).collection("arca_cuits").doc(String(cuit)).get();
+  const snap = await db.collection("users").doc(uid).collection("arca_cuits").doc(String(cuit).replace(/\D/g, "")).get();
   return snap.exists ? snap.data() : null;
 }
 async function saveCuitConfig(db, uid, cuit, data) {
-  await db.collection("users").doc(uid).collection("arca_cuits").doc(String(cuit)).set(data, { merge: true });
+  await db.collection("users").doc(uid).collection("arca_cuits").doc(String(cuit).replace(/\D/g, "")).set(data, { merge: true });
 }
 // Id de la marca de emisión de una orden. Los ids de orden traen prefijos y
 // caracteres que Firestore no acepta en un doc id (ej: "ML-2000/1"), así que se
@@ -1636,9 +1722,13 @@ export default async function handler(req, res) {
 
     if (action === "list_cuits" && req.method === "GET") {
       const cuits = await listCuits(db, uid);
+      // Import dinámico (mismo patrón que firmarTRA) — sin esto cert_expiry
+      // fallaba silenciosamente por ReferenceError dentro del try.
+      let forge = null;
+      try { forge = (await import("node-forge")).default; } catch (_) {}
       return res.json({ cuits: cuits.map(c => {
         let cert_expiry = null;
-        if (c.cert_pem) {
+        if (c.cert_pem && forge) {
           try {
             const parsed = forge.pki.certificateFromPem(c.cert_pem);
             cert_expiry = parsed.validity.notAfter.toISOString();
@@ -1702,8 +1792,12 @@ export default async function handler(req, res) {
       await saveCuitConfig(db, uid, cuitNum, updated);
       // Si cambió el certificado, la clave o el ambiente, el Ticket de Acceso
       // cacheado ya no corresponde: se descarta para que el próximo pedido
-      // vuelva a loguearse contra WSAA.
-      if (data.cert_pem || data.key_pem || data.arca_prod !== undefined) {
+      // vuelva a loguearse contra WSAA. Guardar la config SIN cambios en estos
+      // tres campos no invalida nada (WSAA rechaza logins repetidos).
+      const certCambio = data.cert_pem && data.cert_pem !== existing.cert_pem;
+      const keyCambio = data.key_pem && data.key_pem !== existing.key_pem;
+      const ambCambio = data.arca_prod !== undefined && updated.arca_prod !== !!existing.arca_prod;
+      if (certCambio || keyCambio || ambCambio) {
         await invalidarTA(db, uid, cuitNum);
       }
       return res.json({ ok: true, cuit: cuitNum, has_cert: Boolean(updated.cert_pem), has_key: Boolean(updated.key_pem) });
@@ -1875,14 +1969,42 @@ export default async function handler(req, res) {
         const cuitNum = parseInt(cfg.cuit);
         const pv = parseInt(cfg.punto_venta) || 1;
 
-        // Cache último cbte por tipo NC para minimizar API calls
+        // Cache último cbte por PV+tipo NC para minimizar API calls
         const ultimosNC = {};
         const results = [];
 
-        for (const factura of facturas) {
+        // Dedupe defensivo por (punto_venta, comprobante): un doble-click del
+        // front no puede emitir dos NC de la misma factura.
+        const vistosNC = new Set();
+        const facturasUnicas = facturas.filter(f => {
+          const k = `${f.punto_venta || ""}_${f.comprobante}`;
+          if (vistosNC.has(k)) return false;
+          vistosNC.add(k);
+          return true;
+        });
+
+        for (const factura of facturasUnicas) {
           const tipoFactura = parseInt(factura.tipo) || 6;
           const tipoNC = tipoNCparaFactura(tipoFactura);
+          // La NC sale por el MISMO punto de venta que la factura original
+          const pvNC = parseInt(factura.punto_venta) || pv;
           try {
+            // Si la factura ya está anulada, no emitir otra NC. De paso se toma
+            // el flag exento fiable del comprobante guardado (no del front).
+            let compNC = null;
+            try {
+              const cuitDig = String(cuitEmit).replace(/\D/g, "");
+              const nro8 = String(factura.comprobante).padStart(8, "0");
+              for (const docId of [`${cuitDig}_${pvNC}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
+                const s = await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId).get();
+                if (s.exists) { compNC = s.data(); break; }
+              }
+            } catch (_) {}
+            if (compNC?.anulada) {
+              results.push({ ok: false, factura_comprobante: factura.comprobante, error: `ya anulada (NC ${compNC.nc_nro || "?"})` });
+              continue;
+            }
+            if (compNC) factura.exento = !!compNC.exento;
             // Factura A sin CUIT en Firestore: recuperarlo desde ARCA y persistirlo.
             if ([1, 2, 3].includes(tipoFactura) && (factura.doc_tipo !== "CUIT" || !factura.doc_nro)) {
               // Probar con el PV del comprobante y, si difiere, con el PV del CUIT.
@@ -1895,10 +2017,17 @@ export default async function handler(req, res) {
               if (consultaArca && consultaArca.doc_tipo === "CUIT" && consultaArca.doc_nro) {
                 factura.doc_tipo = "CUIT";
                 factura.doc_nro = consultaArca.doc_nro;
+                // update() falla si el doc no existe — nunca crea registros fantasma
                 try {
-                  const docId = `${String(cuitEmit).replace(/\D/g, "")}_${tipoFactura}_${String(factura.comprobante).padStart(8, "0")}`;
-                  await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
-                    .set({ doc_tipo: "CUIT", doc_nro: consultaArca.doc_nro }, { merge: true });
+                  const cuitDig = String(cuitEmit).replace(/\D/g, "");
+                  const nro8 = String(factura.comprobante).padStart(8, "0");
+                  for (const docId of [`${cuitDig}_${pvNC}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
+                    try {
+                      await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
+                        .update({ doc_tipo: "CUIT", doc_nro: consultaArca.doc_nro });
+                      break;
+                    } catch (_) {}
+                  }
                 } catch (_) {}
               } else {
                 // No pudimos recuperar el CUIT desde ARCA. Devolver error diagnóstico.
@@ -1909,28 +2038,33 @@ export default async function handler(req, res) {
                 continue;
               }
             }
-            if (ultimosNC[tipoNC] === undefined) {
-              ultimosNC[tipoNC] = await getUltimoCbte(token, sign, cuitNum, pv, tipoNC, wsfe);
+            const ncKey = `${pvNC}_${tipoNC}`;
+            if (ultimosNC[ncKey] === undefined) {
+              ultimosNC[ncKey] = await getUltimoCbte(token, sign, cuitNum, pvNC, tipoNC, wsfe);
             }
-            const ncNro = ++ultimosNC[tipoNC];
-            const result = await emitirNotaCredito(token, sign, cuitNum, pv, ncNro, factura, wsfe);
+            const ncNro = ++ultimosNC[ncKey];
+            const result = await emitirNotaCredito(token, sign, cuitNum, pvNC, ncNro, factura, wsfe);
             if (result.resultado !== "A" || !result.cae) {
               results.push({ ok: false, factura_comprobante: factura.comprobante, error: result.obs || "rechazada" });
-              ultimosNC[tipoNC]--; // rollback contador local
+              // Tras un rechazo no se decrementa en memoria: se re-consulta AFIP
+              // en el próximo uso para no desincronizar el numerador.
+              delete ultimosNC[ncKey];
               continue;
             }
             const letra = tipoNC === 3 ? "A" : tipoNC === 8 ? "B" : "C";
             const ncFactData = {
               comprobante: ncNro, cae: result.cae, cae_vto: result.cae_vto,
-              fecha: new Date().toLocaleDateString("es-AR"),
+              fecha: new Date().toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }),
               cliente: factura.cliente || "Consumidor Final",
               doc_tipo: factura.doc_tipo, doc_nro: factura.doc_nro || "",
-              letra, tipo_cbte: tipoNC,
+              letra, tipo_cbte: tipoNC, punto_venta: pvNC,
               domicilio: factura.domicilio || "",
               total: parseFloat(factura.total) || 0,
+              exento: !!factura.exento,
               items: factura.items || [{ nombre: `Anulación Factura ${letra} ${String(factura.comprobante).padStart(8,"0")}`, cantidad: 1, precio: parseFloat(factura.total) || 0 }],
               _is_nc: true,
               _cbte_asoc: factura.comprobante,
+              _pv_asoc: factura.punto_venta || pvNC,
             };
             const pdfBytes = await generarPDF(ncFactData, cfg);
             const pdfB64 = Buffer.from(pdfBytes).toString("base64");
@@ -1939,7 +2073,7 @@ export default async function handler(req, res) {
             try {
               await db.collection("users").doc(uid).collection("arca_notas_credito").add({
                 cuit: String(cuitEmit), tipo: tipoNC, letra,
-                punto_venta: pv, comprobante: ncNro,
+                punto_venta: pvNC, comprobante: ncNro,
                 cae: result.cae, cae_vto: result.cae_vto,
                 total: parseFloat(factura.total) || 0,
                 cliente: factura.cliente || "",
@@ -1959,7 +2093,10 @@ export default async function handler(req, res) {
               try {
                 await db.collection("users").doc(uid).collection("arca_facturadas").doc(String(factura.order_id))
                   .set({ anulada: true, anulada_at: new Date().toISOString(), nc_comprobante: ncNro }, { merge: true });
+                // Filtro por cuit_emisor: la misma orden pudo facturarse desde
+                // otro CUIT — la NC de este no puede marcarle la anulación.
                 const compSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+                  .where("cuit_emisor", "==", String(cuitEmit).replace(/\D/g, ""))
                   .where("orden_id", "==", factura.order_id).get();
                 const batchUpd = db.batch();
                 compSnap.docs.forEach(d => batchUpd.set(d.ref, { anulada: true, anulada_at: new Date().toISOString(), nc_nro: ncNro }, { merge: true }));
@@ -1976,7 +2113,7 @@ export default async function handler(req, res) {
               const cuitDig = String(cuitEmit).replace(/\D/g, "");
               const nro8 = String(factura.comprobante).padStart(8, "0");
               const pvComp = parseInt(factura.punto_venta) || pv;
-              for (const docId of [`${cuitDig}_${tipoFactura}_${nro8}`, `${cuitDig}_${pvComp}_${tipoFactura}_${nro8}`]) {
+              for (const docId of [`${cuitDig}_${pvComp}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
                 try {
                   await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
                     .update({ anulada: true, anulada_at: new Date().toISOString(), nc_nro: ncNro });
@@ -1987,7 +2124,7 @@ export default async function handler(req, res) {
             results.push({
               ok: true,
               factura_comprobante: factura.comprobante,
-              nc: { tipo: tipoNC, letra, punto_venta: pv, comprobante: ncNro, cae: result.cae, total: result.total, nombre_pdf: `NC ${letra} - ${String(ncNro).padStart(8,"0")}.pdf`, pdf_b64: pdfB64 },
+              nc: { tipo: tipoNC, letra, punto_venta: pvNC, comprobante: ncNro, cae: result.cae, total: result.total, nombre_pdf: `NC ${letra} - ${String(ncNro).padStart(8,"0")}.pdf`, pdf_b64: pdfB64 },
               ml_detached: mlDetached,
             });
           } catch (e) {
@@ -1995,7 +2132,7 @@ export default async function handler(req, res) {
           }
         }
         const okCount = results.filter(r => r.ok).length;
-        return res.json({ ok: true, total: facturas.length, ok_count: okCount, errors: results.filter(r => !r.ok), results });
+        return res.json({ ok: true, total: facturasUnicas.length, ok_count: okCount, errors: results.filter(r => !r.ok), results });
       } catch (e) {
         return res.status(500).json({ error: e.message });
       }
@@ -2008,13 +2145,20 @@ export default async function handler(req, res) {
       const body = JSON.parse((await readBody(req)).toString());
       const { cuit_emisor, tipo_cbte, nro, doc_tipo, doc_nro, cliente } = body;
       if (!cuit_emisor || !tipo_cbte || !nro) return res.status(400).json({ error: "Faltan datos del comprobante" });
-      const docId = `${String(cuit_emisor).replace(/\D/g, "")}_${tipo_cbte}_${String(nro).padStart(8, "0")}`;
       try {
-        await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId).set({
+        // Buscar por campos (cubre ambos formatos de docId, con y sin PV) y
+        // actualizar SOLO si el comprobante existe — nunca crear un fantasma.
+        const q = await db.collection("users").doc(uid).collection("arca_comprobantes")
+          .where("cuit_emisor", "==", String(cuit_emisor).replace(/\D/g, ""))
+          .where("tipo_cbte", "==", parseInt(tipo_cbte))
+          .where("nro", "==", parseInt(nro))
+          .get();
+        if (q.empty) return res.status(404).json({ error: "El comprobante no está en Registros — no se puede actualizar el receptor." });
+        await q.docs[0].ref.update({
           doc_tipo: doc_tipo || "",
           doc_nro: String(doc_nro || "").replace(/\D/g, ""),
           ...(cliente ? { cliente } : {}),
-        }, { merge: true });
+        });
         return res.json({ ok: true });
       } catch (e) {
         return res.status(500).json({ error: e.message });
@@ -2034,10 +2178,27 @@ export default async function handler(req, res) {
         const { wsfe } = arcaUrls(cfg.arca_prod);
         const { token, sign } = await obtenerTA(db, uid, cfg);
         const cuitNum = parseInt(cfg.cuit);
-        const pv = parseInt(cfg.punto_venta) || 1;
+        // La NC sale por el MISMO punto de venta que la factura original
+        const pv = parseInt(factura.punto_venta) || parseInt(cfg.punto_venta) || 1;
 
         const tipoFactura = parseInt(factura.tipo) || 6;
         const tipoNC = tipoNCparaFactura(tipoFactura);
+
+        // Comprobante guardado: frena la doble anulación y aporta el flag
+        // exento fiable (no se confía en el que mande el front).
+        let compNC = null;
+        try {
+          const cuitDig = String(cuitEmit).replace(/\D/g, "");
+          const nro8 = String(factura.comprobante).padStart(8, "0");
+          for (const docId of [`${cuitDig}_${pv}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
+            const s = await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId).get();
+            if (s.exists) { compNC = s.data(); break; }
+          }
+        } catch (_) {}
+        if (compNC?.anulada) {
+          return res.status(409).json({ error: `La factura N° ${factura.comprobante} ya está anulada (NC ${compNC.nc_nro || "?"}) — no se emite otra NC.` });
+        }
+        if (compNC) factura.exento = !!compNC.exento;
 
         // Si es Factura A y nos llegó sin CUIT del receptor, intentar recuperarlo
         // consultando ARCA (FECompConsultar). ARCA siempre tiene los datos originales.
@@ -2051,11 +2212,18 @@ export default async function handler(req, res) {
           if (datos && datos.doc_tipo === "CUIT" && datos.doc_nro) {
             factura.doc_tipo = "CUIT";
             factura.doc_nro = datos.doc_nro;
-            // Actualizar Firestore para que no haga falta volver a consultar
+            // Actualizar Firestore para que no haga falta volver a consultar.
+            // update() falla si el doc no existe — nunca crea registros fantasma
             try {
-              const docId = `${String(cuitEmit).replace(/\D/g, "")}_${tipoFactura}_${String(factura.comprobante).padStart(8, "0")}`;
-              await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
-                .set({ doc_tipo: "CUIT", doc_nro: datos.doc_nro }, { merge: true });
+              const cuitDig = String(cuitEmit).replace(/\D/g, "");
+              const nro8 = String(factura.comprobante).padStart(8, "0");
+              for (const docId of [`${cuitDig}_${pv}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
+                try {
+                  await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
+                    .update({ doc_tipo: "CUIT", doc_nro: datos.doc_nro });
+                  break;
+                } catch (_) {}
+              }
             } catch (_) {}
           } else if (datos?.error) {
             return res.status(502).json({ error: "No se pudo recuperar el CUIT del receptor desde ARCA", detalle: `[consulta-arca pv=${pvCandidatos.join("/")}] ${datos.error}` });
@@ -2076,18 +2244,20 @@ export default async function handler(req, res) {
           comprobante: ncNro,
           cae: result.cae,
           cae_vto: result.cae_vto,
-          fecha: new Date().toLocaleDateString("es-AR"),
+          fecha: new Date().toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }),
           cliente: factura.cliente || "Consumidor Final",
           doc_tipo: factura.doc_tipo,
           doc_nro: factura.doc_nro || "",
           letra,
           tipo_cbte: tipoNC,
+          punto_venta: pv,
           domicilio: factura.domicilio || "",
           total: parseFloat(factura.total) || 0,
+          exento: !!factura.exento,
           items: factura.items || [{ nombre: `Anulación Factura ${letra} ${String(factura.comprobante).padStart(8,"0")}`, cantidad: 1, precio: parseFloat(factura.total) || 0 }],
-          // Marcamos como NC en el PDF título (próximo build podemos enriquecerlo)
           _is_nc: true,
           _cbte_asoc: factura.comprobante,
+          _pv_asoc: factura.punto_venta || pv,
         };
         const pdfBytes = await generarPDF(ncFactData, cfg);
         const pdfB64 = Buffer.from(pdfBytes).toString("base64");
@@ -2126,7 +2296,10 @@ export default async function handler(req, res) {
           try {
             await db.collection("users").doc(uid).collection("arca_facturadas").doc(String(factura.order_id))
               .set({ anulada: true, anulada_at: new Date().toISOString(), nc_comprobante: ncNro }, { merge: true });
+            // Filtro por cuit_emisor: la misma orden pudo facturarse desde otro
+            // CUIT — la NC de este no puede marcarle la anulación.
             const compSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+              .where("cuit_emisor", "==", String(cuitEmit).replace(/\D/g, ""))
               .where("orden_id", "==", factura.order_id).get();
             const batchUpd = db.batch();
             compSnap.docs.forEach(d => batchUpd.set(d.ref, { anulada: true, anulada_at: new Date().toISOString(), nc_nro: ncNro }, { merge: true }));
@@ -2143,7 +2316,7 @@ export default async function handler(req, res) {
           const cuitDig = String(cuitEmit).replace(/\D/g, "");
           const nro8 = String(factura.comprobante).padStart(8, "0");
           const pvComp = parseInt(factura.punto_venta) || pv;
-          for (const docId of [`${cuitDig}_${tipoFactura}_${nro8}`, `${cuitDig}_${pvComp}_${tipoFactura}_${nro8}`]) {
+          for (const docId of [`${cuitDig}_${pvComp}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
             try {
               await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
                 .update({ anulada: true, anulada_at: new Date().toISOString(), nc_nro: ncNro });
@@ -2182,7 +2355,7 @@ export default async function handler(req, res) {
       // Un cuit con guiones acá = comprobantes invisibles en Registros.
       const cuitEmit = String(cuitRaw || "").replace(/\D/g, "");
       if (!cuitEmit || !ordenes) return res.status(400).json({ error: "Faltan cuit u ordenes" });
-      const exento = exentoReq === true || exentoReq === "true"; // factura exenta (digitales/ebooks)
+      let exento = exentoReq === true || exentoReq === "true"; // factura exenta (digitales/ebooks)
 
       console.log(`[arca/emit] uid=${uid} cuit=${cuitEmit} n=${Object.keys(ordenes||{}).length} fecha_factura=${JSON.stringify(fecha_factura)}`);
 
@@ -2211,12 +2384,17 @@ export default async function handler(req, res) {
 
       // Autenticar — TA cacheado por CUIT (dura 12h; pedir uno nuevo por lote
       // hace que ARCA rechace el login mientras el anterior siga vigente).
-      const { token, sign } = await obtenerTA(db, uid, cfg);
+      let { token, sign } = await obtenerTA(db, uid, cfg);
 
       // Numeradores — usa el punto de venta elegido (ej: PV físicos vs PV digitales
       // exento). Si el front no manda uno, cae al punto_venta por defecto del CUIT.
       const cuitNum = parseInt(cfg.cuit);
       const pv = parseInt(pvSel) || cfg.punto_venta;
+      // Exento: lo decide la CONFIG del punto de venta, no el front. Si hay
+      // puntos_venta configurados y el flag del front no coincide, gana la config.
+      if (Array.isArray(cfg.puntos_venta) && cfg.puntos_venta.length) {
+        exento = cfg.puntos_venta.find(p => String(p.numero) === String(pv))?.exento === true;
+      }
       let cbteA = isMonotributo ? 0 : (await getUltimoCbte(token, sign, cuitNum, pv, 1, wsfe)) + 1;
       let cbteB = isMonotributo ? 0 : (await getUltimoCbte(token, sign, cuitNum, pv, 6, wsfe)) + 1;
       let cbteC = isMonotributo ? (await getUltimoCbte(token, sign, cuitNum, pv, 11, wsfe)) + 1 : 0;
@@ -2251,7 +2429,21 @@ export default async function handler(req, res) {
         console.error("[arca emit] pre-chequeo de duplicados falló:", e.message);
       }
 
+      // Deadline global del lote (mismo patrón que el resync): si el tiempo se
+      // acaba, las órdenes restantes se devuelven como pendientes en vez de
+      // dejar que Vercel mate la función a mitad de una emisión.
+      const DEADLINE_EMIT = Date.now() + 90000;
+      const pendientesIds = [];
+      let taRenovado = false; // un solo re-login por lote ante token vencido
+
       for (const [orderId, orden] of ordenesEntries) {
+        if (Date.now() > DEADLINE_EMIT) { pendientesIds.push(orderId); continue; }
+        // Total inválido: no se toma marca ni se llama a AFIP.
+        if (!Number.isFinite(Number(orden.total)) || Number(orden.total) <= 0) {
+          resultados.push({ orden_id: orderId, ok: false, total: orden.total,
+            obs: `Total de la orden inválido (${orden.total}) — no se envió a AFIP.` });
+          continue;
+        }
         // ¿Ya tiene factura? No se re-emite.
         const previa = yaFacturadas.get(String(orderId));
         if (previa) {
@@ -2275,7 +2467,14 @@ export default async function handler(req, res) {
               obs: `Ya facturada (CAE ${m.cae || "?"}) — no se re-emite para no duplicarla en ARCA.` });
             continue;
           }
-          if (m && atMs && Date.now() - atMs < 10 * 60000) {
+          // Rechazada hace menos de 2 minutos: frena el doble-click inmediato.
+          // Pasado ese rato, el reintento (con datos corregidos) es legítimo.
+          if (m && m.estado === "rechazado" && atMs && Date.now() - atMs < 2 * 60000) {
+            resultados.push({ orden_id: orderId, ok: false, total: orden.total,
+              obs: "ARCA rechazó esta orden hace un momento — esperá un par de minutos antes de reintentar." });
+            continue;
+          }
+          if (m && m.estado !== "rechazado" && atMs && Date.now() - atMs < 10 * 60000) {
             resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, total: orden.total,
               obs: "Hay otra emisión de esta orden en curso — no se re-emite. Revisá el resultado en unos minutos." });
             continue;
@@ -2299,28 +2498,59 @@ export default async function handler(req, res) {
         // que durante 10 minutos no se reintenta (duplicar es peor que demorar).
         try {
           if (isMonotributo) {
-            result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true, fechaImputacion, exento);
             letra = "C"; tipoCbte = 11; cbteNro = cbteC;
+            result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true, fechaImputacion, exento);
           } else {
             const tieneCuit = orden.doc_tipo === "CUIT";
             if (tieneCuit) {
+              letra = "A"; tipoCbte = 1; cbteNro = cbteA;
               result = await facturar(token, sign, cuitNum, pv, cbteA, orden, 1, wsfe, false, fechaImputacion, exento);
-              if (result.cae) { letra = "A"; tipoCbte = 1; cbteNro = cbteA; }
-              else {
-                // Fallback a B
-                result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
+              // Fallback A→B SOLO ante rechazo de validación del receptor —
+              // nunca por errores genéricos, de token (600/601) ni de
+              // correlatividad (10016).
+              if (!result.cae && esRechazoReceptor(result)) {
                 letra = "B"; tipoCbte = 6; cbteNro = cbteB;
+                result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
               }
             } else {
-              result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
               letra = "B"; tipoCbte = 6; cbteNro = cbteB;
+              result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
             }
           }
         } catch (e) {
-          console.error(`[arca emit] ${orderId} error de conexión:`, e.message);
-          resultados.push({ orden_id: orderId, ok: false, total: orden.total,
-            obs: `No se pudo confirmar con ARCA: ${e.message} — verificá en el historial de ARCA antes de reintentar (por si el comprobante salió igual).` });
-          continue;
+          // Error de red/timeout: FECAESolicitar no se reintenta a ciegas. El
+          // pedido pudo procesarse igual, así que ANTES de darlo por fallido se
+          // consulta si el comprobante ya existe en AFIP con el número esperado.
+          let rec = null;
+          if (tipoCbte && cbteNro) {
+            try { rec = await consultarComprobanteCompleto(token, sign, cuitNum, pv, tipoCbte, cbteNro, wsfe); } catch (_) {}
+          }
+          if (rec && !rec.error && rec.cae) {
+            // AFIP SÍ lo emitió: se trata como éxito con los datos de la consulta.
+            result = { cae: rec.cae, cae_vto: rec.cae_vto, resultado: "A", obs: "", err_code: null, obs_codigo: null, obs_msg: "" };
+          } else {
+            console.error(`[arca emit] ${orderId} error de conexión:`, e.message);
+            resultados.push({ orden_id: orderId, ok: false, total: orden.total,
+              obs: `No se pudo confirmar con ARCA: ${e.message} — verificá en el historial de ARCA antes de reintentar (por si el comprobante salió igual).` });
+            continue;
+          }
+        }
+
+        // Token AFIP vencido a mitad de lote (600/601): renovar el TA UNA sola
+        // vez, re-sincronizar el numerador y reintentar este comprobante.
+        if (!result.cae && [600, 601].includes(result.err_code) && !taRenovado) {
+          taRenovado = true;
+          try {
+            await invalidarTA(db, uid, cuitEmit);
+            ({ token, sign } = await obtenerTA(db, uid, cfg));
+            cbteNro = (await getUltimoCbte(token, sign, cuitNum, pv, tipoCbte, wsfe)) + 1;
+            if (letra === "A") cbteA = cbteNro; else if (letra === "C") cbteC = cbteNro; else cbteB = cbteNro;
+            result = await facturar(token, sign, cuitNum, pv, cbteNro, orden, tipoCbte, wsfe, isMonotributo, fechaImputacion, exento);
+          } catch (e2) {
+            resultados.push({ orden_id: orderId, ok: false, total: orden.total,
+              obs: `Token de ARCA vencido y no se pudo renovar: ${e2.message}` });
+            continue;
+          }
         }
 
         if (result.cae) {
@@ -2335,7 +2565,7 @@ export default async function handler(req, res) {
           // NO new Date() que siempre pone hoy aunque ARCA tenga la fecha correcta.
           const fechaIso = fechaImputacion
             ? `${fechaImputacion.slice(0,4)}-${fechaImputacion.slice(4,6)}-${fechaImputacion.slice(6,8)}`
-            : new Date().toISOString().slice(0, 10);
+            : hoyARISO();
           const fechaDisplay = new Date(fechaIso + "T12:00:00-03:00")
             .toLocaleDateString("es-AR", { day:"2-digit", month:"2-digit", year:"numeric" });
           const factData = {
@@ -2353,8 +2583,10 @@ export default async function handler(req, res) {
           // o la función muere por timeout acá, el registro tiene que quedar —
           // antes se guardaba al final y una falla intermedia lo hacía invisible
           // en Registros para siempre.
+          // docId con punto de venta (mismo formato que el resync): dos PV con
+          // el mismo número de comprobante ya no se pisan entre sí.
           const compRef = db.collection("users").doc(uid).collection("arca_comprobantes")
-            .doc(`${cuitEmit}_${tipoCbte}_${String(cbteNro).padStart(8, "0")}`);
+            .doc(`${cuitEmit}_${pv}_${tipoCbte}_${String(cbteNro).padStart(8, "0")}`);
           let compGuardado = false;
           const netoComp = (isMonotributo || exento) ? (exento ? 0 : orden.total) : Math.round((orden.total / 1.21) * 100) / 100;
           const ivaComp = (isMonotributo || exento) ? 0 : Math.round((orden.total - netoComp) * 100) / 100;
@@ -2387,6 +2619,10 @@ export default async function handler(req, res) {
               domicilio: cleanAddr([orden.direccion, orden.ciudad, orden.provincia]),
               ml_uploaded: false,
               ml_uploaded_at: null,
+              // Resultado=A con observaciones de AFIP: el comprobante es válido,
+              // pero las obs quedan registradas.
+              obs_codigo: result.obs_codigo || null,
+              obs_msg: result.obs_msg || "",
           };
           try {
             await compRef.set(compData);
@@ -2478,7 +2714,8 @@ export default async function handler(req, res) {
                 ml_uploaded = true;
               } else {
                 const txt = await upRes.text().catch(() => "");
-                ml_upload_error = `HTTP ${upRes.status}: ${txt.slice(0, 220)}`;
+                // Solo status + primeros 80 chars (sin datos personales)
+                ml_upload_error = `HTTP ${upRes.status}: ${txt.slice(0, 80)}`;
                 console.error(`[ml-upload] ${orderId} pack=${packId}:`, ml_upload_error);
               }
             } catch (e) {
@@ -2510,11 +2747,17 @@ export default async function handler(req, res) {
           // Transparencia para diagnóstico: qué comprobante intentamos y con qué
           // condición fiscal del emisor — sin esto, el "mismo error" de AFIP no
           // dice si el server usó la config nueva o la vieja.
-          // ARCA rechazó: no hay comprobante, así que se libera la marca para
-          // que el merchant pueda corregir los datos y reintentar.
-          if (marcaTomada) { try { await marcaRef.delete(); } catch (_) {} }
+          // ARCA rechazó: la marca NO se borra — queda en estado "rechazado"
+          // con timestamp, para frenar el doble-click inmediato pero permitir
+          // el reintento legítimo (con datos corregidos) a los 2 minutos.
+          if (marcaTomada) {
+            try {
+              await marcaRef.set({ estado: "rechazado", obs: String(result.obs || "").slice(0, 200), at: new Date().toISOString() }, { merge: true });
+            } catch (_) {}
+          }
           const intento = `[Intenté Factura ${letra || (isMonotributo ? "C" : "?")} · PV ${pv} · emisor ${cfg.condicion_fiscal || "?"}] `;
-          console.log(`[arca emit] ${orderId} RECHAZADA — tipo ${tipoCbte} pv ${pv} cond ${cfg.condicion_fiscal}: ${String(result.obs || "").slice(-180)}`);
+          // Sin el texto del obs en el log (puede traer el doc del receptor) — solo el código.
+          console.log(`[arca emit] ${orderId} RECHAZADA — tipo ${tipoCbte} pv ${pv} cond ${cfg.condicion_fiscal} code=${result.err_code || "?"}`);
           resultados.push({ orden_id: orderId, ok: false, obs: intento + result.obs, total: orden.total });
         }
       }
@@ -2531,7 +2774,7 @@ export default async function handler(req, res) {
             emitido_at: new Date().toISOString(),
             cantidad: exitosos.length,
             total: totalBatch,
-            comprobante_ids: exitosos.map(r => `${cuitEmit}_${r.tipo_cbte || (isMonotributo ? 11 : (r.letra === "A" ? 1 : 6))}_${String(r.comprobante).padStart(8, "0")}`),
+            comprobante_ids: exitosos.map(r => `${cuitEmit}_${pv}_${r.tipo_cbte || (isMonotributo ? 11 : (r.letra === "A" ? 1 : 6))}_${String(r.comprobante).padStart(8, "0")}`),
             resumen: exitosos.map(r => ({
               orden_id: r.orden_id,
               letra: r.letra,
@@ -2545,7 +2788,13 @@ export default async function handler(req, res) {
         console.error("[arca] no se pudo guardar batch:", e.message);
       }
 
-      return res.json({ ok: true, resultados, pdfs });
+      // Lotes grandes: los PDFs en base64 revientan el límite de respuesta de
+      // Vercel — el front los regenera con get_batch_pdfs.
+      const parcialExtra = pendientesIds.length ? { parcial: true, pendientes: pendientesIds } : {};
+      if (resultados.length > 15) {
+        return res.json({ ok: true, resultados, pdfs: [], pdfs_via_batch: true, ...parcialExtra });
+      }
+      return res.json({ ok: true, resultados, pdfs, ...parcialExtra });
     }
 
     // ── HISTORIAL: lista de batches del CUIT activo ──
@@ -2585,12 +2834,14 @@ export default async function handler(req, res) {
           // 1) Regenerar PDF
           const factData = {
             comprobante: c.nro, cae: c.cae, cae_vto: c.cae_vto,
-            fecha: c.fecha_str, fecha_iso: c.emitido_at?.slice(0, 10),
+            // fecha_cbte = fecha REAL del comprobante en AFIP (el emitido_at
+            // puede diferir si se backdateó) — el QR debe llevar la real.
+            fecha: c.fecha_str, fecha_iso: c.fecha_cbte || c.emitido_at?.slice(0, 10),
             cliente: c.cliente || "Consumidor Final",
             doc_tipo: c.doc_tipo, doc_nro: c.doc_nro || "",
             letra: c.letra, tipo_cbte: c.tipo_cbte,
             domicilio: c.domicilio || "",
-            total: c.total, punto_venta: c.punto_venta, exento: !!c.exento,
+            total: c.total, neto: c.neto, iva: c.iva, punto_venta: c.punto_venta, exento: !!c.exento,
             items: (Array.isArray(c.items) && c.items.length > 0)
               ? c.items
               : [{ nombre: "(Detalle no disponible)", cantidad: 1, precio: c.total, descuento_item: 0 }],
@@ -2660,7 +2911,8 @@ export default async function handler(req, res) {
             uploaded++;
           } else {
             const txt = await upRes.text().catch(() => "");
-            errors.push({ orden_id: c.orden_id, error: `HTTP ${upRes.status}: ${txt.slice(0, 180)}` });
+            // Solo status + primeros 80 chars (sin datos personales)
+            errors.push({ orden_id: c.orden_id, error: `HTTP ${upRes.status}: ${txt.slice(0, 80)}` });
           }
         } catch (e) {
           errors.push({ orden_id: c.orden_id, error: e.message });
@@ -2689,7 +2941,9 @@ export default async function handler(req, res) {
         .where("cuit_emisor", "==", cuitParam)
         .get();
 
-      const comprobantes = snap.docs.map(d => d.data())
+      // _docId: id REAL del documento (formato viejo sin PV o nuevo con PV) —
+      // es lo que get_batch_pdfs necesita para reimprimir.
+      const comprobantes = snap.docs.map(d => ({ _docId: d.id, ...d.data() }))
         .filter(c => !filterStart || (c.emitido_at >= filterStart && c.emitido_at < filterEnd))
         .sort((a, b) => (b.emitido_at || "").localeCompare(a.emitido_at || ""));
 
@@ -2713,7 +2967,7 @@ export default async function handler(req, res) {
         }
         current.cantidad++;
         current.total += c.total || 0;
-        current.comprobante_ids.push(`${c.cuit_emisor}_${c.tipo_cbte}_${String(c.nro).padStart(8, "0")}`);
+        current.comprobante_ids.push(c._docId);
         current.resumen.push({
           orden_id: c.orden_id || ("N° " + c.nro),
           letra: c.letra,
@@ -2809,14 +3063,15 @@ export default async function handler(req, res) {
           cae: c.cae,
           cae_vto: c.cae_vto,
           fecha: c.fecha_str,
-          fecha_iso: c.emitido_at?.slice(0, 10),
+          // fecha_cbte = fecha REAL del comprobante en AFIP (para el QR)
+          fecha_iso: c.fecha_cbte || c.emitido_at?.slice(0, 10),
           cliente: c.cliente || "Consumidor Final",
           doc_tipo: c.doc_tipo,
           doc_nro: c.doc_nro || "",
           letra: c.letra,
           tipo_cbte: c.tipo_cbte,
           domicilio: c.domicilio || "",
-          total: c.total, punto_venta: c.punto_venta, exento: !!c.exento,
+          total: c.total, neto: c.neto, iva: c.iva, punto_venta: c.punto_venta, exento: !!c.exento,
           // Items reales si fueron persistidos al emitir, sino fallback (facturas viejas)
           items: (Array.isArray(c.items) && c.items.length > 0)
             ? c.items
@@ -3145,10 +3400,8 @@ export default async function handler(req, res) {
                     billingOk++;
                   } else {
                     billingErr++;
-                    if (billingErr <= 3) {
-                      const txt = await r.text().catch(() => "");
-                      console.error(`[ml-billing] ${o.id} status=${r.status}: ${txt.slice(0, 200)}`);
-                    }
+                    // No loguear el body: billing_info trae datos personales del comprador
+                    if (billingErr <= 3) console.error(`[ml-billing] ${o.id} status=${r.status}`);
                   }
                 } catch (e) {
                   billingErr++;
