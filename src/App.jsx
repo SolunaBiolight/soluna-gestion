@@ -22875,6 +22875,7 @@ const fmtARSm = n => "$ " + Math.round(n||0).toLocaleString("es-AR");
 function ComisionesPanel({ T, uid }) {
   const [cfg, setCfg] = React.useState({ impuestos:"", shopify:"", metodos:{} }); // metodos: { [nombre]: {pct, fijo} }
   const [detected, setDetected] = React.useState([]);
+  const [plats, setPlats] = React.useState({ ml:false, shopify:false });
   const [loaded, setLoaded] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
@@ -22883,8 +22884,16 @@ function ComisionesPanel({ T, uid }) {
     (async () => {
       try {
         const snap = await getDoc(doc(db, "users", uid));
-        const d = snap.exists() ? snap.data().margenesComisionesCfg : null;
+        const data = snap.exists() ? snap.data() : {};
+        const d = data.margenesComisionesCfg;
         if (d) setCfg({ impuestos:d.impuestos??"", impuestosML:d.impuestosML??"", mpPct:d.mpPct??"", shopify:d.shopify??"", metodos:(d.metodos && typeof d.metodos==="object" && !Array.isArray(d.metodos)) ? d.metodos : {} });
+        // Solo mostramos campos de plataformas que la cuenta tiene conectadas
+        // (o donde ya hay un valor cargado, para no esconder config existente).
+        const stores = Array.isArray(data.stores) ? data.stores : [];
+        setPlats({
+          ml: stores.some(s=>s.type==="mercadolibre") || !!(d&&d.impuestosML),
+          shopify: stores.some(s=>s.type==="shopify") || !!(d&&d.shopify),
+        });
       } catch (_) {}
       try {
         // Métodos de pago detectados en las órdenes (solo TN/Shopify). Se excluye
@@ -22918,71 +22927,70 @@ function ComisionesPanel({ T, uid }) {
     <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:900}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
         <div>
-          <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Comisiones</div>
-          <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Mercado Pago y Mercado Libre se leen automáticos. Impuestos, comisión de plataforma y métodos de pago los configurás acá.</div>
+          <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Impuestos y comisiones</div>
+          <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Lo que te descuentan de cada venta. Se usa para calcular tu ganancia real en el Dashboard.</div>
         </div>
         <Btn T={T} variant="primary" onClick={save} disabled={saving}>{saving?"Guardando…":"Guardar"}</Btn>
       </div>
 
-      {/* Estado por plataforma */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12}}>
-        {[
-          {n:"Mercado Libre",d:"Comisión de venta, cuotas y envíos: se leen automáticas de cada orden de ML.",badge:"AUTOMÁTICO",bc:T.green,bg:T.greenBg},
-          {n:"Mercado Pago",d:"Comisión real por transacción: siempre se lee automática de cada pago desde la integración.",badge:"AUTOMÁTICO",bc:T.green,bg:T.greenBg},
-        ].map(p=>(
-          <div key={p.n} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6,gap:8}}>
-              <span style={{fontSize:13,fontWeight:700,color:T.text}}>{p.n}</span>
-              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,background:p.bg,color:p.bc,whiteSpace:"nowrap"}}>● {p.badge}</span>
-            </div>
-            <div style={{fontSize:11,color:T.textSm,lineHeight:1.4}}>{p.d}</div>
-          </div>
-        ))}
+      {/* Lo automático — una sola línea, no compite con lo configurable */}
+      <div style={{display:"flex",alignItems:"center",gap:10,background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:10,padding:"11px 14px",flexWrap:"wrap"}}>
+        <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:"50%",background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
+        <span style={{fontSize:12,color:T.text,lineHeight:1.4}}><strong>Mercado Pago y Mercado Libre ya están cubiertos:</strong> sus comisiones se leen automáticas de cada venta. No tenés que cargar nada de ellos acá.</span>
       </div>
 
-      {/* Impuestos + comisión de plataforma */}
+      {/* Impuestos */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>Impuestos</div>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:180}}>
-            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Impuestos de la tienda</div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>% sobre el total facturado (IVA, IIBB, etc.).</div>
+            <div style={{fontSize:13,fontWeight:600,color:T.text}}>Impuestos de la tienda</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>% que pagás sobre lo que facturás (IVA, IIBB, etc.). Si no sabés el número, pedíselo a tu contador.</div>
           </div>
           <input type="number" step="0.1" min="0" value={cfg.impuestos} onChange={e=>setCfg(c=>({...c,impuestos:e.target.value}))} placeholder="0" style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
           <span style={{fontSize:13,color:T.textSm}}>%</span>
         </div>
+        {plats.ml && (
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
           <div style={{flex:1,minWidth:180}}>
-            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Impuestos de Mercado Libre</div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>% sobre lo facturado en ML. Vacío = usa el mismo % de la tienda.</div>
+            <div style={{fontSize:13,fontWeight:600,color:T.text}}>Impuestos de Mercado Libre <span style={{fontSize:10,fontWeight:600,color:T.textSm}}>(opcional)</span></div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Solo si en ML pagás un % distinto. Vacío = usa el mismo de la tienda.</div>
           </div>
           <input type="number" step="0.1" min="0" value={cfg.impuestosML??""} onChange={e=>setCfg(c=>({...c,impuestosML:e.target.value}))} placeholder={String(cfg.impuestos||0)} style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
           <span style={{fontSize:13,color:T.textSm}}>%</span>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
+        )}
+      </div>
+
+      {/* Comisión de plataforma — solo si hay Shopify */}
+      {plats.shopify && (
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:180}}>
-            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Comisión Shopify</div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Por transacción, si no usás Shopify Payments.</div>
+            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Comisión de Shopify</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>% que te cobra Shopify por transacción cuando no usás Shopify Payments.</div>
           </div>
           <input type="number" step="0.1" min="0" value={cfg.shopify} onChange={e=>setCfg(c=>({...c,shopify:e.target.value}))} placeholder="0" style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
           <span style={{fontSize:13,color:T.textSm}}>%</span>
         </div>
       </div>
+      )}
 
       {/* Métodos de pago — auto-detectados de las órdenes */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
-        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Comisiones por método de pago</div>
-        <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Se detectan solos de tus órdenes (los que creaste en Shopify/TN). Poné la comisión que te quita cada uno. El <strong style={{color:T.textMd}}>impuesto propio</strong> es opcional: si lo cargás, esas ventas usan ESE % de impuestos en vez del de la tienda (como los "pagos personalizados" de Escalafy).</div>
-        {metodos.length===0 && <div style={{fontSize:12,color:T.textSm}}>Todavía no se detectaron métodos de pago distintos de Mercado Pago en tus últimas órdenes.</div>}
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Otros métodos de pago</div>
+        <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Si cobrás por fuera de Mercado Pago (transferencia, efectivo, otra pasarela), esos métodos aparecen solos acá cuando entra una venta. Cargá qué % o monto fijo te descuenta cada uno.</div>
+        {metodos.length===0 && <div style={{fontSize:12,color:T.textSm}}>Por ahora todas tus ventas cobran por Mercado Pago — no hay nada que configurar acá.</div>}
         {metodos.map(name=>{
           const m = cfg.metodos[name]||{};
           return (
             <div key={name} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
               <span style={{flex:1,minWidth:140,fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={name}>{name}</span>
-              <span style={{fontSize:12,color:T.textSm}}>com. %</span>
+              <span style={{fontSize:12,color:T.textSm}} title="Porcentaje que te descuenta este método por cada venta">Comisión %</span>
               <input type="number" step="0.1" min="0" value={m.pct??""} onChange={e=>setMet(name,{pct:e.target.value})} placeholder="0" style={{...InputStyle(T),width:74,fontSize:13,textAlign:"right"}}/>
-              <span style={{fontSize:12,color:T.textSm}}>fijo $</span>
+              <span style={{fontSize:12,color:T.textSm}} title="Monto fijo en pesos que te descuenta por cada venta (además del %)">Fijo $</span>
               <input type="number" min="0" value={m.fijo??""} onChange={e=>setMet(name,{fijo:e.target.value})} placeholder="0" style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
-              <span style={{fontSize:12,color:T.textSm}} title="Impuesto propio: sustituye el % de impuestos de la tienda para las ventas con este método">imp. %</span>
+              <span style={{fontSize:12,color:T.textSm}} title="Opcional: si las ventas con este método pagan un % de impuestos distinto al de la tienda, cargalo acá">Impuesto %</span>
               <input type="number" step="0.1" min="0" value={m.imp??""} onChange={e=>setMet(name,{imp:e.target.value})} placeholder={String(cfg.impuestos||0)} style={{...InputStyle(T),width:74,fontSize:13,textAlign:"right"}}/>
             </div>
           );
