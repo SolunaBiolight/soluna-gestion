@@ -116,7 +116,6 @@ function emailTareaAsignada({ colab, tarea, link }) {
   const deadlineStr = tarea.deadline ? new Date(tarea.deadline).toLocaleDateString("es-AR") : null;
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#6366f1,#a78bfa);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
-    <div style="font-size:28px;margin-bottom:8px">📋</div>
     <div style="font-size:20px;font-weight:700;color:#fff">Nueva tarea asignada</div>
   </div>
   <p style="font-size:15px;color:#374151">Hola <strong>${colab.nombre.split(" ")[0]}</strong>,</p>
@@ -124,8 +123,8 @@ function emailTareaAsignada({ colab, tarea, link }) {
   <div style="background:#f9fafb;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #6366f1">
     <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:6px">${tarea.titulo}</div>
     ${tarea.descripcion ? `<div style="font-size:13px;color:#6b7280">${tarea.descripcion}</div>` : ""}
-    ${deadlineStr ? `<div style="font-size:12px;color:#6b7280;margin-top:6px">📅 Fecha límite: ${deadlineStr}</div>` : ""}
-    ${tarea.prioridad === "urgente" ? `<div style="font-size:12px;color:#ef4444;font-weight:700;margin-top:4px">🔴 URGENTE</div>` : ""}
+    ${deadlineStr ? `<div style="font-size:12px;color:#6b7280;margin-top:6px">Fecha límite: ${deadlineStr}</div>` : ""}
+    ${tarea.prioridad === "urgente" ? `<div style="font-size:12px;color:#ef4444;font-weight:700;margin-top:4px">URGENTE</div>` : ""}
   </div>
   <a href="${link}" style="display:block;text-align:center;background:#6366f1;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver mi tarea →</a>
   <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
@@ -135,7 +134,6 @@ function emailTareaAsignada({ colab, tarea, link }) {
 function emailEntregaRecibida({ colab, tarea, entrega, link }) {
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#f97316,#fb923c);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
-    <div style="font-size:28px;margin-bottom:8px">📦</div>
     <div style="font-size:20px;font-weight:700;color:#fff">Nueva entrega recibida</div>
   </div>
   <p style="font-size:15px;color:#374151"><strong>${colab.nombre}</strong> entregó trabajo para revisar:</p>
@@ -153,7 +151,6 @@ function emailEntregaRecibida({ colab, tarea, entrega, link }) {
 function emailEntregaActualizada({ colab, tarea, entrega, link }) {
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#6366f1,#818cf8);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
-    <div style="font-size:28px;margin-bottom:8px">📎</div>
     <div style="font-size:20px;font-weight:700;color:#fff">Entrega actualizada</div>
   </div>
   <p style="font-size:15px;color:#374151"><strong>${colab.nombre}</strong> agregó un documento a su entrega:</p>
@@ -171,13 +168,12 @@ function emailEntregaActualizada({ colab, tarea, entrega, link }) {
 function emailTareaAprobada({ colab, tarea, link }) {
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#22c55e,#4ade80);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
-    <div style="font-size:28px;margin-bottom:8px">🎉</div>
     <div style="font-size:20px;font-weight:700;color:#fff">¡Tu entrega fue aprobada!</div>
   </div>
   <p style="font-size:15px;color:#374151">Hola <strong>${colab.nombre.split(" ")[0]}</strong>,</p>
   <p style="font-size:14px;color:#6b7280">El equipo revisó y aprobó tu trabajo. ¡Excelente labor!</p>
   <div style="background:#f0fdf4;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #22c55e">
-    <div style="font-size:16px;font-weight:700;color:#111827">✅ ${tarea.titulo}</div>
+    <div style="font-size:16px;font-weight:700;color:#111827">${tarea.titulo}</div>
   </div>
   <a href="${link}" style="display:block;text-align:center;background:#22c55e;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver tarea →</a>
   <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
@@ -187,7 +183,6 @@ function emailTareaAprobada({ colab, tarea, link }) {
 function emailNuevoComentario({ colab, tarea, comentario, link }) {
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#6366f1,#818cf8);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
-    <div style="font-size:28px;margin-bottom:8px">💬</div>
     <div style="font-size:20px;font-weight:700;color:#fff">Nuevo comentario en tu tarea</div>
   </div>
   <p style="font-size:15px;color:#374151">Hola <strong>${colab.nombre.split(" ")[0]}</strong>,</p>
@@ -201,7 +196,6 @@ function emailNuevoComentario({ colab, tarea, comentario, link }) {
 function emailCambiosSolicitados({ colab, tarea, feedback, link }) {
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:#ef4444;padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
-    <div style="font-size:28px;margin-bottom:8px">🔁</div>
     <div style="font-size:20px;font-weight:700;color:#fff">Se solicitaron cambios</div>
   </div>
   <p style="font-size:15px;color:#374151">Hola <strong>${colab.nombre.split(" ")[0]}</strong>,</p>
@@ -215,7 +209,6 @@ function emailCambiosSolicitados({ colab, tarea, feedback, link }) {
 function emailConsultaRecibida({ colab, tarea, texto, link }) {
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#3b82f6,#60a5fa);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
-    <div style="font-size:28px;margin-bottom:8px">❓</div>
     <div style="font-size:20px;font-weight:700;color:#fff">Nueva consulta de colaborador</div>
   </div>
   <p style="font-size:15px;color:#374151"><strong>${colab.nombre}</strong> tiene una consulta sobre <strong>${tarea.titulo}</strong>:</p>
@@ -230,7 +223,6 @@ function emailRecordatorio({ colab, titulo, codigo, estado, deadline, link, nota
   const estadoLabel = {idea:"Idea",  "brief-enviado":"Brief enviado", "en-produccion":"En producción", entregado:"Entregado", publicado:"Publicado", pendiente:"Pendiente", en_proceso:"En proceso"}[estado] || estado;
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#f59e0b,#fbbf24);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
-    <div style="font-size:28px;margin-bottom:8px">⏰</div>
     <div style="font-size:20px;font-weight:700;color:#fff">Recordatorio de tarea</div>
     <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:6px">Growith</div>
   </div>
@@ -240,7 +232,7 @@ function emailRecordatorio({ colab, titulo, codigo, estado, deadline, link, nota
     ${codigo ? `<div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">${codigo}</div>` : ""}
     <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:6px">${titulo}</div>
     <div style="font-size:12px;color:#92400e;font-weight:600">Estado: ${estadoLabel}</div>
-    ${deadlineStr ? `<div style="font-size:12px;color:#dc2626;font-weight:700;margin-top:4px">📅 Vence: ${deadlineStr}</div>` : ""}
+    ${deadlineStr ? `<div style="font-size:12px;color:#dc2626;font-weight:700;margin-top:4px">Vence: ${deadlineStr}</div>` : ""}
     ${nota ? `<div style="font-size:13px;color:#374151;margin-top:8px;padding-top:8px;border-top:1px solid #fde68a">${nota}</div>` : ""}
   </div>
   <a href="${link}" style="display:block;text-align:center;background:#f59e0b;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver mi tarea →</a>
@@ -252,7 +244,6 @@ function emailRecordatorio({ colab, titulo, codigo, estado, deadline, link, nota
 function emailListoParaEntregar({ colab, tarea, link }) {
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#8b5cf6,#a78bfa);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
-    <div style="font-size:28px;margin-bottom:8px">✋</div>
     <div style="font-size:20px;font-weight:700;color:#fff">Listo para entregar</div>
   </div>
   <p style="font-size:15px;color:#374151"><strong>${colab.nombre}</strong> dice que terminó y está listo para entregar:</p>
@@ -269,7 +260,6 @@ function emailListoParaEntregar({ colab, tarea, link }) {
 function emailRetomaTrabajo({ colab, tarea, link }) {
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#22c55e,#4ade80);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
-    <div style="font-size:28px;margin-bottom:8px">🔄</div>
     <div style="font-size:20px;font-weight:700;color:#fff">Bloqueo resuelto</div>
   </div>
   <p style="font-size:15px;color:#374151"><strong>${colab.nombre}</strong> retomó el trabajo en:</p>
@@ -287,7 +277,6 @@ function emailTareaActualizada({ colab, tarea, cambios, link }) {
   const cambiosHtml = cambios.map(c => `<li style="margin-bottom:4px">${c}</li>`).join("");
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#f59e0b,#fbbf24);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
-    <div style="font-size:28px;margin-bottom:8px">✏️</div>
     <div style="font-size:20px;font-weight:700;color:#fff">Tarea actualizada</div>
   </div>
   <p style="font-size:15px;color:#374151">Hola <strong>${colab.nombre.split(" ")[0]}</strong>,</p>
@@ -521,7 +510,7 @@ export default async function handler(req, res) {
       const allowed = ["pendiente","en_proceso","bloqueada"];
       if (!allowed.includes(estado)) return res.status(400).json({ error:"Estado no permitido" });
       const label = progresoLabel || estado;
-      const detalle = estado==="bloqueada" && motivo ? `🚫 Bloqueado: ${motivo}` : `Progreso: ${label}`;
+      const detalle = estado==="bloqueada" && motivo ? `Bloqueado: ${motivo}` : `Progreso: ${label}`;
       const act = { tipo:"progreso", autor:colab.nombre, fecha:now, detalle };
       const upd = { estado, progresoLabel: progresoLabel||"", updatedAt: now, activity: [...(t.data().activity||[]), act] };
       const prevEstado = t.data().estado;
@@ -531,18 +520,18 @@ export default async function handler(req, res) {
 
       if (estado==="bloqueada" && motivo) {
         // Add motivo as a comment so admin sees it
-        const comment = { texto: `🚫 Bloqueado: ${motivo}`, autor:colab.nombre, fecha:now, tipo:"bloqueo" };
+        const comment = { texto: `Bloqueado: ${motivo}`, autor:colab.nombre, fecha:now, tipo:"bloqueo" };
         upd.comments = [...(t.data().comments||[]), comment];
         // Notify manager(s)
         notifyManagers(db, t.data().uid, managerEmailPub,
-          `🚫 ${colab.nombre} está bloqueado — ${t.data().titulo}`,
-          emailConsultaRecibida({ colab, tarea:t.data(), texto:`🚫 Bloqueado: ${motivo}`, link:tareaLink }));
+          `${colab.nombre} está bloqueado — ${t.data().titulo}`,
+          emailConsultaRecibida({ colab, tarea:t.data(), texto:`Bloqueado: ${motivo}`, link:tareaLink }));
       }
 
       // Retoma el trabajo tras bloqueo → notificar al manager (inmediato, es urgente resolverlo)
       if (estado==="en_proceso" && prevEstado==="bloqueada") {
         notifyManagers(db, t.data().uid, managerEmailPub,
-          `🔄 ${colab.nombre} retomó el trabajo — ${t.data().titulo}`,
+          `${colab.nombre} retomó el trabajo — ${t.data().titulo}`,
           emailRetomaTrabajo({ colab, tarea:t.data(), link:tareaLink }));
       }
 
@@ -625,7 +614,7 @@ export default async function handler(req, res) {
       });
       // Notificar al manager por email
       notifyManagers(db, t.data().uid, t.data().managerEmail,
-        `💬 Actualización de ${colab.nombre} — ${t.data().titulo}`,
+        `Actualización de ${colab.nombre} — ${t.data().titulo}`,
         emailNuevoComentario({ colab, tarea:t.data(), comentario:texto.trim(), link:`${origin||"https://www.growithapp.com"}/#/tareas` }));
       return res.json({ ok:true, comment });
     }
@@ -643,7 +632,7 @@ export default async function handler(req, res) {
       await ref.update({ comments:[...(t.data().comments||[]), comment] });
       // Notificar al manager por email
       notifyManagers(db, t.data().uid, t.data().managerEmail,
-        `❓ Consulta de ${colab.nombre} — ${t.data().titulo}`,
+        `Consulta de ${colab.nombre} — ${t.data().titulo}`,
         emailConsultaRecibida({ colab, tarea:t.data(), texto:texto.trim(), link:`${origin||"https://www.growithapp.com"}/#/tareas` }));
       return res.json({ ok:true, comment });
     }
@@ -675,8 +664,8 @@ export default async function handler(req, res) {
       // Email al manager(s): "Entrega actualizada" si ya había entrega, "Nueva entrega" si es la primera
       notifyManagers(db, t.data().uid, t.data().managerEmail,
         hasFinalDelivery
-          ? `📎 Entrega actualizada — ${colab.nombre} agregó un documento en "${t.data().titulo}"`
-          : `📦 Entrega de ${colab.nombre} — ${t.data().titulo}`,
+          ? `Entrega actualizada — ${colab.nombre} agregó un documento en "${t.data().titulo}"`
+          : `Entrega de ${colab.nombre} — ${t.data().titulo}`,
         hasFinalDelivery
           ? emailEntregaActualizada({ colab, tarea:t.data(), entrega, link:`${origin||"https://www.growithapp.com"}/#/tareas` })
           : emailEntregaRecibida({ colab, tarea:t.data(), entrega, link:`${origin||"https://www.growithapp.com"}/#/tareas` }));
@@ -1056,7 +1045,7 @@ export default async function handler(req, res) {
         if (!colab) { console.warn(`[email] colaborador no encontrado para: ${email}`); emailResults.push({email,ok:false,error:"colab_not_found"}); continue; }
         const result = await sendEmail({
           to: email,
-          subject: `📋 Nueva tarea: ${titulo}`,
+          subject: `Nueva tarea: ${titulo}`,
           html: emailTareaAsignada({ colab, tarea:{...data,deadline:deadline?new Date(deadline):null}, link:colabPortalLink(origin, colab.token) }),
         });
         console.log(`[email] resultado para ${email}:`, JSON.stringify(result));
@@ -1081,7 +1070,7 @@ export default async function handler(req, res) {
       if (allDone) upd.estado = "entregado";
       await ref.update(upd);
       notifyManagers(db, uid, snap.data().managerEmail,
-        `📦 Nueva entrega en slot — ${snap.data().titulo}`,
+        `Nueva entrega en slot — ${snap.data().titulo}`,
         emailEntregaRecibida({ colab:{nombre:"Colaborador"}, tarea:snap.data(), entrega, link:`${origin||"https://growithapp.com"}/#/tareas` }));
       return res.json({ ok:true, entrega });
     }
@@ -1128,7 +1117,7 @@ export default async function handler(req, res) {
             const c3 = colabSnap3.docs[0].data();
             const emailRes3 = await sendEmail({
               to: emailDest,
-              subject: `✏️ Actualizaron tu tarea — ${clean.titulo || prevData.titulo}`,
+              subject: `Actualizaron tu tarea — ${clean.titulo || prevData.titulo}`,
               html: emailTareaActualizada({ colab:c3, tarea:{...prevData,...clean}, cambios, link:colabPortalLink(origin, c3.token) }),
               delayMs: 3 * 60 * 1000,
             });
@@ -1163,7 +1152,7 @@ export default async function handler(req, res) {
           const colab = colabSnap.docs[0].data();
           sendEmail({
             to: snap.data().asignadoEmail,
-            subject: `🔁 Se solicitaron cambios — ${snap.data().titulo}`,
+            subject: `Se solicitaron cambios — ${snap.data().titulo}`,
             html: emailCambiosSolicitados({ colab, tarea:snap.data(), feedback:feedback||"", link:colabPortalLink(origin, colab.token) }),
           });
         }
@@ -1177,7 +1166,7 @@ export default async function handler(req, res) {
             const colabAp = colabSnapAp.docs[0].data();
             sendEmail({
               to: snap.data().asignadoEmail,
-              subject: `🎉 ¡Aprobado! — ${snap.data().titulo}`,
+              subject: `¡Aprobado! — ${snap.data().titulo}`,
               html: emailTareaAprobada({ colab:colabAp, tarea:snap.data(), link:colabPortalLink(origin, colabAp.token) }),
             });
           }
@@ -1204,7 +1193,6 @@ export default async function handler(req, res) {
       const link = colabPortalLink(origin, colab.token);
       const html = `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#6366f1,#818cf8);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
-    <div style="font-size:28px;margin-bottom:8px">🔔</div>
     <div style="font-size:20px;font-weight:700;color:#fff">Recordatorio de tarea</div>
   </div>
   <p style="font-size:15px;color:#374151">Hola <strong>${colab.nombre.split(" ")[0]}</strong>,</p>
@@ -1212,12 +1200,12 @@ export default async function handler(req, res) {
   <div style="background:#f0f0ff;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #6366f1">
     <div style="font-size:16px;font-weight:700;color:#1e1b4b">${tarea.titulo}</div>
     ${tarea.descripcion?`<div style="font-size:13px;color:#6b7280;margin-top:6px">${tarea.descripcion}</div>`:""}
-    ${tarea.deadline?`<div style="font-size:13px;color:#d97706;margin-top:8px;font-weight:600">📅 Fecha límite: ${new Date(tarea.deadline._seconds?tarea.deadline._seconds*1000:tarea.deadline).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"})}</div>`:""}
+    ${tarea.deadline?`<div style="font-size:13px;color:#d97706;margin-top:8px;font-weight:600">Fecha límite: ${new Date(tarea.deadline._seconds?tarea.deadline._seconds*1000:tarea.deadline).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"})}</div>`:""}
   </div>
   <a href="${link}" style="display:block;text-align:center;background:#6366f1;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver mi tarea →</a>
   <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
 </div>`;
-      const result = await sendEmail({ to: tarea.asignadoEmail, subject: `🔔 Recordatorio — ${tarea.titulo}`, html });
+      const result = await sendEmail({ to: tarea.asignadoEmail, subject: `Recordatorio — ${tarea.titulo}`, html });
       if (result.error) return res.status(500).json({ error: result.error });
       return res.json({ ok: true });
     }
@@ -1361,7 +1349,7 @@ export default async function handler(req, res) {
         const colab2 = colabSnap2.docs[0].data();
         sendEmail({
           to: tdata.asignadoEmail,
-          subject: `💬 Nuevo comentario en "${tdata.titulo}"`,
+          subject: `Nuevo comentario en "${tdata.titulo}"`,
           html: emailNuevoComentario({ colab:colab2, tarea:tdata, comentario:texto.trim(), link:colabPortalLink(origin, colab2.token) }),
         });
       }
@@ -1408,14 +1396,13 @@ export default async function handler(req, res) {
       if (!to) return res.status(400).json({ error:"Email requerido" });
       const html = `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
         <div style="background:linear-gradient(135deg,#6366f1,#a78bfa);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
-          <div style="font-size:32px;margin-bottom:8px">✅</div>
           <div style="font-size:20px;font-weight:700;color:#fff">Email de prueba</div>
           <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:6px">Growith — Sistema de Notificaciones</div>
         </div>
         <p style="font-size:15px;color:#374151">¡Todo funciona correctamente!</p>
         <p style="font-size:13px;color:#6b7280;line-height:1.6">Este email confirma que el sistema de notificaciones está configurado y funcionando. Los colaboradores van a recibir emails como este cuando se les asignen tareas, y vos vas a recibir notificaciones cuando entreguen trabajo.</p>
         <div style="margin:24px 0;padding:16px;background:#f0fdf4;border-radius:10px;border:1px solid #86efac">
-          <div style="font-size:13px;font-weight:700;color:#16a34a;margin-bottom:8px">📬 Emails activos en tu cuenta:</div>
+          <div style="font-size:13px;font-weight:700;color:#16a34a;margin-bottom:8px">Emails activos en tu cuenta:</div>
           <ul style="font-size:12px;color:#374151;margin:0;padding-left:18px;line-height:2">
             <li>Tarea asignada → colaborador recibe email</li>
             <li>Entrega recibida → vos recibís email</li>
@@ -1427,7 +1414,7 @@ export default async function handler(req, res) {
         </div>
         <p style="font-size:11px;color:#9ca3af;text-align:center;margin-top:24px">Enviado desde Growith — notificaciones@growith.app</p>
       </div>`;
-      const result = await sendEmail({ to, subject:"✅ Email de prueba — Growith funciona correctamente", html });
+      const result = await sendEmail({ to, subject:"Email de prueba — Growith funciona correctamente", html });
       if (result?.error) return res.status(500).json({ error: result.error, detail: result });
       return res.json({ ok:true, id: result?.id });
     }
@@ -1444,7 +1431,7 @@ export default async function handler(req, res) {
       const link = token ? colabPortalLink(origin, token) : (origin || "https://growithapp.com");
       const colab = { nombre: nombre || to };
       const html = emailRecordatorio({ colab, titulo, codigo: codigo||"", estado: estado||"", deadline: deadline||null, link, nota: nota||"" });
-      const result = await sendEmail({ to, subject:`⏰ Recordatorio: ${titulo} — Growith`, html });
+      const result = await sendEmail({ to, subject:`Recordatorio: ${titulo} — Growith`, html });
       if (result?.error) return res.status(500).json({ error: result.error, detail: result });
       return res.json({ ok:true, id: result?.id });
     }
@@ -1813,17 +1800,16 @@ export default async function handler(req, res) {
       const ownerEmail = userSnap.data()?.email;
       if (!ownerEmail) return res.status(400).json({ error:"No se encontró email del usuario" });
       const fechaFmt = new Date(fechaEnvioProgr + "T12:00:00").toLocaleDateString("es-AR", {weekday:"long",day:"numeric",month:"long"});
-      const trackingHtml = tracking ? `<div style="margin:12px 0;padding:10px 14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #22c55e;font-size:13px;color:#374151">📦 Tracking Andreani: <strong>${tracking}</strong><br/><a href="https://www.andreani.com/#!/informacionEnvio/${tracking}" style="color:#6366f1;font-size:12px">Ver seguimiento →</a></div>` : "";
+      const trackingHtml = tracking ? `<div style="margin:12px 0;padding:10px 14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #22c55e;font-size:13px;color:#374151">Tracking Andreani: <strong>${tracking}</strong><br/><a href="https://www.andreani.com/#!/informacionEnvio/${tracking}" style="color:#6366f1;font-size:12px">Ver seguimiento →</a></div>` : "";
       const html = `<div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#6366f1,#a78bfa);padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
-    <div style="font-size:26px;margin-bottom:6px">📦</div>
     <div style="font-size:18px;font-weight:700;color:#fff">Hoy toca enviar un canje</div>
     <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px">${fechaFmt}</div>
   </div>
   <p style="font-size:14px;color:#374151">Acordate de enviar el canje de <strong>${influencer}</strong>${producto?` — <strong>${producto}</strong>`:""} hoy.</p>
   ${trackingHtml}
   <div style="background:#f9fafb;border-radius:8px;padding:14px 16px;font-size:13px;color:#374151;line-height:1.6;margin:16px 0">
-    💡 <strong>No te olvides de:</strong><br/>
+    <strong>No te olvides de:</strong><br/>
     • Mandarle el número de tracking por WhatsApp<br/>
     • Recordarle los acuerdos de contenido<br/>
     • Si es envío a sucursal HOP, avisarle que ya puede ir a buscarlo
@@ -1832,7 +1818,7 @@ export default async function handler(req, res) {
 </div>`;
       const result = await sendEmail({
         to: ownerEmail,
-        subject: `📦 Hoy toca enviar el canje de ${influencer}`,
+        subject: `Hoy toca enviar el canje de ${influencer}`,
         html,
         delayMs: delayMs && Number(delayMs) > 60000 ? Number(delayMs) : undefined,
       });
@@ -1937,7 +1923,7 @@ export default async function handler(req, res) {
       const entrega = { link:link.trim(), label:(label.trim()||`v${(tData.deliverables||[]).length+1}`), nota:nota.trim(), fecha:now, entregadoPor:colabEmail };
       await tareaRef.update({ deliverables:[...(tData.deliverables||[]),entrega], estado:"entregado", updatedAt:now });
       const boardNotifRecipients = [...new Set([userData.email, ...(userData.notifEmails||[])])].filter(Boolean);
-      boardNotifRecipients.forEach(to => sendEmail({ to, subject:`📦 Nueva entrega en "${tData.titulo}"`, html:emailEntregaRecibida({ colab:colabData, tarea:tData, entrega, link:origin }) }));
+      boardNotifRecipients.forEach(to => sendEmail({ to, subject:`Nueva entrega en "${tData.titulo}"`, html:emailEntregaRecibida({ colab:colabData, tarea:tData, entrega, link:origin }) }));
       return res.json({ ok:true, entrega });
     }
 

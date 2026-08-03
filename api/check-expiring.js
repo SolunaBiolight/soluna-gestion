@@ -55,7 +55,7 @@ function emailHtml({ nombre, diasRestantes, isTrial, planesPlanesUrl }) {
           <div style="font-size:28px;font-weight:900;color:#fff;letter-spacing:-0.5px;">Growith</div>
         </td></tr>
         <tr><td style="padding:32px;">
-          <div style="font-size:22px;font-weight:800;color:#111;margin-bottom:12px;">${urgente?"🚨":"⏰"} ${titulo}</div>
+          <div style="font-size:22px;font-weight:800;color:#111;margin-bottom:12px;">${titulo}</div>
           <p style="font-size:15px;color:#444;line-height:1.6;margin:0 0 24px;">
             Hola${nombre ? ` ${nombre.split(" ")[0]}` : ""},<br><br>
             ${isTrial
@@ -145,7 +145,7 @@ export default async function handler(req, res) {
       // 1) Bienvenida: cuenta creada hace <2 días, sin mail previo
       if (diasCuenta !== null && diasCuenta < 2 && !u.welcomeSentAt) {
         return { doc, email, flag: "welcomeSentAt", diasRestantes: 0, isTrial: true,
-          subject: "Te damos la bienvenida a Growith 👋",
+          subject: "Te damos la bienvenida a Growith",
           html: wrap(`¡Hola${nombre?` ${nombre}`:""}! Ya tenés 14 días con todo incluido`,
             "Para ver tus números reales hoy mismo: 1) conectá tu tienda (Tienda Nube, Shopify o Mercado Libre) desde Configuración → Integraciones, 2) cargá tu CUIT si querés facturar con ARCA, 3) mirá el Dashboard. En 5 minutos está andando.",
             btn("Entrar a Growith")) };

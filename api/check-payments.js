@@ -204,7 +204,7 @@ export default async function handler(req, res) {
       const filas = colgados.map(p => `<li>${p.email || p.uid} — $${p.amount} ${p.currency || ""} (${p.method}) — motivo bot: ${p.autoCheckMotivo || "sin revisar"}</li>`).join("");
       const r = await sendEmail({
         to: "contacto.growith@gmail.com",
-        subject: `⚠ ${colgados.length} pago(s) pendiente(s) sin acreditar — revisar en Admin`,
+        subject: `${colgados.length} pago(s) pendiente(s) sin acreditar — revisar en Admin`,
         html: `<div style="font-family:system-ui,sans-serif;font-size:14px"><p>El bot no pudo acreditar estos pagos solos:</p><ul>${filas}</ul><p>Confirmalos o rechazalos desde Admin → Cobros.</p></div>`,
       });
       if (r.ok) await Promise.all(colgados.map(p => p.ref.set({ alertaAdminAt: now }, { merge: true }).catch(() => {})));

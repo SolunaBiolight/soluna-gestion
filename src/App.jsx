@@ -3112,7 +3112,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                 <span style={{fontSize:12,color:T.accent}}>#{activeR.orderNum}</span>
                 <span style={{fontSize:12,color:T.textSm}}>· {activeR.tipo}</span>
-                {!activeOrder&&<span style={{fontSize:11,color:T.textSm,opacity:0.7}}>⏳ Cargando...</span>}
+                {!activeOrder&&<span style={{fontSize:11,color:T.textSm,opacity:0.7}}>Cargando...</span>}
               </div>
             </div>
             <button onClick={()=>setActiveReclamo(null)}
@@ -10673,6 +10673,24 @@ function GhI({n, size=13, style}) {
     case "palette":  return <svg {...p}><path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2v-1c0-.55.45-1 1-1h2a5 5 0 0 0 5-5c0-6.08-4.92-11-10-11z"/><circle cx="7.5" cy="11.5" r="1" fill="currentColor"/><circle cx="12" cy="7.5" r="1" fill="currentColor"/><circle cx="16.5" cy="11.5" r="1" fill="currentColor"/></svg>;
     case "upload":   return <svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
     case "chart":    return <svg {...p}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>;
+    case "clock":    return <svg {...p}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+    case "bell":     return <svg {...p}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>;
+    case "calendar": return <svg {...p}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
+    case "eye":      return <svg {...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
+    case "users":    return <svg {...p}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+    case "user":     return <svg {...p}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
+    case "lock":     return <svg {...p}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
+    case "pin":      return <svg {...p}><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"/></svg>;
+    case "download": return <svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
+    case "alert":    return <svg {...p}><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
+    case "gift":     return <svg {...p}><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>;
+    case "bulb":     return <svg {...p}><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg>;
+    case "image":    return <svg {...p}><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>;
+    case "phone":    return <svg {...p}><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>;
+    case "star":     return <svg {...p}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
+    case "video":    return <svg {...p}><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>;
+    case "store":    return <svg {...p}><path d="M3 9 4 4h16l1 5"/><path d="M4 9v12h16V9"/><path d="M9 21v-6h6v6"/></svg>;
+    case "rocket":   return <svg {...p}><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>;
     case "wa":       return <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" style={{flexShrink:0,display:"inline-block",verticalAlign:"-2px",...style}}><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>;
     default: return null;
   }
@@ -11713,7 +11731,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           {t.leidoAt&&<span style={{fontSize:11,fontWeight:600,color:T.green,background:T.green+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.green}30`}}>Brief leído</span>}
           {(t.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.red}30`}}><GhI n="refresh" size={10}/> {t.correcciones} corrección{(t.correcciones||0)!==1?"es":""}</span>}
           {t.recurrente&&<span style={{fontSize:11,fontWeight:600,color:T.green,background:T.green+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.green}30`}}>Recurrente · {t.frecuenciaRecurrente||"semanal"}</span>}
-          {t.tiempoEntregaDias&&t.estado==="aprobado"&&<span style={{fontSize:11,color:T.blue,background:T.blue+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.blue}30`}}>⏱ {t.tiempoEntregaDias}d</span>}
+          {t.tiempoEntregaDias&&t.estado==="aprobado"&&<span style={{fontSize:11,color:T.blue,background:T.blue+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.blue}30`}}><GhI n="clock" size={10}/> {t.tiempoEntregaDias}d</span>}
         </div>
         {/* Estados */}
         {(!colabMode||colabMode.permisos?.verTareas)&&(()=>{
@@ -12066,7 +12084,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       {(!colabMode||colabMode.permisos?.verTareas)&&i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<>
                         <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:13,padding:"9px 18px",borderRadius:9,background:T.green,color:"#fff",border:"none",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:6}}><GhI n="check" size={13}/> Aprobar entrega</AsyncButton>
                         <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:!p[t._id]}))} style={{fontSize:13,padding:"9px 18px",borderRadius:9,background:showFeedback[t._id]?T.red+"18":"transparent",color:T.red,border:`1.5px solid ${T.red}55`,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:6}}><GhI n="refresh" size={13}/> Pedir cambios</button>
-                        {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:12,padding:"8px 14px",borderRadius:9,color:T.green,border:"1px solid "+T.green+"44"+"",background:T.green+"10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}><GhI n="wa" size={13}/> WA</a>}
+                        {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]}, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:12,padding:"8px 14px",borderRadius:9,color:T.green,border:"1px solid "+T.green+"44"+"",background:T.green+"10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}><GhI n="wa" size={13}/> WA</a>}
                       </>}
                       {(!colabMode||colabMode.permisos?.verTareas)&&t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:12,padding:"8px 14px",borderRadius:9,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}><GhI n="edit" size={12}/> Editar</button>}
                       {(!colabMode||colabMode.permisos?.verTareas)&&<AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:12,padding:"8px 14px",borderRadius:9,background:"transparent",color:T.textSm,border:`1px solid ${T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>Eliminar</AsyncButton>}
@@ -12791,7 +12809,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               })()}
               {tareasActivas.length===0&&(
                 <div style={{textAlign:"center",padding:"70px 24px",background:T.surface,borderRadius:14,border:`1px dashed ${T.border}`}}>
-                  <div style={{fontSize:48,marginBottom:16}}>🚀</div>
+                  <div style={{marginBottom:16,color:T.textSm}}><GhI n="check" size={40}/></div>
                   <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:8}}>Todo al día</div>
                   <div style={{fontSize:13,color:T.textMd,marginBottom:24}}>No hay trabajo activo.</div>
                   <button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:13}}>+ Nueva tarea</button>
@@ -12807,7 +12825,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             <div>
               {produccion.tandas.length===0&&(
                 <div style={{textAlign:"center",padding:"60px 0",color:T.textSm}}>
-                  <div style={{fontSize:44,marginBottom:12}}>📦</div>
+                  <div style={{marginBottom:12,color:T.textSm}}><GhI n="box" size={36}/></div>
                   <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:8}}>Sin tandas aún</div>
                   <div style={{fontSize:13,marginBottom:20}}>Una tanda agrupa creativos bajo un brief y recursos compartidos (Drive, PDFs, fotos de referencia)</div>
                   <button onClick={()=>openTanda()} style={{...BtnPrimary(T),margin:"0 auto"}}>+ Crear primera tanda</button>
@@ -12899,7 +12917,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   {anyFilter&&<button onClick={()=>setProdFilter({tanda:"",editor:"",estado:"",tipo:"",etapa:""})} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red}}>✕ Limpiar filtros</button>}
                   <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
                     <span style={{fontSize:11,color:T.textSm}}>{filtered.length} creativo{filtered.length!==1?"s":""}</span>
-                    {filtered.length>0&&<button onClick={()=>exportCreativosCSV(filtered)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>⬇ CSV</button>}
+                    {filtered.length>0&&<button onClick={()=>exportCreativosCSV(filtered)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>↓ CSV</button>}
                     <div style={{display:"flex",background:T.surface,borderRadius:6,border:`1px solid ${T.border}`,padding:2,gap:1}}>
                       {[["tabla","Tabla"],["tablero","Board"]].map(([v,ico])=>(
                         <button key={v} onClick={()=>setProdView(v)} style={{padding:"3px 9px",borderRadius:4,fontSize:11,fontWeight:600,border:"none",background:prodView===v?T.card:"transparent",color:prodView===v?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:prodView===v?"0 1px 2px rgba(0,0,0,0.1)":"none",whiteSpace:"nowrap"}}>{ico}</button>
@@ -12909,7 +12927,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 </div>
                 {filtered.length===0&&(
                   <div style={{textAlign:"center",padding:"48px 0",color:T.textSm,background:T.surface,borderRadius:12,border:`1px dashed ${T.border}`}}>
-                    <div style={{fontSize:36,marginBottom:10}}>🎬</div>
+                    <div style={{marginBottom:10,color:T.textSm}}><GhI n="video" size={30}/></div>
                     <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:8}}>{produccion.creativos.length===0?"Sin creativos aún":"Sin resultados con estos filtros"}</div>
                     {produccion.creativos.length===0&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),margin:"12px auto 0"}}>+ Crear primer creativo</button>}
                     {produccion.creativos.length>0&&anyFilter&&<button onClick={()=>setProdFilter({tanda:"",editor:"",estado:"",tipo:"",etapa:""})} style={{...BtnSecondary(T),margin:"12px auto 0"}}>Limpiar filtros</button>}
@@ -12974,7 +12992,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                                           if(r?.ok) toast(`Recordatorio enviado a ${editorColab.nombre}`,"success");
                                           else toast("Error al enviar: "+(r?.error||"desconocido"),"error");
                                         }} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px",color:T.yellow,border:`1px solid ${T.yellow}44`}} title={`Recordar a ${editorColab.nombre}`}>
-                                          ⏰
+                                          <GhI n="bell" size={12}/>
                                         </AsyncButton>
                                       )}
                                       <AsyncButton onClick={()=>deleteCreativoProd(c.id)} style={{...BtnDanger(T),fontSize:10,padding:"3px 8px"}}>×</AsyncButton>
@@ -13047,7 +13065,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             <div>
               {produccion.ideas.length===0&&(
                 <div style={{textAlign:"center",padding:"60px 0",color:T.textSm}}>
-                  <div style={{fontSize:44,marginBottom:12}}>💡</div>
+                  <div style={{marginBottom:12,color:T.textSm}}><GhI n="bulb" size={36}/></div>
                   <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:8}}>Sin ideas en backlog</div>
                   <div style={{fontSize:13,marginBottom:20}}>Guardá ideas antes de convertirlas en creativos. Cuando estés listo, promovenlas con un click.</div>
                   <button onClick={()=>openIdea()} style={{...BtnPrimary(T),margin:"0 auto"}}>+ Agregar primera idea</button>
@@ -13094,7 +13112,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           const ELABEL={pendiente:"Pendiente",en_proceso:"En proceso",bloqueada:"Bloqueado",entregado:"Entregado",aprobado:"Aprobado",revision:"En revisión"};
           if(!grupos.length) return (
             <div style={{padding:"20px 24px"}}>
-              <DSEmpty T={T} icon="👥" title="Sin actividad del equipo" subtitle="Cuando haya tareas asignadas vas a ver el estado de cada integrante acá."/>
+              <DSEmpty T={T} icon="" title="Sin actividad del equipo" subtitle="Cuando haya tareas asignadas vas a ver el estado de cada integrante acá."/>
             </div>
           );
           return (
@@ -13140,7 +13158,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           ];
           if(todos.length===0) return (
             <div style={{textAlign:"center",padding:"70px 0"}}>
-              <div style={{fontSize:44,marginBottom:14}}>👥</div>
+              <div style={{marginBottom:14,color:T.textSm}}><GhI n="users" size={36}/></div>
               <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Sin miembros en el equipo</div>
               <div style={{fontSize:13,color:T.textSm,marginBottom:24}}>Agregá a alguien para asignarle tareas, creativos y permisos</div>
               <button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:13}}>+ Agregar miembro</button>
@@ -14201,8 +14219,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 </div>
                 {referencias.length===0&&(
                   colabMode
-                    ? <DSEmpty T={T} icon="🔍" title="Sin referencias aún" subtitle="Todavía no hay marcas de referencia cargadas. El equipo las agrega desde el panel."/>
-                    : <DSEmpty T={T} icon="🔍" title="Sin referencias aún" subtitle="Agregá marcas o tiendas de referencia para que tu equipo pueda acceder rápido a sus redes, ads y sitios." action={<Btn T={T} variant="primary" onClick={()=>openRefModal()}>+ Primera marca</Btn>}/>
+                    ? <DSEmpty T={T} icon="" title="Sin referencias aún" subtitle="Todavía no hay marcas de referencia cargadas. El equipo las agrega desde el panel."/>
+                    : <DSEmpty T={T} icon="" title="Sin referencias aún" subtitle="Agregá marcas o tiendas de referencia para que tu equipo pueda acceder rápido a sus redes, ads y sitios." action={<Btn T={T} variant="primary" onClick={()=>openRefModal()}>+ Primera marca</Btn>}/>
                 )}
                 {referencias.length>0&&(()=>{
                   const q=refSearch.trim().toLowerCase();
@@ -14508,7 +14526,7 @@ function EditorProduccionView({T, token}) {
   if(error) return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
       <div style={{textAlign:"center",maxWidth:380}}>
-        <div style={{fontSize:48,marginBottom:16}}>🔒</div>
+        <div style={{marginBottom:16,color:T.textSm}}><GhI n="lock" size={40}/></div>
         <div style={{fontSize:18,fontWeight:700,color:T.text,marginBottom:8}}>Link inválido</div>
         <div style={{fontSize:14,color:T.textMd,lineHeight:1.5}}>{error}</div>
       </div>
@@ -14526,7 +14544,7 @@ function EditorProduccionView({T, token}) {
       <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"e8",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",padding:"0 20px",height:56,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:30}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{width:3,height:16,borderRadius:2,background:"linear-gradient(180deg,#7c3aed,#a78bfa)",flexShrink:0}}/>
-          <span style={{fontWeight:700,fontSize:14,color:T.text}}>🎬 Portal de Editor</span>
+          <span style={{fontWeight:700,fontSize:14,color:T.text}}>Portal de Editor</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <div style={{width:30,height:30,borderRadius:"50%",background:"#7c3aed20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:"#7c3aed"}}>
@@ -14559,7 +14577,7 @@ function EditorProduccionView({T, token}) {
 
         {filtered.length===0&&(
           <div style={{textAlign:"center",padding:"60px 0",color:T.textSm,background:T.card,borderRadius:12,border:`1px dashed ${T.border}`}}>
-            <div style={{fontSize:44,marginBottom:12}}>🎬</div>
+            <div style={{marginBottom:12,color:T.textSm}}><GhI n="video" size={36}/></div>
             <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Sin creativos asignados aún</div>
           </div>
         )}
@@ -14805,7 +14823,7 @@ function ColaboradorPublicView({T, token}) {
   if(error) return (
     <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif"}}>
       <div style={{textAlign:"center",padding:32}}>
-        <div style={{fontSize:52,marginBottom:16}}>⚠️</div>
+        <div style={{marginBottom:16,color:T.textSm}}><GhI n="alert" size={44}/></div>
         <div style={{fontSize:18,fontWeight:700,color:T.text,marginBottom:8}}>Link inválido</div>
         <div style={{fontSize:14,color:T.textSm}}>{error}</div>
       </div>
@@ -14837,7 +14855,7 @@ function ColaboradorPublicView({T, token}) {
       {/* Banner: guardá este link */}
       {!bannerClosed&&(
         <div style={{background:"#6366f1",padding:"10px 16px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <span style={{fontSize:13,color:"#fff",flex:1}}>💡 <strong>Guardá este link</strong> — es tu único acceso a tus tareas, funciona desde cualquier dispositivo.</span>
+          <span style={{fontSize:13,color:"#fff",flex:1}}><strong>Guardá este link</strong> — es tu único acceso a tus tareas, funciona desde cualquier dispositivo.</span>
           <button onClick={closeBanner} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:20,padding:"4px 14px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>Entendido ✓</button>
         </div>
       )}
@@ -14845,11 +14863,11 @@ function ColaboradorPublicView({T, token}) {
       {/* Banner PWA (solo mobile) */}
       {isMobile&&!pwaBannerClosed&&(
         <div style={{background:"#1e293b",padding:"12px 16px",display:"flex",alignItems:"flex-start",gap:10}}>
-          <span style={{fontSize:18,flexShrink:0}}>📱</span>
+          <span style={{flexShrink:0,color:"rgba(255,255,255,0.8)"}}><GhI n="phone" size={17}/></span>
           <div style={{flex:1}}>
             <div style={{fontSize:13,fontWeight:600,color:"#fff",marginBottom:3}}>Instalá la app para acceso rápido</div>
             {isIOS
-              ? <div style={{fontSize:12,color:"rgba(255,255,255,0.75)"}}>Tocá <strong>Compartir</strong> (📤) y luego <strong>"Agregar a inicio"</strong> para tener acceso directo desde tu pantalla.</div>
+              ? <div style={{fontSize:12,color:"rgba(255,255,255,0.75)"}}>Tocá <strong>Compartir</strong> y luego <strong>"Agregar a inicio"</strong> para tener acceso directo desde tu pantalla.</div>
               : <div style={{fontSize:12,color:"rgba(255,255,255,0.75)"}}>Tocá el menú <strong>⋮</strong> del navegador y elegí <strong>"Agregar a pantalla de inicio"</strong>.</div>
             }
           </div>
@@ -14862,7 +14880,7 @@ function ColaboradorPublicView({T, token}) {
         <div style={{width:56,height:56,borderRadius:"50%",background:"rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:"#fff",margin:"0 auto 12px"}}>
           {colab.nombre[0].toUpperCase()}
         </div>
-        <div style={{fontSize:20,fontWeight:700,color:"#fff",marginBottom:3}}>Hola, {colab.nombre.split(" ")[0]} 👋</div>
+        <div style={{fontSize:20,fontWeight:700,color:"#fff",marginBottom:3}}>Hola, {colab.nombre.split(" ")[0]}</div>
         {colab.rol&&<div style={{fontSize:13,color:"rgba(255,255,255,0.85)",marginBottom:12}}>{colab.rol}</div>}
         {totalTareas>0&&(
           <div style={{maxWidth:300,margin:"0 auto"}}>
@@ -14880,7 +14898,7 @@ function ColaboradorPublicView({T, token}) {
       <div style={{maxWidth:1120,margin:"0 auto",padding:"20px 24px"}}>
         {tareas.length===0&&(
           <div style={{textAlign:"center",padding:"48px 0",color:T.textSm}}>
-            <div style={{fontSize:48,marginBottom:12}}>🎉</div>
+            <div style={{marginBottom:12,color:T.green}}><GhI n="check" size={40}/></div>
             <div style={{fontSize:16,fontWeight:600,color:T.text,marginBottom:6}}>¡Sin tareas por ahora!</div>
             <div style={{fontSize:13}}>Cuando te asignen trabajo, lo vas a ver acá.</div>
           </div>
@@ -14890,7 +14908,7 @@ function ColaboradorPublicView({T, token}) {
         {tablon.length>0&&(
           <div style={{marginBottom:24}}>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,rgba(245,158,11,0.13),rgba(245,158,11,0.06))",borderRadius:12,border:"1.5px solid rgba(245,158,11,0.3)"}}>
-              <span style={{fontSize:18}}>📌</span>
+              <span style={{color:T.yellow}}><GhI n="pin" size={17}/></span>
               <div style={{flex:1}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.yellow}}>Tablón del equipo</div>
                 <div style={{fontSize:11,color:T.textSm}}>{tablon.length} publicación{tablon.length!==1?"es":""}</div>
@@ -14906,7 +14924,7 @@ function ColaboradorPublicView({T, token}) {
               return (
                 <div key={post.id||i} style={{background:T.card,border:`1px solid ${post.pinned?"#f9731440":T.border}`,borderRadius:10,padding:"14px 16px",marginBottom:10,position:"relative"}}>
                   {post.pinned&&(
-                    <div style={{position:"absolute",top:10,right:12,fontSize:14}} title="Fijado">📌</div>
+                    <div style={{position:"absolute",top:10,right:12,color:T.yellow}} title="Fijado"><GhI n="pin" size={13}/></div>
                   )}
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                     <span style={{fontSize:10,fontWeight:700,padding:"2px 9px",borderRadius:20,background:meta.bg,color:meta.color,border:`1px solid ${meta.border}`,textTransform:"uppercase",letterSpacing:"0.05em"}}>{meta.label}</span>
@@ -14991,7 +15009,7 @@ function ColaboradorPublicView({T, token}) {
               {/* Banner deadline urgente */}
               {t.deadline&&days!==null&&days<=2&&!isAprobado&&(
                 <div style={{background:T.red,padding:"6px 16px",fontSize:12,color:"#fff",fontWeight:600}}>
-                  ⚠️ {days<0?`Vencido hace ${Math.abs(days)} día${Math.abs(days)!==1?"s":""}`:days===0?"¡Vence hoy!":days===1?"¡Vence mañana!":"Vence en 2 días"}
+                  {days<0?`Vencido hace ${Math.abs(days)} día${Math.abs(days)!==1?"s":""}`:days===0?"¡Vence hoy!":days===1?"¡Vence mañana!":"Vence en 2 días"}
                 </div>
               )}
               {/* Card header */}
@@ -14999,20 +15017,20 @@ function ColaboradorPublicView({T, token}) {
                 <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,flexWrap:"wrap"}}>
-                      {isUrgente&&<span style={{fontSize:10,color:T.red,fontWeight:800}}>🔴</span>}
+                      {isUrgente&&<span style={{fontSize:10,color:T.red,fontWeight:800}}>●</span>}
                       {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:600}}>#{t.tareaNumStr}</span>}
                       <span style={{fontSize:15,fontWeight:600,color:T.text}}>{t.titulo}</span>
                       {t.propuestaPor&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:"#6366f120",color:"#818cf8",fontWeight:700,flexShrink:0}}>Propuesta por vos</span>}
                       {(t.correcciones||0)>0&&<span style={{fontSize:10,padding:"1px 5px",borderRadius:20,background:T.red+"20",color:T.red,fontWeight:700,flexShrink:0}}>{t.correcciones}ª corrección</span>}
-                      {t.leidoAt&&<span style={{fontSize:10,color:T.green,flexShrink:0}}>👁</span>}
+                      {t.leidoAt&&<span style={{color:T.green,flexShrink:0}} title="Leído"><GhI n="eye" size={11}/></span>}
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:briefPreview&&!expanded?7:0}}>
                       <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,fontWeight:600,background:est.bg,color:est.color}}>{est.label}</span>
                       {t.deadline&&<span style={{fontSize:11,color:days!==null&&days<=2?T.red:T.textSm,fontWeight:days!==null&&days<=2?600:400}}>
-                        📅 {days!==null?(days<0?`Vencido hace ${Math.abs(days)}d`:days===0?"Hoy":`${days}d restantes`):fmtDate(t.deadline)}
+                        <GhI n="calendar" size={10}/> {days!==null?(days<0?`Vencido hace ${Math.abs(days)}d`:days===0?"Hoy":`${days}d restantes`):fmtDate(t.deadline)}
                       </span>}
                       {hasDels&&<span style={{fontSize:11,color:T.green}}>✓ {(t.deliverables||[]).length} enviada{(t.deliverables||[]).length!==1?"s":""}</span>}
-                      {t.estimacion&&<span style={{fontSize:11,color:T.blue}}>⏱ {t.estimacion}</span>}
+                      {t.estimacion&&<span style={{fontSize:11,color:T.blue}}><GhI n="clock" size={10}/> {t.estimacion}</span>}
                     </div>
                     {briefPreview&&!expanded&&<div style={{fontSize:12,color:T.textSm,lineHeight:1.4,fontStyle:"italic"}}>{briefPreview}</div>}
                   </div>
@@ -15025,7 +15043,7 @@ function ColaboradorPublicView({T, token}) {
                   {/* Banner revisión con feedback */}
                   {isRevision&&(
                     <div style={{marginBottom:16,padding:"14px",background:"linear-gradient(135deg,"+T.red+"14"+","+T.red+"08"+")",borderRadius:10,border:"1.5px solid "+T.red+"40"+"",boxShadow:"0 0 0 1px "+T.red+"15"+", 0 4px 16px "+T.red+"18"+""}}>
-                      <div style={{fontSize:13,fontWeight:700,color:T.red,marginBottom:t.feedbackActual?8:0}}>🔁 Te pidieron cambios</div>
+                      <div style={{fontSize:13,fontWeight:700,color:T.red,marginBottom:t.feedbackActual?8:0}}>Te pidieron cambios</div>
                       {t.feedbackActual
                         ?<div style={{fontSize:13,color:T.text,lineHeight:1.5,background:"rgba(239,68,68,0.08)",borderRadius:7,padding:"10px 12px",borderLeft:"3px solid "+T.red+""}}>{t.feedbackActual}</div>
                         :<div style={{fontSize:12,color:T.textMd}}>Revisá el trabajo y subí una nueva versión cuando esté lista.</div>
@@ -15034,12 +15052,12 @@ function ColaboradorPublicView({T, token}) {
                   )}
                   {isAprobado&&(
                     <div style={{marginBottom:16,padding:"12px 14px",background:"linear-gradient(135deg,"+T.green+"14"+","+T.green+"08"+")",borderRadius:10,border:"1.5px solid "+T.green+"40"+"",boxShadow:"0 0 0 1px "+T.green+"15"+", 0 4px 16px "+T.green+"18"+""}}>
-                      <div style={{fontSize:13,fontWeight:600,color:T.green}}>✅ ¡Trabajo aprobado! Excelente trabajo.</div>
+                      <div style={{fontSize:13,fontWeight:600,color:T.green}}>✓ ¡Trabajo aprobado! Excelente trabajo.</div>
                     </div>
                   )}
                   {t.estado==="entregado"&&(
                     <div style={{marginBottom:14,padding:"10px 14px",background:"linear-gradient(135deg,"+T.orange+"14"+","+T.orange+"08"+")",borderRadius:10,border:"1.5px solid "+T.orange+"40"+"",boxShadow:"0 0 0 1px "+T.orange+"15"+", 0 4px 16px "+T.orange+"18"+""}}>
-                      <div style={{fontSize:12,color:T.orange}}>📦 Entrega recibida — esperando revisión del equipo.</div>
+                      <div style={{fontSize:12,color:T.orange}}>Entrega recibida — esperando revisión del equipo.</div>
                     </div>
                   )}
 
@@ -15048,7 +15066,7 @@ function ColaboradorPublicView({T, token}) {
                     <div style={{marginBottom:14}}>
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
                         <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Brief / Instrucciones</div>
-                        {!t.leidoAt&&<AsyncButton onClick={()=>marcarLeido(t._id)} style={{fontSize:10,padding:"3px 8px",borderRadius:6,background:T.green+"20",color:T.green,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>👁 Marcar como leído</AsyncButton>}
+                        {!t.leidoAt&&<AsyncButton onClick={()=>marcarLeido(t._id)} style={{fontSize:10,padding:"3px 8px",borderRadius:6,background:T.green+"20",color:T.green,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Marcar como leído</AsyncButton>}
                       </div>
                       <div style={{fontSize:13,color:T.text,lineHeight:1.6,whiteSpace:"pre-wrap",background:T.surface,borderRadius:8,padding:"12px 14px"}}>{t.brief}</div>
                       {t.leidoAt&&<div style={{fontSize:11,color:T.green,marginTop:5}}>✓ Leído el {fmtDate(t.leidoAt)}</div>}
@@ -15060,7 +15078,7 @@ function ColaboradorPublicView({T, token}) {
                       {linksNorm.map((l,i)=>(
                         <a key={i} href={l.url} target="_blank" rel="noreferrer"
                           style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:"#6366f1",textDecoration:"none",padding:"10px 12px",background:T.surface,borderRadius:8,border:`1px solid ${T.borderL}`,marginBottom:6}}>
-                          <span>🔗</span>
+                          <GhI n="link" size={12}/>
                           <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.name||l.url}</span>
                           <span style={{fontSize:11,color:T.textSm,flexShrink:0}}>↗</span>
                         </a>
@@ -15070,7 +15088,7 @@ function ColaboradorPublicView({T, token}) {
                   {checklist.length>0&&(
                     <div style={{marginBottom:14}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                        <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>✅ Checklist</div>
+                        <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Checklist</div>
                         <span style={{fontSize:11,color:T.textSm}}>{checklist.filter(i=>i.done).length}/{checklist.length}</span>
                       </div>
                       <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",border:`1px solid ${T.borderL}`}}>
@@ -15097,7 +15115,7 @@ function ColaboradorPublicView({T, token}) {
                           <div key={i} style={{background:T.surface,borderRadius:8,padding:"10px 12px",marginBottom:6,border:`1px solid ${isEditing?"#6366f150":T.borderL}`}}>
                             {isEditing?(
                               <div className="gh-accordion">
-                                <div style={{fontSize:12,fontWeight:700,color:"#6366f1",marginBottom:10}}>✏️ Editar entrega {del.label||`v${i+1}`}</div>
+                                <div style={{fontSize:12,fontWeight:700,color:"#6366f1",marginBottom:10}}>Editar entrega {del.label||`v${i+1}`}</div>
                                 <div style={{display:"flex",flexDirection:"column",gap:7}}>
                                   <div>
                                     <div style={{fontSize:11,color:T.textSm,marginBottom:3}}>Etiqueta</div>
@@ -15134,8 +15152,8 @@ function ColaboradorPublicView({T, token}) {
                             ):(
                               <>
                                 <div style={{display:"flex",alignItems:"center",gap:8}}>
-                                  <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:"#6366f1",fontWeight:600,textDecoration:"none",flex:1}}>🔗 {del.label||`Entrega ${i+1}`}</a>
-                                  <span style={{fontSize:10,color:T.textSm,flexShrink:0}}>{del.fecha?fmtDate(del.fecha):""}{del.editedAt?" ✏️":""}</span>
+                                  <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:"#6366f1",fontWeight:600,textDecoration:"none",flex:1}}><GhI n="link" size={11}/> {del.label||`Entrega ${i+1}`}</a>
+                                  <span style={{fontSize:10,color:T.textSm,flexShrink:0}}>{del.fecha?fmtDate(del.fecha):""}{del.editedAt?" (editada)":""}</span>
                                 </div>
                                 {del.nota&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{del.nota}</div>}
                                 {del.feedbackRecibido&&(
@@ -15148,7 +15166,7 @@ function ColaboradorPublicView({T, token}) {
                                   <div style={{display:"flex",gap:7,marginTop:8,paddingTop:8,borderTop:`1px solid ${T.borderL}`}}>
                                     <button onClick={()=>{setEditingEntrega(t._id);setEditEntregaData({link:del.link||"",label:del.label||"",nota:del.nota||""});}}
                                       style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:"#6366f110",color:"#6366f1",border:"1px solid #6366f130",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
-                                      ✏️ Editar esta entrega
+                                      Editar esta entrega
                                     </button>
                                     <AsyncButton onClick={async()=>{
                                       if(!await appConfirm(`¿Eliminar esta entrega "${del.label||`v${i+1}`}"?\nEl estado va a volver atrás.`,{danger:true,okLabel:"Sí, eliminar"})) return;
@@ -15206,7 +15224,7 @@ function ColaboradorPublicView({T, token}) {
                         ):(
                           <button onClick={()=>setShowBloqueo(p=>({...p,[t._id]:!p[t._id]}))}
                             style={{width:"100%",fontSize:11.5,padding:"6px 0",borderRadius:8,border:"1px solid "+T.red+"30"+"",background:T.red+"0a",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,textAlign:"center",display:"block",boxSizing:"border-box",letterSpacing:"0.01em"}}>
-                            🚫 Estoy bloqueado
+                            <GhI n="ban" size={11}/> Estoy bloqueado
                           </button>
                         )}
                         {showBloqueo[t._id]&&currentStep!=="bloqueada"&&(
@@ -15230,14 +15248,14 @@ function ColaboradorPublicView({T, token}) {
                         )}
                         {currentStep==="bloqueada"&&(
                           <div style={{marginTop:8,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"linear-gradient(135deg,"+T.red+"14"+","+T.red+"08"+")",borderRadius:10,border:"1.5px solid "+T.red+"40"+"",boxShadow:"0 0 0 1px "+T.red+"15"+", 0 4px 16px "+T.red+"14"+""}}>
-                            <span style={{fontSize:18}}>🚫</span>
+                            <span style={{color:T.red}}><GhI n="ban" size={16}/></span>
                             <div style={{flex:1,fontSize:12,color:T.red,fontWeight:600}}>Bloqueado — el equipo ya fue notificado</div>
                           </div>
                         )}
                         <div style={{marginTop:10}}>
                           <button onClick={()=>setShowProgress(p=>({...p,[t._id]:!p[t._id]}))}
                             style={{fontSize:12,color:T.textSm,background:"transparent",border:"none",cursor:"pointer",padding:0,fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",textDecorationStyle:"dotted"}}>
-                            {showProgress[t._id]?"Cerrar":"💬 Mandar un mensaje al equipo"}
+                            {showProgress[t._id]?"Cerrar":"Mandar un mensaje al equipo"}
                           </button>
                           {showProgress[t._id]&&(
                             <div style={{marginTop:8,display:"flex",gap:7}}>
@@ -15256,7 +15274,7 @@ function ColaboradorPublicView({T, token}) {
                     <div style={{background:T.surface,borderRadius:10,padding:"16px",border:`1px solid ${isRevision?T.red+"40":T.borderL}`,marginBottom:14}}>
                       {lastEntregaJustSent?(
                         <div style={{textAlign:"center"}}>
-                          <div style={{fontSize:32,marginBottom:8}}>{lastEntregaJustSent.esFinal===false?"📦":"🎉"}</div>
+                          <div style={{marginBottom:8,color:lastEntregaJustSent.esFinal===false?T.orange:T.green}}><GhI n={lastEntregaJustSent.esFinal===false?"box":"check"} size={28}/></div>
                           <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:4}}>{lastEntregaJustSent.esFinal===false?"¡Entrega parcial guardada!":"¡Entrega final enviada!"}</div>
                           <div style={{fontSize:12,color:T.textMd,marginBottom:14}}>{lastEntregaJustSent.esFinal===false?"Podés seguir subiendo más entregas cuando tengas más listo.":"El equipo va a revisarla y te avisamos pronto."}</div>
                           <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
@@ -15271,7 +15289,7 @@ function ColaboradorPublicView({T, token}) {
                       ):(
                         <>
                           <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:10}}>
-                            {hasDels?"📤 Subir nueva versión":"📤 Subir entrega"}
+                            {hasDels?"Subir nueva versión":"Subir entrega"}
                           </div>
                           <input value={entregaLabel[t._id]||""} onChange={e=>setEntregaLabel(prev=>({...prev,[t._id]:e.target.value}))}
                             placeholder={`Etiqueta (ej: v${(t.deliverables||[]).length+1}, Final, Con correcciones...)`}
@@ -15285,11 +15303,11 @@ function ColaboradorPublicView({T, token}) {
                           <div style={{display:"flex",gap:8,alignItems:"center"}}>
                             <AsyncButton onClick={()=>submitEntrega(t._id,false)}
                               style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px 10px",borderRadius:10,border:"1.5px solid "+T.orange+"50"+"",background:T.orange+"12",color:T.orange,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"opacity 0.15s"}}>
-                              📦 Subir parcial
+                              Subir parcial
                             </AsyncButton>
                             <AsyncButton onClick={()=>submitEntrega(t._id,true)}
                               style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px 10px",borderRadius:10,border:"1.5px solid "+T.green+"50"+"",background:T.green,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"opacity 0.15s"}}>
-                              ✅ Entrega final
+                              ✓ Entrega final
                             </AsyncButton>
                             <button onClick={()=>setShowEntregarForm(p=>({...p,[t._id]:false}))}
                               style={{padding:"11px 12px",borderRadius:10,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
@@ -15304,12 +15322,12 @@ function ColaboradorPublicView({T, token}) {
                     <div style={{marginBottom:14}}>
                       {t.estimacion?(
                         <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:T.surface,borderRadius:8,border:`1px solid ${T.borderL}`}}>
-                          <span style={{fontSize:12,color:T.textMd,flex:1}}>⏱ Estimación: <strong style={{color:T.text}}>{t.estimacion}</strong></span>
+                          <span style={{fontSize:12,color:T.textMd,flex:1}}>Estimación: <strong style={{color:T.text}}>{t.estimacion}</strong></span>
                           <button onClick={()=>{setEstimacionText(p=>({...p,[t._id]:t.estimacion}));setShowEstimacion(p=>({...p,[t._id]:true}));}} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>Editar</button>
                         </div>
                       ):(
                         <button onClick={()=>setShowEstimacion(p=>({...p,[t._id]:!p[t._id]}))} style={{...BtnSecondary(T),fontSize:12,width:"100%",padding:"8px",textAlign:"center"}}>
-                          ⏱ {showEstimacion[t._id]?"Cancelar":"¿Cuánto tiempo te va a llevar?"}
+                          {showEstimacion[t._id]?"Cancelar":"¿Cuánto tiempo te va a llevar?"}
                         </button>
                       )}
                       {showEstimacion[t._id]&&(
@@ -15322,7 +15340,7 @@ function ColaboradorPublicView({T, token}) {
                     </div>
                   )}
                   <div>
-                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>💬 Mensajes</div>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Mensajes</div>
                     {(t.comments||[]).length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>Sin mensajes aún.</div>}
                     {(t.comments||[]).map((c,i)=>{
                       const isMe = c.autor!=="manager";
@@ -15354,11 +15372,11 @@ function ColaboradorPublicView({T, token}) {
                     <div style={{marginTop:10}}>
                       {!showConsulta[t._id]?(
                         <button onClick={()=>setShowConsulta(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:12,width:"100%",padding:"8px",textAlign:"center",color:T.blue,border:`1px solid ${T.blue}30`}}>
-                          ❓ Tengo una consulta sobre esta tarea
+                          Tengo una consulta sobre esta tarea
                         </button>
                       ):(
                         <div style={{background:"#eff6ff",borderRadius:10,padding:"12px",border:"1px solid "+T.blue+"30"+"",marginTop:4}}>
-                          <div style={{fontSize:12,fontWeight:600,color:T.blue,marginBottom:8}}>❓ Consulta — se enviará como notificación al equipo</div>
+                          <div style={{fontSize:12,fontWeight:600,color:T.blue,marginBottom:8}}>Consulta — se enviará como notificación al equipo</div>
                           <textarea value={consultaText[t._id]||""} onChange={e=>setConsultaText(prev=>({...prev,[t._id]:e.target.value}))}
                             placeholder="Escribí tu consulta detallada..."
                             style={{...iS,fontSize:13,width:"100%",minHeight:60,resize:"vertical",marginBottom:8}}/>
@@ -15383,7 +15401,7 @@ function ColaboradorPublicView({T, token}) {
             <button onClick={()=>setShowHistorial(v=>!v)}
               style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 16px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:showHistorial?12:0}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:16}}>✅</span>
+                <span style={{color:T.green}}><GhI n="check" size={15}/></span>
                 <div style={{textAlign:"left"}}>
                   <div style={{fontSize:13,fontWeight:700,color:T.text}}>Historial</div>
                   <div style={{fontSize:11,color:T.textSm}}>{historialTareas.length} tarea{historialTareas.length!==1?"s":""} completada{historialTareas.length!==1?"s":""}</div>
@@ -15406,21 +15424,21 @@ function ColaboradorPublicView({T, token}) {
                           </div>
                           {t.updatedAt&&<div style={{fontSize:11,color:T.textSm,marginTop:3}}>Completada el {fmtDate(t.updatedAt)}</div>}
                         </div>
-                        <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:T.green+"18",color:T.green,border:"1px solid "+T.green+"30"+"",flexShrink:0}}>✅ Aprobada</span>
+                        <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:T.green+"18",color:T.green,border:"1px solid "+T.green+"30"+"",flexShrink:0}}>✓ Aprobada</span>
                       </div>
                       {(lastDel||linksNorm.length>0)&&(
                         <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                           {lastDel&&lastDel.link&&(
                             <a href={lastDel.link} target="_blank" rel="noreferrer"
                               style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:"#6366f1",background:"#6366f112",border:"1px solid #6366f130",borderRadius:6,padding:"4px 10px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                              <span>📦</span>{lastDel.label||"Entrega final"}
+                              <GhI n="box" size={11}/>{lastDel.label||"Entrega final"}
                               <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                             </a>
                           )}
                           {linksNorm.map((l,i)=>(
                             <a key={i} href={l.url} target="_blank" rel="noreferrer"
                               style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"4px 10px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                              🔗 {l.name||"Archivo"}
+                              <GhI n="link" size={11}/> {l.name||"Archivo"}
                             </a>
                           ))}
                         </div>
@@ -15437,7 +15455,7 @@ function ColaboradorPublicView({T, token}) {
         {equipoTareas&&(
           <div style={{marginTop:28}}>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(99,102,241,0.13),rgba(99,102,241,0.06))",borderRadius:12,border:"1.5px solid rgba(99,102,241,0.3)"}}>
-              <span style={{fontSize:18}}>👥</span>
+              <span style={{color:"#818cf8"}}><GhI n="users" size={17}/></span>
               <div style={{flex:1}}>
                 <div style={{fontSize:13,fontWeight:700,color:"#818cf8"}}>Estado del equipo</div>
                 <div style={{fontSize:11,color:T.textSm}}>{equipoTareas.length} colaborador{equipoTareas.length!==1?"es":""} · solo lectura</div>
@@ -15481,11 +15499,11 @@ function ColaboradorPublicView({T, token}) {
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:12,fontWeight:500,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</div>
                             {t.deadline&&<div style={{fontSize:10,color:daysLeft!==null&&daysLeft<0?T.red:daysLeft!==null&&daysLeft<=2?T.orange:T.textSm,marginTop:1}}>
-                              📅 {daysLeft===null?"":daysLeft<0?`Vencida hace ${Math.abs(daysLeft)}d`:daysLeft===0?"Hoy":`${daysLeft}d`}
+                              {daysLeft===null?"":daysLeft<0?`Vencida hace ${Math.abs(daysLeft)}d`:daysLeft===0?"Hoy":`${daysLeft}d`}
                             </div>}
                           </div>
                           <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:`${col}18`,color:col,border:`1px solid ${col}44`,flexShrink:0,whiteSpace:"nowrap"}}>{lbl}</span>
-                          {t.deadline&&daysUntil(t.deadline)!==null&&daysUntil(t.deadline)<=1&&<span style={{fontSize:9,fontWeight:700,color:T.red,flexShrink:0}}>🔴</span>}
+                          {t.deadline&&daysUntil(t.deadline)!==null&&daysUntil(t.deadline)<=1&&<span style={{fontSize:9,fontWeight:700,color:T.red,flexShrink:0}}>●</span>}
                           {(t.correcciones||0)>0&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"18",borderRadius:4,padding:"1px 4px",flexShrink:0}}>{t.correcciones}ª corr.</span>}
                         </div>
                       );
@@ -15501,7 +15519,7 @@ function ColaboradorPublicView({T, token}) {
         {materiales.length>0&&(
           <div style={{marginTop:28}}>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,rgba(52,168,83,0.13),rgba(52,168,83,0.06))",borderRadius:12,border:"1.5px solid rgba(52,168,83,0.3)"}}>
-              <span style={{fontSize:18}}>📁</span>
+              <span style={{color:"#34a853"}}><GhI n="folder" size={17}/></span>
               <div style={{flex:1}}>
                 <div style={{fontSize:13,fontWeight:700,color:"#34a853"}}>Material de trabajo</div>
                 <div style={{fontSize:11,color:T.textSm}}>Carpetas, plantillas y guías para tus tareas</div>
@@ -15566,7 +15584,7 @@ function ColaboradorPublicView({T, token}) {
         {creativos&&creativos.length>=0&&(
           <div style={{marginTop:28}}>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,#7c3aed22,#a78bfa15)",borderRadius:12,border:"1px solid #7c3aed30"}}>
-              <span style={{fontSize:18}}>🎬</span>
+              <span style={{color:"#7c3aed"}}><GhI n="video" size={17}/></span>
               <div style={{flex:1}}>
                 <div style={{fontSize:13,fontWeight:700,color:"#7c3aed"}}>Board de Producción</div>
                 <div style={{fontSize:11,color:T.textSm}}>{creativos.length} creativo{creativos.length!==1?"s":""} en total</div>
@@ -15574,7 +15592,7 @@ function ColaboradorPublicView({T, token}) {
             </div>
             {creativos.length===0&&(
               <div style={{textAlign:"center",padding:"32px 0",color:T.textSm,fontSize:13}}>
-                <div style={{fontSize:36,marginBottom:8}}>🎬</div>
+                <div style={{marginBottom:8}}><GhI n="video" size={30}/></div>
                 Sin creativos aún.
               </div>
             )}
@@ -15598,14 +15616,14 @@ function ColaboradorPublicView({T, token}) {
                                 <div style={{flex:1,minWidth:0}}>
                                   <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4,flexWrap:"wrap"}}>
                                     <span style={{fontSize:10,fontWeight:700,color:"#7c3aed",background:"#7c3aed15",border:"1px solid #7c3aed30",borderRadius:4,padding:"1px 6px"}}>{c.codigo}</span>
-                                    <span style={{fontSize:10,color:T.textSm}}>{c.tipo==="estatico"?"🖼 Estático":c.tipo==="video-ugc"?"📱 UGC":"🎬 Video"}</span>
+                                    <span style={{fontSize:10,color:T.textSm}}>{c.tipo==="estatico"?"Estático":c.tipo==="video-ugc"?"UGC":"Video"}</span>
                                     <span style={{fontSize:10,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.border}`,borderRadius:3,padding:"1px 5px"}}>{c.etapa}</span>
                                   </div>
                                   <div style={{fontSize:13,fontWeight:500,color:T.text,lineHeight:1.3,marginBottom:4}}>{c.angulo||"Sin ángulo"}</div>
                                   <div style={{display:"flex",gap:8,flexWrap:"wrap",fontSize:11,color:T.textSm}}>
                                     {c.persona&&<span>{c.persona}</span>}
-                                    {c.editor&&<span>· 👤 {c.editor}</span>}
-                                    {tanda&&<span>· 📦 {tanda.nombre}</span>}
+                                    {c.editor&&<span>· {c.editor}</span>}
+                                    {tanda&&<span>· {tanda.nombre}</span>}
                                   </div>
                                 </div>
                                 {c.pagado&&<span style={{fontSize:11,color:T.green,fontWeight:600,flexShrink:0}}>✓ Pago</span>}
@@ -15684,19 +15702,19 @@ function ColaboradorBoardView({T, boardToken}) {
   }
 
   const ESTADOS={
-    pendiente: {label:"Pendiente",color:T.yellow,bg:T.yellow+"20",icon:"⏳"},
-    en_proceso:{label:"En proceso",color:T.blue,bg:T.blue+"20",icon:"🔄"},
-    bloqueada: {label:"Bloqueada",color:T.textMd,bg:T.textMd+"18",icon:"🚫"},
-    revision:  {label:"A revisar",color:T.red,bg:T.red+"20",icon:"🔁"},
-    entregado: {label:"Entregado",color:T.orange,bg:T.orange+"20",icon:"📦"},
-    aprobado:  {label:"Aprobado",color:T.green,bg:T.green+"20",icon:"✅"},
+    pendiente: {label:"Pendiente",color:T.yellow,bg:T.yellow+"20"},
+    en_proceso:{label:"En proceso",color:T.blue,bg:T.blue+"20"},
+    bloqueada: {label:"Bloqueada",color:T.textMd,bg:T.textMd+"18"},
+    revision:  {label:"A revisar",color:T.red,bg:T.red+"20"},
+    entregado: {label:"Entregado",color:T.orange,bg:T.orange+"20"},
+    aprobado:  {label:"Aprobado",color:T.green,bg:T.green+"20"},
   };
   const KANBAN=[
-    {id:"pendiente",label:"Pendiente",icon:"⏳",color:T.yellow},
-    {id:"en_proceso",label:"En proceso",icon:"🔄",color:T.blue},
-    {id:"bloqueada",label:"Bloqueada",icon:"🚫",color:T.textMd},
-    {id:"revision",label:"Para revisar",icon:"🔁",color:T.red},
-    {id:"entregado",label:"Entregado",icon:"📦",color:T.orange},
+    {id:"pendiente",label:"Pendiente",color:T.yellow},
+    {id:"en_proceso",label:"En proceso",color:T.blue},
+    {id:"bloqueada",label:"Bloqueada",color:T.textMd},
+    {id:"revision",label:"Para revisar",color:T.red},
+    {id:"entregado",label:"Entregado",color:T.orange},
   ];
   const AVATAR_COLORS=["#6366f1","#ec4899",T.orange,T.green,T.blue,"#a855f7","#14b8a6","#0ea5e9"];
 
@@ -15765,7 +15783,7 @@ function ColaboradorBoardView({T, boardToken}) {
             </button>
           ):(
             <button onClick={()=>setShowIdModal(true)} style={{padding:"5px 14px",background:T.accent,border:"none",borderRadius:20,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-              👋 Identificate
+              Identificate
             </button>
           )}
           <button onClick={()=>loadBoard(true)} title="Actualizar" style={{width:32,height:32,borderRadius:8,background:"transparent",border:`1px solid ${T.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:T.textSm,flexShrink:0}}>
@@ -15857,7 +15875,7 @@ function ColaboradorBoardView({T, boardToken}) {
         <>
           <div onClick={()=>setShowIdModal(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:200}}/>
           <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:201,width:"min(340px,92vw)",background:T.card,borderRadius:16,padding:"22px",boxShadow:"0 20px 60px rgba(0,0,0,0.3)",fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:4}}>👋 ¿Quién sos?</div>
+            <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:4}}>¿Quién sos?</div>
             <div style={{fontSize:13,color:T.textSm,marginBottom:14}}>Seleccioná tu nombre para interactuar con tus tareas.</div>
             <div style={{display:"flex",flexDirection:"column",gap:7}}>
               {colaboradores.map(c=>(
@@ -15959,7 +15977,7 @@ function ColaboradorBoardView({T, boardToken}) {
                     <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>Checklist</div>
                     {t.checklist.map(item=>(
                       <div key={item.id} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                        <span style={{fontSize:14,flexShrink:0}}>{item.done?"☑":"☐"}</span>
+                        <span style={{fontSize:14,flexShrink:0}}>{item.done?"✓":"○"}</span>
                         <span style={{fontSize:12,color:item.done?T.textSm:T.text,textDecoration:item.done?"line-through":"none"}}>{item.text}</span>
                       </div>
                     ))}
@@ -16716,9 +16734,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     } finally { setApSaving(false); }
   }
 
-  async function loadPendingOrders() {
+  async function loadPendingOrders(force=false) {
     if(!cuitSel) return;
     const params = {cuit:cuitSel};
+    // force=1: saltea el cache por rango del backend (botón "Actualizar" — el
+    // merchant corrigió un dato en su tienda y necesita verlo ya).
+    if(force) params.force = 1;
     if(periodoModo === "custom") {
       if(!fechaDesde) return;
       params.since = fechaDesde;
@@ -17649,7 +17670,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           {id:"90d", label:"3 meses",         days:90},
                         ]}
                       />
-                      <button onClick={loadPendingOrders} disabled={tnLoading} title="Refrescar ventas" style={{...BtnSecondary(T),padding:"7px 10px",fontSize:12,gap:5,flexShrink:0}}>
+                      <button onClick={()=>loadPendingOrders(true)} disabled={tnLoading} title="Refrescar ventas en vivo (saltea el cache)" style={{...BtnSecondary(T),padding:"7px 10px",fontSize:12,gap:5,flexShrink:0}}>
                         {tnLoading ? <Spinner size={11} color={T.textMd}/> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}
                         Actualizar
                       </button>
@@ -19211,7 +19232,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <li>Entrá a <a href="https://www.afip.gob.ar" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>arca.gob.ar</a> con tu CUIT y clave fiscal <strong style={{color:T.text}}>nivel 3</strong></li>
                           <li>Entrá al servicio <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong> → tocá <strong style={{color:T.text}}>"Agregar alias"</strong></li>
                           <li>Escribí un <strong style={{color:T.text}}>nombre de alias</strong> (ej. <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>growith</code>), tocá <strong style={{color:T.text}}>"Seleccionar archivo"</strong> y elegí el <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>.csr</code> que descargaste. Después tocá <strong style={{color:T.text}}>"Agregar alias"</strong></li>
-                          <li style={{color:T.yellow}}>⏱ Esperá unos segundos. ARCA puede tardar en mostrar el alias creado — <strong style={{color:T.text}}>no toques "Agregar alias" dos veces</strong> o vas a duplicarlo</li>
+                          <li style={{color:T.yellow}}>Esperá unos segundos. ARCA puede tardar en mostrar el alias creado — <strong style={{color:T.text}}>no toques "Agregar alias" dos veces</strong> o vas a duplicarlo</li>
                           <li>Tocá <strong style={{color:T.text}}>"VOLVER"</strong> → en la tabla "Certificados" vas a ver tu alias → tocá <strong style={{color:T.text}}>"Ver"</strong> en esa fila → tocá el ícono <strong style={{color:T.text}}>"Descargar"</strong>. ARCA descarga el certificado <strong style={{color:T.text}}>sin extensión</strong>, no te preocupes — el dropzone de abajo lo acepta igual</li>
                         </ol>
                         <details style={{margin:"0 0 14px",fontSize:11,color:T.textSm}}>
@@ -19801,7 +19822,7 @@ function RuleEditor({T, initialRule, onSave, onCancel, products=[]}) {
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Acción</div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {[
-              {id:"pause", l:"⏸ Pausar"},
+              {id:"pause", l:"Pausar"},
               {id:"reduce_budget", l:"↓ Bajar presupuesto"},
               {id:"increase_budget", l:"↑ Subir presupuesto"},
               {id:"notify", l:"Solo notificar"},
@@ -19825,7 +19846,7 @@ function RuleEditor({T, initialRule, onSave, onCancel, products=[]}) {
                 <span style={{fontSize:13,color:T.textSm}}>$</span>
                 <input type="number" min="0" value={actionMax} onChange={e=>setActionMax(e.target.value)} placeholder="sin tope" style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"6px 10px",fontSize:13,color:T.text,width:110,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:700,textAlign:"center"}}/>
               </div>
-              <div style={{fontSize:10,color:T.yellow,marginTop:6,lineHeight:1.5}}>⚠ Usá siempre un tope: sin tope, una regla que se cumple varios días seguidos escala el presupuesto sin límite.</div>
+              <div style={{fontSize:10,color:T.yellow,marginTop:6,lineHeight:1.5}}>Usá siempre un tope: sin tope, una regla que se cumple varios días seguidos escala el presupuesto sin límite.</div>
             </div>
           )}
         </div>
@@ -19839,7 +19860,7 @@ function RuleEditor({T, initialRule, onSave, onCancel, products=[]}) {
             <>
               <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:6}}>
                 <button onClick={()=>setProductIds([])} style={{padding:"5px 12px",fontSize:11,fontWeight:600,borderRadius:6,border:`1px solid ${productIds.length===0?T.green+"99":T.border}`,background:productIds.length===0?T.green+"15":"transparent",color:productIds.length===0?T.green:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  ⌘ Todos los productos
+                  Todos los productos
                 </button>
                 {products.map(p=>{
                   const sel = productIds.includes(p.id);
@@ -20279,7 +20300,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     setEditingRule(null);
     // Si es regla nueva y está activa, ofrecer reprocesar últimos 30 días al instante
     if (isNew && rule.active !== false) {
-      const ok = await appConfirm("¿Aplicarla ahora sobre los últimos 30 días?\n\nGrowith va a evaluar tus ads/adsets/campañas con la métrica de los últimos 30 días y ejecutar la acción (pausar / bajar presupuesto / notificar) si cumplen las condiciones.", {okLabel:"🔄 Reprocesar 30 días", cancelLabel:"Después"});
+      const ok = await appConfirm("¿Aplicarla ahora sobre los últimos 30 días?\n\nGrowith va a evaluar tus ads/adsets/campañas con la métrica de los últimos 30 días y ejecutar la acción (pausar / bajar presupuesto / notificar) si cumplen las condiciones.", {okLabel:"Reprocesar 30 días", cancelLabel:"Después"});
       if (ok) reprocessRules(30);
     }
     return true;
@@ -21094,10 +21115,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     // se están subiendo a Meta (esos se auto-publican al terminar — el usuario puede irse).
     const queue = withCopy.filter(c => !c._uploading && !c._processing && !String(c.id).startsWith("_temp"));
     const stillUploading = withCopy.length - queue.length;
-    if (!await appConfirm(`Publicar ${withCopy.length} ad${withCopy.length===1?"":"s"} en Meta ${publishActiveByDefault?"ACTIVE":"PAUSED"}?${stillUploading>0?`\n\n${stillUploading} todavía se está${stillUploading===1?"":"n"} subiendo — se publicará${stillUploading===1?"":"n"} solo al terminar. Dejá la app abierta unos minutos.`:""}`,{okLabel:"🚀 Publicar"})) return;
+    if (!await appConfirm(`Publicar ${withCopy.length} ad${withCopy.length===1?"":"s"} en Meta ${publishActiveByDefault?"ACTIVE":"PAUSED"}?${stillUploading>0?`\n\n${stillUploading} todavía se está${stillUploading===1?"":"n"} subiendo — se publicará${stillUploading===1?"":"n"} solo al terminar. Dejá la app abierta unos minutos.`:""}`,{okLabel:"Publicar"})) return;
     // Los que aún suben se auto-publican al terminar (ya tienen copy + destino).
     if (stillUploading > 0) setAutoPublishEnabled(true);
-    if (queue.length === 0) { toast(`${stillUploading} ad${stillUploading===1?"":"s"} se publicará${stillUploading===1?"":"n"} solo al terminar de subir — dejá la app abierta 💤`); return; }
+    if (queue.length === 0) { toast(`${stillUploading} ad${stillUploading===1?"":"s"} se publicará${stillUploading===1?"":"n"} solo al terminar de subir — dejá la app abierta`); return; }
     setBulkPublishing(true);
     setBulkProgress({done:0,total:queue.length,errors:[]});
     const errs = [];
@@ -21171,7 +21192,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     if (found.length === 0) {
       return appAlert(`No se encontraron los creativos en la cola. Puede que los hayas eliminado.\n\nSi querés reintentar, volvelos a subir.`);
     }
-    if (!await appConfirm(`Reintentar publicar ${found.length} ${found.length===1?"ad":"ads"}${missing>0?` (${missing} ya no están en la cola)`:""}?`,{okLabel:"🔄 Reintentar"})) return;
+    if (!await appConfirm(`Reintentar publicar ${found.length} ${found.length===1?"ad":"ads"}${missing>0?` (${missing} ya no están en la cola)`:""}?`,{okLabel:"Reintentar"})) return;
     setRetryingBatchId(batch.id);
     const newItems = new Array(found.length);
     const newErrs = [];
@@ -21696,7 +21717,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 <tr key={r.id} style={{borderBottom:`1px solid ${T.borderL}`,opacity:isActive?1:0.6}}>
                                   <td style={{padding:"10px 12px",display:"flex",gap:4}}>
                                     <button onClick={()=>toggleStatus(r)} disabled={busy} title={isActive?"Pausar":"Activar"} style={{background:isActive?T.green+"22":T.red+"22",border:`1px solid ${isActive?T.green:T.red}55`,color:isActive?T.green:T.red,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:busy?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
-                                      {busy?<Spinner size={10} color={isActive?T.green:T.red}/>:isActive?"⏸":"▶"}
+                                      {busy?<Spinner size={10} color={isActive?T.green:T.red}/>:isActive?"▐▐":"▸"}
                                     </button>
                                   </td>
                                   <td style={{padding:"10px 12px",fontSize:12,color:T.text,maxWidth:320,overflow:"hidden",whiteSpace:"nowrap"}}>
@@ -21994,7 +22015,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 <div style={{padding:"8px 12px",background:T.bg,borderRadius:8,marginTop:6,border:`1px solid ${T.borderL}`}}>
                                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
                                     <span style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>Retención de video</span>
-                                    {ad.video_p25<40 && <span title="Menos del 40% llega al primer cuarto — el hook pierde a la mayoría" style={{fontSize:9,color:T.orange||T.yellow,fontWeight:700}}>⚠ hook débil</span>}
+                                    {ad.video_p25<40 && <span title="Menos del 40% llega al primer cuarto — el hook pierde a la mayoría" style={{fontSize:9,color:T.orange||T.yellow,fontWeight:700}}>hook débil</span>}
                                   </div>
                                   <div style={{display:"flex",gap:4,alignItems:"flex-end",height:26}}>
                                     {[["25%",ad.video_p25],["50%",ad.video_p50],["75%",ad.video_p75],["100%",ad.video_p100]].map(([l,v])=>(
@@ -22056,7 +22077,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   if (avisos.length===0) return null;
                   return (
                     <div style={{background:(T.blue||T.accent)+"10",border:`1px solid ${(T.blue||T.accent)}33`,borderRadius:12,padding:"12px 16px",marginBottom:14}}>
-                      <div style={{fontSize:12,fontWeight:700,color:T.blue||T.accent,marginBottom:6}}>🔔 Avisos de reglas (últimos 7 días)</div>
+                      <div style={{fontSize:12,fontWeight:700,color:T.blue||T.accent,marginBottom:6}}><GhI n="bell" size={12}/> Avisos de reglas (últimos 7 días)</div>
                       <div style={{display:"flex",flexDirection:"column",gap:4}}>
                         {avisos.map(ev=>(
                           <div key={ev.id} style={{fontSize:11,color:T.textMd,lineHeight:1.5}}>
@@ -22144,7 +22165,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                     const date = new Date(ev.ts);
                                     const fechaLabel = date.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});
                                     const horaLabel = date.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-                                    const actionIcon = ev.ok ? (ev.action_taken==="pause" ? "▐▐" : ev.action_taken==="reduce_budget" ? "↓" : ev.action_taken==="increase_budget" ? "↑" : "🔔") : "✕";
+                                    const actionIcon = ev.ok ? (ev.action_taken==="pause" ? "▐▐" : ev.action_taken==="reduce_budget" ? "↓" : ev.action_taken==="increase_budget" ? "↑" : "●") : "✕";
                                     const actionTxt = !ev.ok ? "Falló:" : ev.action_taken==="pause" ? "Pausó" : ev.action_taken==="reduce_budget" ? "Redujo presupuesto de" : ev.action_taken==="increase_budget" ? "Subió presupuesto de" : "Notificó sobre";
                                     return (
                                       <div key={ev.id} style={{padding:"10px 12px",background:ev.ok?T.bg:T.red+"08",borderRadius:8,border:`1px solid ${ev.ok?T.borderL:T.red+"33"}`}}>
@@ -22318,7 +22339,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             const cur = currencySymbol(activeAcc?.currency);
             const curCode = activeAcc?.currency || "USD";
             const queueWithCopy = creatives.filter(c => c.copy?.trim());
-            const dotFor = (status) => status === "ACTIVE" ? "●" : "⏸";
+            const dotFor = (status) => status === "ACTIVE" ? "●" : "○";
             const SectionHeader = ({n,title}) => (
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
                 <div style={{width:30,height:30,borderRadius:8,background:`linear-gradient(135deg, ${T.accent}, ${T.blue||T.accentSolid})`,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:14}}>{n}</div>
@@ -22508,7 +22529,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                               <span style={{fontSize:14,fontWeight:700,color:T.text,wordBreak:"break-all"}}>{c.filename}</span>
                               {c._queued
-                                ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textSm,fontWeight:700,letterSpacing:0.3,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:4}}>⏳ En cola</span>
+                                ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textSm,fontWeight:700,letterSpacing:0.3,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:4}}>En cola</span>
                                 : c._uploading
                                   ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.blue+"22",color:T.blue,fontWeight:700,letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}><Spinner size={9} color={T.blue}/> Subiendo</span>
                                   : c._error || c.video_error
@@ -22837,7 +22858,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           <div>
                             <div style={{fontSize:11,fontWeight:700,color:T.textSm,letterSpacing:0.5,textTransform:"uppercase",marginBottom:8}}>Píxeles de esta cuenta ({(resourcesData.pixels_by_account?.[resSel.ad_account_id]||[]).length})</div>
                             {(!resourcesData.pixels_by_account?.[resSel.ad_account_id] || resourcesData.pixels_by_account[resSel.ad_account_id].length === 0) ? (
-                              <div style={{fontSize:11,color:T.yellow,padding:"10px 12px",background:T.yellow+"10",borderRadius:8,border:`1px solid ${T.yellow}33`}}>⚠ La cuenta no tiene píxeles asignados. Asignalo desde Events Manager.</div>
+                              <div style={{fontSize:11,color:T.yellow,padding:"10px 12px",background:T.yellow+"10",borderRadius:8,border:`1px solid ${T.yellow}33`}}>La cuenta no tiene píxeles asignados. Asignalo desde Events Manager.</div>
                             ) : (
                               <div style={{display:"flex",flexDirection:"column",gap:6}}>
                                 <button onClick={()=>setResSel(p=>({...p, pixel_id: ""}))} style={{textAlign:"left",padding:"8px 12px",border:`1px solid ${!resSel.pixel_id?T.green+"99":T.borderL}`,background:!resSel.pixel_id?T.green+"10":T.surface,borderRadius:8,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,color:T.textSm}}>
@@ -23188,7 +23209,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
 
           {msgs.map((m, i) => m.role === "user" ? (
             <div key={i} style={{alignSelf:"flex-end",maxWidth:"85%",background:T.accentSolid,color:"#fff",borderRadius:"14px 14px 4px 14px",padding:"10px 16px",fontSize:13,lineHeight:1.55,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
-              {m.adj && <div style={{fontSize:10,opacity:0.85,marginBottom:4}}>📎 {m.adj}</div>}
+              {m.adj && <div style={{fontSize:10,opacity:0.85,marginBottom:4}}><GhI n="clip" size={10}/> {m.adj}</div>}
               {m.text}
             </div>
           ) : (
@@ -23215,7 +23236,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                     try {
                       const r = await authFetch(`/api/meta?action=set_status&uid=${uid}&acc_id=${encodeURIComponent(acc)}`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({node_id: camp, status})}).then(x=>x.json());
                       if (r.error) throw new Error(r.error);
-                      setMsgs(p=>[...p,{role:"model",text:`✅ Listo — la campaña **${nombre}** quedó ${status==="PAUSED"?"pausada":"activa"}.`}]);
+                      setMsgs(p=>[...p,{role:"model",text:`✓ Listo — la campaña **${nombre}** quedó ${status==="PAUSED"?"pausada":"activa"}.`}]);
                     } catch(e) {
                       setMsgs(p=>[...p,{role:"model",error:true,text:`No pude ${verbo} la campaña: ${e.message}`}]);
                     }
@@ -23245,7 +23266,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                           try{
                             const r=await authFetch(`/api/meta?action=set_budget&uid=${uid}&acc_id=${encodeURIComponent(mBudget[1])}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({node_id:mBudget[2],daily_budget:parseInt(mBudget[3])})}).then(x=>x.json());
                             if(r.error) throw new Error(r.error);
-                            setMsgs(p=>[...p,{role:"assistant",text:`✅ Listo — **${mBudget[4]}** quedó con presupuesto de $${parseInt(mBudget[3]).toLocaleString("es-AR")}/día.`}]);
+                            setMsgs(p=>[...p,{role:"assistant",text:`✓ Listo — **${mBudget[4]}** quedó con presupuesto de $${parseInt(mBudget[3]).toLocaleString("es-AR")}/día.`}]);
                           }catch(e){ setMsgs(p=>[...p,{role:"assistant",error:true,text:`No pude cambiar el presupuesto: ${e.message}`}]); }
                         }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Cambiar presupuesto</button>
                       </div>
@@ -23259,7 +23280,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                           try{
                             const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"createTarea",uid,titulo:mTarea[2].trim(),descripcion:mTarea[3].trim(),asignadoEmail:mTarea[1].trim().toLowerCase(),asignadoNombre:"",managerEmail:user?.email||""})}).then(x=>x.json());
                             if(r.error) throw new Error(r.error);
-                            setMsgs(p=>[...p,{role:"assistant",text:`✅ Tarea **#${r.tareaNumStr||""} ${mTarea[2].trim()}** creada y asignada a ${mTarea[1].trim()}.`}]);
+                            setMsgs(p=>[...p,{role:"assistant",text:`✓ Tarea **#${r.tareaNumStr||""} ${mTarea[2].trim()}** creada y asignada a ${mTarea[1].trim()}.`}]);
                           }catch(e){ setMsgs(p=>[...p,{role:"assistant",error:true,text:`No pude crear la tarea: ${e.message}`}]); }
                         }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Crear tarea</button>
                       </div>
@@ -23273,7 +23294,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                           try{
                             const r=await fetch(`/api/inventory?action=adjust_stock&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({item_id:mStock[1].trim(),new_stock:parseInt(mStock[2]),source:"manual",event:"ajuste_copilot"})}).then(x=>x.json());
                             if(r.error) throw new Error(r.error);
-                            setMsgs(p=>[...p,{role:"assistant",text:`✅ Stock de **${mStock[3].trim()}** actualizado: ${r.old_stock} → ${r.new_stock} unidades.${(r.sync_results||[]).some(s=>s.ok&&!s.skipped)?" Propagado a tus tiendas.":""}`}]);
+                            setMsgs(p=>[...p,{role:"assistant",text:`✓ Stock de **${mStock[3].trim()}** actualizado: ${r.old_stock} → ${r.new_stock} unidades.${(r.sync_results||[]).some(s=>s.ok&&!s.skipped)?" Propagado a tus tiendas.":""}`}]);
                           }catch(e){ setMsgs(p=>[...p,{role:"assistant",error:true,text:`No pude ajustar el stock: ${e.message}`}]); }
                         }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Ajustar stock</button>
                       </div>
@@ -23298,7 +23319,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
         <div style={{padding:"8px 0 18px",position:"sticky",bottom:0,background:T.bg}}>
           {adjunto && (
             <div style={{display:"inline-flex",alignItems:"center",gap:8,background:T.card,border:`1px solid ${T.accent}55`,borderRadius:10,padding:"5px 10px",marginBottom:6,fontSize:11,color:T.text}}>
-              <span>📎 {adjunto.nombre}</span>
+              <span><GhI n="clip" size={11}/> {adjunto.nombre}</span>
               <span style={{fontSize:9,color:T.textSm}}>{adjunto.tipo==="imagen"?"imagen":"texto"}</span>
               <button onClick={()=>setAdjunto(null)} style={{background:"transparent",border:"none",color:T.red,cursor:"pointer",fontSize:12,padding:0,lineHeight:1}}>✕</button>
             </div>
@@ -23588,7 +23609,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
           <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
             <div style={{marginBottom:8,display:"flex",justifyContent:"center"}}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-6l-2 3H10l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg></div>
             <div style={{fontSize:14,color:T.textMd,marginBottom:10}}>No se encontraron publicaciones {statusFilter==="active"?"activas":statusFilter==="paused"?"pausadas":statusFilter==="closed"?"cerradas":""} en tu cuenta de ML.</div>
-            {diagnostic?.reason === "api_error" && <div style={{fontSize:11,color:T.red,marginBottom:10,fontFamily:"monospace",padding:8,background:T.red+"11",borderRadius:6,maxWidth:520,margin:"0 auto 10px"}}>⚠ {diagnostic.error}</div>}
+            {diagnostic?.reason === "api_error" && <div style={{fontSize:11,color:T.red,marginBottom:10,fontFamily:"monospace",padding:8,background:T.red+"11",borderRadius:6,maxWidth:520,margin:"0 auto 10px"}}>{diagnostic.error}</div>}
             {diagnostic?.reason === "empty" && diagnostic.total_from_ml === 0 && <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>ML respondió 0 publicaciones en estado "{statusFilter}". Probá con "Todas" arriba.</div>}
             <button onClick={runDiagnose} disabled={diagnosing} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{diagnosing?<Spinner size={11} color={T.textMd}/>:null} Diagnosticar conexión</button>
           </div>
@@ -24413,7 +24434,7 @@ function CostosAdicionalesPanel({ T, uid }) {
               </div>
               {c.moneda==="USD" && c.tipo==="fijo" && (parseFloat(c.monto)||0)>0 && (
                 <div style={{fontSize:11,color:dolarValor>0?T.textSm:T.red,paddingLeft:2}}>
-                  {dolarValor>0 ? `≈ $${Math.round((parseFloat(c.monto)||0)*dolarValor).toLocaleString("es-AR")} ARS al dólar cargado` : "⚠ Cargá la cotización en Cotización Dólar para que este costo cuente"}
+                  {dolarValor>0 ? `≈ $${Math.round((parseFloat(c.monto)||0)*dolarValor).toLocaleString("es-AR")} ARS al dólar cargado` : "Cargá la cotización en Cotización Dólar para que este costo cuente"}
                 </div>
               )}
             </div>
@@ -24855,7 +24876,7 @@ function MargenesPnl({ T, uid }) {
           <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:2}}>Resultado mes a mes con tu configuración de costos actual. Los meses cerrados quedan guardados; el corriente se actualiza cada hora.</div>
         </div>
         <div style={{marginLeft:"auto"}}>
-          <Btn T={T} variant="secondary" size="sm" onClick={exportCsv} disabled={!listaMeses.some(m=>meses[m])}>⬇ Exportar CSV</Btn>
+          <Btn T={T} variant="secondary" size="sm" onClick={exportCsv} disabled={!listaMeses.some(m=>meses[m])}>↓ Exportar CSV</Btn>
         </div>
       </div>
       <Card T={T} padding="lg">
@@ -28151,7 +28172,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                 <span style={{width:8,height:8,borderRadius:"50%",background:dotColor,flexShrink:0}}/>{titulo}
                 <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· solo este canal · sin costos fijos/adicionales (son globales)</span>
                 <button onClick={()=>setEditCanalCards(v=>!v)} title="Elegir qué métricas mostrar en este canal"
-                  style={{marginLeft:"auto",fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${editCanalCards?T.accent:T.border}`,background:editCanalCards?T.accentSolid+"18":"transparent",color:editCanalCards?T.accent:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✎ Métricas</button>
+                  style={{marginLeft:"auto",fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${editCanalCards?T.accent:T.border}`,background:editCanalCards?T.accentSolid+"18":"transparent",color:editCanalCards?T.accent:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}><GhI n="edit" size={11}/> Métricas</button>
               </div>
               {/* Cards del canal — mismo sistema uniforme y arrastrable que Global,
                   con visibilidad PROPIA por vista (cardsVisTienda / cardsVisMl) */}
@@ -28235,7 +28256,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                   <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· margen de contribución (sin repartir Ad Spend ni costos fijos)</span>
                   {perdida.length>0 && <DSBadge T={T} color={T.red} size="sm">{perdida.length} a pérdida</DSBadge>}
                   <span style={{marginLeft:"auto",display:"inline-flex",gap:6,alignItems:"center"}}>
-                    <button onClick={exportProdCsv} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,color:T.textMd,fontSize:11,fontWeight:600,cursor:"pointer",padding:"4px 10px",fontFamily:"'Inter',system-ui,sans-serif"}}>⬇ CSV</button>
+                    <button onClick={exportProdCsv} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,color:T.textMd,fontSize:11,fontWeight:600,cursor:"pointer",padding:"4px 10px",fontFamily:"'Inter',system-ui,sans-serif"}}>↓ CSV</button>
                     <EyeBtn k="productos"/>
                   </span>
                 </div>
@@ -28318,7 +28339,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                     <label style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,color:salesLoss?T.red:T.textMd,fontWeight:600,cursor:"pointer",userSelect:"none"}}>
                       <input type="checkbox" checked={salesLoss} onChange={e=>setSalesLoss(e.target.checked)} style={{accentColor:T.red,cursor:"pointer"}}/> Solo pérdidas
                     </label>
-                    <button onClick={exportSalesCsv} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,color:T.textMd,fontSize:11,fontWeight:600,cursor:"pointer",padding:"4px 10px",fontFamily:"'Inter',system-ui,sans-serif"}}>⬇ CSV</button>
+                    <button onClick={exportSalesCsv} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,color:T.textMd,fontSize:11,fontWeight:600,cursor:"pointer",padding:"4px 10px",fontFamily:"'Inter',system-ui,sans-serif"}}>↓ CSV</button>
                   </span>
                 </div>
                 <div style={{maxHeight:520,overflow:"auto"}}>
@@ -28452,9 +28473,9 @@ function AndreaniPollingService({uid, onAlerts}) {
       }));
       if(alertas.length>0) {
         onAlerts(alertas.length);
-        toast(`📦 ${alertas.length} paquete${alertas.length>1?"s":""} listo${alertas.length>1?"s":""} para retirar en sucursal Andreani`,"info");
+        toast(`${alertas.length} paquete${alertas.length>1?"s":""} listo${alertas.length>1?"s":""} para retirar en sucursal Andreani`,"info");
         if("Notification" in window && Notification.permission==="granted")
-          new Notification("Growith - Andreani 📦",{body:`${alertas.length} paquete${alertas.length>1?"s":""} listo${alertas.length>1?"s":""} para retirar`,icon:"/favicon.ico"});
+          new Notification("Growith - Andreani",{body:`${alertas.length} paquete${alertas.length>1?"s":""} listo${alertas.length>1?"s":""} para retirar`,icon:"/favicon.ico"});
       }
     }
 
@@ -28487,7 +28508,7 @@ function ColaboradorPortalUnificado({T, token}) {
   if (loadingColab) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
       <div style={{textAlign:"center"}}>
-        <div style={{fontSize:32,marginBottom:12}}>⚙️</div>
+        <div style={{marginBottom:12,color:T.textSm}}><GhI n="clock" size={28}/></div>
         <div style={{fontSize:14,color:T.textMd}}>Cargando tu portal…</div>
       </div>
     </div>
@@ -28496,7 +28517,7 @@ function ColaboradorPortalUnificado({T, token}) {
   if (errorColab || !colabData) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
       <div style={{textAlign:"center"}}>
-        <div style={{fontSize:32,marginBottom:12}}>🔒</div>
+        <div style={{marginBottom:12,color:T.textSm}}><GhI n="lock" size={28}/></div>
         <div style={{fontSize:14,color:T.red,marginBottom:6}}>Link inválido o vencido</div>
         <div style={{fontSize:12,color:T.textSm}}>{errorColab}</div>
       </div>
@@ -29098,7 +29119,7 @@ export default function App() {
   // hay TN conectada, guía honesta en vez de una pantalla vacía que confunde.
   const requiereTN = (nombre) => (connectedStores.loaded && !connectedStores.tn) ? (
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"60vh",gap:14,padding:24,fontFamily:"'Inter',system-ui,sans-serif",textAlign:"center",background:T.bg}}>
-      <div style={{fontSize:40}}>🏬</div>
+      <div style={{color:T.textSm}}><GhI n="store" size={36}/></div>
       <div style={{fontSize:19,fontWeight:800,color:T.text}}>{nombre} funciona con Tienda Nube</div>
       <div style={{fontSize:13,color:T.textMd,maxWidth:420,lineHeight:1.6}}>Esta sección trabaja con los pedidos de tu Tienda Nube (etiquetas Andreani, seguimientos y reclamos). Conectala y aparece todo solo. El soporte para Shopify y Mercado Libre está en desarrollo.</div>
       <button onClick={()=>setPage("config")} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 24px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Conectar Tienda Nube →</button>
@@ -29108,7 +29129,7 @@ export default function App() {
   const adminGate = (pageId) => {
     if (adminOnlySections.includes(pageId) && !isAdmin) return (
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"70vh",fontFamily:"'Inter',system-ui,sans-serif",gap:16,padding:24,background:T.bg}}>
-        <div style={{fontSize:48}}>🔒</div>
+        <div style={{color:T.textSm}}><GhI n="lock" size={40}/></div>
         <div style={{fontSize:20,fontWeight:800,color:T.text}}>Acceso restringido</div>
         <div style={{fontSize:14,color:T.textMd,textAlign:"center",maxWidth:360}}>Esta sección es exclusiva para administradores de Growith.</div>
         <button onClick={()=>setPage("home")} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 24px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>← Volver al inicio</button>
@@ -29163,7 +29184,7 @@ export default function App() {
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               {isInTrial&&(
                 <button onClick={()=>setPage("planes")} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 12px",background:trialExpiring?T.red+"18":T.green+"18",border:`1.5px solid ${trialExpiring?T.red+"55":T.green+"55"}`,borderRadius:20,color:trialExpiring?T.red:T.green,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
-                  {trialExpiring?"⚠️":"🎁"} Prueba gratis · {trialDaysLeft === 1 ? "último día" : `${trialDaysLeft} días`}
+                  <GhI n={trialExpiring?"alert":"gift"} size={12}/> Prueba gratis · {trialDaysLeft === 1 ? "último día" : `${trialDaysLeft} días`}
                 </button>
               )}
               {tareasForReview>0&&(
@@ -29178,7 +29199,7 @@ export default function App() {
                     <div onClick={()=>setBellPanelOpen(false)} style={{position:"fixed",inset:0,zIndex:199}}/>
                     <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,zIndex:200,width:320,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,boxShadow:DS.shadow.lg,overflow:"hidden",fontFamily:"'Inter',system-ui,sans-serif"}}>
                       <div style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                        <span style={{fontSize:12,fontWeight:700,color:T.text}}>📦 {tareasParaRevisarList.length} entrega{tareasParaRevisarList.length!==1?"s":""} para revisar</span>
+                        <span style={{fontSize:12,fontWeight:700,color:T.text}}>{tareasParaRevisarList.length} entrega{tareasParaRevisarList.length!==1?"s":""} para revisar</span>
                         <div style={{display:"flex",gap:6,alignItems:"center"}}>
                           <button onClick={()=>{setTareasForReview(0);setTareasParaRevisarList([]);setBellPanelOpen(false);}} style={{fontSize:11,padding:"3px 8px",borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar</button>
                           <button onClick={()=>setBellPanelOpen(false)} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,lineHeight:1,padding:0}}>✕</button>
@@ -29214,7 +29235,7 @@ export default function App() {
           {_showExpiryBanner&&(
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"10px 24px",background:expiryDays<=1?T.red+"15":""+T.orange+" 15",backgroundImage:"none",backgroundColor:expiryDays<=1?T.red+"15":"#f9741615",borderBottom:`1px solid ${expiryDays<=1?T.red+"40":"#f9741640"}`,fontFamily:"'Inter',system-ui,sans-serif"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:18}}>{expiryDays<=1?"🚨":"⏰"}</span>
+                <span style={{color:expiryDays<=1?T.red:T.orange}}><GhI n={expiryDays<=1?"alert":"clock"} size={17}/></span>
                 <div>
                   <span style={{fontSize:13,fontWeight:700,color:expiryDays<=1?T.red:T.orange}}>
                     {expiryIsTrial
@@ -29246,7 +29267,7 @@ export default function App() {
       {isInTrial&&ReactDOM.createPortal(
         <div style={{position:"fixed",bottom:72,left:"50%",transform:"translateX(-50%)",zIndex:9000,pointerEvents:"none",display:"flex",justifyContent:"center"}}>
           <div style={{display:"inline-flex",alignItems:"center",gap:10,background:"linear-gradient(135deg,"+T.green+","+T.green+")",borderRadius:20,padding:"8px 18px",boxShadow:"0 4px 20px "+T.green+"44"+"",fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <span style={{fontSize:14}}>🎁</span>
+            <span style={{color:"#fff"}}><GhI n="gift" size={13}/></span>
             <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>Prueba gratis</span>
             <span style={{fontSize:12,color:"#dcfce7",fontWeight:500}}>·</span>
             <span style={{fontSize:12,color:"#dcfce7"}}>{trialDaysLeft === 1 ? "último día" : `${trialDaysLeft} días restantes`}</span>
@@ -29259,7 +29280,7 @@ export default function App() {
       {trialExpired&&page!=="planes"&&ReactDOM.createPortal(
         <div style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:36,maxWidth:420,width:"100%",textAlign:"center",boxShadow:"0 24px 80px rgba(0,0,0,0.5)"}}>
-            <div style={{fontSize:52,marginBottom:16}}>⏰</div>
+            <div style={{marginBottom:16,color:T.textSm}}><GhI n="clock" size={44}/></div>
             <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:8}}>Tu prueba gratuita terminó</div>
             <div style={{fontSize:14,color:T.textMd,lineHeight:1.6,marginBottom:28}}>
               Esperamos que hayas aprovechado los 14 días. Para seguir usando Growith, activá el plan Pro.
@@ -29267,7 +29288,7 @@ export default function App() {
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               <button onClick={()=>setPage("planes")}
                 style={{width:"100%",padding:"13px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#7c3aed,#a78bfa)",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:"0 4px 16px #7c3aed44"}}>
-                ✨ Ver planes
+                Ver planes
               </button>
               <button onClick={()=>{try{signOut(auth);}catch(_){}}}
                 style={{width:"100%",padding:"10px",borderRadius:12,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
