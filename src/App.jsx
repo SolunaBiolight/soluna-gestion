@@ -16078,6 +16078,18 @@ const PLATFORM = {
 };
 // Compat: ids viejos de tab (pendientes/manual/historico/metricas/cuits) → ids nuevos
 const ARCA_TAB_MAP = { pendientes: "facturar", manual: "facturar", historico: "registros", metricas: "resumen", cuits: "config" };
+// Constantes estáticas — a nivel módulo para no reconstruirlas en cada render
+const mesesNombres = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+const CONDICIONES=[{id:"RESPONSABLE_INSCRIPTO",label:"Responsable Inscripto"},{id:"MONOTRIBUTO",label:"Monotributista"}];
+const TIPOS_PERSONA=[{id:"FISICA",label:"Persona física"},{id:"JURIDICA",label:"Persona jurídica"}];
+// Origen de un comprobante derivado de su orden_id (Registros) — función pura
+const origenDe = (r) => {
+  const oid = String(r.orden_id||"");
+  if (r.recuperado_afip || !r.orden_id || oid.startsWith("N° ")) return "recuperado";
+  if (oid.startsWith("ML-")) return "ml";
+  if (oid.startsWith("MANUAL-")) return "manual";
+  return "tn";
+};
 
 function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [cuits, setCuits] = useState([]);
@@ -16178,7 +16190,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [conceptoAcIdx, setConceptoAcIdx] = useState(null);
   const conceptosKey = user?.uid ? `growith_conceptos_${user.uid}` : null;
   const getConceptos = () => { try { return JSON.parse(localStorage.getItem(conceptosKey)||"[]"); } catch(_) { return []; } };
-  const saveConcepto = (nombre) => { if (!conceptosKey||!nombre.trim()) return; const prev=getConceptos(); if(!prev.includes(nombre.trim())) localStorage.setItem(conceptosKey,JSON.stringify([nombre.trim(),...prev].slice(0,50))); };
+  // Conceptos en estado: antes se leía y parseaba localStorage en cada render del map de ítems
+  const [conceptos, setConceptos] = useState(getConceptos);
+  useEffect(()=>{ setConceptos(getConceptos()); /* eslint-disable-next-line react-hooks/exhaustive-deps */ },[conceptosKey]);
+  const saveConcepto = (nombre) => { if (!conceptosKey||!nombre.trim()) return; const n=nombre.trim(); setConceptos(prev=>{ if(prev.includes(n)) return prev; const next=[n,...prev].slice(0,50); localStorage.setItem(conceptosKey,JSON.stringify(next)); return next; }); };
   const [testingCuit, setTestingCuit] = useState(null);
   const [testResult, setTestResult] = useState(null);
 
@@ -16233,9 +16248,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const _now = new Date();
   const [dashMonth, setDashMonth] = useState(_now.getMonth()+1); // 1-12
   const [dashYear, setDashYear] = useState(_now.getFullYear());
-  const mesesNombres = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
   const mesActual = `${mesesNombres[dashMonth-1]} ${dashYear}`;
   const esMesActualReal = dashMonth === _now.getMonth()+1 && dashYear === _now.getFullYear();
+  // Paginación de la vista Comprobantes de Registros (100 por página). Se resetea al
+  // tocar filtros, cambiar de vista/sub-pestaña o navegar de mes — mismo patrón que pendPage.
+  const [regPage, setRegPage] = useState(1);
+  useEffect(()=>{ setRegPage(1); },[regLetra, regPv, regOrigen, regBusq, regSub, regView, dashMonth, dashYear, cuitSel]);
   function navMes(delta) {
     let m = dashMonth + delta, y = dashYear;
     if (m < 1) { m = 12; y -= 1; }
@@ -16640,6 +16658,84 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     return pasaFiltrosComunes(id, o);
   }
 
+  // ── Derivados memoizados de la lista de pendientes ──
+  // Filtrado (caro, recorre TODAS las órdenes) separado de la selección: un click
+  // de checkbox solo recalcula pendSel, no vuelve a filtrar las 1.000+ órdenes.
+  // ordenPasaFiltros/pasaFiltrosComunes leen canalSel/metodoPagoSel/montoMin/montoMax/busquedaPend — todos en deps.
+  const pendFiltered = useMemo(() => {
+    const all = Object.entries(tnData?.ordenes || {});
+    // items: pendientes (no facturadas, pasan filtros de canal/pago/monto/búsqueda)
+    const items = all.filter(([id, o]) => ordenPasaFiltros(id, o));
+    // itemsBilled: ya facturadas en el período — aplica los MISMOS filtros que items
+    const itemsBilled = all.filter(([id, o]) => o._billed && pasaFiltrosComunes(id, o));
+    const itemsBilledMonto = itemsBilled.reduce((s,[,o])=>s+(o.total||0),0);
+    return { items, itemsBilled, itemsBilledMonto };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tnData, canalSel, metodoPagoSel, montoMin, montoMax, busquedaPend]);
+  const pendSel = useMemo(() => {
+    const sel = pendFiltered.items.filter(([id]) => tnSelected[id]);
+    return {
+      selectedCount: sel.length,
+      selectedTotal: sel.reduce((s,[,o])=>s+(o.total||0),0),
+      allSel: pendFiltered.items.length > 0 && sel.length === pendFiltered.items.length,
+      someSel: sel.length > 0,
+    };
+  }, [pendFiltered, tnSelected]);
+  // Contadores del header, panel de progreso y select de métodos de pago — solo canal
+  const pendStats = useMemo(() => {
+    const all = Object.entries(tnData?.ordenes || {});
+    const plat = canalSel === "todos" ? all : all.filter(([,o]) => o._platform === canalSel);
+    const billed = plat.filter(([,o]) => o._billed);
+    const mesTotal = plat.length;
+    const mesMonto = plat.reduce((s,[,o])=>s+(o.total||0),0);
+    const billedMonto = billed.reduce((s,[,o])=>s+(o.total||0),0);
+    const set = new Set();
+    plat.forEach(([,o])=>{const m=normPlatPago(o.plataforma_pago||o.metodo_pago);if(m)set.add(m);});
+    return {
+      mesTotal, mesMonto,
+      billedCount: billed.length, billedMonto,
+      pendCount: mesTotal - billed.length,
+      pctOrd: mesTotal>0?Math.round(billed.length/mesTotal*100):0,
+      pctMonto: mesMonto>0?Math.round(billedMonto/mesMonto*100):0,
+      metodosPago: [...set].sort((a,b)=>a.localeCompare(b,"es")),
+    };
+  }, [tnData, canalSel]);
+
+  // ── Derivados memoizados de Registros ──
+  const regData = useMemo(() => {
+    const busqPasa = (campos) => {
+      const q = regBusq.trim().toLowerCase();
+      if (!q) return true;
+      return campos.filter(v=>v!=null&&v!=="").map(String).join(" ").toLowerCase().includes(q);
+    };
+    const rowPasa = (r) => {
+      if (regLetra && r.letra !== regLetra) return false;
+      if (regPv && String(r.punto_venta||"") !== String(regPv)) return false;
+      if (regOrigen && origenDe(r) !== regOrigen) return false;
+      return busqPasa([r.comprobante, String(r.comprobante).padStart(8,"0"), r.cae, r.cliente, r.doc_nro, r.orden_id]);
+    };
+    const ncPasa = (n) => {
+      if (regLetra && n.letra !== regLetra) return false;
+      if (regPv && String(n.punto_venta||"") !== String(regPv)) return false;
+      return busqPasa([n.comprobante, String(n.comprobante||"").padStart(8,"0"), n.cae, n.cliente, n.doc_nro, n.factura_origen?.comprobante]);
+    };
+    const flat = batches.flatMap(b=>(b.resumen||[]).map((r,i)=>({...r,_b:b,_bi:i})));
+    const rows = flat.filter(rowPasa);
+    const ncRows = ncs.filter(ncPasa);
+    const activas = rows.filter(r=>!r.anulada);
+    const totNeto = activas.reduce((s,r)=>s+(r.neto||0),0);
+    const totIva = activas.reduce((s,r)=>s+(r.iva||0),0);
+    const totTotal = activas.reduce((s,r)=>s+(r.total||0),0);
+    const ncTotal = ncRows.reduce((s,n)=>s+(n.total||0),0);
+    const filtBatches = batches
+      .map(b=>({b, rows:(b.resumen||[]).map((r,i)=>({...r,_b:b,_bi:i})).filter(rowPasa)}))
+      .filter(x=>x.rows.length>0);
+    // Desglose por letra y por PV del pie (sobre las activas filtradas)
+    const porLetraTot = activas.reduce((acc,r)=>{const l=r.letra||"?";if(!acc[l])acc[l]={n:0,t:0};acc[l].n++;acc[l].t+=r.total||0;return acc;},{});
+    const porPvTot = activas.reduce((acc,r)=>{const p=String(parseInt(r.punto_venta)||0);acc[p]=(acc[p]||0)+(r.total||0);return acc;},{});
+    return { rows, ncRows, activas, totNeto, totIva, totTotal, ncTotal, filtBatches, porLetraTot, porPvTot };
+  }, [batches, ncs, regLetra, regPv, regOrigen, regBusq]);
+
   function facturarSeleccionadas() {
     if(!tnData?.ordenes) return;
     if(tnLoading||tnRevalidando) return toast("Esperá a que terminen de actualizarse las ventas antes de facturar","warning");
@@ -16806,11 +16902,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   async function refreshDashboard() {
     if(!cuitSel) return;
     try {
-      const d = await api("dashboard_stats","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
+      const [d,b,n] = await Promise.all([
+        api("dashboard_stats","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}),
+        api("list_batches","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}),
+        api("list_ncs","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}),
+      ]);
       if(!d.error) setDashboardStats(d);
-      const b = await api("list_batches","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
       if(!b.error) setBatches(b.batches||[]);
-      const n = await api("list_ncs","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
       if(!n.error) setNcs(n.ncs||[]);
     } catch(e) {
       toast("No se pudo refrescar el resumen: "+(e?.message||"error de conexión"),"error");
@@ -17089,13 +17187,14 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     </div>
   );
 
-  const CONDICIONES=[{id:"RESPONSABLE_INSCRIPTO",label:"Responsable Inscripto"},{id:"MONOTRIBUTO",label:"Monotributista"}];
-  const TIPOS_PERSONA=[{id:"FISICA",label:"Persona física"},{id:"JURIDICA",label:"Persona jurídica"}];
   const esRI = cuitActivo?.condicion_fiscal === "RESPONSABLE_INSCRIPTO";
   const esMono = cuitActivo?.condicion_fiscal === "MONOTRIBUTO";
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
+      {/* Keyframes de la barra de progreso indeterminada — montado una sola vez
+          (antes se inyectaba dentro del render condicional de la lista) */}
+      <style>{`@keyframes arca-shimmer{0%{transform:translateX(-110%)}100%{transform:translateX(380%)}}`}</style>
       {/* ── TOPBAR ── */}
       <AppTopbar T={T} section="Facturador" onHome={onHome}>
         <div className="arca-cuit-menu" style={{position:"relative"}}>
@@ -17237,7 +17336,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             </div>
 
             {/* GUÍA ¿Cómo funciona? — mismo patrón chico y discreto que el resto de las secciones */}
-            <div style={{marginBottom:16,display:(tab==="resumen"||tab==="facturar")?"block":"none"}}>
+            {(tab==="resumen"||tab==="facturar")&&(
+            <div style={{marginBottom:16}}>
               <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
               </button>
@@ -17271,6 +17371,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 </div>
               )}
             </div>
+            )}
 
             {/* Navegador de meses — compartido entre Resumen y Registros */}
             {(tab==="resumen"||tab==="registros")&&(
@@ -17324,7 +17425,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
             {/* Zona de facturación — wrapper contiene Pendientes y Manual */}
             <div style={{display:"flex",flexDirection:"column",gap:20}}>
-              <div style={{display:tab==="facturar"?"block":"none"}}>
+              {tab==="facturar"&&(
+              <div>
                 {/* Upload */}
                 {/* ══ VENTAS PENDIENTES (desde integraciones conectadas) ══ */}
                 <Card T={T} padding="xl" style={{marginBottom:16}}>
@@ -17334,11 +17436,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <div style={{fontSize:15,fontWeight:700,color:T.text}}>Ventas</div>
                       <div style={{fontSize:11,color:T.textSm,marginTop:2}}>
                         {(()=>{
-                          const totalPlat = Object.values(tnData?.ordenes||{}).filter(o=>canalSel==="todos"||o._platform===canalSel).length;
-                          const pendPlat  = Object.values(tnData?.ordenes||{}).filter(o=>(canalSel==="todos"||o._platform===canalSel)&&!o._billed).length;
                           const canalLabel = canalSel==="tiendanube"?"TN":canalSel==="mercadolibre"?"ML":canalSel==="shopify"?"Shopify":"Todos";
                           return tnData
-                            ? <>{canalLabel}: <strong style={{color:T.text}}>{totalPlat}</strong> en el período · <strong style={{color:T.accent}}>{pendPlat}</strong> pendientes de facturar</>
+                            ? <>{canalLabel}: <strong style={{color:T.text}}>{pendStats.mesTotal}</strong> en el período · <strong style={{color:T.accent}}>{pendStats.pendCount}</strong> pendientes de facturar</>
                             : "Seleccioná las que querés facturar y tocá \"Facturar\"";
                         })()}
                       </div>
@@ -17371,21 +17471,14 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
                   {/* Panel de progreso de facturación del período — solo cuando terminó de cargar */}
                   {!tnLoading && tnData && (()=>{
-                    const _all = Object.entries(tnData.ordenes||{});
-                    const _plat = canalSel==="todos" ? _all : _all.filter(([,o])=>o._platform===canalSel);
-                    const _billed = _plat.filter(([,o])=>o._billed);
-                    const _mesTotal = _plat.length;
-                    const _mesMonto = _plat.reduce((s,[,o])=>s+(o.total||0),0);
-                    const _billedMonto = _billed.reduce((s,[,o])=>s+(o.total||0),0);
-                    const _pctOrd = _mesTotal>0?Math.round(_billed.length/_mesTotal*100):0;
-                    const _pctMonto = _mesMonto>0?Math.round(_billedMonto/_mesMonto*100):0;
+                    const {mesTotal:_mesTotal, mesMonto:_mesMonto, billedCount:_billedCount, billedMonto:_billedMonto, pctOrd:_pctOrd, pctMonto:_pctMonto} = pendStats;
                     if (_mesTotal===0) return null;
                     return (
                       <div style={{padding:"8px 12px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,marginTop:10,marginBottom:14,display:"flex",gap:16,flexWrap:"wrap"}}>
                         <div style={{flex:1,minWidth:130}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
                             <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Ventas facturadas</span>
-                            <span style={{fontSize:11,color:T.text,fontWeight:700}}>{_billed.length}<span style={{color:T.textSm,fontWeight:400}}>/{_mesTotal}</span> <span style={{color:_pctOrd>=80?T.green:_pctOrd>=50?T.yellow:T.textMd,fontWeight:700}}>{_pctOrd}%</span></span>
+                            <span style={{fontSize:11,color:T.text,fontWeight:700}}>{_billedCount}<span style={{color:T.textSm,fontWeight:400}}>/{_mesTotal}</span> <span style={{color:_pctOrd>=80?T.green:_pctOrd>=50?T.yellow:T.textMd,fontWeight:700}}>{_pctOrd}%</span></span>
                           </div>
                           <div style={{height:4,background:T.border,borderRadius:3,overflow:"hidden"}}>
                             <div style={{height:"100%",width:`${_pctOrd}%`,background:_pctOrd>=80?T.green:_pctOrd>=50?T.yellow:T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
@@ -17430,7 +17523,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       {/* Agrupado por PLATAFORMA de cobro (Pago Nube / Mercado Pago / Transferencia),
                           no por tipo de tarjeta — sirve para facturar a distintos CUITs según
                           por dónde entró la plata. Órdenes viejas sin el campo caen al método crudo. */}
-                      {(()=>{const set=new Set();Object.values(tnData?.ordenes||{}).filter(o=>canalSel==="todos"||o._platform===canalSel).forEach(o=>{const m=normPlatPago(o.plataforma_pago||o.metodo_pago);if(m)set.add(m);});return[...set].sort((a,b)=>a.localeCompare(b,"es")).map(m=><option key={m} value={m}>{m}</option>);})()}
+                      {pendStats.metodosPago.map(m=><option key={m} value={m}>{m}</option>)}
                     </select>
                     <div style={{display:"flex",alignItems:"center",gap:6}}>
                       <span style={{fontSize:11,color:T.textSm,flexShrink:0}}>$ mín</span>
@@ -17538,13 +17631,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <div style={{fontSize:11,color:T.textSm}}>No encontramos ventas pagas sin facturar en el período seleccionado.</div>
                     </div>
                   ) : (() => {
-                    // El backend ya manda ordenado por fecha desc. Filtros locales: canal y rango de monto.
-                    const all = Object.entries(tnData.ordenes);
-                    // items: pendientes (no facturadas, pasan filtros de canal/monto/búsqueda)
-                    const items = all.filter(([id, o]) => ordenPasaFiltros(id, o));
-                    // itemsBilled: ya facturadas en el período para la sección colapsada —
-                    // aplica los MISMOS filtros que items (canal, pago, monto, búsqueda)
-                    const itemsBilled = all.filter(([id, o]) => o._billed && pasaFiltrosComunes(id, o));
+                    // El backend ya manda ordenado por fecha desc. Filtrado y totales
+                    // memoizados a nivel componente (pendFiltered/pendSel/pendStats).
+                    const { items, itemsBilled, itemsBilledMonto } = pendFiltered;
                     if (items.length === 0) {
                       return (
                         <div style={{padding:"24px 16px",textAlign:"center",background:T.bg,borderRadius:10}}>
@@ -17585,17 +17674,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       itemsSelectables.forEach(([id])=>{ ns[id] = selSet.has(id); });
                       setTnSelected(ns);
                     }
-                    const allSel = itemsSelectables.length > 0 && itemsSelectables.every(([id])=>tnSelected[id]);
-                    const someSel = itemsSelectables.some(([id])=>tnSelected[id]);
-                    const selectedCount = itemsSelectables.filter(([id])=>tnSelected[id]).length;
-                    const selectedTotal = itemsSelectables.filter(([id])=>tnSelected[id]).reduce((s,[,o])=>s+(o.total||0),0);
-                    // mesTotal/mesMonto filtrados por canalSel para coincidir con itemsBilled
-                    const platOrds  = canalSel === "todos" ? all : all.filter(([,o])=>o._platform===canalSel);
-                    const mesTotal  = platOrds.length;
-                    const mesMonto  = platOrds.reduce((s,[,o])=>s+(o.total||0),0);
-                    const billedMonto = itemsBilled.reduce((s,[,o])=>s+(o.total||0),0);
-                    const pctOrdenes  = mesTotal > 0 ? Math.round(itemsBilled.length / mesTotal * 100) : 0;
-                    const pctMonto    = mesMonto > 0 ? Math.round(billedMonto / mesMonto * 100) : 0;
+                    const { allSel, someSel, selectedCount, selectedTotal } = pendSel;
+                    // mesTotal filtrado por canalSel (memoizado). Las viejas copias de
+                    // mesMonto/billedMonto/pctOrdenes/pctMonto estaban muertas: el panel
+                    // de progreso de arriba usa pendStats directamente.
+                    const mesTotal = pendStats.mesTotal;
                     const badgeColor = (plat) => PLATFORM[plat]?.color || T.blue;
                     const badgeTextColor = (plat) => plat === "mercadolibre" ? "#333" : "#fff";
                     const fmtFechaHora = (iso) => {
@@ -17613,7 +17696,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         {/* Barra de progreso indeterminada — reemplaza el overlay bloqueante */}
                         {tnLoading&&(
                           <>
-                            <style>{`@keyframes arca-shimmer{0%{transform:translateX(-110%)}100%{transform:translateX(380%)}}`}</style>
                             <div style={{height:3,background:T.border,borderRadius:2,overflow:"hidden",marginBottom:8,flexShrink:0}}>
                               <div style={{height:"100%",width:"30%",background:T.accent,borderRadius:2,animation:"arca-shimmer 1.5s cubic-bezier(0.4,0,0.6,1) infinite"}}/>
                             </div>
@@ -17700,7 +17782,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         {itemsBilled.length>0&&(
                           <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8,padding:"8px 12px",background:T.green+"0d",border:`1px solid ${T.green}33`,borderRadius:8,fontSize:12}}>
                             <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:14,height:14,borderRadius:4,background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
-                            <span style={{color:T.green,fontWeight:600}}>{itemsBilled.length} ya facturadas en el período · $ {itemsBilled.reduce((s,[,o])=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span>
+                            <span style={{color:T.green,fontWeight:600}}>{itemsBilled.length} ya facturadas en el período · $ {itemsBilledMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span>
                             <button onClick={()=>setSidebarTab&&setSidebarTab("registros")} style={{marginLeft:"auto",background:"transparent",border:"none",cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",padding:0,whiteSpace:"nowrap"}}>
                               Ver las {itemsBilled.length} facturadas en Registros →
                             </button>
@@ -17751,6 +17833,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 </Card>
 
               </div>
+              )}
 
             {/* ── Unified emit modal ── */}
             {showEmitModal&&ReactDOM.createPortal(
@@ -17975,7 +18058,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             </div>
 
             {/* ══ FACTURA MANUAL — panel colapsable dentro de Facturar ══ */}
-            <div style={{display:(tab==="facturar"&&showManual)?"block":"none",marginTop:0}}>
+            {tab==="facturar"&&showManual&&(
+            <div style={{marginTop:0}}>
               <Card T={T} padding="xl" style={{marginTop:16}}>
                 <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:18}}>
                   <div style={{flex:1}}>
@@ -18014,7 +18098,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:10,marginTop:18,paddingBottom:8,borderBottom:"1px solid "+T.borderL}}>Ítems</div>
                     <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:8}}>
                       {manualItems.map((it,i)=>{
-                        const suggestions = it.nombre.trim() ? getConceptos().filter(c=>c.toLowerCase().includes(it.nombre.trim().toLowerCase())&&c!==it.nombre.trim()) : getConceptos().slice(0,5);
+                        const suggestions = it.nombre.trim() ? conceptos.filter(c=>c.toLowerCase().includes(it.nombre.trim().toLowerCase())&&c!==it.nombre.trim()) : conceptos.slice(0,5);
                         const showAc = conceptoAcIdx===`a${i}` && suggestions.length>0;
                         return (
                         <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 70px 110px 30px",gap:8,alignItems:"center"}}>
@@ -18098,60 +18182,30 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 )}
               </Card>
             </div>
+            )}
 
             {/* ══ REGISTROS — sólo tab Registros ══ */}
             {/* Se renderiza aunque no haya lotes: si faltan registros (guardado
                 post-CAE fallido) el link "Recuperar desde AFIP" del empty state es la salida. */}
-            {cuitSel && (
-              <div style={{marginTop:0,display:tab==="registros"?"block":"none"}}>
+            {cuitSel && tab==="registros" && (
+              <div style={{marginTop:0}}>
                 {(()=>{
-                  // ── Origen derivado de orden_id ──
-                  const origenDe = (r) => {
-                    const oid = String(r.orden_id||"");
-                    if (r.recuperado_afip || !r.orden_id || oid.startsWith("N° ")) return "recuperado";
-                    if (oid.startsWith("ML-")) return "ml";
-                    if (oid.startsWith("MANUAL-")) return "manual";
-                    return "tn";
-                  };
                   const ORIGENES = [
                     {id:"tn",         label:PLATFORM.tiendanube.label,   color:PLATFORM.tiendanube.color},
                     {id:"ml",         label:PLATFORM.mercadolibre.label, color:PLATFORM.mercadolibre.color},
                     {id:"manual",     label:"Manual",                    color:T.purple},
                     {id:"recuperado", label:"Recuperado",                color:T.textMd},
                   ];
-                  const busqPasa = (campos) => {
-                    const q = regBusq.trim().toLowerCase();
-                    if (!q) return true;
-                    return campos.filter(v=>v!=null&&v!=="").map(String).join(" ").toLowerCase().includes(q);
-                  };
-                  const rowPasa = (r) => {
-                    if (regLetra && r.letra !== regLetra) return false;
-                    if (regPv && String(r.punto_venta||"") !== String(regPv)) return false;
-                    if (regOrigen && origenDe(r) !== regOrigen) return false;
-                    return busqPasa([r.comprobante, String(r.comprobante).padStart(8,"0"), r.cae, r.cliente, r.doc_nro, r.orden_id]);
-                  };
-                  const ncPasa = (n) => {
-                    if (regLetra && n.letra !== regLetra) return false;
-                    if (regPv && String(n.punto_venta||"") !== String(regPv)) return false;
-                    return busqPasa([n.comprobante, String(n.comprobante||"").padStart(8,"0"), n.cae, n.cliente, n.doc_nro, n.factura_origen?.comprobante]);
-                  };
-                  const flat = batches.flatMap(b=>(b.resumen||[]).map((r,i)=>({...r,_b:b,_bi:i})));
-                  const rows = flat.filter(rowPasa);
-                  const ncRows = ncs.filter(ncPasa);
-                  const activas = rows.filter(r=>!r.anulada);
-                  const totNeto = activas.reduce((s,r)=>s+(r.neto||0),0);
-                  const totIva = activas.reduce((s,r)=>s+(r.iva||0),0);
-                  const totTotal = activas.reduce((s,r)=>s+(r.total||0),0);
-                  const ncTotal = ncRows.reduce((s,n)=>s+(n.total||0),0);
-                  const filtBatches = batches
-                    .map(b=>({b, rows:(b.resumen||[]).map((r,i)=>({...r,_b:b,_bi:i})).filter(rowPasa)}))
-                    .filter(x=>x.rows.length>0);
+                  // Filtrado y totales memoizados a nivel componente (regData)
+                  const { rows, ncRows, activas, totNeto, totIva, totTotal, ncTotal, filtBatches, porLetraTot, porPvTot } = regData;
                   // Para NCs no cuenta regOrigen (ese filtro no aplica a NCs)
                   const filtrosActivos = regSub==="ncs" ? !!(regLetra||regPv||regBusq.trim()) : !!(regLetra||regPv||regOrigen||regBusq.trim());
-                  // Desglose por letra y por PV del pie (sobre las activas filtradas)
-                  const porLetraTot = activas.reduce((acc,r)=>{const l=r.letra||"?";if(!acc[l])acc[l]={n:0,t:0};acc[l].n++;acc[l].t+=r.total||0;return acc;},{});
-                  const porPvTot = activas.reduce((acc,r)=>{const p=String(parseInt(r.punto_venta)||0);acc[p]=(acc[p]||0)+(r.total||0);return acc;},{});
                   const pvKeys = Object.keys(porPvTot);
+                  // Paginación de la vista Comprobantes (100 por página) — el CSV exporta TODO lo filtrado
+                  const REG_PAGE_SIZE = 100;
+                  const regTotalPages = Math.max(1, Math.ceil(rows.length/REG_PAGE_SIZE));
+                  const regPageCur = Math.min(regPage, regTotalPages);
+                  const regPageRows = rows.slice((regPageCur-1)*REG_PAGE_SIZE, regPageCur*REG_PAGE_SIZE);
                   const fmtFechaCbte = (r) => r.fecha_cbte
                     ? `${r.fecha_cbte.slice(8,10)}/${r.fecha_cbte.slice(5,7)}/${r.fecha_cbte.slice(0,4)}`
                     : (r._b?.emitido_at ? new Date(r._b.emitido_at).toLocaleDateString("es-AR") : "—");
@@ -18346,7 +18400,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 </tr>
                               </thead>
                               <tbody>
-                                {rows.map((r,i)=>(
+                                {regPageRows.map((r,i)=>(
                                   <tr key={i} style={{borderBottom:`1px solid ${T.borderL}`,opacity:r.anulada?0.6:1}}>
                                     <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap"}}>{fmtFechaCbte(r)}</td>
                                     <td style={{padding:"8px 10px"}}>
@@ -18377,6 +18431,14 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               </tbody>
                             </table>
                           </div>
+                          {/* Controles de página — mismo patrón que la lista de pendientes de Facturar */}
+                          {regTotalPages>1&&(
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,padding:"12px 0 4px",flexWrap:"wrap"}}>
+                              <button disabled={regPageCur<=1} onClick={()=>setRegPage(regPageCur-1)} style={{...BtnSecondary(T),padding:"6px 14px",fontSize:12,opacity:regPageCur<=1?0.4:1,cursor:regPageCur<=1?"not-allowed":"pointer"}}>‹ Anterior</button>
+                              <span style={{fontSize:12,color:T.textSm}}>Página <strong style={{color:T.text}}>{regPageCur}</strong> de {regTotalPages} · {rows.length.toLocaleString("es-AR")} comprobantes</span>
+                              <button disabled={regPageCur>=regTotalPages} onClick={()=>setRegPage(regPageCur+1)} style={{...BtnSecondary(T),padding:"6px 14px",fontSize:12,opacity:regPageCur>=regTotalPages?0.4:1,cursor:regPageCur>=regTotalPages?"not-allowed":"pointer"}}>Siguiente ›</button>
+                            </div>
+                          )}
                           {/* Totales del set filtrado */}
                           <div style={{display:"flex",alignItems:"center",gap:14,marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL}`,fontSize:12,flexWrap:"wrap"}}>
                             <span style={{color:T.textSm}}>Total de <span style={{textTransform:"capitalize"}}>{mesActual}</span>{filtrosActivos?" (filtrado)":""}:</span>
@@ -18457,7 +18519,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             )}
 
             {/* ══ CONFIGURACIÓN — CUITs + Mantenimiento ══ */}
-            <div style={{display:tab==="config"?"block":"none",marginTop:0}}>
+            {tab==="config"&&(
+            <div style={{marginTop:0}}>
               <Card T={T} padding="lg">
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
                   <div>
@@ -18526,6 +18589,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 </div>
               </Card>
             </div>
+            )}
           </>
         )}
       </div>
