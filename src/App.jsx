@@ -2068,21 +2068,11 @@ function TopbarMoreMenu({T, items}) {
 }
 
 // --- Shared AppTopbar ---
-// ALTO TOTAL FIJO (64px + 1px de borde = 65). Al scrollear (scrollY > 60) el
-// subtítulo colapsa DENTRO de esa banda (max-height 0 + opacity 0) y el título
-// se centra solo (flex). Se eligió alto fijo en vez de encoger la barra porque
-// los sticky que van debajo dependen de este offset (AppTabs top:113, panel de
-// Reclamos, fila sticky del Facturador, tabs de Tareas): con alto fijo nunca
-// se desalinean ni hay jitter de layout durante el scroll.
+// ALTO TOTAL FIJO (64px + 1px de borde = 65). Los sticky que van debajo
+// dependen de este offset (AppTabs top:113, panel de Reclamos, fila sticky
+// del Facturador, tabs de Tareas).
 // Si cambiás el 64, actualizá TODOS los top:113 / top:65 dependientes.
-function AppTopbar({T, section, sectionId, subtitle, onHelp, onHome, children, top=48}) {
-  const [compact,setCompact]=React.useState(false);
-  React.useEffect(()=>{
-    const onScroll=()=>setCompact(window.scrollY>60);
-    window.addEventListener("scroll",onScroll,{passive:true});
-    onScroll();
-    return ()=>window.removeEventListener("scroll",onScroll);
-  },[]);
+function AppTopbar({T, section, sectionId, onHelp, onHome, children, top=48}) {
   const iconPath = sectionId ? SECTION_ICONS[sectionId] : null;
   return (
     <div style={{borderBottom:`1px solid ${T.border}`,background:T.card+"e0",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",padding:"0 24px",position:"sticky",top,zIndex:30}}>
@@ -2097,12 +2087,7 @@ function AppTopbar({T, section, sectionId, subtitle, onHelp, onHome, children, t
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={iconPath}/></svg>
               </div>
             : <GrowithLogo size={20} variant="color"/>}
-          <div style={{display:"flex",flexDirection:"column",justifyContent:"center",minWidth:0}}>
-            <span style={{fontWeight:DS.w.semibold,fontSize:14,color:T.text,letterSpacing:-0.2,whiteSpace:"nowrap",lineHeight:"18px"}}>{section}</span>
-            {subtitle!=null&&subtitle!==""&&(
-              <div style={{fontSize:11,color:T.textSm,lineHeight:"14px",maxHeight:compact?0:14,opacity:compact?0:1,overflow:"hidden",transition:"max-height 0.2s ease, opacity 0.2s ease",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{subtitle}</div>
-            )}
-          </div>
+          <span style={{fontWeight:DS.w.semibold,fontSize:14,color:T.text,letterSpacing:-0.2,whiteSpace:"nowrap",lineHeight:"18px"}}>{section}</span>
           {onHelp&&(
             <button onClick={onHelp} title="¿Cómo funciona esta sección?"
               style={{width:26,height:26,borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:"transparent",color:T.textSm,fontSize:12,fontWeight:DS.w.bold,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1,padding:0}}>?</button>
@@ -2852,7 +2837,6 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
       {/* Topbar */}
       <AppTopbar T={T} section="Reclamos" sectionId="reclamos" onHome={onHome}
-        subtitle={reclamos.length>0?`${abiertos.length} abierto${abiertos.length===1?"":"s"}`:null}
         onHelp={()=>setShowGuia(s=>!s)}>
         <TopbarMoreMenu T={T} items={[
           {label:"Exportar CSV",onClick:()=>{
@@ -4103,7 +4087,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   return (
     <div style={{fontFamily:"Inter,system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
       <AppTopbar T={T} section="Canjes" sectionId="canjes" onHome={onHome}
-        subtitle={canjes.length>0?`${stats.total-stats.cerrados} activo${stats.total-stats.cerrados===1?"":"s"} · ${stats.contPend} con contenido pendiente`:null}
         onHelp={()=>setShowGuia(s=>!s)}>
         <button onClick={exportCSV} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.textMd}}>Exportar CSV</button>
         <button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:12,padding:"7px 14px"}}>+ Nuevo canje</button>
@@ -6706,7 +6689,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
       {/* Topbar */}
       <AppTopbar T={T} section="Envíos" sectionId="envios" onHome={onHome}
-        subtitle={(counts.empaquetar!=null||counts.enviar!=null)?`${counts.empaquetar??0} por empaquetar · ${counts.enviar??0} por enviar`:null}
         onHelp={()=>setShowGuia(s=>!s)}>
         <AsyncButton onClick={async()=>{
           tabCacheRef.current={};
@@ -8983,7 +8965,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
-      <AppTopbar T={T} section="Configuración" sectionId="config" subtitle="Integraciones y preferencias" onHome={onBack}/>
+      <AppTopbar T={T} section="Configuración" sectionId="config" onHome={onBack}/>
 
       <div style={{maxWidth:960,margin:"0 auto",padding:"20px 24px 80px"}}>
 
@@ -9783,10 +9765,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       <div style={{borderBottom:`1px solid ${T.border}`,background:T.card+"e0",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",padding:"0 20px",height:64,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
         {!isTrialExpired&&<button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>}
         <SectionIcon T={T} id="planes"/>
-        <div style={{display:"flex",flexDirection:"column",justifyContent:"center"}}>
-          <span style={{fontWeight:700,fontSize:14,color:T.text,letterSpacing:-0.2,lineHeight:"18px"}}>Suscripción</span>
-          <span style={{fontSize:11,color:T.textSm,lineHeight:"14px"}}>Tu plan y facturación de Growith</span>
-        </div>
+        <span style={{fontWeight:700,fontSize:14,color:T.text,letterSpacing:-0.2,lineHeight:"18px"}}>Suscripción</span>
       </div>
 
       <div style={{maxWidth:840,margin:"0 auto",padding:"40px 20px 0"}}>
@@ -10141,10 +10120,7 @@ function AppAdmin({T, user, onBack}) {
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:12}}>← Inicio</button>
           <SectionIcon T={T} id="admin"/>
-          <div style={{display:"flex",flexDirection:"column",justifyContent:"center"}}>
-            <span style={{fontWeight:700,fontSize:14,color:T.text,letterSpacing:-0.2,lineHeight:"18px"}}>Admin</span>
-            <span style={{fontSize:11,color:T.textSm,lineHeight:"14px"}}>Cuentas, cobros y accesos</span>
-          </div>
+          <span style={{fontWeight:700,fontSize:14,color:T.text,letterSpacing:-0.2,lineHeight:"18px"}}>Admin</span>
           {pagosPendientes.length>0&&(
             <span style={{background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 8px"}}>
               {pagosPendientes.length} pendiente{pagosPendientes.length>1?"s":""}
@@ -12424,7 +12400,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       {/* Topbar */}
       <AppTopbar T={T} section="Trabajo" sectionId="tareas" onHome={onHome} top={colabMode?0:48}
-        subtitle={tareas.length>0?`${tareas.filter(t=>t.estado!=="aprobado").length} tareas activas · ${enRevision.length} para revisar`:null}
         onHelp={view==="equipo"
           ? (colabMode?null:()=>setShowGuiaEquipo(s=>!s))
           : view==="referencias"
@@ -17517,7 +17492,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       <style>{`@keyframes arca-shimmer{0%{transform:translateX(-110%)}100%{transform:translateX(380%)}}`}</style>
       {/* ── TOPBAR ── */}
       <AppTopbar T={T} section="Facturador" sectionId="arca" onHome={onHome}
-        subtitle={tnData?`${pendStats.pendCount} venta${pendStats.pendCount===1?"":"s"} sin facturar`:null}
         onHelp={cuits.length>0&&tab==="facturar"?()=>setShowGuia(s=>!s):null}>
         <div className="arca-cuit-menu" style={{position:"relative"}}>
           <button onClick={(e)=>{e.stopPropagation();setShowCuitMenu(s=>!s);}} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 12px",borderRadius:10,border:"1px solid "+T.border,background:T.card,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",minWidth:200}}>
@@ -21415,7 +21389,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Meta Ads" sectionId="meta" onHome={onHome}
-        subtitle="Campañas de Facebook e Instagram"
         onHelp={()=>setShowGuia(s=>!s)}>
         {activeAcc&&(
           <AccountSwitcher T={T} accounts={accounts} activeAcc={activeAcc}
@@ -23268,7 +23241,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
 
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Copilot" sectionId="copilot" onHome={onHome} subtitle="Preguntale a tu negocio">
+      <AppTopbar T={T} section="Copilot" sectionId="copilot" onHome={onHome}>
         {msgs.length > 0 && (
           <button onClick={()=>{ setMsgs([]); setDatosAl(null); try{sessionStorage.removeItem("growith_copilot_msgs");}catch(_){} if(uid) setDoc(doc(db,"users",uid,"copilot","historial"),{msgs:[],updated:new Date().toISOString()}).catch(()=>{}); }} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.textMd}}>Nueva conversación</button>
         )}
@@ -23610,7 +23583,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Gestión Mercado Libre" sectionId="ml" onHome={onHome}
-        subtitle={statusFilter==="active"&&items.length>0?`${items.length} publicaci${items.length===1?"ón activa":"ones activas"}`:"Publicaciones y ventas"}>
+        >
         <button onClick={loadItems} disabled={loading} style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px"}}>{loading?<Spinner size={12} color="#fff"/>:"↻"} Refrescar</button>
       </AppTopbar>
 
@@ -24856,7 +24829,7 @@ function AppMargenes({ T, user, onHome, tab="dashboard", setTab }) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Dashboard" sectionId="margenes" subtitle="Finanzas y márgenes" onHome={onHome}/>
+      <AppTopbar T={T} section="Dashboard" sectionId="margenes" onHome={onHome}/>
       <MargenesTabsBar T={T} tab={tab} setTab={setTab}/>
       <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
         {tab==="pnl" && <MargenesPnl T={T} uid={uid}/>}
@@ -25916,7 +25889,6 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       )}
 
       <AppTopbar T={T} section="Stock & Estadísticas" sectionId="stock" onHome={onHome}
-        subtitle={data?`${allProducts.length} producto${allProducts.length===1?"":"s"} · ${alertas.length} en alerta`:null}
         onHelp={()=>setShowGuia(s=>!s)}>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
           {platform==="shopify" && <span style={{fontSize:11,background:"#96BF4822",border:"1px solid #96BF4866",borderRadius:6,padding:"3px 8px",fontWeight:600,color:"#96BF48"}}>Shopify</span>}
@@ -27551,7 +27523,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     const Skel=({h=112,r=14})=>(<div style={{height:h,borderRadius:r,background:`linear-gradient(90deg, ${T.surface} 25%, ${T.card} 50%, ${T.surface} 75%)`,backgroundSize:"200% 100%",animation:"ghskel 1.4s ease infinite"}}/>);
     return(
       <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh"}}>
-        <AppTopbar T={T} section="Dashboard" sectionId="margenes" subtitle="Finanzas y márgenes" onHome={onHome}/>
+        <AppTopbar T={T} section="Dashboard" sectionId="margenes" onHome={onHome}/>
         <MargenesTabsBar T={T} tab={tab||"dashboard"} setTab={setTab}/>
         <div style={{maxWidth:1440,margin:"0 auto",padding:"20px 24px",width:"100%"}}>
           {calcNuevo&&(
@@ -27573,13 +27545,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
 
   return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Dashboard" sectionId="margenes" onHome={onHome}
-        subtitle={(()=>{try{
-          const s=useCustom?dateFrom:fechaAR(new Date(Date.now()-days*86400000));
-          const u=useCustom?dateTo:hoyAR();
-          const f=d=>new Date(d+"T12:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short"});
-          return f(s)+" – "+f(u);
-        }catch(_){return null;}})()}>
+      <AppTopbar T={T} section="Dashboard" sectionId="margenes" onHome={onHome}>
         {/* Preferencias de vista unificadas: números completos + USD en un solo menú */}
         <div style={{position:"relative"}}>
           <button onClick={e=>{const r=e.currentTarget.getBoundingClientRect(); setViewMenuPos({top:r.bottom+6,right:Math.max(10,Math.min(window.innerWidth-r.right,window.innerWidth-246))}); setViewMenu(v=>!v);}} title="Preferencias de vista"
