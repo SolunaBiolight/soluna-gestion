@@ -24067,9 +24067,10 @@ function CostosPanel({ T, uid }) {
   async function save() {
     setSaving(true);
     try {
-      // Fee % por cuenta de Meta (limpiamos vacíos/0). Nota: NO tocamos
-      // margenesDolar.feeAdSpend (queda como fallback de migración en el backend).
-      const feesClean = Object.fromEntries(Object.entries(metaFees).filter(([,v])=>String(v).trim()!=="").map(([k,v])=>[String(k), parseFloat(v)||0]));
+      // Fee % por cuenta de Meta. Guardamos el valor de CADA cuenta tal cual se ve
+      // (vacío o "0" => 0). NO filtramos: así "0%" persiste y no vuelve a caer en el
+      // fee global viejo. Nota: NO tocamos margenesDolar.feeAdSpend (fallback backend).
+      const feesClean = Object.fromEntries(Object.entries(metaFees).map(([k,v])=>[String(k), parseFloat(v)||0]));
       await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesEnvioCfg: { modoTienda: envioModo, mlFlex: mlFlex===""?"":(parseFloat(mlFlex)||0), fulfillment: parseFloat(fulfillment)||0 }, margenesCogs: costos, margenesMetaAdAccounts: (metaSel||[]).map(String), margenesMetaAdAccount: "", margenesMetaAdFees: feesClean }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
