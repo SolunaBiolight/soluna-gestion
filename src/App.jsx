@@ -2088,14 +2088,14 @@ function AppTopbar({T, section, sectionId, onHelp, onHome, children, top=48}) {
               </div>
             : <GrowithLogo size={20} variant="color"/>}
           <span style={{fontWeight:DS.w.semibold,fontSize:14,color:T.text,letterSpacing:-0.2,whiteSpace:"nowrap",lineHeight:"18px"}}>{section}</span>
-          {onHelp&&(
-            <button onClick={onHelp} title="¿Cómo funciona esta sección?"
-              style={{width:26,height:26,borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:"transparent",color:T.textSm,fontSize:12,fontWeight:DS.w.bold,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1,padding:0}}>?</button>
-          )}
         </div>
         {/* En mobile la fila de controles no se corta: scrollea horizontal (sin barra) */}
         <div className="no-scrollbar" style={{display:"flex",alignItems:"center",gap:6,overflowX:"auto",WebkitOverflowScrolling:"touch",maxWidth:"100%",minWidth:0}}>
           {children}
+          {onHelp&&(
+            <button onClick={onHelp} title="¿Cómo funciona esta sección?"
+              style={{width:24,height:24,borderRadius:DS.r.full,border:"none",background:"transparent",color:T.textSm,fontSize:12,fontWeight:DS.w.semibold,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1,padding:0,opacity:0.7}}>?</button>
+          )}
         </div>
       </div>
     </div>
