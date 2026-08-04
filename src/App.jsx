@@ -2008,18 +2008,105 @@ function TabView({children, tabKey}) {
     </div>
   );
 }
-// --- Shared AppTopbar ---
-function AppTopbar({T, section, onHome, children, top=48}) {
+// --- Íconos de sección (paths stroke 24x24, los mismos del Sidebar/CommandPalette) ---
+const SECTION_ICONS = {
+  home:    "M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10",
+  copilot: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z",
+  margenes:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
+  arca:    "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
+  meta:    "M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z",
+  stock:   "M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12",
+  ml:      "M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01",
+  envios:  "M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z",
+  reclamos:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z",
+  canjes:  "M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z",
+  tareas:  "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",
+  config:  "M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1zM15 12a3 3 0 11-6 0 3 3 0 016 0z",
+  planes:  "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
+  admin:   "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+};
+
+// --- Cuadradito de ícono de sección (se reusa en topbars propios como Planes/Admin) ---
+function SectionIcon({T, id, size=32}) {
+  const p = SECTION_ICONS[id];
+  if(!p) return null;
   return (
-    <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"e0",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",padding:"0 24px",position:"sticky",top,zIndex:30}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:52,gap:16,maxWidth:1400,margin:"0 auto"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+    <div style={{width:size,height:size,borderRadius:DS.r.md,background:T.accentSolid+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+      <svg width={Math.round(size*0.53)} height={Math.round(size*0.53)} viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={p}/></svg>
+    </div>
+  );
+}
+
+// --- Menú "⋯" del topbar para acciones terciarias ---
+// Dropdown con position:fixed (via getBoundingClientRect) porque el contenedor
+// de acciones del AppTopbar tiene overflow-x:auto y recortaría un absolute.
+function TopbarMoreMenu({T, items}) {
+  const [open,setOpen]=React.useState(false);
+  const [pos,setPos]=React.useState({top:0,right:0});
+  const list=(items||[]).filter(Boolean);
+  if(!list.length) return null;
+  return (
+    <div style={{position:"relative",flexShrink:0}}>
+      <button title="Más acciones"
+        onClick={e=>{const r=e.currentTarget.getBoundingClientRect();setPos({top:r.bottom+6,right:Math.max(10,window.innerWidth-r.right)});setOpen(o=>!o);}}
+        style={{...BtnSecondary(T),fontSize:14,padding:"7px 10px",lineHeight:1,fontWeight:DS.w.bold,color:T.textMd}}>⋯</button>
+      {open&&(<>
+        <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:60}}/>
+        <div style={{position:"fixed",top:pos.top,right:pos.right,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:6,minWidth:200,boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
+          {list.map((it,i)=>(
+            <button key={i} disabled={it.disabled} onClick={it.disabled?undefined:()=>{setOpen(false);it.onClick&&it.onClick();}}
+              style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"8px 10px",background:"transparent",border:"none",borderRadius:DS.r.md,cursor:it.disabled?"default":"pointer",opacity:it.disabled?0.5:1,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:DS.w.semibold,color:T.text,whiteSpace:"nowrap"}}
+              onMouseEnter={e=>{if(!it.disabled)e.currentTarget.style.background=T.surface;}}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              {it.icon||null}{it.label}
+            </button>
+          ))}
+        </div>
+      </>)}
+    </div>
+  );
+}
+
+// --- Shared AppTopbar ---
+// ALTO TOTAL FIJO (64px + 1px de borde = 65). Al scrollear (scrollY > 60) el
+// subtítulo colapsa DENTRO de esa banda (max-height 0 + opacity 0) y el título
+// se centra solo (flex). Se eligió alto fijo en vez de encoger la barra porque
+// los sticky que van debajo dependen de este offset (AppTabs top:113, panel de
+// Reclamos, fila sticky del Facturador, tabs de Tareas): con alto fijo nunca
+// se desalinean ni hay jitter de layout durante el scroll.
+// Si cambiás el 64, actualizá TODOS los top:113 / top:65 dependientes.
+function AppTopbar({T, section, sectionId, subtitle, onHelp, onHome, children, top=48}) {
+  const [compact,setCompact]=React.useState(false);
+  React.useEffect(()=>{
+    const onScroll=()=>setCompact(window.scrollY>60);
+    window.addEventListener("scroll",onScroll,{passive:true});
+    onScroll();
+    return ()=>window.removeEventListener("scroll",onScroll);
+  },[]);
+  const iconPath = sectionId ? SECTION_ICONS[sectionId] : null;
+  return (
+    <div style={{borderBottom:`1px solid ${T.border}`,background:T.card+"e0",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",padding:"0 24px",position:"sticky",top,zIndex:30}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:64,gap:16,maxWidth:1400,margin:"0 auto"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0,minWidth:0}}>
           <button onClick={onHome} className="mobile-only" style={{display:"none",alignItems:"center",gap:6,padding:"5px 10px",fontSize:DS.font.sm,fontWeight:DS.w.medium,borderRadius:DS.r.md,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
           </button>
-          {/* Logo pequeño */}
-          <GrowithLogo size={20} variant="color"/>
-          <span style={{fontWeight:DS.w.semibold,fontSize:14,color:T.text,letterSpacing:-0.2}}>{section}</span>
+          {/* Ícono de la sección (fallback: logo Growith si no se pasa sectionId) */}
+          {iconPath
+            ? <div style={{width:32,height:32,borderRadius:DS.r.md,background:T.accentSolid+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={iconPath}/></svg>
+              </div>
+            : <GrowithLogo size={20} variant="color"/>}
+          <div style={{display:"flex",flexDirection:"column",justifyContent:"center",minWidth:0}}>
+            <span style={{fontWeight:DS.w.semibold,fontSize:14,color:T.text,letterSpacing:-0.2,whiteSpace:"nowrap",lineHeight:"18px"}}>{section}</span>
+            {subtitle!=null&&subtitle!==""&&(
+              <div style={{fontSize:11,color:T.textSm,lineHeight:"14px",maxHeight:compact?0:14,opacity:compact?0:1,overflow:"hidden",transition:"max-height 0.2s ease, opacity 0.2s ease",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{subtitle}</div>
+            )}
+          </div>
+          {onHelp&&(
+            <button onClick={onHelp} title="¿Cómo funciona esta sección?"
+              style={{width:26,height:26,borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:"transparent",color:T.textSm,fontSize:12,fontWeight:DS.w.bold,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1,padding:0}}>?</button>
+          )}
         </div>
         {/* En mobile la fila de controles no se corta: scrollea horizontal (sin barra) */}
         <div className="no-scrollbar" style={{display:"flex",alignItems:"center",gap:6,overflowX:"auto",WebkitOverflowScrolling:"touch",maxWidth:"100%",minWidth:0}}>
@@ -2034,7 +2121,7 @@ function AppTopbar({T, section, onHome, children, top=48}) {
 function AppTabs({T, tabs, active, onChange, size="normal"}) {
   const isLarge = size==="large";
   return (
-    <div style={{background:T.surface,borderBottom:"1px solid "+T.border,padding:isLarge?"12px 24px":"10px 24px",position:"sticky",top:105,zIndex:20}}>
+    <div style={{background:T.surface,borderBottom:"1px solid "+T.border,padding:isLarge?"12px 24px":"10px 24px",position:"sticky",top:113,zIndex:20}}>
       <div style={{display:"inline-flex",background:T.bg,borderRadius:isLarge?12:10,padding:3,border:"1px solid "+T.border,gap:isLarge?3:2}}>
         {tabs.map(t=>{
           const isActive=active===t.id;
@@ -2764,30 +2851,31 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
 
       {/* Topbar */}
-      <AppTopbar T={T} section="Reclamos" onHome={onHome}>
-        <button onClick={()=>{
+      <AppTopbar T={T} section="Reclamos" sectionId="reclamos" onHome={onHome}
+        subtitle={reclamos.length>0?`${abiertos.length} abierto${abiertos.length===1?"":"s"}`:null}
+        onHelp={()=>setShowGuia(s=>!s)}>
+        <TopbarMoreMenu T={T} items={[
+          {label:"Exportar CSV",onClick:()=>{
           const headers=["Pedido","Cliente","Email","Tipo","Estado","Días abierto","Tracking cambio","Tracking devolución","Motivo","Notas"];
           const rows=reclamos.map(r=>{const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):"";;return[r.orderNum,r.clienteNombre||"",r.clienteEmail||"",r.tipo,r.estado,dias,r.trackingCambio||"",r.trackingDevolucion||"",(r.motivo||"").replace(/\n/g," "),(r.notasInternas||"").replace(/\n/g," ")];});
           const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
           const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}));a.download=`reclamos_${hoyAR()}.csv`;a.click();
           toast("CSV exportado ✓","success");
-        }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",gap:5,display:"flex",alignItems:"center"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>CSV</button>
-        <button onClick={()=>setView("config")} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",color:T.textSm,gap:5,display:"flex",alignItems:"center"}} title="Configurar SLA"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>SLA</button>
-        <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",opacity:ordersStatus==="loading"?0.5:1,minWidth:32,justifyContent:"center"}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}</button>
-        <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:13,padding:"7px 14px"}}>+ Nuevo reclamo</button>
+        }},
+          {label:"Configurar SLA",onClick:()=>setView("config")},
+        ]}/>
+        <button onClick={fetchOrders} disabled={ordersStatus==="loading"} title="Actualizar pedidos" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",opacity:ordersStatus==="loading"?0.5:1,minWidth:32,justifyContent:"center"}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}</button>
+        <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px"}}>+ Nuevo reclamo</button>
       </AppTopbar>
 
       {/* Tabs internos removidos — navegación va por el sidebar izquierdo */}
 
       <div style={{padding:"20px 24px 64px",maxWidth:1400,margin:"0 auto",width:"100%",boxSizing:"border-box",paddingRight:activeReclamo?460:24,transition:`padding-right 0.25s ${DS.ease}`}}>
 
-        {/* GUÍA ¿Cómo funciona? */}
-        <div style={{marginBottom:16}}>
-          <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
-          </button>
+        {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
+        <div>
           {showGuia&&(
-            <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+            <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
                 {n:1,icon:"",title:"Pipeline Kanban",desc:"Los reclamos se organizan por etapa: Nuevo → En proceso → Esperando cliente → Resuelto. Mové las cards entre columnas según el avance."},
                 {n:2,icon:"",title:"Nuevo reclamo",desc:"Registrá el problema con el número de pedido, el cliente y qué pasó. Cuanto más detalle, más fácil resolverlo rápido."},
@@ -3104,7 +3192,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
       {/* === DRAWER PANEL LATERAL === */}
       {activeR&&(
-        <div style={{position:"fixed",right:0,top:105,bottom:0,width:"min(440px,100vw)",background:T.card,borderLeft:`1px solid ${T.border}`,zIndex:35,overflowY:"auto",boxShadow:`-8px 0 32px rgba(0,0,0,0.12)`,animation:"slideInRight 0.22s cubic-bezier(0.4,0,0.2,1)",fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <div style={{position:"fixed",right:0,top:113,bottom:0,width:"min(440px,100vw)",background:T.card,borderLeft:`1px solid ${T.border}`,zIndex:35,overflowY:"auto",boxShadow:`-8px 0 32px rgba(0,0,0,0.12)`,animation:"slideInRight 0.22s cubic-bezier(0.4,0,0.2,1)",fontFamily:"'Inter',system-ui,sans-serif"}}>
           {/* Header */}
           <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",position:"sticky",top:0,zIndex:1}}>
             <div style={{flex:1,minWidth:0}}>
@@ -4014,19 +4102,18 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
   return (
     <div style={{fontFamily:"Inter,system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
-      <AppTopbar T={T} section="Canjes" onHome={onHome}>
-        <button onClick={exportCSV} style={{...BtnSecondary(T),fontSize:12,color:T.textMd}}>Exportar CSV</button>
-        <button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:13,padding:"7px 14px"}}>+ Nuevo canje</button>
+      <AppTopbar T={T} section="Canjes" sectionId="canjes" onHome={onHome}
+        subtitle={canjes.length>0?`${stats.total-stats.cerrados} activo${stats.total-stats.cerrados===1?"":"s"} · ${stats.contPend} con contenido pendiente`:null}
+        onHelp={()=>setShowGuia(s=>!s)}>
+        <button onClick={exportCSV} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.textMd}}>Exportar CSV</button>
+        <button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:12,padding:"7px 14px"}}>+ Nuevo canje</button>
       </AppTopbar>
 
       <div style={{padding:"24px 24px 64px",maxWidth:1280,margin:"0 auto",width:"100%"}}>
-        {/* GUÍA ¿Cómo funciona? */}
-        <div style={{marginBottom:16}}>
-          <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
-          </button>
+        {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
+        <div>
           {showGuia&&(
-            <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+            <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
                 {n:1,title:"Perfiles",desc:"Creá el perfil del influencer con su código, % descuento y % comisión — se reutiliza en cada canje."},
                 {n:2,title:"Nuevo canje",desc:"Elegí el perfil (se autocompleta) o cargalo desde un pedido, productos, tracking y contenido acordado. El estado arranca en 'Por enviar'."},
@@ -6618,12 +6705,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       })()}
 
       {/* Topbar */}
-      <AppTopbar T={T} section="Envíos" onHome={onHome}>
+      <AppTopbar T={T} section="Envíos" sectionId="envios" onHome={onHome}
+        subtitle={(counts.empaquetar!=null||counts.enviar!=null)?`${counts.empaquetar??0} por empaquetar · ${counts.enviar??0} por enviar`:null}
+        onHelp={()=>setShowGuia(s=>!s)}>
         <AsyncButton onClick={async()=>{
           tabCacheRef.current={};
           // No vaciar la lista: se mantiene visible con el chip "Actualizando" (SWR)
           await Promise.all([fetchTabOrders(tabEnvio,{background:true,fresh:true}), fetchTabCounts(user?.uid,true)]);
-        }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.textMd}}>
+        }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px"}}>
           ⟳ Sincronizar
         </AsyncButton>
       </AppTopbar>
@@ -6634,13 +6723,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         {/* -- PANEL DE ENVIOS -- */}
         {tab==="panel"&&(
           <div>
-            {/* GUÍA ¿Cómo funciona? */}
-            <div style={{marginBottom:16}}>
-              <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
-              </button>
+            {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
+            <div>
               {showGuia&&(
-                <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+                <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
                   {[
                     {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de Tienda Nube se sincronizan solos. En 'Por empaquetar' podés armar el paquete, imprimir el picking list y marcarlo como empaquetado sin salir de acá."},
                     {n:2,icon:"",title:"Generar etiquetas",desc:"En 'Por enviar', seleccioná los pedidos y generá el Excel de carga masiva para Andreani (domicilio y sucursal/HOP). Lo subís al portal de Andreani y descargás los rótulos PDF."},
@@ -8897,7 +8983,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
-      <AppTopbar T={T} section="Configuración" onHome={onBack}/>
+      <AppTopbar T={T} section="Configuración" sectionId="config" subtitle="Integraciones y preferencias" onHome={onBack}/>
 
       <div style={{maxWidth:960,margin:"0 auto",padding:"20px 24px 80px"}}>
 
@@ -9694,9 +9780,13 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",paddingBottom:80}}>
       {/* Topbar */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"e8",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",padding:"0 20px",height:52,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.card+"e0",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",padding:"0 20px",height:64,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
         {!isTrialExpired&&<button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>}
-        <span style={{fontWeight:700,fontSize:15,color:T.text}}>Suscripción</span>
+        <SectionIcon T={T} id="planes"/>
+        <div style={{display:"flex",flexDirection:"column",justifyContent:"center"}}>
+          <span style={{fontWeight:700,fontSize:14,color:T.text,letterSpacing:-0.2,lineHeight:"18px"}}>Suscripción</span>
+          <span style={{fontSize:11,color:T.textSm,lineHeight:"14px"}}>Tu plan y facturación de Growith</span>
+        </div>
       </div>
 
       <div style={{maxWidth:840,margin:"0 auto",padding:"40px 20px 0"}}>
@@ -10047,17 +10137,21 @@ function AppAdmin({T, user, onBack}) {
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
 
       {/* Topbar */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"e8",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",padding:"0 20px",height:52,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.card+"e0",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",padding:"0 20px",height:64,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:12}}>← Inicio</button>
-          <span style={{fontWeight:700,fontSize:15,color:T.yellow}}>Admin</span>
+          <SectionIcon T={T} id="admin"/>
+          <div style={{display:"flex",flexDirection:"column",justifyContent:"center"}}>
+            <span style={{fontWeight:700,fontSize:14,color:T.text,letterSpacing:-0.2,lineHeight:"18px"}}>Admin</span>
+            <span style={{fontSize:11,color:T.textSm,lineHeight:"14px"}}>Cuentas, cobros y accesos</span>
+          </div>
           {pagosPendientes.length>0&&(
             <span style={{background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 8px"}}>
               {pagosPendientes.length} pendiente{pagosPendientes.length>1?"s":""}
             </span>
           )}
         </div>
-        <AsyncButton onClick={loadData} style={{...BtnSecondary(T),fontSize:12,padding:"5px 12px"}}>Actualizar</AsyncButton>
+        <AsyncButton onClick={loadData} style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px"}}>Actualizar</AsyncButton>
       </div>
 
       {/* Tabs */}
@@ -12329,7 +12423,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       {/* Topbar */}
-      <AppTopbar T={T} section="Trabajo" onHome={onHome} top={colabMode?0:48}>
+      <AppTopbar T={T} section="Trabajo" sectionId="tareas" onHome={onHome} top={colabMode?0:48}
+        subtitle={tareas.length>0?`${tareas.filter(t=>t.estado!=="aprobado").length} tareas activas · ${enRevision.length} para revisar`:null}
+        onHelp={view==="equipo"
+          ? (colabMode?null:()=>setShowGuiaEquipo(s=>!s))
+          : view==="referencias"
+            ? null
+            : (!colabMode||colabMode.permisos?.verTareas)?()=>setShowGuia(s=>!s):null}>
         {enRevision.length>0&&(
           <button onClick={()=>{setActiveView("todo");setKanbanSelected(null);setCalendarView(false);setFilterCompletadas(false);setFilterEstado("revision");setFilterColab("");}} title="Ver tareas en corrección"
             style={{display:"inline-flex",alignItems:"center",gap:6,background:T.red+"14",color:T.red,border:`1px solid ${T.red}30`,fontSize:11,fontWeight:600,borderRadius:7,padding:"5px 10px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
@@ -12349,12 +12449,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         )}
         {view==="todo"&&!calendarView&&(!colabMode||colabMode.permisos?.verTareas)&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:13,padding:"8px 18px",fontWeight:700,letterSpacing:"0.01em"}}>+ Tarea</button>}
         {view==="equipo"&&!colabMode&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
-        {view==="equipo"&&!colabMode&&<button onClick={async()=>{setShowBoardModal(true);if(!boardToken){setBoardLinkLoading(true);try{const d=await tareasApi({action:"generateBoardToken"});setBoardTokenAdmin(d.token);}catch(e){toast("Error generando link","error");}finally{setBoardLinkLoading(false);}}}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}><GhI n="link" size={12}/> Tablero compartido</button>}
+        {view==="equipo"&&!colabMode&&<button onClick={async()=>{setShowBoardModal(true);if(!boardToken){setBoardLinkLoading(true);try{const d=await tareasApi({action:"generateBoardToken"});setBoardTokenAdmin(d.token);}catch(e){toast("Error generando link","error");}finally{setBoardLinkLoading(false);}}}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}><GhI n="link" size={12}/> Tablero compartido</button>}
         {view==="todo"&&colabMode&&!colabMode.permisos?.verTareas&&<button onClick={()=>setShowNTColab(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>+ Proponer tarea</button>}
       </AppTopbar>
 
       {/* Barra de tabs principales — segmented estándar de la app */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.bg,position:"sticky",top:colabMode?52:100,zIndex:29}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.bg,position:"sticky",top:colabMode?65:113,zIndex:29}}>
         <div style={{display:"flex",padding:"8px 24px"}}>
           <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1}}>
             {[["todo","Tareas"],["equipo","Equipo"],["referencias","Referencias"]].filter(([id])=>{
@@ -12463,13 +12563,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   </div>
                 </div>
               )}
-              {/* GUÍA ¿Cómo funciona? */}
-              {(!colabMode||colabMode.permisos?.verTareas)&&<div style={{marginBottom:16}}>
-                <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
-                </button>
+              {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
+              {(!colabMode||colabMode.permisos?.verTareas)&&<div>
                 {showGuia&&(
-                  <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+                  <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
                     {[
                       {n:1,title:"Crear tarea",desc:"Hacé click en '+ Tarea'. Completá título, asignado y deadline. El Brief es donde van las instrucciones o el link de Drive con el material."},
                       {n:2,title:"Estados",desc:"Las tareas pasan por: Pendiente → En proceso → Entregado → Aprobado. Tu equipo actualiza desde su portal, sin crear cuenta."},
@@ -13201,13 +13298,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   </div>
                 );
               })()}
-              {/* GUÍA ¿Cómo funciona? — Equipo */}
-              <div style={{marginBottom:16}}>
-                <button onClick={()=>setShowGuiaEquipo(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuiaEquipo?"▲":"▾"}</span>
-                </button>
+              {/* GUÍA ¿Cómo funciona? — Equipo — se abre con el botón "?" del topbar */}
+              <div>
                 {showGuiaEquipo&&(
-                  <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+                  <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
                     {[
                       {n:1,title:"Agregar miembro",desc:"Usá '+ Equipo'. Con email: recibe tareas, accede a su portal y recibe notificaciones. Sin email: solo producción de creativos."},
                       {n:2,title:"Portal sin cuenta",desc:"Cada colaborador recibe un link único. Desde ahí ve sus tareas, sube entregas y comenta. No necesita crear ninguna cuenta."},
@@ -17385,7 +17479,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   if(loading) return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Facturador" onHome={onHome}/>
+      <AppTopbar T={T} section="Facturador" sectionId="arca" onHome={onHome}/>
       <div style={{flex:1,maxWidth:1280,margin:"0 auto",padding:"28px 24px",width:"100%",animation:"growith-fadeInFast 0.3s ease"}}>
         {/* Skeleton dashboard */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
@@ -17422,7 +17516,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           (antes se inyectaba dentro del render condicional de la lista) */}
       <style>{`@keyframes arca-shimmer{0%{transform:translateX(-110%)}100%{transform:translateX(380%)}}`}</style>
       {/* ── TOPBAR ── */}
-      <AppTopbar T={T} section="Facturador" onHome={onHome}>
+      <AppTopbar T={T} section="Facturador" sectionId="arca" onHome={onHome}
+        subtitle={tnData?`${pendStats.pendCount} venta${pendStats.pendCount===1?"":"s"} sin facturar`:null}
+        onHelp={cuits.length>0&&tab==="facturar"?()=>setShowGuia(s=>!s):null}>
         <div className="arca-cuit-menu" style={{position:"relative"}}>
           <button onClick={(e)=>{e.stopPropagation();setShowCuitMenu(s=>!s);}} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 12px",borderRadius:10,border:"1px solid "+T.border,background:T.card,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",minWidth:200}}>
             {cuitActivo ? (
@@ -17560,14 +17656,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 ]}/>
             </div>
 
-            {/* GUÍA ¿Cómo funciona? — mismo patrón chico y discreto que el resto de las secciones */}
+            {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
             {tab==="facturar"&&(
-            <div style={{marginBottom:16}}>
-              <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
-              </button>
+            <div>
               {showGuia&&(
-                <div style={{marginTop:12,padding:16,background:T.card,border:"1px solid "+T.border,borderRadius:12}}>
+                <div style={{marginBottom:16,padding:16,background:T.card,border:"1px solid "+T.border,borderRadius:12}}>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:20}}>
                     {[
                       {step:"1",title:"Conectá tus tiendas y tu CUIT",desc:"Desde Config conectá Tienda Nube, Shopify y Mercado Libre — Growith trae las órdenes pagas automáticamente, sin necesidad de subir Excel. Después, arriba a la derecha: selector de CUIT → '+ Conectar nuevo CUIT'. El wizard de 3 pasos te guía con tus datos fiscales, generación del certificado (Growith arma el par RSA, te da el CSR para subir a ARCA → ARCA te devuelve un .crt que cargás acá — descargá y guardá tu clave con el botón Descargar clave) y verificación.",color:T.accent},
@@ -17923,7 +18016,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </>
                         )}
                         {/* Barra de herramientas */}
-                        <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,flexWrap:"wrap",opacity:tnLoading?0.7:1,transition:"opacity 0.2s",position:"sticky",top:105,zIndex:5,boxShadow:`0 2px 8px ${T.bg}`}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,flexWrap:"wrap",opacity:tnLoading?0.7:1,transition:"opacity 0.2s",position:"sticky",top:113,zIndex:5,boxShadow:`0 2px 8px ${T.bg}`}}>
                           {/* Checkbox "seleccionar todas" */}
                           <div onClick={()=>{
                             const ns={...tnSelected};itemsSelectables.forEach(([id])=>ns[id]=!allSel);setTnSelected(ns);
@@ -21321,7 +21414,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Meta Ads" onHome={onHome}>
+      <AppTopbar T={T} section="Meta Ads" sectionId="meta" onHome={onHome}
+        subtitle="Campañas de Facebook e Instagram"
+        onHelp={()=>setShowGuia(s=>!s)}>
         {activeAcc&&(
           <AccountSwitcher T={T} accounts={accounts} activeAcc={activeAcc}
             onSwitch={async (a)=>{
@@ -21375,13 +21470,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           </div>
         </div>
 
-        {/* GUÍA ¿Cómo funciona? */}
-        <div style={{marginBottom:16}}>
-          <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
-          </button>
+        {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
+        <div>
           {showGuia&&(
-            <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+            <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
                 {n:1,icon:"",title:"Conectar Meta",desc:"Necesitás un token desde Business Manager → Usuarios del sistema. Configuralo en Config → Meta Ads siguiendo las instrucciones exactas de permisos."},
                 {n:2,icon:"",title:"Ver campañas",desc:"Ves todas tus campañas activas con gasto, alcance, impresiones y resultados del período seleccionado."},
@@ -23176,9 +23268,9 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
 
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Copilot" onHome={onHome}>
+      <AppTopbar T={T} section="Copilot" sectionId="copilot" onHome={onHome} subtitle="Preguntale a tu negocio">
         {msgs.length > 0 && (
-          <button onClick={()=>{ setMsgs([]); setDatosAl(null); try{sessionStorage.removeItem("growith_copilot_msgs");}catch(_){} if(uid) setDoc(doc(db,"users",uid,"copilot","historial"),{msgs:[],updated:new Date().toISOString()}).catch(()=>{}); }} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textSm,borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Nueva conversación</button>
+          <button onClick={()=>{ setMsgs([]); setDatosAl(null); try{sessionStorage.removeItem("growith_copilot_msgs");}catch(_){} if(uid) setDoc(doc(db,"users",uid,"copilot","historial"),{msgs:[],updated:new Date().toISOString()}).catch(()=>{}); }} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.textMd}}>Nueva conversación</button>
         )}
       </AppTopbar>
 
@@ -23517,8 +23609,9 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Gestión Mercado Libre" onHome={onHome}>
-        <button onClick={loadItems} disabled={loading} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{loading?<Spinner size={12} color={T.textMd}/>:"↻"} Refrescar</button>
+      <AppTopbar T={T} section="Gestión Mercado Libre" sectionId="ml" onHome={onHome}
+        subtitle={statusFilter==="active"&&items.length>0?`${items.length} publicaci${items.length===1?"ón activa":"ones activas"}`:"Publicaciones y ventas"}>
+        <button onClick={loadItems} disabled={loading} style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px"}}>{loading?<Spinner size={12} color="#fff"/>:"↻"} Refrescar</button>
       </AppTopbar>
 
       <div style={{maxWidth:1280,margin:"0 auto",padding:"24px 24px 80px",width:"100%"}}>
@@ -24763,7 +24856,7 @@ function AppMargenes({ T, user, onHome, tab="dashboard", setTab }) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Dashboard" onHome={onHome}/>
+      <AppTopbar T={T} section="Dashboard" sectionId="margenes" subtitle="Finanzas y márgenes" onHome={onHome}/>
       <MargenesTabsBar T={T} tab={tab} setTab={setTab}/>
       <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
         {tab==="pnl" && <MargenesPnl T={T} uid={uid}/>}
@@ -25822,36 +25915,30 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         </div>,document.body
       )}
 
-      <AppTopbar T={T} section="Stock & Estadísticas" onHome={onHome}>
+      <AppTopbar T={T} section="Stock & Estadísticas" sectionId="stock" onHome={onHome}
+        subtitle={data?`${allProducts.length} producto${allProducts.length===1?"":"s"} · ${alertas.length} en alerta`:null}
+        onHelp={()=>setShowGuia(s=>!s)}>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
           {platform==="shopify" && <span style={{fontSize:11,background:"#96BF4822",border:"1px solid #96BF4866",borderRadius:6,padding:"3px 8px",fontWeight:600,color:"#96BF48"}}>Shopify</span>}
           {platform==="tiendanube" && <span style={{fontSize:11,background:"#2D8DF222",border:"1px solid #2D8DF266",borderRadius:6,padding:"3px 8px",fontWeight:600,color:"#2D8DF2"}}>Tienda Nube</span>}
           {data?.ml_data && <span style={{fontSize:11,background:"#FFE60022",border:"1px solid #FFE60088",borderRadius:6,padding:"3px 8px",fontWeight:600,color:"#FFE600"}}>Mercado Libre</span>}
-          <button onClick={exportCSV} disabled={!data}
-            style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontWeight:500}}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> CSV
-          </button>
-          <button onClick={syncSales} disabled={syncingSales}
-            title="Re-sincroniza ventas de los últimos 30 días desde TN/Shopify/ML"
-            style={{background:T.card,border:`1px solid ${T.accent}55`,color:T.accent,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:syncingSales?"wait":"pointer",display:"flex",alignItems:"center",gap:4,fontWeight:600}}>
-            {syncingSales?<><Spinner size={11} color={T.accent}/> Reprocesando...</>:<><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Reprocesar 30 días</>}
-          </button>
+          <TopbarMoreMenu T={T} items={[
+            {label:"Exportar CSV",disabled:!data,onClick:exportCSV},
+            {label:syncingSales?"Reprocesando…":"Reprocesar 30 días",disabled:syncingSales,onClick:syncSales},
+          ]}/>
           <button onClick={()=>loadStock(days, useCustomDate?dateFrom:"", useCustomDate?dateTo:"")} disabled={loading}
-            style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontWeight:500}}>
-            {loading?<Spinner size={11} color={T.textMd}/>:"↻"} Actualizar
+            style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:4}}>
+            {loading?<Spinner size={11} color="#fff"/>:"↻"} Actualizar
           </button>
         </div>
       </AppTopbar>
 
       <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
 
-        {/* GUÍA ¿Cómo funciona? */}
-        <div style={{marginBottom:16}}>
-          <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
-          </button>
+        {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
+        <div>
           {showGuia&&(
-            <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+            <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
                 {n:1,icon:"",title:"Resumen",desc:"KPIs de ventas y stock del período, proyección de demanda y las alertas activas (productos por agotarse). Es tu vista diaria."},
                 {n:2,icon:"",title:"Inventario",desc:"Tu catálogo con stock, velocidad de venta y días restantes por producto. Abajo, el inventario central de Growith: usá 'Vincular catálogo (SKU)' para unificar TN/Shopify/ML por SKU — las ventas lo descuentan solas."},
@@ -27464,7 +27551,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     const Skel=({h=112,r=14})=>(<div style={{height:h,borderRadius:r,background:`linear-gradient(90deg, ${T.surface} 25%, ${T.card} 50%, ${T.surface} 75%)`,backgroundSize:"200% 100%",animation:"ghskel 1.4s ease infinite"}}/>);
     return(
       <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh"}}>
-        <AppTopbar T={T} section="Dashboard" onHome={onHome}/>
+        <AppTopbar T={T} section="Dashboard" sectionId="margenes" subtitle="Finanzas y márgenes" onHome={onHome}/>
         <MargenesTabsBar T={T} tab={tab||"dashboard"} setTab={setTab}/>
         <div style={{maxWidth:1440,margin:"0 auto",padding:"20px 24px",width:"100%"}}>
           {calcNuevo&&(
@@ -27486,7 +27573,13 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
 
   return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Dashboard" onHome={onHome}>
+      <AppTopbar T={T} section="Dashboard" sectionId="margenes" onHome={onHome}
+        subtitle={(()=>{try{
+          const s=useCustom?dateFrom:fechaAR(new Date(Date.now()-days*86400000));
+          const u=useCustom?dateTo:hoyAR();
+          const f=d=>new Date(d+"T12:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short"});
+          return f(s)+" – "+f(u);
+        }catch(_){return null;}})()}>
         {/* Preferencias de vista unificadas: números completos + USD en un solo menú */}
         <div style={{position:"relative"}}>
           <button onClick={e=>{const r=e.currentTarget.getBoundingClientRect(); setViewMenuPos({top:r.bottom+6,right:Math.max(10,Math.min(window.innerWidth-r.right,window.innerWidth-246))}); setViewMenu(v=>!v);}} title="Preferencias de vista"
