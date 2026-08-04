@@ -23980,6 +23980,17 @@ function CostosPanel({ T, uid }) {
   const [mlMp, setMlMp] = React.useState("");             // ML usado para comisiones de MP
   const [mlVentas, setMlVentas] = React.useState("");     // ML usado para ventas de ML
   const [metaAdAccts, setMetaAdAccts] = React.useState([]);     // cuentas de Meta accesibles
+  // Migración robusta del fee: cuando cargan las cuentas, cada una que NO tenga un
+  // % propio guardado arranca con el fee global viejo (así todas quedan editables y
+  // el valor persiste al guardar, en vez de mostrar el legacy solo de forma visual).
+  React.useEffect(()=>{
+    if (!metaAdAccts.length || legacyMetaFee==="") return;
+    setMetaFees(prev => {
+      let changed = false; const next = {...prev};
+      for (const a of metaAdAccts) { const id = String(a.account_id || (a.id||"").replace(/^act_/,"")); if (next[id]==null) { next[id]=legacyMetaFee; changed=true; } }
+      return changed ? next : prev;
+    });
+  }, [metaAdAccts, legacyMetaFee]);
   const [loaded, setLoaded] = React.useState(false);
   const [loadingProds, setLoadingProds] = React.useState(true);
   const [prodError, setProdError] = React.useState(null);
@@ -24058,7 +24069,7 @@ function CostosPanel({ T, uid }) {
     try {
       // Fee % por cuenta de Meta (limpiamos vacíos/0). Nota: NO tocamos
       // margenesDolar.feeAdSpend (queda como fallback de migración en el backend).
-      const feesClean = Object.fromEntries(Object.entries(metaFees).filter(([,v])=>String(v).trim()!=="" && parseFloat(v)!==0).map(([k,v])=>[String(k), parseFloat(v)||0]));
+      const feesClean = Object.fromEntries(Object.entries(metaFees).filter(([,v])=>String(v).trim()!=="").map(([k,v])=>[String(k), parseFloat(v)||0]));
       await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesEnvioCfg: { modoTienda: envioModo, mlFlex: mlFlex===""?"":(parseFloat(mlFlex)||0), fulfillment: parseFloat(fulfillment)||0 }, margenesCogs: costos, margenesMetaAdAccounts: (metaSel||[]).map(String), margenesMetaAdAccount: "", margenesMetaAdFees: feesClean }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
