@@ -1660,6 +1660,79 @@ function buildOrdersFromAPI(data) {
 // --- Andreani shared cache (module level) ---
 const _andreaniLocsCache = { current: null };
 
+// Ubicaciones válidas del template oficial de Andreani (compartido por
+// Reclamos y Canjes; AppEnvios tiene su propia copia con más lógica).
+async function ghLoadAndreaniLocations() {
+  if(_andreaniLocsCache.current) return _andreaniLocsCache.current;
+  if(!window.JSZip){await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=resolve;s.onerror=reject;document.head.appendChild(s);});}
+  const res=await fetch('/andreani_template.xlsx?v='+Date.now());
+  if(!res.ok) throw new Error("No se pudo cargar el template");
+  const buf=await res.arrayBuffer();
+  const zip=await window.JSZip.loadAsync(buf);
+  const ssXml=await zip.file('xl/sharedStrings.xml').async('string');
+  const strings=[];const rx=/<t[^>]*>([\s\S]*?)<\/t>/g;let m;while((m=rx.exec(ssXml))!==null)strings.push(m[1]);
+  const locPattern=/^[A-ZÁÉÍÓÚÑÜ\s]+ \/ [A-ZÁÉÍÓÚÑÜ\s0-9]+ \/ \d+$/;
+  const list=strings.filter(s=>locPattern.test(s.trim()));
+  const cpIndex={};list.forEach(loc=>{const parts=loc.split(' / ');if(parts.length===3){const cp=parts[2].trim();if(!cpIndex[cp])cpIndex[cp]=[];cpIndex[cp].push(loc);}});
+  const provIndex={};list.forEach(loc=>{const prov=loc.split(' / ')[0].trim();if(!provIndex[prov])provIndex[prov]=[];provIndex[prov].push(loc);});
+  const sheet4Xml=await zip.file('xl/worksheets/sheet4.xml').async('string');
+  const aCells=[...sheet4Xml.matchAll(/<c r="A(\d+)"[^>]*t="s"[^>]*><v>(\d+)<\/v>/g)];
+  const sucursales=aCells.map(([,row,idx])=>strings[parseInt(idx)]||"").filter(s=>s.trim()&&s!=="Sucursal");
+  _andreaniLocsCache.current={list,cpIndex,provIndex,sucursales};
+  return _andreaniLocsCache.current;
+}
+
+// XLSX de carga masiva de Andreani con UN solo envío a domicilio. `o` es un
+// pseudo-pedido {numero, comprador, dni, email, telefono, cp, provincia,
+// localidad, direccion, dirNumero, piso}. Tira Error si algo falla.
+async function ghEtiquetaAndreaniXlsxUno(o) {
+  if(!o) throw new Error("Sin datos del envío");
+  const locs=await ghLoadAndreaniLocations();
+  if(!window.JSZip){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
+  const tRes=await fetch('/andreani_template.xlsx?v='+Date.now());
+  if(!tRes.ok) throw new Error("No se pudo cargar el template");
+  const tBuf=await tRes.arrayBuffer();
+  const zip=await window.JSZip.loadAsync(tBuf);
+  const ssXml=await zip.file('xl/sharedStrings.xml').async('string');
+  const existSS=[];const ssRx=/<t[^>]*>([\s\S]*?)<\/t>/g;let mx;while((mx=ssRx.exec(ssXml))!==null)existSS.push(mx[1]);
+  const ssMap=new Map();existSS.forEach((s,i)=>ssMap.set(s,i));const newSS=[...existSS];
+  function idx(s){const k=String(s==null?"":s);if(ssMap.has(k))return ssMap.get(k);const i=newSS.length;newSS.push(k);ssMap.set(k,i);return i;}
+  function sC(ref,val){return '<c r="'+ref+'" t="s"><v>'+idx(val)+'</v></c>';}
+  function nC(ref,val){return (val===''||val===null||val===undefined)?sC(ref,''):'<c r="'+ref+'"><v>'+val+'</v></c>';}
+  // Sin tildes (Andreani rechaza caracteres fuera de ASCII) y CUIT de 11 dígitos → DNI.
+  function cl(s){return String(s||"").normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[-\/\|#*]+/g,' ').replace(/\s{2,}/g,' ').trim();}
+  const dniDep=(()=>{const d=String(o.dni||"").replace(/\D/g,'');return d.length===11?d.slice(2,10):d;})();
+  const partes=String(o.comprador||"").trim().split(' ');
+  const nombre=cl(partes[0]||"");const apellido=cl(partes.slice(1).join(' ')||"");
+  const tel=(o.telefono||"").replace(/[^0-9]/g,'');
+  const clean0=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
+  const clean=clean0.startsWith('9')&&clean0.length===10?clean0.slice(1):clean0;
+  let telCod='',telNum='';
+  if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
+  else if(clean.length>=8){telCod=clean.slice(0,clean.length-8)||'';telNum=clean.slice(clean.length-8);}
+  else if(clean.length>0){telNum=clean;}
+  const cpIndex=locs.cpIndex;const provIndex=locs.provIndex;
+  const cpStr=String(o.cp||"").trim();
+  const provU=(o.provincia||"").toUpperCase().replace(/^CIUDAD AUTONOMA.*/,"CAPITAL FEDERAL");
+  let ubicacion="";
+  const byCp=cpIndex[cpStr]||[];
+  if(byCp.length>=1){const byProv=byCp.find(l=>l.startsWith(provU));ubicacion=byProv||byCp[0];}
+  if(!ubicacion){const provList=provIndex[provU]||[];if(provList.length>0)ubicacion=provList[0];}
+  if(!ubicacion)ubicacion=locs.list.find(l=>l.startsWith('BUENOS AIRES'))||locs.list[0]||"";
+  const dirNum=String(o.dirNumero||"");
+  const direccion=cl(o.direccion||"");
+  const rn=3;
+  const cells=[sC('A'+rn,""),nC('B'+rn,200),nC('C'+rn,5),nC('D'+rn,5),nC('E'+rn,5),nC('F'+rn,6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(dniDep&&!isNaN(dniDep))?nC('J'+rn,parseFloat(dniDep)):sC('J'+rn,dniDep||""),sC('K'+rn,cl(o.email||"")),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),sC('N'+rn,direccion),(dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,0),sC('P'+rn,cl(o.piso||"")),sC('Q'+rn,""),sC('R'+rn,ubicacion),sC('S'+rn,"")].join('');
+  const rowXml='<row r="3" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>';
+  const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
+  const newSheet1=sheet1.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S3"/>').replace('</sheetData>',rowXml+'</sheetData>').replace(/<dataValidations[\s\S]*?<\/dataValidations>/g,'');
+  zip.file('xl/worksheets/sheet1.xml',newSheet1);
+  const newSsItems=newSS.map(s=>{const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');const sp=(s!==s.trim()||s.indexOf(String.fromCharCode(10))>=0)?' xml:space="preserve"':'';return '<si><t'+sp+'>'+esc+'</t></si>';}).join('');
+  zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+newSS.length+'" uniqueCount="'+newSS.length+'">'+newSsItems+'</sst>');
+  const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`EnvioMasivoExcelPaquetes-${o.numero}.xlsx`;a.click();
+}
+
 // --- UI Components ---
 
 // Inject spinner keyframe CSS once
@@ -2765,80 +2838,11 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const activeR=reclamos.find(r=>r._docId===activeReclamo);
   const [activeOrderCache,setActiveOrderCache]=useState({});
 
-  // Andreani functions (using shared module-level cache)
-  async function loadAndreaniLocations() {
-    if(_andreaniLocsCache.current) return _andreaniLocsCache.current;
-    if(!window.JSZip){await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=resolve;s.onerror=reject;document.head.appendChild(s);});}
-    const res=await fetch('/andreani_template.xlsx?v='+Date.now());
-    if(!res.ok) throw new Error("No se pudo cargar el template");
-    const buf=await res.arrayBuffer();
-    const zip=await window.JSZip.loadAsync(buf);
-    const ssXml=await zip.file('xl/sharedStrings.xml').async('string');
-    const strings=[];const rx=/<t[^>]*>([\s\S]*?)<\/t>/g;let m;while((m=rx.exec(ssXml))!==null)strings.push(m[1]);
-    const locPattern=/^[A-ZÁÉÍÓÚÑÜ\s]+ \/ [A-ZÁÉÍÓÚÑÜ\s0-9]+ \/ \d+$/;
-    const list=strings.filter(s=>locPattern.test(s.trim()));
-    const cpIndex={};list.forEach(loc=>{const parts=loc.split(' / ');if(parts.length===3){const cp=parts[2].trim();if(!cpIndex[cp])cpIndex[cp]=[];cpIndex[cp].push(loc);}});
-    const provIndex={};list.forEach(loc=>{const prov=loc.split(' / ')[0].trim();if(!provIndex[prov])provIndex[prov]=[];provIndex[prov].push(loc);});
-    const sheet4Xml=await zip.file('xl/worksheets/sheet4.xml').async('string');
-    const aCells=[...sheet4Xml.matchAll(/<c r="A(\d+)"[^>]*t="s"[^>]*><v>(\d+)<\/v>/g)];
-    const sucursales=aCells.map(([,row,idx])=>strings[parseInt(idx)]||"").filter(s=>s.trim()&&s!=="Sucursal");
-    _andreaniLocsCache.current={list,cpIndex,provIndex,sucursales};
-    return _andreaniLocsCache.current;
-  }
-
+  // Andreani: generador compartido a nivel módulo (también lo usa Canjes)
   async function generarEtiquetaAndreani(o) {
     if(!o) return appAlert("No se encontró el pedido");
-    try {
-      const locs=await loadAndreaniLocations();
-      // Use the same xlsx generation from AppEnvios - simplified version
-      if(!window.JSZip){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
-      const tRes=await fetch('/andreani_template.xlsx?v='+Date.now());
-      if(!tRes.ok) throw new Error("No se pudo cargar el template");
-      const tBuf=await tRes.arrayBuffer();
-      const zip=await window.JSZip.loadAsync(tBuf);
-      const ssXml=await zip.file('xl/sharedStrings.xml').async('string');
-      const existSS=[];const ssRx=/<t[^>]*>([\s\S]*?)<\/t>/g;let mx;while((mx=ssRx.exec(ssXml))!==null)existSS.push(mx[1]);
-      const ssMap=new Map();existSS.forEach((s,i)=>ssMap.set(s,i));const newSS=[...existSS];
-      function idx(s){const k=String(s==null?"":s);if(ssMap.has(k))return ssMap.get(k);const i=newSS.length;newSS.push(k);ssMap.set(k,i);return i;}
-      function sC(ref,val){return '<c r="'+ref+'" t="s"><v>'+idx(val)+'</v></c>';}
-      function nC(ref,val){return (val===''||val===null||val===undefined)?sC(ref,''):'<c r="'+ref+'"><v>'+val+'</v></c>';}
-      // Paridad con el generador principal de AppEnvios: sin tildes (Andreani
-      // rechaza caracteres fuera de ASCII) y CUIT de 11 dígitos → DNI.
-      function cl(s){return String(s||"").normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[-\/\|#*]+/g,' ').replace(/\s{2,}/g,' ').trim();}
-      const dniDep=(()=>{const d=String(o.dni||"").replace(/\D/g,'');return d.length===11?d.slice(2,10):d;})();
-      const partes=o.comprador.trim().split(' ');
-      const nombre=cl(partes[0]||"");const apellido=cl(partes.slice(1).join(' ')||"");
-      const tel=(o.telefono||"").replace(/[^0-9]/g,'');
-      const clean0=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
-      // Quitar el 9 inicial de celulares argentinos (ej: 91156333118 → 1156333118)
-      const clean=clean0.startsWith('9')&&clean0.length===10?clean0.slice(1):clean0;
-      let telCod='',telNum='';
-      if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
-      else if(clean.length>=8){telCod=clean.slice(0,clean.length-8)||'';telNum=clean.slice(clean.length-8);}
-      else if(clean.length>0){telNum=clean;}
-      // Localidad
-      const cpIndex=locs.cpIndex;const provIndex=locs.provIndex;
-      const cpStr=String(o.cp||"").trim();
-      const provU=(o.provincia||"").toUpperCase().replace(/^CIUDAD AUTONOMA.*/,"CAPITAL FEDERAL");
-      const locU=(o.localidad||o.ciudad||"").toUpperCase();
-      let ubicacion="";
-      const byCp=cpIndex[cpStr]||[];
-      if(byCp.length>=1){const byProv=byCp.find(l=>l.startsWith(provU));ubicacion=byProv||byCp[0];}
-      if(!ubicacion){const provList=provIndex[provU]||[];if(provList.length>0)ubicacion=provList[0];}
-      if(!ubicacion)ubicacion=locs.list.find(l=>l.startsWith('BUENOS AIRES'))||locs.list[0]||"";
-      const dirNum=String(o.dirNumero||"");
-      const direccion=cl(o.direccion||"");
-      const rn=3;
-      const cells=[sC('A'+rn,""),nC('B'+rn,200),nC('C'+rn,5),nC('D'+rn,5),nC('E'+rn,5),nC('F'+rn,6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(dniDep&&!isNaN(dniDep))?nC('J'+rn,parseFloat(dniDep)):sC('J'+rn,dniDep||""),sC('K'+rn,cl(o.email||"")),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),sC('N'+rn,direccion),(dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,0),sC('P'+rn,cl(o.piso||"")),sC('Q'+rn,""),sC('R'+rn,ubicacion),sC('S'+rn,"")].join('');
-      const rowXml='<row r="3" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>';
-      const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
-      const newSheet1=sheet1.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S3"/>').replace('</sheetData>',rowXml+'</sheetData>').replace(/<dataValidations[\s\S]*?<\/dataValidations>/g,'');
-      zip.file('xl/worksheets/sheet1.xml',newSheet1);
-      const newSsItems=newSS.map(s=>{const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');const sp=(s!==s.trim()||s.indexOf(String.fromCharCode(10))>=0)?' xml:space="preserve"':'';return '<si><t'+sp+'>'+esc+'</t></si>';}).join('');
-      zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+newSS.length+'" uniqueCount="'+newSS.length+'">'+newSsItems+'</sst>');
-      const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
-      const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`EnvioMasivoExcelPaquetes-${o.numero}.xlsx`;a.click();
-    } catch(e){ appAlert("Error al generar etiqueta: "+e.message); }
+    try { await ghEtiquetaAndreaniXlsxUno(o); }
+    catch(e){ appAlert("Error al generar etiqueta: "+e.message); }
   }
   const activeOrder=activeR?(orders.find(o=>o.numero===activeR.orderNum)||activeOrderCache[activeR.orderNum]||null):null;
 
@@ -3896,6 +3900,67 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   // y manda email al dueño), así funciona aunque la app esté cerrada. Acá solo:
   // (1) backfill de trackDone para canjes viejos que ya tenían tracking cargado,
   // (2) toast de avisos no vistos que trae el snapshot en vivo.
+  // ── Pedir guion: crea una tarea en Tareas (con mail al asignado) con los
+  // datos del canje + redes del influencer + instrucciones personalizadas ──
+  const [pedirGuion,setPedirGuion]=useState(null);   // canje al que se le pide guion
+  const [pgColabs,setPgColabs]=useState(null);       // null=cargando | []
+  const [pgSel,setPgSel]=useState("");               // email del colaborador elegido
+  const [pgNotas,setPgNotas]=useState("");
+  function abrirPedirGuion(c){
+    setPedirGuion(c); setPgNotas(""); setPgColabs(null);
+    fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"getData",uid:user.uid})})
+      .then(r=>r.json()).then(d=>{
+        const cols=Array.isArray(d?.colaboradores)?d.colaboradores:[];
+        setPgColabs(cols);
+        const nico=cols.find(x=>(x.nombre||"").toLowerCase().includes("nico"));
+        setPgSel((nico||cols[0])?.email||"");
+      }).catch(()=>setPgColabs([]));
+  }
+  function descripcionGuion(c,notas){
+    const u=(c.usuario||"").replace("@","");
+    const prods=(c.productosCanje||[]).map(p=>`${p.cantidad||1}x ${p.nombre}`).join(", ")||c.producto||"";
+    const cont=(c.contenido||[]).filter(x=>(x.acordados||0)>0).map(x=>`${x.acordados} ${x.tipo||x.nombre||""}`.trim()).join(", ");
+    return [
+      `Guion para el canje de ${c.influencer||"influencer"}`,
+      u?`Instagram: @${u} — https://instagram.com/${u}`:"",
+      c.telefono?`WhatsApp: ${c.telefono}`:"",
+      c.email?`Email: ${c.email}`:"",
+      prods?`Productos del canje: ${prods}`:"",
+      cont?`Contenido acordado: ${cont}`:"",
+      c.notas?`Notas del canje: ${c.notas}`:"",
+      notas?`\nInstrucciones: ${notas}`:"",
+    ].filter(Boolean).join("\n");
+  }
+  async function crearTareaGuion(){
+    const c=pedirGuion;
+    const colab=(pgColabs||[]).find(x=>x.email===pgSel);
+    if(!c||!colab){ toast("Elegí a quién asignar el guion","warning"); return; }
+    try{
+      const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        action:"createTarea",uid:user.uid,
+        titulo:`Guion — canje de ${c.influencer||c.usuario||"influencer"}`,
+        descripcion:descripcionGuion(c,pgNotas.trim()),
+        asignadoEmail:colab.email,asignadoNombre:colab.nombre||"",
+        managerEmail:user.email||"",prioridad:"normal",
+      })});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`);
+      await updateDoc(doc(db,"canjes",c._docId),{guionTareaId:d._id,guionTareaNum:d.tareaNumStr||String(d.tareaNum||"")});
+      toast(`Tarea de guion creada y asignada a ${colab.nombre||colab.email} ✓`,"success");
+      setPedirGuion(null);
+    }catch(e){ toast("No se pudo crear la tarea: "+e.message,"error"); }
+  }
+  async function verGuion(c){
+    try{
+      const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"getData",uid:user.uid})});
+      const d=await r.json().catch(()=>({}));
+      const t=(d?.tareas||[]).find(x=>x._id===c.guionTareaId);
+      if(!t){ toast("No se encontró la tarea del guion (¿se borró?)","warning"); return; }
+      const dels=(t.deliverables||[]).filter(x=>x.link);
+      if(!dels.length){ toast(`Todavía no subieron el guion — la tarea está "${t.estado||"pendiente"}"`,"info",4500); return; }
+      window.open(dels[dels.length-1].link,"_blank","noopener");
+    }catch(e){ toast("No se pudo abrir el guion: "+e.message,"error"); }
+  }
   const avisosToastRef = useRef(new Set());
   // (3) refresco EN VIVO al abrir la sección: una sola vez por visita, los
   // canjes con seguimiento activo se consultan ya (API oficial → scraping)
@@ -5064,6 +5129,83 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 </div>
               </div>
 
+              {/* ── ENVÍO ANDREANI: datos del domicilio + export XLSX de 1 fila ── */}
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Envío Andreani</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                  <Field label="Dirección (calle)" value={c.direccion} onSave={v=>save({direccion:v})} placeholder="Av. Corrientes"/>
+                  <Field label="Número" value={c.dirNumero} onSave={v=>save({dirNumero:v})} placeholder="1234"/>
+                  <Field label="Piso / Depto" value={c.piso} onSave={v=>save({piso:v})} placeholder="3 B"/>
+                  <Field label="CP" value={c.cp} onSave={v=>save({cp:v})} placeholder="1414"/>
+                  <Field label="Localidad" value={c.localidad} onSave={v=>save({localidad:v})} placeholder="Palermo"/>
+                  <Field label="Provincia" value={c.provincia} onSave={v=>save({provincia:v})} placeholder="Capital Federal"/>
+                  <Field label="DNI" value={c.dni} onSave={v=>save({dni:v})} placeholder="30123456"/>
+                </div>
+                <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                  <AsyncButton onClick={async()=>{
+                    const falta=[["dirección",c.direccion],["número",c.dirNumero],["CP",c.cp],["localidad",c.localidad],["provincia",c.provincia]].filter(([,v])=>!(v||"").trim()).map(([l])=>l);
+                    if(falta.length){ toast("Faltan datos de envío: "+falta.join(", "),"warning"); return; }
+                    try{
+                      await ghEtiquetaAndreaniXlsxUno({
+                        numero:(c.pedidoRef||"").trim()||("CANJE "+(c.usuario||c.influencer||"").replace(/[^\w ]+/g,"").trim().slice(0,16).toUpperCase()||"CANJE"),
+                        comprador:c.influencer||"", dni:c.dni||"", email:c.email||"", telefono:c.telefono||"",
+                        cp:c.cp||"", provincia:c.provincia||"", localidad:c.localidad||"",
+                        direccion:c.direccion||"", dirNumero:c.dirNumero||"", piso:c.piso||"",
+                      });
+                      toast("Excel generado — subilo al portal de Andreani y pegá el tracking acá","success",5000);
+                    }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
+                  }} style={{...BtnSecondary(T),fontSize:12,color:T.green,borderColor:T.green+"66"}}>Exportar XLSX Andreani</AsyncButton>
+                  <span style={{fontSize:11,color:T.textSm}}>Genera el Excel con este envío. Lo subís al portal como siempre y pegás el tracking arriba.</span>
+                </div>
+              </div>
+
+              {/* ── GUION: tarea asignada + acceso al PDF entregado ── */}
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                  <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Guion</span>
+                  {c.guionTareaNum&&<span style={{fontSize:11,fontWeight:700,color:T.accent}}>Tarea #{c.guionTareaNum}</span>}
+                </div>
+                {c.guionTareaId?(
+                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                    <AsyncButton onClick={()=>verGuion(c)} style={{...BtnPrimary(T),fontSize:12}}>Ver guion</AsyncButton>
+                    <span style={{fontSize:11,color:T.textSm}}>Abre el último archivo subido a la tarea, listo para mandarlo por WhatsApp.</span>
+                  </div>
+                ):(
+                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                    <button onClick={()=>abrirPedirGuion(c)} style={{...BtnPrimary(T),fontSize:12}}>Pedir guion</button>
+                    <span style={{fontSize:11,color:T.textSm}}>Crea la tarea con los datos del canje y las redes del influencer, y le avisa por mail al asignado.</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Pedir guion (portal, por encima del detalle) */}
+              <Modal T={T} open={!!pedirGuion} onClose={()=>setPedirGuion(null)} title="Pedir guion" width={480} zIndex={2400}>
+                {pedirGuion&&(
+                  <div>
+                    <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:12}}>
+                      Se crea una tarea en <strong style={{color:T.text}}>Tareas</strong> con los datos del canje de <strong style={{color:T.text}}>{pedirGuion.influencer}</strong> (Instagram, WhatsApp, productos y contenido acordado) y le llega un mail al asignado.
+                    </div>
+                    <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Asignar a</div>
+                    {pgColabs===null?(
+                      <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0 14px",color:T.textSm,fontSize:12}}><Spinner size={13} color={T.accent}/> Cargando colaboradores…</div>
+                    ):pgColabs.length===0?(
+                      <div style={{fontSize:12,color:T.yellow,background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"8px 12px",marginBottom:14}}>No hay colaboradores cargados en Tareas. Agregá a Nico desde la sección Tareas primero.</div>
+                    ):(
+                      <select value={pgSel} onChange={e=>setPgSel(e.target.value)} style={{...iS,marginBottom:14}}>
+                        {pgColabs.map(col=><option key={col.email} value={col.email}>{col.nombre||col.email}{col.rol?` — ${col.rol}`:""}</option>)}
+                      </select>
+                    )}
+                    <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Instrucciones (opcional)</div>
+                    <textarea value={pgNotas} onChange={e=>setPgNotas(e.target.value)} rows={3} placeholder="Ej: enfocar el guion en el uso nocturno, tono descontracturado, mencionar el cupón..."
+                      style={{...iS,resize:"vertical",minHeight:64,marginBottom:12,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <div style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:11,color:T.textSm,whiteSpace:"pre-wrap",maxHeight:140,overflowY:"auto"}}>{descripcionGuion(pedirGuion,pgNotas.trim())}</div>
+                    <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                      <button onClick={()=>setPedirGuion(null)} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>
+                      <AsyncButton onClick={crearTareaGuion} disabled={!pgSel||!(pgColabs||[]).length} style={{...BtnPrimary(T),fontSize:13,minWidth:130,justifyContent:"center"}}>Crear tarea</AsyncButton>
+                    </div>
+                  </div>
+                )}
+              </Modal>
 
               {/* ── PRODUCTOS ── */}
               <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
