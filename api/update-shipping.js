@@ -627,7 +627,9 @@ export default async function handler(req, res) {
             if (!snap.exists) return;
             const c = snap.data();
             if (c.ownerId !== uid) return;
-            if (!c.tracking || !String(c.tracking).trim() || c.trackDone !== false) return;
+            // trackDone===true = ya finalizado; undefined (canje viejo sin
+            // backfill) SÍ se trackea, era el caso que quedaba afuera.
+            if (!c.tracking || !String(c.tracking).trim() || c.trackDone === true) return;
             let est = null, via = "scraping";
             const of = estadoOficial(await trazasOficialAndreani(db, String(c.tracking).trim()));
             if (of) { est = of; via = "oficial"; }

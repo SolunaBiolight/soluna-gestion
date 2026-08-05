@@ -3966,18 +3966,37 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   // canjes con seguimiento activo se consultan ya (API oficial → scraping)
   // y el onSnapshot pinta los chips al instante, sin esperar al cron.
   const liveRefreshRef = useRef(false);
-  useEffect(()=>{
-    if(liveRefreshRef.current || !user?.uid) return;
-    const activos=canjes.filter(c=>c.tracking?.trim() && c.trackDone===false)
+  const [refrescando,setRefrescando]=useState(false);
+  // trackDone!==true: incluye los canjes viejos que todavía no tienen el campo
+  // (antes se exigía ===false y con el backfill pendiente no disparaba nunca).
+  const canjesTrackeables=canjes.filter(c=>c.tracking?.trim() && c.trackDone!==true);
+  async function refrescarTracking(manual){
+    if(!user?.uid) return;
+    const activos=canjesTrackeables.slice()
       .sort((a,b)=>String(a.trackingLastCheck||"").localeCompare(String(b.trackingLastCheck||"")))
       .slice(0,15);
-    if(!activos.length) return;
+    if(!activos.length){ if(manual) toast("No hay envíos con seguimiento activo","info"); return; }
+    if(manual) setRefrescando(true);
+    try{
+      const r=await authFetch(`/api/update-shipping?action=canjes_refresh&uid=${user.uid}`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ids:activos.map(c=>c._docId)}),
+      });
+      const d=await r.json().catch(()=>({}));
+      if(manual){
+        if(!r.ok||d.error) toast("No se pudo actualizar: "+(d.error||`HTTP ${r.status}`),"error");
+        else toast(`${d.actualizados||0} envío${(d.actualizados||0)!==1?"s":""} actualizado${(d.actualizados||0)!==1?"s":""} ✓`,"success");
+      }
+    }catch(e){ if(manual) toast("Error al actualizar: "+e.message,"error"); }
+    if(manual) setRefrescando(false);
+  }
+  // Al abrir la sección, una vez por visita (la firma incluye trackDone: si el
+  // backfill lo completa después del primer render, el efecto vuelve a correr).
+  useEffect(()=>{
+    if(liveRefreshRef.current || !user?.uid || !canjesTrackeables.length) return;
     liveRefreshRef.current=true;
-    authFetch(`/api/update-shipping?action=canjes_refresh&uid=${user.uid}`,{
-      method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({ids:activos.map(c=>c._docId)}),
-    }).catch(()=>{});
-  },[canjes.length,user?.uid]);
+    refrescarTracking(false);
+  },[canjesTrackeables.length,user?.uid]);
   useEffect(()=>{
     canjes.filter(c=>c.tracking?.trim() && c.trackDone===undefined && !["Rechazado","Cerrado"].includes(c.estado))
       .slice(0,20)
@@ -4197,6 +4216,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     <div style={{fontFamily:"Inter,system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
       <AppTopbar T={T} section="Canjes" sectionId="canjes" onHome={onHome}
         onHelp={()=>setShowGuia(s=>!s)}>
+        <button onClick={()=>refrescarTracking(true)} disabled={refrescando} title="Consultar el estado de los envíos en Andreani ahora"
+          style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.textMd,display:"flex",alignItems:"center",gap:6}}>
+          {refrescando?<Spinner size={11} color={T.textMd}/>:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}
+          {refrescando?"Actualizando…":"Actualizar envíos"}
+        </button>
         <button onClick={exportCSV} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.textMd}}>Exportar CSV</button>
         <button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:12,padding:"7px 14px"}}>+ Nuevo canje</button>
       </AppTopbar>
@@ -5045,65 +5069,64 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           return (
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
 
-              {/* ── HEADER ── */}
-              <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
-                <Avatar src={c.foto} name={c.influencer} size={52} radius={12} T={T}/>
+              {/* ── HEADER: identidad + accesos (los links viven acá, no duplicados abajo) ── */}
+              <div style={{display:"flex",alignItems:"center",gap:14}}>
+                <Avatar src={c.foto} name={c.influencer} size={48} radius={12} T={T}/>
                 <div style={{flex:1,minWidth:0}}>
-                  {/* Nombre editable */}
-                  <div style={{fontSize:18,fontWeight:800,color:T.text,marginBottom:6,lineHeight:1.2}}>
+                  <div style={{fontSize:18,fontWeight:800,color:T.text,lineHeight:1.25}}>
                     <InlineField value={c.influencer} onSave={v=>save({influencer:v})} placeholder="Nombre" T={T} iS={iS} style={{fontSize:18,fontWeight:800}}/>
                   </div>
-                  <div style={{height:8}}/>
-                  {/* Botones de acción rápida */}
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:4,alignItems:"center"}}>
                     {c.telefono&&<a href={"https://wa.me/"+c.telefono.replace(/\D/g,"")} target="_blank" rel="noopener noreferrer"
-                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700,color:T.green,textDecoration:"none",background:T.greenBg,border:"1px solid "+T.green+"44",borderRadius:7,padding:"5px 12px"}}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill={T.green}><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                      WhatsApp
+                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,color:T.textMd,textDecoration:"none"}}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill={T.green}><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                      {c.telefono}
                     </a>}
                     {igHref&&<a href={igHref} target="_blank" rel="noopener noreferrer"
-                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700,color:"#E1306C",textDecoration:"none",background:"#E1306C15",border:"1px solid #E1306C33",borderRadius:7,padding:"5px 12px"}}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#E1306C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,color:T.textMd,textDecoration:"none"}}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#E1306C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
                       {c.usuario?"@"+c.usuario.replace("@",""):"Instagram"}
+                    </a>}
+                    {c.email&&<a href={"mailto:"+c.email} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,color:T.textMd,textDecoration:"none"}}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                      {c.email}
                     </a>}
                   </div>
                 </div>
+                <TrackingChip c={c} size={10}/>
               </div>
 
-              {/* ── ESTADO ── */}
-              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                {ESTADOS_C.map(est=>{
-                  const s2=getEstadoCC(T,est);
-                  const active=c.estado===est||(est==="Por enviar"&&c.estado==="Pendiente envío");
-                  return <button key={est} onClick={async()=>{if(active)return;await save({estado:est,...(est==="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});}}
-                    style={{fontSize:12,fontWeight:active?700:500,padding:"6px 14px",borderRadius:99,border:`2px solid ${active?s2.dot:T.border}`,background:active?s2.bg:"transparent",color:active?s2.text:T.textMd,cursor:active?"default":"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
-                    <span style={{width:7,height:7,borderRadius:"50%",background:s2.dot,flexShrink:0}}/>{est}
-                  </button>;
-                })}
-              </div>
-
-              {/* ── DATOS CLAVE en grilla 2 columnas ── */}
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-                  <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Datos del canje</span>
-                  <TrackingChip c={c} size={10}/>
+              {/* ── ESTADO: selector discreto, sin píldoras gritonas ── */}
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.card,border:"1px solid "+T.border,borderRadius:10,padding:"8px 12px"}}>
+                <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Estado</span>
+                <div style={{display:"flex",gap:2,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8,padding:2}}>
+                  {ESTADOS_C.map(est=>{
+                    const s2=getEstadoCC(T,est);
+                    const active=c.estado===est||(est==="Por enviar"&&c.estado==="Pendiente envío");
+                    return <button key={est} onClick={async()=>{if(active)return;await save({estado:est,...(est==="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});}}
+                      style={{fontSize:12,fontWeight:active?700:500,padding:"5px 12px",borderRadius:6,border:"none",background:active?T.surface:"transparent",color:active?s2.text:T.textSm,cursor:active?"default":"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <span style={{width:6,height:6,borderRadius:"50%",background:active?s2.dot:T.borderL,flexShrink:0}}/>{est}
+                    </button>;
+                  })}
                 </div>
+              </div>
+
+              {/* ── DATOS CLAVE en grilla 2 columnas (contacto vive en el header) ── */}
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:12}}>Datos del canje</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <Field label="WhatsApp" value={c.telefono} onSave={v=>save({telefono:v})} placeholder="5491155..."
-                    href={c.telefono?"https://wa.me/"+c.telefono.replace(/\D/g,""):null}/>
-                  <Field label="Email" value={c.email} onSave={v=>save({email:v})} type="email" placeholder="sofi@mail.com"
-                    href={c.email?"mailto:"+c.email:null}/>
+                  <Field label="WhatsApp" value={c.telefono} onSave={v=>save({telefono:v})} placeholder="5491155..."/>
+                  <Field label="Email" value={c.email} onSave={v=>save({email:v})} type="email" placeholder="sofi@mail.com"/>
                   <Field label="@Instagram" value={c.usuario?("@"+c.usuario.replace("@","")):""} onSave={v=>{
                     const raw=(v||"").trim();
                     // Extraer @usuario si pegaron un link de Instagram
                     const match=raw.match(/(?:instagram\.com\/|^@?)([A-Za-z0-9_.]+)/);
                     const u=match?match[1].replace(/^@/,""):raw.replace(/^@/,"");
                     save({usuario:u,linkInstagram:u?"https://instagram.com/"+u:""});
-                  }} placeholder="@usuario o link de Instagram"
-                    href={igHref}/>
+                  }} placeholder="@usuario o link de Instagram"/>
                   <Field label="Nº de pedido" value={c.pedidoRef} onSave={v=>save({pedidoRef:v})} placeholder="12345"/>
                   <Field label="Tracking Andreani" value={c.tracking} onSave={v=>save({tracking:v,...((v||"").trim()&&(v||"").trim()!==(c.tracking||"").trim()?{trackDone:false,trackingCat:"",trackingEstado:"",trackingAviso:null}:{})})} placeholder="3600029..."
-                    href={c.tracking?"https://www.andreani.com/#!/informacionEnvio/"+c.tracking:null}/>
+                    href={c.tracking?"https://www.andreani.com/envio/"+String(c.tracking).replace(/\s+/g,""):null}/>
                   <div>
                     <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Fecha de envío</div>
                     <input type="date" value={c.fechaEnvio||""} style={{...iS,fontSize:12,padding:"6px 10px"}} onChange={e=>save({fechaEnvio:e.target.value})}/>
@@ -5131,35 +5154,36 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 </div>
               </div>
 
-              {/* ── ENVÍO ANDREANI: datos del domicilio + export XLSX de 1 fila ── */}
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
-                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Envío Andreani</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-                  <Field label="Dirección (calle)" value={c.direccion} onSave={v=>save({direccion:v})} placeholder="Av. Corrientes"/>
-                  <Field label="Número" value={c.dirNumero} onSave={v=>save({dirNumero:v})} placeholder="1234"/>
-                  <Field label="Piso / Depto" value={c.piso} onSave={v=>save({piso:v})} placeholder="3 B"/>
-                  <Field label="CP" value={c.cp} onSave={v=>save({cp:v})} placeholder="1414"/>
-                  <Field label="Localidad" value={c.localidad} onSave={v=>save({localidad:v})} placeholder="Palermo"/>
-                  <Field label="Provincia" value={c.provincia} onSave={v=>save({provincia:v})} placeholder="Capital Federal"/>
-                  <Field label="DNI" value={c.dni} onSave={v=>save({dni:v})} placeholder="30123456"/>
-                </div>
-                <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                  <AsyncButton onClick={async()=>{
-                    const falta=[["dirección",c.direccion],["número",c.dirNumero],["CP",c.cp],["localidad",c.localidad],["provincia",c.provincia]].filter(([,v])=>!(v||"").trim()).map(([l])=>l);
-                    if(falta.length){ toast("Faltan datos de envío: "+falta.join(", "),"warning"); return; }
-                    try{
-                      await ghEtiquetaAndreaniXlsxUno({
-                        numero:(c.pedidoRef||"").trim()||("CANJE "+(c.usuario||c.influencer||"").replace(/[^\w ]+/g,"").trim().slice(0,16).toUpperCase()||"CANJE"),
-                        comprador:c.influencer||"", dni:c.dni||"", email:c.email||"", telefono:c.telefono||"",
-                        cp:c.cp||"", provincia:c.provincia||"", localidad:c.localidad||"",
-                        direccion:c.direccion||"", dirNumero:c.dirNumero||"", piso:c.piso||"",
-                      });
-                      toast("Excel generado — subilo al portal de Andreani y pegá el tracking acá","success",5000);
-                    }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
-                  }} style={{...BtnSecondary(T),fontSize:12,color:T.green,borderColor:T.green+"66"}}>Exportar XLSX Andreani</AsyncButton>
-                  <span style={{fontSize:11,color:T.textSm}}>Genera el Excel con este envío. Lo subís al portal como siempre y pegás el tracking arriba.</span>
-                </div>
-              </div>
+              {/* ── ENVÍO ANDREANI: dirección SOLO LECTURA (viene del pedido) +
+                     export XLSX de 1 fila. No se edita desde acá a propósito. ── */}
+              {(()=>{
+                const dirTxt=[[c.direccion,c.dirNumero].filter(Boolean).join(" "),c.piso?`Piso ${c.piso}`:"",c.localidad,c.provincia,c.cp?`CP ${c.cp}`:""].filter(Boolean).join(", ");
+                const falta=[["dirección",c.direccion],["número",c.dirNumero],["CP",c.cp],["localidad",c.localidad],["provincia",c.provincia]].filter(([,v])=>!String(v||"").trim()).map(([l])=>l);
+                return (
+                  <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+                      <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Envío Andreani</span>
+                      <AsyncButton onClick={async()=>{
+                        if(falta.length){ toast("El pedido no tiene estos datos de envío: "+falta.join(", "),"warning",5000); return; }
+                        try{
+                          await ghEtiquetaAndreaniXlsxUno({
+                            numero:(c.pedidoRef||"").trim()||("CANJE "+(c.usuario||c.influencer||"").replace(/[^\w ]+/g,"").trim().slice(0,16).toUpperCase()||"CANJE"),
+                            comprador:c.influencer||"", dni:c.dni||"", email:c.email||"", telefono:c.telefono||"",
+                            cp:c.cp||"", provincia:c.provincia||"", localidad:c.localidad||"",
+                            direccion:c.direccion||"", dirNumero:c.dirNumero||"", piso:c.piso||"",
+                          });
+                          toast("Excel generado — subilo al portal de Andreani y pegá el tracking acá","success",5000);
+                        }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
+                      }} style={{...BtnSecondary(T),fontSize:12,color:T.green,borderColor:T.green+"66",padding:"6px 12px"}}>Exportar XLSX Andreani</AsyncButton>
+                    </div>
+                    {dirTxt?(
+                      <div style={{fontSize:13,color:T.text,lineHeight:1.6}}>{dirTxt}{c.dni?<span style={{color:T.textSm}}> · DNI {c.dni}</span>:null}</div>
+                    ):(
+                      <div style={{fontSize:12,color:T.textSm}}>Sin dirección cargada. Los datos de envío vienen del pedido de la tienda — corregilos ahí si están mal.</div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* ── GUION: tarea asignada + acceso al PDF entregado ── */}
               <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
