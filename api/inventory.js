@@ -66,9 +66,15 @@ function computeStatus(stock, sales30d, settings) {
 }
 
 async function logMovement(db, uid, mov) {
+  // ts normalizado a UTC ISO: cada plataforma manda la fecha con timezone distinto
+  // (TN +0000, Shopify -03:00, ML -04:00) y el orderBy("ts") de Firestore compara
+  // TEXTO → el historial de movimientos quedaba desordenado. Canonizamos acá,
+  // el único punto de entrada.
+  const rawTs = mov.ts || new Date().toISOString();
+  const tMs = Date.parse(rawTs);
   await db.collection("users").doc(uid).collection("inventory_movements").add({
     ...mov,
-    ts: mov.ts || new Date().toISOString(),
+    ts: isNaN(tMs) ? String(rawTs) : new Date(tMs).toISOString(),
   });
 }
 
@@ -886,6 +892,12 @@ export default async function handler(req, res) {
       const snap = await db.collection("users").doc(uid).collection("inventory_movements")
         .orderBy("ts", "desc").limit(limit).get();
       const movements = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Re-orden por instante real: los registros viejos quedaron con ts en
+      // timezones mezcladas (TN +0000, Shopify -03:00, ML -04:00) y el orderBy
+      // de Firestore los compara como texto. Los nuevos ya entran normalizados
+      // a UTC (logMovement), pero el historial existente se ordena acá.
+      const tsMs = v => { const t = Date.parse(String(v||"")); return isNaN(t) ? 0 : t; };
+      movements.sort((a,b) => tsMs(b.ts) - tsMs(a.ts));
       return res.json({ movements });
     }
 
@@ -993,12 +1005,18 @@ export default async function handler(req, res) {
       const byDay = {}; // "YYYY-MM-DD" -> count
       const byItem = {}; // item_id -> {nombre, units, count}
 
+      // Día calendario ARGENTINO del movimiento. Antes: m.ts.slice(0,10) sobre
+      // strings con timezone mezclada (TN +0000, Shopify -03:00, ML -04:00) y la
+      // serie en días UTC → las ventas de la noche caían en el día equivocado y
+      // el recuento diario quedaba corrido.
+      const diaAR = (v) => { const t = Date.parse(String(v||"")); if (isNaN(t)) return String(v||"").slice(0,10); return new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date(t)); };
+
       for (const d of snap.docs) {
         const m = d.data();
         if (!m.ts || new Date(m.ts) < sinceDate) continue;
         const isSale = m.event === "venta" || (m.change < 0 && m.event !== "ajuste_manual" && m.event !== "ajuste");
         if (!isSale) continue;
-        const day = m.ts.slice(0, 10);
+        const day = diaAR(m.ts);
         const qty = Math.abs(m.change) || 0;
         byDay[day] = (byDay[day] || 0) + qty;
         if (!byItem[m.item_id]) byItem[m.item_id] = { id: m.item_id, nombre: m.item_name || "(sin nombre)", units: 0, count: 0 };
@@ -1006,12 +1024,12 @@ export default async function handler(req, res) {
         byItem[m.item_id].count += 1;
       }
 
-      // Serie de tiempo: completar días faltantes con 0
+      // Serie de tiempo: completar días faltantes con 0 (también en días AR)
       const series = [];
       const today = new Date();
       for (let i = days - 1; i >= 0; i--) {
         const d = new Date(today.getTime() - i * 86400000);
-        const key = d.toISOString().slice(0, 10);
+        const key = diaAR(d.toISOString());
         series.push({ date: key, units: byDay[key] || 0 });
       }
 

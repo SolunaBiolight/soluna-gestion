@@ -946,9 +946,10 @@ export default async function handler(req, res) {
       const mpRefCache = (userData.margenesMpRefs && typeof userData.margenesMpRefs==="object" && !Array.isArray(userData.margenesMpRefs)) ? { ...userData.margenesMpRefs } : {};
       const shStoreRef = (userData.stores||[]).find(s => s.type==="shopify");
       if (shStoreRef?.shop && shStoreRef?.accessToken) {
+        const tsPend = f => { const s=String(f||""); if(!s) return 0; const t=Date.parse(/(Z|[+-]\d{2}:?\d{2})$/.test(s)?s:s+"-03:00"); return isNaN(t)?0:t; };
         const pend = [...(curr.raw?.orders_detail||[]), ...(prev.raw?.orders_detail||[])]
           .filter(o => /mercado\s*pago/i.test(o.pay||"") && !mpRefCache[o.id])
-          .sort((a,b)=>String(b.fecha||"").localeCompare(String(a.fecha||"")))
+          .sort((a,b)=>tsPend(b.fecha)-tsPend(a.fecha))
           .slice(0, 40);
         let changed = false;
         for (let i=0; i<pend.length; i+=8) {
@@ -1210,7 +1211,12 @@ export default async function handler(req, res) {
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]?.lt==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0,
             pay:"Mercado Pago", cust:o.cust||"", items:itemsDe(o.items), feeReal: true, mlLink:`https://www.mercadolibre.com.ar/ventas/${o.id}/detalle` });
         }
-        list.sort((a,b)=>String(b.fecha||"").localeCompare(String(a.fecha||"")));
+        // Orden por INSTANTE real, no por texto: cada canal trae la fecha en un
+        // formato distinto (TN hora AR sin offset, Shopify -03:00, ML -04:00) y
+        // el compare lexicográfico mandaba las ventas recién caídas de ML abajo.
+        // Sin offset en el string se asume hora Argentina (-03:00).
+        const tsDe = f => { const s=String(f||""); if(!s) return 0; const t=Date.parse(/(Z|[+-]\d{2}:?\d{2})$/.test(s)?s:s+"-03:00"); return isNaN(t)?0:t; };
+        list.sort((a,b)=>tsDe(b.fecha)-tsDe(a.fecha));
         return list.slice(0, 600);
       }
       const sales = buildSales(curr.raw);

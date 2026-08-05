@@ -30184,9 +30184,15 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               (!qNorm || String(s.nombre||s.id).toLowerCase().includes(qNorm))
             );
             const sk = salesSort.k, sd = salesSort.dir==="desc"?1:-1;
-            sales = [...sales].sort((a,b)=> sk==="fecha"||sk==="nombre"||sk==="canal"
-              ? String(b[sk]||"").localeCompare(String(a[sk]||""))*sd
-              : ((b[sk]||0)-(a[sk]||0))*sd);
+            // Fecha: comparar el INSTANTE (cada canal trae la fecha con timezone
+            // distinto — TN sin offset, Shopify -03:00, ML -04:00 — y el compare
+            // de texto mandaba las ventas nuevas de ML abajo). Sin offset = hora AR.
+            const tsF = f => { const s=String(f||""); if(!s) return 0; const t=Date.parse(/(Z|[+-]\d{2}:?\d{2})$/.test(s)?s:s+"-03:00"); return isNaN(t)?0:t; };
+            sales = [...sales].sort((a,b)=> sk==="fecha"
+              ? (tsF(b.fecha)-tsF(a.fecha))*sd
+              : sk==="nombre"||sk==="canal"
+                ? String(b[sk]||"").localeCompare(String(a[sk]||""))*sd
+                : ((b[sk]||0)-(a[sk]||0))*sd);
             const fmtFecha = f => { try { return new Date(f).toLocaleDateString("es-AR",{day:"2-digit",month:"short"}); } catch(_) { return String(f||"").slice(0,10); } };
             const t2 = sales.reduce((a,s)=>({revenue:a.revenue+s.revenue,cogs:a.cogs+s.cogs,comisiones:a.comisiones+s.comisiones,impuestos:a.impuestos+s.impuestos,envio:a.envio+s.envio,profit:a.profit+s.profit}),{revenue:0,cogs:0,comisiones:0,impuestos:0,envio:0,profit:0});
             const COLS = [["nombre","Venta"],["fecha","Fecha"],["canal","Canal"],["revenue","Revenue"],["cogs","COGS"],["comisiones","Comisión"],["impuestos","Impuestos"],["envio","Envío"],["profit","Margen Neto"],["margin","Margen %"]];
