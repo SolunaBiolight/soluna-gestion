@@ -5485,6 +5485,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [locationModal,setLocationModal]=useState(null);
   const [locSearch,setLocSearch]=useState("");
   const [locSearchType,setLocSearchType]=useState("ciudad");
+  const [locOficialSel,setLocOficialSel]=useState(""); // id elegido en la lista oficial Andreani (modal sucursal del XLSX)
   const [sucursalConfirmed,setSucursalConfirmed]=useState(null);
   const [esquinaModal,setEsquinaModal]=useState(null); // {orders:[...]} pedidos con esquina excluidos del export
   const [copiedToast,setCopiedToast]=useState(null);
@@ -5533,6 +5534,36 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [sendBatchActive,setSendBatchActive]=useState(false);
   const [showGuia,setShowGuia]=useState(false);
   const iS=InputStyle(T);
+
+  // ── Etiquetas Andreani prepagas (feature gateado por cuenta) ──
+  // El backend responde enabled solo para cuentas habilitadas por el admin.
+  // Si enabled es false, NADA de esta UI se renderiza (cero ruido).
+  const [andreani,setAndreani]=useState({enabled:false,saldo:0,origenConfigurado:false,loaded:false});
+  const [andreaniSaldoOpen,setAndreaniSaldoOpen]=useState(false);
+  const [andreaniOrigenOpen,setAndreaniOrigenOpen]=useState(false);
+  const [andreaniOrder,setAndreaniOrder]=useState(null); // pedido elegido para emitir etiqueta
+  const [andreaniEmitidos,setAndreaniEmitidos]=useState({}); // numero pedido -> {numeroDeEnvio,...} emitidos en esta sesión
+  useEffect(()=>{
+    if(!user?.uid) return;
+    let alive=true;
+    authFetch("/api/andreani?action=status")
+      .then(r=>r.ok?r.json():null)
+      .then(d=>{
+        if(!alive) return;
+        if(d&&d.enabled) setAndreani({enabled:true,saldo:d.saldo||0,origenConfigurado:!!d.origenConfigurado,loaded:true});
+        else setAndreani(a=>({...a,enabled:false,loaded:true}));
+      })
+      .catch(()=>{ if(alive) setAndreani(a=>({...a,loaded:true})); });
+    return ()=>{alive=false;};
+  },[user?.uid]);
+  // Número de envío Andreani ya emitido para un pedido (sesión local o Firestore)
+  function andreaniNumeroDe(o){
+    if(!o) return null;
+    return andreaniEmitidos[o.numero]?.numeroDeEnvio
+      || enviosFs[o.numero]?.andreani?.numeroDeEnvio
+      || enviosFs[o.numero]?.andreaniNumero
+      || null;
+  }
 
   // ── Envíos persistidos en Firestore (users/{uid}/envios) ──
   // Historial COMPARTIDO entre dispositivos y usuarios del equipo (antes el
@@ -6048,6 +6079,26 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const sucursalOverridesRef=useRef((()=>{try{return JSON.parse(localStorage.getItem(ghKey("growith_sucOverrides"))||"{}");}catch(_){return {};}})());
   function persistOverrides(){try{localStorage.setItem(ghKey("growith_locOverrides"),JSON.stringify(locationOverridesRef.current));localStorage.setItem(ghKey("growith_sucOverrides"),JSON.stringify(sucursalOverridesRef.current));}catch(_){}}
 
+  // Listado OFICIAL de sucursales Andreani por CP (API), cacheado en memoria
+  // por sesión para no repetir fetches del mismo CP. Solo disponible para
+  // cuentas con Andreani prepago habilitado; si la API falla devuelve null y
+  // el flujo del XLSX cae al matching clásico del template (plan B intacto).
+  const andreaniSucsCpCacheRef=useRef({}); // cp -> Promise<[{id,codigo,descripcion,direccion,...}]|null>
+  function fetchSucursalesOficiales(cp){
+    const cpStr=String(cp||"").trim();
+    if(!cpStr||!andreani.enabled) return Promise.resolve(null);
+    if(!andreaniSucsCpCacheRef.current[cpStr]){
+      andreaniSucsCpCacheRef.current[cpStr]=authFetch(`/api/andreani?action=sucursales&cp=${encodeURIComponent(cpStr)}`)
+        .then(r=>r.ok?r.json():null)
+        .then(d=>Array.isArray(d?.sucursales)?d.sucursales:null)
+        .catch(()=>null);
+    }
+    return andreaniSucsCpCacheRef.current[cpStr];
+  }
+  function cpDestinoDe(o){
+    return String(o?.pickupDetails?.address?.zipcode||o?.pickupDetails?.address?.zip_code||o?.cp||"").trim();
+  }
+
   // Atajos de teclado
   useEffect(()=>{
     function handleKey(e) {
@@ -6213,6 +6264,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       });
       const unresolvedSuc=sucursalOrdersSinEsquina.filter(o=>{
         if(sucursalOverridesRef.current[o.numero]) return false;
+        // Con Andreani prepago habilitado, la sucursal se elige SIEMPRE de la
+        // lista oficial de la API (match exacto, sin texto libre): todos los
+        // pedidos a sucursal sin override pasan por el modal de confirmación.
+        if(andreani.enabled) return true;
         const _sf=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
         return !_sf||_sf.trim()==="";
       });
@@ -6282,6 +6337,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       locationOverridesRef.current[o.numero]=chosen; persistOverrides();
     }
     for(const o of unresolvedSuc){
+      // Lista oficial de la API por CP del destinatario (cacheada). null = API
+      // no disponible → el modal cae a la búsqueda clásica del template.
+      const oficiales=await fetchSucursalesOficiales(cpDestinoDe(o));
+      // Preselección en la lista oficial: única sucursal, o match por nombre del punto de retiro de TN
+      if(Array.isArray(oficiales)&&oficiales.length){
+        const nrm=s=>String(s||"").toUpperCase().replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
+        const tnName=nrm(o.pickupDetails?.name);
+        const match=oficiales.length===1?oficiales[0]
+          :(tnName?oficiales.find(s=>nrm(s.descripcion)===tnName||nrm(s.descripcion).includes(tnName)||tnName.includes(nrm(s.descripcion))):null);
+        setLocOficialSel(match?String(match.id):"");
+      } else setLocOficialSel("");
       const chosen=await new Promise(resolve=>{
         // Pre-fill: primero intentar auto-match para sugerir la sucursal como búsqueda
         const autoMatch=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
@@ -6300,7 +6366,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             prefill=o.direccion||"";
           }
         }
-        setLocationModal({order:o,locs,resolve,type:"sucursal",autoMatch});
+        setLocationModal({order:o,locs,resolve,type:"sucursal",autoMatch,oficiales});
         setLocSearch(prefill);setLocSearchType("ciudad");
       });
       if(chosen===null) return; // cancelar todo
@@ -6690,6 +6756,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* Topbar */}
       <AppTopbar T={T} section="Envíos" sectionId="envios" onHome={onHome}
         onHelp={()=>setShowGuia(s=>!s)}>
+        {andreani.enabled&&(
+          <button onClick={()=>setAndreaniSaldoOpen(true)} title="Saldo de envíos Andreani"
+            style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,borderColor:T.green+"55",fontWeight:700,gap:6}}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="14" rx="3"/><path d="M2 10h20"/><path d="M16 15h2"/></svg>
+            {fmtMoney(andreani.saldo)}
+          </button>
+        )}
         <AsyncButton onClick={async()=>{
           tabCacheRef.current={};
           // No vaciar la lista: se mantiene visible con el chip "Actualizando" (SWR)
@@ -7560,6 +7633,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               </div>
               <div style={{display:"flex",gap:10,justifyContent:"space-between",alignItems:"center",flexWrap:"wrap"}}>
                 <a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),textDecoration:"none",fontSize:13,display:"inline-flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Ver en TN</a>
+                {andreani.enabled&&(
+                  <button onClick={()=>{setAndreaniOrder(o);setOrderDetail(null);}}
+                    style={{...BtnPurple(T),fontSize:13,display:"flex",alignItems:"center",gap:6,marginLeft:"auto"}}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                    {andreaniNumeroDe(o)?"Etiqueta Andreani ✓":"Etiqueta Andreani"}
+                  </button>
+                )}
                 <button onClick={()=>{
                   setExportSingleOrder(o);
                   setOrderDetail(null);
@@ -7577,9 +7657,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* Location / Sucursal Resolution Modal */}
       <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);setExportSingleOrder(null);}}} title={locationModal?.type==="sucursal"?"Confirmar sucursal Andreani":"Confirmar localidad Andreani"} width={560} zIndex={2000}>
         {locationModal&&(()=>{
-          const {order,locs,resolve,type,autoMatch}=locationModal;
+          const {order,locs,resolve,type,autoMatch,oficiales}=locationModal;
           const isSuc=type==="sucursal";
           const results=isSuc?searchSucursales(locs,locSearch):searchAndreaniLocations(locs,locSearch,locSearchType);
+          const cpOf=isSuc?cpDestinoDe(order):"";
+          const hayOficiales=isSuc&&Array.isArray(oficiales);
           return (
             <div>
               <div style={{background:autoMatch?T.greenBg||T.surface:T.yellowBg,border:`1px solid ${autoMatch?T.green||T.accent:T.yellow}44`,borderRadius:10,padding:"12px 14px",marginBottom:16}}>
@@ -7605,9 +7687,40 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   {order.direccion} {order.dirNumero}, {order.localidad||order.ciudad}, {order.provincia} - CP {order.cp}
                 </div>}
               </div>
+              {/* Lista OFICIAL de sucursales Andreani (API) — match exacto por CP.
+                  Camino feliz para cuentas con Andreani prepago; la búsqueda del
+                  template queda abajo como fallback manual. */}
+              {hayOficiales&&oficiales.length>0&&(
+                <div style={{background:T.surface,border:`1px solid ${T.green}44`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+                  <div style={{fontSize:12,fontWeight:600,color:T.green,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
+                    Lista oficial Andreani — CP {cpOf}
+                  </div>
+                  <select value={locOficialSel} onChange={e=>setLocOficialSel(e.target.value)} style={{...InputStyle(T),marginBottom:10}}>
+                    <option value="">Elegí una sucursal…</option>
+                    {oficiales.map(s=>{
+                      const d=s.direccion||{};
+                      const dir=[`${d.calle||""} ${d.numero||""}`.trim(),d.localidad].filter(Boolean).join(", ");
+                      return <option key={s.id} value={String(s.id)}>{s.descripcion}{dir?` — ${dir}`:""}</option>;
+                    })}
+                  </select>
+                  <button disabled={!locOficialSel} onClick={()=>{
+                    const s=oficiales.find(x=>String(x.id)===locOficialSel);
+                    if(!s) return;
+                    resolve(s.descripcion||s.codigo||"");setLocationModal(null);
+                  }} style={{...BtnPrimary(T),fontSize:13,width:"100%",justifyContent:"center",opacity:locOficialSel?1:0.45,cursor:locOficialSel?"pointer":"not-allowed"}}>
+                    Usar esta sucursal
+                  </button>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:8}}>Sucursales oficiales de Andreani para el CP del destinatario — sin texto libre, match exacto.</div>
+                </div>
+              )}
+              {hayOficiales&&oficiales.length===0&&(
+                <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.yellow}}>
+                  No hay sucursales Andreani para el CP {cpOf||"del destinatario"}. Buscá manualmente abajo o excluí el pedido.
+                </div>
+              )}
               <div style={{marginBottom:14}}>
                 <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
-                  {isSuc?"Buscar sucursal Andreani":"Buscar localidad Andreani"}
+                  {isSuc?(hayOficiales&&oficiales.length>0?"Búsqueda manual (fallback)":"Buscar sucursal Andreani"):"Buscar localidad Andreani"}
                 </div>
                 {!isSuc&&(
                   <div style={{display:"flex",gap:6,marginBottom:10}}>
@@ -7767,7 +7880,478 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           </div>
         )}
       </Modal>
+
+      {/* ── Andreani prepago: saldo, datos del remitente y emisión directa ── */}
+      {andreani.enabled&&(
+        <AndreaniSaldoModal T={T} open={andreaniSaldoOpen} onClose={()=>setAndreaniSaldoOpen(false)}
+          saldo={andreani.saldo}
+          onSaldo={s=>{if(typeof s==="number")setAndreani(a=>({...a,saldo:s}));}}
+          onEditOrigen={()=>{setAndreaniSaldoOpen(false);setAndreaniOrigenOpen(true);}}/>
+      )}
+      {andreani.enabled&&(
+        <Modal T={T} open={andreaniOrigenOpen} onClose={()=>setAndreaniOrigenOpen(false)} title="Datos del remitente — Andreani" width={520}>
+          <AndreaniOrigenForm T={T} user={user}
+            onSaved={()=>{setAndreani(a=>({...a,origenConfigurado:true}));setAndreaniOrigenOpen(false);}}
+            onCancel={()=>setAndreaniOrigenOpen(false)}/>
+        </Modal>
+      )}
+      {andreani.enabled&&andreaniOrder&&(
+        <AndreaniEmitirModal key={andreaniOrder.numero} T={T} order={andreaniOrder}
+          cfgDefaults={exportCfg}
+          origenConfigurado={andreani.origenConfigurado}
+          saldo={andreani.saldo}
+          yaEmitido={andreaniNumeroDe(andreaniOrder)}
+          onClose={()=>setAndreaniOrder(null)}
+          onOrigenSaved={()=>setAndreani(a=>({...a,origenConfigurado:true}))}
+          onSaldo={s=>{if(typeof s==="number")setAndreani(a=>({...a,saldo:s}));}}
+          onEmitido={(numero,res)=>{setAndreaniEmitidos(m=>({...m,[numero]:res}));refrescarEnviosFs();}}
+          onOpenSaldo={()=>setAndreaniSaldoOpen(true)}/>
+      )}
     </div>
+  );
+}
+
+// ===========================================
+// ANDREANI PREPAGO — saldo, remitente y emisión de etiquetas
+// ===========================================
+// Descarga un PDF que llega como base64 desde /api/andreani?action=etiqueta
+function ghDescargarPdfB64(b64, filename){
+  const bin=atob(b64);
+  const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  const blob=new Blob([bytes],{type:"application/pdf"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=filename;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+function ghFmtTs(v){
+  if(!v) return "—";
+  const d=v._seconds?new Date(v._seconds*1000):new Date(v);
+  if(isNaN(d)) return "—";
+  return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})+" "+d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
+}
+
+// Modal "Saldo de envíos": saldo actual, últimos movimientos y cómo cargar.
+function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen}){
+  const [data,setData]=useState(null);
+  const [loading,setLoading]=useState(false);
+  useEffect(()=>{
+    if(!open) return;
+    let alive=true;
+    setLoading(true);
+    authFetch("/api/andreani?action=saldo")
+      .then(r=>r.ok?r.json():null)
+      .then(d=>{
+        if(!alive) return;
+        if(d&&!d.error){ setData(d); if(typeof d.saldo==="number") onSaldo&&onSaldo(d.saldo); }
+      })
+      .catch(()=>{})
+      .finally(()=>{ if(alive) setLoading(false); });
+    return ()=>{alive=false;};
+  },[open]);
+  const movs=Array.isArray(data?.movimientos)?data.movimientos:[];
+  const saldoActual=typeof data?.saldo==="number"?data.saldo:saldo;
+  return (
+    <Modal T={T} open={open} onClose={onClose} title="Saldo de envíos" width={560}>
+      <div style={{textAlign:"center",padding:"6px 0 18px"}}>
+        <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6,marginBottom:6}}>Saldo disponible</div>
+        <div style={{fontSize:34,fontWeight:800,color:T.green,letterSpacing:-1,lineHeight:1}}>{fmtMoney(saldoActual)}</div>
+      </div>
+      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:16,fontSize:12,color:T.textMd,lineHeight:1.6}}>
+        <div style={{fontSize:11,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Cargar saldo</div>
+        Transferí el monto que quieras cargar y avisanos por el canal de siempre: el equipo lo acredita a mano y lo ves reflejado acá. Cada etiqueta que emitís se descuenta de este saldo.
+      </div>
+      <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Últimos movimientos</div>
+      {loading?(
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"18px 4px",color:T.textSm,fontSize:12}}>
+          <Spinner size={13} color={T.accent}/> Cargando movimientos…
+        </div>
+      ):movs.length===0?(
+        <div style={{padding:"18px 4px",color:T.textSm,fontSize:12}}>Todavía no hay movimientos.</div>
+      ):(
+        <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:4}}>
+          <div style={{display:"grid",gridTemplateColumns:"90px 1fr 90px 90px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
+            <span>Fecha</span><span>Concepto</span><span style={{textAlign:"right"}}>Monto</span><span style={{textAlign:"right"}}>Saldo</span>
+          </div>
+          <div style={{maxHeight:260,overflowY:"auto"}}>
+            {movs.map((m,i)=>{
+              const esCredito=m.tipo==="credito"||m.tipo==="reverso";
+              const concepto=m.nota||(m.tipo==="debito"?`Etiqueta ${m.numeroDeEnvio||""}`.trim():m.tipo==="reverso"?"Reverso":"Carga de saldo");
+              return (
+                <div key={i} style={{display:"grid",gridTemplateColumns:"90px 1fr 90px 90px",gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<movs.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
+                  <span style={{color:T.textSm,fontSize:11}}>{ghFmtTs(m.ts)}</span>
+                  <span style={{color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={concepto}>{concepto}</span>
+                  <span style={{textAlign:"right",fontWeight:700,color:esCredito?T.green:T.red}}>{esCredito?"+":"−"}{fmtMoney(Math.abs(m.monto||0))}</span>
+                  <span style={{textAlign:"right",color:T.textMd}}>{fmtMoney(m.saldoDespues)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:16,flexWrap:"wrap",gap:8}}>
+        <button onClick={onEditOrigen} style={{...BtnSecondary(T),fontSize:12}}>Datos del remitente</button>
+        <button onClick={onClose} style={{...BtnPrimary(T),fontSize:13}}>Cerrar</button>
+      </div>
+    </Modal>
+  );
+}
+
+// Formulario de origen + remitente (primera vez, y editable después).
+function AndreaniOrigenForm({T, user, onSaved, onCancel}){
+  const iS=InputStyle(T);
+  const [f,setF]=useState({cp:"",calle:"",numero:"",localidad:"",region:"",nombre:"",dni:"",email:user?.email||"",telefono:""});
+  const set=k=>e=>setF(s=>({...s,[k]:e.target.value}));
+  async function guardar(){
+    if(!f.cp.trim()||!f.calle.trim()||!f.numero.trim()||!f.localidad.trim()||!f.region.trim()||!f.nombre.trim()){
+      toast("Completá los datos de origen y el nombre del remitente","error");
+      return;
+    }
+    const r=await authFetch("/api/andreani?action=save_origen",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        origen:{codigoPostal:f.cp.trim(),calle:f.calle.trim(),numero:f.numero.trim(),localidad:f.localidad.trim(),region:f.region.trim()},
+        remitente:{nombreCompleto:f.nombre.trim(),documentoNumero:f.dni.replace(/\D/g,""),email:f.email.trim(),telefono:f.telefono.trim()},
+      }),
+    });
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error){ toast("No se pudo guardar: "+(d.error||`HTTP ${r.status}`),"error"); return; }
+    toast("Datos del remitente guardados ✓","success");
+    onSaved&&onSaved();
+  }
+  return (
+    <div>
+      <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:16}}>
+        Estos datos van como <strong style={{color:T.text}}>origen y remitente</strong> en cada etiqueta Andreani que emitas. Se cargan una sola vez.
+      </div>
+      <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Dirección de origen</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+        <Field T={T} label="Calle" required><input style={iS} value={f.calle} onChange={set("calle")} placeholder="Av. Corrientes"/></Field>
+        <Field T={T} label="Número" required><input style={iS} value={f.numero} onChange={set("numero")} placeholder="1234"/></Field>
+        <Field T={T} label="Código postal" required><input style={iS} value={f.cp} onChange={set("cp")} placeholder="1414"/></Field>
+        <Field T={T} label="Localidad" required><input style={iS} value={f.localidad} onChange={set("localidad")} placeholder="CABA"/></Field>
+      </div>
+      <Field T={T} label="Provincia" required><input style={iS} value={f.region} onChange={set("region")} placeholder="Capital Federal"/></Field>
+      <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,margin:"6px 0 10px"}}>Remitente</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+        <Field T={T} label="Nombre completo" required><input style={iS} value={f.nombre} onChange={set("nombre")} placeholder="Nombre y apellido"/></Field>
+        <Field T={T} label="DNI"><input style={iS} value={f.dni} onChange={set("dni")} placeholder="30123456"/></Field>
+        <Field T={T} label="Email"><input style={iS} value={f.email} onChange={set("email")} placeholder="hola@tienda.com"/></Field>
+        <Field T={T} label="Teléfono"><input style={iS} value={f.telefono} onChange={set("telefono")} placeholder="1155551234"/></Field>
+      </div>
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:6}}>
+        {onCancel&&<button onClick={onCancel} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>}
+        <AsyncButton onClick={guardar} style={{...BtnPrimary(T),fontSize:13,minWidth:150,justifyContent:"center"}}>Guardar remitente</AsyncButton>
+      </div>
+    </div>
+  );
+}
+
+// Modal de emisión de etiqueta Andreani para UN pedido de TN.
+// Flujo: (origen si falta) → datos del destinatario → sucursal oficial si aplica
+// → paquete → cotizar → emitir → descargar PDF. Sin doble emisión: si el pedido
+// ya tiene numeroDeEnvio, muestra directo el número + descarga.
+function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo, yaEmitido, onClose, onOrigenSaved, onSaldo, onEmitido, onOpenSaldo}){
+  const iS=InputStyle(T);
+  const [tipo,setTipo]=useState(o.esSucursal?"sucursal":"domicilio");
+  const [dest,setDest]=useState({
+    nombreCompleto:o.comprador||"",
+    documentoNumero:String(o.dni||"").replace(/\D/g,""),
+    email:o.email||"",
+    telefono:o.telefono||"",
+  });
+  const [dom,setDom]=useState({
+    codigoPostal:String(o.cp||"").trim(),
+    calle:o.direccion||"",
+    numero:String(o.dirNumero||"").trim(),
+    localidad:o.localidad||o.ciudad||"",
+    region:o.provincia||"",
+    piso:o.piso||"",
+    departamento:"",
+  });
+  const [cpSuc,setCpSuc]=useState(String(o.pickupDetails?.address?.zipcode||o.pickupDetails?.address?.zip_code||o.cp||"").trim());
+  const [sucs,setSucs]=useState(null);       // null = sin cargar | [] = CP sin sucursales
+  const [sucLoading,setSucLoading]=useState(false);
+  const [sucId,setSucId]=useState("");
+  const [paq,setPaq]=useState({...{peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000"},...(cfgDefaults||{})});
+  const [cot,setCot]=useState(null);         // {precio,pesoAforado,saldo,tarifaAndreani?}
+  const [cotErr,setCotErr]=useState("");
+  const [emitErr,setEmitErr]=useState("");
+  const [emitido,setEmitido]=useState(yaEmitido?{numeroDeEnvio:yaEmitido}:null);
+  const [pdfPending,setPdfPending]=useState(false);
+  const invalida=fn=>(...a)=>{fn(...a);setCot(null);setCotErr("");setEmitErr("");};
+  const setPaqI=k=>invalida(e=>setPaq(s=>({...s,[k]:e.target.value})));
+  const setDomI=k=>e=>{const v=e.target.value;setDom(s=>({...s,[k]:v}));if(k==="codigoPostal"){setCot(null);setCotErr("");}};
+
+  async function cargarSucursales(cp){
+    const cpStr=String(cp||"").trim();
+    setSucId("");setCot(null);
+    if(!cpStr){ setSucs([]); return; }
+    setSucLoading(true);setSucs(null);
+    try{
+      const r=await authFetch(`/api/andreani?action=sucursales&cp=${encodeURIComponent(cpStr)}`);
+      const d=await r.json().catch(()=>({}));
+      const list=Array.isArray(d?.sucursales)?d.sucursales:[];
+      setSucs(list);
+      if(list.length===1) setSucId(String(list[0].id));
+    }catch(_){ setSucs([]); }
+    setSucLoading(false);
+  }
+  useEffect(()=>{ if(tipo==="sucursal"&&sucs===null&&!sucLoading) cargarSucursales(cpSuc); },[tipo]);
+
+  function buildBultos(){
+    return [{
+      kilos:(parseFloat(paq.peso)||200)/1000,
+      largoCm:parseInt(paq.prof)||5,
+      altoCm:parseInt(paq.alto)||5,
+      anchoCm:parseInt(paq.ancho)||5,
+      valorDeclarado:parseFloat(paq.valor)||0,
+    }];
+  }
+  const cpDestino=(tipo==="sucursal"?cpSuc:dom.codigoPostal).trim();
+  const saldoCot=typeof cot?.saldo==="number"?cot.saldo:saldo;
+  const faltaSaldo=cot&&cot.precio>saldoCot;
+
+  async function cotizar(){
+    setCotErr("");setEmitErr("");setCot(null);
+    if(!cpDestino){ setCotErr("Falta el código postal de destino."); return; }
+    if(tipo==="sucursal"&&!sucId){ setCotErr("Elegí una sucursal de la lista antes de cotizar."); return; }
+    const r=await authFetch("/api/andreani?action=cotizar",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({tipo,cpDestino,bultos:buildBultos()}),
+    });
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error){
+      const msg=typeof d.error==="string"?d.error:`No se pudo cotizar (HTTP ${r.status})`;
+      setCotErr(msg);toast("No se pudo cotizar el envío","error");
+      return;
+    }
+    setCot(d);
+    if(typeof d.saldo==="number") onSaldo&&onSaldo(d.saldo);
+  }
+
+  async function emitir(){
+    if(!cot||faltaSaldo) return;
+    setEmitErr("");
+    if(!dest.nombreCompleto.trim()){ setEmitErr("Falta el nombre del destinatario."); return; }
+    const body={
+      envioId:String(o.numero),
+      tipo,
+      cpDestino,
+      destino:tipo==="sucursal"
+        ?{sucursalId:sucId}
+        :{postal:{codigoPostal:dom.codigoPostal.trim(),calle:dom.calle.trim(),numero:dom.numero.trim(),localidad:dom.localidad.trim(),region:dom.region.trim()}},
+      destinatario:{
+        nombreCompleto:dest.nombreCompleto.trim(),
+        documentoNumero:dest.documentoNumero.trim(),
+        email:dest.email.trim(),
+        telefono:dest.telefono.trim(),
+      },
+      bultos:buildBultos(),
+      productoAEntregar:(o.productos||[]).map(p=>`${p.cantidad||1}x ${p.sku||p.nombre}`).join(", ").slice(0,140)||"Paquete",
+      piso:dom.piso||"",
+      departamento:dom.departamento||"",
+    };
+    const r=await authFetch("/api/andreani?action=emitir",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body),
+    });
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error){
+      if(d.error==="saldo_insuficiente"){
+        setEmitErr(`Saldo insuficiente: tenés ${fmtMoney(d.saldo)} y la etiqueta cuesta ${fmtMoney(d.precio)}. Faltan ${fmtMoney((d.precio||0)-(d.saldo||0))}.`);
+        if(typeof d.saldo==="number") onSaldo&&onSaldo(d.saldo);
+      } else {
+        setEmitErr(typeof d.error==="string"?d.error:`Error al emitir (HTTP ${r.status})`);
+      }
+      toast("No se pudo emitir la etiqueta","error");
+      return;
+    }
+    setEmitido(d);
+    if(typeof d.saldoRestante==="number") onSaldo&&onSaldo(d.saldoRestante);
+    onEmitido&&onEmitido(o.numero,d);
+    toast(`Etiqueta ${d.numeroDeEnvio} emitida ✓`,"success");
+  }
+
+  async function descargarEtiqueta(){
+    const numero=emitido?.numeroDeEnvio;
+    if(!numero) return;
+    setPdfPending(false);
+    const r=await authFetch(`/api/andreani?action=etiqueta&numero=${encodeURIComponent(numero)}`);
+    const d=await r.json().catch(()=>({}));
+    if(d&&d.pdf){ ghDescargarPdfB64(d.pdf,`Andreani_${numero}.pdf`); toast("Etiqueta descargada ✓","success"); }
+    else if(d&&d.pending){ setPdfPending(true); toast("Andreani todavía está generando el PDF — probá en unos segundos","warning"); }
+    else { toast("No se pudo descargar la etiqueta"+(d?.error?`: ${d.error}`:""),"error"); }
+  }
+
+  const segBtn=(active)=>({
+    flex:1,padding:"8px 12px",fontSize:13,fontWeight:active?600:400,border:"none",borderRadius:8,
+    background:active?T.card:"transparent",color:active?T.text:T.textMd,cursor:"pointer",
+    fontFamily:"'Inter',system-ui,sans-serif",boxShadow:active?"0 1px 3px rgba(0,0,0,0.15)":"none",transition:"all 0.12s",
+  });
+
+  return (
+    <Modal T={T} open={true} onClose={onClose} title={`Etiqueta Andreani — pedido #${o.numero}`} width={560}>
+      {emitido?(
+        /* ── Ya emitida: número + descarga, sin doble emisión ── */
+        <div style={{textAlign:"center",padding:"8px 0 4px"}}>
+          <StatusIcon type="success" size={56}/>
+          <div style={{fontSize:16,fontWeight:800,color:T.green,margin:"14px 0 4px"}}>Etiqueta emitida</div>
+          <div style={{fontSize:12,color:T.textSm,marginBottom:14}}>Número de envío Andreani</div>
+          <div style={{fontSize:22,fontWeight:800,color:T.text,fontFamily:"'Cascadia Code','Consolas',monospace",letterSpacing:0.5,marginBottom:16}}>{emitido.numeroDeEnvio}</div>
+          <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginBottom:20,fontSize:12,color:T.textMd}}>
+            {typeof emitido.precio==="number"&&<span>Costo: <strong style={{color:T.text}}>{fmtMoney(emitido.precio)}</strong></span>}
+            {typeof emitido.saldoRestante==="number"&&<span>Saldo restante: <strong style={{color:T.green}}>{fmtMoney(emitido.saldoRestante)}</strong></span>}
+            {emitido.fechaEstimadaDeEntrega&&<span>Entrega estimada: <strong style={{color:T.text}}>{emitido.fechaEstimadaDeEntrega}</strong></span>}
+          </div>
+          {pdfPending&&(
+            <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"8px 12px",fontSize:12,color:T.yellow,marginBottom:14}}>
+              El PDF todavía se está generando en Andreani. Esperá unos segundos y reintentá.
+            </div>
+          )}
+          <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+            <button onClick={onClose} style={{...BtnSecondary(T),fontSize:13}}>Cerrar</button>
+            <AsyncButton onClick={descargarEtiqueta} style={{...BtnPrimary(T),fontSize:13,minWidth:190,justifyContent:"center"}}>
+              {pdfPending?"Reintentar descarga":"Descargar etiqueta PDF"}
+            </AsyncButton>
+          </div>
+        </div>
+      ):!origenConfigurado?(
+        /* ── Primera vez: configurar origen/remitente antes de emitir ── */
+        <AndreaniOrigenForm T={T} onSaved={onOrigenSaved} onCancel={onClose}/>
+      ):(
+        <div>
+          {/* Tipo de envío */}
+          <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,marginBottom:16}}>
+            <button onClick={()=>invalida(setTipo)("domicilio")} style={segBtn(tipo==="domicilio")}>A domicilio</button>
+            <button onClick={()=>invalida(setTipo)("sucursal")} style={segBtn(tipo==="sucursal")}>A sucursal</button>
+          </div>
+
+          {/* Destinatario */}
+          <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Destinatario</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+            <Field T={T} label="Nombre completo" required><input style={iS} value={dest.nombreCompleto} onChange={e=>setDest(s=>({...s,nombreCompleto:e.target.value}))}/></Field>
+            <Field T={T} label="DNI"><input style={iS} value={dest.documentoNumero} onChange={e=>setDest(s=>({...s,documentoNumero:e.target.value.replace(/\D/g,"")}))}/></Field>
+            <Field T={T} label="Email"><input style={iS} value={dest.email} onChange={e=>setDest(s=>({...s,email:e.target.value}))}/></Field>
+            <Field T={T} label="Teléfono"><input style={iS} value={dest.telefono} onChange={e=>setDest(s=>({...s,telefono:e.target.value}))}/></Field>
+          </div>
+
+          {/* Destino */}
+          {tipo==="domicilio"?(
+            <>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,margin:"4px 0 10px"}}>Dirección de entrega</div>
+              <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:"0 14px"}}>
+                <Field T={T} label="Calle" required><input style={iS} value={dom.calle} onChange={setDomI("calle")}/></Field>
+                <Field T={T} label="Número" required><input style={iS} value={dom.numero} onChange={setDomI("numero")}/></Field>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 14px"}}>
+                <Field T={T} label="Piso"><input style={iS} value={dom.piso} onChange={setDomI("piso")}/></Field>
+                <Field T={T} label="Depto"><input style={iS} value={dom.departamento} onChange={setDomI("departamento")}/></Field>
+                <Field T={T} label="CP" required><input style={iS} value={dom.codigoPostal} onChange={setDomI("codigoPostal")}/></Field>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+                <Field T={T} label="Localidad" required><input style={iS} value={dom.localidad} onChange={setDomI("localidad")}/></Field>
+                <Field T={T} label="Provincia" required><input style={iS} value={dom.region} onChange={setDomI("region")}/></Field>
+              </div>
+            </>
+          ):(
+            <>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,margin:"4px 0 10px"}}>Sucursal Andreani de retiro</div>
+              <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"flex-end"}}>
+                <div style={{width:130}}>
+                  <Field T={T} label="CP destino"><input style={{...iS,marginBottom:0}} value={cpSuc} onChange={e=>{setCpSuc(e.target.value);setCot(null);}}/></Field>
+                </div>
+                <AsyncButton onClick={()=>cargarSucursales(cpSuc)} style={{...BtnSecondary(T),fontSize:12,marginBottom:14}}>Buscar sucursales</AsyncButton>
+              </div>
+              {sucLoading?(
+                <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 2px 16px",color:T.textSm,fontSize:12}}>
+                  <Spinner size={13} color={T.accent}/> Buscando sucursales para el CP {cpSuc}…
+                </div>
+              ):Array.isArray(sucs)&&sucs.length===0?(
+                <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"12px 14px",marginBottom:16}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.yellow,marginBottom:4}}>No hay sucursales Andreani para el CP {cpSuc||"indicado"}</div>
+                  <div style={{fontSize:12,color:T.text,marginBottom:10}}>Probá con otro código postal o enviá a domicilio.</div>
+                  <button onClick={()=>invalida(setTipo)("domicilio")} style={{...BtnSecondary(T),fontSize:12}}>Cambiar a domicilio</button>
+                </div>
+              ):Array.isArray(sucs)&&sucs.length>0?(
+                <div style={{marginBottom:16}}>
+                  <select value={sucId} onChange={e=>{setSucId(e.target.value);setCot(null);setCotErr("");}} style={iS}>
+                    <option value="">Elegí una sucursal…</option>
+                    {sucs.map(s=>{
+                      const d=s.direccion||{};
+                      const dir=[`${d.calle||""} ${d.numero||""}`.trim(),d.localidad].filter(Boolean).join(", ");
+                      return <option key={s.id} value={String(s.id)}>{s.descripcion}{dir?` — ${dir}`:""}</option>;
+                    })}
+                  </select>
+                  {(()=>{
+                    const s=sucs.find(x=>String(x.id)===sucId);
+                    if(!s) return <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Lista oficial de Andreani para el CP {cpSuc} — elegí una de la lista.</div>;
+                    return (
+                      <div style={{fontSize:11,color:T.textSm,marginTop:6}}>
+                        {s.direccion?`${s.direccion.calle||""} ${s.direccion.numero||""}, ${s.direccion.localidad||""} (CP ${s.direccion.codigoPostal||cpSuc})`:""}
+                        {s.horarioDeAtencion?` · ${s.horarioDeAtencion}`:""}
+                      </div>
+                    );
+                  })()}
+                  {o.pickupDetails?.name&&<div style={{fontSize:11,color:T.textMd,marginTop:6}}>Punto elegido por el cliente en TN: <strong style={{color:T.accent}}>{o.pickupDetails.name}</strong></div>}
+                </div>
+              ):null}
+            </>
+          )}
+
+          {/* Paquete */}
+          <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,margin:"4px 0 10px"}}>Paquete</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+            <Field T={T} label="Peso (g)"><input style={iS} type="number" value={paq.peso} onChange={setPaqI("peso")} placeholder="200"/></Field>
+            <Field T={T} label="Valor declarado ($)"><input style={iS} type="number" value={paq.valor} onChange={setPaqI("valor")} placeholder="6000"/></Field>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 14px"}}>
+            <Field T={T} label="Alto (cm)"><input style={iS} type="number" value={paq.alto} onChange={setPaqI("alto")} placeholder="5"/></Field>
+            <Field T={T} label="Ancho (cm)"><input style={iS} type="number" value={paq.ancho} onChange={setPaqI("ancho")} placeholder="5"/></Field>
+            <Field T={T} label="Largo (cm)"><input style={iS} type="number" value={paq.prof} onChange={setPaqI("prof")} placeholder="5"/></Field>
+          </div>
+
+          {/* Cotización */}
+          {cot&&(
+            <div style={{background:faltaSaldo?T.redBg:T.surface,border:`1px solid ${faltaSaldo?T.red+"55":T.green+"44"}`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Precio final</div>
+                  <div style={{fontSize:22,fontWeight:800,color:faltaSaldo?T.red:T.green,letterSpacing:-0.5}}>{fmtMoney(cot.precio)}</div>
+                </div>
+                {typeof cot.pesoAforado==="number"&&(
+                  <div>
+                    <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Peso aforado</div>
+                    <div style={{fontSize:13,fontWeight:600,color:T.text}}>{cot.pesoAforado} kg</div>
+                  </div>
+                )}
+                <div style={{marginLeft:"auto",textAlign:"right"}}>
+                  <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Tu saldo</div>
+                  <div style={{fontSize:13,fontWeight:700,color:faltaSaldo?T.red:T.text}}>{fmtMoney(saldoCot)}</div>
+                </div>
+              </div>
+              {faltaSaldo&&(
+                <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.red}33`,fontSize:12,color:T.red,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <span>Saldo insuficiente: faltan <strong>{fmtMoney(cot.precio-saldoCot)}</strong> para emitir esta etiqueta.</span>
+                  <button onClick={onOpenSaldo} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",color:T.red,borderColor:T.red+"66"}}>Cargar saldo</button>
+                </div>
+              )}
+            </div>
+          )}
+          {cotErr&&<div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:8,padding:"9px 12px",fontSize:12,color:T.red,marginBottom:12}}>{cotErr}</div>}
+          {emitErr&&<div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:8,padding:"9px 12px",fontSize:12,color:T.red,marginBottom:12}}>{emitErr}</div>}
+
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <button onClick={onClose} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>
+            <AsyncButton onClick={cotizar} style={{...BtnSecondary(T),fontSize:13,color:T.accent,borderColor:T.accent+"66",minWidth:110,justifyContent:"center"}}>Cotizar</AsyncButton>
+            <AsyncButton onClick={emitir} disabled={!cot||faltaSaldo} style={{...BtnPrimary(T),fontSize:13,minWidth:150,justifyContent:"center"}}>Emitir etiqueta</AsyncButton>
+          </div>
+          {!cot&&!cotErr&&<div style={{fontSize:11,color:T.textSm,marginTop:10,textAlign:"right"}}>Cotizá primero para ver el precio y habilitar la emisión.</div>}
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -9922,6 +10506,63 @@ function AppAdmin({T, user, onBack}) {
   const [usageByUid, setUsageByUid] = useState({}); // {uid: {loading, usage:[], totales}}
   const [userLimit, setUserLimit] = useState(50); // se pinta de a 50: con cientos de cuentas la lista entera traba el navegador
 
+  // ── Tab Envíos: etiquetas Andreani prepagas (markup, habilitados, saldos) ──
+  const [envCfg, setEnvCfg] = useState(null);        // {markupPct, markupFijo, habilitados:[uid]}
+  const [envSaldos, setEnvSaldos] = useState(null);  // [{uid,email,saldo}]
+  const [envLoading, setEnvLoading] = useState(false);
+  const [envNuevoUid, setEnvNuevoUid] = useState("");
+  const [envAcred, setEnvAcred] = useState(null);    // {uid,email} → mini-form de acreditación
+  const [envAcredForm, setEnvAcredForm] = useState({monto:"", nota:""});
+  const [envMovs, setEnvMovs] = useState(null);      // {uid,email,loading,movimientos:[]} → modal
+  async function loadEnvios() {
+    setEnvLoading(true);
+    try {
+      const [c,s] = await Promise.all([
+        authFetch("/api/andreani?action=admin_config").then(r=>r.json()).catch(()=>null),
+        authFetch("/api/andreani?action=admin_saldos").then(r=>r.json()).catch(()=>null),
+      ]);
+      if (c && !c.error) setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, habilitados:Array.isArray(c.habilitados)?c.habilitados:[]});
+      if (s && Array.isArray(s.cuentas)) setEnvSaldos(s.cuentas);
+    } catch(e){ toast("Error cargando Envíos: "+e.message,"error"); }
+    setEnvLoading(false);
+  }
+  useEffect(()=>{ if(tab==="envios" && !envCfg && !envLoading) loadEnvios(); },[tab]);
+  async function saveEnvCfg(next) {
+    const body = next || envCfg;
+    const r = await authFetch("/api/andreani?action=admin_config",{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, habilitados:body.habilitados}),
+    });
+    const d = await r.json().catch(()=>({}));
+    if (!r.ok || d.error) { toast("No se pudo guardar: "+(d.error||`HTTP ${r.status}`),"error"); return false; }
+    setEnvCfg({...body});
+    toast("Configuración de Envíos guardada ✓","success");
+    return true;
+  }
+  async function acreditarSaldo() {
+    const monto = parseFloat(envAcredForm.monto);
+    if (!envAcred || !monto || monto<=0) { toast("Ingresá un monto válido","error"); return; }
+    const r = await authFetch("/api/andreani?action=admin_acreditar",{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({uid:envAcred.uid, monto, nota:envAcredForm.nota||""}),
+    });
+    const d = await r.json().catch(()=>({}));
+    if (!r.ok || d.error) { toast("No se pudo acreditar: "+(d.error||`HTTP ${r.status}`),"error"); return; }
+    toast(`${fmtMoney(monto)} acreditados a ${envAcred.email||envAcred.uid}`,"success");
+    setEnvAcred(null); setEnvAcredForm({monto:"",nota:""});
+    try { const s = await authFetch("/api/andreani?action=admin_saldos").then(r2=>r2.json()); if(Array.isArray(s?.cuentas)) setEnvSaldos(s.cuentas); } catch(_){}
+  }
+  async function verMovimientos(cuenta) {
+    setEnvMovs({uid:cuenta.uid, email:cuenta.email, loading:true, movimientos:[]});
+    try {
+      const d = await authFetch(`/api/andreani?action=admin_movimientos&uid=${encodeURIComponent(cuenta.uid)}`).then(r=>r.json());
+      setEnvMovs(prev=>prev&&prev.uid===cuenta.uid?{...prev, loading:false, movimientos:Array.isArray(d?.movimientos)?d.movimientos:[]}:prev);
+    } catch(e){
+      setEnvMovs(prev=>prev&&prev.uid===cuenta.uid?{...prev, loading:false, movimientos:[]}:prev);
+      toast("Error cargando movimientos","error");
+    }
+  }
+
   async function loadUsage(targetUid) {
     setUsageByUid(prev=>({...prev,[targetUid]:{...(prev[targetUid]||{}),loading:true}}));
     try {
@@ -10137,6 +10778,7 @@ function AppAdmin({T, user, onBack}) {
             ["resumen", pagosPendientes.length>0 ? `Cobros · ${pagosPendientes.length}` : "Cobros"],
             ["usuarios", "Cuentas"],
             ["secciones", "Accesos"],
+            ["envios", "Envíos"],
           ].map(([id,label])=>(
             <button key={id} onClick={()=>setTab(id)} style={tabStyle(id)}>{label}</button>
           ))}
@@ -10615,6 +11257,144 @@ function AppAdmin({T, user, onBack}) {
           <div style={{marginTop:16,padding:"12px 16px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,fontSize:12,color:T.textSm,lineHeight:1.6}}>
             <strong style={{color:T.text}}>Tip:</strong> Los cambios se aplican a todos los usuarios en tiempo real. Las secciones que hagas "solo admin" desaparecen del sidebar de los usuarios comunes inmediatamente.
           </div>
+        </div>
+      )}
+
+      {/* ── ENVÍOS: etiquetas Andreani prepagas ── */}
+      {tab==="envios"&&(
+        <div style={{maxWidth:720,margin:"0 auto",padding:"0 20px"}}>
+          {envLoading&&!envCfg?(
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"32px 0",color:T.textSm,fontSize:13}}>
+              <Spinner size={15} color={T.accent}/> Cargando configuración de Envíos…
+            </div>
+          ):(
+            <>
+              {/* Config de markup */}
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
+                <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>Markup sobre la tarifa Andreani</div>
+                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>
+                  Precio final que paga el cliente = tarifa Andreani + markup % + markup fijo.
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,alignItems:"end"}}>
+                  <Field T={T} label="Markup (%)">
+                    <input style={iS} type="number" value={envCfg?.markupPct??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),markupPct:e.target.value}))} placeholder="0"/>
+                  </Field>
+                  <Field T={T} label="Markup fijo ($)">
+                    <input style={iS} type="number" value={envCfg?.markupFijo??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),markupFijo:e.target.value}))} placeholder="0"/>
+                  </Field>
+                </div>
+                <div style={{display:"flex",justifyContent:"flex-end"}}>
+                  <AsyncButton onClick={()=>saveEnvCfg()} disabled={!envCfg} style={{...BtnPrimary(T),fontSize:13}}>Guardar configuración</AsyncButton>
+                </div>
+              </div>
+
+              {/* Cuentas habilitadas */}
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
+                <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>Cuentas habilitadas</div>
+                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>
+                  Solo estas cuentas ven el sistema de etiquetas prepagas en Envíos. El email de cada uid aparece en la tabla de saldos de abajo.
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+                  {(envCfg?.habilitados||[]).length===0&&<div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Ninguna cuenta habilitada todavía.</div>}
+                  {(envCfg?.habilitados||[]).map(uid=>{
+                    const cuenta=(envSaldos||[]).find(c=>c.uid===uid);
+                    return (
+                      <div key={uid} style={{display:"flex",alignItems:"center",gap:10,background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px"}}>
+                        <span style={{fontSize:12,fontWeight:600,color:T.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          {cuenta?.email||<span style={{fontFamily:"'Cascadia Code','Consolas',monospace"}}>{uid}</span>}
+                        </span>
+                        <span style={{fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{uid.slice(0,8)}…</span>
+                        <AsyncButton onClick={async()=>{
+                          if(!await appConfirm("¿Quitar esta cuenta del sistema de etiquetas prepagas?",{danger:true,okLabel:"Quitar"})) return;
+                          await saveEnvCfg({...envCfg,habilitados:envCfg.habilitados.filter(u=>u!==uid)});
+                        }} style={{background:"transparent",border:"none",color:T.red,cursor:"pointer",fontSize:13,padding:"2px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</AsyncButton>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <input style={{...iS,flex:1}} value={envNuevoUid} onChange={e=>setEnvNuevoUid(e.target.value)} placeholder="UID de Firebase de la cuenta a habilitar"/>
+                  <AsyncButton onClick={async()=>{
+                    const uid=envNuevoUid.trim();
+                    if(!uid){ toast("Pegá el uid de la cuenta","error"); return; }
+                    if((envCfg?.habilitados||[]).includes(uid)){ toast("Esa cuenta ya está habilitada","warning"); return; }
+                    const ok=await saveEnvCfg({...(envCfg||{markupPct:0,markupFijo:0,habilitados:[]}),habilitados:[...(envCfg?.habilitados||[]),uid]});
+                    if(ok) setEnvNuevoUid("");
+                  }} style={{...BtnPrimary(T),fontSize:13,whiteSpace:"nowrap"}}>Habilitar</AsyncButton>
+                </div>
+              </div>
+
+              {/* Saldos */}
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                  <div style={{fontSize:15,fontWeight:700,color:T.text}}>Saldos por cuenta</div>
+                  <AsyncButton onClick={loadEnvios} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>Actualizar</AsyncButton>
+                </div>
+                {(envSaldos||[]).length===0?(
+                  <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin cuentas con saldo todavía.</div>
+                ):(
+                  <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 90px 100px 170px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
+                      <span>Cuenta</span><span>UID</span><span style={{textAlign:"right"}}>Saldo</span><span/>
+                    </div>
+                    {(envSaldos||[]).map((c,i)=>(
+                      <div key={c.uid}>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 90px 100px 170px",gap:8,padding:"10px 12px",fontSize:12,borderBottom:`1px solid ${T.borderL}`,alignItems:"center"}}>
+                          <span style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||"—"}</span>
+                          <span style={{color:T.textSm,fontSize:10,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{String(c.uid||"").slice(0,8)}…</span>
+                          <span style={{textAlign:"right",fontWeight:700,color:(c.saldo||0)>0?T.green:T.textMd}}>{fmtMoney(c.saldo||0)}</span>
+                          <span style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                            <button onClick={()=>{setEnvAcred(envAcred?.uid===c.uid?null:{uid:c.uid,email:c.email});setEnvAcredForm({monto:"",nota:""});}}
+                              style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",color:T.green,borderColor:T.green+"55"}}>Acreditar</button>
+                            <button onClick={()=>verMovimientos(c)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Movs</button>
+                          </span>
+                        </div>
+                        {envAcred?.uid===c.uid&&(
+                          <div style={{display:"flex",gap:8,alignItems:"center",padding:"10px 12px",background:T.surface,borderBottom:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
+                            <input style={{...iS,width:130}} type="number" value={envAcredForm.monto} onChange={e=>setEnvAcredForm(s=>({...s,monto:e.target.value}))} placeholder="Monto ($)"/>
+                            <input style={{...iS,flex:1,minWidth:160}} value={envAcredForm.nota} onChange={e=>setEnvAcredForm(s=>({...s,nota:e.target.value}))} placeholder="Nota (ej: transferencia 5/8)"/>
+                            <AsyncButton onClick={acreditarSaldo} style={{...BtnPrimary(T),fontSize:12}}>Acreditar</AsyncButton>
+                            <button onClick={()=>setEnvAcred(null)} style={{...BtnSecondary(T),fontSize:12}}>Cancelar</button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Modal movimientos de una cuenta */}
+          <Modal T={T} open={!!envMovs} onClose={()=>setEnvMovs(null)} title={`Movimientos — ${envMovs?.email||envMovs?.uid||""}`} width={560}>
+            {envMovs&&(envMovs.loading?(
+              <div style={{display:"flex",alignItems:"center",gap:8,padding:"18px 4px",color:T.textSm,fontSize:12}}>
+                <Spinner size={13} color={T.accent}/> Cargando movimientos…
+              </div>
+            ):envMovs.movimientos.length===0?(
+              <div style={{padding:"18px 4px",color:T.textSm,fontSize:12}}>Sin movimientos para esta cuenta.</div>
+            ):(
+              <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
+                <div style={{display:"grid",gridTemplateColumns:"90px 1fr 90px 90px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
+                  <span>Fecha</span><span>Concepto</span><span style={{textAlign:"right"}}>Monto</span><span style={{textAlign:"right"}}>Saldo</span>
+                </div>
+                <div style={{maxHeight:320,overflowY:"auto"}}>
+                  {envMovs.movimientos.map((m,i)=>{
+                    const esCredito=m.tipo==="credito"||m.tipo==="reverso";
+                    const concepto=m.nota||(m.tipo==="debito"?`Etiqueta ${m.numeroDeEnvio||""}`.trim():m.tipo==="reverso"?"Reverso":"Carga de saldo");
+                    return (
+                      <div key={i} style={{display:"grid",gridTemplateColumns:"90px 1fr 90px 90px",gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<envMovs.movimientos.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
+                        <span style={{color:T.textSm,fontSize:11}}>{ghFmtTs(m.ts)}</span>
+                        <span style={{color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={concepto}>{concepto}</span>
+                        <span style={{textAlign:"right",fontWeight:700,color:esCredito?T.green:T.red}}>{esCredito?"+":"−"}{fmtMoney(Math.abs(m.monto||0))}</span>
+                        <span style={{textAlign:"right",color:T.textMd}}>{fmtMoney(m.saldoDespues)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </Modal>
         </div>
       )}
 
