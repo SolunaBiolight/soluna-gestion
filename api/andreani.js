@@ -147,6 +147,9 @@ async function getGlobalConfig(db) {
       // /v1/tarifas devuelve tarifa de lista; el descuento se aplica en cta corriente,
       // así que lo modelamos acá para que costo y precio reflejen la realidad.
       descuentoPct: Math.min(Math.max(Number(d.descuentoPct) || 0, 0), 90),
+      // % del valor declarado que Andreani factura como seguro (propuesta
+      // comercial: 2%). No lleva el descuento de lista.
+      seguroPct: Math.min(Math.max(d.seguroPct === undefined ? 2 : Number(d.seguroPct) || 0, 0), 10),
       // Código de sucursal de imposición (desde dónde se despacha). /v1/tarifas
       // tarifa distinto según origen; sin esto puede asumir otro y dar de más.
       sucursalOrigen: String(d.sucursalOrigen || "").trim(),
@@ -161,7 +164,7 @@ async function getGlobalConfig(db) {
       } : { alias: "", titular: "", cbu: "" },
     };
   } catch (_) {
-    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" } };
+    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, seguroPct: 2, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" } };
   }
 }
 
@@ -269,7 +272,18 @@ async function cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrige
   if (!isFinite(total) || total <= 0) {
     throw new Error(`Andreani devolvió una tarifa inválida: ${JSON.stringify(data).slice(0, 300)}`);
   }
-  return { tarifaTotal: total, pesoAforado: data.pesoAforado ?? null, raw: data };
+  // Desglose: la propuesta comercial firmada dice que el seguro se factura
+  // al seguroPct% del valor declarado SIN el descuento de lista, así que
+  // necesitamos separar el componente seguro del de distribución.
+  const seguroApi = parseFloat(data?.tarifaConIva?.seguroDistribucion);
+  const valorDeclarado = bultos.reduce((s, b) => s + (parseFloat(b.valorDeclarado) || 0), 0);
+  return {
+    tarifaTotal: total,
+    seguroApi: isFinite(seguroApi) && seguroApi >= 0 ? seguroApi : null,
+    valorDeclarado,
+    pesoAforado: data.pesoAforado ?? null,
+    raw: data,
+  };
 }
 
 // Sucursal de origen efectiva para tarifar: la confirmada por el usuario;
@@ -329,11 +343,22 @@ function mesAR() {
   }).format(new Date());
 }
 
-function costoConDescuento(tarifaTotal, cfg) {
-  return tarifaTotal * (1 - (cfg.descuentoPct || 0) / 100);
+// Costo real según la propuesta comercial firmada (jul/2026):
+// - distribución = tarifa de lista − descuentoPct (30% en el contrato)
+// - seguro = seguroPct% del valor declarado (2% en el contrato), SIN descuento,
+//   + IVA (las tarifas del contrato son sin IVA y acá trabajamos con IVA).
+// Si la API no desglosa el seguro, fallback al modelo anterior (descuento
+// sobre el total) para no inventar un seguro que quizás ya está adentro.
+function costoConDescuento(cot, cfg) {
+  const c = typeof cot === "number" ? { tarifaTotal: cot, seguroApi: null, valorDeclarado: 0 } : cot;
+  const desc = 1 - (cfg.descuentoPct || 0) / 100;
+  if (c.seguroApi == null) return c.tarifaTotal * desc;
+  const distribucion = Math.max(0, c.tarifaTotal - c.seguroApi);
+  const seguroContrato = (c.valorDeclarado || 0) * ((cfg.seguroPct ?? 2) / 100) * 1.21;
+  return distribucion * desc + seguroContrato;
 }
-function precioConMarkup(tarifaTotal, cfg) {
-  return Math.ceil(costoConDescuento(tarifaTotal, cfg) * (1 + cfg.markupPct / 100) + cfg.markupFijo);
+function precioConMarkup(cot, cfg) {
+  return Math.ceil(costoConDescuento(cot, cfg) * (1 + cfg.markupPct / 100) + cfg.markupFijo);
 }
 
 // ─── Pertenencia de un envío (etiqueta/trazas) ─────────────────────────────
@@ -541,7 +566,7 @@ export default async function handler(req, res) {
       if (!esAdmin && !cfg.habilitados.includes(uid)) return res.status(403).json({ error: "Tu cuenta no tiene habilitado Envíos Andreani. Contactá al soporte." });
 
       const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen: sucOrigenDe(snap.data(), cfg) });
-      const precio = precioConMarkup(cot.tarifaTotal, cfg);
+      const precio = precioConMarkup(cot, cfg);
       const out = {
         precio,
         pesoAforado: cot.pesoAforado,
@@ -550,8 +575,10 @@ export default async function handler(req, res) {
       // El costo real solo lo ven los admins — los clientes NUNCA ven la tarifa.
       if (esAdmin) {
         out.tarifaAndreani = cot.tarifaTotal; // tarifa de lista (con IVA)
-        out.costoEstimado = Math.round(costoConDescuento(cot.tarifaTotal, cfg)); // con descuento cta cte
+        out.seguroApi = cot.seguroApi;        // componente seguro de la lista (con IVA), null si no desglosa
+        out.costoEstimado = Math.round(costoConDescuento(cot, cfg)); // distribución − desc + seguro contractual
         out.descuentoPct = cfg.descuentoPct;
+        out.seguroPct = cfg.seguroPct;
       }
       return res.json(out);
     }
@@ -612,7 +639,7 @@ export default async function handler(req, res) {
 
       // b. RE-COTIZAR server-side — nunca confiar en el precio del cliente.
       const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen: sucOrigenDe(uData, cfg) });
-      const precio = precioConMarkup(cot.tarifaTotal, cfg);
+      const precio = precioConMarkup(cot, cfg);
 
       // c. Débito en transacción (saldo + movimiento).
       const movRef = movCol.doc();
@@ -756,7 +783,7 @@ export default async function handler(req, res) {
       try {
         await db.collection("andreani_config").doc(`stats_${mesAR()}`).set({
           facturado: FieldValue.increment(precio),
-          costoReal: FieldValue.increment(Math.round(costoConDescuento(cot.tarifaTotal, cfg))),
+          costoReal: FieldValue.increment(Math.round(costoConDescuento(cot, cfg))),
           etiquetas: FieldValue.increment(1),
           porUid: { [uid]: {
             monto: FieldValue.increment(precio),
@@ -1019,7 +1046,7 @@ export default async function handler(req, res) {
 
       if (action === "admin_config") {
         const gRef = db.collection("andreani_config").doc("global");
-        if (req.method === "POST" && (body.markupPct !== undefined || body.markupFijo !== undefined || body.habilitados !== undefined || body.descuentoPct !== undefined || body.sucursalOrigen !== undefined || body.datosPago !== undefined)) {
+        if (req.method === "POST" && (body.markupPct !== undefined || body.markupFijo !== undefined || body.habilitados !== undefined || body.descuentoPct !== undefined || body.seguroPct !== undefined || body.sucursalOrigen !== undefined || body.datosPago !== undefined)) {
           const upd = {};
           if (body.markupPct !== undefined) {
             const v = Number(body.markupPct);
@@ -1035,6 +1062,11 @@ export default async function handler(req, res) {
             const v = Number(body.descuentoPct);
             if (!isFinite(v) || v < 0 || v > 90) return res.status(400).json({ error: "descuentoPct inválido (0-90)" });
             upd.descuentoPct = v;
+          }
+          if (body.seguroPct !== undefined) {
+            const v = Number(body.seguroPct);
+            if (!isFinite(v) || v < 0 || v > 10) return res.status(400).json({ error: "seguroPct inválido (0-10)" });
+            upd.seguroPct = v;
           }
           if (body.sucursalOrigen !== undefined) {
             upd.sucursalOrigen = String(body.sucursalOrigen || "").trim().slice(0, 20);

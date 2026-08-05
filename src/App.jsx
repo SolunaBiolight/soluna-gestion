@@ -11372,7 +11372,7 @@ function AppAdmin({T, user, onBack}) {
         authFetch("/api/andreani?action=admin_config").then(r=>r.json()).catch(()=>null),
         authFetch("/api/andreani?action=admin_saldos").then(r=>r.json()).catch(()=>null),
       ]);
-      if (c && !c.error) setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}});
+      if (c && !c.error) setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??2, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}});
       if (s && Array.isArray(s.cuentas)) setEnvSaldos(s.cuentas);
     } catch(e){ toast("Error cargando Envíos: "+e.message,"error"); }
     setEnvLoading(false);
@@ -11400,7 +11400,7 @@ function AppAdmin({T, user, onBack}) {
     const body = next || envCfg;
     const r = await authFetch("/api/andreani?action=admin_config",{
       method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}}),
+      body:JSON.stringify({markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?2:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}}),
     });
     const d = await r.json().catch(()=>({}));
     if (!r.ok || d.error) { toast("No se pudo guardar: "+(d.error||`HTTP ${r.status}`),"error"); return false; }
@@ -12143,11 +12143,14 @@ function AppAdmin({T, user, onBack}) {
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
                 <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>Precio de las etiquetas</div>
                 <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>
-                  La API de Andreani devuelve la tarifa de lista. Tu costo real = tarifa − descuento de tu cuenta corriente. Precio del cliente = costo real + markup % + markup fijo.
+                  La API de Andreani devuelve la tarifa de lista. Tu costo real = distribución − descuento de tu propuesta comercial + seguro (% del valor declarado, sin descuento). Precio del cliente = costo real + markup % + markup fijo.
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,alignItems:"end"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:14,alignItems:"end"}}>
                   <Field T={T} label="Descuento Andreani (%)">
                     <input style={iS} type="number" value={envCfg?.descuentoPct??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),descuentoPct:e.target.value}))} placeholder="0"/>
+                  </Field>
+                  <Field T={T} label="Seguro (% valor declarado)">
+                    <input style={iS} type="number" step="0.5" value={envCfg?.seguroPct??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),seguroPct:e.target.value}))} placeholder="2"/>
                   </Field>
                   <Field T={T} label="Markup (%)">
                     <input style={iS} type="number" value={envCfg?.markupPct??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),markupPct:e.target.value}))} placeholder="0"/>
