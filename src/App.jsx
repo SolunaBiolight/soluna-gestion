@@ -18543,10 +18543,20 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     if(batchPdfs[batch.batch_id]) return batchPdfs[batch.batch_id];
     setLoadingBatchPdfs(batch.batch_id);
     try {
-      const d = await api("get_batch_pdfs","POST",{cuit:cuitSel, comprobante_ids:batch.comprobante_ids||[]});
-      if(d.error) { toast("Error al cargar PDFs: "+d.error,"error"); return null; }
-      setBatchPdfs(prev=>({...prev, [batch.batch_id]: d.pdfs||[]}));
-      return d.pdfs;
+      // El backend acepta máx. 100 comprobantes por pedido → lotes grandes se piden
+      // en tandas de 100, secuenciales (cuida el serverless) y en orden (descargarPdfDe
+      // indexa por posición, así que el orden del array NO se puede alterar).
+      const ids = batch.comprobante_ids||[];
+      const CHUNK = 100;
+      const pdfs = [];
+      for (let i = 0; i < Math.max(ids.length, 1); i += CHUNK) {
+        const d = await api("get_batch_pdfs","POST",{cuit:cuitSel, comprobante_ids:ids.slice(i, i+CHUNK)});
+        if(d.error) { toast("Error al cargar PDFs: "+d.error,"error"); return null; }
+        pdfs.push(...(d.pdfs||[]));
+        if (ids.length > CHUNK) toast(`Cargando PDFs… ${Math.min(i+CHUNK, ids.length)}/${ids.length}`,"info");
+      }
+      setBatchPdfs(prev=>({...prev, [batch.batch_id]: pdfs}));
+      return pdfs;
     } catch(e) {
       toast("No se pudieron cargar los PDFs: "+(e?.message||"error de conexión"),"error");
       return null;
@@ -19929,23 +19939,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         ))}
                       </div>
 
-                      {/* Barra de filtros */}
+                      {/* Barra de filtros — solo buscador (los filtros por letra/PV/origen se sacaron a pedido de Thiago; los estados regLetra/regPv/regOrigen quedan en "" y no filtran) */}
                       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
-                        {(esMono?["C"]:["A","B","C"]).map(l=>(
-                          <button key={l} onClick={()=>setRegLetra(regLetra===l?"":l)} style={pillS(regLetra===l, T.accent)}>{l}</button>
-                        ))}
-                        {pvsDisponibles.length>1 && (
-                          <select value={regPv} onChange={e=>setRegPv(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
-                            <option value="">Todos los PV</option>
-                            {pvsDisponibles.map(p=>(<option key={p.numero} value={p.numero}>{p.nombre} · PV {String(p.numero).padStart(5,"0")}</option>))}
-                          </select>
-                        )}
-                        {regSub==="facturas" && ORIGENES.map(o=>(
-                          <button key={o.id} onClick={()=>setRegOrigen(regOrigen===o.id?"":o.id)} style={{...pillS(regOrigen===o.id, o.id==="ml"?"#92620c":o.color),display:"inline-flex",alignItems:"center",gap:6}}>
-                            {(o.id==="tn"||o.id==="ml")&&<BrandIcon name={o.id} size={14} style={{opacity:regOrigen===o.id?1:0.75}}/>}
-                            {o.label}
-                          </button>
-                        ))}
                         <div style={{position:"relative",flex:1,minWidth:180}}>
                           <svg style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",color:T.textSm}} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                           <input type="text" placeholder="Buscar por N°, CAE, cliente, doc o orden…" value={regBusq} onChange={e=>setRegBusq(e.target.value)}
@@ -20053,12 +20048,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                     <td style={{padding:"8px 10px",color:T.textSm,fontFamily:"monospace",fontSize:11,whiteSpace:"nowrap"}} title={r.cae_vto?`Vto CAE ${r.cae_vto}`:undefined}>{r.cae||"—"}</td>
                                     <td style={{padding:"8px 10px"}}>
                                       <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
-                                        <button onClick={()=>descargarPdfDe(r)} style={btnPdfS}>PDF</button>
+                                        <button onClick={()=>descargarPdfDe(r)} style={btnPdfS}>Descargar</button>
                                         {!r.anulada&&!r.nd&&(
-                                          <button onClick={()=>abrirNd(r, r._b)} title="Emitir nota de débito — cobra un adicional asociado a esta factura" style={btnNdS}>ND</button>
+                                          <button onClick={()=>abrirNd(r, r._b)} title="Agrega más monto a la orden — cobra un adicional asociado a esta factura" style={btnNdS}>Emitir nota de débito</button>
                                         )}
                                         {!r.anulada&&(
-                                          <button onClick={()=>{if(!r.recuperado_afip&&!r.nd)anularUnaFactura(r, r._b);}} disabled={!!r.recuperado_afip||!!r.nd} title={r.nd?"Las ND se revierten con una nota de crédito manual":r.recuperado_afip?"Recuperado de AFIP sin detalle de items — anulalo desde una factura manual o contactanos":"Emite NC para anular esta factura"} style={{...btnAnularS,opacity:(r.recuperado_afip||r.nd)?0.45:1,cursor:(r.recuperado_afip||r.nd)?"not-allowed":"pointer"}}>Anular</button>
+                                          <button onClick={()=>{if(!r.recuperado_afip&&!r.nd)anularUnaFactura(r, r._b);}} disabled={!!r.recuperado_afip||!!r.nd} title={r.nd?"Las ND se revierten con una nota de crédito manual":r.recuperado_afip?"Recuperado de AFIP sin detalle de items — anulalo desde una factura manual o contactanos":"Emite NC para anular esta factura"} style={{...btnAnularS,opacity:(r.recuperado_afip||r.nd)?0.45:1,cursor:(r.recuperado_afip||r.nd)?"not-allowed":"pointer"}}>Anular (nota de crédito)</button>
                                         )}
                                       </div>
                                     </td>
@@ -20105,7 +20100,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                       Anular lote
                                     </button>
                                     <button onClick={(e)=>{e.stopPropagation();downloadBatchZip(b);}} style={{background:T.accent,border:"none",color:"#fff",borderRadius:6,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>
-                                      {loadingBatchPdfs===b.batch_id ? <><Spinner size={10} color="#fff"/> ZIP</> : "ZIP"}
+                                      {loadingBatchPdfs===b.batch_id ? <><Spinner size={10} color="#fff"/> Descargando…</> : "Descargar todo el lote"}
                                     </button>
                                   </div>
                                   {isExpanded && (
@@ -20121,17 +20116,17 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                             <div style={{fontSize:11,color:T.textSm}}>N° {String(r.comprobante).padStart(8,"0")} · CAE {r.cae}</div>
                                           </div>
                                           <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>{fmtMonto(r.total)}</div>
-                                          <button onClick={()=>descargarPdfDe(r)} style={btnPdfS}>PDF</button>
+                                          <button onClick={()=>descargarPdfDe(r)} style={btnPdfS}>Descargar</button>
                                           {String(r.orden_id||"").startsWith("ML-") && (
                                             <a href={`https://www.mercadolibre.com.ar/ventas/${String(r.orden_id).replace("ML-","")}/detalle`} target="_blank" rel="noopener" title="Abrí la venta en Mercado Libre para borrar la factura adjunta a mano (3 puntitos del documento → Eliminar)" style={{background:PLATFORM.mercadolibre.color,border:`1px solid ${PLATFORM.mercadolibre.color}55`,color:"#333",borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap",textDecoration:"none"}}>
                                               Ver en ML
                                             </a>
                                           )}
                                           {!r.anulada&&!r.nd&&(
-                                            <button onClick={()=>abrirNd(r, b)} title="Emitir nota de débito — cobra un adicional asociado a esta factura" style={btnNdS}>ND</button>
+                                            <button onClick={()=>abrirNd(r, b)} title="Agrega más monto a la orden — cobra un adicional asociado a esta factura" style={btnNdS}>Emitir nota de débito</button>
                                           )}
                                           {!r.anulada&&(
-                                            <button onClick={()=>{if(!r.recuperado_afip&&!r.nd)anularUnaFactura(r, b);}} disabled={!!r.recuperado_afip||!!r.nd} title={r.nd?"Las ND se revierten con una nota de crédito manual":r.recuperado_afip?"Recuperado de AFIP sin detalle de items — anulalo desde una factura manual o contactanos":"Emite NC para anular esta factura"} style={{...btnAnularS,opacity:(r.recuperado_afip||r.nd)?0.45:1,cursor:(r.recuperado_afip||r.nd)?"not-allowed":"pointer"}}>Anular</button>
+                                            <button onClick={()=>{if(!r.recuperado_afip&&!r.nd)anularUnaFactura(r, b);}} disabled={!!r.recuperado_afip||!!r.nd} title={r.nd?"Las ND se revierten con una nota de crédito manual":r.recuperado_afip?"Recuperado de AFIP sin detalle de items — anulalo desde una factura manual o contactanos":"Emite NC para anular esta factura"} style={{...btnAnularS,opacity:(r.recuperado_afip||r.nd)?0.45:1,cursor:(r.recuperado_afip||r.nd)?"not-allowed":"pointer"}}>Anular (nota de crédito)</button>
                                           )}
                                         </div>
                                       ))}
