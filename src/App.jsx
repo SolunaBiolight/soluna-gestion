@@ -5547,7 +5547,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [andreaniOrder,setAndreaniOrder]=useState(null); // pedido elegido para emitir etiqueta
   const [andreaniEmitidos,setAndreaniEmitidos]=useState({}); // numero pedido -> {numeroDeEnvio,...} emitidos en esta sesión
   // ── Selector de modo al generar (XLSX portal vs etiquetas por API) + flujo bulk ──
-  const [modoModal,setModoModal]=useState(false); // elección de modo, solo cuentas con andreani.enabled
   const [paqModal,setPaqModal]=useState(false); // config del paquete (única fuente: growith_exportCfg)
   const [sucGate,setSucGate]=useState(null); // paso bloqueante "confirmá tu sucursal de despacho" antes del bulk: {orders:array|null}
   const [bulk,setBulk]=useState(null); // flujo "etiquetas listas": {fase:"resolviendo"|"cotizando"|"revision"|"emitiendo"|"resultado", rows, prog:{done,total}}
@@ -5633,31 +5632,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     }catch(e){ if(!silent) toast(`#${o.numero}: ${e.message}`,"error"); return false; }
     finally{ setPacking(p=>{const n={...p};delete n[o.numero];return n;}); }
   }
-  const [packingBatch,setPackingBatch]=useState(false);
-  const [packProgress,setPackProgress]=useState({done:0,total:0});
-  // Tienda Nube no tiene un endpoint para marcar varios pedidos de una: hay que
-  // pegarle uno por uno. Lo resolvemos de a 5 en paralelo y lo presentamos como
-  // UNA sola operación con progreso y un único resultado.
-  async function marcarEmpaquetadosSel(){
-    const sel=[...selected.values()].filter(o=>!o.isPacked);
-    if(!sel.length) return;
-    const ok=await appConfirm(`Se van a marcar ${sel.length} pedido${sel.length!==1?"s":""} como empaquetados en Tienda Nube.`,{title:"Marcar empaquetados",okLabel:"Marcar"});
-    if(!ok) return;
-    setPackingBatch(true);
-    setPackProgress({done:0,total:sel.length});
-    let ok_=0, fail=0;
-    for(let i=0;i<sel.length;i+=5){
-      const res=await Promise.all(sel.slice(i,i+5).map(o=>marcarEmpaquetado(o,{silent:true})));
-      res.forEach(r=>r?ok_++:fail++);
-      setPackProgress({done:Math.min(i+5,sel.length),total:sel.length});
-    }
-    setPackingBatch(false);
-    setPackProgress({done:0,total:0});
-    setSelected(new Map());
-    if(fail===0) toast(`${ok_} pedido${ok_!==1?"s":""} marcado${ok_!==1?"s":""} como empaquetado${ok_!==1?"s":""} ✓`,"success");
-    else toast(`${ok_} marcados · ${fail} con error — revisá los que quedaron en la lista`,ok_?"warning":"error");
-  }
-
   // ── Modo despacho (scan-to-verify): lector USB/Bluetooth o tipeo ──
   const [scanValue,setScanValue]=useState("");
   const [scanLog,setScanLog]=useState([]); // {tracking, numero|null, ok, ts}
@@ -6406,12 +6380,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   function paqResumen(){
     return `${parseFloat(exportCfg.peso)||200} g · ${parseInt(exportCfg.alto)||5}×${parseInt(exportCfg.ancho)||5}×${parseInt(exportCfg.prof)||5} cm · ${fmtMoney(parseFloat(exportCfg.valor)||0)} declarado`;
   }
-  // Puerta única de generación: con Andreani prepago habilitado se elige el modo
-  // primero (etiquetas por API o XLSX); sin habilitar, directo al modal XLSX.
+  // Abre el export XLSX (las dos vías conviven visibles en la toolbar; esta es
+  // la puerta del XLSX desde el detalle de un pedido o la tecla Enter).
   function abrirGeneracion(single){
     if(single){ setExportSingleOrder(single); setOrderDetail(null); }
-    if(andreani.enabled) setModoModal(true);
-    else setExportModal(true);
+    setExportModal(true);
   }
   // Puerta del bulk por API: la tarifa depende de la sucursal de despacho, así
   // que antes de emitir el usuario tiene que haberla confirmado. El XLSX no se
@@ -7226,17 +7199,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               <button onClick={()=>setCompactMode(c=>!c)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",color:compactMode?T.accent:T.textMd,borderColor:compactMode?T.accent:T.border}} title={compactMode?"Vista normal":"Vista compacta"}>
                 {compactMode?"⊟":"⊞"} Compacto
               </button>
-              {tabEnvio==="empaquetar"&&selected.size>0&&(
-                <button onClick={marcarEmpaquetadosSel} disabled={packingBatch} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,borderColor:T.green+"66"}}>
-                  {packingBatch
-                    ? <><Spinner size={11} color={T.green}/> Empaquetando {packProgress.done}/{packProgress.total}…</>
-                    : `Marcar ${selected.size} empaquetado${selected.size!==1?"s":""}`}
-                </button>
-              )}
-              {selected.size>0&&(
-                <button onClick={()=>abrirGeneracion()} style={{...BtnPrimary(T),fontSize:13,display:"flex",alignItems:"center",gap:6}}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  Generar {selected.size} etiqueta{selected.size!==1?"s":""}
+              {/* Las dos vías de generación, siempre visibles: el número sigue a la selección */}
+              <button onClick={()=>{if(!selected.size)return;setExportSingleOrder(null);setExportModal(true);}} disabled={selected.size===0}
+                title={selected.size?`Exportar ${selected.size} al portal de Andreani`:"Seleccioná pedidos para exportar"}
+                style={{...(andreani.enabled?BtnSecondary(T):BtnPrimary(T)),fontSize:selected.size?13:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,opacity:selected.size?1:0.45,cursor:selected.size?"pointer":"default",whiteSpace:"nowrap"}}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
+                Exportar XLSX{selected.size?` (${selected.size})`:""}
+              </button>
+              {andreani.enabled&&(
+                <button onClick={()=>{if(!selected.size)return;setExportSingleOrder(null);lanzarBulkAndreani();}} disabled={selected.size===0}
+                  title={selected.size?`Cotizar y emitir ${selected.size} etiqueta${selected.size!==1?"s":""} listas. Se debitan del saldo.`:"Seleccioná pedidos para emitir etiquetas listas"}
+                  style={{...BtnPrimary(T),fontSize:selected.size?13:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,opacity:selected.size?1:0.45,cursor:selected.size?"pointer":"default",whiteSpace:"nowrap"}}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  Etiquetas listas{selected.size?` (${selected.size})`:""}
                 </button>
               )}
               <span style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"flex",gap:10,alignItems:"center"}}>
@@ -7917,8 +7892,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </button>
                 )}
                 <button onClick={()=>abrirGeneracion(o)} style={{...BtnPrimary(T),fontSize:13,display:"flex",alignItems:"center",gap:6}}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
-                  Generar etiqueta
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
+                  Exportar XLSX
                 </button>
               </div>
             </div>
@@ -8167,7 +8142,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
       {/* ── Barra flotante de selección múltiple (cuentas con Andreani prepago):
              atajo directo a los dos modos sin pasar por el modal de config ── */}
-      {tab==="panel"&&andreani.enabled&&selected.size>0&&!bulk&&!modoModal&&!exportModal&&(
+      {tab==="panel"&&andreani.enabled&&selected.size>0&&!bulk&&!exportModal&&(
         <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:900,display:"flex",alignItems:"center",gap:12,background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"10px 14px",boxShadow:"0 16px 48px rgba(0,0,0,0.4)",maxWidth:"calc(100vw - 32px)",flexWrap:"wrap",justifyContent:"center",animation:"growith-fadeIn 0.2s ease both"}}>
           <span style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>{selected.size} seleccionada{selected.size!==1?"s":""}</span>
           <button onClick={()=>setPaqModal(true)} title={paqResumen()} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
@@ -8183,50 +8158,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           </button>
         </div>
       )}
-
-      {/* ── Selector de modo: XLSX para el portal vs etiquetas por API ── */}
-      <Modal T={T} open={modoModal} onClose={()=>{setModoModal(false);setExportSingleOrder(null);}} title="¿Cómo querés generar las etiquetas?" width={520}>
-        {modoModal&&(()=>{
-          const n=exportSingleOrder?1:selected.size;
-          const cardBase={display:"flex",alignItems:"flex-start",gap:14,width:"100%",textAlign:"left",background:T.surface,borderRadius:12,padding:"16px 18px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"border-color 0.12s"};
-          return (
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>{n} pedido{n!==1?"s":""} seleccionado{n!==1?"s":""}</div>
-              {/* Paquete compartido por ambos modos (se edita en el modal Paquete) */}
-              <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textMd,background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px"}}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
-                <span>Paquete: <strong style={{color:T.text}}>{paqResumen()}</strong></span>
-                <button onClick={()=>setPaqModal(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.accent,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:0}}>Cambiar</button>
-              </div>
-              <button onClick={()=>{setModoModal(false);lanzarBulkAndreani();}}
-                style={{...cardBase,border:`1.5px solid ${T.accent}66`}}
-                onMouseEnter={e=>e.currentTarget.style.borderColor=T.accentSolid||T.accent}
-                onMouseLeave={e=>e.currentTarget.style.borderColor=T.accent+"66"}>
-                <div style={{width:38,height:38,borderRadius:10,background:`${T.accent}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                </div>
-                <div>
-                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>Generar etiquetas listas</div>
-                  <div style={{fontSize:12,color:T.textSm,marginTop:3,lineHeight:1.5}}>Emite los envíos por API y descarga los PDF. Se debita del saldo.</div>
-                  <div style={{fontSize:11,color:T.textMd,marginTop:6}}>Saldo disponible: <strong style={{color:T.green}}>{fmtMoney(andreani.saldo)}</strong></div>
-                </div>
-              </button>
-              <button onClick={()=>{setModoModal(false);setExportModal(true);}}
-                style={{...cardBase,border:`1px solid ${T.border}`}}
-                onMouseEnter={e=>e.currentTarget.style.borderColor=T.textSm}
-                onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-                <div style={{width:38,height:38,borderRadius:10,background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
-                </div>
-                <div>
-                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>Exportar XLSX para Andreani</div>
-                  <div style={{fontSize:12,color:T.textSm,marginTop:3,lineHeight:1.5}}>Archivo para subir al portal de Andreani.</div>
-                </div>
-              </button>
-            </div>
-          );
-        })()}
-      </Modal>
 
       {/* ── Config del paquete: única fuente de verdad (growith_exportCfg) para
              cotizar por fila, el bulk por API y el export XLSX ── */}
