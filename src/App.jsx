@@ -7181,7 +7181,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               {/* Las dos vías de generación, siempre visibles: el número sigue a la selección */}
               <button onClick={()=>{if(!selected.size)return;setExportSingleOrder(null);setExportModal(true);}} disabled={selected.size===0}
                 title={selected.size?`Exportar ${selected.size} al portal de Andreani`:"Seleccioná pedidos para exportar"}
-                style={{...(andreani.enabled?BtnSecondary(T):BtnPrimary(T)),fontSize:selected.size?13:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,opacity:selected.size?1:0.45,cursor:selected.size?"pointer":"default",whiteSpace:"nowrap"}}>
+                style={{...(andreani.enabled?{...BtnSecondary(T),color:T.green,borderColor:T.green+"88",background:T.green+"14",fontWeight:600}:BtnPrimary(T)),fontSize:selected.size?13:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,opacity:selected.size?1:0.45,cursor:selected.size?"pointer":"default",whiteSpace:"nowrap"}}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
                 Exportar XLSX Andreani{selected.size?` (${selected.size})`:""}
               </button>
@@ -8128,7 +8128,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
             Paquete
           </button>
-          <button onClick={()=>{setExportSingleOrder(null);exportAndreani([...selected.values()]);}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap"}}>
+          <button onClick={()=>{setExportSingleOrder(null);exportAndreani([...selected.values()]);}} style={{...BtnSecondary(T),color:T.green,borderColor:T.green+"88",background:T.green+"14",fontWeight:600,fontSize:12,padding:"7px 12px",whiteSpace:"nowrap"}}>
             Exportar XLSX Andreani ({selected.size})
           </button>
           <button onClick={()=>{setExportSingleOrder(null);lanzarBulkAndreani([...selected.values()]);}} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
