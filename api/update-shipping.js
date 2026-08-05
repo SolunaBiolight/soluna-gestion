@@ -26,23 +26,29 @@ const BROWSER_HEADERS = {
   'Referer': 'https://www.andreani.com/',
 };
 
+// La API oficial v1 de trazas devuelve las claves Capitalizadas ("Estado",
+// "Fecha", "Evento") y los endpoints públicos en minúscula — se aceptan ambas.
+function estadoDeEvento(ev) {
+  if (!ev || typeof ev !== 'object') return null;
+  return ev.estado || ev.Estado || ev.evento || ev.Evento || ev.descripcion || ev.Descripcion || ev.accion || ev.Accion || ev.motivo || ev.Motivo || null;
+}
+
 function extractEstado(d) {
   if (!d || typeof d !== 'object') return null;
-  if (Array.isArray(d.eventos) && d.eventos.length > 0) {
-    const ev = d.eventos[d.eventos.length - 1];
-    return ev.estado || ev.descripcion || ev.accion || null;
+  const evs = extractEventos(d);
+  if (evs.length > 0) {
+    const est = estadoDeEvento(evs[evs.length - 1]);
+    if (est) return est;
   }
-  if (Array.isArray(d) && d.length > 0) {
-    const ev = d[d.length - 1];
-    return ev.estado || ev.descripcion || ev.accion || null;
-  }
-  return d.estado || d.estadoActual || d.estadoEnvio ||
+  return d.estado || d.Estado || d.estadoActual || d.estadoEnvio ||
          d.ultimoEvento?.estado || d.ultimoEvento?.descripcion ||
-         d.evento || d.descripcion || null;
+         d.evento || d.Evento || d.descripcion || null;
 }
 
 function extractEventos(d) {
+  if (!d || typeof d !== 'object') return [];
   if (Array.isArray(d.eventos)) return d.eventos;
+  if (Array.isArray(d.Eventos)) return d.Eventos;
   if (Array.isArray(d)) return d;
   if (Array.isArray(d.historial)) return d.historial;
   if (Array.isArray(d.events)) return d.events;
@@ -80,8 +86,10 @@ async function trackAndreani(nroRaw) {
 // La API puede devolver los eventos en cualquier orden: si traen fecha se
 // elige el de fecha máxima; si no, el heurístico de siempre (extractEstado).
 function fechaDeEvento(ev) {
-  const f = ev?.fecha || ev?.fechaHora || ev?.fechaEvento || ev?.timestamp || ev?.date || null;
-  const t = f ? Date.parse(f) : NaN;
+  const f = ev?.fecha || ev?.Fecha || ev?.fechaHora || ev?.FechaHora || ev?.fechaEvento || ev?.FechaEvento || ev?.timestamp || ev?.date || null;
+  // La API oficial puede mandar la fecha como objeto {dia,hora} o similar
+  const fStr = (f && typeof f === 'object') ? [f.dia || f.Dia || "", f.hora || f.Hora || ""].join("T") : f;
+  const t = fStr ? Date.parse(fStr) : NaN;
   return isFinite(t) ? t : null;
 }
 
@@ -89,15 +97,15 @@ function estadoOficial(trazas) {
   if (!trazas) return null;
   const eventos = extractEventos(trazas);
   if (eventos.length) {
-    let mejor = null, mejorT = -Infinity, conFecha = 0;
+    // El de fecha máxima entre los que traen fecha (antes se exigía que TODOS
+    // tuvieran fecha y un solo evento sin fecha anulaba la traza completa).
+    let mejor = null, mejorT = -Infinity;
     for (const ev of eventos) {
       const t = fechaDeEvento(ev);
-      if (t != null) { conFecha++; if (t >= mejorT) { mejorT = t; mejor = ev; } }
+      if (t != null && t >= mejorT) { mejorT = t; mejor = ev; }
     }
-    if (mejor && conFecha === eventos.length) {
-      const estado = mejor.estado || mejor.descripcion || mejor.accion || mejor.motivo || null;
-      if (estado) return { estado, eventos };
-    }
+    const estado = estadoDeEvento(mejor);
+    if (estado) return { estado, eventos };
   }
   const estado = extractEstado(trazas);
   return estado ? { estado, eventos } : null;
@@ -108,11 +116,15 @@ function estadoOficial(trazas) {
 function clasificarEstado(estadoStr) {
   const s = String(estadoStr || "").toLowerCase();
   if (!s) return "desconocido";
+  // Antes de "en_camino": los estados que dicen explícitamente que TODAVÍA NO
+  // entró a la red ("Envío no ingresado", "Pendiente de ingreso") matchearían
+  // /ingresad/ y pintarían "En camino" falso.
+  if (/no ingresad|pendiente de ingreso|sin movimientos/.test(s)) return "otro";
   if (/entregad|retirad/.test(s)) return "entregado";
   if (/sucursal|disponible.*retiro|retiro.*disponible|para retirar/.test(s)) return "en_sucursal";
   if (/devoluci|devuelto|regres|rehusad|rechazad/.test(s)) return "devolucion";
   if (/visita|no se pudo|ausente|no.*entrega|reprogram/.test(s)) return "visita_fallida";
-  if (/camino|reparto|distribuc|transito|tránsito|viaje|planta|procesamiento|admitid|retirado del cliente|colecta/.test(s)) return "en_camino";
+  if (/camino|reparto|distribuc|transito|tránsito|viaje|planta|procesamiento|admitid|ingresad|recibimos|despachad|retirado del cliente|colecta/.test(s)) return "en_camino";
   return "otro";
 }
 
@@ -166,6 +178,11 @@ export default async function handler(req, res) {
       // la función (60s) y lo que quedó pendiente lo agarra la próxima corrida.
       const deadline = Date.now() + 45000;
       const quedaTiempo = () => Date.now() < deadline;
+      // Los envíos van primero y con muchas cuentas/pedidos se comían TODO el
+      // presupuesto: los canjes de esa corrida no se revisaban nunca. Los
+      // envíos ahora cortan a los 30s para que los canjes tengan sus ~15s.
+      const deadlineEnvios = Date.now() + 30000;
+      const quedaTiempoEnvios = () => Date.now() < deadlineEnvios;
       const cutoff = new Date(Date.now() - 7 * 86400000).toISOString();
       const ahora = new Date().toISOString();
       const staleCutoff = new Date(Date.now() - 25 * 60000).toISOString();
@@ -209,7 +226,7 @@ export default async function handler(req, res) {
 
       let revisados = 0, actualizados = 0;
       for (const uDoc of activos) {
-        if (!quedaTiempo()) break;
+        if (!quedaTiempoEnvios()) break;
         // Envíos activos con tracking, no finalizados, sin chequear hace 25+ min.
         const envSnap = await uDoc.ref.collection("envios").where("activo", "==", true).limit(60).get();
         const pendientes = envSnap.docs
@@ -222,7 +239,7 @@ export default async function handler(req, res) {
           .sort((a, b) => String(a.data().lastCheck || "").localeCompare(String(b.data().lastCheck || "")))
           .slice(0, 30);
         for (let i = 0; i < pendientes.length; i += 5) {
-          if (!quedaTiempo()) break;
+          if (!quedaTiempoEnvios()) break;
           await Promise.all(pendientes.slice(i, i + 5).map(async d => {
             const e = d.data();
             revisados++;
@@ -272,18 +289,27 @@ export default async function handler(req, res) {
         // ÍNDICE COMPUESTO NECESARIO en Firestore:
         //   colección `canjes` → trackDone ASC, trackingLastCheck ASC
         const CAND_CANJES = 60;
+        // La query con orderBy necesita el índice compuesto (trackDone ASC +
+        // trackingLastCheck ASC). Si falta o falla, NO puede tumbar el bloque
+        // entero: se sigue con la query simple y se rota ordenando en memoria.
         const [rotC, nuevosC] = await Promise.all([
-          db.collection("canjes").where("trackDone", "==", false).orderBy("trackingLastCheck").limit(CAND_CANJES).get(),
+          db.collection("canjes").where("trackDone", "==", false).orderBy("trackingLastCheck").limit(CAND_CANJES).get()
+            .catch(e => { console.error("[track_all canjes] query orderBy falló (¿falta el índice?):", e.message); return null; }),
           // Los canjes que nunca se chequearon no tienen el campo y quedan
           // fuera del orderBy: entran por acá, y primero (son los más nuevos).
-          db.collection("canjes").where("trackDone", "==", false).limit(CAND_CANJES).get(),
+          db.collection("canjes").where("trackDone", "==", false).limit(200).get(),
         ]);
         const candC = [], vistosC = new Set();
         for (const d of nuevosC.docs) {
           if (d.data().trackingLastCheck) continue;
+          if (candC.length >= CAND_CANJES) break;
           candC.push(d); vistosC.add(d.id);
         }
-        for (const d of rotC.docs) {
+        const rotDocs = rotC ? rotC.docs
+          // Fallback sin índice: los mismos docs de la query simple, ordenados
+          // en memoria por último chequeo (los más olvidados primero).
+          : nuevosC.docs.slice().sort((a, b) => String(a.data().trackingLastCheck || "").localeCompare(String(b.data().trackingLastCheck || "")));
+        for (const d of rotDocs) {
           if (candC.length >= CAND_CANJES) break;
           if (vistosC.has(d.id)) continue;
           candC.push(d); vistosC.add(d.id);
@@ -515,7 +541,7 @@ export default async function handler(req, res) {
   if (req.query.action === 'canjes_refresh' && req.method === 'POST') {
     try {
       const body = await new Promise(resolve => { let d = ""; req.on("data", c => d += c); req.on("end", () => { try { resolve(JSON.parse(d || "{}")); } catch (_) { resolve({}); } }); });
-      const ids = Array.isArray(body.ids) ? body.ids.slice(0, 10).map(String) : [];
+      const ids = Array.isArray(body.ids) ? body.ids.slice(0, 15).map(String) : [];
       if (!ids.length) return res.json({ ok: true, actualizados: 0 });
       const db = initAdmin();
       const ahora = new Date().toISOString();

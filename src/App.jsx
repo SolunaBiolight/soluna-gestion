@@ -3968,7 +3968,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const liveRefreshRef = useRef(false);
   useEffect(()=>{
     if(liveRefreshRef.current || !user?.uid) return;
-    const activos=canjes.filter(c=>c.tracking?.trim() && c.trackDone===false).slice(0,10);
+    const activos=canjes.filter(c=>c.tracking?.trim() && c.trackDone===false)
+      .sort((a,b)=>String(a.trackingLastCheck||"").localeCompare(String(b.trackingLastCheck||"")))
+      .slice(0,15);
     if(!activos.length) return;
     liveRefreshRef.current=true;
     authFetch(`/api/update-shipping?action=canjes_refresh&uid=${user.uid}`,{
