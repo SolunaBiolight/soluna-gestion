@@ -5552,6 +5552,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [andreaniEmitidos,setAndreaniEmitidos]=useState({}); // numero pedido -> {numeroDeEnvio,...} emitidos en esta sesión
   // ── Selector de modo al generar (XLSX portal vs etiquetas por API) + flujo bulk ──
   const [modoModal,setModoModal]=useState(false); // elección de modo, solo cuentas con andreani.enabled
+  const [paqModal,setPaqModal]=useState(false); // config del paquete (única fuente: growith_exportCfg)
   const [sucGate,setSucGate]=useState(null); // paso bloqueante "confirmá tu sucursal de despacho" antes del bulk: {orders:array|null}
   const [bulk,setBulk]=useState(null); // flujo "etiquetas listas": {fase:"resolviendo"|"cotizando"|"revision"|"emitiendo"|"resultado", rows, prog:{done,total}}
   const bulkRowsRef=useRef([]); // fuente de verdad de las filas del bulk (se mutan y se copian a state)
@@ -6435,6 +6436,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       anchoCm:parseInt(exportCfg.ancho)||5,
       valorDeclarado:parseFloat(exportCfg.valor)||0,
     }];
+  }
+  // Resumen de una línea del paquete configurado (para mostrarlo donde se usa)
+  function paqResumen(){
+    return `${parseFloat(exportCfg.peso)||200} g · ${parseInt(exportCfg.alto)||5}×${parseInt(exportCfg.ancho)||5}×${parseInt(exportCfg.prof)||5} cm · ${fmtMoney(parseFloat(exportCfg.valor)||0)} declarado`;
   }
   // Puerta única de generación: con Andreani prepago habilitado se elige el modo
   // primero (etiquetas por API o XLSX); sin habilitar, directo al modal XLSX.
@@ -8150,14 +8155,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               </div>
             )}
           </div>
-          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:10,display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>Paquete</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
-            <Field T={T} label="Peso (g)"><input style={iS} type="number" value={exportCfg.peso} onChange={e=>setExportCfg(c=>({...c,peso:e.target.value}))} placeholder="200"/></Field>
-            <Field T={T} label="Valor declarado ($)"><input style={iS} type="number" value={exportCfg.valor} onChange={e=>setExportCfg(c=>({...c,valor:e.target.value}))} placeholder="6000"/></Field>
-            <Field T={T} label="Alto (cm)"><input style={iS} type="number" value={exportCfg.alto} onChange={e=>setExportCfg(c=>({...c,alto:e.target.value}))} placeholder="5"/></Field>
-            <Field T={T} label="Ancho (cm)"><input style={iS} type="number" value={exportCfg.ancho} onChange={e=>setExportCfg(c=>({...c,ancho:e.target.value}))} placeholder="5"/></Field>
+          <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textMd,background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px",marginBottom:14}}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+            <span>Paquete: <strong style={{color:T.text}}>{paqResumen()}</strong></span>
+            <button onClick={()=>setPaqModal(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.accent,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:0}}>Cambiar</button>
           </div>
-          <Field T={T} label="Prof. (cm)"><input style={iS} type="number" value={exportCfg.prof} onChange={e=>setExportCfg(c=>({...c,prof:e.target.value}))} placeholder="5"/></Field>
           {/* El checkbox "Separar Domicilios/Sucursales" se eliminó: era código
               muerto (el generador nunca lo leía — domicilio y sucursal ya van a
               hojas separadas del mismo Excel) */}
@@ -8223,6 +8225,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {tab==="panel"&&andreani.enabled&&selected.size>0&&!bulk&&!modoModal&&!exportModal&&(
         <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:900,display:"flex",alignItems:"center",gap:12,background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"10px 14px",boxShadow:"0 16px 48px rgba(0,0,0,0.4)",maxWidth:"calc(100vw - 32px)",flexWrap:"wrap",justifyContent:"center",animation:"growith-fadeIn 0.2s ease both"}}>
           <span style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>{selected.size} seleccionada{selected.size!==1?"s":""}</span>
+          <button onClick={()=>setPaqModal(true)} title={paqResumen()} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+            Paquete
+          </button>
           <button onClick={()=>{setExportSingleOrder(null);exportAndreani([...selected.values()]);}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap"}}>
             Exportar XLSX ({selected.size})
           </button>
@@ -8238,21 +8244,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         {modoModal&&(()=>{
           const n=exportSingleOrder?1:selected.size;
           const cardBase={display:"flex",alignItems:"flex-start",gap:14,width:"100%",textAlign:"left",background:T.surface,borderRadius:12,padding:"16px 18px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"border-color 0.12s"};
-          const miniIn={...iS,fontSize:12,padding:"6px 8px"};
           return (
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
               <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>{n} pedido{n!==1?"s":""} seleccionado{n!==1?"s":""}</div>
-              {/* Paquete compartido por ambos modos (persiste en growith_exportCfg) */}
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px"}}>
-                <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Paquete</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
-                  {[["peso","Peso (g)"],["alto","Alto"],["ancho","Ancho"],["prof","Prof."],["valor","Valor ($)"]].map(([k,lbl])=>(
-                    <div key={k}>
-                      <div style={{fontSize:9,color:T.textSm,marginBottom:3}}>{lbl}</div>
-                      <input style={miniIn} type="number" value={exportCfg[k]} onChange={e=>setExportCfg(c=>({...c,[k]:e.target.value}))}/>
-                    </div>
-                  ))}
-                </div>
+              {/* Paquete compartido por ambos modos (se edita en el modal Paquete) */}
+              <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textMd,background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px"}}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+                <span>Paquete: <strong style={{color:T.text}}>{paqResumen()}</strong></span>
+                <button onClick={()=>setPaqModal(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.accent,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:0}}>Cambiar</button>
               </div>
               <button onClick={()=>{setModoModal(false);lanzarBulkAndreani();}}
                 style={{...cardBase,border:`1.5px solid ${T.accent}66`}}
@@ -8284,6 +8283,30 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         })()}
       </Modal>
 
+      {/* ── Config del paquete: única fuente de verdad (growith_exportCfg) para
+             cotizar por fila, el bulk por API y el export XLSX ── */}
+      <Modal T={T} open={paqModal} onClose={()=>setPaqModal(false)} title="Paquete" width={420} zIndex={1600}>
+        {paqModal&&(
+          <div>
+            <div style={{fontSize:12,color:T.textSm,lineHeight:1.6,marginBottom:14}}>
+              Medidas y valor declarado con los que se cotizan y emiten todas tus etiquetas.
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+              <Field T={T} label="Peso (g)"><input style={iS} type="number" value={exportCfg.peso} onChange={e=>setExportCfg(c=>({...c,peso:e.target.value}))} placeholder="200"/></Field>
+              <Field T={T} label="Valor declarado ($)"><input style={iS} type="number" value={exportCfg.valor} onChange={e=>setExportCfg(c=>({...c,valor:e.target.value}))} placeholder="6000"/></Field>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 14px"}}>
+              <Field T={T} label="Alto (cm)"><input style={iS} type="number" value={exportCfg.alto} onChange={e=>setExportCfg(c=>({...c,alto:e.target.value}))} placeholder="5"/></Field>
+              <Field T={T} label="Ancho (cm)"><input style={iS} type="number" value={exportCfg.ancho} onChange={e=>setExportCfg(c=>({...c,ancho:e.target.value}))} placeholder="5"/></Field>
+              <Field T={T} label="Largo (cm)"><input style={iS} type="number" value={exportCfg.prof} onChange={e=>setExportCfg(c=>({...c,prof:e.target.value}))} placeholder="5"/></Field>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end"}}>
+              <button onClick={()=>setPaqModal(false)} style={{...BtnPrimary(T),fontSize:13}}>Listo</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {/* ── Flujo bulk "Etiquetas listas" (emisión por API) ── */}
       {bulk&&(
         <Modal T={T} open={true} onClose={()=>{ if(bulk.fase==="revision"||bulk.fase==="resultado"){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } }} title="Etiquetas listas — Andreani" width={680} zIndex={1500}>
@@ -8310,7 +8333,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             const falta=Math.max(0,total-(andreani.saldo||0));
             return (
               <div>
-                <div style={{fontSize:12,color:T.textSm,marginBottom:12}}>Revisá los envíos antes de emitir. Cada etiqueta se debita del saldo al confirmar.</div>
+                <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>Revisá los envíos antes de emitir. Cada etiqueta se debita del saldo al confirmar.</div>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:12}}>Paquete: <strong style={{color:T.textMd}}>{paqResumen()}</strong></div>
                 <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"auto",maxHeight:320,marginBottom:14}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
                     <thead><tr>
