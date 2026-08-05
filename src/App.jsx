@@ -25966,7 +25966,10 @@ function CostosPanel({ T, uid }) {
         </div>
         {envioModo==="fijo" && (
           <div style={{display:"flex",alignItems:"center",gap:8,marginTop:12}}>
-            <span style={{fontSize:12,color:T.textMd,flex:1}}>Costo promedio por orden</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:12,fontWeight:600,color:T.text}}>Costo promedio por orden</div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Lo que te cuesta despachar cada pedido de tu tienda (Shopify / Tienda Nube). No aplica a Mercado Libre — eso va abajo.</div>
+            </div>
             <span style={{fontSize:13,color:T.textSm}}>$</span>
             <input type="number" min="0" value={envio} onChange={e=>setEnvio(e.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
           </div>
@@ -25974,7 +25977,7 @@ function CostosPanel({ T, uid }) {
         <div style={{display:"flex",alignItems:"center",gap:8,marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>
           <div style={{flex:1}}>
             <div style={{fontSize:12,fontWeight:600,color:T.text}}>Envío Flex de Mercado Libre</div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Costo por envío Flex (lo pagás vos al correo). Vacío = usa el promedio de la tienda. Mercado Envíos se toma automático del costo real.</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Lo que te cuesta cada envío Flex a AMBA (lo pagás vos al correo). Vacío = usa el promedio de la tienda. Los envíos comunes de ML (Mercado Envíos) no van acá: se calculan solos con el costo real de cada venta.</div>
           </div>
           <span style={{fontSize:13,color:T.textSm}}>$</span>
           <input type="number" min="0" value={mlFlex} onChange={e=>setMlFlex(e.target.value)} placeholder={String(envio||0)} style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
