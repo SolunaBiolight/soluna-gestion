@@ -132,9 +132,16 @@ export default async function handler(req, res) {
     const { tracking } = req.query;
     if (!tracking) return res.status(400).json({ error: 'tracking requerido' });
     const nro = tracking.trim().replace(/\s+/g, '');
-    const out = await trackAndreani(nro);
+    // PRIMERO la API oficial autenticada (envíos de la cuenta de la plataforma:
+    // datos al instante y confiables); si no lo ve (envío ajeno) → scraping.
+    let out = null;
+    try {
+      const of = estadoOficial(await trazasOficialAndreani(initAdmin(), nro));
+      if (of) out = { ...of, source: "oficial" };
+    } catch (_) { /* sin creds o error: scraping */ }
+    if (!out) out = await trackAndreani(nro);
     if (out) {
-      console.log(`[andreani] tracking=${nro} estado="${out.estado}"`);
+      console.log(`[andreani] tracking=${nro} estado="${out.estado}" via=${out.source || "scraping"}`);
       return res.status(200).json({ estado: out.estado, estadoActual: out.estado, ultimoEvento: { estado: out.estado }, eventos: out.eventos, raw: out.raw, source: out.source });
     }
     console.log(`[andreani] no se pudo obtener estado para tracking=${nro}`);
@@ -302,10 +309,15 @@ export default async function handler(req, res) {
           await Promise.all(pendCanjes.slice(i, i + 5).map(async d => {
             const c = d.data();
             canjesRevisados++;
-            const out = await trackAndreani(c.tracking);
+            // Igual que los envíos: PRIMERO la API oficial (los canjes salen de
+            // la cuenta Andreani de la plataforma), fallback al scraping.
+            let out = null, via = "scraping";
+            const ofC = estadoOficial(await trazasOficialAndreani(db, String(c.tracking).trim()));
+            if (ofC) { out = ofC; via = "oficial"; }
+            if (!out) out = await trackAndreani(c.tracking);
             if (!out) { await d.ref.set({ trackingLastCheck: ahora }, { merge: true }); return; }
             const cat = clasificarEstado(out.estado);
-            const upd = { trackingLastCheck: ahora, trackingEstado: out.estado, trackingCat: cat };
+            const upd = { trackingLastCheck: ahora, trackingEstado: out.estado, trackingCat: cat, trackVia: via };
             if (cat === "entregado") {
               upd.trackDone = true; upd.trackEntregadoAt = ahora;
               // Deja el campo en null (no ausente) para que el recordatorio de
@@ -494,6 +506,52 @@ export default async function handler(req, res) {
         }));
       }
       return res.json({ ok: true, guardados: items.length });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  }
+
+  // ── action=canjes_refresh: refresco EN VIVO del tracking de canjes al abrir
+  // la sección — misma vía que el cron (API oficial → scraping) sin esperar
+  // los 30 min. El onSnapshot del front pinta el cambio al instante.
+  if (req.query.action === 'canjes_refresh' && req.method === 'POST') {
+    try {
+      const body = await new Promise(resolve => { let d = ""; req.on("data", c => d += c); req.on("end", () => { try { resolve(JSON.parse(d || "{}")); } catch (_) { resolve({}); } }); });
+      const ids = Array.isArray(body.ids) ? body.ids.slice(0, 10).map(String) : [];
+      if (!ids.length) return res.json({ ok: true, actualizados: 0 });
+      const db = initAdmin();
+      const ahora = new Date().toISOString();
+      let actualizados = 0;
+      for (let i = 0; i < ids.length; i += 3) {
+        await Promise.all(ids.slice(i, i + 3).map(async id => {
+          try {
+            const ref = db.collection("canjes").doc(id);
+            const snap = await ref.get();
+            if (!snap.exists) return;
+            const c = snap.data();
+            if (c.ownerId !== uid) return;
+            if (!c.tracking || !String(c.tracking).trim() || c.trackDone !== false) return;
+            let est = null, via = "scraping";
+            const of = estadoOficial(await trazasOficialAndreani(db, String(c.tracking).trim()));
+            if (of) { est = of; via = "oficial"; }
+            if (!est) est = await trackAndreani(String(c.tracking).trim());
+            if (!est) { await ref.set({ trackingLastCheck: ahora }, { merge: true }); return; }
+            const cat = clasificarEstado(est.estado);
+            const upd = { trackingLastCheck: ahora, trackingEstado: est.estado, trackingCat: cat, trackVia: via };
+            if (cat === "entregado") {
+              upd.trackDone = true; upd.trackEntregadoAt = ahora;
+              if (c.contentReminderAt === undefined) upd.contentReminderAt = null;
+              if (["Por enviar", "Pendiente envío", "Enviado"].includes(c.estado)) upd.estado = "Contenido pendiente";
+            }
+            if (cat === "devolucion") upd.trackDone = true;
+            // Aviso in-app (el mail queda a cargo del cron; acá la dueña está EN la app viéndolo)
+            if (cat !== c.trackingCat && ["en_sucursal", "entregado", "devolucion", "visita_fallida"].includes(cat)) {
+              upd.trackingAviso = { cat, estado: est.estado, at: ahora, visto: false };
+            }
+            await ref.set(upd, { merge: true });
+            actualizados++;
+          } catch (_) { /* un canje con error no frena el resto */ }
+        }));
+      }
+      return res.json({ ok: true, actualizados });
     } catch (e) { return res.status(500).json({ error: e.message }); }
   }
 

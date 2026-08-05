@@ -3897,6 +3897,20 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   // (1) backfill de trackDone para canjes viejos que ya tenían tracking cargado,
   // (2) toast de avisos no vistos que trae el snapshot en vivo.
   const avisosToastRef = useRef(new Set());
+  // (3) refresco EN VIVO al abrir la sección: una sola vez por visita, los
+  // canjes con seguimiento activo se consultan ya (API oficial → scraping)
+  // y el onSnapshot pinta los chips al instante, sin esperar al cron.
+  const liveRefreshRef = useRef(false);
+  useEffect(()=>{
+    if(liveRefreshRef.current || !user?.uid) return;
+    const activos=canjes.filter(c=>c.tracking?.trim() && c.trackDone===false).slice(0,10);
+    if(!activos.length) return;
+    liveRefreshRef.current=true;
+    authFetch(`/api/update-shipping?action=canjes_refresh&uid=${user.uid}`,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ids:activos.map(c=>c._docId)}),
+    }).catch(()=>{});
+  },[canjes.length,user?.uid]);
   useEffect(()=>{
     canjes.filter(c=>c.tracking?.trim() && c.trackDone===undefined && !["Rechazado","Cerrado"].includes(c.estado))
       .slice(0,20)
