@@ -1072,6 +1072,15 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
   const [q, setQ] = React.useState("");
   const [selIdx, setSelIdx] = React.useState(0);
   const inputRef = React.useRef(null);
+  // Cierre suave: 180ms de animación de salida antes de desmontar
+  const [closing, setClosing] = React.useState(false);
+  const wasOpen = React.useRef(open);
+  React.useEffect(()=>{
+    let t;
+    if(!open&&wasOpen.current){ setClosing(true); t=setTimeout(()=>setClosing(false),180); }
+    wasOpen.current = open;
+    return ()=>{ if(t)clearTimeout(t); };
+  },[open]);
   React.useEffect(()=>{
     if(open){ inputRef.current?.focus(); setSelIdx(0); }
     else setQ("");
@@ -1108,12 +1117,12 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
   ];
   const filtered = items.filter(i => !q || i.label.toLowerCase().includes(q.toLowerCase()));
 
-  if(!open) return null;
+  if(!open&&!closing) return null;
   return ReactDOM.createPortal(
-    <div className="gh-overlay" onClick={onClose}
+    <div className={closing?"gh-overlay-closing":"gh-overlay"} onClick={onClose}
       style={{position:"fixed", inset:0, zIndex:10000, background:"rgba(0,0,0,0.5)", backdropFilter:"blur(6px)", display:"flex", alignItems:"flex-start", justifyContent:"center", paddingTop:"15vh"}}>
       <div onClick={e=>e.stopPropagation()}
-        style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:DS.r["2xl"], width:"100%", maxWidth:560, boxShadow:DS.shadow.xl, overflow:"hidden", animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}>
+        style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:DS.r["2xl"], width:"100%", maxWidth:560, boxShadow:DS.shadow.xl, overflow:"hidden", animation:closing?"growith-scaleOut 0.18s ease both":"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}>
         <div style={{display:"flex", alignItems:"center", gap:10, padding:"14px 18px", borderBottom:`1px solid ${T.border}`}}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
           <input ref={inputRef} type="text" placeholder="Buscar sección, acción..." value={q} onChange={e=>setQ(e.target.value)}
@@ -1316,11 +1325,22 @@ function AppPromptHost({ T }) {
   const s = _appPromptState;
   const [inputVal, setInputVal] = React.useState("");
   React.useEffect(() => { if (s?.kind === "prompt") setInputVal(s.defaultValue || ""); }, [s?.kind, s?.defaultValue]);
-  if (!s) return null;
-  const isConfirm = s.kind === "confirm";
-  const isPromptInput = s.kind === "prompt";
-  const danger = s.danger;
-  const closeWith = (val) => _appPromptClose(val);
+  // Cierre suave: al resolverse el prompt queda un snapshot ~160ms animando la salida
+  const [closingState, setClosingState] = React.useState(null);
+  const prevS = React.useRef(s);
+  React.useEffect(() => {
+    let t;
+    if (!s && prevS.current) { setClosingState(prevS.current); t = setTimeout(() => setClosingState(null), 160); }
+    prevS.current = s;
+    return () => { if (t) clearTimeout(t); };
+  });
+  const shown = s || closingState;
+  const closing = !s && !!closingState;
+  if (!shown) return null;
+  const isConfirm = shown.kind === "confirm";
+  const isPromptInput = shown.kind === "prompt";
+  const danger = shown.danger;
+  const closeWith = (val) => { if (!closing) _appPromptClose(val); };
   const accentColor = danger ? T.red : isConfirm ? "#6366f1" : T.blue;
   const accentBg = danger ? "linear-gradient(135deg,"+T.red+","+T.red+")" : isConfirm ? "linear-gradient(135deg,#6366f1,#4f46e5)" : "linear-gradient(135deg,"+T.blue+","+T.blue+")";
   const accentTint = danger ? "rgba(239,68,68,0.13)" : isConfirm ? "rgba(99,102,241,0.13)" : "rgba(59,130,246,0.13)";
@@ -1334,19 +1354,19 @@ function AppPromptHost({ T }) {
     ? <><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>
     : <><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>;
   return ReactDOM.createPortal(
-    <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:99999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}
+    <div className={closing?"gh-overlay-closing":"gh-overlay"} style={{position:"fixed",inset:0,zIndex:99999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif",pointerEvents:closing?"none":"auto"}}
       onClick={() => isConfirm ? closeWith(false) : (isPromptInput ? closeWith(null) : closeWith(true))}>
       {/* Mismo lenguaje que el resto de los modales de la app: sin barra de
           color, sin ícono gigante centrado, texto alineado a la izquierda y
           acciones abajo a la derecha. */}
       <div onClick={e => e.stopPropagation()}
-        style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:400,boxShadow:"0 24px 64px rgba(0,0,0,0.45)",animation:"growith-modalIn 0.2s cubic-bezier(0.4,0,0.2,1) both",overflow:"hidden"}}>
+        style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:400,boxShadow:"0 24px 64px rgba(0,0,0,0.45)",animation:closing?"growith-scaleOut 0.16s ease both":"growith-modalIn 0.2s cubic-bezier(0.4,0,0.2,1) both",overflow:"hidden"}}>
         <div style={{padding:"20px 22px 18px"}}>
-          <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:7,letterSpacing:"-0.01em"}}>{s.title}</div>
-          <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{s.message}</div>
+          <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:7,letterSpacing:"-0.01em"}}>{shown.title}</div>
+          <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{shown.message}</div>
           {isPromptInput && (
             <input autoFocus type="text" value={inputVal} onChange={e=>setInputVal(e.target.value)}
-              placeholder={s.placeholder||""}
+              placeholder={shown.placeholder||""}
               onKeyDown={e=>{ if(e.key==="Enter") closeWith(inputVal); if(e.key==="Escape") closeWith(null); }}
               style={{width:"100%",padding:"9px 12px",fontSize:13,borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",marginTop:14,outline:"none",boxSizing:"border-box"}} />
           )}
@@ -1354,10 +1374,10 @@ function AppPromptHost({ T }) {
         <div style={{display:"flex",gap:8,justifyContent:"flex-end",padding:"12px 22px 16px",borderTop:`1px solid ${T.borderL||T.border}`}}>
           {(isConfirm || isPromptInput) && (
             <button onClick={() => closeWith(isPromptInput ? null : false)}
-              style={{...BtnSecondary(T),fontSize:13,padding:"8px 16px"}}>{s.cancelLabel}</button>
+              style={{...BtnSecondary(T),fontSize:13,padding:"8px 16px"}}>{shown.cancelLabel}</button>
           )}
           <button autoFocus={!isPromptInput} onClick={() => closeWith(isPromptInput ? inputVal : true)}
-            style={danger ? {...BtnDanger(T),fontSize:13,padding:"8px 18px",fontWeight:600} : {...BtnPrimary(T),fontSize:13,padding:"8px 18px"}}>{s.okLabel}</button>
+            style={danger ? {...BtnDanger(T),fontSize:13,padding:"8px 18px",fontWeight:600} : {...BtnPrimary(T),fontSize:13,padding:"8px 18px"}}>{shown.okLabel}</button>
         </div>
       </div>
     </div>,
@@ -2052,7 +2072,7 @@ function TopbarMoreMenu({T, items}) {
         style={{...BtnSecondary(T),fontSize:14,padding:"7px 10px",lineHeight:1,fontWeight:DS.w.bold,color:T.textMd}}>⋯</button>
       {open&&(<>
         <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:60}}/>
-        <div style={{position:"fixed",top:pos.top,right:pos.right,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:6,minWidth:200,boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
+        <div className="gh-dropdown" style={{position:"fixed",top:pos.top,right:pos.right,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:6,minWidth:200,boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
           {list.map((it,i)=>(
             <button key={i} disabled={it.disabled} onClick={it.disabled?undefined:()=>{setOpen(false);it.onClick&&it.onClick();}}
               style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"8px 10px",background:"transparent",border:"none",borderRadius:DS.r.md,cursor:it.disabled?"default":"pointer",opacity:it.disabled?0.5:1,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:DS.w.semibold,color:T.text,whiteSpace:"nowrap"}}
@@ -2206,12 +2226,20 @@ function LensDots({productos}) {
 
 function Modal({T, open, onClose, title, width, children, zIndex=1000}) {
   const [visible, setVisible] = React.useState(false);
+  // Cierre suave: al pasar open a false el modal queda montado ~200ms animando
+  // la salida (los que se desmontan condicionalmente desde afuera no pasan por acá).
+  const [mounted, setMounted] = React.useState(open);
+  // Congelar el último contenido durante el cierre: muchos modales condicionan
+  // los children al mismo estado que open y quedaría una caja vacía achicándose.
+  const lastChildren = React.useRef(children);
+  if(open) lastChildren.current = children;
   React.useEffect(()=>{
-    if(open) { document.body.style.overflow='hidden'; requestAnimationFrame(()=>setVisible(true)); }
-    else { document.body.style.overflow=''; setVisible(false); }
-    return()=>{ document.body.style.overflow=''; };
+    let t;
+    if(open) { setMounted(true); document.body.style.overflow='hidden'; requestAnimationFrame(()=>setVisible(true)); }
+    else { document.body.style.overflow=''; setVisible(false); t=setTimeout(()=>setMounted(false),200); }
+    return()=>{ if(t)clearTimeout(t); document.body.style.overflow=''; };
   },[open]);
-  if(!open) return null;
+  if(!mounted) return null;
   return ReactDOM.createPortal(
     <div onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}} style={{position:"fixed",inset:0,background:`rgba(0,0,0,${visible?0.65:0})`,backdropFilter:"blur(4px)",display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",zIndex:zIndex,padding:"24px 16px",transition:"background 0.2s ease",fontFamily:"'Inter',system-ui,sans-serif"}}>
       <div onMouseDown={e=>e.stopPropagation()} style={{background:T.card,borderRadius:16,width:"100%",maxWidth:width||560,maxHeight:"90vh",overflow:"hidden",boxShadow:"0 32px 80px rgba(0,0,0,0.45)",border:`1px solid ${T.border}`,display:"flex",flexDirection:"column",transform:visible?"translateY(0) scale(1)":"translateY(16px) scale(0.97)",opacity:visible?1:0,transition:"transform 0.22s cubic-bezier(0.34,1.26,0.64,1), opacity 0.18s ease"}}>
@@ -2219,7 +2247,7 @@ function Modal({T, open, onClose, title, width, children, zIndex=1000}) {
           <div style={{margin:0,fontSize:17,fontWeight:700,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>{title}</div>
           <button onClick={onClose} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,width:32,height:32,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:T.textMd}}>✕</button>
         </div>
-        <div style={{padding:"18px 24px 24px",overflowY:"auto",flex:1}}>{children}</div>
+        <div style={{padding:"18px 24px 24px",overflowY:"auto",flex:1}}>{open?children:lastChildren.current}</div>
       </div>
     </div>,
     document.body
@@ -4203,7 +4231,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         </div>
                         {/* Dropdown */}
                         {isOpen&&(
-                          <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:60,width:340,maxWidth:"calc(100vw - 48px)",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",boxShadow:"0 12px 32px rgba(0,0,0,0.35)"}}>
+                          <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:60,width:340,maxWidth:"calc(100vw - 48px)",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",boxShadow:"0 12px 32px rgba(0,0,0,0.35)"}}>
                             {items.map((a,i)=>{
                               const initials=(a.canje.influencer||"?").split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase();
                               return (
@@ -16098,7 +16126,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
 
       {/* MODAL Proponer tarea (colabMode) */}
       {showNTColab&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setShowNTColab(false);}}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setShowNTColab(false);}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:24,width:"100%",maxWidth:440}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontSize:15,fontWeight:700,color:T.text}}>Proponer tarea</div>
@@ -16125,7 +16153,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       )}
       {/* MODAL Material de trabajo — agregar / editar */}
       {showMatModal&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setShowMatModal(false);}}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setShowMatModal(false);}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:440}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontSize:15,fontWeight:700,color:T.text}}>{editingMat?"Editar material":"Nuevo material"}</div>
@@ -16160,7 +16188,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       )}
       {/* MODAL Referencias — agregar / editar marca */}
       {showRefModal&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setShowRefModal(false);}}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setShowRefModal(false);}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontSize:15,fontWeight:700,color:T.text}}>{editingRef?"Editar marca":"Nueva marca"}</div>
@@ -16286,7 +16314,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       {/* Modal: Tablero compartido */}
       {showBoardModal&&(
         <>
-          <div onClick={()=>setShowBoardModal(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000}}/>
+          <div onClick={()=>setShowBoardModal(false)} className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000}}/>
           <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:1001,width:"min(440px,92vw)",background:T.card,borderRadius:16,padding:"24px",boxShadow:"0 20px 60px rgba(0,0,0,0.3)",fontFamily:"'Inter',system-ui,sans-serif"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
               <div style={{fontSize:16,fontWeight:700,color:T.text}}><GhI n="link" size={15}/> Tablero compartido</div>
@@ -17729,7 +17757,7 @@ function ColaboradorBoardView({T, boardToken}) {
       {/* Modal de identidad */}
       {showIdModal&&(
         <>
-          <div onClick={()=>setShowIdModal(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:200}}/>
+          <div onClick={()=>setShowIdModal(false)} className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:200}}/>
           <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:201,width:"min(340px,92vw)",background:T.card,borderRadius:16,padding:"22px",boxShadow:"0 20px 60px rgba(0,0,0,0.3)",fontFamily:"'Inter',system-ui,sans-serif"}}>
             <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:4}}>¿Quién sos?</div>
             <div style={{fontSize:13,color:T.textSm,marginBottom:14}}>Seleccioná tu nombre para interactuar con tus tareas.</div>
@@ -17784,7 +17812,7 @@ function ColaboradorBoardView({T, boardToken}) {
 
         return(
           <>
-            <div onClick={()=>setSelectedTask(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",zIndex:300}}/>
+            <div onClick={()=>setSelectedTask(null)} className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",zIndex:300}}/>
             <div style={{position:"fixed",top:0,right:0,bottom:0,width:"min(460px,100vw)",background:T.card,zIndex:301,overflowY:"auto",boxShadow:"-8px 0 40px rgba(0,0,0,0.2)",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
               {/* Panel header */}
               <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10,flexShrink:0,background:T.card,position:"sticky",top:0,zIndex:1}}>
@@ -31087,7 +31115,7 @@ export default function App() {
                   {bellPanelOpen&&(
                     <>
                     <div onClick={()=>setBellPanelOpen(false)} style={{position:"fixed",inset:0,zIndex:199}}/>
-                    <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,zIndex:200,width:320,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,boxShadow:DS.shadow.lg,overflow:"hidden",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 8px)",right:0,zIndex:200,width:320,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,boxShadow:DS.shadow.lg,overflow:"hidden",fontFamily:"'Inter',system-ui,sans-serif"}}>
                       <div style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                         <span style={{fontSize:12,fontWeight:700,color:T.text}}>{tareasParaRevisarList.length} entrega{tareasParaRevisarList.length!==1?"s":""} para revisar</span>
                         <div style={{display:"flex",gap:6,alignItems:"center"}}>
