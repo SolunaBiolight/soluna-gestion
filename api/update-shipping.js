@@ -1,6 +1,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { guardUid, guardCron } from "./_auth.js";
+import { trazasOficialAndreani } from "./andreani.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -73,6 +74,33 @@ async function trackAndreani(nroRaw) {
     } catch (_) {}
   }
   return null;
+}
+
+// Estado más reciente de las trazas OFICIALES (/v1/envios/{n}/trazas).
+// La API puede devolver los eventos en cualquier orden: si traen fecha se
+// elige el de fecha máxima; si no, el heurístico de siempre (extractEstado).
+function fechaDeEvento(ev) {
+  const f = ev?.fecha || ev?.fechaHora || ev?.fechaEvento || ev?.timestamp || ev?.date || null;
+  const t = f ? Date.parse(f) : NaN;
+  return isFinite(t) ? t : null;
+}
+
+function estadoOficial(trazas) {
+  if (!trazas) return null;
+  const eventos = extractEventos(trazas);
+  if (eventos.length) {
+    let mejor = null, mejorT = -Infinity, conFecha = 0;
+    for (const ev of eventos) {
+      const t = fechaDeEvento(ev);
+      if (t != null) { conFecha++; if (t >= mejorT) { mejorT = t; mejor = ev; } }
+    }
+    if (mejor && conFecha === eventos.length) {
+      const estado = mejor.estado || mejor.descripcion || mejor.accion || mejor.motivo || null;
+      if (estado) return { estado, eventos };
+    }
+  }
+  const estado = extractEstado(trazas);
+  return estado ? { estado, eventos } : null;
 }
 
 // Clasificación heurística del estado de Andreani → categoría interna.
@@ -178,7 +206,9 @@ export default async function handler(req, res) {
         // Envíos activos con tracking, no finalizados, sin chequear hace 25+ min.
         const envSnap = await uDoc.ref.collection("envios").where("activo", "==", true).limit(60).get();
         const pendientes = envSnap.docs
-          .filter(d => { const e = d.data(); return e.tracking && (!e.lastCheck || e.lastCheck < staleCutoff); })
+          // Con tracking (scraping) o emitidos por nuestra API oficial
+          // (andreani.numeroDeEnvio) — estos últimos se trackean por API.
+          .filter(d => { const e = d.data(); return (e.tracking || e.andreani?.numeroDeEnvio) && (!e.lastCheck || e.lastCheck < staleCutoff); })
           // Rotación también dentro de la cuenta: primero los que hace más
           // tiempo no se miran (antes el orden lo daba Firestore y con 60
           // envíos activos los últimos no se revisaban nunca).
@@ -189,10 +219,20 @@ export default async function handler(req, res) {
           await Promise.all(pendientes.slice(i, i + 5).map(async d => {
             const e = d.data();
             revisados++;
-            const out = await trackAndreani(e.tracking);
+            // Emitidos por nuestra API: PRIMERO la API oficial de trazas
+            // (garantizado visible con las credenciales de la plataforma).
+            // Si devuelve null o sin trazas → fallback al scraping de siempre.
+            const numOficial = e.andreani?.numeroDeEnvio || null;
+            let out = null, via = "scraping";
+            if (numOficial) {
+              const trazas = await trazasOficialAndreani(db, numOficial);
+              const of = estadoOficial(trazas);
+              if (of) { out = of; via = "oficial"; }
+            }
+            if (!out) out = await trackAndreani(e.tracking || numOficial);
             if (!out) { await d.ref.set({ lastCheck: ahora }, { merge: true }); return; }
             const cat = clasificarEstado(out.estado);
-            const upd = { lastCheck: ahora, estadoAndreani: out.estado, categoria: cat };
+            const upd = { lastCheck: ahora, estadoAndreani: out.estado, categoria: cat, trackVia: via };
             if (out.estado !== e.estadoAndreani) upd.estadoDesde = ahora; // cambió: resetea el reloj de "demorado"
             if (cat === "en_sucursal" && e.categoria !== "en_sucursal") upd.enSucursalDesde = ahora;
             if (cat === "entregado") { upd.activo = false; upd.entregadoAt = ahora; }

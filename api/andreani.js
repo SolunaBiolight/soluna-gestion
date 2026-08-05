@@ -271,6 +271,55 @@ function sucOrigenDe(uData, cfg) {
   return cfg.sucursalOrigen || "";
 }
 
+// ─── Tracking oficial (named export para update-shipping.js) ───────────────
+
+// Trae las trazas crudas de un envío por la API oficial autenticada.
+// NUNCA tira: devuelve null si faltan env vars, si Andreani falla o si la
+// respuesta no es JSON — el caller decide el fallback (scraping).
+export async function trazasOficialAndreani(db, numeroDeEnvio) {
+  try {
+    const env = andreaniEnv();
+    if (!env) return null;
+    const num = String(numeroDeEnvio || "").trim().replace(/\s+/g, "");
+    if (!num) return null;
+    const r = await andreaniFetch(db, env, `/v1/envios/${encodeURIComponent(num)}/trazas`);
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data ?? null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// ─── Email (mismo patrón Resend que check-expiring.js) ─────────────────────
+
+async function sendEmail({ to, subject, html }) {
+  const key = process.env.RESEND_API_KEY;
+  if (!key || !to) return { error: "missing" };
+  const from = process.env.RESEND_FROM || "Growith <onboarding@resend.dev>";
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: [to], subject, html }),
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = await r.json();
+    if (!r.ok) { console.error("[andreani] email error:", data?.message); return { error: data?.message }; }
+    return { ok: true, id: data.id };
+  } catch (e) {
+    console.error("[andreani] email fetch error:", e.message);
+    return { error: e.message };
+  }
+}
+
+// Mes actual en hora Argentina, formato YYYY-MM (para stats mensuales).
+function mesAR() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit",
+  }).format(new Date());
+}
+
 function costoConDescuento(tarifaTotal, cfg) {
   return tarifaTotal * (1 - (cfg.descuentoPct || 0) / 100);
 }
@@ -340,17 +389,30 @@ export default async function handler(req, res) {
 
     // ── status ────────────────────────────────────────────────────────────
     if (action === "status") {
-      const [cfg, snap, esAdmin] = await Promise.all([
+      const [cfg, snap, esAdmin, movSnap] = await Promise.all([
         getGlobalConfig(db), userRef.get(), isPlatformAdmin(db, uid),
+        movCol.orderBy("ts", "desc").limit(20).get().catch(() => null),
       ]);
       const d = snap.exists ? snap.data() : {};
       const origen = d.andreaniOrigen || null;
       const remitente = d.andreaniRemitente || null;
       const origenConfigurado = !!(origen?.codigoPostal && origen?.calle && origen?.localidad && remitente?.nombreCompleto && remitente?.documentoNumero);
+      const saldo = Math.round(Number(d.andreaniSaldo) || 0);
+      // Estimación de etiquetas restantes: promedio de los últimos débitos.
+      let etiquetasEstimadas = null;
+      if (movSnap) {
+        const debitos = movSnap.docs.map(x => x.data()).filter(m => m.tipo === "debito").slice(0, 10);
+        if (debitos.length) {
+          const avg = debitos.reduce((s, m) => s + (Number(m.monto) || 0), 0) / debitos.length;
+          if (avg > 0) etiquetasEstimadas = Math.floor(saldo / avg);
+        }
+      }
       return res.json({
         ok: true,
         enabled: esAdmin || cfg.habilitados.includes(uid),
-        saldo: Math.round(Number(d.andreaniSaldo) || 0),
+        saldo,
+        etiquetasEstimadas,
+        saldoBajo: etiquetasEstimadas != null && etiquetasEstimadas < 5,
         origenConfigurado,
         origen, remitente,
         sucOrigen: d.andreaniSucOrigen || null,
@@ -681,11 +743,59 @@ export default async function handler(req, res) {
       if (envioRef) writes.push(envioRef.set({ andreani: andreaniInfo }, { merge: true }));
       await Promise.all(writes);
 
+      // Stats mensuales de rentabilidad (best-effort, fuera de la transacción).
+      try {
+        await db.collection("andreani_config").doc(`stats_${mesAR()}`).set({
+          facturado: FieldValue.increment(precio),
+          costoReal: FieldValue.increment(Math.round(costoConDescuento(cot.tarifaTotal, cfg))),
+          etiquetas: FieldValue.increment(1),
+          porUid: { [uid]: {
+            monto: FieldValue.increment(precio),
+            etiquetas: FieldValue.increment(1),
+          } },
+        }, { merge: true });
+      } catch (e) { console.error("[andreani] stats:", e.message); }
+
+      // Alerta de saldo bajo: si lo que queda alcanza para menos de 5 etiquetas
+      // al precio recién cobrado, aviso por mail (best-effort, throttle 24h).
+      const etiquetasEstimadas = precio > 0 ? Math.floor(saldoRestante / precio) : null;
+      const saldoBajo = etiquetasEstimadas != null && etiquetasEstimadas < 5;
+      if (saldoBajo) {
+        try {
+          const lastTs = Number(uData.andreaniAvisoSaldoTs) || 0;
+          if (Date.now() - lastTs > 24 * 3600000) {
+            await userRef.set({ andreaniAvisoSaldoTs: Date.now() }, { merge: true });
+            const destinos = new Set();
+            if (uData.email) destinos.add(String(uData.email).trim());
+            if (process.env.ALERT_EMAIL) {
+              destinos.add(String(process.env.ALERT_EMAIL).trim());
+            } else {
+              try {
+                const f = await db.collection("users").doc(FOUNDERS[0]).get();
+                if (f.exists && f.data().email) destinos.add(String(f.data().email).trim());
+              } catch (_) {}
+            }
+            const html = `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
+  <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:16px">Saldo de envíos bajo</div>
+  <p style="font-size:14px">La cuenta ${uData.email || uid} emitió una etiqueta Andreani y el saldo restante es <strong>$${saldoRestante.toLocaleString("es-AR")}</strong>.</p>
+  <p style="font-size:14px">Al precio de la última etiqueta ($${precio.toLocaleString("es-AR")}) alcanza para aproximadamente <strong>${etiquetasEstimadas} etiqueta${etiquetasEstimadas === 1 ? "" : "s"} más</strong>.</p>
+  <p style="font-size:13px">Para seguir emitiendo sin interrupciones, cargá saldo desde la sección Envíos de Growith o contactá al soporte para acreditar una recarga.</p>
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px">Growith — Envíos</p>
+</div>`;
+            await Promise.allSettled([...destinos].filter(Boolean).map(to =>
+              sendEmail({ to, subject: "Saldo de envíos bajo en Growith", html })
+            ));
+          }
+        } catch (e) { console.error("[andreani] aviso saldo bajo:", e.message); }
+      }
+
       return res.json({
         ok: true,
         numeroDeEnvio,
         precio,
         saldoRestante,
+        etiquetasEstimadas,
+        saldoBajo,
         fechaEstimadaDeEntrega: ordenData.fechaEstimadaDeEntrega || null,
         estado: ordenData.estado || "Pendiente",
       });
@@ -738,7 +848,7 @@ export default async function handler(req, res) {
     }
 
     // ── ACCIONES ADMIN ────────────────────────────────────────────────────
-    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos"];
+    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats"];
     if (adminActions.includes(action)) {
       const adm = await requireAdmin(req);
       if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
@@ -813,6 +923,38 @@ export default async function handler(req, res) {
           uid: targetUid,
           saldo: Math.round(Number(s.data()?.andreaniSaldo) || 0),
           movimientos: movSnap.docs.map(d => ({ _id: d.id, ...d.data() })),
+        });
+      }
+
+      if (action === "admin_stats") {
+        // Rentabilidad mensual de etiquetas: andreani_config/stats_{YYYY-MM}.
+        const mes = /^\d{4}-\d{2}$/.test(String(body.mes || "")) ? String(body.mes) : mesAR();
+        const snap = await db.collection("andreani_config").doc(`stats_${mes}`).get();
+        const d = snap.exists ? snap.data() : {};
+        const porUid = (d.porUid && typeof d.porUid === "object") ? d.porUid : {};
+        const uids = Object.keys(porUid).slice(0, 30);
+        const emails = {};
+        if (uids.length) {
+          try {
+            const snaps = await db.getAll(...uids.map(u => db.collection("users").doc(u)));
+            snaps.forEach(s => { if (s.exists) emails[s.id] = s.data().email || ""; });
+          } catch (_) { /* sin emails: se devuelven solo uids */ }
+        }
+        const cuentas = uids.map(u => ({
+          uid: u,
+          email: emails[u] || "",
+          monto: Math.round(Number(porUid[u]?.monto) || 0),
+          etiquetas: Number(porUid[u]?.etiquetas) || 0,
+        })).sort((a, b) => b.monto - a.monto);
+        const facturado = Math.round(Number(d.facturado) || 0);
+        const costoReal = Math.round(Number(d.costoReal) || 0);
+        return res.json({
+          mes,
+          facturado,
+          costoReal,
+          margen: facturado - costoReal,
+          etiquetas: Number(d.etiquetas) || 0,
+          cuentas,
         });
       }
 

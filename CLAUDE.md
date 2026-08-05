@@ -155,6 +155,8 @@ growith_stockouts_{uid}    → JSON[] historial de agotados
 growith_envios_cache_{uid} → JSON cache SWR de Envíos: {ts, tabs:{empaquetar,enviar}, counts}
 growith_envios_cols        → JSON[] columnas ocultas de la tabla de Envíos
 growith_exportCfg          → JSON config de paquete Andreani: {peso,alto,ancho,prof,valor}
+growith_andreani_fmt       → "a4" | "termica" (formato de descarga de etiquetas Andreani, sin uid: preferencia de impresora)
+(sessionStorage) growith_saldo_bajo_dismiss → "1" banner de saldo bajo de Envíos cerrado en esta sesión
 growith_exportHistory      → JSON[] historial local de exportaciones (fallback del historial en Firestore users/{uid}/envios)
 growith_locOverrides / growith_sucOverrides → JSON overrides de localidad/sucursal pendientes de export
 growith_skuCfg             → JSON posición/tamaño del estampado de SKU en rótulos

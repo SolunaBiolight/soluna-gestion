@@ -5538,7 +5538,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // ── Etiquetas Andreani prepagas (feature gateado por cuenta) ──
   // El backend responde enabled solo para cuentas habilitadas por el admin.
   // Si enabled es false, NADA de esta UI se renderiza (cero ruido).
-  const [andreani,setAndreani]=useState({enabled:false,saldo:0,origenConfigurado:false,sucOrigen:null,loaded:false});
+  const [andreani,setAndreani]=useState({enabled:false,saldo:0,origenConfigurado:false,sucOrigen:null,loaded:false,saldoBajo:false,etiquetasEstimadas:null});
+  // Banner "saldo bajo" cerrable: se recuerda en sessionStorage a propósito
+  // (no localStorage) para que reaparezca en la próxima sesión.
+  const [saldoBajoDismiss,setSaldoBajoDismiss]=useState(()=>{try{return sessionStorage.getItem("growith_saldo_bajo_dismiss")==="1";}catch(_){return false;}});
+  const cerrarSaldoBajo=()=>{setSaldoBajoDismiss(true);try{sessionStorage.setItem("growith_saldo_bajo_dismiss","1");}catch(_){}};
+  // Formato de descarga de etiquetas (A4 original | térmica 10x15) — persiste
+  const [dlFmt,setDlFmtState]=useState(()=>{try{return localStorage.getItem("growith_andreani_fmt")==="termica"?"termica":"a4";}catch(_){return "a4";}});
+  const setDlFmt=f=>{setDlFmtState(f);try{localStorage.setItem("growith_andreani_fmt",f);}catch(_){}};
   const [andreaniSaldoOpen,setAndreaniSaldoOpen]=useState(false);
   const [andreaniOrigenOpen,setAndreaniOrigenOpen]=useState(false);
   const [andreaniOrder,setAndreaniOrder]=useState(null); // pedido elegido para emitir etiqueta
@@ -5557,7 +5564,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       .then(r=>r.ok?r.json():null)
       .then(d=>{
         if(!alive) return;
-        if(d&&d.enabled) setAndreani({enabled:true,saldo:d.saldo||0,origenConfigurado:!!d.origenConfigurado,sucOrigen:d.sucOrigen||null,loaded:true});
+        if(d&&d.enabled) setAndreani({enabled:true,saldo:d.saldo||0,origenConfigurado:!!d.origenConfigurado,sucOrigen:d.sucOrigen||null,loaded:true,saldoBajo:!!d.saldoBajo,etiquetasEstimadas:typeof d.etiquetasEstimadas==="number"?d.etiquetasEstimadas:null});
         else setAndreani(a=>({...a,enabled:false,loaded:true}));
       })
       .catch(()=>{ if(alive) setAndreani(a=>({...a,loaded:true})); });
@@ -6517,6 +6524,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const inc=rows.filter(r=>r.incluido&&r.cot&&!r.emitido);
     if(!inc.length) return;
     let done=0;
+    let ultSaldoInfo=null; // último saldoBajo/etiquetasEstimadas que devolvió el backend
     pushBulk("emitiendo",{done:0,total:inc.length});
     // En serie: el débito de saldo es transaccional en el backend y los errores
     // de un pedido no cortan el resto (el backend revierte el débito fallido).
@@ -6554,6 +6562,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         } else {
           r.emitido=d; r.emitError="";
           if(typeof d.saldoRestante==="number") setAndreani(a=>({...a,saldo:d.saldoRestante}));
+          if(d.saldoBajo!==undefined) ultSaldoInfo={saldoBajo:!!d.saldoBajo,etiquetasEstimadas:typeof d.etiquetasEstimadas==="number"?d.etiquetasEstimadas:null};
           setAndreaniEmitidos(m=>({...m,[o.numero]:d}));
         }
       }catch(e){ r.emitError=e.message||"Error de red al emitir"; }
@@ -6574,6 +6583,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       }catch(_){}
       setSelected(new Map());
       setExportSingleOrder(null);
+    }
+    if(ultSaldoInfo){
+      setAndreani(a=>({...a,saldoBajo:ultSaldoInfo.saldoBajo,etiquetasEstimadas:ultSaldoInfo.etiquetasEstimadas}));
+      if(ultSaldoInfo.saldoBajo) toast(ultSaldoInfo.etiquetasEstimadas!=null?`Saldo bajo: te alcanza para ~${ultSaldoInfo.etiquetasEstimadas} etiqueta${ultSaldoInfo.etiquetasEstimadas===1?"":"s"} más`:"Saldo bajo para seguir emitiendo etiquetas","warning",5000);
     }
     pushBulk("resultado");
   }
@@ -6612,7 +6625,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
   async function descargarEtiquetaBulk(numeroDeEnvio){
     const res=await fetchEtiquetaB64(numeroDeEnvio);
-    if(res.pdf){ ghDescargarPdfB64(res.pdf,`Andreani_${numeroDeEnvio}.pdf`); toast("Etiqueta descargada ✓","success"); }
+    if(res.pdf){
+      if(dlFmt==="termica"){
+        try{ ghDescargarPdfBytes(await ghPdfTermica10x15([res.pdf]),`Andreani_${numeroDeEnvio}_10x15.pdf`); }
+        catch(e){ toast("No se pudo convertir a 10x15: "+e.message,"error"); return; }
+      } else ghDescargarPdfB64(res.pdf,`Andreani_${numeroDeEnvio}.pdf`);
+      toast("Etiqueta descargada ✓","success");
+    }
     else if(res.pending) toast(`La etiqueta ${numeroDeEnvio} todavía se está generando — reintentá en unos segundos`,"warning");
     else toast(`No se pudo descargar la etiqueta ${numeroDeEnvio}: ${res.error}`,"error");
   }
@@ -6632,23 +6651,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         setBulkDl({done:i+1,total:nums.length});
       }
       if(pdfs.length){
-        const {PDFDocument}=await import("pdf-lib");
-        const out=await PDFDocument.create();
-        for(const b64 of pdfs){
-          const bin=atob(b64);
-          const bytes=new Uint8Array(bin.length);
-          for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
-          const src=await PDFDocument.load(bytes);
-          const pages=await out.copyPages(src,src.getPageIndices());
-          pages.forEach(p=>out.addPage(p));
+        if(dlFmt==="termica"){
+          ghDescargarPdfBytes(await ghPdfTermica10x15(pdfs),"Andreani_etiquetas_10x15.pdf");
+        } else {
+          const {PDFDocument}=await import("pdf-lib");
+          const out=await PDFDocument.create();
+          for(const b64 of pdfs){
+            const src=await PDFDocument.load(ghB64ToBytes(b64));
+            const pages=await out.copyPages(src,src.getPageIndices());
+            pages.forEach(p=>out.addPage(p));
+          }
+          ghDescargarPdfBytes(await out.save(),`Andreani_etiquetas_${hoyAR()}.pdf`);
         }
-        const merged=await out.save();
-        const blob=new Blob([merged],{type:"application/pdf"});
-        const a=document.createElement("a");
-        a.href=URL.createObjectURL(blob);
-        a.download=`Andreani_etiquetas_${hoyAR()}.pdf`;
-        a.click();
-        setTimeout(()=>URL.revokeObjectURL(a.href),4000);
       }
       if(pendientes.length) toast(`${pdfs.length} etiquetas descargadas · ${pendientes.length} todavía en proceso (${pendientes.join(", ")}) — reintentá en unos segundos`,"warning");
       else toast(`${pdfs.length} etiquetas descargadas en un solo PDF ✓`,"success");
@@ -7034,13 +7048,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* Topbar */}
       <AppTopbar T={T} section="Envíos" sectionId="envios" onHome={onHome}
         onHelp={()=>setShowGuia(s=>!s)}>
-        {andreani.enabled&&(
-          <button onClick={()=>setAndreaniSaldoOpen(true)} title="Saldo de envíos Andreani"
-            style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,borderColor:T.green+"55",fontWeight:700,gap:6}}>
+        {andreani.enabled&&(()=>{
+          // Saldo bajo: el chip pasa a ámbar (o rojo si ya no alcanza para ninguna etiqueta)
+          const chipColor=andreani.saldoBajo?(andreani.etiquetasEstimadas===0?T.red:T.yellow):T.green;
+          const chipTitle=andreani.saldoBajo
+            ?(andreani.etiquetasEstimadas!=null?`Saldo bajo: te alcanza para ~${andreani.etiquetasEstimadas} etiqueta${andreani.etiquetasEstimadas===1?"":"s"} más — hacé clic para cargar saldo`:"Saldo bajo — hacé clic para cargar saldo")
+            :"Saldo de envíos Andreani";
+          return (
+          <button onClick={()=>setAndreaniSaldoOpen(true)} title={chipTitle}
+            style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:chipColor,borderColor:chipColor+"55",fontWeight:700,gap:6}}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="14" rx="3"/><path d="M2 10h20"/><path d="M16 15h2"/></svg>
             {fmtMoney(andreani.saldo)}
           </button>
-        )}
+          );
+        })()}
         <AsyncButton onClick={async()=>{
           tabCacheRef.current={};
           // No vaciar la lista: se mantiene visible con el chip "Actualizando" (SWR)
@@ -7105,6 +7126,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 </span>
               )}
             </div>
+
+            {/* Banner saldo bajo Andreani (solo cuentas habilitadas, cerrable por sesión) */}
+            {andreani.enabled&&andreani.saldoBajo&&!saldoBajoDismiss&&(
+              <div style={{display:"flex",alignItems:"center",gap:10,background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"7px 12px",marginBottom:12,flexWrap:"wrap"}}>
+                <span style={{fontSize:12,color:T.yellow,fontWeight:600,flex:1,minWidth:200}}>
+                  {andreani.etiquetasEstimadas!=null
+                    ?<>Saldo bajo: te alcanza para ~{andreani.etiquetasEstimadas} etiqueta{andreani.etiquetasEstimadas===1?"":"s"} más</>
+                    :<>Saldo bajo para seguir emitiendo etiquetas</>}
+                </span>
+                <button onClick={()=>setAndreaniSaldoOpen(true)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.yellow,borderColor:T.yellow+"66"}}>Cargar saldo</button>
+                <button onClick={cerrarSaldoBajo} title="Cerrar" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:15,padding:"0 2px",lineHeight:1,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+              </div>
+            )}
 
             {/* Panel buscar */}
             {tabEnvio==="buscar"&&(
@@ -8366,7 +8400,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     </div>
                   ))}
                 </div>
-                <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+                <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",alignItems:"center"}}>
+                  {ok.length>0&&<AndreaniFmtToggle T={T} fmt={dlFmt} onChange={setDlFmt}/>}
                   <button onClick={()=>{setBulk(null);bulkRowsRef.current=[];}} style={{...BtnSecondary(T),fontSize:13}}>Cerrar</button>
                   {ok.length>1&&(
                     <AsyncButton onClick={descargarTodasBulk} disabled={!!bulkDl} style={{...BtnPrimary(T),fontSize:13,minWidth:190,justifyContent:"center"}}>
@@ -8425,7 +8460,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           onOrigenSaved={()=>setAndreani(a=>({...a,origenConfigurado:true}))}
           onSucOrigen={suc=>setAndreani(a=>({...a,sucOrigen:suc}))}
           onSaldo={s=>{if(typeof s==="number")setAndreani(a=>({...a,saldo:s}));}}
-          onEmitido={(numero,res)=>{setAndreaniEmitidos(m=>({...m,[numero]:res}));refrescarEnviosFs();}}
+          onEmitido={(numero,res)=>{
+            setAndreaniEmitidos(m=>({...m,[numero]:res}));
+            if(res?.saldoBajo!==undefined){
+              const est=typeof res.etiquetasEstimadas==="number"?res.etiquetasEstimadas:null;
+              setAndreani(a=>({...a,saldoBajo:!!res.saldoBajo,etiquetasEstimadas:est}));
+              if(res.saldoBajo) toast(est!=null?`Saldo bajo: te alcanza para ~${est} etiqueta${est===1?"":"s"} más`:"Saldo bajo para seguir emitiendo etiquetas","warning",5000);
+            }
+            refrescarEnviosFs();
+          }}
           onOpenSaldo={()=>setAndreaniSaldoOpen(true)}/>
       )}
     </div>
@@ -8436,16 +8479,56 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 // ANDREANI PREPAGO — saldo, remitente y emisión de etiquetas
 // ===========================================
 // Descarga un PDF que llega como base64 desde /api/andreani?action=etiqueta
-function ghDescargarPdfB64(b64, filename){
+function ghB64ToBytes(b64){
   const bin=atob(b64);
   const bytes=new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return bytes;
+}
+function ghDescargarPdfBytes(bytes, filename){
   const blob=new Blob([bytes],{type:"application/pdf"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
   a.download=filename;
   a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+function ghDescargarPdfB64(b64, filename){
+  ghDescargarPdfBytes(ghB64ToBytes(b64), filename);
+}
+// Convierte etiquetas A4 (base64) a un PDF de páginas 10x15 cm para impresoras
+// térmicas: cada página del original se embebe escalada al máximo del área
+// manteniendo la proporción. pdf-lib entra por dynamic import (mismo patrón que
+// el "Descargar todas" del bulk: solo se carga cuando se usa).
+async function ghPdfTermica10x15(b64List){
+  const {PDFDocument}=await import("pdf-lib");
+  const W=283.46, H=425.20; // 100 x 150 mm en puntos
+  const out=await PDFDocument.create();
+  for(const b64 of b64List){
+    const src=await PDFDocument.load(ghB64ToBytes(b64));
+    for(let i=0;i<src.getPageCount();i++){
+      const emb=await out.embedPage(src.getPage(i));
+      const scale=Math.min(W/emb.width, H/emb.height);
+      const w=emb.width*scale, h=emb.height*scale;
+      const page=out.addPage([W,H]);
+      page.drawPage(emb,{x:(W-w)/2, y:(H-h)/2, width:w, height:h});
+    }
+  }
+  return out.save();
+}
+// Mini selector de formato de descarga de etiquetas ("A4 | Térmica 10x15").
+function AndreaniFmtToggle({T, fmt, onChange}){
+  const opts=[["a4","A4"],["termica","Térmica 10x15"]];
+  return (
+    <div style={{display:"inline-flex",background:T.surface,borderRadius:8,padding:2,gap:0}} title="Formato de descarga de las etiquetas">
+      {opts.map(([v,l])=>(
+        <button key={v} onClick={()=>onChange(v)}
+          style={{padding:"4px 9px",fontSize:11,border:"none",borderRadius:6,background:fmt===v?T.card:"transparent",color:fmt===v?T.text:T.textMd,cursor:"pointer",fontWeight:fmt===v?600:400,transition:"all 0.1s",boxShadow:fmt===v?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>
+          {l}
+        </button>
+      ))}
+    </div>
+  );
 }
 function ghFmtTs(v){
   if(!v) return "—";
@@ -8809,6 +8892,8 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
   const [emitErr,setEmitErr]=useState("");
   const [emitido,setEmitido]=useState(yaEmitido?{numeroDeEnvio:yaEmitido}:null);
   const [pdfPending,setPdfPending]=useState(false);
+  const [dlFmt,setDlFmtState]=useState(()=>{try{return localStorage.getItem("growith_andreani_fmt")==="termica"?"termica":"a4";}catch(_){return "a4";}});
+  const setDlFmt=f=>{setDlFmtState(f);try{localStorage.setItem("growith_andreani_fmt",f);}catch(_){}};
   const [needSuc,setNeedSuc]=useState(false); // el backend rechazó emitir por sucursal de despacho sin confirmar
   const invalida=fn=>(...a)=>{fn(...a);setCot(null);setCotErr("");setEmitErr("");};
   const setPaqI=k=>invalida(e=>setPaq(s=>({...s,[k]:e.target.value})));
@@ -8914,7 +8999,13 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
     setPdfPending(false);
     const r=await authFetch(`/api/andreani?action=etiqueta&numero=${encodeURIComponent(numero)}`);
     const d=await r.json().catch(()=>({}));
-    if(d&&d.pdf){ ghDescargarPdfB64(d.pdf,`Andreani_${numero}.pdf`); toast("Etiqueta descargada ✓","success"); }
+    if(d&&d.pdf){
+      if(dlFmt==="termica"){
+        try{ ghDescargarPdfBytes(await ghPdfTermica10x15([d.pdf]),`Andreani_${numero}_10x15.pdf`); }
+        catch(e){ toast("No se pudo convertir a 10x15: "+e.message,"error"); return; }
+      } else ghDescargarPdfB64(d.pdf,`Andreani_${numero}.pdf`);
+      toast("Etiqueta descargada ✓","success");
+    }
     else if(d&&d.pending){ setPdfPending(true); toast("Andreani todavía está generando el PDF — probá en unos segundos","warning"); }
     else { toast("No se pudo descargar la etiqueta"+(d?.error?`: ${d.error}`:""),"error"); }
   }
@@ -8944,7 +9035,8 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
               El PDF todavía se está generando en Andreani. Esperá unos segundos y reintentá.
             </div>
           )}
-          <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+          <div style={{display:"flex",gap:10,justifyContent:"center",alignItems:"center",flexWrap:"wrap"}}>
+            <AndreaniFmtToggle T={T} fmt={dlFmt} onChange={setDlFmt}/>
             <button onClick={onClose} style={{...BtnSecondary(T),fontSize:13}}>Cerrar</button>
             <AsyncButton onClick={descargarEtiqueta} style={{...BtnPrimary(T),fontSize:13,minWidth:190,justifyContent:"center"}}>
               {pdfPending?"Reintentar descarga":"Descargar etiqueta PDF"}
@@ -11261,6 +11353,28 @@ function AppAdmin({T, user, onBack}) {
   const [envMovs, setEnvMovs] = useState(null);      // {uid,email,loading,movimientos:[]} → modal
   const [envBusca, setEnvBusca] = useState("");       // input "buscar cuenta por email"
   const [envBuscaRes, setEnvBuscaRes] = useState(null); // null = listado completo | {sinResultados,email} | {cuentas:[...]}
+  // ── Rentabilidad del sistema de etiquetas (admin_stats por mes) ──
+  const envMeses = React.useMemo(()=>{
+    const out=[]; const now=new Date();
+    for(let i=0;i<6;i++){
+      const d=new Date(now.getFullYear(), now.getMonth()-i, 1);
+      const nombre=d.toLocaleDateString("es-AR",{month:"long"});
+      out.push({v:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`, label:nombre.charAt(0).toUpperCase()+nombre.slice(1)+" "+d.getFullYear()});
+    }
+    return out;
+  },[]);
+  const [envStatsMes, setEnvStatsMes] = useState(null);   // "YYYY-MM" elegido (null = todavía no cargó)
+  const [envStats, setEnvStats] = useState({loading:false, data:null, error:""});
+  async function loadEnvStats(mes) {
+    setEnvStatsMes(mes);
+    setEnvStats({loading:true, data:null, error:""});
+    try {
+      const d = await authFetch(`/api/andreani?action=admin_stats&mes=${encodeURIComponent(mes)}`).then(r=>r.json());
+      if (d?.error) setEnvStats({loading:false, data:null, error:typeof d.error==="string"?d.error:"No se pudo cargar la rentabilidad"});
+      else setEnvStats({loading:false, data:d, error:""});
+    } catch(e){ setEnvStats({loading:false, data:null, error:e.message||"Error de red cargando la rentabilidad"}); }
+  }
+  useEffect(()=>{ if(tab==="envios" && !envStatsMes) loadEnvStats(envMeses[0].v); },[tab]);
   async function buscarCuentaSaldo() {
     const email = envBusca.trim();
     if (!email) { setEnvBuscaRes(null); return; }
@@ -12086,6 +12200,64 @@ function AppAdmin({T, user, onBack}) {
                     if(ok) setEnvNuevoUid("");
                   }} style={{...BtnPrimary(T),fontSize:13,whiteSpace:"nowrap"}}>Habilitar</AsyncButton>
                 </div>
+              </div>
+
+              {/* Rentabilidad del sistema de etiquetas */}
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+                  <div style={{fontSize:15,fontWeight:700,color:T.text}}>Rentabilidad</div>
+                  <select value={envStatsMes||envMeses[0].v} onChange={e=>loadEnvStats(e.target.value)}
+                    style={{...iS,width:"auto",marginBottom:0,padding:"6px 10px",fontSize:12,cursor:"pointer"}}>
+                    {envMeses.map(m=><option key={m.v} value={m.v}>{m.label}</option>)}
+                  </select>
+                </div>
+                {envStats.loading?(
+                  <div style={{display:"flex",alignItems:"center",gap:8,padding:"14px 0",color:T.textSm,fontSize:12}}>
+                    <Spinner size={13} color={T.accent}/> Cargando rentabilidad…
+                  </div>
+                ):envStats.error?(
+                  <div style={{fontSize:12,color:T.red,background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:8,padding:"9px 12px"}}>
+                    {envStats.error}
+                  </div>
+                ):!envStats.data||!(envStats.data.etiquetas>0)?(
+                  <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin etiquetas emitidas en ese mes.</div>
+                ):(()=>{
+                  const d=envStats.data;
+                  const cuentas=[...(d.cuentas||[])].sort((a,b)=>(b.monto||0)-(a.monto||0));
+                  return (
+                    <>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:cuentas.length?14:0}}>
+                        {[
+                          {label:"Facturado", val:fmtMoney(d.facturado||0), color:T.text},
+                          {label:"Costo real Andreani", val:fmtMoney(d.costoReal||0), color:T.text},
+                          {label:"Margen", val:fmtMoney(d.margen||0), color:(d.margen||0)>=0?T.green:T.red},
+                          {label:"Etiquetas emitidas", val:String(d.etiquetas||0), color:T.text},
+                        ].map(k=>(
+                          <div key={k.label} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px"}}>
+                            <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{k.label}</div>
+                            <div style={{fontSize:17,fontWeight:800,color:k.color,letterSpacing:-0.3}}>{k.val}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {cuentas.length>0&&(
+                        <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 80px 110px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
+                            <span>Por cuenta</span><span style={{textAlign:"right"}}>Etiquetas</span><span style={{textAlign:"right"}}>Monto</span>
+                          </div>
+                          {cuentas.map((c,i)=>(
+                            <div key={c.uid||i} style={{display:"grid",gridTemplateColumns:"1fr 80px 110px",gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<cuentas.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
+                              <span style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                                {c.email||<span style={{fontFamily:"'Cascadia Code','Consolas',monospace",fontSize:11}}>{String(c.uid||"").slice(0,8)}…</span>}
+                              </span>
+                              <span style={{textAlign:"right",color:T.textMd}}>{c.etiquetas||0}</span>
+                              <span style={{textAlign:"right",fontWeight:700,color:T.text}}>{fmtMoney(c.monto||0)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Saldos */}
