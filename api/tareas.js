@@ -1800,7 +1800,7 @@ export default async function handler(req, res) {
       const ownerEmail = userSnap.data()?.email;
       if (!ownerEmail) return res.status(400).json({ error:"No se encontró email del usuario" });
       const fechaFmt = new Date(fechaEnvioProgr + "T12:00:00").toLocaleDateString("es-AR", {weekday:"long",day:"numeric",month:"long"});
-      const trackingHtml = tracking ? `<div style="margin:12px 0;padding:10px 14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #22c55e;font-size:13px;color:#374151">Tracking Andreani: <strong>${tracking}</strong><br/><a href="https://www.andreani.com/#!/informacionEnvio/${tracking}" style="color:#6366f1;font-size:12px">Ver seguimiento →</a></div>` : "";
+      const trackingHtml = tracking ? `<div style="margin:12px 0;padding:10px 14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #22c55e;font-size:13px;color:#374151">Tracking Andreani: <strong>${tracking}</strong><br/><a href="https://www.andreani.com/envio/${tracking}" style="color:#6366f1;font-size:12px">Ver seguimiento →</a></div>` : "";
       const html = `<div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#6366f1,#a78bfa);padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
     <div style="font-size:18px;font-weight:700;color:#fff">Hoy toca enviar un canje</div>

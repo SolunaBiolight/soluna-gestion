@@ -185,6 +185,12 @@ function estadoOficial(trazas) {
 function clasificarEstado(estadoStr) {
   const s = String(estadoStr || "").toLowerCase();
   if (!s) return "desconocido";
+  // Vía rápida determinista: el tracking v3 arma el estado como "Etapa — detalle"
+  // y la etapa es un valor cerrado. Sin esto, el texto del detalle confunde a la
+  // heurística (ej: "Ingresado — Pronto lo enviaremos a la sucursal encargada...").
+  const ETAPAS = { "pendiente de ingreso": "otro", "ingresado": "en_camino", "en camino": "en_camino", "en sucursal": "en_sucursal", "entregado": "entregado" };
+  const etapa = ETAPAS[s.split(" — ")[0].trim()];
+  if (etapa) return etapa;
   // Antes de "en_camino": los estados que dicen explícitamente que TODAVÍA NO
   // entró a la red ("Envío no ingresado", "Pendiente de ingreso") matchearían
   // /ingresad/ y pintarían "En camino" falso.
@@ -237,7 +243,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       estado: null, estadoActual: null, ultimoEvento: null, eventos: [],
       error: 'No se pudo consultar el estado. Verificá el número de tracking.',
-      trackingUrl: `https://www.andreani.com/#!/informacionEnvio/${nro}`,
+      trackingUrl: `https://www.andreani.com/envio/${nro}`,
     });
   }
 
@@ -451,7 +457,7 @@ export default async function handler(req, res) {
     <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px">Canje de ${inf}</div>
   </div>
   <p style="font-size:14px;color:#374151">Andreani informa: <strong>${out.estado}</strong></p>
-  <div style="margin:12px 0;padding:10px 14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #22c55e;font-size:13px;color:#374151">Tracking: <strong>${nro}</strong><br/><a href="https://www.andreani.com/#!/informacionEnvio/${nro}" style="color:#6366f1;font-size:12px">Ver seguimiento →</a></div>
+  <div style="margin:12px 0;padding:10px 14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #22c55e;font-size:13px;color:#374151">Tracking: <strong>${nro}</strong><br/><a href="https://www.andreani.com/envio/${nro}" style="color:#6366f1;font-size:12px">Ver seguimiento →</a></div>
   ${cat === "en_sucursal" ? '<p style="font-size:13px;color:#374151">Avisale que ya puede pasar a retirarlo — los envíos a sucursal tienen unos días de plazo antes de volver.</p>' : ""}
   <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Seguimiento de canjes</p>
 </div>`;
@@ -724,7 +730,7 @@ export default async function handler(req, res) {
         method: 'POST', headers: shHeaders,
         body: JSON.stringify({ fulfillment: {
           line_items_by_fulfillment_order: abiertos.map(fo => ({ fulfillment_order_id: fo.id })),
-          tracking_info: { number: tracking, url: `https://www.andreani.com/#!/informacionEnvio/${tracking}`, company: "Andreani" },
+          tracking_info: { number: tracking, url: `https://www.andreani.com/envio/${tracking}`, company: "Andreani" },
           notify_customer: true,
         } }),
       });
@@ -793,7 +799,7 @@ export default async function handler(req, res) {
         headers,
         body: JSON.stringify({
           shipping_tracking_number: tracking,
-          shipping_tracking_url: `https://www.andreani.com/#!/informacionEnvio/${tracking}`,
+          shipping_tracking_url: `https://www.andreani.com/envio/${tracking}`,
         })
       }
     );
