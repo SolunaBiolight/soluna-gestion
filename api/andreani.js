@@ -314,6 +314,21 @@ export async function trazasOficialAndreani(db, numeroDeEnvio) {
   }
 }
 
+// Diagnóstico del endpoint oficial de trazas: status + primeros bytes de la
+// respuesta, sin ocultar errores. Solo para el modo debug del proxy.
+export async function trazasDebugAndreani(db, numeroDeEnvio) {
+  try {
+    const env = andreaniEnv();
+    if (!env) return { error: "sin_env" };
+    const num = String(numeroDeEnvio || "").trim().replace(/\s+/g, "");
+    const r = await andreaniFetch(db, env, `/v1/envios/${encodeURIComponent(num)}/trazas`);
+    const text = await r.text();
+    return { status: r.status, body: text.slice(0, 400) };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 // ─── Email (mismo patrón Resend que check-expiring.js) ─────────────────────
 
 async function sendEmail({ to, subject, html }) {

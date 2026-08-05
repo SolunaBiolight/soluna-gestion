@@ -1,7 +1,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { guardUid, guardCron } from "./_auth.js";
-import { trazasOficialAndreani } from "./andreani.js";
+import { trazasOficialAndreani, trazasDebugAndreani } from "./andreani.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -144,6 +144,10 @@ export default async function handler(req, res) {
     const { tracking } = req.query;
     if (!tracking) return res.status(400).json({ error: 'tracking requerido' });
     const nro = tracking.trim().replace(/\s+/g, '');
+    // Modo diagnóstico: status crudo del endpoint oficial (sin datos sensibles)
+    if (req.query.debug === '1') {
+      return res.status(200).json(await trazasDebugAndreani(initAdmin(), nro));
+    }
     // PRIMERO la API oficial autenticada (envíos de la cuenta de la plataforma:
     // datos al instante y confiables); si no lo ve (envío ajeno) → scraping.
     let out = null;
