@@ -1646,6 +1646,14 @@ export default async function handler(req, res) {
       const fulfillments = o.fulfillments || [];
       const isFulfilled = (o.fulfillment_status || "").toLowerCase() === "fulfilled" || fulfillments.some(f => (f.status || "").toLowerCase() === "success");
       const shStatus = isFulfilled ? "shipped" : (fulfillments.length > 0 ? "ready_to_ship" : "unpacked");
+      // Shopify mete calle y número juntos en address1 ("Av. Siempreviva 742");
+      // Andreani (XLSX y API) los necesita separados. Número al final o al
+      // principio; si no hay, queda todo como calle y número vacío.
+      const addr1 = (sh.address1 || "").trim();
+      let calle = addr1, numero = "";
+      let m = addr1.match(/^(.*?)[\s,]+(\d+[a-zA-Z]?)$/);
+      if (m) { calle = m[1].trim(); numero = m[2]; }
+      else { m = addr1.match(/^(\d+[a-zA-Z]?)[\s,]+(.+)$/); if (m) { numero = m[1]; calle = m[2].trim(); } }
       return {
         id: o.id,
         number: o.order_number || (o.name || "").replace("#", "") || o.id,
@@ -1666,14 +1674,15 @@ export default async function handler(req, res) {
         shipping_address: {
           name: sh.first_name || "",
           last_name: sh.last_name || "",
-          address: sh.address1 || "",
-          number: "",
+          address: calle,
+          number: numero,
           floor: sh.address2 || "",
           locality: sh.city || "",
           city: sh.city || "",
           zipcode: sh.zip || "",
           province: sh.province || "",
         },
+        admin_url: shop ? `https://${shop}/admin/orders/${o.id}` : "",
         billing_address: o.billing_address ? { name: `${o.billing_address.first_name || ""} ${o.billing_address.last_name || ""}`.trim(), email: o.email || "", phone: o.billing_address.phone || "" } : null,
         shipping_option: o.shipping_lines?.[0]?.title || "Envío",
         shipping_tracking_number: fulfillments[0]?.tracking_number || "",

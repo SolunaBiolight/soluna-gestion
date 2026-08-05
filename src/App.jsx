@@ -1624,7 +1624,7 @@ function buildOrdersFromAPI(data) {
       })(),
       pickupDetails:o.shipping_pickup_details||null,
       canal:o.storefront||'', tracking:o.shipping_tracking_number||'',
-      linkOrden:o.id?`https://www.tiendanube.com/admin/orders/${o.id}`:"",
+      linkOrden:o.admin_url||(o.id?`https://www.tiendanube.com/admin/orders/${o.id}`:""),
       fechaPago:o.paid_at||'', fechaEnvio:o.shipped_at||'',
       isPacked:!!(o.fulfillments?.some(f=>f.status==='PACKED')),
       productos:Array.isArray(o.products)?o.products.map(p=>({
@@ -7862,7 +7862,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:700,marginTop:6}}><span>Total</span><span style={{color:T.text}}>{fmtMoney(o.total)}</span></div>
               </div>
               <div style={{display:"flex",gap:10,justifyContent:"space-between",alignItems:"center",flexWrap:"wrap"}}>
-                <a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),textDecoration:"none",fontSize:13,display:"inline-flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Ver en TN</a>
+                <a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),textDecoration:"none",fontSize:13,display:"inline-flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>{o.canal==="shopify"?"Ver en Shopify":"Ver en TN"}</a>
                 {andreani.enabled&&(
                   <button onClick={()=>{setAndreaniOrder(o);setOrderDetail(null);}}
                     style={{...BtnPurple(T),fontSize:13,display:"flex",alignItems:"center",gap:6,marginLeft:"auto"}}>

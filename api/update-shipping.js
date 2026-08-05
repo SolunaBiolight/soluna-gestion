@@ -497,12 +497,14 @@ export default async function handler(req, res) {
     } catch (e) { return res.status(500).json({ error: e.message }); }
   }
 
-  let storeId, accessToken;
+  let storeId, accessToken, shStore = null;
   try {
     const db = initAdmin();
     const userSnap = await db.collection("users").doc(uid).get();
     if (userSnap.exists) {
-      const tnStore = (userSnap.data().stores || []).find(s => s.type === "tiendanube");
+      const stores = userSnap.data().stores || [];
+      const tnStore = stores.find(s => s.type === "tiendanube");
+      shStore = stores.find(s => s.type === "shopify" && s.accessToken && s.shop) || null;
       if (tnStore?.accessToken && tnStore?.storeId) {
         storeId = tnStore.storeId;
         accessToken = tnStore.accessToken;
@@ -512,6 +514,52 @@ export default async function handler(req, res) {
     console.error("Firebase error:", e.message);
     return res.status(500).json({ error: "Error al obtener credenciales" });
   }
+
+  // ── Rama Shopify: misma prioridad que orders.js (Shopify manda si está
+  // conectado). Sube el tracking creando un fulfillment con la API de
+  // FulfillmentOrders — equivalente al PUT+fulfill de TN.
+  if (shStore) {
+    if (req.query.action === 'pack') {
+      return res.status(400).json({ error: "Marcar empaquetado no aplica a Shopify (se hace desde el fulfillment)." });
+    }
+    if (!orderId || !tracking) return res.status(400).json({ error: "Faltan orderId o tracking" });
+    const shHeaders = { 'X-Shopify-Access-Token': shStore.accessToken, 'Content-Type': 'application/json' };
+    const shBase = `https://${shStore.shop}/admin/api/2024-10`;
+    try {
+      // 1. Buscar la orden por número visible (name = "#1001")
+      const sr = await fetch(`${shBase}/orders.json?name=${encodeURIComponent('#' + orderId)}&status=any&fields=id,order_number,name,fulfillment_status`, { headers: shHeaders });
+      if (!sr.ok) throw new Error(`Shopify search error ${sr.status}`);
+      const sd = await sr.json();
+      const order = (sd.orders || []).find(o => String(o.order_number) === String(orderId) || String(o.name || "").replace("#", "") === String(orderId));
+      if (!order) return res.status(404).json({ error: `Pedido #${orderId} no encontrado en Shopify` });
+      if ((order.fulfillment_status || "").toLowerCase() === 'fulfilled') {
+        return res.status(400).json({ error: `El pedido #${orderId} ya fue enviado.` });
+      }
+      // 2. Fulfillment orders abiertos de la orden
+      const fr = await fetch(`${shBase}/orders/${order.id}/fulfillment_orders.json`, { headers: shHeaders });
+      if (!fr.ok) throw new Error(`Shopify fulfillment_orders error ${fr.status}`);
+      const fd = await fr.json();
+      const abiertos = (fd.fulfillment_orders || []).filter(fo => ["open", "in_progress", "scheduled"].includes((fo.status || "").toLowerCase()));
+      if (!abiertos.length) return res.status(400).json({ error: `El pedido #${orderId} no tiene items pendientes de despacho en Shopify.` });
+      // 3. Crear el fulfillment con tracking + aviso al cliente
+      let fulfilled = false, fulfillError = null;
+      const pr = await fetch(`${shBase}/fulfillments.json`, {
+        method: 'POST', headers: shHeaders,
+        body: JSON.stringify({ fulfillment: {
+          line_items_by_fulfillment_order: abiertos.map(fo => ({ fulfillment_order_id: fo.id })),
+          tracking_info: { number: tracking, url: `https://www.andreani.com/#!/informacionEnvio/${tracking}`, company: "Andreani" },
+          notify_customer: true,
+        } }),
+      });
+      if (pr.ok) fulfilled = true;
+      else { const pd = await pr.json().catch(() => ({})); fulfillError = pd.errors ? JSON.stringify(pd.errors).slice(0, 200) : `Shopify ${pr.status}`; }
+      if (!fulfilled) return res.status(502).json({ error: `No se pudo crear el fulfillment: ${fulfillError}` });
+      return res.status(200).json({ ok: true, order: orderId, tracking, tnOrderId: String(order.id), fulfilled: true, fulfillError: null });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   if (!storeId || !accessToken) return res.status(403).json({ error: "Tienda no conectada" });
 
   const headers = {
