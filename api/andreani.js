@@ -142,10 +142,14 @@ async function getGlobalConfig(db) {
     return {
       markupPct:  Number(d.markupPct)  || 0,
       markupFijo: Number(d.markupFijo) || 0,
+      // Descuento comercial de la cuenta Andreani de la plataforma (p.ej. 30 = -30%).
+      // /v1/tarifas devuelve tarifa de lista; el descuento se aplica en cta corriente,
+      // así que lo modelamos acá para que costo y precio reflejen la realidad.
+      descuentoPct: Math.min(Math.max(Number(d.descuentoPct) || 0, 0), 90),
       habilitados: Array.isArray(d.habilitados) ? d.habilitados : [],
     };
   } catch (_) {
-    return { markupPct: 0, markupFijo: 0, habilitados: [] };
+    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, habilitados: [] };
   }
 }
 
@@ -203,8 +207,11 @@ async function cotizarAndreani(db, env, { tipo, cpDestino, bultos }) {
   return { tarifaTotal: total, pesoAforado: data.pesoAforado ?? null, raw: data };
 }
 
+function costoConDescuento(tarifaTotal, cfg) {
+  return tarifaTotal * (1 - (cfg.descuentoPct || 0) / 100);
+}
 function precioConMarkup(tarifaTotal, cfg) {
-  return Math.ceil(tarifaTotal * (1 + cfg.markupPct / 100) + cfg.markupFijo);
+  return Math.ceil(costoConDescuento(tarifaTotal, cfg) * (1 + cfg.markupPct / 100) + cfg.markupFijo);
 }
 
 // ─── Pertenencia de un envío (etiqueta/trazas) ─────────────────────────────
@@ -361,7 +368,11 @@ export default async function handler(req, res) {
         saldo: Math.round(Number(snap.data()?.andreaniSaldo) || 0),
       };
       // El costo real solo lo ven los admins — los clientes NUNCA ven la tarifa.
-      if (esAdmin) out.tarifaAndreani = cot.tarifaTotal;
+      if (esAdmin) {
+        out.tarifaAndreani = cot.tarifaTotal; // tarifa de lista (con IVA)
+        out.costoEstimado = Math.round(costoConDescuento(cot.tarifaTotal, cfg)); // con descuento cta cte
+        out.descuentoPct = cfg.descuentoPct;
+      }
       return res.json(out);
     }
 
@@ -647,7 +658,7 @@ export default async function handler(req, res) {
 
       if (action === "admin_config") {
         const gRef = db.collection("andreani_config").doc("global");
-        if (req.method === "POST" && (body.markupPct !== undefined || body.markupFijo !== undefined || body.habilitados !== undefined)) {
+        if (req.method === "POST" && (body.markupPct !== undefined || body.markupFijo !== undefined || body.habilitados !== undefined || body.descuentoPct !== undefined)) {
           const upd = {};
           if (body.markupPct !== undefined) {
             const v = Number(body.markupPct);
@@ -658,6 +669,11 @@ export default async function handler(req, res) {
             const v = Math.round(Number(body.markupFijo));
             if (!isFinite(v) || v < 0) return res.status(400).json({ error: "markupFijo inválido" });
             upd.markupFijo = v;
+          }
+          if (body.descuentoPct !== undefined) {
+            const v = Number(body.descuentoPct);
+            if (!isFinite(v) || v < 0 || v > 90) return res.status(400).json({ error: "descuentoPct inválido (0-90)" });
+            upd.descuentoPct = v;
           }
           if (body.habilitados !== undefined) {
             if (!Array.isArray(body.habilitados)) return res.status(400).json({ error: "habilitados debe ser un array de uids" });
