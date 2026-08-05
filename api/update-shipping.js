@@ -190,7 +190,11 @@ function clasificarEstado(estadoStr) {
   // /ingresad/ y pintarían "En camino" falso.
   if (/no ingresad|pendiente de ingreso|sin movimientos/.test(s)) return "otro";
   if (/entregad|retirad/.test(s)) return "entregado";
-  if (/sucursal|disponible.*retiro|retiro.*disponible|para retirar/.test(s)) return "en_sucursal";
+  // Ojo: "en camino a la sucursal X" / "procesando en la sucursal X" contienen
+  // la palabra "sucursal" pero el envío TODAVÍA no llegó — solo es "en_sucursal"
+  // si el propio texto dice que ya está ahí o listo para retirar.
+  if (!/camino a la sucursal|procesando (tu|el) env|hacia la sucursal/.test(s) &&
+      /sucursal|disponible.*retiro|retiro.*disponible|para retirar/.test(s)) return "en_sucursal";
   if (/devoluci|devuelto|regres|rehusad|rechazad/.test(s)) return "devolucion";
   if (/visita|no se pudo|ausente|no.*entrega|reprogram/.test(s)) return "visita_fallida";
   if (/camino|reparto|distribuc|transito|tránsito|viaje|planta|procesamiento|admitid|ingresad|recibimos|despachad|retirado del cliente|colecta/.test(s)) return "en_camino";
