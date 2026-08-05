@@ -5512,10 +5512,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [buscarQuery,setBuscarQuery]=useState("");
   const [buscarLoading,setBuscarLoading]=useState(false);
   const [compactMode,setCompactMode]=useState(false);
-  // Columnas ocultas persistidas (antes se perdían al recargar)
-  const [hiddenCols,setHiddenCols]=useState(()=>{try{return new Set(JSON.parse(localStorage.getItem(ghKey("growith_envios_cols"))||"[]"));}catch(_){return new Set();}});
-  const [showColMenu,setShowColMenu]=useState(false);
-  function toggleCol(col){setHiddenCols(s=>{const n=new Set(s);n.has(col)?n.delete(col):n.add(col);try{localStorage.setItem(ghKey("growith_envios_cols"),JSON.stringify([...n]));}catch(_){}return n;});}
   const [orderPage,setOrderPage]=useState(0);
   const [showPagePicker,setShowPagePicker]=useState(false);
   // SKU tab
@@ -5660,37 +5656,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     setSelected(new Map());
     if(fail===0) toast(`${ok_} pedido${ok_!==1?"s":""} marcado${ok_!==1?"s":""} como empaquetado${ok_!==1?"s":""} ✓`,"success");
     else toast(`${ok_} marcados · ${fail} con error — revisá los que quedaron en la lista`,ok_?"warning":"error");
-  }
-
-  // ── Picking list imprimible: qué armar hoy, agrupado por SKU + por pedido ──
-  function imprimirPicking(){
-    const lista=selected.size?[...selected.values()]:exportables;
-    if(!lista.length){ toast("No hay pedidos para el picking","warning"); return; }
-    const porSku={};
-    for(const o of lista) for(const p of (o.productos||[])){
-      const k=p.sku||p.nombre||"—";
-      porSku[k]=(porSku[k]||0)+(parseInt(p.cantidad)||1);
-    }
-    const filasSku=Object.entries(porSku).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<tr><td>${k}</td><td style="text-align:right;font-weight:700">${n}</td></tr>`).join("");
-    const filasPed=lista.map(o=>`<tr><td>#${o.numero}</td><td>${o.comprador||""}</td><td>${(o.productos||[]).map(p=>`${p.cantidad||1}× ${p.sku||p.nombre}`).join(", ")}</td><td>${o.esSucursal?"Sucursal":"Domicilio"}</td></tr>`).join("");
-    const w=window.open("","_blank");
-    if(!w){ toast("Permití las ventanas emergentes para imprimir","warning"); return; }
-    w.document.write(`<html><head><title>Picking List — Growith</title><style>
-      body{font-family:system-ui,sans-serif;padding:24px;color:#111}
-      h1{font-size:18px;margin:0 0 2px} .sub{color:#666;font-size:12px;margin-bottom:18px}
-      h2{font-size:14px;margin:18px 0 6px}
-      table{width:100%;border-collapse:collapse;font-size:12px}
-      td,th{border:1px solid #ddd;padding:5px 8px;text-align:left}
-      th{background:#f5f5f5;font-size:11px;text-transform:uppercase}
-      @media print{button{display:none}}
-    </style></head><body>
-      <h1>Picking List</h1><div class="sub">${new Date().toLocaleString("es-AR")} · ${lista.length} pedidos</div>
-      <h2>Total a armar por SKU</h2><table><tr><th>SKU</th><th style="text-align:right">Unidades</th></tr>${filasSku}</table>
-      <h2>Detalle por pedido</h2><table><tr><th>Pedido</th><th>Cliente</th><th>Contenido</th><th>Envío</th></tr>${filasPed}</table>
-      <button onclick="window.print()" style="margin-top:16px;padding:8px 16px">Imprimir</button>
-      <script>setTimeout(()=>window.print(),400)</script>
-    </body></html>`);
-    w.document.close();
   }
 
   // ── Modo despacho (scan-to-verify): lector USB/Bluetooth o tipeo ──
@@ -7087,7 +7052,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               {showGuia&&(
                 <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
                   {[
-                    {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de Tienda Nube se sincronizan solos. En 'Por empaquetar' podés armar el paquete, imprimir el picking list y marcarlo como empaquetado sin salir de acá."},
+                    {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de Tienda Nube se sincronizan solos. En 'Por empaquetar' podés armar el paquete y marcarlo como empaquetado sin salir de acá."},
                     {n:2,icon:"",title:"Generar etiquetas",desc:"En 'Por enviar', seleccioná los pedidos y generá el Excel de carga masiva para Andreani (domicilio y sucursal/HOP). Lo subís al portal de Andreani y descargás los rótulos PDF."},
                     {n:3,icon:"",title:"Procesar rótulos",desc:"Subí el PDF de rótulos UNA sola vez en 'SKU en Rótulos': imprime los SKUs en cada etiqueta Y desde ahí mismo enviás los seguimientos a Tienda Nube (que le avisa al cliente)."},
                     {n:4,icon:"",title:"Seguimiento automático",desc:"Después del despacho, Growith consulta Andreani cada 30 minutos y en 'Seguimientos' ves cada envío: en camino, en sucursal, demorado o entregado, con alertas."},
@@ -7261,26 +7226,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               <button onClick={()=>setCompactMode(c=>!c)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",color:compactMode?T.accent:T.textMd,borderColor:compactMode?T.accent:T.border}} title={compactMode?"Vista normal":"Vista compacta"}>
                 {compactMode?"⊟":"⊞"} Compacto
               </button>
-              {/* Columnas configurables */}
-              <div style={{position:"relative"}}>
-                <button onClick={e=>{e.stopPropagation();setShowColMenu(v=>!v);}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",color:hiddenCols.size>0?T.accent:T.textMd,display:"flex",alignItems:"center",gap:5}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M4.93 19.07l1.41-1.41M19.07 19.07l-1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>Columnas</button>
-                {showColMenu&&(
-                  <>
-                    <div onClick={()=>setShowColMenu(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
-                    <div className="gh-dropdown" style={{position:"absolute",top:"110%",right:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px",zIndex:100,minWidth:160,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
-                      {[["estado","Estado"],["envio","Envío"],["total","Total"]].map(([col,label])=>(
-                        <label key={col} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",fontSize:13,color:T.text,borderRadius:6}}>
-                          <input type="checkbox" checked={!hiddenCols.has(col)} onChange={()=>toggleCol(col)} style={{cursor:"pointer"}}/>
-                          {label}
-                        </label>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-              <button onClick={imprimirPicking} title={selected.size?`Picking list de los ${selected.size} seleccionados`:"Picking list de todos los pedidos visibles"} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px"}}>
-                Picking
-              </button>
               {tabEnvio==="empaquetar"&&selected.size>0&&(
                 <button onClick={marcarEmpaquetadosSel} disabled={packingBatch} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,borderColor:T.green+"66"}}>
                   {packingBatch
@@ -7338,11 +7283,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 {/* Scroll horizontal en pantallas chicas — la grilla de 7 columnas
                     fijas antes se aplastaba/desbordaba en mobile */}
                 <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><div style={{minWidth:720}}>
-                <div style={{display:"grid",gridTemplateColumns:["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["110px"])].join(" "),gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
+                <div style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
                   <span/><span>Pedido</span><span>Cliente</span><span>Productos</span>
-                  {!hiddenCols.has("estado")&&<span>Estado</span>}
-                  {!hiddenCols.has("envio")&&<span>Envío</span>}
-                  {!hiddenCols.has("total")&&<span>Total</span>}
+                  <span>Estado</span>
+                  <span>Envío</span>
+                  <span style={{textAlign:"right"}}>Total</span>
                 </div>
                 {pageOrders.map((o,idx)=>{
                   const sel=selected.has(o.numero);
@@ -7350,7 +7295,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   const exportedOn=exportadoMap[o.numero]?new Date(exportadoMap[o.numero]).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
                   return (
                     <div key={o.numero} onClick={()=>setOrderDetail(o)}
-                      style={{display:"grid",gridTemplateColumns:["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["110px"])].join(" "),gap:8,padding:compactMode?"8px 14px":"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
+                      style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:compactMode?"8px 14px":"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
                       onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
                       onMouseLeave={e=>{if(!sel)e.currentTarget.style.background=sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent";}}>
                       <div onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e,o);}} style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1}}>
@@ -7368,8 +7313,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                         <LensDots productos={o.productos}/>
                         {!compactMode&&<span style={{marginLeft:6}}>{o.productos.map(p=>nombreCorto(p.nombre)).join(', ')}</span>}
                       </div>
-                      {!hiddenCols.has("estado")&&<Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>}
-                      {!hiddenCols.has("envio")&&<div style={{display:"flex",flexDirection:"column",gap:3,minWidth:0}}>
+                      <Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>
+                      <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:0}}>
                         <div style={{fontSize:11,color:o.esSucursal?T.purple:T.blue,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
                           {o.esSucursal
                             ?<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
@@ -7389,12 +7334,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                           if(typeof c?.precio==="number") return <span title="Emitir etiqueta Andreani con este pedido" onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...chip,color:T.green,border:`1px solid ${T.green}55`,background:T.green+"12"}}>{fmtMoney(c.precio)}</span>;
                           return <span title="Cotizar envío por Andreani" onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...chip,color:T.textMd,border:`1px dashed ${T.border}`}}>Cotizar</span>;
                         })()}
-                      </div>}
+                      </div>
                       {/* El ✓ por fila se sacó: ensuciaba la tabla y empujaba a
                           marcar de a uno. Se marca en lote con los tildados. */}
-                      {!hiddenCols.has("total")&&<span style={{fontSize:13,fontWeight:700,color:T.text,display:"flex",alignItems:"center",justifyContent:"flex-end"}}>
+                      <span style={{fontSize:13,fontWeight:700,color:T.text,display:"flex",alignItems:"center",justifyContent:"flex-end"}}>
                         {fmtMoney(o.total)}
-                      </span>}
+                      </span>
                     </div>
                   );
                 })}
