@@ -8482,6 +8482,28 @@ function AndreaniOrigenForm({T, user, onSaved, onCancel}){
   const iS=InputStyle(T);
   const [f,setF]=useState({cp:"",calle:"",numero:"",localidad:"",region:"",nombre:"",dni:"",email:user?.email||"",telefono:""});
   const set=k=>e=>setF(s=>({...s,[k]:e.target.value}));
+  // Prefill con lo ya guardado (status devuelve origen/remitente)
+  const [cargando,setCargando]=useState(true);
+  React.useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      try{
+        const r=await authFetch("/api/andreani?action=status");
+        const d=await r.json().catch(()=>null);
+        if(alive&&d&&(d.origen||d.remitente)){
+          const o=d.origen||{}, rm=d.remitente||{};
+          setF(s=>({
+            cp:o.codigoPostal||s.cp, calle:o.calle||s.calle, numero:o.numero||s.numero,
+            localidad:o.localidad||s.localidad, region:o.region||s.region,
+            nombre:rm.nombreCompleto||s.nombre, dni:rm.documentoNumero||s.dni,
+            email:rm.email||s.email, telefono:rm.telefono||s.telefono,
+          }));
+        }
+      }catch(_){}
+      if(alive) setCargando(false);
+    })();
+    return ()=>{alive=false;};
+  },[]);
   async function guardar(){
     if(!f.cp.trim()||!f.calle.trim()||!f.numero.trim()||!f.localidad.trim()||!f.region.trim()||!f.nombre.trim()){
       toast("Completá los datos de origen y el nombre del remitente","error");
@@ -8505,6 +8527,7 @@ function AndreaniOrigenForm({T, user, onSaved, onCancel}){
         Estos datos van como <strong style={{color:T.text}}>origen y remitente</strong> en cada etiqueta Andreani que emitas. Se cargan una sola vez.
       </div>
       <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Dirección de origen</div>
+      <div style={{opacity:cargando?0.5:1,pointerEvents:cargando?"none":"auto",transition:"opacity 0.15s"}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
         <Field T={T} label="Calle" required><input style={iS} value={f.calle} onChange={set("calle")} placeholder="Av. Corrientes"/></Field>
         <Field T={T} label="Número" required><input style={iS} value={f.numero} onChange={set("numero")} placeholder="1234"/></Field>
@@ -8518,6 +8541,7 @@ function AndreaniOrigenForm({T, user, onSaved, onCancel}){
         <Field T={T} label="DNI"><input style={iS} value={f.dni} onChange={set("dni")} placeholder="30123456"/></Field>
         <Field T={T} label="Email"><input style={iS} value={f.email} onChange={set("email")} placeholder="hola@tienda.com"/></Field>
         <Field T={T} label="Teléfono"><input style={iS} value={f.telefono} onChange={set("telefono")} placeholder="1155551234"/></Field>
+      </div>
       </div>
       <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:6}}>
         {onCancel&&<button onClick={onCancel} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>}
