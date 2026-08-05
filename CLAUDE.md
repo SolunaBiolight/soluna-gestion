@@ -29,6 +29,7 @@ Actualmente en uso real por Soluna Biolight (anteojos blue light blocker).
 │   ├── meta-callback.js ← Callback OAuth Meta
 │   ├── google-ads.js    ← Google Ads (oauth_start/status/disconnect; gasto en orders.js)
 │   ├── google-ads-callback.js ← Callback OAuth Google Ads
+│   ├── andreani.js      ← API oficial Andreani: etiquetas prepagas (billetera, markup, sucursales exactas)
 │   ├── update-shipping.js
 │   ├── process-sku.js
 │   ├── coupons.js
@@ -53,6 +54,9 @@ GOOGLE_ADS_CLIENT_ID          ← OAuth de Google Cloud (Google Ads API habilita
 GOOGLE_ADS_CLIENT_SECRET      ← ídem — PENDIENTE
 GOOGLE_ADS_DEVELOPER_TOKEN    ← centro de API de la cuenta admin de Google Ads — PENDIENTE
 GOOGLE_ADS_LOGIN_CUSTOMER_ID  ← opcional, id del MCC sin guiones
+ANDREANI_USER / ANDREANI_PASS ← cuenta revendedora de la plataforma (Soluna)
+ANDREANI_CLIENTE / ANDREANI_CTA
+ANDREANI_CONTRATO_ESTANDAR / ANDREANI_CONTRATO_SUCURSAL  ← contratos de envío (cambio/retiro pendientes)
 ```
 
 ## Secciones de la app (componentes principales en App.jsx)
