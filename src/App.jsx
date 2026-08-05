@@ -7183,14 +7183,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 title={selected.size?`Exportar ${selected.size} al portal de Andreani`:"Seleccioná pedidos para exportar"}
                 style={{...(andreani.enabled?BtnSecondary(T):BtnPrimary(T)),fontSize:selected.size?13:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,opacity:selected.size?1:0.45,cursor:selected.size?"pointer":"default",whiteSpace:"nowrap"}}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
-                Exportar XLSX{selected.size?` (${selected.size})`:""}
+                Exportar XLSX Andreani{selected.size?` (${selected.size})`:""}
               </button>
               {andreani.enabled&&(
                 <button onClick={()=>{if(!selected.size)return;setExportSingleOrder(null);lanzarBulkAndreani();}} disabled={selected.size===0}
                   title={selected.size?`Cotizar y emitir ${selected.size} etiqueta${selected.size!==1?"s":""} listas. Se debitan del saldo.`:"Seleccioná pedidos para emitir etiquetas listas"}
                   style={{...BtnPrimary(T),fontSize:selected.size?13:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,opacity:selected.size?1:0.45,cursor:selected.size?"pointer":"default",whiteSpace:"nowrap"}}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                  Etiquetas listas{selected.size?` (${selected.size})`:""}
+                  Generar etiquetas listas{selected.size?` (${selected.size})`:""}
                 </button>
               )}
               <span style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"flex",gap:10,alignItems:"center"}}>
@@ -8129,11 +8129,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             Paquete
           </button>
           <button onClick={()=>{setExportSingleOrder(null);exportAndreani([...selected.values()]);}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap"}}>
-            Exportar XLSX ({selected.size})
+            Exportar XLSX Andreani ({selected.size})
           </button>
           <button onClick={()=>{setExportSingleOrder(null);lanzarBulkAndreani([...selected.values()]);}} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            Cotizar y emitir
+            Generar etiquetas listas ({selected.size})
           </button>
         </div>
       )}
