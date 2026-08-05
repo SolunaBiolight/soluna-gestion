@@ -170,6 +170,58 @@ async function isPlatformAdmin(db, uid) {
   } catch (_) { return false; }
 }
 
+// ─── Sucursales (por CP y listado completo para el buscador) ───────────────
+
+function slimSucursal(s) {
+  return {
+    id: s.id,
+    codigo: s.codigo ?? null,
+    numero: s.numero ?? null,
+    descripcion: s.descripcion || "",
+    direccion: s.direccion || null,
+    horarioDeAtencion: s.horarioDeAtencion || "",
+  };
+}
+
+async function sucursalesPorCp(db, env, cp) {
+  const cacheRef = db.collection("andreani_config").doc(`suc_${cp}`);
+  try {
+    const hit = await cacheRef.get();
+    if (hit.exists) {
+      const d = hit.data();
+      if (Array.isArray(d.sucursales) && Date.now() - (d.ts || 0) < SUC_TTL_MS) return d.sucursales;
+    }
+  } catch (_) {}
+  const r = await andreaniFetch(db, env, `/v2/sucursales?codigoPostal=${encodeURIComponent(cp)}&canal=B2C`);
+  if (!r.ok) throw new Error(await andreaniError(r, "No se pudieron obtener las sucursales"));
+  const raw = await r.json();
+  const lista = Array.isArray(raw) ? raw : (raw?.sucursales || []);
+  const sucursales = lista.map(slimSucursal);
+  try { await cacheRef.set({ ts: Date.now(), sucursales }); } catch (_) {}
+  return sucursales;
+}
+
+// Listado COMPLETO (para el buscador de sucursal de origen). Cacheado 7 días.
+async function sucursalesTodas(db, env) {
+  const cacheRef = db.collection("andreani_config").doc("suc_all");
+  try {
+    const hit = await cacheRef.get();
+    if (hit.exists) {
+      const d = hit.data();
+      if (Array.isArray(d.sucursales) && d.sucursales.length && Date.now() - (d.ts || 0) < SUC_TTL_MS) return d.sucursales;
+    }
+  } catch (_) {}
+  const r = await andreaniFetch(db, env, `/v2/sucursales`);
+  if (!r.ok) throw new Error(await andreaniError(r, "No se pudo obtener el listado de sucursales"));
+  const raw = await r.json();
+  const lista = Array.isArray(raw) ? raw : (raw?.sucursales || []);
+  const sucursales = lista.map(slimSucursal);
+  try { await cacheRef.set({ ts: Date.now(), sucursales }); } catch (_) { /* si supera 1MB queda sin cache */ }
+  return sucursales;
+}
+
+const nrmTxt = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
 // ─── Cotización (compartida entre `cotizar` y `emitir`) ────────────────────
 
 function normalizarBultos(bultos) {
@@ -209,6 +261,14 @@ async function cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrige
     throw new Error(`Andreani devolvió una tarifa inválida: ${JSON.stringify(data).slice(0, 300)}`);
   }
   return { tarifaTotal: total, pesoAforado: data.pesoAforado ?? null, raw: data };
+}
+
+// Sucursal de origen efectiva para tarifar: la confirmada por el usuario;
+// fallback al valor global de config (legacy) o nada.
+function sucOrigenDe(uData, cfg) {
+  const so = uData?.andreaniSucOrigen;
+  if (so?.confirmada) return String(so.numero || so.codigo || so.id || "") || cfg.sucursalOrigen || "";
+  return cfg.sucursalOrigen || "";
 }
 
 function costoConDescuento(tarifaTotal, cfg) {
@@ -293,6 +353,7 @@ export default async function handler(req, res) {
         saldo: Math.round(Number(d.andreaniSaldo) || 0),
         origenConfigurado,
         origen, remitente,
+        sucOrigen: d.andreaniSucOrigen || null,
         esAdmin,
       });
     }
@@ -319,36 +380,80 @@ export default async function handler(req, res) {
       if (!o.codigoPostal || !o.calle || !o.numero || !o.localidad) return res.status(400).json({ error: "El origen necesita código postal, calle, número y localidad." });
       if (!rmt.nombreCompleto || !rmt.documentoNumero) return res.status(400).json({ error: "El remitente necesita nombre completo y documento." });
       await userRef.set({ andreaniOrigen: o, andreaniRemitente: rmt }, { merge: true });
-      return res.json({ ok: true, origen: o, remitente: rmt });
+      // Sugerencia automática de sucursal de origen: la del CP del remitente.
+      // No pisa una sucursal ya confirmada por el usuario.
+      let sucOrigen = null;
+      try {
+        const prev = (await userRef.get()).data()?.andreaniSucOrigen;
+        if (prev?.confirmada) {
+          sucOrigen = prev;
+        } else {
+          const lista = await sucursalesPorCp(db, env, o.codigoPostal);
+          if (lista.length) {
+            sucOrigen = { ...lista[0], confirmada: false, ts: Date.now() };
+            await userRef.set({ andreaniSucOrigen: sucOrigen }, { merge: true });
+          }
+        }
+      } catch (_) { /* best-effort: sin sugerencia el front ofrece el buscador */ }
+      return res.json({ ok: true, origen: o, remitente: rmt, sucOrigen });
     }
 
     // ── sucursales ────────────────────────────────────────────────────────
     if (action === "sucursales") {
       const cp = String(body.cp || "").replace(/\D/g, "");
       if (!cp) return res.status(400).json({ error: "cp requerido" });
-      const cacheRef = db.collection("andreani_config").doc(`suc_${cp}`);
       try {
-        const hit = await cacheRef.get();
-        if (hit.exists) {
-          const d = hit.data();
-          if (Array.isArray(d.sucursales) && Date.now() - (d.ts || 0) < SUC_TTL_MS) {
-            return res.json({ sucursales: d.sucursales, cached: true });
-          }
+        return res.json({ sucursales: await sucursalesPorCp(db, env, cp) });
+      } catch (e) {
+        return res.status(502).json({ error: e.message });
+      }
+    }
+
+    // ── sucursales_buscar (buscador global: nombre, calle, número, localidad, CP)
+    if (action === "sucursales_buscar") {
+      const q = nrmTxt(String(body.q || "").trim());
+      if (q.length < 2) return res.status(400).json({ error: "q requiere al menos 2 caracteres" });
+      let todas;
+      try { todas = await sucursalesTodas(db, env); }
+      catch (e) { return res.status(502).json({ error: e.message }); }
+      const tokens = q.split(/\s+/).filter(Boolean);
+      const out = [];
+      for (const s of todas) {
+        const hay = nrmTxt([s.descripcion, s.codigo, s.numero, s.direccion?.calle, s.direccion?.numero, s.direccion?.localidad, s.direccion?.codigoPostal].filter(Boolean).join(" "));
+        if (tokens.every(t => hay.includes(t))) {
+          out.push(s);
+          if (out.length >= 20) break;
         }
-      } catch (_) {}
-      const r = await andreaniFetch(db, env, `/v2/sucursales?codigoPostal=${encodeURIComponent(cp)}&canal=B2C`);
-      if (!r.ok) return res.status(502).json({ error: await andreaniError(r, "No se pudieron obtener las sucursales") });
-      const raw = await r.json();
-      const lista = Array.isArray(raw) ? raw : (raw?.sucursales || []);
-      const sucursales = lista.map(s => ({
-        id: s.id,
-        codigo: s.codigo ?? null,
-        descripcion: s.descripcion || "",
-        direccion: s.direccion || null,
-        horarioDeAtencion: s.horarioDeAtencion || "",
-      }));
-      try { await cacheRef.set({ ts: Date.now(), sucursales }); } catch (_) {}
-      return res.json({ sucursales });
+      }
+      return res.json({ sucursales: out });
+    }
+
+    // ── sucursal_origen (desde dónde se emiten los envíos del usuario) ─────
+    if (action === "sucursal_origen") {
+      if (req.method === "POST") {
+        // Confirmar la sugerida, o elegir otra por id del listado oficial.
+        if (body.sucursalId != null) {
+          let todas;
+          try { todas = await sucursalesTodas(db, env); }
+          catch (e) { return res.status(502).json({ error: e.message }); }
+          const s = todas.find(x => String(x.id) === String(body.sucursalId));
+          if (!s) return res.status(400).json({ error: "sucursalId no encontrado en el listado oficial" });
+          const sucOrigen = { ...s, confirmada: true, ts: Date.now() };
+          await userRef.set({ andreaniSucOrigen: sucOrigen }, { merge: true });
+          return res.json({ ok: true, sucursal: sucOrigen });
+        }
+        if (body.confirmar) {
+          const snap = await userRef.get();
+          const so = snap.data()?.andreaniSucOrigen;
+          if (!so?.id) return res.status(400).json({ error: "No hay sucursal de origen sugerida para confirmar" });
+          const sucOrigen = { ...so, confirmada: true, ts: Date.now() };
+          await userRef.set({ andreaniSucOrigen: sucOrigen }, { merge: true });
+          return res.json({ ok: true, sucursal: sucOrigen });
+        }
+        return res.status(400).json({ error: "Mandá sucursalId o confirmar:true" });
+      }
+      const snap = await userRef.get();
+      return res.json({ sucursal: snap.data()?.andreaniSucOrigen || null });
     }
 
     // ── cotizar ───────────────────────────────────────────────────────────
@@ -364,7 +469,7 @@ export default async function handler(req, res) {
       ]);
       if (!esAdmin && !cfg.habilitados.includes(uid)) return res.status(403).json({ error: "Tu cuenta no tiene habilitado Envíos Andreani. Contactá al soporte." });
 
-      const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen: cfg.sucursalOrigen });
+      const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen: sucOrigenDe(snap.data(), cfg) });
       const precio = precioConMarkup(cot.tarifaTotal, cfg);
       const out = {
         precio,
@@ -411,6 +516,11 @@ export default async function handler(req, res) {
       if (!origen?.codigoPostal || !origen?.calle || !remitente?.nombreCompleto || !remitente?.documentoNumero) {
         return res.status(400).json({ error: "origen_no_configurado", detail: "Configurá tu dirección de origen y datos de remitente antes de emitir (acción save_origen)." });
       }
+      // La sucursal desde la que se despacha tiene que estar CONFIRMADA por el
+      // usuario antes de emitir (la tarifa depende del origen).
+      if (!uData.andreaniSucOrigen?.confirmada) {
+        return res.status(400).json({ error: "sucursal_origen_no_confirmada", detail: "Confirmá desde qué sucursal Andreani despachás tus envíos antes de emitir etiquetas." });
+      }
 
       const envioRef = envioId ? userRef.collection("envios").doc(String(envioId)) : null;
 
@@ -430,7 +540,7 @@ export default async function handler(req, res) {
       }
 
       // b. RE-COTIZAR server-side — nunca confiar en el precio del cliente.
-      const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen: cfg.sucursalOrigen });
+      const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen: sucOrigenDe(uData, cfg) });
       const precio = precioConMarkup(cot.tarifaTotal, cfg);
 
       // c. Débito en transacción (saldo + movimiento).
@@ -708,7 +818,9 @@ export default async function handler(req, res) {
 
       if (action === "admin_saldos") {
         // Con saldo > 0 (inequality sobre un solo campo: no requiere índice
-        // compuesto) + los habilitados en la config aunque tengan saldo 0.
+        // compuesto) + los habilitados en la config aunque tengan saldo 0
+        // + SIEMPRE el propio admin (para poder acreditarse a sí mismo)
+        // + búsqueda opcional por email exacto (&email=) para cargar cualquier cuenta.
         const cfg = await getGlobalConfig(db);
         const conSaldo = await db.collection("users").where("andreaniSaldo", ">", 0).get();
         const porUid = new Map();
@@ -716,7 +828,7 @@ export default async function handler(req, res) {
           const dd = d.data();
           porUid.set(d.id, { uid: d.id, email: dd.email || "", saldo: Math.round(Number(dd.andreaniSaldo) || 0) });
         });
-        const faltantes = cfg.habilitados.filter(u => !porUid.has(u));
+        const faltantes = [...new Set([...cfg.habilitados, uid])].filter(u => !porUid.has(u));
         if (faltantes.length) {
           const snaps = await Promise.all(faltantes.map(u => db.collection("users").doc(u).get()));
           snaps.forEach((s, i) => {
@@ -724,9 +836,26 @@ export default async function handler(req, res) {
               uid: faltantes[i],
               email: s.exists ? (s.data().email || "") : "",
               saldo: s.exists ? Math.round(Number(s.data().andreaniSaldo) || 0) : 0,
-              habilitado: true,
             });
           });
+        }
+        const email = String(body.email || "").trim().toLowerCase();
+        if (email) {
+          try {
+            const q = await db.collection("users").where("email", "==", email).limit(5).get();
+            q.docs.forEach(d => {
+              if (!porUid.has(d.id)) {
+                const dd = d.data();
+                porUid.set(d.id, { uid: d.id, email: dd.email || "", saldo: Math.round(Number(dd.andreaniSaldo) || 0) });
+              }
+            });
+            if (q.empty) return res.json({ cuentas: [], busqueda: email, sinResultados: true, markupPct: cfg.markupPct, markupFijo: cfg.markupFijo });
+            const soloMatch = [...porUid.values()].filter(c => (c.email || "").toLowerCase() === email)
+              .map(c => ({ ...c, habilitado: cfg.habilitados.includes(c.uid) }));
+            return res.json({ cuentas: soloMatch, busqueda: email, markupPct: cfg.markupPct, markupFijo: cfg.markupFijo });
+          } catch (e) {
+            return res.status(500).json({ error: "No se pudo buscar por email: " + e.message });
+          }
         }
         const cuentas = [...porUid.values()].map(c => ({ ...c, habilitado: cfg.habilitados.includes(c.uid) }))
           .sort((a, b) => b.saldo - a.saldo);
