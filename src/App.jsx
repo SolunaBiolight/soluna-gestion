@@ -9148,6 +9148,15 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
                   <div style={{fontSize:13,fontWeight:700,color:faltaSaldo?T.red:T.text}}>{fmtMoney(saldoCot)}</div>
                 </div>
               </div>
+              {/* Desglose solo-admin para conciliar contra el portal de Andreani */}
+              {typeof cot.tarifaAndreani==="number"&&(
+                <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderL}`,fontSize:11,color:T.textSm,lineHeight:1.7}}>
+                  Lista Andreani (con IVA): <strong style={{color:T.textMd}}>{fmtMoney(cot.tarifaAndreani)}</strong>
+                  {typeof cot.seguroApi==="number"&&<> · Seguro incluido en lista: <strong style={{color:T.textMd}}>{fmtMoney(cot.seguroApi)}</strong></>}
+                  {typeof cot.costoEstimado==="number"&&<> · Costo real (−{cot.descuentoPct||0}% + seguro {cot.seguroPct??2}%): <strong style={{color:T.green}}>{fmtMoney(cot.costoEstimado)}</strong></>}
+                  <div style={{opacity:0.7}}>Este desglose lo ves solo vos (admin). El precio de arriba es el que paga el cliente con markup.</div>
+                </div>
+              )}
               {faltaSaldo&&(
                 <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.red}33`,fontSize:12,color:T.red,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                   <span>Saldo insuficiente: faltan <strong>{fmtMoney(cot.precio-saldoCot)}</strong> para emitir esta etiqueta.</span>
