@@ -8508,12 +8508,23 @@ function ghFmtTs(v){
 
 // Modal "Saldo de envíos": saldo actual, últimos movimientos y cómo cargar.
 function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, sucOrigen, onSucOrigen}){
+  const iS=InputStyle(T);
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(false);
+  const [cargas,setCargas]=useState([]);
+  const [datosPago,setDatosPago]=useState(null);
+  const [montoCarga,setMontoCarga]=useState("");
+  const [cargaErr,setCargaErr]=useState("");
+  const [nueva,setNueva]=useState(null); // {ref,monto} recién solicitada → instrucciones
+  function refrescarCargas(){
+    authFetch("/api/andreani?action=cargas").then(r=>r.ok?r.json():null).then(d=>{
+      if(d&&!d.error){ setCargas(Array.isArray(d.cargas)?d.cargas:[]); if(d.datosPago) setDatosPago(d.datosPago); }
+    }).catch(()=>{});
+  }
   useEffect(()=>{
     if(!open) return;
     let alive=true;
-    setLoading(true);
+    setLoading(true); setNueva(null); setCargaErr(""); setMontoCarga("");
     authFetch("/api/andreani?action=saldo")
       .then(r=>r.ok?r.json():null)
       .then(d=>{
@@ -8522,19 +8533,108 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
       })
       .catch(()=>{})
       .finally(()=>{ if(alive) setLoading(false); });
+    refrescarCargas();
     return ()=>{alive=false;};
   },[open]);
+  async function solicitarCarga(){
+    setCargaErr("");
+    const m=Math.round(Number(montoCarga));
+    if(!isFinite(m)||m<1000){ setCargaErr("El monto mínimo de carga es $1.000."); return; }
+    const r=await authFetch("/api/andreani?action=carga_solicitar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({monto:m})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error){ setCargaErr(typeof d.error==="string"?d.error:`No se pudo registrar la carga (HTTP ${r.status})`); return; }
+    if(d.datosPago) setDatosPago(d.datosPago);
+    setNueva(d.carga); setMontoCarga("");
+    refrescarCargas();
+  }
+  function copiar(txt){ try{navigator.clipboard.writeText(txt);toast("Copiado","success");}catch(_){toast("No se pudo copiar","warning");} }
+  const filaCopy=(label,valor)=>(
+    <div style={{display:"flex",alignItems:"center",gap:10,background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px"}}>
+      <div style={{minWidth:0,flex:1}}>
+        <div style={{fontSize:9,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{label}</div>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:"'Cascadia Code','Consolas',monospace",overflow:"hidden",textOverflow:"ellipsis"}}>{valor}</div>
+      </div>
+      <button onClick={()=>copiar(valor)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",flexShrink:0}}>Copiar</button>
+    </div>
+  );
+  const estadoChip=(c)=>{
+    const map={pendiente:[T.yellow,"Esperando acreditación"],acreditada:[T.green,"Acreditada"],rechazada:[T.red,"Rechazada"],cancelada:[T.textSm,"Cancelada"]};
+    const [col,lbl]=map[c.estado]||[T.textSm,c.estado];
+    return <span style={{fontSize:10,fontWeight:700,color:col,background:col+"18",border:`1px solid ${col}44`,borderRadius:5,padding:"2px 7px",whiteSpace:"nowrap"}}>{lbl}</span>;
+  };
   const movs=Array.isArray(data?.movimientos)?data.movimientos:[];
   const saldoActual=typeof data?.saldo==="number"?data.saldo:saldo;
+  const cargasVisibles=cargas.filter(c=>c.estado==="pendiente"||c.estado==="rechazada").slice(0,5);
   return (
     <Modal T={T} open={open} onClose={onClose} title="Saldo de envíos" width={560} zIndex={2100}>
       <div style={{textAlign:"center",padding:"6px 0 18px"}}>
         <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6,marginBottom:6}}>Saldo disponible</div>
         <div style={{fontSize:34,fontWeight:800,color:T.green,letterSpacing:-1,lineHeight:1}}>{fmtMoney(saldoActual)}</div>
       </div>
-      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:16,fontSize:12,color:T.textMd,lineHeight:1.6}}>
-        <div style={{fontSize:11,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Cargar saldo</div>
-        Transferí el monto que quieras cargar y avisanos por el canal de siempre: el equipo lo acredita a mano y lo ves reflejado acá. Cada etiqueta que emitís se descuenta de este saldo.
+      {/* ── Cargar saldo: monto → referencia única → transferencia → acreditación ── */}
+      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:16}}>
+        <div style={{fontSize:11,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Cargar saldo</div>
+        {nueva?(
+          <div>
+            <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:10}}>
+              Transferí el <strong style={{color:T.text}}>monto exacto</strong> y poné la referencia en el concepto (o guardá el comprobante). El equipo verifica el ingreso, lo acredita y te avisamos por mail.
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
+              {datosPago?.alias?filaCopy("Alias",datosPago.alias):null}
+              {datosPago?.cbu?filaCopy("CBU / CVU",datosPago.cbu):null}
+              {datosPago?.titular&&(
+                <div style={{fontSize:11,color:T.textSm}}>Titular: <strong style={{color:T.textMd}}>{datosPago.titular}</strong></div>
+              )}
+              {!datosPago?.alias&&!datosPago?.cbu&&(
+                <div style={{fontSize:12,color:T.yellow,background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"8px 12px"}}>Pedile los datos de la cuenta al soporte por el canal de siempre.</div>
+              )}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <div style={{background:T.bg,border:`1px solid ${T.green}44`,borderRadius:8,padding:"8px 12px"}}>
+                  <div style={{fontSize:9,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Monto exacto</div>
+                  <div style={{fontSize:15,fontWeight:800,color:T.green}}>{fmtMoney(nueva.monto)}</div>
+                </div>
+                <div style={{background:T.bg,border:`1px solid ${T.accent}44`,borderRadius:8,padding:"8px 12px"}}>
+                  <div style={{fontSize:9,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Referencia</div>
+                  <div style={{fontSize:15,fontWeight:800,color:T.accent,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{nueva.ref}</div>
+                </div>
+              </div>
+            </div>
+            <button onClick={()=>setNueva(null)} style={{...BtnSecondary(T),fontSize:12}}>Entendido</button>
+          </div>
+        ):(
+          <div>
+            <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:10}}>
+              Ingresá el monto, transferí con la referencia que te damos y el equipo lo acredita. Cada etiqueta que emitís se descuenta de este saldo.
+            </div>
+            <div style={{display:"flex",gap:8,alignItems:"flex-start",flexWrap:"wrap"}}>
+              <input style={{...iS,marginBottom:0,width:150}} type="number" min="1000" step="500" placeholder="Monto ($)" value={montoCarga}
+                onChange={e=>{setMontoCarga(e.target.value);setCargaErr("");}}
+                onKeyDown={e=>{if(e.key==="Enter")solicitarCarga();}}/>
+              <AsyncButton onClick={solicitarCarga} style={{...BtnPrimary(T),fontSize:12,padding:"9px 14px"}}>Solicitar carga</AsyncButton>
+            </div>
+            {cargaErr&&<div style={{fontSize:12,color:T.red,marginTop:8}}>{cargaErr}</div>}
+          </div>
+        )}
+        {cargasVisibles.length>0&&(
+          <div style={{marginTop:12,borderTop:`1px solid ${T.borderL}`,paddingTop:10,display:"flex",flexDirection:"column",gap:6}}>
+            {cargasVisibles.map(c=>(
+              <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,fontSize:12}}>
+                <span style={{fontFamily:"'Cascadia Code','Consolas',monospace",fontWeight:700,color:T.text}}>{c.ref}</span>
+                <span style={{fontWeight:700,color:T.text}}>{fmtMoney(c.monto)}</span>
+                <span style={{color:T.textSm,fontSize:11}}>{c.ts?new Date(c.ts).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span>
+                <span style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+                  {estadoChip(c)}
+                  {c.estado==="pendiente"&&(
+                    <button title="Cancelar esta carga" onClick={async()=>{
+                      const r=await authFetch("/api/andreani?action=carga_cancelar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:c.id})});
+                      if(r.ok){toast("Carga cancelada","success");refrescarCargas();}else toast("No se pudo cancelar","warning");
+                    }} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:13,padding:0,lineHeight:1}}>✕</button>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Sucursal de despacho</div>
       <div style={{marginBottom:16}}>
@@ -11322,6 +11422,7 @@ function AppAdmin({T, user, onBack}) {
   const [envMovs, setEnvMovs] = useState(null);      // {uid,email,loading,movimientos:[]} → modal
   const [envBusca, setEnvBusca] = useState("");       // input "buscar cuenta por email"
   const [envBuscaRes, setEnvBuscaRes] = useState(null); // null = listado completo | {sinResultados,email} | {cuentas:[...]}
+  const [envCargas, setEnvCargas] = useState([]);     // cargas de saldo pendientes de acreditar
   // ── Rentabilidad del sistema de etiquetas (admin_stats por mes) ──
   const envMeses = React.useMemo(()=>{
     const out=[]; const now=new Date();
@@ -11361,17 +11462,35 @@ function AppAdmin({T, user, onBack}) {
         authFetch("/api/andreani?action=admin_config").then(r=>r.json()).catch(()=>null),
         authFetch("/api/andreani?action=admin_saldos").then(r=>r.json()).catch(()=>null),
       ]);
-      if (c && !c.error) setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[]});
+      if (c && !c.error) setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}});
       if (s && Array.isArray(s.cuentas)) setEnvSaldos(s.cuentas);
     } catch(e){ toast("Error cargando Envíos: "+e.message,"error"); }
     setEnvLoading(false);
+    loadEnvCargas();
+  }
+  async function loadEnvCargas() {
+    try {
+      const d = await authFetch("/api/andreani?action=admin_cargas").then(r=>r.json());
+      if (Array.isArray(d?.cargas)) setEnvCargas(d.cargas);
+    } catch(_){}
+  }
+  async function resolverCarga(c, acreditar) {
+    const act = acreditar ? "admin_carga_acreditar" : "admin_carga_rechazar";
+    const r = await authFetch(`/api/andreani?action=${act}`,{
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({id:c.id}),
+    });
+    const d = await r.json().catch(()=>({}));
+    if (!r.ok || d.error) { toast("No se pudo procesar: "+(d.error||`HTTP ${r.status}`),"error"); return; }
+    toast(acreditar?`${fmtMoney(c.monto)} acreditados a ${c.email||c.uid}`:"Carga rechazada","success");
+    loadEnvCargas();
+    try { const s = await authFetch("/api/andreani?action=admin_saldos").then(r2=>r2.json()); if(Array.isArray(s?.cuentas)) setEnvSaldos(s.cuentas); } catch(_){}
   }
   useEffect(()=>{ if(tab==="envios" && !envCfg && !envLoading) loadEnvios(); },[tab]);
   async function saveEnvCfg(next) {
     const body = next || envCfg;
     const r = await authFetch("/api/andreani?action=admin_config",{
       method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados}),
+      body:JSON.stringify({markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}}),
     });
     const d = await r.json().catch(()=>({}));
     if (!r.ok || d.error) { toast("No se pudo guardar: "+(d.error||`HTTP ${r.status}`),"error"); return false; }
@@ -12130,10 +12249,52 @@ function AppAdmin({T, user, onBack}) {
                 <Field T={T} label="Sucursal de origen (código Andreani, ej: 38)">
                   <input style={iS} value={envCfg?.sucursalOrigen??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),sucursalOrigen:e.target.value}))} placeholder="Vacío = origen default de Andreani"/>
                 </Field>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,margin:"14px 0 8px"}}>Datos para recibir las cargas de saldo</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
+                  <Field T={T} label="Alias">
+                    <input style={iS} value={envCfg?.datosPago?.alias??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),datosPago:{...(c?.datosPago||{}),alias:e.target.value}}))} placeholder="mi.alias.mp"/>
+                  </Field>
+                  <Field T={T} label="CBU / CVU (opcional)">
+                    <input style={iS} value={envCfg?.datosPago?.cbu??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),datosPago:{...(c?.datosPago||{}),cbu:e.target.value}}))} placeholder="22 dígitos"/>
+                  </Field>
+                  <Field T={T} label="Titular">
+                    <input style={iS} value={envCfg?.datosPago?.titular??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),datosPago:{...(c?.datosPago||{}),titular:e.target.value}}))} placeholder="Nombre del titular"/>
+                  </Field>
+                </div>
                 <div style={{display:"flex",justifyContent:"flex-end"}}>
                   <AsyncButton onClick={()=>saveEnvCfg()} disabled={!envCfg} style={{...BtnPrimary(T),fontSize:13}}>Guardar configuración</AsyncButton>
                 </div>
               </div>
+
+              {/* Cargas de saldo pendientes de acreditar */}
+              {envCargas.length>0&&(
+                <div style={{background:T.card,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
+                  <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>Cargas pendientes</div>
+                  <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>
+                    Verificá que la transferencia haya entrado (buscá la referencia en el concepto o el monto exacto) y acreditala con un click.
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {envCargas.map(c=>(
+                      <div key={c.id} style={{display:"flex",alignItems:"center",gap:12,background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 12px",flexWrap:"wrap"}}>
+                        <span style={{fontSize:13,fontWeight:800,color:T.accent,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{c.ref}</span>
+                        <span style={{fontSize:14,fontWeight:800,color:T.text}}>{fmtMoney(c.monto)}</span>
+                        <span style={{fontSize:12,color:T.textMd,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:120}}>{c.email||c.uid}</span>
+                        <span style={{fontSize:11,color:T.textSm}}>{c.ts?new Date(c.ts).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):""}</span>
+                        <div style={{display:"flex",gap:8}}>
+                          <AsyncButton onClick={async()=>{
+                            if(!await appConfirm(`¿Acreditar ${fmtMoney(c.monto)} a ${c.email||c.uid}? Verificá antes que la transferencia ${c.ref} haya entrado.`,{okLabel:"Acreditar"})) return;
+                            await resolverCarga(c,true);
+                          }} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>Acreditar</AsyncButton>
+                          <AsyncButton onClick={async()=>{
+                            if(!await appConfirm("¿Rechazar esta carga? El cliente la va a ver como rechazada.",{danger:true,okLabel:"Rechazar"})) return;
+                            await resolverCarga(c,false);
+                          }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.red,borderColor:T.red+"66"}}>Rechazar</AsyncButton>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Cuentas habilitadas */}
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>

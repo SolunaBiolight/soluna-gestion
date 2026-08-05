@@ -22,6 +22,7 @@
 //  - andreani_config/token — cache del token de login (TTL 12h)
 //  - andreani_config/suc_{cp} — cache de sucursales por CP (TTL 7 días)
 
+import { randomBytes } from "crypto";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { verifyAuth, requireAdmin } from "./_auth.js";
@@ -150,9 +151,17 @@ async function getGlobalConfig(db) {
       // tarifa distinto según origen; sin esto puede asumir otro y dar de más.
       sucursalOrigen: String(d.sucursalOrigen || "").trim(),
       habilitados: Array.isArray(d.habilitados) ? d.habilitados : [],
+      // Datos de la cuenta donde los clientes transfieren las cargas de saldo.
+      // Configurable desde Admin: hoy la cuenta de Soluna, mañana la de la
+      // sociedad o el CVU de un PSP sin tocar nada más.
+      datosPago: (d.datosPago && typeof d.datosPago === "object") ? {
+        alias:   String(d.datosPago.alias || "").trim(),
+        titular: String(d.datosPago.titular || "").trim(),
+        cbu:     String(d.datosPago.cbu || "").trim(),
+      } : { alias: "", titular: "", cbu: "" },
     };
   } catch (_) {
-    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, sucursalOrigen: "", habilitados: [] };
+    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" } };
   }
 }
 
@@ -833,6 +842,70 @@ export default async function handler(req, res) {
       });
     }
 
+    // ── Cargas de saldo (transferencia + referencia única) ────────────────
+    // Colección top-level andreani_cargas: {uid, email, monto, ref, estado,
+    // ts, resueltaTs?, adminUid?, motivo?}. Queries solo por UN campo (uid o
+    // estado) para no necesitar índices compuestos.
+    if (action === "carga_solicitar") {
+      const cfg = await getGlobalConfig(db);
+      const esAdmin = await isPlatformAdmin(db, uid);
+      if (!esAdmin && !cfg.habilitados.includes(uid)) return res.status(403).json({ error: "Tu cuenta no tiene Andreani prepago habilitado." });
+      const monto = Math.round(Number(body.monto));
+      if (!isFinite(monto) || monto < 1000) return res.status(400).json({ error: "El monto mínimo de carga es $1.000." });
+      if (monto > 10000000) return res.status(400).json({ error: "Monto demasiado alto." });
+      const cargasCol = db.collection("andreani_cargas");
+      // Máx 3 pendientes por cuenta (filtrado en memoria: where por un solo campo)
+      const propias = await cargasCol.where("uid", "==", uid).limit(30).get();
+      const pendientes = propias.docs.filter(x => x.data().estado === "pendiente");
+      if (pendientes.length >= 3) return res.status(400).json({ error: "Ya tenés 3 cargas pendientes. Cancelá alguna o esperá a que se acrediten." });
+      const ref = "GW-" + Array.from(randomBytes(4)).map(b => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 32]).join("");
+      const uSnap = await userRef.get();
+      const email = String(uSnap.data()?.email || user.email || "").trim();
+      const docRef = await cargasCol.add({
+        uid, email, monto, ref, estado: "pendiente", ts: FieldValue.serverTimestamp(),
+      });
+      // Aviso al admin (best-effort): hay una carga esperando acreditación.
+      try {
+        const f = await db.collection("users").doc(FOUNDERS[0]).get();
+        const to = f.exists ? String(f.data().email || "").trim() : "";
+        if (to) {
+          await sendEmail({
+            to, subject: `Carga de saldo pendiente: $${monto.toLocaleString("es-AR")} (${ref})`,
+            html: `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
+  <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:16px">Nueva carga de saldo pendiente</div>
+  <p style="font-size:14px">La cuenta <strong>${email || uid}</strong> informó una transferencia de <strong>$${monto.toLocaleString("es-AR")}</strong> con referencia <strong>${ref}</strong>.</p>
+  <p style="font-size:13px">Verificá el ingreso en la cuenta y acreditala desde Admin &rarr; Env&iacute;os &rarr; Cargas pendientes.</p>
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px">Growith — Env&iacute;os</p>
+</div>`,
+          });
+        }
+      } catch (_) {}
+      return res.json({ ok: true, carga: { id: docRef.id, ref, monto, estado: "pendiente" }, datosPago: cfg.datosPago });
+    }
+
+    if (action === "cargas") {
+      const cfg = await getGlobalConfig(db);
+      const snap = await db.collection("andreani_cargas").where("uid", "==", uid).limit(30).get();
+      const cargas = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.ts?.toMillis?.() || 0) - (a.ts?.toMillis?.() || 0))
+        .slice(0, 10)
+        .map(c => ({ id: c.id, ref: c.ref, monto: c.monto, estado: c.estado, ts: c.ts?.toMillis?.() || null, motivo: c.motivo || "" }));
+      return res.json({ ok: true, cargas, datosPago: cfg.datosPago });
+    }
+
+    if (action === "carga_cancelar") {
+      const id = String(body.id || "").trim();
+      if (!id) return res.status(400).json({ error: "id requerido" });
+      const ref = db.collection("andreani_cargas").doc(id);
+      await db.runTransaction(async (tx) => {
+        const s = await tx.get(ref);
+        if (!s.exists || s.data().uid !== uid) throw new Error("Carga no encontrada.");
+        if (s.data().estado !== "pendiente") throw new Error("Esa carga ya fue procesada.");
+        tx.update(ref, { estado: "cancelada", resueltaTs: FieldValue.serverTimestamp() });
+      });
+      return res.json({ ok: true });
+    }
+
     // ── trazas ────────────────────────────────────────────────────────────
     if (action === "trazas") {
       const numero = String(body.numero || "").trim();
@@ -848,7 +921,7 @@ export default async function handler(req, res) {
     }
 
     // ── ACCIONES ADMIN ────────────────────────────────────────────────────
-    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats"];
+    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar"];
     if (adminActions.includes(action)) {
       const adm = await requireAdmin(req);
       if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
@@ -880,9 +953,73 @@ export default async function handler(req, res) {
         return res.json({ ok: true, uid: targetUid, saldo: nuevoSaldo });
       }
 
+      // Cargas de saldo pendientes de todas las cuentas (where por un campo).
+      if (action === "admin_cargas") {
+        const snap = await db.collection("andreani_cargas").where("estado", "==", "pendiente").limit(50).get();
+        const cargas = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (a.ts?.toMillis?.() || 0) - (b.ts?.toMillis?.() || 0))
+          .map(c => ({ id: c.id, uid: c.uid, email: c.email || "", ref: c.ref, monto: c.monto, ts: c.ts?.toMillis?.() || null }));
+        return res.json({ ok: true, cargas });
+      }
+
+      // Acreditar una carga: transacción única — marca la carga como acreditada
+      // Y suma el saldo con su movimiento en el ledger. Idempotente por estado.
+      if (action === "admin_carga_acreditar") {
+        const id = String(body.id || "").trim();
+        if (!id) return res.status(400).json({ error: "id requerido" });
+        const cRef = db.collection("andreani_cargas").doc(id);
+        const out = await db.runTransaction(async (tx) => {
+          const s = await tx.get(cRef);
+          if (!s.exists) throw new Error("Carga no encontrada.");
+          const c = s.data();
+          if (c.estado !== "pendiente") throw new Error(`Esa carga ya está ${c.estado}.`);
+          const tRef = db.collection("users").doc(c.uid);
+          const uSnap = await tx.get(tRef);
+          if (!uSnap.exists) throw new Error("El usuario de la carga no existe.");
+          const saldo = Math.round(Number(uSnap.data()?.andreaniSaldo) || 0);
+          const nuevo = saldo + Math.round(Number(c.monto) || 0);
+          tx.update(cRef, { estado: "acreditada", adminUid: adm.user.uid, resueltaTs: FieldValue.serverTimestamp() });
+          tx.set(tRef, { andreaniSaldo: nuevo }, { merge: true });
+          tx.set(tRef.collection("andreani_mov").doc(), {
+            tipo: "credito", monto: Math.round(Number(c.monto) || 0), saldoDespues: nuevo,
+            nota: `Carga de saldo ${c.ref}`, adminUid: adm.user.uid, ts: FieldValue.serverTimestamp(),
+          });
+          return { uid: c.uid, email: c.email || "", monto: Math.round(Number(c.monto) || 0), ref: c.ref, saldo: nuevo };
+        });
+        // Aviso al cliente (best-effort)
+        if (out.email) {
+          try {
+            await sendEmail({
+              to: out.email, subject: `Se acreditó tu carga de $${out.monto.toLocaleString("es-AR")}`,
+              html: `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
+  <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:16px">Carga acreditada</div>
+  <p style="font-size:14px">Tu carga <strong>${out.ref}</strong> de <strong>$${out.monto.toLocaleString("es-AR")}</strong> ya está disponible. Saldo actual: <strong>$${out.saldo.toLocaleString("es-AR")}</strong>.</p>
+  <p style="font-size:13px">Ya podés emitir etiquetas desde la sección Env&iacute;os de Growith.</p>
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px">Growith — Env&iacute;os</p>
+</div>`,
+            });
+          } catch (_) {}
+        }
+        return res.json({ ok: true, ...out });
+      }
+
+      if (action === "admin_carga_rechazar") {
+        const id = String(body.id || "").trim();
+        const motivo = String(body.motivo || "").trim().slice(0, 200);
+        if (!id) return res.status(400).json({ error: "id requerido" });
+        const cRef = db.collection("andreani_cargas").doc(id);
+        await db.runTransaction(async (tx) => {
+          const s = await tx.get(cRef);
+          if (!s.exists) throw new Error("Carga no encontrada.");
+          if (s.data().estado !== "pendiente") throw new Error(`Esa carga ya está ${s.data().estado}.`);
+          tx.update(cRef, { estado: "rechazada", motivo, adminUid: adm.user.uid, resueltaTs: FieldValue.serverTimestamp() });
+        });
+        return res.json({ ok: true });
+      }
+
       if (action === "admin_config") {
         const gRef = db.collection("andreani_config").doc("global");
-        if (req.method === "POST" && (body.markupPct !== undefined || body.markupFijo !== undefined || body.habilitados !== undefined || body.descuentoPct !== undefined || body.sucursalOrigen !== undefined)) {
+        if (req.method === "POST" && (body.markupPct !== undefined || body.markupFijo !== undefined || body.habilitados !== undefined || body.descuentoPct !== undefined || body.sucursalOrigen !== undefined || body.datosPago !== undefined)) {
           const upd = {};
           if (body.markupPct !== undefined) {
             const v = Number(body.markupPct);
@@ -905,6 +1042,14 @@ export default async function handler(req, res) {
           if (body.habilitados !== undefined) {
             if (!Array.isArray(body.habilitados)) return res.status(400).json({ error: "habilitados debe ser un array de uids" });
             upd.habilitados = body.habilitados.map(String).filter(Boolean);
+          }
+          if (body.datosPago !== undefined) {
+            const p = body.datosPago || {};
+            upd.datosPago = {
+              alias:   String(p.alias || "").trim().slice(0, 60),
+              titular: String(p.titular || "").trim().slice(0, 80),
+              cbu:     String(p.cbu || "").replace(/\D/g, "").slice(0, 22),
+            };
           }
           await gRef.set(upd, { merge: true });
         }
