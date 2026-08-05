@@ -1,3 +1,4 @@
+import { createCipheriv } from "crypto";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { guardUid, guardCron } from "./_auth.js";
@@ -55,9 +56,77 @@ function extractEventos(d) {
   return [];
 }
 
+// ── Tracking público NUEVO de andreani.com/envio/{n} ──────────────────────
+// El sitio consulta tracking-api.andreani.com/api/v3/Tracking?payload=<AES>.
+// El payload es AES-256-CBC del JSON {idReceptor,idSistema,userData,numeroAndreani}
+// con clave e IV que el propio front publica en su __ENV.js (son públicos:
+// el "cifrado" solo ofusca la query, no autentica). Es tracking público: anda
+// con envíos de CUALQUIER cuenta, que es lo que necesitamos para los envíos
+// viejos emitidos fuera del contrato corporativo.
+const AND_PUB_KEY = Buffer.from("12345678901234567890123456789012", "utf8");
+const AND_PUB_IV  = Buffer.from("1234567890123456", "utf8");
+function andreaniPublicPayload(nro) {
+  const body = JSON.stringify({ idReceptor: 1, idSistema: 1, userData: JSON.stringify({ mail: "" }), numeroAndreani: String(nro) });
+  const c = createCipheriv("aes-256-cbc", AND_PUB_KEY, AND_PUB_IV);
+  return Buffer.concat([c.update(body, "utf8"), c.final()]).toString("base64");
+}
+// Normaliza la respuesta v3 a {estado, eventos:[{estado,fecha,descripcion}]}.
+// Estructura real: {timelines:[{orden,titulo,traducciones:[{traduccion,fechaEvento}]}]}
+// — cada timeline es una etapa (Pendiente de ingreso / Ingresado / En camino /
+// En sucursal / Entregado) y solo las alcanzadas traen `traducciones`.
+// El estado actual = el evento de fecha máxima; su `titulo` es la etapa.
+function parseTrackingV3(d) {
+  if (!d || typeof d !== "object") return null;
+  const tls = Array.isArray(d.timelines) ? d.timelines : (Array.isArray(d.Timelines) ? d.Timelines : []);
+  const eventos = [];
+  for (const t of tls) {
+    const titulo = t.titulo || t.Titulo || "";
+    const trads = Array.isArray(t.traducciones) ? t.traducciones : (Array.isArray(t.Traducciones) ? t.Traducciones : []);
+    for (const tr of trads) {
+      eventos.push({
+        estado: titulo,
+        descripcion: String(tr.traduccion || tr.Traduccion || "").replace(/<[^>]+>/g, " ").replace(/\s{2,}/g, " ").trim(),
+        fecha: tr.fechaEvento || tr.FechaEvento || "",
+        orden: Number(t.orden ?? t.Orden ?? 0),
+      });
+    }
+  }
+  if (eventos.length) {
+    // Por fecha; si empatan o faltan, gana el de mayor `orden` (etapa más avanzada).
+    let mejor = eventos[0], mejorT = -Infinity;
+    for (const ev of eventos) {
+      const t = ev.fecha ? Date.parse(ev.fecha) : NaN;
+      const val = isFinite(t) ? t : -Infinity;
+      if (val > mejorT || (val === mejorT && ev.orden >= (mejor.orden || 0))) { mejorT = val; mejor = ev; }
+    }
+    // "Etapa — detalle": clasificarEstado matchea la etapa (En camino/Entregado/…)
+    return { estado: `${mejor.estado}${mejor.descripcion ? " — " + mejor.descripcion : ""}`.trim(), eventos };
+  }
+  const est = d.estado || d.Estado || d.fechaEstimadaDeEntrega || null;
+  return est ? { estado: String(est).replace(/<[^>]+>/g, "").trim(), eventos: [] } : null;
+}
+async function trackAndreaniPublico(nroRaw) {
+  const nro = String(nroRaw || "").trim().replace(/\s+/g, "");
+  if (!nro) return null;
+  try {
+    const url = `https://tracking-api.andreani.com/api/v3/Tracking?payload=${encodeURIComponent(andreaniPublicPayload(nro))}`;
+    const r = await fetch(url, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return null;
+    const text = await r.text();
+    if (text.startsWith("<") || text.startsWith("<!")) return null;
+    let d; try { d = JSON.parse(text); } catch { return null; }
+    const out = parseTrackingV3(d);
+    return out ? { ...out, raw: d, source: "publico_v3" } : null;
+  } catch (_) { return null; }
+}
+
 async function trackAndreani(nroRaw) {
   const nro = String(nroRaw || "").trim().replace(/\s+/g, '');
   if (!nro) return null;
+  // Vía nueva primero (la que usa andreani.com hoy); los endpoints viejos
+  // quedan como respaldo por si Andreani revive alguno.
+  const pub = await trackAndreaniPublico(nro);
+  if (pub) return pub;
   const endpoints = [
     `https://tracking.andreani.com/api/v1/seguimiento?codigoAndreani=${encodeURIComponent(nro)}`,
     `https://tracking.andreani.com/api/v1/seguimiento?numero=${encodeURIComponent(nro)}`,
