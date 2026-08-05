@@ -3906,8 +3906,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [pgColabs,setPgColabs]=useState(null);       // null=cargando | []
   const [pgSel,setPgSel]=useState("");               // email del colaborador elegido
   const [pgNotas,setPgNotas]=useState("");
+  const [pgDeadline,setPgDeadline]=useState("");
   function abrirPedirGuion(c){
-    setPedirGuion(c); setPgNotas(""); setPgColabs(null);
+    setPedirGuion(c); setPgNotas(""); setPgDeadline(""); setPgColabs(null);
     fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"getData",uid:user.uid})})
       .then(r=>r.json()).then(d=>{
         const cols=Array.isArray(d?.colaboradores)?d.colaboradores:[];
@@ -3942,6 +3943,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         descripcion:descripcionGuion(c,pgNotas.trim()),
         asignadoEmail:colab.email,asignadoNombre:colab.nombre||"",
         managerEmail:user.email||"",prioridad:"normal",
+        deadline:pgDeadline||null,
       })});
       const d=await r.json().catch(()=>({}));
       if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`);
@@ -5221,6 +5223,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         {pgColabs.map(col=><option key={col.email} value={col.email}>{col.nombre||col.email}{col.rol?` — ${col.rol}`:""}</option>)}
                       </select>
                     )}
+                    <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Fecha límite (opcional)</div>
+                    <input type="date" value={pgDeadline} onChange={e=>setPgDeadline(e.target.value)} style={{...iS,marginBottom:14,width:"100%"}}/>
                     <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Instrucciones (opcional)</div>
                     <textarea value={pgNotas} onChange={e=>setPgNotas(e.target.value)} rows={3} placeholder="Ej: enfocar el guion en el uso nocturno, tono descontracturado, mencionar el cupón..."
                       style={{...iS,resize:"vertical",minHeight:64,marginBottom:12,fontFamily:"'Inter',system-ui,sans-serif"}}/>

@@ -465,6 +465,14 @@ export default async function handler(req, res) {
                 }
               } catch (e) { console.error("[track_all canje] email:", e.message); }
             }
+            // El aviso in-app puede haber quedado desactualizado (ej: una
+            // clasificación vieja lo marcó "en sucursal" y el envío en
+            // realidad seguía en camino) — se compara contra el cat GUARDADO
+            // EN EL AVISO, no contra trackingCat, para autocorregirse incluso
+            // si trackingCat ya había avanzado sin limpiar el aviso.
+            if (!upd.trackingAviso && c.trackingAviso && !c.trackingAviso.visto && c.trackingAviso.cat !== cat) {
+              upd.trackingAviso = null;
+            }
             await d.ref.set(upd, { merge: true });
             canjesActualizados++;
           }));
@@ -650,6 +658,12 @@ export default async function handler(req, res) {
             // Aviso in-app (el mail queda a cargo del cron; acá la dueña está EN la app viéndolo)
             if (cat !== c.trackingCat && ["en_sucursal", "entregado", "devolucion", "visita_fallida"].includes(cat)) {
               upd.trackingAviso = { cat, estado: est.estado, at: ahora, visto: false };
+            }
+            // Autocorrección: compara contra el cat guardado EN EL AVISO (no
+            // trackingCat) para limpiar avisos ya obsoletos por una clasificación
+            // vieja, incluso si trackingCat ya había avanzado sin limpiarlos.
+            if (!upd.trackingAviso && c.trackingAviso && !c.trackingAviso.visto && c.trackingAviso.cat !== cat) {
+              upd.trackingAviso = null;
             }
             await ref.set(upd, { merge: true });
             actualizados++;
