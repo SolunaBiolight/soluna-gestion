@@ -17849,6 +17849,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   // Nota de débito: modal chico asociado a una factura de Registros
   const [ndModal, setNdModal] = useState(null); // {r: fila resumen, b: batch} | null
+  const [notaOp, setNotaOp] = useState(null); // overlay "Emitiendo NC/ND en ARCA…" {titulo, sub} — mismo mecanismo que el modal de emisión normal (AFIP tarda y antes no se veía ningún cargando)
   const [ndMonto, setNdMonto] = useState("");
   const [ndConcepto, setNdConcepto] = useState("");
   const [ndEmitting, setNdEmitting] = useState(false);
@@ -18590,6 +18591,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       items: resumen.items,
     };
     setEmitting(true);
+    setNotaOp({ titulo:"Emitiendo Nota de Crédito en ARCA…", sub:`NC ${resumen.letra} por $${(resumen.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})} — al terminar se descarga el PDF sola` });
     try {
       let d = await api("emit_nc", "POST", { cuit: cuitSel, factura });
       // Caso típico: Factura A sin CUIT en Growith — ofrecer cargarlo y retry
@@ -18636,12 +18638,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         window.open(link, "_blank", "noopener");
         await appAlert(`La NC se emitió bien ✓, pero Mercado Libre no permitió desadjuntar la factura automáticamente.\n\nTe abrí la venta en una pestaña nueva. Para borrarla a mano:\n1. Andá a "Ver más detalles" de la venta\n2. Buscá la factura adjunta\n3. 3 puntitos del documento → Eliminar\n\nSi no se abrió la pestaña, usá el botón Ver en ML de la factura.`);
       }
+      setNotaOp({ titulo:"Actualizando registros…", sub:"La NC ya salió ✓ — refrescando la lista" });
       refreshDashboard();
       // Recargar pendientes para que la venta vuelva a aparecer + pierda el verde
       await loadPendingOrders();
     } catch(e) {
       toast("No se pudo emitir la NC — revisá tu conexión y verificá en Registros si salió","error");
-    } finally { setEmitting(false); }
+    } finally { setEmitting(false); setNotaOp(null); }
   }
 
   // filasFiltradas: si Registros tiene filtros activos, solo se anulan las filas
@@ -18678,8 +18681,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       items: r.items,
     }));
     setEmitting(true);
+    setNotaOp({ titulo:`Emitiendo ${facturas.length} Nota${facturas.length===1?"":"s"} de Crédito en ARCA…`, sub:"Una NC por cada factura del lote — puede tardar. No cierres esta ventana." });
     try {
       const d = await api("emit_nc_batch", "POST", { cuit: cuitSel, facturas });
+      setNotaOp(null); // los avisos de resultado van en modales propios
       if (d.error) { toast(`Error: ${d.error}`, "error"); return; }
       const mlFailResults = (d.results || []).filter(r => r.ok && r.ml_detached === false);
       const mlFails = mlFailResults.length;
@@ -18701,11 +18706,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           await appAlert(`${links.length} factura(s) de Mercado Libre no se pudieron desadjuntar automáticamente.\n\nBorralas a mano: en cada venta andá a "Ver más detalles" → factura adjunta → 3 puntitos → Eliminar. Usá el botón Ver en ML de cada factura, o estos links:\n\n${links.join("\n")}`);
         }
       }
+      setNotaOp({ titulo:"Actualizando registros…", sub:"Las NCs ya salieron — refrescando la lista" });
       refreshDashboard();
       await loadPendingOrders();
     } catch(e) {
       toast("No se pudieron emitir las NCs — revisá tu conexión y verificá en Registros cuáles salieron","error");
-    } finally { setEmitting(false); }
+    } finally { setEmitting(false); setNotaOp(null); }
   }
 
   // ── Nota de débito: cobra un adicional asociado a una factura ya emitida ──
@@ -18720,6 +18726,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     if (!ndConcepto.trim()) return toast("Poné el concepto del cargo", "warning");
     const { r, b } = ndModal;
     setNdEmitting(true);
+    setNotaOp({ titulo:"Emitiendo Nota de Débito en ARCA…", sub:`$${monto.toLocaleString("es-AR",{minimumFractionDigits:2})} · ${ndConcepto.trim()} — al terminar se descarga el PDF sola` });
     try {
       const d = await api("emit_nd", "POST", {
         cuit: cuitSel,
@@ -18746,7 +18753,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       refreshDashboard();
     } catch (e) {
       toast("No se pudo emitir la ND — revisá tu conexión y verificá en Registros si salió", "error");
-    } finally { setNdEmitting(false); }
+    } finally { setNdEmitting(false); setNotaOp(null); }
   }
 
   async function refreshDashboard() {
@@ -20682,6 +20689,23 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 {ndEmitting?<><Spinner size={12} color={T.accent}/> Emitiendo…</>:"Emitir ND"}
               </Btn>
             </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ══ OVERLAY EMISIÓN NC/ND — mismo mecanismo que el modal de emisión normal.
+          AFIP tarda varios segundos y antes no había NINGÚN cargando entre tocar
+          Anular/Emitir ND y que baje el PDF. Va DESPUÉS del modal ND en el DOM para
+          taparlo mientras emite; appConfirm/appPrompt/appAlert van a zIndex 10000,
+          así que esos diálogos siguen visibles arriba. ══ */}
+      {notaOp && ReactDOM.createPortal(
+        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:18,width:"100%",maxWidth:440,padding:"28px 28px 24px",display:"flex",flexDirection:"column",alignItems:"center",gap:18,fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <Spinner size={38} color={T.accent}/>
+            <div style={{fontSize:15,fontWeight:700,color:T.text,textAlign:"center"}}>{notaOp.titulo}</div>
+            {notaOp.sub && <div style={{fontSize:12,color:T.textMd,textAlign:"center"}}>{notaOp.sub}</div>}
+            <div style={{fontSize:11,color:T.textSm}}>No cierres esta ventana hasta que finalice.</div>
           </div>
         </div>,
         document.body
