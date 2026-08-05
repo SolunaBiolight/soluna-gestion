@@ -5611,27 +5611,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     }catch(e){console.error("registrarEnviosFs:",e);}
   }
 
-  // ── Marcar empaquetado en TN desde Growith (antes había que ir a TN) ──
-  const [packing,setPacking]=useState({}); // numero -> true
-  // Marca UN pedido. `silent` evita el toast individual: en el lote no queremos
-  // 75 carteles apilándose, sino un único resultado al final.
-  async function marcarEmpaquetado(o,{silent=false}={}){
-    if(!user?.uid||!o?.tnId) { if(!silent) toast("Este pedido no tiene ID de TN","error"); return false; }
-    setPacking(p=>({...p,[o.numero]:true}));
-    try{
-      const r=await authFetch(`/api/update-shipping?action=pack&uid=${user.uid}&orderId=${o.tnId}`);
-      const d=await r.json();
-      if(!r.ok||d.error) throw new Error(d.error||"Error");
-      if(!silent) toast(`#${o.numero} empaquetado ✓`,"success");
-      // Actualización local optimista: sale de "empaquetar", entra a "enviar"
-      setTabOrders(list=>list.map(x=>x.numero===o.numero?{...x,isPacked:true,estadoEnvio:"Por enviar"}:x));
-      if(tabEnvio==="empaquetar") setTabOrders(list=>list.filter(x=>x.numero!==o.numero));
-      setTabCounts(c=>({empaquetar:Math.max(0,(c.empaquetar||1)-1),enviar:(c.enviar||0)+1}));
-      tabCacheRef.current={}; // invalida cache local para el próximo cambio de tab
-      return true;
-    }catch(e){ if(!silent) toast(`#${o.numero}: ${e.message}`,"error"); return false; }
-    finally{ setPacking(p=>{const n={...p};delete n[o.numero];return n;}); }
-  }
   // ── Modo despacho (scan-to-verify): lector USB/Bluetooth o tipeo ──
   const [scanValue,setScanValue]=useState("");
   const [scanLog,setScanLog]=useState([]); // {tracking, numero|null, ok, ts}
@@ -7025,7 +7004,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               {showGuia&&(
                 <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
                   {[
-                    {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de Tienda Nube se sincronizan solos. En 'Por empaquetar' podés armar el paquete y marcarlo como empaquetado sin salir de acá."},
+                    {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de Tienda Nube se sincronizan solos. En 'Por empaquetar' ves todo lo que falta despachar y generás las etiquetas desde acá."},
                     {n:2,icon:"",title:"Generar etiquetas",desc:"En 'Por enviar', seleccioná los pedidos y generá el Excel de carga masiva para Andreani (domicilio y sucursal/HOP). Lo subís al portal de Andreani y descargás los rótulos PDF."},
                     {n:3,icon:"",title:"Procesar rótulos",desc:"Subí el PDF de rótulos UNA sola vez en 'SKU en Rótulos': imprime los SKUs en cada etiqueta Y desde ahí mismo enviás los seguimientos a Tienda Nube (que le avisa al cliente)."},
                     {n:4,icon:"",title:"Seguimiento automático",desc:"Después del despacho, Growith consulta Andreani cada 30 minutos y en 'Seguimientos' ves cada envío: en camino, en sucursal, demorado o entregado, con alertas."},
@@ -7250,7 +7229,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 <div style={{fontSize:12,color:T.textSm,maxWidth:320,margin:"0 auto"}}>
                   {tabEnvio==="buscar"?"Escribí y presioná Enter o el botón Buscar"
                     :(orders||[]).length===0?"Cuando tu tienda registre una venta, el pedido aparece acá listo para empaquetar."
-                    :tabEnvio==="empaquetar"?"Los pedidos empaquetados van a Por enviar":"Marcá pedidos como empaquetados desde la pestaña Por empaquetar y van a aparecer acá"}
+                    :tabEnvio==="empaquetar"?"Los pedidos empaquetados van a Por enviar":"Cuando marques un pedido como empaquetado en Tienda Nube va a aparecer acá"}
                 </div>
               </div>
             ):(
