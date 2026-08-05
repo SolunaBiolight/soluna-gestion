@@ -366,7 +366,9 @@ export default async function handler(req, res) {
             if (!jc.noCache && !jc.error && jc.daily_revenue) {
               const rangoCerrado = String(to) < argToday;
               const edadMs = jc.cachedAt ? (Date.now() - Date.parse(jc.cachedAt)) : Infinity;
-              if (rangoCerrado || (isFinite(edadMs) && edadMs < 10 * 60000)) j = jc;
+              // fresh=1 (botón Actualizar): saltea la caché del día actual para ver
+              // las ventas al segundo. Los rangos cerrados son inmutables → caché igual.
+              if (rangoCerrado || (!_fresh && isFinite(edadMs) && edadMs < 10 * 60000)) j = jc;
             }
           }
         } catch (_) { /* la caché es un atajo — si falla, se calcula en vivo */ }

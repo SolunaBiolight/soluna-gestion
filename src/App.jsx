@@ -29029,7 +29029,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   // Anti-carrera: si el usuario cambia el período mientras una carga (o sus
   // reintentos) sigue en vuelo, la carga vieja no debe pisar la vista nueva.
   const reqIdRef = React.useRef(0);
-  async function loadData(overrideDays, overrideFrom, overrideTo, silent) {
+  async function loadData(overrideDays, overrideFrom, overrideTo, silent, fresh) {
     if(!uid){setError("Sin sesión");return;}
     const myReq = ++reqIdRef.current;
     const vigente = () => reqIdRef.current === myReq;
@@ -29040,6 +29040,10 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     let url=`/api/orders?action=daily_metrics&uid=${uid}`;
     if(from&&to){url+=`&date_from=${from}&date_to=${to}`;}
     else{url+=`&days=${d}`;}
+    // fresh=1 solo en las requests EN VIVO (botón Actualizar): saltea la caché de
+    // ventas del día en el backend para ver la última venta al segundo. Las
+    // lecturas cache=only y las cargas automáticas siguen usando la caché (perf).
+    const urlLive = url + (fresh ? "&fresh=1" : "");
     // 0) Pintado en 0ms desde el snapshot local de la última visita, mientras
     //    llegan la caché del servidor y los datos en vivo.
     const periodSig = from&&to?`${from}_${to}`:`d${d}`;
@@ -29087,7 +29091,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       };
       const vivoP=(async()=>{
         try{
-          const r=await fetch(url);
+          const r=await fetch(urlLive);
           const j=await r.json();
           if(j.error) throw new Error(j.error);
           return usar(j,false);
@@ -29118,7 +29122,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
         if(intento>0) await sleep(intento===1?2500:6000);
         if(!vigente()) return;
         try {
-          const r=await fetch(url);
+          const r=await fetch(urlLive);
           const j=await r.json();
           if(!vigente()) return;
           if(j.error) throw new Error(j.error);
@@ -29393,11 +29397,11 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             {id:"7d",label:"Últimos 7 días",days:7},{id:"30d",label:"Últimos 30 días",days:30},
             {id:"60d",label:"Últimos 60 días",days:60},{id:"90d",label:"Últimos 90 días",days:90},
           ]}
-          since={useCustom?dateFrom:fechaAR(new Date(Date.now()-days*86400000))}
+          since={useCustom?dateFrom:fechaAR(new Date(Date.now()-Math.max(0,days-1)*86400000))}
           until={useCustom?dateTo:hoyAR()}
           onPreset={(d)=>{ setUseCustom(false); setDateFrom(""); setDateTo(""); setDays(d); loadData(d,"",""); }}
           onChange={(s,u)=>{ setUseCustom(true); setDateFrom(s); setDateTo(u); const diff=Math.round((new Date(u)-new Date(s))/86400000)+1; setDays(diff); loadData(0,s,u); }}/>
-        <button onClick={()=>loadData()} disabled={loading} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>
+        <button onClick={()=>loadData(undefined,undefined,undefined,false,true)} disabled={loading} title="Recalcula las ventas de hoy al segundo (saltea la caché)" style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>
           {loading?<Spinner size={11} color="#fff"/>:"↻"} Actualizar
         </button>
         {/* Acciones secundarias en un menú ⋯ — "Reprocesar" es mantenimiento y
