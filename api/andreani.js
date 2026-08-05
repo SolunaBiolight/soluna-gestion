@@ -146,10 +146,13 @@ async function getGlobalConfig(db) {
       // /v1/tarifas devuelve tarifa de lista; el descuento se aplica en cta corriente,
       // así que lo modelamos acá para que costo y precio reflejen la realidad.
       descuentoPct: Math.min(Math.max(Number(d.descuentoPct) || 0, 0), 90),
+      // Código de sucursal de imposición (desde dónde se despacha). /v1/tarifas
+      // tarifa distinto según origen; sin esto puede asumir otro y dar de más.
+      sucursalOrigen: String(d.sucursalOrigen || "").trim(),
       habilitados: Array.isArray(d.habilitados) ? d.habilitados : [],
     };
   } catch (_) {
-    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, habilitados: [] };
+    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, sucursalOrigen: "", habilitados: [] };
   }
 }
 
@@ -187,11 +190,12 @@ function normalizarBultos(bultos) {
 
 // GET /v1/tarifas — bultos en formato indexado plano bultos[i][campo].
 // Devuelve {tarifaTotal (número, con IVA), pesoAforado, raw}.
-async function cotizarAndreani(db, env, { tipo, cpDestino, bultos }) {
+async function cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen }) {
   const params = new URLSearchParams();
   params.set("cpDestino", String(cpDestino));
   params.set("contrato", contratoDe(env, tipo));
   params.set("cliente", env.cliente);
+  if (sucursalOrigen) params.set("sucursalOrigen", String(sucursalOrigen));
   bultos.forEach((b, i) => {
     params.set(`bultos[${i}][volumen]`, String(b.largoCm * b.altoCm * b.anchoCm));
     params.set(`bultos[${i}][kilos]`, String(b.kilos));
@@ -360,7 +364,7 @@ export default async function handler(req, res) {
       ]);
       if (!esAdmin && !cfg.habilitados.includes(uid)) return res.status(403).json({ error: "Tu cuenta no tiene habilitado Envíos Andreani. Contactá al soporte." });
 
-      const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos });
+      const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen: cfg.sucursalOrigen });
       const precio = precioConMarkup(cot.tarifaTotal, cfg);
       const out = {
         precio,
@@ -426,7 +430,7 @@ export default async function handler(req, res) {
       }
 
       // b. RE-COTIZAR server-side — nunca confiar en el precio del cliente.
-      const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos });
+      const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen: cfg.sucursalOrigen });
       const precio = precioConMarkup(cot.tarifaTotal, cfg);
 
       // c. Débito en transacción (saldo + movimiento).
@@ -658,7 +662,7 @@ export default async function handler(req, res) {
 
       if (action === "admin_config") {
         const gRef = db.collection("andreani_config").doc("global");
-        if (req.method === "POST" && (body.markupPct !== undefined || body.markupFijo !== undefined || body.habilitados !== undefined || body.descuentoPct !== undefined)) {
+        if (req.method === "POST" && (body.markupPct !== undefined || body.markupFijo !== undefined || body.habilitados !== undefined || body.descuentoPct !== undefined || body.sucursalOrigen !== undefined)) {
           const upd = {};
           if (body.markupPct !== undefined) {
             const v = Number(body.markupPct);
@@ -674,6 +678,9 @@ export default async function handler(req, res) {
             const v = Number(body.descuentoPct);
             if (!isFinite(v) || v < 0 || v > 90) return res.status(400).json({ error: "descuentoPct inválido (0-90)" });
             upd.descuentoPct = v;
+          }
+          if (body.sucursalOrigen !== undefined) {
+            upd.sucursalOrigen = String(body.sucursalOrigen || "").trim().slice(0, 20);
           }
           if (body.habilitados !== undefined) {
             if (!Array.isArray(body.habilitados)) return res.status(400).json({ error: "habilitados debe ser un array de uids" });

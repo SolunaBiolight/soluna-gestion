@@ -6138,7 +6138,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"||e.target.tagName==="SELECT") return;
       if((e.ctrlKey||e.metaKey)&&e.key==="a"&&tab==="panel") { e.preventDefault(); toggleAll(); }
       if(e.key==="Escape") { setSelected(new Map()); setExportSingleOrder(null); setSearchEnvios(""); setBuscarQuery(""); }
-      if(e.key==="Enter"&&selected.size>0&&!exportModal) { setExportModal(true); }
+      if(e.key==="Enter"&&selected.size>0&&!exportModal) { abrirGeneracion(); }
     }
     window.addEventListener("keydown", handleKey);
     return ()=>window.removeEventListener("keydown", handleKey);
@@ -6427,6 +6427,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       anchoCm:parseInt(exportCfg.ancho)||5,
       valorDeclarado:parseFloat(exportCfg.valor)||0,
     }];
+  }
+  // Puerta única de generación: con Andreani prepago habilitado se elige el modo
+  // primero (etiquetas por API o XLSX); sin habilitar, directo al modal XLSX.
+  function abrirGeneracion(single){
+    if(single){ setExportSingleOrder(single); setOrderDetail(null); }
+    if(andreani.enabled) setModoModal(true);
+    else setExportModal(true);
   }
   function pushBulk(fase,prog){
     setBulk(b=>({fase,rows:[...bulkRowsRef.current],prog:prog||(b?b.prog:{done:0,total:0})}));
@@ -7233,7 +7240,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 </button>
               )}
               {selected.size>0&&(
-                <button onClick={()=>setExportModal(true)} style={{...BtnPrimary(T),fontSize:13,display:"flex",alignItems:"center",gap:6}}>
+                <button onClick={()=>abrirGeneracion()} style={{...BtnPrimary(T),fontSize:13,display:"flex",alignItems:"center",gap:6}}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   Generar {selected.size} etiqueta{selected.size!==1?"s":""}
                 </button>
@@ -7915,11 +7922,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     {andreaniNumeroDe(o)?"Etiqueta Andreani ✓":"Etiqueta Andreani"}
                   </button>
                 )}
-                <button onClick={()=>{
-                  setExportSingleOrder(o);
-                  setOrderDetail(null);
-                  setExportModal(true);
-                }} style={{...BtnPrimary(T),fontSize:13,display:"flex",alignItems:"center",gap:6}}>
+                <button onClick={()=>abrirGeneracion(o)} style={{...BtnPrimary(T),fontSize:13,display:"flex",alignItems:"center",gap:6}}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
                   Generar etiqueta
                 </button>
@@ -8117,13 +8120,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           <div style={{fontSize:11,color:T.textSm,marginBottom:20}}>Domicilios y sucursales van en hojas separadas del mismo Excel, como lo espera el portal de Andreani.</div>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <button onClick={()=>{setExportModal(false);setExportSingleOrder(null);}} disabled={exporting} style={{...BtnSecondary(T),opacity:exporting?0.5:1}}>Cancelar</button>
-            <AsyncButton onClick={()=>{
-              // Con Andreani prepago habilitado, primero se elige el modo:
-              // XLSX para el portal, o etiquetas emitidas por API con el saldo.
-              if(andreani.enabled){ setExportModal(false); setModoModal(true); return; }
-              return exportAndreani();
-            }} style={{...BtnPrimary(T),minWidth:160,justifyContent:"center"}}>
-              Generar etiquetas
+            <AsyncButton onClick={()=>exportAndreani()} style={{...BtnPrimary(T),minWidth:160,justifyContent:"center"}}>
+              {andreani.enabled?"Exportar XLSX":"Generar etiquetas"}
             </AsyncButton>
           </div>
         </div>
@@ -8196,9 +8194,22 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         {modoModal&&(()=>{
           const n=exportSingleOrder?1:selected.size;
           const cardBase={display:"flex",alignItems:"flex-start",gap:14,width:"100%",textAlign:"left",background:T.surface,borderRadius:12,padding:"16px 18px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"border-color 0.12s"};
+          const miniIn={...iS,fontSize:12,padding:"6px 8px"};
           return (
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
               <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>{n} pedido{n!==1?"s":""} seleccionado{n!==1?"s":""}</div>
+              {/* Paquete compartido por ambos modos (persiste en growith_exportCfg) */}
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Paquete</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
+                  {[["peso","Peso (g)"],["alto","Alto"],["ancho","Ancho"],["prof","Prof."],["valor","Valor ($)"]].map(([k,lbl])=>(
+                    <div key={k}>
+                      <div style={{fontSize:9,color:T.textSm,marginBottom:3}}>{lbl}</div>
+                      <input style={miniIn} type="number" value={exportCfg[k]} onChange={e=>setExportCfg(c=>({...c,[k]:e.target.value}))}/>
+                    </div>
+                  ))}
+                </div>
+              </div>
               <button onClick={()=>{setModoModal(false);iniciarBulkAndreani();}}
                 style={{...cardBase,border:`1.5px solid ${T.accent}66`}}
                 onMouseEnter={e=>e.currentTarget.style.borderColor=T.accentSolid||T.accent}
@@ -8212,7 +8223,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   <div style={{fontSize:11,color:T.textMd,marginTop:6}}>Saldo disponible: <strong style={{color:T.green}}>{fmtMoney(andreani.saldo)}</strong></div>
                 </div>
               </button>
-              <button onClick={()=>{setModoModal(false);exportAndreani();}}
+              <button onClick={()=>{setModoModal(false);setExportModal(true);}}
                 style={{...cardBase,border:`1px solid ${T.border}`}}
                 onMouseEnter={e=>e.currentTarget.style.borderColor=T.textSm}
                 onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
@@ -11023,7 +11034,7 @@ function AppAdmin({T, user, onBack}) {
         authFetch("/api/andreani?action=admin_config").then(r=>r.json()).catch(()=>null),
         authFetch("/api/andreani?action=admin_saldos").then(r=>r.json()).catch(()=>null),
       ]);
-      if (c && !c.error) setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, habilitados:Array.isArray(c.habilitados)?c.habilitados:[]});
+      if (c && !c.error) setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[]});
       if (s && Array.isArray(s.cuentas)) setEnvSaldos(s.cuentas);
     } catch(e){ toast("Error cargando Envíos: "+e.message,"error"); }
     setEnvLoading(false);
@@ -11033,7 +11044,7 @@ function AppAdmin({T, user, onBack}) {
     const body = next || envCfg;
     const r = await authFetch("/api/andreani?action=admin_config",{
       method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, habilitados:body.habilitados}),
+      body:JSON.stringify({markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados}),
     });
     const d = await r.json().catch(()=>({}));
     if (!r.ok || d.error) { toast("No se pudo guardar: "+(d.error||`HTTP ${r.status}`),"error"); return false; }
@@ -11788,6 +11799,9 @@ function AppAdmin({T, user, onBack}) {
                     <input style={iS} type="number" value={envCfg?.markupFijo??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),markupFijo:e.target.value}))} placeholder="0"/>
                   </Field>
                 </div>
+                <Field T={T} label="Sucursal de origen (código Andreani, ej: 38)">
+                  <input style={iS} value={envCfg?.sucursalOrigen??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),sucursalOrigen:e.target.value}))} placeholder="Vacío = origen default de Andreani"/>
+                </Field>
                 <div style={{display:"flex",justifyContent:"flex-end"}}>
                   <AsyncButton onClick={()=>saveEnvCfg()} disabled={!envCfg} style={{...BtnPrimary(T),fontSize:13}}>Guardar configuración</AsyncButton>
                 </div>
