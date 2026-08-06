@@ -1402,21 +1402,32 @@ function catalogoProductos(orders=[]) {
 function nombreProducto(n) {
   return String(n||"").replace(/[()]/g," ").replace(/\s+/g," ").trim();
 }
-// Prefijo común de los nombres de producto de la cuenta ("MARCA - LINEA - ").
-// Genérico: sale de los nombres reales de los pedidos, no de una marca fija.
+// Prefijo común de los nombres de producto de la cuenta ("MARCA - LINEA ").
+// Genérico: sale de los nombres reales, no de una marca fija. Devuelve el
+// prefijo en MAYÚSCULAS — comparar siempre case-insensitive.
 function ghPrefijoComunProductos(nombres){
-  const lista=[...new Set((nombres||[]).map(n=>String(n||"")).filter(n=>n.length>8))];
+  const lista=[...new Set((nombres||[]).map(n=>String(n||"").toUpperCase().replace(/\s+/g," ").trim()).filter(n=>n.length>8))];
   if(lista.length<2) return "";
-  let pref=lista[0];
-  for(const n of lista){ let i=0; while(i<pref.length&&i<n.length&&pref[i]===n[i]) i++; pref=pref.slice(0,i); if(!pref) break; }
-  const cut=Math.max(pref.lastIndexOf(" - "),pref.lastIndexOf(" — "));
-  if(cut>6) pref=pref.slice(0,cut+3); else if(pref.length<10) pref="";
-  return pref;
+  // Grupo mayoritario por arranque: un producto suelto con otro nombre
+  // ("Liquido Limpia Cristales") no debe matar el prefijo común del resto.
+  const grupos=new Map();
+  for(const n of lista){ const k=n.slice(0,12); if(!grupos.has(k)) grupos.set(k,[]); grupos.get(k).push(n); }
+  const mayor=[...grupos.values()].sort((a,b)=>b.length-a.length)[0];
+  const base=(mayor&&mayor.length>=2)?mayor:lista;
+  let pref=base[0];
+  for(const n of base){ let i=0; while(i<pref.length&&i<n.length&&pref[i]===n[i]) i++; pref=pref.slice(0,i); if(!pref) break; }
+  if(!/\s$/.test(pref)){
+    // Terminó a mitad de palabra: retroceder al último separador o palabra completa
+    const cut=Math.max(pref.lastIndexOf(" - "),pref.lastIndexOf(" — "));
+    if(cut>6) pref=pref.slice(0,cut+3); else pref=pref.replace(/[^ ]*$/,"");
+  }
+  return pref.length<10?"":pref;
 }
-// Nombre corto para chips: recorta el prefijo común y pasa a Título los nombres
-// que vienen en MAYÚSCULAS de TN ("...BLOCKER ROJO - MARCO NEGRO" → "Rojo - Marco Negro").
+// Nombre corto para chips: recorta el prefijo común (case-insensitive) y pasa
+// a Título los nombres en MAYÚSCULAS ("...BLOCKER ROJO - MARCO NEGRO" → "Rojo - Marco Negro").
 function ghNombreCortoProducto(n,prefijo){
-  let s=prefijo&&String(n||"").startsWith(prefijo)?String(n).slice(prefijo.length):String(n||"");
+  let s=String(n||"").replace(/\s+/g," ").trim();
+  if(prefijo&&s.toUpperCase().startsWith(prefijo)) s=s.slice(prefijo.length);
   s=s.replace(/[()]/g," ").replace(/\s+/g," ").trim();
   if(s.length>2&&s===s.toUpperCase()&&/[A-ZÁÉÍÓÚÑ]/.test(s)) s=s.toLowerCase().replace(/\p{L}\S*/gu,w=>w[0].toUpperCase()+w.slice(1));
   return s;
@@ -4027,7 +4038,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const catalogoCanje=useMemo(()=>[...catalogoProductos(orders),...EXTRAS_CANJE],[orders]);
   // Prefijo común del catálogo para chips cortos ("Rojo - Marco Negro" en vez
   // del título completo de TN, que desborda las cards del kanban).
-  const prefProds=useMemo(()=>ghPrefijoComunProductos((orders||[]).flatMap(o=>(o.productos||[]).map(p=>p.nombre||""))),[orders]);
+  // Sale de los pedidos Y de los nombres ya guardados en los canjes: si los
+  // pedidos todavía no cargaron, los canjes legacy alcanzan para deducirlo.
+  const prefProds=useMemo(()=>ghPrefijoComunProductos([
+    ...(orders||[]).flatMap(o=>(o.productos||[]).map(p=>p.nombre||"")),
+    ...(canjes||[]).flatMap(c=>(c.productosCanje||[]).map(p=>p.nombre||"")),
+  ]),[orders,canjes]);
   const [canjes,setCanjes]=useState([]);
   const [form,setForm]=useState(null);
   const [detail,setDetail]=useState(null);
@@ -6453,7 +6469,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // Productos (antes estaba hardcodeado el nombre del producto de Soluna,
   // lo que no generaliza a otras tiendas).
   const prefijoComun=useMemo(()=>ghPrefijoComunProductos(tabOrders.flatMap(o=>(o.productos||[]).map(p=>p.nombre||""))),[tabOrders]);
-  const nombreCorto=n=>{const s=prefijoComun&&String(n||"").startsWith(prefijoComun)?String(n).slice(prefijoComun.length):String(n||"");return s.replace(/[()]/g,'');};
+  const nombreCorto=n=>{const s=prefijoComun&&String(n||"").toUpperCase().startsWith(prefijoComun)?String(n).slice(prefijoComun.length):String(n||"");return s.replace(/[()]/g,'');};
 
   // Paginación de pedidos — 50 por página
   const PAGE_SIZE=50;
