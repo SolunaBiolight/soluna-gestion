@@ -1714,6 +1714,16 @@ function ghMatchSucursal(locs, direccion, pickupDetails) {
     const words=n(direccion).split(' ').filter(w=>w.length>=4);
     if(words.length>=1){ const r=locs.sucursales.filter(s=>n(s).includes(words.join(' '))); if(r.length===1) return r[0]; }
   }
+  // Último intento: tokens significativos (calle + número) presentes TODOS en la
+  // sucursal, sin exigir la frase exacta — TN dice "AVENIDA JURAMENTO 2385" y el
+  // template puede decir "JURAMENTO 2385" o al revés.
+  const STOP=new Set(["AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL","PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","S","N","SN"]);
+  const src=n([pickupDetails?.name,pickupDetails?.address?.address,pickupDetails?.address?.number,(!pickupDetails&&direccion)||""].filter(Boolean).join(" "));
+  const toks=[...new Set(src.split(" ").filter(w=>w&&!STOP.has(w)&&(w.length>=4||/^\d+$/.test(w))))];
+  if(toks.length){
+    const r=locs.sucursales.filter(s=>{const ns=n(s);return toks.every(t=>ns.includes(t));});
+    if(r.length===1) return r[0];
+  }
   return null;
 }
 
@@ -1768,7 +1778,8 @@ async function ghEtiquetaAndreaniXlsxUno(o) {
     // Envío a sucursal/punto HOP: fila en la hoja de sucursales (cols A-N,
     // N = sucursal EXACTA de la lista del template). Exportarlo a domicilio
     // mandaba el paquete a la dirección de facturación del cliente.
-    const sucursal=ghMatchSucursal(locs, o.direccion, o.pickupDetails);
+    // o.sucursal = elegida a mano por el usuario (selector de Canjes/Envíos).
+    const sucursal=o.sucursal||ghMatchSucursal(locs, o.direccion, o.pickupDetails);
     if(!sucursal) throw new Error("es un envío a sucursal y no pude identificar cuál en la lista de Andreani — generá esta etiqueta desde Envíos, que permite elegir la sucursal a mano");
     const cells=[...baseCells,sC('N'+rn,sucursal)].join('');
     const rowXml='<row r="3" spans="1:14" x14ac:dyDescent="0.25">'+cells+'</row>';
@@ -3838,6 +3849,37 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const internalToSidebar = { lista:"activos", kanban:"activos", comisiones:"historial", perfiles:"influencers" };
   const [viewTabLocal,setViewTabLocal]=useState("kanban");
   const [verCerradosTodos,setVerCerradosTodos]=useState(false); // columna Cerrado: 30 días por default
+  // Selector manual de sucursal Andreani (cuando el match automático no es único)
+  const [sucPick,setSucPick]=useState(null); // {resolve, hint}
+  const [sucQ,setSucQ]=useState("");
+  function pedirSucursal(pickupDetails){
+    setSucQ("");
+    return new Promise(resolve=>setSucPick({resolve, hint:pickupDetails?.name||pickupDetails?.address?.address||""}));
+  }
+  // Export XLSX de un canje (alta o detalle): resuelve la sucursal si es envío
+  // a sucursal (override guardado → match automático → selector manual, y la
+  // elección se recuerda en growith_sucOverrides, el mismo que usa Envíos).
+  async function exportarXlsxCanje(d){
+    const numero=(d.pedidoRef||"").trim()||("CANJE "+(d.usuario||d.influencer||"").replace(/[^\w ]+/g,"").trim().slice(0,16).toUpperCase()||"CANJE");
+    let sucursal=null;
+    if(d.esSucursal){
+      const locs=await ghLoadAndreaniLocations();
+      let ov={}; try{ov=JSON.parse(localStorage.getItem(ghKey("growith_sucOverrides"))||"{}");}catch(_){}
+      sucursal=ov[numero]||ghMatchSucursal(locs, d.direccion, d.pickupDetails);
+      if(!sucursal){
+        sucursal=await pedirSucursal(d.pickupDetails);
+        if(!sucursal) return false; // canceló el selector
+        try{ov[numero]=sucursal;localStorage.setItem(ghKey("growith_sucOverrides"),JSON.stringify(ov));}catch(_){}
+      }
+    }
+    await ghEtiquetaAndreaniXlsxUno({
+      numero, comprador:d.influencer||"", dni:d.dni||"", email:d.email||"", telefono:d.telefono||"",
+      cp:d.cp||"", provincia:d.provincia||"", localidad:d.localidad||"",
+      direccion:d.direccion||"", dirNumero:d.dirNumero||"", piso:d.piso||"",
+      esSucursal:!!d.esSucursal, pickupDetails:d.pickupDetails||null, sucursal,
+    });
+    return true;
+  }
   const [dragOverEstado,setDragOverEstado]=useState(null);
   const viewTab = tabProp !== undefined ? (sidebarToInternal[tabProp] || tabProp) : viewTabLocal;
   const setViewTab = (v) => {
@@ -5306,14 +5348,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         const faltaNow=faltantes(cx);
                         if(faltaNow.length){ toast((cx.pedidoRef||"").trim()?("El pedido no tiene estos datos de envío: "+faltaNow.join(", ")):"El canje no tiene nº de pedido — cargalo para traer la dirección","warning",5000); return; }
                         try{
-                          await ghEtiquetaAndreaniXlsxUno({
-                            numero:(cx.pedidoRef||"").trim()||("CANJE "+(cx.usuario||cx.influencer||"").replace(/[^\w ]+/g,"").trim().slice(0,16).toUpperCase()||"CANJE"),
-                            comprador:cx.influencer||"", dni:cx.dni||"", email:cx.email||"", telefono:cx.telefono||"",
-                            cp:cx.cp||"", provincia:cx.provincia||"", localidad:cx.localidad||"",
-                            direccion:cx.direccion||"", dirNumero:cx.dirNumero||"", piso:cx.piso||"",
-                            esSucursal:!!cx.esSucursal, pickupDetails:cx.pickupDetails||null,
-                          });
-                          toast(cx.esSucursal?"Excel generado (envío a sucursal) — subilo al portal de Andreani y pegá el tracking acá":"Excel generado — subilo al portal de Andreani y pegá el tracking acá","success",5000);
+                          const ok=await exportarXlsxCanje(cx);
+                          if(ok) toast(cx.esSucursal?"Excel generado (envío a sucursal) — subilo al portal de Andreani y pegá el tracking acá":"Excel generado — subilo al portal de Andreani y pegá el tracking acá","success",5000);
                         }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
                       }} style={{...BtnSecondary(T),fontSize:12,color:T.green,borderColor:T.green+"66",padding:"6px 12px"}}>Exportar XLSX Andreani</AsyncButton>
                     </div>
@@ -5547,6 +5583,37 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 }
               </div>
 
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* Selector manual de sucursal Andreani (el match automático no fue único) */}
+      <Modal T={T} open={!!sucPick} onClose={()=>{sucPick?.resolve(null);setSucPick(null);}} title="Elegir sucursal Andreani" width={480} zIndex={2600}>
+        {sucPick&&(()=>{
+          const list=_andreaniLocsCache.current?.sucursales||[];
+          const q=sucQ.toUpperCase().trim();
+          const results=q.length>=2?list.filter(s=>s.toUpperCase().includes(q)).slice(0,30):[];
+          return (
+            <div>
+              {sucPick.hint&&<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>El pedido dice: <strong style={{color:T.text}}>{sucPick.hint}</strong> — buscala en la lista oficial de Andreani y elegila.</div>}
+              <input autoFocus value={sucQ} onChange={e=>setSucQ(e.target.value)} placeholder="Buscar por calle, barrio o localidad..." style={{...iS,marginBottom:10}}/>
+              {q.length<2?(
+                <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center"}}>Escribí al menos 2 letras para buscar</div>
+              ):results.length===0?(
+                <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center"}}>Sin resultados para "{sucQ}"</div>
+              ):(
+                <div style={{maxHeight:300,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10}}>
+                  {results.map((s,i)=>(
+                    <div key={s} onClick={()=>{sucPick.resolve(s);setSucPick(null);}}
+                      style={{padding:"10px 14px",fontSize:13,color:T.text,cursor:"pointer",borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
+                      onMouseEnter={e=>e.currentTarget.style.background=T.surface}
+                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                      {s}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })()}
@@ -5790,14 +5857,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 const falta=faltantes(f);
                 if(falta.length){ toast((f.pedidoRef||"").trim()?("El pedido no tiene estos datos de envío: "+falta.join(", ")):"Cargá primero el pedido (arriba) para traer la dirección de envío","warning",5000); return; }
                 try{
-                  await ghEtiquetaAndreaniXlsxUno({
-                    numero:(f.pedidoRef||"").trim()||("CANJE "+(f.usuario||f.influencer||"").replace(/[^\w ]+/g,"").trim().slice(0,16).toUpperCase()||"CANJE"),
-                    comprador:f.influencer||"", dni:f.dni||"", email:f.email||"", telefono:f.telefono||"",
-                    cp:f.cp||"", provincia:f.provincia||"", localidad:f.localidad||"",
-                    direccion:f.direccion||"", dirNumero:f.dirNumero||"", piso:f.piso||"",
-                    esSucursal:!!f.esSucursal, pickupDetails:f.pickupDetails||null,
-                  });
-                  toast(f.esSucursal?"Excel generado (envío a sucursal) — subilo al portal de Andreani y pegá el tracking en el canje":"Excel generado — subilo al portal de Andreani y pegá el tracking en el canje","success",5000);
+                  const ok=await exportarXlsxCanje(f);
+                  if(ok) toast(f.esSucursal?"Excel generado (envío a sucursal) — subilo al portal de Andreani y pegá el tracking en el canje":"Excel generado — subilo al portal de Andreani y pegá el tracking en el canje","success",5000);
                 }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
               }} style={{...BtnSecondary(T),fontSize:12,color:T.green,borderColor:T.green+"66"}}>Exportar XLSX Andreani</AsyncButton>
               <div style={{flex:1}}/>
