@@ -773,14 +773,27 @@ export default async function handler(req, res) {
           };
         }
       }
+      // El listado oficial repite la misma sucursal con variantes (CP, tildes,
+      // "C.A.B.A." vs nombre largo): dedupe por descripción + número de calle.
+      const dedupe = arr => {
+        const vistos = new Set();
+        return arr.filter(s => {
+          const num = (String(s.c || "") + " " + String(s.n || "")).match(/\d{2,}/);
+          const k = nrmTxt(s.d).replace(/[^a-z0-9]/g, "") + "|" + (num ? num[0] : "");
+          if (vistos.has(k)) return false;
+          vistos.add(k);
+          return true;
+        });
+      };
       const conCoords = geo.filter(s => s.la != null).length;
       const stats = { todas: geo.length, conCoords };
       if (origen && conCoords) {
-        const conDist = geo
+        const conDist = dedupe(geo
           .filter(s => s.la != null)
-          .map(s => ({ ...expand(s), distM: distanciaM(origen.lat, origen.lng, s.la, s.lo) }))
-          .sort((a, b) => a.distM - b.distM)
-          .slice(0, 40);
+          .map(s => ({ ...s, distM: distanciaM(origen.lat, origen.lng, s.la, s.lo) }))
+          .sort((a, b) => a.distM - b.distM))
+          .slice(0, 40)
+          .map(s => ({ ...expand(s), distM: s.distM }));
         return res.json({ sucursales: conDist, origen: origen.descripcion, stats });
       }
       // Sin coordenadas o sin ancla: aproximación por CP (mismo CP primero,
@@ -789,7 +802,7 @@ export default async function handler(req, res) {
         const mismoCp = geo.filter(s => String(s.p || "").replace(/\D/g, "") === cp);
         const locCp = nrmTxt(mismoCp[0]?.l || loc || "");
         const mismaLoc = locCp ? geo.filter(s => nrmTxt(s.l || "") === locCp && !mismoCp.includes(s)) : [];
-        const lista = [...mismoCp, ...mismaLoc].slice(0, 40).map(expand);
+        const lista = dedupe([...mismoCp, ...mismaLoc]).slice(0, 40).map(expand);
         if (lista.length) return res.json({ sucursales: lista, origen: `CP ${cp}`, aproximado: true, stats });
       }
       return res.json({ sucursales: [], sinOrigen: true, stats });
