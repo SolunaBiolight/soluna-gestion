@@ -1697,9 +1697,31 @@ async function ghFetchOrderByNum(uid, num) {
   } catch(_) { return null; }
 }
 
-// XLSX de carga masiva de Andreani con UN solo envío a domicilio. `o` es un
-// pseudo-pedido {numero, comprador, dni, email, telefono, cp, provincia,
-// localidad, direccion, dirNumero, piso}. Tira Error si algo falla.
+// Matchea el pedido contra la lista de sucursales del template (mismo criterio
+// que findAndreaniSucursal de AppEnvios): pickupDetails.name exacto → calle+nro
+// del pickup → dirección de entrega. null si no hay match ÚNICO.
+function ghMatchSucursal(locs, direccion, pickupDetails) {
+  if(!locs.sucursales) return null;
+  function n(s){ return (s||"").toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
+  if(pickupDetails){
+    const tnName=n(pickupDetails.name||"");
+    if(tnName){ const exact=locs.sucursales.find(s=>n(s)===tnName); if(exact) return exact; }
+    const addr=(pickupDetails.address?.address||"").trim();
+    const num=(pickupDetails.address?.number||"").replace(/\D.*/,"").trim();
+    const query=(addr+(num?" "+num:"")).trim().toUpperCase();
+    if(query.length>=3){ const r=locs.sucursales.filter(s=>s.toUpperCase().includes(query)); if(r.length===1) return r[0]; }
+  } else if(direccion){
+    const words=n(direccion).split(' ').filter(w=>w.length>=4);
+    if(words.length>=1){ const r=locs.sucursales.filter(s=>n(s).includes(words.join(' '))); if(r.length===1) return r[0]; }
+  }
+  return null;
+}
+
+// XLSX de carga masiva de Andreani con UN solo envío. `o` es un pseudo-pedido
+// {numero, comprador, dni, email, telefono, cp, provincia, localidad,
+// direccion, dirNumero, piso, esSucursal, pickupDetails}. Si esSucursal, la
+// fila va a la hoja de sucursales (col N = sucursal del template) en vez de
+// la de domicilio. Tira Error si algo falla.
 async function ghEtiquetaAndreaniXlsxUno(o) {
   if(!o) throw new Error("Sin datos del envío");
   const locs=await ghLoadAndreaniLocations();
@@ -1741,11 +1763,27 @@ async function ghEtiquetaAndreaniXlsxUno(o) {
   let pk={peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000"};
   try{const saved=localStorage.getItem(ghKey("growith_exportCfg"));if(saved)pk={...pk,...JSON.parse(saved)};}catch(_){}
   const rn=3;
-  const cells=[sC('A'+rn,""),nC('B'+rn,parseFloat(pk.peso)||200),nC('C'+rn,parseInt(pk.alto)||5),nC('D'+rn,parseInt(pk.ancho)||5),nC('E'+rn,parseInt(pk.prof)||5),nC('F'+rn,parseFloat(pk.valor)||6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(dniDep&&!isNaN(dniDep))?nC('J'+rn,parseFloat(dniDep)):sC('J'+rn,dniDep||""),sC('K'+rn,cl(o.email||"")),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),sC('N'+rn,direccion),(dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,0),sC('P'+rn,cl(o.piso||"")),sC('Q'+rn,""),sC('R'+rn,ubicacion),sC('S'+rn,"")].join('');
-  const rowXml='<row r="3" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>';
-  const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
-  const newSheet1=sheet1.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S3"/>').replace('</sheetData>',rowXml+'</sheetData>').replace(/<dataValidations[\s\S]*?<\/dataValidations>/g,'');
-  zip.file('xl/worksheets/sheet1.xml',newSheet1);
+  const baseCells=[sC('A'+rn,""),nC('B'+rn,parseFloat(pk.peso)||200),nC('C'+rn,parseInt(pk.alto)||5),nC('D'+rn,parseInt(pk.ancho)||5),nC('E'+rn,parseInt(pk.prof)||5),nC('F'+rn,parseFloat(pk.valor)||6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(dniDep&&!isNaN(dniDep))?nC('J'+rn,parseFloat(dniDep)):sC('J'+rn,dniDep||""),sC('K'+rn,cl(o.email||"")),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,"")];
+  if(o.esSucursal){
+    // Envío a sucursal/punto HOP: fila en la hoja de sucursales (cols A-N,
+    // N = sucursal EXACTA de la lista del template). Exportarlo a domicilio
+    // mandaba el paquete a la dirección de facturación del cliente.
+    const sucursal=ghMatchSucursal(locs, o.direccion, o.pickupDetails);
+    if(!sucursal) throw new Error("es un envío a sucursal y no pude identificar cuál en la lista de Andreani — generá esta etiqueta desde Envíos, que permite elegir la sucursal a mano");
+    const cells=[...baseCells,sC('N'+rn,sucursal)].join('');
+    const rowXml='<row r="3" spans="1:14" x14ac:dyDescent="0.25">'+cells+'</row>';
+    const sheet2file=zip.file('xl/worksheets/sheet2.xml');
+    if(!sheet2file) throw new Error("el template no tiene hoja de sucursales");
+    const sheet2=await sheet2file.async('string');
+    const newSheet2=sheet2.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:N3"/>').replace('</sheetData>',rowXml+'</sheetData>').replace(/<dataValidations[\s\S]*?<\/dataValidations>/g,'');
+    zip.file('xl/worksheets/sheet2.xml',newSheet2);
+  } else {
+    const cells=[...baseCells,sC('N'+rn,direccion),(dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,0),sC('P'+rn,cl(o.piso||"")),sC('Q'+rn,""),sC('R'+rn,ubicacion),sC('S'+rn,"")].join('');
+    const rowXml='<row r="3" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>';
+    const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
+    const newSheet1=sheet1.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S3"/>').replace('</sheetData>',rowXml+'</sheetData>').replace(/<dataValidations[\s\S]*?<\/dataValidations>/g,'');
+    zip.file('xl/worksheets/sheet1.xml',newSheet1);
+  }
   const newSsItems=newSS.map(s=>{const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');const sp=(s!==s.trim()||s.indexOf(String.fromCharCode(10))>=0)?' xml:space="preserve"':'';return '<si><t'+sp+'>'+esc+'</t></si>';}).join('');
   zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+newSS.length+'" uniqueCount="'+newSS.length+'">'+newSsItems+'</sst>');
   const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
@@ -4114,7 +4152,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       if(!form._docId){
         Object.assign(p,{dni:form.dni||"", cp:form.cp||"", provincia:form.provincia||"",
           localidad:form.localidad||"", direccion:form.direccion||"",
-          dirNumero:form.dirNumero||"", piso:form.piso||""});
+          dirNumero:form.dirNumero||"", piso:form.piso||"",
+          esSucursal:!!form.esSucursal, pickupDetails:form.pickupDetails||null});
       }
       const prev=canjes.find(c=>c._docId===form._docId);
       // Si el tracking es nuevo o cambió, (re)activar el seguimiento del cron
@@ -5215,24 +5254,27 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               {/* ── ENVÍO ANDREANI: dirección SOLO LECTURA (viene del pedido) +
                      export XLSX de 1 fila. No se edita desde acá a propósito. ── */}
               {(()=>{
-                const dirTxt=[[c.direccion,c.dirNumero].filter(Boolean).join(" "),c.piso?`Piso ${c.piso}`:"",c.localidad,c.provincia,c.cp?`CP ${c.cp}`:""].filter(Boolean).join(", ");
-                const falta=[["dirección",c.direccion],["número",c.dirNumero],["CP",c.cp],["localidad",c.localidad],["provincia",c.provincia]].filter(([,v])=>!String(v||"").trim()).map(([l])=>l);
+                const dirTxt=c.esSucursal
+                  ?("Retiro en sucursal"+(c.pickupDetails?.name?`: ${c.pickupDetails.name}`:"")+(c.pickupDetails?.address?.address?` — ${c.pickupDetails.address.address} ${c.pickupDetails.address.number||""}`.trim():""))
+                  :[[c.direccion,c.dirNumero].filter(Boolean).join(" "),c.piso?`Piso ${c.piso}`:"",c.localidad,c.provincia,c.cp?`CP ${c.cp}`:""].filter(Boolean).join(", ");
                 return (
                   <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10,flexWrap:"wrap"}}>
                       <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Envío Andreani</span>
                       <AsyncButton onClick={async()=>{
                         let cx={...c};
-                        const faltantes=x=>[["dirección",x.direccion],["número",x.dirNumero],["CP",x.cp],["localidad",x.localidad],["provincia",x.provincia]].filter(([,v])=>!String(v||"").trim()).map(([l])=>l);
-                        // Canje sin domicilio guardado (viejo o cargado a mano):
-                        // se completa desde el pedido y se persiste en el doc.
-                        if(faltantes(cx).length && (cx.pedidoRef||"").trim()){
+                        const faltantes=x=>x.esSucursal?[]:[["dirección",x.direccion],["número",x.dirNumero],["CP",x.cp],["localidad",x.localidad],["provincia",x.provincia]].filter(([,v])=>!String(v||"").trim()).map(([l])=>l);
+                        // Canje sin domicilio guardado (viejo o cargado a mano),
+                        // o sin saber si el pedido era a sucursal: se completa
+                        // desde el pedido y se persiste en el doc.
+                        if((faltantes(cx).length || cx.esSucursal==null) && (cx.pedidoRef||"").trim()){
                           const o=await ghFetchOrderByNum(user?.uid, cx.pedidoRef);
                           if(o){
                             cx={...cx, dni:cx.dni||o.dni||"", cp:cx.cp||o.cp||"", provincia:cx.provincia||o.provincia||"",
                               localidad:cx.localidad||o.localidad||o.ciudad||"", direccion:cx.direccion||o.direccion||"",
-                              dirNumero:cx.dirNumero||o.dirNumero||"", piso:cx.piso||o.piso||""};
-                            save({dni:cx.dni, cp:cx.cp, provincia:cx.provincia, localidad:cx.localidad, direccion:cx.direccion, dirNumero:cx.dirNumero, piso:cx.piso});
+                              dirNumero:cx.dirNumero||o.dirNumero||"", piso:cx.piso||o.piso||"",
+                              esSucursal:!!o.esSucursal, pickupDetails:o.pickupDetails||cx.pickupDetails||null};
+                            save({dni:cx.dni, cp:cx.cp, provincia:cx.provincia, localidad:cx.localidad, direccion:cx.direccion, dirNumero:cx.dirNumero, piso:cx.piso, esSucursal:cx.esSucursal, pickupDetails:cx.pickupDetails});
                           }
                         }
                         const faltaNow=faltantes(cx);
@@ -5243,8 +5285,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                             comprador:cx.influencer||"", dni:cx.dni||"", email:cx.email||"", telefono:cx.telefono||"",
                             cp:cx.cp||"", provincia:cx.provincia||"", localidad:cx.localidad||"",
                             direccion:cx.direccion||"", dirNumero:cx.dirNumero||"", piso:cx.piso||"",
+                            esSucursal:!!cx.esSucursal, pickupDetails:cx.pickupDetails||null,
                           });
-                          toast("Excel generado — subilo al portal de Andreani y pegá el tracking acá","success",5000);
+                          toast(cx.esSucursal?"Excel generado (envío a sucursal) — subilo al portal de Andreani y pegá el tracking acá":"Excel generado — subilo al portal de Andreani y pegá el tracking acá","success",5000);
                         }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
                       }} style={{...BtnSecondary(T),fontSize:12,color:T.green,borderColor:T.green+"66",padding:"6px 12px"}}>Exportar XLSX Andreani</AsyncButton>
                     </div>
@@ -5518,6 +5561,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   dni:o?.dni||f.dni||"", cp:o?.cp||f.cp||"",
                   provincia:o?.provincia||f.provincia||"", localidad:o?.localidad||o?.ciudad||f.localidad||"",
                   direccion:o?.direccion||f.direccion||"", dirNumero:o?.dirNumero||f.dirNumero||"", piso:o?.piso||f.piso||"",
+                  esSucursal:!!o?.esSucursal, pickupDetails:o?.pickupDetails||null,
                   _pedidoCargado:String(num),
                 }));
               }}/>
@@ -5701,16 +5745,20 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               {/* Export directo desde el alta: evita crear → ir al detalle → exportar */}
               <AsyncButton onClick={async()=>{
                 let f={...form};
-                const faltantes=x=>[["dirección",x.direccion],["número",x.dirNumero],["CP",x.cp],["localidad",x.localidad],["provincia",x.provincia]].filter(([,v])=>!String(v||"").trim()).map(([l])=>l);
-                // Si el domicilio no está en el form pero hay nº de pedido, se
-                // trae del pedido en el momento (cubre canjes cargados a mano).
-                if(faltantes(f).length && (f.pedidoRef||"").trim()){
+                // Con envío a sucursal el destino es la sucursal del template,
+                // no hace falta domicilio.
+                const faltantes=x=>x.esSucursal?[]:[["dirección",x.direccion],["número",x.dirNumero],["CP",x.cp],["localidad",x.localidad],["provincia",x.provincia]].filter(([,v])=>!String(v||"").trim()).map(([l])=>l);
+                // Si el domicilio no está en el form (o no sabemos aún si el
+                // pedido es a sucursal) pero hay nº de pedido, se trae del
+                // pedido en el momento (cubre canjes cargados a mano).
+                if((faltantes(f).length || f.esSucursal==null) && (f.pedidoRef||"").trim()){
                   const o=await ghFetchOrderByNum(user?.uid, f.pedidoRef);
                   if(o){
                     f={...f, dni:f.dni||o.dni||"", cp:f.cp||o.cp||"", provincia:f.provincia||o.provincia||"",
                       localidad:f.localidad||o.localidad||o.ciudad||"", direccion:f.direccion||o.direccion||"",
-                      dirNumero:f.dirNumero||o.dirNumero||"", piso:f.piso||o.piso||""};
-                    setForm(prev=>({...prev, dni:f.dni, cp:f.cp, provincia:f.provincia, localidad:f.localidad, direccion:f.direccion, dirNumero:f.dirNumero, piso:f.piso}));
+                      dirNumero:f.dirNumero||o.dirNumero||"", piso:f.piso||o.piso||"",
+                      esSucursal:!!o.esSucursal, pickupDetails:o.pickupDetails||f.pickupDetails||null};
+                    setForm(prev=>({...prev, dni:f.dni, cp:f.cp, provincia:f.provincia, localidad:f.localidad, direccion:f.direccion, dirNumero:f.dirNumero, piso:f.piso, esSucursal:f.esSucursal, pickupDetails:f.pickupDetails}));
                   }
                 }
                 const falta=faltantes(f);
@@ -5721,8 +5769,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     comprador:f.influencer||"", dni:f.dni||"", email:f.email||"", telefono:f.telefono||"",
                     cp:f.cp||"", provincia:f.provincia||"", localidad:f.localidad||"",
                     direccion:f.direccion||"", dirNumero:f.dirNumero||"", piso:f.piso||"",
+                    esSucursal:!!f.esSucursal, pickupDetails:f.pickupDetails||null,
                   });
-                  toast("Excel generado — subilo al portal de Andreani y pegá el tracking en el canje","success",5000);
+                  toast(f.esSucursal?"Excel generado (envío a sucursal) — subilo al portal de Andreani y pegá el tracking en el canje":"Excel generado — subilo al portal de Andreani y pegá el tracking en el canje","success",5000);
                 }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
               }} style={{...BtnSecondary(T),fontSize:12,color:T.green,borderColor:T.green+"66"}}>Exportar XLSX Andreani</AsyncButton>
               <div style={{flex:1}}/>
