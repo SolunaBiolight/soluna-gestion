@@ -588,13 +588,26 @@ export default async function handler(req, res) {
           };
         }
       }
-      if (!origen) return res.json({ sucursales: [], sinOrigen: true });
-      const conDist = todas
-        .filter(s => s.lat != null)
-        .map(s => ({ ...s, distM: distanciaM(origen.lat, origen.lng, s.lat, s.lng) }))
-        .sort((a, b) => a.distM - b.distM)
-        .slice(0, 40);
-      return res.json({ sucursales: conDist, origen: origen.descripcion });
+      const conCoords = todas.filter(s => s.lat != null).length;
+      const stats = { todas: todas.length, conCoords };
+      if (origen && conCoords) {
+        const conDist = todas
+          .filter(s => s.lat != null)
+          .map(s => ({ ...s, distM: distanciaM(origen.lat, origen.lng, s.lat, s.lng) }))
+          .sort((a, b) => a.distM - b.distM)
+          .slice(0, 40);
+        return res.json({ sucursales: conDist, origen: origen.descripcion, stats });
+      }
+      // Sin coordenadas o sin ancla: aproximación por CP (mismo CP primero,
+      // después el resto de la misma localidad si se puede inferir del CP).
+      if (cp) {
+        const mismoCp = todas.filter(s => String(s.direccion?.codigoPostal || "").replace(/\D/g, "") === cp);
+        const loc = nrmTxt(mismoCp[0]?.direccion?.localidad || "");
+        const mismaLoc = loc ? todas.filter(s => nrmTxt(s.direccion?.localidad || "") === loc && !mismoCp.includes(s)) : [];
+        const lista = [...mismoCp, ...mismaLoc].slice(0, 40);
+        if (lista.length) return res.json({ sucursales: lista, origen: `CP ${cp}`, aproximado: true, stats });
+      }
+      return res.json({ sucursales: [], sinOrigen: true, stats });
     }
 
     // ── sucursal_origen (desde dónde se emiten los envíos del usuario) ─────

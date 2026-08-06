@@ -3861,8 +3861,25 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   function tplSucMap(){
     const m=new Map();
     const n=s=>String(s||"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
-    for(const s of (_andreaniLocsCache.current?.sucursales||[])) m.set(n(s),s);
-    return {map:m,n};
+    const lista=_andreaniLocsCache.current?.sucursales||[];
+    for(const s of lista) m.set(n(s),s);
+    // Resolución tolerante: exacto normalizado → por número de calle + una
+    // palabra significativa compartida (los nombres difieren entre la lista
+    // oficial y el template: "PUNTO ANDREANI HOP X 123" vs "PUNTO HOP X 123").
+    const STOP=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","ESPACIO","AVENIDA","AVDA","CALLE"]);
+    const resolve=(oficial)=>{
+      const txt=n([oficial?.descripcion,oficial?.direccion?.calle,oficial?.direccion?.numero].filter(Boolean).join(" "));
+      if(!txt) return null;
+      if(m.has(txt)) return m.get(txt);
+      const exacto=m.get(n(oficial?.descripcion));
+      if(exacto) return exacto;
+      const nums=[...new Set([...txt.matchAll(/\d{2,}/g)].map(x=>x[0]))];
+      const words=txt.split(" ").filter(w=>w.length>=4&&!STOP.has(w)&&!/^\d+$/.test(w));
+      if(!nums.length||!words.length) return null;
+      const cand=lista.filter(t=>{const nt=n(t);return nums.some(x=>nt.includes(x))&&words.some(w=>nt.includes(w));});
+      return cand.length===1?cand[0]:null;
+    };
+    return {map:m,n,resolve};
   }
   function pedirSucursal(pickupDetails, qTokens, cp){
     setSucQ(""); setSucRes(null); setSucCerca({loading:true});
@@ -3873,11 +3890,15 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         await ghLoadAndreaniLocations(); // asegura el template para mapear
         const r=await authFetch(`/api/andreani?action=sucursales_cercanas&q=${encodeURIComponent(qTokens||"")}&cp=${encodeURIComponent(cp||"")}`);
         const d=await r.json().catch(()=>null);
-        if(!r.ok||!Array.isArray(d?.sucursales)) throw new Error();
-        const {map,n}=tplSucMap();
-        const lista=d.sucursales.map(s=>({...s,tpl:map.get(n(s.descripcion))||null})).filter(s=>s.tpl).slice(0,15);
-        setSucCerca({lista, origen:d.origen||""});
-      }catch(_){ setSucCerca({lista:[]}); }
+        if(!r.ok||!Array.isArray(d?.sucursales)) throw new Error(d?.error||`HTTP ${r.status}`);
+        const {resolve}=tplSucMap();
+        // Las mapeadas al desplegable van clickeables; las que no, visibles
+        // pero deshabilitadas (así se ve el ranking igual y se entiende cuáles
+        // faltan en el template de carga masiva).
+        const lista=d.sucursales.map(s=>({...s,tpl:resolve(s)}));
+        const validas=lista.filter(s=>s.tpl);
+        setSucCerca({lista:(validas.length?[...validas,...lista.filter(s=>!s.tpl).slice(0,5)]:lista).slice(0,18), origen:d.origen||"", aproximado:!!d.aproximado, diag:d.sinOrigen?"sin_origen":(d.stats&&!d.stats.conCoords?"sin_coords":"")});
+      }catch(e){ setSucCerca({lista:[],diag:String(e?.message||"error")}); }
     })();
     return new Promise(resolve=>setSucPick({resolve, hint:pickupDetails?.name||pickupDetails?.address?.address||""}));
   }
@@ -5698,10 +5719,16 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 sucCerca?.loading?(
                   <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/> Buscando sucursales cercanas...</div>
                 ):(sucCerca?.lista||[]).length===0?(
-                  <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center"}}>No pude calcular cercanías — buscá arriba por calle o barrio</div>
+                  <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center"}}>
+                    {sucCerca?.diag==="sin_coords"?"La API de Andreani no publica coordenadas de sus sucursales — buscá arriba por calle o barrio"
+                     :sucCerca?.diag==="sin_origen"?"No pude ubicar el punto del pedido en el listado oficial — buscá arriba por calle o barrio"
+                     :`No pude calcular cercanías${sucCerca?.diag?` (${sucCerca.diag})`:""} — buscá arriba por calle o barrio`}
+                  </div>
                 ):(
                   <div>
-                    <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Más cercanas al punto del pedido{sucCerca.origen?` (${sucCerca.origen})`:""}</div>
+                    <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>
+                      {sucCerca.aproximado?`De la zona del pedido${sucCerca.origen?` (${sucCerca.origen})`:""} — sin distancia exacta`:`Más cercanas al punto del pedido${sucCerca.origen?` (${sucCerca.origen})`:""}`}
+                    </div>
                     <div style={{maxHeight:300,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10}}>
                       {(sucCerca.lista||[]).map((s,i)=><Row key={i} s={s} i={i} valor={s.tpl} distM={s.distM}/>)}
                     </div>
