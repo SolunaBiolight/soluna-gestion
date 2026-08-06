@@ -7668,8 +7668,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             :"Saldo de envíos Andreani";
           return (
           <button onClick={()=>setAndreaniSaldoOpen(true)} title={chipTitle}
-            style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:chipColor,borderColor:chipColor+"55",fontWeight:700,gap:6}}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="14" rx="3"/><path d="M2 10h20"/><path d="M16 15h2"/></svg>
+            style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:chipColor,borderColor:chipColor+"55",background:chipColor+"0d",fontWeight:700,gap:7}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
+            <span style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Saldo</span>
             {fmtMoney(andreani.saldo)}
           </button>
           );
@@ -9043,6 +9044,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* ── Andreani prepago: saldo, datos del remitente y emisión directa ── */}
       {andreani.enabled&&(
         <AndreaniSaldoModal T={T} open={andreaniSaldoOpen} onClose={()=>setAndreaniSaldoOpen(false)}
+          etiquetasEstimadas={andreani.etiquetasEstimadas} saldoBajo={!!andreani.saldoBajo}
           saldo={andreani.saldo}
           sucOrigen={andreani.sucOrigen}
           onSucOrigen={suc=>setAndreani(a=>({...a,sucOrigen:suc}))}
@@ -9146,7 +9148,7 @@ function ghFmtTs(v){
 }
 
 // Modal "Saldo de envíos": saldo actual, últimos movimientos y cómo cargar.
-function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, sucOrigen, onSucOrigen}){
+function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, sucOrigen, onSucOrigen, etiquetasEstimadas=null, saldoBajo=false}){
   const iS=InputStyle(T);
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(false);
@@ -9217,10 +9219,26 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
   const cargasVisibles=cargas.filter(c=>c.estado==="pendiente"||c.estado==="rechazada").slice(0,5);
   return (
     <Modal T={T} open={open} onClose={onClose} title="Saldo de envíos" width={560} zIndex={2100}>
-      <div style={{textAlign:"center",padding:"6px 0 18px"}}>
-        <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6,marginBottom:6}}>Saldo disponible</div>
-        <div style={{fontSize:34,fontWeight:800,color:T.green,letterSpacing:-1,lineHeight:1}}>{fmtMoney(saldoActual)}</div>
-      </div>
+      {(()=>{
+        const col=saldoBajo?(etiquetasEstimadas===0?T.red:T.yellow):T.green;
+        return (
+          <div style={{background:`linear-gradient(135deg, ${col}14, transparent 65%)`,border:`1px solid ${col}33`,borderRadius:14,padding:"16px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:14}}>
+            <div style={{width:46,height:46,borderRadius:12,background:col+"1a",border:`1px solid ${col}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6,marginBottom:2}}>Saldo disponible</div>
+              <div style={{fontSize:30,fontWeight:800,color:T.text,letterSpacing:-1,lineHeight:1.15}}>{fmtMoney(saldoActual)}</div>
+              <div style={{fontSize:11,color:saldoBajo?col:T.textSm,fontWeight:saldoBajo?600:400,marginTop:3}}>
+                {etiquetasEstimadas!=null
+                  ?(etiquetasEstimadas===0?"No alcanza para emitir más etiquetas — cargá saldo"
+                    :`Te alcanza para ~${etiquetasEstimadas} etiqueta${etiquetasEstimadas===1?"":"s"} más`)
+                  :"Cada etiqueta que emitís se descuenta de este saldo"}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {/* ── Cargar saldo: monto → referencia única → transferencia → acreditación ── */}
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:16}}>
         <div style={{fontSize:11,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Cargar saldo</div>
@@ -9254,7 +9272,7 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
         ):(
           <div>
             <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:10}}>
-              Pagá con Mercado Pago y el saldo se acredita <strong style={{color:T.text}}>solo, al instante</strong>. Cada etiqueta que emitís se descuenta de este saldo.
+              Pagá con Mercado Pago y el saldo se acredita <strong style={{color:T.text}}>solo, al instante</strong>. Si preferís, también podés transferir con referencia y lo acredita el equipo.
             </div>
             <div style={{display:"flex",gap:8,alignItems:"flex-start",flexWrap:"wrap"}}>
               <input style={{...iS,marginBottom:0,width:150}} type="number" min="1000" step="500" placeholder="Monto ($)" value={montoCarga}
