@@ -1020,6 +1020,54 @@ export default async function handler(req, res) {
       totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef),     mlEnvioTot(curr.raw), mlAdsAutoCurr, gAdsAutoCurr);
       prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev), mlEnvioTot(prev.raw), mlAdsAutoPrev, gAdsAutoPrev);
 
+      // ── Comparativa estilo Shopify: "Hoy" vs AYER HASTA LA MISMA HORA ──
+      // Con rango = hoy, comparar el día parcial contra ayer COMPLETO infla los
+      // deltas. Se arma prevTotalsHora (solo informativo — prevTotals queda
+      // intacto para gráficos/canales): ventas y órdenes de ayer REALES hasta la
+      // hora actual (hora AR de cada orden), costos proporcionales a esas ventas,
+      // y pauta prorrateada por hora del día (corre todo el día). El front usa
+      // esto SOLO para los chips de comparación de las cards.
+      let prevTotalsHora = null, prevHasta = null;
+      if (since === argToday && until === argToday) {
+        try {
+          const horaFmt = new Intl.DateTimeFormat("en-GB",{timeZone:"America/Argentina/Buenos_Aires",hour:"2-digit",minute:"2-digit",hour12:false});
+          prevHasta = horaFmt.format(new Date()); // "08:20"
+          const [hN,mN] = prevHasta.split(":").map(Number);
+          const minsAhora = hN*60 + mN;
+          const fTime = Math.max(0.01, Math.min(1, minsAhora/1440));
+          const minAR = f => { const s=String(f||""); if(!s) return null; const t=Date.parse(/(Z|[+-]\d{2}:?\d{2})$/.test(s)?s:s+"-03:00"); if(isNaN(t)) return null; const [h,m]=horaFmt.format(new Date(t)).split(":").map(Number); return h*60+m; };
+          // Ventas de ayer hasta esta hora (tienda + ML) — hora real de cada orden
+          let revH = 0, ordH = 0, revDia = 0, ordDia = 0;
+          for (const o of [...(prev.raw?.orders_detail||[]), ...(prev.raw?.ml_data?.ml_orders_detail||[])]) {
+            const r = parseFloat(o.revenue)||0;
+            revDia += r; ordDia++;
+            const m = minAR(o.fecha);
+            if (m == null || m <= minsAhora) { revH += r; ordH++; }
+          }
+          // Fracción real de ventas transcurridas a esta hora (fallback: fracción del día)
+          const fRev = revDia > 0 ? Math.min(1, revH/revDia) : fTime;
+          const fOrd = ordDia > 0 ? Math.min(1, ordH/ordDia) : fTime;
+          const revenueH = +((prevTotals.revenue||0) * fRev).toFixed(2);
+          const ordersH  = Math.round((prevTotals.orders||0) * fOrd);
+          const adSpendH = +((prevTotals.adSpend||0) * fTime).toFixed(2);
+          // Costos proporcionales a las ventas × fRev; fijos/adicionales × fTime
+          const costesH  = ((prevTotals.costoProductos||0) + (prevTotals.impuestos||0) + (prevTotals.comisionPlataforma||0) + (prevTotals.comisionPago||0) + (prevTotals.costoEnvio||0)) * fRev
+                         + (prevTotals.costosAdicionales||0) * fTime;
+          const profitH  = +(revenueH - costesH - adSpendH).toFixed(2);
+          const netRevH  = +(profitH + adSpendH).toFixed(2);
+          prevTotalsHora = {
+            revenue: revenueH, orders: ordersH, adSpend: adSpendH, profit: profitH, netRevenue: netRevH,
+            profitMargin: revenueH>0 ? profitH/revenueH : 0,
+            roas: adSpendH>0 ? revenueH/adSpendH : 0,
+            trueRoas: adSpendH>0 ? netRevH/adSpendH : 0,
+            cpa: ordersH>0 ? adSpendH/ordersH : 0,
+            aov: ordersH>0 ? revenueH/ordersH : 0,
+            breakEvenRoas: netRevH>0 ? revenueH/netRevH : 0,
+            cpaBreakEven: ordersH>0 ? netRevH/ordersH : 0,
+          };
+        } catch (_) { prevTotalsHora = null; prevHasta = null; /* comparación normal si algo falla */ }
+      }
+
       // ── Filas diarias alineadas con el motor real ──
       // Antes las filas usaban la "commission" legacy (aprox. 3%/10%): los
       // sparklines y deltas diarios NO cerraban contra los totales reales.
@@ -1341,7 +1389,7 @@ export default async function handler(req, res) {
       // de una métrica (v2 = facturación TN incluye envío cobrado al cliente;
       // v3 = corte de día TN en hora argentina; v4 = envío ML real con descuentos; v5 = envío ML en cero para ventas devueltas; v6 = Net Revenue = contribución antes de pauta) para que los caches del
       // cliente (P&L mensual) descarten resultados viejos.
-      const responseBody = { engineV: 6, rows, prevRows, totals, prevTotals, byDow, byChannel, byChannelDaily, sales, byProduct, clientes, facturacionBreakdown, adSpendBreakdown,
+      const responseBody = { engineV: 6, rows, prevRows, totals, prevTotals, prevTotalsHora, prevHasta, byDow, byChannel, byChannelDaily, sales, byProduct, clientes, facturacionBreakdown, adSpendBreakdown,
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
         dolarSerie, dolarActual, quality,
         since, until, prevSince, prevUntil,

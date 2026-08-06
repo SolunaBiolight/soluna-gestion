@@ -29798,13 +29798,17 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     const good=invert?d<0:d>=0;
     // Discreto a propósito: solo la flecha lleva color; el porcentaje va en gris
     // para no competir con el número principal de la card.
-    return <span title={`${Math.abs(d).toFixed(1)}% ${good?"mejor":"peor"} que el período anterior`} style={{fontSize:10,fontWeight:600,color:T.textSm,display:"inline-flex",alignItems:"center",gap:2,cursor:"default"}}><span style={{color:good?MC.green:MC.red,fontWeight:800}}>{good?"↑":"↓"}</span>{Math.abs(d)>=100?Math.round(Math.abs(d)):Math.abs(d).toFixed(1)}%</span>;
+    return <span title={`${Math.abs(d).toFixed(1)}% ${good?"mejor":"peor"} que ${prevHasta?`ayer hasta las ${prevHasta}`:"el período anterior"}`} style={{fontSize:10,fontWeight:600,color:T.textSm,display:"inline-flex",alignItems:"center",gap:2,cursor:"default"}}><span style={{color:good?MC.green:MC.red,fontWeight:800}}>{good?"↑":"↓"}</span>{Math.abs(d)>=100?Math.round(Math.abs(d)):Math.abs(d).toFixed(1)}%</span>;
   };
 
   const rows=rendData?.rows||[];
   const prevRows=rendData?.prevRows||[];
   const tot=rendData?.totals||{};
-  const prevTot=rendData?.prevTotals||{};
+  // Con rango "Hoy" el backend manda prevTotalsHora: ayer cortado a la MISMA
+  // hora (estilo Shopify) — comparar el día parcial contra ayer completo
+  // inflaba los deltas. Solo afecta los chips ↑↓; los gráficos usan prevRows.
+  const prevTot=rendData?.prevTotalsHora||rendData?.prevTotals||{};
+  const prevHasta=rendData?.prevTotalsHora?rendData?.prevHasta:null;
   const dailyRows=rows.filter(r=>r.Fecha);
   // "Profit promedio por día de semana" necesita al menos una semana de datos:
   // con un rango corto (ej. "Hoy") solo el día actual tendría barra y parecería
