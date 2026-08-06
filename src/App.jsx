@@ -1266,6 +1266,25 @@ function catalogoProductos(orders=[]) {
 function nombreProducto(n) {
   return String(n||"").replace(/[()]/g," ").replace(/\s+/g," ").trim();
 }
+// Prefijo común de los nombres de producto de la cuenta ("MARCA - LINEA - ").
+// Genérico: sale de los nombres reales de los pedidos, no de una marca fija.
+function ghPrefijoComunProductos(nombres){
+  const lista=[...new Set((nombres||[]).map(n=>String(n||"")).filter(n=>n.length>8))];
+  if(lista.length<2) return "";
+  let pref=lista[0];
+  for(const n of lista){ let i=0; while(i<pref.length&&i<n.length&&pref[i]===n[i]) i++; pref=pref.slice(0,i); if(!pref) break; }
+  const cut=Math.max(pref.lastIndexOf(" - "),pref.lastIndexOf(" — "));
+  if(cut>6) pref=pref.slice(0,cut+3); else if(pref.length<10) pref="";
+  return pref;
+}
+// Nombre corto para chips: recorta el prefijo común y pasa a Título los nombres
+// que vienen en MAYÚSCULAS de TN ("...BLOCKER ROJO - MARCO NEGRO" → "Rojo - Marco Negro").
+function ghNombreCortoProducto(n,prefijo){
+  let s=prefijo&&String(n||"").startsWith(prefijo)?String(n).slice(prefijo.length):String(n||"");
+  s=s.replace(/[()]/g," ").replace(/\s+/g," ").trim();
+  if(s.length>2&&s===s.toUpperCase()&&/[A-ZÁÉÍÓÚÑ]/.test(s)) s=s.toLowerCase().replace(/\p{L}\S*/gu,w=>w[0].toUpperCase()+w.slice(1));
+  return s;
+}
 const SKU_LENTE = { "AMARILLO-NN":"Amarillo","AMARILLO-TT":"Amarillo","NARAN-NN":"Naranja","NARAN-TT":"Naranja","ROJ-NN":"Rojo","ROJ-TT":"Rojo","N-N":"Negro","N-R":"Negro/Rojo","R-R":"Rojo/Rojo","CLIP-ON":"Clip-On","LIQ":"Líquido" };
 // Colores FIJOS de producto (representan el color físico del lente, no un estado
 // de UI) — a propósito NO usan tokens del tema; además es scope de módulo, sin T.
@@ -3868,6 +3887,9 @@ function NotasInline({value, onSave, T, iS}) {
 function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje, initialDetail, onClearInitialDetail, tab: tabProp, setTab: setTabProp, orders=[]}) {
   // Catálogo real de la cuenta (sale de sus propios pedidos) + opciones genéricas.
   const catalogoCanje=useMemo(()=>[...catalogoProductos(orders),...EXTRAS_CANJE],[orders]);
+  // Prefijo común del catálogo para chips cortos ("Rojo - Marco Negro" en vez
+  // del título completo de TN, que desborda las cards del kanban).
+  const prefProds=useMemo(()=>ghPrefijoComunProductos((orders||[]).flatMap(o=>(o.productos||[]).map(p=>p.nombre||""))),[orders]);
   const [canjes,setCanjes]=useState([]);
   const [form,setForm]=useState(null);
   const [detail,setDetail]=useState(null);
@@ -4144,9 +4166,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       if(!prodsCanje.length && (pendingCanje.productos||[]).length) {
         prodsCanje = (pendingCanje.productos||[]).map(p => {
           const nombre = typeof p === "string" ? p : (p.nombre||"");
-          // Se usa el nombre real del pedido: antes se forzaba el encaje
-          // contra un catálogo fijo que solo servía para un cliente.
-          return { nombre: nombreProducto(nombre), cantidad: parseInt(p.cantidad)||1 };
+          // Nombre corto (sin el prefijo común del catálogo): el título
+          // completo de TN desborda los chips de las cards.
+          return { nombre: ghNombreCortoProducto(nombre,prefProds), cantidad: parseInt(p.cantidad)||1 };
         }).filter(p=>p.nombre);
       }
       setForm({...emptyForm(),...pendingCanje,_docId:null,
@@ -4873,8 +4895,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                               <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:8}}>
                                 {c.nicho&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.purpleBg,color:T.purple,fontWeight:600}}>{c.nicho}</span>}
                                 {prods.map((p,i)=>(
-                                  <span key={i} style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.surface,color:T.textMd,fontWeight:500,border:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>
-                                    {p.nombre}{(p.cantidad||1)>1?` ×${p.cantidad}`:""}
+                                  <span key={i} style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.surface,color:T.textMd,fontWeight:500,border:`1px solid ${T.border}`,whiteSpace:"nowrap",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis"}}>
+                                    {ghNombreCortoProducto(p.nombre,prefProds)}{(p.cantidad||1)>1?` ×${p.cantidad}`:""}
                                   </span>
                                 ))}
                               </div>
@@ -5555,7 +5577,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
                   {(c.productosCanje||[]).map((p,pi)=>(
                     <div key={pi} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:8,background:T.bg,border:"1px solid "+T.borderL}}>
-                      <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{p.nombre}</span>
+                      <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{ghNombreCortoProducto(p.nombre,prefProds)}</span>
                       <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x);await save({productosCanje:upd});}} style={bS}>−</button>
                       <span style={{fontSize:13,fontWeight:700,color:T.text,minWidth:20,textAlign:"center"}}>{p.cantidad||1}</span>
                       <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:(x.cantidad||1)+1}:x);await save({productosCanje:upd});}} style={bS}>+</button>
@@ -5809,7 +5831,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <OrderSearchField T={T} orders={orders} uid={user?.uid} onSelect={(num, orden)=>{
                 const o=orden||orders.find(o=>o.numero===String(num));
                 const prodsCanje=(o?.productos||[]).map(p=>({
-                  nombre:nombreProducto(typeof p==="string"?p:(p.nombre||"")),
+                  nombre:ghNombreCortoProducto(typeof p==="string"?p:(p.nombre||""),prefProds),
                   cantidad:parseInt(p.cantidad)||1,
                 })).filter(p=>p.nombre);
                 setForm(f=>({...f,
@@ -6287,16 +6309,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // Prefijo común de los nombres de producto → se recorta en la columna
   // Productos (antes estaba hardcodeado el nombre del producto de Soluna,
   // lo que no generaliza a otras tiendas).
-  const prefijoComun=useMemo(()=>{
-    const nombres=[...new Set(tabOrders.flatMap(o=>(o.productos||[]).map(p=>p.nombre||"")))].filter(n=>n.length>8);
-    if(nombres.length<2) return "";
-    let pref=nombres[0];
-    for(const n of nombres){ let i=0; while(i<pref.length&&i<n.length&&pref[i]===n[i]) i++; pref=pref.slice(0,i); if(!pref) break; }
-    // Cortar en el último separador razonable y solo si vale la pena
-    const cut=Math.max(pref.lastIndexOf(" - "),pref.lastIndexOf(" — "));
-    if(cut>6) pref=pref.slice(0,cut+3); else if(pref.length<10) pref="";
-    return pref;
-  },[tabOrders]);
+  const prefijoComun=useMemo(()=>ghPrefijoComunProductos(tabOrders.flatMap(o=>(o.productos||[]).map(p=>p.nombre||""))),[tabOrders]);
   const nombreCorto=n=>{const s=prefijoComun&&String(n||"").startsWith(prefijoComun)?String(n).slice(prefijoComun.length):String(n||"");return s.replace(/[()]/g,'');};
 
   // Paginación de pedidos — 50 por página
