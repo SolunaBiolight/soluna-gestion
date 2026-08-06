@@ -22,7 +22,7 @@
 //  - andreani_config/token — cache del token de login (TTL 12h)
 //  - andreani_config/suc_{cp} — cache de sucursales por CP (TTL 7 días)
 
-import { randomBytes } from "crypto";
+import { randomBytes, createHmac } from "crypto";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { verifyAuth, requireAdmin } from "./_auth.js";
@@ -250,6 +250,98 @@ async function sucursalesTodas(db, env) {
 }
 
 const nrmTxt = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+// ─── Mercado Pago: carga de saldo automática ───────────────────────────────
+// El cliente paga la carga con Checkout Pro; MP nos notifica al webhook
+// (action=mp_webhook, público) y ahí se acredita SOLO, con la misma
+// transacción idempotente que usa el admin. Env: MP_ACCESS_TOKEN (+
+// MP_WEBHOOK_SECRET para validar la firma de las notificaciones).
+
+const MP_BASE = "https://api.mercadopago.com";
+const APP_BASE = "https://www.growithapp.com";
+
+async function mpWebhook(req, res, db, body) {
+  const token = process.env.MP_ACCESS_TOKEN || "";
+  if (!token) return res.status(200).json({ ok: true, skip: "mp_no_configurado" });
+  const dataId = String(req.query?.["data.id"] || body?.data?.id || "");
+  // Firma: x-signature "ts=...,v1=HMAC(id:<data.id>;request-id:<x-request-id>;ts:<ts>;)"
+  const secret = process.env.MP_WEBHOOK_SECRET || "";
+  if (secret) {
+    const sig = String(req.headers["x-signature"] || "");
+    const ts = (sig.match(/ts=([^,]+)/) || [])[1] || "";
+    const v1 = (sig.match(/v1=([a-f0-9]+)/) || [])[1] || "";
+    const reqId = String(req.headers["x-request-id"] || "");
+    const manifest = `id:${dataId.toLowerCase()};request-id:${reqId};ts:${ts};`;
+    const h = createHmac("sha256", secret).update(manifest).digest("hex");
+    if (!v1 || h !== v1) return res.status(401).json({ error: "firma inválida" });
+  }
+  const type = String(req.query?.type || body?.type || body?.topic || "");
+  if (!/payment/.test(type) || !dataId) return res.status(200).json({ ok: true, skip: type || "sin_tipo" });
+  // Consultar el pago REAL contra la API — nunca se confía en la notificación.
+  const pr = await fetch(`${MP_BASE}/v1/payments/${encodeURIComponent(dataId)}`, {
+    headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000),
+  });
+  if (!pr.ok) return res.status(pr.status === 404 ? 200 : 502).json({ error: `MP HTTP ${pr.status}` });
+  const pago = await pr.json();
+  if (pago.status !== "approved") return res.status(200).json({ ok: true, status: pago.status });
+  const cargaId = String(pago.external_reference || "");
+  if (!cargaId) return res.status(200).json({ ok: true, skip: "sin_external_reference" });
+  const cRef = db.collection("andreani_cargas").doc(cargaId);
+  let out = null;
+  try {
+    out = await db.runTransaction(async (tx) => {
+      const s = await tx.get(cRef);
+      if (!s.exists) throw new Error("SKIP");
+      const c = s.data();
+      if (c.estado !== "pendiente") throw new Error("SKIP"); // MP reintenta: idempotente por estado
+      const monto = Math.round(Number(c.monto) || 0);
+      const pagado = Number(pago.transaction_amount) || 0;
+      if (Math.abs(pagado - monto) > 1) {
+        // El monto aprobado no es el de la carga: NO acreditar solo — a revisión.
+        tx.update(cRef, { motivo: `MP aprobó $${pagado} y la carga es de $${monto} — revisar en Admin`, mpPaymentId: String(pago.id) });
+        throw new Error("MONTO");
+      }
+      const tRef = db.collection("users").doc(c.uid);
+      const uSnap = await tx.get(tRef);
+      if (!uSnap.exists) throw new Error("SKIP");
+      const saldo = Math.round(Number(uSnap.data()?.andreaniSaldo) || 0);
+      const nuevo = saldo + monto;
+      tx.update(cRef, { estado: "acreditada", acreditadaBy: "mp", mpPaymentId: String(pago.id), resueltaTs: FieldValue.serverTimestamp() });
+      tx.set(tRef, { andreaniSaldo: nuevo }, { merge: true });
+      tx.set(tRef.collection("andreani_mov").doc(), {
+        tipo: "credito", monto, saldoDespues: nuevo,
+        nota: `Carga Mercado Pago ${c.ref}`, mpPaymentId: String(pago.id), ts: FieldValue.serverTimestamp(),
+      });
+      return { email: c.email || "", monto, ref: c.ref, saldo: nuevo };
+    });
+  } catch (e) {
+    if (e.message === "SKIP") return res.status(200).json({ ok: true });
+    if (e.message === "MONTO") {
+      try {
+        const f = await db.collection("users").doc(FOUNDERS[0]).get();
+        const to = f.exists ? String(f.data().email || "").trim() : "";
+        if (to) await sendEmail({ to, subject: `Pago MP con monto distinto — revisar carga ${cargaId}`, html: `<p>El pago ${pago.id} de Mercado Pago no coincide con el monto de la carga ${cargaId}. Revisala en Admin → Envíos.</p>` });
+      } catch (_) {}
+      return res.status(200).json({ ok: true, revision: true });
+    }
+    console.error("[mp_webhook]", e.message);
+    return res.status(500).json({ error: e.message }); // 5xx → MP reintenta
+  }
+  if (out?.email) {
+    try {
+      await sendEmail({
+        to: out.email, subject: `Se acreditó tu carga de $${out.monto.toLocaleString("es-AR")}`,
+        html: `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
+  <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:16px">Carga acreditada</div>
+  <p style="font-size:14px">Tu pago por Mercado Pago (<strong>${out.ref}</strong>, $${out.monto.toLocaleString("es-AR")}) ya está disponible. Saldo actual: <strong>$${out.saldo.toLocaleString("es-AR")}</strong>.</p>
+  <p style="font-size:13px">Ya podés emitir etiquetas desde la sección Env&iacute;os de Growith.</p>
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px">Growith — Env&iacute;os</p>
+</div>`,
+      });
+    } catch (_) {}
+  }
+  return res.status(200).json({ ok: true, acreditada: true });
+}
 
 // Listado geo minificado (solo lo que hace falta para rankear por distancia):
 // el listado completo slim supera el límite de 1MB de Firestore, este entra.
@@ -508,6 +600,10 @@ export default async function handler(req, res) {
 
     const action = body.action || req.query?.action;
     if (!action) return res.status(400).json({ error: "action requerida" });
+
+    // Webhook de Mercado Pago: lo llama MP, no un usuario — sin sesión
+    // Firebase. Se valida con la firma HMAC de MP (MP_WEBHOOK_SECRET).
+    if (action === "mp_webhook") return await mpWebhook(req, res, db, body);
 
     // Todas las acciones exigen sesión válida. La identidad sale del TOKEN.
     const user = await verifyAuth(req);
@@ -1058,7 +1154,8 @@ export default async function handler(req, res) {
       const cargasCol = db.collection("andreani_cargas");
       // Máx 3 pendientes por cuenta (filtrado en memoria: where por un solo campo)
       const propias = await cargasCol.where("uid", "==", uid).limit(30).get();
-      const pendientes = propias.docs.filter(x => x.data().estado === "pendiente");
+      // Las cargas MP pendientes son checkouts abandonados: no bloquean el cupo
+      const pendientes = propias.docs.filter(x => x.data().estado === "pendiente" && x.data().metodo !== "mp");
       if (pendientes.length >= 3) return res.status(400).json({ error: "Ya tenés 3 cargas pendientes. Cancelá alguna o esperá a que se acrediten." });
       const ref = "GW-" + Array.from(randomBytes(4)).map(b => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 32]).join("");
       const uSnap = await userRef.get();
@@ -1085,13 +1182,59 @@ export default async function handler(req, res) {
       return res.json({ ok: true, carga: { id: docRef.id, ref, monto, estado: "pendiente" }, datosPago: cfg.datosPago });
     }
 
+    // Carga con Mercado Pago: crea la carga + preferencia de Checkout Pro y
+    // devuelve el link de pago. La acreditación la hace el webhook solo.
+    if (action === "carga_mp") {
+      const mpTok = process.env.MP_ACCESS_TOKEN || "";
+      if (!mpTok) return res.status(500).json({ error: "Mercado Pago no está configurado todavía (falta MP_ACCESS_TOKEN en Vercel)." });
+      const cfg = await getGlobalConfig(db);
+      const esAdmin = await isPlatformAdmin(db, uid);
+      if (!esAdmin && !cfg.habilitados.includes(uid)) return res.status(403).json({ error: "Tu cuenta no tiene Andreani prepago habilitado." });
+      const monto = Math.round(Number(body.monto));
+      if (!isFinite(monto) || monto < 1000) return res.status(400).json({ error: "El monto mínimo de carga es $1.000." });
+      if (monto > 10000000) return res.status(400).json({ error: "Monto demasiado alto." });
+      const cargasCol = db.collection("andreani_cargas");
+      const propias = await cargasCol.where("uid", "==", uid).limit(30).get();
+      const mpPend = propias.docs.filter(x => x.data().estado === "pendiente" && x.data().metodo === "mp");
+      if (mpPend.length >= 5) return res.status(400).json({ error: "Tenés varios pagos de Mercado Pago sin terminar. Cancelá alguno (✕) y volvé a intentar." });
+      const ref = "MP-" + Array.from(randomBytes(4)).map(b => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 32]).join("");
+      const uSnap = await userRef.get();
+      const email = String(uSnap.data()?.email || user.email || "").trim();
+      const docRef = await cargasCol.add({
+        uid, email, monto, ref, estado: "pendiente", metodo: "mp", ts: FieldValue.serverTimestamp(),
+      });
+      const pref = {
+        items: [{ id: "carga-saldo", title: `Growith — Carga de saldo de envíos (${ref})`, quantity: 1, unit_price: monto, currency_id: "ARS" }],
+        external_reference: docRef.id,
+        metadata: { uid, carga_id: docRef.id },
+        notification_url: `${APP_BASE}/api/andreani?action=mp_webhook`,
+        back_urls: { success: `${APP_BASE}/?mp=ok#/envios`, pending: `${APP_BASE}/?mp=pending#/envios`, failure: `${APP_BASE}/?mp=error#/envios` },
+        auto_return: "approved",
+        statement_descriptor: "GROWITH",
+        ...(email ? { payer: { email } } : {}),
+      };
+      const r = await fetch(`${MP_BASE}/checkout/preferences`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${mpTok}`, "Content-Type": "application/json", "X-Idempotency-Key": docRef.id },
+        body: JSON.stringify(pref),
+        signal: AbortSignal.timeout(12000),
+      });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d?.init_point) {
+        await docRef.update({ estado: "cancelada", motivo: "No se pudo crear el checkout de MP" }).catch(() => {});
+        return res.status(502).json({ error: `Mercado Pago no aceptó el pago (HTTP ${r.status}): ${String(d?.message || "").slice(0, 200)}` });
+      }
+      await docRef.update({ mpPreferenceId: String(d.id || "") }).catch(() => {});
+      return res.json({ ok: true, init_point: d.init_point, carga: { id: docRef.id, ref, monto, estado: "pendiente", metodo: "mp" } });
+    }
+
     if (action === "cargas") {
       const cfg = await getGlobalConfig(db);
       const snap = await db.collection("andreani_cargas").where("uid", "==", uid).limit(30).get();
       const cargas = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         .sort((a, b) => (b.ts?.toMillis?.() || 0) - (a.ts?.toMillis?.() || 0))
         .slice(0, 10)
-        .map(c => ({ id: c.id, ref: c.ref, monto: c.monto, estado: c.estado, ts: c.ts?.toMillis?.() || null, motivo: c.motivo || "" }));
+        .map(c => ({ id: c.id, ref: c.ref, monto: c.monto, estado: c.estado, metodo: c.metodo || "transfer", ts: c.ts?.toMillis?.() || null, motivo: c.motivo || "" }));
       return res.json({ ok: true, cargas, datosPago: cfg.datosPago });
     }
 

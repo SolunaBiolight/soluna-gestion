@@ -6109,6 +6109,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // Sucursales cercanas al punto del pedido para el modal de elección (flujo
   // XLSX): null | {loading} | {lista:[{...,distM,tpl}],origen,aproximado,diag}
   const [locCerca,setLocCerca]=useState(null);
+  // Retorno del checkout de Mercado Pago (carga de saldo): /?mp=ok#/envios
+  useEffect(()=>{
+    try{
+      const mp=new URLSearchParams(window.location.search).get("mp");
+      if(!mp) return;
+      window.history.replaceState(null,"",window.location.pathname+window.location.hash);
+      if(mp==="ok") toast("¡Pago recibido! Tu saldo se acredita solo en unos segundos.","success",6000);
+      else if(mp==="pending") toast("Tu pago está en proceso — el saldo se acredita cuando Mercado Pago lo apruebe.","warning",7000);
+      else toast("El pago no se completó. Podés intentar de nuevo desde Saldo de envíos.","warning",7000);
+    }catch(_){}
+  },[]);
   const [locSearch,setLocSearch]=useState("");
   const [locSearchType,setLocSearchType]=useState("ciudad");
   const [locOficialSel,setLocOficialSel]=useState(""); // id elegido en la lista oficial Andreani (modal sucursal del XLSX)
@@ -9162,6 +9173,17 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
     setNueva(d.carga); setMontoCarga("");
     refrescarCargas();
   }
+  // Pago con Mercado Pago: el backend crea la carga + checkout y redirigimos.
+  // El saldo se acredita solo cuando MP aprueba (webhook), sin equipo.
+  async function pagarMP(){
+    setCargaErr("");
+    const m=Math.round(Number(montoCarga));
+    if(!isFinite(m)||m<1000){ setCargaErr("El monto mínimo de carga es $1.000."); return; }
+    const r=await authFetch("/api/andreani?action=carga_mp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({monto:m})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error||!d.init_point){ setCargaErr(typeof d.error==="string"?d.error:`No se pudo iniciar el pago (HTTP ${r.status})`); return; }
+    window.location.href=d.init_point;
+  }
   function copiar(txt){ try{navigator.clipboard.writeText(txt);toast("Copiado","success");}catch(_){toast("No se pudo copiar","warning");} }
   const filaCopy=(label,valor)=>(
     <div style={{display:"flex",alignItems:"center",gap:10,background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px"}}>
@@ -9173,7 +9195,7 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
     </div>
   );
   const estadoChip=(c)=>{
-    const map={pendiente:[T.yellow,"Esperando acreditación"],acreditada:[T.green,"Acreditada"],rechazada:[T.red,"Rechazada"],cancelada:[T.textSm,"Cancelada"]};
+    const map={pendiente:[T.yellow,c.metodo==="mp"?"Esperando pago MP":"Esperando acreditación"],acreditada:[T.green,"Acreditada"],rechazada:[T.red,"Rechazada"],cancelada:[T.textSm,"Cancelada"]};
     const [col,lbl]=map[c.estado]||[T.textSm,c.estado];
     return <span style={{fontSize:10,fontWeight:700,color:col,background:col+"18",border:`1px solid ${col}44`,borderRadius:5,padding:"2px 7px",whiteSpace:"nowrap"}}>{lbl}</span>;
   };
@@ -9219,13 +9241,14 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
         ):(
           <div>
             <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:10}}>
-              Ingresá el monto, transferí con la referencia que te damos y el equipo lo acredita. Cada etiqueta que emitís se descuenta de este saldo.
+              Pagá con Mercado Pago y el saldo se acredita <strong style={{color:T.text}}>solo, al instante</strong>. Cada etiqueta que emitís se descuenta de este saldo.
             </div>
             <div style={{display:"flex",gap:8,alignItems:"flex-start",flexWrap:"wrap"}}>
               <input style={{...iS,marginBottom:0,width:150}} type="number" min="1000" step="500" placeholder="Monto ($)" value={montoCarga}
                 onChange={e=>{setMontoCarga(e.target.value);setCargaErr("");}}
-                onKeyDown={e=>{if(e.key==="Enter")solicitarCarga();}}/>
-              <AsyncButton onClick={solicitarCarga} style={{...BtnPrimary(T),fontSize:12,padding:"9px 14px"}}>Solicitar carga</AsyncButton>
+                onKeyDown={e=>{if(e.key==="Enter")pagarMP();}}/>
+              <AsyncButton onClick={pagarMP} style={{...BtnPrimary(T),fontSize:12,padding:"9px 14px"}}>Pagar con Mercado Pago</AsyncButton>
+              <AsyncButton onClick={solicitarCarga} style={{...BtnSecondary(T),fontSize:12,padding:"9px 14px"}}>Transferencia manual</AsyncButton>
             </div>
             {cargaErr&&<div style={{fontSize:12,color:T.red,marginTop:8}}>{cargaErr}</div>}
           </div>
