@@ -29460,8 +29460,21 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const prevRows=rendData?.prevRows||[];
   const tot=rendData?.totals||{};
   const prevTot=rendData?.prevTotals||{};
-  const byDow=rendData?.byDow||[];
   const dailyRows=rows.filter(r=>r.Fecha);
+  // "Profit promedio por día de semana" necesita al menos una semana de datos:
+  // con un rango corto (ej. "Hoy") solo el día actual tendría barra y parecería
+  // que los demás días "se borraron". En rangos <7 días se usa la caché local
+  // del período de 30 días (el default, casi siempre presente) y se aclara en
+  // el título; si no hay caché, el gráfico se oculta.
+  const byDowRango=rendData?.byDow||[];
+  const {byDow,byDowFuente}=useMemo(()=>{
+    if(dailyRows.length>=7||!uid) return {byDow:byDowRango,byDowFuente:null};
+    for(const d of [30,28,90]){
+      const c=ghSwrGet(`growith_rend_cache_${uid}_d${d}`,7*86400000);
+      if(c?.byDow?.some(x=>(x.days||0)>0)) return {byDow:c.byDow,byDowFuente:`últimos ${d} días`};
+    }
+    return {byDow:byDowRango,byDowFuente:null};
+  },[rendData,uid]);
   const profitDays=dailyRows.filter(r=>r.Profit>0).length;
   const lossDays=dailyRows.filter(r=>r.Profit<0).length;
   const bestDay=dailyRows.length?dailyRows.reduce((b,r)=>r.Profit>=(b?.Profit||0)?r:b,null):null;
@@ -30064,7 +30077,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             const maxAbs = Math.max(...byDow.map(d=>Math.abs(d.avgProfit||0)), 1);
             return (
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 16px",marginBottom:18}}>
-                <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:10}}>Profit promedio por día de semana</div>
+                <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:10}}>Profit promedio por día de semana{byDowFuente&&<span style={{fontWeight:DS.w.medium,textTransform:"none",letterSpacing:0}}> · {byDowFuente} (el rango elegido es muy corto para el promedio semanal)</span>}</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8,alignItems:"end"}}>
                   {[1,2,3,4,5,6,0].map(dow=>{
                     const d = byDow[dow]||{};
