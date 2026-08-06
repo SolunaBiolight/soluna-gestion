@@ -1727,6 +1727,29 @@ function ghMatchSucursal(locs, direccion, pickupDetails) {
   return null;
 }
 
+// Traduce una sucursal OFICIAL de la API ({descripcion,direccion}) al string
+// EXACTO del desplegable del template (o null si no existe ahí). El Excel de
+// carga masiva rechaza cualquier valor fuera de su lista, aunque la sucursal
+// sea real — este mapeo es obligatorio antes de escribir la columna Sucursal.
+function ghTplDeOficial(locs, oficial){
+  const lista=locs?.sucursales||[];
+  if(!lista.length||!oficial) return null;
+  const n=s=>String(s||"").toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
+  const desc=typeof oficial==="string"?oficial:(oficial.descripcion||"");
+  const dir=typeof oficial==="string"?null:oficial.direccion;
+  if(lista.includes(desc)) return desc;
+  const mapa=new Map(lista.map(s=>[n(s),s]));
+  const exacto=mapa.get(n(desc));
+  if(exacto) return exacto;
+  const txt=n([desc,dir?.calle,dir?.numero].filter(Boolean).join(" "));
+  const STOP=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","ESPACIO","AVENIDA","AVDA","CALLE"]);
+  const nums=[...new Set([...txt.matchAll(/\d{2,}/g)].map(x=>x[0]))];
+  const words=txt.split(" ").filter(w=>w.length>=4&&!STOP.has(w)&&!/^\d+$/.test(w));
+  if(!nums.length||!words.length) return null;
+  const cand=lista.filter(t=>{const nt=n(t);return nums.some(x=>nt.includes(x))&&words.some(w=>nt.includes(w));});
+  return cand.length===1?cand[0]:null;
+}
+
 // XLSX de carga masiva de Andreani con UN solo envío. `o` es un pseudo-pedido
 // {numero, comprador, dni, email, telefono, cp, provincia, localidad,
 // direccion, dirNumero, piso, esSucursal, pickupDetails}. Si esSucursal, la
@@ -6901,41 +6924,55 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const oficiales=await fetchSucursalesOficiales(cpDestinoDe(o));
       // Auto-match silencioso: si el CP tiene una sola sucursal, o hay UNA
       // candidata clara (dirección o nombre del punto TN), se usa directo sin
-      // modal. El modal queda solo para la ambigüedad real (0 o 2+ candidatas).
+      // modal — pero SIEMPRE traducida al string del desplegable del Excel: el
+      // nombre oficial crudo era el que el portal rechazaba ("no es del campo
+      // desplegable") o dejaba la columna vacía. Sin equivalente → modal.
       const autoOficial=matchSucursalOficial(oficiales,o);
-      if(autoOficial){
-        sucursalOverridesRef.current[o.numero]=autoOficial.descripcion||autoOficial.codigo||"";
+      const autoTpl=autoOficial?ghTplDeOficial(locs,autoOficial):null;
+      if(autoTpl){
+        sucursalOverridesRef.current[o.numero]=autoTpl;
         persistOverrides();
         continue;
       }
-      setLocOficialSel("");
-      const chosen=await new Promise(resolve=>{
-        // Pre-fill: primero intentar auto-match para sugerir la sucursal como búsqueda
-        const autoMatch=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
-        let prefill='';
-        if(autoMatch){
-          prefill=autoMatch;
-        } else {
-          const pd=o.pickupDetails;
-          if(pd){
-            // Prefill: dirección primero, localidad como fallback
-            const loc=(pd.address?.locality||pd.address?.city||"").trim();
-            const addr=(pd.address?.address||"").trim();
-            const num=(pd.address?.number||"").replace(/\D.*/,"").trim();
-            prefill=(addr+(num?" "+num:"")).trim()||loc;
+      // Modal con reintento: no se acepta un valor fuera del desplegable.
+      let resuelto=false;
+      while(!resuelto){
+        setLocOficialSel("");
+        const chosen=await new Promise(resolve=>{
+          // Pre-fill: primero intentar auto-match para sugerir la sucursal como búsqueda
+          const autoMatch=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
+          let prefill='';
+          if(autoMatch){
+            prefill=autoMatch;
           } else {
-            prefill=o.direccion||"";
+            const pd=o.pickupDetails;
+            if(pd){
+              // Prefill: dirección primero, localidad como fallback
+              const loc=(pd.address?.locality||pd.address?.city||"").trim();
+              const addr=(pd.address?.address||"").trim();
+              const num=(pd.address?.number||"").replace(/\D.*/,"").trim();
+              prefill=(addr+(num?" "+num:"")).trim()||loc;
+            } else {
+              prefill=o.direccion||"";
+            }
           }
+          setLocationModal({order:o,locs,resolve,type:"sucursal",autoMatch,oficiales});
+          setLocSearch(prefill);setLocSearchType("ciudad");
+        });
+        if(chosen===null) return; // cancelar todo
+        if(chosen==="EXCLUIR"){ sucursalOverridesRef.current[o.numero]="EXCLUIR"; persistOverrides(); resuelto=true; break; }
+        // Lo elegido puede venir de la lista oficial: traducirlo al desplegable.
+        const tpl=(locs.sucursales||[]).includes(chosen)?chosen:ghTplDeOficial(locs,{descripcion:chosen});
+        if(!tpl){
+          toast(`"${chosen}" no existe en el desplegable del Excel de carga masiva — elegí otra sucursal (la búsqueda de abajo muestra solo las válidas)`,"warning",6500);
+          continue; // reabrir el modal para el mismo pedido
         }
-        setLocationModal({order:o,locs,resolve,type:"sucursal",autoMatch,oficiales});
-        setLocSearch(prefill);setLocSearchType("ciudad");
-      });
-      if(chosen===null) return; // cancelar todo
-      if(chosen==="EXCLUIR"){ sucursalOverridesRef.current[o.numero]="EXCLUIR"; persistOverrides(); continue; }
-      sucursalOverridesRef.current[o.numero]=chosen; persistOverrides();
-      setSucursalConfirmed({numero:o.numero,nombre:chosen});
-      await new Promise(r=>setTimeout(r,1200));
-      setSucursalConfirmed(null);
+        sucursalOverridesRef.current[o.numero]=tpl; persistOverrides();
+        setSucursalConfirmed({numero:o.numero,nombre:tpl});
+        await new Promise(r=>setTimeout(r,1200));
+        setSucursalConfirmed(null);
+        resuelto=true;
+      }
     }
     setExportModal(true);
     setTimeout(()=>exportAndreani(),100);
@@ -8488,10 +8525,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           const hayOficiales=isSuc&&Array.isArray(oficiales)&&oficiales.length>0;
           const sinSucsCp=isSuc&&Array.isArray(oficiales)&&oficiales.length===0;
           const apiCaida=isSuc&&andreani.enabled&&!Array.isArray(oficiales);
-          // La búsqueda manual del template es SOLO fallback: se muestra si no
-          // hay lista oficial disponible (API caída, CP sin sucursales o cuenta
-          // sin Andreani prepago). Con lista oficial, el select es el único camino.
-          const showManual=!isSuc||(!hayOficiales&&!!locs);
+          // Búsqueda manual del template: para el flujo XLSX (sin wantOficial)
+          // SIEMPRE visible — es la única fuente de valores que el desplegable
+          // del Excel acepta, y la vía de escape si la sucursal oficial elegida
+          // no tiene equivalente ahí. En la emisión API (wantOficial) el select
+          // oficial sigue siendo el único camino (ahí se usa el id, no el string).
+          const showManual=!isSuc||(wantOficial?(!hayOficiales&&!!locs):!!locs);
           const results=showManual?(isSuc?searchSucursales(locs,locSearch):searchAndreaniLocations(locs,locSearch,locSearchType)):[];
           return (
             <div>
