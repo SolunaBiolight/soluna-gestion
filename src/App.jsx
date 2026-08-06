@@ -3914,14 +3914,17 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     };
     return {map:m,n,resolve};
   }
-  function pedirSucursal(pickupDetails, qTokens, cp){
+  function pedirSucursal(pickupDetails, qTokens, cp, geo){
     setSucQ(""); setSucRes(null); setSucCerca({loading:true});
     // Cercanas al punto original, ordenadas por distancia — solo las que
     // existen en el desplegable del template sirven para el XLSX.
     (async()=>{
       try{
         await ghLoadAndreaniLocations(); // asegura el template para mapear
-        const r=await authFetch(`/api/andreani?action=sucursales_cercanas&q=${encodeURIComponent(qTokens||"")}&cp=${encodeURIComponent(cp||"")}`);
+        const dir=geo?.dir||`${pickupDetails?.address?.address||""} ${pickupDetails?.address?.number||""}`.trim();
+        const gloc=geo?.loc||pickupDetails?.address?.locality||pickupDetails?.address?.city||"";
+        const gprov=geo?.prov||pickupDetails?.address?.province||"";
+        const r=await authFetch(`/api/andreani?action=sucursales_cercanas&q=${encodeURIComponent(qTokens||"")}&cp=${encodeURIComponent(cp||"")}&dir=${encodeURIComponent(dir)}&loc=${encodeURIComponent(gloc)}&prov=${encodeURIComponent(gprov)}`);
         const d=await r.json().catch(()=>null);
         if(!r.ok||!Array.isArray(d?.sucursales)) throw new Error(d?.error||`HTTP ${r.status}`);
         const {resolve}=tplSucMap();
@@ -3999,7 +4002,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         sucursal=ov[numero]||ghMatchSucursal(locs, d.direccion, d.pickupDetails);
         if(!sucursal){
           const cpSuc=String(d.pickupDetails?.address?.zipcode||d.pickupDetails?.address?.zip_code||d.cp||"").replace(/\D/g,"");
-          sucursal=await pedirSucursal(d.pickupDetails, q, cpSuc);
+          sucursal=await pedirSucursal(d.pickupDetails, q, cpSuc, d.pickupDetails?null:{dir:`${d.direccion||""} ${d.dirNumero||""}`.trim(),loc:d.localidad||"",prov:d.provincia||""});
           if(!sucursal) return false; // canceló el selector
           try{ov[numero]=sucursal;localStorage.setItem(ghKey("growith_sucOverrides"),JSON.stringify(ov));}catch(_){}
         }
@@ -6947,7 +6950,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       (async()=>{
         try{
           const toks=ghSucTokens(o.pickupDetails,o.direccion).slice(0,4).join(" ");
-          const r=await authFetch(`/api/andreani?action=sucursales_cercanas&q=${encodeURIComponent(toks)}&cp=${encodeURIComponent(cpDestinoDe(o)||"")}`);
+          // Dirección real del punto/destino para geocodificar el ancla en el
+          // backend (no depende de que el punto exista en ningún listado).
+          const pd=o.pickupDetails;
+          const dir=pd?`${pd.address?.address||""} ${pd.address?.number||""}`.trim():`${o.direccion||""} ${o.dirNumero||""}`.trim();
+          const gloc=pd?(pd.address?.locality||pd.address?.city||""):(o.localidad||o.ciudad||"");
+          const gprov=pd?(pd.address?.province||""):(o.provincia||"");
+          const r=await authFetch(`/api/andreani?action=sucursales_cercanas&q=${encodeURIComponent(toks)}&cp=${encodeURIComponent(cpDestinoDe(o)||"")}&dir=${encodeURIComponent(dir)}&loc=${encodeURIComponent(gloc)}&prov=${encodeURIComponent(gprov)}`);
           const d=await r.json().catch(()=>null);
           if(!r.ok||!Array.isArray(d?.sucursales)) throw new Error(d?.error||`HTTP ${r.status}`);
           const lista=d.sucursales.map(s=>({...s,tpl:ghTplDeOficial(locs,s)}));

@@ -251,6 +251,73 @@ async function sucursalesTodas(db, env) {
 
 const nrmTxt = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
+// Listado geo minificado (solo lo que hace falta para rankear por distancia):
+// el listado completo slim supera el límite de 1MB de Firestore, este entra.
+async function sucursalesGeo(db, env) {
+  const cacheRef = db.collection("andreani_config").doc("suc_geo");
+  try {
+    const hit = await cacheRef.get();
+    if (hit.exists) {
+      const d = hit.data();
+      if (Array.isArray(d.s) && d.s.length && Date.now() - (d.ts || 0) < SUC_TTL_MS) return d.s;
+    }
+  } catch (_) {}
+  const todas = await sucursalesTodas(db, env);
+  const s = todas.map(x => ({
+    id: x.id, d: x.descripcion || "", c: x.direccion?.calle || "", n: x.direccion?.numero || "",
+    l: x.direccion?.localidad || "", p: x.direccion?.codigoPostal || "", la: x.lat, lo: x.lng,
+  }));
+  try { await cacheRef.set({ ts: Date.now(), s }); } catch (_) {}
+  return s;
+}
+
+// Geocodificación directa de la dirección del pedido: no depende de que el
+// punto exista en ningún listado. georef (API oficial argentina, sin key) y
+// Nominatim/OSM de respaldo.
+async function geocodeDireccion({ dir, loc, prov, cp }) {
+  const clean = s => String(s || "").replace(/\bs\/?n\.?\b/gi, " ").replace(/\s+/g, " ").trim();
+  dir = clean(dir); loc = clean(loc); prov = clean(prov);
+  cp = String(cp || "").replace(/\D/g, "");
+  if (!dir) return null;
+  // TN manda CABA como "C.A.B.A."/"Capital Federal" con provincia "Buenos Aires"
+  const esCaba = /c\.?\s*a\.?\s*b\.?\s*a|capital federal|ciudad aut/i.test(loc + " " + prov) || /^1[0-4]\d\d$/.test(cp);
+  const tryGeoref = async (params) => {
+    const u = new URL("https://apis.datos.gob.ar/georef/api/direcciones");
+    u.searchParams.set("direccion", dir);
+    u.searchParams.set("max", "1");
+    for (const [k, v] of Object.entries(params)) if (v) u.searchParams.set(k, v);
+    const r = await fetch(u, { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    const ub = j?.direcciones?.[0]?.ubicacion;
+    return (ub && isFinite(ub.lat) && isFinite(ub.lon)) ? { lat: +ub.lat, lng: +ub.lon } : null;
+  };
+  try {
+    const provQ = esCaba ? "Ciudad Autónoma de Buenos Aires" : prov;
+    let g = await tryGeoref({ provincia: provQ, localidad: esCaba ? "" : loc });
+    if (!g && !esCaba && loc) g = await tryGeoref({ provincia: provQ });
+    // georef no encuentra "Avenida Juramento 2385" pero sí "Juramento 2385":
+    // reintento sin el prefijo de vía.
+    const sinVia = dir.replace(/^(avenida|avda\.?|av\.?|calle|diagonal|diag\.?|pasaje|pje\.?|boulevard|bulevar|bv\.?|blvd\.?|ruta)\s+/i, "").trim();
+    if (!g && sinVia && sinVia !== dir) {
+      const dirOrig = dir; dir = sinVia;
+      g = await tryGeoref({ provincia: provQ, localidad: esCaba ? "" : loc });
+      if (!g && !esCaba && loc) g = await tryGeoref({ provincia: provQ });
+      dir = dirOrig;
+    }
+    if (g) return g;
+  } catch (_) {}
+  try {
+    const qq = [dir, loc, prov, cp, "Argentina"].filter(Boolean).join(", ");
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ar&q=${encodeURIComponent(qq)}`,
+      { headers: { "User-Agent": "Growith/1.0 (gestion e-commerce AR)" }, signal: AbortSignal.timeout(6000) });
+    const j = r.ok ? await r.json().catch(() => null) : null;
+    const hit = Array.isArray(j) && j[0];
+    if (hit && isFinite(+hit.lat) && isFinite(+hit.lon)) return { lat: +hit.lat, lng: +hit.lon };
+  } catch (_) {}
+  return null;
+}
+
 // ─── Cotización (compartida entre `cotizar` y `emitir`) ────────────────────
 
 function normalizarBultos(bultos) {
@@ -557,59 +624,76 @@ export default async function handler(req, res) {
     }
 
     // ── sucursales_cercanas: sucursales ordenadas por distancia al punto de
-    // retiro ORIGINAL del pedido. Para cuando ese punto no existe en el
-    // desplegable del XLSX de carga masiva y hay que elegir una cercana.
-    // q = tokens del punto ("JURAMENTO 2385"); cp = fallback si el punto no
-    // está en el listado oficial (ancla = centroide de sucursales del CP).
+    // retiro ORIGINAL del pedido. El ancla se calcula GEOCODIFICANDO la
+    // dirección del pedido (dir/loc/prov/cp) — no depende de que el punto
+    // exista en ningún listado. Fallbacks: tokens del punto en el listado
+    // oficial → centroide del CP → aproximación por CP sin distancias.
     if (action === "sucursales_cercanas") {
       const q = nrmTxt(String(body.q || "").trim());
       const cp = String(body.cp || "").replace(/\D/g, "");
-      // Con CP: listado por CP (rápido y cacheado — el listado COMPLETO tarda
-      // demasiado y supera el límite de cache de Firestore). Sin CP: completo.
-      let todas;
-      try { todas = cp ? await sucursalesPorCp(db, env, cp) : await sucursalesTodas(db, env); }
-      catch (e) { return res.status(502).json({ error: e.message }); }
-      if (cp && (!Array.isArray(todas) || !todas.length)) {
-        try { todas = await sucursalesTodas(db, env); } catch (_) { todas = []; }
+      const dir = String(body.dir || "").trim();
+      const loc = String(body.loc || "").trim();
+      const prov = String(body.prov || "").trim();
+      // Candidatas: listado geo completo (minificado y cacheado); si no está
+      // disponible, al menos las del CP.
+      let geo = [];
+      try { geo = await sucursalesGeo(db, env); } catch (_) {}
+      if (!geo.length && cp) {
+        try {
+          geo = (await sucursalesPorCp(db, env, cp)).map(x => ({
+            id: x.id, d: x.descripcion || "", c: x.direccion?.calle || "", n: x.direccion?.numero || "",
+            l: x.direccion?.localidad || "", p: x.direccion?.codigoPostal || "", la: x.lat, lo: x.lng,
+          }));
+        } catch (e) { return res.status(502).json({ error: e.message }); }
       }
-      // 1) Ancla: el punto original por tokens exactos…
+      const expand = s => ({
+        id: s.id, descripcion: s.d,
+        direccion: { calle: s.c, numero: s.n, localidad: s.l, codigoPostal: s.p },
+        lat: s.la ?? null, lng: s.lo ?? null,
+      });
+      // 1) Ancla: geocodificación directa de la dirección del pedido.
       let origen = null;
-      if (q.length >= 2) {
-        const tokens = q.split(/\s+/).filter(Boolean);
-        const cand = todas.filter(s => {
-          const hay = nrmTxt([s.descripcion, s.direccion?.calle, s.direccion?.numero, s.direccion?.localidad].filter(Boolean).join(" "));
-          return tokens.every(t => hay.includes(t));
-        }).filter(s => s.lat != null);
-        if (cand.length) origen = { lat: cand[0].lat, lng: cand[0].lng, descripcion: cand[0].descripcion };
+      if (dir) {
+        const g = await geocodeDireccion({ dir, loc, prov, cp });
+        if (g) origen = { ...g, descripcion: dir };
       }
-      // 2) …o el centroide de las sucursales del CP del pedido.
+      // 2) …tokens del punto en el listado oficial…
+      if (!origen && q.length >= 2) {
+        const tokens = q.split(/\s+/).filter(Boolean);
+        const cand = geo.filter(s => {
+          const hay = nrmTxt([s.d, s.c, s.n, s.l].filter(Boolean).join(" "));
+          return tokens.every(t => hay.includes(t));
+        }).filter(s => s.la != null);
+        if (cand.length) origen = { lat: cand[0].la, lng: cand[0].lo, descripcion: cand[0].d };
+      }
+      // 3) …o el centroide de las sucursales del CP del pedido.
       if (!origen && cp) {
-        const delCp = todas.filter(s => String(s.direccion?.codigoPostal || "").replace(/\D/g, "") === cp && s.lat != null);
+        const delCp = geo.filter(s => String(s.p || "").replace(/\D/g, "") === cp && s.la != null);
         if (delCp.length) {
           origen = {
-            lat: delCp.reduce((a, s) => a + s.lat, 0) / delCp.length,
-            lng: delCp.reduce((a, s) => a + s.lng, 0) / delCp.length,
+            lat: delCp.reduce((a, s) => a + s.la, 0) / delCp.length,
+            lng: delCp.reduce((a, s) => a + s.lo, 0) / delCp.length,
             descripcion: `CP ${cp}`,
           };
         }
       }
-      const conCoords = todas.filter(s => s.lat != null).length;
-      const stats = { todas: todas.length, conCoords };
+      const conCoords = geo.filter(s => s.la != null).length;
+      const stats = { todas: geo.length, conCoords };
       if (origen && conCoords) {
-        const conDist = todas
-          .filter(s => s.lat != null)
-          .map(s => ({ ...s, distM: distanciaM(origen.lat, origen.lng, s.lat, s.lng) }))
+        const conDist = geo
+          .filter(s => s.la != null)
+          .map(s => ({ ...expand(s), distM: distanciaM(origen.lat, origen.lng, s.la, s.lo) }))
           .sort((a, b) => a.distM - b.distM)
           .slice(0, 40);
         return res.json({ sucursales: conDist, origen: origen.descripcion, stats });
       }
       // Sin coordenadas o sin ancla: aproximación por CP (mismo CP primero,
-      // después el resto de la misma localidad si se puede inferir del CP).
+      // después el resto de la misma localidad).
       if (cp) {
-        const mismoCp = todas.filter(s => String(s.direccion?.codigoPostal || "").replace(/\D/g, "") === cp);
-        const loc = nrmTxt(mismoCp[0]?.direccion?.localidad || "");
-        const mismaLoc = loc ? todas.filter(s => nrmTxt(s.direccion?.localidad || "") === loc && !mismoCp.includes(s)) : [];
-        const lista = [...mismoCp, ...mismaLoc].slice(0, 40);
+        const mismoCp = geo.filter(s => String(s.p || "").replace(/\D/g, "") === cp);
+        const locCp = nrmTxt(mismoCp[0]?.l || loc || "");
+        const mismaLoc = locCp ? geo.filter(s => nrmTxt(s.l || "") === locCp && !mismoCp.includes(s)) : [];
+        const lista = [...mismoCp, ...mismaLoc].slice(0, 40).map(expand);
         if (lista.length) return res.json({ sucursales: lista, origen: `CP ${cp}`, aproximado: true, stats });
       }
       return res.json({ sucursales: [], sinOrigen: true, stats });
