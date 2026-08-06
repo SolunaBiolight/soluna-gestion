@@ -3169,11 +3169,13 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           {showGuia&&(
             <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
-                {n:1,icon:"",title:"Pipeline Kanban",desc:"Los reclamos se organizan por etapa: Nuevo → En proceso → Esperando cliente → Resuelto. Mové las cards entre columnas según el avance."},
-                {n:2,icon:"",title:"Nuevo reclamo",desc:"Registrá el problema con el número de pedido, el cliente y qué pasó. Cuanto más detalle, más fácil resolverlo rápido."},
-                {n:3,icon:"",title:"Cambios de producto",desc:"Si hay cambio o devolución, registrá qué productos entran y cuáles salen para tener el historial completo."},
-                {n:4,icon:"",title:"Tracking",desc:"Cargá el número de seguimiento del envío de cambio directamente en el reclamo para que todo quede en un solo lugar."},
-                {n:5,icon:"",title:"Historial",desc:"Todos los reclamos cerrados quedan guardados. Útil para analizar patrones, mejorar el servicio y responder disputas."},
+                {n:1,icon:"",title:"Pipeline Kanban",desc:"Cada reclamo es una card que se mueve por etapas: Nuevo → Contactado → Esperando producto → Producto recibido → Envío en camino → Resuelto. Arrastrala de columna a medida que avanza, así todo el equipo ve el estado real de un vistazo."},
+                {n:2,icon:"",title:"Crear un reclamo",desc:"Con '+ Reclamo' lo cargás a mano, o buscá el pedido por número/cliente y tocá '+ Reclamo' en la fila: se autocompletan cliente, productos y total. Elegí si es Cambio o Devolución y el motivo — cuanto más claro, más rápido se resuelve."},
+                {n:3,icon:"",title:"Qué entra y qué sale",desc:"En cambios, registrá qué productos te devuelve el cliente y cuáles le enviás vos. Queda el historial completo para que nunca haya dudas de qué se acordó."},
+                {n:4,icon:"",title:"Tracking en vivo",desc:"Cargá el número de seguimiento de Andreani (del envío del cliente hacia vos, o del tuyo hacia él) y la card muestra sola en qué etapa está: en camino hacia acá, llegó, listo para retirar en sucursal, en camino al cliente o entregado. Se actualiza automáticamente cada 30 minutos."},
+                {n:5,icon:"",title:"Actualizar ahora",desc:"El botón 'Actualizar envíos' del topbar consulta Andreani en el momento, para cuando atención al cliente necesita el estado ya."},
+                {n:6,icon:"",title:"Notas y seguimiento",desc:"Cada reclamo tiene notas internas con fecha: qué se habló con el cliente, qué falta, promesas hechas. Ideal para que cualquiera del equipo retome la conversación sin preguntar."},
+                {n:7,icon:"",title:"Historial",desc:"Los reclamos resueltos y rechazados quedan guardados para siempre: sirven para detectar patrones (productos que fallan, motivos repetidos) y responder disputas con evidencia."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -4136,13 +4138,16 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         try{
           const r=await authFetch(`/api/andreani?action=sucursales_buscar&q=${encodeURIComponent(q)}`);
           const j=await r.json().catch(()=>null);
-          if(r.ok&&Array.isArray(j?.sucursales)&&j.sucursales.length===1&&(j.sucursales[0].descripcion||"").trim()){
-            // Solo sirve si ese nombre EXISTE en el desplegable del template:
-            // el Excel rechaza cualquier valor fuera de su lista, aunque la
-            // sucursal sea real. Si no está → selector de cercanas.
+          if(r.ok&&Array.isArray(j?.sucursales)&&j.sucursales.length){
+            // Solo sirve un nombre que EXISTA en el desplegable del template:
+            // el Excel rechaza cualquier valor fuera de su lista. El listado
+            // oficial repite la misma sucursal (variantes de CP/tildes), así
+            // que se traducen TODOS los resultados al desplegable: si todos
+            // apuntan al mismo nombre, es esa — sin abrir el selector.
             await ghLoadAndreaniLocations();
-            const {map,n}=tplSucMap();
-            sucursal=map.get(n(j.sucursales[0].descripcion))||null;
+            const {resolve}=tplSucMap();
+            const tpls=[...new Set(j.sucursales.map(s=>resolve(s)).filter(Boolean))];
+            if(tpls.length===1) sucursal=tpls[0];
           }
         }catch(_){ /* sin API oficial → template/selector */ }
       }
@@ -4665,11 +4670,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           {showGuia&&(
             <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
-                {n:1,title:"Perfiles",desc:"Creá el perfil del influencer con su código, % descuento y % comisión — se reutiliza en cada canje."},
-                {n:2,title:"Nuevo canje",desc:"Elegí el perfil (se autocompleta) o cargalo desde un pedido, productos, tracking y contenido acordado. El estado arranca en 'Por enviar'."},
-                {n:3,title:"Seguimiento automático",desc:"Con el tracking cargado, Growith sigue el envío en Andreani y te avisa cuando llega a sucursal o se entrega. Al entregarse pasa solo a 'Contenido pendiente'."},
-                {n:4,title:"Contenido",desc:"En el detalle marcás los contenidos entregados sobre los acordados. Si a los 5 días de entregado falta contenido, te llega un recordatorio por email."},
-                {n:5,title:"Pagos Cupones",desc:"En Historial cruzás las ventas reales de TN con cada código para calcular la comisión exacta a pagar."},
+                {n:1,title:"Perfiles de influencers",desc:"Creá el perfil una sola vez: código de descuento, % de descuento, % de comisión, redes y nicho. Después cada canje nuevo se autocompleta eligiendo el perfil."},
+                {n:2,title:"Nuevo canje",desc:"Con '+ Canje' elegís el perfil o cargás los datos desde un pedido real ('Cargar desde pedido' trae cliente, productos con nombre corto, dirección y hasta el punto de retiro). Definí los productos, el contenido acordado y listo: arranca en 'Por enviar'."},
+                {n:3,title:"Etiqueta Andreani desde el alta",desc:"Si cargaste el pedido, el botón 'Exportar XLSX Andreani' del mismo modal te da el Excel del envío al toque — sin crear el canje, ir al detalle y volver. Si el punto de retiro no existe en la lista de Andreani, se abre el selector de sucursales cercanas ordenadas por distancia."},
+                {n:4,title:"Kanban por estado",desc:"Las columnas son el ciclo completo: Por enviar → Enviado → Contenido pendiente → Cerrado. 'Contenido pendiente' se ordena por urgencia (lo más viejo arriba) y Cerrado muestra los últimos 30 días (con botón para ver todos)."},
+                {n:5,title:"Seguimiento automático",desc:"Con el tracking cargado, Growith sigue el envío en Andreani cada 30 minutos y te avisa cuando llega a sucursal o se entrega — el banner de avisos tiene 'Ver tracking' directo. Al entregarse, el canje pasa solo a 'Contenido pendiente'."},
+                {n:6,title:"Contenido y recordatorios",desc:"En el detalle marcás los contenidos entregados sobre los acordados (la barra de progreso de cada card). Si a los 5 días de entregado falta contenido, te llega un recordatorio por email. También podés crear una tarea de guion para el equipo con fecha límite."},
+                {n:7,title:"Cupones y comisiones",desc:"En Historial se cruzan las ventas REALES de Tienda Nube con cada código de descuento: ves cuántas ventas trajo, cuánto facturó y la comisión exacta a pagar (con % editable por cupón). Marcá pagos hechos para llevar la cuenta."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -6847,7 +6854,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const nameMatch=!!(tnName&&desc&&(desc===tnName||desc.includes(tnName)||tnName.includes(desc)));
       return dirMatch||nameMatch;
     });
-    return cands.length===1?cands[0]:null;
+    // El listado oficial repite la misma sucursal con variantes (CP, tildes,
+    // localidad larga/corta): deduplicar por nombre+número antes de exigir
+    // unicidad, si no un match perfecto con 3 copias abría el modal al pedo.
+    const key=s=>nrmSucTxt(s.descripcion)+"|"+String(s.direccion?.numero||"").replace(/\D.*/,"").trim();
+    const unicas=[...new Map(cands.map(s=>[key(s),s])).values()];
+    return unicas.length===1?unicas[0]:null;
   }
 
   // Atajos de teclado
@@ -7831,10 +7843,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               {showGuia&&(
                 <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
                   {[
-                    {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de Tienda Nube se sincronizan solos. En 'Por empaquetar' ves todo lo que falta despachar y generás las etiquetas desde acá."},
-                    {n:2,icon:"",title:"Generar etiquetas",desc:"En 'Por enviar', seleccioná los pedidos y generá el Excel de carga masiva para Andreani (domicilio y sucursal/HOP). Lo subís al portal de Andreani y descargás los rótulos PDF."},
-                    {n:3,icon:"",title:"Procesar rótulos",desc:"Subí el PDF de rótulos UNA sola vez en 'SKU en Rótulos': imprime los SKUs en cada etiqueta Y desde ahí mismo enviás los seguimientos a Tienda Nube (que le avisa al cliente)."},
-                    {n:4,icon:"",title:"Seguimiento automático",desc:"Después del despacho, Growith consulta Andreani cada 30 minutos y en 'Seguimientos' ves cada envío: en camino, en sucursal, demorado o entregado, con alertas."},
+                    {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de Tienda Nube se sincronizan solos, sin cargar nada a mano. En 'Por empaquetar' ves todo lo que falta despachar; cuando marcás un pedido como empaquetado pasa a 'Por enviar'. El botón 'Sincronizar' de arriba trae lo último al instante."},
+                    {n:2,icon:"",title:"El paquete y el valor declarado",desc:"El botón 'Paquete' guarda las medidas, el peso y el valor declarado con los que se cotizan y emiten TODAS tus etiquetas. El valor declarado define el seguro que cobra Andreani (un % de ese valor) — no es el total de la venta: poné lo que realmente querés asegurar."},
+                    {n:3,icon:"",title:"Etiquetas por Excel",desc:"En 'Por enviar', seleccioná pedidos y tocá 'Exportar XLSX': sale el Excel de carga masiva listo para subir al portal de Andreani (domicilio y sucursal/HOP en sus hojas correctas). Si el punto de retiro del cliente no existe en la lista de Andreani, se abre un selector con las sucursales más cercanas ordenadas por distancia para que elijas una."},
+                    {n:4,icon:"",title:"Etiquetas listas (prepago)",desc:"Si tenés el prepago habilitado, el botón 'Emitir etiquetas' cotiza y emite directo por la API de Andreani: el PDF sale al instante y el costo se debita de tu saldo. También podés cotizar un pedido puntual con el chip 'Cotizar' de cada fila antes de decidir."},
+                    {n:5,icon:"",title:"Saldo de envíos",desc:"El chip verde con la billetera (arriba) muestra tu saldo. Tocalo para cargar: con Mercado Pago se acredita solo al instante, o por transferencia con referencia y lo acredita el equipo. Ahí mismo ves los movimientos (cada etiqueta descuenta) y tu sucursal de despacho."},
+                    {n:6,icon:"",title:"Procesar rótulos",desc:"Subí el PDF de rótulos UNA sola vez en 'SKU en Rótulos': imprime el SKU de cada pedido en su etiqueta (para armar los paquetes sin errores) Y desde ahí mismo enviás los números de seguimiento a Tienda Nube, que le avisa al cliente por mail."},
+                    {n:7,icon:"",title:"Seguimiento automático",desc:"Después del despacho, Growith consulta Andreani cada 30 minutos, sin que tengas la app abierta. En 'Seguimientos' ves cada envío por etapa: en camino, en sucursal (con días esperando), entregado o devolución, con alertas cuando algo se demora."},
+                    {n:8,icon:"",title:"Si algo no cuadra",desc:"¿Una dirección o sucursal quedó mal en el Excel? Al exportar, Growith te pide confirmar las que no puede resolver solo y recuerda tu elección para la próxima. También podés excluir un pedido puntual del export."},
                   ].map(s=>(
                     <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                       <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -15244,6 +15260,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       {n:4,title:"Correcciones",desc:"Al pedir cambios, escribí exactamente qué modificar. El texto le llega automáticamente por email al colaborador."},
                       {n:5,title:"Calendario",desc:"El botón 'Calendario' muestra todos los deadlines y eventos del mes. Agregá fechas clave como Hot Sale, lanzamientos y festividades."},
                       {n:6,title:"Recurrentes",desc:"Activá 'Tarea recurrente' al crear. Cuando la aprobás, la siguiente se crea sola con el deadline desplazado automáticamente."},
+                      {n:7,title:"Portal del colaborador",desc:"Cada colaborador tiene un link propio (sin crear cuenta): ve SOLO sus tareas, entrega desde ahí y recibe las correcciones. Compartilo desde su perfil en Equipo."},
+                      {n:8,title:"Referencias y tablero",desc:"En Referencias guardás material reutilizable (links, ejemplos, guías de marca). El tablero compartido te da un link para mostrar el estado del trabajo a alguien de afuera, solo lectura."},
                     ].map(s=>(
                       <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                         <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -24162,11 +24180,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           {showGuia&&(
             <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
-                {n:1,icon:"",title:"Conectar Meta",desc:"Necesitás un token desde Business Manager → Usuarios del sistema. Configuralo en Config → Meta Ads siguiendo las instrucciones exactas de permisos."},
-                {n:2,icon:"",title:"Ver campañas",desc:"Ves todas tus campañas activas con gasto, alcance, impresiones y resultados del período seleccionado."},
-                {n:3,icon:"",title:"Publicar creativos",desc:"En Publicar subís imágenes y videos en masa, escribís el copy y Growith crea los anuncios en tu campaña (con opción de publicación automática al terminar la subida)."},
-                {n:4,icon:"",title:"Reglas automáticas",desc:"En Reglas definís condiciones (ROAS, CPA, gasto) y Growith pausa, sube o baja presupuesto solo — cada 30 min con la app abierta y 1 vez al día en la nube."},
-                {n:5,icon:"",title:"Token vencido",desc:"Si el token vence, aparece un banner rojo arriba con el botón para reconectar. Desde esta versión Growith renueva el token automáticamente antes del vencimiento."},
+                {n:1,icon:"",title:"Conectar Meta",desc:"Hoy se conecta con la 'conexión manual': un token desde Business Manager → Usuarios del sistema, siguiendo las instrucciones paso a paso de Config → Meta Ads. La conexión en 1 clic con Facebook va a estar disponible pronto."},
+                {n:2,icon:"",title:"Ver campañas",desc:"Todas tus campañas con gasto, alcance, impresiones, compras y ROAS del período elegido. Podés pausar o activar campañas y conjuntos desde acá, con confirmación."},
+                {n:3,icon:"",title:"Análisis",desc:"La tabla de análisis desglosa el rendimiento por campaña, conjunto o anuncio, con drill-down, columnas configurables y breakdowns (edad, ubicación, ubicación del anuncio). Definí tu ROAS break-even y se pinta solo qué gana y qué pierde plata."},
+                {n:4,icon:"",title:"Publicar creativos",desc:"En Publicar subís imágenes y videos en masa, escribís el copy y Growith crea los anuncios en tu campaña (con opción de publicación automática al terminar la subida)."},
+                {n:5,icon:"",title:"Reglas automáticas",desc:"En Reglas definís condiciones (ROAS, CPA, gasto) y Growith pausa, sube o baja presupuesto solo — cada 30 min con la app abierta y 1 vez al día en la nube, avisándote de cada acción."},
+                {n:6,icon:"",title:"Gasto en tu profit",desc:"El gasto de Meta se descuenta automáticamente en el Dashboard de márgenes: tu profit ya lo tiene restado, sin planillas."},
+                {n:7,icon:"",title:"Token vencido",desc:"Si el token vence, aparece un banner rojo arriba con el botón para reconectar. Growith además renueva el token automáticamente antes del vencimiento."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -25965,16 +25985,35 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
     "¿Tengo envíos demorados o sin retirar?",
     "¿Mi ROAS está por encima del break-even?",
   ];
+  const [showGuiaCp,setShowGuiaCp]=useState(false);
 
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Copilot" sectionId="copilot" onHome={onHome}>
+      <AppTopbar T={T} section="Copilot" sectionId="copilot" onHome={onHome}
+        onHelp={()=>setShowGuiaCp(s=>!s)}>
         {msgs.length > 0 && (
           <button onClick={()=>{ setMsgs([]); setDatosAl(null); try{sessionStorage.removeItem("growith_copilot_msgs");}catch(_){} if(uid) setDoc(doc(db,"users",uid,"copilot","historial"),{msgs:[],updated:new Date().toISOString()}).catch(()=>{}); }} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.textMd}}>Nueva conversación</button>
         )}
       </AppTopbar>
 
       <div style={{flex:1,display:"flex",flexDirection:"column",maxWidth:760,margin:"0 auto",width:"100%",padding:"0 16px"}} className="main-content">
+
+        {showGuiaCp&&(
+          <div style={{padding:"14px 4px 0",display:"flex",flexDirection:"column",gap:5}}>
+            {[
+              {n:1,title:"Preguntale lo que quieras de TU negocio",desc:"Copilot lee tus datos reales (ventas, profit, stock, envíos, campañas) y responde con cifras exactas — no inventa números. Probá las preguntas sugeridas para arrancar."},
+              {n:2,title:"Adjuntos",desc:"Podés subirle una imagen o un archivo (un CSV, una captura de una campaña) y analizarlo en contexto con tus datos."},
+              {n:3,title:"Acciones",desc:"Además de responder, puede ejecutar cosas si se lo pedís: crear una tarea al equipo, ajustar el presupuesto de una campaña de Meta o corregir stock. Siempre te confirma antes."},
+              {n:4,title:"Resumen diario",desc:"Pedile 'el resumen del día' y te arma el estado del negocio: ventas, profit, alertas de stock y envíos con problemas."},
+              {n:5,title:"Historial",desc:"La conversación se guarda en tu cuenta. 'Nueva conversación' arranca de cero cuando quieras cambiar de tema."},
+            ].map(s=>(
+              <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
+                <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
+                <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Mensajes */}
         <div ref={scrollRef} style={{flex:1,overflowY:"auto",padding:"24px 4px 12px",display:"flex",flexDirection:"column",gap:14}}>
@@ -26306,15 +26345,32 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
   }
 
   const cur = (n) => "$"+(n||0).toLocaleString("es-AR");
+  const [showGuiaMl,setShowGuiaMl]=useState(false);
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Gestión Mercado Libre" sectionId="ml" onHome={onHome}
-        >
+        onHelp={()=>setShowGuiaMl(s=>!s)}>
         <button onClick={loadItems} disabled={loading} style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px"}}>{loading?<Spinner size={12} color="#fff"/>:"↻"} Refrescar</button>
       </AppTopbar>
 
       <div style={{maxWidth:1280,margin:"0 auto",padding:"24px 24px 80px",width:"100%"}}>
+        {showGuiaMl&&(
+          <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+            {[
+              {n:1,title:"Conectar",desc:"Vinculás tu cuenta de Mercado Libre desde Config con un clic (OAuth oficial). Con eso entran tus publicaciones, ventas y comisiones a toda la app."},
+              {n:2,title:"Publicaciones",desc:"Todas tus publicaciones con estado (activa/pausada), precio, stock y ventas. Filtrá por estado y buscá por título o SKU."},
+              {n:3,title:"Ventas en tus números",desc:"Las ventas de ML aparecen en el Dashboard con sus comisiones e impuestos reales descontados, y el gasto de Mercado Ads también se resta solo del profit."},
+              {n:4,title:"Stock cruzado",desc:"Con el catálogo vinculado por SKU (sección Stock), las ventas de ML descuentan del inventario central y podés empujar ajustes de stock hacia ML."},
+              {n:5,title:"Facturas automáticas",desc:"Si usás el Facturador con piloto automático, cada venta de ML se factura sola y el PDF se sube a la orden como documento fiscal — el comprador lo ve sin que hagas nada."},
+            ].map(s=>(
+              <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
+                <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
+                <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
+              </div>
+            ))}
+          </div>
+        )}
         {tab==="analytics" ? (
           <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"60px 30px",textAlign:"center"}}>
             <div style={{marginBottom:12,display:"flex",justifyContent:"center"}}><svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
@@ -28657,7 +28713,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 {n:1,icon:"",title:"Resumen",desc:"KPIs de ventas y stock del período, proyección de demanda y las alertas activas (productos por agotarse). Es tu vista diaria."},
                 {n:2,icon:"",title:"Inventario",desc:"Tu catálogo con stock, velocidad de venta y días restantes por producto. Abajo, el inventario central de Growith: usá 'Vincular catálogo (SKU)' para unificar TN/Shopify/ML por SKU — las ventas lo descuentan solas."},
                 {n:3,icon:"",title:"Movimientos",desc:"Cada cambio de stock queda registrado: ventas por canal, ajustes manuales, transferencias entre depósitos."},
-                {n:4,icon:"",title:"Configuración",desc:"Umbral de alertas (global y por producto), lead time del proveedor, notificaciones y depósitos. La config se guarda en tu cuenta, no en el navegador."},
+                {n:4,icon:"",title:"Stock cruzado",desc:"En Config activás la sincronización de escritura: cuando ajustás stock en Growith, se empuja a Tienda Nube y Mercado Libre (con opción de manejar ML por separado y modo simulación para probar sin tocar nada)."},
+                {n:5,icon:"",title:"Configuración",desc:"Umbral de alertas (global y por producto), lead time del proveedor, notificaciones por email/WhatsApp y depósitos con transferencias entre ellos. La config se guarda en tu cuenta, no en el navegador."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -29872,6 +29929,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const [fullNums, setFullNums] = useState(()=>{ try{return localStorage.getItem(ghKey("growith_margenes_fullnums"))==="1";}catch(_){return false;} });
   const [viewMenu, setViewMenu] = useState(false); // menú "Vista" del topbar ($ completos + USD)
   const [viewMenuPos, setViewMenuPos] = useState({top:0,right:10}); // fijo: escapa del topbar scrolleable
+  const [showGuia,setShowGuia]=useState(false); // guía "¿Cómo funciona?" del topbar
   const [extraMenu, setExtraMenu] = useState(false); // menú ⋯ (compartir / reprocesar)
   const [extraMenuPos, setExtraMenuPos] = useState({top:0,right:10});
 
@@ -30308,7 +30366,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
 
   return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Dashboard" sectionId="margenes" onHome={onHome}>
+      <AppTopbar T={T} section="Dashboard" sectionId="margenes" onHome={onHome}
+        onHelp={()=>setShowGuia(s=>!s)}>
         {/* Preferencias de vista unificadas: números completos + USD en un solo menú */}
         <div style={{position:"relative"}}>
           <button onClick={e=>{const r=e.currentTarget.getBoundingClientRect(); setViewMenuPos({top:r.bottom+6,right:Math.max(10,Math.min(window.innerWidth-r.right,window.innerWidth-246))}); setViewMenu(v=>!v);}} title="Preferencias de vista"
@@ -30380,6 +30439,29 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       </AppTopbar>
 
       <MargenesTabsBar T={T} tab={tab||"dashboard"} setTab={setTab}/>
+
+      {/* Guía "¿Cómo funciona?" del botón ? del topbar */}
+      {showGuia&&(
+        <div style={{maxWidth:1440,margin:"0 auto",padding:"14px 24px 0",width:"100%"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:5,paddingLeft:2,marginBottom:4}}>
+            {[
+              {n:1,title:"Tu profit real",desc:"Cada venta entra sola desde Tienda Nube y Mercado Libre, y Growith le descuenta TODO: comisiones de la plataforma y del medio de pago, impuestos, costo de envío, costo del producto y la publicidad (Meta y Mercado Ads). Lo que ves es lo que realmente te queda."},
+              {n:2,title:"Las cards",desc:"Ventas, profit, margen, ROAS, ticket promedio y más. Se arrastran para reordenar y elegís cuáles ver. Cada card compara contra el período anterior."},
+              {n:3,title:"Canales",desc:"Cambiá entre Global, Tienda Nube y Mercado Libre para ver los números de cada canal por separado, con sus propias comisiones e impuestos."},
+              {n:4,title:"Costos",desc:"En la tab Costos cargás el costo de cada producto ($ o % del precio) — sin eso el profit no puede ser real. En Adicionales van los costos fijos mensuales (alquiler, sueldos, apps) y en Dólar la cotización para verlo todo en USD."},
+              {n:5,title:"P&L Mensual",desc:"El estado de resultados de cada mes: facturación, costos, impuestos, publicidad y resultado final. Ideal para comparar meses y ver la tendencia."},
+              {n:6,title:"Impuestos y comisiones",desc:"En Comisiones configurás qué % se lleva cada canal y método de pago, e impuestos como IIBB. Growith los aplica automáticamente a cada venta según su canal."},
+              {n:7,title:"Fact. Externa",desc:"¿Vendés también por fuera (mayorista, showroom, transferencia)? Cargalo en Facturación Externa y entra al profit global sin mezclarse con los canales conectados."},
+              {n:8,title:"Actualizar y compartir",desc:"'Actualizar' recalcula el día al segundo. En el menú ⋯ podés reprocesar 60 días si cambiaste costos hacia atrás, y compartir un resumen."},
+            ].map(s=>(
+              <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
+                <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
+                <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Flotante (no empuja el contenido): antes esta franja entraba en el
           flujo y toda la página saltaba cuando aparecía. */}
