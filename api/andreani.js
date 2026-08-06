@@ -564,9 +564,14 @@ export default async function handler(req, res) {
     if (action === "sucursales_cercanas") {
       const q = nrmTxt(String(body.q || "").trim());
       const cp = String(body.cp || "").replace(/\D/g, "");
+      // Con CP: listado por CP (rápido y cacheado — el listado COMPLETO tarda
+      // demasiado y supera el límite de cache de Firestore). Sin CP: completo.
       let todas;
-      try { todas = await sucursalesTodas(db, env); }
+      try { todas = cp ? await sucursalesPorCp(db, env, cp) : await sucursalesTodas(db, env); }
       catch (e) { return res.status(502).json({ error: e.message }); }
+      if (cp && (!Array.isArray(todas) || !todas.length)) {
+        try { todas = await sucursalesTodas(db, env); } catch (_) { todas = []; }
+      }
       // 1) Ancla: el punto original por tokens exactos…
       let origen = null;
       if (q.length >= 2) {

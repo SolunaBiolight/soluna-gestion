@@ -3964,6 +3964,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       if(!sucursal){
         const locs=await ghLoadAndreaniLocations();
         let ov={}; try{ov=JSON.parse(localStorage.getItem(ghKey("growith_sucOverrides"))||"{}");}catch(_){}
+        // Un override viejo pudo guardar un nombre que NO está en el desplegable
+        // (ej: el nombre oficial de la API) — se descarta y se limpia.
+        if(ov[numero]&&!(locs.sucursales||[]).includes(ov[numero])){
+          delete ov[numero];
+          try{localStorage.setItem(ghKey("growith_sucOverrides"),JSON.stringify(ov));}catch(_){}
+        }
         sucursal=ov[numero]||ghMatchSucursal(locs, d.direccion, d.pickupDetails);
         if(!sucursal){
           const cpSuc=String(d.pickupDetails?.address?.zipcode||d.pickupDetails?.address?.zip_code||d.cp||"").replace(/\D/g,"");
@@ -6541,7 +6547,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       ords.forEach(function(o,i){
         const rn=startRow+i;
         const {nombre,apellido,telCod,telNum}=getPersonData(o);
-        const sucursal=sucursalOverridesRef.current[o.numero]||findAndreaniSucursal(locs,o.direccion,o.pickupDetails)||"";
+        // Override solo si es un valor VÁLIDO del desplegable: una elección
+        // vieja pudo guardar el nombre oficial de Andreani (que el Excel
+        // rechaza con "no es del campo desplegable") — se descarta y limpia.
+        let ovr=sucursalOverridesRef.current[o.numero]||"";
+        if(ovr&&!(locs.sucursales||[]).includes(ovr)){ delete sucursalOverridesRef.current[o.numero]; persistOverrides(); ovr=""; }
+        const sucursal=ovr||findAndreaniSucursal(locs,o.direccion,o.pickupDetails)||"";
         const cells=[
           sC('A'+rn,""),
           nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
