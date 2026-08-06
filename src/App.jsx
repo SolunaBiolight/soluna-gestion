@@ -1750,6 +1750,16 @@ function ghTplDeOficial(locs, oficial){
   return cand.length===1?cand[0]:null;
 }
 
+// Tokens significativos del punto de retiro ("JURAMENTO 2385") para buscar
+// en la lista oficial — sin PUNTO/ANDREANI/HOP/AVENIDA/etc.
+function ghSucTokens(pickupDetails, direccion){
+  const nrm=s=>String(s||"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
+  const STOP=new Set(["PUNTO","ANDREANI","HOP","PICKIT","RETIRO","SUCURSAL","AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL","ESPACIO","DE","DEL","LA","EL"]);
+  const src=nrm([pickupDetails?.name,pickupDetails?.address?.address,pickupDetails?.address?.number,(!pickupDetails&&direccion)||""].filter(Boolean).join(" "));
+  return [...new Set(src.split(" ").filter(w=>w&&!STOP.has(w)&&(w.length>=4||/^\d{2,}$/.test(w))))];
+}
+const ghFmtDist=m=>m==null?"":m<1000?`a ${m} m`:`a ${(m/1000).toFixed(1).replace(".",",")} km`;
+
 // XLSX de carga masiva de Andreani con UN solo envío. `o` es un pseudo-pedido
 // {numero, comprador, dni, email, telefono, cp, provincia, localidad,
 // direccion, dirNumero, piso, esSucursal, pickupDetails}. Si esSucursal, la
@@ -3925,15 +3935,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     })();
     return new Promise(resolve=>setSucPick({resolve, hint:pickupDetails?.name||pickupDetails?.address?.address||""}));
   }
-  const fmtDist=m=>m==null?"":m<1000?`a ${m} m`:`a ${(m/1000).toFixed(1).replace(".",",")} km`;
-  // Tokens significativos del punto de retiro ("JURAMENTO 2385") para buscar
-  // en la lista oficial — sin PUNTO/ANDREANI/HOP/AVENIDA/etc.
-  function sucTokens(pickupDetails, direccion){
-    const nrm=s=>String(s||"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
-    const STOP=new Set(["PUNTO","ANDREANI","HOP","PICKIT","RETIRO","SUCURSAL","AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL","ESPACIO","DE","DEL","LA","EL"]);
-    const src=nrm([pickupDetails?.name,pickupDetails?.address?.address,pickupDetails?.address?.number,(!pickupDetails&&direccion)||""].filter(Boolean).join(" "));
-    return [...new Set(src.split(" ").filter(w=>w&&!STOP.has(w)&&(w.length>=4||/^\d{2,}$/.test(w))))];
-  }
+  const fmtDist=ghFmtDist;
+  const sucTokens=ghSucTokens;
   useEffect(()=>{
     if(!sucPick) return;
     const q=sucQ.trim();
@@ -6100,6 +6103,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [searchEnvios,setSearchEnvios]=useState("");
   const [searchLibre,setSearchLibre]=useState(false);
   const [locationModal,setLocationModal]=useState(null);
+  // Sucursales cercanas al punto del pedido para el modal de elección (flujo
+  // XLSX): null | {loading} | {lista:[{...,distM,tpl}],origen,aproximado,diag}
+  const [locCerca,setLocCerca]=useState(null);
   const [locSearch,setLocSearch]=useState("");
   const [locSearchType,setLocSearchType]=useState("ciudad");
   const [locOficialSel,setLocOficialSel]=useState(""); // id elegido en la lista oficial Andreani (modal sucursal del XLSX)
@@ -6934,6 +6940,21 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         persistOverrides();
         continue;
       }
+      // Cercanas al punto original ordenadas por distancia (mismo motor que
+      // Canjes): se cargan de fondo una vez por pedido, mapeadas al string
+      // exacto del desplegable con ghTplDeOficial.
+      setLocCerca({loading:true});
+      (async()=>{
+        try{
+          const toks=ghSucTokens(o.pickupDetails,o.direccion).slice(0,4).join(" ");
+          const r=await authFetch(`/api/andreani?action=sucursales_cercanas&q=${encodeURIComponent(toks)}&cp=${encodeURIComponent(cpDestinoDe(o)||"")}`);
+          const d=await r.json().catch(()=>null);
+          if(!r.ok||!Array.isArray(d?.sucursales)) throw new Error(d?.error||`HTTP ${r.status}`);
+          const lista=d.sucursales.map(s=>({...s,tpl:ghTplDeOficial(locs,s)}));
+          const validas=lista.filter(s=>s.tpl);
+          setLocCerca({lista:(validas.length?[...validas,...lista.filter(s=>!s.tpl).slice(0,5)]:lista).slice(0,18),origen:d.origen||"",aproximado:!!d.aproximado,diag:d.sinOrigen?"sin_origen":(d.stats&&!d.stats.conCoords?"sin_coords":"")});
+        }catch(e){ setLocCerca({lista:[],diag:String(e?.message||"error")}); }
+      })();
       // Modal con reintento: no se acepta un valor fuera del desplegable.
       let resuelto=false;
       while(!resuelto){
@@ -8561,10 +8582,47 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   No se encontró la localidad exacta — buscala abajo.
                 </div>
               )}
-              {/* Lista OFICIAL de sucursales Andreani (API): único protagonista
-                  cuando está disponible. Solo se llega acá ante ambigüedad real
-                  (el auto-match silencioso ya resolvió los casos claros). */}
-              {hayOficiales&&(
+              {/* Flujo XLSX: cercanas al punto del pedido ordenadas por
+                  distancia, ya traducidas al string del desplegable del Excel.
+                  Las que no existen ahí se ven pero no se pueden elegir. */}
+              {isSuc&&!wantOficial&&(
+                <div style={{marginBottom:14}}>
+                  <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
+                    {locCerca?.aproximado?`Sucursales de la zona del pedido${locCerca?.origen?` (${locCerca.origen})`:""}`:"Sucursales más cercanas al punto del pedido"}
+                  </div>
+                  {locCerca?.loading?(
+                    <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/> Buscando sucursales cercanas...</div>
+                  ):(locCerca?.lista||[]).length===0?(
+                    <div style={{fontSize:12,color:T.textSm,padding:"10px 4px"}}>
+                      {locCerca?.diag==="sin_coords"?"La API de Andreani no publica coordenadas de sus sucursales — buscá abajo por calle o barrio"
+                       :locCerca?.diag==="sin_origen"?"No pude ubicar el punto del pedido en el listado oficial — buscá abajo por calle o barrio"
+                       :`No pude calcular cercanías${locCerca?.diag?` (${locCerca.diag})`:""} — buscá abajo por calle o barrio`}
+                    </div>
+                  ):(
+                    <div style={{maxHeight:280,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10}}>
+                      {(locCerca?.lista||[]).map((s,i)=>{
+                        const dir=[s.direccion?.calle,s.direccion?.numero].filter(Boolean).join(" ");
+                        const loc=[s.direccion?.localidad,s.direccion?.codigoPostal?`CP ${s.direccion.codigoPostal}`:""].filter(Boolean).join(" · ");
+                        const clickable=!!s.tpl;
+                        return (
+                          <div key={(s.id??s.descripcion)+"_"+i} onClick={clickable?()=>{resolve(s.tpl);setLocationModal(null);}:undefined}
+                            style={{padding:"10px 14px",cursor:clickable?"pointer":"default",opacity:clickable?1:0.45,borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s",display:"flex",alignItems:"center",gap:10}}
+                            onMouseEnter={e=>{if(clickable)e.currentTarget.style.background=T.card;}}
+                            onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:13,color:T.text,fontWeight:600}}>{s.descripcion}</div>
+                              {(dir||loc)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>{[dir,loc].filter(Boolean).join(" — ")}{!clickable&&<span style={{color:T.yellow}}> · no está en el desplegable de carga masiva</span>}</div>}
+                            </div>
+                            {s.distM!=null&&<span style={{fontSize:11,fontWeight:700,color:T.accent,flexShrink:0,whiteSpace:"nowrap"}}>{ghFmtDist(s.distM)}</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* Emisión API: lista OFICIAL por CP (se necesita el id exacto). */}
+              {hayOficiales&&wantOficial&&(
                 <div style={{marginBottom:14}}>
                   <div style={{fontSize:13,color:T.text,marginBottom:8}}>Elegí la sucursal oficial de Andreani para este pedido:</div>
                   <select value={locOficialSel} onChange={e=>setLocOficialSel(e.target.value)} style={{...InputStyle(T),marginBottom:10}}>
@@ -8585,12 +8643,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   <div style={{fontSize:11,color:T.textSm,marginTop:8}}>Lista oficial de Andreani para el CP {cpOf} — sin texto libre, match exacto.</div>
                 </div>
               )}
-              {sinSucsCp&&(
+              {sinSucsCp&&wantOficial&&(
                 <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.yellow}}>
                   No hay sucursales Andreani para el CP {cpOf||"del destinatario"}. Buscá manualmente abajo o excluí el pedido.
                 </div>
               )}
-              {apiCaida&&(
+              {apiCaida&&wantOficial&&(
                 <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.yellow}}>
                   La lista oficial de sucursales de Andreani no está disponible en este momento. Buscá la sucursal manualmente abajo.
                 </div>
