@@ -249,6 +249,52 @@ export default async function handler(req, res) {
   // Único camino sin sesión de usuario: los crons, que corren server-side con
   // CRON_SECRET y necesitan operar sobre uids ajenos (warm_margenes recalcula
   // la caché de Márgenes llamándose a sí mismo con action=daily_metrics).
+  // ── Portal público de cupón (token compartible, sin sesión) ─────────────
+  // El dueño de un código de descuento ve SUS ventas y comisión en tiempo
+  // real. El token vive en cupon_links/{token} = {uid, code, comisionPct,
+  // mpComision, influencer}. Devuelve SOLO agregados del cupón — nunca PII.
+  if (action === 'cupon_publico') {
+    const token = String(req.query.token || "").trim();
+    if (!/^[a-f0-9]{20,64}$/.test(token)) return res.status(400).json({ error: "token inválido" });
+    const db = initAdmin();
+    const linkSnap = await db.collection("cupon_links").doc(token).get();
+    if (!linkSnap.exists) return res.status(404).json({ error: "Este link no existe o fue dado de baja." });
+    const link = linkSnap.data();
+    const uSnap = await db.collection("users").doc(link.uid).get();
+    const stores = uSnap.exists ? (uSnap.data().stores || []) : [];
+    const tn = stores.find(s => s.type === "tiendanube");
+    if (!tn?.accessToken || !tn?.storeId) return res.status(503).json({ error: "La tienda no está conectada en este momento." });
+    const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const desde = hoy.slice(0, 8) + "01"; // mes en curso, hora AR
+    const code = String(link.code || "").toUpperCase().trim();
+    const tnHeaders = { 'Authentication': `bearer ${tn.accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)' };
+    let usos = 0, ventas = 0, descuento = 0;
+    for (let p = 1; p <= 15; p++) {
+      let pg = [];
+      try {
+        const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/orders?payment_status=paid&per_page=200&page=${p}&fields=id,coupon,total,discount_coupon&created_at_min=${encodeURIComponent(desde + "T00:00:00-0300")}`, { headers: tnHeaders });
+        if (!r.ok) break;
+        pg = await r.json();
+        if (!Array.isArray(pg)) break;
+      } catch (_) { break; }
+      for (const o of pg) {
+        for (const c of (Array.isArray(o.coupon) ? o.coupon : [])) {
+          if ((c.code || "").toUpperCase().trim() !== code) continue;
+          usos++; ventas += parseFloat(o.total || 0); descuento += parseFloat(o.discount_coupon || 0);
+        }
+      }
+      if (pg.length < 200) break;
+    }
+    const pct = Number(link.comisionPct) || 0;
+    const neto = (ventas - descuento) * (1 - (Number(link.mpComision) || 0) / 100);
+    return res.status(200).json({
+      ok: true, code, influencer: link.influencer || "",
+      periodo: { desde, hasta: hoy },
+      usos, ventas: Math.round(ventas), descuento: Math.round(descuento),
+      neto: Math.round(neto), comisionPct: pct, comision: Math.round(neto * (pct / 100)),
+    });
+  }
+
   if (action === 'warm_margenes') {
     if (!guardCron(req, res)) return;
   } else if (!isCronRequest(req)) {
@@ -1876,6 +1922,32 @@ export default async function handler(req, res) {
       try { porEnviar = await fetchAllPagesFast(storeId, accessToken, PACKED_PARAMS); } catch (_) {}
       if (!porEnviar.length) porEnviar = await scanPacked(false);
       return res.status(200).json(porEnviar);
+    }
+
+    // ── Link público de cupón: crear (o devolver) el token compartible y
+    // sincronizar el % de comisión que ve el dueño del código. Requiere
+    // sesión (ya pasó guardUid) — la lectura pública es action=cupon_publico.
+    if (action === 'cupon_link') {
+      const code = String(req.query.code || "").toUpperCase().trim();
+      if (!code) return res.status(400).json({ error: "code requerido" });
+      const dbCl = initAdmin();
+      const col = dbCl.collection("cupon_links");
+      const datos = {
+        uid, code,
+        comisionPct: Number(req.query.comisionPct) || 0,
+        mpComision: Number(req.query.mpComision) || 0,
+        influencer: String(req.query.influencer || "").slice(0, 80),
+        updatedAt: Date.now(),
+      };
+      const prev = await col.where("uid", "==", uid).where("code", "==", code).limit(1).get();
+      if (!prev.empty) {
+        await prev.docs[0].ref.set(datos, { merge: true });
+        return res.status(200).json({ ok: true, token: prev.docs[0].id });
+      }
+      const { randomBytes } = await import("crypto");
+      const token = randomBytes(16).toString("hex");
+      await col.doc(token).set({ ...datos, createdAt: Date.now() });
+      return res.status(200).json({ ok: true, token });
     }
 
     // ── Coupons (antiguo /api/coupons) ───────────────────────────────────

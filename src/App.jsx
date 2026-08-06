@@ -1362,6 +1362,77 @@ function OnboardingWizard({T, user, onComplete}) {
   );
 }
 
+// ─── Vista pública del cupón (#/cupon/TOKEN) ───
+// El dueño de un código de descuento ve SUS ventas y comisión del mes en
+// tiempo real, sin login. Solo agregados — nada de PII de pedidos.
+function CuponPublicoView({token}){
+  const T=DARK;
+  const [data,setData]=React.useState(null);
+  const [err,setErr]=React.useState("");
+  const [loading,setLoading]=React.useState(true);
+  const fmt=n=>"$"+Math.round(n||0).toLocaleString("es-AR");
+  async function load(){
+    setLoading(true); setErr("");
+    try{
+      const r=await fetch(`/api/orders?action=cupon_publico&token=${encodeURIComponent(token)}`);
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`);
+      setData(d);
+    }catch(e){ setErr(e.message||"No se pudo cargar"); }
+    setLoading(false);
+  }
+  React.useEffect(()=>{ load(); /* eslint-disable-line */ },[token]);
+  const mes=new Date().toLocaleDateString("es-AR",{month:"long",year:"numeric"});
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column",alignItems:"center",padding:"48px 16px"}}>
+      <div style={{maxWidth:460,width:"100%"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:22}}>
+          <GrowithLogo size={30} variant="color"/>
+          <span style={{fontSize:13,color:T.textSm,fontWeight:600}}>Panel de tu código de descuento</span>
+        </div>
+        {loading?(
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"48px 0",color:T.textSm,fontSize:13}}><Spinner size={15} color={T.accent}/> Consultando las ventas en vivo…</div>
+        ):err?(
+          <div style={{background:T.card,border:`1px solid ${T.red}44`,borderRadius:14,padding:"22px 20px",textAlign:"center"}}>
+            <div style={{fontSize:14,fontWeight:700,color:T.red,marginBottom:6}}>No pudimos cargar tus números</div>
+            <div style={{fontSize:12,color:T.textSm,marginBottom:14}}>{err}</div>
+            <button onClick={load} style={{...BtnSecondary(T),fontSize:13,margin:"0 auto"}}>Reintentar</button>
+          </div>
+        ):data&&(
+          <>
+            <div style={{background:`linear-gradient(135deg, ${T.accentSolid}16, transparent 65%)`,border:`1px solid ${T.accentSolid}44`,borderRadius:16,padding:"20px 22px",marginBottom:14}}>
+              {data.influencer&&<div style={{fontSize:13,color:T.textMd,marginBottom:2}}>Hola, {data.influencer}</div>}
+              <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6,marginBottom:4}}>Tu código</div>
+              <div style={{fontSize:28,fontWeight:800,color:T.text,letterSpacing:0.5,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{data.code}</div>
+              <div style={{fontSize:12,color:T.textSm,marginTop:4,textTransform:"capitalize"}}>{mes} — en tiempo real</div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 18px"}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Ventas con tu código</div>
+                <div style={{fontSize:26,fontWeight:800,color:T.text}}>{data.usos}</div>
+              </div>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 18px"}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Facturado</div>
+                <div style={{fontSize:26,fontWeight:800,color:T.text}}>{fmt(data.ventas)}</div>
+              </div>
+            </div>
+            <div style={{background:T.card,border:`1px solid ${T.green}44`,borderRadius:14,padding:"18px 20px",marginBottom:14}}>
+              <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Tu comisión del mes</div>
+              <div style={{fontSize:32,fontWeight:800,color:T.green,letterSpacing:-0.5}}>{fmt(data.comision)}</div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:4}}>{data.comisionPct}% sobre el neto recibido ({fmt(data.neto)})</div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+              <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Los números salen de las ventas reales de la tienda, del mes en curso.</div>
+              <button onClick={load} style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",flexShrink:0}}>Actualizar</button>
+            </div>
+          </>
+        )}
+        <div style={{textAlign:"center",fontSize:10,color:T.textSm,marginTop:32,opacity:0.7}}>Impulsado por Growith</div>
+      </div>
+    </div>
+  );
+}
+
 function DSBadge({T, color, children, size="md"}) {
   const c = color||T.accent;
   return (
@@ -4604,6 +4675,20 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     setComLoading(false);
   }
 
+  // Link público del cupón (#/cupon/TOKEN): el dueño del código ve sus ventas
+  // y comisión del mes en tiempo real, sin cuenta. El token se crea una vez y
+  // se reusa; cada generación sincroniza el % de comisión y la comisión MP.
+  async function compartirCuponLink(r){
+    try{
+      const resp=await authFetch(`/api/orders?action=cupon_link&uid=${user?.uid||""}&code=${encodeURIComponent(r.code)}&comisionPct=${encodeURIComponent(r.comisionPct||0)}&mpComision=${encodeURIComponent(isNaN(mpComision)?12:mpComision)}&influencer=${encodeURIComponent(r.influencer||"")}`);
+      const d=await resp.json().catch(()=>({}));
+      if(!resp.ok||!d.token) throw new Error(typeof d.error==="string"?d.error:`HTTP ${resp.status}`);
+      const url=`${window.location.origin}/#/cupon/${d.token}`;
+      try{await navigator.clipboard.writeText(url);}catch(_){}
+      toast("Link copiado: quien lo abra ve las ventas y su comisión del mes en tiempo real","success",5500);
+    }catch(e){ toast("No se pudo generar el link: "+(e.message||""),"warning",5000); }
+  }
+
   const filtered=useMemo(()=>canjes.filter(c=>{
     if(filterEstado&&c.estado!==filterEstado) return false;
     if(filterRed&&c.red!==filterRed) return false;
@@ -4692,7 +4777,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 {n:4,title:"Kanban por estado",desc:"Las columnas son el ciclo completo: Por enviar → Enviado → Contenido pendiente → Cerrado. 'Contenido pendiente' se ordena por urgencia (lo más viejo arriba) y Cerrado muestra los últimos 30 días (con botón para ver todos)."},
                 {n:5,title:"Seguimiento automático",desc:"Con el tracking cargado, Growith sigue el envío en Andreani cada 30 minutos y te avisa cuando llega a sucursal o se entrega — el banner de avisos tiene 'Ver tracking' directo. Al entregarse, el canje pasa solo a 'Contenido pendiente'."},
                 {n:6,title:"Contenido y recordatorios",desc:"En el detalle marcás los contenidos entregados sobre los acordados (la barra de progreso de cada card). Si a los 5 días de entregado falta contenido, te llega un recordatorio por email. También podés crear una tarea de guion para el equipo con fecha límite."},
-                {n:7,title:"Cupones y comisiones",desc:"En Historial se cruzan las ventas REALES de Tienda Nube con cada código de descuento: ves cuántas ventas trajo, cuánto facturó y la comisión exacta a pagar (con % editable por cupón). Marcá pagos hechos para llevar la cuenta."},
+                {n:7,title:"Cupones y comisiones",desc:"En Historial se cruzan las ventas REALES de Tienda Nube con cada código de descuento: ves cuántas ventas trajo, cuánto facturó y la comisión exacta a pagar (con % editable por cupón). Marcá pagos hechos para llevar la cuenta, y con el botón 'Link' compartís un panel público donde el dueño del código ve sus ventas y su comisión del mes en tiempo real."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -5181,13 +5266,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{rows.length} codigos · {comData.totalPedidos} pedidos analizados</span>
                     </div>
                     {/* Header */}
-                    <div style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 80px 110px",gap:8,padding:"9px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>
-                      <span>Código</span><span>Descuento TN</span><span>Usos</span><span>Influencer</span><span>Bruto</span><span style={{color:T.green}}>Neto (-MP {mpComision}%)</span><span>Comisión %</span><span style={{color:T.orange}}>A pagar</span>
+                    <div style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 80px 110px 62px",gap:8,padding:"9px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>
+                      <span>Código</span><span>Descuento TN</span><span>Usos</span><span>Influencer</span><span>Bruto</span><span style={{color:T.green}}>Neto (-MP {mpComision}%)</span><span>Comisión %</span><span style={{color:T.orange}}>A pagar</span><span>Link</span>
                     </div>
                     {rows.map((r,i)=>{
                       const descLabel=r.type==="percentage"?`${r.value}%`:r.type==="absolute"?`$${r.value}`:"Envío gratis";
                       return (
-                        <div key={r.code} style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 80px 110px",gap:8,padding:"12px 18px",borderBottom:i<rows.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:r.usosPeriodo>0?T.green+"05":"transparent",transition:"background 0.15s"}}
+                        <div key={r.code} style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 80px 110px 62px",gap:8,padding:"12px 18px",borderBottom:i<rows.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:r.usosPeriodo>0?T.green+"05":"transparent",transition:"background 0.15s"}}
                           onMouseEnter={e=>e.currentTarget.style.background=T.surface}
                           onMouseLeave={e=>e.currentTarget.style.background=r.usosPeriodo>0?T.green+"05":"transparent"}>
                           <div style={{fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:13,fontWeight:700,color:T.accent}}>{r.code}</div>
@@ -5223,6 +5308,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           <div style={{fontSize:13,fontWeight:800,color:r.comisionPct>0&&r.netoRecibido>0?T.orange:T.textSm}}>
                             {r.comisionPct>0&&r.netoRecibido>0?fmtARS(r.comisionPagar):"--"}
                           </div>
+                          {/* Link público para el dueño del código */}
+                          <AsyncButton onClick={()=>compartirCuponLink(r)} title={`Copiar el link público de ${r.code}: quien lo abra ve sus ventas y comisión del mes en tiempo real`}
+                            style={{...BtnSecondary(T),fontSize:11,padding:"5px 8px",justifyContent:"center",gap:4}}>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+                            Link
+                          </AsyncButton>
                         </div>
                       );
                     })}
@@ -31489,6 +31580,9 @@ export default function App() {
   // Tablero compartido: #/tablero/BOARD_TOKEN
   const _boardMatch = _initialHash.match(/^tablero\/([a-z0-9]{8,})/i);
   const [boardToken, setBoardToken] = useState(_boardMatch ? _boardMatch[1] : null);
+  // Panel público de cupón: #/cupon/TOKEN (el dueño del código ve su comisión)
+  const _cupMatch = _initialHash.match(/^cupon\/([a-f0-9]{20,64})/i);
+  const [cuponToken, setCuponToken] = useState(_cupMatch ? _cupMatch[1] : null);
   const [page,_setPage]=useState(()=>{const p=_aliasPage(_initialHash.split("/")[0]);return VALID_PAGES.includes(p)?p:"home";});
   const setPage = (p) => {
     _setPage(p);
@@ -31504,13 +31598,15 @@ export default function App() {
     const onHash = () => {
       const h = window.location.hash.replace(/^#\/?/, "") || "home";
       const cm = h.match(/^colaborador\/([a-z0-9]{8,})/i);
-      if (cm) { try{sessionStorage.setItem("growith_colab_token",cm[1]);}catch(e){} setColabToken(cm[1]); setEditorProdToken(null); setBoardToken(null); return; }
+      if (cm) { try{sessionStorage.setItem("growith_colab_token",cm[1]);}catch(e){} setColabToken(cm[1]); setEditorProdToken(null); setBoardToken(null); setCuponToken(null); return; }
       const em = h.match(/^editor-produccion\/([a-z0-9]{8,})/i);
-      if (em) { setEditorProdToken(em[1]); setColabToken(null); setBoardToken(null); return; }
+      if (em) { setEditorProdToken(em[1]); setColabToken(null); setBoardToken(null); setCuponToken(null); return; }
       const bm = h.match(/^tablero\/([a-z0-9]{8,})/i);
-      if (bm) { setBoardToken(bm[1]); setColabToken(null); setEditorProdToken(null); return; }
+      if (bm) { setBoardToken(bm[1]); setColabToken(null); setEditorProdToken(null); setCuponToken(null); return; }
+      const cpm = h.match(/^cupon\/([a-f0-9]{20,64})/i);
+      if (cpm) { setCuponToken(cpm[1]); setColabToken(null); setEditorProdToken(null); setBoardToken(null); return; }
       try{sessionStorage.removeItem("growith_colab_token");}catch(e){}
-      setColabToken(null); setEditorProdToken(null); setBoardToken(null);
+      setColabToken(null); setEditorProdToken(null); setBoardToken(null); setCuponToken(null);
       const hPage = _aliasPage(h.split("/")[0]);
       if (VALID_PAGES.includes(hPage)) _setPage(hPage);
     };
@@ -31673,7 +31769,7 @@ export default function App() {
   // Sincronizar hash con página y sub-tab activo
   useEffect(()=>{
     if(typeof window==="undefined") return;
-    if(colabToken || editorProdToken || boardToken) return;
+    if(colabToken || editorProdToken || boardToken || cuponToken) return;
     const sub = page==="stock"?`/${stockTab}`:page==="arca"?`/${arcaTab}`:"";
     const newHash = `#/${page}${sub}`;
     if(window.location.hash !== newHash) {
@@ -31953,6 +32049,7 @@ export default function App() {
   if(editorProdToken) return <EditorProduccionView T={T} token={editorProdToken}/>;
   if(colabToken) return <ColaboradorPortalUnificado T={T} token={colabToken}/>;
   if(boardToken) return <ColaboradorBoardView T={T} boardToken={boardToken}/>;
+  if(cuponToken) return <CuponPublicoView token={cuponToken}/>;
 
   // Loading
   if(user===undefined) return (
