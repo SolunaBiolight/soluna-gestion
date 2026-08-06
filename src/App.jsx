@@ -3863,13 +3863,40 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     const numero=(d.pedidoRef||"").trim()||("CANJE "+(d.usuario||d.influencer||"").replace(/[^\w ]+/g,"").trim().slice(0,16).toUpperCase()||"CANJE");
     let sucursal=null;
     if(d.esSucursal){
-      const locs=await ghLoadAndreaniLocations();
-      let ov={}; try{ov=JSON.parse(localStorage.getItem(ghKey("growith_sucOverrides"))||"{}");}catch(_){}
-      sucursal=ov[numero]||ghMatchSucursal(locs, d.direccion, d.pickupDetails);
+      // 1) API OFICIAL de Andreani (lista viva, nombres exactos). El template
+      // XLSX trae la lista de sucursales congelada y le faltan puntos HOP
+      // nuevos (ej: Juramento 2385 no existe, solo 2621) — matchear contra el
+      // template elegía una sucursal parecida pero equivocada u obsoleta.
+      const nrm=s=>String(s||"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
+      const cpSuc=String(d.pickupDetails?.address?.zipcode||d.pickupDetails?.address?.zip_code||d.cp||"").replace(/\D/g,"");
+      if(cpSuc){
+        try{
+          const r=await authFetch(`/api/andreani?action=sucursales&cp=${cpSuc}`);
+          if(r.ok){
+            const lista=(await r.json())?.sucursales||[];
+            const src=nrm([d.pickupDetails?.name,d.pickupDetails?.address?.address,d.pickupDetails?.address?.number].filter(Boolean).join(" "));
+            const nums=[...new Set([...src.matchAll(/\d{2,}/g)].map(m=>m[0]))];
+            const txtDe=s=>nrm([s.descripcion,s.direccion?.calle,s.direccion?.numero].filter(Boolean).join(" "));
+            let cand=nums.length?lista.filter(s=>nums.some(n=>txtDe(s).includes(n))):[];
+            if(cand.length>1){
+              const toks=src.split(" ").filter(w=>w.length>=5&&!/^\d+$/.test(w));
+              const c2=cand.filter(s=>toks.some(t=>txtDe(s).includes(t)));
+              if(c2.length) cand=c2;
+            }
+            if(cand.length===1&&(cand[0].descripcion||"").trim()) sucursal=String(cand[0].descripcion).trim();
+          }
+        }catch(_){ /* sin API oficial → template */ }
+      }
+      // 2) Override guardado o match contra el template; 3) selector manual.
       if(!sucursal){
-        sucursal=await pedirSucursal(d.pickupDetails);
-        if(!sucursal) return false; // canceló el selector
-        try{ov[numero]=sucursal;localStorage.setItem(ghKey("growith_sucOverrides"),JSON.stringify(ov));}catch(_){}
+        const locs=await ghLoadAndreaniLocations();
+        let ov={}; try{ov=JSON.parse(localStorage.getItem(ghKey("growith_sucOverrides"))||"{}");}catch(_){}
+        sucursal=ov[numero]||ghMatchSucursal(locs, d.direccion, d.pickupDetails);
+        if(!sucursal){
+          sucursal=await pedirSucursal(d.pickupDetails);
+          if(!sucursal) return false; // canceló el selector
+          try{ov[numero]=sucursal;localStorage.setItem(ghKey("growith_sucOverrides"),JSON.stringify(ov));}catch(_){}
+        }
       }
     }
     await ghEtiquetaAndreaniXlsxUno({
