@@ -3849,13 +3849,45 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const internalToSidebar = { lista:"activos", kanban:"activos", comisiones:"historial", perfiles:"influencers" };
   const [viewTabLocal,setViewTabLocal]=useState("kanban");
   const [verCerradosTodos,setVerCerradosTodos]=useState(false); // columna Cerrado: 30 días por default
-  // Selector manual de sucursal Andreani (cuando el match automático no es único)
+  // Selector manual de sucursal Andreani (cuando el match automático no es único).
+  // Busca en la LISTA OFICIAL viva (action=sucursales_buscar); el template
+  // congelado queda solo de fallback si la API no responde.
   const [sucPick,setSucPick]=useState(null); // {resolve, hint}
   const [sucQ,setSucQ]=useState("");
-  function pedirSucursal(pickupDetails){
-    setSucQ("");
+  const [sucRes,setSucRes]=useState(null); // null | {loading} | {lista:[{descripcion,direccion}],oficial}
+  function pedirSucursal(pickupDetails, prefill){
+    setSucQ(prefill||""); setSucRes(null);
     return new Promise(resolve=>setSucPick({resolve, hint:pickupDetails?.name||pickupDetails?.address?.address||""}));
   }
+  // Tokens significativos del punto de retiro ("JURAMENTO 2385") para buscar
+  // en la lista oficial — sin PUNTO/ANDREANI/HOP/AVENIDA/etc.
+  function sucTokens(pickupDetails, direccion){
+    const nrm=s=>String(s||"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
+    const STOP=new Set(["PUNTO","ANDREANI","HOP","PICKIT","RETIRO","SUCURSAL","AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL","ESPACIO","DE","DEL","LA","EL"]);
+    const src=nrm([pickupDetails?.name,pickupDetails?.address?.address,pickupDetails?.address?.number,(!pickupDetails&&direccion)||""].filter(Boolean).join(" "));
+    return [...new Set(src.split(" ").filter(w=>w&&!STOP.has(w)&&(w.length>=4||/^\d{2,}$/.test(w))))];
+  }
+  useEffect(()=>{
+    if(!sucPick) return;
+    const q=sucQ.trim();
+    if(q.length<2){ setSucRes(null); return; }
+    let alive=true;
+    const t=setTimeout(async()=>{
+      setSucRes({loading:true});
+      try{
+        const r=await authFetch(`/api/andreani?action=sucursales_buscar&q=${encodeURIComponent(q)}`);
+        const d=await r.json().catch(()=>null);
+        if(!alive) return;
+        if(r.ok&&Array.isArray(d?.sucursales)){ setSucRes({lista:d.sucursales,oficial:true}); return; }
+        throw new Error();
+      }catch(_){
+        if(!alive) return;
+        const list=_andreaniLocsCache.current?.sucursales||[];
+        setSucRes({lista:list.filter(s=>s.toUpperCase().includes(q.toUpperCase())).slice(0,30).map(s=>({descripcion:s})),oficial:false});
+      }
+    },300);
+    return ()=>{alive=false;clearTimeout(t);};
+  },[sucQ,sucPick]);
   // Export XLSX de un canje (alta o detalle): resuelve la sucursal si es envío
   // a sucursal (override guardado → match automático → selector manual, y la
   // elección se recuerda en growith_sucOverrides, el mismo que usa Envíos).
@@ -3863,37 +3895,29 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     const numero=(d.pedidoRef||"").trim()||("CANJE "+(d.usuario||d.influencer||"").replace(/[^\w ]+/g,"").trim().slice(0,16).toUpperCase()||"CANJE");
     let sucursal=null;
     if(d.esSucursal){
-      // 1) API OFICIAL de Andreani (lista viva, nombres exactos). El template
-      // XLSX trae la lista de sucursales congelada y le faltan puntos HOP
-      // nuevos (ej: Juramento 2385 no existe, solo 2621) — matchear contra el
-      // template elegía una sucursal parecida pero equivocada u obsoleta.
-      const nrm=s=>String(s||"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
-      const cpSuc=String(d.pickupDetails?.address?.zipcode||d.pickupDetails?.address?.zip_code||d.cp||"").replace(/\D/g,"");
-      if(cpSuc){
+      // 1) Buscador global OFICIAL de Andreani (lista viva, nombres exactos).
+      // El template XLSX trae la lista de sucursales congelada y le faltan
+      // puntos HOP nuevos — matchear contra el template elegía una sucursal
+      // parecida pero equivocada u obsoleta ("no es del campo desplegable").
+      const toks=sucTokens(d.pickupDetails, d.direccion);
+      const q=toks.slice(0,4).join(" ");
+      if(q.length>=2){
         try{
-          const r=await authFetch(`/api/andreani?action=sucursales&cp=${cpSuc}`);
-          if(r.ok){
-            const lista=(await r.json())?.sucursales||[];
-            const src=nrm([d.pickupDetails?.name,d.pickupDetails?.address?.address,d.pickupDetails?.address?.number].filter(Boolean).join(" "));
-            const nums=[...new Set([...src.matchAll(/\d{2,}/g)].map(m=>m[0]))];
-            const txtDe=s=>nrm([s.descripcion,s.direccion?.calle,s.direccion?.numero].filter(Boolean).join(" "));
-            let cand=nums.length?lista.filter(s=>nums.some(n=>txtDe(s).includes(n))):[];
-            if(cand.length>1){
-              const toks=src.split(" ").filter(w=>w.length>=5&&!/^\d+$/.test(w));
-              const c2=cand.filter(s=>toks.some(t=>txtDe(s).includes(t)));
-              if(c2.length) cand=c2;
-            }
-            if(cand.length===1&&(cand[0].descripcion||"").trim()) sucursal=String(cand[0].descripcion).trim();
+          const r=await authFetch(`/api/andreani?action=sucursales_buscar&q=${encodeURIComponent(q)}`);
+          const j=await r.json().catch(()=>null);
+          if(r.ok&&Array.isArray(j?.sucursales)&&j.sucursales.length===1&&(j.sucursales[0].descripcion||"").trim()){
+            sucursal=String(j.sucursales[0].descripcion).trim();
           }
-        }catch(_){ /* sin API oficial → template */ }
+        }catch(_){ /* sin API oficial → template/selector */ }
       }
-      // 2) Override guardado o match contra el template; 3) selector manual.
+      // 2) Override guardado o match contra el template; 3) selector manual
+      // (prefilleado con calle+número para que aparezca solo).
       if(!sucursal){
         const locs=await ghLoadAndreaniLocations();
         let ov={}; try{ov=JSON.parse(localStorage.getItem(ghKey("growith_sucOverrides"))||"{}");}catch(_){}
         sucursal=ov[numero]||ghMatchSucursal(locs, d.direccion, d.pickupDetails);
         if(!sucursal){
-          sucursal=await pedirSucursal(d.pickupDetails);
+          sucursal=await pedirSucursal(d.pickupDetails, q);
           if(!sucursal) return false; // canceló el selector
           try{ov[numero]=sucursal;localStorage.setItem(ghKey("growith_sucOverrides"),JSON.stringify(ov));}catch(_){}
         }
@@ -5618,27 +5642,36 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       {/* Selector manual de sucursal Andreani (el match automático no fue único) */}
       <Modal T={T} open={!!sucPick} onClose={()=>{sucPick?.resolve(null);setSucPick(null);}} title="Elegir sucursal Andreani" width={480} zIndex={2600}>
         {sucPick&&(()=>{
-          const list=_andreaniLocsCache.current?.sucursales||[];
-          const q=sucQ.toUpperCase().trim();
-          const results=q.length>=2?list.filter(s=>s.toUpperCase().includes(q)).slice(0,30):[];
+          const q=sucQ.trim();
+          const lista=sucRes?.lista||[];
           return (
             <div>
               {sucPick.hint&&<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>El pedido dice: <strong style={{color:T.text}}>{sucPick.hint}</strong> — buscala en la lista oficial de Andreani y elegila.</div>}
               <input autoFocus value={sucQ} onChange={e=>setSucQ(e.target.value)} placeholder="Buscar por calle, barrio o localidad..." style={{...iS,marginBottom:10}}/>
               {q.length<2?(
                 <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center"}}>Escribí al menos 2 letras para buscar</div>
-              ):results.length===0?(
+              ):sucRes?.loading?(
+                <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/> Buscando en Andreani...</div>
+              ):lista.length===0?(
                 <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center"}}>Sin resultados para "{sucQ}"</div>
               ):(
-                <div style={{maxHeight:300,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10}}>
-                  {results.map((s,i)=>(
-                    <div key={s} onClick={()=>{sucPick.resolve(s);setSucPick(null);}}
-                      style={{padding:"10px 14px",fontSize:13,color:T.text,cursor:"pointer",borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
-                      onMouseEnter={e=>e.currentTarget.style.background=T.surface}
-                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                      {s}
-                    </div>
-                  ))}
+                <div>
+                  {sucRes?.oficial===false&&<div style={{fontSize:10,color:T.yellow,marginBottom:6}}>La API oficial no respondió — mostrando la lista del template (puede estar desactualizada)</div>}
+                  <div style={{maxHeight:300,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10}}>
+                    {lista.map((s,i)=>{
+                      const dir=[s.direccion?.calle,s.direccion?.numero].filter(Boolean).join(" ");
+                      const loc=[s.direccion?.localidad,s.direccion?.codigoPostal?`CP ${s.direccion.codigoPostal}`:""].filter(Boolean).join(" · ");
+                      return (
+                        <div key={(s.id??s.descripcion)+"_"+i} onClick={()=>{sucPick.resolve(String(s.descripcion||"").trim());setSucPick(null);}}
+                          style={{padding:"10px 14px",cursor:"pointer",borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
+                          onMouseEnter={e=>e.currentTarget.style.background=T.surface}
+                          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                          <div style={{fontSize:13,color:T.text,fontWeight:600}}>{s.descripcion}</div>
+                          {(dir||loc)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>{[dir,loc].filter(Boolean).join(" — ")}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
