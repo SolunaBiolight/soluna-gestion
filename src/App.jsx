@@ -1156,11 +1156,13 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
 }
 
 // ─── Onboarding Wizard ───
-// Onboarding: una sola pantalla y todos los botones hacen algo. La versión
-// anterior tenía tres pasos, de los cuales dos ("Meta Ads" y "ARCA") solo
-// mostraban botones que avanzaban sin conectar nada, y no ofrecía Mercado Libre.
+// Recorrido completo para quien entra sin conocer nada: propuesta de valor,
+// TODAS las secciones explicadas, la comparativa de precio contra pagar cada
+// herramienta por separado, y al final la conexión de tienda (el único paso
+// que conecta algo de verdad — los botones siempre hacen algo).
 function OnboardingWizard({T, user, onComplete}) {
   const [yendo, setYendo] = React.useState("");
+  const [paso, setPaso] = React.useState(0);
 
   async function conectarTN() {
     setYendo("tn");
@@ -1192,35 +1194,169 @@ function OnboardingWizard({T, user, onComplete}) {
     {id:"arca",     nombre:"Solo quiero facturar",  desc:"Cargá tu CUIT y facturá con ARCA — la tienda la conectás después", onClick:()=>onComplete("arca")},
   ];
 
+  // Todas las secciones, explicadas para alguien que no conoce la app.
+  const FEATS_OPERACION = [
+    {id:"envios",   nombre:"Envíos",    desc:"Etiquetas de Andreani en segundos con saldo prepago, y seguimiento automático de cada paquete hasta la entrega."},
+    {id:"reclamos", nombre:"Reclamos",  desc:"Cambios y devoluciones en un tablero visual, con el tracking del envío en vivo para atención al cliente."},
+    {id:"canjes",   nombre:"Canjes",    desc:"Colaboraciones con influencers: productos enviados, contenido pendiente y comisiones, todo en un lugar."},
+    {id:"stock",    nombre:"Stock",     desc:"Inventario cruzado entre Tienda Nube, Mercado Libre y Shopify, con alertas antes de quedarte sin mercadería."},
+    {id:"tareas",   nombre:"Tareas",    desc:"El trabajo del equipo organizado, con portal propio para colaboradores externos."},
+    {id:"home",     nombre:"Inicio",    desc:"Los números del día, alertas y accesos rápidos apenas abrís la app."},
+  ];
+  const FEATS_NUMEROS = [
+    {id:"margenes", nombre:"Dashboard", desc:"Tu profit REAL por venta: comisiones, impuestos, envíos, costo de producto y publicidad, todo descontado solo."},
+    {id:"arca",     nombre:"ARCA",      desc:"Facturación AFIP automática de cada venta, con piloto automático, notas de crédito y envío al cliente por mail."},
+    {id:"meta",     nombre:"Meta Ads",  desc:"Tus campañas de Facebook e Instagram con reglas automáticas y el gasto impactado en tu profit."},
+    {id:"ml",       nombre:"Mercado Libre", desc:"Publicaciones, ventas, comisiones y Mercado Ads integrados a tus números."},
+    {id:"copilot",  nombre:"Copilot",   desc:"Una IA que responde sobre TUS datos reales: ventas, stock, márgenes y campañas. No inventa cifras."},
+  ];
+  // Lo que costaría armar lo mismo con herramientas separadas (rangos de
+  // mercado, genéricos a propósito — sin nombrar competidores).
+  const COMPARATIVA = [
+    {que:"Dashboard de profit y márgenes", precio:"u$s 50-80"},
+    {que:"Facturador electrónico AFIP", precio:"u$s 15-30"},
+    {que:"Gestión de envíos y tracking", precio:"u$s 20-40"},
+    {que:"Stock multicanal", precio:"u$s 30-60"},
+    {que:"Gestor de tareas y reclamos", precio:"u$s 10-20"},
+    {que:"Asistente IA sobre tus datos", precio:"u$s 20+"},
+  ];
+
+  const FeatRow=({f})=>(
+    <div style={{display:"flex",gap:DS.sp.md,alignItems:"flex-start",padding:"9px 0"}}>
+      <SectionIcon T={T} id={f.id} size={34}/>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:DS.font.lg,fontWeight:DS.w.semibold,color:T.text}}>{f.nombre}</div>
+        <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:1,lineHeight:1.5}}>{f.desc}</div>
+      </div>
+    </div>
+  );
+  const PASOS=5;
+  const Nav=({cta="Siguiente"})=>(
+    <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,marginTop:DS.sp["2xl"]}}>
+      {paso>0&&<button onClick={()=>setPaso(p=>p-1)} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:DS.font.lg,padding:"10px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}>← Atrás</button>}
+      <div style={{flex:1,display:"flex",gap:6,justifyContent:"center"}}>
+        {Array.from({length:PASOS}).map((_,i)=>(
+          <span key={i} style={{width:i===paso?18:6,height:6,borderRadius:99,background:i===paso?T.accentSolid:T.border,transition:`all 0.25s ${DS.ease}`}}/>
+        ))}
+      </div>
+      <button onClick={()=>setPaso(p=>p+1)} style={{...BtnPrimary(T),fontSize:DS.font.lg,padding:"10px 22px"}}>{cta}</button>
+    </div>
+  );
+
   return (
     <div className="gh-overlay" style={{position:"fixed",inset:0,background:T.bg,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:DS.sp.lg,overflowY:"auto"}}>
-      <div style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:DS.r["2xl"], padding:"36px 32px", maxWidth:520, width:"100%", boxShadow:DS.shadow.xl, animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}>
-        <div style={{marginBottom:DS.sp["2xl"]}}>
-          <div style={{fontSize:DS.font["2xl"], fontWeight:DS.w.bold, color:T.text, marginBottom:DS.sp.sm, letterSpacing:-0.5}}>Conectá tu tienda</div>
-          <div style={{fontSize:DS.font.lg, color:T.textMd, lineHeight:1.55}}>
-            Es lo único que Growith necesita para empezar a trabajar. Los pedidos, el stock y los números aparecen solos.
-            Meta Ads y la facturación de ARCA se agregan después desde Configuración.
-          </div>
-        </div>
+      <div style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:DS.r["2xl"], padding:"32px 32px 24px", maxWidth:560, width:"100%", maxHeight:"92vh", overflowY:"auto", boxShadow:DS.shadow.xl, animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}>
 
-        <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
-          {OPCIONES.map(o=>(
-            <button key={o.id} onClick={o.onClick} disabled={!!yendo}
-              style={{textAlign:"left",display:"flex",alignItems:"center",gap:DS.sp.md,padding:"14px 16px",borderRadius:DS.r.xl,border:`1px solid ${T.border}`,background:T.surface,cursor:yendo?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:yendo&&yendo!==o.id?0.5:1,transition:`all 0.15s ${DS.ease}`}}>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:DS.font.lg,fontWeight:DS.w.semibold,color:T.text}}>{o.nombre}</div>
-                <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:2}}>{o.desc}</div>
+        {/* Paso 0 — Bienvenida y propuesta de valor */}
+        {paso===0&&(
+          <div>
+            <div style={{marginBottom:DS.sp.lg}}><GrowithLogo size={40} variant="color"/></div>
+            <div style={{fontSize:DS.font["3xl"], fontWeight:DS.w.black, color:T.text, letterSpacing:-0.8, lineHeight:1.2, marginBottom:DS.sp.md}}>
+              Todo tu e-commerce,<br/>en un solo lugar
+            </div>
+            <div style={{fontSize:DS.font.lg, color:T.textMd, lineHeight:1.6, marginBottom:DS.sp.xl}}>
+              Growith reemplaza el combo de herramientas sueltas que hoy necesita una tienda argentina:
+              el dashboard de profit, el facturador de AFIP, la gestión de envíos, el stock multicanal,
+              los reclamos y hasta una IA que conoce tus números. Conectás tu tienda una vez y todo lo demás se llena solo.
+            </div>
+            {[
+              "Tus números reales por venta, sin planillas",
+              "La operación diaria (envíos, reclamos, stock) sin salir de la app",
+              "Facturación de AFIP en piloto automático",
+            ].map((b,i)=>(
+              <div key={i} style={{display:"flex",gap:DS.sp.sm,alignItems:"center",marginBottom:DS.sp.sm}}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><polyline points="20 6 9 17 4 12"/></svg>
+                <span style={{fontSize:DS.font.lg,color:T.text}}>{b}</span>
               </div>
-              <span style={{fontSize:DS.font.lg,color:T.textSm,flexShrink:0}}>{yendo===o.id?"…":"→"}</span>
-            </button>
-          ))}
-        </div>
+            ))}
+            <Nav cta="Ver qué incluye"/>
+          </div>
+        )}
 
-        <div style={{textAlign:"center", marginTop:DS.sp.xl}}>
-          <button onClick={()=>onComplete("skip")} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:DS.font.lg,padding:DS.sp.sm,fontFamily:"'Inter',system-ui,sans-serif"}}>
-            Mirar primero, conectar después
-          </button>
-        </div>
+        {/* Paso 1 — Operación diaria */}
+        {paso===1&&(
+          <div>
+            <div style={{fontSize:DS.font["2xl"], fontWeight:DS.w.bold, color:T.text, letterSpacing:-0.5, marginBottom:4}}>Tu operación diaria, sin fricción</div>
+            <div style={{fontSize:DS.font.base, color:T.textSm, marginBottom:DS.sp.md}}>Todo lo que hoy hacés en 4 apps y 3 planillas, junto:</div>
+            <div style={{display:"flex",flexDirection:"column"}}>{FEATS_OPERACION.map(f=><FeatRow key={f.id} f={f}/>)}</div>
+            <Nav/>
+          </div>
+        )}
+
+        {/* Paso 2 — Números y crecimiento */}
+        {paso===2&&(
+          <div>
+            <div style={{fontSize:DS.font["2xl"], fontWeight:DS.w.bold, color:T.text, letterSpacing:-0.5, marginBottom:4}}>Entendé y hacé crecer el negocio</div>
+            <div style={{fontSize:DS.font.base, color:T.textSm, marginBottom:DS.sp.md}}>Los números que importan, calculados solos y siempre al día:</div>
+            <div style={{display:"flex",flexDirection:"column"}}>{FEATS_NUMEROS.map(f=><FeatRow key={f.id} f={f}/>)}</div>
+            <Nav/>
+          </div>
+        )}
+
+        {/* Paso 3 — Comparativa de precio */}
+        {paso===3&&(
+          <div>
+            <div style={{fontSize:DS.font["2xl"], fontWeight:DS.w.bold, color:T.text, letterSpacing:-0.5, marginBottom:4}}>Todo esto, a un precio que no existe</div>
+            <div style={{fontSize:DS.font.base, color:T.textSm, marginBottom:DS.sp.lg}}>Armar lo mismo con herramientas separadas cuesta esto por mes:</div>
+            <div style={{border:`1px solid ${T.border}`,borderRadius:DS.r.xl,overflow:"hidden",marginBottom:DS.sp.lg}}>
+              {COMPARATIVA.map((c,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 14px",borderBottom:`1px solid ${T.borderL}`,fontSize:DS.font.base}}>
+                  <span style={{color:T.textMd}}>{c.que}</span>
+                  <span style={{color:T.textSm,fontWeight:DS.w.semibold,whiteSpace:"nowrap"}}>{c.precio}</span>
+                </div>
+              ))}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:T.surface,fontSize:DS.font.lg,fontWeight:DS.w.bold}}>
+                <span style={{color:T.text}}>Por separado</span>
+                <span style={{color:T.red}}>u$s 145-250/mes</span>
+              </div>
+            </div>
+            <div style={{background:`linear-gradient(135deg, ${T.accentSolid}14, transparent 70%)`,border:`1px solid ${T.accentSolid}44`,borderRadius:DS.r.xl,padding:"16px 18px"}}>
+              <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:3}}>Growith: todo junto, desde u$s 19/mes</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.55}}>El plan Pro completo cuesta u$s 69/mes — menos que una sola de esas herramientas. Y arrancás con <strong style={{color:T.text}}>14 días gratis con todo incluido</strong>, sin tarjeta.</div>
+            </div>
+            <Nav cta="Empezar"/>
+          </div>
+        )}
+
+        {/* Paso 4 — Conectar tienda (el único paso que conecta de verdad) */}
+        {paso===4&&(
+          <div>
+            <div style={{marginBottom:DS.sp["2xl"]}}>
+              <div style={{fontSize:DS.font["2xl"], fontWeight:DS.w.bold, color:T.text, marginBottom:DS.sp.sm, letterSpacing:-0.5}}>Conectá tu tienda</div>
+              <div style={{fontSize:DS.font.lg, color:T.textMd, lineHeight:1.55}}>
+                Es lo único que Growith necesita para empezar a trabajar. Los pedidos, el stock y los números aparecen solos.
+                Meta Ads y la facturación de ARCA se agregan después desde Configuración.
+              </div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
+              {OPCIONES.map(o=>(
+                <button key={o.id} onClick={o.onClick} disabled={!!yendo}
+                  style={{textAlign:"left",display:"flex",alignItems:"center",gap:DS.sp.md,padding:"14px 16px",borderRadius:DS.r.xl,border:`1px solid ${T.border}`,background:T.surface,cursor:yendo?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:yendo&&yendo!==o.id?0.5:1,transition:`all 0.15s ${DS.ease}`}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:DS.font.lg,fontWeight:DS.w.semibold,color:T.text}}>{o.nombre}</div>
+                    <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:2}}>{o.desc}</div>
+                  </div>
+                  <span style={{fontSize:DS.font.lg,color:T.textSm,flexShrink:0}}>{yendo===o.id?"…":"→"}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:DS.sp.xl}}>
+              <button onClick={()=>setPaso(3)} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:DS.font.lg,padding:"8px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}>← Atrás</button>
+              <button onClick={()=>onComplete("skip")} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:DS.font.lg,padding:DS.sp.sm,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                Mirar primero, conectar después
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Saltar la presentación (solo en los pasos de recorrido) */}
+        {paso<4&&(
+          <div style={{textAlign:"center",marginTop:DS.sp.md}}>
+            <button onClick={()=>setPaso(4)} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:DS.font.base,padding:DS.sp.xs,fontFamily:"'Inter',system-ui,sans-serif"}}>
+              Saltar la presentación
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
