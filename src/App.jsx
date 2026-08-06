@@ -1682,6 +1682,21 @@ async function ghLoadAndreaniLocations() {
   return _andreaniLocsCache.current;
 }
 
+// Busca UN pedido por número en la tienda (misma API que el buscador) y lo
+// devuelve ya formateado, o null. Para completar el domicilio al exportar
+// cuando el canje/reclamo tiene pedidoRef pero no los datos de envío.
+async function ghFetchOrderByNum(uid, num) {
+  const n = String(num||"").trim();
+  if(!n || !uid) return null;
+  try {
+    const r = await authFetch(`/api/orders?uid=${uid}&q=${encodeURIComponent(n)}`);
+    const data = await r.json();
+    if(!Array.isArray(data)) return null;
+    const built = buildOrdersFromAPI(data);
+    return built.find(o=>String(o.numero)===n) || built[0] || null;
+  } catch(_) { return null; }
+}
+
 // XLSX de carga masiva de Andreani con UN solo envío a domicilio. `o` es un
 // pseudo-pedido {numero, comprador, dni, email, telefono, cp, provincia,
 // localidad, direccion, dirNumero, piso}. Tira Error si algo falla.
@@ -1721,8 +1736,12 @@ async function ghEtiquetaAndreaniXlsxUno(o) {
   if(!ubicacion)ubicacion=locs.list.find(l=>l.startsWith('BUENOS AIRES'))||locs.list[0]||"";
   const dirNum=String(o.dirNumero||"");
   const direccion=cl(o.direccion||"");
+  // Medidas del paquete: la misma config que usa Envíos (modal "Paquete"),
+  // no valores fijos. B=peso(g) C=alto D=ancho E=largo F=valor declarado.
+  let pk={peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000"};
+  try{const saved=localStorage.getItem(ghKey("growith_exportCfg"));if(saved)pk={...pk,...JSON.parse(saved)};}catch(_){}
   const rn=3;
-  const cells=[sC('A'+rn,""),nC('B'+rn,200),nC('C'+rn,5),nC('D'+rn,5),nC('E'+rn,5),nC('F'+rn,6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(dniDep&&!isNaN(dniDep))?nC('J'+rn,parseFloat(dniDep)):sC('J'+rn,dniDep||""),sC('K'+rn,cl(o.email||"")),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),sC('N'+rn,direccion),(dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,0),sC('P'+rn,cl(o.piso||"")),sC('Q'+rn,""),sC('R'+rn,ubicacion),sC('S'+rn,"")].join('');
+  const cells=[sC('A'+rn,""),nC('B'+rn,parseFloat(pk.peso)||200),nC('C'+rn,parseInt(pk.alto)||5),nC('D'+rn,parseInt(pk.ancho)||5),nC('E'+rn,parseInt(pk.prof)||5),nC('F'+rn,parseFloat(pk.valor)||6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(dniDep&&!isNaN(dniDep))?nC('J'+rn,parseFloat(dniDep)):sC('J'+rn,dniDep||""),sC('K'+rn,cl(o.email||"")),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),sC('N'+rn,direccion),(dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,0),sC('P'+rn,cl(o.piso||"")),sC('Q'+rn,""),sC('R'+rn,ubicacion),sC('S'+rn,"")].join('');
   const rowXml='<row r="3" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>';
   const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
   const newSheet1=sheet1.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S3"/>').replace('</sheetData>',rowXml+'</sheetData>').replace(/<dataValidations[\s\S]*?<\/dataValidations>/g,'');
@@ -5203,13 +5222,27 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10,flexWrap:"wrap"}}>
                       <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Envío Andreani</span>
                       <AsyncButton onClick={async()=>{
-                        if(falta.length){ toast("El pedido no tiene estos datos de envío: "+falta.join(", "),"warning",5000); return; }
+                        let cx={...c};
+                        const faltantes=x=>[["dirección",x.direccion],["número",x.dirNumero],["CP",x.cp],["localidad",x.localidad],["provincia",x.provincia]].filter(([,v])=>!String(v||"").trim()).map(([l])=>l);
+                        // Canje sin domicilio guardado (viejo o cargado a mano):
+                        // se completa desde el pedido y se persiste en el doc.
+                        if(faltantes(cx).length && (cx.pedidoRef||"").trim()){
+                          const o=await ghFetchOrderByNum(user?.uid, cx.pedidoRef);
+                          if(o){
+                            cx={...cx, dni:cx.dni||o.dni||"", cp:cx.cp||o.cp||"", provincia:cx.provincia||o.provincia||"",
+                              localidad:cx.localidad||o.localidad||o.ciudad||"", direccion:cx.direccion||o.direccion||"",
+                              dirNumero:cx.dirNumero||o.dirNumero||"", piso:cx.piso||o.piso||""};
+                            save({dni:cx.dni, cp:cx.cp, provincia:cx.provincia, localidad:cx.localidad, direccion:cx.direccion, dirNumero:cx.dirNumero, piso:cx.piso});
+                          }
+                        }
+                        const faltaNow=faltantes(cx);
+                        if(faltaNow.length){ toast((cx.pedidoRef||"").trim()?("El pedido no tiene estos datos de envío: "+faltaNow.join(", ")):"El canje no tiene nº de pedido — cargalo para traer la dirección","warning",5000); return; }
                         try{
                           await ghEtiquetaAndreaniXlsxUno({
-                            numero:(c.pedidoRef||"").trim()||("CANJE "+(c.usuario||c.influencer||"").replace(/[^\w ]+/g,"").trim().slice(0,16).toUpperCase()||"CANJE"),
-                            comprador:c.influencer||"", dni:c.dni||"", email:c.email||"", telefono:c.telefono||"",
-                            cp:c.cp||"", provincia:c.provincia||"", localidad:c.localidad||"",
-                            direccion:c.direccion||"", dirNumero:c.dirNumero||"", piso:c.piso||"",
+                            numero:(cx.pedidoRef||"").trim()||("CANJE "+(cx.usuario||cx.influencer||"").replace(/[^\w ]+/g,"").trim().slice(0,16).toUpperCase()||"CANJE"),
+                            comprador:cx.influencer||"", dni:cx.dni||"", email:cx.email||"", telefono:cx.telefono||"",
+                            cp:cx.cp||"", provincia:cx.provincia||"", localidad:cx.localidad||"",
+                            direccion:cx.direccion||"", dirNumero:cx.dirNumero||"", piso:cx.piso||"",
                           });
                           toast("Excel generado — subilo al portal de Andreani y pegá el tracking acá","success",5000);
                         }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
@@ -5667,14 +5700,27 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             <div style={{display:"flex",gap:8,alignItems:"center",paddingTop:8,borderTop:"1px solid "+T.borderL}}>
               {/* Export directo desde el alta: evita crear → ir al detalle → exportar */}
               <AsyncButton onClick={async()=>{
-                const falta=[["dirección",form.direccion],["número",form.dirNumero],["CP",form.cp],["localidad",form.localidad],["provincia",form.provincia]].filter(([,v])=>!String(v||"").trim()).map(([l])=>l);
-                if(falta.length){ toast(form._pedidoCargado?("El pedido no tiene estos datos de envío: "+falta.join(", ")):"Cargá primero el pedido (arriba) para traer la dirección de envío","warning",5000); return; }
+                let f={...form};
+                const faltantes=x=>[["dirección",x.direccion],["número",x.dirNumero],["CP",x.cp],["localidad",x.localidad],["provincia",x.provincia]].filter(([,v])=>!String(v||"").trim()).map(([l])=>l);
+                // Si el domicilio no está en el form pero hay nº de pedido, se
+                // trae del pedido en el momento (cubre canjes cargados a mano).
+                if(faltantes(f).length && (f.pedidoRef||"").trim()){
+                  const o=await ghFetchOrderByNum(user?.uid, f.pedidoRef);
+                  if(o){
+                    f={...f, dni:f.dni||o.dni||"", cp:f.cp||o.cp||"", provincia:f.provincia||o.provincia||"",
+                      localidad:f.localidad||o.localidad||o.ciudad||"", direccion:f.direccion||o.direccion||"",
+                      dirNumero:f.dirNumero||o.dirNumero||"", piso:f.piso||o.piso||""};
+                    setForm(prev=>({...prev, dni:f.dni, cp:f.cp, provincia:f.provincia, localidad:f.localidad, direccion:f.direccion, dirNumero:f.dirNumero, piso:f.piso}));
+                  }
+                }
+                const falta=faltantes(f);
+                if(falta.length){ toast((f.pedidoRef||"").trim()?("El pedido no tiene estos datos de envío: "+falta.join(", ")):"Cargá primero el pedido (arriba) para traer la dirección de envío","warning",5000); return; }
                 try{
                   await ghEtiquetaAndreaniXlsxUno({
-                    numero:(form.pedidoRef||"").trim()||("CANJE "+(form.usuario||form.influencer||"").replace(/[^\w ]+/g,"").trim().slice(0,16).toUpperCase()||"CANJE"),
-                    comprador:form.influencer||"", dni:form.dni||"", email:form.email||"", telefono:form.telefono||"",
-                    cp:form.cp||"", provincia:form.provincia||"", localidad:form.localidad||"",
-                    direccion:form.direccion||"", dirNumero:form.dirNumero||"", piso:form.piso||"",
+                    numero:(f.pedidoRef||"").trim()||("CANJE "+(f.usuario||f.influencer||"").replace(/[^\w ]+/g,"").trim().slice(0,16).toUpperCase()||"CANJE"),
+                    comprador:f.influencer||"", dni:f.dni||"", email:f.email||"", telefono:f.telefono||"",
+                    cp:f.cp||"", provincia:f.provincia||"", localidad:f.localidad||"",
+                    direccion:f.direccion||"", dirNumero:f.dirNumero||"", piso:f.piso||"",
                   });
                   toast("Excel generado — subilo al portal de Andreani y pegá el tracking en el canje","success",5000);
                 }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
