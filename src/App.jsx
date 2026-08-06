@@ -3837,6 +3837,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const sidebarToInternal = { activos:"kanban", historial:"comisiones", influencers:"perfiles" };
   const internalToSidebar = { lista:"activos", kanban:"activos", comisiones:"historial", perfiles:"influencers" };
   const [viewTabLocal,setViewTabLocal]=useState("kanban");
+  const [verCerradosTodos,setVerCerradosTodos]=useState(false); // columna Cerrado: 30 días por default
   const [dragOverEstado,setDragOverEstado]=useState(null);
   const viewTab = tabProp !== undefined ? (sidebarToInternal[tabProp] || tabProp) : viewTabLocal;
   const setViewTab = (v) => {
@@ -4407,8 +4408,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             {(()=>{
               const otros=alertas.filter(a=>a.tipo!=="envio_programado");
               if(!otros.length) return null;
+              // "deben contenido" NO va como chip: ya lo dicen el stat
+              // "Cont. pendiente" y la columna del kanban — era triple.
               const chipDefs=[
-                {tipo:"contenido", label:"deben contenido", color:T.orange},
                 {tipo:"sinrespuesta", label:"sin respuesta +15 días", color:T.blue},
                 {tipo:"recordatorio", label:"recordatorios vencidos", color:T.yellow},
               ];
@@ -4587,12 +4589,30 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               {ESTADOS_C.map(estado=>{
                 const sc=getEstadoCC(T,estado);
                 const isDragOver=dragOverEstado===estado;
-                const cols=(filterEstado?canjes.filter(c=>c.estado===estado):canjes.filter(c=>c.estado===estado))
+                let cols=(filterEstado?canjes.filter(c=>c.estado===estado):canjes.filter(c=>c.estado===estado))
                   .filter(c=>{
                     if(search&&!c.influencer?.toLowerCase().includes(search.toLowerCase())&&!c.usuario?.toLowerCase().includes(search.toLowerCase())) return false;
                     if(filterRed&&c.red!==filterRed) return false;
                     return true;
                   });
+                // "Contenido pendiente" = lista de cobranza de contenido: los que
+                // deben hace más tiempo van arriba (fecha de entrega/envío más vieja).
+                if(estado==="Contenido pendiente"){
+                  const ts=c=>{
+                    const t=Date.parse(c.trackEntregadoAt||c.fechaEnvio||"");
+                    return isFinite(t)?t:((c.createdAt?.seconds||0)*1000||Date.now());
+                  };
+                  cols=[...cols].sort((a,b)=>ts(a)-ts(b));
+                }
+                // "Cerrado" es archivo: solo los últimos 30 días, con "ver todos".
+                let cerradosOcultos=0;
+                if(estado==="Cerrado"&&!verCerradosTodos){
+                  const hace30=Date.now()-30*86400000;
+                  const tsC=c=>((c.finalizadoAt?.seconds||c.updatedAt?.seconds||c.createdAt?.seconds||0)*1000);
+                  const recientes=cols.filter(c=>tsC(c)>=hace30);
+                  cerradosOcultos=cols.length-recientes.length;
+                  if(cerradosOcultos>0) cols=recientes;
+                }
                 return (
                   <div key={estado}
                     onDragOver={e=>{e.preventDefault();setDragOverEstado(estado);}}
@@ -4699,6 +4719,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           </div>
                         );
                       })}
+                      {estado==="Cerrado"&&(cerradosOcultos>0||verCerradosTodos)&&(
+                        <button onClick={()=>setVerCerradosTodos(v=>!v)}
+                          style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:11,padding:"6px 4px",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"center"}}>
+                          {verCerradosTodos?"Mostrar solo últimos 30 días":`Ver todos (${cerradosOcultos} más antiguos)`}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
