@@ -4107,6 +4107,7 @@ function NotasInline({value, onSave, T, iS}) {
 function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje, initialDetail, onClearInitialDetail, tab: tabProp, setTab: setTabProp, orders=[]}) {
   // Catálogo real de la cuenta (sale de sus propios pedidos) + opciones genéricas.
   const catalogoCanje=useMemo(()=>[...catalogoProductos(orders),...EXTRAS_CANJE],[orders]);
+  const [canjes,setCanjes]=useState([]);
   // Prefijo común del catálogo para chips cortos ("Rojo - Marco Negro" en vez
   // del título completo de TN, que desborda las cards del kanban).
   // Sale de los pedidos Y de los nombres ya guardados en los canjes: si los
@@ -4115,7 +4116,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     ...(orders||[]).flatMap(o=>(o.productos||[]).map(p=>p.nombre||"")),
     ...(canjes||[]).flatMap(c=>(c.productosCanje||[]).map(p=>p.nombre||"")),
   ]),[orders,canjes]);
-  const [canjes,setCanjes]=useState([]);
   const [form,setForm]=useState(null);
   const [detail,setDetail]=useState(null);
   const [search,setSearch]=useState("");
