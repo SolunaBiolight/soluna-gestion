@@ -4433,7 +4433,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       <strong>{c.influencer}</strong>: paquete <strong style={{color:m.color}}>{m.txt}</strong>
                       {a.estado&&<span style={{color:T.textSm}}> · Andreani: "{a.estado}"</span>}
                     </span>
-                    <a href={`https://www.andreani.com/envio/${(c.tracking||"").trim()}`} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.blue,textDecoration:"none",flexShrink:0}}>Ver →</a>
+                    <a href={`https://www.andreani.com/envio/${(c.tracking||"").trim()}`} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.blue,textDecoration:"none",flexShrink:0}}>Ver tracking →</a>
                     <button onClick={()=>setDetail(c._docId)} style={{...BtnSecondary(T),padding:"4px 10px",fontSize:11,flexShrink:0}}>Abrir</button>
                     <button onClick={async()=>{try{await updateDoc(doc(db,"canjes",c._docId),{"trackingAviso.visto":true});}catch(_){}}} title="Marcar visto" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:14,padding:"2px 6px",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
                   </div>
