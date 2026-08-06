@@ -4089,6 +4089,14 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         codigoDescuento:(form.codigoDescuento||"").toUpperCase().trim(),
         comisionPct:form.comisionPct||"",
       };
+      // Datos de envío (vienen del pedido cargado): la card "Envío Andreani"
+      // del detalle y el export XLSX los leen del doc. Solo al CREAR — un
+      // guardado de edición sin estos campos en el form no debe pisarlos.
+      if(!form._docId){
+        Object.assign(p,{dni:form.dni||"", cp:form.cp||"", provincia:form.provincia||"",
+          localidad:form.localidad||"", direccion:form.direccion||"",
+          dirNumero:form.dirNumero||"", piso:form.piso||""});
+      }
       const prev=canjes.find(c=>c._docId===form._docId);
       // Si el tracking es nuevo o cambió, (re)activar el seguimiento del cron
       if((p.tracking||"").trim() && (p.tracking||"").trim()!==(prev?.tracking||"").trim()){
@@ -5472,6 +5480,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   pedidoRef:String(num),
                   productosCanje:prodsCanje.length>0?prodsCanje:(f.productosCanje||[]),
                   producto:prodsCanje[0]?.nombre||f.producto||"",
+                  // Datos de envío del pedido: habilitan el export XLSX Andreani
+                  // desde este mismo modal y la card "Envío Andreani" del detalle.
+                  dni:o?.dni||f.dni||"", cp:o?.cp||f.cp||"",
+                  provincia:o?.provincia||f.provincia||"", localidad:o?.localidad||o?.ciudad||f.localidad||"",
+                  direccion:o?.direccion||f.direccion||"", dirNumero:o?.dirNumero||f.dirNumero||"", piso:o?.piso||f.piso||"",
                   _pedidoCargado:String(num),
                 }));
               }}/>
@@ -5651,7 +5664,22 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             </div>
 
             {/* Botones */}
-            <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:8,borderTop:"1px solid "+T.borderL}}>
+            <div style={{display:"flex",gap:8,alignItems:"center",paddingTop:8,borderTop:"1px solid "+T.borderL}}>
+              {/* Export directo desde el alta: evita crear → ir al detalle → exportar */}
+              <AsyncButton onClick={async()=>{
+                const falta=[["dirección",form.direccion],["número",form.dirNumero],["CP",form.cp],["localidad",form.localidad],["provincia",form.provincia]].filter(([,v])=>!String(v||"").trim()).map(([l])=>l);
+                if(falta.length){ toast(form._pedidoCargado?("El pedido no tiene estos datos de envío: "+falta.join(", ")):"Cargá primero el pedido (arriba) para traer la dirección de envío","warning",5000); return; }
+                try{
+                  await ghEtiquetaAndreaniXlsxUno({
+                    numero:(form.pedidoRef||"").trim()||("CANJE "+(form.usuario||form.influencer||"").replace(/[^\w ]+/g,"").trim().slice(0,16).toUpperCase()||"CANJE"),
+                    comprador:form.influencer||"", dni:form.dni||"", email:form.email||"", telefono:form.telefono||"",
+                    cp:form.cp||"", provincia:form.provincia||"", localidad:form.localidad||"",
+                    direccion:form.direccion||"", dirNumero:form.dirNumero||"", piso:form.piso||"",
+                  });
+                  toast("Excel generado — subilo al portal de Andreani y pegá el tracking en el canje","success",5000);
+                }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
+              }} style={{...BtnSecondary(T),fontSize:12,color:T.green,borderColor:T.green+"66"}}>Exportar XLSX Andreani</AsyncButton>
+              <div style={{flex:1}}/>
               <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>
               <button onClick={saveCanje} disabled={saving||!form.influencer} style={{...BtnPurple(T),fontSize:13,padding:"10px 22px",opacity:saving||!form.influencer?0.45:1}}>
                 {saving?"Creando...":"Crear canje →"}
