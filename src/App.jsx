@@ -3855,10 +3855,33 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [sucPick,setSucPick]=useState(null); // {resolve, hint}
   const [sucQ,setSucQ]=useState("");
   const [sucRes,setSucRes]=useState(null); // null | {loading} | {lista:[{descripcion,direccion}],oficial}
-  function pedirSucursal(pickupDetails, prefill){
-    setSucQ(prefill||""); setSucRes(null);
+  const [sucCerca,setSucCerca]=useState(null); // null | {loading} | {lista:[{...,distM,tpl}]}
+  // Nombres del desplegable del XLSX normalizados → string exacto del template.
+  // Solo se puede escribir en el Excel un valor que exista ahí.
+  function tplSucMap(){
+    const m=new Map();
+    const n=s=>String(s||"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
+    for(const s of (_andreaniLocsCache.current?.sucursales||[])) m.set(n(s),s);
+    return {map:m,n};
+  }
+  function pedirSucursal(pickupDetails, qTokens, cp){
+    setSucQ(""); setSucRes(null); setSucCerca({loading:true});
+    // Cercanas al punto original, ordenadas por distancia — solo las que
+    // existen en el desplegable del template sirven para el XLSX.
+    (async()=>{
+      try{
+        await ghLoadAndreaniLocations(); // asegura el template para mapear
+        const r=await authFetch(`/api/andreani?action=sucursales_cercanas&q=${encodeURIComponent(qTokens||"")}&cp=${encodeURIComponent(cp||"")}`);
+        const d=await r.json().catch(()=>null);
+        if(!r.ok||!Array.isArray(d?.sucursales)) throw new Error();
+        const {map,n}=tplSucMap();
+        const lista=d.sucursales.map(s=>({...s,tpl:map.get(n(s.descripcion))||null})).filter(s=>s.tpl).slice(0,15);
+        setSucCerca({lista, origen:d.origen||""});
+      }catch(_){ setSucCerca({lista:[]}); }
+    })();
     return new Promise(resolve=>setSucPick({resolve, hint:pickupDetails?.name||pickupDetails?.address?.address||""}));
   }
+  const fmtDist=m=>m==null?"":m<1000?`a ${m} m`:`a ${(m/1000).toFixed(1).replace(".",",")} km`;
   // Tokens significativos del punto de retiro ("JURAMENTO 2385") para buscar
   // en la lista oficial — sin PUNTO/ANDREANI/HOP/AVENIDA/etc.
   function sucTokens(pickupDetails, direccion){
@@ -3906,18 +3929,24 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           const r=await authFetch(`/api/andreani?action=sucursales_buscar&q=${encodeURIComponent(q)}`);
           const j=await r.json().catch(()=>null);
           if(r.ok&&Array.isArray(j?.sucursales)&&j.sucursales.length===1&&(j.sucursales[0].descripcion||"").trim()){
-            sucursal=String(j.sucursales[0].descripcion).trim();
+            // Solo sirve si ese nombre EXISTE en el desplegable del template:
+            // el Excel rechaza cualquier valor fuera de su lista, aunque la
+            // sucursal sea real. Si no está → selector de cercanas.
+            await ghLoadAndreaniLocations();
+            const {map,n}=tplSucMap();
+            sucursal=map.get(n(j.sucursales[0].descripcion))||null;
           }
         }catch(_){ /* sin API oficial → template/selector */ }
       }
-      // 2) Override guardado o match contra el template; 3) selector manual
-      // (prefilleado con calle+número para que aparezca solo).
+      // 2) Override guardado o match contra el template; 3) selector con las
+      // sucursales cercanas al punto original ordenadas por distancia.
       if(!sucursal){
         const locs=await ghLoadAndreaniLocations();
         let ov={}; try{ov=JSON.parse(localStorage.getItem(ghKey("growith_sucOverrides"))||"{}");}catch(_){}
         sucursal=ov[numero]||ghMatchSucursal(locs, d.direccion, d.pickupDetails);
         if(!sucursal){
-          sucursal=await pedirSucursal(d.pickupDetails, q);
+          const cpSuc=String(d.pickupDetails?.address?.zipcode||d.pickupDetails?.address?.zip_code||d.cp||"").replace(/\D/g,"");
+          sucursal=await pedirSucursal(d.pickupDetails, q, cpSuc);
           if(!sucursal) return false; // canceló el selector
           try{ov[numero]=sucursal;localStorage.setItem(ghKey("growith_sucOverrides"),JSON.stringify(ov));}catch(_){}
         }
@@ -5643,33 +5672,52 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       <Modal T={T} open={!!sucPick} onClose={()=>{sucPick?.resolve(null);setSucPick(null);}} title="Elegir sucursal Andreani" width={480} zIndex={2600}>
         {sucPick&&(()=>{
           const q=sucQ.trim();
-          const lista=sucRes?.lista||[];
+          const {map:tplM,n:tplN}=tplSucMap();
+          const Row=({s,i,valor,distM})=>{
+            const dir=[s.direccion?.calle,s.direccion?.numero].filter(Boolean).join(" ");
+            const loc=[s.direccion?.localidad,s.direccion?.codigoPostal?`CP ${s.direccion.codigoPostal}`:""].filter(Boolean).join(" · ");
+            const clickable=!!valor;
+            return (
+              <div key={(s.id??s.descripcion)+"_"+i} onClick={clickable?()=>{sucPick.resolve(valor);setSucPick(null);}:undefined}
+                style={{padding:"10px 14px",cursor:clickable?"pointer":"default",opacity:clickable?1:0.45,borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s",display:"flex",alignItems:"center",gap:10}}
+                onMouseEnter={e=>{if(clickable)e.currentTarget.style.background=T.surface;}}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,color:T.text,fontWeight:600}}>{s.descripcion}</div>
+                  {(dir||loc)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>{[dir,loc].filter(Boolean).join(" — ")}{!clickable&&<span style={{color:T.yellow}}> · no está en el desplegable de carga masiva</span>}</div>}
+                </div>
+                {distM!=null&&<span style={{fontSize:11,fontWeight:700,color:T.accent,flexShrink:0,whiteSpace:"nowrap"}}>{fmtDist(distM)}</span>}
+              </div>
+            );
+          };
           return (
             <div>
-              {sucPick.hint&&<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>El pedido dice: <strong style={{color:T.text}}>{sucPick.hint}</strong> — buscala en la lista oficial de Andreani y elegila.</div>}
-              <input autoFocus value={sucQ} onChange={e=>setSucQ(e.target.value)} placeholder="Buscar por calle, barrio o localidad..." style={{...iS,marginBottom:10}}/>
+              {sucPick.hint&&<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>El punto elegido en el pedido (<strong style={{color:T.text}}>{sucPick.hint}</strong>) no está en el desplegable de carga masiva de Andreani — elegí la sucursal más cercana.</div>}
+              <input autoFocus value={sucQ} onChange={e=>setSucQ(e.target.value)} placeholder="Buscar otra por calle, barrio o localidad..." style={{...iS,marginBottom:10}}/>
               {q.length<2?(
-                <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center"}}>Escribí al menos 2 letras para buscar</div>
+                sucCerca?.loading?(
+                  <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/> Buscando sucursales cercanas...</div>
+                ):(sucCerca?.lista||[]).length===0?(
+                  <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center"}}>No pude calcular cercanías — buscá arriba por calle o barrio</div>
+                ):(
+                  <div>
+                    <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Más cercanas al punto del pedido{sucCerca.origen?` (${sucCerca.origen})`:""}</div>
+                    <div style={{maxHeight:300,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10}}>
+                      {(sucCerca.lista||[]).map((s,i)=><Row key={i} s={s} i={i} valor={s.tpl} distM={s.distM}/>)}
+                    </div>
+                  </div>
+                )
               ):sucRes?.loading?(
                 <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/> Buscando en Andreani...</div>
-              ):lista.length===0?(
+              ):(sucRes?.lista||[]).length===0?(
                 <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center"}}>Sin resultados para "{sucQ}"</div>
               ):(
                 <div>
                   {sucRes?.oficial===false&&<div style={{fontSize:10,color:T.yellow,marginBottom:6}}>La API oficial no respondió — mostrando la lista del template (puede estar desactualizada)</div>}
                   <div style={{maxHeight:300,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10}}>
-                    {lista.map((s,i)=>{
-                      const dir=[s.direccion?.calle,s.direccion?.numero].filter(Boolean).join(" ");
-                      const loc=[s.direccion?.localidad,s.direccion?.codigoPostal?`CP ${s.direccion.codigoPostal}`:""].filter(Boolean).join(" · ");
-                      return (
-                        <div key={(s.id??s.descripcion)+"_"+i} onClick={()=>{sucPick.resolve(String(s.descripcion||"").trim());setSucPick(null);}}
-                          style={{padding:"10px 14px",cursor:"pointer",borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
-                          onMouseEnter={e=>e.currentTarget.style.background=T.surface}
-                          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                          <div style={{fontSize:13,color:T.text,fontWeight:600}}>{s.descripcion}</div>
-                          {(dir||loc)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>{[dir,loc].filter(Boolean).join(" — ")}</div>}
-                        </div>
-                      );
+                    {(sucRes?.lista||[]).map((s,i)=>{
+                      const tpl=sucRes?.oficial===false?String(s.descripcion||"").trim():(tplM.get(tplN(s.descripcion))||null);
+                      return <Row key={i} s={s} i={i} valor={tpl}/>;
                     })}
                   </div>
                 </div>

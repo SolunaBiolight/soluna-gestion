@@ -185,6 +185,12 @@ async function isPlatformAdmin(db, uid) {
 // ─── Sucursales (por CP y listado completo para el buscador) ───────────────
 
 function slimSucursal(s) {
+  // Coordenadas: Andreani las manda con distintos nombres según el endpoint —
+  // se prueban todas las formas conocidas. Sin coords la sucursal igual sirve
+  // (solo no participa del orden por distancia).
+  const g = s.coordenadas || s.geoCoordenada || s.geolocalizacion || s.geoLocalizacion || s.direccion?.coordenadas || {};
+  const lat = parseFloat(g.latitud ?? g.lat ?? s.latitud ?? s.direccion?.latitud);
+  const lng = parseFloat(g.longitud ?? g.lng ?? g.long ?? s.longitud ?? s.direccion?.longitud);
   return {
     id: s.id,
     codigo: s.codigo ?? null,
@@ -192,11 +198,22 @@ function slimSucursal(s) {
     descripcion: s.descripcion || "",
     direccion: s.direccion || null,
     horarioDeAtencion: s.horarioDeAtencion || "",
+    lat: isFinite(lat) ? lat : null,
+    lng: isFinite(lng) ? lng : null,
   };
 }
 
+// Distancia en metros entre dos coordenadas (haversine).
+function distanciaM(lat1, lng1, lat2, lng2) {
+  const R = 6371000, rad = d => d * Math.PI / 180;
+  const dLat = rad(lat2 - lat1), dLng = rad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(a)));
+}
+
 async function sucursalesPorCp(db, env, cp) {
-  const cacheRef = db.collection("andreani_config").doc(`suc_${cp}`);
+  // suc2_: el slim viejo cacheado no traía lat/lng (orden por distancia)
+  const cacheRef = db.collection("andreani_config").doc(`suc2_${cp}`);
   try {
     const hit = await cacheRef.get();
     if (hit.exists) {
@@ -215,7 +232,7 @@ async function sucursalesPorCp(db, env, cp) {
 
 // Listado COMPLETO (para el buscador de sucursal de origen). Cacheado 7 días.
 async function sucursalesTodas(db, env) {
-  const cacheRef = db.collection("andreani_config").doc("suc_all");
+  const cacheRef = db.collection("andreani_config").doc("suc_all2"); // v2: con lat/lng
   try {
     const hit = await cacheRef.get();
     if (hit.exists) {
@@ -537,6 +554,47 @@ export default async function handler(req, res) {
         }
       }
       return res.json({ sucursales: out });
+    }
+
+    // ── sucursales_cercanas: sucursales ordenadas por distancia al punto de
+    // retiro ORIGINAL del pedido. Para cuando ese punto no existe en el
+    // desplegable del XLSX de carga masiva y hay que elegir una cercana.
+    // q = tokens del punto ("JURAMENTO 2385"); cp = fallback si el punto no
+    // está en el listado oficial (ancla = centroide de sucursales del CP).
+    if (action === "sucursales_cercanas") {
+      const q = nrmTxt(String(body.q || "").trim());
+      const cp = String(body.cp || "").replace(/\D/g, "");
+      let todas;
+      try { todas = await sucursalesTodas(db, env); }
+      catch (e) { return res.status(502).json({ error: e.message }); }
+      // 1) Ancla: el punto original por tokens exactos…
+      let origen = null;
+      if (q.length >= 2) {
+        const tokens = q.split(/\s+/).filter(Boolean);
+        const cand = todas.filter(s => {
+          const hay = nrmTxt([s.descripcion, s.direccion?.calle, s.direccion?.numero, s.direccion?.localidad].filter(Boolean).join(" "));
+          return tokens.every(t => hay.includes(t));
+        }).filter(s => s.lat != null);
+        if (cand.length) origen = { lat: cand[0].lat, lng: cand[0].lng, descripcion: cand[0].descripcion };
+      }
+      // 2) …o el centroide de las sucursales del CP del pedido.
+      if (!origen && cp) {
+        const delCp = todas.filter(s => String(s.direccion?.codigoPostal || "").replace(/\D/g, "") === cp && s.lat != null);
+        if (delCp.length) {
+          origen = {
+            lat: delCp.reduce((a, s) => a + s.lat, 0) / delCp.length,
+            lng: delCp.reduce((a, s) => a + s.lng, 0) / delCp.length,
+            descripcion: `CP ${cp}`,
+          };
+        }
+      }
+      if (!origen) return res.json({ sucursales: [], sinOrigen: true });
+      const conDist = todas
+        .filter(s => s.lat != null)
+        .map(s => ({ ...s, distM: distanciaM(origen.lat, origen.lng, s.lat, s.lng) }))
+        .sort((a, b) => a.distM - b.distM)
+        .slice(0, 40);
+      return res.json({ sucursales: conDist, origen: origen.descripcion });
     }
 
     // ── sucursal_origen (desde dónde se emiten los envíos del usuario) ─────
