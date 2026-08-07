@@ -1370,19 +1370,31 @@ function CuponPublicoView({token}){
   const [data,setData]=React.useState(null);
   const [err,setErr]=React.useState("");
   const [loading,setLoading]=React.useState(true);
+  // Selector de período: mes en curso + los 11 anteriores
+  const MESES=React.useMemo(()=>{
+    const out=[]; const d=new Date();
+    for(let i=0;i<12;i++){
+      const y=d.getFullYear(), m=d.getMonth();
+      const val=`${y}-${String(m+1).padStart(2,"0")}`;
+      const lbl=d.toLocaleDateString("es-AR",{month:"long",year:"numeric"});
+      out.push({val,lbl:lbl.charAt(0).toUpperCase()+lbl.slice(1)});
+      d.setMonth(m-1);
+    }
+    return out;
+  },[]);
+  const [mes,setMes]=React.useState(MESES[0].val);
   const fmt=n=>"$"+Math.round(n||0).toLocaleString("es-AR");
-  async function load(){
+  async function load(m){
     setLoading(true); setErr("");
     try{
-      const r=await fetch(`/api/orders?action=cupon_publico&token=${encodeURIComponent(token)}`);
+      const r=await fetch(`/api/orders?action=cupon_publico&token=${encodeURIComponent(token)}&mes=${encodeURIComponent(m||mes)}`);
       const d=await r.json().catch(()=>({}));
       if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`);
       setData(d);
     }catch(e){ setErr(e.message||"No se pudo cargar"); }
     setLoading(false);
   }
-  React.useEffect(()=>{ load(); /* eslint-disable-line */ },[token]);
-  const mes=new Date().toLocaleDateString("es-AR",{month:"long",year:"numeric"});
+  React.useEffect(()=>{ load(mes); /* eslint-disable-line */ },[token,mes]);
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column",alignItems:"center",padding:"48px 16px"}}>
       <div style={{maxWidth:460,width:"100%"}}>
@@ -1404,26 +1416,24 @@ function CuponPublicoView({token}){
               {data.influencer&&<div style={{fontSize:13,color:T.textMd,marginBottom:2}}>Hola, {data.influencer}</div>}
               <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6,marginBottom:4}}>Tu código</div>
               <div style={{fontSize:28,fontWeight:800,color:T.text,letterSpacing:0.5,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{data.code}</div>
-              <div style={{fontSize:12,color:T.textSm,marginTop:4,textTransform:"capitalize"}}>{mes} — en tiempo real</div>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <select value={mes} onChange={e=>setMes(e.target.value)}
+              style={{width:"100%",background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px",fontSize:13,fontWeight:600,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:10,outline:"none",cursor:"pointer"}}>
+              {MESES.map(m=><option key={m.val} value={m.val}>{m.lbl}</option>)}
+            </select>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 18px"}}>
                 <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Ventas con tu código</div>
-                <div style={{fontSize:26,fontWeight:800,color:T.text}}>{data.usos}</div>
+                <div style={{fontSize:28,fontWeight:800,color:T.text}}>{data.usos}</div>
               </div>
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 18px"}}>
-                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Facturado</div>
-                <div style={{fontSize:26,fontWeight:800,color:T.text}}>{fmt(data.ventas)}</div>
+              <div style={{background:T.card,border:`1px solid ${T.green}44`,borderRadius:14,padding:"16px 18px"}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Tu comisión</div>
+                <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-0.5}}>{fmt(data.comision)}</div>
               </div>
-            </div>
-            <div style={{background:T.card,border:`1px solid ${T.green}44`,borderRadius:14,padding:"18px 20px",marginBottom:14}}>
-              <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Tu comisión del mes</div>
-              <div style={{fontSize:32,fontWeight:800,color:T.green,letterSpacing:-0.5}}>{fmt(data.comision)}</div>
-              <div style={{fontSize:11,color:T.textSm,marginTop:4}}>{data.comisionPct}% sobre el neto recibido ({fmt(data.neto)})</div>
             </div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-              <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Los números salen de las ventas reales de la tienda, del mes en curso.</div>
-              <button onClick={load} style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",flexShrink:0}}>Actualizar</button>
+              <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Los números salen de las ventas reales de la tienda, en tiempo real.</div>
+              <button onClick={()=>load(mes)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",flexShrink:0}}>Actualizar</button>
             </div>
           </>
         )}

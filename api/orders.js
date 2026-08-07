@@ -265,14 +265,20 @@ export default async function handler(req, res) {
     const tn = stores.find(s => s.type === "tiendanube");
     if (!tn?.accessToken || !tn?.storeId) return res.status(503).json({ error: "La tienda no está conectada en este momento." });
     const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-    const desde = hoy.slice(0, 8) + "01"; // mes en curso, hora AR
+    const mesAct = hoy.slice(0, 7);
+    // Mes elegible desde el selector del panel (YYYY-MM); default: mes en curso
+    const mesQ = String(req.query.mes || "").trim();
+    const mes = /^\d{4}-(0[1-9]|1[0-2])$/.test(mesQ) ? mesQ : mesAct;
+    const desde = mes + "-01";
+    const finMes = new Date(+mes.slice(0, 4), +mes.slice(5, 7), 0).getDate();
+    const hasta = mes === mesAct ? hoy : `${mes}-${String(finMes).padStart(2, "0")}`;
     const code = String(link.code || "").toUpperCase().trim();
     const tnHeaders = { 'Authentication': `bearer ${tn.accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)' };
     let usos = 0, ventas = 0, descuento = 0;
     for (let p = 1; p <= 15; p++) {
       let pg = [];
       try {
-        const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/orders?payment_status=paid&per_page=200&page=${p}&fields=id,coupon,total,discount_coupon&created_at_min=${encodeURIComponent(desde + "T00:00:00-0300")}`, { headers: tnHeaders });
+        const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/orders?payment_status=paid&per_page=200&page=${p}&fields=id,coupon,total,discount_coupon&created_at_min=${encodeURIComponent(desde + "T00:00:00-0300")}&created_at_max=${encodeURIComponent(hasta + "T23:59:59-0300")}`, { headers: tnHeaders });
         if (!r.ok) break;
         pg = await r.json();
         if (!Array.isArray(pg)) break;
@@ -289,7 +295,7 @@ export default async function handler(req, res) {
     const neto = (ventas - descuento) * (1 - (Number(link.mpComision) || 0) / 100);
     return res.status(200).json({
       ok: true, code, influencer: link.influencer || "",
-      periodo: { desde, hasta: hoy },
+      mes, periodo: { desde, hasta },
       usos, ventas: Math.round(ventas), descuento: Math.round(descuento),
       neto: Math.round(neto), comisionPct: pct, comision: Math.round(neto * (pct / 100)),
     });
