@@ -273,32 +273,50 @@ export default async function handler(req, res) {
     const finMes = new Date(+mes.slice(0, 4), +mes.slice(5, 7), 0).getDate();
     const hasta = mes === mesAct ? hoy : `${mes}-${String(finMes).padStart(2, "0")}`;
     const code = String(link.code || "").toUpperCase().trim();
+    // Cache en Firestore: mes cerrado no cambia nunca (TTL 24h por las dudas);
+    // mes en curso 3 min. Abrir el link o cambiar el período pega acá casi
+    // siempre en vez de pagar el barrido completo de TN.
+    const cacheRef = db.collection("cupon_links").doc(token).collection("cache").doc(mes);
+    const ttl = mes === mesAct ? 3 * 60000 : 24 * 3600000;
+    try {
+      const hit = await cacheRef.get();
+      if (hit.exists && Date.now() - (hit.data().ts || 0) < ttl) return res.status(200).json(hit.data().resp);
+    } catch (_) {}
     const tnHeaders = { 'Authentication': `bearer ${tn.accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)' };
-    let usos = 0, ventas = 0, descuento = 0;
-    for (let p = 1; p <= 15; p++) {
-      let pg = [];
+    const urlPg = (p) => `https://api.tiendanube.com/v1/${tn.storeId}/orders?payment_status=paid&per_page=200&page=${p}&fields=id,coupon,total,discount_coupon&created_at_min=${encodeURIComponent(desde + "T00:00:00-0300")}&created_at_max=${encodeURIComponent(hasta + "T23:59:59-0300")}`;
+    const fetchPg = async (p) => {
       try {
-        const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/orders?payment_status=paid&per_page=200&page=${p}&fields=id,coupon,total,discount_coupon&created_at_min=${encodeURIComponent(desde + "T00:00:00-0300")}&created_at_max=${encodeURIComponent(hasta + "T23:59:59-0300")}`, { headers: tnHeaders });
-        if (!r.ok) break;
-        pg = await r.json();
-        if (!Array.isArray(pg)) break;
-      } catch (_) { break; }
-      for (const o of pg) {
-        for (const c of (Array.isArray(o.coupon) ? o.coupon : [])) {
-          if ((c.code || "").toUpperCase().trim() !== code) continue;
-          usos++; ventas += parseFloat(o.total || 0); descuento += parseFloat(o.discount_coupon || 0);
-        }
+        const r = await fetch(urlPg(p), { headers: tnHeaders, signal: AbortSignal.timeout(15000) });
+        if (!r.ok) return [];
+        const j = await r.json();
+        return Array.isArray(j) ? j : [];
+      } catch (_) { return []; }
+    };
+    // Lotes de 5 páginas en paralelo (antes era secuencial: hasta 15 round-trips)
+    let allOrders = [];
+    for (let start = 1; start <= 15; start += 5) {
+      const chunk = await Promise.all([0, 1, 2, 3, 4].map(i => fetchPg(start + i)));
+      let fin = false;
+      for (const pg of chunk) { allOrders = allOrders.concat(pg); if (pg.length < 200) { fin = true; break; } }
+      if (fin) break;
+    }
+    let usos = 0, ventas = 0, descuento = 0;
+    for (const o of allOrders) {
+      for (const c of (Array.isArray(o.coupon) ? o.coupon : [])) {
+        if ((c.code || "").toUpperCase().trim() !== code) continue;
+        usos++; ventas += parseFloat(o.total || 0); descuento += parseFloat(o.discount_coupon || 0);
       }
-      if (pg.length < 200) break;
     }
     const pct = Number(link.comisionPct) || 0;
     const neto = (ventas - descuento) * (1 - (Number(link.mpComision) || 0) / 100);
-    return res.status(200).json({
+    const resp = {
       ok: true, code, influencer: link.influencer || "",
       mes, periodo: { desde, hasta },
       usos, ventas: Math.round(ventas), descuento: Math.round(descuento),
       neto: Math.round(neto), comisionPct: pct, comision: Math.round(neto * (pct / 100)),
-    });
+    };
+    try { await cacheRef.set({ ts: Date.now(), resp }); } catch (_) {}
+    return res.status(200).json(resp);
   }
 
   if (action === 'warm_margenes') {

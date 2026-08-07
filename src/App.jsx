@@ -1402,7 +1402,7 @@ function CuponPublicoView({token}){
           <GrowithLogo size={30} variant="color"/>
           <span style={{fontSize:13,color:T.textSm,fontWeight:600}}>Panel de tu código de descuento</span>
         </div>
-        {loading?(
+        {loading&&!data?(
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"48px 0",color:T.textSm,fontSize:13}}><Spinner size={15} color={T.accent}/> Consultando las ventas en vivo…</div>
         ):err?(
           <div style={{background:T.card,border:`1px solid ${T.red}44`,borderRadius:14,padding:"22px 20px",textAlign:"center"}}>
@@ -1417,11 +1417,14 @@ function CuponPublicoView({token}){
               <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6,marginBottom:4}}>Tu código</div>
               <div style={{fontSize:28,fontWeight:800,color:T.text,letterSpacing:0.5,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{data.code}</div>
             </div>
-            <select value={mes} onChange={e=>setMes(e.target.value)}
-              style={{width:"100%",background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px",fontSize:13,fontWeight:600,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:10,outline:"none",cursor:"pointer"}}>
-              {MESES.map(m=><option key={m.val} value={m.val}>{m.lbl}</option>)}
-            </select>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <select value={mes} onChange={e=>setMes(e.target.value)}
+                style={{flex:1,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px",fontSize:13,fontWeight:600,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",outline:"none",cursor:"pointer"}}>
+                {MESES.map(m=><option key={m.val} value={m.val}>{m.lbl}</option>)}
+              </select>
+              {loading&&<span style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:T.textSm,flexShrink:0}}><Spinner size={12} color={T.accent}/> Actualizando…</span>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14,opacity:loading?0.55:1,transition:"opacity 0.15s"}}>
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 18px"}}>
                 <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Ventas con tu código</div>
                 <div style={{fontSize:28,fontWeight:800,color:T.text}}>{data.usos}</div>
