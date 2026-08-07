@@ -1085,6 +1085,7 @@ export default async function handler(req, res) {
           // Ventas de ayer hasta esta hora (tienda + ML) — hora real de cada orden
           let revH = 0, ordH = 0, revDia = 0, ordDia = 0;
           for (const o of [...(prev.raw?.orders_detail||[]), ...(prev.raw?.ml_data?.ml_orders_detail||[])]) {
+            if (o.refunded) continue; // devoluciones ML: excluidas de los totales, también acá
             const r = parseFloat(o.revenue)||0;
             revDia += r; ordDia++;
             const m = minAR(o.fecha);
@@ -1180,6 +1181,7 @@ export default async function handler(req, res) {
           add(o.fecha, "tienda", cogs+imp+comis+env, rev);
         }
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
+          if (o.refunded) continue; // devoluciones/contracargos ML: fuera de los totales (processML ya las excluye)
           const rev=parseFloat(o.revenue)||0;
           add(o.fecha, "ml", cogsDe(o.items) + rev*pctImpML + (parseFloat(o.saleFee)||0) + mlEnvioDe(o)+fulfillFee, rev);
         }
@@ -1300,6 +1302,7 @@ export default async function handler(req, res) {
             pay:o.pay||"", cust:o.cust||"", items:itemsDe(o.items), feeReal: realMp!=null });
         }
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
+          if (o.refunded) continue; // devoluciones/contracargos ML: no van en la tabla (los totales ya las excluyen)
           const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImpML, comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o)+fulfillFee;
           const profit=rev-cogs-imp-comis-env;
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]?.lt==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0,
@@ -1351,6 +1354,7 @@ export default async function handler(req, res) {
           repartir(o, o.items, rev*impFor(o.pay), comis, env, "tienda");
         }
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
+          if (o.refunded) continue; // devoluciones/contracargos ML: fuera del desglose por producto
           const rev = parseFloat(o.revenue)||0;
           repartir(o, o.items, rev*pctImpML, parseFloat(o.saleFee)||0, mlEnvioDe(o)+fulfillFee, "ml");
         }

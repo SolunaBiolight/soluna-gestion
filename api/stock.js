@@ -432,36 +432,44 @@ function processML(orders, couponMap = {}) {
     const cfMp = couponMap[String(o.id)];
     orderRev -= (cfMp != null ? cfMp : (parseFloat(o.coupon?.amount) || 0));
 
+    // Devolución/contracargo: ML marca la orden con tag "refunded" (o el pago
+    // queda con el total reembolsado). ML ANULA los cargos de esas ventas
+    // (comisión y envío) en la facturación → acá se excluyen de TODOS los
+    // agregados (revenue, unidades, comisión, COGS vía map) igual que una
+    // cancelada. La orden queda en ordersDetail con el flag para el contador
+    // de devueltas y para que el motor no cuente su costo de envío.
+    const totAmt = parseFloat(o.total_amount)||0;
+    const refTot = (o.payments||[]).reduce((s,p)=>s+(parseFloat(p.transaction_amount_refunded)||0),0);
+    const refunded = (o.tags||[]).includes("refunded") || (totAmt>0 && refTot >= totAmt*0.99);
+
     for(const item of o.order_items||[]){
       const vid=String(item.item?.id||"ml");
       const qty=parseInt(item.quantity)||0;
       const rev=parseFloat(item.unit_price)*qty; // per-variant a precio de lista
-      if(!map[vid]) map[vid]={units:0,revenue:0,nombre:item.item?.title};
-      map[vid].units+=qty;
-      map[vid].revenue+=rev;
-      orderUnits+=qty;
       const vname=item.item?.variation_attributes?.[0]?.value_name||item.item?.title||"Default";
-      byVariant[vname]=(byVariant[vname]||0)+qty;
-      byVariantRev[vname]=(byVariantRev[vname]||0)+rev;
+      if(!refunded){
+        if(!map[vid]) map[vid]={units:0,revenue:0,nombre:item.item?.title};
+        map[vid].units+=qty;
+        map[vid].revenue+=rev;
+        byVariant[vname]=(byVariant[vname]||0)+qty;
+        byVariantRev[vname]=(byVariantRev[vname]||0)+rev;
+      }
+      orderUnits+=qty;
       orderFee += (parseFloat(item.sale_fee||0)) * qty; // comisión real de ML — sale_fee es POR UNIDAD (igual que unit_price), hay que × cantidad
       detItems.push({ key: "ml:"+String(item.item?.id||"ml"), qty });
     }
-    if(day){
-      daily[day]  =(daily[day]  ||0)+orderUnits;
-      dailyRevenue[day]=(dailyRevenue[day]||0)+orderRev;
-      dailyOrders[day]=(dailyOrders[day]||0)+1;
-      comisionMLDaily[day]=(comisionMLDaily[day]||0)+orderFee;
+    if(!refunded){
+      if(day){
+        daily[day]  =(daily[day]  ||0)+orderUnits;
+        dailyRevenue[day]=(dailyRevenue[day]||0)+orderRev;
+        dailyOrders[day]=(dailyOrders[day]||0)+1;
+        comisionMLDaily[day]=(comisionMLDaily[day]||0)+orderFee;
+      }
+      comisionML += orderFee;
+      if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
+      byProv[prov]=(byProv[prov]||0)+orderUnits;
+      byPayment[pay]=(byPayment[pay]||0)+orderUnits;
     }
-    comisionML += orderFee;
-    if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
-    byProv[prov]=(byProv[prov]||0)+orderUnits;
-    byPayment[pay]=(byPayment[pay]||0)+orderUnits;
-    // Devolución: ML marca la orden con tag "refunded" (o el pago queda con el
-    // total reembolsado). ML ANULA los cargos de esas ventas (envío incluido) en
-    // la facturación — el motor usa este flag para no contar su costo de envío.
-    const totAmt = parseFloat(o.total_amount)||0;
-    const refTot = (o.payments||[]).reduce((s,p)=>s+(parseFloat(p.transaction_amount_refunded)||0),0);
-    const refunded = (o.tags||[]).includes("refunded") || (totAmt>0 && refTot >= totAmt*0.99);
     if(orderRev>0) ordersDetail.push({ id:String(o.id), nombre:`ML #${o.id}`, fecha:(o.date_closed||o.date_created||""), platform:"mercadolibre", revenue:orderRev, items:detItems, saleFee:orderFee, shippingId:o.shipping?.id||null, cust:String(o.buyer?.id||""), refunded });
   }
   return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,byVariantRev,comisionML,comisionMLDaily,ordersDetail};
