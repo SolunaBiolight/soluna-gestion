@@ -7222,6 +7222,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         persistOverrides();
         continue;
       }
+      // La lista oficial por CP no siempre trae los puntos HOP nuevos. Si el
+      // TEMPLATE tiene un match inequívoco (nombre exacto del punto, o su
+      // calle+número con resultado único), es la misma sucursal que el modal
+      // marcaría como "Sugerido" — usarla directo, sin molestar.
+      const autoDirecto=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
+      if(autoDirecto&&(locs.sucursales||[]).includes(autoDirecto)){
+        sucursalOverridesRef.current[o.numero]=autoDirecto;
+        persistOverrides();
+        continue;
+      }
       // Cercanas al punto original ordenadas por distancia (mismo motor que
       // Canjes): se cargan de fondo una vez por pedido, mapeadas al string
       // exacto del desplegable con ghTplDeOficial.
