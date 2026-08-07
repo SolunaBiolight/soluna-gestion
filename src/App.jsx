@@ -4105,8 +4105,6 @@ function NotasInline({value, onSave, T, iS}) {
 
 
 function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje, initialDetail, onClearInitialDetail, tab: tabProp, setTab: setTabProp, orders=[]}) {
-  // Catálogo real de la cuenta (sale de sus propios pedidos) + opciones genéricas.
-  const catalogoCanje=useMemo(()=>[...catalogoProductos(orders),...EXTRAS_CANJE],[orders]);
   const [canjes,setCanjes]=useState([]);
   // Prefijo común del catálogo para chips cortos ("Rojo - Marco Negro" en vez
   // del título completo de TN, que desborda las cards del kanban).
@@ -4116,6 +4114,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     ...(orders||[]).flatMap(o=>(o.productos||[]).map(p=>p.nombre||"")),
     ...(canjes||[]).flatMap(c=>(c.productosCanje||[]).map(p=>p.nombre||"")),
   ]),[orders,canjes]);
+  // Catálogo real de la cuenta (sale de sus propios pedidos) + opciones
+  // genéricas — con el MISMO nombre corto que se guarda al importar desde un
+  // pedido, si no el select no encuentra el valor y queda en "Elegir producto".
+  const catalogoCanje=useMemo(()=>[
+    ...[...new Set(catalogoProductos(orders).map(n=>ghNombreCortoProducto(n,prefProds)))],
+    ...EXTRAS_CANJE,
+  ],[orders,prefProds]);
   const [form,setForm]=useState(null);
   const [detail,setDetail]=useState(null);
   const [search,setSearch]=useState("");
@@ -6174,6 +6179,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       }}
                       style={{...iS,flex:1,padding:"8px 10px",fontSize:13}}>
                       <option value="">Elegir producto...</option>
+                      {/* Valor guardado que no está en el catálogo (nombre viejo/largo): mostrarlo igual */}
+                      {prod.nombre&&!catalogoCanje.includes(prod.nombre)&&<option value={prod.nombre}>{ghNombreCortoProducto(prod.nombre,prefProds)}</option>}
                       {catalogoCanje.map(p=><option key={p} value={p}>{p}</option>)}
                     </select>
                     <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
