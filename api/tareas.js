@@ -40,7 +40,10 @@ function randomToken(len = 24) {
 }
 
 function colabPortalLink(origin, token) {
-  const base = (origin || "https://growithapp.com").replace(/\/$/, "");
+  // Siempre el dominio de marca: si el admin navega desde el dominio técnico
+  // de Vercel, el colaborador NO tiene que recibir un link con ese nombre.
+  const o = String(origin || "");
+  const base = /localhost|127\.0\.0\.1/.test(o) ? o.replace(/\/$/, "") : "https://www.growithapp.com";
   return `${base}/#/colaborador/${token}`;
 }
 

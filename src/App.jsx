@@ -1481,6 +1481,13 @@ function catalogoProductos(orders=[]) {
 function nombreProducto(n) {
   return String(n||"").replace(/[()]/g," ").replace(/\s+/g," ").trim();
 }
+// Dominio de marca para links que se comparten con gente de AFUERA (cupones,
+// portal colaborador, tablero, editor): siempre growithapp.com, aunque se esté
+// navegando desde el dominio técnico de Vercel (soluna-gestion.vercel.app).
+function ghShareOrigin(){
+  const o=window.location.origin;
+  return /localhost|127\.0\.0\.1/.test(o)?o:"https://www.growithapp.com";
+}
 // Prefijo común de los nombres de producto de la cuenta ("MARCA - LINEA ").
 // Genérico: sale de los nombres reales, no de una marca fija. Devuelve el
 // prefijo en MAYÚSCULAS — comparar siempre case-insensitive.
@@ -4696,7 +4703,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       const resp=await authFetch(`/api/orders?action=cupon_link&uid=${user?.uid||""}&code=${encodeURIComponent(r.code)}&comisionPct=${encodeURIComponent(r.comisionPct||0)}&mpComision=${encodeURIComponent(isNaN(mpComision)?12:mpComision)}&influencer=${encodeURIComponent(r.influencer||"")}`);
       const d=await resp.json().catch(()=>({}));
       if(!resp.ok||!d.token) throw new Error(typeof d.error==="string"?d.error:`HTTP ${resp.status}`);
-      const url=`${window.location.origin}/#/cupon/${d.token}`;
+      const url=`${ghShareOrigin()}/#/cupon/${d.token}`;
       try{await navigator.clipboard.writeText(url);}catch(_){}
       toast("Link copiado: quien lo abra ve las ventas y su comisión del mes en tiempo real","success",5500);
     }catch(e){ toast("No se pudo generar el link: "+(e.message||""),"warning",5000); }
@@ -13916,7 +13923,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     return Math.ceil((d - new Date()) / 86400000);
   }
   function colabLink(token) {
-    return `${window.location.origin}/#/colaborador/${token}`;
+    return `${ghShareOrigin()}/#/colaborador/${token}`;
   }
   async function saveNotifEmailsFn(emails) {
     try { await tareasApi({action:"saveNotifEmails",emails}); setNotifEmails(emails); toast("Emails guardados ✓","success"); }
@@ -14257,8 +14264,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   // Editor
   async function agregarEditor(){ if(!nuevoEditor.trim()) return; if(produccion.editores.includes(nuevoEditor.trim())) return appAlert("Ya existe ese editor"); await saveProd({...produccion,editores:[...produccion.editores,nuevoEditor.trim()]}); setNuevoEditor(""); toast("Editor agregado ✓","success"); }
   async function eliminarEditor(nombre){ if(!await appConfirm(`¿Eliminar editor "${nombre}"?`,{danger:true,okLabel:"Eliminar"})) return; await saveProd({...produccion,editores:produccion.editores.filter(e=>e!==nombre)}); toast("Editor eliminado","warning"); }
-  async function generarLinkEditor(editorNombre){ const d=await tareasApi({action:"generateEditorToken",editorNombre}); const newToks={...(produccion.editorTokens||{}),[editorNombre]:d.token}; setProduccion(prev=>({...prev,editorTokens:newToks})); const link=`${window.location.origin}/#/editor-produccion/${d.token}`; try{await navigator.clipboard.writeText(link); toast("Link generado y copiado ✓","success");}catch(e){toast("Link: "+link,"success");} return d.token; }
-  function editorPortalLink(editorNombre){ const tok=produccion.editorTokens?.[editorNombre]; return tok?`${window.location.origin}/#/editor-produccion/${tok}`:null; }
+  async function generarLinkEditor(editorNombre){ const d=await tareasApi({action:"generateEditorToken",editorNombre}); const newToks={...(produccion.editorTokens||{}),[editorNombre]:d.token}; setProduccion(prev=>({...prev,editorTokens:newToks})); const link=`${ghShareOrigin()}/#/editor-produccion/${d.token}`; try{await navigator.clipboard.writeText(link); toast("Link generado y copiado ✓","success");}catch(e){toast("Link: "+link,"success");} return d.token; }
+  function editorPortalLink(editorNombre){ const tok=produccion.editorTokens?.[editorNombre]; return tok?`${ghShareOrigin()}/#/editor-produccion/${tok}`:null; }
   // Export CSV
   function exportCreativosCSV(creativos){ const LABELS={idea:"Idea","brief-enviado":"Brief enviado","en-produccion":"En producción",entregado:"Entregado",publicado:"Publicado",archivado:"Archivado"}; const headers=["Código","Tanda","Ángulo","Tipo","Persona","Etapa","Editor","Estado","Pagado","ROAS","CPA","Performance","Notas"]; const rows=[headers,...creativos.map(c=>{const tanda=produccion.tandas.find(t=>t.id===c.tanda_id)?.nombre||"";return[c.codigo,tanda,c.angulo,c.tipo,c.persona,c.etapa,c.editor||"",LABELS[c.estado]||c.estado,c.pagado?"Sí":"No",c.roas!=null?c.roas:"",c.cpa!=null?c.cpa:"",c.performance||"",c.notas||""];})]; const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n"); const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}); const url=URL.createObjectURL(blob); const a=document.createElement("a");a.href=url;a.download=`creativos-${hoyAR()}.csv`;a.click();URL.revokeObjectURL(url); toast("CSV exportado ✓","success"); }
 
@@ -17356,7 +17363,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             {boardLinkLoading?(
               <div style={{padding:"16px",textAlign:"center",color:T.textSm,fontSize:13}}>Generando link...</div>
             ):boardToken?(()=>{
-              const boardLink=`${window.location.origin}/#/tablero/${boardToken}`;
+              const boardLink=`${ghShareOrigin()}/#/tablero/${boardToken}`;
               return(
                 <div style={{display:"flex",flexDirection:"column",gap:10}}>
                   <div style={{display:"flex",gap:8,alignItems:"center",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px"}}>
