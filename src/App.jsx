@@ -1370,31 +1370,22 @@ function CuponPublicoView({token}){
   const [data,setData]=React.useState(null);
   const [err,setErr]=React.useState("");
   const [loading,setLoading]=React.useState(true);
-  // Selector de período: mes en curso + los 11 anteriores
-  const MESES=React.useMemo(()=>{
-    const out=[]; const d=new Date();
-    for(let i=0;i<12;i++){
-      const y=d.getFullYear(), m=d.getMonth();
-      const val=`${y}-${String(m+1).padStart(2,"0")}`;
-      const lbl=d.toLocaleDateString("es-AR",{month:"long",year:"numeric"});
-      out.push({val,lbl:lbl.charAt(0).toUpperCase()+lbl.slice(1)});
-      d.setMonth(m-1);
-    }
-    return out;
-  },[]);
-  const [mes,setMes]=React.useState(MESES[0].val);
+  // Período libre, igual que el Dashboard (presets + calendario). Default: mes en curso.
+  const hoyISO=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;};
+  const [rango,setRango]=React.useState(()=>{const h=hoyISO();return {desde:h.slice(0,8)+"01",hasta:h};});
   const fmt=n=>"$"+Math.round(n||0).toLocaleString("es-AR");
-  async function load(m){
+  async function load(rg){
+    const r0=rg||rango;
     setLoading(true); setErr("");
     try{
-      const r=await fetch(`/api/orders?action=cupon_publico&token=${encodeURIComponent(token)}&mes=${encodeURIComponent(m||mes)}`);
+      const r=await fetch(`/api/orders?action=cupon_publico&token=${encodeURIComponent(token)}&desde=${encodeURIComponent(r0.desde)}&hasta=${encodeURIComponent(r0.hasta)}`);
       const d=await r.json().catch(()=>({}));
       if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`);
       setData(d);
     }catch(e){ setErr(e.message||"No se pudo cargar"); }
     setLoading(false);
   }
-  React.useEffect(()=>{ load(mes); /* eslint-disable-line */ },[token,mes]);
+  React.useEffect(()=>{ load(rango); /* eslint-disable-line */ },[token,rango]);
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column",alignItems:"center",padding:"48px 16px"}}>
       <div style={{maxWidth:460,width:"100%"}}>
@@ -1418,10 +1409,14 @@ function CuponPublicoView({token}){
               <div style={{fontSize:28,fontWeight:800,color:T.text,letterSpacing:0.5,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{data.code}</div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-              <select value={mes} onChange={e=>setMes(e.target.value)}
-                style={{flex:1,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px",fontSize:13,fontWeight:600,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",outline:"none",cursor:"pointer"}}>
-                {MESES.map(m=><option key={m.val} value={m.val}>{m.lbl}</option>)}
-              </select>
+              <DateRangePicker T={T}
+                presets={[
+                  {id:"hoy",label:"Hoy",days:0},{id:"7d",label:"Últimos 7 días",days:7},
+                  {id:"30d",label:"Últimos 30 días",days:30},{id:"90d",label:"Últimos 90 días",days:90},
+                ]}
+                since={rango.desde} until={rango.hasta}
+                onPreset={(d)=>{const h=new Date();const iso=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;setRango({desde:iso(new Date(h.getTime()-Math.max(0,d-1)*86400000)),hasta:iso(h)});}}
+                onChange={(s,u)=>setRango({desde:s,hasta:u})}/>
               {loading&&<span style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:T.textSm,flexShrink:0}}><Spinner size={12} color={T.accent}/> Actualizando…</span>}
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14,opacity:loading?0.55:1,transition:"opacity 0.15s"}}>

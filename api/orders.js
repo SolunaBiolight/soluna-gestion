@@ -266,18 +266,27 @@ export default async function handler(req, res) {
     if (!tn?.accessToken || !tn?.storeId) return res.status(503).json({ error: "La tienda no está conectada en este momento." });
     const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
     const mesAct = hoy.slice(0, 7);
-    // Mes elegible desde el selector del panel (YYYY-MM); default: mes en curso
-    const mesQ = String(req.query.mes || "").trim();
-    const mes = /^\d{4}-(0[1-9]|1[0-2])$/.test(mesQ) ? mesQ : mesAct;
-    const desde = mes + "-01";
-    const finMes = new Date(+mes.slice(0, 4), +mes.slice(5, 7), 0).getDate();
-    const hasta = mes === mesAct ? hoy : `${mes}-${String(finMes).padStart(2, "0")}`;
+    // Rango libre (desde/hasta YYYY-MM-DD) del selector de período; fallback:
+    // mes (YYYY-MM) de links viejos, y sin nada → mes en curso.
+    const isoRe = /^\d{4}-\d{2}-\d{2}$/;
+    let desde = String(req.query.desde || "").trim();
+    let hasta = String(req.query.hasta || "").trim();
+    if (!isoRe.test(desde) || !isoRe.test(hasta)) {
+      const mesQ = String(req.query.mes || "").trim();
+      const mes = /^\d{4}-(0[1-9]|1[0-2])$/.test(mesQ) ? mesQ : mesAct;
+      desde = mes + "-01";
+      const finMes = new Date(+mes.slice(0, 4), +mes.slice(5, 7), 0).getDate();
+      hasta = mes === mesAct ? hoy : `${mes}-${String(finMes).padStart(2, "0")}`;
+    }
+    if (hasta > hoy) hasta = hoy;
+    if (desde > hasta) return res.status(400).json({ error: "rango inválido" });
+    if ((new Date(hasta) - new Date(desde)) / 86400000 > 400) return res.status(400).json({ error: "El rango máximo es de un año." });
     const code = String(link.code || "").toUpperCase().trim();
-    // Cache en Firestore: mes cerrado no cambia nunca (TTL 24h por las dudas);
-    // mes en curso 3 min. Abrir el link o cambiar el período pega acá casi
-    // siempre en vez de pagar el barrido completo de TN.
-    const cacheRef = db.collection("cupon_links").doc(token).collection("cache").doc(mes);
-    const ttl = mes === mesAct ? 3 * 60000 : 24 * 3600000;
+    // Cache en Firestore por rango: un período que ya terminó no cambia nunca
+    // (TTL 24h por las dudas); uno que incluye hoy, 3 min. Abrir el link o
+    // cambiar el período pega acá casi siempre en vez del barrido de TN.
+    const cacheRef = db.collection("cupon_links").doc(token).collection("cache").doc(`${desde}_${hasta}`);
+    const ttl = hasta < hoy ? 24 * 3600000 : 3 * 60000;
     try {
       const hit = await cacheRef.get();
       if (hit.exists && Date.now() - (hit.data().ts || 0) < ttl) return res.status(200).json(hit.data().resp);
@@ -311,7 +320,7 @@ export default async function handler(req, res) {
     const neto = (ventas - descuento) * (1 - (Number(link.mpComision) || 0) / 100);
     const resp = {
       ok: true, code, influencer: link.influencer || "",
-      mes, periodo: { desde, hasta },
+      periodo: { desde, hasta },
       usos, ventas: Math.round(ventas), descuento: Math.round(descuento),
       neto: Math.round(neto), comisionPct: pct, comision: Math.round(neto * (pct / 100)),
     };
