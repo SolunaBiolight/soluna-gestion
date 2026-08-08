@@ -30397,19 +30397,23 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   }
   const goTab = k => { if (setTab && k) setTab(k); };
 
-  const Spk=({vals,color,h=38,w=130,showZero=false})=>{
+  // Sparkline estilo Escalafy: ocupa TODO el ancho de la card (viewBox
+  // estirado), con área degradada debajo de la línea.
+  const Spk=({vals,color,h=38,w=130,showZero=false,fill=true})=>{
     if(!vals||vals.length<2)return null;
     const min=showZero?Math.min(0,...vals):Math.min(...vals);
     const max=Math.max(...vals);
     const rng=max-min||1;
     const W=w,H=h;
-    const pts=vals.map((v,i)=>`${(i/(vals.length-1))*W},${H-((v-min)/rng)*(H*0.85)-H*0.05}`).join(" ");
+    const py=v=>H-((v-min)/rng)*(H*0.8)-H*0.08;
+    const pts=vals.map((v,i)=>`${(i/(vals.length-1))*W},${py(v)}`).join(" ");
     const uid2=`s${Math.abs(color.charCodeAt(0))+Math.random()*999|0}`;
     return(
-      <svg width={W} height={H} style={{overflow:"visible",display:"block"}}>
-        <defs><linearGradient id={uid2} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.2"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
-        {showZero&&(()=>{const zy=H-((0-min)/rng)*(H*0.85)-H*0.05;return <line x1={0} y1={zy} x2={W} y2={zy} stroke={color} strokeWidth={0.5} strokeOpacity={0.35} strokeDasharray="2,2"/>;})()}
-        <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{display:"block",width:"100%",height:H}}>
+        <defs><linearGradient id={uid2} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.22"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
+        {fill&&<polygon points={`0,${H} ${pts} ${W},${H}`} fill={`url(#${uid2})`}/>}
+        {showZero&&(()=>{const zy=py(0);return <line x1={0} y1={zy} x2={W} y2={zy} stroke={color} strokeWidth={0.5} strokeOpacity={0.35} strokeDasharray="2,2" vectorEffect="non-scaling-stroke"/>;})()}
+        <polyline points={pts} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
       </svg>
     );
   };
@@ -30470,7 +30474,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               <span style={{fontSize:10,color:T.textSm}}>{k.hint}</span>
               {hasPrev && k.c!=null && k.p!=null && <DeltaBadge curr={k.c} prev={k.p} invert={k.inv}/>}
             </div>
-            {k.spk && <div style={{marginTop:"auto",opacity:k.hero?1:0.55}}><Spk vals={k.spk} color={k.accent||T.textSm} h={k.hero?28:16} w={140} showZero={k.zero}/></div>}
+            {/* Sparkline a lo ancho de toda la card (full-bleed, estilo Escalafy) */}
+            {k.spk && <div style={{marginTop:"auto",margin:k.hero?"auto -18px -14px":"auto -14px -10px",opacity:0.95}}><Spk vals={k.spk} color={k.accent||T.accent} h={k.hero?34:24} w={140} showZero={k.zero}/></div>}
           </div>
         ))}
       </div>
@@ -30859,8 +30864,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {label:"True ROAS",   val:fmtX(tot.trueRoas),  c:tot.trueRoas,   p:prevTot.trueRoas,   hint:`meta ≥ ${metas.trueRoas}x`, spk:dailyRows.map(r=>r["True ROAS"]||0), bad:(tot.trueRoas||0)<metas.trueRoas},
               {label:"CPA real",    val:fmtM(tot.cpa),       c:tot.cpa,        p:prevTot.cpa,        hint:"Ad Spend / Órdenes",     spk:dailyRows.map(r=>r.CPA||0), inv:true},
               {label:"CPA Break Even", val:fmtM(tot.cpaBreakEven), c:tot.cpaBreakEven, p:prevTot.cpaBreakEven, hint:"CPA máx. antes de perder"},
-              {label:"AOV",         val:fmtM(tot.aov),       c:tot.aov,        p:prevTot.aov,        hint:"Ticket promedio"},
-              {label:"Margen",      val:fmtPct(tot.profitMargin), c:tot.profitMargin, p:prevTot.profitMargin, hint:`meta > ${metas.margen}%`, bad:(tot.profitMargin||0)<=metas.margen/100},
+              {label:"AOV",         val:fmtM(tot.aov),       c:tot.aov,        p:prevTot.aov,        hint:"Ticket promedio", spk:dailyRows.map(r=>(r["Ordenes > $0"]||0)>0?(r.Revenue||0)/r["Ordenes > $0"]:0)},
+              {label:"Margen",      val:fmtPct(tot.profitMargin), c:tot.profitMargin, p:prevTot.profitMargin, hint:`meta > ${metas.margen}%`, bad:(tot.profitMargin||0)<=metas.margen/100, spk:dailyRows.map(r=>(r.Revenue||0)>0?(r.Profit||0)/r.Revenue*100:0), zero:true},
               {label:"Break Even",  val:fmtX(tot.breakEvenRoas), c:tot.breakEvenRoas, p:prevTot.breakEvenRoas, hint:"ROAS de equilibrio", inv:true},
             ];
             return (<>
