@@ -1460,6 +1460,8 @@ function MiembrosCuentaCard({T,user}){
   const [email,setEmail]=React.useState("");
   const [secs,setSecs]=React.useState({tareas:true,canjes:true,envios:true});
   const [busy,setBusy]=React.useState(false);
+  const [showForm,setShowForm]=React.useState(false);
+  const [editando,setEditando]=React.useState(null); // uid del miembro en edición de secciones
   async function api(action,extra={}){
     const r=await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,uid:user?.uid,...extra})});
     const d=await r.json().catch(()=>({}));
@@ -1500,41 +1502,66 @@ function MiembrosCuentaCard({T,user}){
     </button>
   );
   const lista=[...(data?.miembros||[]).map(m=>({...m,_estado:"activo"})),...(data?.invitaciones||[]).map(i=>({...i,_estado:"pendiente"}))];
+  const secsTexto=(sec)=>{const on=SECCIONES_MIEMBRO.filter(s=>sec?.[s.id]===true).map(s=>s.label);return on.length?on.join(" · "):"Sin secciones";};
+  const AVATAR_COLORS=["#6366f1","#0ea5e9","#f97316","#10b981","#a855f7","#ef4444"];
   return (
     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
-      <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>Miembros con cuenta</div>
-      <div style={{fontSize:12,color:T.textSm,lineHeight:1.55,marginBottom:12}}>
-        Para gente que necesita usar la app completa (no solo su portal de tareas): entra con su propia cuenta y ve <strong style={{color:T.textMd}}>solo las secciones que tildes</strong>. El Dashboard, el Facturador y la Configuración quedan afuera salvo que se los habilites.
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Miembros con cuenta</div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Entran con su propia cuenta y ven solo las secciones que les habilites.</div>
+        </div>
+        {!showForm&&<button onClick={()=>setShowForm(true)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",flexShrink:0}}>+ Invitar</button>}
       </div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
-        <input style={{...iS,marginBottom:0,width:140}} placeholder="Nombre" value={nombre} onChange={e=>setNombre(e.target.value)}/>
-        <input style={{...iS,marginBottom:0,flex:1,minWidth:180}} type="email" placeholder="email@ejemplo.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")invitar();}}/>
-      </div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-        {SECCIONES_MIEMBRO.map(s=><Chip key={s.id} on={secs[s.id]===true} label={s.label} onClick={()=>setSecs(p=>({...p,[s.id]:!(p[s.id]===true)}))}/>)}
-      </div>
-      <AsyncButton onClick={invitar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>Invitar miembro</AsyncButton>
+      {showForm&&(
+        <div style={{marginTop:12,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"12px 14px"}}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+            <input style={{...iS,marginBottom:0,width:140}} placeholder="Nombre" value={nombre} onChange={e=>setNombre(e.target.value)}/>
+            <input style={{...iS,marginBottom:0,flex:1,minWidth:180}} type="email" placeholder="email@ejemplo.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")invitar();}}/>
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+            {SECCIONES_MIEMBRO.map(s=><Chip key={s.id} on={secs[s.id]===true} label={s.label} onClick={()=>setSecs(p=>({...p,[s.id]:!(p[s.id]===true)}))}/>)}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <AsyncButton onClick={invitar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>Enviar invitación</AsyncButton>
+            <button onClick={()=>setShowForm(false)} style={{background:"transparent",border:"none",color:T.textSm,fontSize:12,padding:"8px 12px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>Cancelar</button>
+          </div>
+        </div>
+      )}
       {lista.length>0&&(
-        <div style={{marginTop:14,borderTop:`1px solid ${T.borderL}`,paddingTop:12,display:"flex",flexDirection:"column",gap:12}}>
-          {lista.map((m,i)=>(
-            <div key={(m.uid||m.email)+"_"+i}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                <span style={{fontSize:13,fontWeight:700,color:T.text}}>{m.nombre||m.email}</span>
-                {m.nombre&&<span style={{fontSize:11,color:T.textSm}}>{m.email}</span>}
-                <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:m._estado==="activo"?T.greenBg:T.yellowBg,color:m._estado==="activo"?T.green:T.yellow}}>
-                  {m._estado==="activo"?"Activo":"Invitación pendiente"}
-                </span>
-                <button onClick={()=>quitar(m)} style={{marginLeft:"auto",background:"transparent",border:`1px solid ${T.red}44`,color:T.red,borderRadius:6,padding:"3px 10px",fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Quitar</button>
+        <div style={{marginTop:12,display:"flex",flexDirection:"column"}}>
+          {lista.map((m,i)=>{
+            const key=(m.uid||m.email)+"_"+i;
+            const inicial=(m.nombre||m.email||"?").trim().charAt(0).toUpperCase();
+            const enEdicion=editando===key&&m._estado==="activo";
+            return (
+              <div key={key} style={{borderTop:`1px solid ${T.borderL}`,padding:"10px 0"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:30,height:30,borderRadius:"50%",background:AVATAR_COLORS[i%AVATAR_COLORS.length]+"22",color:AVATAR_COLORS[i%AVATAR_COLORS.length],display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>{inicial}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
+                      <span style={{fontSize:13,fontWeight:700,color:T.text}}>{m.nombre||m.email}</span>
+                      {m.nombre&&<span style={{fontSize:11,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis"}}>{m.email}</span>}
+                      {m._estado==="pendiente"&&<span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:99,background:T.yellowBg,color:T.yellow,flexShrink:0}}>Pendiente</span>}
+                    </div>
+                    {!enEdicion&&<div style={{fontSize:11,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{secsTexto(m.secciones)}</div>}
+                  </div>
+                  {m._estado==="activo"&&(
+                    <button onClick={()=>setEditando(enEdicion?null:key)} style={{background:"transparent",border:`1px solid ${T.border}`,color:enEdicion?T.accent:T.textMd,borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>{enEdicion?"Listo":"Editar"}</button>
+                  )}
+                  <button onClick={()=>quitar(m)} style={{background:"transparent",border:"none",color:T.textSm,borderRadius:6,padding:"4px 6px",fontSize:14,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,lineHeight:1}} title="Quitar acceso"
+                    onMouseEnter={e=>e.currentTarget.style.color=T.red} onMouseLeave={e=>e.currentTarget.style.color=T.textSm}>✕</button>
+                </div>
+                {enEdicion&&(
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8,paddingLeft:40}}>
+                    {SECCIONES_MIEMBRO.map(s=>(
+                      <Chip key={s.id} on={m.secciones?.[s.id]===true} label={s.label} onClick={()=>toggleSecMiembro(m,s.id)}/>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {SECCIONES_MIEMBRO.map(s=>(
-                  <Chip key={s.id} on={m.secciones?.[s.id]===true} label={s.label}
-                    dis={m._estado!=="activo"}
-                    onClick={()=>toggleSecMiembro(m,s.id)}/>
-                ))}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
