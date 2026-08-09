@@ -808,7 +808,7 @@ function GrowithLogo({size=28, variant="color", darkMode=false}) {
   );
 }
 
-function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, margenesTab, setMargenesTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false}) {
+function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, margenesTab, setMargenesTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false, seccionesMiembro=null}) {
   const GROUPS = [
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
     {id:"copilot",  label:"Copilot",   icon:"M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z"},
@@ -898,6 +898,8 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       {/* Nav */}
       <nav style={{flex:1,padding:DS.sp.sm,display:"flex",flexDirection:"column",gap:2,overflowY:"auto"}}>
         {GROUPS.filter(item=>!(adminOnlySections||[]).includes(item.id)||isAdmin)
+          // Miembro de otro espacio: solo sus secciones habilitadas (los títulos de grupo quedan si tienen algo visible)
+          .filter(item=>{ if(!seccionesMiembro) return true; if(item.group) return true; return seccionesMiembro[item.id]===true; })
           // Plan Facturador (sin trial): solo ve Inicio y Facturador — el resto ni aparece
           .filter(item=>{ if(userPlan!=="facturador"||isInTrial) return true; return item.group ? item.group==="FINANZAS" : ["home","arca"].includes(item.id); })
           .map((item,i)=>{
@@ -1008,10 +1010,10 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
           </div>
         )}
         <div style={{display:"flex",flexDirection:collapsed?"column":"row",gap:4}}>
-          <button onClick={()=>setPage("config")} title="Configuración" style={{flex:1,background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textMd,cursor:"pointer",padding:"6px",fontSize:DS.font.sm,display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+          {!seccionesMiembro&&<button onClick={()=>setPage("config")} title="Configuración" style={{flex:1,background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textMd,cursor:"pointer",padding:"6px",fontSize:DS.font.sm,display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
             {!collapsed&&"Config"}
-          </button>
+          </button>}
           <button onClick={onToggleDark} title={darkMode?"Modo claro":"Modo oscuro"} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textMd,cursor:"pointer",padding:"6px 8px",display:"flex",alignItems:"center",justifyContent:"center"}}>
             {darkMode
               ?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
@@ -1437,6 +1439,102 @@ function CuponPublicoView({token}){
         )}
         <div style={{textAlign:"center",fontSize:10,color:T.textSm,marginTop:32,opacity:0.7}}>Impulsado por Growith</div>
       </div>
+    </div>
+  );
+}
+
+// ─── Miembros con cuenta (permisos por sección) ───
+// El dueño invita por email y tilda qué secciones ve cada miembro. El
+// invitado entra con SU propia cuenta y la app le muestra este espacio con
+// el sidebar reducido a lo habilitado (el backend exige el permiso además).
+const SECCIONES_MIEMBRO=[
+  {id:"tareas",label:"Tareas"},{id:"canjes",label:"Canjes"},{id:"envios",label:"Envíos"},
+  {id:"reclamos",label:"Reclamos"},{id:"stock",label:"Stock"},{id:"meta",label:"Meta Ads"},
+  {id:"ml",label:"Mercado Libre"},{id:"margenes",label:"Dashboard"},{id:"arca",label:"Facturador"},
+  {id:"copilot",label:"Copilot"},
+];
+function MiembrosCuentaCard({T,user}){
+  const iS=InputStyle(T);
+  const [data,setData]=React.useState(null); // {miembros,invitaciones}
+  const [nombre,setNombre]=React.useState("");
+  const [email,setEmail]=React.useState("");
+  const [secs,setSecs]=React.useState({tareas:true,canjes:true,envios:true});
+  const [busy,setBusy]=React.useState(false);
+  async function api(action,extra={}){
+    const r=await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,uid:user?.uid,...extra})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`);
+    return d;
+  }
+  const cargar=()=>{ api("miembrosListar").then(setData).catch(()=>setData({miembros:[],invitaciones:[]})); };
+  React.useEffect(()=>{ cargar(); /* eslint-disable-line */ },[user?.uid]);
+  async function invitar(){
+    if(busy) return;
+    const em=email.trim().toLowerCase();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ toast("Poné un email válido","warning"); return; }
+    if(!Object.values(secs).some(Boolean)){ toast("Tildá al menos una sección","warning"); return; }
+    setBusy(true);
+    try{
+      await api("miembroInvitar",{email:em,nombre:nombre.trim(),secciones:secs});
+      toast(`Listo: cuando ${em} entre a Growith con ese mail, ve tu espacio con las secciones tildadas`,"success",6000);
+      setEmail(""); setNombre(""); cargar();
+    }catch(e){ toast("No se pudo invitar: "+e.message,"warning"); }
+    setBusy(false);
+  }
+  async function toggleSecMiembro(m,sec){
+    const nuevas={...(m.secciones||{}),[sec]:!(m.secciones?.[sec]===true)};
+    try{ await api("miembroActualizar",{memberUid:m.uid,secciones:nuevas}); cargar(); }
+    catch(e){ toast("No se pudo actualizar: "+e.message,"warning"); }
+  }
+  async function quitar(m){
+    if(!await appConfirm(`¿Quitarle el acceso a ${m.nombre||m.email}? Deja de ver tu espacio al instante.`,{okLabel:"Quitar acceso",danger:true})) return;
+    try{ await api("miembroQuitar",{memberUid:m.uid||"",email:m.email||""}); cargar(); }
+    catch(e){ toast("No se pudo quitar: "+e.message,"warning"); }
+  }
+  const Chip=({on,label,onClick,dis})=>(
+    <button onClick={dis?undefined:onClick} disabled={dis}
+      style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:99,cursor:dis?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif",border:`1px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid+"22":"transparent",color:on?T.accent:T.textSm,transition:"all 0.12s"}}>
+      {label}
+    </button>
+  );
+  const lista=[...(data?.miembros||[]).map(m=>({...m,_estado:"activo"})),...(data?.invitaciones||[]).map(i=>({...i,_estado:"pendiente"}))];
+  return (
+    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+      <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>Miembros con cuenta</div>
+      <div style={{fontSize:12,color:T.textSm,lineHeight:1.55,marginBottom:12}}>
+        Para gente que necesita usar la app completa (no solo su portal de tareas): entra con su propia cuenta y ve <strong style={{color:T.textMd}}>solo las secciones que tildes</strong>. El Dashboard, el Facturador y la Configuración quedan afuera salvo que se los habilites.
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+        <input style={{...iS,marginBottom:0,width:140}} placeholder="Nombre" value={nombre} onChange={e=>setNombre(e.target.value)}/>
+        <input style={{...iS,marginBottom:0,flex:1,minWidth:180}} type="email" placeholder="email@ejemplo.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")invitar();}}/>
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+        {SECCIONES_MIEMBRO.map(s=><Chip key={s.id} on={secs[s.id]===true} label={s.label} onClick={()=>setSecs(p=>({...p,[s.id]:!(p[s.id]===true)}))}/>)}
+      </div>
+      <AsyncButton onClick={invitar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>Invitar miembro</AsyncButton>
+      {lista.length>0&&(
+        <div style={{marginTop:14,borderTop:`1px solid ${T.borderL}`,paddingTop:12,display:"flex",flexDirection:"column",gap:12}}>
+          {lista.map((m,i)=>(
+            <div key={(m.uid||m.email)+"_"+i}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <span style={{fontSize:13,fontWeight:700,color:T.text}}>{m.nombre||m.email}</span>
+                {m.nombre&&<span style={{fontSize:11,color:T.textSm}}>{m.email}</span>}
+                <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:m._estado==="activo"?T.greenBg:T.yellowBg,color:m._estado==="activo"?T.green:T.yellow}}>
+                  {m._estado==="activo"?"Activo":"Invitación pendiente"}
+                </span>
+                <button onClick={()=>quitar(m)} style={{marginLeft:"auto",background:"transparent",border:`1px solid ${T.red}44`,color:T.red,borderRadius:6,padding:"3px 10px",fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Quitar</button>
+              </div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {SECCIONES_MIEMBRO.map(s=>(
+                  <Chip key={s.id} on={m.secciones?.[s.id]===true} label={s.label}
+                    dis={m._estado!=="activo"}
+                    onClick={()=>toggleSecMiembro(m,s.id)}/>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -16065,6 +16163,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         })()}
 
         {/* ── TAB EQUIPO (admin): gestión de miembros y permisos ── */}
+        {/* Miembros con cuenta propia y permisos por sección (aparte de los
+            colaboradores por link, que siguen abajo igual que siempre) */}
+        {!loading&&tab==="equipo"&&!colabMode&&<div style={{marginBottom:10}}><MiembrosCuentaCard T={T} user={user}/></div>}
         {!loading&&tab==="equipo"&&!colabMode&&(()=>{
           const editoresLegacy=(produccion?.editores||[]).filter(ed=>!colaboradores.some(c=>c.nombre===ed));
           const todos=[
@@ -31598,7 +31699,28 @@ function ColaboradorPortalUnificado({T, token}) {
 // ROOT APP
 // ===========================================
 export default function App() {
-  const [user,setUser]=useState(undefined); // undefined=loading, null=no auth, object=authed
+  const [authUser,setUser]=useState(undefined); // undefined=loading, null=no auth, object=login real
+  // ── Modo miembro: si este login es miembro del espacio de OTRA cuenta
+  // (invitado desde Equipo), toda la app opera sobre el uid del dueño y solo
+  // se muestran las secciones permitidas. El backend exige lo mismo.
+  const [miembroDe,setMiembroDe]=useState(undefined); // undefined=verificando, null=no es miembro, {ownerId,secciones}
+  const user = (authUser && miembroDe && miembroDe.ownerId)
+    ? {...authUser, uid:miembroDe.ownerId, authUid:authUser.uid, esMiembro:true}
+    : authUser;
+  useEffect(()=>{
+    if(!authUser){ setMiembroDe(authUser===null?null:undefined); return; }
+    let alive=true;
+    (async()=>{
+      try{
+        const r=await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"workspace"})});
+        const d=await r.json().catch(()=>({}));
+        if(alive) setMiembroDe(d&&d.ownerId?{ownerId:d.ownerId,secciones:d.secciones||{},ownerNombre:d.ownerNombre||""}:null);
+      }catch(_){ if(alive) setMiembroDe(null); }
+    })();
+    return ()=>{alive=false;};
+  },[authUser&&authUser.uid]);
+  const secMiembro = (user&&user.esMiembro) ? (miembroDe.secciones||{}) : null;
+  const seccionPermitida = (p)=> !secMiembro ? true : secMiembro[p]===true;
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
   const VALID_PAGES = ["home","copilot","margenes","arca","meta","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas"];
@@ -31653,6 +31775,15 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
+  // Miembro parado en una sección que no tiene habilitada → a la primera suya
+  useEffect(()=>{
+    if(!secMiembro) return;
+    if(!seccionPermitida(page)){
+      const primera=["tareas","canjes","envios","reclamos","stock","meta","ml","margenes","arca","copilot"].find(p=>secMiembro[p]===true);
+      _setPage(primera||"tareas");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[secMiembro,page]);
   const [pendingCanje,setPendingCanje]=useState(null);
   const [pendingCanjeDetail,setPendingCanjeDetail]=useState(null);
   const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>{try{return localStorage.getItem("growith_sidebar")==="1";}catch(e){return false;}});
@@ -32113,8 +32244,16 @@ export default function App() {
   // Not logged in
   if(!user) return <><PublicSite T={T} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/><AppPromptHost T={T}/></>;
 
-  // Onboarding (primera vez)
-  const showOnboarding = !onboardingDone;
+  // Resolviendo si este login es miembro del espacio de otra cuenta: no pintar
+  // la app propia (vacía) para después saltar al espacio del dueño.
+  if(miembroDe===undefined) return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{animation:"growith-bounceIn 0.6s cubic-bezier(0.34,1.56,0.64,1) both"}}><GrowithLogo size={96} variant="color"/></div>
+    </div>
+  );
+
+  // Onboarding (primera vez) — los miembros de otro espacio no lo ven
+  const showOnboarding = !onboardingDone && !user.esMiembro;
 
   // Mobile bottom nav
   const MobileBottomNav = () => (
@@ -32136,7 +32275,7 @@ export default function App() {
         {id:"reclamos",label:"Reclamos",icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"},
         {id:"canjes",label:"Canjes",icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"},
         {id:"tareas",label:"Tareas",icon:"M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"},
-      ].map(it=>(
+      ].filter(it=>seccionPermitida(it.id)).map(it=>(
         <button key={it.id} onClick={()=>setPage(it.id)} style={{
           display:"inline-flex", flexShrink:0, minWidth:64, background:"transparent", border:"none", cursor:"pointer",
           flexDirection:"column", alignItems:"center", gap:2, padding:"6px 6px",
@@ -32211,7 +32350,8 @@ export default function App() {
   if((trialExpired||planVencido)&&!isAdmin) return(<><AppPlanes T={T} user={user} userPlan={planEfectivo} planExpiry={planExpiry} onBack={()=>{}} isTrialExpired={true} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/><AppPromptHost T={T}/></>);
 
   let pageContent = null;
-  if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={planEfectivo} planExpiry={planExpiry} onBack={()=>setPage("home")} isTrialExpired={false} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
+  if(secMiembro && !seccionPermitida(page)) pageContent = null; // el efecto de arriba redirige a su primera sección
+  else if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={planEfectivo} planExpiry={planExpiry} onBack={()=>setPage("home")} isTrialExpired={false} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
   else if(page==="copilot") pageContent = planGate("plus") || <PageView T={T} pageKey="copilot"><AppCopilot T={T} user={user} onHome={()=>setPage("home")} onNavigate={setPage} connectedStores={connectedStores}/></PageView>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
@@ -32242,7 +32382,7 @@ export default function App() {
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
       {/* Multi-org F2 modals */}
       {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
       {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}

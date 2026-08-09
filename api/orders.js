@@ -332,7 +332,12 @@ export default async function handler(req, res) {
     if (!guardCron(req, res)) return;
   } else if (!isCronRequest(req)) {
     if (!uid) return res.status(401).json({ error: "uid requerido" });
-    if (!(await guardUid(req, res, uid))) return;
+    // Sección exigida a los miembros de equipo según la acción: las métricas
+    // del Dashboard son "margenes", los cupones "canjes", el resto "envios".
+    const _seccion = (action === 'daily_metrics') ? 'margenes'
+      : (action === 'coupons' || action === 'cupon_link') ? 'canjes'
+      : 'envios';
+    if (!(await guardUid(req, res, uid, _seccion))) return;
   }
 
   // Cache 60s para los tabs de listado. `fresh=1` (botón Sincronizar) lo saltea.

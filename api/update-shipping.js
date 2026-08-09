@@ -580,7 +580,8 @@ export default async function handler(req, res) {
   // logueado con cualquier cuenta y mandar el uid ajeno por query.
   const { uid, orderId, tracking } = req.query;
   if (!uid) return res.status(401).json({ error: "uid requerido" });
-  if (!(await guardUid(req, res, uid))) return;
+  // Miembros de equipo: el refresco de canjes es sección "canjes", el resto "envios".
+  if (!(await guardUid(req, res, uid, req.query.action === 'canjes_refresh' ? 'canjes' : 'envios'))) return;
 
   // ── Historial de envíos en Firestore (vía Admin SDK — no depende de las
   // reglas de seguridad del cliente, que no cubren subcolecciones nuevas) ──

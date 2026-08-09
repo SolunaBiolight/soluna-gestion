@@ -7,7 +7,7 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { guardUid, requireAdmin, guardCron } from "./_auth.js";
+import { guardUid, requireAdmin, guardCron, verifyAuth, clearTeamCache } from "./_auth.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -818,6 +818,44 @@ export default async function handler(req, res) {
       return res.json({ posts:gd.posts||[], referencias:gd.referencias||[], materiales:gd.materiales||[] });
     }
 
+    // ── workspace: ¿este login es miembro del espacio de otra cuenta? ─────
+    // Se autentica SOLO por token (todavía no hay uid destino). También hace
+    // el "claim": al primer login del invitado, la invitación por email se
+    // convierte en membresía real (teamMembers + teamUids del dueño).
+    if (action === "workspace") {
+      const authUser = await verifyAuth(req);
+      if (!authUser) return res.status(401).json({ error: "Sesión inválida" });
+      const myUid = authUser.uid;
+      const myEmail = String(authUser.email || "").toLowerCase().trim();
+      let q = await db.collection("users").where("teamUids", "array-contains", myUid).limit(1).get();
+      if (!q.empty) {
+        const d = q.docs[0].data() || {};
+        const m = (d.teamMembers || {})[myUid];
+        return res.json({ ok: true, ownerId: q.docs[0].id, secciones: m ? (m.secciones || {}) : null, ownerNombre: d.nombre || d.email || "", miembroNombre: m?.nombre || "" });
+      }
+      if (myEmail) {
+        q = await db.collection("users").where("teamInviteEmails", "array-contains", myEmail).limit(1).get();
+        if (!q.empty) {
+          const ref = q.docs[0].ref;
+          const out = await db.runTransaction(async tx => {
+            const s = await tx.get(ref); const d = s.data() || {};
+            const invites = Array.isArray(d.teamInvites) ? d.teamInvites : [];
+            const inv = invites.find(i => String(i.email || "").toLowerCase() === myEmail);
+            if (!inv) return null;
+            tx.update(ref, {
+              teamMembers: { ...(d.teamMembers || {}), [myUid]: { email: myEmail, nombre: inv.nombre || "", secciones: inv.secciones || {}, desde: Date.now() } },
+              teamUids: FieldValue.arrayUnion(myUid),
+              teamInvites: invites.filter(i => String(i.email || "").toLowerCase() !== myEmail),
+              teamInviteEmails: FieldValue.arrayRemove(myEmail),
+            });
+            return { ownerId: ref.id, secciones: inv.secciones || {}, ownerNombre: d.nombre || d.email || "", miembroNombre: inv.nombre || "" };
+          });
+          if (out) { clearTeamCache(out.ownerId); return res.json({ ok: true, ...out }); }
+        }
+      }
+      return res.json({ ok: true, ownerId: null });
+    }
+
     // ── ACCIONES AUTENTICADAS (uid + token de Firebase atado a ese uid) ───────
     // Antes alcanzaba con mandar cualquier uid por el body: se podían leer y
     // escribir tareas, colaboradores y tokens de portal de cualquier cuenta.
@@ -842,7 +880,70 @@ export default async function handler(req, res) {
       if (!(esCM ? ACCIONES_CM : ACCIONES_LECTURA).includes(action))
         return res.status(403).json({ error: "Tu permiso no alcanza para esta acción." });
     } else {
-      if (!(await guardUid(req, res, uid))) return;
+      // Miembros con permisos por sección: casi todo tareas.js es la sección
+      // "tareas"; scheduleCanjeEmail nace de Canjes.
+      const _seccion = action === "scheduleCanjeEmail" ? "canjes" : "tareas";
+      const _g = await guardUid(req, res, uid, _seccion);
+      if (!_g) return;
+      var authViaTeam = !!_g.viaTeam;
+    }
+
+    // ── Miembros con cuenta (permisos por sección) — SOLO el dueño ────────
+    if (["miembrosListar", "miembroInvitar", "miembroActualizar", "miembroQuitar"].includes(action)) {
+      if (typeof authViaTeam !== "undefined" && authViaTeam) return res.status(403).json({ error: "Solo el dueño de la cuenta administra los miembros." });
+      if (colabAuth) return res.status(403).json({ error: "No autorizado" });
+      const uRef = db.collection("users").doc(uid);
+      if (action === "miembrosListar") {
+        const s = await uRef.get(); const d = s.data() || {};
+        const miembros = Object.entries(d.teamMembers || {}).map(([mu, m]) => ({ uid: mu, email: m.email || "", nombre: m.nombre || "", secciones: m.secciones || {} }));
+        return res.json({ ok: true, miembros, invitaciones: (Array.isArray(d.teamInvites) ? d.teamInvites : []).map(i => ({ email: i.email, nombre: i.nombre || "", secciones: i.secciones || {} })) });
+      }
+      if (action === "miembroInvitar") {
+        const email = String(body.email || "").toLowerCase().trim();
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: "Email inválido" });
+        const secciones = (body.secciones && typeof body.secciones === "object") ? body.secciones : {};
+        const nombre = String(body.nombre || "").slice(0, 60);
+        await db.runTransaction(async tx => {
+          const s = await tx.get(uRef); const d = s.data() || {};
+          const yaMiembro = Object.values(d.teamMembers || {}).some(m => String(m.email || "").toLowerCase() === email);
+          if (yaMiembro) throw new Error("Ese email ya es miembro.");
+          const invites = (Array.isArray(d.teamInvites) ? d.teamInvites : []).filter(i => String(i.email || "").toLowerCase() !== email);
+          invites.push({ email, nombre, secciones, ts: Date.now() });
+          tx.set(uRef, { teamInvites: invites, teamInviteEmails: FieldValue.arrayUnion(email) }, { merge: true });
+        }).catch(e => { throw e; });
+        return res.json({ ok: true, email });
+      }
+      if (action === "miembroActualizar") {
+        const memberUid = String(body.memberUid || "").trim();
+        const secciones = (body.secciones && typeof body.secciones === "object") ? body.secciones : {};
+        await db.runTransaction(async tx => {
+          const s = await tx.get(uRef); const d = s.data() || {};
+          const members = { ...(d.teamMembers || {}) };
+          if (!members[memberUid]) throw new Error("Miembro no encontrado.");
+          members[memberUid] = { ...members[memberUid], secciones };
+          tx.update(uRef, { teamMembers: members });
+        });
+        clearTeamCache(uid);
+        return res.json({ ok: true });
+      }
+      if (action === "miembroQuitar") {
+        const memberUid = String(body.memberUid || "").trim();
+        const email = String(body.email || "").toLowerCase().trim();
+        await db.runTransaction(async tx => {
+          const s = await tx.get(uRef); const d = s.data() || {};
+          const members = { ...(d.teamMembers || {}) };
+          if (memberUid) delete members[memberUid];
+          const upd = { teamMembers: members };
+          if (memberUid) upd.teamUids = FieldValue.arrayRemove(memberUid);
+          if (email) {
+            upd.teamInvites = (Array.isArray(d.teamInvites) ? d.teamInvites : []).filter(i => String(i.email || "").toLowerCase() !== email);
+            upd.teamInviteEmails = FieldValue.arrayRemove(email);
+          }
+          tx.update(uRef, upd);
+        });
+        clearTeamCache(uid);
+        return res.json({ ok: true });
+      }
     }
 
     // Pertenencia por documento: las acciones que operan por id (tareaId /
@@ -864,6 +965,7 @@ export default async function handler(req, res) {
     // de Firestore no dejan a un usuario común escribir en `pagos` desde el
     // navegador (error "Missing or insufficient permissions" al suscribirse).
     if (action === "crearPago") {
+      if (typeof authViaTeam !== "undefined" && authViaTeam) return res.status(403).json({ error: "Solo el dueño de la cuenta puede gestionar pagos." });
       const { plan, method, currency = "", amount, txHash = "", transferRef = "", nota = "", meses = 1, periodo = "mensual", email = "" } = body;
       if (!["facturador", "plus"].includes(plan)) return res.status(400).json({ error: "Plan inválido" });
       if (!Number(amount) || Number(amount) <= 0) return res.status(400).json({ error: "Monto inválido" });

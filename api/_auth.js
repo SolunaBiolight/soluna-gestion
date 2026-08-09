@@ -40,32 +40,37 @@ export async function verifyAuth(req) {
 
 // Cache de membresías por instancia caliente (60s) — evita una lectura de
 // Firestore por request en los endpoints que se llaman muchas veces seguidas.
-const _teamCache = new Map(); // uid -> {at, team:[], isAdmin:bool}
+const _teamCache = new Map(); // uid -> {at, team:[], members:{}, isAdmin:bool}
 async function _userMeta(uid) {
   const hit = _teamCache.get(uid);
   if (hit && Date.now() - hit.at < 60000) return hit;
   initApp();
-  let team = [], isAdmin = false, email = "";
+  let team = [], members = {}, isAdmin = false, email = "";
   try {
     const snap = await getFirestore().collection("users").doc(uid).get();
     if (snap.exists) {
       const d = snap.data() || {};
       team = Array.isArray(d.teamUids) ? d.teamUids : [];
+      // Miembros con permisos POR SECCIÓN: {uid:{email,nombre,secciones:{envios:true,...}}}
+      members = (d.teamMembers && typeof d.teamMembers === "object") ? d.teamMembers : {};
       isAdmin = d.isAdmin === true;
       email = d.email || "";
     }
   } catch (_) {}
-  const meta = { at: Date.now(), team, isAdmin, email };
+  const meta = { at: Date.now(), team, members, isAdmin, email };
   if (_teamCache.size > 500) _teamCache.clear();
   _teamCache.set(uid, meta);
   return meta;
 }
 
+/** Invalida el cache de un tenant (tras editar miembros/permisos). */
+export function clearTeamCache(uid) { _teamCache.delete(uid); }
+
 /**
  * Exige token válido Y que ese token pueda operar sobre `uid`.
  * Devuelve {ok:true, user} o {ok:false, code, error}.
  */
-export async function requireUid(req, uid) {
+export async function requireUid(req, uid, seccion) {
   const user = await verifyAuth(req);
   if (!user) return { ok: false, code: 401, error: "Sesión inválida. Recargá la página e iniciá sesión de nuevo." };
   const target = String(uid || "").trim();
@@ -73,7 +78,16 @@ export async function requireUid(req, uid) {
   if (user.uid === target) return { ok: true, user };
   // ¿el solicitante está habilitado como equipo en la cuenta destino?
   const meta = await _userMeta(target);
-  if (meta.team.includes(user.uid)) return { ok: true, user, viaTeam: true };
+  const member = meta.members ? meta.members[user.uid] : null;
+  if (member) {
+    // Miembro con permisos por sección: si el endpoint declara sección, se
+    // exige que esté habilitada. Sin sección declarada, alcanza la membresía.
+    if (seccion && !(member.secciones && member.secciones[seccion] === true)) {
+      return { ok: false, code: 403, error: "Tu cuenta no tiene acceso a esta sección. Pedile al dueño que te la habilite desde Equipo." };
+    }
+    return { ok: true, user, viaTeam: true, member };
+  }
+  if (meta.team.includes(user.uid)) return { ok: true, user, viaTeam: true }; // legacy: acceso total
   // Los admins de la plataforma pueden operar sobre cualquier cuenta (soporte).
   const self = await _userMeta(user.uid);
   if (self.isAdmin) return { ok: true, user, viaAdmin: true };
@@ -81,9 +95,9 @@ export async function requireUid(req, uid) {
   return { ok: false, code: 403, error: "No tenés acceso a esta cuenta." };
 }
 
-/** Helper que ya responde el error. `if (!(await guardUid(req,res,uid))) return;` */
-export async function guardUid(req, res, uid) {
-  const r = await requireUid(req, uid);
+/** Helper que ya responde el error. `if (!(await guardUid(req,res,uid,seccion))) return;` */
+export async function guardUid(req, res, uid, seccion) {
+  const r = await requireUid(req, uid, seccion);
   if (r.ok) return r;
   res.status(r.code).json({ error: r.error });
   return null;
