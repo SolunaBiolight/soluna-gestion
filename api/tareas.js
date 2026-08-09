@@ -908,7 +908,13 @@ export default async function handler(req, res) {
       const _g = await guardUid(req, res, uid, _seccion);
       if (!_g) return;
       var authViaTeam = !!_g.viaTeam;
+      var authMember = _g.member || null;      // miembro con cuenta (nombre/email)
+      var authEmail = (_g.user && _g.user.email) ? String(_g.user.email).toLowerCase() : "";
     }
+    // Quién está operando, para atribuir acciones (ej: quién creó una tarea).
+    const quienOpera = colabAuth
+      ? { nombre: colabAuth.nombre || "", email: colabAuth.email || "", tipo: "colaborador" }
+      : { nombre: (typeof authMember !== "undefined" && authMember && authMember.nombre) || "", email: (typeof authEmail !== "undefined" && authEmail) || "", tipo: (typeof authViaTeam !== "undefined" && authViaTeam) ? "miembro" : "dueño" };
 
     // ── Miembros con cuenta (permisos por sección) — SOLO el dueño ────────
     if (["miembrosListar", "miembroInvitar", "miembroActualizar", "miembroQuitar"].includes(action)) {
@@ -1161,6 +1167,7 @@ export default async function handler(req, res) {
         activity, leidoAt:null, estimacion:null, managerEmail,
         esCampaña: !!esCampaña,
         slots: Array.isArray(slots) ? slots : [],
+        creadoPor: quienOpera,
         createdAt:now, updatedAt:now,
       };
       const ref = await db.collection("tareas").add(data);
@@ -1464,6 +1471,7 @@ export default async function handler(req, res) {
         estimacion: null,
         checklist: (orig.checklist||[]).map(i=>({...i, done:false})),
         tareaNum, tareaNumStr,
+        creadoPor: quienOpera,
         createdAt: now, updatedAt: now,
       };
       const newRef = await db.collection("tareas").add(data);

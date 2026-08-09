@@ -1588,6 +1588,15 @@ function ghShareOrigin(){
   const o=window.location.origin;
   return /localhost|127\.0\.0\.1/.test(o)?o:"https://www.growithapp.com";
 }
+// Etiqueta corta de quién creó una tarea (t.creadoPor lo escribe el backend).
+function ghCreadorLabel(cp){
+  if(!cp) return "";
+  const n=String(cp.nombre||"").trim();
+  if(n) return n.split(" ")[0];
+  const e=String(cp.email||"").trim();
+  if(e) return e.split("@")[0];
+  return cp.tipo==="dueño"?"Admin":"";
+}
 // Prefijo común de los nombres de producto de la cuenta ("MARCA - LINEA ").
 // Genérico: sale de los nombres reales, no de una marca fija. Devuelve el
 // prefijo en MAYÚSCULAS — comparar siempre case-insensitive.
@@ -14748,6 +14757,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         {/* Meta badges */}
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
           {t.tareaNumStr&&<span style={{fontSize:11,fontWeight:600,color:T.textSm,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 10px"}}>#{t.tareaNumStr}</span>}
+          {ghCreadorLabel(t.creadoPor)&&<span style={{fontSize:11,fontWeight:600,color:T.textSm,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 10px"}}>Creada por {ghCreadorLabel(t.creadoPor)}</span>}
           {t.leidoAt&&<span style={{fontSize:11,fontWeight:600,color:T.green,background:T.green+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.green}30`}}>Brief leído</span>}
           {(t.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.red}30`}}><GhI n="refresh" size={10}/> {t.correcciones} corrección{(t.correcciones||0)!==1?"es":""}</span>}
           {t.recurrente&&<span style={{fontSize:11,fontWeight:600,color:T.green,background:T.green+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.green}30`}}>Recurrente · {t.frecuenciaRecurrente||"semanal"}</span>}
@@ -18973,6 +18983,7 @@ function ColaboradorBoardView({T, boardToken}) {
                   {dl&&<div style={{padding:"4px 10px",background:dl.color+"20",borderRadius:20,fontSize:12,fontWeight:600,color:dl.color}}>{dl.label}</div>}
                   {(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?(<div style={{padding:"4px 10px",background:T.red+"20",borderRadius:20,fontSize:12,fontWeight:700,color:T.red,display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:6,height:6,borderRadius:"50%",background:T.red,display:"inline-block"}}/> URGENTE</div>):null;})()}
                   {t.tareaNumStr&&<div style={{padding:"4px 10px",background:T.surface,borderRadius:20,fontSize:11,color:T.textSm}}>#{t.tareaNumStr}</div>}
+                  {ghCreadorLabel(t.creadoPor)&&<div style={{padding:"4px 10px",background:T.surface,borderRadius:20,fontSize:11,color:T.textSm}}>por {ghCreadorLabel(t.creadoPor)}</div>}
                 </div>
 
                 {/* Descripción */}
