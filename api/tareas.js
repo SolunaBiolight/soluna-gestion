@@ -134,6 +134,28 @@ function emailTareaAsignada({ colab, tarea, link }) {
 </div>`;
 }
 
+// Invitación a miembro con cuenta: el botón lleva a la app; al registrarse
+// con este mismo email, el claim de la invitación es automático (action=workspace).
+function emailInvitacionMiembro({ nombre, ownerNombre, secciones, link }) {
+  const LABELS = { tareas:"Tareas", canjes:"Canjes", envios:"Envíos", reclamos:"Reclamos", stock:"Stock", meta:"Meta Ads", ml:"Mercado Libre", margenes:"Dashboard", arca:"Facturador", copilot:"Copilot" };
+  const secs = Object.keys(secciones || {}).filter(k => secciones[k] === true).map(k => LABELS[k] || k);
+  const primerNombre = String(nombre || "").split(" ")[0];
+  return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#6366f1,#a78bfa);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
+    <div style="font-size:20px;font-weight:700;color:#fff">Te invitaron a Growith</div>
+  </div>
+  <p style="font-size:15px;color:#374151">Hola${primerNombre ? ` <strong>${primerNombre}</strong>` : ""},</p>
+  <p style="font-size:14px;color:#6b7280"><strong>${ownerNombre || "Un equipo"}</strong> te invitó a su espacio de trabajo en Growith para que gestiones estas secciones:</p>
+  ${secs.length ? `<div style="background:#f9fafb;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #6366f1">
+    ${secs.map(s => `<div style="font-size:14px;font-weight:600;color:#111827;padding:3px 0">${s}</div>`).join("")}
+  </div>` : ""}
+  <p style="font-size:14px;color:#6b7280">Para entrar, creá tu cuenta usando <strong>este mismo email</strong> (podés hacerlo con Google o con contraseña). Al entrar, tu acceso se activa solo.</p>
+  <a href="${link}" style="display:block;text-align:center;background:#6366f1;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Crear mi cuenta →</a>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Si no esperabas esta invitación, podés ignorar este mail.</p>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
+</div>`;
+}
+
 function emailEntregaRecibida({ colab, tarea, entrega, link }) {
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#f97316,#fb923c);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
@@ -903,15 +925,25 @@ export default async function handler(req, res) {
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: "Email inválido" });
         const secciones = (body.secciones && typeof body.secciones === "object") ? body.secciones : {};
         const nombre = String(body.nombre || "").slice(0, 60);
+        let ownerNombre = "";
         await db.runTransaction(async tx => {
           const s = await tx.get(uRef); const d = s.data() || {};
+          ownerNombre = d.nombre || d.displayName || "";
           const yaMiembro = Object.values(d.teamMembers || {}).some(m => String(m.email || "").toLowerCase() === email);
           if (yaMiembro) throw new Error("Ese email ya es miembro.");
           const invites = (Array.isArray(d.teamInvites) ? d.teamInvites : []).filter(i => String(i.email || "").toLowerCase() !== email);
           invites.push({ email, nombre, secciones, ts: Date.now() });
           tx.set(uRef, { teamInvites: invites, teamInviteEmails: FieldValue.arrayUnion(email) }, { merge: true });
         }).catch(e => { throw e; });
-        return res.json({ ok: true, email });
+        // Mail con botón para que la persona cree su cuenta con este mismo
+        // email y no se equivoque de dirección. Si Resend falla, la invitación
+        // igual queda activa (el claim es por email al primer login).
+        const mailRes = await sendEmail({
+          to: email,
+          subject: `${ownerNombre ? ownerNombre + " te invitó" : "Te invitaron"} a Growith`,
+          html: emailInvitacionMiembro({ nombre, ownerNombre, secciones, link: "https://www.growithapp.com" }),
+        });
+        return res.json({ ok: true, email, mail: mailRes && mailRes.ok ? "enviado" : "no_enviado" });
       }
       if (action === "miembroActualizar") {
         const memberUid = String(body.memberUid || "").trim();

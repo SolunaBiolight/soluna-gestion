@@ -1475,8 +1475,10 @@ function MiembrosCuentaCard({T,user}){
     if(!Object.values(secs).some(Boolean)){ toast("Tildá al menos una sección","warning"); return; }
     setBusy(true);
     try{
-      await api("miembroInvitar",{email:em,nombre:nombre.trim(),secciones:secs});
-      toast(`Listo: cuando ${em} entre a Growith con ese mail, ve tu espacio con las secciones tildadas`,"success",6000);
+      const r=await api("miembroInvitar",{email:em,nombre:nombre.trim(),secciones:secs});
+      toast(r&&r.mail==="enviado"
+        ?`Le mandamos un mail a ${em} con el botón para crear su cuenta. Cuando entre con ese mail, ve tu espacio con las secciones tildadas`
+        :`Invitación creada: cuando ${em} entre a Growith con ese mail, ve tu espacio con las secciones tildadas`,"success",7000);
       setEmail(""); setNombre(""); cargar();
     }catch(e){ toast("No se pudo invitar: "+e.message,"warning"); }
     setBusy(false);
