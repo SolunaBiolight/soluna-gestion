@@ -1096,21 +1096,43 @@ export default async function handler(req, res) {
 
     if (action === "updateColaborador") {
       const { colabId, nombre, rol, telefono, email } = body;
+      const colabDoc = await db.collection("colaboradores").doc(colabId).get();
+      if (!colabDoc.exists || colabDoc.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
       const upd = { updatedAt:now };
       if (nombre!==undefined) upd.nombre = nombre;
       if (rol!==undefined) upd.rol = rol;
       if (telefono!==undefined) upd.telefono = telefono;
       if (email!==undefined) upd.email = email.toLowerCase().trim();
-      // Si cambia el email, reasignar todas las tareas que usaban el email viejo
+      // Si cambia el email, migrar TODO el historial al email nuevo: tareas con
+      // asignada única, tareas con varias asignadas y el rol de manager.
       if (email!==undefined) {
-        const colabDoc = await db.collection("colaboradores").doc(colabId).get();
         const oldEmail = colabDoc.data()?.email;
         const newEmail = email.toLowerCase().trim();
         if (oldEmail && oldEmail !== newEmail) {
-          const tareasSnap = await db.collection("tareas").where("uid","==",uid).where("asignadoEmail","==",oldEmail).get();
-          const batch = db.batch();
-          tareasSnap.docs.forEach(doc => batch.update(doc.ref, { asignadoEmail: newEmail, updatedAt: now }));
-          await batch.commit();
+          const [porAsignado, porLista, porManager] = await Promise.all([
+            db.collection("tareas").where("uid","==",uid).where("asignadoEmail","==",oldEmail).get(),
+            db.collection("tareas").where("uid","==",uid).where("asignadosEmails","array-contains",oldEmail).get(),
+            db.collection("tareas").where("uid","==",uid).where("managerEmail","==",oldEmail).get(),
+          ]);
+          const cambios = new Map();
+          porAsignado.docs.forEach(d => cambios.set(d.id, { ref:d.ref, upd:{ asignadoEmail:newEmail } }));
+          porLista.docs.forEach(d => {
+            const prev = cambios.get(d.id) || { ref:d.ref, upd:{} };
+            prev.upd.asignadosEmails = (d.data().asignadosEmails||[]).map(e => (e||"").toLowerCase()===oldEmail ? newEmail : e);
+            cambios.set(d.id, prev);
+          });
+          porManager.docs.forEach(d => {
+            const prev = cambios.get(d.id) || { ref:d.ref, upd:{} };
+            prev.upd.managerEmail = newEmail;
+            cambios.set(d.id, prev);
+          });
+          // Firestore admite 500 ops por batch; de a 400 por las dudas.
+          const entries = [...cambios.values()];
+          for (let i = 0; i < entries.length; i += 400) {
+            const batch = db.batch();
+            entries.slice(i, i+400).forEach(c => batch.update(c.ref, { ...c.upd, updatedAt: now }));
+            await batch.commit();
+          }
         }
       }
       await db.collection("colaboradores").doc(colabId).update(upd);
