@@ -1292,6 +1292,10 @@ export default async function handler(req, res) {
 
     if (action === "cargas") {
       const cfg = await getGlobalConfig(db);
+      // Oportunista: si el usuario tiene cargas MP pendientes, reconciliarlas
+      // contra la API de MP acá mismo — así al abrir el modal de saldo el pago
+      // aprobado se acredita al instante, sin esperar webhook ni cron.
+      try { await mpReconciliarCargas(db); } catch (e) { console.warn("[cargas] reconciliar:", e.message); }
       const snap = await db.collection("andreani_cargas").where("uid", "==", uid).limit(30).get();
       const cargas = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         .sort((a, b) => (b.ts?.toMillis?.() || 0) - (a.ts?.toMillis?.() || 0))
