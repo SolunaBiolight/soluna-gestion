@@ -27571,9 +27571,9 @@ function DolarPanel({ T, uid }) {
 
       {/* Dólar para Meta Ads — separado, histórico día por día */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
-        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Dólar para Meta Ads</div>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Dólar para Meta Ads <span style={{fontSize:10,fontWeight:600,color:T.textSm,background:T.surface,borderRadius:6,padding:"2px 7px",marginLeft:6}}>respaldo</span></div>
         <div style={{fontSize:11,color:T.textSm,marginBottom:14,lineHeight:1.5}}>
-          Meta cobra la publicidad en USD, y este dólar puede ser distinto al de arriba (por defecto <strong style={{color:T.text}}>Cripto</strong>, el más usado para pautar). A diferencia de un costo puntual, el gasto en Ads se trae <strong style={{color:T.text}}>día por día</strong> — así que acá el Dashboard usa la cotización <strong style={{color:T.text}}>histórica de cada día</strong> del período, no un valor único. Si el dólar subió esta semana, el gasto de la semana pasada se calcula con lo que valía el dólar la semana pasada.
+          El gasto de Meta ahora se convierte con <strong style={{color:T.text}}>el mismo dólar de arriba</strong> (el de Costos Adicionales) — un solo dólar para todo el dashboard, porque siempre conseguís los USDT del mismo lado. Este dólar histórico día por día quedó solo como <strong style={{color:T.text}}>respaldo</strong>: se usa únicamente si no tenés cargado el dólar de arriba.
         </div>
         <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}}>Tipo de dólar para Ads</label>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
@@ -27594,16 +27594,13 @@ function DolarPanel({ T, uid }) {
             <div style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:8,padding:"9px 12px"}}>Se trae solo, día por día, de la serie histórica del dólar {DOLAR_TIPOS.find(t=>t.id===adsTipo)?.label.toLowerCase()}.</div>
           )}
           <div>
-            <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}} title="Se suma a la cotización de cada día — recargo de tarjeta, fee de agencia, etc.">Ajuste manual{(parseFloat(adsAjuste)||0)===0 && (parseFloat(ajuste)||0)!==0 ? <span style={{color:T.textSm}}> · usa {ajuste}%</span> : null}</label>
+            <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}} title="Solo aplica al modo respaldo (histórico día por día)">Ajuste manual</label>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <span style={{fontSize:13,color:T.textSm}}>%</span>
-              <input type="number" step="0.5" value={adsAjuste} onChange={e=>setAdsAjuste(e.target.value)} placeholder={(parseFloat(ajuste)||0)!==0?String(ajuste):"0"} style={{...InputStyle(T),width:80,fontSize:14,padding:"9px 12px",textAlign:"right"}}/>
+              <input type="number" step="0.5" value={adsAjuste} onChange={e=>setAdsAjuste(e.target.value)} placeholder="0" style={{...InputStyle(T),width:80,fontSize:14,padding:"9px 12px",textAlign:"right"}}/>
             </div>
           </div>
         </div>
-        {(parseFloat(adsAjuste)||0)===0 && (parseFloat(ajuste)||0)!==0 && (
-          <div style={{fontSize:11,color:T.textSm,marginTop:12,lineHeight:1.5}}>Si dejás el ajuste en 0, el gasto de Ads usa <strong style={{color:T.text}}>el dólar del día + la cometa del dólar de Costos ({ajuste}%)</strong>. Poné un % acá solo si querés un ajuste distinto para Ads.</div>
-        )}
       </div>
 
       {/* Fee adicional del dólar → ahora es POR CUENTA de Meta (en Costos) */}
@@ -30796,7 +30793,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 16px",marginBottom:16}}>
                 <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.4}}>Cómo se compone tu inversión publicitaria (Meta)</div>
                 {monedas.map(([mon,v]) => row(`Gasto según Meta (${mon})`, fmtOrig(mon,v), mon==="ARS"?null:"(lo que factura Meta, en su moneda)"))}
-                {hayConv && row("Convertido a pesos", fmtM(ab.convertido), `dólar ${TIPO_LBL[ab.cotizTipo]||ab.cotizTipo}${ab.cotizProm?` prom. $${Number(ab.cotizProm).toLocaleString("es-AR",{maximumFractionDigits:0})}`:""}${ab.cotizAjuste?` +${ab.cotizAjuste}% ajuste`:""}, día por día`)}
+                {hayConv && row("Convertido a pesos", fmtM(ab.convertido), ab.cotizOperativo ? `dólar operativo${ab.cotizProm?` $${Number(ab.cotizProm).toLocaleString("es-AR",{maximumFractionDigits:0})}`:""} (el mismo de Costos)` : `dólar ${TIPO_LBL[ab.cotizTipo]||ab.cotizTipo}${ab.cotizProm?` prom. $${Number(ab.cotizProm).toLocaleString("es-AR",{maximumFractionDigits:0})}`:""}${ab.cotizAjuste?` +${ab.cotizAjuste}% ajuste`:""}, día por día`)}
                 {(ab.feePct>0) && row(`+ Fee sobre pauta (${ab.feePct}%)`, fmtM(ab.feeMonto), "(configurado en Cotización Dólar)")}
                 {row("Ad Spend Meta total", fmtM(ab.total), "= la tarjeta AD SPEND", true)}
                 {(ab.diasSinCotiz>0) && (

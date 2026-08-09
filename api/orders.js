@@ -617,17 +617,18 @@ export default async function handler(req, res) {
           const curCode = String(a.currency || "ARS").toUpperCase();
           if (a.currency && a.currency !== "ARS") {
             for (const [fecha, v] of Object.entries(bd)) {
-              let rate;
-              if (dolarAdsTipo === "manual") {
-                rate = dolarAdsManual > 0 ? dolarAdsManual : null;
-              } else {
-                const base = histMap ? dolarDeFecha(histMap, fecha) : null;
-                rate = base != null ? base * (1 + dolarAdsAjuste) : null;
+              // UN SOLO DÓLAR OPERATIVO: el usuario compra USDT siempre en el mismo
+              // lugar, así que el gasto en USD se pasa a ARS con la MISMA cotización
+              // efectiva de Costos ($ del día + cometa) que todo lo demás del
+              // dashboard. Solo si no hay dólar de Costos configurado se cae al
+              // histórico día por día del dólar de Ads (o su manual/fallback), para
+              // no dejar el Ad Spend en $0 por falta de config.
+              let rate = dolarCostosEf > 0 ? dolarCostosEf : null;
+              if (rate == null) {
+                if (dolarAdsTipo === "manual") rate = dolarAdsManual > 0 ? dolarAdsManual : null;
+                else { const base = histMap ? dolarDeFecha(histMap, fecha) : null; rate = base != null ? base * (1 + dolarAdsAjuste) : null; }
+                if (!rate && dolarAdsFallback > 0) rate = dolarAdsFallback;
               }
-              // Fallback: si el histórico no tiene ese día (o la API de series
-              // falló), usar el valor manual de Ads o la cotización de Costos —
-              // un Ad Spend aproximado es infinitamente mejor que $0.
-              if (!rate && dolarAdsFallback > 0) rate = dolarAdsFallback;
               if (!rate) { if (bdCollect) bdCollect.sinCotiz++; delete bd[fecha]; continue; } // sin NINGUNA cotización: se excluye, no se suma mal
               const orig = v.spend||0;
               if (bdCollect) {
@@ -1428,11 +1429,17 @@ export default async function handler(req, res) {
 
       // ── Serie del dólar del período (para el modo USD del dashboard) ──
       const histMapFinal = await dolarAdsHistProm.catch(()=>null);
+      // Un solo dólar operativo para todo el dashboard: el modo "Mostrar en dólares"
+      // usa la MISMA cotización efectiva de Costos que se usa para el gasto de Ads y
+      // los costos USD. Fallback al histórico día por día solo si no hay dólar de
+      // Costos configurado.
       const dolarSerie = {};
-      if (histMapFinal && histMapFinal.size) {
+      if (dolarCostosEf > 0) {
+        for (let d = since; d <= until; d = addDays(d, 1)) dolarSerie[d] = dolarCostosEf;
+      } else if (histMapFinal && histMapFinal.size) {
         for (let d = since; d <= until; d = addDays(d, 1)) { const v = dolarDeFecha(histMapFinal, d); if (v) dolarSerie[d] = v; }
       }
-      const dolarActual = (histMapFinal && dolarDeFecha(histMapFinal, until)) || dolarAdsFallback || 0;
+      const dolarActual = dolarCostosEf > 0 ? dolarCostosEf : ((histMapFinal && dolarDeFecha(histMapFinal, until)) || dolarAdsFallback || 0);
 
       // ── Calidad del dato / configuración — para que el dashboard diga cuándo
       // el número puede no ser exacto en vez de mostrarlo con pinta de real ──
@@ -1472,6 +1479,7 @@ export default async function handler(req, res) {
         convertido: +adsBd.convertido.toFixed(2),
         cotizTipo: dolarAdsTipo,
         cotizAjuste: +(dolarAdsAjuste*100).toFixed(2),
+        cotizOperativo: dolarCostosEf > 0, // true = se usó el dólar único de Costos (no el histórico día por día)
         cotizProm: adsBd.rateDias>0 ? +(adsBd.rateSum/adsBd.rateDias).toFixed(2) : null,
         diasSinCotiz: adsBd.sinCotiz,
         feePct: adsBd.convertido>0 ? +(adsBd.feeMonto/adsBd.convertido*100).toFixed(2) : 0,
