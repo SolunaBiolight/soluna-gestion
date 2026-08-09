@@ -27594,13 +27594,16 @@ function DolarPanel({ T, uid }) {
             <div style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:8,padding:"9px 12px"}}>Se trae solo, día por día, de la serie histórica del dólar {DOLAR_TIPOS.find(t=>t.id===adsTipo)?.label.toLowerCase()}.</div>
           )}
           <div>
-            <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}} title="Se suma a la cotización de cada día — recargo de tarjeta, fee de agencia, etc.">Ajuste manual</label>
+            <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}} title="Se suma a la cotización de cada día — recargo de tarjeta, fee de agencia, etc.">Ajuste manual{(parseFloat(adsAjuste)||0)===0 && (parseFloat(ajuste)||0)!==0 ? <span style={{color:T.textSm}}> · usa {ajuste}%</span> : null}</label>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <span style={{fontSize:13,color:T.textSm}}>%</span>
-              <input type="number" step="0.5" value={adsAjuste} onChange={e=>setAdsAjuste(e.target.value)} placeholder="0" style={{...InputStyle(T),width:80,fontSize:14,padding:"9px 12px",textAlign:"right"}}/>
+              <input type="number" step="0.5" value={adsAjuste} onChange={e=>setAdsAjuste(e.target.value)} placeholder={(parseFloat(ajuste)||0)!==0?String(ajuste):"0"} style={{...InputStyle(T),width:80,fontSize:14,padding:"9px 12px",textAlign:"right"}}/>
             </div>
           </div>
         </div>
+        {(parseFloat(adsAjuste)||0)===0 && (parseFloat(ajuste)||0)!==0 && (
+          <div style={{fontSize:11,color:T.textSm,marginTop:12,lineHeight:1.5}}>Si dejás el ajuste en 0, el gasto de Ads usa <strong style={{color:T.text}}>el dólar del día + la cometa del dólar de Costos ({ajuste}%)</strong>. Poné un % acá solo si querés un ajuste distinto para Ads.</div>
+        )}
       </div>
 
       {/* Fee adicional del dólar → ahora es POR CUENTA de Meta (en Costos) */}

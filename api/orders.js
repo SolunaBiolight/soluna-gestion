@@ -556,7 +556,14 @@ export default async function handler(req, res) {
       const CASA_POR_TIPO = { oficial:"oficial", blue:"blue", mep:"bolsa", cripto:"cripto" };
       const dolarAdsCfg = userData.margenesDolarAds || {};
       const dolarAdsTipo = dolarAdsCfg.tipo || "cripto";
-      const dolarAdsAjuste = (parseFloat(dolarAdsCfg.ajuste)||0)/100;
+      // El "ajuste/cometa" del dólar de Ads: si no se configuró uno propio (0 o
+      // vacío), HEREDA el ajuste del dólar de Costos Adicionales. Así la cometa que
+      // el usuario carga arriba (ej. +2%) también se le suma al gasto de Ads —
+      // "el dólar del día + la cometa" — sin tener que repetirla. Un ajuste propio
+      // en el panel de Ads (≠ 0) siempre gana sobre el heredado.
+      const costosAjustePct = parseFloat((userData.margenesDolar||{}).ajuste)||0;
+      const adsAjustePropio = parseFloat(dolarAdsCfg.ajuste);
+      const dolarAdsAjuste = ((isFinite(adsAjustePropio) && adsAjustePropio!==0 ? adsAjustePropio : costosAjustePct)||0)/100;
       const dolarAdsManual = (parseFloat(dolarAdsCfg.valor)||0) * (1 + dolarAdsAjuste);
       const dolarAdsHistProm = dolarAdsTipo !== "manual" && CASA_POR_TIPO[dolarAdsTipo]
         ? fetchDolarHistorico(CASA_POR_TIPO[dolarAdsTipo])
@@ -564,8 +571,12 @@ export default async function handler(req, res) {
       // Fallback si la serie histórica no está disponible (API caída, red, etc.):
       // valor manual de Ads → cotización de Costos → nunca dejar el Ad Spend en $0
       // por un problema de datos externos.
-      const dolarCostosEf = (parseFloat((userData.margenesDolar||{}).valor)||0) * (1 + (parseFloat((userData.margenesDolar||{}).ajuste)||0)/100);
-      const dolarAdsFallback = dolarAdsManual > 0 ? dolarAdsManual : (dolarCostosEf > 0 ? dolarCostosEf * (1 + dolarAdsAjuste) : 0);
+      const dolarCostosBase = parseFloat((userData.margenesDolar||{}).valor)||0;
+      const dolarCostosEf = dolarCostosBase * (1 + costosAjustePct/100);
+      // Fallback = dólar de Costos base × (1 + ajuste efectivo de Ads). Se parte del
+      // valor BASE (no del efectivo) para no aplicar la cometa dos veces cuando el
+      // ajuste de Ads se hereda del de Costos.
+      const dolarAdsFallback = dolarAdsManual > 0 ? dolarAdsManual : (dolarCostosBase > 0 ? dolarCostosBase * (1 + dolarAdsAjuste) : 0);
       let dolarAdsHistDias = -1; // diagnóstico: cuántos días tiene la serie (-1 = no aplica)
       // Desglose del Ad Spend del período ACTUAL (para el panel "cómo se compone
       // la inversión" del dashboard): gasto original por moneda según Meta,
