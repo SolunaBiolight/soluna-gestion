@@ -265,15 +265,23 @@ async function mpWebhook(req, res, db, body) {
   if (!token) return res.status(200).json({ ok: true, skip: "mp_no_configurado" });
   const dataId = String(req.query?.["data.id"] || body?.data?.id || "");
   // Firma: x-signature "ts=...,v1=HMAC(id:<data.id>;request-id:<x-request-id>;ts:<ts>;)"
+  // NO es eliminatoria: MP manda variantes del manifiesto según el origen del
+  // aviso y rechazarlas perdía notificaciones reales. La seguridad de verdad
+  // está más abajo — NUNCA se acredita por el aviso: se consulta el pago real
+  // contra la API de MP con nuestro token, y solo cuenta si está aprobado y
+  // coincide con una carga pendiente por el monto exacto (idempotente).
   const secret = process.env.MP_WEBHOOK_SECRET || "";
   if (secret) {
     const sig = String(req.headers["x-signature"] || "");
     const ts = (sig.match(/ts=([^,]+)/) || [])[1] || "";
     const v1 = (sig.match(/v1=([a-f0-9]+)/) || [])[1] || "";
     const reqId = String(req.headers["x-request-id"] || "");
-    const manifest = `id:${dataId.toLowerCase()};request-id:${reqId};ts:${ts};`;
-    const h = createHmac("sha256", secret).update(manifest).digest("hex");
-    if (!v1 || h !== v1) return res.status(401).json({ error: "firma inválida" });
+    const variantes = [
+      `id:${dataId.toLowerCase()};request-id:${reqId};ts:${ts};`,
+      `id:${dataId.toLowerCase()};ts:${ts};`, // sin request-id (MP lo omite a veces)
+    ];
+    const okFirma = !!v1 && variantes.some(m => createHmac("sha256", secret).update(m).digest("hex") === v1);
+    if (!okFirma) console.warn(`[mp_webhook] firma no coincide (dataId=${dataId} ts=${!!ts} v1=${!!v1} reqId=${!!reqId}) — sigo igual, la validación real es contra la API`);
   }
   const type = String(req.query?.type || body?.type || body?.topic || "");
   if (!/payment/.test(type) || !dataId) return res.status(200).json({ ok: true, skip: type || "sin_tipo" });
@@ -286,6 +294,15 @@ async function mpWebhook(req, res, db, body) {
   if (pago.status !== "approved") return res.status(200).json({ ok: true, status: pago.status });
   const cargaId = String(pago.external_reference || "");
   if (!cargaId) return res.status(200).json({ ok: true, skip: "sin_external_reference" });
+  const r2 = await mpAcreditarCarga(db, cargaId, pago);
+  if (r2.error) { console.error("[mp_webhook]", r2.error); return res.status(500).json({ error: r2.error }); } // 5xx → MP reintenta
+  return res.status(200).json({ ok: true, ...(r2.acreditada ? { acreditada: true } : {}), ...(r2.revision ? { revision: true } : {}) });
+}
+
+// Acredita una carga MP pendiente contra un pago APROBADO ya verificado por
+// API. Transacción idempotente por estado (webhook y cron pueden llamarla a la
+// vez sin acreditar doble). Devuelve {acreditada}|{revision}|{skip}|{error}.
+async function mpAcreditarCarga(db, cargaId, pago) {
   const cRef = db.collection("andreani_cargas").doc(cargaId);
   let out = null;
   try {
@@ -315,17 +332,16 @@ async function mpWebhook(req, res, db, body) {
       return { email: c.email || "", monto, ref: c.ref, saldo: nuevo };
     });
   } catch (e) {
-    if (e.message === "SKIP") return res.status(200).json({ ok: true });
+    if (e.message === "SKIP") return { skip: true };
     if (e.message === "MONTO") {
       try {
         const f = await db.collection("users").doc(FOUNDERS[0]).get();
         const to = f.exists ? String(f.data().email || "").trim() : "";
         if (to) await sendEmail({ to, subject: `Pago MP con monto distinto — revisar carga ${cargaId}`, html: `<p>El pago ${pago.id} de Mercado Pago no coincide con el monto de la carga ${cargaId}. Revisala en Admin → Envíos.</p>` });
       } catch (_) {}
-      return res.status(200).json({ ok: true, revision: true });
+      return { revision: true };
     }
-    console.error("[mp_webhook]", e.message);
-    return res.status(500).json({ error: e.message }); // 5xx → MP reintenta
+    return { error: e.message };
   }
   if (out?.email) {
     try {
@@ -340,7 +356,40 @@ async function mpWebhook(req, res, db, body) {
       });
     } catch (_) {}
   }
-  return res.status(200).json({ ok: true, acreditada: true });
+  return { acreditada: true };
+}
+
+// Backstop del webhook: reconcilia cargas MP pendientes contra la API de MP.
+// Si el webhook se perdió (firma, caída, config), el cron de cada 10 minutos
+// acredita igual. La llama api/check-payments.js.
+export async function mpReconciliarCargas(db) {
+  const token = process.env.MP_ACCESS_TOKEN || "";
+  if (!token) return { skip: "mp_no_configurado" };
+  const res = { revisadas: 0, acreditadas: 0, revision: 0 };
+  const snap = await db.collection("andreani_cargas").where("estado", "==", "pendiente").limit(50).get();
+  const ahora = Date.now();
+  const pendientesMp = snap.docs.filter(d => {
+    const c = d.data();
+    const ts = c.ts?.toMillis?.() || 0;
+    return c.metodo === "mp" && (!ts || ahora - ts < 7 * 86400000);
+  });
+  for (const d of pendientesMp) {
+    res.revisadas++;
+    try {
+      const pr = await fetch(`${MP_BASE}/v1/payments/search?external_reference=${encodeURIComponent(d.id)}&sort=date_created&criteria=desc`, {
+        headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000),
+      });
+      if (!pr.ok) { console.warn(`[mp_reconciliar] search HTTP ${pr.status} para ${d.id}`); continue; }
+      const j = await pr.json();
+      const aprobado = (j.results || []).find(p => p.status === "approved");
+      if (!aprobado) continue;
+      const r = await mpAcreditarCarga(db, d.id, aprobado);
+      if (r.acreditada) { res.acreditadas++; console.log(`[mp_reconciliar] ✓ carga ${d.id} acreditada (pago ${aprobado.id})`); }
+      else if (r.revision) res.revision++;
+      else if (r.error) console.error(`[mp_reconciliar] ${d.id}:`, r.error);
+    } catch (e) { console.error(`[mp_reconciliar] ${d.id}:`, e.message); }
+  }
+  return res;
 }
 
 // Listado geo minificado (solo lo que hace falta para rankear por distancia):

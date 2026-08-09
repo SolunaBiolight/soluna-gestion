@@ -15,6 +15,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { guardCron } from "./_auth.js";
+import { mpReconciliarCargas } from "./andreani.js";
 
 const WALLET = "TXGtDab6Lf3jtSRgq7uB2WbRfqdRA3PTCD"; // misma USDT_ADDRESS que muestra AppPlanes
 const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // contrato oficial USDT en Tron
@@ -87,6 +88,14 @@ export default async function handler(req, res) {
   const db = initAdmin();
   const now = new Date();
   const results = { pendientes: 0, confirmados: 0, sinMatch: 0, ambiguos: 0, errores: 0 };
+
+  // Backstop de Mercado Pago (saldo de envíos): si un webhook se perdió, acá
+  // se reconcilian las cargas pendientes contra la API de MP y se acreditan.
+  try {
+    const mp = await mpReconciliarCargas(db);
+    if (mp.acreditadas || mp.revision) console.log("[check-payments] mp_reconciliar:", JSON.stringify(mp));
+    results.mp = mp;
+  } catch (e) { console.error("[check-payments] mp_reconciliar:", e.message); }
 
   // Pagos cripto pendientes de los últimos 14 días (después de eso, manual)
   const snap = await db.collection("pagos")
