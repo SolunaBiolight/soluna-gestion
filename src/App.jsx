@@ -1429,7 +1429,10 @@ function CuponPublicoView({token}){
                 <div style={{fontSize:28,fontWeight:800,color:T.text}}>{data.usos}</div>
               </div>
               <div style={{background:T.card,border:`1px solid ${T.green}44`,borderRadius:14,padding:"16px 18px"}}>
-                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Tu comisión</div>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                  <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Tu comisión</span>
+                  {Number(data.comisionPct)>0&&<span style={{fontSize:10,fontWeight:800,color:T.green,background:T.green+"18",border:`1px solid ${T.green}44`,borderRadius:99,padding:"1px 8px"}}>{data.comisionPct}%</span>}
+                </div>
                 <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-0.5}}>{fmt(data.comision)}</div>
               </div>
             </div>
