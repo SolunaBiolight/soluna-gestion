@@ -2810,7 +2810,9 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
       //   - rango que incluye hoy: cache válido 5 minutos.
       //   - force=1 (botón "Actualizar"): saltea el cache y refresca.
       const cacheCol = db.collection("users").doc(uid).collection("arca_cache");
-      const cacheId = `pend_${cuitParam}_${sinceDate}_${untilDate}`;
+      // v2: se cambió qué fecha lleva cada orden (created_at en vez de paid_at) —
+      // el sufijo invalida los caches viejos que traían la fecha de pago.
+      const cacheId = `pend2_${cuitParam}_${sinceDate}_${untilDate}`;
       const CACHE_TTL_MS = 5 * 60 * 1000;
       let rawOrdenes = null; // órdenes normalizadas SIN _billed/_anulada (del cache o del fetch vivo)
       if (!force) {
@@ -2931,7 +2933,10 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
             descuento: parseFloat(o.discount) || 0,
             envio: parseFloat(o.shipping_cost_customer) || 0,
             estado_pago: pStatus,
-            fecha: o.paid_at || o.created_at || "",
+            // created_at primero: el período filtra por fecha de la ORDEN, así que
+            // la fila muestra esa misma fecha. Con paid_at, una orden de julio
+            // pagada en agosto aparecía como "de agosto" dentro del filtro de julio.
+            fecha: o.created_at || o.paid_at || "",
             ciudad: o.shipping_address?.city || o.billing_city || "",
             provincia: o.shipping_address?.province || o.billing_province || "",
             // TN tiene address (calle), number, floor, locality. Combinamos todo.
