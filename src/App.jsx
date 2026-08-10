@@ -21773,10 +21773,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             )}
             </div>
 
-            {/* ══ FACTURA MANUAL — panel colapsable dentro de Facturar ══ */}
-            {tab==="facturar"&&showManual&&(
-            <div style={{marginTop:0}}>
-              <Card T={T} padding="xl" style={{marginTop:16}}>
+            {/* ══ FACTURA MANUAL — modal por portal: antes era un panel inline al
+                final de la lista de ventas y quedaba invisible sin scrollear ══ */}
+            {tab==="facturar"&&showManual&&ReactDOM.createPortal(
+            <div onMouseDown={e=>{if(e.target===e.currentTarget&&!emittingManual){setShowManual(false);setManualResult(null);setManualPercep([]);}}}
+              style={{position:"fixed",inset:0,zIndex:1500,background:"rgba(0,0,0,0.55)",overflowY:"auto",padding:"5vh 16px 48px",animation:"growith-fadeInFast 0.15s ease both"}}>
+              <div style={{maxWidth:860,margin:"0 auto"}}>
+              <Card T={T} padding="xl" style={{boxShadow:"0 24px 80px rgba(0,0,0,0.5)"}}>
                 <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:18}}>
                   <div style={{flex:1}}>
                     <div style={{fontSize:18,fontWeight:800,color:T.text}}>Emitir factura manual</div>
@@ -21947,7 +21950,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   </>
                 )}
               </Card>
-            </div>
+              </div>
+            </div>,
+            document.body
             )}
 
             {/* ══ REGISTROS — sólo tab Registros ══ */}
@@ -30538,6 +30543,17 @@ function RendChart({T, rows, prevRows=[], cv, fmtM, fmtDate}) {
   return (
     <div ref={wrapRef} onMouseMove={onMove} onMouseLeave={()=>setHover(null)} style={{position:"relative",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"14px 14px 6px",marginBottom:18}}>
       <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
+        {/* Total del período de la métrica activa — el gráfico tiene su número
+            ancla en vez de arrancar pelado desde las tabs */}
+        {(()=>{
+          const totSel=(single?series[0].vals:rows.map(r=>cv(r.Revenue||0))).reduce((a,b)=>a+b,0);
+          return (
+            <div style={{display:"flex",flexDirection:"column",marginRight:4,minWidth:0}}>
+              <span style={{fontSize:9,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{single?mSel.label:"Revenue"} · período</span>
+              <span style={{fontSize:18,fontWeight:800,color:single?mSel.color:T.text,letterSpacing:-0.5,lineHeight:1.2,fontVariantNumeric:"tabular-nums"}}>{single?mSel.fmt(totSel):fmtM(totSel)}</span>
+            </div>
+          );
+        })()}
         <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1,flexShrink:0}}>
           {MODES.map(m=>(
             <button key={m.id} onClick={()=>setMode(m.id)}
@@ -31031,8 +31047,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             onDrop={e=>{e.preventDefault(); cardsReorder(cards, orderKey, dragKpi, k.label); setDragKpi(null);}}
             onClick={k.onClick}
             title={k.onClick?"Ver las ventas que componen este número":undefined}
-            className={k.onClick?"gh-card-click":undefined}
-            style={{gridColumn:`span ${spanFor(ci)}`,background:T.card,border:`1px solid ${k.bad?MC.red+"44":"transparent"}`,borderRadius:12,padding:k.hero?"16px 18px 14px":"12px 14px 10px",position:"relative",overflow:"hidden",minHeight:k.hero?122:92,display:"flex",flexDirection:"column",opacity:dragKpi===k.label?0.4:1,transition:"opacity .12s",cursor:k.onClick?"pointer":"default"}}>
+            className={"gh-mcard"+(k.onClick?" gh-card-click":"")}
+            style={{gridColumn:`span ${spanFor(ci)}`,background:k.tint?`linear-gradient(150deg, ${T.card} 45%, ${k.tint}16)`:T.card,border:`1px solid ${k.bad?MC.red+"44":"transparent"}`,borderRadius:12,padding:k.hero?"16px 18px 14px":"12px 14px 10px",position:"relative",overflow:"hidden",minHeight:k.hero?122:92,display:"flex",flexDirection:"column",opacity:dragKpi===k.label?0.4:1,cursor:k.onClick?"pointer":"default"}}>
             <span draggable
               onDragStart={e=>{ setDragKpi(k.label); try{e.dataTransfer.effectAllowed="move";}catch(_){} }}
               onDragEnd={()=>setDragKpi(null)}
@@ -31203,7 +31219,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       <div style={{maxWidth:1440,margin:"0 auto",padding:"20px 24px 64px",width:"100%"}}>
         {/* Hover solo en lo clickeable — también sirve para descubrir que
             Revenue y Órdenes se pueden tocar. */}
-        <style>{`.gh-card-click{transition:box-shadow .15s,transform .15s,opacity .12s;}.gh-card-click:hover{box-shadow:0 4px 16px rgba(0,0,0,0.22);transform:translateY(-1px);}`}</style>
+        <style>{`.gh-card-click{transition:box-shadow .15s,transform .15s,opacity .12s;}.gh-card-click:hover{box-shadow:0 4px 16px rgba(0,0,0,0.22);transform:translateY(-1px);}
+        .gh-mcard{transition:border-color .18s,box-shadow .18s,opacity .12s;}
+        .gh-mcard:hover{border-color:#6366f155 !important;box-shadow:0 6px 22px rgba(0,0,0,0.24);}`}</style>
 
         {!rendData&&!loading&&(
           <div style={{textAlign:"center",padding:"80px 24px"}}>
@@ -31392,13 +31410,16 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             ];
             if (!bc.hasMl && canalVista==="ml") setCanalVista("global");
             return (
-              <div style={{display:"flex",gap:6,marginBottom:18,flexWrap:"wrap"}}>
-                {opts.map(o=>(
-                  <button key={o.id} onClick={()=>setCanalVista(o.id)}
-                    style={{display:"inline-flex",alignItems:"center",gap:7,padding:"8px 16px",fontSize:DS.font.base,fontWeight:canalVista===o.id?DS.w.bold:DS.w.medium,border:`1px solid ${canalVista===o.id?T.accent+"66":T.border}`,borderRadius:DS.r.lg,background:canalVista===o.id?T.accent+"16":T.card,color:canalVista===o.id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                    {o.brand&&<BrandIcon name={o.brand} size={15}/>}{o.dot&&<span style={{width:8,height:8,borderRadius:"50%",background:o.dot,display:"inline-block"}}/>}{o.label}
-                  </button>
-                ))}
+              <div style={{display:"inline-flex",background:T.surface,borderRadius:10,padding:3,gap:2,marginBottom:18,flexWrap:"wrap"}}>
+                {opts.map(o=>{
+                  const on=canalVista===o.id;
+                  return (
+                    <button key={o.id} onClick={()=>setCanalVista(o.id)}
+                      style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 14px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:8,background:on?T.card:"transparent",color:on?T.text:T.textMd,boxShadow:on?"0 1px 3px rgba(0,0,0,0.2)":"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>
+                      {o.brand&&<BrandIcon name={o.brand} size={14}/>}{o.dot&&<span style={{width:7,height:7,borderRadius:"50%",background:o.dot,display:"inline-block"}}/>}{o.label}
+                    </button>
+                  );
+                })}
               </div>
             );
           })()}
@@ -31409,7 +31430,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               stats debajo del gráfico — una sola franja, sin cajitas sueltas.) */}
 
           {/* Hero KPIs */}
-          <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}>Métricas Principales <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· general (Tienda + ML)</span><span style={{marginLeft:"auto",display:"inline-flex",gap:4,alignItems:"center"}}><button onClick={()=>{setEditMetas(s=>!s); setMetasDraft(metas);}} title="Configurar metas (ROAS y margen objetivo)" style={{background:editMetas?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editMetas?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H8a1.65 1.65 0 001-1.51V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V8a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button><button onClick={()=>setEditSecKpis(s=>!s)} title="Elegir qué KPIs se muestran" style={{background:editSecKpis?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editSecKpis?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button><EyeBtn k="sec"/><EyeBtn k="main"/></span></div>
+          <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"6px 0 12px",display:"flex",alignItems:"center",gap:10}}>Métricas Principales <span style={{fontSize:10,fontWeight:700,color:T.textSm,background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"3px 10px",letterSpacing:0.3}}>Tienda + ML</span><span style={{marginLeft:"auto",display:"inline-flex",gap:4,alignItems:"center"}}><button onClick={()=>{setEditMetas(s=>!s); setMetasDraft(metas);}} title="Configurar metas (ROAS y margen objetivo)" style={{background:editMetas?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editMetas?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H8a1.65 1.65 0 001-1.51V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V8a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button><button onClick={()=>setEditSecKpis(s=>!s)} title="Elegir qué KPIs se muestran" style={{background:editSecKpis?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editSecKpis?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button><EyeBtn k="sec"/><EyeBtn k="main"/></span></div>
           {editMetas && (
             <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10,background:T.card,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"12px 14px"}}>
               <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Metas del negocio — los umbrales definen cuándo un KPI se marca en rojo; las metas del mes ($) habilitan el apartado de progreso:</span>
@@ -31430,7 +31451,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               trae sparkline diario Y delta vs período anterior. */}
           {(()=>{
             const CARDS=[
-              {label:"Profit",      val:fmtM(tot.profit),    c:tot.profit,     p:prevTot.profit,     hero:true, accent:(tot.profit||0)>=0?MC.green:MC.red, valColor:(tot.profit||0)>=0?MC.green:MC.red, hint:(tot.profit||0)>=0?"Ganancia neta":"Pérdida neta", spk:dailyRows.map(r=>r.Profit), zero:true},
+              {label:"Profit",      val:fmtM(tot.profit),    c:tot.profit,     p:prevTot.profit,     hero:true, tint:(tot.profit||0)>=0?MC.green:MC.red, accent:(tot.profit||0)>=0?MC.green:MC.red, valColor:(tot.profit||0)>=0?MC.green:MC.red, hint:(tot.profit||0)>=0?"Ganancia neta":"Pérdida neta", spk:dailyRows.map(r=>r.Profit), zero:true},
               {label:"Revenue",     val:fmtM(tot.revenue),   c:tot.revenue,    p:prevTot.revenue,    hero:true, hint:"Facturación total",      spk:dailyRows.map(r=>r.Revenue), onClick:irAVentas},
               {label:"Ad Spend",    val:fmtM(tot.adSpend),   c:tot.adSpend,    p:prevTot.adSpend,    hero:true, hint:"Inversión publicitaria", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
               {label:"Net Revenue", val:fmtM(tot.netRevenue),c:tot.netRevenue, p:prevTot.netRevenue, hero:true, hint:"Todo descontado, antes de pauta", spk:dailyRows.map(r=>r["Net Revenue"])},
