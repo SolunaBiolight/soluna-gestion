@@ -9458,9 +9458,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* ── Barra flotante de selección múltiple (cuentas con Andreani prepago):
              atajo directo a los dos modos sin pasar por el modal de config ── */}
       {tab==="panel"&&selected.size>0&&!bulk&&!exportModal&&ReactDOM.createPortal(
-        {/* Centrado con left/right 0 + margin auto (NO translateX: la animación
-            growith-fadeIn con fill "both" pisa el transform inline y la dejaba
-            corrida a la derecha) */}
+        // Centrado con left/right 0 + margin auto (NO translateX: la animación
+        // growith-fadeIn con fill "both" pisa el transform inline y la dejaba
+        // corrida a la derecha)
         <div style={{position:"fixed",bottom:24,left:0,right:0,margin:"0 auto",width:"fit-content",zIndex:900,display:"flex",alignItems:"center",gap:10,background:T.card,border:`1px solid ${T.accentSolid}55`,borderRadius:14,padding:"12px 16px",boxShadow:`0 20px 60px rgba(0,0,0,0.55), 0 0 0 1px ${T.accentSolid}22`,maxWidth:"calc(100vw - 32px)",flexWrap:"wrap",justifyContent:"center",animation:"growith-fadeIn 0.2s ease both",fontFamily:"'Inter',system-ui,sans-serif"}}>
           <span style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>{selected.size} seleccionada{selected.size!==1?"s":""}</span>
           {andreani.enabled&&(
