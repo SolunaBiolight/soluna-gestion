@@ -10,7 +10,7 @@
 // Sin acciones de escritura en v1 — el Copilot lee y explica, no toca nada.
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { guardUid } from "./_auth.js";
 
 function initAdmin() {
@@ -336,6 +336,17 @@ export default async function handler(req, res) {
   }
 
   const db = initAdmin();
+
+  // Límite de uso diario por cuenta: protege el presupuesto de la API de
+  // Gemini de loops o abuso. 100 mensajes/día alcanza de sobra para uso real.
+  try {
+    const day = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+    const usageRef = db.collection("usage").doc(`${uid}_${day}`);
+    const uSnap = await usageRef.get();
+    const usados = Number(uSnap.data()?.copilot_msgs) || 0;
+    if (usados >= 100) return res.status(429).json({ error: "Llegaste al límite de 100 mensajes por día del Copilot. Mañana se renueva solo." });
+    usageRef.set({ uid, date: day, section: "copilot", copilot_msgs: FieldValue.increment(1), updatedAt: new Date() }, { merge: true }).catch(() => {});
+  } catch (_) {}
 
   // Snapshot determinista (paralelo, best-effort por bloque)
   const [margenes, envios, cuentas, stock] = await Promise.all([

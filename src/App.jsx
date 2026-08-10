@@ -27024,6 +27024,16 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
             <option value="health">Mejor health</option>
           </select>
           <span style={{fontSize:11,color:T.textSm}}>{filtered.length} pubs · {selectedIds.size} sel.</span>
+          {(()=>{
+            // Señales de salud del listado actual, sin ocupar una fila entera
+            const sinStock=items.filter(i=>(i.available_quantity||0)===0&&i.status!=="closed").length;
+            const conSalud=items.filter(i=>typeof i.health==="number"&&i.health>0);
+            const saludProm=conSalud.length?Math.round(conSalud.reduce((a,i)=>a+i.health,0)/conSalud.length*100):null;
+            return <>
+              {sinStock>0&&<span title="Publicaciones sin stock disponible" style={{fontSize:11,fontWeight:700,color:T.orange,background:T.orange+"15",border:`1px solid ${T.orange}44`,borderRadius:99,padding:"3px 10px",whiteSpace:"nowrap"}}>{sinStock} sin stock</span>}
+              {saludProm!=null&&<span title="Salud promedio de tus publicaciones según Mercado Libre" style={{fontSize:11,fontWeight:700,color:saludProm>=70?T.green:T.yellow,background:(saludProm>=70?T.green:T.yellow)+"12",border:`1px solid ${saludProm>=70?T.green:T.yellow}44`,borderRadius:99,padding:"3px 10px",whiteSpace:"nowrap"}}>Salud {saludProm}%</span>}
+            </>;
+          })()}
         </div>
 
         {/* Bulk bar */}
