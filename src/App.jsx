@@ -1057,8 +1057,15 @@ function BrandIcon({name, size=20, style}) {
         <path fill="#4285F4" d="M23.4641 16.9287L15.4632 3.072C14.3586 1.1587 11.9121.5028 9.9988 1.6074S7.4295 5.1585 8.5341 7.0718l8.0009 13.8567c1.1046 1.9133 3.5511 2.5679 5.4644 1.4646 1.9134-1.1046 2.568-3.5511 1.4647-5.4644z"/>
         <path fill="#34A853" d="M3.9998 22.9291C1.7908 22.9291 0 21.1383 0 18.9293s1.7908-3.9998 3.9998-3.9998 3.9998 1.7908 3.9998 3.9998-1.7908 3.9998-3.9998 3.9998z"/>
       </svg>);
+    case "andreani": return (
+      // Isotipo oficial (óvalo con la A) bundleado en /public/brand — el logo
+      // completo con wordmark no se lee a tamaños chicos.
+      <img src="/brand/andreani.png" alt="Andreani" width={s} height={s} style={{flexShrink:0, display:"block", objectFit:"contain", ...style}}/>);
     case "mercadopago": case "mp": return (
-      <svg {...P}><path fill="#00B1EA" d="M11.115 16.479a.93.927 0 0 1-.939-.886c-.002-.042-.006-.155-.103-.155-.04 0-.074.023-.113.059-.112.103-.254.206-.46.206a.816.814 0 0 1-.305-.066c-.535-.214-.542-.578-.521-.725.006-.038.007-.08-.02-.11l-.032-.03h-.034c-.027 0-.055.012-.093.039a.788.786 0 0 1-.454.16.7.699 0 0 1-.253-.05c-.708-.27-.65-.928-.617-1.126.005-.041-.005-.072-.03-.092l-.05-.04-.047.043a.728.726 0 0 1-.505.203.73.728 0 0 1-.732-.725c0-.4.328-.722.732-.722.364 0 .675.27.721.63l.026.195.11-.165c.01-.018.307-.46.852-.46.102 0 .21.016.316.05.434.13.508.52.519.68.008.094.075.1.09.1.037 0 .064-.024.083-.045a.746.744 0 0 1 .54-.225c.128 0 .263.03.402.09.69.293.379 1.158.374 1.167-.058.144-.061.207-.005.244l.027.013h.02c.03 0 .07-.014.134-.035.093-.032.235-.08.367-.08a.944.942 0 0 1 .94.93.936.934 0 0 1-.94.928zm7.302-4.171c-1.138-.98-3.768-3.24-4.481-3.77-.406-.302-.685-.462-.928-.533a1.559 1.554 0 0 0-.456-.07c-.182 0-.376.032-.58.095-.46.145-.918.505-1.362.854l-.023.018c-.414.324-.84.66-1.164.73a1.986 1.98 0 0 1-.43.049c-.362 0-.687-.104-.81-.258-.02-.025-.007-.066.04-.125l.008-.008 1-1.067c.783-.774 1.525-1.506 3.23-1.545h.085c1.062 0 2.12.469 2.24.524a7.03 7.03 0 0 0 3.056.724c1.076 0 2.188-.263 3.354-.795a9.135 9.11 0 0 0-.405-.317c-1.025.44-2.003.66-2.946.66-.962 0-1.925-.229-2.858-.68-.05-.022-1.22-.567-2.44-.57-.032 0-.065 0-.096.002-1.434.033-2.24.536-2.782.976-.528.013-.982.138-1.388.25-.361.1-.673.186-.979.185-.125 0-.35-.01-.37-.012-.35-.01-2.115-.437-3.518-.962-.143.1-.28.203-.415.31 1.466.593 3.25 1.053 3.812 1.089.157.01.323.027.491.027.372 0 .744-.103 1.104-.203.213-.059.446-.123.692-.17l-.196.194-1.017 1.087c-.08.08-.254.294-.14.557a.705.703 0 0 0 .268.292c.243.162.677.27 1.08.271.152 0 .297-.015.43-.044.427-.095.874-.448 1.349-.82.377-.296.913-.672 1.323-.782a1.494 1.49 0 0 1 .37-.05.611.61 0 0 1 .095.005c.27.034.533.125 1.003.472.835.62 4.531 3.815 4.566 3.846.002.002.238.203.22.537-.007.186-.11.352-.294.466a.902.9 0 0 1-.484.15.804.802 0 0 1-.428-.124c-.014-.01-1.28-1.157-1.746-1.543-.074-.06-.146-.115-.22-.115a.122.122 0 0 0-.096.045c-.073.09.01.212.105.294l1.48 1.47c.002 0 .184.17.204.395.012.244-.106.447-.35.606a.957.955 0 0 1-.526.171.766.764 0 0 1-.42-.127l-.214-.206a21.035 20.978 0 0 0-1.08-1.009c-.072-.058-.148-.112-.221-.112a.127.127 0 0 0-.094.038c-.033.037-.056.103.028.212a.698.696 0 0 0 .075.083l1.078 1.198c.01.01.222.26.024.511l-.038.048a1.18 1.178 0 0 1-.1.096c-.184.15-.43.164-.527.164a.8.798 0 0 1-.147-.012c-.106-.018-.178-.048-.212-.089l-.013-.013c-.06-.06-.602-.609-1.054-.98-.059-.05-.133-.11-.21-.11a.128.128 0 0 0-.096.042c-.09.096.044.24.1.293l.92 1.003a.204.204 0 0 1-.033.062c-.033.044-.144.155-.479.196a.91.907 0 0 1-.122.007c-.345 0-.712-.164-.902-.264a1.343 1.34 0 0 0 .13-.576 1.368 1.365 0 0 0-1.42-1.357c.024-.342-.025-.99-.697-1.274a1.455 1.452 0 0 0-.575-.125c-.146 0-.287.025-.42.075a1.153 1.15 0 0 0-.671-.564 1.52 1.515 0 0 0-.494-.085c-.28 0-.537.08-.767.242a1.168 1.165 0 0 0-.903-.43 1.173 1.17 0 0 0-.82.335c-.287-.217-1.425-.93-4.467-1.613a17.39 17.344 0 0 1-.692-.189 4.822 4.82 0 0 0-.077.494l.67.157c3.108.682 4.136 1.391 4.309 1.525a1.145 1.142 0 0 0-.09.442 1.16 1.158 0 0 0 1.378 1.132c.096.467.406.821.879 1.003a1.165 1.162 0 0 0 .415.08c.09 0 .179-.012.266-.034.086.22.282.493.722.668a1.233 1.23 0 0 0 .457.094c.122 0 .241-.022.355-.063a1.373 1.37 0 0 0 1.269.841c.37.002.726-.147.985-.41.221.121.688.341 1.163.341.06 0 .118-.002.175-.01.47-.059.689-.24.789-.382a.571.57 0 0 0 .048-.078c.11.032.234.058.373.058.255 0 .501-.086.75-.265.244-.174.418-.424.444-.637v-.01c.083.017.167.026.251.026.265 0 .527-.082.773-.242.48-.31.562-.715.554-.98a1.28 1.279 0 0 0 .978-.194 1.04 1.04 0 0 0 .502-.808 1.088 1.085 0 0 0-.16-.653c.804-.342 2.636-1.003 4.795-1.483a4.734 4.721 0 0 0-.067-.492 27.742 27.667 0 0 0-5.049 1.62zm5.123-.763c0 4.027-5.166 7.293-11.537 7.293-6.372 0-11.538-3.266-11.538-7.293 0-4.028 5.165-7.293 11.539-7.293 6.371 0 11.537 3.265 11.537 7.293zm.46.004c0-4.272-5.374-7.755-12-7.755S.002 7.277.002 11.55L0 12.004c0 4.533 4.695 8.203 11.999 8.203 7.347 0 12-3.67 12-8.204z"/></svg>);
+      // Colores oficiales: óvalo azul MP (#009EE3) con el trazo del apretón de
+      // manos en blanco — el path de Simple Icons solo trae el trazo, sin el
+      // relleno del óvalo, y en un solo color quedaba mal.
+      <svg {...P}><ellipse cx="12" cy="12.002" rx="11.85" ry="8.1" fill="#009EE3"/><path fill="#FFFFFF" d="M11.115 16.479a.93.927 0 0 1-.939-.886c-.002-.042-.006-.155-.103-.155-.04 0-.074.023-.113.059-.112.103-.254.206-.46.206a.816.814 0 0 1-.305-.066c-.535-.214-.542-.578-.521-.725.006-.038.007-.08-.02-.11l-.032-.03h-.034c-.027 0-.055.012-.093.039a.788.786 0 0 1-.454.16.7.699 0 0 1-.253-.05c-.708-.27-.65-.928-.617-1.126.005-.041-.005-.072-.03-.092l-.05-.04-.047.043a.728.726 0 0 1-.505.203.73.728 0 0 1-.732-.725c0-.4.328-.722.732-.722.364 0 .675.27.721.63l.026.195.11-.165c.01-.018.307-.46.852-.46.102 0 .21.016.316.05.434.13.508.52.519.68.008.094.075.1.09.1.037 0 .064-.024.083-.045a.746.744 0 0 1 .54-.225c.128 0 .263.03.402.09.69.293.379 1.158.374 1.167-.058.144-.061.207-.005.244l.027.013h.02c.03 0 .07-.014.134-.035.093-.032.235-.08.367-.08a.944.942 0 0 1 .94.93.936.934 0 0 1-.94.928zm7.302-4.171c-1.138-.98-3.768-3.24-4.481-3.77-.406-.302-.685-.462-.928-.533a1.559 1.554 0 0 0-.456-.07c-.182 0-.376.032-.58.095-.46.145-.918.505-1.362.854l-.023.018c-.414.324-.84.66-1.164.73a1.986 1.98 0 0 1-.43.049c-.362 0-.687-.104-.81-.258-.02-.025-.007-.066.04-.125l.008-.008 1-1.067c.783-.774 1.525-1.506 3.23-1.545h.085c1.062 0 2.12.469 2.24.524a7.03 7.03 0 0 0 3.056.724c1.076 0 2.188-.263 3.354-.795a9.135 9.11 0 0 0-.405-.317c-1.025.44-2.003.66-2.946.66-.962 0-1.925-.229-2.858-.68-.05-.022-1.22-.567-2.44-.57-.032 0-.065 0-.096.002-1.434.033-2.24.536-2.782.976-.528.013-.982.138-1.388.25-.361.1-.673.186-.979.185-.125 0-.35-.01-.37-.012-.35-.01-2.115-.437-3.518-.962-.143.1-.28.203-.415.31 1.466.593 3.25 1.053 3.812 1.089.157.01.323.027.491.027.372 0 .744-.103 1.104-.203.213-.059.446-.123.692-.17l-.196.194-1.017 1.087c-.08.08-.254.294-.14.557a.705.703 0 0 0 .268.292c.243.162.677.27 1.08.271.152 0 .297-.015.43-.044.427-.095.874-.448 1.349-.82.377-.296.913-.672 1.323-.782a1.494 1.49 0 0 1 .37-.05.611.61 0 0 1 .095.005c.27.034.533.125 1.003.472.835.62 4.531 3.815 4.566 3.846.002.002.238.203.22.537-.007.186-.11.352-.294.466a.902.9 0 0 1-.484.15.804.802 0 0 1-.428-.124c-.014-.01-1.28-1.157-1.746-1.543-.074-.06-.146-.115-.22-.115a.122.122 0 0 0-.096.045c-.073.09.01.212.105.294l1.48 1.47c.002 0 .184.17.204.395.012.244-.106.447-.35.606a.957.955 0 0 1-.526.171.766.764 0 0 1-.42-.127l-.214-.206a21.035 20.978 0 0 0-1.08-1.009c-.072-.058-.148-.112-.221-.112a.127.127 0 0 0-.094.038c-.033.037-.056.103.028.212a.698.696 0 0 0 .075.083l1.078 1.198c.01.01.222.26.024.511l-.038.048a1.18 1.178 0 0 1-.1.096c-.184.15-.43.164-.527.164a.8.798 0 0 1-.147-.012c-.106-.018-.178-.048-.212-.089l-.013-.013c-.06-.06-.602-.609-1.054-.98-.059-.05-.133-.11-.21-.11a.128.128 0 0 0-.096.042c-.09.096.044.24.1.293l.92 1.003a.204.204 0 0 1-.033.062c-.033.044-.144.155-.479.196a.91.907 0 0 1-.122.007c-.345 0-.712-.164-.902-.264a1.343 1.34 0 0 0 .13-.576 1.368 1.365 0 0 0-1.42-1.357c.024-.342-.025-.99-.697-1.274a1.455 1.452 0 0 0-.575-.125c-.146 0-.287.025-.42.075a1.153 1.15 0 0 0-.671-.564 1.52 1.515 0 0 0-.494-.085c-.28 0-.537.08-.767.242a1.168 1.165 0 0 0-.903-.43 1.173 1.17 0 0 0-.82.335c-.287-.217-1.425-.93-4.467-1.613a17.39 17.344 0 0 1-.692-.189 4.822 4.82 0 0 0-.077.494l.67.157c3.108.682 4.136 1.391 4.309 1.525a1.145 1.142 0 0 0-.09.442 1.16 1.158 0 0 0 1.378 1.132c.096.467.406.821.879 1.003a1.165 1.162 0 0 0 .415.08c.09 0 .179-.012.266-.034.086.22.282.493.722.668a1.233 1.23 0 0 0 .457.094c.122 0 .241-.022.355-.063a1.373 1.37 0 0 0 1.269.841c.37.002.726-.147.985-.41.221.121.688.341 1.163.341.06 0 .118-.002.175-.01.47-.059.689-.24.789-.382a.571.57 0 0 0 .048-.078c.11.032.234.058.373.058.255 0 .501-.086.75-.265.244-.174.418-.424.444-.637v-.01c.083.017.167.026.251.026.265 0 .527-.082.773-.242.48-.31.562-.715.554-.98a1.28 1.279 0 0 0 .978-.194 1.04 1.04 0 0 0 .502-.808 1.088 1.085 0 0 0-.16-.653c.804-.342 2.636-1.003 4.795-1.483a4.734 4.721 0 0 0-.067-.492 27.742 27.667 0 0 0-5.049 1.62zm5.123-.763c0 4.027-5.166 7.293-11.537 7.293-6.372 0-11.538-3.266-11.538-7.293 0-4.028 5.165-7.293 11.539-7.293 6.371 0 11.537 3.265 11.537 7.293zm.46.004c0-4.272-5.374-7.755-12-7.755S.002 7.277.002 11.55L0 12.004c0 4.533 4.695 8.203 11.999 8.203 7.347 0 12-3.67 12-8.204z"/></svg>);
     case "arca": case "afip": return (
       <svg {...P}><rect x="3" y="3" width="18" height="18" rx="4" fill="#0B5FFF"/><path d="M7 16l3-8h1.6l3 8M8.2 13.4h5.2" stroke="#fff" strokeWidth="1.4" fill="none" strokeLinecap="round"/><circle cx="17" cy="8" r="1.2" fill="#fff"/></svg>);
     default: return null;
@@ -1217,12 +1224,12 @@ function OnboardingWizard({T, user, onComplete}) {
   // Lo que costaría armar lo mismo con herramientas separadas (rangos de
   // mercado, genéricos a propósito — sin nombrar competidores).
   const COMPARATIVA = [
-    {que:"Dashboard de profit y márgenes", precio:"u$s 50-80"},
-    {que:"Facturador electrónico AFIP", precio:"u$s 15-30"},
-    {que:"Gestión de envíos y tracking", precio:"u$s 20-40"},
-    {que:"Stock multicanal", precio:"u$s 30-60"},
-    {que:"Gestor de tareas y reclamos", precio:"u$s 10-20"},
-    {que:"Asistente IA sobre tus datos", precio:"u$s 20+"},
+    {que:"Dashboard de profit y márgenes", precio:"USD 50-80"},
+    {que:"Facturador electrónico AFIP", precio:"USD 15-30"},
+    {que:"Gestión de envíos y tracking", precio:"USD 20-40"},
+    {que:"Stock multicanal", precio:"USD 30-60"},
+    {que:"Gestor de tareas y reclamos", precio:"USD 10-20"},
+    {que:"Asistente IA sobre tus datos", precio:"USD 20+"},
   ];
 
   const FeatRow=({f})=>(
@@ -1311,12 +1318,12 @@ function OnboardingWizard({T, user, onComplete}) {
               ))}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:T.surface,fontSize:DS.font.lg,fontWeight:DS.w.bold}}>
                 <span style={{color:T.text}}>Por separado</span>
-                <span style={{color:T.red}}>u$s 145-250/mes</span>
+                <span style={{color:T.red}}>USD 145-250/mes</span>
               </div>
             </div>
             <div style={{background:`linear-gradient(135deg, ${T.accentSolid}14, transparent 70%)`,border:`1px solid ${T.accentSolid}44`,borderRadius:DS.r.xl,padding:"16px 18px"}}>
-              <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:3}}>Growith: todo junto, desde u$s 19/mes</div>
-              <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.55}}>El plan Pro completo cuesta u$s 69/mes — menos que una sola de esas herramientas. Y arrancás con <strong style={{color:T.text}}>14 días gratis con todo incluido</strong>, sin tarjeta.</div>
+              <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:3}}>Growith: todo junto, desde USD 19/mes</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.55}}>El plan Pro completo cuesta USD 69/mes — menos que una sola de esas herramientas. Y arrancás con <strong style={{color:T.text}}>14 días gratis con todo incluido</strong>, sin tarjeta.</div>
             </div>
             <Nav cta="Empezar"/>
           </div>
@@ -1589,7 +1596,7 @@ function AppReferidos({T, user, onHome}){
     })();
   },[user?.uid]);
   const link=data?`${ghShareOrigin()}/?ref=${data.code}`:"";
-  const usd=n=>"u$s"+(Number(n)||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const usd=n=>"USD "+(Number(n)||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
   const copiar=(txt,msg)=>{try{navigator.clipboard.writeText(txt);toast(msg||"Copiado","success");}catch(_){toast("No se pudo copiar","warning");}};
   const waText=data?encodeURIComponent(`Estoy usando Growith para gestionar mi e-commerce (facturación ARCA, envíos, stock, profit — todo en un solo lugar) y está muy bueno. Registrate con mi link y probalo gratis: ${link}`):"";
   return (
@@ -2712,7 +2719,7 @@ function UpgradeWall({T, requiredPlan, onNavigate}) {
         {/* Price */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:DS.sp.xl,marginBottom:DS.sp.xl}}>
           <div>
-            <span style={{fontSize:DS.font["3xl"],fontWeight:DS.w.black,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>u$s {info.precio_usdt}</span>
+            <span style={{fontSize:DS.font["3xl"],fontWeight:DS.w.black,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>USD {info.precio_usdt}</span>
             <span style={{fontSize:DS.font.sm,color:T.textSm,fontFamily:"'Inter',system-ui,sans-serif"}}> / mes</span>
           </div>
           <div style={{fontSize:DS.font.sm,color:T.textSm,fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -11055,11 +11062,9 @@ function LandingPage({T, onLogin}) {
           <div className="gh-land-marquee">
             {[0,1].map(rep=>(
               <div key={rep} style={{display:"flex",gap:40,alignItems:"center"}}>
-                {[["mercadopago","Mercado Pago"],["mercadolibre","Mercado Libre"],["meta","Meta Ads"],["googleads","Google Ads"],["tiendanube","Tienda Nube"],["shopify","Shopify"],["arca","ARCA · AFIP"],[null,"Andreani"]].map(([b,n],i)=>(
+                {[["mercadopago","Mercado Pago"],["mercadolibre","Mercado Libre"],["meta","Meta Ads"],["googleads","Google Ads"],["tiendanube","Tienda Nube"],["shopify","Shopify"],["arca","ARCA · AFIP"],["andreani","Andreani"]].map(([b,n],i)=>(
                   <span key={i} style={{display:"inline-flex",alignItems:"center",gap:10,fontSize:14,fontWeight:700,color:T.textMd,whiteSpace:"nowrap"}}>
-                    {b
-                      ?<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:34,height:34,borderRadius:9,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.06)"}}><BrandIcon name={b} size={19}/></span>
-                      :<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:34,height:34,borderRadius:9,background:"rgba(227,6,19,0.15)",border:"1px solid rgba(227,6,19,0.35)",color:"#ff5a64",fontSize:14,fontWeight:900}}>A</span>}
+                    <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:34,height:34,borderRadius:9,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.06)"}}><BrandIcon name={b} size={b==="andreani"?24:19}/></span>
                     {n}
                   </span>
                 ))}
@@ -11135,16 +11140,23 @@ function LandingPage({T, onLogin}) {
           </div>
         </div>
 
-        {/* Banda de valor: el argumento económico */}
-        <div style={{marginTop:56,background:`linear-gradient(135deg, ${T.accentSolid}14, ${T.accentSolid}06)`,border:`1px solid ${T.accentSolid}33`,borderRadius:18,padding:"28px 26px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:22,textAlign:"center"}}>
+        {/* Banda de valor: el argumento económico — apps sueltas vs Growith */}
+        <div style={{marginTop:56,background:`linear-gradient(135deg, ${T.accentSolid}14, ${T.accentSolid}06)`,border:`1px solid ${T.accentSolid}33`,borderRadius:18,padding:"30px 26px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:26,textAlign:"center"}}>
           {[
-            {v:"u$s145–250",l:"por mes te cuestan las apps sueltas que Growith reemplaza"},
-            {v:"desde u$s19",l:"cuesta Growith con todo unificado en un solo lugar"},
-            {v:"5 minutos",l:"tardás en conectar tu tienda y ver tus números reales"},
+            {k:"Apps por separado", pre:"USD", v:"145–250", suf:"/mes", muted:true, l:"entre dashboard de profit, facturador, envíos, stock y asistente IA"},
+            {k:"Con Growith", pre:"desde USD", v:"19", suf:"/mes", l:"todo unificado en un solo lugar — el Pro completo cuesta USD 69"},
+            {k:"Puesta en marcha", v:"5", suf:"min", l:"conectás tu tienda y ya estás viendo tus números reales"},
           ].map(s=>(
-            <div key={s.v}>
-              <div style={{fontSize:30,fontWeight:900,letterSpacing:-1,background:"linear-gradient(92deg,#818cf8,#a78bfa)",WebkitBackgroundClip:"text",backgroundClip:"text",color:"transparent"}}>{s.v}</div>
-              <div style={{fontSize:12.5,color:T.textMd,lineHeight:1.55,marginTop:6,maxWidth:240,marginLeft:"auto",marginRight:"auto"}}>{s.l}</div>
+            <div key={s.k}>
+              <div style={{fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8,color:s.muted?T.textSm:T.accent,marginBottom:8}}>{s.k}</div>
+              <div style={{display:"flex",alignItems:"baseline",justifyContent:"center",gap:5}}>
+                {s.pre&&<span style={{fontSize:14,fontWeight:800,color:s.muted?T.textSm:"#a78bfa",letterSpacing:-0.2}}>{s.pre}</span>}
+                <span style={s.muted
+                  ?{fontSize:32,fontWeight:900,letterSpacing:-1.2,color:T.textMd,textDecoration:"line-through",textDecorationColor:T.red+"99",textDecorationThickness:3}
+                  :{fontSize:32,fontWeight:900,letterSpacing:-1.2,background:"linear-gradient(92deg,#818cf8,#a78bfa)",WebkitBackgroundClip:"text",backgroundClip:"text",color:"transparent"}}>{s.v}</span>
+                {s.suf&&<span style={{fontSize:14,fontWeight:700,color:T.textSm}}>{s.suf}</span>}
+              </div>
+              <div style={{fontSize:12.5,color:T.textMd,lineHeight:1.55,marginTop:8,maxWidth:250,marginLeft:"auto",marginRight:"auto"}}>{s.l}</div>
             </div>
           ))}
         </div>
@@ -12537,12 +12549,12 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   const canjeBox=cubreTodo?(
     <div style={{background:T.greenBg,border:`1.5px solid ${T.green}55`,borderRadius:12,padding:"16px 18px",marginBottom:20}}>
       <div style={{fontSize:14,fontWeight:800,color:T.green,marginBottom:4}}>Tu crédito de referidos cubre este plan completo</div>
-      <div style={{fontSize:12,color:T.textMd,marginBottom:12}}>Tenés u$s{refCred.toLocaleString("es-AR",{minimumFractionDigits:2})} acumulados — podés activar {PLAN.nombre}{anual?" anual":" (1 mes)"} sin pagar nada.</div>
-      <AsyncButton onClick={canjearConCredito} style={{...BtnPrimary(T),background:T.green,fontSize:13,padding:"10px 18px"}}>Activar con mi crédito (u$s{totalU})</AsyncButton>
+      <div style={{fontSize:12,color:T.textMd,marginBottom:12}}>Tenés USD {refCred.toLocaleString("es-AR",{minimumFractionDigits:2})} acumulados — podés activar {PLAN.nombre}{anual?" anual":" (1 mes)"} sin pagar nada.</div>
+      <AsyncButton onClick={canjearConCredito} style={{...BtnPrimary(T),background:T.green,fontSize:13,padding:"10px 18px"}}>Activar con mi crédito (USD {totalU})</AsyncButton>
     </div>
   ):null;
   const credLine=credAplicado>0&&!cubreTodo?(
-    <div style={{fontSize:12,color:T.green,fontWeight:700,marginTop:4}}>Crédito por referidos aplicado: −u$s{credAplicado.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+    <div style={{fontSize:12,color:T.green,fontWeight:700,marginTop:4}}>Crédito por referidos aplicado: −USD {credAplicado.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
   ):null;
   const isPago=userPlan==="plus"||userPlan==="full"||userPlan==="facturador";
   const esFacturador=userPlan==="facturador";
