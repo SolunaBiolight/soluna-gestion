@@ -8291,31 +8291,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 </div>
               )}
             </div>
-            {/* Mini-KPIs: centro de control de un vistazo, clickeables */}
-            {(()=>{
-              const envAll=Object.values(enviosFs);
-              const dEnv=iso=>iso?Math.floor((Date.now()-Date.parse(iso))/86400000):null;
-              const activosK=envAll.filter(e=>e.activo);
-              const kpis=[
-                {label:"Por empaquetar",val:counts.empaquetar,color:T.yellow,go:()=>{setTabEnvio("empaquetar");setSelected(new Map());fetchTabOrders("empaquetar");}},
-                {label:"Por enviar",val:counts.enviar,color:T.blue,go:()=>{setTabEnvio("enviar");setSelected(new Map());fetchTabOrders("enviar");}},
-                {label:"En camino",val:activosK.filter(e=>e.categoria==="en_camino").length,color:T.accent,go:()=>setTabProp&&setTabProp("seguimientos")},
-                {label:"En sucursal",val:activosK.filter(e=>e.categoria==="en_sucursal").length,color:T.orange,go:()=>setTabProp&&setTabProp("seguimientos")},
-                {label:"Entregados (7d)",val:envAll.filter(e=>e.entregadoAt&&dEnv(e.entregadoAt)<=7).length,color:T.green,go:()=>setTabProp&&setTabProp("seguimientos")},
-              ];
-              return (
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8,marginBottom:14}}>
-                  {kpis.map(k=>(
-                    <button key={k.label} onClick={k.go}
-                      style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px",textAlign:"left",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"border-color 0.12s"}}
-                      onMouseEnter={e=>e.currentTarget.style.borderColor=k.color+"66"} onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-                      <div style={{fontSize:20,fontWeight:800,color:k.color,letterSpacing:-0.5,lineHeight:1.1}}>{k.val==null?"·":k.val}</div>
-                      <div style={{fontSize:10,fontWeight:600,color:T.textSm,marginTop:3,textTransform:"uppercase",letterSpacing:0.4,whiteSpace:"nowrap"}}>{k.label}</div>
-                    </button>
-                  ))}
-                </div>
-              );
-            })()}
             {/* Tabs */}
             <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
               {/* Segmented control */}
@@ -8874,18 +8849,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           return (
           <div key="seguimientos" className="gh-tab-content" style={{maxWidth:900,margin:"0 auto",paddingBottom:48}}>
 
-            {/* Enviar seguimientos: subir el PDF de rótulos Andreani.
-                Colapsado por defecto — con la emisión por API se usa cada vez menos;
-                el protagonismo lo tienen las métricas y las alertas. */}
+            {/* Enviar seguimientos: subir el PDF de rótulos Andreani */}
             <div style={{marginBottom:8}}>
-            {!(showPdfUp||pdfFile||pdfProcessing||pdfResults.length>0)&&(
-              <button onClick={()=>setShowPdfUp(true)}
-                style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",marginBottom:16,display:"inline-flex",alignItems:"center",gap:7}}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                Subir PDF de rótulos (portal Andreani)
-              </button>
-            )}
-            {(showPdfUp||pdfFile||pdfProcessing||pdfResults.length>0)&&(
             <label htmlFor="seg-file-input" style={{display:"block",background:T.card,border:`2px dashed ${pdfFile?T.accentSolid:T.border}`,borderRadius:16,padding:"32px 24px",marginBottom:20,textAlign:"center",cursor:"pointer",transition:"all 0.2s ease"}}>
               <input id="seg-file-input" type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f){setPdfFile(f);setPdfResults([]);setTrackingSent({});parsePdf(f,"tracking");}}}/>
               {pdfProcessing
@@ -8910,7 +8875,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     </div>
               }
             </label>
-            )}
 
             {/* Resultados */}
             {pdfResults.length>0&&(()=>{
@@ -10979,9 +10943,18 @@ function LandingPage({T, onLogin}) {
   return (
     <div style={{fontFamily:F, background:T.bg, minHeight:"100vh", color:T.text}}>
       <style>{`
-        @media(max-width:640px){ .gh-land-kpis{grid-template-columns:repeat(2,1fr)!important;} .gh-land-pasos{grid-template-columns:1fr!important;} .hide-mobile{display:none!important;} }
+        @media(max-width:640px){ .gh-land-kpis{grid-template-columns:repeat(2,1fr)!important;} .gh-land-pasos{grid-template-columns:1fr!important;} .hide-mobile{display:none!important;} .gh-land-bento{grid-template-columns:1fr!important;} .gh-land-bento>div{grid-column:span 1!important;} }
         .gh-land-card{transition:transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;}
         .gh-land-card:hover{transform:translateY(-3px);box-shadow:0 14px 34px rgba(0,0,0,0.22);}
+        @keyframes ghLandFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+        @keyframes ghLandMarquee{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+        @keyframes ghLandPulse{0%,100%{opacity:1}50%{opacity:0.35}}
+        @keyframes ghLandUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+        .gh-land-up{animation:ghLandUp 0.7s cubic-bezier(0.22,1,0.36,1) both}
+        .gh-land-marquee{display:flex;gap:40px;width:max-content;animation:ghLandMarquee 28s linear infinite}
+        .gh-land-marquee:hover{animation-play-state:paused}
+        .gh-land-bento>div{position:relative;overflow:hidden;transition:transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease}
+        .gh-land-bento>div:hover{transform:translateY(-4px)}
       `}</style>
       {/* Topnav */}
       <div style={{position:"sticky",top:0,zIndex:50,background:T.bg+"f2",backdropFilter:"blur(10px)",borderBottom:`1px solid ${T.border}`}}>
@@ -10989,6 +10962,8 @@ function LandingPage({T, onLogin}) {
           <img src="/logo-color.png" alt="Growith" style={{width:28,height:28,borderRadius:7}}/>
           <span style={{fontSize:17,fontWeight:800,letterSpacing:-0.4}}>Growith</span>
           <button onClick={irFeatures} className="hide-mobile" style={{background:"transparent",border:"none",cursor:"pointer",fontSize:13,color:T.textMd,fontFamily:F,padding:"6px 10px"}}>Funciones</button>
+          <button onClick={()=>{try{document.getElementById("gh-landing-integs")?.scrollIntoView({behavior:"smooth"});}catch(_){}}} className="hide-mobile" style={{background:"transparent",border:"none",cursor:"pointer",fontSize:13,color:T.textMd,fontFamily:F,padding:"6px 10px"}}>Integraciones</button>
+          <button onClick={()=>{try{document.getElementById("gh-landing-precios")?.scrollIntoView({behavior:"smooth"});}catch(_){}}} className="hide-mobile" style={{background:"transparent",border:"none",cursor:"pointer",fontSize:13,color:T.textMd,fontFamily:F,padding:"6px 10px"}}>Precios</button>
           <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
             <button onClick={onLogin} style={{...BtnSecondary(T),fontSize:13,padding:"7px 16px"}}>Iniciar sesión</button>
             <button onClick={onLogin} style={{...BtnPrimary(T),fontSize:13,padding:"7px 16px"}}>Probar gratis</button>
@@ -10998,25 +10973,50 @@ function LandingPage({T, onLogin}) {
 
       {/* Hero */}
       <div style={{position:"relative",overflow:"hidden"}}>
-        <div style={{position:"absolute",top:-120,left:"50%",transform:"translateX(-50%)",width:900,height:500,background:"radial-gradient(ellipse at center, #6366f122, transparent 65%)",pointerEvents:"none"}}/>
-        <div style={{position:"relative",maxWidth:860,margin:"0 auto",padding:"72px 20px 0",textAlign:"center"}}>
-          <div style={{display:"inline-flex",alignItems:"center",gap:6,background:T.accentSolid+"16",border:`1px solid ${T.accentSolid}44`,borderRadius:20,padding:"4px 14px",marginBottom:20,fontSize:12,fontWeight:600,color:T.accent}}>
+        {/* Profundidad: grilla sutil + orbes de gradiente */}
+        <div style={{position:"absolute",inset:0,backgroundImage:`linear-gradient(${T.border}33 1px, transparent 1px), linear-gradient(90deg, ${T.border}33 1px, transparent 1px)`,backgroundSize:"56px 56px",maskImage:"radial-gradient(ellipse 90% 70% at 50% 0%, black 30%, transparent 75%)",WebkitMaskImage:"radial-gradient(ellipse 90% 70% at 50% 0%, black 30%, transparent 75%)",pointerEvents:"none"}}/>
+        <div style={{position:"absolute",top:-140,left:"50%",transform:"translateX(-62%)",width:760,height:520,background:"radial-gradient(ellipse at center, #6366f130, transparent 62%)",pointerEvents:"none",filter:"blur(4px)"}}/>
+        <div style={{position:"absolute",top:60,left:"50%",transform:"translateX(18%)",width:560,height:420,background:"radial-gradient(ellipse at center, #a855f71e, transparent 65%)",pointerEvents:"none",filter:"blur(4px)"}}/>
+        <div style={{position:"relative",maxWidth:880,margin:"0 auto",padding:"76px 20px 0",textAlign:"center"}}>
+          <div className="gh-land-up" style={{display:"inline-flex",alignItems:"center",gap:8,background:T.accentSolid+"14",border:`1px solid ${T.accentSolid}44`,borderRadius:20,padding:"5px 16px",marginBottom:22,fontSize:12,fontWeight:700,color:T.accent}}>
+            <span style={{width:7,height:7,borderRadius:"50%",background:T.green,animation:"ghLandPulse 1.6s ease infinite",display:"inline-block"}}/>
             14 días de prueba gratis · Sin tarjeta
           </div>
-          <h1 style={{fontSize:"clamp(30px, 5.5vw, 50px)",fontWeight:900,letterSpacing:-1.4,lineHeight:1.1,margin:"0 0 18px"}}>
-            Todo tu e-commerce,<br/>una sola plataforma.
+          <h1 className="gh-land-up" style={{fontSize:"clamp(32px, 6vw, 56px)",fontWeight:900,letterSpacing:-1.6,lineHeight:1.07,margin:"0 0 18px",animationDelay:"0.06s"}}>
+            Todo tu e-commerce.<br/>
+            <span style={{background:"linear-gradient(92deg,#818cf8 0%,#a78bfa 45%,#6366f1 100%)",WebkitBackgroundClip:"text",backgroundClip:"text",color:"transparent"}}>Una sola plataforma.</span>
           </h1>
-          <p style={{fontSize:16,color:T.textMd,lineHeight:1.65,maxWidth:600,margin:"0 auto 28px"}}>
-            Growith unifica ventas, envíos, stock, facturación y publicidad de Tienda Nube, Shopify y Mercado Libre
-            en un tablero que te dice lo único que importa: <strong style={{color:T.text}}>cuánto estás ganando de verdad</strong>.
+          <p className="gh-land-up" style={{fontSize:16,color:T.textMd,lineHeight:1.65,maxWidth:620,margin:"0 auto 30px",animationDelay:"0.12s"}}>
+            Ventas, envíos, stock, facturación ARCA y publicidad de Tienda Nube, Shopify y Mercado Libre,
+            unificados en un tablero que responde lo único que importa: <strong style={{color:T.text}}>cuánto estás ganando de verdad</strong>.
           </p>
-          <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
-            <button onClick={onLogin} style={{...BtnPrimary(T),fontSize:15,padding:"13px 28px"}}>Empezar gratis →</button>
-            <button onClick={irFeatures} style={{...BtnSecondary(T),fontSize:15,padding:"13px 28px"}}>Ver funciones</button>
+          <div className="gh-land-up" style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap",animationDelay:"0.18s"}}>
+            <button onClick={onLogin} style={{background:"linear-gradient(135deg,#6366f1,#7c5cf1)",border:"none",color:"#fff",borderRadius:12,fontSize:15,fontWeight:700,padding:"14px 30px",cursor:"pointer",fontFamily:F,boxShadow:"0 8px 30px #6366f155, inset 0 1px 0 rgba(255,255,255,0.18)"}}>Empezar gratis →</button>
+            <button onClick={irFeatures} style={{...BtnSecondary(T),fontSize:15,padding:"14px 28px"}}>Ver funciones</button>
           </div>
+          <div className="gh-land-up" style={{fontSize:12,color:T.textSm,marginTop:16,animationDelay:"0.22s"}}>Sin renovación automática · Cancelás cuando quieras · Soporte en español</div>
 
           {/* Mockup del dashboard — armado con divs, números ilustrativos */}
-          <div style={{position:"relative",margin:"52px auto -1px",maxWidth:800,textAlign:"left"}}>
+          <div style={{position:"relative",margin:"56px auto -1px",maxWidth:800,textAlign:"left"}}>
+            {/* Chips flotantes: pruebas de vida del producto */}
+            <div className="hide-mobile" style={{position:"absolute",left:-96,top:44,zIndex:2,animation:"ghLandFloat 5s ease-in-out infinite",background:T.card+"f2",backdropFilter:"blur(8px)",border:`1px solid ${T.green}44`,borderRadius:12,padding:"10px 14px",boxShadow:"0 12px 36px rgba(0,0,0,0.35)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{width:24,height:24,borderRadius:7,background:T.green+"22",color:T.green,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800}}>✓</span>
+                <div><div style={{fontSize:11,fontWeight:700,color:T.text}}>Etiqueta Andreani emitida</div><div style={{fontSize:10,color:T.textSm}}>Pedido #1482 · recién</div></div>
+              </div>
+            </div>
+            <div className="hide-mobile" style={{position:"absolute",right:-104,top:130,zIndex:2,animation:"ghLandFloat 6s ease-in-out 0.8s infinite",background:T.card+"f2",backdropFilter:"blur(8px)",border:`1px solid #0B5FFF44`,borderRadius:12,padding:"10px 14px",boxShadow:"0 12px 36px rgba(0,0,0,0.35)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{display:"inline-flex"}}><BrandIcon name="arca" size={24}/></span>
+                <div><div style={{fontSize:11,fontWeight:700,color:T.text}}>Factura emitida — CAE aprobado</div><div style={{fontSize:10,color:T.textSm}}>Automática, desde la venta</div></div>
+              </div>
+            </div>
+            <div className="hide-mobile" style={{position:"absolute",left:-72,bottom:66,zIndex:2,animation:"ghLandFloat 5.5s ease-in-out 1.6s infinite",background:T.card+"f2",backdropFilter:"blur(8px)",border:`1px solid ${T.accentSolid}44`,borderRadius:12,padding:"10px 14px",boxShadow:"0 12px 36px rgba(0,0,0,0.35)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{display:"inline-flex"}}><BrandIcon name="meta" size={22}/></span>
+                <div><div style={{fontSize:11,fontWeight:700,color:T.text}}>ROAS real: 3.2</div><div style={{fontSize:10,color:T.textSm}}>Ads descontados del profit</div></div>
+              </div>
+            </div>
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderBottom:"none",borderRadius:"16px 16px 0 0",boxShadow:"0 -24px 80px rgba(99,102,241,0.10), 0 8px 60px rgba(0,0,0,0.30)",overflow:"hidden"}}>
               <div style={{display:"flex",alignItems:"center",gap:6,padding:"11px 16px",borderBottom:`1px solid ${T.borderL}`}}>
                 {["#ef4444","#eab308","#22c55e"].map(c=><span key={c} style={{width:9,height:9,borderRadius:"50%",background:c+"cc"}}/>)}
@@ -11042,16 +11042,26 @@ function LandingPage({T, onLogin}) {
         </div>
       </div>
 
-      {/* Integraciones */}
-      <div style={{borderTop:`1px solid ${T.borderL}`,borderBottom:`1px solid ${T.borderL}`,background:T.surface+"66",padding:"22px 20px"}}>
-        <div style={{maxWidth:900,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",gap:"14px 28px",flexWrap:"wrap"}}>
-          <span style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.6,width:"100%",textAlign:"center",marginBottom:2}}>Se conecta con lo que ya usás</span>
-          {INTEGS.map(([b,n])=>(
-            <span key={b} style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:T.textMd}}>
-              <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:26,height:26,borderRadius:6,background:"#fff",border:`1px solid ${T.border}`}}><BrandIcon name={b} size={16}/></span>
-              {n}
-            </span>
-          ))}
+      {/* Integraciones — marquee continuo */}
+      <div id="gh-landing-integs" style={{borderTop:`1px solid ${T.borderL}`,borderBottom:`1px solid ${T.borderL}`,background:T.surface+"66",padding:"20px 0 22px",overflow:"hidden"}}>
+        <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.7,textAlign:"center",marginBottom:16}}>Se conecta con todo lo que ya usás</div>
+        <div style={{position:"relative"}}>
+          <div style={{position:"absolute",left:0,top:0,bottom:0,width:90,background:`linear-gradient(90deg, ${T.bg}, transparent)`,zIndex:2,pointerEvents:"none"}}/>
+          <div style={{position:"absolute",right:0,top:0,bottom:0,width:90,background:`linear-gradient(270deg, ${T.bg}, transparent)`,zIndex:2,pointerEvents:"none"}}/>
+          <div className="gh-land-marquee">
+            {[0,1].map(rep=>(
+              <div key={rep} style={{display:"flex",gap:40,alignItems:"center"}}>
+                {[["mercadopago","Mercado Pago"],["mercadolibre","Mercado Libre"],["meta","Meta Ads"],["googleads","Google Ads"],["tiendanube","Tienda Nube"],["shopify","Shopify"],["arca","ARCA · AFIP"],[null,"Andreani"]].map(([b,n],i)=>(
+                  <span key={i} style={{display:"inline-flex",alignItems:"center",gap:10,fontSize:14,fontWeight:700,color:T.textMd,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 18px",whiteSpace:"nowrap"}}>
+                    {b
+                      ?<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:28,height:28,borderRadius:7,background:"#fff",border:`1px solid ${T.border}`}}><BrandIcon name={b} size={18}/></span>
+                      :<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:28,height:28,borderRadius:7,background:"#E30613",color:"#fff",fontSize:13,fontWeight:900}}>A</span>}
+                    {n}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -11059,14 +11069,78 @@ function LandingPage({T, onLogin}) {
       <div id="gh-landing-features" style={{maxWidth:1020,margin:"0 auto",padding:"64px 20px"}}>
         <h2 style={secTitle}>Una sección para cada parte de tu negocio</h2>
         <p style={secSub}>Dejá de saltar entre planillas, el admin de tu tienda y cinco pestañas. Growith lo junta todo y lo convierte en decisiones.</p>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14}}>
-          {FEATURES.map(f=>(
-            <div key={f.t} className="gh-land-card" style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px"}}>
-              <div style={{width:36,height:36,borderRadius:9,background:f.c+"16",border:`1px solid ${f.c}33`,display:"flex",alignItems:"center",justifyContent:"center",color:f.c,marginBottom:12}}>
-                <GhI n={f.gi} size={17}/>
+        <div className="gh-land-bento" style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:14}}>
+          {/* Grande: Rentabilidad — con mini gráfico vivo */}
+          <div style={{gridColumn:"span 3",background:`linear-gradient(155deg, ${T.card} 55%, #6366f110)`,border:`1px solid ${T.border}`,borderRadius:18,padding:"24px 24px 0"}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor="#6366f166"} onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+            <div style={{width:38,height:38,borderRadius:10,background:"#6366f118",border:"1px solid #6366f133",display:"flex",alignItems:"center",justifyContent:"center",color:"#818cf8",marginBottom:12}}><GhI n="chart" size={18}/></div>
+            <div style={{fontSize:17,fontWeight:800,marginBottom:6,letterSpacing:-0.3}}>{FEATURES[0].t}</div>
+            <div style={{fontSize:13,color:T.textSm,lineHeight:1.65,marginBottom:16}}>{FEATURES[0].d}</div>
+            <div style={{display:"flex",alignItems:"flex-end",gap:5,height:74,padding:"0 4px"}}>
+              {[38,52,44,66,58,74,68,62,84,78,92,99].map((h,i)=>(
+                <div key={i} style={{flex:1,height:`${h}%`,background:i>=9?"linear-gradient(180deg,#818cf8,#6366f166)":"linear-gradient(180deg,#6366f155,#6366f118)",borderRadius:"4px 4px 0 0"}}/>
+              ))}
+            </div>
+          </div>
+          {/* Grande: Facturación ARCA — con mini factura */}
+          <div style={{gridColumn:"span 3",background:`linear-gradient(155deg, ${T.card} 55%, #eab30810)`,border:`1px solid ${T.border}`,borderRadius:18,padding:"24px"}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor="#eab30866"} onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+            <div style={{width:38,height:38,borderRadius:10,background:"#eab30818",border:"1px solid #eab30833",display:"flex",alignItems:"center",justifyContent:"center",color:"#eab308",marginBottom:12}}><GhI n="file" size={18}/></div>
+            <div style={{fontSize:17,fontWeight:800,marginBottom:6,letterSpacing:-0.3}}>{FEATURES[3].t}</div>
+            <div style={{fontSize:13,color:T.textSm,lineHeight:1.65,marginBottom:16}}>{FEATURES[3].d}</div>
+            <div style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 14px"}}>
+              {[["Factura B 0004-00001812","CAE aprobado",T.green],["Factura B 0004-00001811","CAE aprobado",T.green],["Nota de crédito 0004-00000094","CAE aprobado",T.green]].map(([f,s,c],i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none",fontSize:11}}>
+                  <span style={{color:T.textMd,fontWeight:600,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f}</span>
+                  <span style={{color:c,fontWeight:700,flexShrink:0}}>✓ {s}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Medianas */}
+          {[FEATURES[2],FEATURES[1],FEATURES[4],FEATURES[5],FEATURES[6],FEATURES[7]].map(f=>(
+            <div key={f.t} style={{gridColumn:"span 2",background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:"20px"}}
+              onMouseEnter={e=>e.currentTarget.style.borderColor=f.c+"66"} onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+              <div style={{width:34,height:34,borderRadius:9,background:f.c+"16",border:`1px solid ${f.c}33`,display:"flex",alignItems:"center",justifyContent:"center",color:f.c,marginBottom:11}}>
+                <GhI n={f.gi} size={16}/>
               </div>
-              <div style={{fontSize:15,fontWeight:700,marginBottom:7}}>{f.t}</div>
-              <div style={{fontSize:13,color:T.textSm,lineHeight:1.65}}>{f.d}</div>
+              <div style={{fontSize:14,fontWeight:700,marginBottom:6}}>{f.t}</div>
+              <div style={{fontSize:12.5,color:T.textSm,lineHeight:1.6}}>{f.d}</div>
+              {f.gi==="play"&&(
+                <div style={{display:"flex",gap:6,marginTop:10}}>
+                  {["meta","googleads","mercadolibre"].map(b=><span key={b} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:24,height:24,borderRadius:6,background:"#fff",border:`1px solid ${T.border}`}}><BrandIcon name={b} size={14}/></span>)}
+                </div>
+              )}
+            </div>
+          ))}
+          {/* Chica final: equipo — ancho completo abajo */}
+          <div style={{gridColumn:"span 6",background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:"18px 20px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor=FEATURES[8].c+"66"} onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+            <div style={{width:34,height:34,borderRadius:9,background:FEATURES[8].c+"16",border:`1px solid ${FEATURES[8].c}33`,display:"flex",alignItems:"center",justifyContent:"center",color:FEATURES[8].c,flexShrink:0}}>
+              <GhI n={FEATURES[8].gi} size={16}/>
+            </div>
+            <div style={{flex:1,minWidth:220}}>
+              <div style={{fontSize:14,fontWeight:700,marginBottom:3}}>{FEATURES[8].t}</div>
+              <div style={{fontSize:12.5,color:T.textSm,lineHeight:1.55}}>{FEATURES[8].d}</div>
+            </div>
+            <div style={{display:"flex"}}>
+              {["#6366f1","#0ea5e9","#f97316","#10b981"].map((c,i)=>(
+                <span key={c} style={{width:30,height:30,borderRadius:"50%",background:c+"33",border:`2px solid ${T.card}`,color:c,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,marginLeft:i>0?-8:0}}>{"RTMC"[i]}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Banda de valor: el argumento económico */}
+        <div style={{marginTop:56,background:`linear-gradient(135deg, ${T.accentSolid}14, ${T.accentSolid}06)`,border:`1px solid ${T.accentSolid}33`,borderRadius:18,padding:"28px 26px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:22,textAlign:"center"}}>
+          {[
+            {v:"u$s145–250",l:"por mes te cuestan las apps sueltas que Growith reemplaza"},
+            {v:"desde u$s19",l:"cuesta Growith con todo unificado en un solo lugar"},
+            {v:"5 minutos",l:"tardás en conectar tu tienda y ver tus números reales"},
+          ].map(s=>(
+            <div key={s.v}>
+              <div style={{fontSize:30,fontWeight:900,letterSpacing:-1,background:"linear-gradient(92deg,#818cf8,#a78bfa)",WebkitBackgroundClip:"text",backgroundClip:"text",color:"transparent"}}>{s.v}</div>
+              <div style={{fontSize:12.5,color:T.textMd,lineHeight:1.55,marginTop:6,maxWidth:240,marginLeft:"auto",marginRight:"auto"}}>{s.l}</div>
             </div>
           ))}
         </div>
@@ -11105,7 +11179,7 @@ function LandingPage({T, onLogin}) {
       </div>
 
       {/* Pricing */}
-      <div style={{background:T.surface+"66",borderTop:`1px solid ${T.borderL}`,borderBottom:`1px solid ${T.borderL}`,padding:"64px 20px"}}>
+      <div id="gh-landing-precios" style={{background:T.surface+"66",borderTop:`1px solid ${T.borderL}`,borderBottom:`1px solid ${T.borderL}`,padding:"64px 20px"}}>
         <h2 style={secTitle}>Planes simples, sin letra chica</h2>
         <p style={secSub}>Probás gratis 14 días con absolutamente todo. Después elegís lo que necesitás.</p>
         <div style={{maxWidth:760,margin:"0 auto",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:18,alignItems:"start"}}>
@@ -11126,7 +11200,7 @@ function LandingPage({T, onLogin}) {
             <button onClick={onLogin} style={{...BtnSecondary(T),width:"100%",justifyContent:"center",fontSize:14,padding:"12px",color:"#10b981",border:"1.5px solid #10b981"}}>Probar gratis 14 días</button>
           </div>
           {/* Pro */}
-          <div style={{background:T.card,border:`2px solid #6366f1`,borderRadius:18,padding:"26px 24px",textAlign:"center",position:"relative"}}>
+          <div style={{background:`linear-gradient(165deg, ${T.card} 60%, #6366f114)`,border:`2px solid #6366f1`,borderRadius:18,padding:"26px 24px",textAlign:"center",position:"relative",boxShadow:"0 0 0 1px #6366f133, 0 18px 60px #6366f125"}}>
             <div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:T.green,color:"#fff",fontSize:11,fontWeight:800,borderRadius:20,padding:"3px 14px",whiteSpace:"nowrap",letterSpacing:0.3}}>RECOMENDADO — TODO INCLUIDO</div>
             <div style={{fontSize:15,fontWeight:800,color:"#6366f1",marginTop:6,marginBottom:2}}>Plan Pro</div>
             <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Todo Growith para tu e-commerce</div>
@@ -11142,6 +11216,19 @@ function LandingPage({T, onLogin}) {
             </div>
             <button onClick={onLogin} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"13px"}}>Probar gratis 14 días</button>
             <div style={{fontSize:11,color:T.textSm,marginTop:10}}>Sin tarjeta · Sin renovación automática · Cancelás cuando quieras</div>
+          </div>
+        </div>
+      </div>
+
+      {/* CTA final */}
+      <div style={{maxWidth:1020,margin:"0 auto",padding:"64px 20px 8px"}}>
+        <div style={{position:"relative",overflow:"hidden",background:"linear-gradient(135deg,#6366f1,#7c5cf1 55%,#8b5cf6)",borderRadius:22,padding:"48px 28px",textAlign:"center",boxShadow:"0 24px 80px #6366f135"}}>
+          <div style={{position:"absolute",inset:0,backgroundImage:"radial-gradient(circle at 20% 20%, rgba(255,255,255,0.14), transparent 42%), radial-gradient(circle at 85% 75%, rgba(255,255,255,0.10), transparent 40%)",pointerEvents:"none"}}/>
+          <div style={{position:"relative"}}>
+            <div style={{fontSize:"clamp(24px,3.6vw,34px)",fontWeight:900,color:"#fff",letterSpacing:-0.8,marginBottom:10}}>Empezá a ver tu ganancia real hoy</div>
+            <div style={{fontSize:14,color:"rgba(255,255,255,0.85)",maxWidth:480,margin:"0 auto 24px",lineHeight:1.6}}>14 días gratis con absolutamente todo. Conectás tu tienda en 5 minutos y Growith hace el resto.</div>
+            <button onClick={onLogin} style={{background:"#fff",color:"#6366f1",border:"none",borderRadius:12,fontSize:15,fontWeight:800,padding:"14px 34px",cursor:"pointer",fontFamily:F,boxShadow:"0 10px 30px rgba(0,0,0,0.22)"}}>Probar Growith gratis →</button>
+            <div style={{fontSize:12,color:"rgba(255,255,255,0.7)",marginTop:12}}>Sin tarjeta · Sin renovación automática</div>
           </div>
         </div>
       </div>
