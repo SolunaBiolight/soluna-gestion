@@ -19730,7 +19730,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // Modal facturación manual (mayoristas, etc)
   const [showManual, setShowManual] = useState(false);
   // Las secciones se muestran/ocultan vía display CSS según sidebarTab.
-  // Factura manual ahora es inline (no modal).
+  // Fecha elegida para la factura manual ("" = hoy). Misma ventana de 5 días
+  // corridos hacia atrás que el emit masivo (límite real del WSFE de ARCA).
+  const [manualFecha, setManualFecha] = useState("");
+  // Factura manual ahora es modal por portal.
   const [manualNombre, setManualNombre] = useState("");
   const [manualDocTipo, setManualDocTipo] = useState("CUIT");
   const [manualDocNro, setManualDocNro] = useState("");
@@ -20761,7 +20764,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       descuento: 0,
       envio: 0,
       estado_pago: "paid",
-      fecha: hoyAR(),
+      fecha: manualFecha || hoyAR(),
       ciudad: "", provincia: "",
       metodo_pago: "Manual",
       items: itemsValid.map(it => ({
@@ -20781,7 +20784,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       // PV propio del panel manual (pvManualElegido) — NO hereda el del modal masivo.
       // Las percepciones viajan DENTRO de la orden (el backend las valida por orden).
       if (percepciones.length) orden.percepciones = percepciones;
-      const d = await api("emit","POST",{cuit:cuitSel, ordenes:{[orderId]:orden}, product_map:{}, punto_venta: pvManualElegido?.numero, exento: !!pvManualElegido?.exento});
+      const d = await api("emit","POST",{cuit:cuitSel, ordenes:{[orderId]:orden}, product_map:{}, fecha_factura:(manualFecha||"").replace(/-/g,""), punto_venta: pvManualElegido?.numero, exento: !!pvManualElegido?.exento});
       if(d.error){toast(d.error,"error");return;}
       const r = (d.resultados||[])[0];
       const pdf = (d.pdfs||[])[0];
@@ -21815,6 +21818,22 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <input value={manualDocNro} onChange={e=>setManualDocNro(e.target.value.replace(/\D/g,""))} placeholder={manualDocTipo === "CUIT" ? "30712345678" : "12345678"} style={iS}/>
                       </div>
                     )}
+                    {/* Fecha de la factura — misma ventana de 5 días corridos que el
+                        emit masivo (límite del WSFE de ARCA para productos) */}
+                    {(()=>{
+                      const nowArg=new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
+                      const pad=n=>String(n).padStart(2,"0");
+                      const hoyIso=`${nowArg.getFullYear()}-${pad(nowArg.getMonth()+1)}-${pad(nowArg.getDate())}`;
+                      const minD=new Date(nowArg.getTime()-5*86400000);
+                      const minIso=`${minD.getFullYear()}-${pad(minD.getMonth()+1)}-${pad(minD.getDate())}`;
+                      return (
+                        <div style={{marginBottom:18}}>
+                          <label style={labelS}>Fecha de la factura</label>
+                          <input type="date" value={manualFecha||hoyIso} min={minIso} max={hoyIso} onChange={e=>setManualFecha(e.target.value===hoyIso?"":e.target.value)} style={{...iS,width:"auto"}}/>
+                          <div style={{fontSize:11,color:T.textSm,marginTop:5}}>Podés retrotraerla hasta 5 días corridos — el máximo que acepta ARCA para venta de productos.</div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Items */}
                     <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:10,marginTop:18,paddingBottom:8,borderBottom:"1px solid "+T.borderL}}>Ítems</div>
