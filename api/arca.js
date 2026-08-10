@@ -2815,7 +2815,11 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
           const cSnap = await cacheCol.doc(cacheId).get();
           if (cSnap.exists) {
             const c = cSnap.data() || {};
-            const rangoCerrado = untilDate < hoyARISO();
+            // "Cerrado" no alcanza: el cache tiene que haberse escrito DESPUÉS de la
+            // medianoche AR que cierra el rango — un cache guardado mientras el último
+            // día seguía en curso congela órdenes parciales para siempre.
+            const rangoCerrado = untilDate < hoyARISO()
+              && (Number(c.ts) || 0) >= Date.parse(`${String(untilDate).slice(0,10)}T23:59:59-03:00`);
             const fresco = Date.now() - (Number(c.ts) || 0) < CACHE_TTL_MS;
             if (c.ordenes && typeof c.ordenes === "object" && (rangoCerrado || fresco)) {
               rawOrdenes = c.ordenes;

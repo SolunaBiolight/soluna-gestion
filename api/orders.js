@@ -450,9 +450,16 @@ export default async function handler(req, res) {
             if (!jc.noCache && !jc.error && jc.daily_revenue) {
               const rangoCerrado = String(to) < argToday;
               const edadMs = jc.cachedAt ? (Date.now() - Date.parse(jc.cachedAt)) : Infinity;
+              // Un rango cerrado solo es inmutable si el snapshot se ESCRIBIÓ después
+              // de la medianoche AR que cierra el rango. Un snapshot guardado mientras
+              // el día seguía en curso (ej. mirando "Hoy" a las 19:00 → clave
+              // 2026-08-09_2026-08-09) congelaba un conteo parcial para siempre: al
+              // día siguiente "Ayer" mostraba 21 ventas cuando TN tenía 31.
+              const cerradoCompleto = rangoCerrado && jc.cachedAt
+                && Date.parse(jc.cachedAt) >= Date.parse(`${String(to).slice(0,10)}T23:59:59-03:00`);
               // fresh=1 (botón Actualizar): saltea la caché del día actual para ver
-              // las ventas al segundo. Los rangos cerrados son inmutables → caché igual.
-              if (rangoCerrado || (!_fresh && isFinite(edadMs) && edadMs < 10 * 60000)) j = jc;
+              // las ventas al segundo. Los rangos cerrados completos siguen de caché.
+              if (cerradoCompleto || (!_fresh && isFinite(edadMs) && edadMs < 10 * 60000)) j = jc;
             }
           }
         } catch (_) { /* la caché es un atajo — si falla, se calcula en vivo */ }
