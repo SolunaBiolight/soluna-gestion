@@ -2868,9 +2868,12 @@ function AppTabs({T, tabs, active, onChange, size="normal"}) {
           const isActive=active===t.id;
           return (
             <button key={t.id} onClick={()=>onChange(t.id)}
-              style={{padding:isLarge?"10px 24px":"7px 18px",fontSize:isLarge?14:13,fontWeight:isActive?700:500,borderRadius:isLarge?10:8,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,transition:"all 0.15s ease",boxShadow:isActive?"0 1px 4px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>
+              onMouseEnter={e=>{if(!isActive)e.currentTarget.style.color=T.text;}}
+              onMouseLeave={e=>{if(!isActive)e.currentTarget.style.color=T.textMd;}}
+              style={{padding:isLarge?"10px 24px":"8px 18px",fontSize:isLarge?14:13,fontWeight:isActive?700:500,borderRadius:isLarge?10:8,border:"none",background:isActive?T.accent+"16":"transparent",color:isActive?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,transition:"all 0.15s ease",boxShadow:isActive?`inset 0 0 0 1px ${T.accent}3a`:"none",whiteSpace:"nowrap"}}>
+              {t.icon&&<svg width={isLarge?15:13} height={isLarge?15:13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:isActive?1:0.75}}><path d={t.icon}/></svg>}
               {t.label}
-              {t.badge!=null&&t.badge>0&&<span style={{fontSize:10,fontWeight:700,background:t.badgeColor||T.red,color:"#fff",borderRadius:4,padding:"1px 5px"}}>{t.badge}</span>}
+              {t.badge!=null&&t.badge>0&&<span style={{fontSize:10,fontWeight:700,background:t.badgeColor||T.red,color:"#fff",borderRadius:10,padding:"1px 7px"}}>{t.badge}</span>}
             </button>
           );
         })}
@@ -21064,9 +21067,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             <div style={{marginBottom:20}}>
               <AppTabs T={T} active={tab} onChange={id=>setSidebarTab&&setSidebarTab(id)}
                 tabs={[
-                  {id:"facturar",  label:"Facturar"},
-                  {id:"registros", label:"Registros"},
-                  {id:"config",    label:"Configuración"},
+                  {id:"facturar",  label:"Facturar", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8", badge:pendStats?.pendCount||0, badgeColor:T.accentSolid},
+                  {id:"registros", label:"Registros", icon:"M21 8v13H3V8M1 3h22v5H1zM10 12h4"},
+                  {id:"config",    label:"Configuración", icon:"M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"},
                 ]}/>
             </div>
 
