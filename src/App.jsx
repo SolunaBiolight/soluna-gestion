@@ -20744,6 +20744,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     if(manualDocTipo !== "CF" && !manualDocNro.trim()) return toast("Completá el número de documento o elegí 'Consumidor Final'","warning");
 
     const total = itemsValid.reduce((s,it)=>s + it.cantidad*it.precio, 0);
+    // AFIP rechaza facturas a Consumidor Final SIN identificar de $10.000.000 o
+    // más (exige CUIT o DNI del cliente) — avisar en criollo antes de emitir.
+    if(manualDocTipo === "CF" && total >= 10000000) return appAlert("Por el monto de esta factura ($10.000.000 o más), ARCA exige identificar al cliente: elegí CUIT o DNI y cargá el número. 'Consumidor Final sin documento' solo sirve para montos menores.");
     const docNro = manualDocTipo === "CF" ? "" : manualDocNro.replace(/\D/g,"");
     if(manualDocTipo === "CUIT" && docNro.length !== 11) return toast("El CUIT del cliente debe tener 11 dígitos","error");
     if(manualDocTipo === "DNI" && (docNro.length < 7 || docNro.length > 8)) return toast("El DNI del cliente debe tener 7 u 8 dígitos","error");
