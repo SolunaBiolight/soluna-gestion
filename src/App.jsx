@@ -832,7 +832,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange"},
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange"},
-    { group:"CRECIMIENTO" },
+    { group:"RECOMPENSAS" },
     {id:"referidos",label:"Referidos", icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
   ];
   const [closedSubs, setClosedSubs] = React.useState(new Set());
@@ -11053,10 +11053,10 @@ function LandingPage({T, onLogin}) {
             {[0,1].map(rep=>(
               <div key={rep} style={{display:"flex",gap:40,alignItems:"center"}}>
                 {[["mercadopago","Mercado Pago"],["mercadolibre","Mercado Libre"],["meta","Meta Ads"],["googleads","Google Ads"],["tiendanube","Tienda Nube"],["shopify","Shopify"],["arca","ARCA · AFIP"],[null,"Andreani"]].map(([b,n],i)=>(
-                  <span key={i} style={{display:"inline-flex",alignItems:"center",gap:10,fontSize:14,fontWeight:700,color:T.textMd,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 18px",whiteSpace:"nowrap"}}>
+                  <span key={i} style={{display:"inline-flex",alignItems:"center",gap:10,fontSize:14,fontWeight:700,color:T.textMd,whiteSpace:"nowrap"}}>
                     {b
-                      ?<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:28,height:28,borderRadius:7,background:"#fff",border:`1px solid ${T.border}`}}><BrandIcon name={b} size={18}/></span>
-                      :<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:28,height:28,borderRadius:7,background:"#E30613",color:"#fff",fontSize:13,fontWeight:900}}>A</span>}
+                      ?<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:34,height:34,borderRadius:9,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.06)"}}><BrandIcon name={b} size={19}/></span>
+                      :<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:34,height:34,borderRadius:9,background:"rgba(227,6,19,0.15)",border:"1px solid rgba(227,6,19,0.35)",color:"#ff5a64",fontSize:14,fontWeight:900}}>A</span>}
                     {n}
                   </span>
                 ))}
@@ -11109,7 +11109,7 @@ function LandingPage({T, onLogin}) {
               <div style={{fontSize:12.5,color:T.textSm,lineHeight:1.6}}>{f.d}</div>
               {f.gi==="play"&&(
                 <div style={{display:"flex",gap:6,marginTop:10}}>
-                  {["meta","googleads","mercadolibre"].map(b=><span key={b} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:24,height:24,borderRadius:6,background:"#fff",border:`1px solid ${T.border}`}}><BrandIcon name={b} size={14}/></span>)}
+                  {["meta","googleads","mercadolibre"].map(b=><span key={b} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:26,height:26,borderRadius:7,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)"}}><BrandIcon name={b} size={15}/></span>)}
                 </div>
               )}
             </div>
@@ -11166,7 +11166,7 @@ function LandingPage({T, onLogin}) {
         </div>
         {/* Google Ads API — contenido requerido por la revisión de Google */}
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginTop:14}}>
-          <div style={{fontSize:15,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:8}}><span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:24,height:24,borderRadius:6,background:"#fff",border:`1px solid ${T.border}`}}><BrandIcon name="googleads" size={15}/></span>Cómo usa Growith la Google Ads API</div>
+          <div style={{fontSize:15,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:8}}><span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:26,height:26,borderRadius:7,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)"}}><BrandIcon name="googleads" size={15}/></span>Cómo usa Growith la Google Ads API</div>
           <div style={{fontSize:13,color:T.textSm,lineHeight:1.7}}>
             Cada usuario conecta <strong style={{color:T.textMd}}>su propia cuenta de Google Ads</strong> mediante OAuth para que Growith importe su inversión
             publicitaria (solo lectura de reportes de costo) y la incluya en su tablero privado de rentabilidad, junto al gasto de Meta Ads y Mercado Ads.
