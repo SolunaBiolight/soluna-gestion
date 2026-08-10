@@ -8,6 +8,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { guardUid, requireAdmin, guardCron, verifyAuth, clearTeamCache } from "./_auth.js";
+import { acreditarComisionReferido, descontarCreditoAplicado } from "./referidos.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -1010,7 +1011,16 @@ export default async function handler(req, res) {
       const metodo = method === "cripto" ? "cripto" : "transfer";
       if (metodo === "cripto" && !String(txHash).trim()) return res.status(400).json({ error: "Falta el hash de transacción (TxID)" });
       if (metodo === "transfer" && !String(transferRef).trim()) return res.status(400).json({ error: "Falta la referencia de la transferencia" });
+      // Crédito de referidos aplicado a este pago: se valida contra el saldo
+      // real y se descuenta recién cuando el pago se confirma.
+      let refCreditAplicado = +(Number(body.refCreditAplicado) || 0).toFixed(2);
+      if (refCreditAplicado > 0) {
+        const uSnapCred = await db.collection("users").doc(uid).get();
+        const credDisp = Number(uSnapCred.data()?.refCreditUsd) || 0;
+        if (refCreditAplicado > credDisp + 0.01) return res.status(400).json({ error: "El crédito de referidos aplicado supera tu crédito disponible. Recargá la página." });
+      } else refCreditAplicado = 0;
       const ref = await db.collection("pagos").add({
+        refCreditAplicado,
         uid, email: String(email).slice(0, 120),
         plan, method: metodo,
         currency: String(currency).slice(0, 12),
@@ -1849,12 +1859,13 @@ export default async function handler(req, res) {
         // los meses dos veces. La transacción marca el pago como confirmado y
         // falla si otro ya lo confirmó.
         const pagoRef = db.collection("pagos").doc(pagoId);
-        let expiry;
+        let expiry, pagoData = null;
         try {
           expiry = await db.runTransaction(async tx => {
             const [pagoSnap, userSnap] = await Promise.all([tx.get(pagoRef), tx.get(db.collection("users").doc(targetUid))]);
             if (!pagoSnap.exists) throw new Error("PAGO_INEXISTENTE");
             if ((pagoSnap.data().estado || "") !== "pendiente") throw new Error("PAGO_YA_PROCESADO");
+            pagoData = pagoSnap.data();
             const userData = userSnap.data() || {};
             let base = adminNow;
             if (userData.planExpiry) {
@@ -1870,6 +1881,13 @@ export default async function handler(req, res) {
           if (e.message === "PAGO_YA_PROCESADO") return res.status(409).json({ error: "Ese pago ya fue procesado." });
           if (e.message === "PAGO_INEXISTENTE") return res.status(404).json({ error: "No se encontró el pago." });
           throw e;
+        }
+        // Programa de referidos (best-effort, idempotente): descuenta el crédito
+        // que el pagador aplicó y acredita el 15% a su referente.
+        if (pagoData) {
+          const pd = { ...pagoData, mesesConfirmados: Number(meses) };
+          await descontarCreditoAplicado(db, pagoId, pd);
+          await acreditarComisionReferido(db, pagoId, pd);
         }
         // Comprobante de activación al cliente (best-effort: si el mail falla,
         // el plan igual quedó activado).

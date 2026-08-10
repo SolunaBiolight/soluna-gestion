@@ -16,6 +16,7 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { guardCron } from "./_auth.js";
 import { mpReconciliarCargas } from "./andreani.js";
+import { acreditarComisionReferido, descontarCreditoAplicado } from "./referidos.js";
 
 const WALLET = "TXGtDab6Lf3jtSRgq7uB2WbRfqdRA3PTCD"; // misma USDT_ADDRESS que muestra AppPlanes
 const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // contrato oficial USDT en Tron
@@ -188,6 +189,11 @@ export default async function handler(req, res) {
       });
       results.confirmados++;
       console.log(`[check-payments] ✓ ${p.id} → ${plan} x${meses}m (tx ${match.txid.slice(0, 12)}…)`);
+
+      // Programa de referidos (best-effort, idempotente)
+      const pd = { ...p, plan, mesesConfirmados: meses };
+      await descontarCreditoAplicado(db, p.id, pd);
+      await acreditarComisionReferido(db, p.id, pd);
 
       // Mail de comprobante (best-effort)
       const planNombre = plan === "facturador" ? "Facturador" : "Pro";

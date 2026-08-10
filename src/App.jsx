@@ -832,6 +832,8 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange"},
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange"},
+    { group:"CRECIMIENTO" },
+    {id:"referidos",label:"Referidos", icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
   ];
   const [closedSubs, setClosedSubs] = React.useState(new Set());
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
@@ -1568,6 +1570,144 @@ function MiembrosCuentaCard({T,user}){
   );
 }
 
+// ─── Referidos: ganá el 15% de cada pago de plan de tus referidos ───
+function AppReferidos({T, user, onHome}){
+  const [data,setData]=React.useState(null);
+  const [err,setErr]=React.useState("");
+  React.useEffect(()=>{
+    if(!user?.uid) return;
+    (async()=>{
+      try{
+        const r=await authFetch("/api/referidos",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"me",uid:user.uid})});
+        const d=await r.json().catch(()=>({}));
+        if(!r.ok||d.error) setErr(typeof d.error==="string"?d.error:`HTTP ${r.status}`);
+        else setData(d);
+      }catch(e){ setErr("No se pudo cargar. Recargá la página."); }
+    })();
+  },[user?.uid]);
+  const link=data?`${ghShareOrigin()}/?ref=${data.code}`:"";
+  const usd=n=>"u$s"+(Number(n)||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const copiar=(txt,msg)=>{try{navigator.clipboard.writeText(txt);toast(msg||"Copiado","success");}catch(_){toast("No se pudo copiar","warning");}};
+  const waText=data?encodeURIComponent(`Estoy usando Growith para gestionar mi e-commerce (facturación ARCA, envíos, stock, profit — todo en un solo lugar) y está muy bueno. Registrate con mi link y probalo gratis: ${link}`):"";
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <AppTopbar T={T} section="Referidos" sectionId="referidos" onHome={onHome}/>
+      <div style={{padding:"20px 24px 64px",maxWidth:860,margin:"0 auto",width:"100%"}}>
+
+        {/* Hero: la propuesta + el link para compartir */}
+        <div style={{background:`linear-gradient(135deg,${T.accentSolid}1c,${T.accentSolid}08)`,border:`1px solid ${T.accentSolid}44`,borderRadius:16,padding:"24px 24px 20px",marginBottom:16}}>
+          <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:6}}>
+            Ganá el <span style={{color:T.accent}}>15%</span> de cada pago de tus referidos, para siempre
+          </div>
+          <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,marginBottom:16,maxWidth:560}}>
+            Compartí tu link: cada persona que se registre con él queda vinculada a tu cuenta, y cada vez que pague su plan vos sumás el 15% como crédito. El crédito se descuenta solo de tus propias renovaciones.
+          </div>
+          {!data&&!err&&<div style={{display:"flex",alignItems:"center",gap:8,color:T.textSm,fontSize:12,padding:"6px 0"}}><Spinner size={13} color={T.accent}/> Cargando tu link…</div>}
+          {err&&<div style={{fontSize:12,color:T.red,background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:8,padding:"8px 12px"}}>{err}</div>}
+          {data&&(
+            <>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"stretch"}}>
+                <div onClick={()=>copiar(link,"Link copiado — compartilo donde quieras")}
+                  style={{flex:1,minWidth:240,display:"flex",alignItems:"center",gap:10,background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 14px",cursor:"pointer"}}>
+                  <span style={{fontSize:13,fontWeight:600,color:T.text,fontFamily:"'Cascadia Code','Consolas',monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{link}</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                </div>
+                <button onClick={()=>copiar(link,"Link copiado — compartilo donde quieras")} style={{...BtnPrimary(T),fontSize:13,padding:"11px 18px"}}>Copiar link</button>
+                <a href={`https://wa.me/?text=${waText}`} target="_blank" rel="noreferrer"
+                  style={{display:"inline-flex",alignItems:"center",gap:7,background:"#25D366",color:"#fff",borderRadius:10,padding:"11px 16px",fontSize:13,fontWeight:700,textDecoration:"none"}}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                  WhatsApp
+                </a>
+              </div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:10}}>Tu código: <span onClick={()=>copiar(data.code,"Código copiado")} style={{fontFamily:"'Cascadia Code','Consolas',monospace",fontWeight:700,color:T.accent,cursor:"pointer",background:T.accentSolid+"14",borderRadius:5,padding:"2px 8px"}}>{data.code}</span> — también sirve escribiéndolo a mano al registrarse.</div>
+            </>
+          )}
+        </div>
+
+        {/* KPIs */}
+        {data&&(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:16}}>
+            {[
+              {label:"Crédito disponible",val:usd(data.creditUsd),color:T.green,sub:"se descuenta de tu próximo pago"},
+              {label:"Ganado total",val:usd(data.ganadoUsd),color:T.accent,sub:"histórico de comisiones"},
+              {label:"Referidos activos",val:String(data.activos||0),color:T.blue,sub:`${(data.referidos||[]).length} registrados con tu link`},
+            ].map(k=>(
+              <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{k.label}</div>
+                <div style={{fontSize:24,fontWeight:800,color:k.color,letterSpacing:-0.5}}>{k.val}</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:4}}>{k.sub}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Cómo funciona */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>Cómo funciona</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>
+            {[
+              {n:1,t:"Compartí tu link",d:"Por WhatsApp, redes o donde tengas contacto con gente de e-commerce."},
+              {n:2,t:"Se registran gratis",d:"Prueban Growith 14 días. Quedan vinculados a tu cuenta automáticamente."},
+              {n:3,t:"Ganás el 15%, siempre",d:"De cada pago de plan que hagan, todos los meses. El crédito se descuenta solo de tus renovaciones."},
+            ].map(p=>(
+              <div key={p.n} style={{display:"flex",gap:10}}>
+                <div style={{width:26,height:26,borderRadius:"50%",background:T.accentSolid+"22",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,flexShrink:0}}>{p.n}</div>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>{p.t}</div>
+                  <div style={{fontSize:12,color:T.textSm,lineHeight:1.5}}>{p.d}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Referidos */}
+        {data&&(
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Tus referidos</div>
+            {(data.referidos||[]).length===0?(
+              <div style={{fontSize:12,color:T.textSm,padding:"18px 0",textAlign:"center"}}>Todavía no tenés referidos. Compartí tu link y empezá a sumar.</div>
+            ):(
+              <div style={{display:"flex",flexDirection:"column"}}>
+                {data.referidos.map((r,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
+                    <div style={{width:28,height:28,borderRadius:"50%",background:(r.activo?T.green:T.textSm)+"22",color:r.activo?T.green:T.textSm,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>{(r.nombre||r.email||"?").charAt(0).toUpperCase()}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.nombre||r.email}</div>
+                      {r.nombre&&<div style={{fontSize:11,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.email}</div>}
+                    </div>
+                    <span style={{fontSize:10,fontWeight:700,padding:"2px 9px",borderRadius:99,background:(r.activo?T.green:T.textSm)+"18",color:r.activo?T.green:T.textSm,flexShrink:0}}>{r.plan}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Historial */}
+        {data&&(data.ledger||[]).length>0&&(
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Historial</div>
+            <div style={{display:"flex",flexDirection:"column"}}>
+              {data.ledger.map((l,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none",fontSize:12}}>
+                  <span style={{color:T.textMd,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {l.tipo==="comision"?`Comisión por ${l.fromEmail||"un referido"}${l.plan?` (${l.plan==="facturador"?"Facturador":"Pro"})`:""}`
+                      :l.tipo==="canje"?"Renovación pagada con tu crédito"
+                      :"Crédito aplicado a tu pago"}
+                  </span>
+                  <span style={{fontWeight:800,color:l.comisionUsd>=0?T.green:T.orange,flexShrink:0}}>{l.comisionUsd>=0?"+":""}{usd(l.comisionUsd)}</span>
+                  {l.ts&&<span style={{color:T.textSm,fontSize:11,flexShrink:0}}>{new Date(l.ts).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DSBadge({T, color, children, size="md"}) {
   const c = color||T.accent;
   return (
@@ -1623,6 +1763,12 @@ function MpLogo({size=22,color="#fff"}){
     </svg>
   );
 }
+// Captura del código de referido (?ref=CODIGO): se guarda ANTES del registro y
+// se reclama en el primer login (el vínculo lo valida el backend).
+try{
+  const _rp=new URLSearchParams(window.location.search).get("ref");
+  if(_rp&&/^[A-Za-z0-9]{6,12}$/.test(_rp)) localStorage.setItem("growith_ref",_rp.toUpperCase());
+}catch(_){}
 // Etiqueta corta de quién creó una tarea (t.creadoPor lo escribe el backend).
 function ghCreadorLabel(cp){
   if(!cp) return "";
@@ -12215,6 +12361,19 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   // monto exacto aunque el TxID venga mal.
   const [centavosId]=useState(()=>{const s=String(user?.uid||"x");let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return (h%99)+1;});
 
+  // Crédito del programa de referidos: se descuenta solo del monto a pagar.
+  const [refCred,setRefCred]=useState(0);
+  useEffect(()=>{
+    if(!user?.uid) return;
+    (async()=>{
+      try{
+        const r=await authFetch("/api/referidos",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"me",uid:user.uid})});
+        const d=await r.json().catch(()=>({}));
+        if(r.ok&&typeof d.creditUsd==="number") setRefCred(d.creditUsd);
+      }catch(_){}
+    })();
+  },[user?.uid]);
+
   // Dos planes: Facturador (solo ARCA) y Pro (todo). Ids Firestore: "facturador" y "plus" (NO cambiar).
   const PLANES=[
     {
@@ -12270,6 +12429,30 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   // Pago anual = 12 meses juntos (el precio anual es el "por mes equivalente")
   const mesesPago=anual?12:1;
   const totalU=+(precioU*mesesPago).toFixed(2);
+  // Descuento automático por crédito de referidos
+  const credAplicado=+Math.min(refCred,totalU).toFixed(2);
+  const totalPagar=+(totalU-credAplicado).toFixed(2);
+  const cubreTodo=totalU>0&&credAplicado>=totalU;
+  async function canjearConCredito(){
+    try{
+      const r=await authFetch("/api/referidos",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"canjearCredito",uid:user.uid,plan:PLAN.id,periodo:anual?"anual":"mensual",email:user?.email||""})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`);
+      toast("¡Plan activado con tu crédito de referidos!","success");
+      setTimeout(()=>window.location.reload(),900);
+    }catch(e){ appAlert("Error: "+e.message); }
+  }
+  // Box verde: el crédito cubre el total — se activa sin pagar nada
+  const canjeBox=cubreTodo?(
+    <div style={{background:T.greenBg,border:`1.5px solid ${T.green}55`,borderRadius:12,padding:"16px 18px",marginBottom:20}}>
+      <div style={{fontSize:14,fontWeight:800,color:T.green,marginBottom:4}}>Tu crédito de referidos cubre este plan completo</div>
+      <div style={{fontSize:12,color:T.textMd,marginBottom:12}}>Tenés u$s{refCred.toLocaleString("es-AR",{minimumFractionDigits:2})} acumulados — podés activar {PLAN.nombre}{anual?" anual":" (1 mes)"} sin pagar nada.</div>
+      <AsyncButton onClick={canjearConCredito} style={{...BtnPrimary(T),background:T.green,fontSize:13,padding:"10px 18px"}}>Activar con mi crédito (u$s{totalU})</AsyncButton>
+    </div>
+  ):null;
+  const credLine=credAplicado>0&&!cubreTodo?(
+    <div style={{fontSize:12,color:T.green,fontWeight:700,marginTop:4}}>Crédito por referidos aplicado: −u$s{credAplicado.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+  ):null;
   const isPago=userPlan==="plus"||userPlan==="full"||userPlan==="facturador";
   const esFacturador=userPlan==="facturador";
 
@@ -12287,7 +12470,8 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
           plan: PLAN.id,
           method: metodo,
           currency: metodo==="cripto"?"USDT":"USD",
-          amount: metodo==="cripto"?+(totalU+centavosId/100).toFixed(2):totalU,
+          amount: metodo==="cripto"?+(totalPagar+centavosId/100).toFixed(2):totalPagar,
+          refCreditAplicado: credAplicado,
           meses: mesesPago,
           periodo: anual?"anual":"mensual",
           txHash: metodo==="cripto"?txHash.trim():"",
@@ -12329,12 +12513,14 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         <div style={{background:T.card,border:`0.5px solid ${PLAN.color}44`,borderLeft:`3px solid ${PLAN.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
           <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan seleccionado</div>
           <div style={{fontSize:17,fontWeight:700,color:PLAN.color}}>{PLAN.nombre}{anual?" · Anual":""}</div>
-          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${(totalU+centavosId/100).toFixed(2)} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>{anual?"USDT/año (12 meses)":"USDT/mes"}</span></div>
+          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${(totalPagar+centavosId/100).toFixed(2)} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>{anual?"USDT/año (12 meses)":"USDT/mes"}</span></div>
+          {credLine}
           {anual&&<div style={{fontSize:12,color:T.green,fontWeight:600,marginTop:2}}>Equivale a ${precioU} USD/mes</div>}
           <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Los centavos (,{String(centavosId).padStart(2,"0")}) identifican tu pago — enviá el monto exacto.</div>
         </div>
+        {canjeBox}
         <div style={{marginBottom:20}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Enviá exactamente ${(totalU+centavosId/100).toFixed(2)} USDT (TRC20) a:</div>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Enviá exactamente ${(totalPagar+centavosId/100).toFixed(2)} USDT (TRC20) a:</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
             <code style={{flex:1,fontSize:12,color:T.text,wordBreak:"break-all",fontFamily:"monospace"}}>{USDT_ADDRESS}</code>
             <button onClick={()=>{navigator.clipboard.writeText(USDT_ADDRESS);toast("Dirección copiada","success");}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0,display:"flex",alignItems:"center"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
@@ -12370,8 +12556,10 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
         <div style={{background:T.card,border:`0.5px solid ${PLAN.color}44`,borderLeft:`3px solid ${PLAN.color}`,borderRadius:12,padding:"14px 20px",marginBottom:24}}>
           <span style={{fontSize:13,color:T.textSm}}>Plan </span><span style={{fontSize:14,fontWeight:700,color:PLAN.color}}>{PLAN.nombre}{anual?" · Anual":""}</span>
-          <span style={{fontSize:14,fontWeight:800,color:T.text,marginLeft:10}}>${totalU} USD{anual?"/año":"/mes"}</span>
+          <span style={{fontSize:14,fontWeight:800,color:T.text,marginLeft:10}}>${totalPagar} USD{anual?"/año":"/mes"}</span>
+          {credLine}
         </div>
+        {canjeBox}
         {[
           {id:"transfer",titulo:"Transferencia bancaria (pesos)",desc:"Transferís en ARS al alias de Growith. Lo confirmamos en el día.",icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><path d="M5 22V11M9 22V11M15 22V11M19 22V11"/><path d="M12 2L2 8h20z"/></svg>},
           {id:"cripto",titulo:"USDT (red TRC20)",desc:"Se acredita solo en menos de 15 minutos, sin intermediarios.",icon:"₮"},
@@ -12402,9 +12590,11 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         <div style={{background:T.card,border:`0.5px solid ${PLAN.color}44`,borderLeft:`3px solid ${PLAN.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
           <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan seleccionado</div>
           <div style={{fontSize:17,fontWeight:700,color:PLAN.color}}>{PLAN.nombre}{anual?" · Anual":""}</div>
-          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${totalU} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>USD {anual?"por año (12 meses)":"por mes"}</span></div>
+          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${totalPagar} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>USD {anual?"por año (12 meses)":"por mes"}</span></div>
+          {credLine}
           <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Se paga el equivalente en pesos al dólar del día — al confirmar te llega el comprobante por mail.</div>
         </div>
+        {canjeBox}
         <div style={{marginBottom:20}}>
           <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Transferí al alias:</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",marginBottom:8}}>
@@ -31826,9 +32016,24 @@ export default function App() {
   },[authUser&&authUser.uid]);
   const secMiembro = (user&&user.esMiembro) ? (miembroDe.secciones||{}) : null;
   const seccionPermitida = (p)=> !secMiembro ? true : secMiembro[p]===true;
+  // Claim del código de referido guardado en el registro (una sola vez; el
+  // backend valida que la cuenta sea nueva y el código exista).
+  useEffect(()=>{
+    if(!user?.uid||user.esMiembro) return;
+    let code=null; try{code=localStorage.getItem("growith_ref");}catch(_){}
+    if(!code) return;
+    (async()=>{
+      try{
+        const r=await authFetch("/api/referidos",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"claim",uid:user.uid,code})});
+        const d=await r.json().catch(()=>({}));
+        // Éxito o rechazo definitivo → no reintentar más
+        if(r.ok||["codigo_propio","cuenta_no_nueva","codigo_inexistente","codigo_invalido"].includes(d.error)){ try{localStorage.removeItem("growith_ref");}catch(_){} }
+      }catch(_){}
+    })();
+  },[user&&user.uid]);
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","copilot","margenes","arca","meta","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas"];
+  const VALID_PAGES = ["home","copilot","margenes","arca","meta","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos"];
   // Alias legacy: #/rendimiento era el nombre viejo del Dashboard (hoy #/margenes)
   const _aliasPage = (p) => p === "rendimiento" ? "margenes" : p;
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
@@ -32380,6 +32585,7 @@ export default function App() {
         {id:"reclamos",label:"Reclamos",icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"},
         {id:"canjes",label:"Canjes",icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"},
         {id:"tareas",label:"Tareas",icon:"M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"},
+        {id:"referidos",label:"Referidos",icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
       ].filter(it=>seccionPermitida(it.id)).map(it=>(
         <button key={it.id} onClick={()=>setPage(it.id)} style={{
           display:"inline-flex", flexShrink:0, minWidth:64, background:"transparent", border:"none", cursor:"pointer",
@@ -32468,6 +32674,7 @@ export default function App() {
   else if(page==="tareas") pageContent = adminGate("tareas") || planGate("plus") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab} pendingOpenTaskId={pendingOpenTaskId} onPendingOpenTaskConsumed={()=>setPendingOpenTaskId(null)}/></PageView>;
   else if(page==="reclamos") pageContent = adminGate("reclamos") || planGate("plus") || requiereTN("Reclamos") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
   else if(page==="canjes") pageContent = adminGate("canjes") || planGate("plus") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
+  else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="envios") pageContent = adminGate("envios") || planGate("plus") || requiereTN("Envíos") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
   else pageContent = <HomeScreen T={T} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
