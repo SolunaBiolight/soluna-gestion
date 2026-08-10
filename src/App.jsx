@@ -9447,8 +9447,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
       {/* ── Barra flotante de selección múltiple (cuentas con Andreani prepago):
              atajo directo a los dos modos sin pasar por el modal de config ── */}
-      {tab==="panel"&&selected.size>0&&!bulk&&!exportModal&&(
-        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:900,display:"flex",alignItems:"center",gap:10,background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"10px 14px",boxShadow:"0 16px 48px rgba(0,0,0,0.4)",maxWidth:"calc(100vw - 32px)",flexWrap:"wrap",justifyContent:"center",animation:"growith-fadeIn 0.2s ease both"}}>
+      {tab==="panel"&&selected.size>0&&!bulk&&!exportModal&&ReactDOM.createPortal(
+        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:900,display:"flex",alignItems:"center",gap:10,background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"10px 14px",boxShadow:"0 16px 48px rgba(0,0,0,0.4)",maxWidth:"calc(100vw - 32px)",flexWrap:"wrap",justifyContent:"center",animation:"growith-fadeIn 0.2s ease both",fontFamily:"'Inter',system-ui,sans-serif"}}>
           <span style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>{selected.size} seleccionada{selected.size!==1?"s":""}</span>
           {andreani.enabled&&(
             <button onClick={()=>setPaqModal(true)} title={paqResumen()} style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
@@ -9473,7 +9473,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               <span style={{position:"absolute",top:-9,right:10,fontSize:9,fontWeight:800,letterSpacing:0.4,textTransform:"uppercase",background:T.green,color:"#fff",borderRadius:5,padding:"2px 7px",boxShadow:"0 2px 8px rgba(0,0,0,0.35)"}}>Recomendado</span>
             </button>
           )}
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Config del paquete: única fuente de verdad (growith_exportCfg) para
