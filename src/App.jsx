@@ -21647,7 +21647,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const nowArg = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
                     const pad = n=>String(n).padStart(2,"0");
                     const hoyIso = `${nowArg.getFullYear()}-${pad(nowArg.getMonth()+1)}-${pad(nowArg.getDate())}`;
-                    const minD = new Date(nowArg.getTime()-5*86400000);
+                    const minD = new Date(nowArg.getTime()-10*86400000);
                     const minIso = `${minD.getFullYear()}-${pad(minD.getMonth()+1)}-${pad(minD.getDate())}`;
                     const fechaLabel = fechaFactura ? new Date(fechaFactura+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}) : "";
                     const diasAtras = fechaFactura ? Math.round((new Date(hoyIso)-new Date(fechaFactura))/86400000) : 0;
@@ -21693,7 +21693,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             {fechaLabel&&<span style={{fontSize:12,color:T.text,fontWeight:500,textTransform:"capitalize"}}>{fechaLabel}</span>}
                           </div>
                           <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>
-                            Podés elegir cualquier día de los últimos 5 corridos — límite real del WSFE de ARCA (error TN-3526 si se excede).{diasAtras>0?` Hace ${diasAtras} día${diasAtras>1?"s":""}.`:""}
+                            Podés retrotraer hasta 10 días corridos. Ojo: la norma publicada indica 5 días para venta de productos (10 es para servicios) — si elegís más de 5 y ARCA no lo acepta, vas a ver el rechazo de ese comprobante acá mismo.{diasAtras>0?` Hace ${diasAtras} día${diasAtras>1?"s":""}.`:""}
                           </div>
                         </div>
 
@@ -21833,13 +21833,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       const nowArg=new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
                       const pad=n=>String(n).padStart(2,"0");
                       const hoyIso=`${nowArg.getFullYear()}-${pad(nowArg.getMonth()+1)}-${pad(nowArg.getDate())}`;
-                      const minD=new Date(nowArg.getTime()-5*86400000);
+                      const minD=new Date(nowArg.getTime()-10*86400000);
                       const minIso=`${minD.getFullYear()}-${pad(minD.getMonth()+1)}-${pad(minD.getDate())}`;
                       return (
                         <div style={{marginBottom:18}}>
                           <label style={labelS}>Fecha de la factura</label>
                           <input type="date" value={manualFecha||hoyIso} min={minIso} max={hoyIso} onChange={e=>setManualFecha(e.target.value===hoyIso?"":e.target.value)} style={{...iS,width:"auto"}}/>
-                          <div style={{fontSize:11,color:T.textSm,marginTop:5}}>Podés retrotraerla hasta 5 días corridos — el máximo que acepta ARCA para venta de productos.</div>
+                          <div style={{fontSize:11,color:T.textSm,marginTop:5}}>Podés retrotraerla hasta 10 días corridos. La norma publicada indica 5 para productos (10 para servicios): si ARCA no acepta la fecha, te muestra el rechazo acá.</div>
                         </div>
                       );
                     })()}

@@ -721,7 +721,10 @@ function fechaValida(yyyymmdd) {
   const today = new Date(Date.UTC(ty, tm - 1, td));
   const diffDays = (today.getTime() - target.getTime()) / (24 * 60 * 60 * 1000);
   if (diffDays < 0) return { ok: false, msg: "No podés emitir facturas con fecha futura." };
-  if (diffDays > 5) return { ok: false, msg: `La fecha ${String(d).padStart(2,"0")}/${String(m).padStart(2,"0")}/${y} está fuera del rango ARCA (máximo 5 días corridos hacia atrás). ARCA rechaza comprobantes con fecha anterior a N-5 (error TN-3526).` };
+  // Ventana ampliada a 10 días: la norma pública dice 5 para bienes y 10 para
+  // servicios, pero el juez final es el WSFE — si ARCA no acepta la fecha,
+  // rechaza ese comprobante con error explícito (TN-3526) y acá se muestra.
+  if (diffDays > 10) return { ok: false, msg: `La fecha ${String(d).padStart(2,"0")}/${String(m).padStart(2,"0")}/${y} está fuera del rango ARCA (máximo 10 días corridos hacia atrás).` };
   return { ok: true };
 }
 function dentroDe10DiasCorridos(yyyymmdd) { return fechaValida(yyyymmdd).ok; }
