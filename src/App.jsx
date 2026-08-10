@@ -2044,15 +2044,23 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
       <button onClick={toggleOpen} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"7px 14px",background:T.input,border:`1px solid ${open?T.accent+"66":T.inputBorder}`,borderRadius:10,fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
         <span>{label}</span> <span style={{color:T.textSm,fontSize:10}}>▾</span>
       </button>
-      {open && ReactDOM.createPortal(
+      {open && ReactDOM.createPortal((()=>{
         /* Portal a body: si un ancestro tiene transform (animaciones con fill-mode
            both), position:fixed se vuelve relativo a ese ancestro y el calendario
-           aparecía flotando en cualquier lado. En body el fixed es real. */
-        <div ref={ddRef} className="gh-dropdown" style={{position:"fixed",top:pos.top,right:pos.right,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:14,boxShadow:"0 14px 40px rgba(0,0,0,0.45)",width:"min(340px,calc(100vw - 20px))",boxSizing:"border-box",maxHeight:"calc(100vh - 120px)",overflowY:"auto"}}>
+           aparecía flotando en cualquier lado. En body el fixed es real.
+           En mobile el dropdown anclado quedaba apretado contra el borde: se
+           convierte en un bottom sheet a lo ancho con backdrop y targets táctiles. */
+        const esMobile = typeof window!=="undefined" && window.innerWidth<640;
+        const sheetStyle = esMobile
+          ? {position:"fixed",left:10,right:10,bottom:10,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:16,boxShadow:"0 -10px 44px rgba(0,0,0,0.55)",boxSizing:"border-box",maxHeight:"78vh",overflowY:"auto"}
+          : {position:"fixed",top:pos.top,right:pos.right,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:14,boxShadow:"0 14px 40px rgba(0,0,0,0.45)",width:"min(340px,calc(100vw - 20px))",boxSizing:"border-box",maxHeight:"calc(100vh - 120px)",overflowY:"auto"};
+        return (<>
+        {esMobile && <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,0.45)"}}/>}
+        <div ref={ddRef} className="gh-dropdown" style={sheetStyle}>
           {/* Presets */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:6,marginBottom:10}}>
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${esMobile?2:3}, 1fr)`,gap:esMobile?8:6,marginBottom:10}}>
             {PRESETS.map(p => (
-              <button key={p.id} onClick={()=>applyPreset(p)} style={{padding:"6px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:7,background:T.surface,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.label}</button>
+              <button key={p.id} onClick={()=>applyPreset(p)} style={{padding:esMobile?"10px 10px":"6px 10px",fontSize:esMobile?12:11,border:`1px solid ${T.border}`,borderRadius:8,background:T.surface,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.label}</button>
             ))}
           </div>
           {/* Month nav */}
@@ -2077,7 +2085,7 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
               const dis = c.out;
               return (
                 <button key={i} disabled={dis} onClick={()=>!dis && clickDay(str)} style={{
-                  padding:"7px 0",fontSize:12,borderRadius:6,
+                  padding:esMobile?"10px 0":"7px 0",fontSize:esMobile?13:12,borderRadius:6,
                   border: isToday ? `1px solid ${T.accent}55` : "1px solid transparent",
                   background: isStart||isEnd||isTmp ? T.accent : isInRange ? T.accent+"22" : "transparent",
                   color: isStart||isEnd||isTmp ? "#fff" : dis ? T.textSm+"77" : T.text,
@@ -2090,7 +2098,9 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
             })}
           </div>
           {tmpStart && <div style={{marginTop:8,padding:"6px 10px",background:T.accent+"15",border:`1px solid ${T.accent}33`,borderRadius:7,fontSize:11,color:T.textMd}}>Inicio: {new Date(tmpStart+"T00:00:00").toLocaleDateString("es-AR")} — elegí la fecha final</div>}
-        </div>,
+        </div>
+        </>);
+      })(),
         document.body
       )}
     </div>
