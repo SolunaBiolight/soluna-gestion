@@ -8473,6 +8473,33 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 </svg>
                 Compacto
               </button>
+              {/* CTAs de exportación en la fila de controles, junto al selector —
+                  la barra flotante quedaba disimulada; acá se ven siempre */}
+              {selected.size>0&&(
+                <>
+                  {andreani.enabled&&(
+                    <button onClick={()=>setPaqModal(true)} title={paqResumen()} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+                      Paquete
+                    </button>
+                  )}
+                  <button onClick={()=>{setExportSingleOrder(null);exportAndreani([...selected.values()]);}}
+                    title="Genera el Excel para subir al portal de Andreani y pagar con tu propia cuenta"
+                    style={{...BtnSecondary(T),fontWeight:600,fontSize:12,padding:"7px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
+                    Exportar XLSX Andreani ({selected.size})
+                  </button>
+                  {andreani.enabled&&(
+                    <button onClick={()=>{setExportSingleOrder(null);lanzarBulkAndreani([...selected.values()]);}}
+                      title="Cotiza y emite las etiquetas al instante, debitando del saldo de envíos"
+                      style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",position:"relative"}}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                      Generar etiquetas (Saldo) ({selected.size})
+                      <span style={{position:"absolute",top:-9,right:10,fontSize:9,fontWeight:800,letterSpacing:0.4,textTransform:"uppercase",background:T.green,color:"#fff",borderRadius:5,padding:"2px 7px",boxShadow:"0 2px 8px rgba(0,0,0,0.35)"}}>Recomendado</span>
+                    </button>
+                  )}
+                </>
+              )}
               <span title="Atajos: Ctrl+A selecciona todos · Shift+click selecciona un rango · Esc limpia la selección · Enter exporta"
                 style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"flex",gap:10,alignItems:"center",cursor:"help"}}>
                 <span>{exportables.length} {exportables.length===1?"pedido":"pedidos"}{totalPages>1?` · pág. ${orderPage+1}/${totalPages}`:""}</span>
@@ -9454,41 +9481,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           </div>
         )}
       </Modal>
-
-      {/* ── Barra flotante de selección múltiple (cuentas con Andreani prepago):
-             atajo directo a los dos modos sin pasar por el modal de config ── */}
-      {tab==="panel"&&selected.size>0&&!bulk&&!exportModal&&ReactDOM.createPortal(
-        // Centrado con left/right 0 + margin auto (NO translateX: la animación
-        // growith-fadeIn con fill "both" pisa el transform inline y la dejaba
-        // corrida a la derecha)
-        <div style={{position:"fixed",bottom:24,left:0,right:0,margin:"0 auto",width:"fit-content",zIndex:900,display:"flex",alignItems:"center",gap:10,background:T.card,border:`1px solid ${T.accentSolid}55`,borderRadius:14,padding:"12px 16px",boxShadow:`0 20px 60px rgba(0,0,0,0.55), 0 0 0 1px ${T.accentSolid}22`,maxWidth:"calc(100vw - 32px)",flexWrap:"wrap",justifyContent:"center",animation:"growith-fadeIn 0.2s ease both",fontFamily:"'Inter',system-ui,sans-serif"}}>
-          <span style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>{selected.size} seleccionada{selected.size!==1?"s":""}</span>
-          {andreani.enabled&&(
-            <button onClick={()=>setPaqModal(true)} title={paqResumen()} style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
-              Paquete
-            </button>
-          )}
-          {/* Dos vías con la misma jerarquía: XLSX = pagás con TU cuenta Andreani;
-              Saldo = se emiten acá y se debitan del saldo (recomendado). */}
-          <button onClick={()=>{setExportSingleOrder(null);exportAndreani([...selected.values()]);}}
-            title="Genera el Excel para subir al portal de Andreani y pagar con tu propia cuenta"
-            style={{...BtnSecondary(T),fontWeight:600,fontSize:13,padding:"9px 14px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
-            Exportar XLSX Andreani ({selected.size})
-          </button>
-          {andreani.enabled&&(
-            <button onClick={()=>{setExportSingleOrder(null);lanzarBulkAndreani([...selected.values()]);}}
-              title="Cotiza y emite las etiquetas al instante, debitando del saldo de envíos"
-              style={{...BtnPrimary(T),fontSize:13,padding:"9px 14px",display:"flex",alignItems:"center",gap:7,whiteSpace:"nowrap",position:"relative"}}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-              Generar etiquetas (Saldo) ({selected.size})
-              <span style={{position:"absolute",top:-9,right:10,fontSize:9,fontWeight:800,letterSpacing:0.4,textTransform:"uppercase",background:T.green,color:"#fff",borderRadius:5,padding:"2px 7px",boxShadow:"0 2px 8px rgba(0,0,0,0.35)"}}>Recomendado</span>
-            </button>
-          )}
-        </div>,
-        document.body
-      )}
 
       {/* ── Config del paquete: única fuente de verdad (growith_exportCfg) para
              cotizar por fila, el bulk por API y el export XLSX ── */}
