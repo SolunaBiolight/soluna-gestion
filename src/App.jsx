@@ -8457,7 +8457,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       {/* Seleccionar todo / Limpiar */}
                       <div className="gh-accordion" style={{borderTop:`1px solid ${T.borderL}`,margin:"4px 0 0",padding:"6px 6px 2px",display:"flex",gap:4}}>
                         <button onClick={()=>toggleAll()} style={{flex:1,fontSize:11,padding:"6px 8px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
-                          {selected.size===exportables.length&&exportables.length>0?`Limpiar todo`:`Seleccionar todo (${exportables.length})`}
+                          Seleccionar todo ({exportables.length})
                         </button>
                         {selected.size>0&&<button onClick={()=>setSelected(new Map())} style={{fontSize:11,padding:"6px 10px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar</button>}
                       </div>
@@ -9458,7 +9458,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* ── Barra flotante de selección múltiple (cuentas con Andreani prepago):
              atajo directo a los dos modos sin pasar por el modal de config ── */}
       {tab==="panel"&&selected.size>0&&!bulk&&!exportModal&&ReactDOM.createPortal(
-        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:900,display:"flex",alignItems:"center",gap:10,background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"10px 14px",boxShadow:"0 16px 48px rgba(0,0,0,0.4)",maxWidth:"calc(100vw - 32px)",flexWrap:"wrap",justifyContent:"center",animation:"growith-fadeIn 0.2s ease both",fontFamily:"'Inter',system-ui,sans-serif"}}>
+        {/* Centrado con left/right 0 + margin auto (NO translateX: la animación
+            growith-fadeIn con fill "both" pisa el transform inline y la dejaba
+            corrida a la derecha) */}
+        <div style={{position:"fixed",bottom:24,left:0,right:0,margin:"0 auto",width:"fit-content",zIndex:900,display:"flex",alignItems:"center",gap:10,background:T.card,border:`1px solid ${T.accentSolid}55`,borderRadius:14,padding:"12px 16px",boxShadow:`0 20px 60px rgba(0,0,0,0.55), 0 0 0 1px ${T.accentSolid}22`,maxWidth:"calc(100vw - 32px)",flexWrap:"wrap",justifyContent:"center",animation:"growith-fadeIn 0.2s ease both",fontFamily:"'Inter',system-ui,sans-serif"}}>
           <span style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>{selected.size} seleccionada{selected.size!==1?"s":""}</span>
           {andreani.enabled&&(
             <button onClick={()=>setPaqModal(true)} title={paqResumen()} style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
@@ -9470,17 +9473,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               Saldo = se emiten acá y se debitan del saldo (recomendado). */}
           <button onClick={()=>{setExportSingleOrder(null);exportAndreani([...selected.values()]);}}
             title="Genera el Excel para subir al portal de Andreani y pagar con tu propia cuenta"
-            style={{...BtnSecondary(T),fontWeight:600,fontSize:13,padding:"9px 14px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+            style={{...BtnPrimary(T),fontWeight:600,fontSize:13,padding:"9px 14px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
             Exportar XLSX Andreani ({selected.size})
           </button>
           {andreani.enabled&&(
             <button onClick={()=>{setExportSingleOrder(null);lanzarBulkAndreani([...selected.values()]);}}
               title="Cotiza y emite las etiquetas al instante, debitando del saldo de envíos"
-              style={{...BtnPrimary(T),fontSize:13,padding:"9px 14px",display:"flex",alignItems:"center",gap:7,whiteSpace:"nowrap",position:"relative"}}>
+              style={{...BtnPrimary(T),background:T.green,fontSize:13,padding:"9px 14px",display:"flex",alignItems:"center",gap:7,whiteSpace:"nowrap",position:"relative",boxShadow:`0 4px 14px ${T.green}44`}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
               Generar etiquetas (Saldo) ({selected.size})
-              <span style={{position:"absolute",top:-9,right:10,fontSize:9,fontWeight:800,letterSpacing:0.4,textTransform:"uppercase",background:T.green,color:"#fff",borderRadius:5,padding:"2px 7px",boxShadow:"0 2px 8px rgba(0,0,0,0.35)"}}>Recomendado</span>
+              <span style={{position:"absolute",top:-9,right:10,fontSize:9,fontWeight:800,letterSpacing:0.4,textTransform:"uppercase",background:"#fff",color:"#059669",borderRadius:5,padding:"2px 7px",boxShadow:"0 2px 8px rgba(0,0,0,0.35)"}}>Recomendado</span>
             </button>
           )}
         </div>,
