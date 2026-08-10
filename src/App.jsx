@@ -13445,18 +13445,48 @@ function AppAdmin({T, user, onBack}) {
                 {expanded&&(
                   <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,background:T.bg}}>
 
-                    {/* Estado actual */}
-                    <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                      {u.plan==="free"?(
-                        <span style={{fontSize:13,color:T.textSm}}>Plan gratuito — sin suscripción activa</span>
-                      ):(
-                        <>
-                          <span style={{fontSize:14,fontWeight:700,color:PLAN_C[u.plan]}}>{planLabel(u.plan)}</span>
-                          {u.isTrial&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:4,fontWeight:700,background:T.yellowBg,color:T.yellow}}>PRUEBA</span>}
-                          {days!==null&&<span style={{fontSize:13,fontWeight:600,color:expiryColor}}>{days<0?`Vencido hace ${Math.abs(days)}d`:days===0?"Vence hoy":`${days}d restantes`}</span>}
-                          {u.planExpiry&&<span style={{fontSize:12,color:T.textSm}}>hasta {fmtDate(u.planExpiry)}</span>}
-                        </>
-                      )}
+                    {/* Resumen: suscripción + datos de la cuenta, en dos columnas */}
+                    <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:14}}>
+                      <div>
+                        <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:7}}>Suscripción</div>
+                        {u.plan==="free"?(
+                          <div style={{fontSize:13,color:T.textSm}}>Sin plan activo — cuenta gratuita</div>
+                        ):(
+                          <>
+                            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                              <span style={{fontSize:16,fontWeight:800,color:PLAN_C[u.plan],letterSpacing:-0.3}}>{planLabel(u.plan)}</span>
+                              {u.isTrial&&<span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:T.yellowBg,color:T.yellow}}>PRUEBA GRATIS</span>}
+                            </div>
+                            {days!==null&&(
+                              <div style={{fontSize:12.5,fontWeight:600,color:expiryColor,marginTop:5,lineHeight:1.5}}>
+                                {days<0?`Vencida hace ${Math.abs(days)} día${Math.abs(days)!==1?"s":""} — venció el ${fmtDate(u.planExpiry)}`
+                                 :days===0?`Vence hoy (${fmtDate(u.planExpiry)})`
+                                 :`Activa — vence el ${fmtDate(u.planExpiry)} (en ${days} día${days!==1?"s":""})`}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      <div>
+                        <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:7}}>Cuenta</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:5,fontSize:12,color:T.textMd}}>
+                          <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                            <span style={{color:T.textSm}}>Integraciones:</span>
+                            {(u.stores||[]).length===0&&(u.cuits||[]).length===0
+                              ? <span style={{color:T.textSm,fontStyle:"italic"}}>ninguna conectada</span>
+                              : <>
+                                  {(u.stores||[]).map((s,i)=><span key={i} title={s.type==="tiendanube"?"Tienda Nube":s.type==="shopify"?"Shopify":s.type==="mercadolibre"?"Mercado Libre":s.type} style={{display:"inline-flex"}}><BrandIcon name={s.type} size={15}/></span>)}
+                                  {(u.cuits||[]).length>0&&<span title={`ARCA · ${(u.cuits||[]).length} CUIT`} style={{display:"inline-flex"}}><BrandIcon name="arca" size={15}/></span>}
+                                </>}
+                            {(u.teamUids||[]).length>0&&<span style={{fontSize:11,color:T.textSm}}>· {(u.teamUids||[]).length} miembro{(u.teamUids||[]).length!==1?"s":""} de equipo</span>}
+                          </div>
+                          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                            <span>{userPagos.length} pago{userPagos.length!==1?"s":""} registrado{userPagos.length!==1?"s":""}</span>
+                            <button onClick={()=>{try{navigator.clipboard.writeText(u._id);toast("UID copiado","success");}catch(_){appAlert(u._id);}}}
+                              title={u._id} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,color:T.textSm,cursor:"pointer",padding:"2px 8px",fontSize:10,fontFamily:"'Inter',system-ui,sans-serif"}}>Copiar UID</button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Uso — Envíos */}
@@ -13471,22 +13501,25 @@ function AppAdmin({T, user, onBack}) {
                       ];
                       const maxDay=Math.max(1,...rows.map(r=>Math.max(r.etiquetas||0,r.skus||0,r.seguimientos||0)));
                       return (
-                        <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.borderL}`}}>
-                          <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:10}}>Uso — Envíos · últimos 30 días</div>
+                        <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`}}>
+                          <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Uso de Envíos · últimos 30 días</div>
                           {u_?.loading?(
                             <div style={{fontSize:12,color:T.textSm,padding:"8px 0"}}><Spinner size={14} color={T.accent}/> Cargando uso…</div>
+                          ):(tot.etiquetas+tot.skus+tot.seguimientos)===0?(
+                            <div style={{fontSize:12,color:T.textSm}}>Sin actividad en Envíos en este período.</div>
                           ):(
                             <>
-                              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:rows.length?12:0}}>
+                              <div style={{display:"flex",gap:16,flexWrap:"wrap",marginBottom:rows.length?12:0,fontSize:12.5}}>
                                 {METRICS.map(m=>(
-                                  <div key={m.key} style={{flex:"1 1 100px",background:T.card,border:`1px solid ${m.color}28`,borderRadius:DS.r.lg,padding:"10px 12px"}}>
-                                    <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.4,marginBottom:4}}>{m.icon} {m.label}</div>
-                                    <div style={{fontSize:22,fontWeight:800,color:m.color,lineHeight:1}}>{tot[m.key]||0}</div>
-                                  </div>
+                                  <span key={m.key} style={{display:"inline-flex",alignItems:"center",gap:6}}>
+                                    <span style={{width:8,height:8,borderRadius:"50%",background:m.color,display:"inline-block"}}/>
+                                    <strong style={{color:T.text,fontWeight:800}}>{tot[m.key]||0}</strong>
+                                    <span style={{color:T.textMd}}>{m.label.toLowerCase()}</span>
+                                  </span>
                                 ))}
                               </div>
                               {rows.length===0?(
-                                <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin actividad registrada en Envíos todavía.</div>
+                                <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin detalle diario disponible.</div>
                               ):(
                                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                                   {rows.map(r=>(
@@ -13515,65 +13548,86 @@ function AppAdmin({T, user, onBack}) {
                       );
                     })()}
 
-                    {/* Gestionar suscripción */}
-                    <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.borderL}`}}>
+                    {/* Gestionar suscripción — cada acción en su propia caja, con
+                        explicación de qué hace (antes era una fila de controles sueltos
+                        imposible de leer sin conocer el código) */}
+                    <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`}}>
                       <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:10}}>Gestionar suscripción</div>
-                      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:u.plan!=="free"?10:0}}>
-                        <select value={selPlan} onChange={e=>setUPlan(prev=>({...prev,[u._id]:e.target.value}))}
-                          style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
-                          <option value="plus">Pro</option>
-                          <option value="facturador">Facturador</option>
-                        </select>
-                        <span style={{fontSize:12,color:T.textMd}}>por</span>
-                        <input type="number" min="1" value={uCantidad[u._id]||"1"}
-                          onChange={e=>setUCantidad(prev=>({...prev,[u._id]:e.target.value}))}
-                          style={{...iS,fontSize:12,width:60,textAlign:"center"}}/>
-                        <select value={uUnidad[u._id]||"meses"} onChange={e=>setUUnidad(prev=>({...prev,[u._id]:e.target.value}))}
-                          style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
-                          <option value="meses">mes(es)</option>
-                          <option value="dias">día(s)</option>
-                        </select>
-                        <AsyncButton onClick={()=>gestionarPlan(u._id, selPlan, uCantidad[u._id]||1, uUnidad[u._id]||"meses", false)}
-                          style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>
-                          Activar
-                        </AsyncButton>
-                        <AsyncButton onClick={()=>gestionarPlan(u._id, selPlan, uCantidad[u._id]||1, uUnidad[u._id]||"meses", true)}
-                          style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.yellow,border:`1px solid ${T.yellow}44`}}>
-                          Prueba
-                        </AsyncButton>
+
+                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+                        <div style={{fontSize:12.5,fontWeight:700,color:T.text,marginBottom:8}}>{u.plan==="free"?"Activar un plan":"Renovar o cambiar el plan"}</div>
+                        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                          <select value={selPlan} onChange={e=>setUPlan(prev=>({...prev,[u._id]:e.target.value}))}
+                            style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
+                            <option value="plus">Pro</option>
+                            <option value="facturador">Facturador</option>
+                          </select>
+                          <span style={{fontSize:12,color:T.textMd}}>durante</span>
+                          <input type="number" min="1" value={uCantidad[u._id]||"1"}
+                            onChange={e=>setUCantidad(prev=>({...prev,[u._id]:e.target.value}))}
+                            style={{...iS,fontSize:12,width:60,textAlign:"center"}}/>
+                          <select value={uUnidad[u._id]||"meses"} onChange={e=>setUUnidad(prev=>({...prev,[u._id]:e.target.value}))}
+                            style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
+                            <option value="meses">mes(es)</option>
+                            <option value="dias">día(s)</option>
+                          </select>
+                          <AsyncButton onClick={()=>gestionarPlan(u._id, selPlan, uCantidad[u._id]||1, uUnidad[u._id]||"meses", false)}
+                            style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>
+                            Activar como pago
+                          </AsyncButton>
+                          <AsyncButton onClick={()=>gestionarPlan(u._id, selPlan, uCantidad[u._id]||1, uUnidad[u._id]||"meses", true)}
+                            style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.yellow,border:`1px solid ${T.yellow}44`}}>
+                            Dar como prueba
+                          </AsyncButton>
+                        </div>
+                        <div style={{fontSize:11,color:T.textSm,marginTop:8,lineHeight:1.5}}>
+                          El tiempo se <strong style={{color:T.textMd}}>suma al vencimiento actual</strong> (si está vencida, arranca desde hoy).
+                          "Dar como prueba" no cuenta como ingreso en las métricas.
+                        </div>
                       </div>
+
                       {u.plan!=="free"&&(
-                        <div className="gh-accordion" style={{borderTop:`1px solid ${T.borderL}`,paddingTop:10}}>
-                          <div style={{fontSize:11,color:T.textSm,marginBottom:6}}>Ajustar días al vencimiento:</div>
+                        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+                          <div style={{fontSize:12.5,fontWeight:700,color:T.text,marginBottom:8}}>Corregir el vencimiento</div>
                           <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
                             {[-30,-7,-1,1,7,30].map(d=>(
                               <AsyncButton key={d} onClick={()=>ajustarDias(u._id,d)}
-                                style={{...BtnSecondary(T),fontSize:11,padding:"3px 9px",color:d<0?T.red:T.green}}>
+                                style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:d<0?T.red:T.green}}>
                                 {d>0?"+":""}{d}d
                               </AsyncButton>
                             ))}
                             <input type="number" value={selDias}
                               onChange={e=>setUDias(prev=>({...prev,[u._id]:e.target.value}))}
                               onKeyDown={e=>e.key==="Enter"&&ajustarDias(u._id,selDias)}
-                              placeholder="días" style={{...iS,fontSize:11,width:68,textAlign:"center"}}/>
+                              placeholder="± días" style={{...iS,fontSize:11,width:68,textAlign:"center"}}/>
                             <AsyncButton onClick={()=>ajustarDias(u._id,selDias)}
-                              style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px",color:Number(selDias)<0?T.red:T.green}}>
+                              style={{...BtnSecondary(T),fontSize:11,padding:"4px 12px",color:Number(selDias)<0?T.red:T.green}}>
                               Aplicar
                             </AsyncButton>
                           </div>
+                          <div style={{fontSize:11,color:T.textSm,marginTop:8}}>
+                            Mueve la fecha de vencimiento actual ({fmtDate(u.planExpiry)}) sin registrar ningún pago — para regalar días o corregir errores.
+                          </div>
                         </div>
                       )}
+
                       {u.plan!=="free"&&(
-                        <div style={{marginTop:10}}>
-                          <AsyncButton onClick={()=>desactivarPlan(u._id)} style={{...BtnDanger(T),fontSize:11,padding:"5px 12px"}}>
-                            Desactivar plan
+                        <div style={{border:`1px solid ${T.red}33`,borderRadius:10,padding:"11px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+                          <div>
+                            <div style={{fontSize:12.5,fontWeight:700,color:T.red}}>Desactivar plan</div>
+                            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>La cuenta pasa a Free ahora mismo. No borra datos ni historial de pagos.</div>
+                          </div>
+                          <AsyncButton onClick={()=>desactivarPlan(u._id)} style={{...BtnDanger(T),fontSize:11,padding:"6px 14px",flexShrink:0}}>
+                            Desactivar
                           </AsyncButton>
                         </div>
                       )}
                     </div>
 
-                    {/* Nota interna */}
-                    <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.borderL}`}}>
+                    {/* Nota interna + Acceso admin lado a lado (dos cosas chicas que
+                        apiladas estiraban el panel al pedo) */}
+                    <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14}}>
+                    <div>
                       <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Nota interna</div>
                       {noteEdit[u._id]!==undefined ? (
                         <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
@@ -13596,11 +13650,10 @@ function AppAdmin({T, user, onBack}) {
                       )}
                     </div>
 
-                    {/* Acceso Admin */}
-                    <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12}}>
                       <div>
-                        <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>Acceso Admin</div>
-                        <div style={{fontSize:11,color:T.textSm}}>Permite ver secciones exclusivas de administrador (Dashboard, etc.)</div>
+                        <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>Acceso admin</div>
+                        <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Habilita las secciones exclusivas de administrador para esta cuenta.</div>
                       </div>
                       <AsyncButton onClick={async()=>{
                         const d=await adminApi({action:"toggleAdmin",targetUid:u._id});
@@ -13609,22 +13662,26 @@ function AppAdmin({T, user, onBack}) {
                         {u.isAdmin?"Quitar admin":"Dar admin"}
                       </AsyncButton>
                     </div>
+                    </div>
 
-                    {/* Historial */}
-                    <div style={{padding:"13px 16px"}}>
-                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Historial ({userPagos.length})</div>
+                    {/* Historial de pagos */}
+                    <div style={{padding:"14px 16px"}}>
+                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Historial de pagos ({userPagos.length})</div>
                       {userPagos.length===0
-                        ? <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin pagos registrados</div>
+                        ? <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Esta cuenta nunca registró un pago ni una prueba.</div>
                         : userPagos.map(p=>(
-                          <div key={p._id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:11,padding:"7px 10px",background:T.surface,borderRadius:8,marginBottom:6}}>
+                          <div key={p._id} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontSize:11.5,padding:"8px 12px",background:T.surface,borderRadius:8,marginBottom:6}}>
+                            <span style={{color:T.textSm,width:72,flexShrink:0}}>{fmtDate(p.createdAt)}</span>
                             <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{planLabel(p.plan)}</span>
                             {p.isTrial
-                              ? <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:T.yellowBg,color:T.yellow}}>prueba</span>
-                              : Number(p.amount)>0&&<span style={{color:T.textMd,fontWeight:600}}>${p.amount} {p.currency}</span>
+                              ? <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:T.yellowBg,color:T.yellow}}>prueba gratis</span>
+                              : Number(p.amount)>0
+                                ? <span style={{color:T.text,fontWeight:700}}>${p.amount} {p.currency}{p.method?<span style={{color:T.textSm,fontWeight:500}}> · {p.method==="cripto"?"USDT":p.method==="credito"?"crédito referidos":p.method}</span>:null}</span>
+                                : <span style={{color:T.textSm}}>sin monto</span>
                             }
-                            <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.estado==="confirmado"?T.greenBg:p.estado==="pendiente"?T.yellowBg:T.redBg,color:p.estado==="confirmado"?T.green:p.estado==="pendiente"?T.yellow:T.red}}>{p.estado}</span>
-                            {p.mesesConfirmados&&<span style={{color:T.textSm}}>{p.mesesConfirmados}m</span>}
-                            <span style={{color:T.textSm,marginLeft:"auto"}}>{fmtDate(p.createdAt)}</span>
+                            {p.mesesConfirmados&&<span style={{color:T.textSm}}>{p.mesesConfirmados} mes{p.mesesConfirmados>1?"es":""}</span>}
+                            {p.periodo==="anual"&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:4,fontWeight:700,background:T.accentSolid+"22",color:T.accent}}>anual</span>}
+                            <span style={{marginLeft:"auto",padding:"2px 8px",borderRadius:4,fontWeight:600,background:p.estado==="confirmado"?T.greenBg:p.estado==="pendiente"?T.yellowBg:T.redBg,color:p.estado==="confirmado"?T.green:p.estado==="pendiente"?T.yellow:T.red}}>{p.estado}</span>
                           </div>
                         ))
                       }

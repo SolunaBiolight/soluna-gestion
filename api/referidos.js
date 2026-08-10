@@ -210,7 +210,7 @@ export default async function handler(req, res) {
         uid, email: String(body.email || ""), plan, method: "credito", currency: "USD", amount: total,
         meses, periodo, estado: "confirmado", mesesConfirmados: meses,
         confirmadoBy: "credito-referidos", confirmadoAt: new Date(), createdAt: new Date(),
-        nota: `Renovación pagada 100% con crédito de referidos (u$s${total})`,
+        nota: `Renovación pagada 100% con crédito de referidos (USD ${total})`,
       }).catch(() => {});
       return res.json({ ok: true, expiry });
     }
