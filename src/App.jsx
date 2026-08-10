@@ -2332,7 +2332,7 @@ async function ghEtiquetaAndreaniXlsxUno(o) {
   function sC(ref,val){return '<c r="'+ref+'" t="s"><v>'+idx(val)+'</v></c>';}
   function nC(ref,val){return (val===''||val===null||val===undefined)?sC(ref,''):'<c r="'+ref+'"><v>'+val+'</v></c>';}
   // Sin tildes (Andreani rechaza caracteres fuera de ASCII) y CUIT de 11 dígitos → DNI.
-  function cl(s){return String(s||"").normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[-\/\|#*]+/g,' ').replace(/\s{2,}/g,' ').trim();}
+  function cl(s){return String(s||"").normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[-\/\|#*]+/g,' ').replace(/[^A-Za-z0-9\s.,]/g,' ').replace(/\s{2,}/g,' ').trim();}
   const dniDep=(()=>{const d=String(o.dni||"").replace(/\D/g,'');return d.length===11?d.slice(2,10):d;})();
   const partes=String(o.comprador||"").trim().split(' ');
   const nombre=cl(partes[0]||"");const apellido=cl(partes.slice(1).join(' ')||"");
@@ -7079,7 +7079,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     let rowsXml='';
     // Clean invalid chars for Andreani (-, /, etc → space)
     function cleanField(s){return String(s||"").replace(/["']/g,"").replace(/[-\/\\|#*]+/g,' ').replace(/\s{2,}/g,' ').trim();}
-    function cleanAndreani(s){return cleanField(s).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^\x00-\x7F]/g,"");}
+    // Whitelist final: el importador de Andreani rechaza s\u00edmbolos como & ! ( ) \u2014
+    // solo dejamos letras, n\u00fameros, espacios, punto y coma.
+    function cleanAndreani(s){return cleanField(s).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^\x00-\x7F]/g,"").replace(/[^A-Za-z0-9\s.,]/g," ").replace(/\s{2,}/g," ").trim();}
 
     // Separate domicilio vs sucursal
     // NOTA: por pedido del usuario, TODOS los envíos a Andreani se generan como
@@ -7160,7 +7162,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
           sC('N'+rn,cleanAndreani(direccion)),
           (dirNum&&dirNum!=="0"&&!isNaN(dirNum)&&parseFloat(dirNum)>0)?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,parseFloat(dirNum)||0),
-          sC('P'+rn,cleanField(o.piso||"")),
+          sC('P'+rn,cleanAndreani(o.piso||"")),
           sC('Q'+rn,""),
           sC('R'+rn,ubicacion),
           sC('S'+rn,""),
@@ -30887,9 +30889,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     const d=delta(curr,prev);
     if(d===null)return null;
     const good=invert?d<0:d>=0;
-    // Discreto a propósito: solo la flecha lleva color; el porcentaje va en gris
-    // para no competir con el número principal de la card.
-    return <span title={`${Math.abs(d).toFixed(1)}% ${good?"mejor":"peor"} que ${prevHasta?`ayer hasta las ${prevHasta}`:"el período anterior"}`} style={{fontSize:10,fontWeight:600,color:T.textSm,display:"inline-flex",alignItems:"center",gap:2,cursor:"default"}}><span style={{color:good?MC.green:MC.red,fontWeight:800}}>{good?"↑":"↓"}</span>{Math.abs(d)>=100?Math.round(Math.abs(d)):Math.abs(d).toFixed(1)}%</span>;
+    // Pill de variación (estilo Escalafy): fondo tenue verde/rojo al lado del
+    // número — se lee de un vistazo sin competir en tamaño.
+    return <span title={`${Math.abs(d).toFixed(1)}% ${good?"mejor":"peor"} que ${prevHasta?`ayer hasta las ${prevHasta}`:"el período anterior"}`} style={{fontSize:10,fontWeight:700,color:good?MC.green:MC.red,background:(good?MC.green:MC.red)+"1c",borderRadius:20,padding:"2px 8px",display:"inline-flex",alignItems:"center",gap:3,cursor:"default",lineHeight:1.4,flexShrink:0}}>{good?"↑":"↓"} {Math.abs(d)>=100?Math.round(Math.abs(d)):Math.abs(d).toFixed(1)}%</span>;
   };
 
   const rows=rendData?.rows||[];
@@ -31020,7 +31022,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             onClick={k.onClick}
             title={k.onClick?"Ver las ventas que componen este número":undefined}
             className={k.onClick?"gh-card-click":undefined}
-            style={{gridColumn:`span ${spanFor(ci)}`,background:T.card,border:`1px solid ${k.bad?MC.red+"44":T.border}`,borderRadius:12,padding:k.hero?"16px 18px 14px":"12px 14px 10px",position:"relative",overflow:"hidden",minHeight:k.hero?122:92,display:"flex",flexDirection:"column",opacity:dragKpi===k.label?0.4:1,transition:"opacity .12s",cursor:k.onClick?"pointer":"default"}}>
+            style={{gridColumn:`span ${spanFor(ci)}`,background:T.card,border:`1px solid ${k.bad?MC.red+"44":"transparent"}`,borderRadius:12,padding:k.hero?"16px 18px 14px":"12px 14px 10px",position:"relative",overflow:"hidden",minHeight:k.hero?122:92,display:"flex",flexDirection:"column",opacity:dragKpi===k.label?0.4:1,transition:"opacity .12s",cursor:k.onClick?"pointer":"default"}}>
             <span draggable
               onDragStart={e=>{ setDragKpi(k.label); try{e.dataTransfer.effectAllowed="move";}catch(_){} }}
               onDragEnd={()=>setDragKpi(null)}
@@ -31030,10 +31032,12 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {k.accent && <span style={{width:6,height:6,borderRadius:"50%",background:k.accent,display:"inline-block",flexShrink:0}}/>}
               {k.label}
             </div>
-            <div style={{fontSize:k.hero?28:19,fontWeight:800,color:k.valColor||(k.bad?MC.red:T.text),letterSpacing:k.hero?-1:-0.6,lineHeight:1,marginBottom:5,fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:5}}>
+              <span style={{fontSize:k.hero?30:23,fontWeight:800,color:k.valColor||(k.bad?MC.red:T.text),letterSpacing:k.hero?-1.1:-0.7,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{k.val}</span>
+              {hasPrev && k.c!=null && k.p!=null && <DeltaBadge curr={k.c} prev={k.p} invert={k.inv}/>}
+            </div>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:k.spk?8:0}}>
               <span style={{fontSize:10,color:T.textSm}}>{k.hint}</span>
-              {hasPrev && k.c!=null && k.p!=null && <DeltaBadge curr={k.c} prev={k.p} invert={k.inv}/>}
             </div>
             {/* Sparkline a lo ancho de toda la card (full-bleed, estilo Escalafy) */}
             {k.spk && <div style={{marginTop:"auto",margin:k.hero?"auto -18px -14px":"auto -14px -10px",opacity:0.95}}><Spk vals={k.spk} color={k.accent||T.accent} h={k.hero?34:24} w={140} showZero={k.zero}/></div>}
@@ -31420,7 +31424,13 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {label:"Revenue",     val:fmtM(tot.revenue),   c:tot.revenue,    p:prevTot.revenue,    hero:true, hint:"Facturación total",      spk:dailyRows.map(r=>r.Revenue), onClick:irAVentas},
               {label:"Ad Spend",    val:fmtM(tot.adSpend),   c:tot.adSpend,    p:prevTot.adSpend,    hero:true, hint:"Inversión publicitaria", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
               {label:"Net Revenue", val:fmtM(tot.netRevenue),c:tot.netRevenue, p:prevTot.netRevenue, hero:true, hint:"Todo descontado, antes de pauta", spk:dailyRows.map(r=>r["Net Revenue"])},
-              {label:"Órdenes",     val:fmtInt(tot.orders),  c:tot.orders,     p:prevTot.orders,     hint:"Con revenue",            spk:dailyRows.map(r=>r["Ordenes > $0"]), bad:!((tot.orders||0)>0), onClick:irAVentas},
+              {label:"Órdenes",     val:fmtInt(tot.orders),  c:tot.orders,     p:prevTot.orders,
+                // En la vista global se aclara cuántas órdenes aporta cada canal
+                hint:(()=>{const bc=rendData?.byChannel; if(!bc) return "Con revenue";
+                  const partes=[`${bc.platform==="shopify"?"Shopify":"TN"} ${fmtInt(bc.tienda?.orders||0)}`];
+                  if(bc.hasMl) partes.push(`ML ${fmtInt(bc.ml?.orders||0)}`);
+                  return partes.length>1?partes.join(" · "):"Con revenue";})(),
+                spk:dailyRows.map(r=>r["Ordenes > $0"]), bad:!((tot.orders||0)>0), onClick:irAVentas},
               {label:"ROAS",        val:fmtX(tot.roas),      c:tot.roas,       p:prevTot.roas,       hint:`meta ≥ ${metas.roas}x`,  spk:dailyRows.map(r=>r.ROAS||0), bad:(tot.roas||0)<metas.roas},
               {label:"True ROAS",   val:fmtX(tot.trueRoas),  c:tot.trueRoas,   p:prevTot.trueRoas,   hint:`meta ≥ ${metas.trueRoas}x`, spk:dailyRows.map(r=>r["True ROAS"]||0), bad:(tot.trueRoas||0)<metas.trueRoas},
               {label:"CPA real",    val:fmtM(tot.cpa),       c:tot.cpa,        p:prevTot.cpa,        hint:"Ad Spend / Órdenes",     spk:dailyRows.map(r=>r.CPA||0), inv:true},

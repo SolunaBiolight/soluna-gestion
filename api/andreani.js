@@ -1006,23 +1006,27 @@ export default async function handler(req, res) {
       }
 
       // d. Crear la orden en Andreani. Si falla → reverso.
+      // Andreani rechaza caracteres especiales en los campos de texto (&, !,
+      // paréntesis, tildes según el campo) — se sanitiza igual que el XLSX:
+      // solo letras, números, espacios y . , - para que ninguna etiqueta rebote.
+      const limpiarTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9\s.,-]/g, " ").replace(/\s{2,}/g, " ").trim();
       const contrato = contratoDe(env, tipo);
       const destinoBody = tipo === "sucursal"
         ? { sucursal: { id: Number(destino.sucursalId) } }
         : { postal: {
             codigoPostal: String(destino.postal.codigoPostal).trim(),
-            calle:        String(destino.postal.calle).trim(),
+            calle:        limpiarTxt(destino.postal.calle),
             numero:       String(destino.postal.numero).trim(),
-            localidad:    String(destino.postal.localidad).trim(),
-            region:       String(destino.postal.region || "").trim(),
+            localidad:    limpiarTxt(destino.postal.localidad),
+            region:       limpiarTxt(destino.postal.region),
             pais: "Argentina",
             componentesDeDireccion: [
-              { meta: "piso", contenido: String(piso || destino.postal.piso || "") },
-              { meta: "departamento", contenido: String(departamento || destino.postal.departamento || "") },
+              { meta: "piso", contenido: limpiarTxt(piso || destino.postal.piso || "") },
+              { meta: "departamento", contenido: limpiarTxt(departamento || destino.postal.departamento || "") },
             ],
           } };
       const personaDe = (p) => ({
-        nombreCompleto: String(p.nombreCompleto || "").trim(),
+        nombreCompleto: limpiarTxt(p.nombreCompleto),
         email: String(p.email || "").trim(),
         documentoTipo: "DNI",
         documentoNumero: String(p.documentoNumero || "").replace(/[.\-\s]/g, ""),
@@ -1031,13 +1035,13 @@ export default async function handler(req, res) {
       const orden = {
         contrato,
         origen: { postal: {
-          codigoPostal: origen.codigoPostal, calle: origen.calle, numero: origen.numero,
-          localidad: origen.localidad, region: origen.region || "", pais: "Argentina",
+          codigoPostal: origen.codigoPostal, calle: limpiarTxt(origen.calle), numero: origen.numero,
+          localidad: limpiarTxt(origen.localidad), region: limpiarTxt(origen.region || ""), pais: "Argentina",
         } },
         destino: destinoBody,
         remitente: personaDe(remitente),
         destinatario: [personaDe(destinatario)],
-        productoAEntregar: String(productoAEntregar || "Paquete"),
+        productoAEntregar: limpiarTxt(productoAEntregar) || "Paquete",
         bultos: bultos.map(b => ({
           kilos: b.kilos,
           largoCm: b.largoCm,
