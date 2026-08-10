@@ -31425,11 +31425,14 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {label:"Ad Spend",    val:fmtM(tot.adSpend),   c:tot.adSpend,    p:prevTot.adSpend,    hero:true, hint:"Inversión publicitaria", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
               {label:"Net Revenue", val:fmtM(tot.netRevenue),c:tot.netRevenue, p:prevTot.netRevenue, hero:true, hint:"Todo descontado, antes de pauta", spk:dailyRows.map(r=>r["Net Revenue"])},
               {label:"Órdenes",     val:fmtInt(tot.orders),  c:tot.orders,     p:prevTot.orders,
-                // En la vista global se aclara cuántas órdenes aporta cada canal
-                hint:(()=>{const bc=rendData?.byChannel; if(!bc) return "Con revenue";
-                  const partes=[`${bc.platform==="shopify"?"Shopify":"TN"} ${fmtInt(bc.tienda?.orders||0)}`];
-                  if(bc.hasMl) partes.push(`ML ${fmtInt(bc.ml?.orders||0)}`);
-                  return partes.length>1?partes.join(" · "):"Con revenue";})(),
+                // En la vista global se aclara cuántas órdenes aporta cada canal,
+                // con el logo de cada plataforma en vez de la sigla
+                hint:(()=>{const bc=rendData?.byChannel; if(!bc||!bc.hasMl) return "Con revenue";
+                  return (<span style={{display:"inline-flex",alignItems:"center",gap:5}}>
+                    <BrandIcon name={bc.platform==="shopify"?"shopify":"tiendanube"} size={12}/>{fmtInt(bc.tienda?.orders||0)}
+                    <span style={{opacity:0.5,margin:"0 1px"}}>·</span>
+                    <BrandIcon name="mercadolibre" size={12}/>{fmtInt(bc.ml?.orders||0)}
+                  </span>);})(),
                 spk:dailyRows.map(r=>r["Ordenes > $0"]), bad:!((tot.orders||0)>0), onClick:irAVentas},
               {label:"ROAS",        val:fmtX(tot.roas),      c:tot.roas,       p:prevTot.roas,       hint:`meta ≥ ${metas.roas}x`,  spk:dailyRows.map(r=>r.ROAS||0), bad:(tot.roas||0)<metas.roas},
               {label:"True ROAS",   val:fmtX(tot.trueRoas),  c:tot.trueRoas,   p:prevTot.trueRoas,   hint:`meta ≥ ${metas.trueRoas}x`, spk:dailyRows.map(r=>r["True ROAS"]||0), bad:(tot.trueRoas||0)<metas.trueRoas},
