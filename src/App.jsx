@@ -19755,6 +19755,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [ordenes, setOrdenes] = useState(null);
   const [productos, setProductos] = useState([]);
   const [productMap, setProductMap] = useState({});
+  // Concepto genérico para TODOS los items del lote (ej. "Productos varios")
+  const [conceptoTodos, setConceptoTodos] = useState("");
   const [emitting, setEmitting] = useState(false);
   const [resyncing, setResyncing] = useState(false); // "Recuperar desde AFIP" en curso
   const [resyncMsg, setResyncMsg] = useState(""); // progreso por ronda (AFIP tarda ~1min por ronda)
@@ -21730,7 +21732,14 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               <span style={{fontSize:11,color:T.textSm}}>Click para personalizar ▾</span>
                             </summary>
                             <div style={{padding:"4px 14px 14px"}}>
-                              <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Personalizá cómo aparece cada producto en el PDF.</div>
+                              <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Personalizá cómo aparece cada producto en el PDF — o usá un concepto genérico para todo el lote.</div>
+                              <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+                                <input value={conceptoTodos} onChange={e=>setConceptoTodos(e.target.value)} placeholder='Ej: "Productos varios" o "Venta de productos"' style={{...iS,fontSize:12,flex:1,minWidth:200}}/>
+                                <button onClick={()=>{const c=conceptoTodos.trim(); if(!c) return; setProductMap(Object.fromEntries(productos.map(p=>[p,c])));}}
+                                  disabled={!conceptoTodos.trim()}
+                                  style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",opacity:conceptoTodos.trim()?1:0.5}}>Aplicar a todos</button>
+                                {Object.keys(productMap).length>0&&<button onClick={()=>{setProductMap({});setConceptoTodos("");}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.red}}>Restaurar nombres</button>}
+                              </div>
                               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}}>
                                 {productos.map(p=>(
                                   <div key={p}>
