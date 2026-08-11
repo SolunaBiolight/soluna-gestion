@@ -13055,7 +13055,9 @@ function AppAdmin({T, user, onBack}) {
     const next = sectionsConfig.includes(id) ? sectionsConfig.filter(s=>s!==id) : [...sectionsConfig,id];
     saveSectionsConfig(next);
   }
-  useEffect(()=>{ loadData(); loadSectionsConfig(); },[]);
+  // Las cargas de saldo pendientes se cargan de entrada (no solo al abrir el tab
+  // Envíos): alimentan el badge "por atender" y la cola de acción del Resumen.
+  useEffect(()=>{ loadData(); loadSectionsConfig(); loadEnvCargas(); },[]);
 
   function fmtDate(val) {
     if (!val) return "—";
@@ -13219,16 +13221,28 @@ function AppAdmin({T, user, onBack}) {
 
       {/* Tabs */}
       <div style={{maxWidth:960,margin:"0 auto",padding:"16px 20px 0"}}>
-        <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:0,marginBottom:20,width:"fit-content"}}>
-          {[
-            ["resumen", pagosPendientes.length>0 ? `Cobros · ${pagosPendientes.length}` : "Cobros"],
-            ["usuarios", "Cuentas"],
-            ["secciones", "Accesos"],
-            ["envios", "Envíos"],
-          ].map(([id,label])=>(
-            <button key={id} onClick={()=>setTab(id)} style={tabStyle(id)}>{label}</button>
-          ))}
-        </div>
+        {(()=>{
+          const porAtender = pagosPendientes.length + envCargas.length;
+          const TABS=[
+            {id:"resumen",   label:"Resumen",  icon:"M3 3v18h18M18 17V9M13 17V5M8 17v-3", badge:porAtender, desc:"El pulso del negocio y todo lo que requiere tu acción: pagos, cargas de saldo y vencimientos."},
+            {id:"usuarios",  label:"Cuentas",  icon:"M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M13 7a4 4 0 11-8 0 4 4 0 018 0zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75", desc:"Todas las cuentas de Growith: plan, vencimiento, uso, historial de pagos y gestión de la suscripción."},
+            {id:"envios",    label:"Envíos",   icon:"M16 16h6m-3-3v6M1 3h15v13H1z", desc:"El negocio de etiquetas prepagas: markup, cuentas habilitadas, saldos, movimientos y rentabilidad mensual."},
+            {id:"secciones", label:"Accesos",  icon:"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", desc:"Qué secciones de la app quedan exclusivas para administradores mientras las desarrollás."},
+          ];
+          const cur=TABS.find(t=>t.id===tab);
+          return (<>
+            <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:2,marginBottom:8,width:"fit-content",flexWrap:"wrap"}}>
+              {TABS.map(t=>{const on=tab===t.id;return(
+                <button key={t.id} onClick={()=>setTab(t.id)}
+                  style={{display:"flex",alignItems:"center",gap:7,padding:"8px 16px",borderRadius:8,fontSize:13,border:"none",background:on?T.accent+"16":"transparent",color:on?T.accent:T.textMd,fontWeight:on?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?`inset 0 0 0 1px ${T.accent}3a`:"none",transition:"all 0.15s",whiteSpace:"nowrap"}}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{opacity:on?1:0.75,flexShrink:0}}><path d={t.icon}/></svg>
+                  {t.label}
+                  {(t.badge||0)>0&&<span style={{fontSize:10,fontWeight:700,background:T.red,color:"#fff",borderRadius:10,padding:"1px 7px"}}>{t.badge}</span>}
+                </button>);})}
+            </div>
+            {cur&&<div style={{fontSize:12,color:T.textSm,marginBottom:18,lineHeight:1.5}}>{cur.desc}</div>}
+          </>);
+        })()}
       </div>
 
       {loading&&<div style={{textAlign:"center",padding:60}}><Spinner size={36} color={T.accent}/></div>}
@@ -13245,7 +13259,7 @@ function AppAdmin({T, user, onBack}) {
             {[
               {icon:"$",label:"MRR",value:stats.mrrUsdt?`$${stats.mrrUsdt} USDT`:"$0",sub:stats.mrrArs?`$${(stats.mrrArs).toLocaleString("es-AR")} ARS/mes`:"sin ingresos aún",color:stats.mrrUsdt?T.green:T.textSm},
               {icon:"u",label:"Suscripciones activas",value:totalPagando,sub:totalPrueba>0?`+ ${totalPrueba} prueba`:`${stats.totalUsuarios||0} usuarios totales`,color:totalPagando>0?T.blue:T.textSm},
-              {icon:pagosPendientes.length>0?"!":"✓",label:"Pagos pendientes",value:pagosPendientes.length,sub:pagosPendientes.length>0?"requieren tu atención":"todo al día",color:pagosPendientes.length>0?T.red:T.textSm},
+              {icon:(pagosPendientes.length+envCargas.length)>0?"!":"✓",label:"Por atender",value:pagosPendientes.length+envCargas.length,sub:(pagosPendientes.length+envCargas.length)>0?[pagosPendientes.length?`${pagosPendientes.length} pago${pagosPendientes.length>1?"s":""}`:null,envCargas.length?`${envCargas.length} carga${envCargas.length>1?"s":""} de saldo`:null].filter(Boolean).join(" · "):"todo al día",color:(pagosPendientes.length+envCargas.length)>0?T.red:T.textSm},
               {icon:vencenProximos.length>0?"!":"·",label:"Vencen esta semana",value:vencenProximos.length,sub:vencenProximos.length>0?"considerar extender":"sin vencimientos próximos",color:vencenProximos.length>0?T.yellow:T.textSm},
             ].map((k,i)=>(
               <div key={i} style={{background:T.card,border:`1px solid ${i===2&&pagosPendientes.length>0?T.red+"55":T.border}`,borderRadius:12,padding:"16px 18px"}}>
@@ -13293,6 +13307,28 @@ function AppAdmin({T, user, onBack}) {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* Cargas de saldo de Envíos por acreditar — misma cola de acción que
+              los pagos: se resuelven acá mismo sin ir al tab Envíos */}
+          {envCargas.length>0&&(
+            <div style={{background:T.card,border:`1px solid ${T.yellow}44`,borderLeft:`3px solid ${T.yellow}`,borderRadius:12,marginBottom:20,overflow:"hidden"}}>
+              <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:13,fontWeight:700,color:T.yellow}}>Cargas de saldo por acreditar</span>
+                <span style={{fontSize:12,color:T.textSm}}>Recargas de Envíos esperando tu confirmación</span>
+              </div>
+              {envCargas.map((c,i)=>(
+                <div key={c.id} style={{padding:"12px 18px",borderBottom:i<envCargas.length-1?`1px solid ${T.borderL}`:"none",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:180}}>
+                    <div style={{fontSize:13,fontWeight:600,color:T.text}}>{c.email||c.uid}</div>
+                    {(c.codigo||c.ref)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>Ref: <strong style={{color:T.text}}>{c.codigo||c.ref}</strong></div>}
+                  </div>
+                  <span style={{fontSize:14,fontWeight:800,color:T.text}}>{fmtMoney(c.monto)}</span>
+                  <AsyncButton onClick={()=>resolverCarga(c,true)} style={{...BtnPrimary(T),fontSize:12,padding:"7px 16px"}}>✓ Acreditar</AsyncButton>
+                  <AsyncButton onClick={()=>resolverCarga(c,false)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>✕</AsyncButton>
+                </div>
+              ))}
             </div>
           )}
 
