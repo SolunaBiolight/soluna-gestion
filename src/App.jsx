@@ -21499,11 +21499,17 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const page = Math.min(pendPage, totalPages);
                     const pageItems = items.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE);
                     function seleccionarPorcentaje(pct) {
-                      // Determinístico: ordena por fecha ascendente (más antiguas primero)
-                      // y toma las primeras N — dos clicks del mismo % dan la misma selección.
-                      const ordenadas = [...itemsSelectables].sort((a,b)=>new Date(a[1].fecha||0)-new Date(b[1].fecha||0));
-                      const count = Math.ceil(ordenadas.length * pct / 100);
-                      const selSet = new Set(ordenadas.slice(0, count).map(([id])=>id));
+                      // Aleatorio: baraja las pendientes (Fisher-Yates) y toma N al azar,
+                      // así se reparte parejo y no caen siempre las más viejas. Las que
+                      // quedan sin tildar simplemente no se facturan. Cada click re-baraja
+                      // (una tanda distinta cada vez).
+                      const arr = [...itemsSelectables];
+                      for (let i = arr.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [arr[i], arr[j]] = [arr[j], arr[i]];
+                      }
+                      const count = Math.ceil(arr.length * pct / 100);
+                      const selSet = new Set(arr.slice(0, count).map(([id])=>id));
                       const ns = {...tnSelected};
                       itemsSelectables.forEach(([id])=>{ ns[id] = selSet.has(id); });
                       setTnSelected(ns);
@@ -21547,7 +21553,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
 
                           {/* Selector de porcentaje a seleccionar */}
-                          <select onChange={e=>{const p=parseInt(e.target.value);if(p)seleccionarPorcentaje(p);e.target.value="";}} title="Selecciona el N% más antiguo de las ventas pendientes" style={{...iS,padding:"4px 8px",fontSize:11,width:"auto",cursor:"pointer",fontWeight:600,flexShrink:0}}>
+                          <select onChange={e=>{const p=parseInt(e.target.value);if(p)seleccionarPorcentaje(p);e.target.value="";}} title="Selecciona un N% al azar de las ventas pendientes" style={{...iS,padding:"4px 8px",fontSize:11,width:"auto",cursor:"pointer",fontWeight:600,flexShrink:0}}>
                             <option value="">% auto</option>
                             {[10,20,30,40,50,60,70,80,90,100].map(p=><option key={p} value={p}>{p}%</option>)}
                           </select>
