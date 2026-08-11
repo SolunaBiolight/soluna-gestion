@@ -16278,34 +16278,40 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   <button onClick={()=>setFilterEstado("")} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.red,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}>✕ Quitar filtro</button>
                 </div>
               )}
+              {/* Entregas para revisar — tira compacta (mismo patrón que "Hoy en
+                  Canjes"): una card con tile + pills por entrega, en vez de una
+                  pila de filas naranjas con botones gigantes. Click en la pill =
+                  ver la entrega; el ✓ verde aprueba directo. */}
               {(!colabMode||colabMode.permisos?.verTareas)&&paraRevisar.length>0&&(
-                <div style={{marginBottom:20}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:showParaRevisar?10:0,cursor:"pointer"}} onClick={()=>setShowParaRevisar(p=>!p)}>
-                    <div style={{width:7,height:7,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
-                    <span style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>Entregas para revisar</span>
-                    <span style={{fontSize:11,fontWeight:700,color:T.orange,background:T.orange+"18",borderRadius:20,padding:"1px 9px",fontFamily:"'Inter',system-ui,sans-serif"}}>{paraRevisar.length}</span>
-                    <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:4}}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{transform:showParaRevisar?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.2s"}}><polyline points="6 9 12 15 18 9"/></svg>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"12px 16px",marginBottom:20,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:11,flexShrink:0}}>
+                    <div style={{width:34,height:34,borderRadius:9,background:T.orange+"18",color:T.orange,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>
+                    </div>
+                    <div>
+                      <div style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",color:T.textSm,fontFamily:"'Inter',system-ui,sans-serif"}}>PARA REVISAR</div>
+                      <div style={{fontSize:15,fontWeight:800,color:T.text,lineHeight:1.25,fontFamily:"'Inter',system-ui,sans-serif"}}>{paraRevisar.length} {paraRevisar.length===1?"entrega":"entregas"}</div>
                     </div>
                   </div>
-                  {showParaRevisar&&<div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",flex:1,minWidth:0}}>
                     {paraRevisar.map(t=>{
-                      const initials=(t.asignadoNombre||"?").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+                      const inicial=(t.asignadoNombre||"?").trim()[0]?.toUpperCase()||"?";
                       return(
-                        <div key={t._id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",background:T.card,borderRadius:DS.r.lg,border:`1px solid ${T.border}`,borderLeft:`3px solid ${T.orange}`}}>
-                          <div style={{width:34,height:34,borderRadius:"50%",background:T.orange+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:T.orange,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>{initials}</div>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{t.titulo}</div>
-                            <div style={{fontSize:11,color:T.textSm,marginTop:2,fontFamily:"'Inter',system-ui,sans-serif"}}>{t.asignadoNombre}</div>
-                          </div>
-                          <div style={{display:"flex",gap:6,flexShrink:0}}>
-                            <button onClick={()=>setKanbanSelected(t)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>Ver</button>
-                            <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:12,padding:"6px 14px",borderRadius:8,border:"none",background:T.green,color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}><GhI n="check" size={12}/> Aprobar</AsyncButton>
-                          </div>
+                        <div key={t._id} onClick={()=>setKanbanSelected(t)} title={`Ver la entrega de ${t.asignadoNombre||""}`}
+                          style={{display:"inline-flex",alignItems:"center",gap:8,padding:"5px 6px 5px 6px",borderRadius:99,cursor:"pointer",border:`1px solid ${T.border}`,background:T.surface,transition:"border-color 0.15s",maxWidth:340}}
+                          onMouseEnter={e=>e.currentTarget.style.borderColor=T.orange+"88"}
+                          onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+                          <span style={{width:22,height:22,borderRadius:"50%",background:T.orange+"18",color:T.orange,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>{inicial}</span>
+                          <span style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{t.titulo}</span>
+                          <span style={{fontSize:11,color:T.textSm,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>{(t.asignadoNombre||"").split(" ")[0]}</span>
+                          <AsyncButton onClick={e=>{e?.stopPropagation?.();return updateEstado(t._id,"aprobado");}} title="Aprobar entrega"
+                            style={{width:24,height:24,borderRadius:"50%",border:`1px solid ${T.green}44`,background:T.green+"14",color:T.green,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:0}}>
+                            <GhI n="check" size={12}/>
+                          </AsyncButton>
                         </div>
                       );
                     })}
-                  </div>}
+                  </div>
                 </div>
               )}
               {/* ── Barra de filtros ── */}
