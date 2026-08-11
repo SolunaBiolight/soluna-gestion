@@ -13255,14 +13255,16 @@ function AppAdmin({T, user, onBack}) {
         <div style={{maxWidth:960,margin:"0 auto",padding:"0 20px"}}>
 
           {/* KPIs */}
-          <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
+          <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:20}}>
             {[
               {icon:"$",label:"MRR",value:stats.mrrUsdt?`$${stats.mrrUsdt} USDT`:"$0",sub:stats.mrrArs?`$${(stats.mrrArs).toLocaleString("es-AR")} ARS/mes`:"sin ingresos aún",color:stats.mrrUsdt?T.green:T.textSm},
+              (()=>{const k=`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`;const m=byMonth[k]||{usdt:0,ars:0,count:0};return {icon:"+",label:"Ingresos este mes",value:m.usdt>0?`$${m.usdt} USDT`:m.ars>0?`$${m.ars.toLocaleString("es-AR")} ARS`:"$0",sub:`${m.count} pago${m.count!==1?"s":""} confirmado${m.count!==1?"s":""}`,color:m.count>0?T.green:T.textSm};})(),
               {icon:"u",label:"Suscripciones activas",value:totalPagando,sub:totalPrueba>0?`+ ${totalPrueba} prueba`:`${stats.totalUsuarios||0} usuarios totales`,color:totalPagando>0?T.blue:T.textSm},
+              (()=>{const n=usuarios.filter(x=>(x.plan||"free")!=="free"&&!x.isTrial&&(daysUntil(x.planExpiry)??1)<0).length;return {icon:n>0?"!":"·",label:"Vencidas sin renovar",value:n,sub:n>0?"cuentas pagas con plan vencido":"ninguna cuenta paga vencida",color:n>0?T.red:T.textSm};})(),
               {icon:(pagosPendientes.length+envCargas.length)>0?"!":"✓",label:"Por atender",value:pagosPendientes.length+envCargas.length,sub:(pagosPendientes.length+envCargas.length)>0?[pagosPendientes.length?`${pagosPendientes.length} pago${pagosPendientes.length>1?"s":""}`:null,envCargas.length?`${envCargas.length} carga${envCargas.length>1?"s":""} de saldo`:null].filter(Boolean).join(" · "):"todo al día",color:(pagosPendientes.length+envCargas.length)>0?T.red:T.textSm},
               {icon:vencenProximos.length>0?"!":"·",label:"Vencen esta semana",value:vencenProximos.length,sub:vencenProximos.length>0?"considerar extender":"sin vencimientos próximos",color:vencenProximos.length>0?T.yellow:T.textSm},
             ].map((k,i)=>(
-              <div key={i} style={{background:T.card,border:`1px solid ${i===2&&pagosPendientes.length>0?T.red+"55":T.border}`,borderRadius:12,padding:"16px 18px"}}>
+              <div key={i} style={{background:T.card,border:`1px solid ${k.color===T.red?T.red+"55":T.border}`,borderRadius:12,padding:"16px 18px"}}>
                 <div style={{fontSize:18,marginBottom:6}}>{k.icon}</div>
                 <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>{k.label}</div>
                 <div style={{fontSize:22,fontWeight:700,color:k.color,lineHeight:1}}>{k.value}</div>
@@ -13270,6 +13272,29 @@ function AppAdmin({T, user, onBack}) {
               </div>
             ))}
           </div>
+
+          {/* Alertas proactivas: pagos viejos sin confirmar + riesgo de churn */}
+          {(()=>{
+            const ahora=Date.now();
+            const alertas=[];
+            pagosPendientes.forEach(p=>{
+              const ts=p.createdAt?._seconds?p.createdAt._seconds*1000:null;
+              if(ts&&ahora-ts>24*3600e3){
+                const u2=usuarios.find(x=>x._id===p.uid);
+                alertas.push({sev:"red",msg:`El pago de ${u2?.email||p.email||p.uid} lleva ${Math.floor((ahora-ts)/3600e3)} horas sin confirmar ni rechazar.`});
+              }
+            });
+            const churn=usuarios.filter(u2=>(u2.plan||"free")!=="free"&&!u2.isTrial&&(daysUntil(u2.planExpiry)??1)<-3);
+            if(churn.length) alertas.push({sev:"yellow",msg:`${churn.length} cuenta${churn.length>1?"s":""} paga${churn.length>1?"s":""} con el plan vencido hace más de 3 días sin renovar (riesgo de churn): ${churn.slice(0,3).map(x=>x.email).join(", ")}${churn.length>3?` y ${churn.length-3} más`:""}.`});
+            if(!alertas.length) return null;
+            return (
+              <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
+                {alertas.map((a,i)=>(
+                  <div key={i} style={{padding:"10px 14px",borderRadius:10,background:(a.sev==="red"?T.red:T.yellow)+"12",border:`1px solid ${a.sev==="red"?T.red:T.yellow}44`,fontSize:12,color:a.sev==="red"?T.red:T.yellow,fontWeight:600,lineHeight:1.5}}>{a.msg}</div>
+                ))}
+              </div>
+            );
+          })()}
 
           {/* Pagos pendientes — acción inmediata */}
           {pagosPendientes.length>0&&(
@@ -13457,6 +13482,11 @@ function AppAdmin({T, user, onBack}) {
             const days = daysUntil(u.planExpiry);
             const expiryColor = days===null||u.plan==="free" ? T.textSm : days<3 ? T.red : days<7 ? T.yellow : days>30 ? T.green : T.textMd;
             const userPagos = pagos.filter(p=>p.uid===u._id).sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0));
+            // Pagos REALES (plata que entró) vs pruebas: las pruebas también crean
+            // docs en `pagos` (method:"prueba", confirmado, $0) y contarlas como
+            // "pagos" hacía parecer que cuentas de prueba habían pagado varias veces.
+            const pagosReales_u = userPagos.filter(p=>!p.isTrial&&p.estado==="confirmado"&&Number(p.amount)>0);
+            const pruebas_u = userPagos.filter(p=>p.isTrial);
             const selPlan = uPlan[u._id] || (u.plan==="facturador" ? "facturador" : "plus");
             const selDias = uDias[u._id] || "";
             return (
@@ -13482,14 +13512,28 @@ function AppAdmin({T, user, onBack}) {
                     </div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                    {userPagos.length>0&&<span style={{fontSize:11,color:T.textSm}}>{userPagos.length} pago{userPagos.length!==1?"s":""}</span>}
+                    {pagosReales_u.length>0
+                      ? <span style={{fontSize:11,color:T.green,fontWeight:700}}>{pagosReales_u.length} pago{pagosReales_u.length!==1?"s":""}</span>
+                      : pruebas_u.length>0 ? <span style={{fontSize:11,color:T.textSm}}>solo pruebas</span> : null}
                     <span style={{fontSize:11,color:T.textSm}}>{expanded?"▲":"▼"}</span>
                   </div>
                 </div>
 
-                {/* Panel expandido */}
-                {expanded&&(
-                  <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,background:T.bg}}>
+                {/* Panel de la cuenta como DRAWER lateral (estilo Stripe): la lista
+                    nunca pierde la posición de scroll y el detalle tiene todo el alto */}
+                {expanded&&ReactDOM.createPortal(
+                  <>
+                  <div onClick={()=>setExpandedUser(null)} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.5)",animation:"growith-fadeInFast 0.15s ease both"}}/>
+                  <div style={{position:"fixed",top:0,right:0,bottom:0,zIndex:1201,width:"min(600px,100vw)",background:T.bg,borderLeft:`1px solid ${T.border}`,boxShadow:"-24px 0 60px rgba(0,0,0,0.45)",overflowY:"auto",animation:"growith-fadeInLeft 0.18s ease both"}}>
+                  <div style={{position:"sticky",top:0,zIndex:5,display:"flex",alignItems:"center",gap:10,padding:"14px 16px",background:T.card,borderBottom:`1px solid ${T.border}`}}>
+                    <div style={{width:32,height:32,borderRadius:"50%",background:PLAN_BG[u.plan||"free"]||T.surface,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:PLAN_C[u.plan||"free"]||T.textSm,flexShrink:0}}>{(u.email||u.nombre||"?")[0].toUpperCase()}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email||u.nombre}</div>
+                      <div style={{fontSize:11,color:T.textSm}}>{planLabel(u.plan)}{u.isTrial?" · prueba":""}</div>
+                    </div>
+                    <ModalCloseBtn T={T} onClick={()=>setExpandedUser(null)}/>
+                  </div>
+                  <div style={{background:T.bg}}>
 
                     {/* Resumen: suscripción + datos de la cuenta, en dos columnas */}
                     <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:14}}>
@@ -13510,6 +13554,15 @@ function AppAdmin({T, user, onBack}) {
                                  :`Activa — vence el ${fmtDate(u.planExpiry)} (en ${days} día${days!==1?"s":""})`}
                               </div>
                             )}
+                            {/* Origen del plan vigente: prueba / pago real (auto o manual) / activación a dedo */}
+                            {(()=>{
+                              const ult=pagosReales_u[0];
+                              let txt,color;
+                              if(u.isTrial){ txt="Origen: prueba gratis — nunca pagó este plan"; color=T.yellow; }
+                              else if(ult){ txt=ult.method==="cripto"?"Origen: pago automático en USDT":ult.method==="credito"?"Origen: crédito de referidos":`Origen: pago confirmado a mano (${ult.currency||"transferencia"})`; color=T.green; }
+                              else { txt="Origen: activada a mano por admin — sin ningún pago registrado"; color=T.orange||T.yellow; }
+                              return <div style={{fontSize:11,fontWeight:700,color,marginTop:4}}>{txt}</div>;
+                            })()}
                           </>
                         )}
                       </div>
@@ -13527,7 +13580,7 @@ function AppAdmin({T, user, onBack}) {
                             {(u.teamUids||[]).length>0&&<span style={{fontSize:11,color:T.textSm}}>· {(u.teamUids||[]).length} miembro{(u.teamUids||[]).length!==1?"s":""} de equipo</span>}
                           </div>
                           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                            <span>{userPagos.length} pago{userPagos.length!==1?"s":""} registrado{userPagos.length!==1?"s":""}</span>
+                            <span><strong style={{color:pagosReales_u.length?T.green:T.textSm}}>{pagosReales_u.length}</strong> pago{pagosReales_u.length!==1?"s":""} real{pagosReales_u.length!==1?"es":""}{pruebas_u.length>0&&<span style={{color:T.textSm}}> · {pruebas_u.length} prueba{pruebas_u.length!==1?"s":""}</span>}</span>
                             <button onClick={()=>{try{navigator.clipboard.writeText(u._id);toast("UID copiado","success");}catch(_){appAlert(u._id);}}}
                               title={u._id} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,color:T.textSm,cursor:"pointer",padding:"2px 8px",fontSize:10,fontFamily:"'Inter',system-ui,sans-serif"}}>Copiar UID</button>
                           </div>
@@ -13727,13 +13780,16 @@ function AppAdmin({T, user, onBack}) {
                             }
                             {p.mesesConfirmados&&<span style={{color:T.textSm}}>{p.mesesConfirmados} mes{p.mesesConfirmados>1?"es":""}</span>}
                             {p.periodo==="anual"&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:4,fontWeight:700,background:T.accentSolid+"22",color:T.accent}}>anual</span>}
-                            <span style={{marginLeft:"auto",padding:"2px 8px",borderRadius:4,fontWeight:600,background:p.estado==="confirmado"?T.greenBg:p.estado==="pendiente"?T.yellowBg:T.redBg,color:p.estado==="confirmado"?T.green:p.estado==="pendiente"?T.yellow:T.red}}>{p.estado}</span>
+                            <span style={{marginLeft:"auto",padding:"2px 8px",borderRadius:4,fontWeight:600,background:p.isTrial?T.surface:p.estado==="confirmado"?T.greenBg:p.estado==="pendiente"?T.yellowBg:T.redBg,color:p.isTrial?T.textSm:p.estado==="confirmado"?T.green:p.estado==="pendiente"?T.yellow:T.red}}>{p.isTrial?"prueba otorgada":p.estado}</span>
                           </div>
                         ))
                       }
                     </div>
 
                   </div>
+                  </div>
+                  </>,
+                  document.body
                 )}
               </div>
             );
