@@ -21422,16 +21422,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     return (
                       <div style={{position:"relative"}}>
                         {/* Barra de progreso indeterminada — reemplaza el overlay bloqueante */}
+                        {/* Solo la barra fina — el aviso grande de arriba ya explica la
+                            actualización; el cartel chico acá era ruido duplicado */}
                         {tnLoading&&(
-                          <>
-                            <div style={{height:3,background:T.border,borderRadius:2,overflow:"hidden",marginBottom:8,flexShrink:0}}>
-                              <div style={{height:"100%",width:"30%",background:T.accent,borderRadius:2,animation:"arca-shimmer 1.5s cubic-bezier(0.4,0,0.6,1) infinite"}}/>
-                            </div>
-                            <div style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:T.accent+"12",border:`1px solid ${T.accent}30`,borderRadius:7,marginBottom:8,fontSize:11,color:T.accent,fontWeight:600}}>
-                              <Spinner size={11} color={T.accent}/>
-                              Actualizando {canalSel==="tiendanube"?"Tienda Nube":canalSel==="mercadolibre"?"Mercado Libre":canalSel==="shopify"?"Shopify":"ventas"}…
-                            </div>
-                          </>
+                          <div style={{height:3,background:T.border,borderRadius:2,overflow:"hidden",marginBottom:8,flexShrink:0}}>
+                            <div style={{height:"100%",width:"30%",background:T.accent,borderRadius:2,animation:"arca-shimmer 1.5s cubic-bezier(0.4,0,0.6,1) infinite"}}/>
+                          </div>
                         )}
                         {/* Barra de herramientas */}
                         <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,flexWrap:"wrap",opacity:tnLoading?0.7:1,transition:"opacity 0.2s",position:"sticky",top:113,zIndex:5,boxShadow:`0 2px 8px ${T.bg}`}}>
