@@ -4917,16 +4917,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     canjes.filter(c=>c.tracking?.trim() && c.trackDone===undefined && !["Rechazado","Cerrado"].includes(c.estado))
       .slice(0,20)
       .forEach(c=>{ updateDoc(doc(db,"canjes",c._docId),{trackDone:false}).catch(()=>{}); });
-    const AVISO_MSG = { en_sucursal:"listo para retirar en sucursal", entregado:"paquete entregado", devolucion:"el envío está volviendo (devolución)", visita_fallida:"visita fallida — reprogramá con Andreani" };
-    canjes.forEach(c=>{
-      const a=c.trackingAviso;
-      if(!a||a.visto) return;
-      const key=`${c._docId}:${a.at}`;
-      if(avisosToastRef.current.has(key)) return;
-      avisosToastRef.current.add(key);
-      toast(`Canje ${c.influencer}: ${AVISO_MSG[a.cat]||a.estado}`, a.cat==="entregado"?"success":"info", 6000);
-    });
-  },[canjes.map(c=>`${c._docId}${c.trackDone}${c.trackingAviso?.at||""}${c.trackingAviso?.visto??""}`).join("|")]);
+    // (Se eliminó el toast por cada trackingAviso al abrir la sección: con
+    // varios entregados era una lluvia de carteles — la tira "Hoy en Canjes"
+    // ya agrupa esas novedades sin tapar la pantalla.)
+  },[canjes.map(c=>`${c._docId}${c.trackDone}`).join("|")]);
 
   // Chip de estado del envío Andreani (lo alimenta el cron track_all)
   function TrackingChip({c,size=9}){
@@ -32789,7 +32783,21 @@ export default function App() {
       try{
         const r=await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"workspace"})});
         const d=await r.json().catch(()=>({}));
-        if(alive) setMiembroDe(d&&d.ownerId?{ownerId:d.ownerId,secciones:d.secciones||{},ownerNombre:d.ownerNombre||""}:null);
+        if(!alive) return;
+        const info=d&&d.ownerId?{ownerId:d.ownerId,secciones:d.secciones||{},ownerNombre:d.ownerNombre||""}:null;
+        setMiembroDe(info);
+        // Modo miembro: las puertas del front (plan/trial, "conectá Tienda
+        // Nube") tienen que evaluar al DUEÑO, no al miembro — el doc del dueño
+        // no es legible con el SDK cliente del miembro, así que el contexto
+        // viene del workspace. Sin esto, a un miembro con cuenta nueva le
+        // aparecía el paywall/"conectá tu tienda" al abrir Envíos o Canjes.
+        if(info&&d.ownerCtx){
+          const oc=d.ownerCtx;
+          setUserPlan(oc.plan||"free");
+          setPlanExpiry(oc.planExpiry?new Date(oc.planExpiry):null);
+          setTrialEnd(oc.trialEnd?new Date(oc.trialEnd):null);
+          if(oc.stores) setConnectedStores({...oc.stores,loaded:true});
+        }
       }catch(_){ if(alive) setMiembroDe(null); }
     })();
     return ()=>{alive=false;};
@@ -33124,6 +33132,12 @@ export default function App() {
   const orgsMigratedRef=useRef(false);
   useEffect(()=>{
     if(!user) return;
+    // Modo miembro: el doc del dueño no es legible con el SDK cliente del
+    // miembro (reglas) — el plan/tiendas del dueño ya vienen del workspace.
+    // Sin este guard, el snapshot de la PROPIA cuenta del miembro (que corre
+    // antes de resolver el workspace) pisaba ese contexto con plan free y
+    // "sin tienda conectada".
+    if(user.esMiembro) return;
     const unsub=onSnapshot(doc(db,"users",user.uid),snap=>{
       if(!snap.exists()) return;
       const d=snap.data();

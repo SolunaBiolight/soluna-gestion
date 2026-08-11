@@ -848,13 +848,28 @@ export default async function handler(req, res) {
     if (action === "workspace") {
       const authUser = await verifyAuth(req);
       if (!authUser) return res.status(401).json({ error: "Sesión inválida" });
+      // Contexto del dueño que el modo miembro necesita para las puertas del
+      // front (plan/trial y tiendas conectadas): el miembro NO puede leer el
+      // doc del dueño con el SDK cliente (reglas), así que viaja por acá.
+      const ownerCtx = (d) => {
+        const iso = (v) => { try { const x = v?.toDate ? v.toDate() : (v instanceof Date ? v : null); return x ? x.toISOString() : null; } catch (_) { return null; } };
+        return {
+          plan: d.plan || "free", planExpiry: iso(d.planExpiry), trialEnd: iso(d.trialEnd),
+          stores: {
+            tn: !!(d.stores || []).find(s => s.type === "tiendanube"),
+            shopify: !!(d.stores || []).find(s => s.type === "shopify"),
+            ml: !!(d.stores || []).find(s => s.type === "mercadolibre" || s.type === "meli"),
+            meta: (d.metaAccounts || []).length > 0,
+          },
+        };
+      };
       const myUid = authUser.uid;
       const myEmail = String(authUser.email || "").toLowerCase().trim();
       let q = await db.collection("users").where("teamUids", "array-contains", myUid).limit(1).get();
       if (!q.empty) {
         const d = q.docs[0].data() || {};
         const m = (d.teamMembers || {})[myUid];
-        return res.json({ ok: true, ownerId: q.docs[0].id, secciones: m ? (m.secciones || {}) : null, ownerNombre: d.nombre || d.email || "", miembroNombre: m?.nombre || "" });
+        return res.json({ ok: true, ownerId: q.docs[0].id, secciones: m ? (m.secciones || {}) : null, ownerNombre: d.nombre || d.email || "", miembroNombre: m?.nombre || "", ownerCtx: ownerCtx(d) });
       }
       if (myEmail) {
         q = await db.collection("users").where("teamInviteEmails", "array-contains", myEmail).limit(1).get();
@@ -871,7 +886,7 @@ export default async function handler(req, res) {
               teamInvites: invites.filter(i => String(i.email || "").toLowerCase() !== myEmail),
               teamInviteEmails: FieldValue.arrayRemove(myEmail),
             });
-            return { ownerId: ref.id, secciones: inv.secciones || {}, ownerNombre: d.nombre || d.email || "", miembroNombre: inv.nombre || "" };
+            return { ownerId: ref.id, secciones: inv.secciones || {}, ownerNombre: d.nombre || d.email || "", miembroNombre: inv.nombre || "", ownerCtx: ownerCtx(d) };
           });
           if (out) { clearTeamCache(out.ownerId); return res.json({ ok: true, ...out }); }
         }

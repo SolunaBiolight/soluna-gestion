@@ -1,0 +1,55 @@
+rules_version = '2';
+// Reglas de Firestore de Growith — copia canónica (las reglas VIVEN en la
+// consola de Firebase: Firestore Database → Reglas; este archivo es la fuente
+// de verdad para pegarlas ahí cuando cambien).
+//
+// Modelo: cada cuenta es users/{uid}. Los miembros de equipo (invitados desde
+// Equipo) están en users/{owner}.teamUids[] y operan sobre los datos del dueño
+// con SU PROPIO login — por eso cada regla acepta al dueño O a su equipo.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ¿El login actual es el dueño o un miembro de su equipo?
+    function esDelEquipo(ownerId) {
+      return request.auth != null && (
+        request.auth.uid == ownerId ||
+        request.auth.uid in get(/databases/$(database)/documents/users/$(ownerId)).data.get('teamUids', [])
+      );
+    }
+
+    // Doc de cuenta: LEER el propio o el del dueño (modo miembro). ESCRIBIR
+    // solo el propio — si un miembro pudiera escribir el doc del dueño podría
+    // tocarle el plan o el equipo.
+    match /users/{userId} {
+      allow read: if esDelEquipo(userId);
+      allow write: if request.auth != null && request.auth.uid == userId;
+
+      // Subcolecciones (envios, copilot_convs, margenes_cache, etc.):
+      // acceso completo para el dueño y su equipo.
+      match /{document=**} {
+        allow read, write: if esDelEquipo(userId);
+      }
+    }
+
+    // Colecciones multi-tenant por ownerId (el front SIEMPRE filtra con
+    // where("ownerId","==",uid), que es lo que permite probar estas reglas).
+    match /reclamos/{id} {
+      allow create: if request.resource.data.ownerId is string && esDelEquipo(request.resource.data.ownerId);
+      allow read, delete: if resource.data.ownerId is string && esDelEquipo(resource.data.ownerId);
+      allow update: if resource.data.ownerId is string && esDelEquipo(resource.data.ownerId)
+                    && request.resource.data.ownerId == resource.data.ownerId;
+    }
+    match /canjes/{id} {
+      allow create: if request.resource.data.ownerId is string && esDelEquipo(request.resource.data.ownerId);
+      allow read, delete: if resource.data.ownerId is string && esDelEquipo(resource.data.ownerId);
+      allow update: if resource.data.ownerId is string && esDelEquipo(resource.data.ownerId)
+                    && request.resource.data.ownerId == resource.data.ownerId;
+    }
+    match /influencers/{id} {
+      allow create: if request.resource.data.ownerId is string && esDelEquipo(request.resource.data.ownerId);
+      allow read, delete: if resource.data.ownerId is string && esDelEquipo(resource.data.ownerId);
+      allow update: if resource.data.ownerId is string && esDelEquipo(resource.data.ownerId)
+                    && request.resource.data.ownerId == resource.data.ownerId;
+    }
+  }
+}
