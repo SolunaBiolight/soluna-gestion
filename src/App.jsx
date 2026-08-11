@@ -19805,6 +19805,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [regPv, setRegPv] = useState("");               // "" | número de PV
   const [regOrigen, setRegOrigen] = useState("");       // "" | "tn" | "ml" | "manual" | "recuperado"
   const [regBusq, setRegBusq] = useState("");
+  // Canceladas con factura activa (para emitir sus NC en lote) — sección al final de Registros
+  const [cancData, setCancData] = useState(null);   // {rows, count, truncated, amplio}
+  const [cancLoading, setCancLoading] = useState(false);
   // "Adjuntar pendientes a ML" tiene su propio flag (antes compartía `emitting`)
   const [attachingML, setAttachingML] = useState(false);
 
@@ -19978,6 +19981,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     }).catch(e=>{
       toast("No se pudieron cargar los registros: "+(e?.message||"error de conexión"),"error");
     }).finally(()=>setBatchesLoading(false));
+    // Canceladas con factura activa del período (sección al final). Fire-and-forget,
+    // es una sección secundaria: si falla no rompe Registros.
+    loadCanceladas(false);
   },[uid, cuitSel, regDesde, regHasta]);
 
   // ── Limpieza al cambiar de CUIT: nada del CUIT anterior debe quedar pintado ──
@@ -20678,6 +20684,92 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     } catch(e) {
       toast("No se pudieron emitir las NCs — revisá tu conexión y verificá en Registros cuáles salieron","error");
     } finally { setEmitting(false); setNotaOp(null); }
+  }
+
+  // ── Canceladas con factura activa: cargar + emitir sus NC en lote ──────────
+  async function loadCanceladas(sinceAmplio=false) {
+    if (!uid || !cuitSel) { setCancData(null); return; }
+    setCancLoading(true);
+    try {
+      const extra = sinceAmplio
+        ? { cuit: cuitSel, since: "2023-01-01", until: regHasta }
+        : { cuit: cuitSel, since: regDesde, until: regHasta };
+      const d = await api("cancelled_with_invoice", "GET", null, extra);
+      if (!d.error) setCancData({ rows: d.rows||[], count: d.count||0, truncated: !!d.truncated, amplio: sinceAmplio });
+    } catch(e) {
+      // silencioso: sección secundaria, no rompe Registros
+    } finally { setCancLoading(false); }
+  }
+  async function emitirNCCanceladas() {
+    const filas = cancData?.rows || [];
+    if (!cuitSel || !filas.length || emitting) return;
+    const cuitActivoData = cuits.find(c => c.cuit === cuitSel);
+    const emisorInfo = cuitActivoData
+      ? `\nCUIT emisor: ${formatCuit(cuitActivoData.cuit)} (${cuitActivoData.razon_social || ""})` : "";
+    const totalRevertir = filas.reduce((s,r)=>s+(r.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2});
+    const nML = filas.filter(r=>r._platform==="mercadolibre").length;
+    const msg = `¿Emitir ${filas.length} Nota${filas.length===1?"":"s"} de Crédito?\n\n` +
+      `Son las ventas CANCELADAS / reembolsadas / con contracargo que todavía tienen su factura activa. ` +
+      `Se emite una NC por cada una (mismo importe, mismo cliente). Total a revertir: $${totalRevertir}.\n\n` +
+      (nML ? `${nML} son de Mercado Libre: sus facturas se DESADJUNTAN del pack automáticamente.\n\n` : "") +
+      `El IVA débito fiscal se descuenta de tu facturado del mes en ARCA al cerrar el período.${emisorInfo}\n\n` +
+      `Esta acción no se puede deshacer.`;
+    if (!await appConfirm(msg, { okLabel: `Emitir ${filas.length} NC${filas.length===1?"":"s"}`, danger: true })) return;
+    const facturas = filas.map(r => ({
+      tipo: r.tipo || (r.letra==="A"?1:r.letra==="C"?11:6),
+      punto_venta: r.punto_venta || 1,
+      comprobante: r.comprobante,
+      total: r.total,
+      doc_tipo: r.doc_tipo || "",
+      doc_nro: r.doc_nro || "",
+      cliente: r.cliente || "",
+      order_id: r.order_id,
+    }));
+    const CHUNK = 50;
+    const chunks = [];
+    for (let i=0;i<facturas.length;i+=CHUNK) chunks.push(facturas.slice(i,i+CHUNK));
+    setEmitting(true);
+    let okTotal=0; const errAll=[]; const mlFailAll=[];
+    try {
+      for (let ci=0; ci<chunks.length; ci++) {
+        setNotaOp({ titulo:"Emitiendo Notas de Crédito en ARCA…", sub:`Tanda ${ci+1}/${chunks.length} · ${Math.min((ci+1)*CHUNK,facturas.length)}/${facturas.length} NC — no cierres esta ventana` });
+        const d = await api("emit_nc_batch","POST",{ cuit: cuitSel, facturas: chunks[ci] });
+        if (d.error) { errAll.push({ factura_comprobante:"—", error:d.error }); continue; }
+        okTotal += d.ok_count || 0;
+        if (d.errors?.length) errAll.push(...d.errors);
+        mlFailAll.push(...(d.results||[]).filter(r=>r.ok && r.ml_detached===false));
+      }
+      setNotaOp(null);
+      toast(`${okTotal}/${facturas.length} NCs emitidas${errAll.length?` · ${errAll.length} con error`:""}${mlFailAll.length?` · ${mlFailAll.length} sin desadjuntar de ML`:""}`, (errAll.length||mlFailAll.length)?"warning":"success");
+      if (errAll.length) {
+        const detalle = errAll.slice(0,8).map(e=>`· Factura ${e.factura_comprobante}: ${e.error||"sin detalle"}`).join("\n");
+        await appAlert(`No se pudieron anular ${errAll.length} factura(s):\n\n${detalle}${errAll.length>8?`\n…y ${errAll.length-8} más`:""}\n\nLas que fallaron suelen ser Factura A sin CUIT del receptor — anulalas a mano desde el lote en Registros.`);
+      }
+      if (mlFailAll.length) {
+        const links = mlFailAll.map(r => {
+          const row = filas.find(x => x.comprobante === r.factura_comprobante);
+          const oid = row?.order_id || "";
+          return oid.startsWith("ML-") ? `https://www.mercadolibre.com.ar/ventas/${oid.replace("ML-","")}/detalle` : null;
+        }).filter(Boolean);
+        if (links.length) await appAlert(`${links.length} factura(s) de Mercado Libre no se pudieron desadjuntar solas. Borralas a mano (venta → 3 puntitos del documento → Eliminar):\n\n${links.join("\n")}`);
+      }
+      setNotaOp({ titulo:"Actualizando…", sub:"Las NCs ya salieron — refrescando" });
+      refreshDashboard();
+    } catch(e) {
+      toast("Se cortó la emisión — verificá en Registros cuáles NCs salieron","error");
+    } finally {
+      setEmitting(false); setNotaOp(null);
+      // Refrescar: las emitidas desaparecen (su comprobante queda anulada) y aparecen las NC nuevas.
+      try { await loadCanceladas(cancData?.amplio); } catch(_){}
+      try {
+        const [b,n] = await Promise.all([
+          api("list_batches","GET",null,{cuit:cuitSel,desde:regDesde,hasta:regHasta}),
+          api("list_ncs","GET",null,{cuit:cuitSel,desde:regDesde,hasta:regHasta}),
+        ]);
+        if(!b.error) setBatches(b.batches||[]);
+        if(!n.error) setNcs(n.ncs||[]);
+      } catch(_){}
+    }
   }
 
   // ── Nota de débito: cobra un adicional asociado a una factura ya emitida ──
@@ -22416,6 +22508,58 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <span style={{marginLeft:"auto",color:T.text,fontWeight:800,fontSize:13}}>{fmtMonto(totTotal)}</span>
                           </div>
                           {pieExtra}
+                        </>
+                      )}
+                    </Card>
+                  );
+                })()}
+
+                {/* ══ Ventas canceladas con factura emitida — emitir sus NC ══ */}
+                {(()=>{
+                  const cRows = cancData?.rows || [];
+                  const cCount = cancData?.count || 0;
+                  const money = (v)=>"$ "+(v||0).toLocaleString("es-AR",{minimumFractionDigits:2});
+                  const totalCanc = cRows.reduce((s,r)=>s+(r.total||0),0);
+                  const motivoColor = (m)=> m==="contracargo"?T.red : m==="reembolso"?T.orange : T.textMd;
+                  const RENDER_CAP = 200;
+                  return (
+                    <Card T={T} padding="lg" style={{marginTop:16,border:`1px solid ${T.border}`}}>
+                      <div style={{display:"flex",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:cCount?12:0}}>
+                        <div style={{flex:1,minWidth:220}}>
+                          <div style={{fontSize:14,fontWeight:700,color:T.text}}>Ventas canceladas con factura emitida</div>
+                          <div style={{fontSize:12,color:T.textSm,marginTop:2,lineHeight:1.5}}>Ventas de Shopify/ML que se cancelaron, reembolsaron o tuvieron contracargo y <strong style={{color:T.textMd}}>todavía tienen su factura activa</strong>. Emití la nota de crédito de cada una. Las canceladas sin factura no aparecen (nunca se facturan).</div>
+                        </div>
+                        <button onClick={()=>loadCanceladas(true)} disabled={cancLoading||emitting} title="Busca en TODO el histórico, no solo el período que estás viendo arriba" style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"8px 12px",fontSize:12,fontWeight:600,cursor:(cancLoading||emitting)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap",opacity:(cancLoading||emitting)?0.6:1,display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                          {cancLoading ? <><Spinner size={11} color={T.textMd}/> Buscando…</> : "↻ Reprocesar todo el pasado"}
+                        </button>
+                      </div>
+                      {cancLoading && !cRows.length ? (
+                        <div style={{fontSize:12,color:T.textSm,padding:"12px 0"}}>Buscando ventas canceladas…</div>
+                      ) : cCount===0 ? (
+                        <div style={{fontSize:12,color:T.textSm,padding:"8px 0"}}>No hay ventas canceladas con factura activa en {cancData?.amplio?"el histórico":"este período"}. 🎉</div>
+                      ) : (
+                        <>
+                          {cancData?.truncated && <div style={{fontSize:11,color:T.orange,marginBottom:8}}>⚠ Hay muchas canceladas: puede faltar alguna. Reprocesá por períodos más cortos para cubrir todo.</div>}
+                          <div style={{border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,overflow:"hidden",marginBottom:12}}>
+                            {cRows.slice(0,RENDER_CAP).map((r,i)=>(
+                              <div key={r.order_id+"_"+i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderBottom:i<Math.min(cRows.length,RENDER_CAP)-1?`1px solid ${T.borderL}`:"none",minWidth:0}}>
+                                <span title={r._platform} style={{display:"inline-flex",flexShrink:0}}><BrandIcon name={r._platform==="mercadolibre"?"ml":"tn"} size={15}/></span>
+                                <div style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:`1px solid ${T.accent}44`,color:T.accent,background:T.accent+"11",flexShrink:0}}>F{r.letra}</div>
+                                <span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:motivoColor(r._motivo)+"1a",color:motivoColor(r._motivo),fontWeight:700,border:`1px solid ${motivoColor(r._motivo)}44`,whiteSpace:"nowrap",flexShrink:0}}>{r._motivo_lbl}</span>
+                                <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
+                                  <div style={{fontSize:12,fontWeight:500,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.order_id}{r.cliente?` · ${r.cliente}`:""}</div>
+                                  <div style={{fontSize:11,color:T.textSm}}>N° {String(r.comprobante).padStart(8,"0")}</div>
+                                </div>
+                                <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>{money(r.total)}</div>
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                            <span style={{fontSize:12,color:T.textMd}}>{cCount} venta{cCount===1?"":"s"} · total a revertir <span style={{fontWeight:700,color:T.text}}>{money(totalCanc)}</span></span>
+                            <button onClick={emitirNCCanceladas} disabled={emitting||cancLoading} style={{marginLeft:"auto",background:T.red,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:700,cursor:(emitting||cancLoading)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(emitting||cancLoading)?0.6:1,whiteSpace:"nowrap"}}>
+                              {emitting ? "Emitiendo…" : `Emitir ${cCount} nota${cCount===1?"":"s"} de crédito`}
+                            </button>
+                          </div>
                         </>
                       )}
                     </Card>

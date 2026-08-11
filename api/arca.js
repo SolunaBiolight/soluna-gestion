@@ -4736,6 +4736,145 @@ export default async function handler(req, res) {
 
     // ── INTEGRACIONES: traer órdenes pendientes de facturar de TODAS las plataformas conectadas ──
 
+    // ── CANCELADAS CON FACTURA ACTIVA — para emitir sus NC en lote ──────────
+    // Función ISLA: solo LEE comprobantes + fetchea canceladas/reembolsadas de las
+    // tiendas (read-only). NO toca obtenerPendientes (su filtro de canceladas es
+    // fiscalmente crítico: una fuga = facturar una venta cancelada). Devuelve solo
+    // las canceladas cuyo comprobante sigue ACTIVO (no anulada), listas para NC.
+    if (action === "cancelled_with_invoice" && req.method === "GET") {
+      const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
+      if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
+      const argYmd0 = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
+      const sinceDate = req.query.since ? String(req.query.since).slice(0, 10) : argYmd0(new Date(Date.now() - 30 * 86400000));
+      const untilDate = req.query.until ? String(req.query.until).slice(0, 10) : argYmd0(new Date());
+
+      // 1) Comprobantes ACTIVOS (no anulados) del CUIT → map por orden_id. Se leen
+      //    los mismos campos que list_batches: emit_nc_batch revierte 100% por total
+      //    con línea única, no necesita items/domicilio.
+      const compSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+        .where("cuit_emisor", "==", cuitParam)
+        .select("orden_id", "nro", "letra", "tipo_cbte", "punto_venta", "total",
+          "doc_tipo", "doc_nro", "cliente", "fecha_cbte", "emitido_at", "anulada")
+        .get();
+      const activeByOrder = new Map();
+      for (const d of compSnap.docs) {
+        const c = d.data();
+        if (!c.orden_id || c.anulada) continue;
+        const key = c.fecha_cbte || (c.emitido_at || "").slice(0, 10);
+        if (key && (key < sinceDate || key > untilDate)) continue; // ventana por fecha del comprobante
+        if (!activeByOrder.has(c.orden_id)) activeByOrder.set(c.orden_id, c);
+      }
+      if (!activeByOrder.size) {
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+        return res.json({ rows: [], count: 0, connections: [], truncated: false });
+      }
+
+      // 2) Fetch ISLA de canceladas/reembolsadas de las tiendas (Shopify + ML).
+      const userSnap0 = await db.collection("users").doc(uid).get();
+      const stores0 = userSnap0.data()?.stores || [];
+      const shStore = stores0.find(s => s.type === "shopify");
+      const mlStore = stores0.find(s => s.type === "mercadolibre");
+      const connections = [];
+      const canceladas = new Map(); // orderId -> motivo
+      let truncated = false;
+
+      // Shopify: canceladas (status=cancelled) + reembolsos TOTALES (financial_status=refunded)
+      if (shStore?.accessToken && shStore?.shop) {
+        connections.push("shopify");
+        const pullSH = async (extraQS, motivo, detect) => {
+          let url = `https://${shStore.shop}/admin/api/2024-10/orders.json?limit=250&order=created_at+desc&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00&${extraQS}`;
+          for (let i = 0; i < 40 && url; i++) {
+            if (i === 39) truncated = true;
+            const r = await fetch(url, { headers: { "X-Shopify-Access-Token": shStore.accessToken } });
+            if (!r.ok) break;
+            const data = await r.json();
+            for (const o of (data.orders || [])) {
+              if (detect && !detect(o)) continue;
+              const oid = "SH-" + (o.name || String(o.order_number || o.id));
+              if (!canceladas.has(oid)) canceladas.set(oid, motivo);
+            }
+            const link = r.headers.get("link") || r.headers.get("Link") || "";
+            const m = link.match(/<([^>]+)>;\s*rel="next"/);
+            url = m ? m[1] : null;
+          }
+        };
+        try { await pullSH("status=cancelled", "cancelada"); } catch (_) {}
+        try { await pullSH("status=any&financial_status=refunded", "reembolso", o => !o.cancelled_at); } catch (_) {}
+      }
+
+      // ML: canceladas (order.status=cancelled) + reembolsos/contracargos sobre las
+      // pagas (misma lógica que api/stock.js: payments[].status refunded/charged_back,
+      // neto cobrado = cobrado − devuelto; cancelled/rejected = intento fallido).
+      if (mlStore?.userId) {
+        connections.push("mercadolibre");
+        try {
+          const ml = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
+          const accessToken = ml?.accessToken, userId = ml?.userId || mlStore.userId;
+          if (accessToken) {
+            const pullML = async (statusQS, evaluar) => {
+              const pageUrl = (offset) => `https://api.mercadolibre.com/orders/search?seller=${userId}&${statusQS}&order.date_created.from=${sinceDate}T00:00:00.000-03:00&order.date_created.to=${untilDate}T23:59:59.999-03:00&limit=50&offset=${offset}&sort=date_desc`;
+              let offset = 0;
+              for (let i = 0; i < 40; i++) {
+                const r = await fetch(pageUrl(offset), { headers: { Authorization: `Bearer ${accessToken}` } });
+                if (!r.ok) break;
+                const data = await r.json();
+                const results = data.results || [];
+                for (const o of results) {
+                  const motivo = evaluar(o);
+                  if (!motivo) continue;
+                  const oid = "ML-" + String(o.id);
+                  if (!canceladas.has(oid)) canceladas.set(oid, motivo);
+                }
+                const total = parseInt(data.paging?.total) || 0;
+                offset += 50;
+                if (results.length < 50 || offset >= Math.min(total, 2000)) { if (offset < total) truncated = true; break; }
+                await new Promise(res2 => setTimeout(res2, 250));
+              }
+            };
+            await pullML("order.status=cancelled", () => "cancelada");
+            await pullML("order.status=paid", (o) => {
+              let cobrado = 0, devuelto = 0, cargoback = false;
+              for (const p of (o.payments || [])) {
+                const st = String(p.status || "").toLowerCase();
+                const amt = parseFloat(p.transaction_amount) || 0;
+                const tar = parseFloat(p.transaction_amount_refunded) || 0;
+                if (st === "approved") { cobrado += amt; devuelto += tar; }
+                else if (st === "refunded" || st === "charged_back") { cobrado += amt; devuelto += (amt > 0 ? amt : tar); if (st === "charged_back") cargoback = true; }
+              }
+              if (cobrado > 0 && (cobrado - devuelto) <= cobrado * 0.01) return cargoback ? "contracargo" : "reembolso";
+              return null;
+            });
+          }
+        } catch (_) {}
+      }
+
+      // 3) Intersección: canceladas que tienen comprobante ACTIVO → filas para emit_nc_batch.
+      const MOTIVO_LBL = { cancelada: "Cancelada", reembolso: "Reembolso", contracargo: "Contracargo" };
+      const rows = [];
+      for (const [orderId, comp] of activeByOrder) {
+        const motivo = canceladas.get(orderId);
+        if (!motivo) continue;
+        rows.push({
+          order_id: orderId,
+          tipo: comp.tipo_cbte,
+          letra: comp.letra,
+          punto_venta: comp.punto_venta || null,
+          comprobante: comp.nro,
+          total: comp.total || 0,
+          doc_tipo: comp.doc_tipo || "",
+          doc_nro: comp.doc_nro || "",
+          cliente: comp.cliente || "",
+          fecha_cbte: comp.fecha_cbte || null,
+          _motivo: motivo,
+          _motivo_lbl: MOTIVO_LBL[motivo] || motivo,
+          _platform: orderId.startsWith("ML-") ? "mercadolibre" : "shopify",
+        });
+      }
+      rows.sort((a, b) => String(b.fecha_cbte || "").localeCompare(String(a.fecha_cbte || "")));
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      return res.json({ rows, count: rows.length, connections, truncated });
+    }
+
     if (action === "pending_orders" && req.method === "GET") {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
