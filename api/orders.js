@@ -457,9 +457,15 @@ export default async function handler(req, res) {
               // día siguiente "Ayer" mostraba 21 ventas cuando TN tenía 31.
               const cerradoCompleto = rangoCerrado && jc.cachedAt
                 && Date.parse(jc.cachedAt) >= Date.parse(`${String(to).slice(0,10)}T23:59:59-03:00`);
-              // fresh=1 (botón Actualizar): saltea la caché del día actual para ver
-              // las ventas al segundo. Los rangos cerrados completos siguen de caché.
-              if (cerradoCompleto || (!_fresh && isFinite(edadMs) && edadMs < 10 * 60000)) j = jc;
+              // fresh=1 (botón Actualizar): saltea TODA la caché — la del día actual
+              // (para ver ventas al segundo) Y la de rangos cerrados. Antes los rangos
+              // cerrados se servían de caché aun con fresh, pero una DEVOLUCIÓN de ML
+              // cae días después de la venta (cuando el día ya cerró) y tiene que
+              // BORRAR la venta original de su día → el rango cerrado NO es realmente
+              // inmutable. Al recalcular en vivo se reescribe el snapshot corregido,
+              // así los loads siguientes (sin fresh) vuelven a ser rápidos y ya sin la
+              // venta devuelta. La navegación normal (sin fresh) mantiene el caché.
+              if (!_fresh && (cerradoCompleto || (isFinite(edadMs) && edadMs < 10 * 60000))) j = jc;
             }
           }
         } catch (_) { /* la caché es un atajo — si falla, se calcula en vivo */ }
