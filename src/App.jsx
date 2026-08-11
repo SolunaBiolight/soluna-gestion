@@ -6095,7 +6095,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           const ok=await exportarXlsxCanje(cx);
                           if(ok) toast(cx.esSucursal?"Excel generado (envío a sucursal) — subilo al portal de Andreani y pegá el tracking acá":"Excel generado — subilo al portal de Andreani y pegá el tracking acá","success",5000);
                         }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
-                      }} style={{...BtnSecondary(T),fontSize:12,color:T.green,borderColor:T.green+"66",padding:"6px 12px"}}>Exportar XLSX Andreani</AsyncButton>
+                      }} style={{...BtnSecondary(T),fontSize:13,color:T.green,borderColor:T.green+"66",height:38,padding:"0 16px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",whiteSpace:"nowrap"}}>Exportar XLSX Andreani</AsyncButton>
                     </div>
                     {dirTxt?(
                       <div style={{fontSize:13,color:T.text,lineHeight:1.6}}>{dirTxt}{c.dni?<span style={{color:T.textSm}}> · DNI {c.dni}</span>:null}</div>
@@ -6640,10 +6640,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   const ok=await exportarXlsxCanje(f);
                   if(ok) toast(f.esSucursal?"Excel generado (envío a sucursal) — subilo al portal de Andreani y pegá el tracking en el canje":"Excel generado — subilo al portal de Andreani y pegá el tracking en el canje","success",5000);
                 }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
-              }} style={{...BtnSecondary(T),fontSize:12,color:T.green,borderColor:T.green+"66"}}>Exportar XLSX Andreani</AsyncButton>
+              }} style={{...BtnSecondary(T),fontSize:13,color:T.green,borderColor:T.green+"66",height:38,padding:"0 16px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",whiteSpace:"nowrap"}}>Exportar XLSX Andreani</AsyncButton>
               <div style={{flex:1}}/>
-              <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>
-              <button onClick={saveCanje} disabled={saving||!form.influencer} style={{...BtnPurple(T),fontSize:13,padding:"10px 22px",opacity:saving||!form.influencer?0.45:1}}>
+              <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13,height:38,padding:"0 16px",boxSizing:"border-box",display:"inline-flex",alignItems:"center"}}>Cancelar</button>
+              <button onClick={saveCanje} disabled={saving||!form.influencer} style={{...BtnPurple(T),fontSize:13,height:38,padding:"0 20px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",whiteSpace:"nowrap",opacity:saving||!form.influencer?0.45:1}}>
                 {saving?"Creando...":"Crear canje →"}
               </button>
             </div>
@@ -7098,6 +7098,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     // Whitelist final: el importador de Andreani rechaza s\u00edmbolos como & ! ( ) \u2014
     // solo dejamos letras, n\u00fameros, espacios, punto y coma.
     function cleanAndreani(s){return cleanField(s).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^\x00-\x7F]/g,"").replace(/[^A-Za-z0-9\s.,]/g," ").replace(/\s{2,}/g," ").trim();}
+    // MISMA regla de email en toda la app (Env\u00edos, Canjes, etc.): sin espacios y
+    // solo ASCII imprimible \u2014 nunca por el whitelist, que romp\u00eda la @.
+    function cleanEmail(s){return String(s||"").trim().replace(/\s+/g,"").replace(/[^\x21-\x7E]/g,"");}
 
     // Separate domicilio vs sucursal
     // NOTA: por pedido del usuario, TODOS los envíos a Andreani se generan como
@@ -7173,7 +7176,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           sC('H'+rn,cleanAndreani(nombre)),
           sC('I'+rn,cleanAndreani(apellido)),
           (()=>{const d=String(o.dni||'').replace(/\D/g,'');const dniClean=d.length===11?d.slice(2,10):d;return (dniClean&&!isNaN(dniClean)&&dniClean.length>=7)?nC('J'+rn,parseFloat(dniClean)):sC('J'+rn,dniClean||'');})(),
-          sC('K'+rn,cleanField(o.email||"")),
+          sC('K'+rn,cleanEmail(o.email)),
           telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
           telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
           sC('N'+rn,cleanAndreani(direccion)),
@@ -7211,7 +7214,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           sC('H'+rn,cleanAndreani(nombre)),
           sC('I'+rn,cleanAndreani(apellido)),
           (()=>{const d=String(o.dni||'').replace(/\D/g,'');const dniClean=d.length===11?d.slice(2,10):d;return (dniClean&&!isNaN(dniClean)&&dniClean.length>=7)?nC('J'+rn,parseFloat(dniClean)):sC('J'+rn,dniClean||'');})(),
-          sC('K'+rn,cleanField(o.email||"")),
+          sC('K'+rn,cleanEmail(o.email)),
           telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
           telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
           sC('N'+rn,sucursal),
