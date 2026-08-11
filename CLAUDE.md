@@ -180,7 +180,8 @@ growith_conceptos_{uid}    → JSON conceptos frecuentes del facturador ARCA
 growith_colab_banner_{token} / growith_pwa_banner_{token} → "1" banners cerrados en portal colaborador
 growith_expiry_dismiss_{uid}_{fecha} → "1" banner de vencimiento de plan/trial cerrado ese día
 growith_home_start_{uid}   → "1" checklist "Empecemos" del Home cerrado manualmente
-(sessionStorage) growith_copilot_msgs → JSON[] historial del chat Copilot
+(sessionStorage) growith_copilot_conv → JSON {id,msgs} conversación activa del Copilot (cache; la verdad vive en users/{uid}/copilot_convs)
+(sessionStorage) growith_copilot_pending → prompt pendiente al abrir Copilot desde otra sección (ej. configuración guiada del Home)
 (sessionStorage) growith_colab_token / growith_board_id_{token} → sesión de portal colaborador / identidad de tablero compartido
 growith_orders_{uid} / growith_orders_v3 → LEGACY, solo se borran (purga de cache viejo de órdenes)
 growith_stock_cache_{uid}_{periodo}  → SWR {ts,data} snapshot de Stock (pintado instantáneo)

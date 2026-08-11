@@ -291,6 +291,19 @@ Para setear el stock de un item del inventario central (número entero ≥ 0).
 REGLAS: usá SOLO item_id que estén en DATOS.stock.inventario_central. Si el stock cruzado
 está activado, aclarale que el cambio se propaga a sus tiendas.
 
+CONFIGURACIÓN GUIADA: si el usuario pide configurar la app, hacer el setup, o dice
+"configuración guiada" (o llegó desde el onboarding), mirá DATOS.estado_configuracion y
+guialo como un onboarding conversacional:
+1. Arrancá con un diagnóstico en 1-2 líneas: qué ya está listo (✓) y qué falta.
+2. Después avanzá DE A UN PASO POR VEZ, en este orden de prioridad: tienda conectada
+   (sin tienda no hay datos) → costos de productos en Márgenes (sin costos no hay
+   ganancia real) → ARCA si factura → Meta Ads si hace pauta → stock → equipo.
+   Saltá lo que ya está configurado y lo que el usuario diga que no usa.
+3. En cada paso explicá EN CRIOLLO qué gana con eso, qué tiene que hacer exactamente,
+   y cerrá con la acción navegar a la sección correspondiente para llevarlo ahí.
+4. Cuando vuelva y te diga "listo" (o le preguntes si lo hizo), seguí con el paso
+   siguiente. Si todo está configurado, felicitalo y sugerile pedir el resumen diario.
+
 RESUMEN DIARIO: si el usuario pide "resumen diario" (o similar), armá un resumen ejecutivo
 breve: cómo cerró ayer (facturación, ganancia, órdenes), tendencia de los últimos 7 días,
 alertas de stock y de envíos si las hay, y UNA recomendación concreta. Terminá sin acción
@@ -357,8 +370,24 @@ export default async function handler(req, res) {
   ]);
   if (margenes && cuentas?.metas_margenes) margenes.metas_configuradas = cuentas.metas_margenes;
 
+  // Estado de configuración de la cuenta — alimenta la "configuración guiada":
+  // el modelo ve qué está listo y qué falta, y guía paso a paso sin inventar.
+  const estadoConfig = {
+    tienda_conectada: !!(cuentas?.tiendas || []).find(t => t.tipo === "tiendanube" || t.tipo === "shopify"),
+    mercado_libre_conectado: !!(cuentas?.tiendas || []).find(t => t.tipo === "mercadolibre"),
+    meta_ads: (cuentas?.meta_ads || []).length
+      ? (cuentas.meta_ads.some(a => a.tiene_token && !a.token_vencido) ? "conectada" : "token_vencido")
+      : "sin_conectar",
+    arca_facturacion: (cuentas?.cuits_arca || 0) > 0 ? "configurada" : "sin_configurar",
+    margenes_calculados: !!margenes,
+    productos_sin_costo_cargado: margenes ? (margenes.top_productos || []).filter(p => p.sin_costo_configurado).length : null,
+    stock_activado: !!stock,
+    colaboradores_en_equipo: (cuentas?.colaboradores || []).length,
+  };
+
   const datos = {
     fecha_hora_actual: new Date().toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }),
+    estado_configuracion: estadoConfig,
     margenes: margenes || "SIN DATOS — el usuario todavía no abrió la sección Márgenes (el caché se genera al abrirla). Sugerile entrar a Márgenes para que se calculen.",
     envios: envios || "SIN DATOS de envíos registrados.",
     stock: stock || "SIN DATOS de stock — sugerile abrir la sección Stock (el snapshot se genera al usarla).",

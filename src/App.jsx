@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect, useMemo, useRef } from "react"; // v2
 import ReactDOM from "react-dom";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, setDoc, getDoc, query, where, getDocs, orderBy } from "firebase/firestore";
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, setDoc, getDoc, query, where, getDocs, orderBy, limit } from "firebase/firestore";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider, reauthenticateWithPopup } from "firebase/auth";
 
 const firebaseConfig = {
@@ -10881,6 +10881,14 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
                 <Btn T={T} variant={p.n===1?"primary":"secondary"} size="sm" onClick={()=>onNavigate(p.go)}>{p.cta}</Btn>
               </div>
             ))}
+            {/* Camino guiado: el Copilot revisa qué falta y lleva de la mano */}
+            <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:"10px 12px",background:T.purpleBg,border:`1px solid ${T.purple}33`,borderRadius:DS.r.lg}}>
+              <span style={{width:22,height:22,borderRadius:DS.r.full,background:T.purple+"22",color:T.purple,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"/></svg>
+              </span>
+              <span style={{flex:1,fontSize:DS.font.base,color:T.text}}>¿Preferís que te lleven de la mano? El Copilot te guía paso a paso</span>
+              <Btn T={T} variant="secondary" size="sm" onClick={()=>{ try{sessionStorage.setItem("growith_copilot_pending",PROMPT_CONFIG_GUIADA);}catch(_){} onNavigate("copilot"); }}>Configuración guiada</Btn>
+            </div>
           </div>
         </Card>
       )}
@@ -26917,11 +26925,29 @@ function CopilotText({T, text}) {
   );
 }
 
+// Título automático de una conversación del Copilot: el primer mensaje del
+// usuario, recortado. El resumen diario disparado solo tiene nombre propio.
+function ghTituloConv(ms){
+  const u=(ms||[]).find(m=>m.role==="user");
+  let t=String(u?.text||"Conversación").replace(/\s+/g," ").trim();
+  if(/resumen diario/i.test(t)) t="Resumen diario";
+  if(/configuraci[oó]n guiada/i.test(t)) t="Configuración guiada";
+  return t.slice(0,48)||"Conversación";
+}
+const PROMPT_CONFIG_GUIADA="Iniciá la configuración guiada de mi cuenta: fijate qué tengo listo y qué falta, y guiame paso a paso.";
 function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
   const uid = user?.uid;
+  // Cache de sesión de la conversación ACTIVA: {id,msgs} — pinta al instante
+  // mientras Firestore carga la lista completa de conversaciones.
   const [msgs, setMsgs] = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem("growith_copilot_msgs") || "[]"); } catch (_) { return []; }
+    try { const c=JSON.parse(sessionStorage.getItem("growith_copilot_conv")||"null"); return Array.isArray(c?.msgs)?c.msgs:[]; } catch (_) { return []; }
   });
+  const [convId,setConvId]=useState(()=>{ try{ return JSON.parse(sessionStorage.getItem("growith_copilot_conv")||"null")?.id||null; }catch(_){ return null; } });
+  const [convs,setConvs]=useState(null); // null = cargando lista
+  const [convsOpen,setConvsOpen]=useState(false); // drawer mobile
+  const [renaming,setRenaming]=useState(null); // {id,titulo}
+  const convIdRef=React.useRef(null);
+  useEffect(()=>{ convIdRef.current=convId; },[convId]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [datosAl, setDatosAl] = useState(null);
@@ -26931,21 +26957,49 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
   const fileRef = React.useRef(null);
   const historyLoadedRef = React.useRef(false);
 
-  // Historial persistente en Firestore (cross-device, sobrevive al cierre de pestaña).
-  // sessionStorage queda como cache rápida de la sesión actual.
+  // Conversaciones persistentes en Firestore (cross-device): cada chat es un
+  // doc en users/{uid}/copilot_convs. El doc único viejo (copilot/historial)
+  // se migra UNA vez a una conversación y queda vacío.
   useEffect(() => {
     if (!uid) return;
     (async () => {
+      let lista=[];
       try {
-        const snap = await getDoc(doc(db, "users", uid, "copilot", "historial"));
-        if (snap.exists()) {
-          const d = snap.data();
-          if (Array.isArray(d.msgs) && d.msgs.length) {
-            setMsgs(prev => prev.length >= d.msgs.length ? prev : d.msgs);
-          }
-        }
+        const qs=await getDocs(query(collection(db,"users",uid,"copilot_convs"),orderBy("updated","desc"),limit(30)));
+        lista=qs.docs.map(d=>({id:d.id,...d.data()}));
       } catch (_) {}
+      if(!lista.length){
+        try {
+          const snap=await getDoc(doc(db,"users",uid,"copilot","historial"));
+          const d=snap.exists()?snap.data():null;
+          if(Array.isArray(d?.msgs)&&d.msgs.length){
+            const ahora=d.updated||new Date().toISOString();
+            const data={titulo:ghTituloConv(d.msgs),msgs:d.msgs.slice(-60),created:ahora,updated:ahora};
+            const ref=await addDoc(collection(db,"users",uid,"copilot_convs"),data);
+            lista=[{id:ref.id,...data}];
+            setDoc(doc(db,"users",uid,"copilot","historial"),{msgs:[],migrado:true,updated:new Date().toISOString()}).catch(()=>{});
+          }
+        } catch (_) {}
+      }
+      setConvs(lista);
+      // Retomar: la conversación de la sesión si sigue existiendo; si no, la última.
+      const activa=convIdRef.current?lista.find(c=>c.id===convIdRef.current):null;
+      if(activa){
+        setMsgs(prev=>prev.length>=(activa.msgs||[]).length?prev:activa.msgs||[]);
+      } else if(lista.length){
+        setConvId(lista[0].id); convIdRef.current=lista[0].id;
+        setMsgs(prev=>prev.length>=(lista[0].msgs||[]).length?prev:lista[0].msgs||[]);
+      }
       historyLoadedRef.current = true;
+      // Pedido pendiente desde otra sección (ej: "configuración guiada" del Home):
+      // arranca una conversación nueva con ese prompt y no dispara el resumen diario.
+      let pendiente=null;
+      try{ pendiente=sessionStorage.getItem("growith_copilot_pending"); if(pendiente) sessionStorage.removeItem("growith_copilot_pending"); }catch(_){}
+      if(pendiente){
+        setMsgs([]); setDatosAl(null); setConvId(null); convIdRef.current=null;
+        setTimeout(()=>sendRef.current?.(pendiente),400);
+        return;
+      }
       // Resumen diario proactivo: la primera vez que abrís el Copilot cada día
       // te recibe con el estado del negocio, sin que preguntes nada. Sin tienda
       // conectada no hay negocio del que hablar, así que no se dispara (y no se
@@ -26956,6 +27010,9 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
         const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
         if (_hayTienda && localStorage.getItem(key) !== hoy) {
           localStorage.setItem(key, hoy);
+          // El resumen de cada día arranca su propia conversación (queda en el
+          // historial como "Resumen diario" en vez de estirar el chat anterior).
+          setMsgs([]); setDatosAl(null); setConvId(null); convIdRef.current=null;
           setTimeout(() => sendRef.current?.("Dame el resumen diario de mi negocio"), 400);
         }
       } catch (_) {}
@@ -26964,18 +27021,38 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
   }, [uid]);
 
   const persistTimer = React.useRef(null);
+  const creatingConvRef = React.useRef(false);
   useEffect(() => {
-    try { sessionStorage.setItem("growith_copilot_msgs", JSON.stringify(msgs.slice(-30))); } catch (_) {}
-    // Persistir a Firestore con debounce (sin las corridas parciales del streaming)
+    try { sessionStorage.setItem("growith_copilot_conv", JSON.stringify({id:convId,msgs:msgs.slice(-30)})); } catch (_) {}
+    // Persistir a Firestore con debounce (sin las corridas parciales del streaming).
+    // Sin convId todavía → se crea el doc de la conversación con título automático.
     if (uid && historyLoadedRef.current && msgs.length && !msgs[msgs.length-1]?.streaming) {
       clearTimeout(persistTimer.current);
-      persistTimer.current = setTimeout(() => {
-        setDoc(doc(db, "users", uid, "copilot", "historial"), { msgs: msgs.slice(-60).map(m=>({role:m.role,text:m.text,...(m.error?{error:true}:{}),...(m.adj?{adj:m.adj}:{})})), updated: new Date().toISOString() }).catch(()=>{});
+      persistTimer.current = setTimeout(async () => {
+        const data={ msgs: msgs.slice(-60).map(m=>({role:m.role,text:m.text,...(m.error?{error:true}:{}),...(m.adj?{adj:m.adj}:{})})), updated: new Date().toISOString() };
+        try {
+          if (convIdRef.current) {
+            const id=convIdRef.current;
+            await setDoc(doc(db,"users",uid,"copilot_convs",id), data, {merge:true});
+            setConvs(p=>{
+              const l=(p||[]).map(c=>c.id===id?{...c,...data}:c);
+              l.sort((a,b)=>String(b.updated||"").localeCompare(String(a.updated||"")));
+              return l;
+            });
+          } else if (!creatingConvRef.current) {
+            creatingConvRef.current=true;
+            const nueva={...data,titulo:ghTituloConv(msgs),created:data.updated};
+            const ref=await addDoc(collection(db,"users",uid,"copilot_convs"),nueva);
+            convIdRef.current=ref.id; setConvId(ref.id);
+            setConvs(p=>[{id:ref.id,...nueva},...(p||[])]);
+            creatingConvRef.current=false;
+          }
+        } catch(_) { creatingConvRef.current=false; }
       }, 800);
     }
     // Auto-scroll al último mensaje
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [msgs, sending]);
+  }, [msgs, sending, convId]);
 
   async function onPickFile(e) {
     const f = e.target.files?.[0];
@@ -27052,6 +27129,73 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
   }
   sendRef.current = send;
 
+  function nuevaConversacion(){
+    setMsgs([]); setDatosAl(null); setConvId(null); convIdRef.current=null; setConvsOpen(false); setRenaming(null);
+    try{sessionStorage.removeItem("growith_copilot_conv");}catch(_){}
+    setTimeout(()=>inputRef.current?.focus(),60);
+  }
+  function abrirConv(c){
+    if(sending) return;
+    setConvId(c.id); convIdRef.current=c.id; setMsgs(c.msgs||[]); setDatosAl(null); setConvsOpen(false); setRenaming(null);
+  }
+  async function borrarConv(c,e){
+    e?.stopPropagation();
+    if(!(await appConfirm(`¿Borrar la conversación "${c.titulo||"sin título"}"?`,{danger:true,okLabel:"Borrar"}))) return;
+    try{ await deleteDoc(doc(db,"users",uid,"copilot_convs",c.id)); }catch(_){}
+    setConvs(p=>(p||[]).filter(x=>x.id!==c.id));
+    if(convIdRef.current===c.id) nuevaConversacion();
+  }
+  async function renombrarConv(){
+    const r=renaming; if(!r) return;
+    setRenaming(null);
+    const titulo=String(r.titulo||"").trim().slice(0,60);
+    if(!titulo) return;
+    try{ await setDoc(doc(db,"users",uid,"copilot_convs",r.id),{titulo},{merge:true}); }catch(_){}
+    setConvs(p=>(p||[]).map(c=>c.id===r.id?{...c,titulo}:c));
+  }
+  const fmtConvFecha=(iso)=>{ try{ const d=new Date(iso); if(!isFinite(d)) return ""; return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})+" · "+d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}); }catch(_){ return ""; } };
+  // Panel de conversaciones — mismo markup para el sidebar desktop y el drawer mobile
+  function renderConvPanel(){
+    return (
+      <div style={{display:"flex",flexDirection:"column",gap:6,height:"100%"}}>
+        <button onClick={nuevaConversacion} style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>+ Nueva conversación</button>
+        <div style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",color:T.textSm,padding:"8px 4px 2px"}}>CONVERSACIONES</div>
+        <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:4,minHeight:0}}>
+          {convs===null&&<div style={{fontSize:11,color:T.textSm,padding:"8px 4px"}}>Cargando…</div>}
+          {convs&&!convs.length&&<div style={{fontSize:11,color:T.textSm,padding:"8px 4px",lineHeight:1.5}}>Todavía no hay conversaciones guardadas. Escribile y se guarda sola.</div>}
+          {(convs||[]).map(c=>{
+            const active=convId===c.id;
+            return (
+              <div key={c.id} onClick={()=>abrirConv(c)}
+                style={{padding:"8px 10px",borderRadius:9,cursor:"pointer",background:active?T.accent+"16":"transparent",border:`1px solid ${active?T.accent+"3a":"transparent"}`,transition:"background 0.12s",position:"relative"}}
+                onMouseEnter={e=>{if(!active)e.currentTarget.style.background=T.card;}}
+                onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>
+                {renaming?.id===c.id?(
+                  <input autoFocus value={renaming.titulo} onChange={e=>setRenaming({...renaming,titulo:e.target.value})}
+                    onClick={e=>e.stopPropagation()}
+                    onKeyDown={e=>{if(e.key==="Enter")renombrarConv();if(e.key==="Escape")setRenaming(null);}}
+                    onBlur={renombrarConv}
+                    style={{width:"100%",padding:"3px 6px",borderRadius:6,border:`1px solid ${T.accent}`,background:T.card,color:T.text,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",outline:"none"}}/>
+                ):(
+                  <>
+                    <div style={{fontSize:12,fontWeight:active?700:500,color:active?T.text:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:38}}>{c.titulo||"Conversación"}</div>
+                    <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{fmtConvFecha(c.updated)}</div>
+                    <div style={{position:"absolute",top:7,right:6,display:"flex",gap:2}}>
+                      <button onClick={e=>{e.stopPropagation();setRenaming({id:c.id,titulo:c.titulo||""});}} title="Renombrar" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",padding:2,display:"flex"}}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                      <button onClick={e=>borrarConv(c,e)} title="Borrar" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",padding:2,fontSize:12,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   const SUGERIDAS = [
     "Dame el resumen diario de mi negocio",
     "¿Cómo me fue ayer?",
@@ -27066,11 +27210,20 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Copilot" sectionId="copilot" onHome={onHome}
         onHelp={()=>setShowGuiaCp(s=>!s)}>
+        {typeof window!=="undefined"&&window.innerWidth<900&&(convs||[]).length>0&&(
+          <button onClick={()=>setConvsOpen(true)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.textMd}}>Historial</button>
+        )}
         {msgs.length > 0 && (
-          <button onClick={()=>{ setMsgs([]); setDatosAl(null); try{sessionStorage.removeItem("growith_copilot_msgs");}catch(_){} if(uid) setDoc(doc(db,"users",uid,"copilot","historial"),{msgs:[],updated:new Date().toISOString()}).catch(()=>{}); }} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.textMd}}>Nueva conversación</button>
+          <button onClick={nuevaConversacion} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.textMd}}>Nueva conversación</button>
         )}
       </AppTopbar>
 
+      <div style={{flex:1,display:"flex",minHeight:0,width:"100%"}}>
+      {/* Sidebar de conversaciones — desktop */}
+      <div className="hide-mobile" style={{width:232,flexShrink:0,borderRight:`1px solid ${T.border}`,padding:"14px 10px",overflowY:"auto"}}>
+        {renderConvPanel()}
+      </div>
+      <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
       <div style={{flex:1,display:"flex",flexDirection:"column",maxWidth:760,margin:"0 auto",width:"100%",padding:"0 16px"}} className="main-content">
 
         {showGuiaCp&&(
@@ -27080,7 +27233,8 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
               {n:2,title:"Adjuntos",desc:"Podés subirle una imagen o un archivo (un CSV, una captura de una campaña) y analizarlo en contexto con tus datos."},
               {n:3,title:"Acciones",desc:"Además de responder, puede ejecutar cosas si se lo pedís: crear una tarea al equipo, ajustar el presupuesto de una campaña de Meta o corregir stock. Siempre te confirma antes."},
               {n:4,title:"Resumen diario",desc:"Pedile 'el resumen del día' y te arma el estado del negocio: ventas, profit, alertas de stock y envíos con problemas."},
-              {n:5,title:"Historial",desc:"La conversación se guarda en tu cuenta. 'Nueva conversación' arranca de cero cuando quieras cambiar de tema."},
+              {n:5,title:"Conversaciones guardadas",desc:"Cada chat se guarda en tu cuenta (panel de la izquierda, o botón 'Historial' en el celular). Podés retomar, renombrar o borrar cualquiera, y '+ Nueva conversación' arranca de cero."},
+              {n:6,title:"Configuración guiada",desc:"Pedile 'configuración guiada' y el Copilot revisa qué tenés conectado y qué falta, y te lleva paso a paso por la app hasta dejar todo funcionando."},
             ].map(s=>(
               <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                 <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -27100,6 +27254,20 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
               <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.4}}>Preguntale a tu negocio</div>
               <div style={{fontSize:13,color:T.textSm,marginTop:8,lineHeight:1.6,maxWidth:440,margin:"8px auto 0"}}>
                 El Copilot responde con <strong style={{color:T.textMd}}>tus números reales</strong> — los mismos que calculan Márgenes y Envíos. No inventa cifras: si no tiene un dato, te dice dónde encontrarlo.
+              </div>
+              {/* Configuración guiada — el Copilot ve qué falta y guía paso a paso */}
+              <div onClick={()=>send(PROMPT_CONFIG_GUIADA)}
+                style={{maxWidth:460,margin:"22px auto 0",display:"flex",gap:12,alignItems:"center",padding:"13px 16px",background:T.green+"0d",border:`1.5px dashed ${T.green}66`,borderRadius:12,cursor:"pointer",textAlign:"left",transition:"border-color 0.15s"}}
+                onMouseEnter={e=>e.currentTarget.style.borderColor=T.green}
+                onMouseLeave={e=>e.currentTarget.style.borderColor=T.green+"66"}>
+                <div style={{width:34,height:34,borderRadius:9,background:T.green+"1c",color:T.green,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 00-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 012-3.95A12.88 12.88 0 0122 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 01-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.green}}>Configuración guiada</div>
+                  <div style={{fontSize:11.5,color:T.textMd,lineHeight:1.45,marginTop:2}}>Te guío paso a paso para conectar tu tienda, cargar costos y dejar todo funcionando.</div>
+                </div>
+                <span style={{color:T.green,fontSize:15,flexShrink:0}}>→</span>
               </div>
               <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",marginTop:24}}>
                 {SUGERIDAS.map(s=>(
@@ -27248,6 +27416,15 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
           </div>
         </div>
       </div>
+      </div>
+      </div>
+      {/* Drawer de conversaciones — mobile */}
+      {convsOpen&&<>
+        <div onClick={()=>setConvsOpen(false)} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.5)"}}/>
+        <div style={{position:"fixed",top:0,left:0,bottom:0,zIndex:1201,width:"min(280px,85vw)",background:T.bg,borderRight:`1px solid ${T.border}`,padding:"16px 12px",overflowY:"auto"}}>
+          {renderConvPanel()}
+        </div>
+      </>}
     </div>
   );
 }
