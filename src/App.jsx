@@ -30781,6 +30781,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const [editSecKpis, setEditSecKpis] = useState(false);
   const [editCanalCards, setEditCanalCards] = useState(false); // editor de métricas de la vista de canal (Tienda/ML)
   const [dragKpi, setDragKpi] = useState(null); // label del KPI que se está arrastrando
+  // Anti-jitter del reorden EN VIVO: procesar cada par (arrastrada → objetivo)
+  // una sola vez mientras el cursor siga sobre el mismo objetivo.
+  const dragOverRef = React.useRef(null);
   // Desplegables compactos: alertas, precisión de datos y desgloses viven en
   // chips que se expanden a demanda (antes eran bloques fijos que comían espacio).
   const [openInfo, setOpenInfo] = useState(null); // null | "alertas" | "avisos" | "fb" | "ab"
@@ -31151,11 +31154,18 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   };
   const cardsReorder = (cards, orderKey, fromLbl, toLbl) => {
     if(!fromLbl||!toLbl||fromLbl===toLbl) return;
-    const cur = cardsOrdered(cards, orderKey).map(k=>k.label);
+    const antes = cardsOrdered(cards, orderKey).map(k=>k.label);
+    const cur = [...antes];
     const fi=cur.indexOf(fromLbl); if(fi<0) return;
+    const tiOrig=cur.indexOf(toLbl);
     cur.splice(fi,1);
-    const ti=cur.indexOf(toLbl);
-    cur.splice(ti<0?cur.length:ti,0,fromLbl);
+    let ti=cur.indexOf(toLbl);
+    if(ti<0) ti=cur.length;
+    // Si venía desde la izquierda, se inserta DESPUÉS del objetivo — sin esto,
+    // mover una card hacia la derecha sobre su vecina no producía cambio.
+    else if(tiOrig>=0 && fi<tiOrig) ti=ti+1;
+    cur.splice(ti,0,fromLbl);
+    if(cur.join("|")===antes.join("|")) return; // sin cambio real: no escribir
     updVis({[orderKey]:cur});
   };
   const renderCards = (cards, orderKey, filter) => {
@@ -31173,15 +31183,31 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},minmax(0,1fr))`,gap:10,marginBottom:18}}>
         {visibleCards.map((k,ci)=>(
           <div key={k.label}
-            onDragOver={e=>e.preventDefault()}
-            onDrop={e=>{e.preventDefault(); cardsReorder(cards, orderKey, dragKpi, k.label); setDragKpi(null);}}
+            onDragOver={e=>{
+              e.preventDefault();
+              // Reorden EN VIVO: la card se acomoda mientras la arrastrás, no al soltar
+              if(!dragKpi||dragKpi===k.label) return;
+              const par=dragKpi+">"+k.label;
+              if(dragOverRef.current===par) return;
+              dragOverRef.current=par;
+              cardsReorder(cards, orderKey, dragKpi, k.label);
+            }}
+            onDrop={e=>{e.preventDefault(); setDragKpi(null); dragOverRef.current=null;}}
             onClick={k.onClick}
             title={k.onClick?"Ver las ventas que componen este número":undefined}
             className={"gh-mcard"+(k.onClick?" gh-card-click":"")}
             style={{gridColumn:`span ${spanFor(ci)}`,background:k.tint?`linear-gradient(150deg, ${T.card} 45%, ${k.tint}16)`:T.card,border:`1px solid ${k.bad?MC.red+"44":"transparent"}`,borderRadius:12,padding:k.hero?"16px 18px 14px":"12px 14px 10px",position:"relative",overflow:"hidden",minHeight:k.hero?122:92,display:"flex",flexDirection:"column",opacity:dragKpi===k.label?0.4:1,cursor:k.onClick?"pointer":"default"}}>
             <span draggable
-              onDragStart={e=>{ setDragKpi(k.label); try{e.dataTransfer.effectAllowed="move";}catch(_){} }}
-              onDragEnd={()=>setDragKpi(null)}
+              onDragStart={e=>{
+                setDragKpi(k.label); dragOverRef.current=null;
+                // La imagen que sigue al cursor es la CARD entera, no el iconito ⠿
+                try{
+                  e.dataTransfer.effectAllowed="move";
+                  const card=e.currentTarget.parentElement;
+                  if(card) e.dataTransfer.setDragImage(card, Math.min(80,card.offsetWidth/2), 30);
+                }catch(_){}
+              }}
+              onDragEnd={()=>{setDragKpi(null); dragOverRef.current=null;}}
               title="Arrastrá para reordenar"
               style={{position:"absolute",top:9,right:10,cursor:"grab",color:T.textSm,opacity:0.4,fontSize:11,lineHeight:1,userSelect:"none"}}>⠿</span>
             <div style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:7,paddingRight:16}}>
