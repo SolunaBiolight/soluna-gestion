@@ -8277,11 +8277,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             :"Saldo de envíos Andreani";
           return (
           <button onClick={()=>setAndreaniSaldoOpen(true)} title={chipTitle}
-            style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:chipColor,borderColor:chipColor+"55",background:chipColor+"0d",fontWeight:700,gap:7}}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
-            <span style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Saldo</span>
-            {fmtMoney(andreani.saldo)}
-            {andreani.etiquetasEstimadas!=null&&<span style={{fontSize:10,fontWeight:600,color:T.textSm}}>≈ {andreani.etiquetasEstimadas} etiq.</span>}
+            style={{display:"inline-flex",alignItems:"center",gap:10,height:44,padding:"0 14px",borderRadius:12,boxSizing:"border-box",border:`1px solid ${chipColor}44`,background:`linear-gradient(135deg, ${chipColor}16, ${chipColor}05)`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
+            <span style={{width:28,height:28,borderRadius:8,background:chipColor+"22",border:`1px solid ${chipColor}44`,display:"inline-flex",alignItems:"center",justifyContent:"center",color:chipColor,flexShrink:0}}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
+            </span>
+            <span style={{display:"flex",flexDirection:"column",alignItems:"flex-start",lineHeight:1.25}}>
+              <span style={{fontSize:8.5,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.7}}>Saldo de envíos</span>
+              <span style={{display:"flex",alignItems:"baseline",gap:6}}>
+                <span style={{fontSize:16,fontWeight:800,color:chipColor,letterSpacing:-0.4,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(andreani.saldo)}</span>
+                {andreani.etiquetasEstimadas!=null&&<span style={{fontSize:10,fontWeight:600,color:T.textSm,whiteSpace:"nowrap"}}>≈ {andreani.etiquetasEstimadas} etiq.</span>}
+              </span>
+            </span>
           </button>
           );
         })()}
@@ -9896,12 +9902,14 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
               onChange={e=>{setMontoCarga(e.target.value);setCargaErr("");}}
               onKeyDown={e=>{if(e.key==="Enter")pagarMP();}}/>
           </div>
+          {/* Premium y sobrio: fondo oscuro con borde celeste MP y el logo a color,
+              en vez de la placa celeste maciza que se comía el modal */}
           <AsyncButton onClick={pagarMP}
             style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:10,
-              background:"#009EE3",color:"#fff",border:"none",borderRadius:10,padding:"14px 20px",
-              fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",
-              boxShadow:"0 2px 12px #009EE355"}}>
-            <MpLogo size={24}/> Pagar con Mercado Pago
+              background:"#009EE310",color:T.text,border:"1.5px solid #009EE3",borderRadius:10,
+              height:46,padding:"0 20px",boxSizing:"border-box",
+              fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <MpLogo size={22}/> Pagar con Mercado Pago
           </AsyncButton>
           {cargaErr&&<div style={{fontSize:12,color:T.red,marginTop:8}}>{cargaErr}</div>}
         </div>
