@@ -853,6 +853,15 @@ export default async function handler(req, res) {
       // doc del dueño con el SDK cliente (reglas), así que viaja por acá.
       const ownerCtx = (d) => {
         const iso = (v) => { try { const x = v?.toDate ? v.toDate() : (v instanceof Date ? v : null); return x ? x.toISOString() : null; } catch (_) { return null; } };
+        // Dueño admin de Growith: sus miembros nunca chocan con paywall/trial
+        // (el doc del admin puede tener plan "free" con trial viejo).
+        const esAdmin = d.isAdmin === true || d.uid === "WJH3ArqDPQcNLha9lOinvkVi9uJ2";
+        if (esAdmin) return { plan: "full", planExpiry: null, trialEnd: null, stores: {
+          tn: !!(d.stores || []).find(s => s.type === "tiendanube"),
+          shopify: !!(d.stores || []).find(s => s.type === "shopify"),
+          ml: !!(d.stores || []).find(s => s.type === "mercadolibre" || s.type === "meli"),
+          meta: (d.metaAccounts || []).length > 0,
+        } };
         return {
           plan: d.plan || "free", planExpiry: iso(d.planExpiry), trialEnd: iso(d.trialEnd),
           stores: {
@@ -1368,8 +1377,15 @@ export default async function handler(req, res) {
     }
 
     if (action === "deleteTarea") {
-      await db.collection("tareas").doc(body.tareaId).delete();
-      return res.json({ ok:true });
+      if (!body.tareaId) return res.status(400).json({ error: "Falta tareaId" });
+      const tRef = db.collection("tareas").doc(String(body.tareaId));
+      const tSnap = await tRef.get();
+      // Si el doc no existe, ya está borrado: ok idempotente (antes un id
+      // inexistente "borraba" en silencio y el front creía que funcionó).
+      if (!tSnap.exists) return res.json({ ok: true, yaNoExistia: true });
+      if (tSnap.data().uid !== uid) return res.status(403).json({ error: "Esa tarea no es de esta cuenta" });
+      await tRef.delete();
+      return res.json({ ok: true });
     }
 
     if (action === "sendRecordatorio") {
