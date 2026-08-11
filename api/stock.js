@@ -432,15 +432,30 @@ function processML(orders, couponMap = {}) {
     const cfMp = couponMap[String(o.id)];
     orderRev -= (cfMp != null ? cfMp : (parseFloat(o.coupon?.amount) || 0));
 
-    // Devolución/contracargo: ML marca la orden con tag "refunded" (o el pago
-    // queda con el total reembolsado). ML ANULA los cargos de esas ventas
-    // (comisión y envío) en la facturación → acá se excluyen de TODOS los
-    // agregados (revenue, unidades, comisión, COGS vía map) igual que una
-    // cancelada. La orden queda en ordersDetail con el flag para el contador
-    // de devueltas y para que el motor no cuente su costo de envío.
+    // Devolución/contracargo: cuando el comprador recupera su plata, ML deja el
+    // PAGO en status "refunded" (devolución) o "charged_back" (contracargo) —ese es
+    // el signal confiable—, o marca un reembolso parcial en transaction_amount_refunded
+    // sobre un pago que sigue "approved". El tag "refunded" NO existe en órdenes ML,
+    // y transaction_amount_refunded muchas veces queda en 0 aunque el pago esté
+    // devuelto, así que hay que mirar el status. ML ANULA los cargos de esas ventas
+    // (comisión y envío) en la facturación → acá se excluyen de TODOS los agregados
+    // (revenue, unidades, comisión, COGS vía map) igual que una cancelada. La orden
+    // queda en ordersDetail con el flag para el contador de devueltas y para que el
+    // motor no cuente su costo de envío.
+    // Neto cobrado = cobrado − devuelto: un pago devuelto/contracargado suma a AMBOS
+    // (entró y salió); un reembolso parcial sobre un pago vivo solo suma a devuelto.
+    // Los intentos fallidos (cancelled/rejected) NO son devoluciones y no se cuentan.
+    // Si el comprador repagó (otro pago approved), el neto se mantiene y NO se excluye.
     const totAmt = parseFloat(o.total_amount)||0;
-    const refTot = (o.payments||[]).reduce((s,p)=>s+(parseFloat(p.transaction_amount_refunded)||0),0);
-    const refunded = (o.tags||[]).includes("refunded") || (totAmt>0 && refTot >= totAmt*0.99);
+    let cobradoML = 0, devueltoML = 0;
+    for (const p of (o.payments||[])) {
+      const st = String(p.status||"").toLowerCase();
+      const amt = parseFloat(p.transaction_amount)||0;
+      const tar = parseFloat(p.transaction_amount_refunded)||0;
+      if (st === "approved") { cobradoML += amt; devueltoML += tar; }
+      else if (st === "refunded" || st === "charged_back") { cobradoML += amt; devueltoML += (amt > 0 ? amt : tar); }
+    }
+    const refunded = cobradoML > 0 && (cobradoML - devueltoML) <= cobradoML * 0.01;
 
     for(const item of o.order_items||[]){
       const vid=String(item.item?.id||"ml");
