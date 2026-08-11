@@ -2041,7 +2041,7 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
     : "Período";
   return (
     <div ref={wrapRef} style={{position:"relative",display:"inline-block",fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <button onClick={toggleOpen} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"7px 14px",background:T.input,border:`1px solid ${open?T.accent+"66":T.inputBorder}`,borderRadius:10,fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <button onClick={toggleOpen} style={{display:"inline-flex",alignItems:"center",gap:8,height:34,padding:"0 14px",boxSizing:"border-box",background:T.input,border:`1px solid ${open?T.accent+"66":T.inputBorder}`,borderRadius:9,fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
         <span>{label}</span> <span style={{color:T.textSm,fontSize:10}}>▾</span>
       </button>
       {open && ReactDOM.createPortal((()=>{
@@ -2850,7 +2850,7 @@ function AppTopbar({T, section, sectionId, onHelp, onHome, children, top=48}) {
           {children}
           {onHelp&&(
             <button onClick={onHelp} title="¿Cómo funciona esta sección?"
-              style={{width:24,height:24,borderRadius:DS.r.full,border:"none",background:"transparent",color:T.textSm,fontSize:12,fontWeight:DS.w.semibold,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1,padding:0,opacity:0.7}}>?</button>
+              style={{width:34,height:34,borderRadius:9,boxSizing:"border-box",border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,fontSize:13,fontWeight:DS.w.bold,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1,padding:0}}>?</button>
           )}
         </div>
       </div>
@@ -31262,7 +31262,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
         {/* Preferencias de vista unificadas: números completos + USD en un solo menú */}
         <div style={{position:"relative"}}>
           <button onClick={e=>{const r=e.currentTarget.getBoundingClientRect(); setViewMenuPos({top:r.bottom+6,right:Math.max(10,Math.min(window.innerWidth-r.right,window.innerWidth-246))}); setViewMenu(v=>!v);}} title="Preferencias de vista"
-            style={{...InputStyle(T),fontSize:11,padding:"5px 10px",width:"auto",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,fontWeight:(fullNums||usdMode)?700:500,color:(fullNums||usdMode)?T.accent:T.textMd,borderColor:(fullNums||usdMode)?T.accent+"66":T.inputBorder}}>
+            style={{...InputStyle(T),fontSize:12,height:34,padding:"0 14px",borderRadius:9,boxSizing:"border-box",width:"auto",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,fontWeight:(fullNums||usdMode)?700:500,color:(fullNums||usdMode)?T.accent:T.textMd,borderColor:(fullNums||usdMode)?T.accent+"66":T.inputBorder}}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="20" cy="14" r="2"/></svg>
             Vista{usdMode?" · US$":""}{fullNums?" · $ completos":""}
           </button>
@@ -31301,14 +31301,14 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           until={useCustom?dateTo:hoyAR()}
           onPreset={(d)=>{ setUseCustom(false); setDateFrom(""); setDateTo(""); setDays(d); loadData(d,"",""); }}
           onChange={(s,u)=>{ setUseCustom(true); setDateFrom(s); setDateTo(u); const diff=Math.round((new Date(u)-new Date(s))/86400000)+1; setDays(diff); loadData(0,s,u); }}/>
-        <button onClick={()=>loadData(undefined,undefined,undefined,false,true)} disabled={loading} title="Recalcula las ventas de hoy al segundo (saltea la caché)" style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>
+        <button onClick={()=>loadData(undefined,undefined,undefined,false,true)} disabled={loading} title="Recalcula las ventas de hoy al segundo (saltea la caché)" style={{...BtnPrimary(T),fontSize:12,height:34,padding:"0 16px",borderRadius:9,boxSizing:"border-box",display:"inline-flex",alignItems:"center",gap:6}}>
           {loading?<Spinner size={11} color="#fff"/>:"↻"} Actualizar
         </button>
         {/* Acciones secundarias en un menú ⋯ — "Reprocesar" es mantenimiento y
             asusta/confunde como botón permanente; "Compartir" es ocasional. */}
         <div style={{position:"relative"}}>
           <button onClick={e=>{const r=e.currentTarget.getBoundingClientRect(); setExtraMenuPos({top:r.bottom+6,right:Math.max(10,window.innerWidth-r.right)}); setExtraMenu(v=>!v);}} title="Más acciones"
-            style={{...InputStyle(T),fontSize:14,padding:"5px 9px",width:"auto",cursor:"pointer",lineHeight:1,color:T.textMd,fontWeight:700}}>⋯</button>
+            style={{...InputStyle(T),width:34,height:34,padding:0,borderRadius:9,boxSizing:"border-box",fontSize:16,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",lineHeight:1,color:T.textMd,fontWeight:700}}>⋯</button>
           {extraMenu&&(
             <>
               <div onClick={()=>setExtraMenu(false)} style={{position:"fixed",inset:0,zIndex:60}}/>
