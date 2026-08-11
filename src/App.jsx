@@ -2343,6 +2343,9 @@ async function ghEtiquetaAndreaniXlsxUno(o) {
   function nC(ref,val){return (val===''||val===null||val===undefined)?sC(ref,''):'<c r="'+ref+'"><v>'+val+'</v></c>';}
   // Sin tildes (Andreani rechaza caracteres fuera de ASCII) y CUIT de 11 dígitos → DNI.
   function cl(s){return String(s||"").normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[-\/\|#*]+/g,' ').replace(/[^A-Za-z0-9\s.,]/g,' ').replace(/\s{2,}/g,' ').trim();}
+  // El email NO pasa por cl(): el whitelist le borraba la @ y Andreani lo
+  // rechazaba como "mail inválido". Solo se sacan espacios y no-ASCII.
+  function clEmail(s){return String(s||"").trim().replace(/\s+/g,'').replace(/[^\x21-\x7E]/g,'');}
   const dniDep=(()=>{const d=String(o.dni||"").replace(/\D/g,'');return d.length===11?d.slice(2,10):d;})();
   const partes=String(o.comprador||"").trim().split(' ');
   const nombre=cl(partes[0]||"");const apellido=cl(partes.slice(1).join(' ')||"");
@@ -2368,7 +2371,7 @@ async function ghEtiquetaAndreaniXlsxUno(o) {
   let pk={peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000"};
   try{const saved=localStorage.getItem(ghKey("growith_exportCfg"));if(saved)pk={...pk,...JSON.parse(saved)};}catch(_){}
   const rn=3;
-  const baseCells=[sC('A'+rn,""),nC('B'+rn,parseFloat(pk.peso)||200),nC('C'+rn,parseInt(pk.alto)||5),nC('D'+rn,parseInt(pk.ancho)||5),nC('E'+rn,parseInt(pk.prof)||5),nC('F'+rn,parseFloat(pk.valor)||6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(dniDep&&!isNaN(dniDep))?nC('J'+rn,parseFloat(dniDep)):sC('J'+rn,dniDep||""),sC('K'+rn,cl(o.email||"")),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,"")];
+  const baseCells=[sC('A'+rn,""),nC('B'+rn,parseFloat(pk.peso)||200),nC('C'+rn,parseInt(pk.alto)||5),nC('D'+rn,parseInt(pk.ancho)||5),nC('E'+rn,parseInt(pk.prof)||5),nC('F'+rn,parseFloat(pk.valor)||6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(dniDep&&!isNaN(dniDep))?nC('J'+rn,parseFloat(dniDep)):sC('J'+rn,dniDep||""),sC('K'+rn,clEmail(o.email)),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,"")];
   if(o.esSucursal){
     // Envío a sucursal/punto HOP: fila en la hoja de sucursales (cols A-N,
     // N = sucursal EXACTA de la lista del template). Exportarlo a domicilio
