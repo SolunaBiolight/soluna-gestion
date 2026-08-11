@@ -4435,6 +4435,61 @@ function NotasInline({value, onSave, T, iS}) {
 }
 
 
+// ── Motor de alertas de Canjes ──────────────────────────────────────────────
+// Cada canje abierto tiene SIEMPRE un "próximo paso" derivado de su estado y
+// sus fechas; las alertas son los pasos vencidos (sev>=1). La tira "Hoy en
+// Canjes", la línea de cada card del kanban y el badge del sidebar cuentan
+// exactamente lo mismo — una sola fuente de verdad.
+const CANJE_ALERT_DEFAULTS={despachar:3,demora:7,contAviso:7,contUrgente:15,contCritico:30,sinrespuesta:15};
+function ghCanjeAlertCfg(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(ghKey("growith_canjes_alertcfg"))||"{}");
+    const cfg={...CANJE_ALERT_DEFAULTS};
+    for(const k of Object.keys(CANJE_ALERT_DEFAULTS)){ const v=Number(raw[k]); if(isFinite(v)&&v>=1) cfg[k]=v; }
+    return cfg;
+  }catch(_){ return {...CANJE_ALERT_DEFAULTS}; }
+}
+function ghCanjeAccion(c, cfg){
+  cfg=cfg||CANJE_ALERT_DEFAULTS;
+  const est=c.estado||"";
+  if(est==="Cerrado"||est==="Finalizado"||est==="Contenido entregado") return null;
+  // Guard de fechas mal tipeadas (año 0026 daba "730538d")
+  const dias=v=>{
+    const t=v?.seconds?v.seconds*1000:Date.parse(v||"");
+    if(!isFinite(t)) return null;
+    const d=Math.floor((Date.now()-t)/86400000);
+    return (d>=0&&d<3650)?d:null;
+  };
+  if(est==="Por enviar"||est==="Pendiente envío"){
+    const hoy=hoyAR();
+    if(c.fechaEnvioProgr&&c.fechaEnvioProgr<=hoy&&c.envioAlertDismissed!==c.fechaEnvioProgr)
+      return {tipo:"despachar",sev:2,label:"Programado: despachar hoy"};
+    const d=dias(c.createdAt);
+    if(d!==null&&d>=cfg.despachar) return {tipo:"despachar",sev:d>=cfg.despachar*2?2:1,dias:d,label:`Sin despachar hace ${d}d`};
+    return {tipo:"ok",sev:0,label:"Próximo paso: despachar"};
+  }
+  if(est==="Enviado"){
+    const d=dias(c.fechaEnvio);
+    if(d!==null&&d>=cfg.sinrespuesta) return {tipo:"sinrespuesta",sev:3,dias:d,label:`Enviado hace ${d}d sin respuesta`};
+    if(d!==null&&d>=cfg.demora&&c.trackingCat!=="entregado") return {tipo:"demorado",sev:1,dias:d,label:`En camino hace ${d}d — posible demora`};
+    return {tipo:"ok",sev:0,label:d!==null?`En camino — ${d}d`:"En camino"};
+  }
+  if(est==="Contenido pendiente"){
+    const cont=c.contenido||[];
+    const total=cont.reduce((s,x)=>s+(x.acordados||0),0);
+    const entregados=cont.reduce((s,x)=>s+(x.entregados||0),0);
+    const debe=total-entregados;
+    const d=dias(c.trackEntregadoAt||c.fechaEnvio);
+    if(total===0) return {tipo:"ok",sev:0,label:"Acordar contenido"};
+    if(debe<=0) return {tipo:"ok",sev:0,label:"Contenido completo — cerrar canje"};
+    if(d!==null&&d>=cfg.contCritico) return {tipo:"contenido",sev:3,dias:d,label:`Sin contenido hace ${d}d — considerá cerrarlo`};
+    if(d!==null&&d>=cfg.contUrgente) return {tipo:"contenido",sev:2,dias:d,label:`Reclamar contenido — ${d}d`};
+    if(d!==null&&d>=cfg.contAviso) return {tipo:"contenido",sev:1,dias:d,label:`Debe ${debe} contenido${debe!==1?"s":""} — ${d}d`};
+    const margen=d!==null?cfg.contAviso-d:null;
+    return {tipo:"ok",sev:0,label:margen!==null?`Esperando contenido — ${margen}d de margen`:`Debe ${debe} contenido${debe!==1?"s":""}`};
+  }
+  return null;
+}
 function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje, initialDetail, onClearInitialDetail, tab: tabProp, setTab: setTabProp, orders=[]}) {
   const [canjes,setCanjes]=useState([]);
   // Prefijo común del catálogo para chips cortos ("Rojo - Marco Negro" en vez
@@ -4609,7 +4664,15 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     if (setTabProp) setTabProp(internalToSidebar[v] || v);
   };
   const [showGuia,setShowGuia]=useState(false);
-  const [openAlertDrop,setOpenAlertDrop]=useState(null); // "contenido"|"sinrespuesta"|"recordatorio"|null
+  const [openAlertDrop,setOpenAlertDrop]=useState(null); // id del chip de avisos abierto ("entregado"|"en_sucursal"|"problema") | "cfg" | null
+  // Filtro del kanban activado desde la tira "Hoy en Canjes": {tipo,label,color,ids}
+  const [alertFilter,setAlertFilter]=useState(null);
+  const [alertCfg,setAlertCfg]=useState(ghCanjeAlertCfg());
+  function saveAlertCfg(patch){
+    const next={...alertCfg,...patch};
+    setAlertCfg(next);
+    try{localStorage.setItem(ghKey("growith_canjes_alertcfg"),JSON.stringify(next));}catch(_){}
+  }
   // Perfiles de influencers
   const [influencers,setInfluencers]=useState([]);
   const [showInfluencerForm,setShowInfluencerForm]=useState(false);
@@ -5039,27 +5102,20 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     return true;
   }),[canjes,search,filterEstado,filterRed,filterNicho,filterSoloPendientes]);
 
-  // Alertas
-  const alertas=useMemo(()=>{
+  // Alertas — motor unificado (ghCanjeAccion): próximo paso por canje +
+  // grupos de vencidos para los chips de la tira "Hoy en Canjes".
+  const acciones=useMemo(()=>{
     const hoy=hoyAR();
-    const hace15=fechaAR(new Date(Date.now()-15*86400000));
-    const alerts=[];
+    const map=new Map(); // _docId → accion (para la línea de cada card)
+    const grupos={despachar:[],demorado:[],sinrespuesta:[],contenido:[],recordatorio:[]};
     canjes.forEach(c=>{
-      if(c.recordatorio&&c.recordatorio<=hoy) alerts.push({tipo:"recordatorio",canje:c,msg:`Recordatorio vencido`});
-      // envioAlertDismissed guarda la fecha programada que se descartó: el aviso
-      // no vuelve a aparecer para esa fecha (sí si se reprograma para otro día).
-      if(c.fechaEnvioProgr&&c.fechaEnvioProgr<=hoy&&c.estado==="Por enviar"&&c.envioAlertDismissed!==c.fechaEnvioProgr)
-        alerts.push({tipo:"envio_programado",canje:c,msg:`Hoy toca enviar este canje`});
-      if(c.estado==="Enviado"&&c.fechaEnvio&&c.fechaEnvio<=hace15) alerts.push({tipo:"sinrespuesta",canje:c,msg:`Enviado hace +15 días sin respuesta`});
-      if(c.estado==="Contenido pendiente"){
-        const cont=c.contenido||[];
-        const total=cont.reduce((s,x)=>s+(x.acordados||0),0);
-        const entregados=cont.reduce((s,x)=>s+(x.entregados||0),0);
-        if(total>0&&entregados<total) alerts.push({tipo:"contenido",canje:c,msg:`Debe ${total-entregados} contenido(s)`});
-      }
+      const a=ghCanjeAccion(c,alertCfg);
+      if(a) map.set(c._docId,a);
+      if(a&&a.sev>=1&&grupos[a.tipo]) grupos[a.tipo].push(c);
+      if(c.recordatorio&&c.recordatorio<=hoy&&c.estado!=="Cerrado"&&c.estado!=="Finalizado") grupos.recordatorio.push(c);
     });
-    return alerts;
-  },[canjes]);
+    return {map,grupos,total:Object.values(grupos).reduce((s,l)=>s+l.length,0)};
+  },[canjes,alertCfg]);
 
   async function addNota(docId, texto) {
     if(!texto.trim()) return;
@@ -5111,7 +5167,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 {n:2,title:"Nuevo canje",desc:"Con '+ Canje' elegís el perfil o cargás los datos desde un pedido real ('Cargar desde pedido' trae cliente, productos con nombre corto, dirección y hasta el punto de retiro). Definí los productos, el contenido acordado y listo: arranca en 'Por enviar'."},
                 {n:3,title:"Etiqueta Andreani desde el alta",desc:"Si cargaste el pedido, el botón 'Exportar XLSX Andreani' del mismo modal te da el Excel del envío al toque — sin crear el canje, ir al detalle y volver. Si el punto de retiro no existe en la lista de Andreani, se abre el selector de sucursales cercanas ordenadas por distancia."},
                 {n:4,title:"Kanban por estado",desc:"Las columnas son el ciclo completo: Por enviar → Enviado → Contenido pendiente → Cerrado. 'Contenido pendiente' se ordena por urgencia (lo más viejo arriba) y Cerrado muestra los últimos 30 días (con botón para ver todos)."},
-                {n:5,title:"Seguimiento automático",desc:"Con el tracking cargado, Growith sigue el envío en Andreani cada 30 minutos y te avisa cuando llega a sucursal o se entrega — el banner de avisos tiene 'Ver tracking' directo. Al entregarse, el canje pasa solo a 'Contenido pendiente'."},
+                {n:5,title:"Hoy en Canjes",desc:"La tira de arriba junta TODO lo que requiere acción: canjes sin despachar, envíos demorados, paquetes entregados o en sucursal, contenido vencido y recordatorios. Cada chip filtra el kanban a esos canjes con un click, y cada card muestra su próximo paso. Los umbrales de días se configuran con el engranaje de la tira. El badge de Canjes en el menú cuenta estas acciones pendientes."},
                 {n:6,title:"Contenido y recordatorios",desc:"En el detalle marcás los contenidos entregados sobre los acordados (la barra de progreso de cada card). Si a los 5 días de entregado falta contenido, te llega un recordatorio por email. También podés crear una tarea de guion para el equipo con fecha límite."},
                 {n:7,title:"Cupones y comisiones",desc:"En Historial se cruzan las ventas REALES de Tienda Nube con cada código de descuento: ves cuántas ventas trajo, cuánto facturó y la comisión exacta a pagar (con % editable por cupón). Marcá pagos hechos para llevar la cuenta, y con el botón 'Link' compartís un panel público donde el dueño del código ve sus ventas y su comisión del mes en tiempo real."},
               ].map(s=>(
@@ -5162,94 +5218,126 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           })}
         </div>
 
-        {/* ── ALERTAS DE CANJES ── */}
-        {alertas.length>0&&(
-          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
-            {alertas.filter(a=>a.tipo==="envio_programado").map((a,i)=>(
-              <div key={i} className="gh-accordion" style={{background:"linear-gradient(135deg,#6366f112,#a855f708)",border:"1.5px solid #6366f140",borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                <span style={{display:"inline-flex",color:"#6366f1"}}><GhI n="box" size={18}/></span>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:700,color:"#6366f1"}}>Hoy toca enviar: {a.canje.influencer}</div>
-                  <div style={{fontSize:12,color:T.textMd}}>{a.canje.producto||((a.canje.productosCanje||[])[0]?.nombre)||""}
-                    {a.canje.tracking&&<span style={{marginLeft:8,color:T.textSm}}>· Tracking: <code style={{fontSize:11}}>{a.canje.tracking}</code></span>}
-                  </div>
+        {/* ── HOY EN CANJES — tira única de acciones vencidas y novedades ── */}
+        {(()=>{
+          const g=acciones.grupos;
+          const avisos=canjes.filter(c=>{
+            const a=c.trackingAviso;
+            if(!a||a.visto) return false;
+            // Los "entregado" se auto-archivan a las 48h: dejan de ser novedad
+            if(a.cat==="entregado"&&isFinite(Date.parse(a.at||""))&&Date.now()-Date.parse(a.at)>48*3600e3) return false;
+            return true;
+          });
+          const worstCont=g.contenido.reduce((s,c)=>Math.max(s,acciones.map.get(c._docId)?.sev||0),0);
+          const chips=[
+            {id:"despachar",   items:g.despachar,   label:"sin despachar",  color:T.orange},
+            {id:"demorado",    items:g.demorado,    label:g.demorado.length===1?"demorado":"demorados", color:T.blue},
+            {id:"sinrespuesta",items:g.sinrespuesta,label:`sin respuesta +${alertCfg.sinrespuesta}d`, color:T.red},
+            {id:"contenido",   items:g.contenido,   label:"contenido vencido", color:worstCont>=2?T.red:T.orange},
+            {id:"recordatorio",items:g.recordatorio,label:g.recordatorio.length===1?"recordatorio":"recordatorios", color:T.yellow},
+          ].filter(ch=>ch.items.length>0);
+          const AVISO_TXT={entregado:"entregado",en_sucursal:"en sucursal para retirar",devolucion:"volviendo (devolución)",visita_fallida:"con visita fallida"};
+          const avisoDefs=[
+            {id:"entregado",  cats:["entregado"],  uno:"entregado",   varios:"entregados", color:T.green},
+            {id:"en_sucursal",cats:["en_sucursal"],uno:"en sucursal", varios:"en sucursal", color:T.yellow},
+            {id:"problema",   cats:["devolucion","visita_fallida"],uno:"con problema",varios:"con problema", color:T.red},
+          ].map(d=>({...d,items:avisos.filter(c=>d.cats.includes(c.trackingAviso.cat))})).filter(d=>d.items.length>0);
+          const nTotal=acciones.total+avisos.length;
+          if(nTotal===0) return null;
+          const toggleFiltro=(ch)=>{
+            if(alertFilter?.tipo===ch.id){ setAlertFilter(null); return; }
+            setAlertFilter({tipo:ch.id,label:`${ch.items.length} ${ch.label}`,color:ch.color,ids:ch.items.map(c=>c._docId)});
+            setViewTab("kanban"); setOpenAlertDrop(null);
+          };
+          const pill=(active,col)=>({display:"inline-flex",alignItems:"center",gap:7,padding:"6px 13px",borderRadius:99,cursor:"pointer",border:`1px solid ${active?col:col+"44"}`,background:active?col+"1c":col+"10",color:col,transition:"all 0.15s ease",userSelect:"none",fontSize:12,fontWeight:600,whiteSpace:"nowrap"});
+          return (
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:11,flexShrink:0}}>
+                <div style={{width:34,height:34,borderRadius:9,background:T.accent+"18",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
                 </div>
-                <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-                  <button onClick={()=>setDetail(a.canje._docId)} style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:T.surface,border:`1px solid ${T.border}`,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ver canje</button>
-                  {a.canje.telefono&&<a href={`https://wa.me/${a.canje.telefono.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
-                    style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:T.green,color:"#fff",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                    Enviar WA
-                  </a>}
-                  <button onClick={async()=>{try{await updateDoc(doc(db,"canjes",a.canje._docId),{envioAlertDismissed:a.canje.fechaEnvioProgr||""});}catch(_){}}} title="No mostrar más este aviso" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:15,padding:"2px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                <div>
+                  <div style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",color:T.textSm}}>HOY EN CANJES</div>
+                  <div style={{fontSize:15,fontWeight:800,color:T.text,lineHeight:1.25}}>{nTotal} {nTotal===1?"pendiente":"pendientes"}</div>
                 </div>
               </div>
-            ))}
-            {(()=>{
-              const otros=alertas.filter(a=>a.tipo!=="envio_programado");
-              if(!otros.length) return null;
-              // "deben contenido" NO va como chip: ya lo dicen el stat
-              // "Cont. pendiente" y la columna del kanban — era triple.
-              const chipDefs=[
-                {tipo:"sinrespuesta", label:"sin respuesta +15 días", color:T.blue},
-                {tipo:"recordatorio", label:"recordatorios vencidos", color:T.yellow},
-              ];
-              return (
-                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                  {chipDefs.map(def=>{
-                    const items=otros.filter(a=>a.tipo===def.tipo);
-                    if(!items.length) return null;
-                    const isOpen=openAlertDrop===def.tipo;
-                    const col=def.color;
-                    return (
-                      <div key={def.tipo} style={{position:"relative"}}>
-                        {/* Pill compacta — el detalle se abre como dropdown flotante */}
-                        <div onClick={()=>setOpenAlertDrop(isOpen?null:def.tipo)}
-                          style={{display:"inline-flex",alignItems:"center",gap:7,padding:"6px 13px",borderRadius:99,cursor:"pointer",
-                            border:`1px solid ${isOpen?col:col+"44"}`,
-                            background:isOpen?col+"1c":col+"10",
-                            color:col,transition:"all 0.15s ease",userSelect:"none",fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>
-                          <span style={{fontSize:13,fontWeight:800}}>{items.length}</span>
-                          <span>{def.label}</span>
-                          <span style={{fontSize:9,opacity:isOpen?.8:.5,transition:"transform 0.2s",display:"inline-block",transform:isOpen?"rotate(180deg)":"rotate(0deg)"}}>▼</span>
-                        </div>
-                        {/* Dropdown */}
-                        {isOpen&&(
-                          <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:60,width:340,maxWidth:"calc(100vw - 48px)",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",boxShadow:"0 12px 32px rgba(0,0,0,0.35)"}}>
-                            {items.map((a,i)=>{
-                              const initials=(a.canje.influencer||"?").split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase();
-                              return (
-                                <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",
-                                  borderBottom:i<items.length-1?`1px solid ${T.borderL}`:"none",
-                                  cursor:"pointer",transition:"background 0.12s"}}
-                                  onMouseEnter={e=>e.currentTarget.style.background=T.card}
-                                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                                  <div style={{width:28,height:28,borderRadius:"50%",background:col+"20",color:col,
-                                    display:"flex",alignItems:"center",justifyContent:"center",
-                                    fontSize:10,fontWeight:700,flexShrink:0}}>{initials}</div>
-                                  <div style={{flex:1,minWidth:0}}>
-                                    <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.canje.influencer}</div>
-                                    <div style={{fontSize:11,color:T.textSm,marginTop:1}}>{a.msg}</div>
-                                  </div>
-                                  <button onClick={()=>{setDetail(a.canje._docId);setOpenAlertDrop(null);}}
-                                    style={{fontSize:11,padding:"4px 10px",borderRadius:6,background:T.card,
-                                      border:`1px solid ${T.border}`,color:T.textMd,cursor:"pointer",
-                                      fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"}}>
-                                    Ver →
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",flex:1,minWidth:0}}>
+                {chips.map(ch=>{
+                  const active=alertFilter?.tipo===ch.id;
+                  return (
+                    <div key={ch.id} onClick={()=>toggleFiltro(ch)} title="Filtrar el kanban a estos canjes" style={pill(active,ch.color)}>
+                      <span style={{fontSize:13,fontWeight:800}}>{ch.items.length}</span>
+                      <span>{ch.label}</span>
+                      {active&&<span style={{fontSize:11,opacity:.8}}>✕</span>}
+                    </div>
+                  );
+                })}
+                {avisoDefs.map(d=>{
+                  const isOpen=openAlertDrop===d.id;
+                  return (
+                    <div key={d.id} style={{position:"relative"}}>
+                      <div onClick={()=>setOpenAlertDrop(isOpen?null:d.id)} style={pill(isOpen,d.color)}>
+                        <span style={{fontSize:13,fontWeight:800}}>{d.items.length}</span>
+                        <span>{d.items.length===1?d.uno:d.varios}</span>
+                        <span style={{fontSize:9,opacity:isOpen?.8:.5,transition:"transform 0.2s",display:"inline-block",transform:isOpen?"rotate(180deg)":"rotate(0deg)"}}>▼</span>
                       </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-          </div>
-        )}
+                      {isOpen&&(
+                        <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:60,width:380,maxWidth:"calc(100vw - 48px)",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",boxShadow:"0 12px 32px rgba(0,0,0,0.35)"}}>
+                          {d.items.map(c=>(
+                            <div key={c._docId} style={{display:"flex",alignItems:"center",gap:9,padding:"9px 12px",borderBottom:`1px solid ${T.borderL}`}}>
+                              <span style={{width:7,height:7,borderRadius:"50%",background:d.color,flexShrink:0}}/>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.influencer||"Sin nombre"}</div>
+                                <div style={{fontSize:11,color:T.textSm,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>Paquete {AVISO_TXT[c.trackingAviso.cat]||""}{c.trackingAviso.estado?` · "${c.trackingAviso.estado}"`:""}</div>
+                              </div>
+                              {(c.tracking||"").trim()&&<a href={`https://www.andreani.com/envio/${(c.tracking||"").trim()}`} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.blue,textDecoration:"none",flexShrink:0}}>Tracking →</a>}
+                              <button onClick={()=>{setDetail(c._docId);setOpenAlertDrop(null);}} style={{...BtnSecondary(T),padding:"4px 10px",fontSize:11,flexShrink:0}}>Abrir</button>
+                              <button onClick={async()=>{try{await updateDoc(doc(db,"canjes",c._docId),{"trackingAviso.visto":true});}catch(_){}}} title="Marcar visto" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:14,padding:"2px 4px",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                            </div>
+                          ))}
+                          <button onClick={async()=>{setOpenAlertDrop(null);try{await Promise.all(d.items.map(c=>updateDoc(doc(db,"canjes",c._docId),{"trackingAviso.visto":true})));}catch(_){}}}
+                            style={{width:"100%",background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:11,fontWeight:600,padding:"8px 12px",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                            Marcar todos como vistos
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Umbrales configurables (días) */}
+              <div style={{position:"relative",marginLeft:"auto",flexShrink:0}}>
+                <button onClick={()=>setOpenAlertDrop(openAlertDrop==="cfg"?null:"cfg")} title="Configurar umbrales de alertas"
+                  style={{width:28,height:28,borderRadius:8,background:"transparent",border:`1px solid ${openAlertDrop==="cfg"?T.accent:T.border}`,color:openAlertDrop==="cfg"?T.accent:T.textSm,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                </button>
+                {openAlertDrop==="cfg"&&(
+                  <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:60,width:280,background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",boxShadow:"0 12px 32px rgba(0,0,0,0.35)"}}>
+                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:10}}>Umbrales de alerta (días)</div>
+                    {[
+                      {k:"despachar",label:"Sin despachar tras crear"},
+                      {k:"demora",label:"Envío demorado"},
+                      {k:"contAviso",label:"Aviso de contenido"},
+                      {k:"contUrgente",label:"Contenido urgente"},
+                      {k:"contCritico",label:"Contenido crítico"},
+                      {k:"sinrespuesta",label:"Sin respuesta"},
+                    ].map(f=>(
+                      <div key={f.k} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:7}}>
+                        <span style={{fontSize:11,color:T.textMd}}>{f.label}</span>
+                        <input type="number" min={1} value={alertCfg[f.k]} onChange={e=>{const v=Number(e.target.value);if(isFinite(v)&&v>=1)saveAlertCfg({[f.k]:v});}}
+                          style={{width:56,padding:"4px 8px",borderRadius:7,border:`1px solid ${T.inputBorder}`,background:T.card,color:T.text,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",textAlign:"center"}}/>
+                      </div>
+                    ))}
+                    <button onClick={()=>{setAlertCfg({...CANJE_ALERT_DEFAULTS});try{localStorage.removeItem(ghKey("growith_canjes_alertcfg"));}catch(_){}}}
+                      style={{marginTop:4,background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:11,padding:0,fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline"}}>
+                      Restaurar valores por defecto
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         <div style={{padding:"14px 0 8px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
           {viewTab!=="comisiones"&&<>
@@ -5264,32 +5352,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             <span style={{fontSize:12,color:T.textSm,marginLeft:"auto"}}>{filtered.length} canjes</span>
           </>}
         </div>
-
-        {/* Avisos de seguimiento Andreani (los genera el cron del servidor) */}
-        {(viewTab==="kanban"||viewTab==="lista")&&(()=>{
-          const conAviso=canjes.filter(c=>c.trackingAviso&&!c.trackingAviso.visto);
-          if(!conAviso.length) return null;
-          const AVISO_TXT={en_sucursal:{txt:"listo para retirar en sucursal",color:T.yellow},entregado:{txt:"entregado",color:T.green},devolucion:{txt:"volviendo (devolución)",color:T.red},visita_fallida:{txt:"con visita fallida",color:T.red}};
-          return (
-            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14}}>
-              {conAviso.map(c=>{
-                const a=c.trackingAviso; const m=AVISO_TXT[a.cat]||{txt:a.estado,color:T.blue};
-                return (
-                  <div key={c._docId} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",background:m.color+"10",border:`1px solid ${m.color}44`,borderRadius:10,fontSize:12,flexWrap:"wrap"}}>
-                    <span style={{width:7,height:7,borderRadius:"50%",background:m.color,flexShrink:0}}/>
-                    <span style={{color:T.text,flex:1,minWidth:140}}>
-                      <strong>{c.influencer}</strong>: paquete <strong style={{color:m.color}}>{m.txt}</strong>
-                      {a.estado&&<span style={{color:T.textSm}}> · Andreani: "{a.estado}"</span>}
-                    </span>
-                    <a href={`https://www.andreani.com/envio/${(c.tracking||"").trim()}`} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.blue,textDecoration:"none",flexShrink:0}}>Ver tracking →</a>
-                    <button onClick={()=>setDetail(c._docId)} style={{...BtnSecondary(T),padding:"4px 10px",fontSize:11,flexShrink:0}}>Abrir</button>
-                    <button onClick={async()=>{try{await updateDoc(doc(db,"canjes",c._docId),{"trackingAviso.visto":true});}catch(_){}}} title="Marcar visto" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:14,padding:"2px 6px",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
 
         {/* LISTA */}
         {viewTab==="lista"&&<div key="lista" className="gh-tab-content" style={{paddingBottom:48,overflowX:"auto"}}>
@@ -5363,7 +5425,16 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           <div key="kanban" style={{paddingBottom:48}}>
             {/* El buscador y los filtros viven en la fila de filtros de arriba —
                 acá solo queda el hint de drag para no duplicar controles */}
-            <div style={{textAlign:"right",fontSize:11,color:T.textSm,marginBottom:10}}>Arrastrá las tarjetas para cambiar estado</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+              {alertFilter?(
+                <div onClick={()=>setAlertFilter(null)} title="Quitar el filtro"
+                  style={{display:"inline-flex",alignItems:"center",gap:7,padding:"5px 12px",borderRadius:99,cursor:"pointer",border:`1px solid ${alertFilter.color}`,background:alertFilter.color+"1c",color:alertFilter.color,fontSize:12,fontWeight:600,userSelect:"none"}}>
+                  Mostrando: {alertFilter.label}
+                  <span style={{fontSize:11,opacity:.85}}>✕</span>
+                </div>
+              ):<span/>}
+              <span style={{fontSize:11,color:T.textSm}}>Arrastrá las tarjetas para cambiar estado</span>
+            </div>
 
             <div className="stack-mobile" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,alignItems:"start"}}>
               {ESTADOS_C.map(estado=>{
@@ -5371,6 +5442,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 const isDragOver=dragOverEstado===estado;
                 let cols=(filterEstado?canjes.filter(c=>c.estado===estado):canjes.filter(c=>c.estado===estado))
                   .filter(c=>{
+                    if(alertFilter&&!alertFilter.ids.includes(c._docId)) return false;
                     if(search&&!c.influencer?.toLowerCase().includes(search.toLowerCase())&&!c.usuario?.toLowerCase().includes(search.toLowerCase())) return false;
                     if(filterRed&&c.red!==filterRed) return false;
                     return true;
@@ -5428,11 +5500,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         const totalAcordado=cont.reduce((a,x)=>a+(x.acordados||0),0);
                         const totalEntregado=cont.reduce((a,x)=>a+(x.entregados||0),0);
                         const pctContenido=totalAcordado>0?Math.round((totalEntregado/totalAcordado)*100):null;
-                        // Guard: una fecha de envío mal tipeada (ej. año 0026) daba badges
-                        // absurdos tipo "730538d" y marcaba la card como urgente.
-                        const _dRaw=c.fechaEnvio?Math.floor((Date.now()-new Date(c.fechaEnvio))/(86400000)):null;
-                        const diasEnvio=(_dRaw!==null&&isFinite(_dRaw)&&_dRaw>=0&&_dRaw<3650)?_dRaw:null;
-                        const urgente=diasEnvio!==null&&diasEnvio>14&&(c.estado==="Enviado"||c.estado==="Contenido pendiente");
+                        // Próximo paso del motor de alertas: reemplaza los badges
+                        // URGENTE/"126d" — la línea de abajo dice qué hacer y hace cuánto.
+                        const accion=acciones.map.get(c._docId)||null;
+                        const urgente=!!accion&&accion.sev>=2;
+                        const accionCol=!accion||accion.sev===0?T.textSm:accion.sev===1?T.orange:T.red;
                         const prods=(c.productosCanje||[]);
                         return (
                           <div key={c._docId}
@@ -5452,12 +5524,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                               </div>
                               <div style={{display:"flex",gap:4,alignItems:"center"}}>
                                 <TrackingChip c={c}/>
-                                {urgente&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"12",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
-                                {diasEnvio!==null&&(c.estado==="Enviado"||c.estado==="Contenido pendiente")&&(
-                                  <span style={{fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:4,background:diasEnvio>=15?T.redBg:diasEnvio>=7?T.orangeBg:T.greenBg,color:diasEnvio>=15?T.red:diasEnvio>=7?T.orange:T.green,border:`1px solid ${diasEnvio>=15?T.red:diasEnvio>=7?T.orange:T.green}33`}}>
-                                    {diasEnvio}d
-                                  </span>
-                                )}
                               </div>
                             </div>
 
@@ -5479,6 +5545,14 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                                     {ghNombreCortoProducto(p.nombre,prefProds)}{(p.cantidad||1)>1?` ×${p.cantidad}`:""}
                                   </span>
                                 ))}
+                              </div>
+                            )}
+
+                            {/* Próximo paso — la card dice qué toca hacer con este canje */}
+                            {accion&&(
+                              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+                                <span style={{width:6,height:6,borderRadius:"50%",background:accionCol,flexShrink:0}}/>
+                                <span style={{fontSize:10.5,fontWeight:accion.sev>=1?600:500,color:accionCol,lineHeight:1.3}}>{accion.label}</span>
                               </div>
                             )}
 
@@ -32668,6 +32742,7 @@ export default function App() {
   const [fbStatus,setFbStatus]=useState("connecting");
   const [reclamosCount,setReclamosCount]=useState(0);
   const [canjesCount,setCanjesCount]=useState(0);
+  const [canjesAcciones,setCanjesAcciones]=useState(0); // badge sidebar: acciones vencidas, no total
   const [alertas,setAlertas]=useState([]);
   const [darkMode,setDarkMode]=useState(()=>{ try { return localStorage.getItem("growith_theme")!=="light"; } catch(e){ return true; } });
   const [userPlan,setUserPlan]=useState("free"); // free | plus | full
@@ -33012,6 +33087,17 @@ export default function App() {
     const u2=onSnapshot(q2,snap=>{
       const canjesData=snap.docs.map(d=>({...d.data(),_docId:d.id}));
       setCanjesCount(canjesData.length);
+      // Badge del sidebar = acciones vencidas del motor de alertas (ghCanjeAccion):
+      // "3" significa 3 cosas que atender hoy; sin nada, estás al día. Antes
+      // mostraba el TOTAL de canjes, que no decía nada accionable.
+      try{
+        const cfgC=ghCanjeAlertCfg(); const hoyC=hoyAR();
+        setCanjesAcciones(canjesData.filter(c=>{
+          const a=ghCanjeAccion(c,cfgC);
+          const rec=c.recordatorio&&c.recordatorio<=hoyC&&c.estado!=="Cerrado"&&c.estado!=="Finalizado";
+          return (a&&a.sev>=1)||rec;
+        }).length);
+      }catch(_){}
       getDoc(doc(db,"users",user.uid)).then(userSnap=>{
         const alertasCfg=userSnap.data()?.alertas||{recordatorio:true,sinrespuesta:true,contenido:true};
         const hoy=hoyAR();
@@ -33223,7 +33309,7 @@ export default function App() {
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesAcciones, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
       {/* Multi-org F2 modals */}
       {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
       {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}

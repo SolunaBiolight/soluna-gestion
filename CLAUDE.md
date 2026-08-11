@@ -169,6 +169,7 @@ growith_switch_to          → JSON {email,provider} temporal al cambiar de cuen
 growith_compaid_{uid}      → JSON comisiones de cupones marcadas como pagadas
 growith_comisionOverrides  → JSON overrides de % comisión por cupón
 growith_mpComision         → número, % comisión MP default en Canjes (12)
+growith_canjes_alertcfg_{uid} → JSON umbrales (días) del motor de alertas de Canjes: {despachar,demora,contAviso,contUrgente,contCritico,sinrespuesta}
 growith_meta_roas_be       → número, ROAS break-even del análisis Meta (2)
 growith_meta_cols          → JSON[] columnas visibles de la tabla de análisis Meta
 growith_meta_lasteval_{accId} → timestamp última evaluación de reglas Meta
