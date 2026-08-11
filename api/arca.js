@@ -765,6 +765,14 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
   puntoVenta = parseInt(puntoVenta); cbteNro = parseInt(cbteNro); tipoCbte = parseInt(tipoCbte);
   if (![puntoVenta, cbteNro, tipoCbte].every(Number.isFinite)) throw new Error("Punto de venta, número o tipo de comprobante inválido — no se envió a AFIP.");
   const fecha = fechaImputacion || hoyARISO().replace(/-/g, "");
+  // Concepto del comprobante: 1 Productos (default histórico) · 2 Servicios ·
+  // 3 Productos y Servicios. Con 2/3 el WSFE exige FchServDesde/Hasta/VtoPago
+  // y habilita la ventana de fecha retroactiva de 10 días (productos: 5).
+  const concepto = [2, 3].includes(parseInt(opts.concepto)) ? parseInt(opts.concepto) : 1;
+  const fchServXml = concepto !== 1 ? `
+          <ar:FchServDesde>${fecha}</ar:FchServDesde>
+          <ar:FchServHasta>${fecha}</ar:FchServHasta>
+          <ar:FchVtoPago>${fecha}</ar:FchVtoPago>` : "";
 
   const docTipoClas = orden.doc_tipo;
   const nroDocNum = parseInt(String(orden.doc_nro || orden.dni || "").replace(/\D/g, ""), 10);
@@ -837,7 +845,7 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
       </ar:FeCabReq>
       <ar:FeDetReq>
         <ar:FECAEDetRequest>
-          <ar:Concepto>1</ar:Concepto>
+          <ar:Concepto>${concepto}</ar:Concepto>
           <ar:DocTipo>${tipoDoc}</ar:DocTipo>
           <ar:DocNro>${nroDoc}</ar:DocNro>
           <ar:CbteDesde>${cbteNro}</ar:CbteDesde>
@@ -848,7 +856,7 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
           <ar:ImpNeto>${neto.toFixed(2)}</ar:ImpNeto>
           <ar:ImpOpEx>${impOpEx.toFixed(2)}</ar:ImpOpEx>
           <ar:ImpTrib>${impTrib.toFixed(2)}</ar:ImpTrib>
-          <ar:ImpIVA>${iva.toFixed(2)}</ar:ImpIVA>
+          <ar:ImpIVA>${iva.toFixed(2)}</ar:ImpIVA>${fchServXml}
           <ar:MonId>PES</ar:MonId>
           <ar:MonCotiz>1</ar:MonCotiz>
           <ar:CondicionIVAReceptorId>${condIva}</ar:CondicionIVAReceptorId>
@@ -901,6 +909,12 @@ async function facturarLote(ordenesPrep, ctx) {
   const pvN = parseInt(pv), tipoN = parseInt(tipoCbte);
   if (![pvN, tipoN].every(Number.isFinite) || !ordenesPrep.length) throw new Error("Lote inválido (PV/tipo/órdenes) — no se envió a AFIP.");
   const fecha = fechaImputacion || hoyARISO().replace(/-/g, "");
+  // Mismo criterio de concepto que facturar() — ver comentario allá.
+  const concepto = [2, 3].includes(parseInt(ctx.concepto)) ? parseInt(ctx.concepto) : 1;
+  const fchServXml = concepto !== 1 ? `
+          <ar:FchServDesde>${fecha}</ar:FchServDesde>
+          <ar:FchServHasta>${fecha}</ar:FchServHasta>
+          <ar:FchVtoPago>${fecha}</ar:FchVtoPago>` : "";
 
   const dets = [];
   for (const p of ordenesPrep) {
@@ -938,7 +952,7 @@ async function facturarLote(ordenesPrep, ctx) {
           </ar:Iva>` : "";
 
     dets.push(`<ar:FECAEDetRequest>
-          <ar:Concepto>1</ar:Concepto>
+          <ar:Concepto>${concepto}</ar:Concepto>
           <ar:DocTipo>${tipoDoc}</ar:DocTipo>
           <ar:DocNro>${nroDoc}</ar:DocNro>
           <ar:CbteDesde>${cbteNro}</ar:CbteDesde>
@@ -949,7 +963,7 @@ async function facturarLote(ordenesPrep, ctx) {
           <ar:ImpNeto>${neto.toFixed(2)}</ar:ImpNeto>
           <ar:ImpOpEx>${impOpEx.toFixed(2)}</ar:ImpOpEx>
           <ar:ImpTrib>0</ar:ImpTrib>
-          <ar:ImpIVA>${iva.toFixed(2)}</ar:ImpIVA>
+          <ar:ImpIVA>${iva.toFixed(2)}</ar:ImpIVA>${fchServXml}
           <ar:MonId>PES</ar:MonId>
           <ar:MonCotiz>1</ar:MonCotiz>
           <ar:CondicionIVAReceptorId>${condIva}</ar:CondicionIVAReceptorId>
@@ -2151,8 +2165,10 @@ async function listCuits(db, uid) {
 // batch. Extraído tal cual del handler emit para que cron_autopilot use
 // EXACTAMENTE el mismo camino (mismas garantías anti-duplicado).
 // deadline: timestamp absoluto opcional (el cron corre con menos presupuesto).
-async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, fechaImputacion, pvSel, exentoReq, deadline }) {
+async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, fechaImputacion, pvSel, exentoReq, conceptoReq, deadline }) {
       let exento = exentoReq === true;
+      // Concepto AFIP del lote (1 Productos default · 2 Servicios · 3 Prod y Serv)
+      let conceptoEmit = [2, 3].includes(parseInt(conceptoReq)) ? parseInt(conceptoReq) : 1;
       const isMonotributo = cfg.condicion_fiscal === "MONOTRIBUTO";
       const { wsfe } = arcaUrls(cfg.arca_prod);
 
@@ -2164,10 +2180,12 @@ async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, f
       // exento). Si el front no manda uno, cae al punto_venta por defecto del CUIT.
       const cuitNum = parseInt(cfg.cuit);
       const pv = parseInt(pvSel) || cfg.punto_venta;
-      // Exento: lo decide la CONFIG del punto de venta, no el front. Si hay
-      // puntos_venta configurados y el flag del front no coincide, gana la config.
+      // Exento y concepto: los decide la CONFIG del punto de venta, no el front.
+      // Si hay puntos_venta configurados y el flag del front no coincide, gana la config.
       if (Array.isArray(cfg.puntos_venta) && cfg.puntos_venta.length) {
-        exento = cfg.puntos_venta.find(p => String(p.numero) === String(pv))?.exento === true;
+        const pvCfg = cfg.puntos_venta.find(p => String(p.numero) === String(pv));
+        exento = pvCfg?.exento === true;
+        conceptoEmit = pvCfg && [2, 3].includes(parseInt(pvCfg.concepto)) ? parseInt(pvCfg.concepto) : (pvCfg ? 1 : conceptoEmit);
       }
       let cbteA = isMonotributo ? 0 : (await getUltimoCbte(token, sign, cuitNum, pv, 1, wsfe)) + 1;
       let cbteB = isMonotributo ? 0 : (await getUltimoCbte(token, sign, cuitNum, pv, 6, wsfe)) + 1;
@@ -2219,6 +2237,7 @@ async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, f
       const optsFact = (orden) => ({
         alicMap: alicMapActivo ? cfg.alic_map : null,
         percepciones: orden.percepciones || null,
+        concepto: conceptoEmit,
       });
       let taRenovado = false; // un solo re-login por lote ante token vencido
 
@@ -2534,7 +2553,7 @@ async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, f
             try {
               lote = await facturarLote(prep.map(ent => ({ orden: ent.orden, cbteNro: ent.cbteNro })), {
                 token, sign, cuitNum, pv, tipoCbte: tipoLote, wsfeUrl: wsfe,
-                monotributo: isMonotributo, fechaImputacion, exento,
+                monotributo: isMonotributo, fechaImputacion, exento, concepto: conceptoEmit,
               });
             } catch (e) {
               falloEstructural = e;
@@ -3505,7 +3524,7 @@ export default async function handler(req, res) {
         try {
           const arr = typeof data.puntos_venta === "string" ? JSON.parse(data.puntos_venta) : data.puntos_venta;
           updated.puntos_venta = (Array.isArray(arr) ? arr : [])
-            .map(p => ({ numero: parseInt(p.numero) || 0, exento: !!p.exento, nombre: String(p.nombre || "").slice(0, 40) }))
+            .map(p => ({ numero: parseInt(p.numero) || 0, exento: !!p.exento, nombre: String(p.nombre || "").slice(0, 40), concepto: [2, 3].includes(parseInt(p.concepto)) ? parseInt(p.concepto) : 1 }))
             .filter(p => p.numero > 0);
         } catch(_) {}
       }
@@ -4319,7 +4338,7 @@ export default async function handler(req, res) {
 
     if (action === "emit" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString());
-      const { cuit: cuitRaw, ordenes, product_map, fecha_factura, punto_venta: pvSel, exento: exentoReq } = body;
+      const { cuit: cuitRaw, ordenes, product_map, fecha_factura, punto_venta: pvSel, exento: exentoReq, concepto: conceptoReq } = body;
       // Normalizar SIEMPRE a dígitos: cuit_emisor se guarda con este valor y el
       // historial (list_batches / dashboard_stats) filtra con el cuit normalizado.
       // Un cuit con guiones acá = comprobantes invisibles en Registros.
@@ -4356,7 +4375,7 @@ export default async function handler(req, res) {
       if (percErr) return res.status(400).json({ error: percErr });
 
       const { resultados, pdfs, pendientesIds } = await ejecutarEmision(db, uid, cfg, {
-        cuitEmit, ordenes, product_map, fechaImputacion, pvSel, exentoReq: exento,
+        cuitEmit, ordenes, product_map, fechaImputacion, pvSel, exentoReq: exento, conceptoReq,
       });
 
       // Lotes grandes: los PDFs en base64 revientan el límite de respuesta de

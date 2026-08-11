@@ -19789,8 +19789,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const cuitActivo = cuits.find(c => c.cuit === cuitSel);
   // Puntos de venta disponibles: el físico (por defecto) + los adicionales cargados.
   const pvsDisponibles = cuitActivo ? [
-    { numero: parseInt(cuitActivo.punto_venta)||1, exento:false, nombre:"Físicos (21%)" },
-    ...((Array.isArray(cuitActivo.puntos_venta)?cuitActivo.puntos_venta:[]).map(p=>({ numero:parseInt(p.numero)||0, exento:!!p.exento, nombre:p.nombre||`PV ${p.numero}` })).filter(p=>p.numero>0)),
+    { numero: parseInt(cuitActivo.punto_venta)||1, exento:false, concepto:1, nombre:"Físicos (21%)" },
+    ...((Array.isArray(cuitActivo.puntos_venta)?cuitActivo.puntos_venta:[]).map(p=>({ numero:parseInt(p.numero)||0, exento:!!p.exento, concepto:[2,3].includes(parseInt(p.concepto))?parseInt(p.concepto):1, nombre:p.nombre||`PV ${p.numero}` })).filter(p=>p.numero>0)),
   ] : [];
   const pvElegido = pvEmit || pvsDisponibles[0] || { numero:undefined, exento:false, nombre:"Físicos (21%)" };
   // PV de la factura manual: NUNCA hereda el elegido en el modal masivo — usa el
@@ -20789,7 +20789,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       // PV propio del panel manual (pvManualElegido) — NO hereda el del modal masivo.
       // Las percepciones viajan DENTRO de la orden (el backend las valida por orden).
       if (percepciones.length) orden.percepciones = percepciones;
-      const d = await api("emit","POST",{cuit:cuitSel, ordenes:{[orderId]:orden}, product_map:{}, fecha_factura:(manualFecha||"").replace(/-/g,""), punto_venta: pvManualElegido?.numero, exento: !!pvManualElegido?.exento});
+      const d = await api("emit","POST",{cuit:cuitSel, ordenes:{[orderId]:orden}, product_map:{}, fecha_factura:(manualFecha||"").replace(/-/g,""), punto_venta: pvManualElegido?.numero, exento: !!pvManualElegido?.exento, concepto: pvManualElegido?.concepto||1});
       if(d.error){toast(d.error,"error");return;}
       const r = (d.resultados||[])[0];
       const pdf = (d.pdfs||[])[0];
@@ -20840,6 +20840,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         fecha_factura: fechaYYYYMMDD,
         punto_venta: pvElegido?.numero,
         exento: !!pvElegido?.exento,
+        concepto: pvElegido?.concepto||1,
       });
       clearInterval(simInterval); simInterval = null;
       if(d.error){
@@ -22957,6 +22958,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <input type="checkbox" checked={!!p.exento} onChange={e=>{const arr=[...(editCuit.puntos_venta||[])];arr[i]={...arr[i],exento:e.target.checked};setEditCuit({...editCuit,puntos_venta:arr});}}/>
                       IVA exento
                     </label>
+                    <select value={String(p.concepto||1)} title="Concepto AFIP del comprobante — Servicios/Prod. y serv. habilita fecha retroactiva de hasta 10 días (Productos: 5)"
+                      onChange={e=>{const arr=[...(editCuit.puntos_venta||[])];arr[i]={...arr[i],concepto:parseInt(e.target.value)};setEditCuit({...editCuit,puntos_venta:arr});}}
+                      style={{...iS,width:"auto",fontSize:12,padding:"6px 8px"}}>
+                      <option value="1">Productos</option>
+                      <option value="2">Servicios</option>
+                      <option value="3">Prod. y servicios</option>
+                    </select>
                     <button onClick={()=>{const arr=(editCuit.puntos_venta||[]).filter((_,j)=>j!==i);setEditCuit({...editCuit,puntos_venta:arr});}} style={{...BtnSecondary(T),fontSize:12,padding:"4px 10px",color:T.red}}>✕</button>
                   </div>
                 ))}
