@@ -8277,7 +8277,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             :"Saldo de envíos Andreani";
           return (
           <button onClick={()=>setAndreaniSaldoOpen(true)} title={chipTitle}
-            style={{display:"inline-flex",alignItems:"center",gap:10,height:44,padding:"0 14px",borderRadius:12,boxSizing:"border-box",border:`1px solid ${chipColor}44`,background:`linear-gradient(135deg, ${chipColor}16, ${chipColor}05)`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
+            style={{display:"inline-flex",alignItems:"center",gap:10,height:42,margin:"2px 0",padding:"0 14px",borderRadius:12,boxSizing:"border-box",border:`1px solid ${chipColor}44`,background:`linear-gradient(135deg, ${chipColor}16, ${chipColor}05)`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,alignSelf:"center"}}>
             <span style={{width:28,height:28,borderRadius:8,background:chipColor+"22",border:`1px solid ${chipColor}44`,display:"inline-flex",alignItems:"center",justifyContent:"center",color:chipColor,flexShrink:0}}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
             </span>
