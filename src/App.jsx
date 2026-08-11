@@ -990,7 +990,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
               }
               <div style={{flex:1,minWidth:0,textAlign:"left"}}>
                 <div style={{fontSize:DS.font.md,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.displayName||user?.email?.split("@")[0]}</div>
-                <div style={{fontSize:DS.font.xs,color:T.textSm}}>{userPlan==="plus"||userPlan==="full"?"Pro":userPlan==="facturador"?"Facturador":isInTrial?"Prueba gratis":"Trial vencido"}</div>
+                <div style={{fontSize:DS.font.xs,color:T.textSm}}>{seccionesMiembro?"Miembro del equipo":userPlan==="plus"||userPlan==="full"?"Pro":userPlan==="facturador"?"Facturador":isInTrial?"Prueba gratis":"Trial vencido"}</div>
               </div>
               <span style={{color:T.textSm,fontSize:11,flexShrink:0}}>{acctOpen?"▾":"⇅"}</span>
             </button>
@@ -14966,6 +14966,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     }
     setDatos(prev=>({...prev,tareas:prev.tareas.filter(t=>t._id!==tareaId)}));
     if(expandedTarea===tareaId) setExpandedTarea(null);
+    // Cerrar también el detalle del kanban: la tarea ya no existe, no tiene
+    // sentido dejar su ficha abierta.
+    setKanbanSelected(prev=>prev?._id===tareaId?null:prev);
+    setEditModeDetalle(false);
     toast("Tarea eliminada","warning");
   }
 
@@ -32782,9 +32786,16 @@ export default function App() {
   // (invitado desde Equipo), toda la app opera sobre el uid del dueño y solo
   // se muestran las secciones permitidas. El backend exige lo mismo.
   const [miembroDe,setMiembroDe]=useState(undefined); // undefined=verificando, null=no es miembro, {ownerId,secciones}
-  const user = (authUser && miembroDe && miembroDe.ownerId)
-    ? {...authUser, uid:miembroDe.ownerId, authUid:authUser.uid, esMiembro:true}
-    : authUser;
+  const miembroDeRef=React.useRef(null); // para que efectos async (login) no pisen el contexto del dueño
+  // MEMOIZADO: sin useMemo este objeto se recreaba en CADA render y todos los
+  // effects con dep [user] (onSnapshot de canjes/reclamos, etc.) se
+  // des-suscribían y re-suscribían en loop — para los miembros la app quedaba
+  // pesadísima y los clicks del sidebar tardaban en reflejarse.
+  const user = React.useMemo(()=>(
+    (authUser && miembroDe && miembroDe.ownerId)
+      ? {...authUser, uid:miembroDe.ownerId, authUid:authUser.uid, esMiembro:true}
+      : authUser
+  ),[authUser, miembroDe]);
   useEffect(()=>{
     if(!authUser){ setMiembroDe(authUser===null?null:undefined); return; }
     let alive=true;
@@ -32794,6 +32805,7 @@ export default function App() {
         const d=await r.json().catch(()=>({}));
         if(!alive) return;
         const info=d&&d.ownerId?{ownerId:d.ownerId,secciones:d.secciones||{},ownerNombre:d.ownerNombre||""}:null;
+        miembroDeRef.current=info;
         setMiembroDe(info);
         // Modo miembro: las puertas del front (plan/trial, "conectá Tienda
         // Nube") tienen que evaluar al DUEÑO, no al miembro — el doc del dueño
@@ -33072,11 +33084,16 @@ export default function App() {
         try {
           const userRef=doc(db,"users",u.uid);
           const userSnap=await getDoc(userRef);
+          // Miembro de otro espacio: su plan/trial NO cuentan — el contexto del
+          // dueño llega por el workspace y este getDoc (async) no debe pisarlo.
+          const _esMiembroYa=!!(miembroDeRef.current&&miembroDeRef.current.ownerId);
           if(userSnap.exists()){
             const d=userSnap.data();
-            setUserPlan(d.plan||"free");
-            setPlanExpiry(d.planExpiry?.toDate?.()||null);
-            setTrialEnd(d.trialEnd instanceof Date ? d.trialEnd : d.trialEnd?.toDate?.()??null);
+            if(!_esMiembroYa){
+              setUserPlan(d.plan||"free");
+              setPlanExpiry(d.planExpiry?.toDate?.()||null);
+              setTrialEnd(d.trialEnd instanceof Date ? d.trialEnd : d.trialEnd?.toDate?.()??null);
+            }
             setIsAdmin(["WJH3ArqDPQcNLha9lOinvkVi9uJ2"].includes(u.uid) || d?.isAdmin===true);
             // Onboarding: localStorage se pierde en incógnito/otro dispositivo — si
             // Firestore lo marca hecho o el usuario ya tiene integraciones, no mostrarlo.
@@ -33091,8 +33108,7 @@ export default function App() {
             // "Tu usuario no se encontró en Firestore".
             const trialEnd = new Date(Date.now() + 14*24*60*60*1000);
             try { await setDoc(userRef, { uid:u.uid, email:u.email||"", nombre:u.displayName||u.email?.split("@")[0]||"", createdAt: serverTimestamp(), plan:"free", trialEnd, stores:[] }, { merge:true }); } catch(_){}
-            setUserPlan("free");
-            setTrialEnd(trialEnd);
+            if(!_esMiembroYa){ setUserPlan("free"); setTrialEnd(trialEnd); }
             setIsAdmin(["WJH3ArqDPQcNLha9lOinvkVi9uJ2"].includes(u.uid));
           }
         } catch(e){}
@@ -33518,7 +33534,7 @@ export default function App() {
           <div className="hide-mobile" style={{position:"sticky",top:0,zIndex:40,background:T.bg+"f5",backdropFilter:"blur(8px)",borderBottom:`1px solid ${T.border}`,padding:"10px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:DS.sp.md,height:48}}>
             <div/>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              {isInTrial&&(
+              {isInTrial&&!user?.esMiembro&&(
                 <button onClick={()=>setPage("planes")} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 12px",background:trialExpiring?T.red+"18":T.green+"18",border:`1.5px solid ${trialExpiring?T.red+"55":T.green+"55"}`,borderRadius:20,color:trialExpiring?T.red:T.green,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
                   <GhI n={trialExpiring?"alert":"gift"} size={12}/> Prueba gratis · {trialDaysLeft === 1 ? "último día" : `${trialDaysLeft} días`}
                 </button>
@@ -33599,8 +33615,8 @@ export default function App() {
       <AppPromptHost T={T}/>
       {user && <AndreaniPollingService uid={user.uid} onAlerts={setAndreaniAlertCount}/>}
 
-      {/* ── Banner prueba activa ── */}
-      {isInTrial&&ReactDOM.createPortal(
+      {/* ── Banner prueba activa (nunca para miembros: la prueba es del dueño) ── */}
+      {isInTrial&&!user?.esMiembro&&ReactDOM.createPortal(
         <div style={{position:"fixed",bottom:72,left:"50%",transform:"translateX(-50%)",zIndex:9000,pointerEvents:"none",display:"flex",justifyContent:"center"}}>
           <div style={{display:"inline-flex",alignItems:"center",gap:10,background:"linear-gradient(135deg,"+T.green+","+T.green+")",borderRadius:20,padding:"8px 18px",boxShadow:"0 4px 20px "+T.green+"44"+"",fontFamily:"'Inter',system-ui,sans-serif"}}>
             <span style={{color:"#fff"}}><GhI n="gift" size={13}/></span>
