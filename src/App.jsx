@@ -22261,7 +22261,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                     <button onClick={(e)=>{e.stopPropagation();anularLoteCompleto(b, bRows);}} title="Emite NC por cada factura activa del lote que pase los filtros" style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
                                       Anular lote
                                     </button>
-                                    <button onClick={(e)=>{e.stopPropagation();downloadBatchZip(b);}} style={{background:T.accent,border:"none",color:"#fff",borderRadius:6,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>
+                                    <button onClick={(e)=>{e.stopPropagation();downloadBatchZip(b);}} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:6,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>
                                       {loadingBatchPdfs===b.batch_id ? <><Spinner size={10} color="#fff"/> Descargando…</> : "Descargar todo el lote"}
                                     </button>
                                   </div>
@@ -22735,7 +22735,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:12}}>
                           Tocá el botón y Growith genera tu CSR (Certificate Signing Request). Lo vas a descargar como <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>growith-{wizCuit||"CUIT"}.csr</code> para subirlo a ARCA en el paso siguiente.
                         </div>
-                        <button onClick={generarCsrYKey} disabled={genLoading} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"12px 18px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:genLoading?0.7:1}}>
+                        <button onClick={generarCsrYKey} disabled={genLoading} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"12px 18px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:genLoading?0.7:1}}>
                           {genLoading ? <><Spinner size={13} color="#fff"/> Generando (10-20 seg)...</> : "Generar mi archivo para ARCA"}
                         </button>
                         {genError && (
@@ -22901,7 +22901,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               )}
               <div style={{flex:1}}/>
               {wizStep<3?(
-                <button onClick={()=>setWizStep(s=>s+1)} disabled={(wizStep===0 && !wizPuntoVenta.trim()) || (wizStep===2 && (!certText.trim()||!keyText.trim()))} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:((wizStep===0 && !wizPuntoVenta.trim()) || (wizStep===2&&(!certText.trim()||!keyText.trim())))?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:((wizStep===0 && !wizPuntoVenta.trim()) || (wizStep===2&&(!certText.trim()||!keyText.trim())))?0.5:1}}>
+                <button onClick={()=>setWizStep(s=>s+1)} disabled={(wizStep===0 && !wizPuntoVenta.trim()) || (wizStep===2 && (!certText.trim()||!keyText.trim()))} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:((wizStep===0 && !wizPuntoVenta.trim()) || (wizStep===2&&(!certText.trim()||!keyText.trim())))?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:((wizStep===0 && !wizPuntoVenta.trim()) || (wizStep===2&&(!certText.trim()||!keyText.trim())))?0.5:1}}>
                   Continuar →
                 </button>
               ):(
@@ -23028,7 +23028,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 Cancelar
               </button>
               <div style={{flex:1}}/>
-              <button onClick={handleSaveEditCuit} disabled={savingEdit} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+              <button onClick={handleSaveEditCuit} disabled={savingEdit} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
                 {savingEdit?<><Spinner size={13} color="#fff"/> Guardando...</>:"Guardar cambios"}
               </button>
             </div>
