@@ -27157,6 +27157,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
   sendRef.current = send;
 
   function nuevaConversacion(){
+    if(sending) return; // no vaciar el chat mientras el modelo escribe (se perdería la respuesta)
     setMsgs([]); setDatosAl(null); setConvId(null); convIdRef.current=null; setConvsOpen(false); setRenaming(null);
     try{sessionStorage.removeItem("growith_copilot_conv");}catch(_){}
     setTimeout(()=>inputRef.current?.focus(),60);
@@ -27167,6 +27168,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
   }
   async function borrarConv(c,e){
     e?.stopPropagation();
+    if(sending) return;
     if(!(await appConfirm(`¿Borrar la conversación "${c.titulo||"sin título"}"?`,{danger:true,okLabel:"Borrar"}))) return;
     try{ await deleteDoc(doc(db,"users",uid,"copilot_convs",c.id)); }catch(_){}
     setConvs(p=>(p||[]).filter(x=>x.id!==c.id));
@@ -27337,9 +27339,9 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                     try {
                       const r = await authFetch(`/api/meta?action=set_status&uid=${uid}&acc_id=${encodeURIComponent(acc)}`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({node_id: camp, status})}).then(x=>x.json());
                       if (r.error) throw new Error(r.error);
-                      setMsgs(p=>[...p,{role:"model",text:`✓ Listo — la campaña **${nombre}** quedó ${status==="PAUSED"?"pausada":"activa"}.`}]);
+                      setMsgs(p=>[...p,{role:"assistant",text:`✓ Listo — la campaña **${nombre}** quedó ${status==="PAUSED"?"pausada":"activa"}.`}]);
                     } catch(e) {
-                      setMsgs(p=>[...p,{role:"model",error:true,text:`No pude ${verbo} la campaña: ${e.message}`}]);
+                      setMsgs(p=>[...p,{role:"assistant",error:true,text:`No pude ${verbo} la campaña: ${e.message}`}]);
                     }
                   };
                   return (<>
