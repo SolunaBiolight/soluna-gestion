@@ -16039,27 +16039,35 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         {view==="todo"&&colabMode&&!colabMode.permisos?.verTareas&&<button onClick={()=>setShowNTColab(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>+ Proponer tarea</button>}
       </AppTopbar>
 
-      {/* Barra de tabs principales — segmented estándar de la app */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.bg,position:"sticky",top:colabMode?65:113,zIndex:29}}>
-        <div style={{display:"flex",padding:"8px 24px"}}>
-          <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1}}>
-            {[["todo","Tareas"],["equipo","Equipo"],["referencias","Referencias"]].filter(([id])=>{
-              if(!colabMode) return true;
-              // La pestaña Equipo la habilita SOLO el permiso "Estado del equipo".
-              // Antes cualquier CM (verTareas) la veía aunque el permiso estuviera
-              // apagado, y encima adentro se renderizaba el gestor de admin.
-              if(id==="equipo") return !!colabMode.permisos?.verEquipo;
-              return true;
-            }).map(([id,label])=>{
-              const isActive=view===id||(id==="todo"&&view!=="equipo"&&view!=="referencias");
-              return (
-                <button key={id} onClick={()=>{setActiveView(id);setKanbanSelected(null);}}
-                  style={{padding:"6px 16px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:isActive?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap",flexShrink:0,transition:"all 0.12s"}}>
-                  {label}
-                </button>
-              );
-            })}
-          </div>
+      {/* Barra de tabs principales — mismo estilo que las tabs del Facturador
+          (AppTabs: activa en accent con inset border + iconos). No usa el
+          componente AppTabs directo porque acá el sticky top depende de
+          colabMode (65 en portal, 113 con AppTopbar). */}
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:colabMode?65:113,zIndex:29,padding:"10px 24px"}}>
+        <div style={{display:"inline-flex",background:T.bg,borderRadius:10,padding:3,border:`1px solid ${T.border}`,gap:2}}>
+          {[
+            ["todo","Tareas","M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"],
+            ["equipo","Equipo","M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"],
+            ["referencias","Referencias","M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"],
+          ].filter(([id])=>{
+            if(!colabMode) return true;
+            // La pestaña Equipo la habilita SOLO el permiso "Estado del equipo".
+            // Antes cualquier CM (verTareas) la veía aunque el permiso estuviera
+            // apagado, y encima adentro se renderizaba el gestor de admin.
+            if(id==="equipo") return !!colabMode.permisos?.verEquipo;
+            return true;
+          }).map(([id,label,icon])=>{
+            const isActive=view===id||(id==="todo"&&view!=="equipo"&&view!=="referencias");
+            return (
+              <button key={id} onClick={()=>{setActiveView(id);setKanbanSelected(null);}}
+                onMouseEnter={e=>{if(!isActive)e.currentTarget.style.color=T.text;}}
+                onMouseLeave={e=>{if(!isActive)e.currentTarget.style.color=T.textMd;}}
+                style={{padding:"8px 18px",fontSize:13,fontWeight:isActive?700:500,borderRadius:8,border:"none",background:isActive?T.accent+"16":"transparent",color:isActive?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,transition:"all 0.15s ease",boxShadow:isActive?`inset 0 0 0 1px ${T.accent}3a`:"none",whiteSpace:"nowrap",flexShrink:0}}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:isActive?1:0.75}}><path d={icon}/></svg>
+                {label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
