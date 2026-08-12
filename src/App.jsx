@@ -33487,14 +33487,16 @@ export default function App() {
       return <UpgradeWall T={T} requiredPlan={req} onNavigate={setPage}/>;
     return null;
   };
-  // requiereTN — Envíos y Reclamos trabajan sobre pedidos de Tienda Nube; si no
-  // hay TN conectada, guía honesta en vez de una pantalla vacía que confunde.
-  const requiereTN = (nombre) => (connectedStores.loaded && !connectedStores.tn) ? (
+  // requiereTN — Envíos y Reclamos trabajan sobre los pedidos de la tienda
+  // conectada (Tienda Nube O Shopify — el backend traduce Shopify al mismo
+  // formato). Solo si no hay NINGUNA tienda se muestra la guía en vez de una
+  // pantalla vacía que confunde.
+  const requiereTN = (nombre) => (connectedStores.loaded && !connectedStores.tn && !connectedStores.shopify) ? (
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"60vh",gap:14,padding:24,fontFamily:"'Inter',system-ui,sans-serif",textAlign:"center",background:T.bg}}>
       <div style={{color:T.textSm}}><GhI n="store" size={36}/></div>
-      <div style={{fontSize:19,fontWeight:800,color:T.text}}>{nombre} funciona con Tienda Nube</div>
-      <div style={{fontSize:13,color:T.textMd,maxWidth:420,lineHeight:1.6}}>Esta sección trabaja con los pedidos de tu Tienda Nube (etiquetas Andreani, seguimientos y reclamos). Conectala y aparece todo solo. El soporte para Shopify y Mercado Libre está en desarrollo.</div>
-      <button onClick={()=>setPage("config")} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 24px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Conectar Tienda Nube →</button>
+      <div style={{fontSize:19,fontWeight:800,color:T.text}}>{nombre} trabaja con tu tienda</div>
+      <div style={{fontSize:13,color:T.textMd,maxWidth:420,lineHeight:1.6}}>Esta sección usa los pedidos de tu Tienda Nube o Shopify (etiquetas Andreani, seguimientos y reclamos). Conectá tu tienda y aparece todo solo. El soporte para Mercado Libre está en desarrollo.</div>
+      <button onClick={()=>setPage("config")} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 24px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Conectar mi tienda →</button>
     </div>
   ) : null;
   // adminGate — bloquea acceso a secciones admin-only para usuarios sin admin

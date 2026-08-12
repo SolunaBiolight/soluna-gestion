@@ -1724,10 +1724,11 @@ export default async function handler(req, res) {
   });
 
   try {
-    // BULK LOOKUP: trae una página de órdenes recientes para matchear SKUs localmente.
-    // TN no soporta búsqueda por número de orden — hay que paginar y filtrar local.
-    if (tab === 'bulk_lookup') {
-      if (platform === 'shopify') return res.status(200).json([]);
+    // BULK LOOKUP (TN): trae una página de órdenes recientes para matchear SKUs
+    // localmente. TN no soporta búsqueda por número de orden — hay que paginar
+    // y filtrar local. El caso Shopify vive más abajo (necesita los helpers
+    // shopifyFetchOrders/shopifyToTNFormat, que son const y todavía no existen acá).
+    if (tab === 'bulk_lookup' && platform !== 'shopify') {
       const tnHeaders = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)' };
       const page = parseInt(req.query.page) || 1;
       const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?per_page=200&page=${page}`, { headers: tnHeaders });
@@ -1887,6 +1888,20 @@ export default async function handler(req, res) {
       }
       return out;
     };
+
+    // BULK LOOKUP (Shopify): una sola "página" con las últimas 250 órdenes en
+    // formato TN — alcanza para matchear los SKU de los rótulos recién
+    // exportados. page>1 devuelve [] para cortar la paginación del front.
+    if (tab === 'bulk_lookup' && platform === 'shopify') {
+      const page = parseInt(req.query.page) || 1;
+      if (page > 1) return res.status(200).json([]);
+      try {
+        const r = await fetch(`${SH_BASE}/orders.json?limit=250&status=any`, { headers: SH_HEADERS });
+        if (!r.ok) return res.status(200).json([]);
+        const d = await r.json();
+        return res.status(200).json((d.orders || []).map(shopifyToTNFormat));
+      } catch (_) { return res.status(200).json([]); }
+    }
 
     // TOTAL: count de todos los pedidos pagados (TN o Shopify)
     if (tab === 'total') {
