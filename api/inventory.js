@@ -150,6 +150,45 @@ async function pushML(db, uid, link, item, stock, mode) {
   const e = { ...base, from_qty: from, ok: true }; await syncLog(db, uid, e); return e;
 }
 
+// Shopify: variante por SKU (o la única) → inventory_levels/set con la primera
+// location activa de la tienda. Requiere write_inventory en el token.
+const _shLocCache = {}; // { [shop]: {id, ts} } — la location no cambia entre pushes
+async function pushShopify(db, uid, sh, link, item, stock, mode) {
+  const pid = link.product_id.replace(/^SH-/, "");
+  const base = { item_id: item.id, item_name: item.nombre, link_id: link.product_id, platform: "shopify", to_qty: stock, mode };
+  const H = { "X-Shopify-Access-Token": sh.accessToken, "Content-Type": "application/json" };
+  const SHB = `https://${sh.shop}/admin/api/2024-10`;
+  const r = await fetch(`${SHB}/products/${pid}.json?fields=id,variants`, { headers: H, signal: AbortSignal.timeout(12000) });
+  if (!r.ok) { const e = { ...base, ok: false, error: `Shopify HTTP ${r.status}${r.status===401||r.status===403?" — reconectá Shopify (falta permiso)":""}` }; await syncLog(db, uid, e); return e; }
+  const variants = (await r.json())?.product?.variants || [];
+  if (!variants.length) { const e = { ...base, ok: false, error: "Producto Shopify sin variantes" }; await syncLog(db, uid, e); return e; }
+  let v = variants.find(x => normSku(x.sku) === normSku(item.sku) && normSku(item.sku));
+  if (!v && variants.length === 1) v = variants[0];
+  if (!v) { const e = { ...base, ok: false, error: `Producto Shopify con ${variants.length} variantes y ninguna coincide con el SKU "${item.sku||"(vacío)"}" — no se toca` }; await syncLog(db, uid, e); return e; }
+  const from = v.inventory_quantity == null ? null : parseInt(v.inventory_quantity);
+  if (from === stock) return { ...base, from_qty: from, ok: true, skipped: true };
+  if (mode === "simulacion") { const e = { ...base, from_qty: from, ok: true, simulated: true }; await syncLog(db, uid, e); return e; }
+  if (!v.inventory_item_id) { const e = { ...base, from_qty: from, ok: false, error: "La variante no tiene inventory_item_id (¿inventario no trackeado en Shopify?)" }; await syncLog(db, uid, e); return e; }
+  // Location activa (cache 10 min por tienda: no cambia entre pushes del lote)
+  let loc = _shLocCache[sh.shop];
+  if (!loc || Date.now() - loc.ts > 10 * 60000) {
+    const lr = await fetch(`${SHB}/locations.json`, { headers: H, signal: AbortSignal.timeout(12000) });
+    if (!lr.ok) { const e = { ...base, from_qty: from, ok: false, error: `Shopify locations HTTP ${lr.status}` }; await syncLog(db, uid, e); return e; }
+    const locs = (await lr.json())?.locations || [];
+    const activa = locs.find(l => l.active) || locs[0];
+    if (!activa) { const e = { ...base, from_qty: from, ok: false, error: "La tienda Shopify no tiene locations" }; await syncLog(db, uid, e); return e; }
+    loc = { id: activa.id, ts: Date.now() };
+    _shLocCache[sh.shop] = loc;
+  }
+  const w = await fetch(`${SHB}/inventory_levels/set.json`, {
+    method: "POST", headers: H,
+    body: JSON.stringify({ location_id: loc.id, inventory_item_id: v.inventory_item_id, available: stock }),
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!w.ok) { const txt = await w.text().catch(()=>""); const e = { ...base, from_qty: from, ok: false, error: `Shopify POST ${w.status}: ${txt.slice(0,120)}${w.status===401||w.status===403?" — el token no tiene write_inventory: desvinculá y volvé a conectar Shopify autorizando ese permiso":""}` }; await syncLog(db, uid, e); return e; }
+  const e = { ...base, from_qty: from, ok: true }; await syncLog(db, uid, e); return e;
+}
+
 // Empuja el stock de UN item a todas sus publicaciones vinculadas (según settings).
 async function pushItemStock(db, uid, item, stores, settings) {
   const results = [];
@@ -166,7 +205,8 @@ async function pushItemStock(db, uid, item, stores, settings) {
         if (settings.sync_ml_separado) continue;
         results.push(await pushML(db, uid, link, item, stock, mode));
       } else if (link.platform === "shopify") {
-        results.push({ item_id: item.id, item_name: item.nombre, link_id: link.product_id, platform: "shopify", to_qty: stock, mode, ok: false, error: "Escritura de stock en Shopify: próximamente" });
+        const sh = stores.find(s => s.type === "shopify");
+        if (sh?.accessToken && sh?.shop) results.push(await pushShopify(db, uid, sh, link, item, stock, mode));
       }
     } catch (e) {
       const err = { item_id: item.id, item_name: item.nombre, link_id: link.product_id, platform: link.platform, to_qty: stock, mode, ok: false, error: e.message };

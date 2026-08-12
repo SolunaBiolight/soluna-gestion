@@ -262,8 +262,9 @@ export default async function handler(req, res) {
     const link = linkSnap.data();
     const uSnap = await db.collection("users").doc(link.uid).get();
     const stores = uSnap.exists ? (uSnap.data().stores || []) : [];
-    const tn = stores.find(s => s.type === "tiendanube");
-    if (!tn?.accessToken || !tn?.storeId) return res.status(503).json({ error: "La tienda no está conectada en este momento." });
+    const tn = stores.find(s => s.type === "tiendanube" && s.accessToken && s.storeId);
+    const shp = stores.find(s => s.type === "shopify" && s.accessToken && s.shop);
+    if (!tn && !shp) return res.status(503).json({ error: "La tienda no está conectada en este momento." });
     const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
     const mesAct = hoy.slice(0, 7);
     // Rango libre (desde/hasta YYYY-MM-DD) del selector de período; fallback:
@@ -291,29 +292,54 @@ export default async function handler(req, res) {
       const hit = await cacheRef.get();
       if (hit.exists && Date.now() - (hit.data().ts || 0) < ttl) return res.status(200).json(hit.data().resp);
     } catch (_) {}
-    const tnHeaders = { 'Authentication': `bearer ${tn.accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)' };
-    const urlPg = (p) => `https://api.tiendanube.com/v1/${tn.storeId}/orders?payment_status=paid&per_page=200&page=${p}&fields=id,coupon,total,discount_coupon&created_at_min=${encodeURIComponent(desde + "T00:00:00-0300")}&created_at_max=${encodeURIComponent(hasta + "T23:59:59-0300")}`;
-    const fetchPg = async (p) => {
-      try {
-        const r = await fetch(urlPg(p), { headers: tnHeaders, signal: AbortSignal.timeout(15000) });
-        if (!r.ok) return [];
-        const j = await r.json();
-        return Array.isArray(j) ? j : [];
-      } catch (_) { return []; }
-    };
-    // Lotes de 5 páginas en paralelo (antes era secuencial: hasta 15 round-trips)
-    let allOrders = [];
-    for (let start = 1; start <= 15; start += 5) {
-      const chunk = await Promise.all([0, 1, 2, 3, 4].map(i => fetchPg(start + i)));
-      let fin = false;
-      for (const pg of chunk) { allOrders = allOrders.concat(pg); if (pg.length < 200) { fin = true; break; } }
-      if (fin) break;
-    }
     let usos = 0, ventas = 0, descuento = 0;
-    for (const o of allOrders) {
-      for (const c of (Array.isArray(o.coupon) ? o.coupon : [])) {
-        if ((c.code || "").toUpperCase().trim() !== code) continue;
-        usos++; ventas += parseFloat(o.total || 0); descuento += parseFloat(o.discount_coupon || 0);
+    if (tn) {
+      const tnHeaders = { 'Authentication': `bearer ${tn.accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)' };
+      const urlPg = (p) => `https://api.tiendanube.com/v1/${tn.storeId}/orders?payment_status=paid&per_page=200&page=${p}&fields=id,coupon,total,discount_coupon&created_at_min=${encodeURIComponent(desde + "T00:00:00-0300")}&created_at_max=${encodeURIComponent(hasta + "T23:59:59-0300")}`;
+      const fetchPg = async (p) => {
+        try {
+          const r = await fetch(urlPg(p), { headers: tnHeaders, signal: AbortSignal.timeout(15000) });
+          if (!r.ok) return [];
+          const j = await r.json();
+          return Array.isArray(j) ? j : [];
+        } catch (_) { return []; }
+      };
+      // Lotes de 5 páginas en paralelo (antes era secuencial: hasta 15 round-trips)
+      let allOrders = [];
+      for (let start = 1; start <= 15; start += 5) {
+        const chunk = await Promise.all([0, 1, 2, 3, 4].map(i => fetchPg(start + i)));
+        let fin = false;
+        for (const pg of chunk) { allOrders = allOrders.concat(pg); if (pg.length < 200) { fin = true; break; } }
+        if (fin) break;
+      }
+      for (const o of allOrders) {
+        for (const c of (Array.isArray(o.coupon) ? o.coupon : [])) {
+          if ((c.code || "").toUpperCase().trim() !== code) continue;
+          usos++; ventas += parseFloat(o.total || 0); descuento += parseFloat(o.discount_coupon || 0);
+        }
+      }
+    } else {
+      // Shopify: mismo agregado leyendo discount_codes[] con paginación por cursor.
+      const shHeaders = { 'X-Shopify-Access-Token': shp.accessToken, 'Content-Type': 'application/json' };
+      let url = `https://${shp.shop}/admin/api/2024-10/orders.json?limit=250&status=any&financial_status=paid&fields=id,total_price,discount_codes,cancelled_at&created_at_min=${encodeURIComponent(desde + "T00:00:00-0300")}&created_at_max=${encodeURIComponent(hasta + "T23:59:59-0300")}`;
+      let safety = 0;
+      while (url && safety < 12) {
+        safety++;
+        try {
+          const r = await fetch(url, { headers: shHeaders, signal: AbortSignal.timeout(15000) });
+          if (!r.ok) break;
+          const d = await r.json();
+          for (const o of (d.orders || [])) {
+            if (o.cancelled_at) continue;
+            for (const c of (o.discount_codes || [])) {
+              if ((c.code || "").toUpperCase().trim() !== code) continue;
+              usos++; ventas += parseFloat(o.total_price || 0); descuento += parseFloat(c.amount || 0);
+            }
+          }
+          const lk = r.headers.get("Link") || "";
+          const nx = lk.match(/<([^>]+)>;\s*rel="next"/);
+          url = nx ? nx[1] : null;
+        } catch (_) { break; }
       }
     }
     const pct = Number(link.comisionPct) || 0;
@@ -2045,6 +2071,22 @@ export default async function handler(req, res) {
       const tzOffset = "-0300";
       const desdeISO = desde ? `${desde}T00:00:00${tzOffset}` : null;
       const hastaISO = hasta ? `${hasta}T23:59:59${tzOffset}` : null;
+      // Shopify: los códigos de descuento vienen en discount_codes[] de cada
+      // orden — mismo agregado que TN (usos, ventas y descuento por código).
+      if (platform === 'shopify') {
+        const extra = `${desdeISO ? `&created_at_min=${encodeURIComponent(desdeISO)}` : ""}${hastaISO ? `&created_at_max=${encodeURIComponent(hastaISO)}` : ""}`;
+        const shOrders = await shopifyFetchOrders(`financial_status=paid&fields=id,total_price,discount_codes,created_at,cancelled_at${extra}`);
+        const map = {};
+        for (const o of shOrders) {
+          if (o.cancelled_at) continue;
+          for (const c of (o.discount_codes || [])) {
+            const code = (c.code || "").toUpperCase().trim(); if (!code) continue;
+            if (!map[code]) map[code] = { code, type: c.type === "percentage" ? "percentage" : "absolute", value: "0", usosPeriodo: 0, ventasPeriodo: 0, descuentoPeriodo: 0 };
+            map[code].usosPeriodo++; map[code].ventasPeriodo += parseFloat(o.total_price || 0); map[code].descuentoPeriodo += parseFloat(c.amount || 0);
+          }
+        }
+        return res.status(200).json({ coupons: Object.values(map).sort((a, b) => b.usosPeriodo - a.usosPeriodo), totalPedidosAnalizados: shOrders.length, periodo: { desde: desdeISO, hasta: hastaISO } });
+      }
       if (platform !== 'tiendanube') return res.status(200).json({ coupons: [], totalPedidosAnalizados: 0, periodo: { desde: desdeISO, hasta: hastaISO } });
       const tnHeaders = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)' };
       // Solo los campos que usa el cálculo (sin fields TN manda la orden completa

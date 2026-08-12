@@ -5169,7 +5169,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 {n:4,title:"Kanban por estado",desc:"Las columnas son el ciclo completo: Por enviar → Enviado → Contenido pendiente → Cerrado. 'Contenido pendiente' se ordena por urgencia (lo más viejo arriba) y Cerrado muestra los últimos 30 días (con botón para ver todos)."},
                 {n:5,title:"Hoy en Canjes",desc:"La tira de arriba junta TODO lo que requiere acción: canjes sin despachar, envíos demorados, paquetes entregados o en sucursal, contenido vencido y recordatorios. Cada chip filtra el kanban a esos canjes con un click, y cada card muestra su próximo paso. Los umbrales de días se configuran con el engranaje de la tira. El badge de Canjes en el menú cuenta estas acciones pendientes."},
                 {n:6,title:"Contenido y recordatorios",desc:"En el detalle marcás los contenidos entregados sobre los acordados (la barra de progreso de cada card). Si a los 5 días de entregado falta contenido, te llega un recordatorio por email. También podés crear una tarea de guion para el equipo con fecha límite."},
-                {n:7,title:"Cupones y comisiones",desc:"En Historial se cruzan las ventas REALES de Tienda Nube con cada código de descuento: ves cuántas ventas trajo, cuánto facturó y la comisión exacta a pagar (con % editable por cupón). Marcá pagos hechos para llevar la cuenta, y con el botón 'Link' compartís un panel público donde el dueño del código ve sus ventas y su comisión del mes en tiempo real."},
+                {n:7,title:"Cupones y comisiones",desc:"En Historial se cruzan las ventas REALES de tu tienda (Tienda Nube o Shopify) con cada código de descuento: ves cuántas ventas trajo, cuánto facturó y la comisión exacta a pagar (con % editable por cupón). Marcá pagos hechos para llevar la cuenta, y con el botón 'Link' compartís un panel público donde el dueño del código ve sus ventas y su comisión del mes en tiempo real."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -11330,7 +11330,7 @@ function LandingPage({T, onLogin}) {
             <div style={{fontSize:42,fontWeight:900,letterSpacing:-1.5,lineHeight:1.1}}>$69 <span style={{fontSize:14,fontWeight:500,color:T.textSm}}>USD/mes</span></div>
             <div style={{fontSize:12,color:T.textSm,marginTop:4,marginBottom:16}}>o $57 USD/mes pagando anual</div>
             <div style={{textAlign:"left",display:"flex",flexDirection:"column",gap:7,marginBottom:20}}>
-              {["Todo lo del plan Facturador","Dashboard de rentabilidad en tiempo real","Envíos con etiquetas Andreani (Tienda Nube)","Stock cruzado entre canales","Meta Ads + Mercado Ads (Google Ads próximamente)","Copilot IA y gestión de equipo"].map((x,i)=>(
+              {["Todo lo del plan Facturador","Dashboard de rentabilidad en tiempo real","Envíos con etiquetas Andreani (Tienda Nube y Shopify)","Stock cruzado entre canales","Meta Ads + Mercado Ads (Google Ads próximamente)","Copilot IA y gestión de equipo"].map((x,i)=>(
                 <div key={x} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:i===0?T.text:T.textMd,fontWeight:i===0?700:400}}>
                   <span style={{color:T.green,fontWeight:800,flexShrink:0}}>✓</span>{x}
                 </div>
@@ -27284,19 +27284,21 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
               <div style={{fontSize:13,color:T.textSm,marginTop:8,lineHeight:1.6,maxWidth:440,margin:"8px auto 0"}}>
                 El Copilot responde con <strong style={{color:T.textMd}}>tus números reales</strong> — los mismos que calculan Márgenes y Envíos. No inventa cifras: si no tiene un dato, te dice dónde encontrarlo.
               </div>
-              {/* Configuración guiada — el Copilot ve qué falta y guía paso a paso */}
+              {/* Puesta a punto — el Copilot ve qué falta y guía paso a paso.
+                  Identidad propia de Growith: card violeta con el gradiente del
+                  Copilot y botón sólido (nada de placas verdes punteadas). */}
               <div onClick={()=>send(PROMPT_CONFIG_GUIADA)}
-                style={{maxWidth:460,margin:"22px auto 0",display:"flex",gap:12,alignItems:"center",padding:"13px 16px",background:T.green+"0d",border:`1.5px dashed ${T.green}66`,borderRadius:12,cursor:"pointer",textAlign:"left",transition:"border-color 0.15s"}}
-                onMouseEnter={e=>e.currentTarget.style.borderColor=T.green}
-                onMouseLeave={e=>e.currentTarget.style.borderColor=T.green+"66"}>
-                <div style={{width:34,height:34,borderRadius:9,background:T.green+"1c",color:T.green,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 00-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 012-3.95A12.88 12.88 0 0122 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 01-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+                style={{maxWidth:480,margin:"22px auto 0",display:"flex",gap:13,alignItems:"center",padding:"14px 16px",background:`linear-gradient(135deg, ${T.accentSolid}14, ${T.purple||"#a855f7"}0d)`,border:`1px solid ${T.accentSolid}3a`,borderRadius:14,cursor:"pointer",textAlign:"left",transition:"border-color 0.15s, transform 0.15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=T.accentSolid+"88";e.currentTarget.style.transform="translateY(-1px)";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=T.accentSolid+"3a";e.currentTarget.style.transform="none";}}>
+                <div style={{width:38,height:38,borderRadius:11,background:`linear-gradient(135deg, ${T.accentSolid}, ${T.purple||"#a855f7"})`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z"/></svg>
                 </div>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.green}}>Configuración guiada</div>
-                  <div style={{fontSize:11.5,color:T.textMd,lineHeight:1.45,marginTop:2}}>Te guío paso a paso para conectar tu tienda, cargar costos y dejar todo funcionando.</div>
+                  <div style={{fontSize:13.5,fontWeight:800,color:T.text}}>Puesta a punto de tu cuenta</div>
+                  <div style={{fontSize:11.5,color:T.textMd,lineHeight:1.45,marginTop:2}}>El Copilot revisa qué tenés conectado, detecta qué falta y te lleva paso a paso hasta dejar todo andando.</div>
                 </div>
-                <span style={{color:T.green,fontSize:15,flexShrink:0}}>→</span>
+                <span style={{flexShrink:0,background:T.accentSolid,color:"#fff",fontSize:12,fontWeight:700,borderRadius:9,padding:"7px 14px",fontFamily:"'Inter',system-ui,sans-serif"}}>Empezar</span>
               </div>
               <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",marginTop:24}}>
                 {SUGERIDAS.map(s=>(
@@ -30907,7 +30909,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </div>
                   )}
                   <div style={{fontSize:10,color:T.textSm,marginTop:12,lineHeight:1.6,background:T.surface,borderRadius:6,padding:"7px 10px"}}>
-                    Si aparecen errores 401/403: tu app de Mercado Libre necesita el permiso <strong>"Publicación y sincronización"</strong> (developers.mercadolibre.com → tu app → Permisos) y después reconectar ML en Config → Integraciones. En Tienda Nube, el permiso de escritura de productos. Shopify: próximamente.
+                    Si aparecen errores 401/403: tu app de Mercado Libre necesita el permiso <strong>"Publicación y sincronización"</strong> (developers.mercadolibre.com → tu app → Permisos) y después reconectar ML en Config → Integraciones. En Tienda Nube, el permiso de escritura de productos. En Shopify, el permiso <strong>write_inventory</strong> (si da 401/403, desvinculá y volvé a conectar Shopify para autorizarlo).
                   </div>
                 </div>
                 {/* Config global */}
