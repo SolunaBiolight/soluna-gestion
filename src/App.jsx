@@ -2034,15 +2034,21 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
     return str >= since && str <= until;
   }
   const monthName = viewMonth.toLocaleDateString("es-AR", { month:"long", year:"numeric" });
+  // Mobile: etiqueta numérica corta (dd/mm) — los nombres de mes no entran en
+  // el topbar angosto y el control quedaba desbordado/desalineado.
+  const trigCompacto = typeof window!=="undefined" && window.innerWidth<640;
+  const fmtNum = (s)=>{const d=new Date(s+"T00:00:00");return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;};
   const label = since && until
-    ? (since === until
-        ? new Date(since+"T00:00:00").toLocaleDateString("es-AR", { day:"numeric", month:"short", year:"numeric" })
-        : `${new Date(since+"T00:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short"})} – ${new Date(until+"T00:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short",year:"numeric"})}`)
+    ? (trigCompacto
+        ? (since === until ? fmtNum(since) : `${fmtNum(since)} – ${fmtNum(until)}`)
+        : (since === until
+            ? new Date(since+"T00:00:00").toLocaleDateString("es-AR", { day:"numeric", month:"short", year:"numeric" })
+            : `${new Date(since+"T00:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short"})} – ${new Date(until+"T00:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short",year:"numeric"})}`))
     : "Período";
   return (
-    <div ref={wrapRef} style={{position:"relative",display:"inline-block",fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <button onClick={toggleOpen} style={{display:"inline-flex",alignItems:"center",gap:8,height:34,padding:"0 14px",boxSizing:"border-box",background:T.input,border:`1px solid ${open?T.accent+"66":T.inputBorder}`,borderRadius:9,fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-        <span>{label}</span> <span style={{color:T.textSm,fontSize:10}}>▾</span>
+    <div ref={wrapRef} style={{position:"relative",display:"inline-block",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
+      <button onClick={toggleOpen} style={{display:"inline-flex",alignItems:"center",gap:trigCompacto?6:8,height:34,padding:trigCompacto?"0 10px":"0 14px",boxSizing:"border-box",background:T.input,border:`1px solid ${open?T.accent+"66":T.inputBorder}`,borderRadius:9,fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+        <span style={{whiteSpace:"nowrap"}}>{label}</span> <span style={{color:T.textSm,fontSize:10}}>▾</span>
       </button>
       {open && ReactDOM.createPortal((()=>{
         /* Portal a body: si un ancestro tiene transform (animaciones con fill-mode
