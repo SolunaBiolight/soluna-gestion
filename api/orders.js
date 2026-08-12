@@ -288,9 +288,13 @@ export default async function handler(req, res) {
     // cambiar el período pega acá casi siempre en vez del barrido de TN.
     const cacheRef = db.collection("cupon_links").doc(token).collection("cache").doc(`${desde}_${hasta}`);
     const ttl = hasta < hoy ? 24 * 3600000 : 3 * 60000;
+    // Modo diagnóstico (&debug=1): saltea la caché y devuelve qué rama corrió,
+    // el status HTTP de cada página y cuántas órdenes/códigos vio — solo
+    // agregados, sin PII. Para depurar "el panel muestra 0" sin acceso a logs.
+    const _dbg = req.query.debug === "1" ? { rama: tn ? "tiendanube" : "shopify", paginas: [], codigos: {} } : null;
     try {
       const hit = await cacheRef.get();
-      if (hit.exists && Date.now() - (hit.data().ts || 0) < ttl) return res.status(200).json(hit.data().resp);
+      if (!_dbg && hit.exists && Date.now() - (hit.data().ts || 0) < ttl) return res.status(200).json(hit.data().resp);
     } catch (_) {}
     let usos = 0, ventas = 0, descuento = 0;
     if (tn) {
@@ -299,10 +303,12 @@ export default async function handler(req, res) {
       const fetchPg = async (p) => {
         try {
           const r = await fetch(urlPg(p), { headers: tnHeaders, signal: AbortSignal.timeout(15000) });
+          if (_dbg && (r.status !== 404 || p === 1)) _dbg.paginas.push({ p, status: r.status });
           if (!r.ok) return [];
           const j = await r.json();
+          if (_dbg) _dbg.paginas[_dbg.paginas.length - 1].ordenes = Array.isArray(j) ? j.length : -1;
           return Array.isArray(j) ? j : [];
-        } catch (_) { return []; }
+        } catch (e) { if (_dbg) _dbg.paginas.push({ p, error: String(e?.message || e).slice(0, 80) }); return []; }
       };
       // Lotes de 5 páginas en paralelo (antes era secuencial: hasta 15 round-trips)
       let allOrders = [];
@@ -314,10 +320,13 @@ export default async function handler(req, res) {
       }
       for (const o of allOrders) {
         for (const c of (Array.isArray(o.coupon) ? o.coupon : [])) {
-          if ((c.code || "").toUpperCase().trim() !== code) continue;
+          const cc = (c.code || "").toUpperCase().trim();
+          if (_dbg && cc) _dbg.codigos[cc] = (_dbg.codigos[cc] || 0) + 1;
+          if (cc !== code) continue;
           usos++; ventas += parseFloat(o.total || 0); descuento += parseFloat(o.discount_coupon || 0);
         }
       }
+      if (_dbg) _dbg.totalOrdenes = allOrders.length;
     } else {
       // Shopify: mismo agregado leyendo discount_codes[] con paginación por cursor.
       const shHeaders = { 'X-Shopify-Access-Token': shp.accessToken, 'Content-Type': 'application/json' };
@@ -350,6 +359,7 @@ export default async function handler(req, res) {
       usos, ventas: Math.round(ventas), descuento: Math.round(descuento),
       neto: Math.round(neto), comisionPct: pct, comision: Math.round(neto * (pct / 100)),
     };
+    if (_dbg) return res.status(200).json({ ...resp, _debug: _dbg }); // sin cachear
     try { await cacheRef.set({ ts: Date.now(), resp }); } catch (_) {}
     return res.status(200).json(resp);
   }
