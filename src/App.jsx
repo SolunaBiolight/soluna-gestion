@@ -6695,8 +6695,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               )}
             </div>
 
-            {/* Botones */}
-            <div style={{display:"flex",gap:8,alignItems:"center",paddingTop:8,borderTop:"1px solid "+T.borderL}}>
+            {/* Botones — flexWrap: en pantallas angostas el export pasa a su
+                propia línea en vez de desbordar el modal con scroll lateral */}
+            <div style={{display:"flex",gap:8,alignItems:"center",paddingTop:8,borderTop:"1px solid "+T.borderL,flexWrap:"wrap"}}>
               {/* Export directo desde el alta: evita crear → ir al detalle → exportar */}
               <AsyncButton onClick={async()=>{
                 let f={...form};
@@ -6723,8 +6724,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   if(ok) toast(f.esSucursal?"Excel generado (envío a sucursal) — subilo al portal de Andreani y pegá el tracking en el canje":"Excel generado — subilo al portal de Andreani y pegá el tracking en el canje","success",5000);
                 }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
               }} style={{...BtnSecondary(T),fontSize:13,color:T.green,borderColor:T.green+"66",height:38,padding:"0 16px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",whiteSpace:"nowrap"}}>Exportar XLSX Andreani</AsyncButton>
-              <div style={{flex:1}}/>
-              <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13,height:38,padding:"0 16px",boxSizing:"border-box",display:"inline-flex",alignItems:"center"}}>Cancelar</button>
+              <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13,height:38,padding:"0 16px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",marginLeft:"auto"}}>Cancelar</button>
               <button onClick={saveCanje} disabled={saving||!form.influencer} style={{...BtnPurple(T),fontSize:13,height:38,padding:"0 20px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",whiteSpace:"nowrap",opacity:saving||!form.influencer?0.45:1}}>
                 {saving?"Creando...":"Crear canje →"}
               </button>
