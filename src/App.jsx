@@ -28084,6 +28084,7 @@ function CostosPanel({ T, uid }) {
   const [gadsConnected, setGadsConnected] = React.useState(false); // OAuth de Google Ads hecho → el gasto entra solo por API
   const [verGadsManual, setVerGadsManual] = React.useState(false); // mostrar la carga manual aunque esté conectado
   const [mlConnected, setMlConnected] = React.useState(false);     // ML conectado → Mercado Ads intenta leerse por API
+  const [verMlManual, setVerMlManual] = React.useState(false);     // mostrar la carga manual de Mercado Ads aunque haya API
   const [products, setProducts] = React.useState([]);
   const [mlItems, setMlItems] = React.useState([]);
   const [costos, setCostos] = React.useState({}); // { [key]: costo }
@@ -28326,7 +28327,11 @@ function CostosPanel({ T, uid }) {
             ?"Con Mercado Libre conectado, el gasto real de Mercado Ads se lee solo de la API — cuando la API devuelve el dato, esta carga manual se ignora. Usala únicamente como respaldo (por si la API no informa tu gasto)."
             :"Cargá lo que gastaste (o vas a gastar) en publicidad de ML en cada rango — podés poner fechas a futuro. Se promedia por día y el dashboard descuenta el promedio diario según los días que se solapen, así el gasto fijo se va imputando solo día a día. Ej: del 01/06 al 30/06 $3.000.000 = $100.000/día."}</div>
         </div>
-        {(()=>{ const today=hoyAR();
+        {mlConnected&&mlAdsList.length===0&&!verMlManual ? (
+          <button onClick={()=>setVerMlManual(true)} style={{background:"transparent",border:"none",color:T.textSm,fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3,padding:0}}>
+            Cargar manualmente igual
+          </button>
+        ) : (()=>{ const today=hoyAR();
         const maxFut=new Date(Date.now()+730*86400000).toISOString().slice(0,10); // permite cargar a futuro (hasta ~2 años)
         const fmtF=f=>{ try { return new Date(f+"T00:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}); } catch(_) { return f; } };
         const dias=(a,b)=>{ if(!a||!b||b<a) return 0; return Math.round((new Date(b)-new Date(a))/86400000)+1; };
@@ -28346,9 +28351,9 @@ function CostosPanel({ T, uid }) {
           </div>}
           {/* Form para agregar un período nuevo */}
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderTop:mlAdsList.length>0?`1px solid ${T.borderL}`:"none",paddingTop:mlAdsList.length>0?12:0}}>
-            <input type="date" min="2023-01-01" max={dr.hasta||maxFut} value={dr.desde} onChange={ev=>setD("desde",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+            <input type="date" min="2023-01-01" max={dr.hasta||maxFut} value={dr.desde} onChange={ev=>setD("desde",ev.target.value)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
             <span style={{fontSize:12,color:T.textSm}}>→</span>
-            <input type="date" min={dr.desde||"2023-01-01"} max={maxFut} value={dr.hasta} onChange={ev=>setD("hasta",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+            <input type="date" min={dr.desde||"2023-01-01"} max={maxFut} value={dr.hasta} onChange={ev=>setD("hasta",ev.target.value)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
             <span style={{fontSize:13,color:T.textSm}}>$</span>
             <input type="number" min="0" value={dr.monto} onChange={ev=>setD("monto",ev.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right",padding:"6px 8px"}}/>
             {dProm>0 && <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(dProm).toLocaleString("es-AR")}/día</span>}
@@ -28393,9 +28398,9 @@ function CostosPanel({ T, uid }) {
             );})}
           </div>}
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderTop:googleAdsList.length>0?`1px solid ${T.borderL}`:"none",paddingTop:googleAdsList.length>0?12:0}}>
-            <input type="date" min="2023-01-01" max={dr.hasta||maxFut} value={dr.desde} onChange={ev=>setD("desde",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+            <input type="date" min="2023-01-01" max={dr.hasta||maxFut} value={dr.desde} onChange={ev=>setD("desde",ev.target.value)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
             <span style={{fontSize:12,color:T.textSm}}>→</span>
-            <input type="date" min={dr.desde||"2023-01-01"} max={maxFut} value={dr.hasta} onChange={ev=>setD("hasta",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+            <input type="date" min={dr.desde||"2023-01-01"} max={maxFut} value={dr.hasta} onChange={ev=>setD("hasta",ev.target.value)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
             <span style={{fontSize:13,color:T.textSm}}>$</span>
             <input type="number" min="0" value={dr.monto} onChange={ev=>setD("monto",ev.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right",padding:"6px 8px"}}/>
             {dProm>0 && <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(dProm).toLocaleString("es-AR")}/día</span>}
@@ -31650,6 +31655,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     if (q.impuestosSinConfig) qItems.push({k:"comisiones", msg:"Impuestos configurados en 0% — el profit no descuenta carga impositiva", cta:"Configurar"});
     if (q.envioSinConfig) qItems.push({k:"costos", msg:"Costo de envío en $0 (modo promedio sin valor cargado)", cta:"Configurar"});
     if (q.mpSinConfig) qItems.push({k:"comisiones", msg:"Hay ventas cobradas con Mercado Pago sin % de comisión configurado — esas comisiones cuentan $0", cta:"Configurar"});
+    if (rendData?.meta?.googleAdsConectado && rendData?.meta?.googleAdsFuente!=="auto") qItems.push({k:null, msg:`Google Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.googleAdsDiag?` — ${rendData.meta.googleAdsDiag}`:""}`});
     if (q.tnTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Tienda Nube — los totales están TRUNCADOS. Usá un rango más corto."});
     if (q.mlTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Mercado Libre — los totales de ML están TRUNCADOS."});
     if ((q.reembolsosParciales||0)>0) qItems.push({k:null, msg:`${q.reembolsosParciales} orden(es) con reembolso parcial contadas a valor pleno (TN no informa el monto devuelto)`});

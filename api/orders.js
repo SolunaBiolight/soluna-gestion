@@ -722,6 +722,7 @@ export default async function handler(req, res) {
       // sus errores y devuelven null → el dashboard sale sin ese gasto, igual
       // que antes.
       const mlAdsDebug = {};
+      let gadsDiag = null; // por qué Google Ads no devolvió gasto (se muestra como aviso en el Dashboard)
       const [curr, prev, metaCurr, metaPrev, mpCommCurr, mpCommPrev, mlAdsAutoCurr, mlAdsAutoPrev, gAdsAutoCurr, gAdsAutoPrev] = await Promise.race([
         Promise.all([
           fetchStock(since, until), fetchStock(prevSince, prevUntil),
@@ -1135,14 +1136,17 @@ export default async function handler(req, res) {
         try {
           const g = userData.googleAds;
           const cid = process.env.GOOGLE_ADS_CLIENT_ID, cs = process.env.GOOGLE_ADS_CLIENT_SECRET, dt = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
-          if (!g?.refresh_token || !cid || !cs || !dt) return null;
+          if (!g?.refresh_token || !cid || !cs || !dt) {
+            if (g?.refresh_token && !dt) gadsDiag = "falta el developer token en Vercel";
+            return null;
+          }
           const tr = await fetch("https://oauth2.googleapis.com/token", {
             method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: new URLSearchParams({ client_id: cid, client_secret: cs, refresh_token: g.refresh_token, grant_type: "refresh_token" }),
           });
-          if (!tr.ok) return null;
+          if (!tr.ok) { gadsDiag = `Google rechazó la sesión (HTTP ${tr.status}) — desvinculá y volvé a conectar Google Ads`; return null; }
           const at = (await tr.json()).access_token;
-          if (!at) return null;
+          if (!at) { gadsDiag = "Google no devolvió token de acceso — reconectá Google Ads"; return null; }
           // Self-healing de cuentas: si la conexión se hizo antes de que Google
           // aprobara el developer token, el callback guardó customers=[] y nadie
           // volvía a resolverlas — el gasto quedaba en manual para siempre. Acá
@@ -1155,11 +1159,15 @@ export default async function handler(req, res) {
             if (cr.ok) {
               customers = ((await cr.json()).resourceNames || []).map(r => String(r).replace("customers/", ""));
               if (customers.length) db.collection("users").doc(uid).set({ googleAds: { ...g, customers } }, { merge: true }).catch(()=>{});
+              else gadsDiag = "la cuenta de Google conectada no tiene cuentas de Google Ads accesibles";
             } else {
-              console.error("gads listAccessibleCustomers HTTP", cr.status, (await cr.text().catch(()=>"" )).slice(0,200));
+              const txt = (await cr.text().catch(()=>"" )).slice(0, 300);
+              gadsDiag = `Google Ads API rechazó el listado de cuentas (HTTP ${cr.status}${/DEVELOPER_TOKEN/i.test(txt) ? " — developer token sin aprobar por Google" : ""})`;
+              console.error("gads listAccessibleCustomers HTTP", cr.status, txt.slice(0,200));
             }
           }
           let total = 0, any = false;
+          const searchErrs = [];
           for (const c of (customers || []).slice(0, 5)) {
             const cn = String(c).replace(/^customers\//, "").replace(/-/g, "");
             const r = await fetch(`https://googleads.googleapis.com/v18/customers/${cn}/googleAds:search`, {
@@ -1168,12 +1176,20 @@ export default async function handler(req, res) {
                 ...(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ? { "login-customer-id": String(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID).replace(/-/g, "") } : {}) },
               body: JSON.stringify({ query: `SELECT metrics.cost_micros, segments.date FROM customer WHERE segments.date BETWEEN '${sinceR}' AND '${untilR}'` }),
             });
-            if (!r.ok) { console.error("gads search HTTP", r.status, (await r.text().catch(()=>"" )).slice(0,200)); continue; }
+            if (!r.ok) {
+              const txt = (await r.text().catch(()=>"" )).slice(0, 300);
+              searchErrs.push(`HTTP ${r.status}${/DEVELOPER_TOKEN_NOT_APPROVED/i.test(txt) ? " (developer token sin aprobar)" : /REQUESTED_METRICS_FOR_MANAGER/i.test(txt) ? " (cuenta administrador MCC, sin métricas propias)" : ""}`);
+              console.error("gads search HTTP", r.status, txt.slice(0,200));
+              continue;
+            }
             const j = await r.json();
             for (const row of (j.results || [])) { total += (parseFloat(row.metrics?.costMicros) || 0) / 1e6; any = true; }
           }
+          if (!any && !gadsDiag) {
+            gadsDiag = searchErrs.length ? `la consulta de gasto falló: ${searchErrs[0]}` : (customers.length ? "la API respondió sin gasto para el período" : gadsDiag);
+          }
           return any ? +total.toFixed(2) : null;
-        } catch (e) { console.error("Google Ads spend error:", e.message); return null; }
+        } catch (e) { gadsDiag = gadsDiag || ("error de red: " + e.message); console.error("Google Ads spend error:", e.message); return null; }
       }
 
       // Gasto real de Mercado Ads y Google Ads (API): ya se trajo en el
@@ -1569,6 +1585,7 @@ export default async function handler(req, res) {
           mlAdsFuente: mlAdsAutoCurr!=null ? "auto" : (mlAdsList.length ? "manual" : "sin_datos"),
           googleAdsFuente: gAdsAutoCurr!=null ? "auto" : (googleAdsList.length ? "manual" : "sin_datos"),
           googleAdsConectado: !!userData.googleAds?.refresh_token,
+          googleAdsDiag: (userData.googleAds?.refresh_token && gAdsAutoCurr==null) ? gadsDiag : null,
           mlAdsDebug, mlEnvioDebug,
           metaTokenExpired: !!metaErr.expired,
           costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo, dolarAdsHistDias, dolarAdsFallback: +dolarAdsFallback.toFixed(2) } } };
