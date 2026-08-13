@@ -31229,10 +31229,12 @@ function RendChart({T, rows, prevRows=[], cv, fmtM, fmtDate}) {
             </div>
           );
         })()}
-        <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1,flexShrink:0}}>
+        <div style={{display:"flex",background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:2,gap:2,flexShrink:0}}>
           {MODES.map(m=>(
             <button key={m.id} onClick={()=>setMode(m.id)}
-              style={{padding:"4px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:mode===m.id?T.card:"transparent",color:mode===m.id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:mode===m.id?"0 1px 3px rgba(0,0,0,0.15)":"none",transition:"all 0.12s"}}>
+              onMouseEnter={e=>{if(mode!==m.id)e.currentTarget.style.color=T.text;}}
+              onMouseLeave={e=>{if(mode!==m.id)e.currentTarget.style.color=T.textSm;}}
+              style={{padding:"4px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:DS.r.full,background:mode===m.id?T.card:"transparent",color:mode===m.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:mode===m.id?DS.shadow.sm:"none",transition:`all 0.15s ${DS.ease}`}}>
               {m.label}
             </button>
           ))}
@@ -32165,12 +32167,14 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             ];
             if (!bc.hasMl && canalVista==="ml") setCanalVista("global");
             return (
-              <div style={{display:"inline-flex",background:T.surface,borderRadius:10,padding:3,gap:2,marginBottom:18,flexWrap:"wrap"}}>
+              <div style={{display:"inline-flex",background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:2,gap:2,marginBottom:18,flexWrap:"wrap"}}>
                 {opts.map(o=>{
                   const on=canalVista===o.id;
                   return (
                     <button key={o.id} onClick={()=>setCanalVista(o.id)}
-                      style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 14px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:8,background:on?T.card:"transparent",color:on?T.text:T.textMd,boxShadow:on?"0 1px 3px rgba(0,0,0,0.2)":"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>
+                      onMouseEnter={e=>{if(!on)e.currentTarget.style.color=T.text;}}
+                      onMouseLeave={e=>{if(!on)e.currentTarget.style.color=T.textSm;}}
+                      style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 14px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:DS.r.full,background:on?T.card:"transparent",color:on?T.text:T.textSm,boxShadow:on?DS.shadow.sm:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all 0.15s ${DS.ease}`}}>
                       {o.brand&&<BrandIcon name={o.brand} size={14}/>}{o.dot&&<span style={{width:7,height:7,borderRadius:"50%",background:o.dot,display:"inline-block"}}/>}{o.label}
                     </button>
                   );
