@@ -723,6 +723,7 @@ export default async function handler(req, res) {
       // que antes.
       const mlAdsDebug = {};
       let gadsDiag = null; // por qué Google Ads no devolvió gasto (se muestra como aviso en el Dashboard)
+      const gadsAttr = {}; // conversiones/valor atribuidos por Google, por rango: {"since_until": {conv, convValue}}
       const [curr, prev, metaCurr, metaPrev, mpCommCurr, mpCommPrev, mlAdsAutoCurr, mlAdsAutoPrev, gAdsAutoCurr, gAdsAutoPrev] = await Promise.race([
         Promise.all([
           fetchStock(since, until), fetchStock(prevSince, prevUntil),
@@ -1174,7 +1175,7 @@ export default async function handler(req, res) {
               method: "POST",
               headers: { Authorization: `Bearer ${at}`, "developer-token": dt, "Content-Type": "application/json",
                 ...(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ? { "login-customer-id": String(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID).replace(/-/g, "") } : {}) },
-              body: JSON.stringify({ query: `SELECT metrics.cost_micros, segments.date FROM customer WHERE segments.date BETWEEN '${sinceR}' AND '${untilR}'` }),
+              body: JSON.stringify({ query: `SELECT metrics.cost_micros, metrics.conversions, metrics.conversions_value, segments.date FROM customer WHERE segments.date BETWEEN '${sinceR}' AND '${untilR}'` }),
             });
             if (!r.ok) {
               const txt = (await r.text().catch(()=>"" )).slice(0, 300);
@@ -1183,7 +1184,13 @@ export default async function handler(req, res) {
               continue;
             }
             const j = await r.json();
-            for (const row of (j.results || [])) { total += (parseFloat(row.metrics?.costMicros) || 0) / 1e6; any = true; }
+            for (const row of (j.results || [])) {
+              total += (parseFloat(row.metrics?.costMicros) || 0) / 1e6; any = true;
+              const k = `${sinceR}_${untilR}`;
+              const a = gadsAttr[k] || (gadsAttr[k] = { conv: 0, convValue: 0 });
+              a.conv += parseFloat(row.metrics?.conversions) || 0;
+              a.convValue += parseFloat(row.metrics?.conversionsValue) || 0;
+            }
           }
           if (!any && !gadsDiag) {
             gadsDiag = searchErrs.length ? `la consulta de gasto falló: ${searchErrs[0]}` : (customers.length ? "la API respondió sin gasto para el período" : gadsDiag);
@@ -1391,6 +1398,25 @@ export default async function handler(req, res) {
           aov: ord>0?rev/ord:0, aovNeto: ord>0?netRev/ord:0 };
       }
       const byChannel = {
+        // Fila propia de Google Ads para la tabla de Canales: el gasto es real
+        // (API) y órdenes/revenue son las conversiones ATRIBUIDAS POR GOOGLE
+        // (su modelo) — no se pueden cruzar con las órdenes de la tienda, así
+        // que la fila se marca como atribución de Google. Sin conexión o sin
+        // gasto en el período no aparece.
+        google: (()=>{
+          const ads = totals.adSpendGoogle||0;
+          if (!(ads>0) || gAdsAutoCurr==null) return null;
+          const a = gadsAttr[`${since}_${until}`] || null;
+          const conv = a ? Math.round(a.conv||0) : 0;
+          const cval = a ? (a.convValue||0) : 0;
+          return { adSpend:+ads.toFixed(2), atribGoogle:true,
+            ...(conv>0||cval>0 ? {
+              orders: conv, revenue:+cval.toFixed(2),
+              roas: +(cval/ads).toFixed(2),
+              cpa: conv>0 ? +(ads/conv).toFixed(2) : undefined,
+              aov: conv>0 ? +(cval/conv).toFixed(2) : undefined,
+            } : {}) };
+        })(),
         tienda: canal(curr.raw, false, shopifyPayComm(curr.raw, feeByRef), totals.adSpendMeta + (totals.adSpendGoogle||0), 0, mpCommCurr.rev),
         ml:     canal(curr.raw, true,  0, totals.adSpendMl, mlEnvioTot(curr.raw), 0),
         tiendaPrev: canal(prev.raw, false, shopifyPayComm(prev.raw, feeByRefPrev), prevTotals.adSpendMeta + (prevTotals.adSpendGoogle||0), 0, mpCommPrev.rev),
