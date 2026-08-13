@@ -2861,7 +2861,9 @@ function AppTopbar({T, section, sectionId, onHelp, onHome, children, top=48}) {
           <span style={{fontWeight:DS.w.semibold,fontSize:14,color:T.text,letterSpacing:-0.2,whiteSpace:"nowrap",lineHeight:"18px"}}>{section}</span>
         </div>
         {/* En mobile la fila de controles no se corta: scrollea horizontal (sin barra) */}
-        <div className="no-scrollbar" style={{display:"flex",alignItems:"center",gap:6,overflowX:"auto",WebkitOverflowScrolling:"touch",maxWidth:"100%",minWidth:0}}>
+        {/* padding vertical: el overflow-x recorta el borde/glow superior de los
+            botones en hover si quedan al ras del contenedor */}
+        <div className="no-scrollbar" style={{display:"flex",alignItems:"center",gap:6,overflowX:"auto",WebkitOverflowScrolling:"touch",maxWidth:"100%",minWidth:0,padding:"3px 0"}}>
           {children}
           {onHelp&&(
             <button onClick={onHelp} title="¿Cómo funciona esta sección?"
@@ -31815,29 +31817,33 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Dashboard" sectionId="margenes" onHome={onHome}
         onHelp={()=>setShowGuia(s=>!s)}>
-        {/* Cotización del dólar siempre a la vista — click abre su configuración
-            (Dólar dejó de ser entrada del sidebar: vive en Configuraciones). */}
-        {setTab && usdRate>0 && (
-          <button className="hide-mobile" onClick={()=>setTab("dolar")} title="Cotización usada en el período — click para configurar"
-            style={{...InputStyle(T),fontSize:12,height:34,padding:"0 12px",borderRadius:9,boxSizing:"border-box",width:"auto",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,fontWeight:600,color:T.textMd}}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-            Dólar ${Math.round(usdRate).toLocaleString("es-AR")}
-          </button>
+        {/* Toggle pesos/dólares — la cotización se configura en Configuraciones
+            → Dólar; acá solo se cambia la moneda de la vista. */}
+        {usdRate>0 && (
+          <div style={{display:"inline-flex",border:`1px solid ${T.inputBorder}`,borderRadius:9,overflow:"hidden",height:34,boxSizing:"border-box",flexShrink:0}}>
+            {[["ars","$"],["usd","US$"]].map(([id,lbl])=>{
+              const act = usdMode ? id==="usd" : id==="ars";
+              return (
+                <button key={id} title={id==="usd"?`Ver en dólares — cotización promedio del período $${Math.round(usdRate).toLocaleString("es-AR")}`:"Ver en pesos"}
+                  onClick={()=>{ const n=id==="usd"; if(n===usdMode) return; setUsdMode(n); try{localStorage.setItem(ghKey("growith_margenes_usd"),n?"1":"0");}catch(_){} }}
+                  style={{padding:"0 12px",fontSize:12,fontWeight:act?DS.w.bold:DS.w.medium,border:"none",background:act?T.accent+"16":"transparent",color:act?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:act?`inset 0 0 0 1px ${T.accent}3a`:"none",height:"100%"}}>{lbl}</button>
+              );
+            })}
+          </div>
         )}
-        {/* Preferencias de vista unificadas: números completos + USD en un solo menú */}
+        {/* Preferencias de vista — el cambio de moneda vive en el toggle $/US$ */}
         <div style={{position:"relative"}}>
           <button onClick={e=>{const r=e.currentTarget.getBoundingClientRect(); setViewMenuPos({top:r.bottom+6,right:Math.max(10,Math.min(window.innerWidth-r.right,window.innerWidth-246))}); setViewMenu(v=>!v);}} title="Preferencias de vista"
-            style={{...InputStyle(T),fontSize:12,height:34,padding:"0 14px",borderRadius:9,boxSizing:"border-box",width:"auto",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,fontWeight:(fullNums||usdMode)?700:500,color:(fullNums||usdMode)?T.accent:T.textMd,borderColor:(fullNums||usdMode)?T.accent+"66":T.inputBorder}}>
+            style={{...InputStyle(T),fontSize:12,height:34,padding:"0 14px",borderRadius:9,boxSizing:"border-box",width:"auto",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,fontWeight:fullNums?700:500,color:fullNums?T.accent:T.textMd,borderColor:fullNums?T.accent+"66":T.inputBorder}}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="20" cy="14" r="2"/></svg>
-            Vista{usdMode?" · US$":""}{fullNums?" · $ completos":""}
+            Vista{fullNums?" · $ completos":""}
           </button>
-          {viewMenu&&(
+          {viewMenu&&ReactDOM.createPortal(
             <>
               <div onClick={()=>setViewMenu(false)} style={{position:"fixed",inset:0,zIndex:60}}/>
               <div style={{position:"fixed",top:viewMenuPos.top,right:viewMenuPos.right,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:6,width:"min(236px,calc(100vw - 20px))",boxSizing:"border-box",boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
                 {[
                   {on:fullNums, t:"Números completos", d:"Mostrar sin redondeo K/M", fn:()=>setFullNums(f=>{const n=!f; try{localStorage.setItem(ghKey("growith_margenes_fullnums"),n?"1":"0");}catch(_){} return n;})},
-                  {on:usdMode, t:"Mostrar en dólares", d:usdRate>0?`Cotización promedio del período: $${Math.round(usdRate).toLocaleString("es-AR")}`:"Sin cotización disponible todavía", dis:!usdMode&&!(usdRate>0), fn:()=>setUsdMode(f=>{const n=!f; try{localStorage.setItem(ghKey("growith_margenes_usd"),n?"1":"0");}catch(_){} return n;})},
                 ].map((o,i)=>(
                   <button key={i} onClick={o.dis?undefined:o.fn} disabled={o.dis}
                     style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"8px 10px",background:"transparent",border:"none",borderRadius:8,cursor:o.dis?"default":"pointer",opacity:o.dis?0.5:1,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -31851,7 +31857,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                   </button>
                 ))}
               </div>
-            </>
+            </>,
+            document.body
           )}
         </div>
         {/* Los presets (7/30/60/90d) viven DENTRO del selector de fechas — una
@@ -31874,7 +31881,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
         <div style={{position:"relative"}}>
           <button onClick={e=>{const r=e.currentTarget.getBoundingClientRect(); setExtraMenuPos({top:r.bottom+6,right:Math.max(10,window.innerWidth-r.right)}); setExtraMenu(v=>!v);}} title="Más acciones"
             style={{...InputStyle(T),width:34,height:34,padding:0,borderRadius:9,boxSizing:"border-box",fontSize:16,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",lineHeight:1,color:T.textMd,fontWeight:700}}>⋯</button>
-          {extraMenu&&(
+          {/* Portal al body: el backdrop-filter del topbar convierte al header en
+              el containing block de position:fixed y el menú quedaba corrido. */}
+          {extraMenu&&ReactDOM.createPortal(
             <>
               <div onClick={()=>setExtraMenu(false)} style={{position:"fixed",inset:0,zIndex:60}}/>
               <div style={{position:"fixed",top:extraMenuPos.top,right:extraMenuPos.right,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:6,width:"min(258px,calc(100vw - 20px))",boxSizing:"border-box",boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
@@ -31889,7 +31898,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                   </button>
                 ))}
               </div>
-            </>
+            </>,
+            document.body
           )}
         </div>
       </AppTopbar>
