@@ -6782,7 +6782,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [exportSingleOrder,setExportSingleOrder]=useState(null);
   const [exporting,setExporting]=useState(false);
   const [exportProgress,setExportProgress]=useState({step:"",pct:0,current:0,total:0});
-  const [exportDone,setExportDone]=useState(null); // null | {count,esquinas}
+  const [exportDone,setExportDone]=useState(null); // marcador del último export exitoso (refresca exportadoMap; el resultado se avisa por toast)
   const [exportCfg,setExportCfg]=useState(()=>{
     try {
       const saved=localStorage.getItem(ghKey("growith_exportCfg"));
@@ -7608,7 +7608,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       setExportSingleOrder(null);
       locationOverridesRef.current={}; sucursalOverridesRef.current={};
       try{localStorage.removeItem(ghKey("growith_locOverrides"));localStorage.removeItem(ghKey("growith_sucOverrides"));}catch(_){}
-      setExportDone({count:finalOrders.length, esquinas:esquinaOrders.length, esquinaOrders});
+      // Éxito → toast (sin modal que pida click); si quedaron pedidos en
+      // esquina afuera del Excel, se abre directo su modal informativo.
+      toast(`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel — descargado ✓`,"success");
+      if(esquinaOrders.length>0) setEsquinaModal({orders:esquinaOrders});
+      setExportDone({count:finalOrders.length, ts:Date.now()}); // ya no abre modal: refresca el mapa "ya exportado"
       logUsage("etiquetas", finalOrders.length);
       registrarEnviosFs(finalOrders); // historial compartido en Firestore (fire-and-forget)
     } catch(e){
@@ -8213,7 +8217,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       if(i<pending.length-1) await new Promise(r=>setTimeout(r,500));
     }
     setSendBatchActive(false);
-    setSeguimientoProgress({active:false,current:pending.length,total:pending.length,last:"",done:true,ok,fail,errors});
+    // Éxito total → toast y a otra cosa: un "salió todo bien" no interrumpe con
+    // un modal que pide click. El modal de resultado queda SOLO para errores.
+    if(fail===0){
+      toast(`${ok} seguimiento${ok!==1?"s":""} enviado${ok!==1?"s":""} a la tienda ✓`,"success");
+      setSeguimientoProgress({active:false,current:0,total:0,last:"",done:false,ok:0,fail:0,errors:[]});
+    } else {
+      setSeguimientoProgress({active:false,current:pending.length,total:pending.length,last:"",done:true,ok,fail,errors});
+    }
   }
 
   return (
@@ -8224,7 +8235,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {(seguimientoProgress.active||seguimientoProgress.done)&&ReactDOM.createPortal(
         <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}
           onClick={seguimientoProgress.done?()=>setSeguimientoProgress(p=>({...p,done:false})):undefined}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.done?(seguimientoProgress.fail>0?T.orange+"55":T.green+"55"):T.green+"44"}`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.done?(seguimientoProgress.ok===0?T.red+"55":T.orange+"55"):T.green+"44"}`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
             onClick={e=>e.stopPropagation()}>
             {!seguimientoProgress.done ? (
               <>
@@ -8257,34 +8268,39 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               </>
             ) : (
               <>
-                <div style={{textAlign:"center",marginBottom:24}}>
-                  <div style={{marginBottom:16}}><StatusIcon type={seguimientoProgress.fail===0?"success":seguimientoProgress.ok===0?"error":"warning"} size={64}/></div>
-                  <div style={{fontSize:18,fontWeight:800,color:seguimientoProgress.fail===0?T.green:seguimientoProgress.ok===0?T.red:T.orange,marginBottom:6}}>
-                    {seguimientoProgress.fail===0?"¡Seguimientos enviados!":seguimientoProgress.ok===0?"Error al enviar":"Envío parcial"}
+                {/* Resultado con errores (el éxito total sale como toast, sin
+                    modal): sobrio, sin glow ni placas macizas — chips con
+                    número y el detalle de qué pedidos fallaron. */}
+                <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16}}>
+                  <StatusIcon type={seguimientoProgress.ok===0?"error":"warning"} size={40}/>
+                  <div>
+                    <div style={{fontSize:16,fontWeight:700,color:T.text}}>
+                      {seguimientoProgress.ok===0?"No se pudieron enviar los seguimientos":"Algunos seguimientos no se enviaron"}
+                    </div>
+                    <div style={{fontSize:13,color:T.textSm,marginTop:2}}>{seguimientoProgress.ok} de {seguimientoProgress.total} enviados a la tienda</div>
                   </div>
-                  <div style={{fontSize:13,color:T.textSm}}>{seguimientoProgress.total} seguimiento{seguimientoProgress.total!==1?"s":""} procesados</div>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:seguimientoProgress.errors?.length>0?16:24}}>
-                  <div style={{background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
-                    <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-1}}>{seguimientoProgress.ok}</div>
-                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Enviados OK</div>
-                  </div>
-                  <div style={{background:seguimientoProgress.fail>0?T.redBg:T.surface,border:`1px solid ${seguimientoProgress.fail>0?T.red+"33":T.border}`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
-                    <div style={{fontSize:28,fontWeight:800,color:seguimientoProgress.fail>0?T.red:T.textSm,letterSpacing:-1}}>{seguimientoProgress.fail}</div>
-                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Con error</div>
-                  </div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+                  {seguimientoProgress.ok>0&&(
+                    <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 12px",fontSize:12,fontWeight:700,borderRadius:DS.r.full,background:T.green+"14",border:`1px solid ${T.green}44`,color:T.green}}>
+                      <span style={{width:6,height:6,borderRadius:"50%",background:T.green}}/>{seguimientoProgress.ok} enviado{seguimientoProgress.ok!==1?"s":""}
+                    </span>
+                  )}
+                  <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 12px",fontSize:12,fontWeight:700,borderRadius:DS.r.full,background:T.red+"14",border:`1px solid ${T.red}44`,color:T.red}}>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:T.red}}/>{seguimientoProgress.fail} con error
+                  </span>
                 </div>
                 {seguimientoProgress.errors?.length>0&&(
-                  <div style={{background:T.redBg,border:`1.5px solid ${T.red}44`,borderRadius:10,padding:"12px 14px",marginBottom:20,maxHeight:130,overflowY:"auto",boxShadow:`0 0 0 1px ${T.red}18, 0 4px 16px ${T.red}14`}}>
-                    <div style={{fontSize:11,fontWeight:700,color:T.red,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Detalle de errores</div>
+                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:16,maxHeight:150,overflowY:"auto"}}>
                     {seguimientoProgress.errors.map((e,i)=>(
-                      <div key={i} style={{fontSize:12,color:T.red,marginBottom:3}}>· <span style={{fontWeight:600}}>#{e.pedido}:</span> {e.msg}</div>
+                      <div key={i} style={{fontSize:12,color:T.textMd,marginBottom:4,lineHeight:1.5}}><span style={{fontWeight:700,color:T.red}}>#{e.pedido}</span> — {e.msg}</div>
                     ))}
                   </div>
                 )}
-                <button onClick={()=>setSeguimientoProgress(p=>({...p,done:false}))} style={{width:"100%",background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"12px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  Cerrar
-                </button>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:14,lineHeight:1.5}}>Los que fallaron quedan pendientes — corregí el motivo y volvé a enviar seguimientos: solo se reintentan los que faltan.</div>
+                <div style={{display:"flex",justifyContent:"flex-end"}}>
+                  <button onClick={()=>setSeguimientoProgress(p=>({...p,done:false}))} style={{...BtnSecondary(T),fontSize:13}}>Cerrar</button>
+                </div>
               </>
             )}
           </div>
@@ -8292,13 +8308,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         document.body
       )}
 
-      {/* Generar etiquetas — portal unificado activo + resultado */}
-      {(exporting||!!exportDone)&&ReactDOM.createPortal(
-        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}
-          onClick={exportDone?()=>{const d=exportDone;setExportDone(null);setExportProgress({step:"",pct:0,current:0,total:0});if(d.esquinas>0&&d.esquinaOrders?.length>0)setEsquinaModal({orders:d.esquinaOrders});}:undefined}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${exportDone?T.green+"55":T.blue+"44"}`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
+      {/* Generar etiquetas — overlay de progreso. El resultado exitoso sale
+          como toast (sin modal); si hubo esquinas se abre directo su modal. */}
+      {exporting&&ReactDOM.createPortal(
+        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}>
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${T.blue}44`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
             onClick={e=>e.stopPropagation()}>
-            {!exportDone ? (
               <>
                 <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
                   <div style={{width:44,height:44,borderRadius:12,background:T.blue+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
@@ -8327,30 +8342,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   ))}
                 </div>
               </>
-            ) : (
-              <>
-                <div style={{textAlign:"center",marginBottom:24}}>
-                  <StatusIcon type="success" size={64}/>
-                  <div style={{fontSize:18,fontWeight:800,color:T.green,marginBottom:6}}>¡Etiquetas generadas!</div>
-                  <div style={{fontSize:13,color:T.textSm}}>El archivo Excel fue descargado a tu computadora</div>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:exportDone.esquinas>0?"1fr 1fr":"1fr",gap:12,marginBottom:24}}>
-                  <div style={{background:T.greenBg,border:`1.5px solid ${T.green}44`,borderRadius:12,padding:"14px 16px",textAlign:"center",boxShadow:`0 0 0 1px ${T.green}18, 0 6px 20px ${T.green}18`}}>
-                    <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-1}}>{exportDone.count}</div>
-                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Etiquetas incluidas</div>
-                  </div>
-                  {exportDone.esquinas>0&&(
-                    <div style={{background:T.yellowBg,border:`1.5px solid ${T.yellow}44`,borderRadius:12,padding:"14px 16px",textAlign:"center",boxShadow:`0 0 0 1px ${T.yellow}18, 0 6px 20px ${T.yellow}14`}}>
-                      <div style={{fontSize:28,fontWeight:800,color:T.yellow,letterSpacing:-1}}>{exportDone.esquinas}</div>
-                      <div style={{fontSize:12,color:T.textSm,marginTop:2}}>En esquina (excluidas)</div>
-                    </div>
-                  )}
-                </div>
-                <button onClick={()=>{const d=exportDone;setExportDone(null);setExportProgress({step:"",pct:0,current:0,total:0});if(d.esquinas>0&&d.esquinaOrders?.length>0)setEsquinaModal({orders:d.esquinaOrders});}} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",padding:"12px",fontSize:14}}>
-                  Cerrar
-                </button>
-              </>
-            )}
           </div>
         </div>,
         document.body
@@ -28090,6 +28081,9 @@ function CostosPanel({ T, uid }) {
   const [googleAdsDraft, setGoogleAdsDraft] = React.useState({desde:"",hasta:"",monto:""});
   const [googleAdsSaving, setGoogleAdsSaving] = React.useState(false);
   const [mlAdsSaving, setMlAdsSaving] = React.useState(false);
+  const [gadsConnected, setGadsConnected] = React.useState(false); // OAuth de Google Ads hecho → el gasto entra solo por API
+  const [verGadsManual, setVerGadsManual] = React.useState(false); // mostrar la carga manual aunque esté conectado
+  const [mlConnected, setMlConnected] = React.useState(false);     // ML conectado → Mercado Ads intenta leerse por API
   const [products, setProducts] = React.useState([]);
   const [mlItems, setMlItems] = React.useState([]);
   const [costos, setCostos] = React.useState({}); // { [key]: costo }
@@ -28125,6 +28119,8 @@ function CostosPanel({ T, uid }) {
       try {
         const snap = await getDoc(doc(db, "users", uid));
         const d = snap.exists() ? snap.data() : {};
+        setGadsConnected(!!(d.googleAds&&d.googleAds.refresh_token));
+        setMlConnected((d.stores||[]).some(s=>s.type==="mercadolibre"));
         setEnvio(d.margenesEnvioProm ?? "");
         const ec = d.margenesEnvioCfg || {};
         setEnvioModo(ec.modoTienda === "orden" ? "orden" : "fijo");
@@ -28323,8 +28319,12 @@ function CostosPanel({ T, uid }) {
       {/* Gasto de Mercado Ads por períodos (carga manual hasta integrar la API) */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
         <div style={{marginBottom:10}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Gasto de Mercado Ads (por período)</div>
-          <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cargá lo que gastaste (o vas a gastar) en publicidad de ML en cada rango — podés poner fechas a futuro. Se promedia por día y el dashboard descuenta el promedio diario según los días que se solapen, así el gasto fijo se va imputando solo día a día. Ej: del 01/06 al 30/06 $3.000.000 = $100.000/día.</div>
+          <div style={{fontSize:13,fontWeight:700,color:T.text,display:"flex",alignItems:"center",gap:8}}>Gasto de Mercado Ads (por período)
+            {mlConnected&&<span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"2px 9px",fontSize:10,fontWeight:700,borderRadius:DS.r.full,background:T.green+"14",border:`1px solid ${T.green}44`,color:T.green}}><span style={{width:5,height:5,borderRadius:"50%",background:T.green}}/>API automática</span>}
+          </div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{mlConnected
+            ?"Con Mercado Libre conectado, el gasto real de Mercado Ads se lee solo de la API — cuando la API devuelve el dato, esta carga manual se ignora. Usala únicamente como respaldo (por si la API no informa tu gasto)."
+            :"Cargá lo que gastaste (o vas a gastar) en publicidad de ML en cada rango — podés poner fechas a futuro. Se promedia por día y el dashboard descuenta el promedio diario según los días que se solapen, así el gasto fijo se va imputando solo día a día. Ej: del 01/06 al 30/06 $3.000.000 = $100.000/día."}</div>
         </div>
         {(()=>{ const today=hoyAR();
         const maxFut=new Date(Date.now()+730*86400000).toISOString().slice(0,10); // permite cargar a futuro (hasta ~2 años)
@@ -28363,11 +28363,19 @@ function CostosPanel({ T, uid }) {
         <div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
           <BrandIcon name="google" size={18}/>
           <div>
-            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Gasto de Google Ads (por período)</div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cargá lo que gastás en Google Ads por rango de fechas — se promedia por día y entra al Ad Spend del Dashboard (global y canal Tienda), al ROAS, CPA y profit, igual que Meta y Mercado Ads.</div>
+            <div style={{fontSize:13,fontWeight:700,color:T.text,display:"flex",alignItems:"center",gap:8}}>Gasto de Google Ads (por período)
+              {gadsConnected&&<span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"2px 9px",fontSize:10,fontWeight:700,borderRadius:DS.r.full,background:T.green+"14",border:`1px solid ${T.green}44`,color:T.green}}><span style={{width:5,height:5,borderRadius:"50%",background:T.green}}/>Conectado — automático</span>}
+            </div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{gadsConnected
+              ?"Google Ads está conectado: el gasto real entra solo desde la API al Ad Spend del Dashboard. Esta carga manual queda como respaldo y se ignora mientras la API responda."
+              :"Cargá lo que gastás en Google Ads por rango de fechas — se promedia por día y entra al Ad Spend del Dashboard (global y canal Tienda), al ROAS, CPA y profit, igual que Meta y Mercado Ads."}</div>
           </div>
         </div>
-        {(()=>{
+        {gadsConnected&&googleAdsList.length===0&&!verGadsManual ? (
+          <button onClick={()=>setVerGadsManual(true)} style={{background:"transparent",border:"none",color:T.textSm,fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3,padding:0}}>
+            Cargar manualmente igual
+          </button>
+        ) : (()=>{
         const maxFut=new Date(Date.now()+730*86400000).toISOString().slice(0,10);
         const fmtF=f=>{ try { return new Date(f+"T00:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}); } catch(_) { return f; } };
         const dias=(a,b)=>{ if(!a||!b||b<a) return 0; return Math.round((new Date(b)-new Date(a))/86400000)+1; };
@@ -28393,7 +28401,7 @@ function CostosPanel({ T, uid }) {
             {dProm>0 && <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(dProm).toLocaleString("es-AR")}/día</span>}
             <button onClick={addGoogleAdsPeriod} disabled={googleAdsSaving} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>{googleAdsSaving?"Guardando…":"+ Guardar período"}</button>
           </div>
-          <div style={{fontSize:10,color:T.textSm,marginTop:8}}>Si conectás Google Ads en Config → Integraciones (con el developer token cargado en Vercel), el gasto real de la API pisa esta carga manual automáticamente.</div>
+          {!gadsConnected&&<div style={{fontSize:10,color:T.textSm,marginTop:8}}>Si conectás Google Ads en Config → Integraciones, el gasto real de la API pisa esta carga manual automáticamente — sin cargar nada a mano.</div>}
         </>); })()}
       </div>
 
@@ -31986,7 +31994,10 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             const fb0 = rendData?.facturacionBreakdown;
             const fbOk = fb0 && fb0.bruto>0 && ((fb0.descuento||0)+(fb0.envioCliente||0)) >= (fb0.neto||0)*0.002;
             const ab0 = rendData?.adSpendBreakdown;
-            const abOk = ab0 && ab0.total>0 && (Object.entries(ab0.porMoneda||{}).some(([k,v])=>k!=="ARS"&&v>0) || ab0.feePct>0);
+            // Hay algo que desglosar si Meta tiene conversión/fee, O si el gasto
+            // viene de más de una plataforma (Google Ads, Mercado Ads, otros).
+            const abOk = (ab0 && ab0.total>0 && (Object.entries(ab0.porMoneda||{}).some(([k,v])=>k!=="ARS"&&v>0) || ab0.feePct>0))
+              || [(tot.adSpendMeta||0),(tot.adSpendGoogle||0),(tot.adSpendMl||0),(tot.adSpendExtra||0)].filter(v=>v>0).length>1;
             // Solo las alertas y avisos son chips con color (son avisos reales).
             // Los desgloses son links de texto discretos: informativos, no urgentes.
             const chips = [
@@ -32077,10 +32088,18 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               conversión a ARS con dólar histórico por día y fee sobre pauta. */}
           {openInfo==="ab" && (()=>{
             const ab = rendData?.adSpendBreakdown;
-            if (!ab || !(ab.total>0)) return null;
-            const monedas = Object.entries(ab.porMoneda||{}).filter(([,v])=>v>0);
+            const monedas = Object.entries(ab?.porMoneda||{}).filter(([,v])=>v>0);
             const hayConv = monedas.some(([k])=>k!=="ARS");
-            if (!hayConv && !(ab.feePct>0)) return null; // gasto ARS sin fee: no hay nada que desglosar
+            const hayMetaDetalle = !!(ab && ab.total>0 && (hayConv || ab.feePct>0));
+            // Inversión por plataforma: Meta + Google Ads + Mercado Ads + otros.
+            // La fuente (API real vs carga manual) viene del backend.
+            const fuentes = [
+              ["Meta Ads", tot.adSpendMeta, "(real, API)"],
+              ["Google Ads", tot.adSpendGoogle, rendData?.meta?.googleAdsFuente==="auto"?"(real, API)":"(carga manual)"],
+              ["Mercado Ads", tot.adSpendMl, rendData?.meta?.mlAdsFuente==="auto"?"(real, API)":"(carga manual)"],
+              ["Otros", tot.adSpendExtra, "(costos adicionales tipo pauta)"],
+            ].filter(([,v])=>(v||0)>0);
+            if (!hayMetaDetalle && fuentes.length<=1) return null;
             const fmtOrig = (mon,v) => mon==="ARS" ? fmtM(v) : mon+" "+Number(v).toLocaleString("es-AR",{maximumFractionDigits:0});
             const row = (lbl, val, hint, strong) => (
               <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:10,padding:"3px 0"}}>
@@ -32091,17 +32110,28 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             const TIPO_LBL = {oficial:"oficial",blue:"blue",mep:"MEP",cripto:"cripto",manual:"manual"};
             return (
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 16px",marginBottom:16}}>
-                <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.4}}>Cómo se compone tu inversión publicitaria (Meta)</div>
-                {monedas.map(([mon,v]) => row(`Gasto según Meta (${mon})`, fmtOrig(mon,v), mon==="ARS"?null:"(lo que factura Meta, en su moneda)"))}
-                {hayConv && row("Convertido a pesos", fmtM(ab.convertido), ab.cotizOperativo ? `dólar operativo${ab.cotizProm?` $${Number(ab.cotizProm).toLocaleString("es-AR",{maximumFractionDigits:0})}`:""} (el mismo de Costos)` : `dólar ${TIPO_LBL[ab.cotizTipo]||ab.cotizTipo}${ab.cotizProm?` prom. $${Number(ab.cotizProm).toLocaleString("es-AR",{maximumFractionDigits:0})}`:""}${ab.cotizAjuste?` +${ab.cotizAjuste}% ajuste`:""}, día por día`)}
-                {(ab.feePct>0) && row(`+ Fee sobre pauta (${ab.feePct}%)`, fmtM(ab.feeMonto), "(configurado en Cotización Dólar)")}
-                {row("Ad Spend Meta total", fmtM(ab.total), "= la tarjeta AD SPEND", true)}
-                {(ab.diasSinCotiz>0) && (
-                  <div style={{fontSize:DS.font.sm,color:T.yellow,marginTop:6}}>{ab.diasSinCotiz} día{ab.diasSinCotiz>1?"s":""} sin cotización disponible — ese gasto quedó excluido del total.</div>
+                {fuentes.length>1 && (
+                  <>
+                    <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.4}}>Inversión por plataforma</div>
+                    {fuentes.map(([lbl,v,hint]) => row(lbl, fmtM(v), hint))}
+                    {row("Ad Spend total", fmtM(tot.adSpend), "= la tarjeta AD SPEND", true)}
+                  </>
                 )}
-                <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8,lineHeight:1.5,borderTop:`1px solid ${T.borderL}`,paddingTop:8}}>
-                  {hayConv ? "Cada día se convierte con la cotización de ESE día (histórico), no con el dólar de hoy — por eso el total no cambia cuando se mueve el dólar. " : ""}{ab.feePct>0 ? "El fee sobre pauta suma el recargo real que pagás sobre lo que factura Meta (impuestos/tarjeta). Otras apps muestran el gasto sin ese recargo — por eso pueden mostrar un número más chico." : ""}
-                </div>
+                {hayMetaDetalle && (
+                  <>
+                    <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.4,marginTop:fuentes.length>1?12:0,paddingTop:fuentes.length>1?10:0,borderTop:fuentes.length>1?`1px solid ${T.borderL}`:"none"}}>Cómo se compone el gasto de Meta</div>
+                    {monedas.map(([mon,v]) => row(`Gasto según Meta (${mon})`, fmtOrig(mon,v), mon==="ARS"?null:"(lo que factura Meta, en su moneda)"))}
+                    {hayConv && row("Convertido a pesos", fmtM(ab.convertido), ab.cotizOperativo ? `dólar operativo${ab.cotizProm?` $${Number(ab.cotizProm).toLocaleString("es-AR",{maximumFractionDigits:0})}`:""} (el mismo de Costos)` : `dólar ${TIPO_LBL[ab.cotizTipo]||ab.cotizTipo}${ab.cotizProm?` prom. $${Number(ab.cotizProm).toLocaleString("es-AR",{maximumFractionDigits:0})}`:""}${ab.cotizAjuste?` +${ab.cotizAjuste}% ajuste`:""}, día por día`)}
+                    {(ab.feePct>0) && row(`+ Fee sobre pauta (${ab.feePct}%)`, fmtM(ab.feeMonto), "(configurado en Cotización Dólar)")}
+                    {row("Ad Spend Meta total", fmtM(ab.total), fuentes.length>1?null:"= la tarjeta AD SPEND", true)}
+                    {(ab.diasSinCotiz>0) && (
+                      <div style={{fontSize:DS.font.sm,color:T.yellow,marginTop:6}}>{ab.diasSinCotiz} día{ab.diasSinCotiz>1?"s":""} sin cotización disponible — ese gasto quedó excluido del total.</div>
+                    )}
+                    <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8,lineHeight:1.5,borderTop:`1px solid ${T.borderL}`,paddingTop:8}}>
+                      {hayConv ? "Cada día se convierte con la cotización de ESE día (histórico), no con el dólar de hoy — por eso el total no cambia cuando se mueve el dólar. " : ""}{ab.feePct>0 ? "El fee sobre pauta suma el recargo real que pagás sobre lo que factura Meta (impuestos/tarjeta). Otras apps muestran el gasto sin ese recargo — por eso pueden mostrar un número más chico." : ""}
+                    </div>
+                  </>
+                )}
               </div>
             );
           })()}
@@ -32160,7 +32190,11 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             const CARDS=[
               {label:"Profit",      val:fmtM(tot.profit),    c:tot.profit,     p:prevTot.profit,     hero:true, tint:(tot.profit||0)>=0?MC.green:MC.red, accent:(tot.profit||0)>=0?MC.green:MC.red, valColor:(tot.profit||0)>=0?MC.green:MC.red, hint:(tot.profit||0)>=0?"Ganancia neta":"Pérdida neta", spk:dailyRows.map(r=>r.Profit), zero:true},
               {label:"Revenue",     val:fmtM(tot.revenue),   c:tot.revenue,    p:prevTot.revenue,    hero:true, hint:"Facturación total",      spk:dailyRows.map(r=>r.Revenue), onClick:irAVentas},
-              {label:"Ad Spend",    val:fmtM(tot.adSpend),   c:tot.adSpend,    p:prevTot.adSpend,    hero:true, hint:"Inversión publicitaria", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
+              {label:"Ad Spend",    val:fmtM(tot.adSpend),   c:tot.adSpend,    p:prevTot.adSpend,    hero:true,
+                // El sub de la card nombra las fuentes reales del gasto (Meta,
+                // Google, Mercado Ads) — así se ve de dónde sale el número.
+                hint:(()=>{const f=[];if((tot.adSpendMeta||0)>0)f.push("Meta");if((tot.adSpendGoogle||0)>0)f.push("Google");if((tot.adSpendMl||0)>0)f.push("Mercado Ads");if((tot.adSpendExtra||0)>0)f.push("Otros");return f.length>1?f.join(" + "):"Inversión publicitaria";})(),
+                spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
               {label:"Net Revenue", val:fmtM(tot.netRevenue),c:tot.netRevenue, p:prevTot.netRevenue, hero:true, hint:"Todo descontado, antes de pauta", spk:dailyRows.map(r=>r["Net Revenue"])},
               {label:"Órdenes",     val:fmtInt(tot.orders),  c:tot.orders,     p:prevTot.orders,
                 // En la vista global se aclara cuántas órdenes aporta cada canal,
