@@ -1143,8 +1143,24 @@ export default async function handler(req, res) {
           if (!tr.ok) return null;
           const at = (await tr.json()).access_token;
           if (!at) return null;
+          // Self-healing de cuentas: si la conexión se hizo antes de que Google
+          // aprobara el developer token, el callback guardó customers=[] y nadie
+          // volvía a resolverlas — el gasto quedaba en manual para siempre. Acá
+          // se re-listan y se persisten para las próximas cargas.
+          let customers = g.customers || [];
+          if (!customers.length) {
+            const cr = await fetch("https://googleads.googleapis.com/v18/customers:listAccessibleCustomers", {
+              headers: { Authorization: `Bearer ${at}`, "developer-token": dt },
+            });
+            if (cr.ok) {
+              customers = ((await cr.json()).resourceNames || []).map(r => String(r).replace("customers/", ""));
+              if (customers.length) db.collection("users").doc(uid).set({ googleAds: { ...g, customers } }, { merge: true }).catch(()=>{});
+            } else {
+              console.error("gads listAccessibleCustomers HTTP", cr.status, (await cr.text().catch(()=>"" )).slice(0,200));
+            }
+          }
           let total = 0, any = false;
-          for (const c of (g.customers || []).slice(0, 5)) {
+          for (const c of (customers || []).slice(0, 5)) {
             const cn = String(c).replace(/^customers\//, "").replace(/-/g, "");
             const r = await fetch(`https://googleads.googleapis.com/v18/customers/${cn}/googleAds:search`, {
               method: "POST",
