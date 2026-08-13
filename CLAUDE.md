@@ -162,6 +162,7 @@ growith_skuCfg             → JSON posición/tamaño del estampado de SKU en r�
 growith_margenes_vis_{uid} → JSON visibilidad del dashboard Márgenes: {main,sec,costos,tienda,ml,canales,productos,secKpis,secKpisOrder}
 growith_margenes_fullnums  → "1" (números completos en Márgenes, sin K/M)
 growith_margenes_usd       → "1" (dashboard Márgenes en USD)
+growith_costos_alert_{uid} → número de productos vendidos sin costo cargado (badge "Costos y motor" del sidebar; lo publica AppRendimiento + evento "gh-costos-alert")
 growith_reproc_{uid}       → timestamp del último reprocesamiento de 60 días
 growith_pnl_{uid}_{YYYY-MM} → JSON cache del P&L mensual: {ts, totals} (meses cerrados: permanente; mes actual: TTL 1h)
 growith_accounts           → JSON[] cuentas recordadas en login (email, nombre, provider)

@@ -816,7 +816,10 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     // Sin subs: la navegación interna vive en las pills de la sección (tenerla
     // dos veces —sidebar y pills— duplicaba y ocupaba espacio).
     {id:"margenes", label:"Dashboard", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
-      subs:[{id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos"},{id:"adicionales",label:"Adicionales"},{id:"dolar",label:"Dólar"},{id:"facturacion_externa",label:"Fact. Externa"}]},
+      // "costos" agrupa TODA la config del motor de ganancia (costos, comisiones,
+      // adicionales, fact. externa, dólar) — las 5 entradas viejas son tabs
+      // internas de esa página; sus ids siguen vivos como margenesTab (aliases).
+      subs:[{id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"costos",label:"Costos y motor"}]},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
@@ -936,7 +939,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
                     // subActive solo cuando el módulo padre es el activo —
                     // antes daba highlight aún navegando otra sección, ahora
                     // que las subs son visibles siempre eso confundía.
-                    const subActive = active && ((item.id==="envios"&&enviosTab===sub.id)||(item.id==="reclamos"&&reclamosView===sub.id)||(item.id==="meta"&&metaTab===sub.id)||(item.id==="stock"&&stockTab===sub.id)||(item.id==="margenes"&&margenesTab===sub.id)||(item.id==="arca"&&arcaTab===sub.id)||(item.id==="tareas"&&tareasTab===sub.id)||(item.id==="canjes"&&canjesTab===sub.id)||(item.id==="ml"&&mlTab===sub.id));
+                    const subActive = active && ((item.id==="envios"&&enviosTab===sub.id)||(item.id==="reclamos"&&reclamosView===sub.id)||(item.id==="meta"&&metaTab===sub.id)||(item.id==="stock"&&stockTab===sub.id)||(item.id==="margenes"&&(sub.id==="costos"?["costos","comisiones","adicionales","facturacion_externa","dolar"].includes(margenesTab):margenesTab===sub.id))||(item.id==="arca"&&arcaTab===sub.id)||(item.id==="tareas"&&tareasTab===sub.id)||(item.id==="canjes"&&canjesTab===sub.id)||(item.id==="ml"&&mlTab===sub.id));
                     return (
                       <button key={sub.id}
                         onClick={()=>{
@@ -967,6 +970,9 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
                           transition:`width 0.18s ${DS.ease}, background 0.18s`,
                         }}/>
                         {sub.label}
+                        {item.id==="margenes"&&sub.id==="costos"&&(alerts.costos||0)>0&&(
+                          <span title={`${alerts.costos} producto(s) vendidos sin costo cargado`} style={{marginLeft:"auto",fontSize:9,fontWeight:DS.w.bold,background:T.yellow+"1f",color:T.yellow,border:`1px solid ${T.yellow}44`,borderRadius:DS.r.full,padding:"0 5px",lineHeight:"14px",flexShrink:0}}>{alerts.costos}</span>
+                        )}
                       </button>
                     );
                   })}
@@ -28893,20 +28899,37 @@ function FacturacionExternaPanel({ T, uid }) {
 function MargenesTabsBar({ T, tab, setTab }) {
   if (!setTab) return null; // ruta legacy #/rendimiento sin navegación de tabs
   const TABS = [
-    {id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"comisiones",label:"Comisiones"},
-    {id:"costos",label:"Costos"},{id:"adicionales",label:"Adicionales"},{id:"dolar",label:"Dólar"},{id:"facturacion_externa",label:"Fact. Externa"},
+    {id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"costos",label:"Costos y motor"},
   ];
+  const activa = (t) => t.id==="costos" ? MARGENES_CFG_IDS.includes(tab) : tab===t.id;
   return (
     <div className="mobile-only no-scrollbar" style={{display:"flex",gap:DS.sp.xs,overflowX:"auto",padding:"10px 24px 0",maxWidth:1440,margin:"0 auto",width:"100%",boxSizing:"border-box",WebkitOverflowScrolling:"touch"}}>
-      {TABS.map(t=>(
-        <button key={t.id} onClick={()=>setTab(t.id)}
-          style={{padding:"6px 12px",fontSize:DS.font.md,fontWeight:tab===t.id?DS.w.bold:DS.w.medium,border:`1px solid ${tab===t.id?T.accent+"55":T.border}`,borderRadius:DS.r.full,background:tab===t.id?T.accent+"16":T.card,color:tab===t.id?T.accent:T.textMd,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
-          {t.label}
-        </button>
-      ))}
+      {TABS.map(t=>{
+        const act = activa(t);
+        return (
+          <button key={t.id} onClick={()=>setTab(t.id)}
+            style={{padding:"6px 12px",fontSize:DS.font.md,fontWeight:act?DS.w.bold:DS.w.medium,border:`1px solid ${act?T.accent+"55":T.border}`,borderRadius:DS.r.full,background:act?T.accent+"16":T.card,color:act?T.accent:T.textMd,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
+            {t.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
+
+// Página "Costos y motor": toda la configuración que alimenta el cálculo de
+// ganancia (costos de productos, comisiones e impuestos, adicionales, fact.
+// externa y dólar) en UNA página con tabs internas estilo Facturador. Los ids
+// viejos del sidebar siguen vivos como valor de margenesTab, así los hashes
+// #/margenes/comisiones, #/margenes/dolar, etc. abren directo su tab.
+const MARGENES_CFG_TABS = [
+  {id:"costos", label:"Costos de productos", icon:"M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01"},
+  {id:"comisiones", label:"Comisiones e impuestos", icon:"M19 5L5 19M9 6.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM20 17.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"},
+  {id:"adicionales", label:"Adicionales", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM12 8v8M8 12h8"},
+  {id:"facturacion_externa", label:"Fact. externa", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6"},
+  {id:"dolar", label:"Dólar", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"},
+];
+const MARGENES_CFG_IDS = MARGENES_CFG_TABS.map(t=>t.id);
 
 function AppMargenes({ T, user, onHome, tab="dashboard", setTab }) {
   const uid = user?.uid;
@@ -28918,10 +28941,31 @@ function AppMargenes({ T, user, onHome, tab="dashboard", setTab }) {
     return <AppRendimiento T={T} user={user} onHome={onHome} tab={tab} setTab={setTab}/>;
   }
 
+  const esCfg = MARGENES_CFG_IDS.includes(tab);
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Dashboard" sectionId="margenes" onHome={onHome}/>
+      <AppTopbar T={T} section={esCfg?"Costos y motor":"Dashboard"} sectionId="margenes" onHome={onHome}/>
       <MargenesTabsBar T={T} tab={tab} setTab={setTab}/>
+      {/* Tabs internas del grupo de configuración — mismo estilo que las tabs
+          del Facturador (AppTabs: activa en accent con inset border + iconos). */}
+      {esCfg && setTab && (
+        <div className="no-scrollbar" style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:113,zIndex:19,padding:"10px 24px",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+          <div style={{display:"inline-flex",background:T.bg,borderRadius:10,padding:3,border:`1px solid ${T.border}`,gap:2}}>
+            {MARGENES_CFG_TABS.map(t=>{
+              const isActive=tab===t.id;
+              return (
+                <button key={t.id} onClick={()=>setTab(t.id)}
+                  onMouseEnter={e=>{if(!isActive)e.currentTarget.style.color=T.text;}}
+                  onMouseLeave={e=>{if(!isActive)e.currentTarget.style.color=T.textMd;}}
+                  style={{padding:"8px 18px",fontSize:13,fontWeight:isActive?700:500,borderRadius:8,border:"none",background:isActive?T.accent+"16":"transparent",color:isActive?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,transition:"all 0.15s ease",boxShadow:isActive?`inset 0 0 0 1px ${T.accent}3a`:"none",whiteSpace:"nowrap",flexShrink:0}}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:isActive?1:0.75}}><path d={t.icon}/></svg>
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
         {tab==="pnl" && <MargenesPnl T={T} uid={uid}/>}
         {tab==="comisiones" && <ComisionesPanel T={T} uid={uid}/>}
@@ -31477,6 +31521,18 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   // sería aún más fino, pero el promedio mantiene consistencia entre totales y
   // porcentajes). Sin serie disponible cae a la cotización actual.
   const usdRate = (()=>{ const vals=Object.values(rendData?.dolarSerie||{}); if(vals.length) return vals.reduce((a,b)=>a+b,0)/vals.length; return rendData?.dolarActual||0; })();
+
+  // Publica el conteo de productos vendidos sin costo cargado para el badge de
+  // "Costos y motor" en el sidebar (el root no tiene estos datos — se comunica
+  // por localStorage + evento, mismo patrón lectura-instantánea del resto).
+  useEffect(()=>{
+    if(!rendData||!uid) return;
+    try{
+      const n = rendData?.quality?.productosSinCogs||0;
+      const k = `growith_costos_alert_${uid}`;
+      if(localStorage.getItem(k)!==String(n)){ localStorage.setItem(k,String(n)); window.dispatchEvent(new Event("gh-costos-alert")); }
+    }catch(_){}
+  },[rendData,uid]);
   const usdOn = usdMode && usdRate>0;
   const cv = v => usdOn ? Number(v)/usdRate : Number(v);
   const fmtM=(v)=>{if(v==null||v===""||isNaN(Number(v)))return"—";const n=cv(v),abs=Math.abs(n),s=n<0?"-":"",P=usdOn?"US$":"$";if(fullNums)return s+P+Math.round(abs).toLocaleString("es-AR");if(abs>=1e9)return s+P+(abs/1e9).toFixed(1)+"B";if(abs>=1e6)return s+P+(abs/1e6).toFixed(1)+"M";if(abs>=1e3)return s+P+Math.round(abs/1e3).toLocaleString("es-AR")+"K";return s+P+Math.round(abs).toLocaleString("es-AR");};
@@ -31705,6 +31761,15 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Dashboard" sectionId="margenes" onHome={onHome}
         onHelp={()=>setShowGuia(s=>!s)}>
+        {/* Cotización del dólar siempre a la vista — click abre su configuración
+            (Dólar dejó de ser entrada del sidebar: vive en Costos y motor). */}
+        {setTab && usdRate>0 && (
+          <button className="hide-mobile" onClick={()=>setTab("dolar")} title="Cotización usada en el período — click para configurar"
+            style={{...InputStyle(T),fontSize:12,height:34,padding:"0 12px",borderRadius:9,boxSizing:"border-box",width:"auto",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,fontWeight:600,color:T.textMd}}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            Dólar ${Math.round(usdRate).toLocaleString("es-AR")}
+          </button>
+        )}
         {/* Preferencias de vista unificadas: números completos + USD en un solo menú */}
         <div style={{position:"relative"}}>
           <button onClick={e=>{const r=e.currentTarget.getBoundingClientRect(); setViewMenuPos({top:r.bottom+6,right:Math.max(10,Math.min(window.innerWidth-r.right,window.innerWidth-246))}); setViewMenu(v=>!v);}} title="Preferencias de vista"
@@ -32973,6 +33038,7 @@ export default function App() {
   const [reclamosCount,setReclamosCount]=useState(0);
   const [canjesCount,setCanjesCount]=useState(0);
   const [canjesAcciones,setCanjesAcciones]=useState(0); // badge sidebar: acciones vencidas, no total
+  const [costosAlert,setCostosAlert]=useState(0); // badge "Costos y motor": productos vendidos sin costo (lo publica AppRendimiento vía localStorage + evento)
   const [alertas,setAlertas]=useState([]);
   const [darkMode,setDarkMode]=useState(()=>{ try { return localStorage.getItem("growith_theme")!=="light"; } catch(e){ return true; } });
   const [userPlan,setUserPlan]=useState("free"); // free | plus | full
@@ -33000,6 +33066,16 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return ()=>window.removeEventListener("keydown", onKey);
   },[]);
+
+  // Badge de "Costos y motor" en el sidebar: AppRendimiento publica en
+  // localStorage cuántos productos vendidos no tienen costo cargado.
+  useEffect(()=>{
+    if(!user?.uid){ setCostosAlert(0); return; }
+    const leer=()=>{ try{ setCostosAlert(parseInt(localStorage.getItem(`growith_costos_alert_${user.uid}`)||"0",10)||0); }catch(_){ setCostosAlert(0); } };
+    leer();
+    window.addEventListener("gh-costos-alert",leer);
+    return ()=>window.removeEventListener("gh-costos-alert",leer);
+  },[user?.uid]);
 
   // Persist sidebar collapsed
   useEffect(()=>{try{localStorage.setItem("growith_sidebar", sidebarCollapsed?"1":"0");}catch(e){}}, [sidebarCollapsed]);
@@ -33551,7 +33627,7 @@ export default function App() {
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesAcciones, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesAcciones, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
       {/* Multi-org F2 modals */}
       {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
       {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}
