@@ -31820,13 +31820,15 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
         {/* Toggle pesos/dólares — la cotización se configura en Configuraciones
             → Dólar; acá solo se cambia la moneda de la vista. */}
         {usdRate>0 && (
-          <div style={{display:"inline-flex",border:`1px solid ${T.inputBorder}`,borderRadius:9,overflow:"hidden",height:34,boxSizing:"border-box",flexShrink:0}}>
+          <div style={{display:"inline-flex",alignItems:"center",background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:2,gap:2,height:34,boxSizing:"border-box",flexShrink:0}}>
             {[["ars","$"],["usd","US$"]].map(([id,lbl])=>{
               const act = usdMode ? id==="usd" : id==="ars";
               return (
                 <button key={id} title={id==="usd"?`Ver en dólares — cotización promedio del período $${Math.round(usdRate).toLocaleString("es-AR")}`:"Ver en pesos"}
                   onClick={()=>{ const n=id==="usd"; if(n===usdMode) return; setUsdMode(n); try{localStorage.setItem(ghKey("growith_margenes_usd"),n?"1":"0");}catch(_){} }}
-                  style={{padding:"0 12px",fontSize:12,fontWeight:act?DS.w.bold:DS.w.medium,border:"none",background:act?T.accent+"16":"transparent",color:act?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:act?`inset 0 0 0 1px ${T.accent}3a`:"none",height:"100%"}}>{lbl}</button>
+                  onMouseEnter={e=>{if(!act)e.currentTarget.style.color=T.text;}}
+                  onMouseLeave={e=>{if(!act)e.currentTarget.style.color=T.textSm;}}
+                  style={{padding:"0 11px",height:"100%",fontSize:11.5,fontWeight:act?DS.w.bold:DS.w.medium,border:"none",borderRadius:DS.r.full,background:act?T.card:"transparent",color:act?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:act?DS.shadow.sm:"none",transition:`all 0.15s ${DS.ease}`}}>{lbl}</button>
               );
             })}
           </div>
