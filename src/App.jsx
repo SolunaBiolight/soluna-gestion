@@ -32493,12 +32493,12 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             const bc = rendData.byChannel;
             const esShop = bc.platform==="shopify";
             const filas = [
-              { canal:(esShop?"Tienda":"Tienda Nube")+" · Meta", dot:T.blue, ...(bc.tienda||{}) },
-              ...(bc.hasMl ? [{ canal:"Mercado Libre · Mercado Ads", dot:T.yellow, ...(bc.ml||{}) }] : []),
+              { canal:(esShop?"Tienda":"Tienda Nube")+" · Meta", brands:[esShop?"shopify":"tiendanube","meta"], ...(bc.tienda||{}) },
+              ...(bc.hasMl ? [{ canal:"Mercado Libre · Mercado Ads", brands:["mercadolibre"], ...(bc.ml||{}) }] : []),
               // Google Ads con atribución propia (conversiones y valor según
               // Google): sus ventas ya están dentro de la fila de la tienda,
               // por eso la fila se marca y no suma con las otras.
-              ...(bc.google ? [{ canal:"Google Ads", dot:T.green, ...bc.google }] : []),
+              ...(bc.google ? [{ canal:"Google Ads", brands:["googleads"], ...bc.google }] : []),
             ];
             const COLS = [
               ["adSpend","Ad Spend",fmtM],["roas","ROAS",fmtX],["trueRoas","True ROAS",fmtX],
@@ -32528,7 +32528,12 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                       <tbody>
                         {orden.map(f=>(
                           <tr key={f.canal}>
-                            <td style={{padding:"10px 14px",fontWeight:600,color:T.text,whiteSpace:"nowrap",borderBottom:`1px solid ${T.borderL}`}}><span style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:f.dot,marginRight:8}}/>{f.canal}{f.atribGoogle&&<span title="Órdenes y revenue según el modelo de atribución de Google — esas ventas también están contadas en la fila de la tienda" style={{fontSize:10,color:T.textSm,fontWeight:500,marginLeft:6}}>atribución de Google</span>}</td>
+                            <td style={{padding:"10px 14px",fontWeight:600,color:T.text,whiteSpace:"nowrap",borderBottom:`1px solid ${T.borderL}`}}>
+                              <span style={{display:"inline-flex",alignItems:"center",gap:5,marginRight:8,verticalAlign:"middle"}}>
+                                {(f.brands||[]).map(b=><BrandIcon key={b} name={b} size={15}/>)}
+                              </span>
+                              {f.canal}{f.atribGoogle&&<span title="Órdenes y revenue según el modelo de atribución de Google — esas ventas también están contadas en la fila de la tienda" style={{fontSize:10,color:T.textSm,fontWeight:500,marginLeft:6}}>atribución de Google</span>}
+                            </td>
                             {COLS.map(([k,,fmt])=>(
                               <td key={k} style={{padding:"10px 12px",textAlign:"right",color:T.text,whiteSpace:"nowrap",borderBottom:`1px solid ${T.borderL}`}}>{fmt(f[k])}</td>
                             ))}
