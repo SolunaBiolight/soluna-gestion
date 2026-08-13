@@ -7620,6 +7620,29 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     }
   }
 
+  // Sucursales cercanas al destino original de un pedido, ordenadas por
+  // distancia (backend geocodifica la dirección). Con `locs` (flujo XLSX) mapea
+  // cada una al string del desplegable del Excel; sin `locs` (emisión API)
+  // quedan crudas — ahí lo que importa es el id oficial.
+  function cargarLocCerca(o,locs){
+    setLocCerca({loading:true});
+    (async()=>{
+      try{
+        const toks=ghSucTokens(o.pickupDetails,o.direccion).slice(0,4).join(" ");
+        const pd=o.pickupDetails;
+        const dir=pd?`${pd.address?.address||""} ${pd.address?.number||""}`.trim():`${o.direccion||""} ${o.dirNumero||""}`.trim();
+        const gloc=pd?(pd.address?.locality||pd.address?.city||""):(o.localidad||o.ciudad||"");
+        const gprov=pd?(pd.address?.province||""):(o.provincia||"");
+        const r=await authFetch(`/api/andreani?action=sucursales_cercanas&q=${encodeURIComponent(toks)}&cp=${encodeURIComponent(cpDestinoDe(o)||"")}&dir=${encodeURIComponent(dir)}&loc=${encodeURIComponent(gloc)}&prov=${encodeURIComponent(gprov)}`);
+        const d=await r.json().catch(()=>null);
+        if(!r.ok||!Array.isArray(d?.sucursales)) throw new Error(d?.error||`HTTP ${r.status}`);
+        const lista=d.sucursales.map(s=>({...s,tpl:locs?ghTplDeOficial(locs,s):null}));
+        const validas=locs?lista.filter(s=>s.tpl):lista;
+        setLocCerca({lista:(locs&&validas.length?[...validas,...lista.filter(s=>!s.tpl).slice(0,5)]:lista).slice(0,18),origen:d.origen||"",aproximado:!!d.aproximado,diag:d.sinOrigen?"sin_origen":(d.stats&&!d.stats.conCoords?"sin_coords":"")});
+      }catch(e){ setLocCerca({lista:[],diag:String(e?.message||"error")}); }
+    })();
+  }
+
   async function resolveLocationsSequentially(unresolvedDom,unresolvedSuc,locs) {
     for(const o of unresolvedDom){
       const chosen=await new Promise(resolve=>{
@@ -7630,7 +7653,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       if(chosen==="EXCLUIR"){ locationOverridesRef.current[o.numero]="EXCLUIR"; persistOverrides(); continue; }
       locationOverridesRef.current[o.numero]=chosen; persistOverrides();
     }
+    // El barrido de sucursales consulta la API pedido por pedido: con muchas
+    // ventas son varios segundos. El overlay de progreso queda VISIBLE durante
+    // las consultas (antes se apagaba acá y parecía que el botón no hizo nada)
+    // y solo se oculta cuando se abre un modal que necesita al usuario.
+    let sucIdx=0;
     for(const o of unresolvedSuc){
+      sucIdx++;
+      setExporting(true);
+      setExportProgress({step:`Verificando sucursales Andreani… (${sucIdx}/${unresolvedSuc.length})`,pct:30+Math.round(25*sucIdx/unresolvedSuc.length),current:sucIdx,total:unresolvedSuc.length});
       // Lista oficial de la API por CP del destinatario (cacheada). null = API
       // no disponible → el modal cae a la búsqueda clásica del template.
       const oficiales=await fetchSucursalesOficiales(cpDestinoDe(o));
@@ -7659,25 +7690,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       // Cercanas al punto original ordenadas por distancia (mismo motor que
       // Canjes): se cargan de fondo una vez por pedido, mapeadas al string
       // exacto del desplegable con ghTplDeOficial.
-      setLocCerca({loading:true});
-      (async()=>{
-        try{
-          const toks=ghSucTokens(o.pickupDetails,o.direccion).slice(0,4).join(" ");
-          // Dirección real del punto/destino para geocodificar el ancla en el
-          // backend (no depende de que el punto exista en ningún listado).
-          const pd=o.pickupDetails;
-          const dir=pd?`${pd.address?.address||""} ${pd.address?.number||""}`.trim():`${o.direccion||""} ${o.dirNumero||""}`.trim();
-          const gloc=pd?(pd.address?.locality||pd.address?.city||""):(o.localidad||o.ciudad||"");
-          const gprov=pd?(pd.address?.province||""):(o.provincia||"");
-          const r=await authFetch(`/api/andreani?action=sucursales_cercanas&q=${encodeURIComponent(toks)}&cp=${encodeURIComponent(cpDestinoDe(o)||"")}&dir=${encodeURIComponent(dir)}&loc=${encodeURIComponent(gloc)}&prov=${encodeURIComponent(gprov)}`);
-          const d=await r.json().catch(()=>null);
-          if(!r.ok||!Array.isArray(d?.sucursales)) throw new Error(d?.error||`HTTP ${r.status}`);
-          const lista=d.sucursales.map(s=>({...s,tpl:ghTplDeOficial(locs,s)}));
-          const validas=lista.filter(s=>s.tpl);
-          setLocCerca({lista:(validas.length?[...validas,...lista.filter(s=>!s.tpl).slice(0,5)]:lista).slice(0,18),origen:d.origen||"",aproximado:!!d.aproximado,diag:d.sinOrigen?"sin_origen":(d.stats&&!d.stats.conCoords?"sin_coords":"")});
-        }catch(e){ setLocCerca({lista:[],diag:String(e?.message||"error")}); }
-      })();
+      cargarLocCerca(o,locs);
       // Modal con reintento: no se acepta un valor fuera del desplegable.
+      setExporting(false); // el overlay de progreso no puede tapar el modal
       let resuelto=false;
       while(!resuelto){
         setLocOficialSel("");
@@ -7717,7 +7732,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         resuelto=true;
       }
     }
-    setExportModal(true);
+    // Overlay puente hasta que exportAndreani retome (evita el "hueco" visual)
+    setExportProgress({step:"Generando el archivo…",pct:58,current:0,total:0});
+    setExporting(true);
     setTimeout(()=>exportAndreani(),100);
   }
 
@@ -7764,7 +7781,22 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     for(const o of selOrders){
       const yaNum=andreaniNumeroDe(o);
       if(yaNum){ rows.push(mkRow(o,{incluido:false,cotError:`Ya emitido — envío ${yaNum}`,emitido:{numeroDeEnvio:yaNum,yaEmitido:true}})); continue; }
-      if(hasEsquinaAddress(o)){ rows.push(mkRow(o,{incluido:false,cotError:"Dirección en esquina (Esq.) — emitila individualmente desde el detalle del pedido"})); continue; }
+      if(hasEsquinaAddress(o)){
+        // Dirección en esquina (sin numeración real): Andreani la rechaza a
+        // domicilio. En vez de excluirla en seco, se ofrece redirigir el envío
+        // a una sucursal cercana (ordenadas por distancia al destino original)
+        // o excluirla para emitirla a mano en Andreani, como siempre.
+        const oficialesEsq=await fetchSucursalesOficiales(cpDestinoDe(o));
+        cargarLocCerca(o,null);
+        setLocOficialSel("");
+        const chosenEsq=await new Promise(resolve=>{ setLocationModal({order:o,locs:null,resolve,type:"sucursal",oficiales:oficialesEsq,wantOficial:true,esquina:true}); setLocSearch(""); });
+        if(chosenEsq===null){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); return; } // cancelar todo
+        if(chosenEsq==="EXCLUIR"){ rows.push(mkRow(o,{incluido:false,cotError:"Dirección en esquina — emitilo a mano en Andreani (carga individual)"})); continue; }
+        const ofcEsq=chosenEsq&&chosenEsq.oficial?chosenEsq.oficial:null;
+        if(!ofcEsq){ rows.push(mkRow(o,{incluido:false,cotError:"Dirección en esquina — sin sucursal elegida"})); continue; }
+        rows.push(mkRow(o,{tipo:"sucursal",oficial:ofcEsq}));
+        continue;
+      }
       if(!isSucursalOrder(o)){ rows.push(mkRow(o)); continue; }
       const oficiales=await fetchSucursalesOficiales(cpDestinoDe(o));
       if(!Array.isArray(oficiales)||!oficiales.length){
@@ -9314,7 +9346,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* Location / Sucursal Resolution Modal */}
       <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);setExportSingleOrder(null);}}} title={locationModal?.type==="sucursal"?"Elegir sucursal Andreani":"Confirmar localidad Andreani"} width={560} zIndex={2000}>
         {locationModal&&(()=>{
-          const {order,locs,resolve,type,autoMatch,oficiales,wantOficial}=locationModal;
+          const {order,locs,resolve,type,autoMatch,oficiales,wantOficial,esquina}=locationModal;
           const isSuc=type==="sucursal";
           const cpOf=isSuc?cpDestinoDe(order):"";
           const hayOficiales=isSuc&&Array.isArray(oficiales)&&oficiales.length>0;
@@ -9356,13 +9388,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   No se encontró la localidad exacta — buscala abajo.
                 </div>
               )}
+              {esquina&&(
+                <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.yellow}}>
+                  <strong>La dirección es en esquina (sin numeración)</strong> y Andreani la rechaza para envío a domicilio. Elegí una sucursal cercana para mandarlo ahí, o excluí el pedido y emitilo a mano en Andreani (carga individual) como siempre.
+                </div>
+              )}
               {/* Flujo XLSX: cercanas al punto del pedido ordenadas por
                   distancia, ya traducidas al string del desplegable del Excel.
                   Las que no existen ahí se ven pero no se pueden elegir. */}
-              {isSuc&&!wantOficial&&(
+              {isSuc&&(!wantOficial||esquina)&&(
                 <div style={{marginBottom:14}}>
                   <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
-                    {locCerca?.aproximado?`Sucursales de la zona del pedido${locCerca?.origen?` (${locCerca.origen})`:""}`:"Sucursales más cercanas al punto del pedido"}
+                    {locCerca?.aproximado?`Sucursales de la zona del pedido${locCerca?.origen?` (${locCerca.origen})`:""}`:esquina?"Sucursales más cercanas a la dirección del pedido":"Sucursales más cercanas al punto del pedido"}
                   </div>
                   {locCerca?.loading?(
                     <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/> Buscando sucursales cercanas...</div>
@@ -9377,15 +9414,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       {(locCerca?.lista||[]).map((s,i)=>{
                         const dir=[s.direccion?.calle,s.direccion?.numero].filter(Boolean).join(" ");
                         const loc=[s.direccion?.localidad,s.direccion?.codigoPostal?`CP ${s.direccion.codigoPostal}`:""].filter(Boolean).join(" · ");
-                        const clickable=!!s.tpl;
+                        // Flujo XLSX: solo son elegibles las que existen en el
+                        // desplegable del Excel (tpl). Emisión API (esquina):
+                        // lo que importa es el id oficial de la sucursal.
+                        const clickable=wantOficial?s.id!=null:!!s.tpl;
                         return (
-                          <div key={(s.id??s.descripcion)+"_"+i} onClick={clickable?()=>{resolve(s.tpl);setLocationModal(null);}:undefined}
+                          <div key={(s.id??s.descripcion)+"_"+i} onClick={clickable?()=>{resolve(wantOficial?{oficial:s}:s.tpl);setLocationModal(null);}:undefined}
                             style={{padding:"10px 14px",cursor:clickable?"pointer":"default",opacity:clickable?1:0.45,borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s",display:"flex",alignItems:"center",gap:10}}
                             onMouseEnter={e=>{if(clickable)e.currentTarget.style.background=T.card;}}
                             onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                             <div style={{flex:1,minWidth:0}}>
                               <div style={{fontSize:13,color:T.text,fontWeight:600}}>{s.descripcion}</div>
-                              {(dir||loc)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>{[dir,loc].filter(Boolean).join(" — ")}{!clickable&&<span style={{color:T.yellow}}> · no está en el desplegable de carga masiva</span>}</div>}
+                              {(dir||loc)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>{[dir,loc].filter(Boolean).join(" — ")}{!clickable&&!wantOficial&&<span style={{color:T.yellow}}> · no está en el desplegable de carga masiva</span>}</div>}
                             </div>
                             {s.distM!=null&&<span style={{fontSize:11,fontWeight:700,color:T.accent,flexShrink:0,whiteSpace:"nowrap"}}>{ghFmtDist(s.distM)}</span>}
                           </div>
