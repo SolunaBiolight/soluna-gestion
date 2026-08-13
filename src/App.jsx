@@ -16457,7 +16457,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                               {t.publicado&&<span style={{fontSize:9,fontWeight:700,color:"#06b6d4",background:"#06b6d412",borderRadius:4,padding:"2px 7px"}}>Publicado</span>}
                               {!t.publicado&&t.tipoContenido==="pauta"&&<span style={{fontSize:9,fontWeight:700,color:T.purple,background:T.purple+"12",borderRadius:4,padding:"2px 7px"}}>Pauta</span>}
                               {!t.publicado&&t.tipoContenido==="organico"&&<span style={{fontSize:9,fontWeight:700,color:T.green,background:T.green+"12",borderRadius:4,padding:"2px 7px"}}>Redes</span>}
-                              {ghCreadorLabel(t.creadoPor)&&<span style={{fontSize:9,fontWeight:600,color:T.textSm,background:T.surface,border:`1px solid ${T.border}`,borderRadius:4,padding:"2px 7px",whiteSpace:"nowrap"}}>por {ghCreadorLabel(t.creadoPor)}</span>}
+                              {/* "por X" vive en el detalle de la tarea, no en la card */}
                               {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:500}}>#{t.tareaNumStr}</span>}
                             </div>
                           </div>
@@ -18759,7 +18759,7 @@ function ColaboradorPublicView({T, token}) {
                       {isUrgente&&<span style={{fontSize:10,color:T.red,fontWeight:800}}>●</span>}
                       {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:600}}>#{t.tareaNumStr}</span>}
                       <span style={{fontSize:15,fontWeight:600,color:T.text}}>{t.titulo}</span>
-                      {ghCreadorLabel(t.creadoPor)&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:T.surface,border:`1px solid ${T.border}`,color:T.textSm,fontWeight:600,flexShrink:0}}>por {ghCreadorLabel(t.creadoPor)}</span>}
+                      {/* "por X" vive en el detalle de la tarea, no en la card */}
                       {t.propuestaPor&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:"#6366f120",color:"#818cf8",fontWeight:700,flexShrink:0}}>Propuesta por vos</span>}
                       {(t.correcciones||0)>0&&<span style={{fontSize:10,padding:"1px 5px",borderRadius:20,background:T.red+"20",color:T.red,fontWeight:700,flexShrink:0}}>{t.correcciones}ª corrección</span>}
                       {t.leidoAt&&<span style={{color:T.green,flexShrink:0}} title="Leído"><GhI n="eye" size={11}/></span>}
@@ -19689,7 +19689,7 @@ function ColaboradorBoardView({T, boardToken}) {
                   {dl&&<div style={{padding:"4px 10px",background:dl.color+"20",borderRadius:20,fontSize:12,fontWeight:600,color:dl.color}}>{dl.label}</div>}
                   {(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?(<div style={{padding:"4px 10px",background:T.red+"20",borderRadius:20,fontSize:12,fontWeight:700,color:T.red,display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:6,height:6,borderRadius:"50%",background:T.red,display:"inline-block"}}/> URGENTE</div>):null;})()}
                   {t.tareaNumStr&&<div style={{padding:"4px 10px",background:T.surface,borderRadius:20,fontSize:11,color:T.textSm}}>#{t.tareaNumStr}</div>}
-                  {ghCreadorLabel(t.creadoPor)&&<div style={{padding:"4px 10px",background:T.surface,borderRadius:20,fontSize:11,color:T.textSm}}>por {ghCreadorLabel(t.creadoPor)}</div>}
+                  {/* "por X" vive en el detalle de la tarea, no en la card */}
                 </div>
 
                 {/* Descripción */}
