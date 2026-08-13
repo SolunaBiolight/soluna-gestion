@@ -819,7 +819,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       // "costos" agrupa TODA la config del motor de ganancia (costos, comisiones,
       // adicionales, fact. externa, dólar) — las 5 entradas viejas son tabs
       // internas de esa página; sus ids siguen vivos como margenesTab (aliases).
-      subs:[{id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"costos",label:"Costos y motor"}]},
+      subs:[{id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"costos",label:"Configuraciones"}]},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
@@ -28899,7 +28899,7 @@ function FacturacionExternaPanel({ T, uid }) {
 function MargenesTabsBar({ T, tab, setTab }) {
   if (!setTab) return null; // ruta legacy #/rendimiento sin navegación de tabs
   const TABS = [
-    {id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"costos",label:"Costos y motor"},
+    {id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"costos",label:"Configuraciones"},
   ];
   const activa = (t) => t.id==="costos" ? MARGENES_CFG_IDS.includes(tab) : tab===t.id;
   return (
@@ -28917,7 +28917,7 @@ function MargenesTabsBar({ T, tab, setTab }) {
   );
 }
 
-// Página "Costos y motor": toda la configuración que alimenta el cálculo de
+// Página "Configuraciones" del Dashboard: toda la configuración que alimenta el cálculo de
 // ganancia (costos de productos, comisiones e impuestos, adicionales, fact.
 // externa y dólar) en UNA página con tabs internas estilo Facturador. Los ids
 // viejos del sidebar siguen vivos como valor de margenesTab, así los hashes
@@ -28944,7 +28944,7 @@ function AppMargenes({ T, user, onHome, tab="dashboard", setTab }) {
   const esCfg = MARGENES_CFG_IDS.includes(tab);
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section={esCfg?"Costos y motor":"Dashboard"} sectionId="margenes" onHome={onHome}/>
+      <AppTopbar T={T} section={esCfg?"Configuraciones":"Dashboard"} sectionId="margenes" onHome={onHome}/>
       <MargenesTabsBar T={T} tab={tab} setTab={setTab}/>
       {/* Tabs internas del grupo de configuración — mismo estilo que las tabs
           del Facturador (AppTabs: activa en accent con inset border + iconos). */}
@@ -31523,7 +31523,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const usdRate = (()=>{ const vals=Object.values(rendData?.dolarSerie||{}); if(vals.length) return vals.reduce((a,b)=>a+b,0)/vals.length; return rendData?.dolarActual||0; })();
 
   // Publica el conteo de productos vendidos sin costo cargado para el badge de
-  // "Costos y motor" en el sidebar (el root no tiene estos datos — se comunica
+  // "Configuraciones" en el sidebar (el root no tiene estos datos — se comunica
   // por localStorage + evento, mismo patrón lectura-instantánea del resto).
   useEffect(()=>{
     if(!rendData||!uid) return;
@@ -31762,7 +31762,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       <AppTopbar T={T} section="Dashboard" sectionId="margenes" onHome={onHome}
         onHelp={()=>setShowGuia(s=>!s)}>
         {/* Cotización del dólar siempre a la vista — click abre su configuración
-            (Dólar dejó de ser entrada del sidebar: vive en Costos y motor). */}
+            (Dólar dejó de ser entrada del sidebar: vive en Configuraciones). */}
         {setTab && usdRate>0 && (
           <button className="hide-mobile" onClick={()=>setTab("dolar")} title="Cotización usada en el período — click para configurar"
             style={{...InputStyle(T),fontSize:12,height:34,padding:"0 12px",borderRadius:9,boxSizing:"border-box",width:"auto",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,fontWeight:600,color:T.textMd}}>
@@ -33038,7 +33038,7 @@ export default function App() {
   const [reclamosCount,setReclamosCount]=useState(0);
   const [canjesCount,setCanjesCount]=useState(0);
   const [canjesAcciones,setCanjesAcciones]=useState(0); // badge sidebar: acciones vencidas, no total
-  const [costosAlert,setCostosAlert]=useState(0); // badge "Costos y motor": productos vendidos sin costo (lo publica AppRendimiento vía localStorage + evento)
+  const [costosAlert,setCostosAlert]=useState(0); // badge "Configuraciones" del Dashboard: productos vendidos sin costo (lo publica AppRendimiento vía localStorage + evento)
   const [alertas,setAlertas]=useState([]);
   const [darkMode,setDarkMode]=useState(()=>{ try { return localStorage.getItem("growith_theme")!=="light"; } catch(e){ return true; } });
   const [userPlan,setUserPlan]=useState("free"); // free | plus | full
@@ -33067,7 +33067,7 @@ export default function App() {
     return ()=>window.removeEventListener("keydown", onKey);
   },[]);
 
-  // Badge de "Costos y motor" en el sidebar: AppRendimiento publica en
+  // Badge de "Configuraciones" (Dashboard) en el sidebar: AppRendimiento publica en
   // localStorage cuántos productos vendidos no tienen costo cargado.
   useEffect(()=>{
     if(!user?.uid){ setCostosAlert(0); return; }
