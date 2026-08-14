@@ -2224,18 +2224,29 @@ export default async function handler(req, res) {
       // sigue mostrando los detectados en pedidos.
       let couponsListError = null, couponsListados = 0;
       try {
-        for (let p = 1; p <= 3; p++) {
+        // TN lista de más viejo a más nuevo: hay que llegar a la ÚLTIMA página
+        // o los códigos recién creados quedan afuera. Lotes de 5 páginas en
+        // paralelo, hasta 40 páginas (8000 cupones).
+        const cuponPage = async (p) => {
           const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/coupons?per_page=200&page=${p}`, { headers: tnHeaders });
-          if (!r.ok) { couponsListError = `TN respondió ${r.status} al listar cupones${r.status === 401 || r.status === 403 ? " (la app no tiene permiso de cupones — reconectá Tienda Nube)" : ""}`; break; }
+          if (r.status === 404) return [];
+          if (!r.ok) throw new Error(`TN respondió ${r.status} al listar cupones${r.status === 401 || r.status === 403 ? " (la app no tiene permiso de cupones — reconectá Tienda Nube)" : ""}`);
           const cs = await r.json();
-          if (!Array.isArray(cs)) { couponsListError = "TN devolvió un formato inesperado al listar cupones"; break; }
-          if (!cs.length) break;
-          couponsListados += cs.length;
-          for (const c of cs) {
-            const code = (c.code || "").toUpperCase().trim(); if (!code || couponMap[code]) continue;
-            couponMap[code] = { code, type: c.type || "percentage", value: c.value || "0", usosPeriodo: 0, ventasPeriodo: 0, descuentoPeriodo: 0, sinUso: true };
+          if (!Array.isArray(cs)) throw new Error("TN devolvió un formato inesperado al listar cupones");
+          return cs;
+        };
+        for (let start = 1; start <= 40; start += 5) {
+          const chunk = await Promise.all([0, 1, 2, 3, 4].map(i => cuponPage(start + i)));
+          let fin = false;
+          for (const cs of chunk) {
+            couponsListados += cs.length;
+            for (const c of cs) {
+              const code = (c.code || "").toUpperCase().trim(); if (!code || couponMap[code]) continue;
+              couponMap[code] = { code, type: c.type || "percentage", value: c.value || "0", usosPeriodo: 0, ventasPeriodo: 0, descuentoPeriodo: 0, sinUso: true };
+            }
+            if (cs.length < 200) { fin = true; break; }
           }
-          if (cs.length < 200) break;
+          if (fin) break;
         }
       } catch (e) { couponsListError = e.message || "error de red"; }
       return res.status(200).json({ coupons: Object.values(couponMap).sort((a,b) => b.usosPeriodo - a.usosPeriodo || String(a.code).localeCompare(String(b.code))), totalPedidosAnalizados: allOrders.length, couponsListError, couponsListados, periodo: { desde: desdeISO, hasta: hastaISO } });
