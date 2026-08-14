@@ -1175,12 +1175,19 @@ export default async function handler(req, res) {
 
     if (action === "regenerateToken") {
       const { colabId } = body;
+      // Cross-tenant guard: el colaborador tiene que ser de ESTE tenant, si no
+      // cualquiera podía rotar (y recibir) el token de portal de un colaborador
+      // ajeno → toma de control del portal de otra cuenta.
+      const colabDoc = await db.collection("colaboradores").doc(colabId).get();
+      if (!colabDoc.exists || colabDoc.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
       const tok = randomToken(24);
       await db.collection("colaboradores").doc(colabId).update({ token:tok });
       return res.json({ ok:true, token:tok });
     }
 
     if (action === "deleteColaborador") {
+      const colabDoc = await db.collection("colaboradores").doc(body.colabId).get();
+      if (!colabDoc.exists || colabDoc.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
       await db.collection("colaboradores").doc(body.colabId).delete();
       return res.json({ ok:true });
     }
@@ -1279,6 +1286,9 @@ export default async function handler(req, res) {
       const { tareaId, titulo, descripcion, brief, links, deadline, estado, asignadoEmail, asignadoNombre, prioridad, checklist, asignadosEmails } = body;
       const ref = db.collection("tareas").doc(tareaId);
       const prevSnap = await ref.get();
+      // Cross-tenant guard: la tarea tiene que ser de ESTE tenant (tareas es una
+      // colección top-level → cualquier id ajeno resolvería sin este chequeo).
+      if (!prevSnap.exists || prevSnap.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
       const prevData = prevSnap.data() || {};
       const clean = { updatedAt:now };
       if (titulo!==undefined) clean.titulo = titulo;
@@ -1332,6 +1342,8 @@ export default async function handler(req, res) {
       const { tareaId, estado, feedback } = body;
       const ref = db.collection("tareas").doc(tareaId);
       const snap = await ref.get();
+      // Cross-tenant guard (tareas es top-level): la tarea tiene que ser de este tenant.
+      if (!snap.exists || snap.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
       const upd = { estado, updatedAt: now };
       const act = { tipo:"estado", autor:"manager", fecha:now, detalle:`Estado: ${estado}` };
       upd.activity = [...(snap.data()?.activity||[]), act];

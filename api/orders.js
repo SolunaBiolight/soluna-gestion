@@ -321,7 +321,9 @@ export default async function handler(req, res) {
       for (const o of allOrders) {
         for (const c of (Array.isArray(o.coupon) ? o.coupon : [])) {
           const cc = (c.code || "").toUpperCase().trim();
-          if (_dbg && cc) _dbg.codigos[cc] = (_dbg.codigos[cc] || 0) + 1;
+          // Solo contamos el código pedido: mapear TODOS filtraría los demás
+          // cupones del tenant a cualquiera que tenga un link público.
+          if (_dbg && cc === code) _dbg.codigos[cc] = (_dbg.codigos[cc] || 0) + 1;
           if (cc !== code) continue;
           usos++; ventas += parseFloat(o.total || 0); descuento += parseFloat(o.discount_coupon || 0);
         }

@@ -1,7 +1,7 @@
 import { createCipheriv } from "crypto";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { guardUid, guardCron } from "./_auth.js";
+import { guardUid, guardCron, verifyAuth } from "./_auth.js";
 import { trazasOficialAndreani, trazasDebugAndreani } from "./andreani.js";
 
 function initAdmin() {
@@ -223,8 +223,11 @@ export default async function handler(req, res) {
     const { tracking } = req.query;
     if (!tracking) return res.status(400).json({ error: 'tracking requerido' });
     const nro = tracking.trim().replace(/\s+/g, '');
-    // Modo diagnóstico: status crudo del endpoint oficial (sin datos sensibles)
+    // Modo diagnóstico: devuelve la respuesta CRUDA de la API oficial autenticada
+    // (con las credenciales de la plataforma) → detrás de sesión válida, si no
+    // cualquiera lo usa como oráculo del endpoint pago de Andreani.
     if (req.query.debug === '1') {
+      if (!(await verifyAuth(req))) return res.status(401).json({ error: 'Sesión requerida para el modo diagnóstico' });
       return res.status(200).json(await trazasDebugAndreani(initAdmin(), nro));
     }
     // PRIMERO la API oficial autenticada (envíos de la cuenta de la plataforma:
