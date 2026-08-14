@@ -2222,13 +2222,15 @@ export default async function handler(req, res) {
       // que un código recién creado aparezca en la tabla (con 0 usos) apenas
       // se crea, sin esperar la primera venta. Best-effort: si falla, la tabla
       // sigue mostrando los detectados en pedidos.
-      let couponsListError = null;
+      let couponsListError = null, couponsListados = 0;
       try {
         for (let p = 1; p <= 3; p++) {
           const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/coupons?per_page=200&page=${p}`, { headers: tnHeaders });
           if (!r.ok) { couponsListError = `TN respondió ${r.status} al listar cupones${r.status === 401 || r.status === 403 ? " (la app no tiene permiso de cupones — reconectá Tienda Nube)" : ""}`; break; }
           const cs = await r.json();
-          if (!Array.isArray(cs) || !cs.length) break;
+          if (!Array.isArray(cs)) { couponsListError = "TN devolvió un formato inesperado al listar cupones"; break; }
+          if (!cs.length) break;
+          couponsListados += cs.length;
           for (const c of cs) {
             const code = (c.code || "").toUpperCase().trim(); if (!code || couponMap[code]) continue;
             couponMap[code] = { code, type: c.type || "percentage", value: c.value || "0", usosPeriodo: 0, ventasPeriodo: 0, descuentoPeriodo: 0, sinUso: true };
@@ -2236,7 +2238,7 @@ export default async function handler(req, res) {
           if (cs.length < 200) break;
         }
       } catch (e) { couponsListError = e.message || "error de red"; }
-      return res.status(200).json({ coupons: Object.values(couponMap).sort((a,b) => b.usosPeriodo - a.usosPeriodo || String(a.code).localeCompare(String(b.code))), totalPedidosAnalizados: allOrders.length, couponsListError, periodo: { desde: desdeISO, hasta: hastaISO } });
+      return res.status(200).json({ coupons: Object.values(couponMap).sort((a,b) => b.usosPeriodo - a.usosPeriodo || String(a.code).localeCompare(String(b.code))), totalPedidosAnalizados: allOrders.length, couponsListError, couponsListados, periodo: { desde: desdeISO, hasta: hastaISO } });
     }
     // ── fin Coupons ───────────────────────────────────────────────────────
 

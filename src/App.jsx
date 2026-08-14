@@ -5078,7 +5078,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         };
       });
 
-      setComData({coupons: enriched, totalPedidos: data.totalPedidosAnalizados});
+      setComData({coupons: enriched, totalPedidos: data.totalPedidosAnalizados, couponsListError: data.couponsListError||null, couponsListados: data.couponsListados||0});
     } catch(e){ setComError("Error: "+e.message); comAutoRef.current=false; /* re-intenta solo al volver al tab */ }
     setComLoading(false);
   }
@@ -5690,7 +5690,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           style={{width:"100%",background:T.bg,border:`1px solid ${cuponSearch?T.accent+"88":T.border}`,borderRadius:DS.r.full,padding:"6px 10px 6px 27px",fontSize:12,color:T.text,outline:"none",fontFamily:"'Inter',system-ui,sans-serif"}}/>
                         {cuponSearch&&<button onClick={()=>setCuponSearch("")} style={{position:"absolute",right:7,top:"50%",transform:"translateY(-50%)",background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:12,padding:2,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
                       </div>
-                      <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{qCup?`${rowsVis.length} de ${rows.length} códigos`:`${rows.length} codigos · ${comData.totalPedidos} pedidos analizados`}</span>
+                      <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{qCup?`${rowsVis.length} de ${rows.length} códigos`:`${rows.length} codigos · ${comData.totalPedidos} pedidos analizados${comData.couponsListados?` · ${comData.couponsListados} cupones en TN`:""}`}</span>
                     </div>
                     {comData.couponsListError&&(
                       <div style={{padding:"8px 18px",background:T.yellowBg,borderBottom:`1px solid ${T.yellow}33`,fontSize:11,color:T.yellow}}>
