@@ -7366,25 +7366,31 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   function nrmSucTxt(s){
     return String(s||"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
   }
-  // Auto-match SILENCIOSO contra la lista oficial de Andreani. Conservador a
-  // propósito: solo devuelve una sucursal si el CP tiene UNA sola, o si hay UNA
-  // única candidata clara (calle+número del punto de retiro TN coincide con la
-  // dirección oficial, o el nombre del punto TN coincide con la descripción).
-  // Con 0 o 2+ candidatas devuelve null → modal de elección.
+  // Auto-match SILENCIOSO contra la lista oficial de Andreani. Estricto a
+  // propósito: SOLO devuelve una sucursal si es inequívocamente EL punto que
+  // eligió el cliente (calle+número coinciden, o el nombre del punto TN — sin
+  // palabras genéricas — coincide con la descripción oficial). Nunca "la única
+  // del CP": los puntos HOP de terceros suelen no estar en la lista por CP y
+  // ese atajo mandaba el pedido a otra sucursal en silencio (#5287/#5079/#5099).
+  // Con 0 o 2+ candidatas devuelve null → fallback global o modal.
   function matchSucursalOficial(oficiales,o){
     if(!Array.isArray(oficiales)||!oficiales.length) return null;
-    if(oficiales.length===1) return oficiales[0];
     const pd=o?.pickupDetails;
-    const calle=nrmSucTxt(pd?pd.address?.address:o?.direccion);
-    const num=String((pd?pd.address?.number:o?.dirNumero)||"").replace(/\D.*/,"").trim();
-    const tnName=nrmSucTxt(pd?.name);
+    const calleRaw=nrmSucTxt(pd?pd.address?.address:o?.direccion);
+    const numCampo=String((pd?pd.address?.number:o?.dirNumero)||"").replace(/\D.*/,"").trim();
+    // TN a veces embebe el número en la dirección ("Cosme Beccar 274")
+    const numEmb=(calleRaw.match(/\b(\d{1,5})\s*$/)||[])[1]||"";
+    const num=numCampo||numEmb;
+    const calle=num?calleRaw.replace(new RegExp("\\b"+num+"\\s*$"),"").trim():calleRaw;
+    const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO"]);
+    const tnTokens=nrmSucTxt(pd?.name).split(" ").filter(w=>w&&!GEN.has(w)&&w.length>=3);
     const cands=oficiales.filter(s=>{
       const d=s.direccion||{};
       const sCalle=nrmSucTxt(d.calle);
       const sNum=String(d.numero||"").replace(/\D.*/,"").trim();
       const dirMatch=!!(calle&&num&&sCalle&&sNum&&sNum===num&&(sCalle.includes(calle)||calle.includes(sCalle)));
       const desc=nrmSucTxt(s.descripcion);
-      const nameMatch=!!(tnName&&desc&&(desc===tnName||desc.includes(tnName)||tnName.includes(desc)));
+      const nameMatch=!!(tnTokens.length&&desc&&tnTokens.every(t=>desc.includes(t)));
       return dirMatch||nameMatch;
     });
     // El listado oficial repite la misma sucursal con variantes (CP, tildes,
@@ -7393,6 +7399,29 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const key=s=>nrmSucTxt(s.descripcion)+"|"+String(s.direccion?.numero||"").replace(/\D.*/,"").trim();
     const unicas=[...new Map(cands.map(s=>[key(s),s])).values()];
     return unicas.length===1?unicas[0]:null;
+  }
+  // Fallback: el punto exacto puede existir en el listado COMPLETO de Andreani
+  // aunque no aparezca en la lista por CP (típico de puntos HOP nuevos, que
+  // Andreani registra con otro CP). Busca por calle+número y por nombre en el
+  // buscador global del backend y exige el mismo match estricto de arriba.
+  async function buscarPuntoExactoGlobal(o){
+    const pd=o?.pickupDetails;
+    const calle=String((pd?pd.address?.address:o?.direccion)||"").trim();
+    const num=String((pd?pd.address?.number:o?.dirNumero)||"").replace(/\D.*/,"").trim();
+    const qs=[];
+    const dirQ=`${calle} ${num}`.trim();
+    if(dirQ.length>=4) qs.push(dirQ);
+    const toks=ghSucTokens(pd,o?.direccion).slice(0,4).join(" ");
+    if(toks.length>=4&&toks!==dirQ) qs.push(toks);
+    const vistos=new Map();
+    for(const q of qs){
+      try{
+        const r=await authFetch(`/api/andreani?action=sucursales_buscar&q=${encodeURIComponent(q)}`);
+        const d=await r.json().catch(()=>null);
+        if(r.ok&&Array.isArray(d?.sucursales)) d.sucursales.forEach(s=>{ if(s?.id!=null&&!vistos.has(String(s.id))) vistos.set(String(s.id),s); });
+      }catch(_){}
+    }
+    return vistos.size?matchSucursalOficial([...vistos.values()],o):null;
   }
 
   // Atajos de teclado
@@ -7693,6 +7722,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         persistOverrides();
         continue;
       }
+      // Último intento silencioso: el punto exacto en el listado COMPLETO de
+      // Andreani (los HOP nuevos suelen faltar en la lista por CP), traducido
+      // al desplegable del Excel. Match estricto: si no es EL punto, modal.
+      const globalOficial=await buscarPuntoExactoGlobal(o);
+      const globalTpl=globalOficial?ghTplDeOficial(locs,globalOficial):null;
+      if(globalTpl){
+        sucursalOverridesRef.current[o.numero]=globalTpl;
+        persistOverrides();
+        continue;
+      }
       // Cercanas al punto original ordenadas por distancia (mismo motor que
       // Canjes): se cargan de fondo una vez por pedido, mapeadas al string
       // exacto del desplegable con ghTplDeOficial.
@@ -7720,7 +7759,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               prefill=o.direccion||"";
             }
           }
-          setLocationModal({order:o,locs,resolve,type:"sucursal",autoMatch,oficiales});
+          setLocationModal({order:o,locs,resolve,type:"sucursal",autoMatch,oficiales,noExacto:!!o.pickupDetails});
           setLocSearch(prefill);setLocSearchType("ciudad");
         });
         if(chosen===null) return; // cancelar todo
@@ -7805,16 +7844,22 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       }
       if(!isSucursalOrder(o)){ rows.push(mkRow(o)); continue; }
       const oficiales=await fetchSucursalesOficiales(cpDestinoDe(o));
-      if(!Array.isArray(oficiales)||!oficiales.length){
-        rows.push(mkRow(o,{incluido:false,cotError:Array.isArray(oficiales)?`Sin sucursales Andreani para el CP ${cpDestinoDe(o)||"del destinatario"}`:"Lista oficial de Andreani no disponible — probá de nuevo en unos minutos"}));
+      let ofc=Array.isArray(oficiales)&&oficiales.length?matchSucursalOficial(oficiales,o):null;
+      // El punto exacto puede no estar en la lista por CP (HOP nuevos): antes
+      // de molestar, buscarlo en el listado COMPLETO con el mismo match estricto.
+      if(!ofc) ofc=await buscarPuntoExactoGlobal(o);
+      if(!ofc&&!Array.isArray(oficiales)){
+        // API de sucursales caída y el buscador global tampoco respondió
+        rows.push(mkRow(o,{incluido:false,cotError:"Lista oficial de Andreani no disponible — probá de nuevo en unos minutos"}));
         continue;
       }
-      let ofc=matchSucursalOficial(oficiales,o);
       if(!ofc){
-        // Ambigüedad real → mismo modal de elección que el flujo XLSX, pero
-        // devolviendo el objeto oficial (necesitamos el id para emitir).
+        // No se pudo confirmar el punto EXACTO que eligió el cliente → modal
+        // con advertencia explícita: lo que se elija acá es a donde va el
+        // paquete. Cercanas ordenadas por distancia al punto original.
+        cargarLocCerca(o,null);
         setLocOficialSel("");
-        const chosen=await new Promise(resolve=>{ setLocationModal({order:o,locs:null,resolve,type:"sucursal",oficiales,wantOficial:true}); setLocSearch(""); });
+        const chosen=await new Promise(resolve=>{ setLocationModal({order:o,locs:null,resolve,type:"sucursal",oficiales,wantOficial:true,noExacto:true}); setLocSearch(""); });
         if(chosen===null){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); return; } // cancelar todo
         if(chosen==="EXCLUIR"){ rows.push(mkRow(o,{incluido:false,cotError:"Excluido manualmente"})); continue; }
         ofc=chosen&&chosen.oficial?chosen.oficial:null;
@@ -9341,7 +9386,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* Location / Sucursal Resolution Modal */}
       <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);setExportSingleOrder(null);}}} title={locationModal?.type==="sucursal"?"Elegir sucursal Andreani":"Confirmar localidad Andreani"} width={560} zIndex={2000}>
         {locationModal&&(()=>{
-          const {order,locs,resolve,type,autoMatch,oficiales,wantOficial,esquina}=locationModal;
+          const {order,locs,resolve,type,autoMatch,oficiales,wantOficial,esquina,noExacto}=locationModal;
           const isSuc=type==="sucursal";
           const cpOf=isSuc?cpDestinoDe(order):"";
           const hayOficiales=isSuc&&Array.isArray(oficiales)&&oficiales.length>0;
@@ -9388,10 +9433,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   <strong>La dirección es en esquina (sin numeración)</strong> y Andreani la rechaza para envío a domicilio. Elegí una sucursal cercana para mandarlo ahí, o excluí el pedido y emitilo a mano en Andreani (carga individual) como siempre.
                 </div>
               )}
+              {noExacto&&!esquina&&(
+                <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.red}}>
+                  <strong>No pude confirmar el punto EXACTO que eligió el cliente.</strong> El envío va a ir a la sucursal que elijas acá — no al punto de arriba. Elegí solo si estás segura de que es el mismo lugar (misma calle y número); si no aparece, excluí el pedido y emitilo a mano en Andreani para respetar el punto del cliente.
+                </div>
+              )}
               {/* Flujo XLSX: cercanas al punto del pedido ordenadas por
                   distancia, ya traducidas al string del desplegable del Excel.
                   Las que no existen ahí se ven pero no se pueden elegir. */}
-              {isSuc&&(!wantOficial||esquina)&&(
+              {isSuc&&(!wantOficial||esquina||noExacto)&&(
                 <div style={{marginBottom:14}}>
                   <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
                     {locCerca?.aproximado?`Sucursales de la zona del pedido${locCerca?.origen?` (${locCerca.origen})`:""}`:esquina?"Sucursales más cercanas a la dirección del pedido":"Sucursales más cercanas al punto del pedido"}
