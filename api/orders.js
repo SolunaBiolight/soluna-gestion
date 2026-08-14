@@ -2222,10 +2222,11 @@ export default async function handler(req, res) {
       // que un código recién creado aparezca en la tabla (con 0 usos) apenas
       // se crea, sin esperar la primera venta. Best-effort: si falla, la tabla
       // sigue mostrando los detectados en pedidos.
+      let couponsListError = null;
       try {
         for (let p = 1; p <= 3; p++) {
           const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/coupons?per_page=200&page=${p}`, { headers: tnHeaders });
-          if (!r.ok) break;
+          if (!r.ok) { couponsListError = `TN respondió ${r.status} al listar cupones${r.status === 401 || r.status === 403 ? " (la app no tiene permiso de cupones — reconectá Tienda Nube)" : ""}`; break; }
           const cs = await r.json();
           if (!Array.isArray(cs) || !cs.length) break;
           for (const c of cs) {
@@ -2234,8 +2235,8 @@ export default async function handler(req, res) {
           }
           if (cs.length < 200) break;
         }
-      } catch (_) {}
-      return res.status(200).json({ coupons: Object.values(couponMap).sort((a,b) => b.usosPeriodo - a.usosPeriodo || String(a.code).localeCompare(String(b.code))), totalPedidosAnalizados: allOrders.length, periodo: { desde: desdeISO, hasta: hastaISO } });
+      } catch (e) { couponsListError = e.message || "error de red"; }
+      return res.status(200).json({ coupons: Object.values(couponMap).sort((a,b) => b.usosPeriodo - a.usosPeriodo || String(a.code).localeCompare(String(b.code))), totalPedidosAnalizados: allOrders.length, couponsListError, periodo: { desde: desdeISO, hasta: hastaISO } });
     }
     // ── fin Coupons ───────────────────────────────────────────────────────
 

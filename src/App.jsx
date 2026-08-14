@@ -4755,7 +4755,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       try{
         const desde=c.createdAt?.seconds?new Date(c.createdAt.seconds*1000).toISOString().slice(0,10):fechaAR(new Date(Date.now()-90*86400000));
         const hasta=hoyAR();
-        const r=await fetch(`/api/orders?action=coupons&uid=${user?.uid||""}&desde=${desde}&hasta=${hasta}`);
+        const r=await authFetch(`/api/orders?action=coupons&uid=${user?.uid||""}&desde=${desde}&hasta=${hasta}`);
         const data=await r.json();
         const cp=(data.coupons||[]).find(x=>String(x.code||"").toUpperCase()===code);
         setCuponStats(prev=>({...prev,[code]:{loading:false,found:!!cp,usos:cp?.usosPeriodo||0,ventas:cp?.ventasPeriodo||0,descuento:cp?.descuentoPeriodo||0,desde}}));
@@ -5692,6 +5692,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       </div>
                       <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{qCup?`${rowsVis.length} de ${rows.length} códigos`:`${rows.length} codigos · ${comData.totalPedidos} pedidos analizados`}</span>
                     </div>
+                    {comData.couponsListError&&(
+                      <div style={{padding:"8px 18px",background:T.yellowBg,borderBottom:`1px solid ${T.yellow}33`,fontSize:11,color:T.yellow}}>
+                        Solo se muestran códigos con ventas: no pude leer el listado completo de cupones de tu tienda ({comData.couponsListError}). Los códigos nuevos sin uso van a aparecer cuando se resuelva.
+                      </div>
+                    )}
                     {/* Header */}
                     <div style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 80px 110px 62px",gap:8,padding:"9px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>
                       <span>Código</span><span>Descuento TN</span><span>Usos</span><span>Influencer</span><span>Bruto</span><span style={{color:T.green}}>Neto (-MP {mpComision}%)</span><span>Comisión %</span><span style={{color:T.orange}}>A pagar</span><span>Link</span>
