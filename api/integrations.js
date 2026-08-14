@@ -9,6 +9,7 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { guardUid } from "./_auth.js";
 import { signState } from "./tn-callback.js";
+import crypto from "crypto";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -31,10 +32,15 @@ async function readBody(req) {
   });
 }
 
-// ─── Shopify: OAuth con credenciales del cliente ──────────────────
-// Cada cliente trae SU client_id + client_secret de SU app de Shopify Partners.
-// Growith no necesita env vars — solo orquesta el flujo OAuth con esos datos.
+// ─── Shopify: OAuth con la app pública de Growith (1 click) ────────
+// Por defecto usa las credenciales de la app pública de Growith (env
+// SHOPIFY_APP_ID / SHOPIFY_APP_SECRET): el cliente solo pone su dominio
+// .myshopify.com y toca Conectar, igual que Tienda Nube/Mercado Libre.
+// Fallback: si el cliente manda SU client_id + client_secret (app propia de
+// Shopify Partners), se usan esos — así los ya conectados siguen funcionando.
 
+const SHOPIFY_APP_ID     = process.env.SHOPIFY_APP_ID     || "";
+const SHOPIFY_APP_SECRET = process.env.SHOPIFY_APP_SECRET || "";
 const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products";
 const SHOPIFY_APP_URL = "https://www.growithapp.com";
 // Shopify NO permite el query param reservado "action" en la redirect URL, así
@@ -54,17 +60,52 @@ function genState() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
 }
 
-// POST { uid, shop, client_id, client_secret }
-// Guarda credenciales temporalmente en Firestore (oauth_pending) y devuelve URL OAuth
+// HMAC del callback OAuth de Shopify: HMAC-SHA256 (hex) sobre el querystring
+// ORDENADO alfabéticamente, sin los params `hmac` y `signature`. Compara en tiempo
+// constante contra el `hmac` que manda Shopify. Valida que el redirect es genuino.
+function verifyShopifyOauthHmac(query, secret) {
+  const { hmac, signature, ...rest } = query || {};
+  if (!hmac || !secret) return false;
+  const message = Object.keys(rest).sort()
+    .map(k => `${k}=${Array.isArray(rest[k]) ? rest[k].join(",") : rest[k]}`)
+    .join("&");
+  const digest = crypto.createHmac("sha256", secret).update(message).digest("hex");
+  try { return crypto.timingSafeEqual(Buffer.from(digest, "utf8"), Buffer.from(String(hmac), "utf8")); }
+  catch { return false; }
+}
+
+// HMAC de webhook de Shopify: base64 de HMAC-SHA256 sobre el CUERPO CRUDO (bytes),
+// comparado contra el header X-Shopify-Hmac-Sha256.
+function verifyShopifyWebhookHmac(rawBody, hmacHeader, secret) {
+  if (!hmacHeader || !secret) return false;
+  const digest = crypto.createHmac("sha256", secret).update(rawBody).digest("base64");
+  try { return crypto.timingSafeEqual(Buffer.from(digest, "utf8"), Buffer.from(String(hmacHeader), "utf8")); }
+  catch { return false; }
+}
+
+// POST { uid, shop, [client_id], [client_secret] }
+// Sin client_id/secret → app pública de Growith (1 click). Con ellos → app propia
+// del cliente (fallback). Guarda el estado en Firestore (oauth_pending) y devuelve URL.
 async function shopifyOauthStart(req, res, db) {
   const body = JSON.parse((await readBody(req)).toString());
-  const { uid, shop: shopRaw, client_id, client_secret } = body;
-  if (!uid || !shopRaw || !client_id || !client_secret) {
-    return res.status(400).json({ error: "Faltan uid, shop, client_id o client_secret" });
+  const { uid, shop: shopRaw } = body;
+  let { client_id, client_secret } = body;
+  if (!uid || !shopRaw) {
+    return res.status(400).json({ error: "Faltan uid o shop" });
   }
   // Sin esto, cualquiera podía arrancar un OAuth y dejar credenciales +
   // conexión de Shopify colgando de un uid ajeno.
   if (!(await guardUid(req, res, uid))) return;
+
+  // 1-click: si el cliente no trae SUS credenciales, usar la app pública de Growith.
+  const central = !(client_id && client_secret);
+  if (central) {
+    client_id = SHOPIFY_APP_ID;
+    client_secret = SHOPIFY_APP_SECRET;
+    if (!client_id || !client_secret) {
+      return res.status(500).json({ error: "La app de Shopify de Growith todavía no está configurada en el servidor. Avisale al equipo." });
+    }
+  }
 
   const shop = normalizeShop(shopRaw);
   if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop)) {
@@ -73,14 +114,17 @@ async function shopifyOauthStart(req, res, db) {
     });
   }
 
-  // Guardar credenciales temporalmente con un state random (TTL 10 min implícito)
+  // Guardar el estado con un state random (TTL 10 min implícito). El secret de la
+  // app CENTRAL no se persiste — se lee del env en el callback; solo se guarda el
+  // secret cuando es una app propia del cliente.
   const state = genState();
   try {
     await db.collection("oauth_pending").doc(state).set({
       uid: String(uid),
       shop,
       client_id: String(client_id).trim(),
-      client_secret: String(client_secret).trim(),
+      client_secret: central ? null : String(client_secret).trim(),
+      central,
       created_at: new Date().toISOString(),
     });
   } catch (e) {
@@ -118,7 +162,15 @@ async function shopifyOauthCallback(req, res, db) {
 
   const uid = pending.uid;
   const clientId = pending.client_id;
-  const clientSecret = pending.client_secret;
+  // App central: el secret vive en el env (no se persistió). App propia: en el state.
+  const clientSecret = pending.central ? SHOPIFY_APP_SECRET : pending.client_secret;
+  if (!clientSecret) return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=no_secret`);
+
+  // Verificar el HMAC del callback OAuth (Shopify lo firma con el secret de la app).
+  // Protege contra callbacks falsificados — requisito para apps públicas.
+  if (!verifyShopifyOauthHmac(req.query, clientSecret)) {
+    return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=bad_hmac`);
+  }
 
   // 2) Intercambiar code por access_token
   let accessToken;
@@ -170,6 +222,7 @@ async function shopifyOauthCallback(req, res, db) {
       type: "shopify",
       shop,
       clientId,
+      central: !!pending.central, // true = conectada con la app pública de Growith
       accessToken,
       storeName: shopName,
       storeEmail: shopEmail,
@@ -198,6 +251,52 @@ async function shopifyDisconnect(req, res, db) {
   await userRef.update({ stores });
 
   return res.json({ ok: true });
+}
+
+// ─── Webhooks OBLIGATORIOS de privacidad (compliance) de Shopify ────────────
+// Toda app pública debe implementar los 3 mandatory webhooks. Se enrutan todos a
+// esta misma URL y se distinguen por el header X-Shopify-Topic:
+//   • customers/data_request  → el merchant pide los datos de un comprador.
+//   • customers/redact        → borrar los datos de un comprador.
+//   • shop/redact             → 48hs post-desinstalación, borrar TODO de esa tienda.
+// HMAC obligatorio con el secret de la app: si no valida → 401 (Shopify lo exige y
+// lo testea). Growith NO persiste una base de clientes (los pedidos se leen en vivo
+// de la API, no se guardan), así que data_request/redact no tienen PII propia que
+// entregar o borrar; shop/redact sí desconecta la tienda y borra su token.
+async function shopifyCompliance(req, res, db) {
+  const secret = SHOPIFY_APP_SECRET;
+  const raw = await readBody(req); // Buffer crudo — necesario para el HMAC
+  const hmacHeader = req.headers["x-shopify-hmac-sha256"];
+  if (!secret || !verifyShopifyWebhookHmac(raw, hmacHeader, secret)) {
+    return res.status(401).json({ error: "HMAC inválido" });
+  }
+  const topic = String(req.headers["x-shopify-topic"] || "");
+  let payload = {};
+  try { payload = JSON.parse(raw.toString() || "{}"); } catch (_) {}
+  const shopDomain = String(req.headers["x-shopify-shop-domain"] || payload.shop_domain || "").toLowerCase();
+
+  try {
+    if (topic === "shop/redact" && shopDomain) {
+      // Desinstalación: desconectar esa tienda de TODO usuario que la tenga y borrar
+      // su token. Los snapshots derivados (stock_cache, etc.) son por-uid y quedan
+      // inertes/expiran al no haber más acceso a la tienda.
+      const usersSnap = await db.collection("users").get();
+      for (const d of usersSnap.docs) {
+        const st = d.data().stores || [];
+        const tiene = st.some(s => s.type === "shopify" && String(s.shop || "").toLowerCase() === shopDomain);
+        if (tiene) {
+          const keep = st.filter(s => !(s.type === "shopify" && String(s.shop || "").toLowerCase() === shopDomain));
+          await d.ref.update({ stores: keep }).catch(() => {});
+        }
+      }
+    }
+    // customers/data_request y customers/redact: sin base de clientes propia →
+    // nada que entregar/borrar. Se acusa recibo (200) como exige Shopify.
+  } catch (e) {
+    console.error("[shopify-compliance]", topic, e.message);
+    // Igual respondemos 200: el HMAC ya validó; reintentar no cambia el resultado.
+  }
+  return res.status(200).json({ ok: true, topic });
 }
 
 // ─── Mercado Libre: OAuth con app propia de Growith (1 click) ────────
@@ -577,6 +676,9 @@ export default async function handler(req, res) {
       // detectamos por el code así no depende del param reservado "action".
       if (req.method === "GET" && (action === "callback" || req.query.code)) return shopifyOauthCallback(req, res, db);
       if (action === "disconnect" && req.method === "POST") return shopifyDisconnect(req, res, db);
+      // Webhooks obligatorios de privacidad (customers/data_request, customers/redact,
+      // shop/redact) — todos a esta URL, distinguidos por el header X-Shopify-Topic.
+      if (action === "compliance" && req.method === "POST") return shopifyCompliance(req, res, db);
     }
 
     if (platform === "tiendanube") {

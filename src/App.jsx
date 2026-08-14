@@ -11813,6 +11813,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   const [shopifyShop,setShopifyShop]=useState("");
   const [shopifyClientId,setShopifyClientId]=useState("");
   const [shopifySecret,setShopifySecret]=useState("");
+  const [shopifyAdvanced,setShopifyAdvanced]=useState(false); // usar app propia (fallback)
   const [connectingShopify,setConnectingShopify]=useState(false);
   const [showMLModal,setShowMLModal]=useState(false);
   const [connectingML,setConnectingML]=useState(false);
@@ -11920,19 +11921,24 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   const iS=InputStyle(T);
 
   async function connectShopify() {
-    if(!shopifyShop.trim() || !shopifyClientId.trim() || !shopifySecret.trim()) {
-      setMsg("Completá los 3 campos"); return;
+    if(!shopifyShop.trim()) {
+      setMsg("Poné tu dominio .myshopify.com"); return;
     }
     setConnectingShopify(true);
     try {
+      // 1-click: solo el dominio. El backend usa la app pública de Growith
+      // (SHOPIFY_APP_ID/SECRET). Si el usuario cargó SUS credenciales (modo
+      // avanzado), se mandan y el backend usa su app propia.
       const r = await fetch("/api/integrations?platform=shopify&action=oauth_start", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
           uid: user.uid,
           shop: shopifyShop.trim(),
-          client_id: shopifyClientId.trim(),
-          client_secret: shopifySecret.trim(),
+          ...(shopifyClientId.trim() && shopifySecret.trim() ? {
+            client_id: shopifyClientId.trim(),
+            client_secret: shopifySecret.trim(),
+          } : {}),
         }),
       });
       const d = await r.json();
@@ -12480,58 +12486,55 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
                 <div>
                   <div style={{fontSize:16,fontWeight:700,color:T.text}}>Conectar Shopify</div>
-                  <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Pegá las credenciales de TU app de Shopify (creada en Dev Dashboard)</div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Un clic: poné tu dominio .myshopify.com y autorizá</div>
                 </div>
                 <ModalCloseBtn T={T} onClick={()=>!connectingShopify && setShowShopifyModal(false)} disabled={connectingShopify}/>
               </div>
 
-              <div style={{padding:12,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,marginBottom:16,fontSize:11,color:T.textMd,lineHeight:1.65}}>
-                <div style={{fontWeight:700,color:T.text,marginBottom:6}}>Crear tu app en Shopify (3 minutos)</div>
+              <div style={{padding:"12px 14px",background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,marginBottom:18,fontSize:11,color:T.textMd,lineHeight:1.7}}>
+                <div style={{fontWeight:600,color:T.text,marginBottom:6}}>¿Qué va a pasar?</div>
                 <ol style={{margin:0,paddingLeft:18}}>
-                  <li>Entrá a <a href="https://dev.shopify.com/dashboard" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>dev.shopify.com/dashboard</a> → <strong style={{color:T.text}}>"Crear app"</strong> → nombre "Growith"</li>
-                  <li>"Versiones" → <strong style={{color:T.text}}>"Crear versión"</strong> → en "Acceso" → Seleccionar alcances <strong style={{color:T.text}}>(marcá todos)</strong>:
-                    <div style={{margin:"3px 0",display:"flex",gap:4,flexWrap:"wrap"}}>
-                      <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>read_all_orders</code>
-                      <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>read_customers</code>
-                      <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>read_orders</code>
-                      <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>write_orders</code>
-                      <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent,border:`1px solid ${T.yellow||T.yellow}55`}}>read_products</code>
-                    </div>
-                    <div style={{fontSize:9,color:T.textSm,marginTop:3}}><strong>read_products</strong> es indispensable para Stock y Análisis. Si tu app vieja no lo tenía, creá una versión nueva ahora y publicala.</div>
-                  </li>
-                  <li>En esa misma versión, agregá esta <strong style={{color:T.text}}>URL de redireccionamiento</strong>:
-                    <div style={{marginTop:3,padding:"4px 7px",background:T.surface,borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:9,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/integrations?platform=shopify`}</div>
-                  </li>
-                  <li>Publicar la versión</li>
-                  <li>"Configuración" → copiá el <strong style={{color:T.text}}>ID de cliente</strong> y el <strong style={{color:T.text}}>Secreto</strong> (tocá el ojito) → pegalos abajo</li>
+                  <li>Ponés tu dominio <strong style={{color:T.text}}>.myshopify.com</strong> y tocás <strong style={{color:T.text}}>"Autorizar en Shopify"</strong></li>
+                  <li>Se abre Shopify para que apruebes el acceso a tus pedidos, productos y clientes</li>
+                  <li>Volvés a Growith con la tienda conectada</li>
                 </ol>
               </div>
 
               <div style={{display:"flex",flexDirection:"column",gap:14}}>
                 <div>
-                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Subdominio Shopify <span style={{color:T.yellow||T.yellow,textTransform:"none",fontWeight:500}}>(el .myshopify.com, NO tu dominio custom)</span></div>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Tu dominio Shopify <span style={{color:T.yellow||T.yellow,textTransform:"none",fontWeight:500}}>(el .myshopify.com, NO tu dominio custom)</span></div>
                   <input value={shopifyShop} onChange={e=>setShopifyShop(e.target.value)} placeholder="ej: tu-tienda-xx (solo el subdominio)" style={iS} disabled={connectingShopify} autoFocus/>
                   <div style={{fontSize:10,color:T.textSm,marginTop:4,lineHeight:1.5}}>
                     Tenés que poner el subdominio <strong style={{color:T.text}}>NATIVO</strong> de Shopify (ej: <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>asdf-sc.myshopify.com</code> → ponés solo <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>asdf-sc</code>).<br/>
-                    <strong style={{color:T.text}}>NO uses tu dominio personalizado</strong> (ej: <code style={{color:T.red}}>tutienda.com</code>, <code style={{color:T.red}}>tutienda.com.ar</code>) — Shopify OAuth solo funciona con el .myshopify.com.<br/>
-                    Para encontrarlo: andá al admin de Shopify → <strong style={{color:T.text}}>Configuración → Dominios</strong> → mirá cuál tiene el sello "Predeterminado de Shopify" (ese es el .myshopify.com).
+                    <strong style={{color:T.text}}>NO uses tu dominio personalizado</strong> (ej: <code style={{color:T.red}}>tutienda.com</code>) — Shopify OAuth solo funciona con el .myshopify.com. Lo encontrás en el admin → <strong style={{color:T.text}}>Configuración → Dominios</strong> (el que dice "Predeterminado de Shopify").
                   </div>
                 </div>
+
+                {/* Modo avanzado: usar la app propia del cliente (fallback para ya conectados) */}
                 <div>
-                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Client ID</div>
-                  <input value={shopifyClientId} onChange={e=>setShopifyClientId(e.target.value)} placeholder="8a3b6810ff78..." style={{...iS,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}} disabled={connectingShopify}/>
-                </div>
-                <div>
-                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Client Secret</div>
-                  <input value={shopifySecret} onChange={e=>setShopifySecret(e.target.value)} placeholder="..." type="password" style={{...iS,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}} disabled={connectingShopify}/>
-                  <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Se usa una sola vez para autorizar. Se guarda cifrado.</div>
+                  <button onClick={()=>setShopifyAdvanced(v=>!v)} disabled={connectingShopify} style={{background:"transparent",border:"none",color:T.textSm,fontSize:11,cursor:"pointer",padding:0,fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline"}}>
+                    {shopifyAdvanced?"− Ocultar modo avanzado":"+ Modo avanzado (usar mi propia app de Shopify)"}
+                  </button>
+                  {shopifyAdvanced && (
+                    <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:12,padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
+                      <div style={{fontSize:10,color:T.textSm,lineHeight:1.5}}>Solo si tenés TU propia app de Shopify Partners y querés usar sus credenciales. Redirect URL de tu app: <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:9,color:T.accent,wordBreak:"break-all"}}>https://www.growithapp.com/api/integrations?platform=shopify</code></div>
+                      <div>
+                        <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Client ID</div>
+                        <input value={shopifyClientId} onChange={e=>setShopifyClientId(e.target.value)} placeholder="8a3b6810ff78..." style={{...iS,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}} disabled={connectingShopify}/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Client Secret</div>
+                        <input value={shopifySecret} onChange={e=>setShopifySecret(e.target.value)} placeholder="..." type="password" style={{...iS,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}} disabled={connectingShopify}/>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div style={{display:"flex",gap:10,marginTop:22}}>
                 <button onClick={()=>setShowShopifyModal(false)} disabled={connectingShopify} style={{...BtnSecondary(T),fontSize:13,padding:"10px 18px"}}>Cancelar</button>
                 <div style={{flex:1}}/>
-                <button onClick={connectShopify} disabled={connectingShopify||!shopifyShop.trim()||!shopifyClientId.trim()||!shopifySecret.trim()} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px",opacity:(!shopifyShop.trim()||!shopifyClientId.trim()||!shopifySecret.trim())?0.5:1}}>
+                <button onClick={connectShopify} disabled={connectingShopify||!shopifyShop.trim()} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px",opacity:(!shopifyShop.trim())?0.5:1}}>
                   {connectingShopify?"Abriendo...":"Autorizar en Shopify →"}
                 </button>
               </div>
