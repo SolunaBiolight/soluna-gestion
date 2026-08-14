@@ -436,7 +436,10 @@ export default async function handler(req, res) {
     if (action === "sync_sales" && req.method === "POST") {
       const itemsSnap = await db.collection("users").doc(uid).collection("inventory_items").get();
       const items = itemsSnap.docs.map(d => ({ ref: d.ref, ...d.data() }));
-      const linkedItems = items.filter(i => Array.isArray(i.product_links) && i.product_links.length > 0);
+      // Un item se descuenta si tiene product_links (vínculo explícito por producto)
+      // O un SKU — el SKU es la MISMA llave con la que la UI vincula item↔producto,
+      // así una venta descuenta aunque el item nunca haya sido "linkeado" a mano.
+      const linkedItems = items.filter(i => (Array.isArray(i.product_links) && i.product_links.length > 0) || String(i.sku || "").trim());
       if (linkedItems.length === 0) return res.json({ ok: true, processed_orders: 0, items_updated: 0 });
 
       const settings = await getSettings(db, uid);
@@ -465,7 +468,7 @@ export default async function handler(req, res) {
                 order_id: `TN-ORD-${o.id}`,
                 platform: "tiendanube",
                 ts: o.paid_at || o.created_at,
-                products: (o.products || []).map(p => ({ id: `TN-${p.product_id || p.id}`, quantity: parseInt(p.quantity) || 1 })),
+                products: (o.products || []).map(p => ({ id: `TN-${p.product_id || p.id}`, sku: p.sku || "", quantity: parseInt(p.quantity) || 1 })),
               });
             }
             if (batch.length < 200) break;
@@ -489,7 +492,7 @@ export default async function handler(req, res) {
                 order_id: `SH-ORD-${o.id}`,
                 platform: "shopify",
                 ts: o.processed_at || o.created_at,
-                products: (o.line_items || []).map(li => ({ id: `SH-${li.product_id}`, quantity: parseInt(li.quantity) || 1 })),
+                products: (o.line_items || []).map(li => ({ id: `SH-${li.product_id}`, sku: li.sku || "", quantity: parseInt(li.quantity) || 1 })),
               });
             }
             const linkHeader = r.headers.get("link") || "";
@@ -520,7 +523,7 @@ export default async function handler(req, res) {
                   order_id: `ML-ORD-${o.id}`,
                   platform: "mercadolibre",
                   ts: o.date_closed || o.date_created,
-                  products: (o.order_items || []).map(it => ({ id: `ML-${it.item?.id}`, quantity: parseInt(it.quantity) || 1 })),
+                  products: (o.order_items || []).map(it => ({ id: `ML-${it.item?.id}`, sku: it.item?.seller_sku || it.item?.seller_custom_field || "", quantity: parseInt(it.quantity) || 1 })),
                 });
               }
               if (orders.length < 50) break;
@@ -533,7 +536,8 @@ export default async function handler(req, res) {
       let itemsUpdated = 0;
       let salesLogged = 0;
       for (const item of linkedItems) {
-        const linkMap = new Map(item.product_links.map(l => [l.product_id, parseInt(l.quantity) || 1]));
+        const linkMap = new Map((item.product_links || []).map(l => [l.product_id, parseInt(l.quantity) || 1]));
+        const itemSku = String(item.sku || "").trim().toUpperCase();
         const processed = new Set(item.processed_orders || []);
         let stockChange = 0;
         const newProcessed = [];
@@ -542,8 +546,11 @@ export default async function handler(req, res) {
           if (processed.has(ord.order_id)) continue;
           let unitsForItem = 0;
           for (const prod of ord.products) {
+            // 1) Vínculo explícito por product_id (prioridad). 2) Fallback por SKU
+            //    (misma llave que usa la UI) — así descuenta aunque no esté linkeado.
             const linkedQty = linkMap.get(prod.id);
-            if (linkedQty) unitsForItem += prod.quantity * linkedQty;
+            if (linkedQty) { unitsForItem += prod.quantity * linkedQty; continue; }
+            if (itemSku && String(prod.sku || "").trim().toUpperCase() === itemSku) unitsForItem += prod.quantity;
           }
           if (unitsForItem > 0) {
             const oldStock = (item.stock_total || 0) + stockChange;
