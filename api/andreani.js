@@ -1162,6 +1162,19 @@ export default async function handler(req, res) {
         } catch (e) { console.error("[andreani] aviso saldo bajo:", e.message); }
       }
 
+      // Verificación independiente del destino: resolver el id emitido contra
+      // el listado oficial y devolver qué sucursal ES realmente, para que el
+      // frontend lo compare contra el punto que eligió el cliente en la tienda.
+      let sucursalDestino = null;
+      if (tipo === "sucursal") {
+        try {
+          const todas = await sucursalesTodas(db, env);
+          let s = todas.find(x => String(x.id) === String(destino.sucursalId));
+          if (!s && cpDestino) s = (await sucursalesPorCp(db, env, cpDestino)).find(x => String(x.id) === String(destino.sucursalId));
+          if (s) sucursalDestino = { id: s.id, descripcion: s.descripcion || "", direccion: s.direccion || null };
+        } catch (_) {}
+      }
+
       return res.json({
         ok: true,
         numeroDeEnvio,
@@ -1171,6 +1184,7 @@ export default async function handler(req, res) {
         saldoBajo,
         fechaEstimadaDeEntrega: ordenData.fechaEstimadaDeEntrega || null,
         estado: ordenData.estado || "Pendiente",
+        sucursalDestino,
       });
     }
 

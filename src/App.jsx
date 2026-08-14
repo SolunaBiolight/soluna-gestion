@@ -6815,6 +6815,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [locSearch,setLocSearch]=useState("");
   const [locSearchType,setLocSearchType]=useState("ciudad");
   const [locOficialSel,setLocOficialSel]=useState(""); // id elegido en la lista oficial Andreani (modal sucursal del XLSX)
+  const [verifModal,setVerifModal]=useState(null); // {items,resolve} — filas del XLSX que no coinciden con el destino de la tienda
   const [sucursalConfirmed,setSucursalConfirmed]=useState(null);
   const [esquinaModal,setEsquinaModal]=useState(null); // {orders:[...]} pedidos con esquina excluidos del export
   const [copiedToast,setCopiedToast]=useState(null);
@@ -7207,6 +7208,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       return {nombre,apellido,telCod,telNum};
     }
 
+    // Verificación final contra la tienda: cada fila escrita en el Excel se
+    // compara con el destino del pedido en TN/Shopify. Los que no coinciden
+    // frenan la descarga con un modal (exportar igual o volver a corregir).
+    const verifRows=[];
+
     // Sheet1: envíos a domicilio
     function buildDomicilioRowsXml(ords, startRow){
       let xml='';
@@ -7247,6 +7253,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         const ubicacion=locationOverridesRef.current[o.numero]||findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad)||locs.list.find(l=>l.startsWith('BUENOS AIRES'))||locs.list[0]||"";
         const dirNum=extractStreetNum(o.direccion, o.dirNumero);
         const direccion=extractStreetName(o.direccion, o.dirNumero);
+        if(verifUbicacionVsPedido(o,ubicacion)==="warn")verifRows.push({numero:o.numero,comprador:o.comprador,tipo:"domicilio",escrito:ubicacion,esperado:`${o.localidad||o.ciudad||""}${o.cp?` (CP ${o.cp})`:""}`});
         const cells=[
           sC('A'+rn,""),
           nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
@@ -7285,6 +7292,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         let ovr=sucursalOverridesRef.current[o.numero]||"";
         if(ovr&&!(locs.sucursales||[]).includes(ovr)){ delete sucursalOverridesRef.current[o.numero]; persistOverrides(); ovr=""; }
         const sucursal=ovr||findAndreaniSucursal(locs,o.direccion,o.pickupDetails)||"";
+        if(verifSucursalTplVsTienda(o,sucursal)==="warn")verifRows.push({numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:`${o.pickupDetails?.name||""} — ${o.pickupDetails?.address?.address||""} ${o.pickupDetails?.address?.number||""}`.trim()});
         const cells=[
           sC('A'+rn,""),
           nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
@@ -7308,6 +7316,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
     const domRowsXml=buildDomicilioRowsXml(domicilioOrders,3);
     const sucRowsXml=buildSucursalRowsXml(sucursalOrders,3);
+
+    // Freno de seguridad: si alguna fila del Excel no coincide con el destino
+    // del pedido en la tienda, NO se descarga en silencio — modal con el
+    // detalle (qué dice la tienda vs qué quedó escrito) y decisión explícita.
+    if(verifRows.length){
+      setExporting(false);
+      const seguir=await new Promise(resolve=>setVerifModal({items:verifRows,resolve}));
+      setVerifModal(null);
+      if(!seguir){ setExportProgress({step:"",pct:0,current:0,total:0}); return; }
+      setExporting(true);
+      setExportProgress({step:"Generando el archivo…",pct:70,current:0,total:0});
+    }
 
     // Update sheet1 (domicilio) - limpiar filas de datos viejos antes de escribir
     const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
@@ -7422,6 +7442,41 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       }catch(_){}
     }
     return vistos.size?matchSucursalOficial([...vistos.values()],o):null;
+  }
+  // ── Verificación independiente de destinos (post-resolución) ──
+  // ¿Esta sucursal ES el punto que eligió el cliente en la tienda?
+  // "ok" | "warn" | null (pedido sin punto de retiro comparable).
+  function verifSucursalVsTienda(o,suc){
+    if(!o?.pickupDetails||!suc) return null;
+    return matchSucursalOficial([suc],o)?"ok":"warn";
+  }
+  // Ídem pero contra el STRING del desplegable del Excel (flujo XLSX): exige
+  // que el texto contenga la calle+número del punto TN, o su nombre distintivo.
+  function verifSucursalTplVsTienda(o,tplStr){
+    const pd=o?.pickupDetails;
+    if(!pd||!tplStr) return null;
+    const s=nrmSucTxt(tplStr);
+    const calleRaw=nrmSucTxt(pd.address?.address);
+    const numCampo=String(pd.address?.number||"").replace(/\D.*/,"").trim();
+    const num=numCampo||(calleRaw.match(/\b(\d{1,5})\s*$/)||[])[1]||"";
+    const calleSola=num?calleRaw.replace(new RegExp("\\b"+num+"\\s*$"),"").trim():calleRaw;
+    const calleToks=calleSola.split(" ").filter(w=>w.length>=4);
+    const dirOk=!!(num&&calleToks.length&&new RegExp("\\b"+num+"\\b").test(s)&&calleToks.some(t=>s.includes(t)));
+    const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO"]);
+    const tnTokens=nrmSucTxt(pd.name).split(" ").filter(w=>w&&!GEN.has(w)&&w.length>=3);
+    const nameOk=!!(tnTokens.length&&tnTokens.every(t=>s.includes(t)));
+    return (dirOk||nameOk)?"ok":"warn";
+  }
+  // Flujo XLSX domicilio: la calle/número se copian tal cual del pedido; lo
+  // resuelto es la LOCALIDAD del desplegable — verificar que contenga el CP
+  // del pedido o un token de su localidad.
+  function verifUbicacionVsPedido(o,ubicacion){
+    if(!ubicacion) return null;
+    const s=nrmSucTxt(ubicacion);
+    const cpO=String(o?.cp||"").replace(/\D/g,"");
+    const locToks=nrmSucTxt(o?.localidad||o?.ciudad||"").split(" ").filter(w=>w.length>=4);
+    if(!cpO&&!locToks.length) return null;
+    return ((cpO&&s.includes(cpO))||locToks.some(t=>s.includes(t)))?"ok":"warn";
   }
 
   // Atajos de teclado
@@ -7641,7 +7696,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       try{localStorage.removeItem(ghKey("growith_locOverrides"));localStorage.removeItem(ghKey("growith_sucOverrides"));}catch(_){}
       // Éxito → toast (sin modal que pida click); si quedaron pedidos en
       // esquina afuera del Excel, se abre directo su modal informativo.
-      toast(`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel — descargado ✓`,"success");
+      toast(verifRows.length
+        ?`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel — descargado (${verifRows.length} destino${verifRows.length!==1?"s":""} sin verificar)`
+        :`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel — descargado ✓ destinos verificados con tu tienda`,"success");
       if(esquinaOrders.length>0) setEsquinaModal({orders:esquinaOrders});
       setExportDone({count:finalOrders.length, ts:Date.now()}); // ya no abre modal: refresca el mapa "ya exportado"
       logUsage("etiquetas", finalOrders.length);
@@ -7865,7 +7922,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         ofc=chosen&&chosen.oficial?chosen.oficial:null;
         if(!ofc){ rows.push(mkRow(o,{incluido:false,cotError:"Sin sucursal elegida"})); continue; }
       }
-      rows.push(mkRow(o,{oficial:ofc}));
+      rows.push(mkRow(o,{oficial:ofc,verif:verifSucursalVsTienda(o,ofc)}));
     }
     await cotizarBulk();
   }
@@ -7945,6 +8002,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           if(typeof d.saldo==="number") setAndreani(a=>({...a,saldo:d.saldo}));
         } else {
           r.emitido=d; r.emitError="";
+          // Verificación post-emisión: el backend resuelve qué sucursal ES el
+          // id emitido; se compara contra el punto elegido en la tienda.
+          if(r.tipo==="sucursal"&&d.sucursalDestino){
+            r.sucReal=d.sucursalDestino;
+            r.verifFinal=verifSucursalVsTienda(o,d.sucursalDestino);
+          }
           if(typeof d.saldoRestante==="number") setAndreani(a=>({...a,saldo:d.saldoRestante}));
           if(d.saldoBajo!==undefined) ultSaldoInfo={saldoBajo:!!d.saldoBajo,etiquetasEstimadas:typeof d.etiquetasEstimadas==="number"?d.etiquetasEstimadas:null};
           setAndreaniEmitidos(m=>({...m,[o.numero]:d}));
@@ -9383,6 +9446,33 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         })()}
       </Modal>
 
+      {/* Verificación pre-descarga: filas del Excel que no coinciden con la tienda */}
+      <Modal T={T} open={!!verifModal} onClose={()=>{if(verifModal){verifModal.resolve(false);}}} title="Verificación de destinos" width={620} zIndex={2100}>
+        {verifModal&&(
+          <div>
+            <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.red}}>
+              <strong>{verifModal.items.length} destino{verifModal.items.length!==1?"s":""} del Excel no coincide{verifModal.items.length!==1?"n":""} con lo que dice tu tienda.</strong> Revisá antes de cargar el archivo en Andreani: estos paquetes saldrían a un lugar distinto del que eligió el cliente.
+            </div>
+            <div style={{maxHeight:300,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10,marginBottom:14}}>
+              {verifModal.items.map((v,i)=>(
+                <div key={v.numero+"_"+i} style={{padding:"10px 14px",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>#{v.numero} — {v.comprador}</div>
+                  <div style={{fontSize:11,color:T.textSm}}>Según tu tienda:</div>
+                  <div style={{fontSize:12,color:T.green,fontWeight:600,marginBottom:3}}>{v.esperado||"(sin datos del punto)"}</div>
+                  <div style={{fontSize:11,color:T.textSm}}>Quedaría en el Excel:</div>
+                  <div style={{fontSize:12,color:T.red,fontWeight:600}}>{v.escrito}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{fontSize:12,color:T.textSm,marginBottom:14}}>Para corregirlos: cancelá, tocá el pedido y elegí la sucursal correcta desde el modal de elección (o excluilo y emitilo a mano en Andreani).</div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <button onClick={()=>verifModal.resolve(false)} style={{...BtnPrimary(T),fontSize:13}}>Cancelar y corregir</button>
+              <button onClick={()=>verifModal.resolve(true)} style={{...BtnDanger(T),fontSize:13}}>Exportar igual</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {/* Location / Sucursal Resolution Modal */}
       <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);setExportSingleOrder(null);}}} title={locationModal?.type==="sucursal"?"Elegir sucursal Andreani":"Confirmar localidad Andreani"} width={560} zIndex={2000}>
         {locationModal&&(()=>{
@@ -9747,6 +9837,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                             <td style={{padding:"7px 10px",color:T.text}}>{o.comprador}</td>
                             <td style={{padding:"7px 10px",color:T.textMd}}>
                               {destino}
+                              {r.tipo==="sucursal"&&r.verif==="ok"&&(
+                                <div style={{color:T.green,fontSize:11,marginTop:2,fontWeight:600}}>✓ Coincide con el punto elegido en tu tienda</div>
+                              )}
+                              {r.tipo==="sucursal"&&r.verif==="warn"&&(
+                                <div style={{color:T.yellow,fontSize:11,marginTop:2,fontWeight:600}}>Distinto del punto que eligió el cliente ({r.order.pickupDetails?.name||"punto de retiro"}) — revisá antes de emitir</div>
+                              )}
                               {r.cotError&&(
                                 <div style={{color:T.red,fontSize:11,marginTop:2,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                                   <span>{r.cotError}</span>
@@ -9801,11 +9897,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:300,overflow:"auto",marginBottom:16}}>
                   {ok.map(r=>(
-                    <div key={r.numero} style={{display:"flex",alignItems:"center",gap:10,background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"9px 12px"}}>
-                      <span style={{fontWeight:700,color:T.text,fontSize:13,whiteSpace:"nowrap"}}>#{r.numero}</span>
-                      <span style={{fontSize:12,color:T.textSm,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.order.comprador}</span>
-                      <span style={{fontSize:12,color:T.text,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{r.emitido.numeroDeEnvio}</span>
-                      <AsyncButton onClick={()=>descargarEtiquetaBulk(String(r.emitido.numeroDeEnvio))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Descargar etiqueta</AsyncButton>
+                    <div key={r.numero} style={{background:T.bg,border:`1px solid ${r.verifFinal==="warn"?T.yellow+"66":T.border}`,borderRadius:8,padding:"9px 12px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <span style={{fontWeight:700,color:T.text,fontSize:13,whiteSpace:"nowrap"}}>#{r.numero}</span>
+                        <span style={{fontSize:12,color:T.textSm,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.order.comprador}</span>
+                        <span style={{fontSize:12,color:T.text,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{r.emitido.numeroDeEnvio}</span>
+                        <AsyncButton onClick={()=>descargarEtiquetaBulk(String(r.emitido.numeroDeEnvio))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Descargar etiqueta</AsyncButton>
+                      </div>
+                      {r.verifFinal==="ok"&&r.sucReal&&(
+                        <div style={{fontSize:11,color:T.green,fontWeight:600,marginTop:4}}>✓ Etiqueta verificada: va a {r.sucReal.descripcion} — el punto que eligió el cliente</div>
+                      )}
+                      {r.verifFinal==="warn"&&r.sucReal&&(
+                        <div style={{fontSize:11,color:T.yellow,fontWeight:600,marginTop:4}}>La etiqueta salió a {r.sucReal.descripcion}, distinto del punto elegido en tu tienda ({r.order.pickupDetails?.name||""}) — avisale al cliente</div>
+                      )}
                     </div>
                   ))}
                   {fails.map(r=>(

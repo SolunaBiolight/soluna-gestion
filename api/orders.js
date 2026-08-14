@@ -1962,6 +1962,14 @@ export default async function handler(req, res) {
         admin_url: shop ? `https://${shop}/admin/orders/${o.id}` : "",
         billing_address: o.billing_address ? { name: `${o.billing_address.first_name || ""} ${o.billing_address.last_name || ""}`.trim(), email: o.email || "", phone: o.billing_address.phone || "" } : null,
         shipping_option: o.shipping_lines?.[0]?.title || "Envío",
+        // Punto de retiro en Shopify: no hay objeto estándar como en TN — las
+        // apps de envío ponen el punto en el título del método y suelen pisar
+        // shipping_address con la dirección del punto. Se arma un pickup
+        // sintético para que el matcheo de sucursal Andreani y su verificación
+        // contra la tienda trabajen igual que con Tienda Nube.
+        shipping_pickup_details: /sucursal|punto|hop|retiro|pickup/i.test(o.shipping_lines?.[0]?.title || "")
+          ? { name: o.shipping_lines[0].title, address: { address: calle, number: numero === "0" ? "" : numero, locality: sh.city || "", city: sh.city || "", zipcode: sh.zip || "", province: sh.province || "" } }
+          : null,
         shipping_tracking_number: fulfillments[0]?.tracking_number || "",
         payment_details: { method: o.payment_gateway_names?.[0] || "" },
         gateway_name: o.payment_gateway_names?.[0] || "",
