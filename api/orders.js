@@ -2218,7 +2218,24 @@ export default async function handler(req, res) {
           couponMap[code].usosPeriodo++; couponMap[code].ventasPeriodo += parseFloat(o.total||0); couponMap[code].descuentoPeriodo += parseFloat(o.discount_coupon||0);
         }
       }
-      return res.status(200).json({ coupons: Object.values(couponMap).sort((a,b) => b.usosPeriodo - a.usosPeriodo), totalPedidosAnalizados: allOrders.length, periodo: { desde: desdeISO, hasta: hastaISO } });
+      // Códigos SIN uso en el período: listado oficial de cupones de TN, para
+      // que un código recién creado aparezca en la tabla (con 0 usos) apenas
+      // se crea, sin esperar la primera venta. Best-effort: si falla, la tabla
+      // sigue mostrando los detectados en pedidos.
+      try {
+        for (let p = 1; p <= 3; p++) {
+          const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/coupons?per_page=200&page=${p}`, { headers: tnHeaders });
+          if (!r.ok) break;
+          const cs = await r.json();
+          if (!Array.isArray(cs) || !cs.length) break;
+          for (const c of cs) {
+            const code = (c.code || "").toUpperCase().trim(); if (!code || couponMap[code]) continue;
+            couponMap[code] = { code, type: c.type || "percentage", value: c.value || "0", usosPeriodo: 0, ventasPeriodo: 0, descuentoPeriodo: 0, sinUso: true };
+          }
+          if (cs.length < 200) break;
+        }
+      } catch (_) {}
+      return res.status(200).json({ coupons: Object.values(couponMap).sort((a,b) => b.usosPeriodo - a.usosPeriodo || String(a.code).localeCompare(String(b.code))), totalPedidosAnalizados: allOrders.length, periodo: { desde: desdeISO, hasta: hastaISO } });
     }
     // ── fin Coupons ───────────────────────────────────────────────────────
 

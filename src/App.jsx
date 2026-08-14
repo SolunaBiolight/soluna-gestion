@@ -5667,7 +5667,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   {/* Resumen global */}
                   <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:20}}>
                     {[
-                      {label:"Códigos con uso",val:rows.length,color:T.textMd},
+                      {label:"Códigos con uso",val:conVentas.length,color:T.textMd},
                       {label:"Ventas brutas",val:fmtARS(totalVentas),color:T.textMd},
                       {label:"Descuentos otorgados",val:"-"+fmtARS(totalDescuentos),color:T.red},
                       {label:`Neto (-MP ${mpComision}%)`,val:fmtARS(totalNeto),color:T.green},
@@ -5683,7 +5683,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   {/* Tabla principal */}
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflowY:"hidden",overflowX:"auto",WebkitOverflowScrolling:"touch",marginBottom:16}}>
                     <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:12,minWidth:800,flexWrap:"wrap"}}>
-                      <span style={{fontSize:12,fontWeight:700,color:T.text}}>Códigos detectados en pedidos · mayor a menor usos</span>
+                      <span style={{fontSize:12,fontWeight:700,color:T.text}}>Códigos de descuento · con uso primero</span>
                       <div style={{position:"relative",flex:"0 1 240px",minWidth:160}}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{position:"absolute",left:9,top:"50%",transform:"translateY(-50%)",color:T.textSm,pointerEvents:"none"}}><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
                         <input value={cuponSearch} onChange={e=>setCuponSearch(e.target.value)} placeholder="Buscar cupón o influencer…"
