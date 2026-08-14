@@ -1920,6 +1920,17 @@ export default async function handler(req, res) {
       let m = addr1.match(/^(.*?)[\s,]+(\d+[a-zA-Z]?)$/);
       if (m) { calle = m[1].trim(); numero = m[2]; }
       else { m = addr1.match(/^(\d+[a-zA-Z]?)[\s,]+(.+)$/); if (m) { numero = m[1]; calle = m[2].trim(); } }
+      // Sin número parseable → "0": la API de Andreani (action=emitir) exige
+      // `numero` no vacío para envíos a domicilio o devuelve 400 (el XLSX ya
+      // hace el mismo fallback). Andreani interpreta "0" como sin numeración.
+      if (!numero) numero = "0";
+      // Shopify no captura DNI de forma nativa; algunas tiendas lo piden en un
+      // campo custom del checkout → llega en note_attributes. Lo buscamos por
+      // nombres habituales (DNI/documento/cuit) para no emitir la etiqueta sin
+      // documento del destinatario.
+      const notas = Array.isArray(o.note_attributes) ? o.note_attributes : [];
+      const docAttr = notas.find(a => /dni|documento|cuit|cuil|identific/i.test(String(a?.name || "")));
+      const contactDoc = String(docAttr?.value || "").replace(/\D/g, "");
       return {
         id: o.id,
         number: o.order_number || (o.name || "").replace("#", "") || o.id,
@@ -1929,7 +1940,7 @@ export default async function handler(req, res) {
         contact_name: o.customer ? `${o.customer.first_name || ""} ${o.customer.last_name || ""}`.trim() : (sh.name || ""),
         contact_email: o.email || o.contact_email || o.customer?.email || "",
         contact_phone: o.phone || sh.phone || o.customer?.phone || "",
-        contact_identification: "",
+        contact_identification: contactDoc,
         created_at: o.created_at,
         paid_at: o.processed_at,
         shipped_at: fulfillments[0]?.created_at || null,

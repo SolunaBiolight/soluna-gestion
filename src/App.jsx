@@ -3149,7 +3149,7 @@ function OrderSearchField({T, orders, onSelect, uid}) {
         </div>
       )}
       {q.length>=2&&!loading&&results.length===0&&<div style={{marginTop:6,padding:14,textAlign:"center",color:T.textSm,fontSize:14,border:`1px solid ${T.border}`,borderRadius:12}}>Sin resultados para "{q}"</div>}
-      {q.length>=2&&loading&&results.length===0&&<div style={{marginTop:6,padding:14,textAlign:"center",color:T.textSm,fontSize:13,border:`1px solid ${T.border}`,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/>Buscando en Tienda Nube...</div>}
+      {q.length>=2&&loading&&results.length===0&&<div style={{marginTop:6,padding:14,textAlign:"center",color:T.textSm,fontSize:13,border:`1px solid ${T.border}`,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/>Buscando en tu tienda...</div>}
     </div>
   );
 }
@@ -3684,7 +3684,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   {searchApiLoading&&<div style={{position:"absolute",right:search?36:14,top:"50%",transform:"translateY(-50%)"}}><Spinner size={13} color={T.textSm}/></div>}
                 </div>
                 {search.length>=2&&<div style={{fontSize:11,color:matchCount>0?T.accent:T.textSm,marginTop:5,paddingLeft:2,fontWeight:matchCount>0?600:400}}>
-                  {matchCount>0?`${matchCount} reclamo${matchCount!==1?"s":""} encontrado${matchCount!==1?"s":""}`:searchApiLoading?"Buscando en Tienda Nube...":"Sin resultados en reclamos"}
+                  {matchCount>0?`${matchCount} reclamo${matchCount!==1?"s":""} encontrado${matchCount!==1?"s":""}`:searchApiLoading?"Buscando en tu tienda...":"Sin resultados en reclamos"}
                 </div>}
               </div>
               );
@@ -3973,7 +3973,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                         WhatsApp
                       </a>}
-                      {activeOrder?.linkOrden&&<a href={activeOrder.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",textDecoration:"none",color:T.purple,display:"inline-flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>TN</a>}
+                      {activeOrder?.linkOrden&&<a href={activeOrder.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",textDecoration:"none",color:T.purple,display:"inline-flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>{/shopify|myshopify/i.test(activeOrder.linkOrden)?"Shopify":"TN"}</a>}
                       {email&&<span style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:4}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>{email}</span>}
                     </div>
                   </div>
@@ -8416,12 +8416,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               {showGuia&&(
                 <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
                   {[
-                    {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de Tienda Nube se sincronizan solos, sin cargar nada a mano. En 'Por empaquetar' ves todo lo que falta despachar; cuando marcás un pedido como empaquetado pasa a 'Por enviar'. El botón 'Sincronizar' de arriba trae lo último al instante."},
+                    {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de tu tienda se sincronizan solos, sin cargar nada a mano. En 'Por empaquetar' ves todo lo que falta despachar; cuando marcás un pedido como empaquetado pasa a 'Por enviar'. El botón 'Sincronizar' de arriba trae lo último al instante."},
                     {n:2,icon:"",title:"El paquete y el valor declarado",desc:"El botón 'Paquete' guarda las medidas, el peso y el valor declarado con los que se cotizan y emiten TODAS tus etiquetas. El valor declarado define el seguro que cobra Andreani (un % de ese valor) — no es el total de la venta: poné lo que realmente querés asegurar."},
                     {n:3,icon:"",title:"Etiquetas por Excel",desc:"En 'Por enviar', seleccioná pedidos y tocá 'Exportar XLSX': sale el Excel de carga masiva listo para subir al portal de Andreani (domicilio y sucursal/HOP en sus hojas correctas). Si el punto de retiro del cliente no existe en la lista de Andreani, se abre un selector con las sucursales más cercanas ordenadas por distancia para que elijas una."},
                     {n:4,icon:"",title:"Etiquetas listas (prepago)",desc:"Si tenés el prepago habilitado, el botón 'Emitir etiquetas' cotiza y emite directo por la API de Andreani: el PDF sale al instante y el costo se debita de tu saldo. También podés cotizar un pedido puntual con el chip 'Cotizar' de cada fila antes de decidir."},
                     {n:5,icon:"",title:"Saldo de envíos",desc:"El chip verde con la billetera (arriba) muestra tu saldo. Tocalo para cargar: con Mercado Pago se acredita solo al instante, o por transferencia con referencia y lo acredita el equipo. Ahí mismo ves los movimientos (cada etiqueta descuenta) y tu sucursal de despacho."},
-                    {n:6,icon:"",title:"Procesar rótulos",desc:"Subí el PDF de rótulos UNA sola vez en 'SKU en Rótulos': imprime el SKU de cada pedido en su etiqueta (para armar los paquetes sin errores) Y desde ahí mismo enviás los números de seguimiento a Tienda Nube, que le avisa al cliente por mail."},
+                    {n:6,icon:"",title:"Procesar rótulos",desc:"Subí el PDF de rótulos UNA sola vez en 'SKU en Rótulos': imprime el SKU de cada pedido en su etiqueta (para armar los paquetes sin errores) Y desde ahí mismo enviás los números de seguimiento a tu tienda, que le avisa al cliente por mail."},
                     {n:7,icon:"",title:"Seguimiento automático",desc:"Después del despacho, Growith consulta Andreani cada 30 minutos, sin que tengas la app abierta. En 'Seguimientos' ves cada envío por etapa: en camino, en sucursal (con días esperando), entregado o devolución, con alertas cuando algo se demora."},
                     {n:8,icon:"",title:"Si algo no cuadra",desc:"¿Una dirección o sucursal quedó mal en el Excel? Al exportar, Growith te pide confirmar las que no puede resolver solo y recuerda tu elección para la próxima. También podés excluir un pedido puntual del export."},
                   ].map(s=>(
@@ -8670,7 +8670,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 <div style={{fontSize:12,color:T.textSm,maxWidth:320,margin:"0 auto"}}>
                   {tabEnvio==="buscar"?"Escribí y presioná Enter o el botón Buscar"
                     :(orders||[]).length===0?"Cuando tu tienda registre una venta, el pedido aparece acá listo para empaquetar."
-                    :tabEnvio==="empaquetar"?"Los pedidos empaquetados van a Por enviar":"Cuando marques un pedido como empaquetado en Tienda Nube va a aparecer acá"}
+                    :tabEnvio==="empaquetar"?"Los pedidos empaquetados van a Por enviar":"Cuando marques un pedido como empaquetado en tu tienda va a aparecer acá"}
                 </div>
               </div>
             ):(
@@ -8927,7 +8927,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     <div style={{background:T.card,border:`1.5px solid ${done?T.green+"55":T.blue+"44"}`,borderRadius:14,padding:"16px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
                       <div style={{flex:1,minWidth:220}}>
                         <div style={{fontSize:10,fontWeight:800,letterSpacing:0.8,textTransform:"uppercase",color:done?T.green:T.blue,marginBottom:4}}>Paso 2 · Avisar a los clientes</div>
-                        <div style={{fontSize:14,fontWeight:800,color:T.text,marginBottom:2}}>{done?"Seguimientos enviados":"Enviar seguimientos a Tienda Nube"}</div>
+                        <div style={{fontSize:14,fontWeight:800,color:T.text,marginBottom:2}}>{done?"Seguimientos enviados":"Enviar seguimientos a tu tienda"}</div>
                         <div style={{fontSize:12,color:T.textSm}}>{pend.length>0?`${pend.length} tracking(s) del mismo PDF, listos para subir (avisa al cliente y activa el seguimiento automático)`:done?`${okCount} enviados — ver estado en la pestaña Seguimientos`:"Sin trackings pendientes"}</div>
                       </div>
                       {pend.length>0&&(
@@ -9041,7 +9041,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   : <div>
                       <div style={{display:"flex",justifyContent:"center",marginBottom:12}}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
                       <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Subí el PDF de rótulos Andreani</div>
-                      <div style={{fontSize:13,color:T.textSm,marginBottom:16,lineHeight:1.6}}>Extrae el N° de seguimiento de cada etiqueta<br/>y lo envía automáticamente a Tienda Nube</div>
+                      <div style={{fontSize:13,color:T.textSm,marginBottom:16,lineHeight:1.6}}>Extrae el N° de seguimiento de cada etiqueta<br/>y lo envía automáticamente a tu tienda</div>
                       <div style={{display:"inline-block",background:T.accentSolid,color:"#fff",borderRadius:8,padding:"8px 22px",fontSize:13,fontWeight:600}}>Seleccionar PDF</div>
                     </div>
               }
@@ -9065,7 +9065,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   <div style={{background:T.card,border:`1px solid ${sentCount>0?T.green+"44":T.border}`,borderRadius:12,padding:"16px 18px"}}>
                     <div style={{fontSize:11,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Enviados</div>
                     <div style={{fontSize:28,fontWeight:800,color:sentCount>0?T.green:T.textSm,letterSpacing:-1}}>{sentCount}</div>
-                    <div style={{fontSize:12,color:T.textSm}}>a Tienda Nube</div>
+                    <div style={{fontSize:12,color:T.textSm}}>a tu tienda</div>
                   </div>
                   <div style={{background:T.card,border:`1px solid ${pending.length>0?T.orange+"44":T.border}`,borderRadius:12,padding:"16px 18px"}}>
                     <div style={{fontSize:11,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Pendientes</div>
@@ -9361,7 +9361,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 <div style={{fontSize:13,color:T.text,marginBottom:isSuc?6:0}}>Pedido <strong>#{order.numero}</strong> — {order.comprador}</div>
                 {isSuc&&order.pickupDetails&&(
                   <div style={{fontSize:12,color:T.text,background:T.bg,borderRadius:8,padding:"8px 10px"}}>
-                    <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>Punto de retiro según Tienda Nube</div>
+                    <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>Punto de retiro según tu tienda</div>
                     <div style={{fontWeight:600,color:T.accent,marginBottom:2}}>{order.pickupDetails.name}</div>
                     <div>{order.pickupDetails.address?.address} {order.pickupDetails.address?.number}</div>
                     <div style={{color:T.textSm}}>{order.pickupDetails.address?.locality}, {order.pickupDetails.address?.province}</div>
@@ -11354,7 +11354,7 @@ function LandingPage({T, onLogin}) {
             <div style={{fontSize:42,fontWeight:900,letterSpacing:-1.5,lineHeight:1.1}}>$19 <span style={{fontSize:14,fontWeight:500,color:T.textSm}}>USD/mes</span></div>
             <div style={{fontSize:12,color:T.textSm,marginTop:4,marginBottom:16}}>o $16 USD/mes pagando anual</div>
             <div style={{textAlign:"left",display:"flex",flexDirection:"column",gap:7,marginBottom:20}}>
-              {["Facturación ARCA/AFIP ilimitada","Facturación automática de órdenes de Tienda Nube","Facturas y notas de crédito manuales","Monotributo y Responsable Inscripto","Múltiples puntos de venta y CUITs"].map(x=>(
+              {["Facturación ARCA/AFIP ilimitada","Facturación automática de órdenes de tu tienda y Mercado Libre","Facturas y notas de crédito manuales","Monotributo y Responsable Inscripto","Múltiples puntos de venta y CUITs"].map(x=>(
                 <div key={x} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:T.textMd}}>
                   <span style={{color:"#10b981",fontWeight:800,flexShrink:0}}>✓</span>{x}
                 </div>
@@ -12634,7 +12634,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       tagline:"Solo el facturador ARCA, ilimitado",
       features:[
         "Facturación ARCA / AFIP ilimitada",
-        "Facturación automática de tus órdenes de Tienda Nube",
+        "Facturación automática de tus órdenes de la tienda y Mercado Libre",
         "Facturas y notas de crédito manuales",
         "Monotributo y Responsable Inscripto",
         "Múltiples puntos de venta y CUITs",
@@ -12650,7 +12650,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       features:[
         "Todo lo del plan Facturador",
         "Márgenes, profit y costos por venta en tiempo real",
-        "Envíos + etiquetas Andreani con SKU (Tienda Nube)",
+        "Envíos + etiquetas Andreani con SKU (Tienda Nube y Shopify)",
         "Auto-tracking Andreani y reclamos ilimitados",
         "Stock cruzado TN + Mercado Libre + Shopify",
         "Meta Ads y Mercado Ads en el profit (Google Ads próximamente)",
@@ -19868,6 +19868,7 @@ const origenDe = (r) => {
   const oid = String(r.orden_id||"");
   if (r.recuperado_afip || !r.orden_id || oid.startsWith("N° ")) return "recuperado";
   if (oid.startsWith("ML-")) return "ml";
+  if (oid.startsWith("SH-")) return "shopify";
   if (oid.startsWith("MANUAL-")) return "manual";
   return "tn";
 };
@@ -22348,6 +22349,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 {(()=>{
                   const ORIGENES = [
                     {id:"tn",         label:PLATFORM.tiendanube.label,   color:PLATFORM.tiendanube.color},
+                    {id:"shopify",    label:PLATFORM.shopify.label,      color:PLATFORM.shopify.color},
                     {id:"ml",         label:PLATFORM.mercadolibre.label, color:PLATFORM.mercadolibre.color},
                     {id:"manual",     label:"Manual",                    color:T.purple},
                     {id:"recuperado", label:"Recuperado",                color:T.textMd},
@@ -29268,7 +29270,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [syncResults,setSyncResults]=useState(null); // {resumen, results, mode}
   async function cambiarSyncMode(m){
     if(m==="on"){
-      if(!await appConfirm("Vas a ACTIVAR el stock cruzado: a partir de ahora Growith va a escribir el stock del inventario central en Tienda Nube y Mercado Libre cada vez que cambie (venta, edición manual, sincronización).\n\nRecomendado: usá primero el modo Simulación y revisá los resultados.\n\n¿Activar la escritura real?",{danger:true,okLabel:"Activar escritura"})) return;
+      if(!await appConfirm("Vas a ACTIVAR el stock cruzado: a partir de ahora Growith va a escribir el stock del inventario central en tu tienda (Tienda Nube / Shopify) y Mercado Libre cada vez que cambie (venta, edición manual, sincronización).\n\nRecomendado: usá primero el modo Simulación y revisá los resultados.\n\n¿Activar la escritura real?",{danger:true,okLabel:"Activar escritura"})) return;
     }
     setSyncMode(m); pushSettings({sync_mode:m});
     toast(m==="off"?"Stock cruzado apagado":m==="simulacion"?"Modo simulación activado — nada se escribe todavía":"Stock cruzado ACTIVADO ✓","success");
@@ -30107,7 +30109,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 {n:1,icon:"",title:"Resumen",desc:"KPIs de ventas y stock del período, proyección de demanda y las alertas activas (productos por agotarse). Es tu vista diaria."},
                 {n:2,icon:"",title:"Inventario",desc:"Tu catálogo con stock, velocidad de venta y días restantes por producto. Abajo, el inventario central de Growith: usá 'Vincular catálogo (SKU)' para unificar TN/Shopify/ML por SKU — las ventas lo descuentan solas."},
                 {n:3,icon:"",title:"Movimientos",desc:"Cada cambio de stock queda registrado: ventas por canal, ajustes manuales, transferencias entre depósitos."},
-                {n:4,icon:"",title:"Stock cruzado",desc:"En Config activás la sincronización de escritura: cuando ajustás stock en Growith, se empuja a Tienda Nube y Mercado Libre (con opción de manejar ML por separado y modo simulación para probar sin tocar nada)."},
+                {n:4,icon:"",title:"Stock cruzado",desc:"En Config activás la sincronización de escritura: cuando ajustás stock en Growith, se empuja a tu tienda (Tienda Nube / Shopify) y Mercado Libre (con opción de manejar ML por separado y modo simulación para probar sin tocar nada)."},
                 {n:5,icon:"",title:"Configuración",desc:"Umbral de alertas (global y por producto), lead time del proveedor, notificaciones por email/WhatsApp y depósitos con transferencias entre ellos. La config se guarda en tu cuenta, no en el navegador."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
@@ -30966,7 +30968,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <span style={{fontSize:9,padding:"2px 8px",borderRadius:10,fontWeight:800,letterSpacing:0.5,background:syncMode==="on"?T.green+"22":syncMode==="simulacion"?(T.yellow||T.yellow)+"22":T.surface,color:syncMode==="on"?T.green:syncMode==="simulacion"?(T.yellow||T.yellow):T.textSm}}>{syncMode==="on"?"ACTIVADO":syncMode==="simulacion"?"SIMULACIÓN":"APAGADO"}</span>
                   </div>
                   <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:12}}>
-                    Cuando el stock del <strong>inventario central</strong> cambia (venta en cualquier canal, edición manual o transferencia), Growith lo escribe automáticamente en <strong>Tienda Nube</strong> y en las publicaciones de <strong>Mercado Libre</strong> vinculadas. Así una venta en un canal descuenta el stock en todos y evitás la sobreventa.
+                    Cuando el stock del <strong>inventario central</strong> cambia (venta en cualquier canal, edición manual o transferencia), Growith lo escribe automáticamente en <strong>tu tienda</strong> (Tienda Nube / Shopify) y en las publicaciones de <strong>Mercado Libre</strong> vinculadas. Así una venta en un canal descuenta el stock en todos y evitás la sobreventa.
                   </div>
                   <div style={{display:"flex",background:T.surface,borderRadius:9,padding:3,gap:2,width:"fit-content",marginBottom:12}}>
                     {[{v:"off",l:"Apagado"},{v:"simulacion",l:"Simulación"},{v:"on",l:"Activado"}].map(o=>(
@@ -31917,9 +31919,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
         <div style={{maxWidth:1440,margin:"0 auto",padding:"14px 24px 0",width:"100%"}}>
           <div style={{display:"flex",flexDirection:"column",gap:5,paddingLeft:2,marginBottom:4}}>
             {[
-              {n:1,title:"Tu profit real",desc:"Cada venta entra sola desde Tienda Nube y Mercado Libre, y Growith le descuenta TODO: comisiones de la plataforma y del medio de pago, impuestos, costo de envío, costo del producto y la publicidad (Meta y Mercado Ads). Lo que ves es lo que realmente te queda."},
+              {n:1,title:"Tu profit real",desc:"Cada venta entra sola desde tu tienda (Tienda Nube / Shopify) y Mercado Libre, y Growith le descuenta TODO: comisiones de la plataforma y del medio de pago, impuestos, costo de envío, costo del producto y la publicidad (Meta y Mercado Ads). Lo que ves es lo que realmente te queda."},
               {n:2,title:"Las cards",desc:"Ventas, profit, margen, ROAS, ticket promedio y más. Se arrastran para reordenar y elegís cuáles ver. Cada card compara contra el período anterior."},
-              {n:3,title:"Canales",desc:"Cambiá entre Global, Tienda Nube y Mercado Libre para ver los números de cada canal por separado, con sus propias comisiones e impuestos."},
+              {n:3,title:"Canales",desc:"Cambiá entre Global, tu tienda y Mercado Libre para ver los números de cada canal por separado, con sus propias comisiones e impuestos."},
               {n:4,title:"Costos",desc:"En la tab Costos cargás el costo de cada producto ($ o % del precio) — sin eso el profit no puede ser real. En Adicionales van los costos fijos mensuales (alquiler, sueldos, apps) y en Dólar la cotización para verlo todo en USD."},
               {n:5,title:"P&L Mensual",desc:"El estado de resultados de cada mes: facturación, costos, impuestos, publicidad y resultado final. Ideal para comparar meses y ver la tendencia."},
               {n:6,title:"Impuestos y comisiones",desc:"En Comisiones configurás qué % se lleva cada canal y método de pago, e impuestos como IIBB. Growith los aplica automáticamente a cada venta según su canal."},
@@ -31967,7 +31969,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             </div>
             <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:12}}>Dashboard Financiero</div>
             <div style={{fontSize:14,color:T.textMd,marginBottom:28,maxWidth:500,margin:"0 auto 28px",lineHeight:1.7}}>
-              Conectá Tienda Nube y/o Meta Ads desde Configuración, luego hacé click en Actualizar para ver tus métricas en tiempo real.
+              Conectá tu tienda y/o Meta Ads desde Configuración, luego hacé click en Actualizar para ver tus métricas en tiempo real.
             </div>
             {error&&<div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 16px",color:T.red,fontSize:13,marginBottom:20,maxWidth:540,margin:"0 auto 20px"}}>{error}</div>}
             <button onClick={()=>loadData()} disabled={loading} style={{...BtnPrimary(T),fontSize:14,padding:"12px 32px"}}>{loading?<><Spinner size={13} color="#fff"/> Cargando...</>:"↻ Cargar datos ahora"}</button>
@@ -32083,6 +32085,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {openInfo==="fb" && (()=>{
             const fb = rendData?.facturacionBreakdown;
             if (!fb || !(fb.bruto>0)) return null;
+            const tiendaLbl = rendData?.byChannel?.platform==="shopify" ? "Shopify" : "Tienda Nube";
             const dif = (fb.descuento||0) + (fb.envioCliente||0);
             if (dif < (fb.neto||0)*0.002) return null; // sin diferencias relevantes
             const row = (lbl, val, hint, strong) => (
@@ -32093,14 +32096,14 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             );
             return (
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 16px",marginBottom:16}}>
-                <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.4}}>Cómo se compone tu facturación de Tienda Nube</div>
+                <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.4}}>Cómo se compone tu facturación de {tiendaLbl}</div>
                 {row("Productos a precio de lista", fb.bruto, null)}
                 {(fb.descuento||0)>0 && row("− Descuentos / cupones", -fb.descuento, null)}
                 {(fb.descuento||0)>0 && row("Productos netos", fb.neto, null)}
                 {(fb.envioCliente||0)>0 && row("+ Envío cobrado al cliente", fb.envioCliente, null)}
-                {row("Facturación total", fb.conEnvio, "= lo que muestra Growith y Tienda Nube", true)}
+                {row("Facturación total", fb.conEnvio, `= lo que muestra Growith y ${tiendaLbl}`, true)}
                 <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8,lineHeight:1.5,borderTop:`1px solid ${T.borderL}`,paddingTop:8}}>
-                  La facturación incluye el envío que le cobrás al cliente, igual que la reporta el admin de Tienda Nube. El costo del envío (lo que vos le pagás al correo) se descuenta aparte, en la capa de costos.
+                  La facturación incluye el envío que le cobrás al cliente, igual que la reporta el admin de {tiendaLbl}. El costo del envío (lo que vos le pagás al correo) se descuenta aparte, en la capa de costos.
                 </div>
               </div>
             );
