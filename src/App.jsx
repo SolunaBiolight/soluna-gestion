@@ -4742,6 +4742,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     }
   }
   const [comData,setComData]=useState(null);
+  const [cuponSearch,setCuponSearch]=useState(""); // buscador de la tabla de códigos
   // Resultados del cupón del canje abierto (ROI) — se busca una vez por código
   // al abrir el detalle, con las ventas TN desde la creación del canje.
   const [cuponStats,setCuponStats]=useState({});
@@ -5658,6 +5659,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               const totalNeto=rows.reduce((s,r)=>s+(r.netoRecibido||0),0);
               const totalComision=rows.filter(r=>r.comisionPct>0).reduce((s,r)=>s+r.comisionPagar,0);
               const conComision=rows.filter(r=>r.comisionPct>0&&r.comisionPagar>0);
+              const qCup=cuponSearch.trim().toUpperCase();
+              const rowsVis=qCup?rows.filter(r=>String(r.code||"").toUpperCase().includes(qCup)||String(r.influencer||"").toUpperCase().includes(qCup)||String(r.usuario||"").toUpperCase().includes(qCup)):rows;
 
               return (
                 <div>
@@ -5679,18 +5682,27 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
                   {/* Tabla principal */}
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflowY:"hidden",overflowX:"auto",WebkitOverflowScrolling:"touch",marginBottom:16}}>
-                    <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8,minWidth:800}}>
+                    <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:12,minWidth:800,flexWrap:"wrap"}}>
                       <span style={{fontSize:12,fontWeight:700,color:T.text}}>Códigos detectados en pedidos · mayor a menor usos</span>
-                      <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{rows.length} codigos · {comData.totalPedidos} pedidos analizados</span>
+                      <div style={{position:"relative",flex:"0 1 240px",minWidth:160}}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{position:"absolute",left:9,top:"50%",transform:"translateY(-50%)",color:T.textSm,pointerEvents:"none"}}><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                        <input value={cuponSearch} onChange={e=>setCuponSearch(e.target.value)} placeholder="Buscar cupón o influencer…"
+                          style={{width:"100%",background:T.bg,border:`1px solid ${cuponSearch?T.accent+"88":T.border}`,borderRadius:DS.r.full,padding:"6px 10px 6px 27px",fontSize:12,color:T.text,outline:"none",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                        {cuponSearch&&<button onClick={()=>setCuponSearch("")} style={{position:"absolute",right:7,top:"50%",transform:"translateY(-50%)",background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:12,padding:2,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
+                      </div>
+                      <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{qCup?`${rowsVis.length} de ${rows.length} códigos`:`${rows.length} codigos · ${comData.totalPedidos} pedidos analizados`}</span>
                     </div>
                     {/* Header */}
                     <div style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 80px 110px 62px",gap:8,padding:"9px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>
                       <span>Código</span><span>Descuento TN</span><span>Usos</span><span>Influencer</span><span>Bruto</span><span style={{color:T.green}}>Neto (-MP {mpComision}%)</span><span>Comisión %</span><span style={{color:T.orange}}>A pagar</span><span>Link</span>
                     </div>
-                    {rows.map((r,i)=>{
+                    {qCup&&rowsVis.length===0&&(
+                      <div style={{padding:"22px 18px",fontSize:12,color:T.textSm,textAlign:"center"}}>Ningún código coincide con "{cuponSearch}"</div>
+                    )}
+                    {rowsVis.map((r,i)=>{
                       const descLabel=r.type==="percentage"?`${r.value}%`:r.type==="absolute"?`$${r.value}`:"Envío gratis";
                       return (
-                        <div key={r.code} style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 80px 110px 62px",gap:8,padding:"12px 18px",borderBottom:i<rows.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:r.usosPeriodo>0?T.green+"05":"transparent",transition:"background 0.15s"}}
+                        <div key={r.code} style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 80px 110px 62px",gap:8,padding:"12px 18px",borderBottom:i<rowsVis.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:r.usosPeriodo>0?T.green+"05":"transparent",transition:"background 0.15s"}}
                           onMouseEnter={e=>e.currentTarget.style.background=T.surface}
                           onMouseLeave={e=>e.currentTarget.style.background=r.usosPeriodo>0?T.green+"05":"transparent"}>
                           <div style={{fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:13,fontWeight:700,color:T.accent}}>{r.code}</div>
