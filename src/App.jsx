@@ -29850,7 +29850,9 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const fmtARS = n => "$\u00a0"+Math.round(n||0).toLocaleString("es-AR");
   const rate   = p => p.units_sold>0 ? p.units_sold/days : 0;
   const vrate  = v => v.units_sold>0 ? v.units_sold/days : 0;
-  const dLeft  = (stock,r) => r>0 ? Math.round(stock/r) : null;
+  // Días de stock restante. Si la tienda quedó en negativo (oversold en Shopify),
+  // el stock ya se agotó → 0 días, no un "-19d" sin sentido. Se clampea a 0.
+  const dLeft  = (stock,r) => r>0 ? Math.max(0, Math.round(stock/r)) : null;
 
   // Umbral por producto (individual o global)
   const thresholdFor = p => alertConfig[p.id]?.threshold ?? globalThreshold;
