@@ -29788,14 +29788,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     fetch(`/api/inventory?action=sync_sales&uid=${uid}`, { method: "POST" })
       .then(r => r.json())
       .then(j => {
-        if (j.items_updated > 0 || j.sales_logged > 0) {
-          // Recargar items si la tab actual los muestra
-          if (tab === "inventario") loadInvItems();
-        }
+        // Si descontó algo, recargar los items — actualiza tanto la lista de
+        // Inventario como el número "Inventario Growith" del panel de Stock.
+        if (j.items_updated > 0 || j.sales_logged > 0) loadInvItems();
       })
       .catch(()=>{});
     /* eslint-disable-next-line */
-  }, [uid]);
+  }, [uid, tab]);
 
   // Cargar config de alertas: Firestore es la fuente de verdad (cross-device);
   // localStorage es cache local y fuente de migración one-time para users viejos.

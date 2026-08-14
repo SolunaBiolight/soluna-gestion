@@ -539,11 +539,15 @@ export default async function handler(req, res) {
         const linkMap = new Map((item.product_links || []).map(l => [l.product_id, parseInt(l.quantity) || 1]));
         const itemSku = String(item.sku || "").trim().toUpperCase();
         const processed = new Set(item.processed_orders || []);
+        // Baseline: el stock que fijaste a mano ya refleja las ventas de ANTES. Solo
+        // las ventas posteriores al baseline descuentan (evita doble conteo).
+        const baselineMs = item.stock_baseline_at ? Date.parse(item.stock_baseline_at) : 0;
         let stockChange = 0;
         const newProcessed = [];
 
         for (const ord of recentOrders) {
           if (processed.has(ord.order_id)) continue;
+          if (baselineMs && ord.ts) { const t = Date.parse(ord.ts); if (isFinite(t) && t <= baselineMs) continue; }
           let unitsForItem = 0;
           for (const prod of ord.products) {
             // 1) Vínculo explícito por product_id (prioridad). 2) Fallback por SKU
@@ -848,6 +852,13 @@ export default async function handler(req, res) {
         // Mantenemos el set de orders procesadas para no descontar 2 veces
         processed_orders: existing?.processed_orders || [],
         last_sync_at: existing?.last_sync_at || null,
+        // "Baseline": cuando fijás el stock a mano, ESE número es la verdad DESDE
+        // AHORA. Solo las ventas POSTERIORES lo descuentan — las anteriores ya están
+        // reflejadas en el conteo físico que cargaste. Evita el doble conteo y que
+        // el número quede congelado. Se re-estampa cada vez que cambia el stock manual.
+        stock_baseline_at: (!existing || (existing.stock_total || 0) !== stockTotalFromSbw)
+          ? new Date().toISOString()
+          : (existing?.stock_baseline_at || null),
         created_at: existing?.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
