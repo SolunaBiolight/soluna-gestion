@@ -8615,16 +8615,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       Paquete
                     </button>
                   )}
+                  {/* Exportar = violeta (acción primaria clásica); Generar con
+                      saldo = verde (la vía recomendada, mismo verde del saldo). */}
                   <button onClick={()=>{setExportSingleOrder(null);exportAndreani([...selected.values()]);}}
                     title="Genera el Excel para subir al portal de Andreani y pagar con tu propia cuenta"
-                    style={{...BtnSecondary(T),fontWeight:600,fontSize:12,padding:"7px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+                    style={{...BtnPrimary(T),fontWeight:600,fontSize:12,padding:"7px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
                     Exportar XLSX Andreani ({selected.size})
                   </button>
                   {andreani.enabled&&(
                     <button onClick={()=>{setExportSingleOrder(null);lanzarBulkAndreani([...selected.values()]);}}
                       title="Cotiza y emite las etiquetas al instante, debitando del saldo de envíos"
-                      style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",position:"relative"}}>
+                      style={{...BtnPrimary(T),border:`1.5px solid ${T.green}55`,background:T.green+"1a",color:T.green,boxShadow:`0 0 0 1px ${T.green}15, 0 4px 20px ${T.green}20`,fontSize:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",position:"relative"}}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                       Generar etiquetas (Saldo) ({selected.size})
                       <span style={{position:"absolute",top:-9,right:10,fontSize:9,fontWeight:800,letterSpacing:0.4,textTransform:"uppercase",background:T.green,color:"#fff",borderRadius:5,padding:"2px 7px",boxShadow:"0 2px 8px rgba(0,0,0,0.35)"}}>Recomendado</span>
