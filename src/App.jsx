@@ -29780,6 +29780,9 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   useEffect(()=>{ if (uid && tab === "config") { loadWarehouses(); loadInvItems(); } /* eslint-disable-next-line */ }, [uid, tab]);
   useEffect(()=>{ if (uid && tab === "inventario") { loadInvItems(); loadWarehouses(); } /* eslint-disable-next-line */ }, [uid, tab]);
+  // Cargar los items de inventario SIEMPRE (no solo en la tab Inventario): la lista
+  // de productos usa el stock del depósito como fuente de verdad (override de p.stock_total).
+  useEffect(()=>{ if (uid) loadInvItems(); /* eslint-disable-next-line */ }, [uid]);
   useEffect(()=>{ if (uid && tab === "movimientos") { loadMovements(); loadWarehouses(); } /* eslint-disable-next-line */ }, [uid, tab]);
 
   // Polling automático cada 60s mientras el usuario está en el tab Historial.
@@ -29878,7 +29881,26 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const stLabel = (stock,d) => stock===0?"Sin stock":d===null?"Sin ventas":d<=7?"Crítico":d<=14?"Reponer":"OK";
   const stBg    = d => stColor(d)+"22";
 
-  const allProducts = data?.products||[];
+  // Stock del DEPÓSITO Growith como fuente de verdad: si el producto tiene un item
+  // de inventario vinculado (por SKU o por link explícito), ESE stock manda sobre el
+  // de la tienda (Shopify la deja en negativo por sobreventa). Así la lista muestra
+  // tu stock real (depósito), no el -2.154 de la tienda. Se propaga solo a stock/días/
+  // proyección/KPIs porque todos derivan de p.stock_total y p.variants[].stock.
+  const invBySku = (()=>{ const m=new Map(); for(const it of invItems){ const k=String(it.sku||"").trim().toUpperCase(); if(k&&!m.has(k)) m.set(k,it); } return m; })();
+  const itemForProduct = (p) => {
+    for (const v of (p.variants||[])) { const k=String(v.sku||"").trim().toUpperCase(); if(k&&invBySku.has(k)) return invBySku.get(k); }
+    const linkIds=[`TN-${p.id}`,`SH-${p.id}`,`ML-${p.id}`];
+    return invItems.find(it=>(it.product_links||[]).some(l=>linkIds.includes(l.product_id)))||null;
+  };
+  const allProducts = (data?.products||[]).map(p=>{
+    const it = itemForProduct(p);
+    if (!it) return p;
+    const invStock = Math.max(0, parseInt(it.stock_total)||0);
+    // 1 variante: le pasamos el stock del depósito directo. Multi-variante: no se
+    // puede repartir, así que dejamos las variantes como están y solo overrideamos el total.
+    const variants = (p.variants||[]).length===1 ? [{...p.variants[0], stock: invStock}] : (p.variants||[]);
+    return {...p, stock_total: invStock, variants, _invStock: true};
+  });
 
   // Alertas activas
   const alertas = allProducts.filter(p=>enabledFor(p)).flatMap(p=>{
@@ -30240,14 +30262,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     {id:"config",label:"Configuración"},
   ];
 
-  // Fusión Catálogo ↔ Items de inventario: matchea por SKU (cualquier variante)
-  // o por publicación vinculada. Una sola verdad de stock por producto.
-  const invBySku = (()=>{ const m=new Map(); for(const it of invItems){ const k=String(it.sku||"").trim().toUpperCase(); if(k&&!m.has(k)) m.set(k,it); } return m; })();
-  const itemForProduct = (p) => {
-    for (const v of (p.variants||[])) { const k=String(v.sku||"").trim().toUpperCase(); if(k&&invBySku.has(k)) return invBySku.get(k); }
-    const linkIds=[`TN-${p.id}`,`SH-${p.id}`,`ML-${p.id}`];
-    return invItems.find(it=>(it.product_links||[]).some(l=>linkIds.includes(l.product_id)))||null;
-  };
+  // (invBySku + itemForProduct se definen arriba, junto a allProducts — el stock del
+  // depósito ya está inyectado en p.stock_total, así que acá no se redefine.)
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
