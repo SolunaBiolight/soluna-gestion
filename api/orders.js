@@ -1183,9 +1183,9 @@ export default async function handler(req, res) {
               body: JSON.stringify({ query: `SELECT metrics.cost_micros, metrics.conversions, metrics.conversions_value, segments.date FROM customer WHERE segments.date BETWEEN '${sinceR}' AND '${untilR}'` }),
             });
             if (!r.ok) {
-              const txt = (await r.text().catch(()=>"" )).slice(0, 300);
-              searchErrs.push(`HTTP ${r.status}${/DEVELOPER_TOKEN_NOT_APPROVED/i.test(txt) ? " (developer token sin aprobar)" : /REQUESTED_METRICS_FOR_MANAGER/i.test(txt) ? " (cuenta administrador MCC, sin métricas propias)" : ""}`);
-              console.error("gads search HTTP", r.status, txt.slice(0,200));
+              const txt = (await r.text().catch(()=>"" )).slice(0, 1200);
+              searchErrs.push(`HTTP ${r.status}${/DEVELOPER_TOKEN_NOT_APPROVED/i.test(txt) ? " (developer token sin aprobar)" : /DEVELOPER_TOKEN_PROHIBITED/i.test(txt) ? " (el developer token no puede usarse con este proyecto de Google Cloud)" : /USER_PERMISSION_DENIED/i.test(txt) ? " (la cuenta Google conectada no tiene acceso directo a esa cuenta de Ads — puede faltar login-customer-id del MCC)" : /CUSTOMER_NOT_ENABLED/i.test(txt) ? " (la cuenta de Ads está desactivada)" : /REQUESTED_METRICS_FOR_MANAGER/i.test(txt) ? " (cuenta administrador MCC, sin métricas propias)" : ""}`);
+              console.error("gads search HTTP", r.status, txt);
               continue;
             }
             const j = await r.json();
