@@ -1156,7 +1156,10 @@ export default async function handler(req, res) {
           // se re-listan y se persisten para las próximas cargas.
           let customers = g.customers || [];
           if (!customers.length) {
-            const cr = await fetch("https://googleads.googleapis.com/v18/customers:listAccessibleCustomers", {
+            // v25 (ago 2026): Google pasó a releases mensuales — v18 murió y devolvía
+            // 404 en todo. Si esto vuelve a dar 404 en el futuro, subir la versión acá
+            // y en google-ads-callback.js (developers.google.com/google-ads/api/docs/sunset-dates).
+            const cr = await fetch("https://googleads.googleapis.com/v25/customers:listAccessibleCustomers", {
               headers: { Authorization: `Bearer ${at}`, "developer-token": dt },
             });
             if (cr.ok) {
@@ -1173,7 +1176,7 @@ export default async function handler(req, res) {
           const searchErrs = [];
           for (const c of (customers || []).slice(0, 5)) {
             const cn = String(c).replace(/^customers\//, "").replace(/-/g, "");
-            const r = await fetch(`https://googleads.googleapis.com/v18/customers/${cn}/googleAds:search`, {
+            const r = await fetch(`https://googleads.googleapis.com/v25/customers/${cn}/googleAds:search`, {
               method: "POST",
               headers: { Authorization: `Bearer ${at}`, "developer-token": dt, "Content-Type": "application/json",
                 ...(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ? { "login-customer-id": String(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID).replace(/-/g, "") } : {}) },

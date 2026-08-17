@@ -67,7 +67,7 @@ export default async function handler(req, res) {
     const devToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
     if (devToken) {
       try {
-        const cr = await fetch("https://googleads.googleapis.com/v18/customers:listAccessibleCustomers", {
+        const cr = await fetch("https://googleads.googleapis.com/v25/customers:listAccessibleCustomers", {
           headers: { Authorization: `Bearer ${tj.access_token}`, "developer-token": devToken },
         });
         if (cr.ok) {
