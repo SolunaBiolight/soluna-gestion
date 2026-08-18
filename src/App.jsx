@@ -12679,33 +12679,31 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                 <div style={{fontWeight:700,color:T.text,marginBottom:8}}>Cómo generar tu System User Token (5-8 min)</div>
 
                 <div style={{marginBottom:10,padding:"8px 11px",background:T.yellowBg,border:`1.5px solid ${T.yellow||T.yellow}44`,borderRadius:6,fontSize:11,color:T.textMd,lineHeight:1.5,boxShadow:`0 0 0 1px ${T.yellow||T.yellow}18, 0 4px 12px ${T.yellow||T.yellow}14`}}>
-                  <strong style={{color:T.text}}>Antes de empezar:</strong> necesitás <strong style={{color:T.text}}>una app en Meta for Developers</strong> (no importa cuál, sirve cualquiera). Si no tenés, mirá el desplegable de abajo — se crea en 1 minuto.
+                  <strong style={{color:T.text}}>Antes de empezar:</strong> necesitás <strong style={{color:T.text}}>una app en Meta for Developers</strong> (no importa cuál, sirve cualquiera). Si no tenés, mirá el desplegable de abajo — se crea en 2 minutos.
                 </div>
 
                 <details style={{marginBottom:12,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8}}>
                   <summary style={{cursor:"pointer",padding:"8px 12px",fontSize:11,fontWeight:600,color:T.accent,listStyle:"none"}}>
-                    ▸ ¿No tenés una app creada? Crearla en 1 minuto
+                    ▸ ¿No tenés una app creada? Crearla en 2 minutos
                   </summary>
                   <ol style={{margin:0,padding:"4px 12px 12px 30px",fontSize:11,color:T.textMd,lineHeight:1.7}}>
                     <li>Entrá a <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>developers.facebook.com/apps</a> e iniciá sesión con tu Facebook.</li>
                     <li style={{padding:"6px 8px",background:T.yellow+"15",border:`1px solid ${T.yellow}33`,borderRadius:6,marginLeft:-8,paddingLeft:14}}><strong style={{color:T.text}}>Si es tu primera vez</strong> y te lleva a una página de documentación (SDK, "Empezar", etc.) es porque tu cuenta todavía no está registrada como desarrollador: tocá <strong style={{color:T.text}}>"Empezar" / "Get Started"</strong> (arriba a la derecha) y completá el registro. Cuando te pregunte <strong style={{color:T.text}}>"¿Cuál te describe mejor?"</strong>, elegí <strong style={{color:T.text}}>"Desarrollador"</strong> → <strong style={{color:T.text}}>Completar registro</strong>. Después volvés a <strong style={{color:T.text}}>developers.facebook.com/apps</strong>.</li>
-                    <li>Ya adentro, tocá el botón verde <strong style={{color:T.text}}>"Crear app"</strong> (arriba a la derecha).</li>
-                    <li>Si te pregunta qué querés hacer, elegí <strong style={{color:T.text}}>"Otro"</strong> → tipo <strong style={{color:T.text}}>"Negocio"</strong>. Nombre: lo que quieras (ej. <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>Growith Connect</code>) → email → Crear.</li>
-                    <li>Listo. No hace falta configurar nada más ahí — el resto se hace desde Business Manager (los pasos de abajo).</li>
+                    <li>Tocá el botón verde <strong style={{color:T.text}}>"Crear app"</strong> (arriba a la derecha). Poné un nombre (ej. <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>Growith Connect</code>) y tu email → <strong style={{color:T.text}}>Siguiente</strong>.</li>
+                    <li>En <strong style={{color:T.text}}>Casos de uso</strong> elegí el <strong style={{color:T.text}}>primero: "Crear y administrar anuncios con la API de marketing"</strong> → Siguiente.</li>
+                    <li style={{padding:"6px 8px",background:T.yellow+"15",border:`1px solid ${T.yellow}33`,borderRadius:6,marginLeft:-8,paddingLeft:14}}>En <strong style={{color:T.text}}>Negocio</strong> ("¿Qué portfolio comercial querés conectar?") <strong style={{color:T.text}}>elegí TU negocio</strong> — el mismo Business Manager donde tenés tus anuncios y tu página. Es importante que sea ese, no otro → Siguiente.</li>
+                    <li>En <strong style={{color:T.text}}>Requisitos</strong> (dice "No se identificaron requisitos") → Siguiente. En <strong style={{color:T.text}}>Resumen</strong> → <strong style={{color:T.text}}>Crear app</strong>. Listo.</li>
                   </ol>
                 </details>
 
-                <div style={{fontWeight:700,color:T.text,marginBottom:8,marginTop:2}}>Hacelo todo desde Business Manager:</div>
+                <div style={{fontWeight:700,color:T.text,marginBottom:8,marginTop:2}}>Generá el token desde Business Manager:</div>
                 <ol style={{margin:0,paddingLeft:18}}>
-                  <li>Entrá a <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>business.facebook.com → Configuración del negocio → Usuarios → Usuarios del sistema</a></li>
-                  <li>Click en <strong style={{color:T.text}}>+ Agregar</strong> → ponele un nombre (ej: "Growith") → rol: <strong style={{color:T.text}}>Administrador</strong> → Crear usuario del sistema</li>
-                  <li>Click en el usuario que creaste → <strong style={{color:T.text}}>"Asignar activos"</strong> → seleccioná tu <strong style={{color:T.text}}>Cuenta publicitaria</strong> y tu <strong style={{color:T.text}}>Página</strong> → marcá <strong style={{color:T.text}}>todos los permisos (acceso completo)</strong> → Guardar</li>
-                  <li style={{padding:"6px 8px",background:T.yellow+"15",border:`1px solid ${T.yellow}33`,borderRadius:6,marginLeft:-8,paddingLeft:14}}>
-                    <strong style={{color:T.text}}>PASO CLAVE — asignar la app al usuario:</strong> en el mismo lugar (el usuario abierto), buscá la sección <strong style={{color:T.text}}>"Apps asignadas"</strong> o click en <strong style={{color:T.text}}>"Asignar apps"</strong> → elegí tu app → permisos completos → Guardar.
-                  </li>
-                  <li>Volvé al usuario → click en <strong style={{color:T.text}}>"Generar token"</strong> → elegí la app que asignaste → caducidad: <strong style={{color:T.text}}>Nunca</strong> → Siguiente</li>
+                  <li>Entrá a <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>business.facebook.com/settings/system-users</a>. <strong style={{color:T.text}}>Arriba a la izquierda asegurate de tener seleccionado TU negocio</strong> (el mismo Business Manager de recién) → después andá a <strong style={{color:T.text}}>Usuarios → Usuarios del sistema</strong>.</li>
+                  <li>Click en <strong style={{color:T.text}}>+ Agregar</strong> → nombre (ej: "Growith") → rol: <strong style={{color:T.text}}>Admin</strong> → <strong style={{color:T.text}}>Create system user</strong>.</li>
+                  <li>Con el usuario abierto → <strong style={{color:T.text}}>"Asignar activos"</strong> → seleccioná tu <strong style={{color:T.text}}>Cuenta publicitaria</strong> y tu <strong style={{color:T.text}}>Página</strong> → en cada uno marcá <strong style={{color:T.text}}>control total / todos los permisos</strong> → Guardar.</li>
+                  <li>Click en <strong style={{color:T.text}}>"Generar token"</strong> → paso <strong style={{color:T.text}}>"Seleccionar app"</strong>: elegí la app que creaste (Growith Connect) → <strong style={{color:T.text}}>"Definir caducidad"</strong>: <strong style={{color:T.text}}>Nunca</strong> → seguí.</li>
                   <li style={{padding:"8px 10px",background:T.accent+"10",border:`1px solid ${T.accent}33`,borderRadius:6,marginLeft:-8,paddingLeft:14}}>
-                    <strong style={{color:T.text}}>Permisos a marcar en el dropdown</strong> (buscá cada uno con el cuadro de búsqueda):
+                    <strong style={{color:T.text}}>"Asignar permisos"</strong> — marcá estos (buscá cada uno con el cuadro de búsqueda):
                     <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:6}}>
                       {["ads_management","ads_read","business_management","pages_show_list","pages_read_engagement"].map(p=>(
                         <code key={p} style={{background:T.surface,padding:"2px 7px",borderRadius:4,fontSize:10,color:T.accent,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}}>{p}</code>
@@ -12713,7 +12711,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                     </div>
                     <div style={{marginTop:6,fontSize:10,color:T.textSm}}>Los 3 primeros son <strong style={{color:T.text}}>obligatorios</strong>. <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>read_insights</code> e <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>instagram_basic</code> ya no aparecen en tokens de sistema (Meta los eliminó de este flujo) — están cubiertos por <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>ads_read</code> y <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>pages_read_engagement</code>. <strong style={{color:T.text}}>NO marques</strong> catalog_management, pages_manage_ads, threads ni messaging.</div>
                   </li>
-                  <li>Click en <strong style={{color:T.text}}>"Generar token"</strong> → copialo (empieza con <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>EAA...</code>) → pegalo abajo</li>
+                  <li>Al terminar de asignar los permisos <strong style={{color:T.text}}>el token se genera solo</strong>: en la pantalla final <strong style={{color:T.text}}>"Se creó el token"</strong> tocá <strong style={{color:T.text}}>"Copiar"</strong> (empieza con <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>EAA...</code>) → pegalo abajo. <strong style={{color:T.red}}>Copialo ahora</strong>: no se vuelve a mostrar.</li>
                 </ol>
                 <div style={{marginTop:10,padding:"8px 12px",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:6,fontSize:11,color:T.green}}>
                   ✓ El token "Nunca vence" — no vas a tener que renovarlo.
