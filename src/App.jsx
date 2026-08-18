@@ -842,6 +842,15 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
   const [acctOpen, setAcctOpen] = React.useState(false);
   const otherAccounts = ghReadAccounts().filter(a=>a.email!==user?.email);
+  // Quehaceres de vinculación: una vez conectada la tienda (TN/Shopify), sugerir
+  // conectar Mercado Libre/Pago, Meta y ARCA. Se puede cerrar (por usuario).
+  const [quehaceresOff, setQuehaceresOff] = React.useState(()=>{ try{return localStorage.getItem(ghKey("growith_quehaceres_off"))==="1";}catch(_){return false;} });
+  const tiendaLista = !!connectedStores.loaded && (connectedStores.tn || connectedStores.shopify);
+  const pendientesVinc = [
+    { key:"ml",   ok:connectedStores.ml,   label:"Mercado Libre / Pago", icon:"ml" },
+    { key:"meta", ok:connectedStores.meta, label:"Meta Ads",             icon:"meta" },
+    { key:"arca", ok:connectedStores.arca, label:"ARCA (facturación)",   icon:"arca" },
+  ].filter(x=>!x.ok);
   const W = collapsed ? 64 : 224;
 
   const NavBtn = ({item}) => {
@@ -983,7 +992,25 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
         })}
       </nav>
 
-      {/* Multi-tienda cancelado — una sola tienda por usuario. Sin selector de org. */}
+      {/* Quehaceres de vinculación (abajo a la izquierda) — aparecen cuando ya
+          hay tienda conectada pero faltan integraciones. Se pueden cerrar. */}
+      {!collapsed && tiendaLista && pendientesVinc.length>0 && !quehaceresOff && (
+        <div style={{margin:`0 ${DS.sp.sm}px ${DS.sp.sm}px`,padding:"10px 12px",background:T.accent+"0f",border:`1px solid ${T.accent}33`,borderRadius:DS.r.lg}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+            <span style={{fontSize:11,fontWeight:800,color:T.accent,letterSpacing:0.3,textTransform:"uppercase"}}>Terminá de conectar</span>
+            <button onClick={()=>{setQuehaceresOff(true);try{localStorage.setItem(ghKey("growith_quehaceres_off"),"1");}catch(_){}}} title="Ocultar" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:14,lineHeight:1,padding:0}}>✕</button>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            {pendientesVinc.map(p=>(
+              <button key={p.key} onClick={()=>setPage("config")} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"7px 8px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.md,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left"}}>
+                <span style={{display:"inline-flex",flexShrink:0}}><BrandIcon name={p.icon} size={15}/></span>
+                <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.label}</span>
+                <span style={{flexShrink:0,fontSize:13,color:T.accent,fontWeight:700}}>+</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* User Section */}
       <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,padding:DS.sp.sm,marginTop:DS.sp.sm}}>
@@ -12516,13 +12543,13 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               {/* Pasos escritos — mismo flujo que muestra el video */}
               <div style={{padding:"14px 16px",background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,marginBottom:18,fontSize:12,color:T.textMd,lineHeight:1.7}}>
                 <div style={{fontWeight:700,color:T.text,marginBottom:8}}>Crear tu app en Shopify (3 minutos)</div>
-                <ol style={{margin:0,paddingLeft:18,display:"flex",flexDirection:"column",gap:8}}>
+                <ol style={{margin:0,paddingLeft:18,display:"flex",flexDirection:"column",gap:9}}>
                   <li>Entrá a <a href="https://dev.shopify.com/dashboard" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>dev.shopify.com/dashboard</a> → <strong style={{color:T.text}}>Create app</strong> → nombre <strong style={{color:T.text}}>Growith</strong>.</li>
-                  <li>Entrá a la app → <strong style={{color:T.text}}>Configuración</strong> (o "Versiones → Crear versión"). En <strong style={{color:T.text}}>Alcances (scopes)</strong> pegá estos:
-                    <div style={{margin:"5px 0 2px",display:"flex",gap:4,flexWrap:"wrap"}}>
-                      {["read_all_orders","read_customers","read_orders","write_orders","read_products"].map(s=>(
-                        <code key={s} style={{background:T.bg,padding:"2px 7px",borderRadius:4,fontSize:10,color:T.accent}}>{s}</code>
-                      ))}
+                  <li>Entrá a la app → <strong style={{color:T.text}}>Versiones → Crear versión</strong>. Ahí adentro está todo lo de los pasos 3 y 4.</li>
+                  <li>En <strong style={{color:T.text}}>Alcances (scopes)</strong> pegá TODOS estos de una (van separados por comas):
+                    <div style={{marginTop:5,display:"flex",alignItems:"center",gap:6}}>
+                      <code style={{flex:1,minWidth:0,background:T.bg,padding:"6px 8px",borderRadius:5,fontSize:9.5,color:T.accent,wordBreak:"break-all"}}>read_all_orders,read_customers,read_orders,write_orders,read_products</code>
+                      <button onClick={()=>{navigator.clipboard.writeText("read_all_orders,read_customers,read_orders,write_orders,read_products");toast("Scopes copiados ✓","success");}} style={{...BtnSecondary(T),fontSize:10,padding:"5px 9px",flexShrink:0}}>Copiar</button>
                     </div>
                   </li>
                   <li>En <strong style={{color:T.text}}>URL de redireccionamiento</strong> pegá exactamente esta:
@@ -12531,18 +12558,20 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                       <button onClick={()=>{navigator.clipboard.writeText("https://www.growithapp.com/api/integrations?platform=shopify");toast("URL copiada ✓","success");}} style={{...BtnSecondary(T),fontSize:10,padding:"5px 9px",flexShrink:0}}>Copiar</button>
                     </div>
                   </li>
-                  <li><strong style={{color:T.text}}>Publicá</strong> la versión / guardá los cambios.</li>
-                  <li>En <strong style={{color:T.text}}>Configuración → Credenciales</strong>, copiá el <strong style={{color:T.text}}>Client ID</strong> y el <strong style={{color:T.text}}>Client Secret</strong> (tocá el ojito para verlo) → pegalos acá abajo.</li>
+                  <li><strong style={{color:T.text}}>Lanzá la versión:</strong> tocá <strong style={{color:T.text}}>"Publicar" / "Lanzar"</strong> (arriba a la derecha). Aparece un cartel pidiendo el <strong style={{color:T.text}}>nombre de la versión</strong> → dejalo <strong style={{color:T.text}}>en blanco</strong> y tocá de nuevo <strong style={{color:T.text}}>"Lanzar" / "Avanzar"</strong>. Con eso la versión interna de tu app queda lista.</li>
+                  <li>Ahora sí, en <strong style={{color:T.text}}>Configuración → Credenciales</strong> copiá el <strong style={{color:T.text}}>Client ID</strong> y el <strong style={{color:T.text}}>Client Secret</strong> (tocá el ojito para verlo) → pegalos en los campos 2 y 3 de acá abajo.</li>
                 </ol>
               </div>
 
               {/* Los 3 campos */}
               <div style={{display:"flex",flexDirection:"column",gap:14}}>
                 <div>
-                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>1 · Tu dominio Shopify <span style={{color:T.yellow||T.yellow,textTransform:"none",fontWeight:500}}>(el .myshopify.com)</span></div>
-                  <input value={shopifyShop} onChange={e=>setShopifyShop(e.target.value)} placeholder="ej: tu-tienda-xx (solo el subdominio)" style={iS} disabled={connectingShopify}/>
-                  <div style={{fontSize:10,color:T.textSm,marginTop:4,lineHeight:1.5}}>
-                    El subdominio <strong style={{color:T.text}}>NATIVO</strong> (ej: <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>asdf-sc.myshopify.com</code> → ponés solo <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>asdf-sc</code>). NO tu dominio custom (.com). Lo ves en el admin → <strong style={{color:T.text}}>Configuración → Dominios</strong>.
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>1 · Tu dominio Shopify</div>
+                  <input value={shopifyShop} onChange={e=>setShopifyShop(e.target.value)} placeholder="ej: tu-tienda.myshopify.com" style={iS} disabled={connectingShopify}/>
+                  <div style={{fontSize:10,color:T.textSm,marginTop:4,lineHeight:1.55}}>
+                    Es el dominio <strong style={{color:T.text}}>NATIVO</strong> que te dio Shopify, escrito <strong style={{color:T.text}}>completo hasta el <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>.myshopify.com</code></strong> (ej: <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>tu-tienda.myshopify.com</code>).<br/>
+                    <strong style={{color:T.red}}>NO uses tu dominio propio</strong> (ej: <code style={{color:T.red}}>tutienda.com</code> / <code style={{color:T.red}}>.com.ar</code>).<br/>
+                    ¿Dónde lo encontrás? En tu admin de Shopify → <strong style={{color:T.text}}>Configuración → Dominios</strong> → el que tiene el sello <strong style={{color:T.text}}>"Predeterminado de Shopify"</strong> (ese termina en .myshopify.com).
                   </div>
                 </div>
                 <div>
@@ -33596,7 +33625,8 @@ export default function App() {
       const shopify=d.stores?.find(s=>s.type==="shopify");
       const ml=d.stores?.find(s=>s.type==="mercadolibre"||s.type==="meli");
       const meta=(d.metaAccounts||[]).length>0;
-      setConnectedStores({tn:!!tn,shopify:!!shopify,ml:!!ml,meta,loaded:true});
+      const arca=(d.cuits||[]).length>0;
+      setConnectedStores({tn:!!tn,shopify:!!shopify,ml:!!ml,meta,arca,loaded:true});
       const newId=tn?.storeId||null;
       if(prevTnRef.current!==null && prevTnRef.current!==newId) {
         try{ localStorage.removeItem(`growith_orders_${user.uid}`); }catch(e){}
