@@ -7,6 +7,7 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
 import { guardUid, requireAdmin, guardCron, verifyAuth, clearTeamCache } from "./_auth.js";
 import { acreditarComisionReferido, descontarCreditoAplicado } from "./referidos.js";
 
@@ -1822,6 +1823,35 @@ export default async function handler(req, res) {
         ]);
         const pagos = pagSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
         const usuarios = usSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
+        // Fuente de verdad de "quién se registró" = Firebase Auth. Cuentas que se
+        // crearon antes de que existiera el auto-doc (o que nunca dispararon su
+        // creación) no tienen doc en `users` y no aparecían acá. Traemos todos los
+        // usuarios de Auth y agregamos los que falten como registros mínimos, para
+        // que el panel muestre TODAS las cuentas. Best-effort: si Auth falla, se
+        // sigue con solo los docs de Firestore.
+        try {
+          const yaCargados = new Set(usuarios.map(u => u._id));
+          const authUsers = [];
+          let pageToken = undefined;
+          for (let i = 0; i < 5; i++) { // hasta 5000 cuentas (1000 por página)
+            const page = await getAuth().listUsers(1000, pageToken);
+            authUsers.push(...page.users);
+            if (!page.pageToken) break;
+            pageToken = page.pageToken;
+          }
+          for (const au of authUsers) {
+            if (yaCargados.has(au.uid)) continue;
+            usuarios.push({
+              _id: au.uid,
+              uid: au.uid,
+              email: au.email || "",
+              nombre: au.displayName || (au.email ? au.email.split("@")[0] : au.uid),
+              plan: "free",
+              createdAt: au.metadata?.creationTime ? { _seconds: Math.floor(new Date(au.metadata.creationTime).getTime() / 1000) } : null,
+              _sinDoc: true, // no tiene doc en Firestore (nunca completó registro/onboarding)
+            });
+          }
+        } catch (e) { console.warn("[admin] listUsers:", e.message); }
         const activos = usuarios.filter(u => u.plan && u.plan !== "free");
         const activosPagos = activos.filter(u => !u.isTrial);
         const mrrUsdt = activosPagos.reduce((s, u) => s + (PLAN_PRICE_USDT[u.plan] || 0), 0);

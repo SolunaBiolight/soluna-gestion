@@ -13856,6 +13856,7 @@ function AppAdmin({T, user, onBack}) {
                     <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                       <span style={{fontSize:11,padding:"1px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[u.plan||"free"]||T.surface,color:PLAN_C[u.plan||"free"]||T.textSm}}>{planLabel(u.plan)}</span>
                       {u.isTrial&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:4,fontWeight:700,background:T.yellowBg,color:T.yellow}}>prueba</span>}
+                      {u._sinDoc&&<span title="Cuenta registrada en Auth que nunca completó el registro en la app (sin datos/plan)." style={{fontSize:10,padding:"1px 7px",borderRadius:4,fontWeight:700,background:T.textSm+"22",color:T.textSm}}>sin registro completo</span>}
                       {u.planExpiry&&u.plan!=="free"&&days!==null&&(
                         <span style={{fontSize:11,color:expiryColor}}>
                           {days<0?`vencido hace ${Math.abs(days)}d`:days===0?"vence hoy":`${days}d restantes`}
