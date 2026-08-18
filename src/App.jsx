@@ -12687,10 +12687,11 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                     ▸ ¿No tenés una app creada? Crearla en 1 minuto
                   </summary>
                   <ol style={{margin:0,padding:"4px 12px 12px 30px",fontSize:11,color:T.textMd,lineHeight:1.7}}>
-                    <li>Entrá a <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>developers.facebook.com/apps</a></li>
-                    <li>Click en <strong style={{color:T.text}}>"Crear aplicación"</strong> → elegí <strong style={{color:T.text}}>"Otro"</strong> → <strong style={{color:T.text}}>"Negocio"</strong></li>
-                    <li>Nombre: lo que quieras (ej. <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>Growith Connect</code>) → email → Cuenta empresarial → Crear</li>
-                    <li>Listo. No necesitás hacer nada más en esa pantalla — todo se hace desde Business Manager.</li>
+                    <li>Entrá a <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>developers.facebook.com/apps</a> e iniciá sesión con tu Facebook.</li>
+                    <li style={{padding:"6px 8px",background:T.yellow+"15",border:`1px solid ${T.yellow}33`,borderRadius:6,marginLeft:-8,paddingLeft:14}}><strong style={{color:T.text}}>Si es tu primera vez</strong> y te lleva a una página de documentación (SDK, "Empezar", etc.) es porque tu cuenta todavía no está registrada como desarrollador: tocá <strong style={{color:T.text}}>"Empezar" / "Get Started"</strong> (arriba a la derecha), aceptá los términos con tu Facebook, y volvés a <strong style={{color:T.text}}>developers.facebook.com/apps</strong>.</li>
+                    <li>Ya adentro, tocá el botón verde <strong style={{color:T.text}}>"Crear app"</strong> (arriba a la derecha).</li>
+                    <li>Si te pregunta qué querés hacer, elegí <strong style={{color:T.text}}>"Otro"</strong> → tipo <strong style={{color:T.text}}>"Negocio"</strong>. Nombre: lo que quieras (ej. <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>Growith Connect</code>) → email → Crear.</li>
+                    <li>Listo. No hace falta configurar nada más ahí — el resto se hace desde Business Manager (los pasos de abajo).</li>
                   </ol>
                 </details>
 
