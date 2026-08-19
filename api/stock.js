@@ -319,11 +319,15 @@ function processSH(orders) {
     const pay=esRecurrentes ? "Mercado Pago" : ((Array.isArray(o.payment_gateway_names)&&o.payment_gateway_names.length?o.payment_gateway_names.join(", "):o.payment_gateway)||"Otro");
     // Comisión REAL de MP embebida por Recurrentes en la orden (note_attribute
     // "mp_fee_real"). Si está, el motor la usa como fee exacto en vez del %.
-    let saleFeeReal = null;
+    let saleFeeReal = null, mpPayId = null;
     if (esRecurrentes && Array.isArray(o.note_attributes)) {
       const na = o.note_attributes.find(a => a && a.name === "mp_fee_real");
       const v = na ? parseFloat(na.value) : NaN;
       if (isFinite(v) && v > 0) saleFeeReal = v;
+      // Órdenes viejas de Recurrentes no tienen mp_fee_real pero sí mp_payment_id:
+      // el motor cruza el fee real por ese ID (retroactivo).
+      const naPay = o.note_attributes.find(a => a && a.name === "mp_payment_id");
+      if (naPay && naPay.value) mpPayId = String(naPay.value);
     }
     let orderUnits=0;
 
@@ -357,7 +361,7 @@ function processSH(orders) {
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
-    if(orderRevenue>0) ordersDetail.push({ id:String(o.id), nombre:`#${o.order_number||o.name||o.id}`, fecha:dt, platform:"shopify", revenue:orderRevenue, items:detItems, pay, envioCosto:parseFloat(o.total_shipping_price_set?.shop_money?.amount)||0, cust:String(o.email||""), ...(saleFeeReal!=null?{saleFee:saleFeeReal}:{}) });
+    if(orderRevenue>0) ordersDetail.push({ id:String(o.id), nombre:`#${o.order_number||o.name||o.id}`, fecha:dt, platform:"shopify", revenue:orderRevenue, items:detItems, pay, envioCosto:parseFloat(o.total_shipping_price_set?.shop_money?.amount)||0, cust:String(o.email||""), ...(saleFeeReal!=null?{saleFee:saleFeeReal}:{}), ...(mpPayId?{mpPayId}:{}) });
   }
   return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,ordersDetail};
 }

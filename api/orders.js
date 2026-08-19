@@ -537,7 +537,7 @@ export default async function handler(req, res) {
           const tok = await getValidMLToken(db, uid, mlMpAcc); // cuenta de MP (Shopify)
           if (!tok?.accessToken) return { fee:0, rev:0 };
           const begin = `${sinceYmd}T00:00:00.000-03:00`, end = `${untilYmd}T23:59:59.999-03:00`;
-          let fee = 0, rev = 0, offset = 0; const feeByRef = {};
+          let fee = 0, rev = 0, offset = 0; const feeByRef = {}; const feeByPayId = {};
           // Cashflow real de MP: profit ≠ caja. money_release_date dice cuándo MP
           // libera cada pago (0-18 días). Se acumula el NETO recibido (post fees)
           // liberado vs retenido, sobre TODOS los pagos aprobados de la cuenta en
@@ -556,6 +556,13 @@ export default async function handler(req, res) {
             for (const p of results) {
               const ref = String(p.external_reference || "");
               const esRegular = p.status==="approved" && p.operation_type==="regular_payment";
+              // Índice por payment_id (TODOS los aprobados, incluidas suscripciones
+              // recurring_payment): las órdenes de Recurrentes guardan su mp_payment_id
+              // y no matchean por external_reference, así que se cruzan por ID directo.
+              if (p.status==="approved") {
+                const fId = (p.fee_details||[]).filter(fd=>fd.fee_payer!=="payer").reduce((s,fd)=>s+(parseFloat(fd.amount)||0),0);
+                if (fId>0) feeByPayId[String(p.id)] = fId;
+              }
               if (esRegular && !/^cashback|^INSTORE/i.test(ref)) {
                 const neto = parseFloat(p.transaction_details?.net_received_amount);
                 const monto = isFinite(neto) && neto>0 ? neto : (parseFloat(p.transaction_amount)||0);
@@ -579,8 +586,8 @@ export default async function handler(req, res) {
             offset += results.length;
             if (results.length < 100 || offset >= (j.paging?.total||0)) break;
           }
-          return { fee, rev, feeByRef, cashflow:{ liberado:+liberado.toFixed(2), retenido:+retenido.toFixed(2) }, financingFee:+financingFee.toFixed(2), retenciones:+retenciones.toFixed(2) };
-        } catch(_) { return { fee:0, rev:0, feeByRef:{} }; }
+          return { fee, rev, feeByRef, feeByPayId, cashflow:{ liberado:+liberado.toFixed(2), retenido:+retenido.toFixed(2) }, financingFee:+financingFee.toFixed(2), retenciones:+retenciones.toFixed(2) };
+        } catch(_) { return { fee:0, rev:0, feeByRef:{}, feeByPayId:{} }; }
       }
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
       // Solo exige token: fetchMetaAll descubre las cuentas publicitarias vía
@@ -1092,6 +1099,19 @@ export default async function handler(req, res) {
       // incluye pagos ajenos). Se cachea en Firestore; cada orden se consulta 1 vez.
       const feeByRef = mpCommCurr.feeByRef || {};
       const feeByRefPrev = mpCommPrev.feeByRef || {};
+      // Fee real de MP por payment_id — para cruzar las órdenes de Recurrentes
+      // (suscripciones) que guardan su mp_payment_id y no matchean por ref.
+      const feeByPayId = mpCommCurr.feeByPayId || {};
+      const feeByPayIdPrev = mpCommPrev.feeByPayId || {};
+      // Fee real de una orden: prioridad al fee exacto embebido (saleFee), después
+      // el cruce por payment_id, después el cruce por ref. Null = usar el %.
+      const realMpDe = (o, fbRef, fbPay) => {
+        if (parseFloat(o.saleFee) > 0) return parseFloat(o.saleFee);
+        if (o.mpPayId && fbPay && fbPay[o.mpPayId] != null) return parseFloat(fbPay[o.mpPayId]) || 0;
+        const ref = mpRefCache[o.id];
+        if (ref && fbRef && fbRef[ref] != null) return parseFloat(fbRef[ref]) || 0;
+        return null;
+      };
       const mpRefCache = (userData.margenesMpRefs && typeof userData.margenesMpRefs==="object" && !Array.isArray(userData.margenesMpRefs)) ? { ...userData.margenesMpRefs } : {};
       const shStoreRef = (userData.stores||[]).find(s => s.type==="shopify");
       if (shStoreRef?.shop && shStoreRef?.accessToken) {
@@ -1120,15 +1140,11 @@ export default async function handler(req, res) {
       // Comisión de pago de Shopify: por orden, si matcheó su pago de MP real (por
       // receipt_id) usamos ESE fee; sino el % configurado del método. Suma SOLO las
       // órdenes de esta tienda → nunca arrastra otras tiendas/ML del MP compartido.
-      function shopifyPayComm(raw, feeMap) {
+      function shopifyPayComm(raw, feeMap, feeMapPay) {
         let s = 0;
         for (const o of (raw?.orders_detail||[])) {
           const rev = parseFloat(o.revenue)||0;
-          const ref = mpRefCache[o.id];
-          // Fee exacto embebido en la orden (ej: suscripciones Recurrentes) manda.
-          // Si no, el fee real matcheado por ref. Si no, el % configurado.
-          const realMp = (parseFloat(o.saleFee)>0) ? parseFloat(o.saleFee)
-            : ((ref && (feeMap||{})[ref]!=null) ? (parseFloat(feeMap[ref])||0) : null);
+          const realMp = realMpDe(o, feeMap, feeMapPay);
           s += (realMp!=null) ? realMp : rev * pctPagoFor(o.pay);
         }
         return s;
@@ -1209,8 +1225,8 @@ export default async function handler(req, res) {
 
       // Gasto real de Mercado Ads y Google Ads (API): ya se trajo en el
       // Promise.all principal de arriba (mlAdsAutoCurr/Prev, gAdsAutoCurr/Prev).
-      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef),     mlEnvioTot(curr.raw), mlAdsAutoCurr, gAdsAutoCurr);
-      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev), mlEnvioTot(prev.raw), mlAdsAutoPrev, gAdsAutoPrev);
+      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef, feeByPayId),     mlEnvioTot(curr.raw), mlAdsAutoCurr, gAdsAutoCurr);
+      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev, feeByPayIdPrev), mlEnvioTot(prev.raw), mlAdsAutoPrev, gAdsAutoPrev);
 
       // ── Comparativa estilo Shopify: "Hoy" vs AYER HASTA LA MISMA HORA ──
       // Con rango = hoy, comparar el día parcial contra ayer COMPLETO infla los
@@ -1322,7 +1338,7 @@ export default async function handler(req, res) {
         for (const o of (raw?.orders_detail||[])) {
           const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*impFor(o.pay);
           const env=((envioModoTienda==="orden")?(parseFloat(o.envioCosto)||0):envioProm)+fulfillFee;
-          const ref=mpRefCache[o.id]; const realMp=(parseFloat(o.saleFee)>0)?parseFloat(o.saleFee):((ref&&feeByRef[ref]!=null)?feeByRef[ref]:null);
+          const realMp=realMpDe(o, feeByRef, feeByPayId);
           const comis=(realMp!=null)?(rev*pctPlat+realMp):(rev*(pctPlat+pctPagoFor(o.pay)));
           add(o.fecha, "tienda", cogs+imp+comis+env, rev);
         }
@@ -1425,9 +1441,9 @@ export default async function handler(req, res) {
               aov: conv>0 ? +(cval/conv).toFixed(2) : undefined,
             } : {}) };
         })(),
-        tienda: canal(curr.raw, false, shopifyPayComm(curr.raw, feeByRef), totals.adSpendMeta + (totals.adSpendGoogle||0), 0, mpCommCurr.rev),
+        tienda: canal(curr.raw, false, shopifyPayComm(curr.raw, feeByRef, feeByPayId), totals.adSpendMeta + (totals.adSpendGoogle||0), 0, mpCommCurr.rev),
         ml:     canal(curr.raw, true,  0, totals.adSpendMl, mlEnvioTot(curr.raw), 0),
-        tiendaPrev: canal(prev.raw, false, shopifyPayComm(prev.raw, feeByRefPrev), prevTotals.adSpendMeta + (prevTotals.adSpendGoogle||0), 0, mpCommPrev.rev),
+        tiendaPrev: canal(prev.raw, false, shopifyPayComm(prev.raw, feeByRefPrev, feeByPayIdPrev), prevTotals.adSpendMeta + (prevTotals.adSpendGoogle||0), 0, mpCommPrev.rev),
         mlPrev:     canal(prev.raw, true,  0, prevTotals.adSpendMl, mlEnvioTot(prev.raw), 0),
         platform: curr.raw?.platform || (curr.raw?.products?.[0]?.platform) || "tiendanube",
         hasMl: !!(curr.raw?.ml_data),
@@ -1457,10 +1473,9 @@ export default async function handler(req, res) {
         for (const o of (raw?.orders_detail||[])) {
           const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*impFor(o.pay);
           const env = ((envioModoTienda==="orden") ? (parseFloat(o.envioCosto)||0) : envioProm) + fulfillFee;
-          // Comisión = % plataforma + comisión de pago: si tenemos la real de MP
-          // de esta venta (vía receipt_id) la usamos; si no, caemos al % configurado.
-          const ref = mpRefCache[o.id];
-          const realMp = (parseFloat(o.saleFee)>0) ? parseFloat(o.saleFee) : ((ref && feeByRef[ref]!=null) ? feeByRef[ref] : null);
+          // Comisión = % plataforma + comisión de pago: fee exacto embebido, cruce
+          // por payment_id (Recurrentes) o por receipt_id; si no, el % configurado.
+          const realMp = realMpDe(o, feeByRef, feeByPayId);
           const comis = (realMp!=null) ? (rev*pctPlat + realMp) : (rev*(pctPlat+pctPagoFor(o.pay)));
           const profit=rev-cogs-imp-comis-env;
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:(curr.raw?.platform==="shopify"?"Shopify":"Tienda Nube"), revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0,
