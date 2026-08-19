@@ -145,7 +145,7 @@ async function shProducts(shop, tok) {
 async function shOrders(shop, tok, days, since, until) {
   // Format exact que usa Facturador: 2026-05-22T00:00:00-03:00 (sin URL-encode).
   // status=any incluye canceladas — filtramos por cancelled_at en JS.
-  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${since}&fields=id,email,line_items,created_at,shipping_address,payment_gateway,payment_gateway_names,financial_status,total_price,subtotal_price,total_tax,total_discounts,total_shipping_price_set,cancelled_at,refunds`;
+  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${since}&fields=id,email,line_items,created_at,shipping_address,payment_gateway,payment_gateway_names,financial_status,total_price,subtotal_price,total_tax,total_discounts,total_shipping_price_set,cancelled_at,refunds,source_name,tags`;
   if(until) url+=`&created_at_max=${until}`;
   while(url){
     const r=await fetchTR(url,{headers:SH_H(tok)});
@@ -311,7 +311,12 @@ function processSH(orders) {
     const day=dt.slice(0,10);
     const hour=dt.slice(11,13);
     const prov=o.shipping_address?.province||"Sin provincia";
-    const pay=(Array.isArray(o.payment_gateway_names)&&o.payment_gateway_names.length?o.payment_gateway_names.join(", "):o.payment_gateway)||"Otro";
+    // Órdenes de suscripción de Recurrentes: se cobran por Mercado Pago aunque
+    // versiones viejas quedaron con gateway "manual". Se detectan por source_name
+    // o el tag "RECURRENTE" y se fuerza el método a Mercado Pago para que el motor
+    // de márgenes les aplique la comisión de MP (no una genérica ni $0).
+    const esRecurrentes = String(o.source_name||"")==="Recurrentes" || /(^|,)\s*RECURRENTE\b/i.test(String(o.tags||""));
+    const pay=esRecurrentes ? "Mercado Pago" : ((Array.isArray(o.payment_gateway_names)&&o.payment_gateway_names.length?o.payment_gateway_names.join(", "):o.payment_gateway)||"Otro");
     let orderUnits=0;
 
     if(day) dailyOrders[day]=(dailyOrders[day]||0)+1;
