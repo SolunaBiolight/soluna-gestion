@@ -1107,9 +1107,16 @@ export default async function handler(req, res) {
       // el cruce por payment_id, después el cruce por ref. Null = usar el %.
       const realMpDe = (o, fbRef, fbPay) => {
         if (parseFloat(o.saleFee) > 0) return parseFloat(o.saleFee);
+        // Suscripciones Recurrentes: payment_id explícito en la orden.
         if (o.mpPayId && fbPay && fbPay[o.mpPayId] != null) return parseFloat(fbPay[o.mpPayId]) || 0;
+        // Ventas normales de MP: mpRefCache guarda el payment_id del receipt de la
+        // transacción Shopify. Se prueba tanto el índice por payment_id (el que
+        // matchea de verdad) como el de external_reference, en ese orden.
         const ref = mpRefCache[o.id];
-        if (ref && fbRef && fbRef[ref] != null) return parseFloat(fbRef[ref]) || 0;
+        if (ref) {
+          if (fbPay && fbPay[ref] != null) return parseFloat(fbPay[ref]) || 0;
+          if (fbRef && fbRef[ref] != null) return parseFloat(fbRef[ref]) || 0;
+        }
         return null;
       };
       const mpRefCache = (userData.margenesMpRefs && typeof userData.margenesMpRefs==="object" && !Array.isArray(userData.margenesMpRefs)) ? { ...userData.margenesMpRefs } : {};
