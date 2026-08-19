@@ -1125,7 +1125,10 @@ export default async function handler(req, res) {
         for (const o of (raw?.orders_detail||[])) {
           const rev = parseFloat(o.revenue)||0;
           const ref = mpRefCache[o.id];
-          const realMp = (ref && (feeMap||{})[ref]!=null) ? (parseFloat(feeMap[ref])||0) : null;
+          // Fee exacto embebido en la orden (ej: suscripciones Recurrentes) manda.
+          // Si no, el fee real matcheado por ref. Si no, el % configurado.
+          const realMp = (parseFloat(o.saleFee)>0) ? parseFloat(o.saleFee)
+            : ((ref && (feeMap||{})[ref]!=null) ? (parseFloat(feeMap[ref])||0) : null);
           s += (realMp!=null) ? realMp : rev * pctPagoFor(o.pay);
         }
         return s;
@@ -1319,7 +1322,7 @@ export default async function handler(req, res) {
         for (const o of (raw?.orders_detail||[])) {
           const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*impFor(o.pay);
           const env=((envioModoTienda==="orden")?(parseFloat(o.envioCosto)||0):envioProm)+fulfillFee;
-          const ref=mpRefCache[o.id]; const realMp=(ref&&feeByRef[ref]!=null)?feeByRef[ref]:null;
+          const ref=mpRefCache[o.id]; const realMp=(parseFloat(o.saleFee)>0)?parseFloat(o.saleFee):((ref&&feeByRef[ref]!=null)?feeByRef[ref]:null);
           const comis=(realMp!=null)?(rev*pctPlat+realMp):(rev*(pctPlat+pctPagoFor(o.pay)));
           add(o.fecha, "tienda", cogs+imp+comis+env, rev);
         }
@@ -1457,7 +1460,7 @@ export default async function handler(req, res) {
           // Comisión = % plataforma + comisión de pago: si tenemos la real de MP
           // de esta venta (vía receipt_id) la usamos; si no, caemos al % configurado.
           const ref = mpRefCache[o.id];
-          const realMp = (ref && feeByRef[ref]!=null) ? feeByRef[ref] : null;
+          const realMp = (parseFloat(o.saleFee)>0) ? parseFloat(o.saleFee) : ((ref && feeByRef[ref]!=null) ? feeByRef[ref] : null);
           const comis = (realMp!=null) ? (rev*pctPlat + realMp) : (rev*(pctPlat+pctPagoFor(o.pay)));
           const profit=rev-cogs-imp-comis-env;
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:(curr.raw?.platform==="shopify"?"Shopify":"Tienda Nube"), revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0,

@@ -145,7 +145,7 @@ async function shProducts(shop, tok) {
 async function shOrders(shop, tok, days, since, until) {
   // Format exact que usa Facturador: 2026-05-22T00:00:00-03:00 (sin URL-encode).
   // status=any incluye canceladas — filtramos por cancelled_at en JS.
-  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${since}&fields=id,email,line_items,created_at,shipping_address,payment_gateway,payment_gateway_names,financial_status,total_price,subtotal_price,total_tax,total_discounts,total_shipping_price_set,cancelled_at,refunds,source_name,tags`;
+  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${since}&fields=id,email,line_items,created_at,shipping_address,payment_gateway,payment_gateway_names,financial_status,total_price,subtotal_price,total_tax,total_discounts,total_shipping_price_set,cancelled_at,refunds,source_name,tags,note_attributes`;
   if(until) url+=`&created_at_max=${until}`;
   while(url){
     const r=await fetchTR(url,{headers:SH_H(tok)});
@@ -317,6 +317,14 @@ function processSH(orders) {
     // de márgenes les aplique la comisión de MP (no una genérica ni $0).
     const esRecurrentes = String(o.source_name||"")==="Recurrentes" || /(^|,)\s*RECURRENTE\b/i.test(String(o.tags||""));
     const pay=esRecurrentes ? "Mercado Pago" : ((Array.isArray(o.payment_gateway_names)&&o.payment_gateway_names.length?o.payment_gateway_names.join(", "):o.payment_gateway)||"Otro");
+    // Comisión REAL de MP embebida por Recurrentes en la orden (note_attribute
+    // "mp_fee_real"). Si está, el motor la usa como fee exacto en vez del %.
+    let saleFeeReal = null;
+    if (esRecurrentes && Array.isArray(o.note_attributes)) {
+      const na = o.note_attributes.find(a => a && a.name === "mp_fee_real");
+      const v = na ? parseFloat(na.value) : NaN;
+      if (isFinite(v) && v > 0) saleFeeReal = v;
+    }
     let orderUnits=0;
 
     if(day) dailyOrders[day]=(dailyOrders[day]||0)+1;
@@ -349,7 +357,7 @@ function processSH(orders) {
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
-    if(orderRevenue>0) ordersDetail.push({ id:String(o.id), nombre:`#${o.order_number||o.name||o.id}`, fecha:dt, platform:"shopify", revenue:orderRevenue, items:detItems, pay, envioCosto:parseFloat(o.total_shipping_price_set?.shop_money?.amount)||0, cust:String(o.email||"") });
+    if(orderRevenue>0) ordersDetail.push({ id:String(o.id), nombre:`#${o.order_number||o.name||o.id}`, fecha:dt, platform:"shopify", revenue:orderRevenue, items:detItems, pay, envioCosto:parseFloat(o.total_shipping_price_set?.shop_money?.amount)||0, cust:String(o.email||""), ...(saleFeeReal!=null?{saleFee:saleFeeReal}:{}) });
   }
   return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,ordersDetail};
 }
