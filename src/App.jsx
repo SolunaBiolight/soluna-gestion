@@ -2410,7 +2410,7 @@ async function ghEtiquetaAndreaniXlsxUno(o) {
   let pk={peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000"};
   try{const saved=localStorage.getItem(ghKey("growith_exportCfg"));if(saved)pk={...pk,...JSON.parse(saved)};}catch(_){}
   const rn=3;
-  const baseCells=[sC('A'+rn,""),nC('B'+rn,parseFloat(pk.peso)||200),nC('C'+rn,parseInt(pk.alto)||5),nC('D'+rn,parseInt(pk.ancho)||5),nC('E'+rn,parseInt(pk.prof)||5),nC('F'+rn,parseFloat(pk.valor)||6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(dniDep&&!isNaN(dniDep))?nC('J'+rn,parseFloat(dniDep)):sC('J'+rn,dniDep||""),sC('K'+rn,clEmail(o.email)),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,"")];
+  const baseCells=[sC('A'+rn,""),nC('B'+rn,parseFloat(pk.peso)||200),nC('C'+rn,parseInt(pk.alto)||5),nC('D'+rn,parseInt(pk.ancho)||5),nC('E'+rn,parseInt(pk.prof)||5),nC('F'+rn,parseFloat(pk.valor)||6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(dniDep&&!isNaN(dniDep))?nC('J'+rn,parseFloat(dniDep)):sC('J'+rn,dniDep||""),sC('K'+rn,clEmail(o.email)),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),(telNum&&telNum[0]!=='0')?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,telNum||"")];
   if(o.esSucursal){
     // Envío a sucursal/punto HOP: fila en la hoja de sucursales (cols A-N,
     // N = sucursal EXACTA de la lista del template). Exportarlo a domicilio
@@ -7311,7 +7311,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           (()=>{const d=String(o.dni||'').replace(/\D/g,'');const dniClean=d.length===11?d.slice(2,10):d;return (dniClean&&!isNaN(dniClean)&&dniClean.length>=7)?nC('J'+rn,parseFloat(dniClean)):sC('J'+rn,dniClean||'');})(),
           sC('K'+rn,cleanEmail(o.email)),
           telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
-          telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
+          (telNum&&telNum[0]!=='0')?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,telNum||""),
           sC('N'+rn,cleanAndreani(direccion)),
           (dirNum&&dirNum!=="0"&&!isNaN(dirNum)&&parseFloat(dirNum)>0)?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,parseFloat(dirNum)||0),
           sC('P'+rn,cleanAndreani(o.piso||"")),
@@ -7350,7 +7350,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           (()=>{const d=String(o.dni||'').replace(/\D/g,'');const dniClean=d.length===11?d.slice(2,10):d;return (dniClean&&!isNaN(dniClean)&&dniClean.length>=7)?nC('J'+rn,parseFloat(dniClean)):sC('J'+rn,dniClean||'');})(),
           sC('K'+rn,cleanEmail(o.email)),
           telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
-          telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
+          (telNum&&telNum[0]!=='0')?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,telNum||""),
           sC('N'+rn,sucursal),
         ].join('');
         xml+='<row r="'+rn+'" spans="1:14" x14ac:dyDescent="0.25">'+cells+'</row>';
