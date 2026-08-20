@@ -7450,8 +7450,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const tnTokens=nrmSucTxt(pd?.name).split(" ").filter(w=>w&&!GEN.has(w)&&w.length>=3);
     const cands=oficiales.filter(s=>{
       const d=s.direccion||{};
-      const sCalle=nrmSucTxt(d.calle);
-      const sNum=String(d.numero||"").replace(/\D.*/,"").trim();
+      let sCalle=nrmSucTxt(d.calle);
+      let sNum=String(d.numero||"").replace(/\D.*/,"").trim();
+      // El listado oficial a veces trae el número embebido en la calle
+      // ("Independencia 1946" con numero vacío) — extraerlo para comparar.
+      if(!sNum){ const m=sCalle.match(/\b(\d{1,5})\s*$/); if(m){ sNum=m[1]; sCalle=sCalle.replace(/\b\d{1,5}\s*$/,"").trim(); } }
       const dirMatch=!!(calle&&num&&sCalle&&sNum&&sNum===num&&(sCalle.includes(calle)||calle.includes(sCalle)));
       const desc=nrmSucTxt(s.descripcion);
       const nameMatch=!!(tnTokens.length&&desc&&tnTokens.every(t=>desc.includes(t)));
@@ -7494,8 +7497,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     if(!o?.pickupDetails||!suc) return null;
     return matchSucursalOficial([suc],o)?"ok":"warn";
   }
-  // Ídem pero contra el STRING del desplegable del Excel (flujo XLSX): exige
-  // que el texto contenga la calle+número del punto TN, o su nombre distintivo.
+  // Ídem pero contra el STRING del desplegable del Excel (flujo XLSX). Los
+  // nombres del desplegable suelen NO traer número y a veces ni la calle
+  // ("SAN ISIDRO (CENTRO)"), así que acá se detectan CONTRADICCIONES, no
+  // ausencias: coincide si comparte calle, nombre distintivo o localidad con
+  // el punto de la tienda (y si ambos tienen número, deben coincidir). Solo
+  // avisa cuando no comparte NADA — que es el patrón del envío mal mandado.
   function verifSucursalTplVsTienda(o,tplStr){
     const pd=o?.pickupDetails;
     if(!pd||!tplStr) return null;
@@ -7504,12 +7511,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const numCampo=String(pd.address?.number||"").replace(/\D.*/,"").trim();
     const num=numCampo||(calleRaw.match(/\b(\d{1,5})\s*$/)||[])[1]||"";
     const calleSola=num?calleRaw.replace(new RegExp("\\b"+num+"\\s*$"),"").trim():calleRaw;
-    const calleToks=calleSola.split(" ").filter(w=>w.length>=4);
-    const dirOk=!!(num&&calleToks.length&&new RegExp("\\b"+num+"\\b").test(s)&&calleToks.some(t=>s.includes(t)));
-    const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO"]);
+    const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL"]);
+    const calleToks=calleSola.split(" ").filter(w=>w.length>=4&&!GEN.has(w));
+    const calleOk=!!(calleToks.length&&calleToks.some(t=>s.includes(t)));
     const tnTokens=nrmSucTxt(pd.name).split(" ").filter(w=>w&&!GEN.has(w)&&w.length>=3);
-    const nameOk=!!(tnTokens.length&&tnTokens.every(t=>s.includes(t)));
-    return (dirOk||nameOk)?"ok":"warn";
+    const nameOk=!!(tnTokens.length&&tnTokens.some(t=>s.includes(t)));
+    const locToks=nrmSucTxt(pd.address?.locality||pd.address?.city||"").split(" ").filter(w=>w.length>=4&&!GEN.has(w));
+    const locOk=!!(locToks.length&&locToks.some(t=>s.includes(t)));
+    // Si ambos lados tienen numeración y comparten calle, el número debe coincidir
+    const sNums=s.match(/\b\d{2,5}\b/g)||[];
+    const numContradice=!!(num&&calleOk&&sNums.length&&!sNums.includes(num));
+    if(numContradice) return "warn";
+    if(!calleToks.length&&!tnTokens.length&&!locToks.length) return null; // sin datos comparables
+    return (calleOk||nameOk||locOk)?"ok":"warn";
   }
   // Flujo XLSX domicilio: la calle/número se copian tal cual del pedido; lo
   // resuelto es la LOCALIDAD del desplegable — verificar que contenga el CP
