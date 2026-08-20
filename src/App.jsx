@@ -6860,6 +6860,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [locSearchType,setLocSearchType]=useState("ciudad");
   const [locOficialSel,setLocOficialSel]=useState(""); // id elegido en la lista oficial Andreani (modal sucursal del XLSX)
   const [verifModal,setVerifModal]=useState(null); // {items,resolve} — filas del XLSX que no coinciden con el destino de la tienda
+  const verifRowsRef=useRef([]); // resultado de la verificación del último armado de Excel (lo lee exportAndreani para el toast)
   const [sucursalConfirmed,setSucursalConfirmed]=useState(null);
   const [esquinaModal,setEsquinaModal]=useState(null); // {orders:[...]} pedidos con esquina excluidos del export
   const [copiedToast,setCopiedToast]=useState(null);
@@ -7255,7 +7256,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     // Verificación final contra la tienda: cada fila escrita en el Excel se
     // compara con el destino del pedido en TN/Shopify. Los que no coinciden
     // frenan la descarga con un modal (exportar igual o volver a corregir).
-    const verifRows=[];
+    // Vive en un ref del componente: exportAndreani (otra función) lee el
+    // resultado para el toast final.
+    verifRowsRef.current=[];
+    const verifRows=verifRowsRef.current;
 
     // Sheet1: envíos a domicilio
     function buildDomicilioRowsXml(ords, startRow){
@@ -7368,7 +7372,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       setExporting(false);
       const seguir=await new Promise(resolve=>setVerifModal({items:verifRows,resolve}));
       setVerifModal(null);
-      if(!seguir){ setExportProgress({step:"",pct:0,current:0,total:0}); return; }
+      if(!seguir){ setExportProgress({step:"",pct:0,current:0,total:0}); return null; } // null = cancelado por el usuario
       setExporting(true);
       setExportProgress({step:"Generando el archivo…",pct:70,current:0,total:0});
     }
@@ -7736,6 +7740,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
       setExportProgress({step:`Generando ${finalOrders.length} etiquetas...`,pct:60,current:finalOrders.length,total:finalOrders.length});
       const b=await generateAndreaniXlsx(finalOrders,locs);
+      if(!b){ setExporting(false); return; } // cancelado desde el modal de verificación
       setExportProgress({step:"Descargando...",pct:90,current:finalOrders.length,total:finalOrders.length});
       const date=hoyAR();
       const a=document.createElement('a');
@@ -7754,8 +7759,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       try{localStorage.removeItem(ghKey("growith_locOverrides"));localStorage.removeItem(ghKey("growith_sucOverrides"));}catch(_){}
       // Éxito → toast (sin modal que pida click); si quedaron pedidos en
       // esquina afuera del Excel, se abre directo su modal informativo.
-      toast(verifRows.length
-        ?`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel — descargado (${verifRows.length} destino${verifRows.length!==1?"s":""} sin verificar)`
+      toast(verifRowsRef.current.length
+        ?`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel — descargado (${verifRowsRef.current.length} destino${verifRowsRef.current.length!==1?"s":""} sin verificar)`
         :`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel — descargado ✓ destinos verificados con tu tienda`,"success");
       if(esquinaOrders.length>0) setEsquinaModal({orders:esquinaOrders});
       setExportDone({count:finalOrders.length, ts:Date.now()}); // ya no abre modal: refresca el mapa "ya exportado"
