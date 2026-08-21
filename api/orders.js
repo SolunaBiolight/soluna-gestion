@@ -479,13 +479,14 @@ export default async function handler(req, res) {
         // importar su edad; un rango que incluye hoy solo si tiene <10 min.
         // Sin caché válida → cálculo en vivo como siempre. Esto le saca 15-50s
         // ×2 períodos al camino crítico de daily_metrics.
-        let j = null;
+        let j = null, jcFallback = null;
         try {
           const cacheUrl = new URL(stockUrl); cacheUrl.searchParams.set("cache", "only");
           const rc = await fetch(cacheUrl.toString(), { headers: stockHeaders });
           if (rc.ok) {
             const jc = await rc.json();
             if (!jc.noCache && !jc.error && jc.daily_revenue) {
+              jcFallback = jc; // último snapshot completo — plan B si TN/ML no responden
               const rangoCerrado = String(to) < argToday;
               const edadMs = jc.cachedAt ? (Date.now() - Date.parse(jc.cachedAt)) : Infinity;
               // Un rango cerrado solo es inmutable si el snapshot se ESCRIBIÓ después
@@ -508,12 +509,19 @@ export default async function handler(req, res) {
           }
         } catch (_) { /* la caché es un atajo — si falla, se calcula en vivo */ }
         if (!j) {
-          let r;
-          try { r = await fetch(stockUrl.toString(), { headers: stockHeaders }); }
-          catch (e) { throw new Error("No se pudieron traer las ventas (red). Reintentá en unos segundos."); }
-          if (!r.ok) throw new Error(`No se pudieron traer las ventas (HTTP ${r.status}). Reintentá en unos segundos.`);
-          j = await r.json();
-          if (j.error) throw new Error(`Ventas: ${j.error}`);
+          // TN/ML lentos a ráfagas (timeout de 45s en stock → 504): si el cálculo
+          // en vivo falla y hay un snapshot COMPLETO previo, mejor servir ese
+          // marcando su edad (la UI avisa) que tirar TODO el dashboard con 500.
+          // Datos PARCIALES siguen prohibidos — el fallback es un snapshot íntegro.
+          let jr = null, failMsg = null;
+          try {
+            const r = await fetch(stockUrl.toString(), { headers: stockHeaders });
+            if (!r.ok) failMsg = `No se pudieron traer las ventas (HTTP ${r.status}). Reintentá en unos segundos.`;
+            else { jr = await r.json(); if (jr.error) { failMsg = `Ventas: ${jr.error}`; jr = null; } }
+          } catch (_) { failMsg = "No se pudieron traer las ventas (red). Reintentá en unos segundos."; }
+          if (jr) j = jr;
+          else if (jcFallback) { j = jcFallback; j._degradado = jcFallback.cachedAt || "sin fecha"; }
+          else throw new Error(failMsg || "No se pudieron traer las ventas.");
         }
         // Combinar TN/Shopify + Mercado Libre (ML viene aparte en ml_data),
         // igual que el tab Análisis del front (mergeDaily). Antes se ignoraba ML
@@ -524,7 +532,7 @@ export default async function handler(req, res) {
         const mlOrd = j.ml_data?.daily_orders  || {};
         for (const [day,v] of Object.entries(mlRev)) dailyRevenue[day] = (dailyRevenue[day]||0) + (v||0);
         for (const [day,v] of Object.entries(mlOrd)) dailyOrders[day]  = (dailyOrders[day]||0)  + (v||0);
-        return { dailyRevenue, dailyOrders, raw: j };
+        return { dailyRevenue, dailyOrders, raw: j, degradado: j._degradado || null };
       }
       // Comisión REAL de Mercado Pago en ventas que NO son ML (Shopify/TN vía MP
       // Checkout). Con el token de ML se consultan los pagos de MP y se suma el
@@ -1642,12 +1650,16 @@ export default async function handler(req, res) {
           googleAdsFuente: gAdsAutoCurr!=null ? "auto" : (googleAdsList.length ? "manual" : "sin_datos"),
           googleAdsConectado: !!userData.googleAds?.refresh_token,
           googleAdsDiag: (userData.googleAds?.refresh_token && gAdsAutoCurr==null) ? gadsDiag : null,
+          stockDegradado: curr.degradado || prev.degradado || null, // ts del snapshot servido cuando TN/ML no respondieron en vivo
           mlAdsDebug, mlEnvioDebug,
           metaTokenExpired: !!metaErr.expired,
           costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo, dolarAdsHistDias, dolarAdsFallback: +dolarAdsFallback.toFixed(2) } } };
       // Guardar caché + registrar el rango en el warmer (best-effort: si Firestore
-      // falla acá, la respuesta en vivo sale igual).
+      // falla acá, la respuesta en vivo sale igual). Respuesta DEGRADADA (snapshot
+      // viejo porque TN/ML no respondieron): NO se cachea — sería congelar datos
+      // vencidos como si fueran frescos.
       try {
+        if (responseBody.meta?.stockDegradado) throw Object.assign(new Error("skip-cache"), { _skip: true });
         const nowIso = new Date().toISOString();
         // Guard de tamaño (mismo criterio que saveStockCache en api/stock.js):
         // Firestore rechaza docs >1MB y el catch de acá abajo se lo tragaba →
