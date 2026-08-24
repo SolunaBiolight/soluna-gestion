@@ -597,7 +597,7 @@ function costoConDescuento(cot, cfg) {
   const desc = 1 - (cfg.descuentoPct || 0) / 100;
   if (c.seguroApi == null) return c.tarifaTotal * desc;
   const distribucion = Math.max(0, c.tarifaTotal - c.seguroApi);
-  const seguroContrato = (c.valorDeclarado || 0) * ((cfg.seguroPct ?? 2) / 100) * 1.21;
+  const seguroContrato = (c.valorDeclarado || 0) * ((cfg.seguroPct ?? 1) / 100) * 1.21;
   return distribucion * desc + seguroContrato;
 }
 function precioConMarkup(cot, cfg) {
