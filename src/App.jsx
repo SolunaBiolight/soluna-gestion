@@ -13015,6 +13015,30 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   const [txHash,setTxHash]=useState("");
   const [transferRef,setTransferRef]=useState("");
   const [nota,setNota]=useState("");
+  // Captura del comprobante de transferencia: {b64,name} — comprimida en el
+  // navegador a JPEG (≤650KB) para que entre en el doc de Firestore y viaje
+  // adjunta en el mail de aviso al equipo.
+  const [compImg,setCompImg]=useState(null);
+  const [compCargando,setCompCargando]=useState(false);
+  async function cargarComprobante(file){
+    if(!file) return;
+    if(!/^image\//.test(file.type)){ appAlert("Subí una imagen: captura de pantalla o foto del comprobante."); return; }
+    setCompCargando(true);
+    try{
+      const url=URL.createObjectURL(file);
+      const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>rej(new Error("No se pudo leer la imagen"));i.src=url;});
+      const MAX=1400; let w=img.width,h=img.height;
+      if(Math.max(w,h)>MAX){const k=MAX/Math.max(w,h);w=Math.round(w*k);h=Math.round(h*k);}
+      const c=document.createElement("canvas");c.width=w;c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url);
+      let q=0.85,b64=c.toDataURL("image/jpeg",q);
+      while(b64.length>650000&&q>0.35){q-=0.15;b64=c.toDataURL("image/jpeg",q);}
+      if(b64.length>650000) throw new Error("La imagen pesa demasiado — probá con una captura de pantalla en vez de una foto");
+      setCompImg({b64,name:file.name||"comprobante"});
+    }catch(e){ appAlert("No se pudo procesar la imagen: "+e.message); }
+    setCompCargando(false);
+  }
   const [anual,setAnual]=useState(false);
   const [faqOpen,setFaqOpen]=useState(null);
   // Centavos identificatorios: cada pago pide un monto único (ej: 79.37) para
@@ -13138,7 +13162,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
 
   async function enviarPago() {
     if(metodo==="cripto"&&!txHash.trim()) return appAlert("Pegá el hash de transacción (TxID)");
-    if(metodo==="transfer"&&!transferRef.trim()) return appAlert("Ingresá el número de comprobante o referencia de la transferencia");
+    if(metodo==="transfer"&&!compImg) return appAlert("Subí la captura del comprobante de la transferencia");
     try {
       // Vía backend (Admin SDK): escribir `pagos` directo desde el navegador
       // fallaba con "Missing or insufficient permissions" para clientes no-admin.
@@ -13156,6 +13180,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
           periodo: anual?"anual":"mensual",
           txHash: metodo==="cripto"?txHash.trim():"",
           transferRef: metodo==="transfer"?transferRef.trim():"",
+          comprobanteB64: metodo==="transfer"&&compImg?compImg.b64:"",
           // Conversión mostrada al cliente al momento de pagar (transferencia en ARS)
           arsMonto: metodo==="transfer"&&dolarCripto?Math.round(totalPagar*dolarCripto):0,
           dolarCripto: metodo==="transfer"&&dolarCripto?Math.round(dolarCripto*100)/100:0,
@@ -13244,18 +13269,19 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         </div>
         {canjeBox}
         {[
-          {id:"transfer",titulo:"Transferencia bancaria (pesos)",desc:"Transferís en ARS al alias de Growith. Lo confirmamos en el día.",icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><path d="M5 22V11M9 22V11M15 22V11M19 22V11"/><path d="M12 2L2 8h20z"/></svg>},
-          {id:"cripto",titulo:"USDT (red TRC20)",desc:"Se acredita solo en menos de 15 minutos, sin intermediarios.",icon:"₮"},
+          {id:"transfer",titulo:"Transferencia bancaria (pesos)",desc:"Transferís en ARS al alias de Growith y subís el comprobante. Lo confirmamos en el día.",color:"#22c55e",icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><path d="M5 22V11M9 22V11M15 22V11M19 22V11"/><path d="M12 2L2 8h20z"/></svg>},
+          {id:"cripto",titulo:"USDT (red TRC20)",desc:"Se acredita solo en menos de 15 minutos, sin intermediarios.",color:"#26a17b",icon:<span style={{fontSize:18,fontWeight:800}}>₮</span>},
         ].map(m=>(
           <button key={m.id} onClick={()=>{setMetodo(m.id);setStep(m.id==="cripto"?"pago_cripto":"pago_transfer");}}
-            style={{width:"100%",textAlign:"left",display:"flex",gap:14,alignItems:"center",background:T.card,border:`1.5px solid ${T.border}`,borderRadius:14,padding:"18px 20px",marginBottom:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"border-color 0.15s"}}
-            onMouseEnter={e=>e.currentTarget.style.borderColor=PLAN.color}
-            onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-            <span style={{fontSize:24,flexShrink:0}}>{m.icon}</span>
-            <span>
+            style={{width:"100%",textAlign:"left",display:"flex",gap:14,alignItems:"center",background:T.card,border:`1.5px solid ${T.border}`,borderRadius:DS.r["2xl"],padding:"18px 20px",marginBottom:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"border-color 0.15s, transform 0.15s"}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=m.color+"88";e.currentTarget.style.transform="translateY(-1px)";}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="none";}}>
+            <span style={{width:42,height:42,borderRadius:12,background:m.color+"1a",border:`1px solid ${m.color}33`,display:"flex",alignItems:"center",justifyContent:"center",color:m.color,flexShrink:0}}>{m.icon}</span>
+            <span style={{flex:1,minWidth:0}}>
               <span style={{display:"block",fontSize:14,fontWeight:700,color:T.text,marginBottom:3}}>{m.titulo}</span>
               <span style={{display:"block",fontSize:12,color:T.textSm,lineHeight:1.5}}>{m.desc}</span>
             </span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><polyline points="9 18 15 12 9 6"/></svg>
           </button>
         ))}
       </div>
@@ -13284,28 +13310,50 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         </div>
         {canjeBox}
         <div style={{marginBottom:20}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Transferí a:</div>
-          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",marginBottom:8}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Transferí a</div>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"16px 18px",marginBottom:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4}}>Alias</div>
+                <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:2}}>Alias</div>
                 <code style={{fontSize:15,fontWeight:700,color:T.text,fontFamily:"monospace"}}>{ALIAS_PAGO}</code>
               </div>
-              <button onClick={()=>{navigator.clipboard.writeText(ALIAS_PAGO);toast("Alias copiado","success");}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0}}>Copiar</button>
+              <button onClick={()=>{navigator.clipboard.writeText(ALIAS_PAGO);toast("Alias copiado","success");}} style={{...BtnSecondary(T),padding:"6px 14px",fontSize:12,borderRadius:DS.r.full,flexShrink:0}}>Copiar</button>
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,borderTop:`1px solid ${T.borderL}`,paddingTop:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,borderTop:`1px solid ${T.borderL}`,paddingTop:10}}>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4}}>CVU</div>
+                <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:2}}>CVU</div>
                 <code style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:"monospace",wordBreak:"break-all"}}>{CVU_PAGO}</code>
               </div>
-              <button onClick={()=>{navigator.clipboard.writeText(CVU_PAGO);toast("CVU copiado","success");}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0}}>Copiar</button>
+              <button onClick={()=>{navigator.clipboard.writeText(CVU_PAGO);toast("CVU copiado","success");}} style={{...BtnSecondary(T),padding:"6px 14px",fontSize:12,borderRadius:DS.r.full,flexShrink:0}}>Copiar</button>
             </div>
-            <div style={{fontSize:12,color:T.textSm}}>Titular: <strong style={{color:T.text}}>{TITULAR_PAGO}</strong></div>
+            <div style={{fontSize:12,color:T.textSm,borderTop:`1px solid ${T.borderL}`,paddingTop:10}}>Titular: <strong style={{color:T.text}}>{TITULAR_PAGO}</strong></div>
           </div>
         </div>
         <div style={{marginBottom:16}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>N° de comprobante o referencia *</div>
-          <input style={{...iS,fontSize:13}} placeholder="El número de operación de tu banco/billetera..." value={transferRef} onChange={e=>setTransferRef(e.target.value)}/>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Comprobante de la transferencia *</div>
+          {compImg?(
+            <div style={{background:T.card,border:`1.5px solid ${T.green}55`,borderRadius:DS.r.xl,padding:"12px 14px",display:"flex",alignItems:"center",gap:12}}>
+              <img src={compImg.b64} alt="" style={{width:52,height:52,objectFit:"cover",borderRadius:DS.r.md,border:`1px solid ${T.borderL}`,flexShrink:0}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.green,display:"flex",alignItems:"center",gap:6}}>✓ Comprobante cargado</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{compImg.name}</div>
+              </div>
+              <button onClick={()=>setCompImg(null)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",borderRadius:DS.r.full,flexShrink:0}}>Cambiar</button>
+            </div>
+          ):(
+            <label style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,background:T.card,border:`1.5px dashed ${T.border}`,borderRadius:DS.r.xl,padding:"26px 16px",cursor:compCargando?"wait":"pointer",transition:"border-color 0.15s"}}
+              onMouseEnter={e=>e.currentTarget.style.borderColor=PLAN.color}
+              onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+              <input type="file" accept="image/*" style={{display:"none"}} disabled={compCargando} onChange={e=>{cargarComprobante(e.target.files?.[0]);e.target.value="";}}/>
+              {compCargando?(
+                <div style={{fontSize:13,color:T.textSm,display:"flex",alignItems:"center",gap:8}}><Spinner size={14} color={T.textSm}/> Procesando imagen…</div>
+              ):(<>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <div style={{fontSize:13,fontWeight:700,color:T.text}}>Subir comprobante</div>
+                <div style={{fontSize:11,color:T.textSm,textAlign:"center",lineHeight:1.5}}>Captura de pantalla o foto del comprobante<br/>de tu banco o billetera</div>
+              </>)}
+            </label>
+          )}
         </div>
         <div style={{marginBottom:28}}>
           <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Nota adicional (opcional)</div>
@@ -13314,7 +13362,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         <AsyncButton onClick={enviarPago} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"13px"}}>
           Enviar comprobante
         </AsyncButton>
-        <div style={{textAlign:"center",fontSize:12,color:T.textSm,marginTop:10}}>Confirmamos tu transferencia y activamos el plan en el día.</div>
+        <div style={{textAlign:"center",fontSize:12,color:T.textSm,marginTop:10}}>Nos llega al instante con tu comprobante — confirmamos la transferencia y activamos el plan en el día.</div>
       </div>
     </div>
   );
@@ -13333,11 +13381,15 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
 
         {/* Banner trial vencido o hero normal */}
         {isTrialExpired?(
-          <div style={{background:T.red+"12",border:"1px solid "+T.red+"40"+"",borderRadius:14,padding:"18px 22px",marginBottom:32,textAlign:"center"}}>
-            <div style={{display:"flex",justifyContent:"center",marginBottom:8}}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-            <div style={{fontSize:18,fontWeight:800,color:T.red,marginBottom:6}}>Tu prueba gratuita terminó</div>
-            <div style={{fontSize:13,color:T.textMd,lineHeight:1.6}}>Suscribite para seguir usando Growith. Tus datos y facturas siguen guardados intactos.</div>
-            <div style={{fontSize:12,color:T.textSm,marginTop:8}}>¿Necesitás exportar tus facturas o datos? Escribinos a <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:T.accent,fontWeight:600}}>{SUPPORT_EMAIL}</a> y te los mandamos en el día.</div>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderTop:`3px solid ${T.red}`,borderRadius:DS.r["2xl"],padding:"26px 24px",marginBottom:32,textAlign:"center",boxShadow:DS.shadow?.md||"0 8px 30px rgba(0,0,0,0.25)"}}>
+            <div style={{display:"flex",justifyContent:"center",marginBottom:12}}>
+              <span style={{width:52,height:52,borderRadius:16,background:T.red+"14",border:`1px solid ${T.red}33`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </span>
+            </div>
+            <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:6}}>Tu prueba gratuita terminó</div>
+            <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,maxWidth:400,margin:"0 auto"}}>Elegí un plan abajo para seguir usando Growith. Tus datos, facturas y configuraciones siguen guardados intactos.</div>
+            <div style={{fontSize:12,color:T.textSm,marginTop:10}}>¿Necesitás exportar tus facturas o datos? Escribinos a <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:T.accent,fontWeight:600}}>{SUPPORT_EMAIL}</a> y te los mandamos en el día.</div>
           </div>
         ):(
           <div style={{textAlign:"center",marginBottom:32}}>
@@ -13900,6 +13952,14 @@ function AppAdmin({T, user, onBack}) {
                         {p.amount>0&&<span style={{fontSize:11,fontWeight:700,color:T.text}}>${p.amount}</span>}
                         {p.method&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:T.blueBg,color:p.method==="cripto"?T.green:T.blue}}>{p.method==="cripto"?"₮ USDT":"Transf."}</span>}
                         {p.arsMonto>0&&<span style={{fontSize:11,fontWeight:700,color:T.blue}}>${Number(p.arsMonto).toLocaleString("es-AR")} ARS{p.dolarCripto>0?<span style={{color:T.textSm,fontWeight:500}}> (dólar ${Math.round(p.dolarCripto).toLocaleString("es-AR")})</span>:null}</span>}
+                        {p.tieneComprobante&&<button onClick={async()=>{
+                          try{
+                            const d=await adminApi({action:"pagoComprobante",pagoId:p._id});
+                            if(!d?.comprobanteB64) throw new Error("Sin comprobante");
+                            const bl=await fetch(d.comprobanteB64).then(x=>x.blob());
+                            window.open(URL.createObjectURL(bl),"_blank");
+                          }catch(e){ toast("No se pudo abrir el comprobante: "+e.message,"error"); }
+                        }} style={{fontSize:11,padding:"3px 10px",borderRadius:DS.r.full,border:`1px solid ${T.accent}55`,background:T.accent+"12",color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ver comprobante</button>}
                         {p.transferRef&&<span style={{fontSize:11,color:T.textSm}}>Ref: <strong style={{color:T.text}}>{p.transferRef}</strong></span>}
                         {p.txHash&&<span style={{fontSize:11,color:T.textSm,fontFamily:"monospace"}}>TX: {p.txHash.slice(0,16)}…</span>}
                         <span style={{fontSize:11,color:T.textSm}}>{fmtDateFull(p.createdAt)}</span>
@@ -34350,7 +34410,7 @@ export default function App() {
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               <button onClick={()=>setPage("planes")}
-                style={{width:"100%",padding:"13px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#7c3aed,#a78bfa)",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:"0 4px 16px #7c3aed44"}}>
+                style={{width:"100%",padding:"13px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#6366f1,#818cf8)",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:"0 4px 16px #6366f144"}}>
                 Ver planes
               </button>
               <button onClick={()=>{try{signOut(auth);}catch(_){}}}

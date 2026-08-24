@@ -50,7 +50,7 @@ function colabPortalLink(origin, token) {
 }
 
 // delayMs opcional → usa Resend scheduled_at (permite cancelar antes de enviar)
-async function sendEmail({ to, subject, html, delayMs }) {
+async function sendEmail({ to, subject, html, delayMs, attachments }) {
   const key = process.env.RESEND_API_KEY;
   if (!key) { console.error("[email] RESEND_API_KEY no configurada"); return { error: "RESEND_API_KEY_FALTANTE" }; }
   if (!to)  { console.error("[email] destinatario vacío"); return { error: "Sin destinatario" }; }
@@ -61,6 +61,7 @@ async function sendEmail({ to, subject, html, delayMs }) {
   }
   try {
     const body = { from, to: [to], subject, html };
+    if (Array.isArray(attachments) && attachments.length) body.attachments = attachments;
     if (delayMs) {
       body.scheduled_at = new Date(Date.now() + delayMs).toISOString();
       console.log(`[email] programado en ${delayMs/1000}s → "${subject}"`);
@@ -1035,7 +1036,13 @@ export default async function handler(req, res) {
       if (!Number(amount) || Number(amount) <= 0) return res.status(400).json({ error: "Monto inválido" });
       const metodo = method === "cripto" ? "cripto" : "transfer";
       if (metodo === "cripto" && !String(txHash).trim()) return res.status(400).json({ error: "Falta el hash de transacción (TxID)" });
-      if (metodo === "transfer" && !String(transferRef).trim()) return res.status(400).json({ error: "Falta la referencia de la transferencia" });
+      // Comprobante en imagen (captura/foto): validado y con tope de tamaño
+      // (Firestore admite 1MB por doc; el front ya comprime a JPEG).
+      let comprobanteB64 = String(body.comprobanteB64 || "");
+      if (comprobanteB64 && (!/^data:image\/(jpeg|jpg|png|webp);base64,/.test(comprobanteB64) || comprobanteB64.length > 900000)) {
+        return res.status(400).json({ error: "El comprobante debe ser una imagen (jpg/png) de menos de ~650KB — probá con una captura de pantalla" });
+      }
+      if (metodo === "transfer" && !comprobanteB64 && !String(transferRef).trim()) return res.status(400).json({ error: "Subí la captura del comprobante de la transferencia" });
       // Crédito de referidos aplicado a este pago: se valida contra el saldo
       // real y se descuenta recién cuando el pago se confirma.
       let refCreditAplicado = +(Number(body.refCreditAplicado) || 0).toFixed(2);
@@ -1059,8 +1066,34 @@ export default async function handler(req, res) {
         meses: Math.min(12, Math.max(1, Number(meses) || 1)),
         periodo: periodo === "anual" ? "anual" : "mensual",
         estado: "pendiente",
+        comprobanteB64,
         createdAt: now,
       });
+      // Aviso inmediato al equipo: transferencias se confirman a mano, así que
+      // el mail con el comprobante adjunto es lo que dispara la acción.
+      if (metodo === "transfer") {
+        try {
+          const arsMonto = Math.max(0, Number(body.arsMonto) || 0);
+          const dolarCripto = Math.max(0, Number(body.dolarCripto) || 0);
+          await sendEmail({
+            to: "contacto.growith@gmail.com",
+            subject: `Transferencia por confirmar — ${email || uid} — ${plan === "facturador" ? "Facturador" : "Pro"}${periodo === "anual" ? " ANUAL" : ""}`,
+            html: `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px">
+  <h2 style="font-size:18px">Nueva transferencia en pesos por confirmar</h2>
+  <p style="font-size:14px;line-height:1.7">
+    Cuenta: <strong>${String(email || uid).slice(0, 120)}</strong><br/>
+    Plan: <strong>${plan === "facturador" ? "Facturador" : "Pro"}</strong> · ${periodo === "anual" ? "Anual (12 meses)" : "Mensual"}<br/>
+    Monto esperado: <strong>${arsMonto ? `$${arsMonto.toLocaleString("es-AR")} ARS` : `USD ${Number(amount) || 0}`}</strong>${dolarCripto ? ` (dólar cripto $${Math.round(dolarCripto).toLocaleString("es-AR")})` : ""}<br/>
+    ${String(transferRef).trim() ? `Referencia: <strong>${String(transferRef).trim().slice(0, 120)}</strong><br/>` : ""}
+    ${String(nota).trim() ? `Nota: ${String(nota).trim().slice(0, 300)}<br/>` : ""}
+  </p>
+  ${comprobanteB64 ? `<p style="font-size:13px">El comprobante va adjunto en este mail.</p>` : ""}
+  <p style="font-size:13px;color:#666">Confirmala desde Growith → Admin → Cobros (verificá que la plata haya entrado al CVU antes de confirmar).</p>
+</div>`,
+            attachments: comprobanteB64 ? [{ filename: "comprobante.jpg", content: comprobanteB64.split(",")[1] }] : undefined,
+          });
+        } catch (e) { console.error("[crearPago] aviso transferencia:", e.message); }
+      }
       return res.json({ ok: true, id: ref.id });
     }
 
@@ -1824,7 +1857,9 @@ export default async function handler(req, res) {
           db.collection("pagos").orderBy("createdAt", "desc").limit(1000).get(),
           db.collection("users").limit(2000).get(),
         ]);
-        const pagos = pagSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
+        // El comprobante (imagen base64) NO viaja en el listado — inflaría la
+        // respuesta varios MB. Se pide por pago con action=pagoComprobante.
+        const pagos = pagSnap.docs.map(d => { const { comprobanteB64, ...rest } = d.data(); return { _id: d.id, ...rest, tieneComprobante: !!comprobanteB64 }; });
         const usuarios = usSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
         // Fuente de verdad de "quién se registró" = Firebase Auth. Cuentas que se
         // crearon antes de que existiera el auto-doc (o que nunca dispararon su
@@ -1927,6 +1962,14 @@ export default async function handler(req, res) {
         const { targetUid } = body;
         await db.collection("users").doc(targetUid).update({ plan: "free", planExpiry: null, planDesactivadoBy: uid, planDesactivadoAt: adminNow });
         return res.json({ ok: true });
+      }
+
+      // Comprobante de un pago puntual (imagen base64) — fuera del listado
+      // para no inflar adminGetData.
+      if (action === "pagoComprobante") {
+        const snap = await db.collection("pagos").doc(String(body.pagoId || "")).get();
+        if (!snap.exists) return res.status(404).json({ error: "No se encontró el pago." });
+        return res.json({ comprobanteB64: snap.data().comprobanteB64 || "" });
       }
 
       if (action === "confirmarPago") {
