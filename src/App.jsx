@@ -7411,6 +7411,23 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     // Freno de seguridad: si alguna fila del Excel no coincide con el destino
     // del pedido en la tienda, NO se descarga en silencio — modal con el
     // detalle (qué dice la tienda vs qué quedó escrito) y decisión explícita.
+    // Antes del modal, segunda pasada con el listado OFICIAL: nombres del
+    // desplegable sin dirección ("BARRACAS" = Av. Vieytes 1230) daban falso
+    // positivo — se resuelve el string a la sucursal real y se compara SU
+    // dirección contra el punto del pedido. Si no coincide (o la API no
+    // responde), el aviso queda.
+    if(verifRows.some(v=>v.tipo==="sucursal")){
+      setExportProgress({step:"Verificando destinos contra el listado oficial de Andreani…",pct:65,current:0,total:0});
+      const quedan=[];
+      for(const vr of verifRows){
+        if(vr.tipo!=="sucursal"){ quedan.push(vr); continue; }
+        const o=sucursalOrders.find(x=>x.numero===vr.numero);
+        let ok=false;
+        try{ ok=o?await verifTplContraOficial(o,vr.escrito):false; }catch(_){}
+        if(!ok) quedan.push(vr);
+      }
+      verifRows.length=0; verifRows.push(...quedan);
+    }
     if(verifRows.length){
       setExporting(false);
       const seguir=await new Promise(resolve=>setVerifModal({items:verifRows,resolve}));
@@ -7579,6 +7596,33 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     if(numContradice) return "warn";
     if(!calleToks.length&&!tnTokens.length&&!locToks.length) return null; // sin datos comparables
     return (calleOk||nameOk||locOk)?"ok":"warn";
+  }
+  // Segunda opinión para los "warn" de verifSucursalTplVsTienda: resuelve el
+  // string del desplegable a la sucursal OFICIAL real (sucursales_buscar) y
+  // compara la dirección de ESA sucursal contra el punto del pedido con el
+  // match estricto de siempre. true = es el mismo lugar, el aviso era falso
+  // positivo (ej. "BARRACAS" = Av. Vieytes 1230). Números comparados EXACTOS:
+  // "UGARTE 170" jamás valida contra el punto de "UGARTE 1705".
+  async function verifTplContraOficial(o,tplStr){
+    const tplN=nrmSucTxt(tplStr);
+    if(!tplN) return false;
+    const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO"]);
+    const toks=tplN.split(" ").filter(w=>w&&!GEN.has(w));
+    if(!toks.length) return false;
+    const r=await authFetch(`/api/andreani?action=sucursales_buscar&q=${encodeURIComponent(toks.slice(0,4).join(" "))}`);
+    const d=await r.json().catch(()=>null);
+    if(!r.ok||!Array.isArray(d?.sucursales)||!d.sucursales.length) return false;
+    // Solo las oficiales que corresponden a ESTE string del template:
+    // todas las palabras y todos los números (exactos) del tpl presentes.
+    const tplNums=tplN.match(/\d{1,5}/g)||[];
+    const words=toks.filter(t=>!/^\d+$/.test(t));
+    const cands=d.sucursales.filter(s=>{
+      const dirTxt=nrmSucTxt([s.descripcion,s.direccion?.calle,s.direccion?.numero,s.direccion?.localidad].filter(Boolean).join(" "));
+      const sNums=dirTxt.match(/\d{1,5}/g)||[];
+      return words.every(t=>dirTxt.includes(t))&&tplNums.every(n=>sNums.includes(n));
+    });
+    if(!cands.length) return false;
+    return !!matchSucursalOficial(cands,o);
   }
   // Flujo XLSX domicilio: la calle/número se copian tal cual del pedido; lo
   // resuelto es la LOCALIDAD del desplegable — verificar que contenga el CP
