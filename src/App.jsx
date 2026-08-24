@@ -1112,6 +1112,13 @@ function BrandIcon({name, size=20, style}) {
 // depende de la verificación. Cuando Meta apruebe la app, volver esto a true.
 const META_OAUTH_OK = false;
 
+// ── Google Ads OAuth — switch de disponibilidad ──
+// Hasta que Google apruebe el Basic Access del developer token, el OAuth de
+// Google Ads solo trae el gasto de cuentas de prueba: para clientes reales
+// conecta pero no entra ningún dato. Mientras tanto el camino que funciona es
+// cargar el gasto manual en Dashboard → Configuraciones. Al aprobar, true.
+const GADS_OAUTH_OK = false;
+
 function CommandPalette({T, open, onClose, setPage, isAdmin}) {
   const [q, setQ] = React.useState("");
   const [selIdx, setSelIdx] = React.useState(0);
@@ -8215,24 +8222,25 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             .map(p=>p.pedidoNum)
         )];
 
-        // Traer órdenes recientes en bulk (TN no busca por número con q=)
-        // Una sola llamada de 200 órdenes cubre los últimos ~200 pedidos.
-        // Si quedan faltantes, busca en la página 2 (y 3 si es necesario).
+        // Traer órdenes recientes en bulk (TN no busca por número con q=).
+        // Las 4 páginas van EN PARALELO: antes eran secuenciales y con TN lenta
+        // el análisis tardaba minutos (4 × 200 órdenes, una espera detrás de otra).
         const fetchedMap={};
         if(missingNums.length>0){
           const missingSet=new Set(missingNums);
-          for(let page=1; page<=4 && missingSet.size>0; page++){
+          const pageDatas=await Promise.all([1,2,3,4].map(async page=>{
             try{
               const r=await authFetch(`/api/orders?uid=${user?.uid||""}&tab=bulk_lookup&page=${page}`);
-              if(!r.ok) break;
+              if(!r.ok) return [];
               const data=await r.json();
-              if(!Array.isArray(data)||data.length===0) break;
-              buildOrdersFromAPI(data).forEach(o=>{
-                if(missingSet.has(o.numero)){ fetchedMap[o.numero]=o; missingSet.delete(o.numero); }
-              });
-              if(data.length<200) break; // última página
-            }catch(_){ break; }
-          }
+              return Array.isArray(data)?data:[];
+            }catch(_){ return []; }
+          }));
+          pageDatas.forEach(data=>{
+            buildOrdersFromAPI(data).forEach(o=>{
+              if(missingSet.has(o.numero)){ fetchedMap[o.numero]=o; missingSet.delete(o.numero); }
+            });
+          });
         }
 
         // 3ª pasada: construir resultados con los datos ya cargados
@@ -12277,16 +12285,21 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               key:"meta", label:"Meta Ads", sub: metaConnected ? "Conectado" : "Facebook + Instagram · No conectado",
               connected:!!metaConnected, disabled:false, brand:"#1877F2", iconBg:"#fff",
               icon:<BrandIcon name="meta" size={30}/>,
-              onConnect:()=>{setMetaMode("oauth");setShowMetaModal(true);}, onDisconnect:disconnectMeta,
+              // Mientras META_OAUTH_OK sea false el modal abre directo en la
+              // conexión manual (con el botón de Facebook visible pero apagado).
+              onConnect:()=>{setMetaMode(META_OAUTH_OK?"oauth":"token");setShowMetaModal(true);}, onDisconnect:disconnectMeta,
             },
             {
               key:"gads", label:"Google Ads",
               sub: userDoc?.googleAds?.connected
                 ? `Conectado${(userDoc.googleAds.customers||[]).length ? ` · ${(userDoc.googleAds.customers||[]).length} cuenta(s)` : " · esperando developer token"}`
-                : "No conectado · mientras tanto podés cargar el gasto manual en Dashboard → Costos",
-              connected: !!userDoc?.googleAds?.connected, disabled:false, brand:"#4285F4", iconBg:"#fff",
+                : (GADS_OAUTH_OK
+                    ? "No conectado · mientras tanto podés cargar el gasto manual en Dashboard → Costos"
+                    : <>La conexión automática llega pronto — mientras tanto cargá el gasto manual en <a href="#/margenes/costos" style={{color:T.accent,fontWeight:700,textDecoration:"underline"}}>Dashboard → Configuraciones</a></>),
+              connected: !!userDoc?.googleAds?.connected, disabled:false, soon:!GADS_OAUTH_OK, brand:"#4285F4", iconBg:"#fff",
               icon:<BrandIcon name="google" size={28}/>,
               onConnect: async ()=>{
+                if(!GADS_OAUTH_OK) return;
                 try {
                   const j = await authFetch(`/api/google-ads?action=oauth_start&uid=${user.uid}`).then(r=>r.json());
                   if (j.url) { window.location.href = j.url; return; }
@@ -12312,6 +12325,11 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                 </div>
                 {p.connected
                   ? <button onClick={p.onDisconnect} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px",flexShrink:0}}>Desvincular</button>
+                  : p.soon
+                  ? <div style={{position:"relative",flexShrink:0}}>
+                      <button disabled style={{fontSize:12,padding:"7px 14px",borderRadius:8,border:`1.5px solid ${T.borderL}`,background:T.bg,color:T.textSm,fontWeight:600,cursor:"not-allowed",fontFamily:"'Inter',system-ui,sans-serif",opacity:0.6}}>Conectar</button>
+                      <span style={{position:"absolute",top:-9,right:-6,fontSize:8,fontWeight:800,letterSpacing:0.5,background:T.yellow,color:"#000",borderRadius:99,padding:"2px 7px"}}>PRONTO</span>
+                    </div>
                   : <button onClick={p.onConnect} disabled={p.disabled} style={{fontSize:12,padding:"7px 14px",borderRadius:8,border:`1.5px solid ${p.brand}88`,background:`${p.brand}18`,color:p.brand==="FFE600"?"#1a1a1a":p.brand,fontWeight:600,cursor:p.disabled?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s ease",boxShadow:`0 0 0 1px ${p.brand}18, 0 4px 14px ${p.brand}22`,flexShrink:0}}>Conectar</button>
                 }
               </div>
@@ -12666,7 +12684,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                 <ModalCloseBtn T={T} onClick={()=>!connectingMeta && setShowMetaModal(false)} disabled={connectingMeta}/>
               </div>
 
-              {metaMode==="oauth" && (
+              {metaMode==="oauth" && META_OAUTH_OK && (
                 <div style={{marginBottom:6}}>
                   <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:14}}>Conectá tu cuenta en <strong style={{color:T.text}}>un clic</strong>: se abre Facebook, autorizás el acceso a tus campañas y páginas, y volvés — listo.</div>
                   <button onClick={connectMetaOauth} disabled={connectingMeta} style={{width:"100%",padding:"13px 18px",fontSize:14,fontWeight:700,borderRadius:10,border:"none",background:"#1877F2",color:"#fff",cursor:connectingMeta?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
@@ -12677,7 +12695,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                 </div>
               )}
 
-              {metaMode==="token" && (<>
+              {(metaMode==="token"||!META_OAUTH_OK) && (<>
               {META_OAUTH_OK
                 ? <button onClick={()=>setMetaMode("oauth")} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,padding:0,marginBottom:12,fontFamily:"'Inter',system-ui,sans-serif"}}>← Volver a conectar con 1 clic</button>
                 : <div style={{marginBottom:14}}>

@@ -1868,10 +1868,15 @@ export default async function handler(req, res) {
     if (tab === 'bulk_lookup' && platform !== 'shopify') {
       const tnHeaders = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)' };
       const page = parseInt(req.query.page) || 1;
-      const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?per_page=200&page=${page}`, { headers: tnHeaders });
-      if (!r.ok) return res.status(200).json([]);
-      const data = await r.json();
-      return res.status(200).json(Array.isArray(data) ? data : []);
+      // Solo los campos que usa el estampado de SKUs (number + products) — el
+      // payload completo de 200 órdenes pesaba ~1-2MB y hacía eterno el análisis.
+      // Timeout de 40s: si TN está lenta devolvemos [] en vez de colgar la función.
+      try {
+        const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?per_page=200&page=${page}&fields=id,number,contact_name,products`, { headers: tnHeaders, signal: AbortSignal.timeout(40000) });
+        if (!r.ok) return res.status(200).json([]);
+        const data = await r.json();
+        return res.status(200).json(Array.isArray(data) ? data : []);
+      } catch (_) { return res.status(200).json([]); }
     }
 
     // ML_ENVIOS: pedidos de Mercado Libre para el panel de Envíos (solo
