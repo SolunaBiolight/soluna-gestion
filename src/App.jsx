@@ -3017,7 +3017,13 @@ function AsyncButton({onClick, children, style, disabled, ...props}) {
   const handleClick = async (e) => {
     if(loading || disabled) return;
     setLoading(true);
-    try { await onClick(e); } catch(err) { console.error(err); }
+    // El error NUNCA se traga en silencio: si el handler no lo manejó, se
+    // muestra como toast — un click que "no hace nada" es peor que un error.
+    try { await onClick(e); }
+    catch(err) {
+      console.error(err);
+      try { toast(String(err?.message||"Algo falló — probá de nuevo"),"error",6000); } catch(_) {}
+    }
     finally { setLoading(false); }
   };
   const spinnerColor = style?.color || "#fff";
@@ -16401,10 +16407,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       </>}
                       {(!colabMode||colabMode.permisos?.verTareas)&&t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:12,padding:"8px 14px",borderRadius:9,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}><GhI n="edit" size={12}/> Editar</button>}
                       {(!colabMode||colabMode.permisos?.verTareas)&&<AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:12,padding:"8px 14px",borderRadius:9,background:"transparent",color:T.textSm,border:`1px solid ${T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>Eliminar</AsyncButton>}
-                      {colabMode&&i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<AsyncButton onClick={async()=>{
+                      {colabMode&&t.estado!=="aprobado"&&<AsyncButton onClick={async()=>{
                         if(!await appConfirm(`¿Eliminar tu entrega "${del.label||`v${i+1}`}"?`,{danger:true,okLabel:"Eliminar"})) return;
                         try{
-                          const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicDeleteLastDeliverable",token:colabMode.token,tareaId:t._id})});
+                          const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicDeleteLastDeliverable",token:colabMode.token,tareaId:t._id,index:i})});
                           const d=await r.json();
                           if(!r.ok||d.error) throw new Error(d.error||"Error");
                           toast("Entrega eliminada","warning");
@@ -19495,15 +19501,17 @@ function ColaboradorPublicView({T, token}) {
                                     {del.feedbackRecibido}
                                   </div>
                                 )}
-                                {canEdit&&(
+                                {!isAprobado&&(
                                   <div style={{display:"flex",gap:7,marginTop:8,paddingTop:8,borderTop:`1px solid ${T.borderL}`}}>
-                                    <button onClick={()=>{setEditingEntrega(t._id);setEditEntregaData({link:del.link||"",label:del.label||"",nota:del.nota||""});}}
+                                    {canEdit&&<button onClick={()=>{setEditingEntrega(t._id);setEditEntregaData({link:del.link||"",label:del.label||"",nota:del.nota||""});}}
                                       style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:"#6366f110",color:"#6366f1",border:"1px solid #6366f130",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
                                       Editar esta entrega
-                                    </button>
+                                    </button>}
+                                    {/* Eliminar disponible en TODAS las entregas (no solo la última):
+                                        un video subido a la tarea equivocada tiene que poder sacarse */}
                                     <AsyncButton onClick={async()=>{
-                                      if(!await appConfirm(`¿Eliminar esta entrega "${del.label||`v${i+1}`}"?\nEl estado va a volver atrás.`,{danger:true,okLabel:"Sí, eliminar"})) return;
-                                      const d=await publicApi({action:"publicDeleteLastDeliverable",tareaId:t._id});
+                                      if(!await appConfirm(`¿Eliminar esta entrega "${del.label||`v${i+1}`}"?${isLast?"\nEl estado va a volver atrás.":""}`,{danger:true,okLabel:"Sí, eliminar"})) return;
+                                      const d=await publicApi({action:"publicDeleteLastDeliverable",tareaId:t._id,index:i});
                                       setData(prev=>({...prev,tareas:prev.tareas.map(x=>x._id===t._id?{...x,deliverables:d.deliverables,estado:d.estado,feedbackActual:null}:x)}));
                                       setEntregaEnviada(prev=>({...prev,[t._id]:null}));
                                       toast("Entrega eliminada ↩","warning");
