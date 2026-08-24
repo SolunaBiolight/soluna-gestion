@@ -2354,9 +2354,9 @@ function ghTplDeOficial(locs, oficial){
   const nums=[...new Set([...txt.matchAll(/\d{2,}/g)].map(x=>x[0]))];
   const words=txt.split(" ").filter(w=>w.length>=4&&!STOP.has(w)&&!/^\d+$/.test(w));
   if(!nums.length||!words.length) return null;
-  // Set: el desplegable repite el mismo punto — duplicados idénticos no
-  // deben anular el "resultado único"
-  const cand=[...new Set(lista.filter(t=>{const nt=n(t);return nums.some(x=>nt.includes(x))&&words.some(w=>nt.includes(w));}))];
+  // Dedupe por texto normalizado: el desplegable repite el mismo punto (a
+  // veces con distinto espaciado) — duplicados no deben anular el "resultado único"
+  const cand=[...new Map(lista.filter(t=>{const nt=n(t);return nums.some(x=>nt.includes(x))&&words.some(w=>nt.includes(w));}).map(t=>[n(t),t])).values()];
   return cand.length===1?cand[0]:null;
 }
 
@@ -7198,11 +7198,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       // unidad ("Local 9 y 10"): rompían el substring contra el template.
       const addr=ghStripUnidad((pickupDetails.address?.address||"").trim());
       const num=(pickupDetails.address?.number||"").replace(/\D.*/,"").trim();
-      const query=(addr+(num?" "+num:"")).trim().toUpperCase();
+      // Espacios normalizados en AMBOS lados: el template trae entradas con
+      // doble espacio ("HOP BELGRANO  995") invisibles en pantalla que
+      // rompían el substring con un solo espacio.
+      const nrmSp=s=>String(s||"").toUpperCase().replace(/\s+/g," ").trim();
+      const query=nrmSp(addr+(num?" "+num:""));
       if(query.length>=3){
-        // Set: el desplegable trae el mismo punto repetido y 2 entradas
-        // idénticas no deben anular el "resultado único"
-        const results=[...new Set(locs.sucursales.filter(s=>s.toUpperCase().includes(query)))];
+        // Dedupe por texto normalizado: el desplegable repite el mismo punto
+        // (a veces con espaciado distinto) y 2 entradas del mismo lugar no
+        // deben anular el "resultado único"
+        const results=[...new Map(locs.sucursales.filter(s=>nrmSp(s).includes(query)).map(s=>[nrmSp(s),s])).values()];
         if(results.length===1) return results[0];
       }
     } else if(direccion) {
@@ -7210,7 +7215,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const words=cl(direccion).split(' ').filter(w=>w.length>=4);
       if(words.length>=1){
         const q=words.join(' ');
-        const results=[...new Set(locs.sucursales.filter(s=>cl(s).includes(q)))];
+        const results=[...new Map(locs.sucursales.filter(s=>cl(s).includes(q)).map(s=>[cl(s),s])).values()];
         if(results.length===1) return results[0];
       }
     }
@@ -7220,8 +7225,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
   function searchSucursales(locs, query) {
     if(!query||query.length<2||!locs.sucursales) return [];
-    const q=query.toUpperCase().trim();
-    let r=locs.sucursales.filter(s=>s.toUpperCase().includes(q));
+    // Espacios normalizados: el template trae dobles espacios invisibles
+    const nrmSp=s=>String(s||"").toUpperCase().replace(/\s+/g," ").trim();
+    const q=nrmSp(query);
+    let r=locs.sucursales.filter(s=>nrmSp(s).includes(q));
     // Sin resultados con el texto completo: buscar por palabras (en cualquier
     // orden) y, si tampoco, ir soltando las del final ("...LOCAL 9 Y 10")
     // hasta que aparezca algo — la búsqueda se relaja sola.
@@ -7229,12 +7236,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       let toks=q.split(/\s+/).filter(Boolean);
       while(toks.length){
         const t2=toks;
-        r=locs.sucursales.filter(s=>{const u=s.toUpperCase();return t2.every(t=>u.includes(t));});
+        r=locs.sucursales.filter(s=>{const u=nrmSp(s);return t2.every(t=>u.includes(t));});
         if(r.length||toks.length===1) break;
         toks=toks.slice(0,-1);
       }
     }
-    return [...new Set(r)].slice(0,25); // sin entradas repetidas del desplegable
+    // Dedupe con espacios normalizados (el desplegable repite el mismo punto,
+    // a veces con distinto espaciado) — se devuelve el string ORIGINAL, que es
+    // el que el Excel acepta.
+    const vistos=new Set();
+    return r.filter(s=>{const k=nrmSp(s);if(vistos.has(k))return false;vistos.add(k);return true;}).slice(0,25);
   }
   async function generateAndreaniXlsx(ordersData,locs,cfgOverride) {
     if(!window.JSZip){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
