@@ -1052,6 +1052,9 @@ export default async function handler(req, res) {
         amount: Number(amount),
         txHash: String(txHash).trim().slice(0, 120),
         transferRef: String(transferRef).trim().slice(0, 120),
+        // Transferencia en ARS: monto en pesos y dólar cripto mostrados al pagar
+        arsMonto: Math.max(0, Number(body.arsMonto) || 0),
+        dolarCripto: Math.max(0, Number(body.dolarCripto) || 0),
         nota: String(nota).slice(0, 500),
         meses: Math.min(12, Math.max(1, Number(meses) || 1)),
         periodo: periodo === "anual" ? "anual" : "mensual",

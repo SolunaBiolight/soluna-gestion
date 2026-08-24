@@ -12459,11 +12459,57 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                 <>
                   <div style={{fontSize:15,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userDoc?.nombre||user?.displayName||"Usuario"}</div>
                   <div style={{fontSize:12,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userDoc?.email||user?.email}</div>
-                  <div style={{fontSize:11,color:T.accent,marginTop:3,fontWeight:500}}>Plan {userDoc?.plan||"free"}</div>
                 </>
               )}
             </div>
           </div>
+
+          {/* Tu plan: cuál tenés hoy, hasta cuándo, y qué planes existen */}
+          {(()=>{
+            const _now=new Date();
+            const planId=userDoc?.plan||"free";
+            const pExp=userDoc?.planExpiry?.toDate?.()||null;
+            const tEnd=userDoc?.trialEnd?.toDate?.()||(userDoc?.trialEnd instanceof Date?userDoc.trialEnd:null);
+            const planVigente=planId!=="free"&&(!pExp||pExp>_now);
+            const enTrial=!planVigente&&tEnd&&tEnd>_now;
+            const esFact=planId==="facturador";
+            const cAct=planVigente?(esFact?"#10b981":"#6366f1"):(enTrial?T.green:T.textSm);
+            const nombreAct=planVigente?(esFact?"Facturador":"Pro"):(enTrial?"Prueba gratuita":"Sin plan activo");
+            const fmtF=d=>d?d.toLocaleDateString("es-AR",{day:"2-digit",month:"long"}):"";
+            const subAct=planVigente
+              ?(pExp?`Vence el ${fmtF(pExp)}`:"Activo")
+              :enTrial?`Hasta el ${fmtF(tEnd)} — todas las funciones incluidas`
+              :(planId!=="free"?`Tu plan ${esFact?"Facturador":"Pro"} venció${pExp?` el ${fmtF(pExp)}`:""} — renovalo para recuperar el acceso`:"Elegí un plan para usar Growith");
+            const actualId=planVigente?(esFact?"facturador":"plus"):null;
+            return (
+              <div style={{borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:10}}>Tu plan</div>
+                <div style={{background:cAct+"10",border:`1px solid ${cAct}40`,borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <span style={{fontSize:14,fontWeight:800,color:planVigente||enTrial?cAct:T.text}}>{nombreAct}</span>
+                    {(planVigente||enTrial)&&<span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,background:cAct,color:"#fff",borderRadius:99,padding:"2px 8px"}}>ACTIVO</span>}
+                  </div>
+                  <div style={{fontSize:12,color:T.textMd,marginTop:3,lineHeight:1.5}}>{subAct}</div>
+                </div>
+                {[
+                  {id:"facturador",n:"Facturador",c:"#10b981",p:19,d:"Solo el facturador ARCA, ilimitado"},
+                  {id:"plus",n:"Pro",c:"#6366f1",p:69,d:"Todo Growith: márgenes, envíos, stock, ads, copilot"},
+                ].map(pl=>(
+                  <div key={pl.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,border:`1px solid ${actualId===pl.id?pl.c+"66":T.borderL}`,background:actualId===pl.id?pl.c+"0d":"transparent",marginBottom:6}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <span style={{fontSize:13,fontWeight:700,color:pl.c}}>{pl.n}</span>
+                      <span style={{fontSize:11,color:T.textSm,marginLeft:8}}>{pl.d}</span>
+                    </div>
+                    <span style={{fontSize:12,fontWeight:700,color:T.text,flexShrink:0}}>USD {pl.p}<span style={{fontSize:10,fontWeight:500,color:T.textSm}}>/mes</span></span>
+                    {actualId===pl.id&&<span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,color:pl.c,flexShrink:0}}>ACTUAL</span>}
+                  </div>
+                ))}
+                <button onClick={()=>onNavigate&&onNavigate("planes")} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",width:"100%",marginTop:4}}>
+                  {planVigente?"Ver planes y renovar":"Ver planes y suscribirme"}
+                </button>
+              </div>
+            );
+          })()}
           {editProfile ? (
             <div style={{display:"flex",gap:8}}>
               <button onClick={saveProfile} disabled={pSaving} style={{...BtnPrimary(T),fontSize:12,justifyContent:"center",flex:1}}>{pSaving?"Guardando...":"Guardar"}</button>
@@ -12919,13 +12965,29 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   ];
   const [selPlanId,setSelPlanId]=useState("plus");
   const PLAN=PLANES.find(p=>p.id===selPlanId)||PLANES[1];
-  // Datos bancarios para transferencia en ARS — completar cuando Soluna pase alias/titular reales
-  const ALIAS_PAGO="XXXX";
-  const TITULAR_PAGO="XXXX";
+  // Datos bancarios para transferencia en ARS (cargados 23/ago/2026)
+  const ALIAS_PAGO="GROWITHAPP";
+  const CVU_PAGO="0000168300000018414686";
+  const TITULAR_PAGO="THIAGO ACUÑA";
+  // Dólar cripto promedio del momento (compra+venta)/2 — para convertir el
+  // precio USD del plan a pesos. Si la API no responde, se muestra el monto
+  // en USD con la leyenda "al dólar cripto del momento".
+  const [dolarCripto,setDolarCripto]=useState(null);
+  useEffect(()=>{
+    if(step!=="pago_transfer"||dolarCripto) return;
+    (async()=>{
+      try{
+        const r=await fetch("https://dolarapi.com/v1/dolares/cripto");
+        const d=await r.json();
+        const prom=(Number(d?.compra)+Number(d?.venta))/2;
+        if(prom>0) setDolarCripto(prom);
+      }catch(_){}
+    })();
+  },[step]);
 
   const FAQS=[
     {q:"¿Hay renovación automática?", a:"No. Pagás mes a mes manualmente, sin débito automático. Te avisamos antes de que venza."},
-    {q:"¿En cuánto tiempo se activa?", a:"Automáticamente: detectamos tu pago en la blockchain y el plan se activa solo, normalmente en menos de 15 minutos. Si algo no matchea, lo revisamos a mano en el día."},
+    {q:"¿En cuánto tiempo se activa?", a:"Con USDT es automático: detectamos tu pago en la blockchain y el plan se activa solo, normalmente en menos de 15 minutos. Con transferencia en pesos lo confirmamos a mano y se activa en el día."},
     {q:"¿Puedo cancelar cuando quiero?", a:"Sí. No hay contrato ni penalidad. Tu cuenta sigue activa hasta fin del período pagado."},
     {q:"¿Qué pasa con mis datos si no renuevo?", a:"Todos tus datos quedan guardados. Si volvés a suscribirte, todo sigue igual donde lo dejaste."},
   ];
@@ -12982,6 +13044,9 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
           periodo: anual?"anual":"mensual",
           txHash: metodo==="cripto"?txHash.trim():"",
           transferRef: metodo==="transfer"?transferRef.trim():"",
+          // Conversión mostrada al cliente al momento de pagar (transferencia en ARS)
+          arsMonto: metodo==="transfer"&&dolarCripto?Math.round(totalPagar*dolarCripto):0,
+          dolarCripto: metodo==="transfer"&&dolarCripto?Math.round(dolarCripto*100)/100:0,
           nota: nota.trim(),
         }),
       });
@@ -13096,17 +13161,32 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         <div style={{background:T.card,border:`0.5px solid ${PLAN.color}44`,borderLeft:`3px solid ${PLAN.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
           <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan seleccionado</div>
           <div style={{fontSize:17,fontWeight:700,color:PLAN.color}}>{PLAN.nombre}{anual?" · Anual":""}</div>
-          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${totalPagar} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>USD {anual?"por año (12 meses)":"por mes"}</span></div>
+          {dolarCripto
+            ? <>
+                <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${Math.round(totalPagar*dolarCripto).toLocaleString("es-AR")} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>ARS {anual?"por año (12 meses)":"por mes"}</span></div>
+                <div style={{fontSize:12,color:T.textMd,marginTop:2}}>USD {totalPagar} al dólar cripto de ahora (${Math.round(dolarCripto).toLocaleString("es-AR")})</div>
+              </>
+            : <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${totalPagar} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>USD {anual?"por año (12 meses)":"por mes"}</span></div>}
           {credLine}
-          <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Se paga el equivalente en pesos al dólar del día — al confirmar te llega el comprobante por mail.</div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:4}}>La conversión es al dólar cripto promedio del momento — al confirmar te llega el comprobante por mail.</div>
         </div>
         {canjeBox}
         <div style={{marginBottom:20}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Transferí al alias:</div>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Transferí a:</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",marginBottom:8}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
-              <code style={{flex:1,fontSize:15,fontWeight:700,color:T.text,fontFamily:"monospace"}}>{ALIAS_PAGO}</code>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4}}>Alias</div>
+                <code style={{fontSize:15,fontWeight:700,color:T.text,fontFamily:"monospace"}}>{ALIAS_PAGO}</code>
+              </div>
               <button onClick={()=>{navigator.clipboard.writeText(ALIAS_PAGO);toast("Alias copiado","success");}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0}}>Copiar</button>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,borderTop:`1px solid ${T.borderL}`,paddingTop:8}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4}}>CVU</div>
+                <code style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:"monospace",wordBreak:"break-all"}}>{CVU_PAGO}</code>
+              </div>
+              <button onClick={()=>{navigator.clipboard.writeText(CVU_PAGO);toast("CVU copiado","success");}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0}}>Copiar</button>
             </div>
             <div style={{fontSize:12,color:T.textSm}}>Titular: <strong style={{color:T.text}}>{TITULAR_PAGO}</strong></div>
           </div>
@@ -13707,6 +13787,7 @@ function AppAdmin({T, user, onBack}) {
                         {p.periodo==="anual"&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:800,background:T.accentSolid+"22",color:T.accent}}>ANUAL (12m)</span>}
                         {p.amount>0&&<span style={{fontSize:11,fontWeight:700,color:T.text}}>${p.amount}</span>}
                         {p.method&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:T.blueBg,color:p.method==="cripto"?T.green:T.blue}}>{p.method==="cripto"?"₮ USDT":"Transf."}</span>}
+                        {p.arsMonto>0&&<span style={{fontSize:11,fontWeight:700,color:T.blue}}>${Number(p.arsMonto).toLocaleString("es-AR")} ARS{p.dolarCripto>0?<span style={{color:T.textSm,fontWeight:500}}> (dólar ${Math.round(p.dolarCripto).toLocaleString("es-AR")})</span>:null}</span>}
                         {p.transferRef&&<span style={{fontSize:11,color:T.textSm}}>Ref: <strong style={{color:T.text}}>{p.transferRef}</strong></span>}
                         {p.txHash&&<span style={{fontSize:11,color:T.textSm,fontFamily:"monospace"}}>TX: {p.txHash.slice(0,16)}…</span>}
                         <span style={{fontSize:11,color:T.textSm}}>{fmtDateFull(p.createdAt)}</span>
