@@ -1978,7 +1978,7 @@ function AppPromptHost({ T }) {
 }
 
 // --- DateRangePicker (dropdown con calendario inline + presets) ---
-function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
+function DateRangePicker({ T, since, until, onChange, presets, onPreset, labelText }) {
   const [open, setOpen] = React.useState(false);
   // Posición fija calculada al abrir: el dropdown escapa de contenedores con
   // overflow (topbar scrolleable en mobile) y se clampa a los bordes del viewport.
@@ -1991,10 +1991,16 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
       const r=wrapRef.current.getBoundingClientRect();
       const w=Math.min(340,window.innerWidth-20);
       setPos({top:r.bottom+6,right:Math.max(10,Math.min(window.innerWidth-r.right,window.innerWidth-w-10))});
+      // El calendario abre siempre en el mes del rango vigente (antes quedaba
+      // clavado en el mes con el que se montó el componente).
+      const base = until || since;
+      if (base) { const d = new Date(base + "T00:00:00"); if (!isNaN(d)) setViewMonth(new Date(d.getFullYear(), d.getMonth(), 1)); }
+      setTmpStart(null); setHoverDay(null);
     }
     return n;
   });
   const [tmpStart, setTmpStart] = React.useState(null); // primera fecha al elegir custom
+  const [hoverDay, setHoverDay] = React.useState(null); // vista previa del rango mientras se elige el fin
   const initialMonth = (() => {
     const d = since ? new Date(since + "T00:00:00") : new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -2029,9 +2035,23 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
       const y = new Date(today.getTime() - 86400000);
       onChange(fmt(y), fmt(y));
     } else {
-      onChange(fmt(new Date(today.getTime() - p.days*86400000)), fmt(today));
+      // "Últimos N días" INCLUYE hoy → N-1 hacia atrás (convención de toda la app)
+      onChange(fmt(new Date(today.getTime() - Math.max(0,p.days-1)*86400000)), fmt(today));
     }
     setOpen(false);
+  }
+  // Preset activo: el que produce exactamente el rango vigente (para resaltarlo)
+  const fmtARdp = (d) => new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(d);
+  const hoyStrDp = fmtARdp(new Date());
+  function presetActivo(p){
+    if(!since||!until) return false;
+    if(p.range){ try{ const [s,u]=p.range(); return s===since&&u===until; }catch(_){ return false; } }
+    if(p.days===0) return since===hoyStrDp&&until===hoyStrDp;
+    if(p.days===-1){ const y=fmtARdp(new Date(Date.now()-86400000)); return since===y&&until===y; }
+    if(!(until===hoyStrDp)) return false;
+    const a=fmtARdp(new Date(Date.now()-Math.max(0,p.days-1)*86400000));
+    const b=fmtARdp(new Date(Date.now()-p.days*86400000));
+    return since===a||since===b;
   }
   function clickDay(dateStr) {
     // Primer click: marca inicio. No llama onChange todavía para evitar una API call
@@ -2044,12 +2064,13 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
     if (s > u) [s, u] = [u, s];
     onChange(s, u);
     setTmpStart(null);
+    setHoverDay(null);
     setOpen(false);
   }
-  // Build month grid (Su..Sa)
+  // Build month grid (Lu..Do — la semana argentina arranca el lunes)
   const year = viewMonth.getFullYear();
   const month = viewMonth.getMonth();
-  const firstDow = new Date(year, month, 1).getDay(); // 0=Su
+  const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // 0=Lu
   const daysInMonth = new Date(year, month+1, 0).getDate();
   const daysInPrev = new Date(year, month, 0).getDate();
   const cells = [];
@@ -2078,16 +2099,21 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
   // el topbar angosto y el control quedaba desbordado/desalineado.
   const trigCompacto = typeof window!=="undefined" && window.innerWidth<640;
   const fmtNum = (s)=>{const d=new Date(s+"T00:00:00");return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;};
-  const label = since && until
+  // Etiqueta del trigger: si el rango vigente ES un preset, mostrar su nombre
+  // ("Últimos 30 días") — mucho más legible que el par de fechas. labelText
+  // permite forzarla desde afuera.
+  const presetLabel = (!trigCompacto && PRESETS.find(p=>presetActivo(p))?.label) || null;
+  const label = labelText || (since && until
     ? (trigCompacto
         ? (since === until ? fmtNum(since) : `${fmtNum(since)} – ${fmtNum(until)}`)
-        : (since === until
+        : presetLabel || (since === until
             ? new Date(since+"T00:00:00").toLocaleDateString("es-AR", { day:"numeric", month:"short", year:"numeric" })
             : `${new Date(since+"T00:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short"})} – ${new Date(until+"T00:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short",year:"numeric"})}`))
-    : "Período";
+    : "Período");
   return (
     <div ref={wrapRef} style={{position:"relative",display:"inline-block",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
-      <button onClick={toggleOpen} style={{display:"inline-flex",alignItems:"center",gap:trigCompacto?6:8,height:34,padding:trigCompacto?"0 12px":"0 15px",boxSizing:"border-box",background:"transparent",border:`1px solid ${open?T.accent+"66":T.border}`,borderRadius:DS.r.full,fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+      <button onClick={toggleOpen} title={since&&until?`${new Date(since+"T00:00:00").toLocaleDateString("es-AR")} — ${new Date(until+"T00:00:00").toLocaleDateString("es-AR")}`:"Elegir período"} style={{display:"inline-flex",alignItems:"center",gap:trigCompacto?6:8,height:34,padding:trigCompacto?"0 12px":"0 15px",boxSizing:"border-box",background:"transparent",border:`1px solid ${open?T.accent+"66":T.border}`,borderRadius:DS.r.full,fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         <span style={{whiteSpace:"nowrap"}}>{label}</span> <span style={{color:T.textSm,fontSize:10}}>▾</span>
       </button>
       {open && ReactDOM.createPortal((()=>{
@@ -2105,9 +2131,12 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
         <div ref={ddRef} className="gh-dropdown" style={sheetStyle}>
           {/* Presets */}
           <div style={{display:"grid",gridTemplateColumns:`repeat(${esMobile?2:3}, 1fr)`,gap:esMobile?8:6,marginBottom:10}}>
-            {PRESETS.map(p => (
-              <button key={p.id} onClick={()=>applyPreset(p)} style={{padding:esMobile?"10px 10px":"6px 10px",fontSize:esMobile?12:11,border:`1px solid ${T.border}`,borderRadius:8,background:T.surface,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.label}</button>
-            ))}
+            {PRESETS.map(p => {
+              const act=presetActivo(p);
+              return (
+              <button key={p.id} onClick={()=>applyPreset(p)} style={{padding:esMobile?"10px 10px":"6px 10px",fontSize:esMobile?12:11,fontWeight:act?700:500,border:`1px solid ${act?T.accent:T.border}`,borderRadius:8,background:act?T.accent+"1c":T.surface,color:act?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.label}</button>
+              );
+            })}
           </div>
           {/* Month nav */}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
@@ -2117,7 +2146,7 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
           </div>
           {/* Day labels */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(7, 1fr)",gap:2,marginBottom:4}}>
-            {["Do","Lu","Ma","Mi","Ju","Vi","Sa"].map(d=> <div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:T.textSm,letterSpacing:0.3,padding:4}}>{d}</div>)}
+            {["Lu","Ma","Mi","Ju","Vi","Sa","Do"].map(d=> <div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:T.textSm,letterSpacing:0.3,padding:4}}>{d}</div>)}
           </div>
           {/* Day grid */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(7, 1fr)",gap:2}}>
@@ -2126,14 +2155,22 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
               const isToday = (()=>{ const d=new Date(str+"T00:00:00"); return d.toDateString() === today.toDateString(); })();
               const isStart = str === since;
               const isEnd = str === until;
-              const isInRange = inRange(str);
+              // Vista previa mientras se elige el fin: pinta el rango entre el
+              // inicio marcado y el día bajo el mouse.
+              const isPreview = tmpStart && hoverDay && ((str>=tmpStart&&str<=hoverDay)||(str>=hoverDay&&str<=tmpStart));
+              const isInRange = !tmpStart && inRange(str);
               const isTmp = tmpStart && str === tmpStart;
-              const dis = c.out;
+              // Futuro deshabilitado: rangos sin datos solo confunden.
+              const hoyStr = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date());
+              const esFuturo = str > hoyStr;
+              const dis = c.out || esFuturo;
               return (
-                <button key={i} disabled={dis} onClick={()=>!dis && clickDay(str)} style={{
+                <button key={i} disabled={dis} onClick={()=>!dis && clickDay(str)}
+                  onMouseEnter={()=>{ if(!dis&&tmpStart) setHoverDay(str); }}
+                  style={{
                   padding:esMobile?"10px 0":"7px 0",fontSize:esMobile?13:12,borderRadius:6,
                   border: isToday ? `1px solid ${T.accent}55` : "1px solid transparent",
-                  background: isStart||isEnd||isTmp ? T.accent : isInRange ? T.accent+"22" : "transparent",
+                  background: isStart||isEnd||isTmp ? T.accent : (isInRange||isPreview) ? T.accent+"22" : "transparent",
                   color: isStart||isEnd||isTmp ? "#fff" : dis ? T.textSm+"77" : T.text,
                   cursor: dis ? "default" : "pointer",
                   fontWeight: isStart||isEnd||isTmp ? 700 : 500,
@@ -32447,14 +32484,16 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           presets={[
             {id:"today",label:"Hoy",days:0},{id:"yest",label:"Ayer",days:-1},
             {id:"7d",label:"Últimos 7 días",days:7},{id:"30d",label:"Últimos 30 días",days:30},
+            {id:"mes",label:"Este mes",range:()=>{const h=new Date();return [fechaAR(new Date(h.getFullYear(),h.getMonth(),1)),hoyAR()];}},
+            {id:"mes-1",label:"Mes pasado",range:()=>{const h=new Date();return [fechaAR(new Date(h.getFullYear(),h.getMonth()-1,1)),fechaAR(new Date(h.getFullYear(),h.getMonth(),0))];}},
             {id:"60d",label:"Últimos 60 días",days:60},{id:"90d",label:"Últimos 90 días",days:90},
           ]}
           since={useCustom?dateFrom:fechaAR(new Date(Date.now()-Math.max(0,days-1)*86400000))}
           until={useCustom?dateTo:hoyAR()}
           onPreset={(d)=>{ setUseCustom(false); setDateFrom(""); setDateTo(""); setDays(d); loadData(d,"",""); }}
           onChange={(s,u)=>{ setUseCustom(true); setDateFrom(s); setDateTo(u); const diff=Math.round((new Date(u)-new Date(s))/86400000)+1; setDays(diff); loadData(0,s,u); }}/>
-        <button onClick={()=>loadData(undefined,undefined,undefined,false,true)} disabled={loading} title="Recalcula las ventas de hoy al segundo (saltea la caché)" style={{...BtnPrimary(T),fontSize:12,height:34,padding:"0 17px",borderRadius:DS.r.full,boxSizing:"border-box",display:"inline-flex",alignItems:"center",gap:6}}>
-          {loading?<Spinner size={11} color="#fff"/>:"↻"} Actualizar
+        <button onClick={()=>loadData(undefined,undefined,undefined,false,true)} disabled={loading} title="Recalcula las ventas de hoy al segundo (saltea la caché)" style={{...BtnPrimary(T),fontSize:12,height:34,padding:"0 17px",borderRadius:DS.r.full,boxSizing:"border-box",display:"inline-flex",alignItems:"center",gap:6,opacity:loading?0.75:1}}>
+          {loading?<Spinner size={11} color="#fff"/>:"↻"} {loading?"Actualizando…":"Actualizar"}
         </button>
         {/* Acciones secundarias en un menú ⋯ — "Reprocesar" es mantenimiento y
             asusta/confunde como botón permanente; "Compartir" es ocasional. */}
