@@ -1471,10 +1471,25 @@ export default async function handler(req, res) {
       };
 
 
+      // Nombre legible producto+variante. Regla: si el producto tiene VARIAS
+      // variantes, se muestra "Producto · <nombre de variante>", y si la variante
+      // no tiene nombre real (Default/Default Title) se cae al SKU — NUNCA al id
+      // random. Si el producto tiene una sola variante (Default Title), se muestra
+      // solo el nombre del producto (sin el "· Default Title" feo).
+      const prodLabel = (p, v) => {
+        const nombre = p.nombre || v.sku || String(v.id);
+        const multiVar = (p.variants || []).length > 1;
+        const vn = String(v.nombre || "").trim();
+        const vnReal = vn && vn !== "Default" && vn !== "Default Title" ? vn : "";
+        const sku = String(v.sku || "").trim();
+        // suffix: nombre de variante real; si no y es multi-variante, el SKU.
+        const suffix = vnReal || (multiVar ? sku : "");
+        return nombre + (suffix ? " · " + suffix : "");
+      };
       // Nombres legibles por key (sku/variant/publicación ML) — para el detalle
       // de cada venta (drill-down) y la tabla de productos.
       const nameByKeyGlobal = {};
-      for (const p of (curr.raw?.products||[])) for (const v of (p.variants||[])) { const k=v.sku||String(v.id); if (nameByKeyGlobal[k]==null) nameByKeyGlobal[k]=(p.nombre||k)+(v.nombre&&v.nombre!=="Default"?" · "+v.nombre:""); }
+      for (const p of (curr.raw?.products||[])) for (const v of (p.variants||[])) { const k=v.sku||String(v.id); if (nameByKeyGlobal[k]==null) nameByKeyGlobal[k]=prodLabel(p,v); }
       for (const m of (curr.raw?.ml_data?.ml_products||[])) { if (nameByKeyGlobal["ml:"+m.id]==null) nameByKeyGlobal["ml:"+m.id]=m.nombre||("ML "+m.id); }
 
       // ── Venta por venta: cada orden con sus costos reales ──
@@ -1521,7 +1536,7 @@ export default async function handler(req, res) {
         const nameByKey = {}, priceByKey = {};
         for (const p of (raw?.products||[])) for (const v of (p.variants||[])) {
           const k = v.sku || String(v.id);
-          if (nameByKey[k]==null) nameByKey[k] = (p.nombre||k) + (v.nombre && v.nombre!=="Default" ? " · "+v.nombre : "");
+          if (nameByKey[k]==null) nameByKey[k] = prodLabel(p, v);
           if (priceByKey[k]==null) priceByKey[k] = parseFloat(v.price)||0;
         }
         for (const m of (raw?.ml_data?.ml_products||[])) { if (nameByKey["ml:"+m.id]==null) nameByKey["ml:"+m.id] = m.nombre || ("ML "+m.id); }
@@ -1595,7 +1610,7 @@ export default async function handler(req, res) {
       // el número puede no ser exacto en vez de mostrarlo con pinta de real ──
       const sinCogsNombres = [];
       for (const p of (curr.raw?.products||[])) for (const v of (p.variants||[])) {
-        if ((v.units_sold||0)>0 && cogsMap[v.sku||String(v.id)]==null) sinCogsNombres.push((p.nombre||"") + (v.nombre && v.nombre!=="Default" ? " · "+v.nombre : ""));
+        if ((v.units_sold||0)>0 && cogsMap[v.sku||String(v.id)]==null) sinCogsNombres.push(prodLabel(p, v));
       }
       for (const m of (curr.raw?.ml_data?.ml_products||[])) { if ((m.units||0)>0 && cogsMap["ml:"+m.id]==null) sinCogsNombres.push("ML · "+(m.nombre||m.id)); }
       const rawQ = curr.raw?.quality || {};
