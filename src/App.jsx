@@ -6919,6 +6919,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [sendingTracking,setSendingTracking]=useState({});
   const [trackingSent,setTrackingSent]=useState({});
   const [seguimientoProgress,setSeguimientoProgress]=useState({active:false,current:0,total:0,last:"",done:false,ok:0,fail:0});
+  // Minimizado a segundo plano: el modal se oculta y el progreso vive en la
+  // pastilla flotante global (SeguimientosHud) — el envío sigue corriendo igual.
+  const segMinRef=useRef(false);
+  const segHud=(d)=>{try{window.dispatchEvent(new CustomEvent("gh-seg-hud",{detail:d}));}catch(_){}};
+  useEffect(()=>{
+    const h=()=>{segMinRef.current=false;setSeguimientoProgress(p=>p.active?{...p,min:false}:p);};
+    window.addEventListener("gh-seg-expand",h);
+    return ()=>window.removeEventListener("gh-seg-expand",h);
+  },[]);
   const [sendBatchActive,setSendBatchActive]=useState(false);
   const [showGuia,setShowGuia]=useState(false);
   const iS=InputStyle(T);
@@ -8468,7 +8477,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   async function sendAllTracking() {
     const pending=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]);
     setSendBatchActive(true);
-    setSeguimientoProgress({active:true,current:0,total:pending.length,last:"",done:false,ok:0,fail:0});
+    segMinRef.current=false;
+    setSeguimientoProgress({active:true,current:0,total:pending.length,last:"",done:false,ok:0,fail:0,min:false});
     let ok=0,fail=0;
     const errors=[];
     for(let i=0;i<pending.length;i++){
@@ -8483,16 +8493,22 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         errors.push({pedido:r.pedidoNum,msg:e.message});
         setSeguimientoProgress(p=>({...p,fail}));
       }
+      // La pastilla global vive de estos eventos: sigue mostrando el progreso
+      // aunque el modal esté minimizado o la usuaria se vaya a otra sección.
+      segHud({active:true,min:segMinRef.current,current:i+1,total:pending.length,ok,fail});
       // Pausa entre pedidos para respetar rate limit de TN
       if(i<pending.length-1) await new Promise(r=>setTimeout(r,500));
     }
     setSendBatchActive(false);
+    segHud({active:false});
     // Éxito total → toast y a otra cosa: un "salió todo bien" no interrumpe con
     // un modal que pide click. El modal de resultado queda SOLO para errores.
     if(fail===0){
       toast(`${ok} seguimiento${ok!==1?"s":""} enviado${ok!==1?"s":""} a la tienda ✓`,"success");
       setSeguimientoProgress({active:false,current:0,total:0,last:"",done:false,ok:0,fail:0,errors:[]});
     } else {
+      // El toast también, por si está en otra sección con el modal desmontado
+      toast(`${ok} seguimiento${ok!==1?"s":""} enviado${ok!==1?"s":""} · ${fail} con error — el detalle está en Envíos`,"warning",7000);
       setSeguimientoProgress({active:false,current:pending.length,total:pending.length,last:"",done:true,ok,fail,errors});
     }
   }
@@ -8502,7 +8518,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
       {/* Seguimientos batch progress modal */}
       {/* Seguimientos — portal unificado activo + resultado */}
-      {(seguimientoProgress.active||seguimientoProgress.done)&&ReactDOM.createPortal(
+      {((seguimientoProgress.active&&!seguimientoProgress.min)||seguimientoProgress.done)&&ReactDOM.createPortal(
         <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}
           onClick={seguimientoProgress.done?()=>setSeguimientoProgress(p=>({...p,done:false})):undefined}>
           <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.done?(seguimientoProgress.ok===0?T.red+"55":T.orange+"55"):T.green+"44"}`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
@@ -8535,6 +8551,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Con error</div>
                   </div>
                 </div>
+                <button onClick={()=>{
+                  segMinRef.current=true;
+                  setSeguimientoProgress(p=>({...p,min:true}));
+                  segHud({active:true,min:true,current:seguimientoProgress.current,total:seguimientoProgress.total,ok:seguimientoProgress.ok,fail:seguimientoProgress.fail});
+                }} style={{marginTop:16,width:"100%",padding:"9px 14px",fontSize:12,fontWeight:600,borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  Seguir en segundo plano — usá la app mientras termina
+                </button>
               </>
             ) : (
               <>
@@ -33309,6 +33332,35 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
 
 
 // ─── Andreani Polling Service (global, fuera de App) ───
+// Pastilla flotante global de "Enviando seguimientos" en segundo plano: vive
+// de los eventos gh-seg-hud que dispara el batch de AppEnvios, así sigue
+// visible aunque la usuaria navegue a otra sección (el envío no se corta).
+// Click: en Envíos reabre el modal (gh-seg-expand); en otra sección lleva a Envíos.
+function SeguimientosHud({T}){
+  const [st,setSt]=React.useState(null);
+  React.useEffect(()=>{
+    const h=e=>{const d=e.detail||{};if(!d.active){setSt(null);return;}setSt(d.min?d:null);};
+    window.addEventListener("gh-seg-hud",h);
+    return ()=>window.removeEventListener("gh-seg-hud",h);
+  },[]);
+  if(!st) return null;
+  const pct=Math.round((st.current/Math.max(1,st.total))*100);
+  return ReactDOM.createPortal(
+    <div onClick={()=>{
+        if(String(window.location.hash||"").includes("envios")){ setSt(null); window.dispatchEvent(new Event("gh-seg-expand")); }
+        else window.location.hash="#/envios";
+      }}
+      title="Ver el progreso"
+      style={{position:"fixed",right:16,bottom:88,zIndex:9000,display:"flex",alignItems:"center",gap:10,background:T.card,border:`1px solid ${T.green}55`,borderRadius:DS.r.full,padding:"9px 16px",boxShadow:"0 8px 30px rgba(0,0,0,0.45)",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",maxWidth:"calc(100vw - 32px)"}}>
+      <div style={{width:16,height:16,border:`2.5px solid ${T.green}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite",flexShrink:0}}/>
+      <span style={{fontSize:12,fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>Seguimientos {st.current}/{st.total}</span>
+      <span style={{fontSize:12,fontWeight:800,color:T.green}}>{pct}%</span>
+      {st.fail>0&&<span style={{fontSize:11,fontWeight:700,color:T.red}}>{st.fail} err</span>}
+    </div>,
+    document.body
+  );
+}
+
 function AndreaniPollingService({uid, onAlerts}) {
   const [reclamos, setReclamos] = useState([]);
   const reclamosRef = useRef([]);
@@ -34272,6 +34324,7 @@ export default function App() {
       <ToastContainer T={T}/>
       <AppPromptHost T={T}/>
       {user && <AndreaniPollingService uid={user.uid} onAlerts={setAndreaniAlertCount}/>}
+      <SeguimientosHud T={T}/>
 
       {/* ── Banner prueba activa (nunca para miembros: la prueba es del dueño) ── */}
       {isInTrial&&!user?.esMiembro&&ReactDOM.createPortal(
