@@ -7479,6 +7479,27 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const locationOverridesRef=useRef((()=>{try{return JSON.parse(localStorage.getItem(ghKey("growith_locOverrides"))||"{}");}catch(_){return {};}})());
   const sucursalOverridesRef=useRef((()=>{try{return JSON.parse(localStorage.getItem(ghKey("growith_sucOverrides"))||"{}");}catch(_){return {};}})());
   function persistOverrides(){try{localStorage.setItem(ghKey("growith_locOverrides"),JSON.stringify(locationOverridesRef.current));localStorage.setItem(ghKey("growith_sucOverrides"),JSON.stringify(sucursalOverridesRef.current));}catch(_){}}
+  // ── Memoria por PUNTO de retiro ──
+  // Cuando la usuaria confirma a mano qué sucursal es un punto (modal), la
+  // elección queda guardada por PUNTO (nombre+dirección+CP), no por pedido:
+  // todos los pedidos futuros al mismo punto se resuelven solos, en ambos
+  // flujos (tpl = string del desplegable del Excel; oficial = id de la API).
+  const puntoMapRef=useRef((()=>{try{return JSON.parse(localStorage.getItem(ghKey("growith_puntoMap"))||"{}");}catch(_){return {};}})());
+  function persistPuntoMap(){try{localStorage.setItem(ghKey("growith_puntoMap"),JSON.stringify(puntoMapRef.current));}catch(_){}}
+  function ghPuntoKey(o){
+    const pd=o?.pickupDetails; if(!pd) return null;
+    const nom=nrmSucTxt(pd.name);
+    const dir=nrmSucTxt(ghStripUnidad(pd.address?.address));
+    const num=String(pd.address?.number||"").replace(/\D.*/,"").trim();
+    const cp=String(pd.address?.zipcode||pd.address?.zip_code||o?.cp||"").trim();
+    if(!dir&&!nom) return null;
+    return [nom,dir,num,cp].join("|");
+  }
+  function recordarPunto(o,datos){
+    const pk=ghPuntoKey(o); if(!pk) return;
+    puntoMapRef.current[pk]={...(puntoMapRef.current[pk]||{}),...datos,ts:Date.now()};
+    persistPuntoMap();
+  }
 
   // Listado OFICIAL de sucursales Andreani por CP (API), cacheado en memoria
   // por sesión para no repetir fetches del mismo CP. Solo disponible para
@@ -7921,6 +7942,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       sucIdx++;
       setExporting(true);
       setExportProgress({step:`Verificando sucursales Andreani… (${sucIdx}/${unresolvedSuc.length})`,pct:30+Math.round(25*sucIdx/unresolvedSuc.length),current:sucIdx,total:unresolvedSuc.length});
+      // Memoria por punto: si este punto de retiro ya fue confirmado a mano
+      // alguna vez, se reusa esa elección (validando que siga en el desplegable).
+      const memXlsx=(()=>{const pk=ghPuntoKey(o);return pk?puntoMapRef.current[pk]:null;})();
+      if(memXlsx?.tpl&&(locs.sucursales||[]).includes(memXlsx.tpl)){
+        sucursalOverridesRef.current[o.numero]=memXlsx.tpl;
+        persistOverrides();
+        continue;
+      }
       // Lista oficial de la API por CP del destinatario (cacheada). null = API
       // no disponible → el modal cae a la búsqueda clásica del template.
       const oficiales=await fetchSucursalesOficiales(cpDestinoDe(o));
@@ -7996,6 +8025,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           continue; // reabrir el modal para el mismo pedido
         }
         sucursalOverridesRef.current[o.numero]=tpl; persistOverrides();
+        // Memoria por punto: la próxima vez que un pedido venga a ESTE punto,
+        // se resuelve solo con esta elección.
+        recordarPunto(o,{tpl});
         setSucursalConfirmed({numero:o.numero,nombre:tpl});
         await new Promise(r=>setTimeout(r,1200));
         setSucursalConfirmed(null);
@@ -8068,6 +8100,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         continue;
       }
       if(!isSucursalOrder(o)){ rows.push(mkRow(o)); continue; }
+      // Memoria por punto: elección confirmada a mano en un pedido anterior al
+      // MISMO punto de retiro → se reusa directo (id oficial guardado).
+      const memApi=(()=>{const pk=ghPuntoKey(o);return pk?puntoMapRef.current[pk]:null;})();
+      if(memApi?.oficial?.id!=null){
+        rows.push(mkRow(o,{oficial:memApi.oficial,verif:verifSucursalVsTienda(o,memApi.oficial),deMemoria:true}));
+        continue;
+      }
       const oficiales=await fetchSucursalesOficiales(cpDestinoDe(o));
       let ofc=Array.isArray(oficiales)&&oficiales.length?matchSucursalOficial(oficiales,o):null;
       // El punto exacto puede no estar en la lista por CP (HOP nuevos): antes
@@ -8089,6 +8128,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         if(chosen==="EXCLUIR"){ rows.push(mkRow(o,{incluido:false,cotError:"Excluido manualmente"})); continue; }
         ofc=chosen&&chosen.oficial?chosen.oficial:null;
         if(!ofc){ rows.push(mkRow(o,{incluido:false,cotError:"Sin sucursal elegida"})); continue; }
+        // Memoria por punto: solo el mínimo necesario para reusar (id + datos visibles)
+        recordarPunto(o,{oficial:{id:ofc.id,codigo:ofc.codigo??null,numero:ofc.numero??null,descripcion:ofc.descripcion||"",direccion:ofc.direccion||null}});
       }
       rows.push(mkRow(o,{oficial:ofc,verif:verifSucursalVsTienda(o,ofc)}));
     }
@@ -10025,8 +10066,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                               {r.tipo==="sucursal"&&r.verif==="ok"&&(
                                 <div style={{color:T.green,fontSize:11,marginTop:2,fontWeight:600}}>✓ Coincide con el punto elegido en tu tienda</div>
                               )}
-                              {r.tipo==="sucursal"&&r.verif==="warn"&&(
+                              {r.tipo==="sucursal"&&r.verif==="warn"&&!r.deMemoria&&(
                                 <div style={{color:T.yellow,fontSize:11,marginTop:2,fontWeight:600}}>Distinto del punto que eligió el cliente ({r.order.pickupDetails?.name||"punto de retiro"}) — revisá antes de emitir</div>
+                              )}
+                              {r.tipo==="sucursal"&&r.verif==="warn"&&r.deMemoria&&(
+                                <div style={{color:T.accent,fontSize:11,marginTop:2,fontWeight:600}}>Sucursal que confirmaste antes para este mismo punto de retiro</div>
                               )}
                               {r.cotError&&(
                                 <div style={{color:T.red,fontSize:11,marginTop:2,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
