@@ -7524,7 +7524,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const calleSola=num?calleRaw.replace(new RegExp("\\b"+num+"\\s*$"),"").trim():calleRaw;
     const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL"]);
     const calleToks=calleSola.split(" ").filter(w=>w.length>=4&&!GEN.has(w));
-    const calleOk=!!(calleToks.length&&calleToks.some(t=>s.includes(t)));
+    let calleOk=!!(calleToks.length&&calleToks.some(t=>s.includes(t)));
+    // Calles numeradas (La Plata: "CALLE 13", "DIAGONAL 74"): no dejan tokens de
+    // texto comparables. Si TODOS los números del lado tienda (calle + puerta)
+    // aparecen en la fila del Excel, es la misma dirección.
+    const calleNums=calleSola.match(/\b\d{1,5}\b/g)||[];
+    if(!calleOk&&calleNums.length){
+      const sNumsAll=s.match(/\b\d{1,5}\b/g)||[];
+      calleOk=calleNums.every(n=>sNumsAll.includes(n))&&(!num||sNumsAll.includes(num));
+    }
     const tnTokens=nrmSucTxt(pd.name).split(" ").filter(w=>w&&!GEN.has(w)&&w.length>=3);
     const nameOk=!!(tnTokens.length&&tnTokens.some(t=>s.includes(t)));
     const locToks=nrmSucTxt(pd.address?.locality||pd.address?.city||"").split(" ").filter(w=>w.length>=4&&!GEN.has(w));
