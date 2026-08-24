@@ -6917,6 +6917,25 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   },[]);
   const [locSearch,setLocSearch]=useState("");
   const [locSearchType,setLocSearchType]=useState("ciudad");
+  // Enriquecimiento de los resultados del buscador del template con el listado
+  // OFICIAL vivo: el template trae entradas sin número de calle ("HOP AVENIDA
+  // RICARDO BALBIN") y no se pueden distinguir — el oficial trae la dirección
+  // completa. {q, lista:[oficiales]} para el último locSearch consultado.
+  const [sucEnrich,setSucEnrich]=useState(null);
+  useEffect(()=>{
+    if(!locationModal||locationModal.type!=="sucursal") return;
+    const q=locSearch.trim();
+    if(q.length<3){ setSucEnrich(null); return; }
+    let alive=true;
+    const t=setTimeout(async()=>{
+      try{
+        const r=await authFetch(`/api/andreani?action=sucursales_buscar&q=${encodeURIComponent(ghStripUnidad(q))}`);
+        const d=await r.json().catch(()=>null);
+        if(alive&&r.ok&&Array.isArray(d?.sucursales)) setSucEnrich({q,lista:d.sucursales});
+      }catch(_){}
+    },450);
+    return ()=>{alive=false;clearTimeout(t);};
+  },[locSearch,locationModal]);
   const [locOficialSel,setLocOficialSel]=useState(""); // id elegido en la lista oficial Andreani (modal sucursal del XLSX)
   const [verifModal,setVerifModal]=useState(null); // {items,resolve} — filas del XLSX que no coinciden con el destino de la tienda
   const verifRowsRef=useRef([]); // resultado de la verificación del último armado de Excel (lo lee exportAndreani para el toast)
@@ -9922,6 +9941,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     {results.map((item,i)=>{
                       if(isSuc){
                         const isSugerido=autoMatch&&item===autoMatch;
+                        // Dirección completa desde el listado OFICIAL: el template a
+                        // veces no trae el número de calle y no se distinguen puntos
+                        // del mismo nombre. Match por descripción normalizada.
+                        const nrmE=s=>String(s||"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
+                        const itemN=nrmE(item);
+                        const matches=(sucEnrich?.lista||[]).filter(s=>{const dN=nrmE(s.descripcion);return dN===itemN||dN&&itemN.includes(dN)||dN.includes(itemN);});
+                        // Dedupe por dirección real (el listado repite variantes)
+                        const dirsUnicas=[...new Map(matches.map(s=>{const d=s.direccion||{};const k=nrmE(`${d.calle||""} ${d.numero||""}`);return [k,{dir:`${d.calle||""} ${d.numero||""}`.trim(),loc:d.localidad||"",cp:d.codigoPostal||""}];})).values()].filter(x=>x.dir);
                         return (
                           <div key={i} onClick={()=>{resolve(item);setLocationModal(null);}}
                             style={{padding:"11px 14px",cursor:"pointer",borderBottom:i<results.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.1s",background:isSugerido?`${T.accent}18`:"transparent"}}
@@ -9931,6 +9958,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                               <div style={{fontSize:13,fontWeight:600,color:T.text,flex:1}}>{item}</div>
                               {isSugerido&&<span style={{fontSize:10,fontWeight:700,color:T.accent,background:`${T.accent}22`,borderRadius:4,padding:"2px 6px",whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:0.5}}>Sugerido</span>}
                             </div>
+                            {dirsUnicas.length===1&&(
+                              <div style={{fontSize:11,color:T.textSm,marginTop:3}}>{[dirsUnicas[0].dir,dirsUnicas[0].loc,dirsUnicas[0].cp?`CP ${dirsUnicas[0].cp}`:""].filter(Boolean).join(" · ")}</div>
+                            )}
+                            {dirsUnicas.length>1&&(
+                              <div style={{fontSize:11,color:T.yellow,marginTop:3,lineHeight:1.5}}>
+                                <strong>{dirsUnicas.length} puntos distintos comparten este nombre</strong> ({dirsUnicas.map(x=>x.dir).join(" / ")}) — el Excel no puede distinguirlos: emitilo por Etiquetas listas o a mano en Andreani.
+                              </div>
+                            )}
                           </div>
                         );
                       }
