@@ -7681,8 +7681,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const sNums=s.match(/\b\d{2,5}\b/g)||[];
     const numContradice=!!(num&&calleOk&&sNums.length&&!sNums.includes(num));
     if(numContradice) return "warn";
-    if(!calleToks.length&&!tnTokens.length&&!locToks.length) return null; // sin datos comparables
-    return (calleOk||nameOk||locOk)?"ok":"warn";
+    if(!calleToks.length&&!calleNums.length&&!tnTokens.length&&!locToks.length) return null; // sin datos comparables
+    if(calleOk||nameOk) return "ok";
+    // Solo coincide la LOCALIDAD: alcanza únicamente cuando el pedido no trae
+    // dirección comparable del punto. Con dirección, "misma localidad" no
+    // prueba que sea EL punto (dos sucursales del mismo barrio se colaban como
+    // ok) → warn, y la segunda pasada contra el listado oficial decide: si la
+    // sucursal escrita ES el punto del cliente, el aviso se descarta solo.
+    const dirComparable=!!(calleToks.length||calleNums.length||num);
+    return (locOk&&!dirComparable)?"ok":"warn";
   }
   // Segunda opinión para los "warn" de verifSucursalTplVsTienda: resuelve el
   // string del desplegable a la sucursal OFICIAL real (sucursales_buscar) y
