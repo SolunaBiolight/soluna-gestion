@@ -7435,7 +7435,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         let ovr=sucursalOverridesRef.current[o.numero]||"";
         if(ovr&&!(locs.sucursales||[]).includes(ovr)){ delete sucursalOverridesRef.current[o.numero]; persistOverrides(); ovr=""; }
         const sucursal=ovr||findAndreaniSucursal(locs,o.direccion,o.pickupDetails)||"";
-        if(verifSucursalTplVsTienda(o,sucursal)==="warn")verifRows.push({numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:`${o.pickupDetails?.name||""} — ${o.pickupDetails?.address?.address||""} ${o.pickupDetails?.address?.number||""}`.trim()});
+        if(verifSucursalTplVsTienda(o,sucursal)==="warn")verifRows.push({numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:(o.pickupDetails?`${o.pickupDetails.name||""} — ${o.pickupDetails.address?.address||""} ${o.pickupDetails.address?.number||""}`:`${o.direccion||""} ${o.dirNumero||""}, ${o.localidad||o.ciudad||""}`).trim()});
         const cells=[
           sC('A'+rn,""),
           nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
@@ -7655,11 +7655,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // el punto de la tienda (y si ambos tienen número, deben coincidir). Solo
   // avisa cuando no comparte NADA — que es el patrón del envío mal mandado.
   function verifSucursalTplVsTienda(o,tplStr){
+    if(!tplStr) return null;
     const pd=o?.pickupDetails;
-    if(!pd||!tplStr) return null;
+    // Sin pickupDetails (TN registra el punto como dirección de envío común):
+    // la dirección del PEDIDO es la sucursal que eligió el cliente — antes
+    // estos pedidos quedaban sin verificar (return null) y una sucursal
+    // equivocada exportaba en silencio.
+    const addrSrc=pd?pd.address?.address:o?.direccion;
+    const numSrc=pd?pd.address?.number:o?.dirNumero;
+    const nameSrc=pd?pd.name:"";
+    const locSrc=pd?(pd.address?.locality||pd.address?.city||""):(o?.localidad||o?.ciudad||"");
+    if(!addrSrc&&!nameSrc&&!locSrc) return null;
     const s=nrmSucTxt(tplStr);
-    const calleRaw=nrmSucTxt(ghStripUnidad(pd.address?.address));
-    const numCampo=String(pd.address?.number||"").replace(/\D.*/,"").trim();
+    const calleRaw=nrmSucTxt(ghStripUnidad(addrSrc));
+    const numCampo=String(numSrc||"").replace(/\D.*/,"").trim();
     const num=numCampo||(calleRaw.match(/\b(\d{1,5})\s*$/)||[])[1]||"";
     const calleSola=num?calleRaw.replace(new RegExp("\\b"+num+"\\s*$"),"").trim():calleRaw;
     const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL"]);
@@ -7673,9 +7682,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const sNumsAll=s.match(/\b\d{1,5}\b/g)||[];
       calleOk=calleNums.every(n=>sNumsAll.includes(n))&&(!num||sNumsAll.includes(num));
     }
-    const tnTokens=nrmSucTxt(pd.name).split(" ").filter(w=>w&&!GEN.has(w)&&w.length>=3);
+    const tnTokens=nrmSucTxt(nameSrc).split(" ").filter(w=>w&&!GEN.has(w)&&w.length>=3);
     const nameOk=!!(tnTokens.length&&tnTokens.some(t=>s.includes(t)));
-    const locToks=nrmSucTxt(pd.address?.locality||pd.address?.city||"").split(" ").filter(w=>w.length>=4&&!GEN.has(w));
+    const locToks=nrmSucTxt(locSrc).split(" ").filter(w=>w.length>=4&&!GEN.has(w));
     const locOk=!!(locToks.length&&locToks.some(t=>s.includes(t)));
     // Si ambos lados tienen numeración y comparten calle, el número debe coincidir
     const sNums=s.match(/\b\d{2,5}\b/g)||[];
