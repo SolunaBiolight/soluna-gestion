@@ -7484,7 +7484,21 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       setExporting(false);
       const seguir=await new Promise(resolve=>setVerifModal({items:verifRows,resolve}));
       setVerifModal(null);
-      if(!seguir){ setExportProgress({step:"",pct:0,current:0,total:0}); return null; } // null = cancelado por el usuario
+      if(!seguir){
+        // "Cancelar y corregir": borrar el override Y la memoria del punto de
+        // los pedidos marcados — si no, el próximo export resolvía solo con la
+        // misma elección equivocada y nunca volvía a preguntar.
+        for(const vr of verifRows){
+          if(vr.tipo!=="sucursal") continue;
+          delete sucursalOverridesRef.current[vr.numero];
+          const oV=sucursalOrders.find(x=>x.numero===vr.numero);
+          const pkV=oV?ghPuntoKey(oV):null;
+          if(pkV) delete puntoMapRef.current[pkV];
+        }
+        persistOverrides(); persistPuntoMap();
+        setExportProgress({step:"",pct:0,current:0,total:0});
+        return null; // null = cancelado por el usuario
+      }
       setExporting(true);
       setExportProgress({step:"Generando el archivo…",pct:70,current:0,total:0});
     }
@@ -8211,6 +8225,24 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   function reintentarCotBulk(r){
     r.incluido=true; r.cotError="";
     cotizarBulk(); // solo recotiza filas sin cotización
+  }
+  // Cambiar la sucursal de una fila del bulk ANTES de emitir: reabre el modal
+  // de elección y, si se elige otra, pisa también la memoria del punto — es el
+  // escape para una elección equivocada que quedó guardada (ej. #5324).
+  async function cambiarSucursalFila(r){
+    const o=r.order;
+    const oficiales=await fetchSucursalesOficiales(cpDestinoDe(o));
+    cargarLocCerca(o,null);
+    setLocOficialSel("");
+    const chosen=await new Promise(resolve=>{ setLocationModal({order:o,locs:null,resolve,type:"sucursal",oficiales,wantOficial:true,noExacto:!!o.pickupDetails}); setLocSearch(""); });
+    if(chosen===null) return;
+    if(chosen==="EXCLUIR"){ r.incluido=false; r.cotError="Excluido manualmente"; pushBulk("revision"); return; }
+    const ofc=chosen&&chosen.oficial?chosen.oficial:null;
+    if(!ofc) return;
+    r.oficial=ofc; r.verif=verifSucursalVsTienda(o,ofc); r.deMemoria=false;
+    recordarPunto(o,{oficial:{id:ofc.id,codigo:ofc.codigo??null,numero:ofc.numero??null,descripcion:ofc.descripcion||"",direccion:ofc.direccion||null}});
+    pushBulk("revision");
+    toast("Sucursal corregida — la nueva elección quedó guardada para este punto ✓","success");
   }
   async function emitirBulk(){
     const rows=bulkRowsRef.current;
@@ -9809,6 +9841,21 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       return <option key={s.id} value={String(s.id)}>{s.descripcion}{dir?` — ${dir}`:""}</option>;
                     })}
                   </select>
+                  {/* Detalle COMPLETO de la elegida: el desplegable nativo corta el
+                      texto largo y no se ven los números finales — acá se ve todo
+                      antes de confirmar. */}
+                  {locOficialSel&&(()=>{
+                    const s=oficiales.find(x=>String(x.id)===locOficialSel);
+                    if(!s) return null;
+                    const d=s.direccion||{};
+                    return (
+                      <div style={{background:T.bg,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"10px 12px",marginBottom:10}}>
+                        <div style={{fontSize:13,fontWeight:700,color:T.text,wordBreak:"break-word"}}>{s.descripcion}</div>
+                        <div style={{fontSize:12,color:T.textMd,marginTop:2,wordBreak:"break-word"}}>{[`${d.calle||""} ${d.numero||""}`.trim(),d.localidad,d.codigoPostal?`CP ${d.codigoPostal}`:""].filter(Boolean).join(" · ")}</div>
+                        {order.pickupDetails&&<div style={{fontSize:11,color:T.textSm,marginTop:4}}>Compará calle y número contra el punto de arriba antes de confirmar.</div>}
+                      </div>
+                    );
+                  })()}
                   <button disabled={!locOficialSel} onClick={()=>{
                     const s=oficiales.find(x=>String(x.id)===locOficialSel);
                     if(!s) return;
@@ -10114,6 +10161,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                               )}
                               {r.tipo==="sucursal"&&r.verif==="warn"&&r.deMemoria&&(
                                 <div style={{color:T.accent,fontSize:11,marginTop:2,fontWeight:600}}>Sucursal que confirmaste antes para este mismo punto de retiro</div>
+                              )}
+                              {r.tipo==="sucursal"&&!r.emitido&&(
+                                <button onClick={()=>cambiarSucursalFila(r)} style={{marginTop:4,fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cambiar sucursal</button>
                               )}
                               {r.cotError&&(
                                 <div style={{color:T.red,fontSize:11,marginTop:2,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
