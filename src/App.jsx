@@ -7688,7 +7688,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const locOk=!!(locToks.length&&locToks.some(t=>s.includes(t)));
     // Si ambos lados tienen numeración y comparten calle, el número debe coincidir
     const sNums=s.match(/\b\d{2,5}\b/g)||[];
-    const numContradice=!!(num&&calleOk&&sNums.length&&!sNums.includes(num));
+    // Misma calle + el pedido tiene número: el número TIENE que estar en la
+    // fila del Excel. Si la fila no trae ningún número (texto truncado del
+    // template), tampoco alcanza — warn, y la 2da pasada oficial decide.
+    const numContradice=!!(num&&calleOk&&(!sNums.length||!sNums.includes(num)));
     if(numContradice) return "warn";
     if(!calleToks.length&&!calleNums.length&&!tnTokens.length&&!locToks.length) return null; // sin datos comparables
     if(calleOk||nameOk) return "ok";
