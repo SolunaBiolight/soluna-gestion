@@ -418,6 +418,9 @@ async function sucursalesGeo(db, env) {
 async function geocodeDireccion({ dir, loc, prov, cp }) {
   const clean = s => String(s || "").replace(/\bs\/?n\.?\b/gi, " ").replace(/\s+/g, " ").trim();
   dir = clean(dir); loc = clean(loc); prov = clean(prov);
+  // Sufijos de unidad ("Local 9 y 10", "Piso 2 Dpto B") confunden al geocoder
+  // y devuelven anclas en cualquier lado — solo calle y altura.
+  dir = dir.replace(/[,\s]+(local(?:es)?|piso|dpto\.?|depto\.?|departamento|oficina|of\.|uf|galeria|galería|timbre|casa|pb)\b[\s\S]*$/i, "").trim();
   cp = String(cp || "").replace(/\D/g, "");
   if (!dir) return null;
   // TN manda CABA como "C.A.B.A."/"Capital Federal" con provincia "Buenos Aires"
@@ -811,17 +814,23 @@ export default async function handler(req, res) {
         }).filter(s => s.la != null);
         if (cand.length) origen = { lat: cand[0].la, lng: cand[0].lo, descripcion: cand[0].d };
       }
-      // 3) …o el centroide de las sucursales del CP del pedido.
-      if (!origen && cp) {
+      // 3) Centroide de las sucursales del CP del pedido: fallback de ancla y
+      // TAMBIÉN control de cordura del geocoder — una dirección con texto raro
+      // puede geocodificar a cientos de km del CP real del comprador (se vio
+      // "Calle 49 621 Local 9 y 10" de La Plata anclada cerca de Misiones).
+      let cpCent = null;
+      if (cp) {
         const delCp = geo.filter(s => String(s.p || "").replace(/\D/g, "") === cp && s.la != null);
         if (delCp.length) {
-          origen = {
+          cpCent = {
             lat: delCp.reduce((a, s) => a + s.la, 0) / delCp.length,
             lng: delCp.reduce((a, s) => a + s.lo, 0) / delCp.length,
             descripcion: `CP ${cp}`,
           };
         }
       }
+      if (origen && cpCent && distanciaM(origen.lat, origen.lng, cpCent.lat, cpCent.lng) > 150000) origen = cpCent;
+      if (!origen) origen = cpCent;
       // El listado oficial repite la misma sucursal con variantes (CP, tildes,
       // "C.A.B.A." vs nombre largo): dedupe por descripción + número de calle.
       const dedupe = arr => {

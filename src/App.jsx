@@ -2354,8 +2354,17 @@ function ghTplDeOficial(locs, oficial){
   const nums=[...new Set([...txt.matchAll(/\d{2,}/g)].map(x=>x[0]))];
   const words=txt.split(" ").filter(w=>w.length>=4&&!STOP.has(w)&&!/^\d+$/.test(w));
   if(!nums.length||!words.length) return null;
-  const cand=lista.filter(t=>{const nt=n(t);return nums.some(x=>nt.includes(x))&&words.some(w=>nt.includes(w));});
+  // Set: el desplegable repite el mismo punto — duplicados idénticos no
+  // deben anular el "resultado único"
+  const cand=[...new Set(lista.filter(t=>{const nt=n(t);return nums.some(x=>nt.includes(x))&&words.some(w=>nt.includes(w));}))];
   return cand.length===1?cand[0]:null;
+}
+
+// Corta sufijos de unidad ("Local 9 y 10", "Piso 2 Dpto B", "Oficina 3") que
+// los puntos de retiro traen pegados a la calle y rompen el match contra los
+// listados de Andreani (el template dice "CALLE 49 621", no "...LOCAL 9 Y 10").
+function ghStripUnidad(s){
+  return String(s||"").replace(/[,\s]+(LOCAL(?:ES)?|PISO|DPTO\.?|DEPTO\.?|DEPARTAMENTO|OFICINA|OF\.|UF|GALERIA|GALERÍA|TIMBRE|CASA|PB)\b[\s\S]*$/i,"").trim();
 }
 
 // Tokens significativos del punto de retiro ("JURAMENTO 2385") para buscar
@@ -2363,7 +2372,7 @@ function ghTplDeOficial(locs, oficial){
 function ghSucTokens(pickupDetails, direccion){
   const nrm=s=>String(s||"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
   const STOP=new Set(["PUNTO","ANDREANI","HOP","PICKIT","RETIRO","SUCURSAL","AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL","ESPACIO","DE","DEL","LA","EL"]);
-  const src=nrm([pickupDetails?.name,pickupDetails?.address?.address,pickupDetails?.address?.number,(!pickupDetails&&direccion)||""].filter(Boolean).join(" "));
+  const src=nrm([pickupDetails?.name,ghStripUnidad(pickupDetails?.address?.address),pickupDetails?.address?.number,(!pickupDetails&&ghStripUnidad(direccion))||""].filter(Boolean).join(" "));
   return [...new Set(src.split(" ").filter(w=>w&&!STOP.has(w)&&(w.length>=4||/^\d{2,}$/.test(w))))];
 }
 const ghFmtDist=m=>m==null?"":m<1000?`a ${m} m`:`a ${(m/1000).toFixed(1).replace(".",",")} km`;
@@ -7185,12 +7194,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         const exact=locs.sucursales.find(s=>cl(s)===tnName);
         if(exact) return exact;
       }
-      // Step 2: calle + número → solo si resultado ÚNICO
-      const addr=(pickupDetails.address?.address||"").trim();
+      // Step 2: calle + número → solo si resultado ÚNICO. Sin sufijos de
+      // unidad ("Local 9 y 10"): rompían el substring contra el template.
+      const addr=ghStripUnidad((pickupDetails.address?.address||"").trim());
       const num=(pickupDetails.address?.number||"").replace(/\D.*/,"").trim();
       const query=(addr+(num?" "+num:"")).trim().toUpperCase();
       if(query.length>=3){
-        const results=locs.sucursales.filter(s=>s.toUpperCase().includes(query));
+        // Set: el desplegable trae el mismo punto repetido y 2 entradas
+        // idénticas no deben anular el "resultado único"
+        const results=[...new Set(locs.sucursales.filter(s=>s.toUpperCase().includes(query)))];
         if(results.length===1) return results[0];
       }
     } else if(direccion) {
@@ -7198,7 +7210,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const words=cl(direccion).split(' ').filter(w=>w.length>=4);
       if(words.length>=1){
         const q=words.join(' ');
-        const results=locs.sucursales.filter(s=>cl(s).includes(q));
+        const results=[...new Set(locs.sucursales.filter(s=>cl(s).includes(q)))];
         if(results.length===1) return results[0];
       }
     }
@@ -7209,7 +7221,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   function searchSucursales(locs, query) {
     if(!query||query.length<2||!locs.sucursales) return [];
     const q=query.toUpperCase().trim();
-    return locs.sucursales.filter(s=>s.toUpperCase().includes(q)).slice(0,25);
+    let r=locs.sucursales.filter(s=>s.toUpperCase().includes(q));
+    // Sin resultados con el texto completo: buscar por palabras (en cualquier
+    // orden) y, si tampoco, ir soltando las del final ("...LOCAL 9 Y 10")
+    // hasta que aparezca algo — la búsqueda se relaja sola.
+    if(!r.length){
+      let toks=q.split(/\s+/).filter(Boolean);
+      while(toks.length){
+        const t2=toks;
+        r=locs.sucursales.filter(s=>{const u=s.toUpperCase();return t2.every(t=>u.includes(t));});
+        if(r.length||toks.length===1) break;
+        toks=toks.slice(0,-1);
+      }
+    }
+    return [...new Set(r)].slice(0,25); // sin entradas repetidas del desplegable
   }
   async function generateAndreaniXlsx(ordersData,locs,cfgOverride) {
     if(!window.JSZip){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
@@ -7451,7 +7476,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   function matchSucursalOficial(oficiales,o){
     if(!Array.isArray(oficiales)||!oficiales.length) return null;
     const pd=o?.pickupDetails;
-    const calleRaw=nrmSucTxt(pd?pd.address?.address:o?.direccion);
+    const calleRaw=nrmSucTxt(ghStripUnidad(pd?pd.address?.address:o?.direccion));
     const numCampo=String((pd?pd.address?.number:o?.dirNumero)||"").replace(/\D.*/,"").trim();
     // TN a veces embebe el número en la dirección ("Cosme Beccar 274")
     const numEmb=(calleRaw.match(/\b(\d{1,5})\s*$/)||[])[1]||"";
@@ -7518,7 +7543,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const pd=o?.pickupDetails;
     if(!pd||!tplStr) return null;
     const s=nrmSucTxt(tplStr);
-    const calleRaw=nrmSucTxt(pd.address?.address);
+    const calleRaw=nrmSucTxt(ghStripUnidad(pd.address?.address));
     const numCampo=String(pd.address?.number||"").replace(/\D.*/,"").trim();
     const num=numCampo||(calleRaw.match(/\b(\d{1,5})\s*$/)||[])[1]||"";
     const calleSola=num?calleRaw.replace(new RegExp("\\b"+num+"\\s*$"),"").trim():calleRaw;
@@ -7800,7 +7825,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       try{
         const toks=ghSucTokens(o.pickupDetails,o.direccion).slice(0,4).join(" ");
         const pd=o.pickupDetails;
-        const dir=pd?`${pd.address?.address||""} ${pd.address?.number||""}`.trim():`${o.direccion||""} ${o.dirNumero||""}`.trim();
+        const dir=pd?`${ghStripUnidad(pd.address?.address)} ${pd.address?.number||""}`.trim():`${ghStripUnidad(o.direccion)} ${o.dirNumero||""}`.trim();
         const gloc=pd?(pd.address?.locality||pd.address?.city||""):(o.localidad||o.ciudad||"");
         const gprov=pd?(pd.address?.province||""):(o.provincia||"");
         const r=await authFetch(`/api/andreani?action=sucursales_cercanas&q=${encodeURIComponent(toks)}&cp=${encodeURIComponent(cpDestinoDe(o)||"")}&dir=${encodeURIComponent(dir)}&loc=${encodeURIComponent(gloc)}&prov=${encodeURIComponent(gprov)}`);
@@ -7885,9 +7910,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           } else {
             const pd=o.pickupDetails;
             if(pd){
-              // Prefill: dirección primero, localidad como fallback
+              // Prefill: dirección primero (sin "Local 9 y 10" y demás
+              // sufijos, que dejaban la búsqueda sin resultados), localidad como fallback
               const loc=(pd.address?.locality||pd.address?.city||"").trim();
-              const addr=(pd.address?.address||"").trim();
+              const addr=ghStripUnidad((pd.address?.address||"").trim());
               const num=(pd.address?.number||"").replace(/\D.*/,"").trim();
               prefill=(addr+(num?" "+num:"")).trim()||loc;
             } else {
@@ -9609,48 +9635,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   <strong>No pude confirmar el punto EXACTO que eligió el cliente.</strong> El envío va a ir a la sucursal que elijas acá — no al punto de arriba. Elegí solo si estás segura de que es el mismo lugar (misma calle y número); si no aparece, excluí el pedido y emitilo a mano en Andreani para respetar el punto del cliente.
                 </div>
               )}
-              {/* Flujo XLSX: cercanas al punto del pedido ordenadas por
-                  distancia, ya traducidas al string del desplegable del Excel.
-                  Las que no existen ahí se ven pero no se pueden elegir. */}
-              {isSuc&&(!wantOficial||esquina||noExacto)&&(
-                <div style={{marginBottom:14}}>
-                  <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
-                    {locCerca?.aproximado?`Sucursales de la zona del pedido${locCerca?.origen?` (${locCerca.origen})`:""}`:esquina?"Sucursales más cercanas a la dirección del pedido":"Sucursales más cercanas al punto del pedido"}
-                  </div>
-                  {locCerca?.loading?(
-                    <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/> Buscando sucursales cercanas...</div>
-                  ):(locCerca?.lista||[]).length===0?(
-                    <div style={{fontSize:12,color:T.textSm,padding:"10px 4px"}}>
-                      {locCerca?.diag==="sin_coords"?"La API de Andreani no publica coordenadas de sus sucursales — buscá abajo por calle o barrio"
-                       :locCerca?.diag==="sin_origen"?"No pude ubicar el punto del pedido en el listado oficial — buscá abajo por calle o barrio"
-                       :`No pude calcular cercanías${locCerca?.diag?` (${locCerca.diag})`:""} — buscá abajo por calle o barrio`}
-                    </div>
-                  ):(
-                    <div style={{maxHeight:280,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10}}>
-                      {(locCerca?.lista||[]).map((s,i)=>{
-                        const dir=[s.direccion?.calle,s.direccion?.numero].filter(Boolean).join(" ");
-                        const loc=[s.direccion?.localidad,s.direccion?.codigoPostal?`CP ${s.direccion.codigoPostal}`:""].filter(Boolean).join(" · ");
-                        // Flujo XLSX: solo son elegibles las que existen en el
-                        // desplegable del Excel (tpl). Emisión API (esquina):
-                        // lo que importa es el id oficial de la sucursal.
-                        const clickable=wantOficial?s.id!=null:!!s.tpl;
-                        return (
-                          <div key={(s.id??s.descripcion)+"_"+i} onClick={clickable?()=>{resolve(wantOficial?{oficial:s}:s.tpl);setLocationModal(null);}:undefined}
-                            style={{padding:"10px 14px",cursor:clickable?"pointer":"default",opacity:clickable?1:0.45,borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s",display:"flex",alignItems:"center",gap:10}}
-                            onMouseEnter={e=>{if(clickable)e.currentTarget.style.background=T.card;}}
-                            onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                            <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:13,color:T.text,fontWeight:600}}>{s.descripcion}</div>
-                              {(dir||loc)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>{[dir,loc].filter(Boolean).join(" — ")}{!clickable&&!wantOficial&&<span style={{color:T.yellow}}> · no está en el desplegable de carga masiva</span>}</div>}
-                            </div>
-                            {s.distM!=null&&<span style={{fontSize:11,fontWeight:700,color:T.accent,flexShrink:0,whiteSpace:"nowrap"}}>{ghFmtDist(s.distM)}</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
               {/* Emisión API: lista OFICIAL por CP (se necesita el id exacto). */}
               {hayOficiales&&wantOficial&&(
                 <div style={{marginBottom:14}}>
@@ -9737,10 +9721,52 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 )}
                 {locSearch.length>=2&&results.length===0&&(
                   <div style={{padding:"20px",textAlign:"center",color:T.textSm,fontSize:13,background:T.bg,borderRadius:10,border:`1px solid ${T.border}`}}>
-                    Sin resultados para "{locSearch}"
+                    Sin resultados para "{locSearch}" — probá con menos palabras (solo la calle, o el barrio)
                   </div>
                 )}
               </div>
+              )}
+              {/* Cercanas al punto del pedido ordenadas por distancia, ya
+                  traducidas al string del desplegable del Excel. Debajo del
+                  buscador a propósito: el buscador es el camino principal. */}
+              {isSuc&&(!wantOficial||esquina||noExacto)&&(
+                <div style={{marginBottom:14}}>
+                  <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
+                    {locCerca?.aproximado?`Sucursales de la zona del pedido${locCerca?.origen?` (${locCerca.origen})`:""}`:esquina?"Sucursales más cercanas a la dirección del pedido":"Sucursales más cercanas al punto del pedido"}
+                  </div>
+                  {locCerca?.loading?(
+                    <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/> Buscando sucursales cercanas...</div>
+                  ):(locCerca?.lista||[]).length===0?(
+                    <div style={{fontSize:12,color:T.textSm,padding:"10px 4px"}}>
+                      {locCerca?.diag==="sin_coords"?"La API de Andreani no publica coordenadas de sus sucursales — usá el buscador de arriba"
+                       :locCerca?.diag==="sin_origen"?"No pude ubicar el punto del pedido en el listado oficial — usá el buscador de arriba"
+                       :`No pude calcular cercanías${locCerca?.diag?` (${locCerca.diag})`:""} — usá el buscador de arriba`}
+                    </div>
+                  ):(
+                    <div style={{maxHeight:280,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10}}>
+                      {(locCerca?.lista||[]).map((s,i)=>{
+                        const dir=[s.direccion?.calle,s.direccion?.numero].filter(Boolean).join(" ");
+                        const loc=[s.direccion?.localidad,s.direccion?.codigoPostal?`CP ${s.direccion.codigoPostal}`:""].filter(Boolean).join(" · ");
+                        // Flujo XLSX: solo son elegibles las que existen en el
+                        // desplegable del Excel (tpl). Emisión API (esquina):
+                        // lo que importa es el id oficial de la sucursal.
+                        const clickable=wantOficial?s.id!=null:!!s.tpl;
+                        return (
+                          <div key={(s.id??s.descripcion)+"_"+i} onClick={clickable?()=>{resolve(wantOficial?{oficial:s}:s.tpl);setLocationModal(null);}:undefined}
+                            style={{padding:"10px 14px",cursor:clickable?"pointer":"default",opacity:clickable?1:0.45,borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s",display:"flex",alignItems:"center",gap:10}}
+                            onMouseEnter={e=>{if(clickable)e.currentTarget.style.background=T.card;}}
+                            onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:13,color:T.text,fontWeight:600}}>{s.descripcion}</div>
+                              {(dir||loc)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>{[dir,loc].filter(Boolean).join(" — ")}{!clickable&&!wantOficial&&<span style={{color:T.yellow}}> · no está en el desplegable de carga masiva</span>}</div>}
+                            </div>
+                            {s.distM!=null&&<span style={{fontSize:11,fontWeight:700,color:T.accent,flexShrink:0,whiteSpace:"nowrap"}}>{ghFmtDist(s.distM)}</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               )}
               <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:12,borderTop:`0.5px solid ${T.borderL}`,flexWrap:"wrap"}}>
                 <button onClick={()=>{resolve(null);setLocationModal(null);}} style={{...BtnSecondary(T),fontSize:13}}>Cancelar exportación</button>
