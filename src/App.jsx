@@ -10925,7 +10925,7 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
                 <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderL}`,fontSize:11,color:T.textSm,lineHeight:1.7}}>
                   Lista Andreani (con IVA): <strong style={{color:T.textMd}}>{fmtMoney(cot.tarifaAndreani)}</strong>
                   {typeof cot.seguroApi==="number"&&<> · Seguro incluido en lista: <strong style={{color:T.textMd}}>{fmtMoney(cot.seguroApi)}</strong></>}
-                  {typeof cot.costoEstimado==="number"&&<> · Costo real (−{cot.descuentoPct||0}% + seguro {cot.seguroPct??2}%): <strong style={{color:T.green}}>{fmtMoney(cot.costoEstimado)}</strong></>}
+                  {typeof cot.costoEstimado==="number"&&<> · Costo real (−{cot.descuentoPct||0}% + seguro {cot.seguroPct??1}%): <strong style={{color:T.green}}>{fmtMoney(cot.costoEstimado)}</strong></>}
                   <div style={{opacity:0.7}}>Este desglose lo ves solo vos (admin). El precio de arriba es el que paga el cliente con markup.</div>
                 </div>
               )}
@@ -13455,7 +13455,7 @@ function AppAdmin({T, user, onBack}) {
         authFetch("/api/andreani?action=admin_config").then(r=>r.json()).catch(()=>null),
         authFetch("/api/andreani?action=admin_saldos").then(r=>r.json()).catch(()=>null),
       ]);
-      if (c && !c.error) setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??2, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}});
+      if (c && !c.error) setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}});
       if (s && Array.isArray(s.cuentas)) setEnvSaldos(s.cuentas);
     } catch(e){ toast("Error cargando Envíos: "+e.message,"error"); }
     setEnvLoading(false);
@@ -13483,7 +13483,7 @@ function AppAdmin({T, user, onBack}) {
     const body = next || envCfg;
     const r = await authFetch("/api/andreani?action=admin_config",{
       method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?2:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}}),
+      body:JSON.stringify({markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}}),
     });
     const d = await r.json().catch(()=>({}));
     if (!r.ok || d.error) { toast("No se pudo guardar: "+(d.error||`HTTP ${r.status}`),"error"); return false; }
@@ -14384,7 +14384,7 @@ function AppAdmin({T, user, onBack}) {
                     <input style={iS} type="number" value={envCfg?.descuentoPct??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),descuentoPct:e.target.value}))} placeholder="0"/>
                   </Field>
                   <Field T={T} label="Seguro (% valor declarado)">
-                    <input style={iS} type="number" step="0.5" value={envCfg?.seguroPct??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),seguroPct:e.target.value}))} placeholder="2"/>
+                    <input style={iS} type="number" step="0.5" value={envCfg?.seguroPct??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),seguroPct:e.target.value}))} placeholder="1"/>
                   </Field>
                   <Field T={T} label="Markup (%)">
                     <input style={iS} type="number" value={envCfg?.markupPct??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),markupPct:e.target.value}))} placeholder="0"/>

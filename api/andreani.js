@@ -147,9 +147,9 @@ async function getGlobalConfig(db) {
       // /v1/tarifas devuelve tarifa de lista; el descuento se aplica en cta corriente,
       // así que lo modelamos acá para que costo y precio reflejen la realidad.
       descuentoPct: Math.min(Math.max(Number(d.descuentoPct) || 0, 0), 90),
-      // % del valor declarado que Andreani factura como seguro (propuesta
-      // comercial: 2%). No lleva el descuento de lista.
-      seguroPct: Math.min(Math.max(d.seguroPct === undefined ? 2 : Number(d.seguroPct) || 0, 0), 10),
+      // % del valor declarado que Andreani factura como seguro (contrato
+      // vigente: 1%). No lleva el descuento de lista.
+      seguroPct: Math.min(Math.max(d.seguroPct === undefined ? 1 : Number(d.seguroPct) || 0, 0), 10),
       // Código de sucursal de imposición (desde dónde se despacha). /v1/tarifas
       // tarifa distinto según origen; sin esto puede asumir otro y dar de más.
       sucursalOrigen: String(d.sucursalOrigen || "").trim(),
