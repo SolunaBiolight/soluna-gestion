@@ -15,6 +15,21 @@ async function mlVentasAcc(db, uid) {
   catch(_) { return null; }
 }
 
+// Fetch a la API de Mercado Libre con el token del seller. Devuelve el JSON
+// parseado; si la respuesta no es 2xx lanza un Error con el mensaje de ML (para
+// que el caller lo devuelva como 502 con detalle). Base URL fija api.mercadolibre.com.
+async function mlApi(accessToken, path, { method = "GET", body = null } = {}) {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+  if (body != null) headers["Content-Type"] = "application/json";
+  const r = await fetch(`https://api.mercadolibre.com${path}`, {
+    method, headers, ...(body != null ? { body: JSON.stringify(body) } : {}),
+  });
+  const txt = await r.text();
+  let data; try { data = txt ? JSON.parse(txt) : {}; } catch(_) { data = { raw: txt }; }
+  if (!r.ok) { const e = new Error(data.message || data.error || `ML HTTP ${r.status}`); e.status = r.status; e.ml = data; throw e; }
+  return data;
+}
+
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
   initializeApp({
@@ -1420,6 +1435,225 @@ export default async function handler(req, res) {
       } catch (e) {
         return res.status(500).json({ error: e.message });
       }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // GESTOR MERCADO LIBRE — publicador, preguntas, mensajes, ventas, reputación
+    // Todas reusan getValidMLToken (auto-refresh) + la cuenta de ventas elegida.
+    // ─────────────────────────────────────────────────────────────────────
+    const mlToken = async () => {
+      const t = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
+      if (!t) { const e = new Error("Mercado Libre no conectado"); e.status = 400; throw e; }
+      return t;
+    };
+    const mlErr = (res, e) => res.status(e.status === 400 ? 400 : 502).json({ error: e.message, raw: e.ml || null });
+
+    // Info del vendedor: site_id (país), nickname, permalink y REPUTACIÓN completa
+    // (color del termómetro, métricas de reclamos/cancelaciones/demoras, ventas).
+    if (action === "ml_seller_info" && req.method === "GET") {
+      try {
+        const t = await mlToken();
+        const u = await mlApi(t.accessToken, `/users/${t.userId}`);
+        return res.json({
+          ok: true, seller_id: t.userId, site_id: u.site_id || "MLA", nickname: u.nickname || "",
+          permalink: u.permalink || "", registration_date: u.registration_date || null,
+          reputation: u.seller_reputation || null, status: u.status || null,
+        });
+      } catch (e) { return mlErr(res, e); }
+    }
+
+    // Predecir categoría a partir del título (domain discovery). Devuelve las
+    // categorías sugeridas para que el cliente elija — así el rubro es dinámico.
+    if (action === "ml_predict_category" && req.method === "GET") {
+      const q = String(req.query.q || "").trim();
+      const site = String(req.query.site || "MLA");
+      if (!q) return res.status(400).json({ error: "Falta q (título)" });
+      try {
+        const t = await mlToken();
+        const arr = await mlApi(t.accessToken, `/sites/${site}/domain_discovery/search?limit=8&q=${encodeURIComponent(q)}`);
+        return res.json({ ok: true, suggestions: (arr || []).map(d => ({ category_id: d.category_id, category_name: d.category_name, domain_id: d.domain_id, domain_name: d.domain_name })) });
+      } catch (e) { return mlErr(res, e); }
+    }
+
+    // Explorar categorías: sin cat → raíz del sitio; con cat → hijos + path_from_root.
+    if (action === "ml_categories" && req.method === "GET") {
+      const site = String(req.query.site || "MLA");
+      const cat = String(req.query.cat || "").trim();
+      try {
+        const t = await mlToken();
+        if (!cat) { const roots = await mlApi(t.accessToken, `/sites/${site}/categories`); return res.json({ ok: true, root: true, categories: roots }); }
+        const c = await mlApi(t.accessToken, `/categories/${cat}`);
+        return res.json({ ok: true, id: c.id, name: c.name, path_from_root: c.path_from_root || [], children: c.children_categories || [], settings: c.settings || null });
+      } catch (e) { return mlErr(res, e); }
+    }
+
+    // Atributos que exige una categoría (dinámico por categoría). El front arma
+    // el formulario: required, tipo (list/number/string), valores permitidos, unidades.
+    if (action === "ml_category_attributes" && req.method === "GET") {
+      const cat = String(req.query.cat || "").trim();
+      if (!cat) return res.status(400).json({ error: "Falta cat" });
+      try {
+        const t = await mlToken();
+        const attrs = await mlApi(t.accessToken, `/categories/${cat}/attributes`);
+        return res.json({ ok: true, attributes: attrs });
+      } catch (e) { return mlErr(res, e); }
+    }
+
+    // Tipos de publicación del sitio (gold_special, gold_pro, free...).
+    if (action === "ml_listing_types" && req.method === "GET") {
+      const site = String(req.query.site || "MLA");
+      try {
+        const t = await mlToken();
+        const lt = await mlApi(t.accessToken, `/sites/${site}/listing_types`);
+        return res.json({ ok: true, listing_types: lt });
+      } catch (e) { return mlErr(res, e); }
+    }
+
+    // Subir UNA foto desde el dispositivo (base64) al repositorio de imágenes de
+    // ML. Devuelve el id de la imagen para usarlo en la publicación como {id}.
+    if (action === "ml_upload_picture" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const dataUrl = String(body?.data_url || "");
+      const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (!m) return res.status(400).json({ error: "Falta data_url (imagen base64)" });
+      try {
+        const t = await mlToken();
+        const buf = Buffer.from(m[2], "base64");
+        const fd = new FormData();
+        fd.append("file", new Blob([buf], { type: m[1] }), "photo." + (m[1].split("/")[1] || "jpg"));
+        const r = await fetch("https://api.mercadolibre.com/pictures/items/upload", {
+          method: "POST", headers: { Authorization: `Bearer ${t.accessToken}` }, body: fd,
+        });
+        const data = await r.json();
+        if (!r.ok) return res.status(502).json({ error: data.message || `HTTP ${r.status}`, raw: data });
+        return res.json({ ok: true, id: data.id, url: data.variations?.[0]?.secure_url || data.variations?.[0]?.url || null });
+      } catch (e) { return mlErr(res, e); }
+    }
+
+    // Crear UNA publicación. El front manda el `item` completo ya armado con la
+    // categoría/atributos elegidos (dinámico). La descripción va aparte (recurso
+    // /description). Devuelve id + permalink.
+    if (action === "ml_create_item" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const item = body?.item;
+      if (!item || typeof item !== "object") return res.status(400).json({ error: "Falta item" });
+      try {
+        const t = await mlToken();
+        const created = await mlApi(t.accessToken, `/items`, { method: "POST", body: item });
+        const desc = String(body?.description || "").trim();
+        if (desc) { try { await mlApi(t.accessToken, `/items/${created.id}/description`, { method: "POST", body: { plain_text: desc } }); } catch(_) {} }
+        return res.json({ ok: true, id: created.id, permalink: created.permalink || null, status: created.status || null });
+      } catch (e) { return mlErr(res, e); }
+    }
+
+    // Publicación MASIVA (plantilla + duplicar): el front manda un array de items
+    // ya resueltos (misma descripción/atributos, distinto título/precio/SKU/fotos).
+    // Se crean en pool con reporte por publicación (id/permalink o error).
+    if (action === "ml_create_bulk" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const items = Array.isArray(body?.items) ? body.items : null;
+      if (!items || items.length === 0) return res.status(400).json({ error: "Faltan items" });
+      if (items.length > 100) return res.status(400).json({ error: "Máximo 100 por tanda" });
+      try {
+        const t = await mlToken();
+        const results = new Array(items.length);
+        let idx = 0; const POOL = 3;
+        const worker = async () => {
+          while (idx < items.length) {
+            const i = idx++; const entry = items[i] || {}; const it = entry.item;
+            const title = it?.title || `#${i + 1}`;
+            try {
+              const created = await mlApi(t.accessToken, `/items`, { method: "POST", body: it });
+              const desc = String(entry.description || "").trim();
+              if (desc) { try { await mlApi(t.accessToken, `/items/${created.id}/description`, { method: "POST", body: { plain_text: desc } }); } catch(_) {} }
+              results[i] = { ok: true, title, id: created.id, permalink: created.permalink || null };
+            } catch (e) { results[i] = { ok: false, title, error: e.message }; }
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(POOL, items.length) }, () => worker()));
+        return res.json({ ok: true, total: items.length, ok_count: results.filter(r => r.ok).length, results });
+      } catch (e) { return mlErr(res, e); }
+    }
+
+    // PREGUNTAS pre-venta: listar (por defecto sin responder) + enriquecer con
+    // título/thumbnail de la publicación.
+    if (action === "ml_questions" && req.method === "GET") {
+      const status = String(req.query.status || "UNANSWERED");
+      const limit = Math.min(parseInt(req.query.limit) || 50, 50);
+      try {
+        const t = await mlToken();
+        const qs = await mlApi(t.accessToken, `/questions/search?seller_id=${t.userId}&api_version=4&sort=date_desc&status=${status}&limit=${limit}`);
+        const questions = qs.questions || [];
+        const ids = [...new Set(questions.map(q => q.item_id).filter(Boolean))];
+        const titles = {};
+        for (let i = 0; i < ids.length; i += 20) {
+          const chunk = ids.slice(i, i + 20);
+          try {
+            const arr = await mlApi(t.accessToken, `/items?ids=${chunk.join(",")}&attributes=id,title,thumbnail,permalink,price`);
+            for (const e of arr) if (e.code === 200 && e.body) titles[e.body.id] = { title: e.body.title, thumbnail: e.body.thumbnail, permalink: e.body.permalink, price: e.body.price };
+          } catch(_) {}
+        }
+        return res.json({ ok: true, total: qs.total || questions.length, questions: questions.map(q => ({ id: q.id, text: q.text, status: q.status, date: q.date_created, item_id: q.item_id, from: q.from?.id || null, item: titles[q.item_id] || null })) });
+      } catch (e) { return mlErr(res, e); }
+    }
+
+    // Responder una pregunta.
+    if (action === "ml_answer" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const question_id = body?.question_id; const text = String(body?.text || "").trim();
+      if (!question_id || !text) return res.status(400).json({ error: "Falta question_id o text" });
+      try {
+        const t = await mlToken();
+        await mlApi(t.accessToken, `/answers`, { method: "POST", body: { question_id, text } });
+        return res.json({ ok: true, question_id });
+      } catch (e) { return mlErr(res, e); }
+    }
+
+    // VENTAS / órdenes: lista con número de pack (#2000...), comprador, ítems,
+    // estado y estado de envío. Paginada por offset.
+    if (action === "ml_orders" && req.method === "GET") {
+      const limit = Math.min(parseInt(req.query.limit) || 40, 50);
+      const offset = parseInt(req.query.offset) || 0;
+      try {
+        const t = await mlToken();
+        const o = await mlApi(t.accessToken, `/orders/search?seller=${t.userId}&sort=date_desc&limit=${limit}&offset=${offset}`);
+        const orders = (o.results || []).map(r => ({
+          id: r.id, pack_id: r.pack_id || r.id, date: r.date_created, status: r.status,
+          total: r.total_amount, currency: r.currency_id,
+          buyer: r.buyer?.nickname || `${r.buyer?.first_name || ""} ${r.buyer?.last_name || ""}`.trim(),
+          buyer_id: r.buyer?.id || null,
+          items: (r.order_items || []).map(oi => ({ title: oi.item?.title, qty: oi.quantity, unit_price: oi.unit_price, item_id: oi.item?.id, variation: oi.item?.variation_attributes?.map(v => v.value_name).join(" / ") || "" })),
+          shipping_id: r.shipping?.id || null,
+        }));
+        return res.json({ ok: true, total: o.paging?.total || orders.length, offset, orders });
+      } catch (e) { return mlErr(res, e); }
+    }
+
+    // MENSAJES post-venta de un pack: hilo completo comprador↔vendedor.
+    if (action === "ml_messages" && req.method === "GET") {
+      const pack = String(req.query.pack_id || "").trim();
+      if (!pack) return res.status(400).json({ error: "Falta pack_id" });
+      try {
+        const t = await mlToken();
+        const m = await mlApi(t.accessToken, `/messages/packs/${pack}/sellers/${t.userId}?tag=post_sale&mark_as_read=false`);
+        const msgs = (m.messages || []).map(x => ({ id: x.id, from: x.from?.user_id, to: x.to?.user_id, text: x.text || "", date: x.message_date?.created || x.date_created, mine: String(x.from?.user_id) === String(t.userId) }));
+        return res.json({ ok: true, seller_id: t.userId, messages: msgs });
+      } catch (e) { return mlErr(res, e); }
+    }
+
+    // Enviar un mensaje post-venta al comprador de un pack.
+    if (action === "ml_send_message" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const pack = String(body?.pack_id || "").trim();
+      const to = body?.to_user_id; const text = String(body?.text || "").trim();
+      if (!pack || !to || !text) return res.status(400).json({ error: "Falta pack_id, to_user_id o text" });
+      try {
+        const t = await mlToken();
+        await mlApi(t.accessToken, `/messages/packs/${pack}/sellers/${t.userId}?tag=post_sale`, {
+          method: "POST", body: { from: { user_id: String(t.userId) }, to: { user_id: String(to) }, text },
+        });
+        return res.json({ ok: true, pack_id: pack });
+      } catch (e) { return mlErr(res, e); }
     }
 
     return res.status(400).json({ error: `Acción no soportada: ${action}` });
