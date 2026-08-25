@@ -33903,6 +33903,7 @@ export default function App() {
   const [costosAlert,setCostosAlert]=useState(0); // badge "Configuraciones" del Dashboard: productos vendidos sin costo (lo publica AppRendimiento vía localStorage + evento)
   const [alertas,setAlertas]=useState([]);
   const [darkMode,setDarkMode]=useState(()=>{ try { return localStorage.getItem("growith_theme")!=="light"; } catch(e){ return true; } });
+  const [mobileMenuOpen,setMobileMenuOpen]=useState(false); // hoja de cuenta en celular (cambiar cuenta / config / tema / salir)
   const [userPlan,setUserPlan]=useState("free"); // free | plus | full
   const [planExpiry,setPlanExpiry]=useState(null); // Date or null
   const [trialEnd,setTrialEnd]=useState(null);    // Date or null — fin del período de prueba
@@ -34393,6 +34394,109 @@ export default function App() {
     </div>
   );
 
+  // Mobile top header — en celular el sidebar y el topbar están ocultos, así que
+  // sin esto no había NINGÚN acceso a la cuenta (cambiar de cuenta, config, tema,
+  // salir). Logo a la izquierda + avatar a la derecha que abre la hoja de cuenta.
+  const _mInitial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
+  const MobileTopHeader = () => (
+    <div className="mobile-only" style={{
+      display:"none", position:"relative", zIndex:20,
+      background:T.surface, borderBottom:`1px solid ${T.border}`,
+      padding:"9px 14px", alignItems:"center", justifyContent:"space-between", gap:10, height:52, boxSizing:"border-box",
+    }}>
+      <div style={{display:"flex",alignItems:"center",gap:9,minWidth:0}}>
+        <GrowithLogo size={22} variant="color"/>
+        <span style={{fontWeight:DS.w.bold,fontSize:DS.font.xl,color:T.text,letterSpacing:-0.3}}>Growith</span>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+        {isInTrial&&!user?.esMiembro&&(
+          <button onClick={()=>setPage("planes")} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",background:trialExpiring?T.red+"18":T.green+"18",border:`1.5px solid ${trialExpiring?T.red+"55":T.green+"55"}`,borderRadius:20,color:trialExpiring?T.red:T.green,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+            <GhI n={trialExpiring?"alert":"gift"} size={12}/> {trialDaysLeft===1?"último día":`${trialDaysLeft}d`}
+          </button>
+        )}
+        <button onClick={()=>setMobileMenuOpen(true)} title="Mi cuenta" style={{display:"flex",alignItems:"center",gap:6,background:"transparent",border:"none",cursor:"pointer",padding:2,borderRadius:DS.r.full}}>
+          {user?.photoURL
+            ?<img src={user.photoURL} alt="" style={{width:32,height:32,borderRadius:DS.r.full,border:`1px solid ${T.border}`}}/>
+            :<div style={{width:32,height:32,borderRadius:DS.r.full,background:T.accentSolid+"33",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:DS.w.bold,fontSize:DS.font.lg}}>{_mInitial}</div>
+          }
+        </button>
+      </div>
+    </div>
+  );
+
+  // Hoja de cuenta (celular): cambiar de cuenta, ir a Configuración (donde se
+  // cambia el email de acceso), alternar tema y cerrar sesión. Reusa la misma
+  // maquinaria del switcher del sidebar (ghReadAccounts / ghSwitchAccount).
+  const _mOtherAccounts = ghReadAccounts().filter(a=>a.email!==user?.email);
+  const MobileAccountSheet = () => !mobileMenuOpen ? null : ReactDOM.createPortal(
+    <div style={{position:"fixed",inset:0,zIndex:9500,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"rgba(0,0,0,0.5)",backdropFilter:"blur(2px)"}} onClick={()=>setMobileMenuOpen(false)}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.bg,borderTopLeftRadius:20,borderTopRightRadius:20,borderTop:`1px solid ${T.border}`,boxShadow:"0 -16px 48px rgba(0,0,0,0.4)",padding:"10px 14px calc(18px + env(safe-area-inset-bottom))",maxHeight:"85vh",overflowY:"auto",animation:"growith-panelUp 0.24s cubic-bezier(0.4,0,0.2,1)",fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <div style={{width:38,height:4,borderRadius:99,background:T.border,margin:"2px auto 14px"}}/>
+        {/* Cuenta actual */}
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"4px 6px 14px"}}>
+          {user?.photoURL
+            ?<img src={user.photoURL} alt="" style={{width:44,height:44,borderRadius:DS.r.full,border:`1px solid ${T.border}`,flexShrink:0}}/>
+            :<div style={{width:44,height:44,borderRadius:DS.r.full,background:T.accentSolid+"33",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:DS.w.bold,fontSize:20,flexShrink:0}}>{_mInitial}</div>
+          }
+          <div style={{minWidth:0,flex:1}}>
+            <div style={{fontSize:15,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.displayName||user?.email?.split("@")[0]}</div>
+            <div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.email}</div>
+          </div>
+        </div>
+
+        {/* Otras cuentas */}
+        {_mOtherAccounts.length>0&&(
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,padding:"0 6px 6px"}}>Cambiar de cuenta</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {_mOtherAccounts.map(a=>(
+                <button key={a.email} onClick={()=>ghSwitchAccount(a.email,a.provider)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"10px 12px",background:T.card,border:`1px solid ${T.border}`,borderRadius:12,cursor:"pointer",color:T.text,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <div style={{width:30,height:30,borderRadius:"50%",background:T.accent+"22",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>{(a.nombre||a.email||"?")[0].toUpperCase()}</div>
+                  <div style={{minWidth:0,flex:1}}>
+                    <div style={{fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.nombre||a.email}</div>
+                    <div style={{fontSize:11,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.email}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <button onClick={()=>ghSwitchAccount("","")} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px 12px",background:"transparent",border:`1px solid ${T.accent}55`,borderRadius:12,cursor:"pointer",color:T.accent,fontWeight:600,fontSize:13,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:14}}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Agregar / entrar a otra cuenta
+        </button>
+
+        {/* Acciones */}
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {!secMiembro&&(
+            <button onClick={()=>{setMobileMenuOpen(false);setPage("config");}} style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"12px",background:T.card,border:`1px solid ${T.border}`,borderRadius:12,cursor:"pointer",color:T.text,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif",fontSize:14,fontWeight:600}}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+              <span style={{flex:1}}>Configuración y cuenta</span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          )}
+          {isAdmin&&(
+            <button onClick={()=>{setMobileMenuOpen(false);setPage("admin");}} style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"12px",background:T.card,border:`1px solid ${T.yellow}44`,borderRadius:12,cursor:"pointer",color:T.yellow,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif",fontSize:14,fontWeight:600}}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l7 4v6c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6z"/></svg>
+              <span style={{flex:1}}>Panel de administración</span>
+            </button>
+          )}
+          <button onClick={()=>{setDarkMode(d=>!d);}} style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"12px",background:T.card,border:`1px solid ${T.border}`,borderRadius:12,cursor:"pointer",color:T.text,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif",fontSize:14,fontWeight:600}}>
+            {darkMode
+              ?<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              :<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>}
+            <span style={{flex:1}}>{darkMode?"Modo claro":"Modo oscuro"}</span>
+          </button>
+          <button onClick={()=>{try{signOut(auth);}catch(_){}}} style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"12px",background:"transparent",border:`1px solid ${T.red}44`,borderRadius:12,cursor:"pointer",color:T.red,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif",fontSize:14,fontWeight:600}}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+            <span style={{flex:1}}>Cerrar sesión</span>
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+
   // ─── Trial computed values ───
   const _now = new Date();
   const isInTrial    = !!(trialEnd && _now < trialEnd && userPlan === "free");
@@ -34495,6 +34599,7 @@ export default function App() {
       {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
       {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}
         <div style={{flex:1,minWidth:0,paddingBottom:"68px"}} className="main-content">
+          <MobileTopHeader/>
           {/* Mini topbar global con Cmd+K hint */}
           <div className="hide-mobile" style={{position:"sticky",top:0,zIndex:40,background:T.bg+"f5",backdropFilter:"blur(8px)",borderBottom:`1px solid ${T.border}`,padding:"10px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:DS.sp.md,height:48}}>
             <div/>
@@ -34576,6 +34681,7 @@ export default function App() {
         </div>
       </div>
       <MobileBottomNav/>
+      <MobileAccountSheet/>
       <ToastContainer T={T}/>
       <AppPromptHost T={T}/>
       {user && <AndreaniPollingService uid={user.uid} onAlerts={setAndreaniAlertCount}/>}

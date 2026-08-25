@@ -1332,6 +1332,21 @@ export default async function handler(req, res) {
       // entra al Set de allDates de buildRendRows. Prorratear con la cantidad
       // real de filas evita que costosAdicionales quede levemente sobre/sub
       // contado en la suma diaria vs el total.
+      // Resolver de key CANÓNICA por catálogo: mapea el item de una orden a la key
+      // actual de su variante usando el variant_id (estable ante rename/cambio de
+      // SKU) y, si no, el SKU. Así las ventas viejas (con SKU/nombre viejos) y las
+      // nuevas de la MISMA variante se suman bajo su nombre actual, no se separan.
+      // Variante borrada del catálogo → queda su key original (no hay a qué mapear).
+      const makeKeyResolver = (raw) => {
+        const byVid = {}, bySku = {};
+        for (const p of (raw?.products||[])) for (const v of (p.variants||[])) {
+          const canon = v.sku || String(v.id);
+          if (byVid[String(v.id)] == null) byVid[String(v.id)] = canon;
+          if (v.sku && bySku[v.sku] == null) bySku[v.sku] = canon;
+        }
+        return (it) => (it.vid != null && byVid[String(it.vid)]) || bySku[it.key] || it.key;
+      };
+
       // ── Costos VARIABLES reales por día (desde cada orden) ──
       // Antes el profit diario era proporcional (revenue del día × ratio del
       // período): un día que vendió solo productos de bajo margen mostraba el
@@ -1344,7 +1359,8 @@ export default async function handler(req, res) {
         const chContrib = { tienda:{}, ml:{} };  // fecha -> contribución (rev-costos, sin pauta) por canal
         const priceByKey = {};
         for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const k=v.sku||String(v.id); if (priceByKey[k]==null) priceByKey[k]=v.price; }
-        const cogsDe = items => (items||[]).reduce((s,it)=>s+cogsCosto(cogsMap[it.key], priceByKey[it.key])*(it.qty||0),0);
+        const rk = makeKeyResolver(raw);
+        const cogsDe = items => (items||[]).reduce((s,it)=>{ const k=rk(it); return s+cogsCosto(cogsMap[k], priceByKey[k])*(it.qty||0); },0);
         const add = (fecha, ch, cost, rev) => {
           const f = String(fecha||"").slice(0,10); if (!f) return;
           porDia[f] = (porDia[f]||0) + cost;
@@ -1498,8 +1514,9 @@ export default async function handler(req, res) {
         // Precio de venta por key (sku/variant id) para poder resolver COGS en %.
         const priceByKey = {};
         for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const k=v.sku||String(v.id); if (priceByKey[k]==null) priceByKey[k]=v.price; }
-        const cogsDe = items => (items||[]).reduce((s,it)=>s+cogsCosto(cogsMap[it.key], priceByKey[it.key])*(it.qty||0),0);
-        const itemsDe = items => (items||[]).map(it=>({ n: nameByKeyGlobal[it.key]||it.key, q: it.qty||0 }));
+        const rk = makeKeyResolver(raw);
+        const cogsDe = items => (items||[]).reduce((s,it)=>{ const k=rk(it); return s+cogsCosto(cogsMap[k], priceByKey[k])*(it.qty||0); },0);
+        const itemsDe = items => (items||[]).map(it=>{ const k=rk(it); return { n: nameByKeyGlobal[k]||k, q: it.qty||0 }; });
         for (const o of (raw?.orders_detail||[])) {
           const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*impFor(o.pay);
           const env = ((envioModoTienda==="orden") ? (parseFloat(o.envioCosto)||0) : envioProm) + fulfillFee;
@@ -1540,19 +1557,22 @@ export default async function handler(req, res) {
           if (priceByKey[k]==null) priceByKey[k] = parseFloat(v.price)||0;
         }
         for (const m of (raw?.ml_data?.ml_products||[])) { if (nameByKey["ml:"+m.id]==null) nameByKey["ml:"+m.id] = m.nombre || ("ML "+m.id); }
+        // Canonicaliza cada item a la key actual de su variante (por variant_id
+        // estable, luego SKU) para que rename/cambio de SKU no parta el recuento.
+        const rk = makeKeyResolver(raw);
         const agg = {};
         const slot = (key, canal) => agg[key] || (agg[key] = { key, nombre:nameByKey[key]||key, canal, units:0, orders:0, revenue:0, cogs:0, impuestos:0, comisiones:0, envio:0 });
         const repartir = (o, items, imp, comis, env, canal, mlKey) => {
           const rev = parseFloat(o.revenue)||0;
-          const its = (items||[]).map(it=>({ ...it, w:(priceByKey[it.key]||0)*(it.qty||0) }));
+          const its = (items||[]).map(it=>{ const k=rk(it); return { ...it, k, w:(priceByKey[k]||0)*(it.qty||0) }; });
           let wSum = its.reduce((s,it)=>s+it.w,0);
           if (wSum<=0) { its.forEach(it=>it.w=it.qty||0); wSum = its.reduce((s,it)=>s+it.w,0)||1; }
           for (const it of its) {
             const sh = it.w/wSum;
-            const a = slot(it.key, canal);
+            const a = slot(it.k, canal);
             a.units += it.qty||0; a.orders += 1;
             a.revenue += rev*sh; a.impuestos += imp*sh; a.comisiones += comis*sh; a.envio += env*sh;
-            a.cogs += cogsCosto(cogsMap[it.key], priceByKey[it.key])*(it.qty||0);
+            a.cogs += cogsCosto(cogsMap[it.k], priceByKey[it.k])*(it.qty||0);
           }
         };
         for (const o of (raw?.orders_detail||[])) {
