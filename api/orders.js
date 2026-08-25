@@ -1516,7 +1516,7 @@ export default async function handler(req, res) {
         for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const k=v.sku||String(v.id); if (priceByKey[k]==null) priceByKey[k]=v.price; }
         const rk = makeKeyResolver(raw);
         const cogsDe = items => (items||[]).reduce((s,it)=>{ const k=rk(it); return s+cogsCosto(cogsMap[k], priceByKey[k])*(it.qty||0); },0);
-        const itemsDe = items => (items||[]).map(it=>{ const k=rk(it); return { n: nameByKeyGlobal[k]||k, q: it.qty||0 }; });
+        const itemsDe = items => (items||[]).map(it=>{ const k=rk(it); return { n: nameByKeyGlobal[k]||it.n||k, q: it.qty||0 }; });
         for (const o of (raw?.orders_detail||[])) {
           const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*impFor(o.pay);
           const env = ((envioModoTienda==="orden") ? (parseFloat(o.envioCosto)||0) : envioProm) + fulfillFee;
@@ -1561,7 +1561,9 @@ export default async function handler(req, res) {
         // estable, luego SKU) para que rename/cambio de SKU no parta el recuento.
         const rk = makeKeyResolver(raw);
         const agg = {};
-        const slot = (key, canal) => agg[key] || (agg[key] = { key, nombre:nameByKey[key]||key, canal, units:0, orders:0, revenue:0, cogs:0, impuestos:0, comisiones:0, envio:0 });
+        // fallbackName = nombre embebido en la orden (it.n): se usa solo si la
+        // variante ya no está en el catálogo, así nunca mostramos el id pelado.
+        const slot = (key, canal, fallbackName) => agg[key] || (agg[key] = { key, nombre:nameByKey[key]||fallbackName||key, canal, units:0, orders:0, revenue:0, cogs:0, impuestos:0, comisiones:0, envio:0 });
         const repartir = (o, items, imp, comis, env, canal, mlKey) => {
           const rev = parseFloat(o.revenue)||0;
           const its = (items||[]).map(it=>{ const k=rk(it); return { ...it, k, w:(priceByKey[k]||0)*(it.qty||0) }; });
@@ -1569,7 +1571,7 @@ export default async function handler(req, res) {
           if (wSum<=0) { its.forEach(it=>it.w=it.qty||0); wSum = its.reduce((s,it)=>s+it.w,0)||1; }
           for (const it of its) {
             const sh = it.w/wSum;
-            const a = slot(it.k, canal);
+            const a = slot(it.k, canal, it.n);
             a.units += it.qty||0; a.orders += 1;
             a.revenue += rev*sh; a.impuestos += imp*sh; a.comisiones += comis*sh; a.envio += env*sh;
             a.cogs += cogsCosto(cogsMap[it.k], priceByKey[it.k])*(it.qty||0);

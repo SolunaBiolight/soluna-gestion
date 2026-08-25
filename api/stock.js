@@ -277,7 +277,11 @@ function processTN(orders) {
       orderRevenue+=rev;
       const vname=item.variant_values?.join(" / ")||item.name||"Default";
       byVariant[vname]=(byVariant[vname]||0)+qty;
-      detItems.push({ key: item.sku || vid, vid, qty });
+      // Nombre legible embebido en la orden (lo que vio el cliente): fallback para
+      // cuando la variante ya no está en el catálogo (borrada, discontinuada, etc.)
+      // y el motor no tiene con qué nombrarla salvo el id.
+      const nm=((item.name||"")+(item.variant_values?.length?" · "+item.variant_values.join(" / "):"")).trim()||item.sku||"";
+      detItems.push({ key: item.sku || vid, vid, qty, n: nm });
     }
     // Envío cobrado al cliente (lo que pagó por el shipping). TN lo expone como
     // shipping_cost_customer; shipping_cost_owner es lo que la tienda le paga al correo.
@@ -358,7 +362,10 @@ function processSH(orders) {
       // vid (variant_id) es ESTABLE: no cambia si renombrás la variante ni si le
       // cambiás el SKU. El motor lo usa para unificar las ventas viejas y nuevas
       // de la misma variante bajo su nombre actual.
-      detItems.push({ key: item.sku || vid, vid, qty });
+      // n = nombre legible embebido en la orden (lo que vio el cliente): fallback
+      // para cuando la variante ya no está en el catálogo (borrada/discontinuada).
+      const nm=((item.title||"")+(item.variant_title && item.variant_title!=="Default Title"?" · "+item.variant_title:"")).trim()||item.name||item.sku||"";
+      detItems.push({ key: item.sku || vid, vid, qty, n: nm });
     }
     if(day)  { daily[day]=(daily[day]||0)+orderUnits; dailyRevenue[day]=(dailyRevenue[day]||0)+orderRevenue; }
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
@@ -491,7 +498,9 @@ function processML(orders, couponMap = {}) {
       }
       orderUnits+=qty;
       orderFee += (parseFloat(item.sale_fee||0)) * qty; // comisión real de ML — sale_fee es POR UNIDAD (igual que unit_price), hay que × cantidad
-      detItems.push({ key: "ml:"+String(item.item?.id||"ml"), qty });
+      // n = título de la publicación embebido en la orden (fallback si no está en el catálogo de publicaciones)
+      const nmML=(item.item?.title||"").trim()||"";
+      detItems.push({ key: "ml:"+String(item.item?.id||"ml"), qty, ...(nmML?{n:nmML}:{}) });
     }
     if(!refunded){
       if(day){
