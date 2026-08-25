@@ -827,7 +827,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
       subs:[{id:"resumen",label:"Resumen"},{id:"inventario",label:"Inventario"},{id:"movimientos",label:"Movimientos"},{id:"config",label:"Configuración"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
-      subs:[{id:"gestion",label:"Gestión"}]},
+      subs:[{id:"gestion",label:"Gestión"},{id:"publicar",label:"Publicar"},{id:"preguntas",label:"Preguntas"},{id:"mensajes",label:"Mensajes"},{id:"ventas",label:"Ventas"},{id:"reputacion",label:"Reputación"}]},
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count:alerts.envios,
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
@@ -28220,6 +28220,480 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
   );
 }
 
+// ── Helper: llamar una action del gestor ML (api/inventory) con auth ──
+async function ghMlApi(uid, action, params = {}, body = null) {
+  const qs = new URLSearchParams({ action, uid, ...params }).toString();
+  const opts = body ? { method: body.method || "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body.data || body) } : undefined;
+  const r = await authFetch(`/api/inventory?${qs}`, opts);
+  const j = await r.json();
+  if (j.error) throw new Error(j.error);
+  return j;
+}
+
+// Moneda por sitio de Mercado Libre (para el publicador).
+const ML_SITE_CURRENCY = { MLA:"ARS", MLB:"BRL", MLM:"MXN", MLC:"CLP", MCO:"COP", MLU:"UYU", MPE:"PEN", MLV:"VES" };
+
+// ── REPUTACIÓN ──────────────────────────────────────────────────────────
+function MLReputacion({ T, uid }) {
+  const [d, setD] = useState(null); const [loading, setLoading] = useState(true); const [err, setErr] = useState(null);
+  useEffect(() => { let ok = true; (async () => { setLoading(true); setErr(null); try { const j = await ghMlApi(uid, "ml_seller_info"); if (ok) setD(j); } catch (e) { if (ok) setErr(e.message); } finally { if (ok) setLoading(false); } })(); return () => { ok = false; }; }, [uid]);
+  if (loading) return <div style={{ padding: 50, textAlign: "center" }}><Spinner size={22} color={T.accent} /></div>;
+  if (err) return <div style={{ background: T.card, border: `1px solid ${T.red}44`, borderRadius: 12, padding: 20, color: T.red, fontSize: 13 }}>No se pudo cargar la reputación: {err}</div>;
+  const rep = d?.reputation || {}; const level = String(rep.level_id || "");
+  const color = level.includes("green") ? "#00a650" : level.includes("yellow") ? "#f5c518" : level.includes("orange") ? "#ff7733" : level.includes("red") ? "#e63a3a" : T.textSm;
+  const tx = rep.transactions || {}; const ratings = tx.ratings || {}; const met = rep.metrics || {};
+  const pct = v => v != null ? (v * 100).toFixed(v * 100 < 1 ? 2 : 1) + "%" : "—";
+  const LEVELS = ["1_red", "2_orange", "3_yellow", "4_light_green", "5_green"];
+  const levelIdx = LEVELS.indexOf(level);
+  const powerLabel = { platinum: "MercadoLíder Platinum", gold: "MercadoLíder Gold", silver: "MercadoLíder" }[rep.power_seller_status] || null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 14, padding: "20px 22px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <div style={{ width: 52, height: 52, borderRadius: "50%", background: color + "22", border: `2px solid ${color}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <div style={{ width: 22, height: 22, borderRadius: "50%", background: color }} />
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>{d?.nickname || "Tu reputación"}</div>
+            <div style={{ fontSize: 12, color: T.textSm }}>{powerLabel ? <span style={{ color, fontWeight: 700 }}>{powerLabel}</span> : "Vendedor"}{d?.permalink && <> · <a href={d.permalink} target="_blank" rel="noreferrer" style={{ color: T.accent }}>ver perfil</a></>}</div>
+          </div>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "flex-end" }}>
+            {LEVELS.map((lv, i) => { const c = lv.includes("green") ? "#00a650" : lv.includes("yellow") ? "#f5c518" : lv.includes("orange") ? "#ff7733" : "#e63a3a"; return <div key={lv} title={lv} style={{ width: 16, height: 12 + i * 6, borderRadius: 3, background: i <= levelIdx && levelIdx >= 0 ? c : T.border, opacity: i === levelIdx ? 1 : 0.9 }} />; })}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12 }}>
+        {[
+          { l: "Ventas concretadas", v: tx.completed != null ? tx.completed : "—", s: tx.total != null ? `de ${tx.total} operaciones` : "" },
+          { l: "Reclamos", v: pct(met.claims?.rate), s: met.claims?.value != null ? `${met.claims.value} casos` : "", bad: (met.claims?.rate || 0) > 0.02 },
+          { l: "Demoras en despacho", v: pct(met.delayed_handling_time?.rate), s: met.delayed_handling_time?.value != null ? `${met.delayed_handling_time.value} envíos` : "", bad: (met.delayed_handling_time?.rate || 0) > 0.15 },
+          { l: "Cancelaciones", v: pct(met.cancellations?.rate), s: met.cancellations?.value != null ? `${met.cancellations.value} ventas` : "", bad: (met.cancellations?.rate || 0) > 0.03 },
+        ].map((k, i) => (
+          <div key={i} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 16px" }}>
+            <div style={{ fontSize: 11, color: T.textSm, fontWeight: 600, marginBottom: 6 }}>{k.l}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: k.bad ? T.red : T.text }}>{k.v}</div>
+            {k.s && <div style={{ fontSize: 11, color: T.textSm, marginTop: 2 }}>{k.s}</div>}
+          </div>
+        ))}
+      </div>
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 12 }}>Calificaciones de compradores</div>
+        <div style={{ display: "flex", gap: 4, height: 10, borderRadius: 6, overflow: "hidden", marginBottom: 10 }}>
+          <div style={{ flex: ratings.positive || 0.001, background: "#00a650" }} />
+          <div style={{ flex: ratings.neutral || 0.001, background: "#f5c518" }} />
+          <div style={{ flex: ratings.negative || 0.001, background: "#e63a3a" }} />
+        </div>
+        <div style={{ display: "flex", gap: 18, fontSize: 12, color: T.textMd, flexWrap: "wrap" }}>
+          <span><span style={{ color: "#00a650", fontWeight: 700 }}>{pct(ratings.positive)}</span> positivas</span>
+          <span><span style={{ color: "#f5c518", fontWeight: 700 }}>{pct(ratings.neutral)}</span> neutrales</span>
+          <span><span style={{ color: "#e63a3a", fontWeight: 700 }}>{pct(ratings.negative)}</span> negativas</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── VENTAS / ÓRDENES ────────────────────────────────────────────────────
+function MLVentas({ T, uid, onOpenMessages }) {
+  const [orders, setOrders] = useState([]); const [loading, setLoading] = useState(true); const [err, setErr] = useState(null);
+  const [offset, setOffset] = useState(0); const [total, setTotal] = useState(0);
+  const load = async (off) => { setLoading(true); setErr(null); try { const j = await ghMlApi(uid, "ml_orders", { offset: off, limit: 40 }); setOrders(j.orders || []); setTotal(j.total || 0); setOffset(off); } catch (e) { setErr(e.message); } finally { setLoading(false); } };
+  useEffect(() => { load(0); /* eslint-disable-next-line */ }, [uid]);
+  const STATUS = { paid: { l: "Pagada", c: T.green }, confirmed: { l: "Confirmada", c: T.accent }, cancelled: { l: "Cancelada", c: T.red }, invalid: { l: "Inválida", c: T.textSm }, payment_required: { l: "Pago pendiente", c: T.orange }, payment_in_process: { l: "Procesando pago", c: T.orange } };
+  if (loading && !orders.length) return <div style={{ padding: 50, textAlign: "center" }}><Spinner size={22} color={T.accent} /></div>;
+  if (err) return <div style={{ background: T.card, border: `1px solid ${T.red}44`, borderRadius: 12, padding: 20, color: T.red, fontSize: 13 }}>No se pudieron cargar las ventas: {err}</div>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ fontSize: 12, color: T.textSm }}>{total.toLocaleString("es-AR")} ventas</div>
+        <button onClick={() => load(offset)} disabled={loading} style={{ ...BtnSecondary(T), fontSize: 12, padding: "6px 12px" }}>{loading ? <Spinner size={12} color={T.text} /> : "↻"} Actualizar</button>
+      </div>
+      {orders.map(o => { const st = STATUS[o.status] || { l: o.status, c: T.textSm }; return (
+        <div key={o.id} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "13px 16px", display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: T.text, fontVariantNumeric: "tabular-nums" }}>#{o.pack_id}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: st.c, background: st.c + "1c", padding: "2px 8px", borderRadius: 20 }}>{st.l}</span>
+              <span style={{ fontSize: 11, color: T.textSm }}>{o.date ? new Date(o.date).toLocaleDateString("es-AR", { day: "2-digit", month: "short" }) : ""}</span>
+            </div>
+            {(o.items || []).map((it, i) => <div key={i} style={{ fontSize: 12, color: T.textMd, lineHeight: 1.5 }}>{it.qty}× {it.title}{it.variation ? <span style={{ color: T.textSm }}> · {it.variation}</span> : ""}</div>)}
+            <div style={{ fontSize: 11, color: T.textSm, marginTop: 3 }}>{o.buyer || "Comprador"}</div>
+          </div>
+          <div style={{ textAlign: "right", display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.text }}>{o.currency === "ARS" ? "$" : ""}{(o.total || 0).toLocaleString("es-AR")}</div>
+            {onOpenMessages && <button onClick={() => onOpenMessages(o)} style={{ ...BtnSecondary(T), fontSize: 11, padding: "5px 10px" }}>💬 Mensajes</button>}
+          </div>
+        </div>
+      ); })}
+      {total > 40 && (
+        <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 6 }}>
+          <button disabled={offset === 0 || loading} onClick={() => load(Math.max(0, offset - 40))} style={{ ...BtnSecondary(T), fontSize: 12, padding: "7px 14px", opacity: offset === 0 ? 0.5 : 1 }}>← Anteriores</button>
+          <button disabled={offset + 40 >= total || loading} onClick={() => load(offset + 40)} style={{ ...BtnSecondary(T), fontSize: 12, padding: "7px 14px", opacity: offset + 40 >= total ? 0.5 : 1 }}>Siguientes →</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── PREGUNTAS pre-venta ─────────────────────────────────────────────────
+function MLPreguntas({ T, uid }) {
+  const [qs, setQs] = useState([]); const [loading, setLoading] = useState(true); const [err, setErr] = useState(null);
+  const [status, setStatus] = useState("UNANSWERED"); const [answers, setAnswers] = useState({}); const [sending, setSending] = useState(null);
+  const load = async (st) => { setLoading(true); setErr(null); try { const j = await ghMlApi(uid, "ml_questions", { status: st }); setQs(j.questions || []); } catch (e) { setErr(e.message); } finally { setLoading(false); } };
+  useEffect(() => { load(status); /* eslint-disable-next-line */ }, [uid, status]);
+  const responder = async (q) => { const text = (answers[q.id] || "").trim(); if (!text) { toast("Escribí una respuesta", "warning"); return; } setSending(q.id); try { await ghMlApi(uid, "ml_answer", {}, { data: { question_id: q.id, text } }); toast("Respondida ✓", "success"); setQs(prev => prev.filter(x => x.id !== q.id)); setAnswers(a => { const n = { ...a }; delete n[q.id]; return n; }); } catch (e) { toast("Error: " + e.message, "error"); } finally { setSending(null); } };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 2, background: T.bg, padding: 3, borderRadius: 8, border: `1px solid ${T.borderL}` }}>
+          {[{ id: "UNANSWERED", l: "Sin responder" }, { id: "ANSWERED", l: "Respondidas" }].map(s => (
+            <button key={s.id} onClick={() => setStatus(s.id)} style={{ padding: "6px 12px", fontSize: 11, fontWeight: 600, border: "none", borderRadius: 6, background: status === s.id ? T.card : "transparent", color: status === s.id ? T.text : T.textSm, cursor: "pointer", fontFamily: "'Inter',system-ui,sans-serif" }}>{s.l}</button>
+          ))}
+        </div>
+        <button onClick={() => load(status)} disabled={loading} style={{ ...BtnSecondary(T), fontSize: 12, padding: "6px 12px" }}>{loading ? <Spinner size={12} color={T.text} /> : "↻"} Actualizar</button>
+      </div>
+      {loading && !qs.length ? <div style={{ padding: 40, textAlign: "center" }}><Spinner size={20} color={T.accent} /></div> :
+        err ? <div style={{ background: T.card, border: `1px solid ${T.red}44`, borderRadius: 12, padding: 20, color: T.red, fontSize: 13 }}>{err}</div> :
+          !qs.length ? <div style={{ background: T.card, border: `1px dashed ${T.borderL}`, borderRadius: 12, padding: "40px 20px", textAlign: "center", color: T.textSm, fontSize: 13 }}>{status === "UNANSWERED" ? "No tenés preguntas sin responder 🎉" : "Sin preguntas respondidas en el listado."}</div> :
+            qs.map(q => (
+              <div key={q.id} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 16px", display: "flex", gap: 12 }}>
+                {q.item?.thumbnail && <img src={q.item.thumbnail.replace(/^http:/, "https:")} alt="" style={{ width: 46, height: 46, borderRadius: 8, objectFit: "cover", flexShrink: 0, border: `1px solid ${T.border}` }} />}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {q.item?.title && <div style={{ fontSize: 11, color: T.textSm, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.item.title}{q.item.price ? ` · $${q.item.price.toLocaleString("es-AR")}` : ""}</div>}
+                  <div style={{ fontSize: 13, color: T.text, fontWeight: 500, marginBottom: 8 }}>{q.text}</div>
+                  {status === "UNANSWERED" && (
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                      <textarea value={answers[q.id] || ""} onChange={e => setAnswers(a => ({ ...a, [q.id]: e.target.value }))} placeholder="Escribí tu respuesta..." rows={2} style={{ flex: 1, background: T.input, border: `1px solid ${T.inputBorder}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, color: T.text, fontFamily: "'Inter',system-ui,sans-serif", resize: "vertical" }} />
+                      <button onClick={() => responder(q)} disabled={sending === q.id} style={{ ...BtnPrimary(T), fontSize: 12, padding: "8px 14px", flexShrink: 0 }}>{sending === q.id ? <Spinner size={12} color="#fff" /> : "Responder"}</button>
+                    </div>
+                  )}
+                  <div style={{ fontSize: 10, color: T.textSm, marginTop: 6 }}>{q.date ? new Date(q.date).toLocaleString("es-AR") : ""}</div>
+                </div>
+              </div>
+            ))}
+    </div>
+  );
+}
+
+// ── MENSAJES post-venta ─────────────────────────────────────────────────
+// Lista las ventas recientes y abre el hilo del pack elegido.
+function MLMensajes({ T, uid, initialOrder }) {
+  const [sel, setSel] = useState(initialOrder || null);
+  useEffect(() => { if (initialOrder) setSel(initialOrder); }, [initialOrder]);
+  const [thread, setThread] = useState([]); const [loadingT, setLoadingT] = useState(false); const [text, setText] = useState(""); const [sending, setSending] = useState(false); const [sellerId, setSellerId] = useState(null);
+  const loadThread = async (o) => { if (!o) return; setLoadingT(true); setThread([]); try { const j = await ghMlApi(uid, "ml_messages", { pack_id: o.pack_id }); setThread(j.messages || []); setSellerId(j.seller_id); } catch (e) { toast("No se pudo abrir el chat: " + e.message, "error"); } finally { setLoadingT(false); } };
+  useEffect(() => { if (sel) loadThread(sel); /* eslint-disable-next-line */ }, [sel?.pack_id]);
+  const enviar = async () => { const t = text.trim(); if (!t || !sel) return; setSending(true); try { await ghMlApi(uid, "ml_send_message", {}, { data: { pack_id: sel.pack_id, to_user_id: sel.buyer_id, text: t } }); setText(""); await loadThread(sel); } catch (e) { toast("Error: " + e.message, "error"); } finally { setSending(false); } };
+  if (!sel) return <MLVentas T={T} uid={uid} onOpenMessages={setSel} />;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <button onClick={() => setSel(null)} style={{ ...BtnSecondary(T), fontSize: 12, padding: "6px 12px", alignSelf: "flex-start" }}>← Volver a ventas</button>
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 16px" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>#{sel.pack_id} · {sel.buyer || "Comprador"}</div>
+        {(sel.items || []).map((it, i) => <div key={i} style={{ fontSize: 11, color: T.textSm }}>{it.qty}× {it.title}</div>)}
+      </div>
+      <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 12, padding: 14, minHeight: 200, maxHeight: 420, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+        {loadingT ? <div style={{ margin: "auto" }}><Spinner size={20} color={T.accent} /></div> :
+          !thread.length ? <div style={{ margin: "auto", color: T.textSm, fontSize: 12 }}>Sin mensajes todavía. Escribí el primero.</div> :
+            thread.map(m => (
+              <div key={m.id} style={{ alignSelf: m.mine ? "flex-end" : "flex-start", maxWidth: "78%", background: m.mine ? T.accent + "22" : T.card, border: `1px solid ${m.mine ? T.accent + "44" : T.border}`, borderRadius: 12, padding: "8px 12px" }}>
+                <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{m.text}</div>
+                <div style={{ fontSize: 9, color: T.textSm, marginTop: 3, textAlign: "right" }}>{m.date ? new Date(m.date).toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}</div>
+              </div>
+            ))}
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+        <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Escribí un mensaje al comprador..." rows={2} style={{ flex: 1, background: T.input, border: `1px solid ${T.inputBorder}`, borderRadius: 8, padding: "9px 12px", fontSize: 13, color: T.text, fontFamily: "'Inter',system-ui,sans-serif", resize: "vertical" }} />
+        <button onClick={enviar} disabled={sending || !text.trim()} style={{ ...BtnPrimary(T), fontSize: 13, padding: "10px 16px", flexShrink: 0 }}>{sending ? <Spinner size={13} color="#fff" /> : "Enviar"}</button>
+      </div>
+      <div style={{ fontSize: 11, color: T.textSm }}>Mercado Libre solo permite mensajes post-venta dentro de las políticas de la plataforma (sin datos de contacto externos).</div>
+    </div>
+  );
+}
+
+// ── PUBLICADOR (plantilla + duplicar) ───────────────────────────────────
+// Cargás UNA publicación modelo (categoría/atributos DINÁMICOS que elige el
+// cliente, precio, stock, fotos, descripción, garantía, envío) y desde ahí
+// generás muchas cambiando solo título/SKU/precio/stock/fotos.
+function MLPublicar({ T, uid }) {
+  const [site, setSite] = useState("MLA");
+  const currency = ML_SITE_CURRENCY[site] || "ARS";
+  const [baseTitle, setBaseTitle] = useState("");
+  const [predicting, setPredicting] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [category, setCategory] = useState(null); // {id, name, path}
+  const [manualCat, setManualCat] = useState("");
+  const [attributes, setAttributes] = useState([]);
+  const [attrVals, setAttrVals] = useState({}); // {attrId: value_name}
+  const [loadingAttrs, setLoadingAttrs] = useState(false);
+  const [listingTypes, setListingTypes] = useState([]);
+  const [listingTypeId, setListingTypeId] = useState("gold_special");
+  const [condition, setCondition] = useState("new");
+  const [price, setPrice] = useState("");
+  const [qty, setQty] = useState("1");
+  const [descripcion, setDescripcion] = useState("");
+  const [warrantyType, setWarrantyType] = useState("Garantía del vendedor");
+  const [warrantyTime, setWarrantyTime] = useState("30 días");
+  const [freeShipping, setFreeShipping] = useState(true);
+  const [localPickup, setLocalPickup] = useState(false);
+  const [pics, setPics] = useState([]); // [{id?, url}]
+  const [urlText, setUrlText] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [rows, setRows] = useState([]); // duplicados
+  const [publishing, setPublishing] = useState(false);
+  const [results, setResults] = useState(null);
+
+  useEffect(() => { (async () => { try { const j = await ghMlApi(uid, "ml_seller_info"); if (j.site_id) setSite(j.site_id); } catch (_) { } })(); }, [uid]);
+
+  const predecir = async () => {
+    if (!baseTitle.trim()) { toast("Escribí primero el título", "warning"); return; }
+    setPredicting(true); setSuggestions([]);
+    try { const j = await ghMlApi(uid, "ml_predict_category", { q: baseTitle.trim(), site }); setSuggestions(j.suggestions || []); if (!j.suggestions?.length) toast("Sin sugerencias — probá con otro título o cargá la categoría a mano", "info"); }
+    catch (e) { toast("Error prediciendo categoría: " + e.message, "error"); }
+    finally { setPredicting(false); }
+  };
+  const elegirCategoria = async (catId, catName) => {
+    setLoadingAttrs(true); setSuggestions([]); setAttributes([]); setAttrVals({});
+    try {
+      const info = await ghMlApi(uid, "ml_categories", { cat: catId, site }).catch(() => null);
+      const path = (info?.path_from_root || []).map(p => p.name).join(" › ");
+      setCategory({ id: catId, name: catName || info?.name || catId, path });
+      const [attrs, lt] = await Promise.all([
+        ghMlApi(uid, "ml_category_attributes", { cat: catId }),
+        listingTypes.length ? Promise.resolve({ listing_types: listingTypes }) : ghMlApi(uid, "ml_listing_types", { site }).catch(() => ({ listing_types: [] })),
+      ]);
+      setAttributes(attrs.attributes || []);
+      if (lt.listing_types?.length) setListingTypes(lt.listing_types);
+    } catch (e) { toast("Error cargando atributos: " + e.message, "error"); }
+    finally { setLoadingAttrs(false); }
+  };
+  const uploadFiles = async (files) => {
+    setUploading(true);
+    try {
+      for (const f of Array.from(files)) {
+        const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
+        try { const j = await ghMlApi(uid, "ml_upload_picture", {}, { data: { data_url: dataUrl } }); setPics(p => [...p, { id: j.id, url: j.url || dataUrl }]); }
+        catch (e) { toast("No se pudo subir " + f.name + ": " + e.message, "error"); }
+      }
+    } finally { setUploading(false); }
+  };
+  const addUrls = () => { const urls = urlText.split(/[\n,]/).map(s => s.trim()).filter(u => /^https?:\/\//i.test(u)); if (!urls.length) { toast("Pegá URLs de imágenes válidas", "warning"); return; } setPics(p => [...p, ...urls.map(u => ({ url: u }))]); setUrlText(""); };
+
+  const reqAttrs = attributes.filter(a => a.tags?.required || a.tags?.catalog_required);
+  const attrList = () => Object.entries(attrVals).filter(([, v]) => v != null && String(v).trim() !== "").map(([id, value_name]) => ({ id, value_name: String(value_name) }));
+  const buildItem = (over = {}) => {
+    const skuAttr = over.sku ? [{ id: "SELLER_SKU", value_name: String(over.sku) }] : [];
+    const sale_terms = warrantyType !== "Sin garantía" ? [{ id: "WARRANTY_TYPE", value_name: warrantyType }, ...(warrantyTime ? [{ id: "WARRANTY_TIME", value_name: warrantyTime }] : [])] : [];
+    const itemPics = over.pics && over.pics.length ? over.pics : pics;
+    return {
+      title: over.title || baseTitle.trim(),
+      category_id: category?.id, price: Number(over.price != null && over.price !== "" ? over.price : price),
+      currency_id: currency, available_quantity: Number(over.qty != null && over.qty !== "" ? over.qty : qty),
+      buying_mode: "buy_it_now", condition, listing_type_id: listingTypeId,
+      pictures: itemPics.map(p => p.id ? { id: p.id } : { source: p.url }),
+      attributes: [...attrList(), ...skuAttr],
+      sale_terms,
+      shipping: { mode: "me2", local_pick_up: localPickup, free_shipping: freeShipping },
+    };
+  };
+  const validar = () => {
+    if (!category?.id) return "Elegí una categoría";
+    if (!baseTitle.trim()) return "Falta el título";
+    if (!(Number(price) > 0)) return "Poné un precio válido";
+    if (!(Number(qty) >= 1)) return "Poné stock (cantidad) ≥ 1";
+    if (!pics.length) return "Subí al menos 1 foto";
+    if (!listingTypeId) return "Elegí el tipo de publicación";
+    return null;
+  };
+  const publicar = async () => {
+    const v = validar(); if (v) { toast(v, "warning"); return; }
+    const valid = rows.filter(r => (r.title || "").trim());
+    const n = valid.length || 1;
+    const ok = await appConfirm(`Vas a publicar ${n} publicación${n !== 1 ? "es" : ""} en Mercado Libre${valid.length ? " (plantilla + " + valid.length + " duplicados)" : ""}. ¿Confirmás?`);
+    if (!ok) return;
+    setPublishing(true); setResults(null);
+    try {
+      if (!valid.length) {
+        const j = await ghMlApi(uid, "ml_create_item", {}, { data: { item: buildItem(), description: descripcion } });
+        setResults([{ ok: true, title: baseTitle.trim(), id: j.id, permalink: j.permalink }]);
+      } else {
+        const items = valid.map(r => ({ item: buildItem({ title: r.title, sku: r.sku, price: r.price, qty: r.qty, pics: (r.picsText || "").split(/[\n,]/).map(s => s.trim()).filter(u => /^https?:\/\//i.test(u)).map(u => ({ url: u })) }), description: descripcion }));
+        const j = await ghMlApi(uid, "ml_create_bulk", {}, { data: { items } });
+        setResults(j.results || []);
+      }
+      toast("Listo — revisá el resultado abajo", "success");
+    } catch (e) { toast("Error publicando: " + e.message, "error"); }
+    finally { setPublishing(false); }
+  };
+
+  const lbl = { fontSize: 11, fontWeight: 700, color: T.textSm, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6, display: "block" };
+  const inp = { width: "100%", background: T.input, border: `1px solid ${T.inputBorder}`, borderRadius: 8, padding: "9px 12px", fontSize: 13, color: T.text, fontFamily: "'Inter',system-ui,sans-serif", boxSizing: "border-box" };
+  const cardS = { background: T.card, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 20px", marginBottom: 14 };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      {/* 1. Producto + categoría */}
+      <div style={cardS}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 14 }}>1 · Producto base</div>
+        <label style={lbl}>Título</label>
+        <input value={baseTitle} onChange={e => setBaseTitle(e.target.value)} maxLength={60} placeholder="Ej: Zapatillas Running Hombre Negras Talle 42" style={inp} />
+        <div style={{ fontSize: 10, color: T.textSm, margin: "4px 0 12px", textAlign: "right" }}>{baseTitle.length}/60</div>
+        {!category ? (
+          <>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <button onClick={predecir} disabled={predicting} style={{ ...BtnPrimary(T), fontSize: 12, padding: "8px 14px" }}>{predicting ? <Spinner size={12} color="#fff" /> : "🔎"} Detectar categoría</button>
+              <span style={{ fontSize: 11, color: T.textSm }}>o cargá el ID a mano:</span>
+              <input value={manualCat} onChange={e => setManualCat(e.target.value)} placeholder="MLAxxxxx" style={{ ...inp, width: 140, padding: "7px 10px", fontSize: 12 }} />
+              <button onClick={() => manualCat.trim() && elegirCategoria(manualCat.trim())} style={{ ...BtnSecondary(T), fontSize: 12, padding: "7px 12px" }}>Usar</button>
+            </div>
+            {suggestions.length > 0 && (
+              <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                {suggestions.map(s => (
+                  <button key={s.category_id} onClick={() => elegirCategoria(s.category_id, s.category_name)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 12px", background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, cursor: "pointer", textAlign: "left", fontFamily: "'Inter',system-ui,sans-serif" }}>
+                    <span style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>{s.category_name}</span>
+                    <span style={{ fontSize: 11, color: T.accent, flexShrink: 0 }}>Elegir →</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: T.green + "12", border: `1px solid ${T.green}44`, borderRadius: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{category.name}</div>
+              {category.path && <div style={{ fontSize: 10, color: T.textSm, marginTop: 1 }}>{category.path}</div>}
+            </div>
+            <button onClick={() => { setCategory(null); setAttributes([]); setAttrVals({}); }} style={{ ...BtnSecondary(T), fontSize: 11, padding: "5px 10px" }}>Cambiar</button>
+          </div>
+        )}
+      </div>
+
+      {category && (<>
+        {/* 2. Precio, stock, condición, tipo, garantía, envío */}
+        <div style={cardS}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 14 }}>2 · Precio, stock y condiciones</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12 }}>
+            <div><label style={lbl}>Precio ({currency})</label><input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="0" style={inp} /></div>
+            <div><label style={lbl}>Stock</label><input type="number" value={qty} onChange={e => setQty(e.target.value)} style={inp} /></div>
+            <div><label style={lbl}>Condición</label><select value={condition} onChange={e => setCondition(e.target.value)} style={inp}><option value="new">Nuevo</option><option value="used">Usado</option></select></div>
+            <div><label style={lbl}>Tipo de publicación</label><select value={listingTypeId} onChange={e => setListingTypeId(e.target.value)} style={inp}>{(listingTypes.length ? listingTypes : [{ id: "gold_special", name: "Clásica" }, { id: "gold_pro", name: "Premium" }, { id: "free", name: "Gratuita" }]).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
+            <div><label style={lbl}>Garantía</label><select value={warrantyType} onChange={e => setWarrantyType(e.target.value)} style={inp}><option>Garantía del vendedor</option><option>Garantía de fábrica</option><option>Sin garantía</option></select></div>
+            {warrantyType !== "Sin garantía" && <div><label style={lbl}>Tiempo de garantía</label><input value={warrantyTime} onChange={e => setWarrantyTime(e.target.value)} placeholder="30 días" style={inp} /></div>}
+          </div>
+          <div style={{ display: "flex", gap: 18, marginTop: 14, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", fontSize: 12, color: T.textMd }}><input type="checkbox" checked={freeShipping} onChange={e => setFreeShipping(e.target.checked)} /> Envío gratis (Mercado Envíos)</label>
+            <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", fontSize: 12, color: T.textMd }}><input type="checkbox" checked={localPickup} onChange={e => setLocalPickup(e.target.checked)} /> Retiro en persona</label>
+          </div>
+        </div>
+
+        {/* 3. Atributos dinámicos */}
+        {loadingAttrs ? <div style={{ ...cardS, textAlign: "center" }}><Spinner size={18} color={T.accent} /></div> : reqAttrs.length > 0 && (
+          <div style={cardS}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 4 }}>3 · Ficha técnica</div>
+            <div style={{ fontSize: 11, color: T.textSm, marginBottom: 14 }}>Datos que exige esta categoría de Mercado Libre.</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
+              {reqAttrs.map(a => {
+                const val = attrVals[a.id] || "";
+                const set = v => setAttrVals(p => ({ ...p, [a.id]: v }));
+                const hasList = Array.isArray(a.values) && a.values.length > 0 && a.value_type !== "number" && a.value_type !== "number_unit";
+                return (
+                  <div key={a.id}>
+                    <label style={lbl}>{a.name}{(a.tags?.required || a.tags?.catalog_required) && <span style={{ color: T.red }}> *</span>}</label>
+                    {hasList
+                      ? <select value={val} onChange={e => set(e.target.value)} style={inp}><option value="">Elegir…</option>{a.values.map(o => <option key={o.id} value={o.name}>{o.name}</option>)}</select>
+                      : <input value={val} onChange={e => set(e.target.value)} placeholder={a.value_type === "number_unit" && a.allowed_units?.[0] ? "Ej: 10 " + a.allowed_units[0].name : ""} style={inp} />}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 4. Fotos */}
+        <div style={cardS}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 4 }}>4 · Fotos</div>
+          <div style={{ fontSize: 11, color: T.textSm, marginBottom: 14 }}>La primera es la principal. Subí desde tu equipo o pegá URLs.</div>
+          {pics.length > 0 && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+              {pics.map((p, i) => (
+                <div key={i} style={{ position: "relative", width: 72, height: 72, borderRadius: 8, overflow: "hidden", border: `1px solid ${i === 0 ? T.accent : T.border}` }}>
+                  <img src={p.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  {i === 0 && <span style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: T.accent, color: "#fff", fontSize: 8, fontWeight: 700, textAlign: "center", padding: "1px 0" }}>PRINCIPAL</span>}
+                  <button onClick={() => setPics(pp => pp.filter((_, j) => j !== i))} style={{ position: "absolute", top: 2, right: 2, width: 18, height: 18, borderRadius: "50%", background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", cursor: "pointer", fontSize: 11, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <label style={{ ...BtnSecondary(T), fontSize: 12, padding: "8px 14px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+              {uploading ? <Spinner size={12} color={T.text} /> : "📷"} Subir del equipo
+              <input type="file" accept="image/*" multiple onChange={e => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = ""; }} style={{ display: "none" }} />
+            </label>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "flex-start" }}>
+            <textarea value={urlText} onChange={e => setUrlText(e.target.value)} placeholder="Pegá URLs de imágenes (una por línea)" rows={2} style={{ ...inp, resize: "vertical", flex: 1 }} />
+            <button onClick={addUrls} style={{ ...BtnSecondary(T), fontSize: 12, padding: "8px 12px" }}>Agregar</button>
+          </div>
+        </div>
+
+        {/* 5. Descripción */}
+        <div style={cardS}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 14 }}>5 · Descripción</div>
+          <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={6} placeholder="Descripción detallada del producto (se aplica a todas las publicaciones)." style={{ ...inp, resize: "vertical" }} />
+        </div>
+
+        {/* 6. Duplicar */}
+        <div style={cardS}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>6 · Publicar en masa (opcional)</div>
+            <button onClick={() => setRows(r => [...r, { title: baseTitle, sku: "", price: "", qty: "", picsText: "" }])} style={{ ...BtnSecondary(T), fontSize: 12, padding: "6px 12px" }}>+ Agregar variante</button>
+          </div>
+          <div style={{ fontSize: 11, color: T.textSm, marginBottom: 12 }}>Cada fila = una publicación nueva con la MISMA categoría, atributos, descripción, garantía y envío. Solo cambian los campos que completes acá. Si no agregás filas, se publica una sola (la plantilla).</div>
+          {rows.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {rows.map((r, i) => (
+                <div key={i} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: T.textSm }}>#{i + 1}</span>
+                    <input value={r.title} onChange={e => setRows(rr => rr.map((x, j) => j === i ? { ...x, title: e.target.value } : x))} maxLength={60} placeholder="Título de esta variante" style={{ ...inp, flex: 1, padding: "7px 10px", fontSize: 12 }} />
+                    <button onClick={() => setRows(rr => rr.filter((_, j) => j !== i))} style={{ background: "transparent", border: "none", color: T.red, cursor: "pointer", fontSize: 16 }}>×</button>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(110px,1fr))", gap: 8 }}>
+                    <input value={r.sku} onChange={e => setRows(rr => rr.map((x, j) => j === i ? { ...x, sku: e.target.value } : x))} placeholder="SKU" style={{ ...inp, padding: "7px 10px", fontSize: 12 }} />
+                    <input type="number" value={r.price} onChange={e => setRows(rr => rr.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} placeholder={"Precio (" + (price || "base") + ")"} style={{ ...inp, padding: "7px 10px", fontSize: 12 }} />
+                    <input type="number" value={r.qty} onChange={e => setRows(rr => rr.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} placeholder={"Stock (" + (qty || "base") + ")"} style={{ ...inp, padding: "7px 10px", fontSize: 12 }} />
+                    <input value={r.picsText} onChange={e => setRows(rr => rr.map((x, j) => j === i ? { ...x, picsText: e.target.value } : x))} placeholder="Fotos URL (opcional)" style={{ ...inp, padding: "7px 10px", fontSize: 12 }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Publicar */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginBottom: 20 }}>
+          <button onClick={publicar} disabled={publishing} style={{ ...BtnPrimary(T), fontSize: 14, padding: "12px 26px" }}>{publishing ? <><Spinner size={14} color="#fff" /> Publicando…</> : `Publicar ${rows.filter(r => (r.title || "").trim()).length || 1} en Mercado Libre`}</button>
+        </div>
+
+        {results && (
+          <div style={cardS}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 12 }}>Resultado</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {results.map((r, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: T.bg, border: `1px solid ${r.ok ? T.green + "44" : T.red + "44"}`, borderRadius: 8 }}>
+                  <span style={{ color: r.ok ? T.green : T.red, fontWeight: 700 }}>{r.ok ? "✓" : "✗"}</span>
+                  <span style={{ flex: 1, fontSize: 12, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.title}</span>
+                  {r.ok && r.permalink ? <a href={r.permalink} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: T.accent, flexShrink: 0 }}>Ver publicación →</a> : !r.ok && <span style={{ fontSize: 11, color: T.red, flexShrink: 0, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.error}>{r.error}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </>)}
+    </div>
+  );
+}
+
 // ===========================================
 // APP MERCADO LIBRE — Gestión + Bulk Edit
 // ===========================================
@@ -28414,7 +28888,12 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
             ))}
           </div>
         )}
-        {tab==="analytics" ? (
+        {tab==="reputacion" ? <MLReputacion T={T} uid={uid}/> :
+         tab==="ventas" ? <MLVentas T={T} uid={uid}/> :
+         tab==="preguntas" ? <MLPreguntas T={T} uid={uid}/> :
+         tab==="mensajes" ? <MLMensajes T={T} uid={uid}/> :
+         tab==="publicar" ? <MLPublicar T={T} uid={uid}/> :
+         tab==="analytics" ? (
           <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"60px 30px",textAlign:"center"}}>
             <div style={{marginBottom:12,display:"flex",justifyContent:"center"}}><svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
             <div style={{fontSize:18,fontWeight:700,color:T.text,marginBottom:8}}>Analytics de Mercado Libre</div>
