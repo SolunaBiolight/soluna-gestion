@@ -216,11 +216,11 @@ const DS = {
 };
 
 // ─── Componentes base reusables ───────────────────────────────────────
-function Card({T, children, hoverable, onClick, style={}, padding="lg"}) {
+function Card({T, children, hoverable, onClick, style={}, padding="lg", className}) {
   const [hover, setHover] = React.useState(false);
   const padMap = {sm:"10px 12px", md:"14px 16px", lg:"18px 20px", xl:"24px 28px"};
   return (
-    <div onClick={onClick}
+    <div onClick={onClick} className={className}
       onMouseEnter={()=>hoverable&&setHover(true)}
       onMouseLeave={()=>setHover(false)}
       style={{
@@ -232,7 +232,7 @@ function Card({T, children, hoverable, onClick, style={}, padding="lg"}) {
         cursor: onClick?"pointer":"default",
         boxShadow: hover&&hoverable
           ? `0 8px 32px rgba(0,0,0,0.18), 0 0 0 1px ${T.accentSolid}18`
-          : "0 1px 3px rgba(0,0,0,0.07)",
+          : "0 1px 2px rgba(0,0,0,0.06), 0 3px 10px rgba(0,0,0,0.04)",
         transform: hover&&hoverable ? "translateY(-2px)" : "translateY(0)",
         ...style,
       }}>
@@ -259,7 +259,7 @@ function KPI({T, label, value, sub, color, icon, accent, onClick, compact, loadi
           <div style={{fontSize:DS.font.xs,textTransform:"uppercase",color:T.textSm,fontWeight:DS.w.semibold,letterSpacing:0.5,marginBottom:5}}>{label}</div>
           {loading
             ? <Skeleton T={T} height={compact?18:24} width="65%" style={{marginBottom:6}}/>
-            : <div style={{fontSize:compact?DS.font["2xl"]:DS.font["3xl"],fontWeight:DS.w.black,color:c,letterSpacing:-0.6,lineHeight:1}}>{value}</div>
+            : <div key={String(value)} className="gh-kpi-value" style={{fontSize:compact?DS.font["2xl"]:DS.font["3xl"],fontWeight:DS.w.black,color:c,letterSpacing:-0.6,lineHeight:1}}>{value}</div>
           }
           {loading
             ? <Skeleton T={T} height={11} width="45%" style={{marginTop:6}}/>
@@ -524,7 +524,7 @@ function DriveOpenBtn({ T, url = "", size = "sm" }) {
 
 function DSEmpty({T, icon="", title, subtitle, action}) {
   return (
-    <Card T={T} padding="xl" style={{textAlign:"center"}}>
+    <Card T={T} padding="xl" className="gh-section" style={{textAlign:"center"}}>
       {icon?<div style={{fontSize:42,marginBottom:DS.sp.md,opacity:0.8}}>{icon}</div>:null}
       <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:DS.sp.xs}}>{title}</div>
       {subtitle&&<div style={{fontSize:DS.font.md,color:T.textSm,marginBottom:action?DS.sp.lg:0,maxWidth:400,margin:"0 auto"}}>{subtitle}</div>}
@@ -2127,7 +2127,7 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset, labelTe
           ? {position:"fixed",left:10,right:10,bottom:10,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:16,boxShadow:"0 -10px 44px rgba(0,0,0,0.55)",boxSizing:"border-box",maxHeight:"78vh",overflowY:"auto"}
           : {position:"fixed",top:pos.top,right:pos.right,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:14,boxShadow:"0 14px 40px rgba(0,0,0,0.45)",width:"min(340px,calc(100vw - 20px))",boxSizing:"border-box",maxHeight:"calc(100vh - 120px)",overflowY:"auto"};
         return (<>
-        {esMobile && <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,0.45)"}}/>}
+        {esMobile && <div onClick={()=>setOpen(false)} className="gh-modal-backdrop" style={{position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,0.45)"}}/>}
         <div ref={ddRef} className="gh-dropdown" style={sheetStyle}>
           {/* Presets */}
           <div style={{display:"grid",gridTemplateColumns:`repeat(${esMobile?2:3}, 1fr)`,gap:esMobile?8:6,marginBottom:10}}>
@@ -2525,6 +2525,9 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     @keyframes growith-bounceIn   { 0%{opacity:0;transform:scale(0.4)} 55%{opacity:1;transform:scale(1.1)} 75%{transform:scale(0.94)} 100%{transform:scale(1)} }
     @keyframes growith-shimmer    { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
     @keyframes growith-skeleton   { 0%,100%{opacity:0.4} 50%{opacity:0.8} }
+    /* Nombre legacy que usa el componente Skeleton — global para que el shimmer
+       corra en TODAS las secciones (antes solo existía en 2 styles locales) */
+    @keyframes skeleton           { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
 
     /* ── Keyframes: salidas ── */
     @keyframes growith-fadeOut    { from{opacity:1;transform:translateY(0)} to{opacity:0;transform:translateY(4px)} }
@@ -2559,6 +2562,9 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     /* Contenido de modales */
     .gh-modal   { animation: growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both; }
     .gh-modal-closing { animation: growith-scaleOut 0.18s ease both; }
+    /* El contenido de cualquier overlay entra con scale+lift aunque no tenga
+       clase propia — cubre todos los modales existentes de una sola vez */
+    .gh-overlay > :first-child { animation: growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both; }
 
     /* Dropdowns, popovers, menus contextuales */
     .gh-dropdown {
@@ -2580,6 +2586,9 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     /* Items de lista y cards */
     .gh-list-item  { animation: growith-fadeInFast 0.18s cubic-bezier(0.22,1,0.36,1) both; }
     .gh-card-enter { animation: growith-popIn 0.22s cubic-bezier(0.22,1,0.36,1) both; }
+
+    /* Valor de KPI — entra con un fade+lift cada vez que cambia (key=value) */
+    .gh-kpi-value  { animation: growith-fadeIn 0.3s cubic-bezier(0.22,1,0.36,1) both; }
 
     /* ══════════════════════════════════════
        TRANSICIONES GLOBALES DE ELEMENTOS
@@ -2618,10 +2627,13 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     .gh-clickable:hover  { transform: translateY(-2px) !important; box-shadow: 0 6px 20px rgba(0,0,0,0.12) !important; }
     .gh-clickable:active { transform: scale(0.98) translateY(0) !important; transition-duration: 0.07s !important; }
 
-    /* Filas de tabla */
+    /* Filas de tabla — hover sutil en TODAS las tablas de datos.
+       Sin !important: si la fila trae background inline (zebra, selección), gana el inline. */
+    tbody tr { transition: background 0.12s ease; }
+    tbody tr:hover { background: var(--gh-surface, rgba(139,92,246,0.05)); }
     .gh-row { transition: background 0.12s ease !important; cursor: pointer; }
-    .gh-row:hover  { background: var(--gh-surface) !important; }
-    .gh-row:active { background: var(--gh-card)    !important; }
+    .gh-row:hover  { background: var(--gh-surface, rgba(139,92,246,0.06)) !important; }
+    .gh-row:active { background: var(--gh-card, rgba(139,92,246,0.10))    !important; }
 
     /* Kanban cards */
     .gh-kanban-card {
@@ -2661,8 +2673,8 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     /* Scrollbar */
     ::-webkit-scrollbar { width: 10px; height: 10px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); background-clip: padding-box; }
+    ::-webkit-scrollbar-thumb { background: var(--gh-scrollbar, rgba(255,255,255,0.08)); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--gh-scrollbar-hov, rgba(255,255,255,0.15)); background-clip: padding-box; }
 
     /* Focus rings */
     *:focus { outline: none; }
@@ -2706,6 +2718,8 @@ function useToast(){
 function toast(msg,type="success",duration=3000){
   const id=Date.now()+Math.random();
   _toastSetters.forEach(setter=>setter(prev=>[...prev,{id,msg,type}]));
+  // Marcar como "closing" un instante antes de sacarlo para que corra la animación de salida
+  setTimeout(()=>{_toastSetters.forEach(setter=>setter(prev=>prev.map(t=>t.id===id?{...t,closing:true}:t)));},Math.max(0,duration-200));
   setTimeout(()=>{_toastSetters.forEach(setter=>setter(prev=>prev.filter(t=>t.id!==id)));},duration);
 }
 function ToastContainer({T}){
@@ -2733,7 +2747,7 @@ function ToastContainer({T}){
             letterSpacing:"-0.01em",
             boxShadow:`0 8px 32px rgba(0,0,0,0.28), 0 0 0 1px ${cfg.color}18`,
             whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:12,
-            animation:"growith-toast-in 0.4s cubic-bezier(0.34,1.56,0.64,1) both",
+            animation:t.closing?"growith-toast-out 0.2s ease both":"growith-toast-in 0.4s cubic-bezier(0.34,1.56,0.64,1) both",
             backdropFilter:"blur(16px)",
           }}>
             <div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${cfg.bg},${cfg.bg}cc)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:`0 4px 12px ${cfg.color}55`}}>
@@ -19391,7 +19405,7 @@ function ColaboradorPublicView({T, token}) {
 
         {/* Modal: proponer tarea */}
         {showProponerTarea&&ReactDOM.createPortal(
-          <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget){setShowProponerTarea(false);}}}>
+          <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget){setShowProponerTarea(false);}}}>
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:460,padding:"24px 24px 20px",display:"flex",flexDirection:"column",gap:16}} onClick={e=>e.stopPropagation()}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                 <div style={{fontSize:15,fontWeight:700,color:T.text}}>Proponer tarea</div>
@@ -28197,7 +28211,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
       </div>
       {/* Drawer de conversaciones — mobile */}
       {convsOpen&&<>
-        <div onClick={()=>setConvsOpen(false)} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.5)"}}/>
+        <div onClick={()=>setConvsOpen(false)} className="gh-modal-backdrop" style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.5)"}}/>
         <div style={{position:"fixed",top:0,left:0,bottom:0,zIndex:1201,width:"min(280px,85vw)",background:T.bg,borderRight:`1px solid ${T.border}`,padding:"16px 12px",overflowY:"auto"}}>
           {renderConvPanel()}
         </div>
@@ -32570,7 +32584,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {viewMenu&&ReactDOM.createPortal(
             <>
               <div onClick={()=>setViewMenu(false)} style={{position:"fixed",inset:0,zIndex:60}}/>
-              <div style={{position:"fixed",top:viewMenuPos.top,right:viewMenuPos.right,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:6,width:"min(236px,calc(100vw - 20px))",boxSizing:"border-box",boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
+              <div className="gh-dropdown" style={{position:"fixed",top:viewMenuPos.top,right:viewMenuPos.right,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:6,width:"min(236px,calc(100vw - 20px))",boxSizing:"border-box",boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
                 {[
                   {on:fullNums, t:"Números completos", d:"Mostrar sin redondeo K/M", fn:()=>setFullNums(f=>{const n=!f; try{localStorage.setItem(ghKey("growith_margenes_fullnums"),n?"1":"0");}catch(_){} return n;})},
                 ].map((o,i)=>(
@@ -32617,7 +32631,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {extraMenu&&ReactDOM.createPortal(
             <>
               <div onClick={()=>setExtraMenu(false)} style={{position:"fixed",inset:0,zIndex:60}}/>
-              <div style={{position:"fixed",top:extraMenuPos.top,right:extraMenuPos.right,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:6,width:"min(258px,calc(100vw - 20px))",boxSizing:"border-box",boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
+              <div className="gh-dropdown" style={{position:"fixed",top:extraMenuPos.top,right:extraMenuPos.right,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:6,width:"min(258px,calc(100vw - 20px))",boxSizing:"border-box",boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
                 {[
                   {t:"Compartir resumen",d:"Genera una imagen del período para mandar por WhatsApp",dis:!rendData,fn:()=>{setExtraMenu(false);compartirResumen();}},
                   {t:reproc?"Reprocesando…":"Reprocesar 60 días",d:"Re-sincroniza las ventas desde las plataformas (tarda un rato)",dis:reproc||loading,fn:()=>{setExtraMenu(false);reprocesar60();}},
@@ -33768,6 +33782,7 @@ export default function App() {
           setUserPlan(oc.plan||"free");
           setPlanExpiry(oc.planExpiry?new Date(oc.planExpiry):null);
           setTrialEnd(oc.trialEnd?new Date(oc.trialEnd):null);
+          setPlanLoaded(true);
           if(oc.stores) setConnectedStores({...oc.stores,loaded:true});
         }
       }catch(_){ if(alive) setMiembroDe(null); }
@@ -33907,6 +33922,10 @@ export default function App() {
   const [userPlan,setUserPlan]=useState("free"); // free | plus | full
   const [planExpiry,setPlanExpiry]=useState(null); // Date or null
   const [trialEnd,setTrialEnd]=useState(null);    // Date or null — fin del período de prueba
+  // true recién cuando el plan/trial reales llegaron de Firestore (o del workspace
+  // para miembros). Sin esto, al recargar la app arranca con plan "free" y durante
+  // ~1s aparecía el paywall/UpgradeWall aunque el usuario tenga plan pago vigente.
+  const [planLoaded,setPlanLoaded]=useState(false);
   const [isAdmin,setIsAdmin]=useState(false);
   const [adminOnlySections,setAdminOnlySections]=useState([]); // default, se sobreescribe al cargar ("rendimiento" legacy = "margenes")
 
@@ -33917,6 +33936,20 @@ export default function App() {
   const SUPPORT_EMAIL="contacto.growith@gmail.com";
 
   const T = darkMode ? DARK : LIGHT;
+
+  // Variables CSS del tema — las clases globales del sistema de animaciones
+  // (.gh-row:hover, .gh-hover-surface, scrollbar) leen estos valores. Sin esto
+  // esos hovers no tenían color definido y no se veían.
+  useEffect(()=>{
+    try{
+      const r=document.documentElement.style;
+      r.setProperty("--gh-bg",T.bg);
+      r.setProperty("--gh-card",T.card);
+      r.setProperty("--gh-surface",T.surface);
+      r.setProperty("--gh-scrollbar",darkMode?"rgba(255,255,255,0.08)":"rgba(15,15,35,0.18)");
+      r.setProperty("--gh-scrollbar-hov",darkMode?"rgba(255,255,255,0.15)":"rgba(15,15,35,0.30)");
+    }catch(_){}
+  },[darkMode]);
 
   // Ctrl+K / Cmd+K — Command Palette
   useEffect(()=>{
@@ -34075,6 +34108,7 @@ export default function App() {
             setIsAdmin(["WJH3ArqDPQcNLha9lOinvkVi9uJ2"].includes(u.uid));
           }
         } catch(e){}
+        setPlanLoaded(true);
         // Load sections config (available for all users)
         try {
           const r=await fetch(`/api/tareas?action=getSectionsConfig&uid=${u.uid}`);
@@ -34132,6 +34166,7 @@ export default function App() {
       // Sincronizar plan y trial en tiempo real (cubre race condition en primer login)
       setUserPlan(d.plan||"free");
       setPlanExpiry(d.planExpiry?.toDate?.()||null);
+      setPlanLoaded(true);
       if(!d.trialEnd&&(d.plan==="free"||!d.plan)){
         const te=new Date(Date.now()+14*24*60*60*1000);
         updateDoc(doc(db,"users",user.uid),{trialEnd:te}).catch(()=>{});
@@ -34429,7 +34464,7 @@ export default function App() {
   // maquinaria del switcher del sidebar (ghReadAccounts / ghSwitchAccount).
   const _mOtherAccounts = ghReadAccounts().filter(a=>a.email!==user?.email);
   const MobileAccountSheet = () => !mobileMenuOpen ? null : ReactDOM.createPortal(
-    <div style={{position:"fixed",inset:0,zIndex:9500,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"rgba(0,0,0,0.5)",backdropFilter:"blur(2px)"}} onClick={()=>setMobileMenuOpen(false)}>
+    <div className="gh-modal-backdrop" style={{position:"fixed",inset:0,zIndex:9500,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"rgba(0,0,0,0.5)",backdropFilter:"blur(2px)"}} onClick={()=>setMobileMenuOpen(false)}>
       <div onClick={e=>e.stopPropagation()} style={{background:T.bg,borderTopLeftRadius:20,borderTopRightRadius:20,borderTop:`1px solid ${T.border}`,boxShadow:"0 -16px 48px rgba(0,0,0,0.4)",padding:"10px 14px calc(18px + env(safe-area-inset-bottom))",maxHeight:"85vh",overflowY:"auto",animation:"growith-panelUp 0.24s cubic-bezier(0.4,0,0.2,1)",fontFamily:"'Inter',system-ui,sans-serif"}}>
         <div style={{width:38,height:4,borderRadius:99,background:T.border,margin:"2px auto 14px"}}/>
         {/* Cuenta actual */}
@@ -34498,6 +34533,10 @@ export default function App() {
   );
 
   // ─── Trial computed values ───
+  // planReady: plan/trial reales cargados Y la verificación de membresía resuelta.
+  // Hasta entonces NO se muestra ningún paywall ni UpgradeWall — evita el
+  // pantallazo de "pagá tu plan" en cada recarga mientras Firestore responde.
+  const planReady = planLoaded && miembroDe !== undefined;
   const _now = new Date();
   const isInTrial    = !!(trialEnd && _now < trialEnd && userPlan === "free");
   const trialExpired = !!(trialEnd && _now >= trialEnd && userPlan === "free");
@@ -34519,7 +34558,7 @@ export default function App() {
   // Dismiss per-expiry-date so banner reappears each day
   const _expiryDismissKey = `growith_expiry_dismiss_${user?.uid}_${(planExpiring?planExpiry:trialEnd)?.toDateString?.()}`;
   const _expiryStoredDismiss = !expiryDismissed && (() => { try { return localStorage.getItem(_expiryDismissKey)==="1"; } catch(e) { return false; } })();
-  const _showExpiryBanner = showExpiryWarning && !expiryDismissed && !_expiryStoredDismiss;
+  const _showExpiryBanner = planReady && showExpiryWarning && !expiryDismissed && !_expiryStoredDismiss;
 
   // ─── Render page content ───
   // Plan gate: devuelve <UpgradeWall> si el plan no alcanza, o null si puede pasar
@@ -34527,6 +34566,7 @@ export default function App() {
   // facturador = solo ARCA (nivel 1); plus/full = todo. El gate compara niveles.
   const PLAN_LEVEL = {free:0, facturador:1, plus:2, full:3};
   const planGate = (req) => {
+    if (!planReady) return null; // plan todavía no cargó — no flashear UpgradeWall
     if (isInTrial) return null; // trial = acceso completo a todo
     if ((PLAN_LEVEL[planEfectivo]??0) < (PLAN_LEVEL[req]??0))
       return <UpgradeWall T={T} requiredPlan={req} onNavigate={setPage}/>;
@@ -34558,7 +34598,7 @@ export default function App() {
   };
 
   // Paywall: trial vencido sin plan pago, o plan pago vencido sin renovar
-  if((trialExpired||planVencido)&&!isAdmin) return(<><AppPlanes T={T} user={user} userPlan={planEfectivo} planExpiry={planExpiry} onBack={()=>{}} isTrialExpired={true} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/><AppPromptHost T={T}/></>);
+  if((trialExpired||planVencido)&&planReady&&!isAdmin) return(<><AppPlanes T={T} user={user} userPlan={planEfectivo} planExpiry={planExpiry} onBack={()=>{}} isTrialExpired={true} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/><AppPromptHost T={T}/></>);
 
   let pageContent = null;
   if(secMiembro && !seccionPermitida(page)) pageContent = null; // el efecto de arriba redirige a su primera sección
@@ -34702,7 +34742,7 @@ export default function App() {
 
       {/* ── Overlay trial expirado ── */}
       {trialExpired&&page!=="planes"&&ReactDOM.createPortal(
-        <div style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:36,maxWidth:420,width:"100%",textAlign:"center",boxShadow:"0 24px 80px rgba(0,0,0,0.5)"}}>
             <div style={{marginBottom:16,color:T.textSm}}><GhI n="clock" size={44}/></div>
             <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:8}}>Tu prueba gratuita terminó</div>
