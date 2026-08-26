@@ -2784,19 +2784,14 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
       // IDs ya facturadas (mantenemos para marcar visualmente, no para filtrar).
       // .select(): solo los campos que se usan — sin items/domicilio/cliente,
       // que son lo pesado de cada comprobante.
-      const [userSnap, billedSnap, cuitCfgSnap] = await Promise.all([
+      const [userSnap, billedSnap] = await Promise.all([
         db.collection("users").doc(uid).get(),
         db.collection("users").doc(uid).collection("arca_comprobantes")
           .where("cuit_emisor", "==", cuitParam)
           .select("orden_id", "letra", "nro", "emitido_at", "anulada", "anulada_at", "nc_nro")
           .get(),
-        db.collection("users").doc(uid).collection("arca_cuits").doc(String(cuitParam).replace(/\D/g, "")).get(),
       ]);
       if (!userSnap.exists) return { connections: [], ordenes: {}, tnDebug: null };
-      // ¿Este CUIT factura las ventas de Mercado Libre? Por defecto NO: si solo
-      // cobra por MP para su tienda (Shopify/TN), no debe ver el marketplace de ML.
-      // Se activa a mano (incluir_ml:true) para quien vende por ambos lados.
-      const incluirML = cuitCfgSnap.exists ? cuitCfgSnap.data().incluir_ml === true : false;
       const stores = userSnap.data().stores || [];
       const billedMap = new Map();
       // IDs que fueron facturadas y luego ANULADAS con NC — recordatorio visual.
@@ -2822,7 +2817,7 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
       const mlStore = stores.find(s => s.type === "mercadolibre");
       if (tnStore?.accessToken && tnStore?.storeId) connections.push({ platform: "tiendanube", name: tnStore.storeName || "Tienda Nube", connected: true });
       if (shStore?.accessToken && shStore?.shop) connections.push({ platform: "shopify", name: shStore.storeName || shStore.shop, connected: true });
-      if (mlStore?.userId) connections.push({ platform: "mercadolibre", name: mlStore.nickname || `ML #${mlStore.userId}`, connected: true, excluded: !incluirML });
+      if (mlStore?.userId) connections.push({ platform: "mercadolibre", name: mlStore.nickname || `ML #${mlStore.userId}`, connected: true });
 
       // ─── CACHE POR RANGO (Firestore) ──────────────────────────────────────
       // Guardamos SOLO la parte cara: las órdenes crudas ya normalizadas de
@@ -3081,8 +3076,8 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
         }
       })().catch(e => console.error("[sh-pending] error:", e.message)));
 
-      // ─── Mercado Libre ─── (solo si el CUIT tiene ML habilitado para facturar)
-      if (incluirML && mlStore?.userId) fetchers.push((async () => {
+      // ─── Mercado Libre ───
+      if (mlStore?.userId) fetchers.push((async () => {
         try {
           const { accessToken, userId } = await getValidMLToken(db, uid, await mlVentasAcc(db, uid)) || {};
           if (accessToken) {
@@ -3281,7 +3276,7 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
       if (!stores.find(s => s.type === "shopify")) connections.push({ platform: "shopify", connected: false });
       if (!stores.find(s => s.type === "mercadolibre")) connections.push({ platform: "mercadolibre", connected: false });
 
-      return { connections, ordenes, tnDebug, incluir_ml: incluirML };
+      return { connections, ordenes, tnDebug };
 }
 
 // ─── Piloto automático (cron_autopilot) ─────────────────────────────────────
@@ -3570,11 +3565,6 @@ export default async function handler(req, res) {
           }
         } catch (_) {}
       }
-
-      // ¿Facturar también las ventas de Mercado Libre con este CUIT? Por defecto
-      // NO: quien cobra por MP solo para su tienda (Shopify/TN) no quiere ver las
-      // ventas del marketplace de ML en el facturador. Se activa a mano ("ambos").
-      if (data.incluir_ml !== undefined) updated.incluir_ml = data.incluir_ml === true || data.incluir_ml === "true";
 
       await saveCuitConfig(db, uid, cuitNum, updated);
       // Si cambió el certificado, la clave o el ambiente, el Ticket de Acceso
