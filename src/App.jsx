@@ -29471,7 +29471,19 @@ function CostosPanel({ T, uid }) {
       // (vacío o "0" => 0). NO filtramos: así "0%" persiste y no vuelve a caer en el
       // fee global viejo. Nota: NO tocamos margenesDolar.feeAdSpend (fallback backend).
       const feesClean = Object.fromEntries(Object.entries(metaFees).map(([k,v])=>[String(k), parseFloat(v)||0]));
-      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesEnvioCfg: { modoTienda: envioModo, mlFlex: mlFlex===""?"":(parseFloat(mlFlex)||0), fulfillment: parseFloat(fulfillment)||0 }, margenesCogs: costos, margenesMetaAdAccounts: (metaSel||[]).map(String), margenesMetaAdAccount: "", margenesMetaAdFees: feesClean }, { merge: true });
+      // Limpieza de costos con historial: descarta tramos sin valor; si queda 1 solo
+      // sin fechas lo colapsa a costo plano; si no queda ninguno, saca el producto.
+      const costosClean = {};
+      for (const [k,entry] of Object.entries(costos||{})) {
+        if (entry && typeof entry==="object" && Array.isArray(entry.hist)) {
+          const tramos = entry.hist.filter(h=>h&&String(h.v).trim()!=="");
+          if (!tramos.length) continue;
+          if (tramos.length===1 && !tramos[0].desde && !tramos[0].hasta) { const o=tramos[0]; costosClean[k]= o.t==="pct"?{t:"pct",v:o.v}:o.v; }
+          else costosClean[k]={hist:tramos};
+        } else if (entry!=="" && entry!=null) costosClean[k]=entry;
+      }
+      setCostos(costosClean);
+      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesEnvioCfg: { modoTienda: envioModo, mlFlex: mlFlex===""?"":(parseFloat(mlFlex)||0), fulfillment: parseFloat(fulfillment)||0 }, margenesCogs: costosClean, margenesMetaAdAccounts: (metaSel||[]).map(String), margenesMetaAdAccount: "", margenesMetaAdFees: feesClean }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
@@ -29501,13 +29513,15 @@ function CostosPanel({ T, uid }) {
     const v = costoVal(entry);
     return (v!==""&&v!=null) ? [{desde:"",hasta:"",t:costoEsPct(entry)?"pct":"fijo",v}] : [{desde:"",hasta:"",t:"fijo",v:""}];
   };
-  // Escribe los tramos: 1 solo tramo sin desde ni hasta → se guarda plano
-  // (retrocompat); si hay fechas → {hist:[...]} ordenado por fecha ascendente.
+  // Escribe los tramos MIENTRAS se editan (NO filtra los vacíos: si no, el tramo
+  // recién agregado —que arranca sin valor— se borraría solo). La limpieza de
+  // tramos vacíos se hace al guardar (sanitizeCostos). 1 solo tramo sin fechas →
+  // se guarda plano (retrocompat); si hay más → {hist:[...]} ordenado por desde.
   const setHistTramos = (key,tramos)=>setCostos(c=>{
-    const clean = (tramos||[]).filter(t=>t&&String(t.v).trim()!=="").map(t=>({desde:t.desde||"",hasta:t.hasta||"",t:t.t==="pct"?"pct":"fijo",v:t.v}));
-    if (!clean.length){ const n={...c}; delete n[key]; return n; }
-    if (clean.length===1 && !clean[0].desde && !clean[0].hasta){ const o=clean[0]; return {...c,[key]: o.t==="pct"?{t:"pct",v:o.v}:o.v}; }
-    const sorted = clean.sort((a,b)=>String(a.desde).localeCompare(String(b.desde))).map(t=>{ const o={desde:t.desde}; if(t.hasta) o.hasta=t.hasta; if(t.t==="pct") o.t="pct"; o.v=t.v; return o; });
+    const arr = (tramos||[]).map(t=>({desde:t.desde||"",hasta:t.hasta||"",t:t.t==="pct"?"pct":"fijo",v:t.v??""}));
+    if (!arr.length){ const n={...c}; delete n[key]; return n; }
+    if (arr.length===1 && !arr[0].desde && !arr[0].hasta){ const o=arr[0]; return {...c,[key]: o.t==="pct"?{t:"pct",v:o.v}:o.v}; }
+    const sorted = arr.slice().sort((a,b)=>String(a.desde).localeCompare(String(b.desde))).map(t=>{ const o={desde:t.desde}; if(t.hasta) o.hasta=t.hasta; if(t.t==="pct") o.t="pct"; o.v=t.v; return o; });
     return {...c,[key]:{hist:sorted}};
   });
   const updTramo = (key,i,patch)=>setHistTramos(key, getHist(costos[key]).map((t,j)=>j===i?{...t,...patch}:t));
