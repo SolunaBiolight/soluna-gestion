@@ -21307,6 +21307,26 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     }
   }
 
+  // Activar/desactivar la facturación de ventas de Mercado Libre para este CUIT.
+  // Por defecto está en OFF: quien cobra por MP solo para su tienda (Shopify/TN)
+  // no ve el marketplace de ML. Al cambiarlo guardamos y recargamos los pendientes.
+  const [mlTogglando, setMlTogglando] = useState(false);
+  async function setIncluirML(next) {
+    if (!cuitSel || mlTogglando) return;
+    setMlTogglando(true);
+    try {
+      const fd = new FormData();
+      fd.append("cuit", cuitSel);
+      fd.append("incluir_ml", next ? "true" : "false");
+      const d = await fetch(`/api/arca?action=save_cuit&uid=${uid}`, { method: "POST", body: fd }).then(r => r.json());
+      if (d.error) { toast("Error: " + d.error, "error"); return; }
+      setCuits(cs => cs.map(c => c.cuit === cuitSel ? { ...c, incluir_ml: next } : c));
+      toast(next ? "Ahora se facturan también las ventas de Mercado Libre" : "Las ventas de Mercado Libre ya no aparecen en el facturador", "success");
+      loadPendingOrders(true);
+    } catch (e) { toast("No se pudo guardar: " + (e?.message || "error de conexión"), "error"); }
+    finally { setMlTogglando(false); }
+  }
+
   // Predicado de filtros visibles — MISMO criterio que la lista en pantalla
   // (canal, método de pago, rango de monto, buscador). Se usa
   // tanto para renderizar como para facturar, de modo que "lo que ves
@@ -22294,6 +22314,24 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       </button>
                     </div>
                   </div>
+
+                  {/* Incluir / excluir Mercado Libre — solo si ML está conectado.
+                      Default OFF: quien cobra por MP solo para su tienda no factura
+                      el marketplace. Se activa acá para vender por ambos lados. */}
+                  {tnData?.connections?.some(c=>c.platform==="mercadolibre"&&c.connected)&&(()=>{
+                    const mlOn = cuitActivo?.incluir_ml===true;
+                    return (
+                      <div style={{display:"flex",alignItems:"center",gap:11,background:mlOn?T.surface:"#f9741612",border:`1px solid ${mlOn?T.border:"#f9741655"}`,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
+                        <BrandIcon name="ml" size={18}/>
+                        <div style={{flex:1,minWidth:0,fontSize:12,color:T.textMd,lineHeight:1.5}}>
+                          {mlOn
+                            ? <>Se facturan también las ventas de <strong style={{color:T.text}}>Mercado Libre</strong> con este CUIT.</>
+                            : <>Tenés <strong style={{color:T.text}}>Mercado Libre</strong> conectado pero sus ventas <strong style={{color:T.text}}>no aparecen</strong> en el facturador. Activá si vendés por ML y querés facturarlas.</>}
+                        </div>
+                        {mlTogglando ? <Spinner size={14} color={T.accent}/> : <DSToggle T={T} active={mlOn} onToggle={()=>setIncluirML(!mlOn)}/>}
+                      </div>
+                    );
+                  })()}
 
                   {/* Aviso GRANDE mientras el fetch en vivo sigue en vuelo: la cache pintada
                       puede estar incompleta y facturar sobre eso es peligroso. */}
