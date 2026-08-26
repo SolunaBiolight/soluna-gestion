@@ -759,15 +759,67 @@ export default async function handler(req, res) {
 
       // ── Capas de costo configuradas en Márgenes → margen real estilo Escalafy ──
       const cogsMap   = userData.margenesCogs && typeof userData.margenesCogs==="object" && !Array.isArray(userData.margenesCogs) ? userData.margenesCogs : {};
-      // COGS por producto: número/string = $ fijo; {t:"pct",v} = % del precio de venta.
-      const cogsCosto = (entry, price) => {
+      // COGS por producto/variante. Formatos soportados (retrocompatibles):
+      //   • número / string       → $ fijo (siempre)
+      //   • { t:"pct", v }         → % del precio de venta (siempre)
+      //   • { hist:[{desde,v,t}] } → HISTORIAL por fecha: cada tramo vale DESDE su
+      //     fecha (YYYY-MM-DD) en adelante. El último tramo rige hasta hoy. Una
+      //     venta toma el costo que regía SU fecha (los proveedores cambian precio).
+      //   • [ {desde,v,t}, ... ]   → mismo historial en forma de array pelado.
+      // `fecha` (YYYY-MM-DD de la orden) elige el tramo. Sin fecha → el más nuevo.
+      const cogsCosto = (entry, price, fecha) => {
         if (entry == null) return 0;
-        if (typeof entry === "object") {
-          const p = parseFloat(entry.v);
-          if (!isFinite(p)) return 0;
-          return entry.t === "pct" ? (parseFloat(price)||0) * (p/100) : p;
+        const val = (t, v) => { const p = parseFloat(v); if (!isFinite(p)) return 0; return t === "pct" ? (parseFloat(price)||0)*(p/100) : p; };
+        const hist = Array.isArray(entry) ? entry : (entry && Array.isArray(entry.hist) ? entry.hist : null);
+        if (hist) {
+          const sorted = hist.filter(h => h && h.v != null && String(h.v).trim() !== "").sort((a,b)=>String(a.desde||"").localeCompare(String(b.desde||"")));
+          if (!sorted.length) return 0;
+          let chosen = sorted[0]; // por defecto el más viejo (para ventas previas al 1er tramo)
+          if (fecha) { for (const h of sorted) { if (String(h.desde||"") <= fecha) chosen = h; else break; } }
+          else chosen = sorted[sorted.length-1]; // sin fecha → el vigente (más nuevo)
+          return val(chosen.t, chosen.v);
         }
+        if (typeof entry === "object") return val(entry.t, entry.v);
         const n = parseFloat(entry); return isFinite(n) ? n : 0;
+      };
+      // Resolver de key CANÓNICA por catálogo: mapea el item de una orden a la key
+      // actual de su variante por variant_id (estable ante rename/cambio de SKU) y,
+      // si no, por SKU. Así ventas viejas y nuevas de la misma variante se unifican.
+      const makeKeyResolver = (raw) => {
+        const byVid = {}, bySku = {};
+        for (const p of (raw?.products||[])) for (const v of (p.variants||[])) {
+          const canon = v.sku || String(v.id);
+          if (byVid[String(v.id)] == null) byVid[String(v.id)] = canon;
+          if (v.sku && bySku[v.sku] == null) bySku[v.sku] = canon;
+        }
+        return (it) => (it.vid != null && byVid[String(it.vid)]) || bySku[it.key] || it.key;
+      };
+      // COGS total POR ORDEN (fecha-aware) separado por canal. Antes se calculaba
+      // unidades_vendidas_del_período × costo_actual — eso ignora los cambios de
+      // costo por fecha. Ahora se recorre orden por orden y cada una toma el costo
+      // que regía su día. Con costos SIN historial da idéntico al método viejo.
+      const _cogsCache = new WeakMap();
+      const cogsPorCanal = (raw) => {
+        if (!raw) return { tienda: 0, ml: 0 };
+        if (_cogsCache.has(raw)) return _cogsCache.get(raw);
+        const rk = makeKeyResolver(raw);
+        const priceByKey = {};
+        for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const k=v.sku||String(v.id); if (priceByKey[k]==null) priceByKey[k]=v.price; }
+        const priceMl = {};
+        for (const m of (raw?.ml_data?.ml_products||[])) priceMl["ml:"+m.id]=m.price;
+        let tienda = 0, ml = 0;
+        for (const o of (raw?.orders_detail||[])) {
+          const f = String(o.fecha||"").slice(0,10);
+          for (const it of (o.items||[])) { const k=rk(it); const c=cogsCosto(cogsMap[k], priceByKey[k], f); if (c>0) tienda += c*(it.qty||0); }
+        }
+        for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
+          if (o.refunded) continue;
+          const f = String(o.fecha||"").slice(0,10);
+          for (const it of (o.items||[])) { const c=cogsCosto(cogsMap[it.key], priceMl[it.key], f); if (c>0) ml += c*(it.qty||0); }
+        }
+        const res = { tienda, ml };
+        _cogsCache.set(raw, res);
+        return res;
       };
       const comCfg    = userData.margenesComisionesCfg || {};
       const metodos   = comCfg.metodos && typeof comCfg.metodos==="object" ? comCfg.metodos : {};
@@ -929,14 +981,10 @@ export default async function handler(req, res) {
       const feeAd     = 0; // el fee adicional ahora es POR CUENTA (horneado en fetchMetaAll)
 
       function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio, mlAdsAuto, gAdsAuto) {
-        // COGS = unidades vendidas × costo cargado por producto/variante ($ fijo o % del precio).
-        let cogs = 0;
-        for (const p of (raw?.products||[])) for (const v of (p.variants||[])) {
-          const c = cogsCosto(cogsMap[v.sku || String(v.id)], v.price); if (c>0) cogs += c*(v.units_sold||0);
-        }
-        for (const m of (raw?.ml_data?.ml_products||[])) {
-          const c = cogsCosto(cogsMap["ml:"+m.id], m.price); if (c>0) cogs += c*(m.units||0);
-        }
+        // COGS = costo por producto/variante, ORDEN por ORDEN (cada una toma el
+        // costo vigente a su fecha; con costos sin historial = método viejo exacto).
+        const _cg = cogsPorCanal(raw);
+        const cogs = _cg.tienda + _cg.ml;
         const storeRev = Object.values(raw?.daily_revenue||{}).reduce((a,b)=>a+b,0);
         const factRows = factExt.filter(r => r.fecha && r.fecha>=sinceR && r.fecha<=untilR);
         const factExtTot = factRows.reduce((s,r)=>s+(parseFloat(r.monto)||0),0);
@@ -1332,20 +1380,6 @@ export default async function handler(req, res) {
       // entra al Set de allDates de buildRendRows. Prorratear con la cantidad
       // real de filas evita que costosAdicionales quede levemente sobre/sub
       // contado en la suma diaria vs el total.
-      // Resolver de key CANÓNICA por catálogo: mapea el item de una orden a la key
-      // actual de su variante usando el variant_id (estable ante rename/cambio de
-      // SKU) y, si no, el SKU. Así las ventas viejas (con SKU/nombre viejos) y las
-      // nuevas de la MISMA variante se suman bajo su nombre actual, no se separan.
-      // Variante borrada del catálogo → queda su key original (no hay a qué mapear).
-      const makeKeyResolver = (raw) => {
-        const byVid = {}, bySku = {};
-        for (const p of (raw?.products||[])) for (const v of (p.variants||[])) {
-          const canon = v.sku || String(v.id);
-          if (byVid[String(v.id)] == null) byVid[String(v.id)] = canon;
-          if (v.sku && bySku[v.sku] == null) bySku[v.sku] = canon;
-        }
-        return (it) => (it.vid != null && byVid[String(it.vid)]) || bySku[it.key] || it.key;
-      };
 
       // ── Costos VARIABLES reales por día (desde cada orden) ──
       // Antes el profit diario era proporcional (revenue del día × ratio del
@@ -1360,14 +1394,14 @@ export default async function handler(req, res) {
         const priceByKey = {};
         for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const k=v.sku||String(v.id); if (priceByKey[k]==null) priceByKey[k]=v.price; }
         const rk = makeKeyResolver(raw);
-        const cogsDe = items => (items||[]).reduce((s,it)=>{ const k=rk(it); return s+cogsCosto(cogsMap[k], priceByKey[k])*(it.qty||0); },0);
+        const cogsDe = o => (o.items||[]).reduce((s,it)=>{ const k=rk(it); return s+cogsCosto(cogsMap[k], priceByKey[k], String(o.fecha||"").slice(0,10))*(it.qty||0); },0);
         const add = (fecha, ch, cost, rev) => {
           const f = String(fecha||"").slice(0,10); if (!f) return;
           porDia[f] = (porDia[f]||0) + cost;
           chContrib[ch][f] = (chContrib[ch][f]||0) + (rev - cost);
         };
         for (const o of (raw?.orders_detail||[])) {
-          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*impFor(o.pay);
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o), imp=rev*impFor(o.pay);
           const env=((envioModoTienda==="orden")?(parseFloat(o.envioCosto)||0):envioProm)+fulfillFee;
           const realMp=realMpDe(o, feeByRef, feeByPayId);
           const comis=(realMp!=null)?(rev*pctPlat+realMp):(rev*(pctPlat+pctPagoFor(o.pay)));
@@ -1376,7 +1410,7 @@ export default async function handler(req, res) {
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
           if (o.refunded) continue; // devoluciones/contracargos ML: fuera de los totales (processML ya las excluye)
           const rev=parseFloat(o.revenue)||0;
-          add(o.fecha, "ml", cogsDe(o.items) + rev*pctImpML + (parseFloat(o.saleFee)||0) + mlEnvioDe(o)+fulfillFee, rev);
+          add(o.fecha, "ml", cogsDe(o) + rev*pctImpML + (parseFloat(o.saleFee)||0) + mlEnvioDe(o)+fulfillFee, rev);
         }
         return { porDia, chContrib };
       }
@@ -1417,9 +1451,7 @@ export default async function handler(req, res) {
         const dord = isMl ? (raw?.ml_data?.daily_orders||{}) : (raw?.daily_orders||{});
         const rev = Object.values(dr).reduce((a,b)=>a+b,0);
         const ord = Object.values(dord).reduce((a,b)=>a+b,0);
-        let cogs = 0;
-        if (isMl) { for (const m of (raw?.ml_data?.ml_products||[])) { const c=cogsCosto(cogsMap["ml:"+m.id], m.price); if(c>0) cogs+=c*(m.units||0); } }
-        else { for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const c=cogsCosto(cogsMap[v.sku||String(v.id)], v.price); if(c>0) cogs+=c*(v.units_sold||0); } }
+        const cogs = isMl ? cogsPorCanal(raw).ml : cogsPorCanal(raw).tienda;
         // Impuestos: tienda con su % (+ ajuste por método), ML con el suyo.
         let impuestos;
         if (isMl) { impuestos = rev*pctImpML; }
@@ -1515,10 +1547,10 @@ export default async function handler(req, res) {
         const priceByKey = {};
         for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const k=v.sku||String(v.id); if (priceByKey[k]==null) priceByKey[k]=v.price; }
         const rk = makeKeyResolver(raw);
-        const cogsDe = items => (items||[]).reduce((s,it)=>{ const k=rk(it); return s+cogsCosto(cogsMap[k], priceByKey[k])*(it.qty||0); },0);
+        const cogsDe = o => (o.items||[]).reduce((s,it)=>{ const k=rk(it); return s+cogsCosto(cogsMap[k], priceByKey[k], String(o.fecha||"").slice(0,10))*(it.qty||0); },0);
         const itemsDe = items => (items||[]).map(it=>{ const k=rk(it); return { n: nameByKeyGlobal[k]||it.n||k, q: it.qty||0 }; });
         for (const o of (raw?.orders_detail||[])) {
-          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*impFor(o.pay);
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o), imp=rev*impFor(o.pay);
           const env = ((envioModoTienda==="orden") ? (parseFloat(o.envioCosto)||0) : envioProm) + fulfillFee;
           // Comisión = % plataforma + comisión de pago: fee exacto embebido, cruce
           // por payment_id (Recurrentes) o por receipt_id; si no, el % configurado.
@@ -1530,7 +1562,7 @@ export default async function handler(req, res) {
         }
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
           if (o.refunded) continue; // devoluciones/contracargos ML: no van en la tabla (los totales ya las excluyen)
-          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImpML, comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o)+fulfillFee;
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o), imp=rev*pctImpML, comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o)+fulfillFee;
           const profit=rev-cogs-imp-comis-env;
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]?.lt==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0,
             pay:"Mercado Pago", cust:o.cust||"", items:itemsDe(o.items), feeReal: true, mlLink:`https://www.mercadolibre.com.ar/ventas/${o.id}/detalle` });
@@ -1566,6 +1598,7 @@ export default async function handler(req, res) {
         const slot = (key, canal, fallbackName) => agg[key] || (agg[key] = { key, nombre:nameByKey[key]||fallbackName||key, canal, units:0, orders:0, revenue:0, cogs:0, impuestos:0, comisiones:0, envio:0 });
         const repartir = (o, items, imp, comis, env, canal, mlKey) => {
           const rev = parseFloat(o.revenue)||0;
+          const f = String(o.fecha||"").slice(0,10);
           const its = (items||[]).map(it=>{ const k=rk(it); return { ...it, k, w:(priceByKey[k]||0)*(it.qty||0) }; });
           let wSum = its.reduce((s,it)=>s+it.w,0);
           if (wSum<=0) { its.forEach(it=>it.w=it.qty||0); wSum = its.reduce((s,it)=>s+it.w,0)||1; }
@@ -1574,7 +1607,7 @@ export default async function handler(req, res) {
             const a = slot(it.k, canal, it.n);
             a.units += it.qty||0; a.orders += 1;
             a.revenue += rev*sh; a.impuestos += imp*sh; a.comisiones += comis*sh; a.envio += env*sh;
-            a.cogs += cogsCosto(cogsMap[it.k], priceByKey[it.k])*(it.qty||0);
+            a.cogs += cogsCosto(cogsMap[it.k], priceByKey[it.k], f)*(it.qty||0);
           }
         };
         for (const o of (raw?.orders_detail||[])) {

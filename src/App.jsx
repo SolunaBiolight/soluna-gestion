@@ -29486,8 +29486,52 @@ function CostosPanel({ T, uid }) {
     const val = prev&&typeof prev==="object" ? prev.v : prev;
     return {...c,[key]: tipo==="pct" ? {t:"pct",v:val??""} : (val??"")};
   });
-  const costoVal  = entry => entry&&typeof entry==="object" ? (entry.v??"") : (entry??"");
-  const costoEsPct= entry => !!(entry&&typeof entry==="object"&&entry.t==="pct");
+  const costoVal  = entry => entry&&typeof entry==="object"&&!Array.isArray(entry.hist) ? (entry.v??"") : (Array.isArray(entry?.hist)?"":(entry??""));
+  const costoEsPct= entry => !!(entry&&typeof entry==="object"&&!Array.isArray(entry.hist)&&entry.t==="pct");
+
+  // ── Historial de costos por fecha ──────────────────────────────────────
+  // Un producto puede tener el costo cambiando en el tiempo (los proveedores
+  // suben precio). Se guarda como {hist:[{desde,t?,v}]}: cada tramo vale DESDE
+  // su fecha; el último rige hasta hoy. Una venta toma el costo de su fecha.
+  const [histKey,setHistKey]=useState(null); // key del producto con el editor de historial abierto
+  const tieneHist = entry => !!(entry&&typeof entry==="object"&&Array.isArray(entry.hist)&&entry.hist.length);
+  // Normaliza cualquier entry a lista de tramos editables [{desde,t,v}].
+  const getHist = entry => {
+    if (entry&&Array.isArray(entry.hist)) return entry.hist.map(h=>({desde:h.desde||"",t:h.t==="pct"?"pct":"fijo",v:h.v??""}));
+    const v = costoVal(entry);
+    return (v!==""&&v!=null) ? [{desde:"",t:costoEsPct(entry)?"pct":"fijo",v}] : [{desde:"",t:"fijo",v:""}];
+  };
+  // Escribe los tramos: 1 solo tramo sin fecha → se guarda plano (retrocompat);
+  // si hay fechas → {hist:[...]} ordenado por fecha ascendente.
+  const setHistTramos = (key,tramos)=>setCostos(c=>{
+    const clean = (tramos||[]).filter(t=>t&&String(t.v).trim()!=="").map(t=>({desde:t.desde||"",t:t.t==="pct"?"pct":"fijo",v:t.v}));
+    if (!clean.length){ const n={...c}; delete n[key]; return n; }
+    if (clean.length===1 && !clean[0].desde){ const o=clean[0]; return {...c,[key]: o.t==="pct"?{t:"pct",v:o.v}:o.v}; }
+    const sorted = clean.sort((a,b)=>String(a.desde).localeCompare(String(b.desde))).map(t=>t.t==="pct"?{desde:t.desde,t:"pct",v:t.v}:{desde:t.desde,v:t.v});
+    return {...c,[key]:{hist:sorted}};
+  });
+  const updTramo = (key,i,patch)=>setHistTramos(key, getHist(costos[key]).map((t,j)=>j===i?{...t,...patch}:t));
+  const addTramo = key=>setHistTramos(key, [...getHist(costos[key]), {desde:hoyAR(),t:"fijo",v:""}]);
+  const delTramo = (key,i)=>setHistTramos(key, getHist(costos[key]).filter((_,j)=>j!==i));
+  const renderHistPanel = (key, price) => {
+    const tramos = getHist(costos[key]);
+    return (
+      <div style={{padding:"6px 0 12px 44px",display:"flex",flexDirection:"column",gap:6,background:T.surface,borderRadius:8,marginBottom:6}}>
+        <div style={{fontSize:11,color:T.textSm,lineHeight:1.5,padding:"6px 12px 0"}}>Cada tramo vale <strong style={{color:T.textMd}}>desde</strong> su fecha en adelante; el último rige hasta hoy. Cada venta usa el costo que regía su fecha. Dejá la primera fecha vacía = "desde siempre".</div>
+        {tramos.map((tr,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",padding:"0 12px"}}>
+            <span style={{fontSize:11,color:T.textSm,width:36}}>desde</span>
+            <input type="date" value={tr.desde} onChange={e=>updTramo(key,i,{desde:e.target.value})} style={{...InputStyle(T),fontSize:12,padding:"6px 8px",width:150,flexShrink:0}}/>
+            <select value={tr.t} onChange={e=>updTramo(key,i,{t:e.target.value})} style={{...InputStyle(T),width:54,fontSize:12,padding:"6px 4px",flexShrink:0}}><option value="fijo">$</option><option value="pct">%</option></select>
+            <input type="number" min="0" value={tr.v} onChange={e=>updTramo(key,i,{v:e.target.value})} placeholder="0" style={{...InputStyle(T),width:90,fontSize:12,textAlign:"right",flexShrink:0}}/>
+            {tr.t==="pct"&&(parseFloat(tr.v)||0)>0&&<span style={{fontSize:10,color:T.textSm}}>≈ {fmtARSm((price||0)*(parseFloat(tr.v)||0)/100)}</span>}
+            <button onClick={()=>delTramo(key,i)} title="Quitar tramo" style={{background:"transparent",border:"none",color:T.red,cursor:"pointer",fontSize:16,lineHeight:1,flexShrink:0}}>×</button>
+          </div>
+        ))}
+        <div style={{padding:"2px 12px"}}><button onClick={()=>addTramo(key)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>+ Agregar cambio de precio</button></div>
+      </div>
+    );
+  };
 
   async function persistMlAds(list) {
     await setDoc(doc(db,"users",uid), { margenesMlAds: list }, { merge: true });
@@ -29540,7 +29584,7 @@ function CostosPanel({ T, uid }) {
   const q = busqProd.trim().toLowerCase();
   const visRows = q ? prodRows.filter(r => `${r.nombre} ${r.variante} ${r.sku}`.toLowerCase().includes(q)) : prodRows;
   const visMl = q ? mlItems.filter(p => String(p.nombre||"").toLowerCase().includes(q)) : mlItems;
-  const conCosto = Object.values(costos).filter(v => (typeof v==="object" ? parseFloat(v?.v) : parseFloat(v)) > 0).length;
+  const conCosto = Object.values(costos).filter(v => (v&&typeof v==="object"&&Array.isArray(v.hist)) ? v.hist.some(h=>parseFloat(h?.v)>0) : (typeof v==="object" ? parseFloat(v?.v) : parseFloat(v)) > 0).length;
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18,maxWidth:900}}>
@@ -29739,8 +29783,11 @@ function CostosPanel({ T, uid }) {
             <div style={{fontSize:12,color:T.textSm}}>No se encontraron productos en tu tienda. Verificá la conexión en Config → Integraciones o creá productos en tu tienda primero.</div>
           )
         )}
-        {visRows.map(r=>(
-          <div key={r.key} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
+        {visRows.map(r=>{
+          const hasH = tieneHist(costos[r.key]); const abierto = histKey===r.key;
+          return (
+          <div key={r.key} style={{borderBottom:`1px solid ${T.borderL}`}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0"}}>
             {r.img
               ? <img src={r.img} alt="" style={{width:34,height:34,borderRadius:6,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
               : <div style={{width:34,height:34,borderRadius:6,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>}
@@ -29748,27 +29795,46 @@ function CostosPanel({ T, uid }) {
               <div style={{fontSize:13,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.nombre}{r.variante?` · ${r.variante}`:""}</div>
               <div style={{fontSize:10,color:T.textSm}}>{r.sku?`SKU ${r.sku} · `:""}{fmtARSm(r.price)}</div>
             </div>
-            <select value={costoEsPct(costos[r.key])?"pct":"fijo"} onChange={e=>setCostoTipo(r.key,e.target.value)} title="$ fijo o % del precio de venta" style={{...InputStyle(T),width:64,fontSize:12,padding:"7px 6px",flexShrink:0}}>
-              <option value="fijo">$</option>
-              <option value="pct">%</option>
-            </select>
-            <input type="number" min="0" value={costoVal(costos[r.key])} onChange={e=>setCosto(r.key,e.target.value)} placeholder="0" style={{...InputStyle(T),width:100,fontSize:13,textAlign:"right",flexShrink:0}}/>
-            {costoEsPct(costos[r.key])&&(parseFloat(costoVal(costos[r.key]))||0)>0&&(
-              <span style={{fontSize:10,color:T.textSm,flexShrink:0,width:70,textAlign:"right"}}>≈ {fmtARSm((r.price||0)*(parseFloat(costoVal(costos[r.key]))||0)/100)}</span>
-            )}
+            {hasH ? (
+              <button onClick={()=>setHistKey(abierto?null:r.key)} style={{display:"flex",alignItems:"center",gap:6,background:T.accent+"14",border:`1px solid ${T.accent}44`,borderRadius:8,padding:"7px 11px",cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>📅 {costos[r.key].hist.length} precios por fecha</button>
+            ) : (<>
+              <select value={costoEsPct(costos[r.key])?"pct":"fijo"} onChange={e=>setCostoTipo(r.key,e.target.value)} title="$ fijo o % del precio de venta" style={{...InputStyle(T),width:64,fontSize:12,padding:"7px 6px",flexShrink:0}}>
+                <option value="fijo">$</option>
+                <option value="pct">%</option>
+              </select>
+              <input type="number" min="0" value={costoVal(costos[r.key])} onChange={e=>setCosto(r.key,e.target.value)} placeholder="0" style={{...InputStyle(T),width:100,fontSize:13,textAlign:"right",flexShrink:0}}/>
+              {costoEsPct(costos[r.key])&&(parseFloat(costoVal(costos[r.key]))||0)>0&&(
+                <span style={{fontSize:10,color:T.textSm,flexShrink:0,width:66,textAlign:"right"}}>≈ {fmtARSm((r.price||0)*(parseFloat(costoVal(costos[r.key]))||0)/100)}</span>
+              )}
+            </>)}
+            <button onClick={()=>setHistKey(abierto?null:r.key)} title="Costo por fecha (los proveedores cambian de precio)" style={{background:abierto?T.accent+"18":"transparent",border:`1px solid ${abierto?T.accent+"55":T.border}`,borderRadius:8,padding:"6px 8px",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",color:abierto?T.accent:T.textSm}}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            </button>
           </div>
-        ))}
+          {abierto && renderHistPanel(r.key, r.price)}
+          </div>
+        );})}
         {visMl.length>0 && <div style={{fontSize:11,fontWeight:700,color:T.textSm,margin:"12px 0 4px",textTransform:"uppercase",letterSpacing:0.4}}>Mercado Libre</div>}
         {visMl.map(p=>{
-          const key = "ml:"+p.id;
+          const key = "ml:"+p.id; const hasH = tieneHist(costos[key]); const abierto = histKey===key;
           return (
-            <div key={key} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
+            <div key={key} style={{borderBottom:`1px solid ${T.borderL}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0"}}>
               <div style={{width:34,height:34,borderRadius:6,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57l1.65-7.74H6"/></svg></div>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:13,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.nombre}>{p.nombre}</div>
               </div>
-              <span style={{fontSize:12,color:T.textSm}}>costo $</span>
-              <input type="number" min="0" value={costoVal(costos[key])} onChange={e=>setCosto(key,e.target.value)} placeholder="0" style={{...InputStyle(T),width:110,fontSize:13,textAlign:"right",flexShrink:0}}/>
+              {hasH ? (
+                <button onClick={()=>setHistKey(abierto?null:key)} style={{display:"flex",alignItems:"center",gap:6,background:T.accent+"14",border:`1px solid ${T.accent}44`,borderRadius:8,padding:"7px 11px",cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>📅 {costos[key].hist.length} precios por fecha</button>
+              ) : (<>
+                <span style={{fontSize:12,color:T.textSm}}>costo $</span>
+                <input type="number" min="0" value={costoVal(costos[key])} onChange={e=>setCosto(key,e.target.value)} placeholder="0" style={{...InputStyle(T),width:110,fontSize:13,textAlign:"right",flexShrink:0}}/>
+              </>)}
+              <button onClick={()=>setHistKey(abierto?null:key)} title="Costo por fecha (los proveedores cambian de precio)" style={{background:abierto?T.accent+"18":"transparent",border:`1px solid ${abierto?T.accent+"55":T.border}`,borderRadius:8,padding:"6px 8px",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",color:abierto?T.accent:T.textSm}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              </button>
+            </div>
+            {abierto && renderHistPanel(key, p.price||0)}
             </div>
           );
         })}
