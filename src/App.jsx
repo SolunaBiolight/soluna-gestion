@@ -2390,6 +2390,20 @@ function ghTplDeOficial(locs, oficial){
   const STOP=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","ESPACIO","AVENIDA","AVDA","CALLE"]);
   const nums=[...new Set([...txt.matchAll(/\d{2,}/g)].map(x=>x[0]))];
   const words=txt.split(" ").filter(w=>w.length>=4&&!STOP.has(w)&&!/^\d+$/.test(w));
+  // Por NOMBRE oficial: las sucursales clásicas del desplegable no traen calle
+  // ni número ("SALTA (CENTRO)"). Única candidata que contenga TODAS las
+  // palabras del nombre y cuyos números (si tiene) existan en los datos del
+  // punto oficial — así un "HOP JURAMENTO 2621" nunca pasa por "Juramento 367".
+  const descWords=n(desc).split(" ").filter(w=>w.length>=4&&!STOP.has(w)&&!/^\d+$/.test(w));
+  if(descWords.length){
+    const oficNums=new Set([...txt.matchAll(/\d{2,}/g)].map(x=>x[0]));
+    const candN=[...new Map(lista.filter(t=>{
+      const nt=n(t);
+      if(!descWords.every(w=>nt.includes(w))) return false;
+      return [...nt.matchAll(/\d{2,}/g)].every(x=>oficNums.has(x[0]));
+    }).map(t=>[n(t),t])).values()];
+    if(candN.length===1) return candN[0];
+  }
   if(!nums.length||!words.length) return null;
   // Dedupe por texto normalizado: el desplegable repite el mismo punto (a
   // veces con distinto espaciado) — duplicados no deben anular el "resultado único"
@@ -8013,18 +8027,27 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // distancia (backend geocodifica la dirección). Con `locs` (flujo XLSX) mapea
   // cada una al string del desplegable del Excel; sin `locs` (emisión API)
   // quedan crudas — ahí lo que importa es el id oficial.
+  // Fetch crudo del motor de cercanías (listado GEO completo + ancla
+  // geocodificada). Lo usan cargarLocCerca (modal) y la capa de auto-match
+  // silencioso: el listado GEO a veces trae puntos y direcciones que FALTAN
+  // en la lista por CP y en el buscador global (#5898: "SALTA (CENTRO),
+  // Juramento 367" — cercanías lo encontraba pero la cadena silenciosa no).
+  async function fetchCercanasRaw(o){
+    const toks=ghSucTokens(o.pickupDetails,o.direccion).slice(0,4).join(" ");
+    const pd=o.pickupDetails;
+    const dir=pd?`${ghStripUnidad(pd.address?.address)} ${pd.address?.number||""}`.trim():`${ghStripUnidad(o.direccion)} ${o.dirNumero||""}`.trim();
+    const gloc=pd?(pd.address?.locality||pd.address?.city||""):(o.localidad||o.ciudad||"");
+    const gprov=pd?(pd.address?.province||""):(o.provincia||"");
+    const r=await authFetch(`/api/andreani?action=sucursales_cercanas&q=${encodeURIComponent(toks)}&cp=${encodeURIComponent(cpDestinoDe(o)||"")}&dir=${encodeURIComponent(dir)}&loc=${encodeURIComponent(gloc)}&prov=${encodeURIComponent(gprov)}`);
+    const d=await r.json().catch(()=>null);
+    if(!r.ok||!Array.isArray(d?.sucursales)) throw new Error(d?.error||`HTTP ${r.status}`);
+    return d;
+  }
   function cargarLocCerca(o,locs){
     setLocCerca({loading:true});
     (async()=>{
       try{
-        const toks=ghSucTokens(o.pickupDetails,o.direccion).slice(0,4).join(" ");
-        const pd=o.pickupDetails;
-        const dir=pd?`${ghStripUnidad(pd.address?.address)} ${pd.address?.number||""}`.trim():`${ghStripUnidad(o.direccion)} ${o.dirNumero||""}`.trim();
-        const gloc=pd?(pd.address?.locality||pd.address?.city||""):(o.localidad||o.ciudad||"");
-        const gprov=pd?(pd.address?.province||""):(o.provincia||"");
-        const r=await authFetch(`/api/andreani?action=sucursales_cercanas&q=${encodeURIComponent(toks)}&cp=${encodeURIComponent(cpDestinoDe(o)||"")}&dir=${encodeURIComponent(dir)}&loc=${encodeURIComponent(gloc)}&prov=${encodeURIComponent(gprov)}`);
-        const d=await r.json().catch(()=>null);
-        if(!r.ok||!Array.isArray(d?.sucursales)) throw new Error(d?.error||`HTTP ${r.status}`);
+        const d=await fetchCercanasRaw(o);
         const lista=d.sucursales.map(s=>({...s,tpl:locs?ghTplDeOficial(locs,s):null}));
         const validas=locs?lista.filter(s=>s.tpl):lista;
         setLocCerca({lista:(locs&&validas.length?[...validas,...lista.filter(s=>!s.tpl).slice(0,5)]:lista).slice(0,18),origen:d.origen||"",aproximado:!!d.aproximado,diag:d.sinOrigen?"sin_origen":(d.stats&&!d.stats.conCoords?"sin_coords":"")});
@@ -8091,6 +8114,21 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const globalTpl=globalOficial?ghTplDeOficial(locs,globalOficial):null;
       if(globalTpl){
         sucursalOverridesRef.current[o.numero]=globalTpl;
+        persistOverrides();
+        continue;
+      }
+      // Capa final silenciosa: el motor de cercanías usa el listado GEO
+      // completo, que a veces trae puntos/direcciones ausentes en la lista por
+      // CP y en el buscador global (#5898). MISMO match estricto de siempre
+      // (calle+número exactos) — la distancia NO decide nada.
+      let cercaTpl=null;
+      try{
+        const dCerca=await fetchCercanasRaw(o);
+        const cercaOficial=matchSucursalOficial(dCerca.sucursales,o);
+        cercaTpl=cercaOficial?ghTplDeOficial(locs,cercaOficial):null;
+      }catch(_){}
+      if(cercaTpl){
+        sucursalOverridesRef.current[o.numero]=cercaTpl;
         persistOverrides();
         continue;
       }
@@ -8221,6 +8259,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       // El punto exacto puede no estar en la lista por CP (HOP nuevos): antes
       // de molestar, buscarlo en el listado COMPLETO con el mismo match estricto.
       if(!ofc) ofc=await buscarPuntoExactoGlobal(o);
+      // Capa final: motor de cercanías (listado GEO completo) con el mismo
+      // match estricto por calle+número — la distancia NO decide (#5898).
+      if(!ofc){ try{ ofc=matchSucursalOficial((await fetchCercanasRaw(o)).sucursales,o); }catch(_){} }
       if(!ofc&&!Array.isArray(oficiales)){
         // API de sucursales caída y el buscador global tampoco respondió
         rows.push(mkRow(o,{incluido:false,cotError:"Lista oficial de Andreani no disponible — probá de nuevo en unos minutos"}));
