@@ -762,10 +762,11 @@ export default async function handler(req, res) {
       // COGS por producto/variante. Formatos soportados (retrocompatibles):
       //   • número / string       → $ fijo (siempre)
       //   • { t:"pct", v }         → % del precio de venta (siempre)
-      //   • { hist:[{desde,v,t}] } → HISTORIAL por fecha: cada tramo vale DESDE su
-      //     fecha (YYYY-MM-DD) en adelante. El último tramo rige hasta hoy. Una
-      //     venta toma el costo que regía SU fecha (los proveedores cambian precio).
-      //   • [ {desde,v,t}, ... ]   → mismo historial en forma de array pelado.
+      //   • { hist:[{desde,hasta?,v,t}] } → HISTORIAL por fecha: cada tramo vale
+      //     entre `desde` y `hasta` (YYYY-MM-DD). Si `hasta` está vacío el tramo
+      //     corre hasta el próximo cambio (o hasta hoy si es el último). Una venta
+      //     toma el costo que regía SU fecha (los proveedores cambian precio).
+      //   • [ {desde,hasta?,v,t}, ... ] → mismo historial en forma de array pelado.
       // `fecha` (YYYY-MM-DD de la orden) elige el tramo. Sin fecha → el más nuevo.
       const cogsCosto = (entry, price, fecha) => {
         if (entry == null) return 0;
@@ -774,9 +775,17 @@ export default async function handler(req, res) {
         if (hist) {
           const sorted = hist.filter(h => h && h.v != null && String(h.v).trim() !== "").sort((a,b)=>String(a.desde||"").localeCompare(String(b.desde||"")));
           if (!sorted.length) return 0;
-          let chosen = sorted[0]; // por defecto el más viejo (para ventas previas al 1er tramo)
-          if (fecha) { for (const h of sorted) { if (String(h.desde||"") <= fecha) chosen = h; else break; } }
-          else chosen = sorted[sorted.length-1]; // sin fecha → el vigente (más nuevo)
+          let chosen = null;
+          if (fecha) {
+            for (const h of sorted) {
+              if (String(h.desde||"") <= fecha) {
+                // `hasta` explícito vencido → este tramo ya no aplica a esa fecha.
+                if (h.hasta && String(h.hasta) < fecha) continue;
+                chosen = h;
+              } else break;
+            }
+            if (!chosen) chosen = sorted[0]; // antes del 1er tramo (o en un hueco) → el más viejo
+          } else chosen = sorted[sorted.length-1]; // sin fecha → el vigente (más nuevo)
           return val(chosen.t, chosen.v);
         }
         if (typeof entry === "object") return val(entry.t, entry.v);

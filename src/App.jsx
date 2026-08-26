@@ -29497,31 +29497,34 @@ function CostosPanel({ T, uid }) {
   const tieneHist = entry => !!(entry&&typeof entry==="object"&&Array.isArray(entry.hist)&&entry.hist.length);
   // Normaliza cualquier entry a lista de tramos editables [{desde,t,v}].
   const getHist = entry => {
-    if (entry&&Array.isArray(entry.hist)) return entry.hist.map(h=>({desde:h.desde||"",t:h.t==="pct"?"pct":"fijo",v:h.v??""}));
+    if (entry&&Array.isArray(entry.hist)) return entry.hist.map(h=>({desde:h.desde||"",hasta:h.hasta||"",t:h.t==="pct"?"pct":"fijo",v:h.v??""}));
     const v = costoVal(entry);
-    return (v!==""&&v!=null) ? [{desde:"",t:costoEsPct(entry)?"pct":"fijo",v}] : [{desde:"",t:"fijo",v:""}];
+    return (v!==""&&v!=null) ? [{desde:"",hasta:"",t:costoEsPct(entry)?"pct":"fijo",v}] : [{desde:"",hasta:"",t:"fijo",v:""}];
   };
-  // Escribe los tramos: 1 solo tramo sin fecha → se guarda plano (retrocompat);
-  // si hay fechas → {hist:[...]} ordenado por fecha ascendente.
+  // Escribe los tramos: 1 solo tramo sin desde ni hasta → se guarda plano
+  // (retrocompat); si hay fechas → {hist:[...]} ordenado por fecha ascendente.
   const setHistTramos = (key,tramos)=>setCostos(c=>{
-    const clean = (tramos||[]).filter(t=>t&&String(t.v).trim()!=="").map(t=>({desde:t.desde||"",t:t.t==="pct"?"pct":"fijo",v:t.v}));
+    const clean = (tramos||[]).filter(t=>t&&String(t.v).trim()!=="").map(t=>({desde:t.desde||"",hasta:t.hasta||"",t:t.t==="pct"?"pct":"fijo",v:t.v}));
     if (!clean.length){ const n={...c}; delete n[key]; return n; }
-    if (clean.length===1 && !clean[0].desde){ const o=clean[0]; return {...c,[key]: o.t==="pct"?{t:"pct",v:o.v}:o.v}; }
-    const sorted = clean.sort((a,b)=>String(a.desde).localeCompare(String(b.desde))).map(t=>t.t==="pct"?{desde:t.desde,t:"pct",v:t.v}:{desde:t.desde,v:t.v});
+    if (clean.length===1 && !clean[0].desde && !clean[0].hasta){ const o=clean[0]; return {...c,[key]: o.t==="pct"?{t:"pct",v:o.v}:o.v}; }
+    const sorted = clean.sort((a,b)=>String(a.desde).localeCompare(String(b.desde))).map(t=>{ const o={desde:t.desde}; if(t.hasta) o.hasta=t.hasta; if(t.t==="pct") o.t="pct"; o.v=t.v; return o; });
     return {...c,[key]:{hist:sorted}};
   });
   const updTramo = (key,i,patch)=>setHistTramos(key, getHist(costos[key]).map((t,j)=>j===i?{...t,...patch}:t));
-  const addTramo = key=>setHistTramos(key, [...getHist(costos[key]), {desde:hoyAR(),t:"fijo",v:""}]);
+  const addTramo = key=>setHistTramos(key, [...getHist(costos[key]), {desde:hoyAR(),hasta:"",t:"fijo",v:""}]);
   const delTramo = (key,i)=>setHistTramos(key, getHist(costos[key]).filter((_,j)=>j!==i));
   const renderHistPanel = (key, price) => {
     const tramos = getHist(costos[key]);
     return (
-      <div style={{padding:"6px 0 12px 44px",display:"flex",flexDirection:"column",gap:6,background:T.surface,borderRadius:8,marginBottom:6}}>
-        <div style={{fontSize:11,color:T.textSm,lineHeight:1.5,padding:"6px 12px 0"}}>Cada tramo vale <strong style={{color:T.textMd}}>desde</strong> su fecha en adelante; el último rige hasta hoy. Cada venta usa el costo que regía su fecha. Dejá la primera fecha vacía = "desde siempre".</div>
+      <div style={{padding:"6px 0 12px 44px",display:"flex",flexDirection:"column",gap:8,background:T.surface,borderRadius:8,marginBottom:6}}>
+        <div style={{fontSize:11,color:T.textSm,lineHeight:1.5,padding:"6px 12px 0"}}>Cada tramo vale entre <strong style={{color:T.textMd}}>desde</strong> y <strong style={{color:T.textMd}}>hasta</strong>. Dejá <strong style={{color:T.textMd}}>desde</strong> vacío = "desde siempre" y <strong style={{color:T.textMd}}>hasta</strong> vacío = "hasta hoy". Cada venta usa el costo que regía su fecha.</div>
         {tramos.map((tr,i)=>(
           <div key={i} style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",padding:"0 12px"}}>
-            <span style={{fontSize:11,color:T.textSm,width:36}}>desde</span>
-            <input type="date" value={tr.desde} onChange={e=>updTramo(key,i,{desde:e.target.value})} style={{...InputStyle(T),fontSize:12,padding:"6px 8px",width:150,flexShrink:0}}/>
+            <span style={{fontSize:11,color:T.textSm}}>desde</span>
+            <input type="date" value={tr.desde} onChange={e=>updTramo(key,i,{desde:e.target.value})} style={{...InputStyle(T),fontSize:12,padding:"6px 8px",width:146,flexShrink:0}}/>
+            <span style={{fontSize:11,color:T.textSm}}>hasta</span>
+            <input type="date" value={tr.hasta} onChange={e=>updTramo(key,i,{hasta:e.target.value})} title="Vacío = hasta hoy" style={{...InputStyle(T),fontSize:12,padding:"6px 8px",width:146,flexShrink:0,...(tr.hasta?{}:{color:T.textSm})}}/>
+            {!tr.hasta&&<span style={{fontSize:10,color:T.textSm,marginLeft:-2}}>(hoy)</span>}
             <select value={tr.t} onChange={e=>updTramo(key,i,{t:e.target.value})} style={{...InputStyle(T),width:54,fontSize:12,padding:"6px 4px",flexShrink:0}}><option value="fijo">$</option><option value="pct">%</option></select>
             <input type="number" min="0" value={tr.v} onChange={e=>updTramo(key,i,{v:e.target.value})} placeholder="0" style={{...InputStyle(T),width:90,fontSize:12,textAlign:"right",flexShrink:0}}/>
             {tr.t==="pct"&&(parseFloat(tr.v)||0)>0&&<span style={{fontSize:10,color:T.textSm}}>≈ {fmtARSm((price||0)*(parseFloat(tr.v)||0)/100)}</span>}
