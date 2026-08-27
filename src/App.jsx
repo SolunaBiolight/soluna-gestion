@@ -2739,35 +2739,35 @@ function toast(msg,type="success",duration=3000){
 function ToastContainer({T}){
   const toasts=useToast();
   if(!toasts.length) return null;
+  // Diseño sobrio (estilo Linear/Vercel): tarjeta neutra elevada, el color del
+  // tipo vive SOLO en el ícono — nada de gradientes ni bordes saturados. El
+  // texto envuelve en varias líneas (los mensajes largos antes desbordaban).
   const cfgMap={
-    success:{color:T.green,   bg:T.green, icon:<polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>},
-    error:  {color:T.red,     bg:T.red, icon:<><line x1="18" y1="6" x2="6" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>},
-    warning:{color:T.orange||T.orange, bg:T.orange, icon:<><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 9v4M12 17h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>},
-    info:   {color:T.blue||T.blue, bg:T.blue, icon:<><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>},
+    success:{color:T.green, icon:<polyline points="20 6 9 17 4 12"/>},
+    error:  {color:T.red,   icon:<><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></>},
+    warning:{color:T.yellow||T.orange, icon:<><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>},
+    info:   {color:T.blue||T.accent, icon:<><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></>},
   };
   return(
-    <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:9999,display:"flex",flexDirection:"column",gap:10,alignItems:"center",pointerEvents:"none"}}>
+    <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:9999,display:"flex",flexDirection:"column",gap:8,alignItems:"center",pointerEvents:"none",padding:"0 16px",width:"100%",maxWidth:560,boxSizing:"border-box"}}>
       {toasts.map(t=>{
         const cfg=cfgMap[t.type]||cfgMap.success;
         return(
           <div key={t.id} style={{
-            background:`linear-gradient(135deg,${cfg.bg}14,${cfg.bg}08)`,
-            border:`1.5px solid ${cfg.color}55`,
-            borderLeft:`3px solid ${cfg.color}`,
-            borderRadius:14,
-            padding:"12px 20px 12px 14px",
+            background:T.card,
+            border:`1px solid ${T.border}`,
+            borderRadius:12,
+            padding:"11px 16px 11px 13px",
             fontSize:13,fontWeight:500,color:T.text,
             fontFamily:"'Inter',system-ui,sans-serif",
-            letterSpacing:"-0.01em",
-            boxShadow:`0 8px 32px rgba(0,0,0,0.28), 0 0 0 1px ${cfg.color}18`,
-            whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:12,
+            letterSpacing:"-0.01em",lineHeight:1.45,
+            boxShadow:"0 2px 6px rgba(0,0,0,0.12), 0 12px 40px rgba(0,0,0,0.24)",
+            maxWidth:"100%",display:"flex",alignItems:"flex-start",gap:10,
             animation:t.closing?"growith-toast-out 0.2s ease both":"growith-toast-in 0.4s cubic-bezier(0.34,1.56,0.64,1) both",
             backdropFilter:"blur(16px)",
           }}>
-            <div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${cfg.bg},${cfg.bg}cc)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:`0 4px 12px ${cfg.color}55`}}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">{cfg.icon}</svg>
-            </div>
-            {t.msg.replace(/\s*[✓✔]\s*$/, '')}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={cfg.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:2}}>{cfg.icon}</svg>
+            <span style={{minWidth:0}}>{t.msg.replace(/\s*[✓✔]\s*$/, '')}</span>
           </div>
         );
       })}
@@ -9842,10 +9842,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         </div>
       )}
       {sucursalConfirmed&&(
-        <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:T.card,border:`0.5px solid ${T.green}44`,borderLeft:`3px solid ${T.green}`,borderRadius:10,padding:"12px 20px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 8px 40px rgba(0,0,0,0.3)",animation:"fadeIn 0.2s ease",minWidth:280}}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"11px 16px 11px 13px",display:"flex",alignItems:"flex-start",gap:10,boxShadow:"0 2px 6px rgba(0,0,0,0.12), 0 12px 40px rgba(0,0,0,0.24)",animation:"growith-toast-in 0.4s cubic-bezier(0.34,1.56,0.64,1) both",minWidth:280,fontFamily:"'Inter',system-ui,sans-serif"}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:2}}><polyline points="20 6 9 17 4 12"/></svg>
           <div>
-            <div style={{fontSize:13,fontWeight:600,color:T.green}}>Sucursal confirmada · #{sucursalConfirmed.numero}</div>
+            <div style={{fontSize:13,fontWeight:600,color:T.text}}>Sucursal confirmada · #{sucursalConfirmed.numero}</div>
             <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{sucursalConfirmed.nombre}</div>
           </div>
         </div>
