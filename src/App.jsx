@@ -5111,11 +5111,14 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       if((p.tracking||"").trim() && (p.tracking||"").trim()!==(prev?.tracking||"").trim()){
         p.trackDone=false; p.trackingCat=""; p.trackingEstado=""; p.trackingAviso=null;
       }
-      if(form._docId) {
-        await updateDoc(doc(db,"canjes",form._docId),{...p,updatedAt:serverTimestamp(),...(form.estado==="Cerrado"&&prev?.estado!=="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});
-      } else {
-        await addDoc(collection(db,"canjes"),{...p,ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
-      }
+      // Cierre OPTIMISTA: la escritura se aplica local al instante (el snapshot
+      // ya muestra el canje) — esperar el ack del server dejaba el botón en
+      // "Creando..." para siempre con conexión inestable. Si el server termina
+      // rechazando la escritura, avisamos por toast.
+      const writeP=form._docId
+        ? updateDoc(doc(db,"canjes",form._docId),{...p,updatedAt:serverTimestamp(),...(form.estado==="Cerrado"&&prev?.estado!=="Cerrado"?{finalizadoAt:serverTimestamp()}:{})})
+        : addDoc(collection(db,"canjes"),{...p,ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+      writeP.catch(e=>toast("El canje no se pudo guardar en el servidor: "+String(e?.message||e).slice(0,120)+" — revisá que siga en la lista","error",8000));
       // Programar email de recordatorio si hay fechaEnvioProgr nueva o cambiada
       const prevFecha = prev?.fechaEnvioProgr;
       if(p.fechaEnvioProgr && p.fechaEnvioProgr !== prevFecha) {
