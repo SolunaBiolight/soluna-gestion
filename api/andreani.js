@@ -164,7 +164,7 @@ async function getGlobalConfig(db) {
       } : { alias: "", titular: "", cbu: "" },
     };
   } catch (_) {
-    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, seguroPct: 2, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" } };
+    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, seguroPct: 1, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" } };
   }
 }
 
@@ -291,6 +291,12 @@ async function mpWebhook(req, res, db, body) {
   });
   if (!pr.ok) return res.status(pr.status === 404 ? 200 : 502).json({ error: `MP HTTP ${pr.status}` });
   const pago = await pr.json();
+  // Devolución/contracargo de un pago ya acreditado: débito compensatorio.
+  if (["refunded", "charged_back"].includes(pago.status)) {
+    const r3 = await mpContracargo(db, String(pago.external_reference || ""), pago);
+    if (r3.error) { console.error("[mp_webhook contracargo]", r3.error); return res.status(500).json({ error: r3.error }); }
+    return res.status(200).json({ ok: true, ...(r3.debitada ? { contracargo: true } : {}) });
+  }
   if (pago.status !== "approved") return res.status(200).json({ ok: true, status: pago.status });
   const cargaId = String(pago.external_reference || "");
   if (!cargaId) return res.status(200).json({ ok: true, skip: "sin_external_reference" });
@@ -305,6 +311,7 @@ async function mpWebhook(req, res, db, body) {
 async function mpAcreditarCarga(db, cargaId, pago) {
   const cRef = db.collection("andreani_cargas").doc(cargaId);
   let out = null;
+  let montoInfo = null; // para escribir el motivo FUERA de la transacción (un write dentro de una tx abortada se rollbackea)
   try {
     out = await db.runTransaction(async (tx) => {
       const s = await tx.get(cRef);
@@ -313,9 +320,9 @@ async function mpAcreditarCarga(db, cargaId, pago) {
       if (c.estado !== "pendiente") throw new Error("SKIP"); // MP reintenta: idempotente por estado
       const monto = Math.round(Number(c.monto) || 0);
       const pagado = Number(pago.transaction_amount) || 0;
-      if (Math.abs(pagado - monto) > 1) {
-        // El monto aprobado no es el de la carga: NO acreditar solo — a revisión.
-        tx.update(cRef, { motivo: `MP aprobó $${pagado} y la carga es de $${monto} — revisar en Admin`, mpPaymentId: String(pago.id) });
+      if (Math.abs(pagado - monto) > 1 || String(pago.currency_id || "ARS") !== "ARS") {
+        // El monto/moneda aprobados no son los de la carga: NO acreditar solo — a revisión.
+        montoInfo = { pagado, monto, moneda: String(pago.currency_id || "ARS") };
         throw new Error("MONTO");
       }
       const tRef = db.collection("users").doc(c.uid);
@@ -334,6 +341,16 @@ async function mpAcreditarCarga(db, cargaId, pago) {
   } catch (e) {
     if (e.message === "SKIP") return { skip: true };
     if (e.message === "MONTO") {
+      // Estado "revision": sale del filtro de pendientes (el cron dejaba de
+      // acreditarla pero la re-encontraba cada 10 min y re-mandaba el mail).
+      // El motivo se escribe FUERA de la tx abortada, si no se perdía.
+      try {
+        await cRef.update({
+          estado: "revision",
+          motivo: `MP aprobó $${(montoInfo?.pagado ?? 0).toLocaleString("es-AR")}${montoInfo?.moneda && montoInfo.moneda !== "ARS" ? " " + montoInfo.moneda : ""} y la carga es de $${(montoInfo?.monto ?? 0).toLocaleString("es-AR")} — revisar en Admin`,
+          mpPaymentId: String(pago.id),
+        });
+      } catch (_) {}
       try {
         const f = await db.collection("users").doc(FOUNDERS[0]).get();
         const to = f.exists ? String(f.data().email || "").trim() : "";
@@ -359,19 +376,64 @@ async function mpAcreditarCarga(db, cargaId, pago) {
   return { acreditada: true };
 }
 
+// Devolución/contracargo de MP sobre una carga YA acreditada: se debita el
+// monto del saldo (puede quedar negativo — es deuda del usuario, visible en el
+// ledger) y se avisa al founder. Idempotente por flag `contracargo`.
+async function mpContracargo(db, cargaId, pago) {
+  if (!cargaId) return { skip: true };
+  const cRef = db.collection("andreani_cargas").doc(cargaId);
+  let out = null;
+  try {
+    out = await db.runTransaction(async (tx) => {
+      const s = await tx.get(cRef);
+      if (!s.exists) throw new Error("SKIP");
+      const c = s.data();
+      if (c.estado !== "acreditada" || c.contracargo) throw new Error("SKIP");
+      if (c.mpPaymentId && String(c.mpPaymentId) !== String(pago.id)) throw new Error("SKIP");
+      const monto = Math.round(Number(c.monto) || 0);
+      const tRef = db.collection("users").doc(c.uid);
+      const uSnap = await tx.get(tRef);
+      if (!uSnap.exists) throw new Error("SKIP");
+      const saldo = Math.round(Number(uSnap.data()?.andreaniSaldo) || 0);
+      const nuevo = saldo - monto;
+      tx.update(cRef, { contracargo: true, estado: "contracargo", motivo: `MP informó ${pago.status} del pago ${pago.id}`, resueltaTs: FieldValue.serverTimestamp() });
+      tx.set(tRef, { andreaniSaldo: nuevo }, { merge: true });
+      tx.set(tRef.collection("andreani_mov").doc(), {
+        tipo: "contracargo", monto, saldoDespues: nuevo,
+        nota: `Contracargo/devolución MP de la carga ${c.ref}`, mpPaymentId: String(pago.id), ts: FieldValue.serverTimestamp(),
+      });
+      return { uid: c.uid, email: c.email || "", monto, ref: c.ref, saldo: nuevo };
+    });
+  } catch (e) {
+    if (e.message === "SKIP") return { skip: true };
+    return { error: e.message };
+  }
+  try {
+    const f = await db.collection("users").doc(FOUNDERS[0]).get();
+    const to = f.exists ? String(f.data().email || "").trim() : "";
+    if (to) await sendEmail({ to, subject: `Contracargo MP: $${out.monto.toLocaleString("es-AR")} (${out.ref})`, html: `<p>Mercado Pago informó ${pago.status} del pago ${pago.id} (carga ${out.ref} de ${out.email || out.uid}). Se debitó el saldo: quedó en $${out.saldo.toLocaleString("es-AR")}${out.saldo < 0 ? " (NEGATIVO — deuda del usuario)" : ""}.</p>` });
+  } catch (_) {}
+  return { debitada: true };
+}
+
 // Backstop del webhook: reconcilia cargas MP pendientes contra la API de MP.
 // Si el webhook se perdió (firma, caída, config), el cron de cada 10 minutos
 // acredita igual. La llama api/check-payments.js.
-export async function mpReconciliarCargas(db) {
+export async function mpReconciliarCargas(db, soloUid) {
   const token = process.env.MP_ACCESS_TOKEN || "";
   if (!token) return { skip: "mp_no_configurado" };
   const res = { revisadas: 0, acreditadas: 0, revision: 0 };
-  const snap = await db.collection("andreani_cargas").where("estado", "==", "pendiente").limit(50).get();
+  // Con soloUid (llamada inline desde la acción `cargas`): SOLO las cargas del
+  // usuario — el barrido global de todos los tenants es del cron; hacerlo
+  // dentro del request de un usuario podía exceder el timeout de la function.
+  const snap = soloUid
+    ? await db.collection("andreani_cargas").where("uid", "==", soloUid).limit(200).get()
+    : await db.collection("andreani_cargas").where("estado", "==", "pendiente").limit(50).get();
   const ahora = Date.now();
   const pendientesMp = snap.docs.filter(d => {
     const c = d.data();
     const ts = c.ts?.toMillis?.() || 0;
-    return c.metodo === "mp" && (!ts || ahora - ts < 7 * 86400000);
+    return c.estado === "pendiente" && c.metodo === "mp" && (!ts || ahora - ts < 7 * 86400000);
   });
   for (const d of pendientesMp) {
     res.revisadas++;
@@ -475,7 +537,9 @@ function normalizarBultos(bultos) {
   }));
   if (!out.length) return null;
   for (const b of out) {
-    if (b.kilos <= 0 || b.largoCm <= 0 || b.altoCm <= 0 || b.anchoCm <= 0) return null;
+    // valorDeclarado negativo podía producir un precio negativo (débito que
+    // ACREDITA saldo) — se rechaza acá y además hay piso en precioConMarkup.
+    if (b.kilos <= 0 || b.largoCm <= 0 || b.altoCm <= 0 || b.anchoCm <= 0 || b.valorDeclarado < 0) return null;
   }
   return out;
 }
@@ -601,7 +665,8 @@ function costoConDescuento(cot, cfg) {
   return distribucion * desc + seguroContrato;
 }
 function precioConMarkup(cot, cfg) {
-  return Math.ceil(costoConDescuento(cot, cfg) * (1 + cfg.markupPct / 100) + cfg.markupFijo);
+  // Piso de $1: un precio 0 o negativo jamás debe llegar al débito de saldo.
+  return Math.max(1, Math.ceil(costoConDescuento(cot, cfg) * (1 + cfg.markupPct / 100) + cfg.markupFijo));
 }
 
 // ─── Pertenencia de un envío (etiqueta/trazas) ─────────────────────────────
@@ -627,7 +692,7 @@ async function envioPerteneceAlUid(db, uid, numero) {
 // ─── Handler ───────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
-  { const _o = String(req.headers.origin || ""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o) || _o.endsWith("-soluna1.vercel.app") || _o.startsWith("http://localhost")) ? _o : "https://www.growithapp.com"); } // allowlist CORS
+  { const _o = String(req.headers.origin || ""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o) || /^https:\/\/[a-z0-9-]+-soluna1\.vercel\.app$/.test(_o) || /^http:\/\/localhost(:\d+)?$/.test(_o)) ? _o : "https://www.growithapp.com"); } // allowlist CORS (regex anclada: "evil-soluna1.vercel.app" y "localhost.evil.com" no pasan)
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -647,11 +712,17 @@ export default async function handler(req, res) {
         req.on("end", () => resolve(Buffer.concat(chunks).toString()));
         req.on("error", reject);
       });
-      body = raw ? JSON.parse(raw) : {};
+      try { body = raw ? JSON.parse(raw) : {}; }
+      catch (_) { return res.status(400).json({ error: "Body JSON inválido" }); }
     }
 
     const action = body.action || req.query?.action;
     if (!action) return res.status(400).json({ error: "action requerida" });
+
+    // Toda acción que ESCRIBE exige POST (un GET con token en un prefetch o un
+    // log no debe poder mutar estado). emitir y sucursal_origen ya lo chequean adentro.
+    const ACCIONES_POST = new Set(["save_origen", "carga_solicitar", "carga_mp", "carga_cancelar", "admin_acreditar", "admin_carga_acreditar", "admin_carga_rechazar"]);
+    if (ACCIONES_POST.has(action) && req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
 
     // Webhook de Mercado Pago: lo llama MP, no un usuario — sin sesión
     // Firebase. Se valida con la firma HMAC de MP (MP_WEBHOOK_SECRET).
@@ -876,7 +947,12 @@ export default async function handler(req, res) {
           catch (e) { return res.status(502).json({ error: e.message }); }
           const s = todas.find(x => String(x.id) === String(body.sucursalId));
           if (!s) return res.status(400).json({ error: "sucursalId no encontrado en el listado oficial" });
-          const sucOrigen = { ...s, confirmada: true, ts: Date.now() };
+          // Marca de auditoría: la tarifa depende de esta sucursal; si su CP no
+          // coincide con el del origen declarado, dejar registro visible.
+          const cpOri = String((await userRef.get()).data()?.andreaniOrigen?.codigoPostal || "").replace(/\D/g, "");
+          const cpSucO = String(s.direccion?.codigoPostal || "").replace(/\D/g, "");
+          const sucOrigen = { ...s, confirmada: true, ts: Date.now(), ...(cpOri && cpSucO && cpOri !== cpSucO ? { cpDistintoDelOrigen: true } : {}) };
+          if (sucOrigen.cpDistintoDelOrigen) console.warn(`[andreani] uid=${uid} confirmó sucursal origen CP ${cpSucO} distinta del CP declarado ${cpOri}`);
           await userRef.set({ andreaniSucOrigen: sucOrigen }, { merge: true });
           return res.json({ ok: true, sucursal: sucOrigen });
         }
@@ -979,15 +1055,48 @@ export default async function handler(req, res) {
         }
       }
 
+      // El CP que define la tarifa se deriva SIEMPRE del destino REAL — nunca
+      // del campo suelto del body (se podía cotizar con un CP barato y emitir
+      // la etiqueta a otro caro: la diferencia la absorbía la plataforma).
+      let cpTarifa = cpDestino;
+      let sucDestinoOficial = null;
+      if (tipo === "sucursal") {
+        let listaOk = false;
+        try {
+          const todas = await sucursalesTodas(db, env);
+          listaOk = true;
+          sucDestinoOficial = todas.find(x => String(x.id) === String(destino.sucursalId)) || null;
+        } catch (_) {}
+        if (listaOk && !sucDestinoOficial) {
+          try { sucDestinoOficial = (await sucursalesPorCp(db, env, cpDestino)).find(x => String(x.id) === String(destino.sucursalId)) || null; } catch (_) {}
+        }
+        if (listaOk && !sucDestinoOficial) return res.status(400).json({ error: "La sucursal destino no existe en el listado oficial de Andreani — volvé a elegirla." });
+        const cpSuc = String(sucDestinoOficial?.direccion?.codigoPostal || "").replace(/\D/g, "");
+        if (cpSuc) cpTarifa = cpSuc;
+      } else {
+        cpTarifa = String(destino.postal.codigoPostal).replace(/\D/g, "") || cpDestino;
+      }
+
       // b. RE-COTIZAR server-side — nunca confiar en el precio del cliente.
-      const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen: sucOrigenDe(uData, cfg) });
+      const cot = await cotizarAndreani(db, env, { tipo, cpDestino: cpTarifa, bultos, sucursalOrigen: sucOrigenDe(uData, cfg) });
       const precio = precioConMarkup(cot, cfg);
 
-      // c. Débito en transacción (saldo + movimiento).
+      // c. Débito en transacción (saldo + movimiento) CON idempotencia adentro:
+      // dos requests concurrentes con el mismo envioId (dos pestañas, dos
+      // colaboradoras) serializan acá — el segundo ve el lock o el número ya
+      // emitido. El check rápido de arriba (fuera de tx) queda como fast-path.
       const movRef = movCol.doc();
       let saldoRestante;
       try {
         saldoRestante = await db.runTransaction(async (tx) => {
+          // Firestore exige TODAS las lecturas antes que las escrituras.
+          if (envioRef) {
+            const eSnap = await tx.get(envioRef);
+            const ea = eSnap.exists ? eSnap.data()?.andreani : null;
+            if (ea?.numeroDeEnvio) { const err = new Error("ya_emitido"); err.yaEmitido = ea; throw err; }
+            const lockTs = Number(ea?.emitiendoTs || 0);
+            if (lockTs && Date.now() - lockTs < 120000) { const err = new Error("emision_en_curso"); err.enCurso = true; throw err; }
+          }
           const s = await tx.get(userRef);
           const saldo = Math.round(Number(s.data()?.andreaniSaldo) || 0);
           if (saldo < precio) {
@@ -996,12 +1105,13 @@ export default async function handler(req, res) {
             throw err;
           }
           const nuevo = saldo - precio;
+          if (envioRef) tx.set(envioRef, { andreani: { emitiendoTs: Date.now() } }, { merge: true });
           tx.set(userRef, { andreaniSaldo: nuevo }, { merge: true });
           tx.set(movRef, {
             tipo: "debito",
             monto: precio,
             saldoDespues: nuevo,
-            nota: `Etiqueta Andreani ${tipo === "sucursal" ? "a sucursal" : "a domicilio"} · CP ${cpDestino}`,
+            nota: `Etiqueta Andreani ${tipo === "sucursal" ? "a sucursal" : "a domicilio"} · CP ${cpTarifa}`,
             envioId: envioId || null,
             ts: FieldValue.serverTimestamp(),
           });
@@ -1010,6 +1120,12 @@ export default async function handler(req, res) {
       } catch (e) {
         if (e.saldoInsuficiente) {
           return res.status(402).json({ error: "saldo_insuficiente", ...e.saldoInsuficiente });
+        }
+        if (e.yaEmitido) {
+          return res.json({ ok: true, yaEmitido: true, numeroDeEnvio: e.yaEmitido.numeroDeEnvio, precio: e.yaEmitido.precio ?? null, saldoRestante: null, fechaEstimadaDeEntrega: e.yaEmitido.fechaEstimadaDeEntrega ?? null });
+        }
+        if (e.enCurso) {
+          return res.status(409).json({ error: "Este envío se está emitiendo en este momento (otra pestaña o compañera). Esperá unos segundos y actualizá." });
         }
         throw e;
       }
@@ -1065,7 +1181,12 @@ export default async function handler(req, res) {
         })),
       };
 
-      let ordenData = null, ordenErr = null;
+      // `ambiguo` = no sabemos si Andreani creó la orden o no (timeout/red, o
+      // respuesta 2xx sin número). En ese caso NO se reversa automático: si la
+      // orden SÍ se creó, el reverso regalaba la etiqueta y la plataforma
+      // pagaba el costo real sin registro. Se retiene el débito, se marca el
+      // envío como dudoso y se avisa al admin para conciliar contra Andreani.
+      let ordenData = null, ordenErr = null, ambiguo = false;
       try {
         const r = await andreaniFetch(db, env, "/v2/ordenes-de-envio", {
           method: "POST",
@@ -1078,14 +1199,28 @@ export default async function handler(req, res) {
           if (!ordenData?.bultos?.[0]?.numeroDeEnvio) {
             ordenErr = `Andreani no devolvió número de envío: ${JSON.stringify(ordenData).slice(0, 300)}`;
             ordenData = null;
+            ambiguo = true;
           }
         }
       } catch (e) {
         ordenErr = e.message || "Error de red contra Andreani";
+        ambiguo = true;
       }
 
       if (!ordenData) {
-        // Reverso: segunda transacción que acredita lo debitado + movimiento.
+        if (ambiguo) {
+          // Débito retenido + marca de emisión dudosa. El lock de 2 min evita
+          // un reintento inmediato que podría duplicar la orden real.
+          try { await movRef.set({ dudoso: true, nota: `Etiqueta Andreani ${tipo} · CP ${cpTarifa} — EMISIÓN DUDOSA: ${String(ordenErr).slice(0, 180)}` }, { merge: true }); } catch (_) {}
+          if (envioRef) { try { await envioRef.set({ andreani: { dudosoTs: Date.now(), emitiendoTs: FieldValue.delete() } }, { merge: true }); } catch (_) {} }
+          try {
+            const f = await db.collection("users").doc(FOUNDERS[0]).get();
+            const to = f.exists ? String(f.data().email || "").trim() : "";
+            if (to) await sendEmail({ to, subject: `Emisión Andreani DUDOSA — conciliar (uid ${uid})`, html: `<p>La emisión del envío ${envioId || "(sin id)"} de ${uData.email || uid} falló de forma ambigua (${String(ordenErr).slice(0, 200)}). El débito de $${precio.toLocaleString("es-AR")} quedó RETENIDO. Verificá en el panel de Andreani si la orden se creó: si NO existe, acreditale el monto desde Admin → Envíos; si existe, avisale el número al usuario.</p>` });
+          } catch (_) {}
+          return res.status(502).json({ error: `No pudimos confirmar si Andreani emitió la etiqueta (${String(ordenErr).slice(0, 160)}). Para que no se emita ni cobre dos veces, el débito quedó retenido y el equipo de Growith ya fue avisado para resolverlo — no reintentes por ahora.`, dudoso: true });
+        }
+        // Andreani respondió que NO (rechazo claro): reverso del débito.
         const revRef = movCol.doc();
         try {
           await db.runTransaction(async (tx) => {
@@ -1093,6 +1228,7 @@ export default async function handler(req, res) {
             const saldo = Math.round(Number(s.data()?.andreaniSaldo) || 0);
             const nuevo = saldo + precio;
             tx.set(userRef, { andreaniSaldo: nuevo }, { merge: true });
+            if (envioRef) tx.set(envioRef, { andreani: { emitiendoTs: FieldValue.delete() } }, { merge: true });
             tx.set(revRef, {
               tipo: "reverso",
               monto: precio,
@@ -1119,6 +1255,7 @@ export default async function handler(req, res) {
         contrato,
         tipo,
         fechaEstimadaDeEntrega: ordenData.fechaEstimadaDeEntrega || null,
+        emitiendoTs: FieldValue.delete(), // liberar el lock de emisión
         ts: FieldValue.serverTimestamp(),
       };
       const writes = [movRef.set({ numeroDeEnvio }, { merge: true })];
@@ -1176,12 +1313,17 @@ export default async function handler(req, res) {
       // frontend lo compare contra el punto que eligió el cliente en la tienda.
       let sucursalDestino = null;
       if (tipo === "sucursal") {
-        try {
-          const todas = await sucursalesTodas(db, env);
-          let s = todas.find(x => String(x.id) === String(destino.sucursalId));
-          if (!s && cpDestino) s = (await sucursalesPorCp(db, env, cpDestino)).find(x => String(x.id) === String(destino.sucursalId));
-          if (s) sucursalDestino = { id: s.id, descripcion: s.descripcion || "", direccion: s.direccion || null };
-        } catch (_) {}
+        // Ya se resolvió antes de cotizar (define el CP de tarifa); fallback al
+        // lookup viejo por si la lista falló en aquel momento.
+        let s = sucDestinoOficial;
+        if (!s) {
+          try {
+            const todas = await sucursalesTodas(db, env);
+            s = todas.find(x => String(x.id) === String(destino.sucursalId));
+            if (!s && cpDestino) s = (await sucursalesPorCp(db, env, cpDestino)).find(x => String(x.id) === String(destino.sucursalId));
+          } catch (_) {}
+        }
+        if (s) sucursalDestino = { id: s.id, descripcion: s.descripcion || "", direccion: s.direccion || null };
       }
 
       return res.json({
@@ -1241,8 +1383,9 @@ export default async function handler(req, res) {
       if (!isFinite(monto) || monto < 1000) return res.status(400).json({ error: "El monto mínimo de carga es $1.000." });
       if (monto > 10000000) return res.status(400).json({ error: "Monto demasiado alto." });
       const cargasCol = db.collection("andreani_cargas");
-      // Máx 3 pendientes por cuenta (filtrado en memoria: where por un solo campo)
-      const propias = await cargasCol.where("uid", "==", uid).limit(30).get();
+      // Máx 3 pendientes por cuenta (filtrado en memoria: where por un solo campo;
+      // limit alto para que las pendientes no queden fuera de la ventana con historial largo)
+      const propias = await cargasCol.where("uid", "==", uid).limit(200).get();
       // Las cargas MP pendientes son checkouts abandonados: no bloquean el cupo
       const pendientes = propias.docs.filter(x => x.data().estado === "pendiente" && x.data().metodo !== "mp");
       if (pendientes.length >= 3) return res.status(400).json({ error: "Ya tenés 3 cargas pendientes. Cancelá alguna o esperá a que se acrediten." });
@@ -1283,7 +1426,7 @@ export default async function handler(req, res) {
       if (!isFinite(monto) || monto < 1000) return res.status(400).json({ error: "El monto mínimo de carga es $1.000." });
       if (monto > 10000000) return res.status(400).json({ error: "Monto demasiado alto." });
       const cargasCol = db.collection("andreani_cargas");
-      const propias = await cargasCol.where("uid", "==", uid).limit(30).get();
+      const propias = await cargasCol.where("uid", "==", uid).limit(200).get();
       const mpPend = propias.docs.filter(x => x.data().estado === "pendiente" && x.data().metodo === "mp");
       if (mpPend.length >= 5) return res.status(400).json({ error: "Tenés varios pagos de Mercado Pago sin terminar. Cancelá alguno (✕) y volvé a intentar." });
       const ref = "MP-" + Array.from(randomBytes(4)).map(b => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 32]).join("");
@@ -1322,8 +1465,8 @@ export default async function handler(req, res) {
       // Oportunista: si el usuario tiene cargas MP pendientes, reconciliarlas
       // contra la API de MP acá mismo — así al abrir el modal de saldo el pago
       // aprobado se acredita al instante, sin esperar webhook ni cron.
-      try { await mpReconciliarCargas(db); } catch (e) { console.warn("[cargas] reconciliar:", e.message); }
-      const snap = await db.collection("andreani_cargas").where("uid", "==", uid).limit(30).get();
+      try { await mpReconciliarCargas(db, uid); } catch (e) { console.warn("[cargas] reconciliar:", e.message); }
+      const snap = await db.collection("andreani_cargas").where("uid", "==", uid).limit(200).get();
       const cargas = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         .sort((a, b) => (b.ts?.toMillis?.() || 0) - (a.ts?.toMillis?.() || 0))
         .slice(0, 10)
@@ -1391,12 +1534,13 @@ export default async function handler(req, res) {
         return res.json({ ok: true, uid: targetUid, saldo: nuevoSaldo });
       }
 
-      // Cargas de saldo pendientes de todas las cuentas (where por un campo).
+      // Cargas de saldo pendientes o en revisión (monto de MP distinto) de
+      // todas las cuentas (where por un campo, operador "in").
       if (action === "admin_cargas") {
-        const snap = await db.collection("andreani_cargas").where("estado", "==", "pendiente").limit(50).get();
+        const snap = await db.collection("andreani_cargas").where("estado", "in", ["pendiente", "revision"]).limit(50).get();
         const cargas = snap.docs.map(d => ({ id: d.id, ...d.data() }))
           .sort((a, b) => (a.ts?.toMillis?.() || 0) - (b.ts?.toMillis?.() || 0))
-          .map(c => ({ id: c.id, uid: c.uid, email: c.email || "", ref: c.ref, monto: c.monto, ts: c.ts?.toMillis?.() || null }));
+          .map(c => ({ id: c.id, uid: c.uid, email: c.email || "", ref: c.ref, monto: c.monto, ts: c.ts?.toMillis?.() || null, estado: c.estado, motivo: c.motivo || "" }));
         return res.json({ ok: true, cargas });
       }
 
@@ -1410,7 +1554,8 @@ export default async function handler(req, res) {
           const s = await tx.get(cRef);
           if (!s.exists) throw new Error("Carga no encontrada.");
           const c = s.data();
-          if (c.estado !== "pendiente") throw new Error(`Esa carga ya está ${c.estado}.`);
+          // "revision" (monto MP distinto) también se puede acreditar a mano
+          if (c.estado !== "pendiente" && c.estado !== "revision") throw new Error(`Esa carga ya está ${c.estado}.`);
           const tRef = db.collection("users").doc(c.uid);
           const uSnap = await tx.get(tRef);
           if (!uSnap.exists) throw new Error("El usuario de la carga no existe.");
@@ -1449,7 +1594,7 @@ export default async function handler(req, res) {
         await db.runTransaction(async (tx) => {
           const s = await tx.get(cRef);
           if (!s.exists) throw new Error("Carga no encontrada.");
-          if (s.data().estado !== "pendiente") throw new Error(`Esa carga ya está ${s.data().estado}.`);
+          if (s.data().estado !== "pendiente" && s.data().estado !== "revision") throw new Error(`Esa carga ya está ${s.data().estado}.`);
           tx.update(cRef, { estado: "rechazada", motivo, adminUid: adm.user.uid, resueltaTs: FieldValue.serverTimestamp() });
         });
         return res.json({ ok: true });
@@ -1485,6 +1630,13 @@ export default async function handler(req, res) {
           if (body.habilitados !== undefined) {
             if (!Array.isArray(body.habilitados)) return res.status(400).json({ error: "habilitados debe ser un array de uids" });
             upd.habilitados = body.habilitados.map(String).filter(Boolean);
+            // La lista se REEMPLAZA completa: log del diff para poder auditar
+            // un vaciado accidental desde Admin.
+            try {
+              const prev = (await gRef.get()).data()?.habilitados || [];
+              const out = prev.filter(u => !upd.habilitados.includes(u));
+              if (out.length) console.warn(`[andreani] admin_config quitó habilitados: ${out.join(",")} (por ${adm.user.uid})`);
+            } catch (_) {}
           }
           if (body.datosPago !== undefined) {
             const p = body.datosPago || {};

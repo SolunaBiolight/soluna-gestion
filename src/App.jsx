@@ -6941,6 +6941,28 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       if(mp==="ok") toast("¡Pago recibido! Tu saldo se acredita solo en unos segundos.","success",6000);
       else if(mp==="pending") toast("Tu pago está en proceso — el saldo se acredita cuando Mercado Pago lo apruebe.","warning",7000);
       else toast("El pago no se completó. Podés intentar de nuevo desde Saldo de envíos.","warning",7000);
+      // El webhook acredita en segundos pero el chip mostraba el saldo VIEJO
+      // hasta recargar — pollear el status hasta ver el saldo subir (~48s máx).
+      if(mp==="ok"||mp==="pending"){
+        let prev=null,ticks=0;
+        const iv=setInterval(async()=>{
+          ticks++;
+          if(ticks>12){ clearInterval(iv); return; }
+          try{
+            const r=await authFetch("/api/andreani?action=status");
+            const d=await r.json().catch(()=>null);
+            const s=(r.ok&&typeof d?.saldo==="number")?d.saldo:null;
+            if(s==null) return;
+            // Mantener el chip al día en cada tick; el toast solo cuando se ve subir
+            setAndreani(a=>({...a,saldo:s,saldoBajo:!!d.saldoBajo,etiquetasEstimadas:typeof d.etiquetasEstimadas==="number"?d.etiquetasEstimadas:a.etiquetasEstimadas}));
+            if(prev!=null&&s>prev){
+              clearInterval(iv);
+              toast(`Saldo acreditado: $${s.toLocaleString("es-AR")} ✓`,"success",6000);
+            }
+            prev=s;
+          }catch(_){}
+        },4000);
+      }
     }catch(_){}
   },[]);
   const [locSearch,setLocSearch]=useState("");
@@ -6984,6 +7006,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [filterTipoEnvio,setFilterTipoEnvio]=useState("todos");
   const [tabOrders,setTabOrders]=useState([]);
   const [tabLoading,setTabLoading]=useState(false);
+  const [tabError,setTabError]=useState(false); // el último fetch del tab falló (con o sin cache pintada)
   const [tabRefreshing,setTabRefreshing]=useState(false); // datos viejos visibles, refresh en background
   const tabCacheRef=useRef({});
   const lsCacheRef=useRef(null); // cache localStorage (SWR): última lista conocida por tab
@@ -7042,6 +7065,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [sucGate,setSucGate]=useState(null); // paso bloqueante "confirmá tu sucursal de despacho" antes del bulk: {orders:array|null}
   const [bulk,setBulk]=useState(null); // flujo "etiquetas listas": {fase:"resolviendo"|"cotizando"|"revision"|"emitiendo"|"resultado", rows, prog:{done,total}}
   const bulkRowsRef=useRef([]); // fuente de verdad de las filas del bulk (se mutan y se copian a state)
+  const bulkCancelRef=useRef(false); // cancelar la fase "resolviendo" (antes de cualquier débito)
   const [bulkDl,setBulkDl]=useState(null); // progreso de "Descargar todas": {done,total} | null
   const [cotRow,setCotRow]=useState({}); // cotización por fila: numero -> {loading}|{precio}|{error} (cache de sesión, no re-cotiza al re-render)
   useEffect(()=>{
@@ -7440,7 +7464,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       ords.forEach(function(o,i){
         const rn=startRow+i;
         const {nombre,apellido,telCod,telNum}=getPersonData(o);
-        const ubicacion=locationOverridesRef.current[o.numero]||findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad)||locs.list.find(l=>l.startsWith('BUENOS AIRES'))||locs.list[0]||"";
+        const ubicacion=locationOverridesRef.current[ovrKey(o)]||findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad)||locs.list.find(l=>l.startsWith('BUENOS AIRES'))||locs.list[0]||"";
         const dirNum=extractStreetNum(o.direccion, o.dirNumero);
         const direccion=extractStreetName(o.direccion, o.dirNumero);
         if(verifUbicacionVsPedido(o,ubicacion)==="warn")verifRows.push({numero:o.numero,comprador:o.comprador,tipo:"domicilio",escrito:ubicacion,esperado:`${o.localidad||o.ciudad||""}${o.cp?` (CP ${o.cp})`:""}`});
@@ -7479,8 +7503,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         // Override solo si es un valor VÁLIDO del desplegable: una elección
         // vieja pudo guardar el nombre oficial de Andreani (que el Excel
         // rechaza con "no es del campo desplegable") — se descarta y limpia.
-        let ovr=sucursalOverridesRef.current[o.numero]||"";
-        if(ovr&&!(locs.sucursales||[]).includes(ovr)){ delete sucursalOverridesRef.current[o.numero]; persistOverrides(); ovr=""; }
+        let ovr=sucursalOverridesRef.current[ovrKey(o)]||"";
+        if(ovr&&!(locs.sucursales||[]).includes(ovr)){ delete sucursalOverridesRef.current[ovrKey(o)]; persistOverrides(); ovr=""; }
         const sucursal=ovr||findAndreaniSucursal(locs,o.direccion,o.pickupDetails)||"";
         if(verifSucursalTplVsTienda(o,sucursal)==="warn")verifRows.push({numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:(o.pickupDetails?`${o.pickupDetails.name||""} — ${o.pickupDetails.address?.address||""} ${o.pickupDetails.address?.number||""}`:`${o.direccion||""} ${o.dirNumero||""}, ${o.localidad||o.ciudad||""}`).trim()});
         const cells=[
@@ -7534,11 +7558,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       if(!seguir){
         // "Cancelar y corregir": borrar el override Y la memoria del punto de
         // los pedidos marcados — si no, el próximo export resolvía solo con la
-        // misma elección equivocada y nunca volvía a preguntar.
+        // misma elección equivocada y nunca volvía a preguntar. Aplica a
+        // sucursal Y domicilio (una localidad mal elegida también quedaba
+        // pegada y el modal reaparecía sin salida).
         for(const vr of verifRows){
-          if(vr.tipo!=="sucursal") continue;
-          delete sucursalOverridesRef.current[vr.numero];
+          if(vr.tipo!=="sucursal"){
+            const oD=domicilioOrders.find(x=>x.numero===vr.numero);
+            delete locationOverridesRef.current[oD?ovrKey(oD):vr.numero];
+            continue;
+          }
           const oV=sucursalOrders.find(x=>x.numero===vr.numero);
+          delete sucursalOverridesRef.current[oV?ovrKey(oV):vr.numero];
           const pkV=oV?ghPuntoKey(oV):null;
           if(pkV) delete puntoMapRef.current[pkV];
         }
@@ -7582,7 +7612,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
   const locationOverridesRef=useRef((()=>{try{return JSON.parse(localStorage.getItem(ghKey("growith_locOverrides"))||"{}");}catch(_){return {};}})());
   const sucursalOverridesRef=useRef((()=>{try{return JSON.parse(localStorage.getItem(ghKey("growith_sucOverrides"))||"{}");}catch(_){return {};}})());
-  function persistOverrides(){try{localStorage.setItem(ghKey("growith_locOverrides"),JSON.stringify(locationOverridesRef.current));localStorage.setItem(ghKey("growith_sucOverrides"),JSON.stringify(sucursalOverridesRef.current));}catch(_){}}
+  // Key de overrides por pedido: incluye el canal cuando no es TN para que un
+  // pedido Shopify #1234 y uno TN #1234 no compartan la misma entrada.
+  function ovrKey(o){ return ((o?.canal&&o.canal!=="tiendanube")?o.canal+"_":"")+(o?.numero??""); }
+  // "EXCLUIR" NO se persiste a localStorage: si el export se cancelaba después
+  // de excluir, días más tarde ese pedido desaparecía del Excel en silencio.
+  // Vive solo en memoria (dura lo que la sesión de la pestaña).
+  function _sinExcluir(m){ const out={}; for(const k in m){ if(m[k]!=="EXCLUIR") out[k]=m[k]; } return out; }
+  function persistOverrides(){try{localStorage.setItem(ghKey("growith_locOverrides"),JSON.stringify(_sinExcluir(locationOverridesRef.current)));localStorage.setItem(ghKey("growith_sucOverrides"),JSON.stringify(_sinExcluir(sucursalOverridesRef.current)));}catch(_){}}
   // ── Memoria por PUNTO de retiro ──
   // Cuando la usuaria confirma a mano qué sucursal es un punto (modal), la
   // elección queda guardada por PUNTO (nombre+dirección+CP), no por pedido:
@@ -7601,7 +7638,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
   function recordarPunto(o,datos){
     const pk=ghPuntoKey(o); if(!pk) return;
-    puntoMapRef.current[pk]={...(puntoMapRef.current[pk]||{}),...datos,ts:Date.now()};
+    // REEMPLAZA la entrada (no mergea): una elección manual nueva define el
+    // punto completo. El merge dejaba vivo el dato del OTRO flujo (tpl viejo
+    // corregido por API seguía aplicándose en el XLSX, y viceversa).
+    puntoMapRef.current[pk]={...datos,ts:Date.now()};
     persistPuntoMap();
   }
 
@@ -7617,7 +7657,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       andreaniSucsCpCacheRef.current[cpStr]=authFetch(`/api/andreani?action=sucursales&cp=${encodeURIComponent(cpStr)}`)
         .then(r=>r.ok?r.json():null)
         .then(d=>Array.isArray(d?.sucursales)?d.sucursales:null)
-        .catch(()=>null);
+        .catch(()=>null)
+        .then(v=>{
+          // Un fallo NO se cachea: antes un blip de la API dejaba el CP marcado
+          // "no disponible" toda la sesión y reintentar no servía sin F5.
+          if(v===null) delete andreaniSucsCpCacheRef.current[cpStr];
+          return v;
+        });
     }
     return andreaniSucsCpCacheRef.current[cpStr];
   }
@@ -7702,7 +7748,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // el punto de la tienda (y si ambos tienen número, deben coincidir). Solo
   // avisa cuando no comparte NADA — que es el patrón del envío mal mandado.
   function verifSucursalTplVsTienda(o,tplStr){
-    if(!tplStr) return null;
+    // Sucursal vacía en la fila = SIEMPRE warn: un override invalidado a mitad
+    // de la generación dejaba la columna vacía y el toast celebraba igual.
+    if(!tplStr||!String(tplStr).trim()) return "warn";
     const pd=o?.pickupDetails;
     // Sin pickupDetails (TN registra el punto como dirección de envío común):
     // la dirección del PEDIDO es la sucursal que eligió el cliente — antes
@@ -7793,13 +7841,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   useEffect(()=>{
     function handleKey(e) {
       if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"||e.target.tagName==="SELECT") return;
+      // Con cualquier modal/flujo abierto, los atajos globales no aplican:
+      // Enter abría el export desde el detalle de un pedido, y Escape durante
+      // los modales de resolución vaciaba la selección (dejando el export
+      // colgado sin pedidos al retomar).
+      if(orderDetail||exportModal||locationModal||verifModal||bulk||exporting||andreaniSaldoOpen) return;
       if((e.ctrlKey||e.metaKey)&&e.key==="a"&&tab==="panel") { e.preventDefault(); toggleAll(); }
       if(e.key==="Escape") { setSelected(new Map()); setExportSingleOrder(null); setSearchEnvios(""); setBuscarQuery(""); }
       if(e.key==="Enter"&&selected.size>0&&!exportModal) { abrirGeneracion(); }
     }
     window.addEventListener("keydown", handleKey);
     return ()=>window.removeEventListener("keydown", handleKey);
-  },[selected, tab, exportModal, tabOrders]);
+  },[selected, tab, exportModal, tabOrders, orderDetail, locationModal, verifModal, bulk, exporting, andreaniSaldoOpen]);
 
   // Fetch local tab orders - independiente del estado global de orders
   // Persiste la última lista conocida para que el próximo ingreso sea instantáneo (SWR)
@@ -7818,14 +7871,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   async function fetchTabOrders(tab, opts={}) {
     if(!user?.uid) return;
     if(!opts.fresh){
-      // Optimización: si empaquetar ya está en caché y tiene PACKED, enviar es instantáneo
-      if(tab==="enviar" && tabCacheRef.current["empaquetar"]?.some(o=>o.isPacked)) {
-        const enviar=tabCacheRef.current["empaquetar"].filter(o=>o.isPacked);
-        tabCacheRef.current["enviar"]=enviar;
-        setTabCounts(prev=>({...prev,enviar:enviar.length}));
-        setTabOrders(enviar);
-        return;
-      }
+      // NOTA: acá había una "optimización" que derivaba "enviar" filtrando
+      // isPacked sobre la caché de "empaquetar". Premisa FALSA: el server
+      // define empaquetar=unpacked y enviar=unfulfilled — conjuntos disjuntos.
+      // Un fulfillment parcial marcado PACKED pisaba la lista real de enviar
+      // y bloqueaba el prefetch: pedidos empaquetados invisibles. Eliminada.
       if(tabCacheRef.current[tab] !== undefined) {
         setTabOrders(tabCacheRef.current[tab]);
         return;
@@ -7872,16 +7922,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         tabCacheRef.current[tab]=built;
         // Solo actualizar la vista si el usuario sigue en este tab
         if(tabEnvioRef.current===tab) setTabOrders(built);
-        // Cuando empaquetar carga, derivar count de enviar como side-effect
         if(tab==="empaquetar"){
-          const enviar=built.filter(o=>o.isPacked);
-          if(enviar.length>0){
-            tabCacheRef.current["enviar"]=enviar;
-            setTabCounts(prev=>({...prev,empaquetar:built.length,enviar:enviar.length}));
-            if(tabEnvioRef.current==="enviar") setTabOrders(enviar);
-          } else {
-            setTabCounts(prev=>({...prev,empaquetar:built.length}));
-          }
+          setTabCounts(prev=>({...prev,empaquetar:built.length}));
           // Prefetch de enviar en background: cuando el usuario clickee el tab, ya está
           if(tabCacheRef.current["enviar"]===undefined&&!enviarPrefetchRef.current){
             enviarPrefetchRef.current=authFetch(`/api/orders?uid=${user.uid}&tab=enviar${opts.fresh?"&fresh=1":""}`)
@@ -7900,7 +7942,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         }
         saveEnviosCache();
       }
-    } catch(e){ console.error(e); superseded=true; }
+      setTabError(false);
+    } catch(e){
+      console.error(e); superseded=true;
+      // SIN esto, un error de red mostraba "Todo empaquetado"/"Todavía no
+      // llegaron pedidos" — mensajes tranquilizadores falsos.
+      setTabError(true);
+    }
     finally { setTabLoading(false); setTabRefreshing(false); }
   }
 
@@ -7911,7 +7959,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     try{
       const c=JSON.parse(localStorage.getItem(`growith_envios_cache_${user.uid}`)||"null");
       // Cache válido por 24h — más viejo que eso, mejor skeleton que datos irreales
-      if(c&&Date.now()-c.ts<24*3600*1000&&Array.isArray(c.tabs?.empaquetar)&&c.tabs.empaquetar.length){
+      if(c&&Date.now()-c.ts<24*3600*1000&&Array.isArray(c.tabs?.empaquetar)){
         lsCacheRef.current=c;
         setTabOrders(c.tabs.empaquetar);
         setTabCounts({empaquetar:c.counts?.empaquetar??null,enviar:c.counts?.enviar??null});
@@ -7928,7 +7976,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
   async function exportAndreani(ordersOverride) {
     const selOrders=Array.isArray(ordersOverride)?ordersOverride:(exportSingleOrder?[exportSingleOrder]:[...selected.values()]);
-    if(!selOrders.length) return;
+    // El resume post-modales llega con exporting=true (overlay puente): si la
+    // selección se vació en el medio (Escape), apagar el overlay antes de salir
+    // — si no quedaba "Generando el archivo…" pegado para siempre.
+    if(!selOrders.length){ setExporting(false); setExportProgress({step:"",pct:0,current:0,total:0}); return; }
     // Cerrar el modal INMEDIATAMENTE - el progreso se muestra en el overlay flotante
     setExportModal(false);
     setExporting(true);
@@ -7949,11 +8000,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const domicilioOrdersSinEsquina=domicilioOrders.filter(o=>!esquinaSet.has(o.numero));
 
       const unresolvedDom=domicilioOrdersSinEsquina.filter(o=>{
-        if(locationOverridesRef.current[o.numero]) return false;
+        if(locationOverridesRef.current[ovrKey(o)]) return false;
         return !findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
       });
       const unresolvedSuc=sucursalOrdersSinEsquina.filter(o=>{
-        if(sucursalOverridesRef.current[o.numero]) return false;
+        const _ovr=sucursalOverridesRef.current[ovrKey(o)];
+        if(_ovr==="EXCLUIR") return false;
+        if(_ovr&&(locs.sucursales||[]).includes(_ovr)) return false;
+        // Override guardado que ya no existe en el desplegable: NO se trata
+        // como resuelto (antes se descartaba a mitad de la generación y la
+        // columna salía vacía sin modal) — se limpia y se vuelve a preguntar.
+        if(_ovr){ delete sucursalOverridesRef.current[ovrKey(o)]; persistOverrides(); }
         // Con Andreani prepago habilitado, la sucursal se elige SIEMPRE de la
         // lista oficial de la API (match exacto, sin texto libre): todos los
         // pedidos a sucursal sin override pasan por el modal de confirmación.
@@ -7965,13 +8022,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       if(unresolvedDom.length>0||unresolvedSuc.length>0){
         setExporting(false);
         setExportProgress({step:"",pct:0,current:0,total:0});
-        await resolveLocationsSequentially(unresolvedDom,unresolvedSuc,locs);
+        await resolveLocationsSequentially(unresolvedDom,unresolvedSuc,locs,selOrders);
         return;
       }
 
       const finalOrders=selOrders.filter(o=>
-        locationOverridesRef.current[o.numero]!=="EXCLUIR" &&
-        sucursalOverridesRef.current[o.numero]!=="EXCLUIR" &&
+        locationOverridesRef.current[ovrKey(o)]!=="EXCLUIR" &&
+        sucursalOverridesRef.current[ovrKey(o)]!=="EXCLUIR" &&
         !esquinaSet.has(o.numero)
       );
       if(!finalOrders.length){
@@ -8055,15 +8112,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     })();
   }
 
-  async function resolveLocationsSequentially(unresolvedDom,unresolvedSuc,locs) {
+  async function resolveLocationsSequentially(unresolvedDom,unresolvedSuc,locs,loteOriginal) {
     for(const o of unresolvedDom){
       const chosen=await new Promise(resolve=>{
         setLocationModal({order:o,locs,resolve,type:"domicilio"});
         setLocSearch("");setLocSearchType("ciudad");
       });
       if(chosen===null) return; // cancelar todo
-      if(chosen==="EXCLUIR"){ locationOverridesRef.current[o.numero]="EXCLUIR"; persistOverrides(); continue; }
-      locationOverridesRef.current[o.numero]=chosen; persistOverrides();
+      if(chosen==="EXCLUIR"){ locationOverridesRef.current[ovrKey(o)]="EXCLUIR"; persistOverrides(); continue; }
+      locationOverridesRef.current[ovrKey(o)]=chosen; persistOverrides();
     }
     // El barrido de sucursales consulta la API pedido por pedido: con muchas
     // ventas son varios segundos. El overlay de progreso queda VISIBLE durante
@@ -8078,7 +8135,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       // alguna vez, se reusa esa elección (validando que siga en el desplegable).
       const memXlsx=(()=>{const pk=ghPuntoKey(o);return pk?puntoMapRef.current[pk]:null;})();
       if(memXlsx?.tpl&&(locs.sucursales||[]).includes(memXlsx.tpl)){
-        sucursalOverridesRef.current[o.numero]=memXlsx.tpl;
+        sucursalOverridesRef.current[ovrKey(o)]=memXlsx.tpl;
         persistOverrides();
         continue;
       }
@@ -8093,7 +8150,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const autoOficial=matchSucursalOficial(oficiales,o);
       const autoTpl=autoOficial?ghTplDeOficial(locs,autoOficial):null;
       if(autoTpl){
-        sucursalOverridesRef.current[o.numero]=autoTpl;
+        sucursalOverridesRef.current[ovrKey(o)]=autoTpl;
         persistOverrides();
         continue;
       }
@@ -8103,7 +8160,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       // marcaría como "Sugerido" — usarla directo, sin molestar.
       const autoDirecto=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
       if(autoDirecto&&(locs.sucursales||[]).includes(autoDirecto)){
-        sucursalOverridesRef.current[o.numero]=autoDirecto;
+        sucursalOverridesRef.current[ovrKey(o)]=autoDirecto;
         persistOverrides();
         continue;
       }
@@ -8113,7 +8170,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const globalOficial=await buscarPuntoExactoGlobal(o);
       const globalTpl=globalOficial?ghTplDeOficial(locs,globalOficial):null;
       if(globalTpl){
-        sucursalOverridesRef.current[o.numero]=globalTpl;
+        sucursalOverridesRef.current[ovrKey(o)]=globalTpl;
         persistOverrides();
         continue;
       }
@@ -8128,7 +8185,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         cercaTpl=cercaOficial?ghTplDeOficial(locs,cercaOficial):null;
       }catch(_){}
       if(cercaTpl){
-        sucursalOverridesRef.current[o.numero]=cercaTpl;
+        sucursalOverridesRef.current[ovrKey(o)]=cercaTpl;
         persistOverrides();
         continue;
       }
@@ -8164,27 +8221,30 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           setLocSearch(prefill);setLocSearchType("ciudad");
         });
         if(chosen===null) return; // cancelar todo
-        if(chosen==="EXCLUIR"){ sucursalOverridesRef.current[o.numero]="EXCLUIR"; persistOverrides(); resuelto=true; break; }
+        if(chosen==="EXCLUIR"){ sucursalOverridesRef.current[ovrKey(o)]="EXCLUIR"; persistOverrides(); resuelto=true; break; }
         // Lo elegido puede venir de la lista oficial: traducirlo al desplegable.
         const tpl=(locs.sucursales||[]).includes(chosen)?chosen:ghTplDeOficial(locs,{descripcion:chosen});
         if(!tpl){
           toast(`"${chosen}" no existe en el desplegable del Excel de carga masiva — elegí otra sucursal (la búsqueda de abajo muestra solo las válidas)`,"warning",6500);
           continue; // reabrir el modal para el mismo pedido
         }
-        sucursalOverridesRef.current[o.numero]=tpl; persistOverrides();
+        sucursalOverridesRef.current[ovrKey(o)]=tpl; persistOverrides();
         // Memoria por punto: la próxima vez que un pedido venga a ESTE punto,
         // se resuelve solo con esta elección.
         recordarPunto(o,{tpl});
+        // Confirmación visual SIN bloquear el loop (con 10 pedidos eran 12
+        // segundos de animación pura entre modal y modal).
         setSucursalConfirmed({numero:o.numero,nombre:tpl});
-        await new Promise(r=>setTimeout(r,1200));
-        setSucursalConfirmed(null);
+        setTimeout(()=>setSucursalConfirmed(c=>c&&c.numero===o.numero?null:c),1200);
         resuelto=true;
       }
     }
-    // Overlay puente hasta que exportAndreani retome (evita el "hueco" visual)
+    // Overlay puente hasta que exportAndreani retome (evita el "hueco" visual).
+    // Se retoma con el MISMO lote que arrancó: si la selección se limpió
+    // durante los modales (Escape), el resume no debe perder los pedidos.
     setExportProgress({step:"Generando el archivo…",pct:58,current:0,total:0});
     setExporting(true);
-    setTimeout(()=>exportAndreani(),100);
+    setTimeout(()=>exportAndreani(loteOriginal),100);
   }
 
   // ═══ Flujo bulk "Etiquetas listas": emisión por API de Andreani ═══
@@ -8224,10 +8284,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const selOrders=Array.isArray(ordersOverride)?ordersOverride:(exportSingleOrder?[exportSingleOrder]:[...selected.values()]);
     if(!selOrders.length) return;
     bulkRowsRef.current=[];
+    bulkCancelRef.current=false;
     setBulk({fase:"resolviendo",rows:[],prog:{done:0,total:selOrders.length}});
     const rows=bulkRowsRef.current;
     const mkRow=(o,extra)=>({numero:o.numero,order:o,tipo:isSucursalOrder(o)?"sucursal":"domicilio",oficial:null,cot:null,cotError:"",incluido:true,emitido:null,emitError:"",...extra});
+    let _resDone=0;
     for(const o of selOrders){
+      // Cancelable durante la resolución (todavía no se debitó nada) + progreso visible
+      if(bulkCancelRef.current){ setBulk(null); bulkRowsRef.current=[]; return; }
+      _resDone++;
+      setBulk(b=>b&&b.fase==="resolviendo"?{...b,prog:{done:_resDone-1,total:selOrders.length}}:b);
       const yaNum=andreaniNumeroDe(o);
       if(yaNum){ rows.push(mkRow(o,{incluido:false,cotError:`Ya emitido — envío ${yaNum}`,emitido:{numeroDeEnvio:yaNum,yaEmitido:true}})); continue; }
       if(hasEsquinaAddress(o)){
@@ -8416,7 +8482,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
   // Cotización rápida de UNA fila de la tabla (chip "Cotizar"). Usa el paquete
   // default de growith_exportCfg y cachea el resultado por número de pedido.
+  const cotRowBusyRef=useRef({});
   async function cotizarFila(o){
+    if(cotRowBusyRef.current[o.numero]) return; // guard doble click
+    cotRowBusyRef.current[o.numero]=true;
     setCotRow(m=>({...m,[o.numero]:{loading:true}}));
     try{
       const resp=await authFetch("/api/andreani?action=cotizar",{
@@ -8431,6 +8500,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         if(typeof d.saldo==="number") setAndreani(a=>({...a,saldo:d.saldo}));
       }
     }catch(e){ setCotRow(m=>({...m,[o.numero]:{error:e.message||"Error de red"}})); }
+    finally{ delete cotRowBusyRef.current[o.numero]; }
   }
   // El chip solo aparece en pedidos que van por Andreani: sucursal/HOP siempre,
   // y domicilio salvo medios claramente ajenos (retiro en local, a acordar).
@@ -8718,9 +8788,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     } else {
       // El toast también, por si está en otra sección con el modal desmontado
       toast(`${ok} seguimiento${ok!==1?"s":""} enviado${ok!==1?"s":""} · ${fail} con error — el detalle está en Envíos`,"warning",7000);
-      setSeguimientoProgress({active:false,current:pending.length,total:pending.length,last:"",done:true,ok,fail,errors});
+      const resFin={active:false,current:pending.length,total:pending.length,last:"",done:true,ok,fail,errors};
+      _ghSegLastResult={ts:Date.now(),res:resFin}; // por si el componente está desmontado
+      setSeguimientoProgress(resFin);
     }
   }
+  // Al volver a Envíos: si un batch terminó con errores mientras el componente
+  // estaba desmontado, restaurar el modal de resultado (antes se perdía todo).
+  useEffect(()=>{
+    if(_ghSegLastResult&&Date.now()-_ghSegLastResult.ts<3600000){
+      setSeguimientoProgress(_ghSegLastResult.res);
+      _ghSegLastResult=null;
+    }
+  },[]);
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
@@ -8729,7 +8809,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* Seguimientos — portal unificado activo + resultado */}
       {((seguimientoProgress.active&&!seguimientoProgress.min)||seguimientoProgress.done)&&ReactDOM.createPortal(
         <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}
-          onClick={seguimientoProgress.done?()=>setSeguimientoProgress(p=>({...p,done:false})):undefined}>
+          onClick={seguimientoProgress.done?()=>{_ghSegLastResult=null;setSeguimientoProgress(p=>({...p,done:false}));}:undefined}>
           <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.done?(seguimientoProgress.ok===0?T.red+"55":T.orange+"55"):T.green+"44"}`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
             onClick={e=>e.stopPropagation()}>
             {!seguimientoProgress.done ? (
@@ -9000,9 +9080,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                           setBuscarLoading(true);
                           try{
                             const r=await authFetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(buscarQuery.trim())}`);
-                            const data=await r.json();
-                            if(Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data));
-                          }catch(ex){}
+                            const data=await r.json().catch(()=>null);
+                            if(r.ok&&Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data));
+                            else toast(typeof data?.error==="string"?data.error:"La búsqueda falló — probá de nuevo","error",5000);
+                          }catch(ex){ toast("La búsqueda falló (red) — probá de nuevo","error",5000); }
                           setBuscarLoading(false);
                         }
                       }}
@@ -9012,8 +9093,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   <AsyncButton onClick={async()=>{
                     if(!buscarQuery.trim()) return;
                     const r=await authFetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(buscarQuery.trim())}`);
-                    const data=await r.json();
-                    if(Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data));
+                    const data=await r.json().catch(()=>null);
+                    if(r.ok&&Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data));
+                    else throw new Error(typeof data?.error==="string"?data.error:"La búsqueda falló — probá de nuevo");
                   }} style={{...BtnPrimary(T),fontSize:13}}>
                     Buscar
                   </AsyncButton>
@@ -9153,6 +9235,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </div>
                 ))}
               </div>
+            ):tabError&&exportables.length===0&&tabEnvio!=="buscar"?(
+              <div style={{textAlign:"center",padding:"72px 20px"}}>
+                <div style={{width:60,height:60,borderRadius:14,background:T.redBg,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 18px",color:T.red}}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                </div>
+                <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>No pudimos traer los pedidos</div>
+                <div style={{fontSize:12,color:T.textSm,maxWidth:320,margin:"0 auto 16px"}}>Tu tienda no respondió o hubo un problema de red. Tus pedidos siguen ahí — probá de nuevo.</div>
+                <Btn T={T} variant="primary" size="md" onClick={()=>fetchTabOrders(tabEnvio,{fresh:true})}>Reintentar</Btn>
+              </div>
             ):exportables.length===0?(
               <div style={{textAlign:"center",padding:"72px 20px"}}>
                 <div style={{width:60,height:60,borderRadius:14,background:T.surface,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 18px",color:T.textSm}}>
@@ -9177,6 +9268,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               </div>
             ):(
               <>
+                {tabError&&(
+                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",background:T.yellowBg,borderBottom:`1px solid ${T.yellow}44`,fontSize:12,color:T.yellow}}>
+                    No se pudieron actualizar los pedidos — estás viendo los últimos datos guardados.
+                    <button onClick={()=>fetchTabOrders(tabEnvio,{fresh:true})} style={{marginLeft:"auto",background:"transparent",border:`1px solid ${T.yellow}66`,borderRadius:8,padding:"3px 12px",fontSize:11,fontWeight:600,color:T.yellow,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Reintentar</button>
+                  </div>
+                )}
                 {/* Scroll horizontal en pantallas chicas — la grilla de 7 columnas
                     fijas antes se aplastaba/desbordaba en mobile */}
                 <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><div style={{minWidth:720}}>
@@ -9664,7 +9761,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
                 {alertas.slice(0,8).map((a,i)=>{
                   const trk=a.envio?.tracking||"";
-                  const linkSeg=trk?`https://www.andreani.com/#!/informacionEnvio/${trk}`:"";
+                  const linkSeg=trk?`https://www.andreani.com/envio/${trk}`:"";
                   const aviso=a.tipo==="sucursal"
                     ?`¡Hola! Tu pedido ya está esperándote en la sucursal de Andreani. Acordate de pasar a retirarlo antes de que venza el plazo, así no vuelve al remitente.${linkSeg?` Podés ver los detalles acá: ${linkSeg}`:""}`
                     :a.tipo==="fallida"
@@ -9966,7 +10063,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               )}
               {apiCaida&&wantOficial&&(
                 <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.yellow}}>
-                  La lista oficial de sucursales de Andreani no está disponible en este momento. Buscá la sucursal manualmente abajo.
+                  La lista oficial de sucursales de Andreani no está disponible en este momento. Cerrá este paso y reintentá en unos minutos (excluí el pedido si es urgente y emitilo a mano en Andreani).
                 </div>
               )}
               {showManual&&(
@@ -10215,10 +10312,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
       {/* ── Flujo bulk "Etiquetas listas" (emisión por API) ── */}
       {bulk&&(
-        <Modal T={T} open={true} onClose={()=>{ if(bulk.fase==="revision"||bulk.fase==="resultado"){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } }} title="Etiquetas listas — Andreani" width={680} zIndex={1500}>
+        <Modal T={T} open={true} onClose={()=>{ if(bulk.fase==="revision"||bulk.fase==="resultado"){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } else if(bulk.fase==="resolviendo"){ bulkCancelRef.current=true; setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } }} title="Etiquetas listas — Andreani" width={680} zIndex={1500}>
           {bulk.fase==="resolviendo"&&(
-            <div style={{display:"flex",alignItems:"center",gap:10,padding:"18px 4px",color:T.textMd,fontSize:13}}>
-              <Spinner size={16} color={T.accent}/> Preparando pedidos y resolviendo sucursales…
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"18px 4px",color:T.textMd,fontSize:13,flexWrap:"wrap"}}>
+              <Spinner size={16} color={T.accent}/> Preparando pedidos y resolviendo sucursales… {bulk.prog?.total>1?`(${Math.min((bulk.prog.done||0)+1,bulk.prog.total)}/${bulk.prog.total})`:""}
+              <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>Podés cerrar con ✕ — todavía no se debitó nada</span>
             </div>
           )}
           {(bulk.fase==="cotizando"||bulk.fase==="emitiendo")&&(
@@ -10252,6 +10350,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       {rows.map(r=>{
                         const o=r.order;
                         const destino=r.tipo==="sucursal"?(r.oficial?`Sucursal — ${r.oficial.descripcion}`:"Sucursal"):`Domicilio — ${o.localidad||o.ciudad||""}`;
+                        // Dirección real de la sucursal destino — sin esto no
+                        // se puede juzgar "¿es este el punto?" desde la revisión
+                        const dirSuc=r.tipo==="sucursal"&&r.oficial?[[r.oficial.direccion?.calle,r.oficial.direccion?.numero].filter(Boolean).join(" "),r.oficial.direccion?.localidad,r.oficial.direccion?.codigoPostal?`CP ${r.oficial.direccion.codigoPostal}`:""].filter(Boolean).join(" · "):"";
                         const retryable=!!r.cotError&&!r.emitido&&(r.tipo==="domicilio"||!!r.oficial);
                         return (
                           <tr key={r.numero} style={{opacity:r.incluido?1:0.55,borderBottom:`1px solid ${T.borderL}`}}>
@@ -10262,6 +10363,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                             <td style={{padding:"7px 10px",color:T.text}}>{o.comprador}</td>
                             <td style={{padding:"7px 10px",color:T.textMd}}>
                               {destino}
+                              {dirSuc&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{dirSuc}</div>}
                               {r.tipo==="sucursal"&&r.verif==="ok"&&(
                                 <div style={{color:T.green,fontSize:11,marginTop:2,fontWeight:600}}>✓ Coincide con el punto elegido en tu tienda</div>
                               )}
@@ -10498,6 +10600,7 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
   const [montoCarga,setMontoCarga]=useState("");
   const [showSucCfg,setShowSucCfg]=useState(false); // sucursal de despacho: config de una sola vez, colapsada
   const [cargaErr,setCargaErr]=useState("");
+  const [saldoErr,setSaldoErr]=useState(false); // el fetch de saldo/movimientos falló (≠ "sin movimientos")
   const [nueva,setNueva]=useState(null); // {ref,monto} recién solicitada → instrucciones
   function refrescarCargas(){
     authFetch("/api/andreani?action=cargas").then(r=>r.ok?r.json():null).then(d=>{
@@ -10512,9 +10615,10 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
       .then(r=>r.ok?r.json():null)
       .then(d=>{
         if(!alive) return;
-        if(d&&!d.error){ setData(d); if(typeof d.saldo==="number") onSaldo&&onSaldo(d.saldo); }
+        if(d&&!d.error){ setData(d); setSaldoErr(false); if(typeof d.saldo==="number") onSaldo&&onSaldo(d.saldo); }
+        else setSaldoErr(true);
       })
-      .catch(()=>{})
+      .catch(()=>{ if(alive) setSaldoErr(true); })
       .finally(()=>{ if(alive) setLoading(false); });
     refrescarCargas();
     return ()=>{alive=false;};
@@ -10523,6 +10627,7 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
     setCargaErr("");
     const m=Math.round(Number(montoCarga));
     if(!isFinite(m)||m<1000){ setCargaErr("El monto mínimo de carga es $1.000."); return; }
+    if(m>10000000){ setCargaErr(`El monto máximo por carga es $10.000.000 (escribiste ${fmtMoney(m)}).`); return; }
     const r=await authFetch("/api/andreani?action=carga_solicitar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({monto:m})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok||d.error){ setCargaErr(typeof d.error==="string"?d.error:`No se pudo registrar la carga (HTTP ${r.status})`); return; }
@@ -10536,6 +10641,7 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
     setCargaErr("");
     const m=Math.round(Number(montoCarga));
     if(!isFinite(m)||m<1000){ setCargaErr("El monto mínimo de carga es $1.000."); return; }
+    if(m>10000000){ setCargaErr(`El monto máximo por carga es $10.000.000 (escribiste ${fmtMoney(m)}).`); return; }
     const r=await authFetch("/api/andreani?action=carga_mp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({monto:m})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok||d.error||!d.init_point){ setCargaErr(typeof d.error==="string"?d.error:`No se pudo iniciar el pago (HTTP ${r.status})`); return; }
@@ -10552,13 +10658,13 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
     </div>
   );
   const estadoChip=(c)=>{
-    const map={pendiente:[T.yellow,c.metodo==="mp"?"Esperando pago MP":"Esperando acreditación"],acreditada:[T.green,"Acreditada"],rechazada:[T.red,"Rechazada"],cancelada:[T.textSm,"Cancelada"]};
+    const map={pendiente:[T.yellow,c.metodo==="mp"?"Esperando pago MP":"Esperando acreditación"],acreditada:[T.green,"Acreditada"],rechazada:[T.red,"Rechazada"],cancelada:[T.textSm,"Cancelada"],revision:[T.orange||T.yellow,"En revisión"],contracargo:[T.red,"Contracargo"]};
     const [col,lbl]=map[c.estado]||[T.textSm,c.estado];
     return <span style={{fontSize:10,fontWeight:700,color:col,background:col+"18",border:`1px solid ${col}44`,borderRadius:5,padding:"2px 7px",whiteSpace:"nowrap"}}>{lbl}</span>;
   };
   const movs=Array.isArray(data?.movimientos)?data.movimientos:[];
   const saldoActual=typeof data?.saldo==="number"?data.saldo:saldo;
-  const cargasVisibles=cargas.filter(c=>c.estado==="pendiente"||c.estado==="rechazada").slice(0,5);
+  const cargasVisibles=cargas.filter(c=>["pendiente","rechazada","revision","contracargo"].includes(c.estado)).slice(0,5);
   return (
     <Modal T={T} open={open} onClose={onClose} title="Saldo de envíos" width={560} zIndex={2100}>
       {(()=>{
@@ -10581,6 +10687,11 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
           </div>
         );
       })()}
+      {saldoErr&&(
+        <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12,color:T.yellow}}>
+          No se pudieron traer los movimientos — el saldo mostrado puede estar desactualizado. Cerrá y volvé a abrir para reintentar.
+        </div>
+      )}
       {/* ── Cargar saldo: monto → referencia única → transferencia → acreditación ── */}
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:16}}>
         <div style={{fontSize:11,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Cargar saldo</div>
@@ -34208,10 +34319,17 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
 // de los eventos gh-seg-hud que dispara el batch de AppEnvios, así sigue
 // visible aunque la usuaria navegue a otra sección (el envío no se corta).
 // Click: en Envíos reabre el modal (gh-seg-expand); en otra sección lleva a Envíos.
+// Resultado del último batch de seguimientos CON errores: sobrevive al
+// desmontaje de AppEnvios (si la usuaria navegó a mitad del batch, al volver
+// a Envíos el detalle de errores reaparece en vez de perderse).
+let _ghSegLastResult=null;
 function SeguimientosHud({T}){
   const [st,setSt]=React.useState(null);
   React.useEffect(()=>{
-    const h=e=>{const d=e.detail||{};if(!d.active){setSt(null);return;}setSt(d.min?d:null);};
+    // La pastilla se muestra si el batch está minimizado O si la usuaria se
+    // fue de Envíos sin minimizar (el modal se desmonta y sin esto no había
+    // NINGÚN feedback del progreso).
+    const h=e=>{const d=e.detail||{};if(!d.active){setSt(null);return;}const fueraDeEnvios=!String(window.location.hash||"").includes("envios");setSt((d.min||fueraDeEnvios)?d:null);};
     window.addEventListener("gh-seg-hud",h);
     return ()=>window.removeEventListener("gh-seg-hud",h);
   },[]);

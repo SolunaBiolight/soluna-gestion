@@ -196,6 +196,17 @@ function tabCacheSet(key, body) {
 // Variante rápida: TN tarda ~14s en generar una página de 200 órdenes completas,
 // pero ~4s una de 50. Con el count del header sabemos cuántas páginas de 50 pedir
 // en paralelo → una sola ronda de ~4-5s en vez de 14-19s.
+// Una página que falla (429/timeout de TN) se reintenta; si vuelve a fallar se
+// TIRA error. Antes se tragaba como [] y una página fallida del medio devolvía
+// la lista truncada como si fuera completa — pedidos invisibles que no se
+// despachaban, cacheados 24h sin ningún indicio.
+async function fetchPageRetry(storeId, accessToken, extraParams, page, perPage) {
+  try { return await fetchPage(storeId, accessToken, extraParams, page, perPage); }
+  catch (_) {
+    await new Promise(r => setTimeout(r, 700));
+    return await fetchPage(storeId, accessToken, extraParams, page, perPage);
+  }
+}
 async function fetchAllPagesFast(storeId, accessToken, extraParams = "", perPage = 50) {
   let total = null;
   try { total = await fetchTNCount(storeId, accessToken, extraParams); } catch (_) {}
@@ -203,11 +214,15 @@ async function fetchAllPagesFast(storeId, accessToken, extraParams = "", perPage
   const maxPage = total ? Math.min(Math.ceil(total / perPage), 40) : 20;
   const pages = await Promise.all(
     Array.from({ length: maxPage }, (_, i) =>
-      fetchPage(storeId, accessToken, extraParams, i + 1, perPage).catch(() => [])
+      fetchPageRetry(storeId, accessToken, extraParams, i + 1, perPage)
     )
   );
   let all = [];
   for (const pg of pages) { all = all.concat(pg); if (pg.length < perPage) break; }
+  if (total != null && all.length < total && all.length < maxPage * perPage) {
+    // Sanity: el count dijo más de lo que juntamos y no fue por el tope de páginas
+    console.warn(`[orders] TN parcial: count=${total} juntadas=${all.length}`);
+  }
   return all;
 }
 
@@ -216,7 +231,7 @@ async function fetchAllPages(storeId, accessToken, extraParams = "") {
   if (first.length === 0 || first.length < 200) return first;
   const extras = await Promise.all(
     [2,3,4,5,6,7,8,9,10].map(p =>
-      fetchPage(storeId, accessToken, extraParams, p).catch(() => [])
+      fetchPageRetry(storeId, accessToken, extraParams, p, 200)
     )
   );
   let all = [...first];
@@ -229,7 +244,7 @@ async function fetchAllPages(storeId, accessToken, extraParams = "") {
 }
 
 export default async function handler(req, res) {
-  { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||_o.endsWith("-soluna1.vercel.app")||_o.startsWith("http://localhost"))?_o:"https://www.growithapp.com"); } // allowlist CORS
+  { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||/^https:\/\/[a-z0-9-]+-soluna1\.vercel\.app$/.test(_o)||/^http:\/\/localhost(:\d+)?$/.test(_o))?_o:"https://www.growithapp.com"); } // allowlist CORS (regex anclada)
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
