@@ -315,23 +315,43 @@ export default async function handler(req, res) {
     if (tn) {
       const tnHeaders = { 'Authentication': `bearer ${tn.accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)' };
       const urlPg = (p) => `https://api.tiendanube.com/v1/${tn.storeId}/orders?payment_status=paid&per_page=200&page=${p}&fields=id,coupon,total,discount_coupon&created_at_min=${encodeURIComponent(desde + "T00:00:00-0300")}&created_at_max=${encodeURIComponent(hasta + "T23:59:59-0300")}`;
+      // Una página fallida (429/timeout de TN) se reintenta; si vuelve a fallar
+      // devuelve null — NUNCA [] silencioso: antes un 429 en la página 1
+      // cortaba el barrido, respondía ceros y encima los cacheaba ("no cargan
+      // los datos" del panel de la influencer).
+      const fetchPgUna = async (p) => {
+        const r = await fetch(urlPg(p), { headers: tnHeaders, signal: AbortSignal.timeout(15000) });
+        if (_dbg && (r.status !== 404 || p === 1)) _dbg.paginas.push({ p, status: r.status });
+        if (r.status === 404) return []; // más allá de la última página
+        if (!r.ok) throw new Error(`TN HTTP ${r.status}`);
+        const j = await r.json();
+        if (_dbg) _dbg.paginas[_dbg.paginas.length - 1].ordenes = Array.isArray(j) ? j.length : -1;
+        return Array.isArray(j) ? j : [];
+      };
       const fetchPg = async (p) => {
-        try {
-          const r = await fetch(urlPg(p), { headers: tnHeaders, signal: AbortSignal.timeout(15000) });
-          if (_dbg && (r.status !== 404 || p === 1)) _dbg.paginas.push({ p, status: r.status });
-          if (!r.ok) return [];
-          const j = await r.json();
-          if (_dbg) _dbg.paginas[_dbg.paginas.length - 1].ordenes = Array.isArray(j) ? j.length : -1;
-          return Array.isArray(j) ? j : [];
-        } catch (e) { if (_dbg) _dbg.paginas.push({ p, error: String(e?.message || e).slice(0, 80) }); return []; }
+        try { return await fetchPgUna(p); }
+        catch (_) {
+          await new Promise(r => setTimeout(r, 700));
+          try { return await fetchPgUna(p); }
+          catch (e) { if (_dbg) _dbg.paginas.push({ p, error: String(e?.message || e).slice(0, 80) }); return null; }
+        }
       };
       // Lotes de 5 páginas en paralelo (antes era secuencial: hasta 15 round-trips)
-      let allOrders = [];
+      let allOrders = [], falloTn = false;
       for (let start = 1; start <= 15; start += 5) {
         const chunk = await Promise.all([0, 1, 2, 3, 4].map(i => fetchPg(start + i)));
         let fin = false;
-        for (const pg of chunk) { allOrders = allOrders.concat(pg); if (pg.length < 200) { fin = true; break; } }
+        for (const pg of chunk) {
+          if (pg === null) { falloTn = true; fin = true; break; }
+          allOrders = allOrders.concat(pg);
+          if (pg.length < 200) { fin = true; break; }
+        }
         if (fin) break;
+      }
+      if (falloTn) {
+        const resp503 = { error: "La tienda no respondió en este momento — tocá Actualizar en unos segundos." };
+        if (_dbg) resp503.debug = _dbg;
+        return res.status(503).json(resp503);
       }
       for (const o of allOrders) {
         for (const c of (Array.isArray(o.coupon) ? o.coupon : [])) {
@@ -348,12 +368,12 @@ export default async function handler(req, res) {
       // Shopify: mismo agregado leyendo discount_codes[] con paginación por cursor.
       const shHeaders = { 'X-Shopify-Access-Token': shp.accessToken, 'Content-Type': 'application/json' };
       let url = `https://${shp.shop}/admin/api/2024-10/orders.json?limit=250&status=any&financial_status=paid&fields=id,total_price,discount_codes,cancelled_at&created_at_min=${encodeURIComponent(desde + "T00:00:00-0300")}&created_at_max=${encodeURIComponent(hasta + "T23:59:59-0300")}`;
-      let safety = 0;
+      let safety = 0, falloShp = false;
       while (url && safety < 12) {
         safety++;
         try {
           const r = await fetch(url, { headers: shHeaders, signal: AbortSignal.timeout(15000) });
-          if (!r.ok) break;
+          if (!r.ok) { falloShp = true; break; }
           const d = await r.json();
           for (const o of (d.orders || [])) {
             if (o.cancelled_at) continue;
@@ -365,8 +385,10 @@ export default async function handler(req, res) {
           const lk = r.headers.get("Link") || "";
           const nx = lk.match(/<([^>]+)>;\s*rel="next"/);
           url = nx ? nx[1] : null;
-        } catch (_) { break; }
+        } catch (_) { falloShp = true; break; }
       }
+      // Igual que la rama TN: nunca responder (ni cachear) ceros falsos
+      if (falloShp) return res.status(503).json({ error: "La tienda no respondió en este momento — tocá Actualizar en unos segundos." });
     }
     const pct = Number(link.comisionPct) || 0;
     const neto = (ventas - descuento) * (1 - (Number(link.mpComision) || 0) / 100);
