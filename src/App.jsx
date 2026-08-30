@@ -32845,11 +32845,12 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       const desde=dailyRows[0]?.Fecha||"", hasta=dailyRows[dailyRows.length-1]?.Fecha||"";
       const fmtF=f=>{const [y,m,d]=String(f).split("-");return d&&m?`${d}/${m}`:f;};
       ctx.fillText(desde===hasta?`Resumen del ${fmtF(desde)}`:`Resumen del ${fmtF(desde)} al ${fmtF(hasta)}`,64,112);
-      // 4 números hero
+      // 4 números hero — el % de margen reemplaza al ad spend (pedido de Soluna)
+      const margenPct=(tot.revenue||0)>0?((tot.profit||0)/tot.revenue*100):null;
       const nums=[
         {l:"PROFIT",v:fmtM(tot.profit),c:(tot.profit||0)>=0?"#3fb950":"#f85149"},
+        {l:"MARGEN",v:margenPct==null?"—":`${margenPct.toFixed(1).replace(".",",")}%`,c:(tot.profit||0)>=0?"#3fb950":"#f85149"},
         {l:"REVENUE",v:fmtM(tot.revenue),c:"#e6edf3"},
-        {l:"AD SPEND",v:fmtM(tot.adSpend),c:"#e6edf3"},
         {l:"ROAS",v:fmtX(tot.roas),c:"#e6edf3"},
       ];
       nums.forEach((n,i)=>{
@@ -32878,12 +32879,10 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       ctx.fillText(`Generado con Growith · ${new Date().toLocaleDateString("es-AR")}`,64,H-40);
       const blob=await new Promise(res=>cv2.toBlob(res,"image/png"));
       if(!blob) throw new Error("no blob");
-      const file=new File([blob],`growith-resumen-${hoyAR()}.png`,{type:"image/png"});
-      if(navigator.canShare&&navigator.canShare({files:[file]})){
-        try{ await navigator.share({files:[file],title:"Resumen Growith"}); return; }catch(e){ if(e?.name==="AbortError") return; }
-      }
-      const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=file.name; a.click(); URL.revokeObjectURL(a.href);
-      toast("Imagen del resumen descargada ✓","success");
+      // Descarga directa SIEMPRE — el share sheet del navegador resultaba raro;
+      // con el archivo bajado cada uno lo manda por donde quiera.
+      const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`growith-resumen-${hoyAR()}.png`; a.click(); URL.revokeObjectURL(a.href);
+      toast("Imagen del resumen descargada","success");
     } catch(e){ toast("No se pudo generar la imagen","error"); }
   }
   const [canalSort, setCanalSort] = useState({k:null,dir:"desc"});
@@ -33382,7 +33381,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               <div onClick={()=>setExtraMenu(false)} style={{position:"fixed",inset:0,zIndex:60}}/>
               <div className="gh-dropdown" style={{position:"fixed",top:extraMenuPos.top,right:extraMenuPos.right,zIndex:61,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:6,width:"min(258px,calc(100vw - 20px))",boxSizing:"border-box",boxShadow:"0 12px 32px rgba(0,0,0,0.3)"}}>
                 {[
-                  {t:"Compartir resumen",d:"Genera una imagen del período para mandar por WhatsApp",dis:!rendData,fn:()=>{setExtraMenu(false);compartirResumen();}},
+                  {t:"Descargar resumen",d:"Descarga una imagen del período (profit, margen, revenue, ROAS)",dis:!rendData,fn:()=>{setExtraMenu(false);compartirResumen();}},
                   {t:reproc?"Reprocesando…":"Reprocesar 60 días",d:"Re-sincroniza las ventas desde las plataformas (tarda un rato)",dis:reproc||loading,fn:()=>{setExtraMenu(false);reprocesar60();}},
                 ].map((o,i)=>(
                   <button key={i} onClick={o.dis?undefined:o.fn} disabled={o.dis}
