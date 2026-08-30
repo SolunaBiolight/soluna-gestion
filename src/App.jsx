@@ -7549,7 +7549,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         if(vr.tipo!=="sucursal"){ quedan.push(vr); continue; }
         const o=sucursalOrders.find(x=>x.numero===vr.numero);
         let ok=false;
-        try{ ok=o?await verifTplContraOficial(o,vr.escrito):false; }catch(_){}
+        try{ ok=o?await verifTplContraOficial(o,vr.escrito,locs):false; }catch(_){}
         if(!ok) quedan.push(vr);
       }
       verifRows.length=0; verifRows.push(...quedan);
@@ -7807,9 +7807,41 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // match estricto de siempre. true = es el mismo lugar, el aviso era falso
   // positivo (ej. "BARRACAS" = Av. Vieytes 1230). Números comparados EXACTOS:
   // "UGARTE 170" jamás valida contra el punto de "UGARTE 1705".
-  async function verifTplContraOficial(o,tplStr){
+  async function verifTplContraOficial(o,tplStr,locs){
     const tplN=nrmSucTxt(tplStr);
     if(!tplN) return false;
+    // Camino INVERSO primero: resolver el punto exacto del PEDIDO en el listado
+    // oficial (query específica con su calle+número, ej. "San Martin 2127") y
+    // ver si su traducción al desplegable es EXACTAMENTE este string. Cubre los
+    // casos donde la búsqueda por tokens del template se queda corta (calles
+    // populosas: "ROSARIO AV SAN MARTIN" da >20 resultados y el correcto queda
+    // fuera del corte) — #6036.
+    if(locs){
+      try{
+        const pd=o?.pickupDetails;
+        const calleQ=String((pd?pd.address?.address:o?.direccion)||"").trim();
+        const numQ=String((pd?pd.address?.number:o?.dirNumero)||"").replace(/\D.*/,"").trim();
+        const q=`${ghStripUnidad(calleQ)} ${numQ}`.trim();
+        if(q.length>=4){
+          const rq=await authFetch(`/api/andreani?action=sucursales_buscar&q=${encodeURIComponent(q)}`);
+          const dq=await rq.json().catch(()=>null);
+          if(rq.ok&&Array.isArray(dq?.sucursales)&&dq.sucursales.length){
+            // "San Martín" existe en todas las ciudades: quedarse con las del
+            // CP/localidad del pedido antes de exigir match único.
+            const cpO=String(cpDestinoDe(o)||"").replace(/\D/g,"");
+            const locO=nrmSucTxt(pd?(pd.address?.locality||pd.address?.city||""):(o?.localidad||o?.ciudad||""));
+            const misma=dq.sucursales.filter(s=>{
+              const sCp=String(s.direccion?.codigoPostal||"").replace(/\D/g,"");
+              const sLoc=nrmSucTxt(s.direccion?.localidad||"");
+              return (cpO&&sCp===cpO)||(locO&&sLoc&&(sLoc.includes(locO)||locO.includes(sLoc)));
+            });
+            const ofcPedido=matchSucursalOficial(misma.length?misma:dq.sucursales,o);
+            const tplDePedido=ofcPedido?ghTplDeOficial(locs,ofcPedido):null;
+            if(tplDePedido&&nrmSucTxt(tplDePedido)===tplN) return true;
+          }
+        }
+      }catch(_){}
+    }
     const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO"]);
     const toks=tplN.split(" ").filter(w=>w&&!GEN.has(w));
     if(!toks.length) return false;
