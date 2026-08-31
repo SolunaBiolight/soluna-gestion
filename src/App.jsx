@@ -33808,19 +33808,38 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             ];
             return (<>
               {editSecKpis && (
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,background:T.card,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"10px 12px"}}>
-                  <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Elegí qué cards mostrar · arrastrá (acá o desde la agarradera ⠿ del grid) para reordenar:</span>
-                  {cardsOrdered(CARDS,"cardsOrder").map(k=>{
-                    const on=vis.secKpis[k.label]!==false;
-                    return <button key={k.label}
-                      draggable
-                      onDragStart={()=>setDragKpi(k.label)}
-                      onDragOver={e=>e.preventDefault()}
-                      onDrop={e=>{e.preventDefault(); cardsReorder(CARDS,"cardsOrder",dragKpi,k.label); setDragKpi(null);}}
-                      onDragEnd={()=>setDragKpi(null)}
-                      onClick={()=>updVis({secKpis:{...vis.secKpis,[k.label]:!on}})}
-                      style={{fontSize:11,padding:"4px 10px",borderRadius:DS.r.full,border:`1px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid:"transparent",color:on?"#fff":T.textMd,cursor:"grab",opacity:dragKpi===k.label?0.4:1,fontFamily:"'Inter',system-ui,sans-serif"}}>⠿ {k.label}</button>;
-                  })}
+                <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+                  {/* Editor de métricas: panel compacto — arrastrar reordena,
+                      el interruptor muestra/oculta. Dos gestos separados (el
+                      chip viejo mezclaba click y drag en el mismo elemento). */}
+                  <div className="gh-dropdown" style={{width:320,maxWidth:"100%",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,boxShadow:"0 2px 6px rgba(0,0,0,0.12), 0 16px 48px rgba(0,0,0,0.28)",padding:"14px 14px 12px",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>Personalizar métricas</div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Arrastrá desde <span style={{color:T.textMd}}>⠿</span> para cambiar el orden. El interruptor muestra u oculta la card.</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:2,maxHeight:340,overflowY:"auto",margin:"0 -4px",padding:"0 4px"}}>
+                      {cardsOrdered(CARDS,"cardsOrder").map(k=>{
+                        const on=vis.secKpis[k.label]!==false;
+                        return (
+                          <div key={k.label}
+                            draggable
+                            onDragStart={()=>setDragKpi(k.label)}
+                            onDragOver={e=>e.preventDefault()}
+                            onDrop={e=>{e.preventDefault(); cardsReorder(CARDS,"cardsOrder",dragKpi,k.label); setDragKpi(null);}}
+                            onDragEnd={()=>setDragKpi(null)}
+                            className="gh-hover-surface"
+                            style={{display:"flex",alignItems:"center",gap:10,padding:"7px 8px",borderRadius:DS.r.md,cursor:"grab",opacity:dragKpi===k.label?0.35:1,border:dragKpi&&dragKpi!==k.label?`1px dashed ${T.border}`:"1px dashed transparent",transition:"opacity 0.12s"}}>
+                            <span style={{color:T.textSm,fontSize:13,lineHeight:1,flexShrink:0,cursor:"grab"}}>⠿</span>
+                            <span style={{flex:1,fontSize:12.5,fontWeight:600,color:on?T.text:T.textSm}}>{k.label}</span>
+                            <DSToggle T={T} active={on} onToggle={()=>updVis({secKpis:{...vis.secKpis,[k.label]:!on}})}/>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{display:"flex",gap:8,alignItems:"center",marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL||T.border}`}}>
+                      <Btn T={T} variant="ghost" size="sm" onClick={()=>updVis({secKpis:{}})}>Mostrar todas</Btn>
+                      <div style={{flex:1}}/>
+                      <Btn T={T} variant="primary" size="sm" onClick={()=>setEditSecKpis(false)}>Listo</Btn>
+                    </div>
+                  </div>
                 </div>
               )}
               {vis.main!==false && renderCards(CARDS, "cardsOrder", k=> vis.secKpis[k.label]!==false && (k.hero || vis.sec!==false))}
