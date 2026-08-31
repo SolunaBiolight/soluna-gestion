@@ -32835,7 +32835,10 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const [rendData, setRendData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [days, setDays] = useState(30);
+  // El Dashboard abre SIEMPRE filtrado en el día corriente (hora argentina) —
+  // days=1 = preset "Hoy" (pedido de Soluna, 31/ago). El período elegido no se
+  // persiste a propósito: cada apertura vuelve a Hoy.
+  const [days, setDays] = useState(1);
   const [useCustom, setUseCustom] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
