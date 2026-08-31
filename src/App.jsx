@@ -15843,7 +15843,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   // borde), flota arriba del grid y el equipo la ve igual en su portal.
   async function togglePrioridad(tareaId){
     const tarea=tareas.find(t=>t._id===tareaId); if(!tarea) return;
-    const prioridad=!tarea.prioridad;
+    // Solo cuenta el booleano true: las tareas viejas traen prioridad="normal"
+    // (string legacy de otro flujo) y eso NO es una marca manual.
+    const prioridad=tarea.prioridad!==true;
     await tareasApi({action:"updateTarea",tareaId,prioridad});
     setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,prioridad}:t)}));
     if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,prioridad}));
@@ -17036,9 +17038,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             <div style={{flex:1}}/>
             {(!colabMode||colabMode.permisos?.verTareas)&&!editModeDetalle&&kanbanSelected.estado!=="aprobado"&&(
               <AsyncButton onClick={()=>togglePrioridad(kanbanSelected._id)}
-                style={{display:"inline-flex",alignItems:"center",gap:6,background:kanbanSelected.prioridad?T.yellow+"18":"transparent",border:`1px solid ${kanbanSelected.prioridad?T.yellow:T.border}`,borderRadius:DS.r.lg,padding:"5px 14px",cursor:"pointer",fontSize:12,color:kanbanSelected.prioridad?T.yellow:T.textMd,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:kanbanSelected.prioridad?700:500}}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill={kanbanSelected.prioridad?"currentColor":"none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-                {kanbanSelected.prioridad?"Prioritaria":"Marcar prioridad"}
+                style={{display:"inline-flex",alignItems:"center",gap:6,background:kanbanSelected.prioridad===true?T.yellow+"18":"transparent",border:`1px solid ${kanbanSelected.prioridad===true?T.yellow:T.border}`,borderRadius:DS.r.lg,padding:"5px 14px",cursor:"pointer",fontSize:12,color:kanbanSelected.prioridad===true?T.yellow:T.textMd,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:kanbanSelected.prioridad===true?700:500}}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill={kanbanSelected.prioridad===true?"currentColor":"none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                {kanbanSelected.prioridad===true?"Prioritaria":"Marcar prioridad"}
               </AsyncButton>
             )}
             {(!colabMode||colabMode.permisos?.verTareas)&&(editModeDetalle?(
@@ -17063,7 +17065,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             )}
             {!editModeDetalle&&(
               <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginTop:6}}>
-                {kanbanSelected.prioridad&&<span style={{fontSize:11,fontWeight:800,color:T.yellow,background:T.yellow+"15",border:`1px solid ${T.yellow}44`,borderRadius:5,padding:"2px 9px",letterSpacing:"0.05em"}}>PRIORIDAD</span>}
+                {kanbanSelected.prioridad===true&&<span style={{fontSize:11,fontWeight:800,color:T.yellow,background:T.yellow+"15",border:`1px solid ${T.yellow}44`,borderRadius:5,padding:"2px 9px",letterSpacing:"0.05em"}}>PRIORIDAD</span>}
                 {kanbanSelected.asignadoNombre&&<span style={{fontSize:12,color:T.textSm}}>{kanbanSelected.asignadoNombre}</span>}
                 {kanbanSelected.creadoPor?.nombre&&kanbanSelected.creadoPor.nombre!==(user?.displayName||user?.email?.split("@")[0])&&<span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"1px 7px",border:`1px solid ${T.border}`}}>Asignada por {kanbanSelected.creadoPor.nombre}</span>}
                 {(kanbanSelected.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:5,padding:"2px 8px"}}><GhI n="refresh" size={10}/> {kanbanSelected.correcciones}ª corrección</span>}
@@ -17106,7 +17108,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               // Las tareas con prioridad manual flotan SIEMPRE arriba (sort
               // estable: el resto conserva su orden); con "Por prioridad"
               // activo, dentro de cada grupo ordena por deadline.
-              const pr=t=>t.prioridad?0:1;
+              const pr=t=>t.prioridad===true?0:1;
               if(sortTareas) arr=[...arr].sort((a,b)=>pr(a)-pr(b)||((dLeft(a.deadline)??9999)-(dLeft(b.deadline)??9999)));
               else arr=[...arr].sort((a,b)=>pr(a)-pr(b));
               return arr;
@@ -17364,7 +17366,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       const hasSlots=(t.slots||[]).length>0;
                       const isEntregado=t.estado==="entregado";
                       const isAprobado=t.estado==="aprobado";
-                      const cardBorder=isAprobado?`1.5px solid ${T.green}`:t.prioridad?`1.5px solid ${T.yellow}`:isUrgente?`1.5px solid ${T.red}`:isEntregado?`1.5px dashed ${T.green}`:t.estado==="pendiente"||t.estado==="bloqueada"?`1px solid ${T.border}`:`1px solid ${est.border}`;
+                      const cardBorder=isAprobado?`1.5px solid ${T.green}`:t.prioridad===true?`1.5px solid ${T.yellow}`:isUrgente?`1.5px solid ${T.red}`:isEntregado?`1.5px dashed ${T.green}`:t.estado==="pendiente"||t.estado==="bloqueada"?`1px solid ${T.border}`:`1px solid ${est.border}`;
                       const cardBg=isEntregado?T.green+"08":isAprobado?T.green+"08":T.card;
                       return(
                         <div key={t._id} onClick={()=>setKanbanSelected(t)}
@@ -17379,7 +17381,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                               <span style={{fontSize:11,fontWeight:600,color:est.c}}>{est.l}</span>
                             </div>
                             <div style={{display:"flex",alignItems:"center",gap:5}}>
-                              {t.prioridad&&!isAprobado&&<span style={{fontSize:9,fontWeight:800,color:T.yellow,background:T.yellow+"15",border:`1px solid ${T.yellow}44`,borderRadius:4,padding:"2px 7px",letterSpacing:"0.05em"}}>PRIORIDAD</span>}
+                              {t.prioridad===true&&!isAprobado&&<span style={{fontSize:9,fontWeight:800,color:T.yellow,background:T.yellow+"15",border:`1px solid ${T.yellow}44`,borderRadius:4,padding:"2px 7px",letterSpacing:"0.05em"}}>PRIORIDAD</span>}
                               {isUrgente&&!isAprobado&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"12",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
                               {correcciones>0&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:4,padding:"2px 7px"}}><GhI n="refresh" size={9}/> {correcciones}</span>}
                               {t.publicado&&<span style={{fontSize:9,fontWeight:700,color:"#06b6d4",background:"#06b6d412",borderRadius:4,padding:"2px 7px"}}>Publicado</span>}
