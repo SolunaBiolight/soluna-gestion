@@ -30735,6 +30735,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [platformErrors, setPlatformErrors] = useState([]);
   const [mapeoSearch, setMapeoSearch] = useState("");
   const [mapeoChannel, setMapeoChannel] = useState("all"); // all|shopify|tiendanube|mercadolibre
+  const [mapeoExpanded, setMapeoExpanded] = useState(null); // product id desplegado para elegir variante
   // Movimientos
   const [movements, setMovements] = useState([]);
   const [movementsLoading, setMovementsLoading] = useState(false);
@@ -31047,20 +31048,34 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     toast("Item borrado","success");
     loadInvItems();
   }
-  function linkProductToItem(prod) {
+  // Vincula un producto O una variante puntual (talle). Si viene `variant`, el
+  // link queda atado a esa variante (variant_id) y solo sus ventas descuentan.
+  // link_id es la llave única (producto, o producto+variante).
+  function linkProductToItem(prod, variant) {
     if (!editingItem) return;
     const links = editingItem.product_links || [];
-    if (links.some(l => l.product_id === prod.id)) return toast("Ya está vinculado","info");
-    const next = [...links, { product_id: prod.id, platform: prod.platform, title: prod.title, image: prod.image, quantity: 1 }];
+    const linkId = variant ? `${prod.id}::v${variant.id}` : prod.id;
+    if (links.some(l => (l.link_id || l.product_id) === linkId)) return toast("Ya está vinculado","info");
+    const next = [...links, {
+      link_id: linkId,
+      product_id: prod.id,
+      variant_id: variant ? String(variant.id) : null,
+      variant_title: variant ? variant.title : null,
+      platform: prod.platform,
+      title: prod.title,
+      image: prod.image,
+      sku: variant ? (variant.sku||"") : (prod.sku||""),
+      quantity: 1,
+    }];
     setEditingItem({...editingItem, product_links: next});
   }
   function unlinkProduct(linkId) {
     if (!editingItem) return;
-    setEditingItem({...editingItem, product_links: (editingItem.product_links||[]).filter(l => l.product_id !== linkId)});
+    setEditingItem({...editingItem, product_links: (editingItem.product_links||[]).filter(l => (l.link_id||l.product_id) !== linkId)});
   }
   function updateLinkQty(linkId, qty) {
     if (!editingItem) return;
-    const next = (editingItem.product_links||[]).map(l => l.product_id===linkId ? {...l, quantity: Math.max(1, parseInt(qty)||1)} : l);
+    const next = (editingItem.product_links||[]).map(l => (l.link_id||l.product_id)===linkId ? {...l, quantity: Math.max(1, parseInt(qty)||1)} : l);
     setEditingItem({...editingItem, product_links: next});
   }
   const [importingCatalog,setImportingCatalog]=useState(false);
@@ -32384,24 +32399,30 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           ) : (editingItem.product_links||[]).map(l => {
                             const chLabel = l.platform==="shopify"?"Shopify":l.platform==="tiendanube"?"TN":l.platform==="mercadolibre"?"ML":l.platform;
                             const chColor = l.platform==="shopify"?T.green:l.platform==="mercadolibre"?T.yellow:l.platform==="tiendanube"?T.blue:T.textSm;
+                            const lid = l.link_id || l.product_id;
                             return (
-                              <div key={l.product_id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:T.bg,border:`1px solid ${chColor}33`,borderRadius:8}}>
+                              <div key={lid} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:T.bg,border:`1px solid ${chColor}33`,borderRadius:8}}>
                                 {l.image && <img src={l.image} alt="" style={{width:36,height:36,borderRadius:6,objectFit:"cover",flexShrink:0}}/>}
                                 <div style={{flex:1,minWidth:0}}>
                                   <div style={{fontSize:11,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.title}</div>
-                                  <span style={{fontSize:9,padding:"1px 6px",borderRadius:4,fontWeight:700,letterSpacing:0.3,background:chColor+"22",color:chColor}}>{chLabel}</span>
+                                  <div style={{display:"flex",alignItems:"center",gap:5,marginTop:1}}>
+                                    <span style={{fontSize:9,padding:"1px 6px",borderRadius:4,fontWeight:700,letterSpacing:0.3,background:chColor+"22",color:chColor}}>{chLabel}</span>
+                                    {l.variant_title
+                                      ? <span style={{fontSize:9,padding:"1px 6px",borderRadius:4,fontWeight:700,background:T.accent+"22",color:T.accent}}>{l.variant_title}</span>
+                                      : <span style={{fontSize:9,color:T.textSm}}>Todas las variantes</span>}
+                                  </div>
                                 </div>
                                 <div style={{display:"flex",alignItems:"center",gap:6}}>
                                   <span style={{fontSize:10,color:T.textSm}}>Cantidad</span>
-                                  <button onClick={()=>updateLinkQty(l.product_id,(l.quantity||1)-1)} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.textMd,cursor:"pointer",fontSize:13,fontWeight:700,padding:0}}>−</button>
-                                  <input type="number" min="1" value={l.quantity||1} onChange={e=>updateLinkQty(l.product_id,e.target.value)} style={{width:42,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:5,padding:"3px 6px",fontSize:11,color:T.text,textAlign:"center",fontFamily:"monospace"}}/>
-                                  <button onClick={()=>updateLinkQty(l.product_id,(l.quantity||1)+1)} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.textMd,cursor:"pointer",fontSize:13,fontWeight:700,padding:0}}>+</button>
+                                  <button onClick={()=>updateLinkQty(lid,(l.quantity||1)-1)} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.textMd,cursor:"pointer",fontSize:13,fontWeight:700,padding:0}}>−</button>
+                                  <input type="number" min="1" value={l.quantity||1} onChange={e=>updateLinkQty(lid,e.target.value)} style={{width:42,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:5,padding:"3px 6px",fontSize:11,color:T.text,textAlign:"center",fontFamily:"monospace"}}/>
+                                  <button onClick={()=>updateLinkQty(lid,(l.quantity||1)+1)} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.textMd,cursor:"pointer",fontSize:13,fontWeight:700,padding:0}}>+</button>
                                 </div>
                                 <label title="Si está apagado, el stock cruzado no escribe en esta publicación" style={{display:"flex",alignItems:"center",gap:4,fontSize:9,color:l.sync===false?T.textSm:T.green,cursor:"pointer",flexShrink:0,fontWeight:700}}>
-                                  <input type="checkbox" checked={l.sync!==false} onChange={e=>{const next=(editingItem.product_links||[]).map(x=>x.product_id===l.product_id?{...x,sync:e.target.checked}:x);setEditingItem({...editingItem,product_links:next});}} style={{cursor:"pointer"}}/>
+                                  <input type="checkbox" checked={l.sync!==false} onChange={e=>{const next=(editingItem.product_links||[]).map(x=>(x.link_id||x.product_id)===lid?{...x,sync:e.target.checked}:x);setEditingItem({...editingItem,product_links:next});}} style={{cursor:"pointer"}}/>
                                   Sync
                                 </label>
-                                <button onClick={()=>unlinkProduct(l.product_id)} style={{width:24,height:24,border:`1px solid ${T.red}33`,borderRadius:5,background:"transparent",color:T.red,cursor:"pointer",fontSize:11,padding:0}}>×</button>
+                                <button onClick={()=>unlinkProduct(lid)} style={{width:24,height:24,border:`1px solid ${T.red}33`,borderRadius:5,background:"transparent",color:T.red,cursor:"pointer",fontSize:11,padding:0}}>×</button>
                               </div>
                             );
                           })}
@@ -32429,26 +32450,56 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           ) : platformProducts.length===0 ? (
                             <div style={{padding:"20px",textAlign:"center",fontSize:11,color:T.textSm}}>Sin publicaciones disponibles. Conectá Shopify/TN/ML en Configuración primero.</div>
                           ) : (() => {
-                            const linkedIds = new Set((editingItem.product_links||[]).map(l=>l.product_id));
+                            const linkedSet = new Set((editingItem.product_links||[]).map(l=>l.link_id||l.product_id));
                             const filtered = platformProducts.filter(p => {
-                              if (linkedIds.has(p.id)) return false;
+                              if (linkedSet.has(p.id)) return false; // producto entero ya vinculado
                               if (mapeoChannel !== "all" && p.platform !== mapeoChannel) return false;
                               if (mapeoSearch.trim() && !p.title.toLowerCase().includes(mapeoSearch.trim().toLowerCase()) && !(p.sku||"").toLowerCase().includes(mapeoSearch.trim().toLowerCase())) return false;
                               return true;
                             });
                             if (filtered.length === 0) return <div style={{padding:"20px",textAlign:"center",fontSize:11,color:T.textSm}}>Sin resultados con esos filtros.</div>;
+                            const plusBtn = {width:24,height:24,border:`1px solid ${T.accent}33`,borderRadius:5,background:"transparent",color:T.accent,cursor:"pointer",fontSize:13,padding:0,fontWeight:700,flexShrink:0};
                             return filtered.slice(0, 50).map(p => {
                               const chLabel = p.platform==="shopify"?"Shopify":p.platform==="tiendanube"?"TN":p.platform==="mercadolibre"?"ML":p.platform;
                               const chColor = p.platform==="shopify"?T.green:p.platform==="mercadolibre"?T.yellow:p.platform==="tiendanube"?T.blue:T.textSm;
+                              const realVars = (p.variants||[]).filter(v=>v && (v.title!=="Default"));
+                              const multi = realVars.length > 1;
+                              const exp = mapeoExpanded === p.id;
                               return (
-                                <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer"}} onClick={()=>linkProductToItem(p)}>
-                                  {p.image && <img src={p.image} alt="" style={{width:32,height:32,borderRadius:5,objectFit:"cover",flexShrink:0}}/>}
-                                  <div style={{flex:1,minWidth:0}}>
-                                    <div style={{fontSize:11,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.title}</div>
-                                    {p.sku && <div style={{fontSize:9,color:T.textSm,fontFamily:"monospace"}}>SKU: {p.sku}</div>}
+                                <div key={p.id} style={{borderBottom:`1px solid ${T.borderL}`}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",cursor:"pointer"}}
+                                    onClick={()=> multi ? setMapeoExpanded(exp?null:p.id) : linkProductToItem(p)}>
+                                    {p.image && <img src={p.image} alt="" style={{width:32,height:32,borderRadius:5,objectFit:"cover",flexShrink:0}}/>}
+                                    <div style={{flex:1,minWidth:0}}>
+                                      <div style={{fontSize:11,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.title}</div>
+                                      {multi
+                                        ? <div style={{fontSize:9,color:T.accent,fontWeight:600}}>{realVars.length} talles · elegí uno ▾</div>
+                                        : (p.sku && <div style={{fontSize:9,color:T.textSm,fontFamily:"monospace"}}>SKU: {p.sku}</div>)}
+                                    </div>
+                                    <span style={{fontSize:9,padding:"1px 6px",borderRadius:4,fontWeight:700,letterSpacing:0.3,background:chColor+"22",color:chColor}}>{chLabel}</span>
+                                    {multi
+                                      ? <span style={{fontSize:13,color:T.textSm,transition:"transform 0.2s",transform:exp?"rotate(90deg)":"rotate(0deg)",flexShrink:0,width:24,textAlign:"center"}}>›</span>
+                                      : <button style={plusBtn}>+</button>}
                                   </div>
-                                  <span style={{fontSize:9,padding:"1px 6px",borderRadius:4,fontWeight:700,letterSpacing:0.3,background:chColor+"22",color:chColor}}>{chLabel}</span>
-                                  <button style={{width:24,height:24,border:`1px solid ${T.accent}33`,borderRadius:5,background:"transparent",color:T.accent,cursor:"pointer",fontSize:13,padding:0,fontWeight:700}}>+</button>
+                                  {multi && exp && (
+                                    <div style={{background:T.bg,paddingBottom:4}}>
+                                      {realVars.map(v=>{
+                                        const already = linkedSet.has(`${p.id}::v${v.id}`);
+                                        return (
+                                          <div key={v.id} onClick={()=>{ if(!already) linkProductToItem(p, v); }}
+                                            style={{display:"flex",alignItems:"center",gap:10,padding:"6px 10px 6px 48px",cursor:already?"default":"pointer",opacity:already?0.45:1}}>
+                                            <div style={{flex:1,minWidth:0}}>
+                                              <div style={{fontSize:11,fontWeight:600,color:T.text}}>{v.title}</div>
+                                              {v.sku && <div style={{fontSize:9,color:T.textSm,fontFamily:"monospace"}}>SKU: {v.sku}</div>}
+                                            </div>
+                                            {already
+                                              ? <span style={{fontSize:9,color:T.green,fontWeight:700,flexShrink:0}}>✓ vinculado</span>
+                                              : <button style={plusBtn}>+</button>}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             });

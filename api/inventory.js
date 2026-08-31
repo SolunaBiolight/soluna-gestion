@@ -115,7 +115,8 @@ async function pushTN(db, uid, tn, link, item, stock, mode) {
   if (!r.ok) { const e = { ...base, ok: false, error: `TN HTTP ${r.status}${r.status===401||r.status===403?" — reconectá Tienda Nube (falta permiso de escritura)":""}` }; await syncLog(db, uid, e); return e; }
   const variants = await r.json();
   if (!Array.isArray(variants) || variants.length === 0) { const e = { ...base, ok: false, error: "Producto TN sin variantes" }; await syncLog(db, uid, e); return e; }
-  let v = variants.find(x => normSku(x.sku) === normSku(item.sku) && normSku(item.sku));
+  let v = link.variant_id ? variants.find(x => String(x.id) === String(link.variant_id)) : null;
+  if (!v) v = variants.find(x => normSku(x.sku) === normSku(item.sku) && normSku(item.sku));
   if (!v && variants.length === 1) v = variants[0];
   if (!v) { const e = { ...base, ok: false, error: `Producto TN con ${variants.length} variantes y ninguna coincide con el SKU "${item.sku||"(vacío)"}" — no se toca` }; await syncLog(db, uid, e); return e; }
   const from = v.stock == null ? null : parseInt(v.stock);
@@ -148,7 +149,8 @@ async function pushML(db, uid, link, item, stock, mode) {
     from = parseInt(it.available_quantity) || 0;
     body = { available_quantity: stock };
   } else {
-    let v = vars.find(x => normSku(x.seller_custom_field) === normSku(item.sku) && normSku(item.sku));
+    let v = link.variant_id ? vars.find(x => String(x.id) === String(link.variant_id)) : null;
+    if (!v) v = vars.find(x => normSku(x.seller_custom_field) === normSku(item.sku) && normSku(item.sku));
     if (!v) v = vars.find(x => (x.attributes||[]).some(a => a.id === "SELLER_SKU" && normSku(a.value_name) === normSku(item.sku)) && normSku(item.sku));
     if (!v && vars.length === 1) v = vars[0];
     if (!v) { const e = { ...base, ok: false, error: `Publicación ML con ${vars.length} variantes y ninguna coincide con el SKU "${item.sku||"(vacío)"}" — no se toca` }; await syncLog(db, uid, e); return e; }
@@ -177,7 +179,10 @@ async function pushShopify(db, uid, sh, link, item, stock, mode) {
   if (!r.ok) { const e = { ...base, ok: false, error: `Shopify HTTP ${r.status}${r.status===401||r.status===403?" — reconectá Shopify (falta permiso)":""}` }; await syncLog(db, uid, e); return e; }
   const variants = (await r.json())?.product?.variants || [];
   if (!variants.length) { const e = { ...base, ok: false, error: "Producto Shopify sin variantes" }; await syncLog(db, uid, e); return e; }
-  let v = variants.find(x => normSku(x.sku) === normSku(item.sku) && normSku(item.sku));
+  // Si el vínculo apunta a una variante puntual (mapeo por talle), usamos ESA.
+  // Si no, caemos al match por SKU (o la única variante) — comportamiento clásico.
+  let v = link.variant_id ? variants.find(x => String(x.id) === String(link.variant_id)) : null;
+  if (!v) v = variants.find(x => normSku(x.sku) === normSku(item.sku) && normSku(item.sku));
   if (!v && variants.length === 1) v = variants[0];
   if (!v) { const e = { ...base, ok: false, error: `Producto Shopify con ${variants.length} variantes y ninguna coincide con el SKU "${item.sku||"(vacío)"}" — no se toca` }; await syncLog(db, uid, e); return e; }
   const from = v.inventory_quantity == null ? null : parseInt(v.inventory_quantity);
@@ -325,6 +330,11 @@ export default async function handler(req, res) {
                   sku: p.variants?.[0]?.sku || "",
                   image: p.images?.[0]?.src || null,
                   price: parseFloat(p.variants?.[0]?.price) || 0,
+                  variants: (p.variants || []).map(v => ({
+                    id: String(v.id),
+                    title: (v.values || []).map(val => typeof val === "string" ? val : (val?.es || val?.en || Object.values(val || {})[0])).filter(Boolean).join(" / ") || "Default",
+                    sku: v.sku || "",
+                  })),
                 });
               }
               if (batch.length < 200) break;
@@ -366,6 +376,11 @@ export default async function handler(req, res) {
                   sku: p.variants?.[0]?.sku || "",
                   image: p.image?.src || null,
                   price: parseFloat(p.variants?.[0]?.price) || 0,
+                  variants: (p.variants || []).map(v => ({
+                    id: String(v.id),
+                    title: [v.option1, v.option2, v.option3].filter(x => x && x !== "Default Title").join(" / ") || "Default",
+                    sku: v.sku || "",
+                  })),
                 });
               }
               const linkHeader = r.headers.get("link") || "";
@@ -483,7 +498,7 @@ export default async function handler(req, res) {
                 order_id: `TN-ORD-${o.id}`,
                 platform: "tiendanube",
                 ts: o.paid_at || o.created_at,
-                products: (o.products || []).map(p => ({ id: `TN-${p.product_id || p.id}`, sku: p.sku || "", quantity: parseInt(p.quantity) || 1 })),
+                products: (o.products || []).map(p => ({ id: `TN-${p.product_id || p.id}`, variant_id: p.variant_id != null ? String(p.variant_id) : null, sku: p.sku || "", quantity: parseInt(p.quantity) || 1 })),
               });
             }
             if (batch.length < 200) break;
@@ -507,7 +522,7 @@ export default async function handler(req, res) {
                 order_id: `SH-ORD-${o.id}`,
                 platform: "shopify",
                 ts: o.processed_at || o.created_at,
-                products: (o.line_items || []).map(li => ({ id: `SH-${li.product_id}`, sku: li.sku || "", quantity: parseInt(li.quantity) || 1 })),
+                products: (o.line_items || []).map(li => ({ id: `SH-${li.product_id}`, variant_id: li.variant_id != null ? String(li.variant_id) : null, sku: li.sku || "", quantity: parseInt(li.quantity) || 1 })),
               });
             }
             const linkHeader = r.headers.get("link") || "";
@@ -538,7 +553,7 @@ export default async function handler(req, res) {
                   order_id: `ML-ORD-${o.id}`,
                   platform: "mercadolibre",
                   ts: o.date_closed || o.date_created,
-                  products: (o.order_items || []).map(it => ({ id: `ML-${it.item?.id}`, sku: it.item?.seller_sku || it.item?.seller_custom_field || "", quantity: parseInt(it.quantity) || 1 })),
+                  products: (o.order_items || []).map(it => ({ id: `ML-${it.item?.id}`, variant_id: it.item?.variation_id != null ? String(it.item.variation_id) : null, sku: it.item?.seller_sku || it.item?.seller_custom_field || "", quantity: parseInt(it.quantity) || 1 })),
                 });
               }
               if (orders.length < 50) break;
@@ -551,7 +566,7 @@ export default async function handler(req, res) {
       let itemsUpdated = 0;
       let salesLogged = 0;
       for (const item of linkedItems) {
-        const linkMap = new Map((item.product_links || []).map(l => [l.product_id, parseInt(l.quantity) || 1]));
+        const links = item.product_links || [];
         const itemSku = String(item.sku || "").trim().toUpperCase();
         const processed = new Set(item.processed_orders || []);
         // Baseline: el stock que fijaste a mano ya refleja las ventas de ANTES. Solo
@@ -565,10 +580,21 @@ export default async function handler(req, res) {
           if (baselineMs && ord.ts) { const t = Date.parse(ord.ts); if (isFinite(t) && t <= baselineMs) continue; }
           let unitsForItem = 0;
           for (const prod of ord.products) {
-            // 1) Vínculo explícito por product_id (prioridad). 2) Fallback por SKU
-            //    (misma llave que usa la UI) — así descuenta aunque no esté linkeado.
-            const linkedQty = linkMap.get(prod.id);
-            if (linkedQty) { unitsForItem += prod.quantity * linkedQty; continue; }
+            // 1) Vínculo explícito. Si el link tiene variant_id (mapeo por talle),
+            //    SOLO matchea esa variante. Si no, matchea el producto entero (todas
+            //    las variantes) = comportamiento clásico. 2) Fallback por SKU.
+            let matched = false;
+            for (const l of links) {
+              if (l.product_id !== prod.id) continue;
+              if (l.variant_id) {
+                if (prod.variant_id != null && String(l.variant_id) === String(prod.variant_id)) {
+                  unitsForItem += prod.quantity * (parseInt(l.quantity) || 1); matched = true; break;
+                }
+              } else {
+                unitsForItem += prod.quantity * (parseInt(l.quantity) || 1); matched = true; break;
+              }
+            }
+            if (matched) continue;
             if (itemSku && String(prod.sku || "").trim().toUpperCase() === itemSku) unitsForItem += prod.quantity;
           }
           if (unitsForItem > 0) {
