@@ -32542,7 +32542,11 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           ) : (() => {
                             const linkedSet = new Set((editingItem.product_links||[]).map(l=>l.link_id||l.product_id));
                             const filtered = platformProducts.filter(p => {
-                              if (linkedSet.has(p.id)) return false; // producto entero ya vinculado
+                              const _rv = (p.variants||[]).filter(v=>v && v.title!=="Default");
+                              // Ocultar SOLO si es de una sola variante y ya está vinculado.
+                              // Los productos con varios talles SIEMPRE se muestran (aunque tengan
+                              // un vínculo a nivel producto), para poder elegir cada talle.
+                              if (_rv.length <= 1 && linkedSet.has(p.id)) return false;
                               if (mapeoChannel !== "all" && p.platform !== mapeoChannel) return false;
                               if (mapeoSearch.trim() && !p.title.toLowerCase().includes(mapeoSearch.trim().toLowerCase()) && !(p.sku||"").toLowerCase().includes(mapeoSearch.trim().toLowerCase())) return false;
                               return true;
@@ -32573,8 +32577,14 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                   </div>
                                   {multi && exp && (
                                     <div style={{background:T.bg,paddingBottom:4}}>
+                                      {linkedSet.has(p.id) && (
+                                        <div style={{padding:"6px 12px 6px 48px",fontSize:10,color:T.yellow||T.textSm,lineHeight:1.4}}>
+                                          Este producto está vinculado como <strong>"Todas las variantes"</strong>. Para llevar stock por talle, quitá ese vínculo arriba (× roja) y después agregá cada talle acá.
+                                        </div>
+                                      )}
                                       {realVars.map(v=>{
-                                        const already = linkedSet.has(`${p.id}::v${v.id}`);
+                                        // "already" = ese talle ya está vinculado, O el producto entero está vinculado (cubre todos los talles).
+                                        const already = linkedSet.has(`${p.id}::v${v.id}`) || linkedSet.has(p.id);
                                         return (
                                           <div key={v.id} onClick={()=>{ if(!already) linkProductToItem(p, v); }}
                                             style={{display:"flex",alignItems:"center",gap:10,padding:"6px 10px 6px 48px",cursor:already?"default":"pointer",opacity:already?0.45:1}}>
