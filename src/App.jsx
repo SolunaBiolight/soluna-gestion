@@ -7710,10 +7710,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const nameMatch=!!(tnTokens.length&&desc&&tnTokens.every(t=>desc.includes(t)));
       return dirMatch||nameMatch;
     });
-    // El listado oficial repite la misma sucursal con variantes (CP, tildes,
-    // localidad larga/corta): deduplicar por nombre+número antes de exigir
-    // unicidad, si no un match perfecto con 3 copias abría el modal al pedo.
-    const key=s=>nrmSucTxt(s.descripcion)+"|"+String(s.direccion?.numero||"").replace(/\D.*/,"").trim();
+    // El listado oficial repite la misma sucursal con variantes — de espaciado
+    // Y de NOMBRE ("LUJAN" y "LUJAN (HUMBERTO PRIMO)" son el mismo punto, #6154).
+    // Deduplicar por DIRECCIÓN FÍSICA (calle+número+CP) cuando existe; solo si
+    // no hay dirección, por nombre+número como antes.
+    const key=s=>{
+      const dd=s.direccion||{};
+      const kc=nrmSucTxt(dd.calle), kn=String(dd.numero||"").replace(/\D.*/,"").trim(), kcp=String(dd.codigoPostal||"").replace(/\D/g,"");
+      return kc&&(kn||kcp)?`${kc}|${kn}|${kcp}`:nrmSucTxt(s.descripcion)+"|"+kn;
+    };
     const unicas=[...new Map(cands.map(s=>[key(s),s])).values()];
     return unicas.length===1?unicas[0]:null;
   }
@@ -7873,15 +7878,23 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           const GEN2=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL"]);
           const calleToks=calleSola.split(" ").filter(w=>w.length>=4&&!GEN2.has(w));
           if(calleToks.length&&misma.length){
-            const enCalle=[...new Map(misma.filter(s=>{
+            const enCalle=misma.filter(s=>{
               const sc=nrmSucTxt([s.direccion?.calle,s.descripcion].filter(Boolean).join(" "));
               return calleToks.every(t=>sc.includes(t));
-            }).map(s=>[nrmSucTxt(s.descripcion),s])).values()];
-            D.push(`enCalle[${calleToks.join(" ")}]=${enCalle.map(s=>s.descripcion).slice(0,3).join("/")||"0"}`);
-            if(enCalle.length===1){
-              const tplU=ghTplDeOficial(locs,enCalle[0]);
-              D.push(`→tpl:"${tplU||"null"}"`);
-              if(tplU&&nrmSucTxt(tplU)===tplN) return R(true);
+            });
+            // El listado oficial duplica el mismo punto con nombres distintos
+            // ("LUJAN" y "LUJAN (HUMBERTO PRIMO)"): agrupar por DIRECCIÓN
+            // física — si todas las variantes comparten dirección, es UN punto,
+            // y alcanza con que ALGUNA variante traduzca exacto al string.
+            const dirKey=s=>[nrmSucTxt(s.direccion?.calle),String(s.direccion?.numero||"").replace(/\D/g,""),String(s.direccion?.codigoPostal||"").replace(/\D/g,"")].join("|");
+            const dirsU=[...new Set(enCalle.map(dirKey))];
+            D.push(`enCalle=${enCalle.map(s=>s.descripcion).slice(0,3).join("/")||"0"} dirs=${dirsU.length}`);
+            if(enCalle.length&&dirsU.length===1){
+              for(const sV of enCalle){
+                const tplU=ghTplDeOficial(locs,sV);
+                if(tplU&&nrmSucTxt(tplU)===tplN){ D.push(`variante "${sV.descripcion}"→ok`); return R(true); }
+              }
+              D.push("ninguna variante traduce al tpl");
             }
           } else D.push(`enCalle skip toks=${calleToks.length} misma=${misma.length}`);
         }
