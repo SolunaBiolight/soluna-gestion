@@ -13918,6 +13918,7 @@ function AppAdmin({T, user, onBack}) {
   const [filterPlan, setFilterPlan] = useState("todos");
   const [search, setSearch] = useState("");
   const [expandedUser, setExpandedUser] = useState(null);
+  const [cuentaDiag, setCuentaDiag] = useState(null); // resultado de "buscar cuenta en Firebase Auth"
   const [noteEdit, setNoteEdit] = useState({});
   const [confirmMeses, setConfirmMeses] = useState({});
   const [uPlan,     setUPlan]     = useState({});
@@ -14514,7 +14515,34 @@ function AppAdmin({T, user, onBack}) {
             ))}
           </div>
 
-          {usuariosFiltrados.length===0&&<div style={{textAlign:"center",padding:40,color:T.textSm}}>Sin cuentas en este filtro.</div>}
+          {usuariosFiltrados.length===0&&(
+            <div style={{textAlign:"center",padding:40,color:T.textSm}}>
+              <div style={{marginBottom:12}}>Sin cuentas en este filtro.</div>
+              {search.includes("@")&&(
+                <AsyncButton onClick={async()=>{
+                  setCuentaDiag(null);
+                  const d=await adminApi({action:"adminBuscarCuenta",email:search.trim()});
+                  setCuentaDiag({email:search.trim(),...d});
+                  if(d?.creoDoc) loadData(); // ya tiene doc: recargar para que aparezca en la lista
+                }} style={{...BtnSecondary(T),fontSize:12,margin:"0 auto"}}>Buscar esta cuenta en Firebase Auth</AsyncButton>
+              )}
+            </div>
+          )}
+          {cuentaDiag&&(
+            <div style={{background:T.card,border:`1px solid ${cuentaDiag.encontrado?T.green+"55":T.yellow+"55"}`,borderRadius:10,padding:"12px 16px",marginBottom:14,fontSize:12,color:T.text,lineHeight:1.7}}>
+              <div style={{fontWeight:700,marginBottom:2}}>{cuentaDiag.email}</div>
+              {cuentaDiag.encontrado?(
+                <>
+                  <div>Registrada en Firebase Auth {cuentaDiag.creado?`el ${new Date(cuentaDiag.creado).toLocaleDateString("es-AR")}`:""} {cuentaDiag.providers?.length?`· acceso: ${cuentaDiag.providers.join(", ").replace("password","email/contraseña").replace("google.com","Google")}`:""}</div>
+                  <div>Último login: {cuentaDiag.ultimoLogin?new Date(cuentaDiag.ultimoLogin).toLocaleDateString("es-AR"):"nunca"} · Plan actual: {cuentaDiag.plan||"free"}</div>
+                  {cuentaDiag.creoDoc&&<div style={{color:T.green,fontWeight:600}}>No tenía ficha en la base (nunca terminó su primer ingreso) — se creó recién: ya aparece en la lista y podés asignarle el plan.</div>}
+                </>
+              ):(
+                <div style={{color:T.yellow}}>{cuentaDiag.motivo||"No encontrada."}</div>
+              )}
+              <button onClick={()=>setCuentaDiag(null)} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:11,padding:0,marginTop:4,fontFamily:"'Inter',system-ui,sans-serif"}}>Cerrar</button>
+            </div>
+          )}
           {usuariosFiltrados.slice(0,userLimit).map(u=>{
             const expanded = expandedUser===u._id;
             const days = daysUntil(u.planExpiry);

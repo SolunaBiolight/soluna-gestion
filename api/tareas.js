@@ -1811,7 +1811,7 @@ export default async function handler(req, res) {
     }
 
     // Acciones solo-admin
-    const adminActions = ["setSectionsConfig","adminGetData","adminGetUsage","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin"];
+    const adminActions = ["setSectionsConfig","adminGetData","adminGetUsage","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin","adminBuscarCuenta"];
     if (adminActions.includes(action)) {
       // La identidad del admin sale del TOKEN verificado, no del uid del body.
       // Antes bastaba con mandar el uid del dueño (que estaba publicado en el
@@ -1826,6 +1826,37 @@ export default async function handler(req, res) {
         if (!Array.isArray(adminOnlySections)) return res.status(400).json({ error: "adminOnlySections debe ser un array" });
         await db.collection("config").doc(CONFIG_DOC).set({ adminOnlySections, updatedAt: adminNow, updatedBy: uid }, { merge: true });
         return res.json({ ok: true, adminOnlySections });
+      }
+
+      // Diagnóstico de "no me aparece en la lista": busca el email DIRECTO en
+      // Firebase Auth. Si la cuenta existe pero no tiene doc en `users` (nunca
+      // completó el primer login que lo crea), lo crea mínimo para que aparezca
+      // en el listado y se le pueda gestionar el plan.
+      if (action === "adminBuscarCuenta") {
+        const email = String(body.email || "").trim().toLowerCase();
+        if (!email || !email.includes("@")) return res.status(400).json({ error: "email requerido" });
+        let au = null, authErr = "";
+        try { au = await getAuth().getUserByEmail(email); }
+        catch (e) { authErr = String(e.code || e.message || ""); }
+        if (!au) {
+          return res.json({ ok: true, encontrado: false, motivo: /not.?found/i.test(authErr) ? "No existe ninguna cuenta registrada con ese email (revisá mayúsculas/typos, o se registró con otro mail)." : `No se pudo consultar Firebase Auth: ${authErr}` });
+        }
+        const uRef = db.collection("users").doc(au.uid);
+        const uSnap = await uRef.get();
+        let creoDoc = false;
+        if (!uSnap.exists) {
+          const trialEnd = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+          await uRef.set({ uid: au.uid, email: au.email || email, nombre: au.displayName || email.split("@")[0], createdAt: FieldValue.serverTimestamp(), plan: "free", trialEnd, stores: [] }, { merge: true });
+          creoDoc = true;
+        }
+        return res.json({
+          ok: true, encontrado: true, uid: au.uid,
+          providers: (au.providerData || []).map(p => p.providerId),
+          creado: au.metadata?.creationTime || null,
+          ultimoLogin: au.metadata?.lastSignInTime || null,
+          tieneDoc: uSnap.exists, creoDoc,
+          plan: uSnap.exists ? (uSnap.data().plan || "free") : "free",
+        });
       }
 
       if (action === "adminGetData") {
