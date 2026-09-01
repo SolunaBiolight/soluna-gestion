@@ -1117,7 +1117,9 @@ const META_OAUTH_OK = false;
 // Google Ads solo trae el gasto de cuentas de prueba: para clientes reales
 // conecta pero no entra ningún dato. Mientras tanto el camino que funciona es
 // cargar el gasto manual en Dashboard → Configuraciones. Al aprobar, true.
-const GADS_OAUTH_OK = false;
+// Habilitado 1/sep/2026: app OAuth "En producción" + Basic Access del developer
+// token aprobado (el gasto real ya entraba por la API).
+const GADS_OAUTH_OK = true;
 
 function CommandPalette({T, open, onClose, setPage, isAdmin}) {
   const [q, setQ] = React.useState("");
