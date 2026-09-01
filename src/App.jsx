@@ -7821,23 +7821,53 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         const pd=o?.pickupDetails;
         const calleQ=String((pd?pd.address?.address:o?.direccion)||"").trim();
         const numQ=String((pd?pd.address?.number:o?.dirNumero)||"").replace(/\D.*/,"").trim();
-        const q=`${ghStripUnidad(calleQ)} ${numQ}`.trim();
-        if(q.length>=4){
-          const rq=await authFetch(`/api/andreani?action=sucursales_buscar&q=${encodeURIComponent(q)}`);
-          const dq=await rq.json().catch(()=>null);
-          if(rq.ok&&Array.isArray(dq?.sucursales)&&dq.sucursales.length){
-            // "San Martín" existe en todas las ciudades: quedarse con las del
-            // CP/localidad del pedido antes de exigir match único.
-            const cpO=String(cpDestinoDe(o)||"").replace(/\D/g,"");
-            const locO=nrmSucTxt(pd?(pd.address?.locality||pd.address?.city||""):(o?.localidad||o?.ciudad||""));
-            const misma=dq.sucursales.filter(s=>{
-              const sCp=String(s.direccion?.codigoPostal||"").replace(/\D/g,"");
-              const sLoc=nrmSucTxt(s.direccion?.localidad||"");
-              return (cpO&&sCp===cpO)||(locO&&sLoc&&(sLoc.includes(locO)||locO.includes(sLoc)));
-            });
-            const ofcPedido=matchSucursalOficial(misma.length?misma:dq.sucursales,o);
-            const tplDePedido=ofcPedido?ghTplDeOficial(locs,ofcPedido):null;
-            if(tplDePedido&&nrmSucTxt(tplDePedido)===tplN) return true;
+        const cpO=String(cpDestinoDe(o)||"").replace(/\D/g,"");
+        const locO=nrmSucTxt(pd?(pd.address?.locality||pd.address?.city||""):(o?.localidad||o?.ciudad||""));
+        const calleSola=nrmSucTxt(ghStripUnidad(calleQ)).replace(numQ?new RegExp("\\b"+numQ+"\\s*$"):/$^/,"").trim();
+        const buscar=async q=>{
+          if(!q||q.length<4) return [];
+          try{
+            const r=await authFetch(`/api/andreani?action=sucursales_buscar&q=${encodeURIComponent(q)}`);
+            const d=await r.json().catch(()=>null);
+            return (r.ok&&Array.isArray(d?.sucursales))?d.sucursales:[];
+          }catch(_){ return []; }
+        };
+        // Dos consultas: calle+número exactos, y localidad+calle — por si el
+        // número que muestra la tienda no coincide con el del listado oficial
+        // (la búsqueda con el número no lo encontraría nunca).
+        const res1=await buscar(`${ghStripUnidad(calleQ)} ${numQ}`.trim());
+        const res2=(locO&&calleSola)?await buscar(`${locO} ${calleSola}`):[];
+        const vistos=new Map();
+        [...res1,...res2].forEach(s=>{const k=String(s.id??s.descripcion);if(!vistos.has(k))vistos.set(k,s);});
+        const todos=[...vistos.values()];
+        if(todos.length){
+          // "San Martín" existe en todas las ciudades: quedarse con las del
+          // CP/localidad del pedido antes de exigir match único.
+          const misma=todos.filter(s=>{
+            const sCp=String(s.direccion?.codigoPostal||"").replace(/\D/g,"");
+            const sLoc=nrmSucTxt(s.direccion?.localidad||"");
+            return (cpO&&sCp===cpO)||(locO&&sLoc&&(sLoc.includes(locO)||locO.includes(sLoc)));
+          });
+          // 1) Match estricto: calle+número exactos.
+          const ofcPedido=matchSucursalOficial(misma.length?misma:todos,o);
+          const tplDePedido=ofcPedido?ghTplDeOficial(locs,ofcPedido):null;
+          if(tplDePedido&&nrmSucTxt(tplDePedido)===tplN) return true;
+          // 2) Identidad por localidad+calle: si en la localidad del pedido hay
+          // UN SOLO punto sobre esa calle y su traducción al desplegable es
+          // exactamente este string, es la misma sucursal aunque el número
+          // oficial esté desactualizado (#6154: "LUJAN (HUMBERTO PRIMO)" vs
+          // "Humberto Primo 1058"). Con 2+ puntos en la misma calle NO decide.
+          const GEN2=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL"]);
+          const calleToks=calleSola.split(" ").filter(w=>w.length>=4&&!GEN2.has(w));
+          if(calleToks.length&&misma.length){
+            const enCalle=[...new Map(misma.filter(s=>{
+              const sc=nrmSucTxt([s.direccion?.calle,s.descripcion].filter(Boolean).join(" "));
+              return calleToks.every(t=>sc.includes(t));
+            }).map(s=>[nrmSucTxt(s.descripcion),s])).values()];
+            if(enCalle.length===1){
+              const tplU=ghTplDeOficial(locs,enCalle[0]);
+              if(tplU&&nrmSucTxt(tplU)===tplN) return true;
+            }
           }
         }
       }catch(_){}
