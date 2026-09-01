@@ -7549,7 +7549,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         if(vr.tipo!=="sucursal"){ quedan.push(vr); continue; }
         const o=sucursalOrders.find(x=>x.numero===vr.numero);
         let ok=false;
-        try{ ok=o?await verifTplContraOficial(o,vr.escrito,locs):false; }catch(_){}
+        try{
+          const rV=o?await verifTplContraOficial(o,vr.escrito,locs):{ok:false,diag:"pedido no encontrado"};
+          ok=rV.ok; vr.diag=rV.diag||"";
+        }catch(_){}
         if(!ok) quedan.push(vr);
       }
       verifRows.length=0; verifRows.push(...quedan);
@@ -7808,8 +7811,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // positivo (ej. "BARRACAS" = Av. Vieytes 1230). Números comparados EXACTOS:
   // "UGARTE 170" jamás valida contra el punto de "UGARTE 1705".
   async function verifTplContraOficial(o,tplStr,locs){
+    // Devuelve {ok,diag}: diag es la traza de decisión — se muestra chiquito en
+    // el modal de verificación para poder diagnosticar falsos positivos reales
+    // (tres iteraciones a ciegas con #6154 bastaron).
+    const D=[]; const R=ok=>({ok,diag:D.join(" · ")});
     const tplN=nrmSucTxt(tplStr);
-    if(!tplN) return false;
+    if(!tplN) return R(false);
     // Camino INVERSO primero: resolver el punto exacto del PEDIDO en el listado
     // oficial (query específica con su calle+número, ej. "San Martin 2127") y
     // ver si su traducción al desplegable es EXACTAMENTE este string. Cubre los
@@ -7835,11 +7842,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         // Dos consultas: calle+número exactos, y localidad+calle — por si el
         // número que muestra la tienda no coincide con el del listado oficial
         // (la búsqueda con el número no lo encontraría nunca).
-        const res1=await buscar(`${ghStripUnidad(calleQ)} ${numQ}`.trim());
-        const res2=(locO&&calleSola)?await buscar(`${locO} ${calleSola}`):[];
+        const q1=`${ghStripUnidad(calleQ)} ${numQ}`.trim();
+        const q2=(locO&&calleSola)?`${locO} ${calleSola}`:"";
+        const res1=await buscar(q1);
+        const res2=q2?await buscar(q2):[];
+        D.push(`q1"${q1}"=${res1.length}`,`q2"${q2}"=${res2.length}`);
         const vistos=new Map();
         [...res1,...res2].forEach(s=>{const k=String(s.id??s.descripcion);if(!vistos.has(k))vistos.set(k,s);});
         const todos=[...vistos.values()];
+        if(!todos.length) D.push("sin resultados oficiales");
         if(todos.length){
           // "San Martín" existe en todas las ciudades: quedarse con las del
           // CP/localidad del pedido antes de exigir match único.
@@ -7848,10 +7859,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             const sLoc=nrmSucTxt(s.direccion?.localidad||"");
             return (cpO&&sCp===cpO)||(locO&&sLoc&&(sLoc.includes(locO)||locO.includes(sLoc)));
           });
+          D.push(`loc"${locO}" cp${cpO} misma=${misma.length}/${todos.length}`);
           // 1) Match estricto: calle+número exactos.
           const ofcPedido=matchSucursalOficial(misma.length?misma:todos,o);
           const tplDePedido=ofcPedido?ghTplDeOficial(locs,ofcPedido):null;
-          if(tplDePedido&&nrmSucTxt(tplDePedido)===tplN) return true;
+          D.push(ofcPedido?`estricto:"${ofcPedido.descripcion}"→tpl:"${tplDePedido||"null"}"`:"estricto:sin único");
+          if(tplDePedido&&nrmSucTxt(tplDePedido)===tplN) return R(true);
           // 2) Identidad por localidad+calle: si en la localidad del pedido hay
           // UN SOLO punto sobre esa calle y su traducción al desplegable es
           // exactamente este string, es la misma sucursal aunque el número
@@ -7864,20 +7877,22 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               const sc=nrmSucTxt([s.direccion?.calle,s.descripcion].filter(Boolean).join(" "));
               return calleToks.every(t=>sc.includes(t));
             }).map(s=>[nrmSucTxt(s.descripcion),s])).values()];
+            D.push(`enCalle[${calleToks.join(" ")}]=${enCalle.map(s=>s.descripcion).slice(0,3).join("/")||"0"}`);
             if(enCalle.length===1){
               const tplU=ghTplDeOficial(locs,enCalle[0]);
-              if(tplU&&nrmSucTxt(tplU)===tplN) return true;
+              D.push(`→tpl:"${tplU||"null"}"`);
+              if(tplU&&nrmSucTxt(tplU)===tplN) return R(true);
             }
-          }
+          } else D.push(`enCalle skip toks=${calleToks.length} misma=${misma.length}`);
         }
-      }catch(_){}
+      }catch(e){ D.push("err:"+String(e?.message||e).slice(0,60)); }
     }
     const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO"]);
     const toks=tplN.split(" ").filter(w=>w&&!GEN.has(w));
-    if(!toks.length) return false;
+    if(!toks.length) return R(false);
     const r=await authFetch(`/api/andreani?action=sucursales_buscar&q=${encodeURIComponent(toks.slice(0,4).join(" "))}`);
     const d=await r.json().catch(()=>null);
-    if(!r.ok||!Array.isArray(d?.sucursales)||!d.sucursales.length) return false;
+    if(!r.ok||!Array.isArray(d?.sucursales)||!d.sucursales.length){ D.push(`qTpl=0 (HTTP ${r.status})`); return R(false); }
     // Solo las oficiales que corresponden a ESTE string del template:
     // todas las palabras y todos los números (exactos) del tpl presentes.
     const tplNums=tplN.match(/\d{1,5}/g)||[];
@@ -7887,8 +7902,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const sNums=dirTxt.match(/\d{1,5}/g)||[];
       return words.every(t=>dirTxt.includes(t))&&tplNums.every(n=>sNums.includes(n));
     });
-    if(!cands.length) return false;
-    return !!matchSucursalOficial(cands,o);
+    D.push(`qTpl cands=${cands.length}`);
+    if(!cands.length) return R(false);
+    return R(!!matchSucursalOficial(cands,o));
   }
   // Flujo XLSX domicilio: la calle/número se copian tal cual del pedido; lo
   // resuelto es la LOCALIDAD del desplegable — verificar que contenga el CP
@@ -10017,6 +10033,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   <div style={{fontSize:12,color:T.green,fontWeight:600,marginBottom:3}}>{v.esperado||"(sin datos del punto)"}</div>
                   <div style={{fontSize:11,color:T.textSm}}>Quedaría en el Excel:</div>
                   <div style={{fontSize:12,color:T.red,fontWeight:600}}>{v.escrito}</div>
+                  {v.diag&&<div style={{fontSize:9.5,color:T.textSm,marginTop:5,fontFamily:"'Cascadia Code','Consolas',monospace",opacity:0.65,wordBreak:"break-word",lineHeight:1.5}}>diag: {v.diag}</div>}
                 </div>
               ))}
             </div>
