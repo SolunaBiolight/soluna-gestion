@@ -1888,6 +1888,17 @@ export default async function handler(req, res) {
             if (!page.pageToken) break;
             pageToken = page.pageToken;
           }
+          // El email de LOGIN real vive en Auth: si el doc quedó con un mail
+          // viejo (cambio de email confirmado por link, fuera de la app), el
+          // listado muestra el de Auth — es el que el cliente dice usar.
+          const authByUid = new Map(authUsers.map(a => [a.uid, a]));
+          for (const u of usuarios) {
+            const au = authByUid.get(u._id);
+            if (au?.email && String(u.email || "").toLowerCase() !== au.email.toLowerCase()) {
+              if (u.email) u.emailDoc = u.email;
+              u.email = au.email;
+            }
+          }
           for (const au of authUsers) {
             if (yaCargados.has(au.uid)) continue;
             usuarios.push({

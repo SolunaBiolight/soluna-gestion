@@ -34967,6 +34967,13 @@ export default function App() {
           const _esMiembroYa=!!(miembroDeRef.current&&miembroDeRef.current.ownerId);
           if(userSnap.exists()){
             const d=userSnap.data();
+            // Sync del email: "Cambiar email de acceso" se confirma por link
+            // FUERA de la app (verifyBeforeUpdateEmail), así que el doc quedaba
+            // con el mail viejo y la cuenta no se encontraba en Admin. En cada
+            // login, si el mail real de Auth difiere del doc, se corrige solo.
+            if(u.email&&d.email!==u.email){
+              updateDoc(userRef,{email:u.email,...(d.email?{emailAnterior:d.email}:{})}).catch(()=>{});
+            }
             if(!_esMiembroYa){
               setUserPlan(d.plan||"free");
               setPlanExpiry(d.planExpiry?.toDate?.()||null);
