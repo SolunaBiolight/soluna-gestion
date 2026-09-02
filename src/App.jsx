@@ -8319,7 +8319,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   async function fetchCercanasRaw(o){
     const toks=ghSucTokens(o.pickupDetails,o.direccion).slice(0,4).join(" ");
     const pd=o.pickupDetails;
-    const dir=pd?`${ghStripUnidad(pd.address?.address)} ${pd.address?.number||""}`.trim():`${ghStripUnidad(o.direccion)} ${o.dirNumero||""}`.trim();
+    // Se recorta sobre calle+número JUNTOS: TN a veces mete "2110 Entre X y Z" en el campo número
+    const dir=pd?ghStripUnidad(`${pd.address?.address||""} ${pd.address?.number||""}`.trim()):ghStripUnidad(`${o.direccion||""} ${o.dirNumero||""}`.trim());
     const gloc=pd?(pd.address?.locality||pd.address?.city||""):(o.localidad||o.ciudad||"");
     const gprov=pd?(pd.address?.province||""):(o.provincia||"");
     const r=await authFetch(`/api/andreani?action=sucursales_cercanas&q=${encodeURIComponent(toks)}&cp=${encodeURIComponent(cpDestinoDe(o)||"")}&dir=${encodeURIComponent(dir)}&loc=${encodeURIComponent(gloc)}&prov=${encodeURIComponent(gprov)}`);
@@ -8336,7 +8337,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         const validas=locs?lista.filter(s=>s.tpl):lista;
         const gz=d.stats?.geo||{};
         setLocCerca({lista:(locs&&validas.length?[...validas,...lista.filter(s=>!s.tpl).slice(0,5)]:lista).slice(0,18),origen:d.origen||"",aproximado:!!d.aproximado,diag:d.sinOrigen?"sin_origen":(d.stats&&!d.stats.conCoords?"sin_coords":""),
-          geoDiag:gz.zona!=null?`coords ${gz.geocodificadas}/${gz.zona} de la zona · esta vez: ${gz.ok||0} ok, ${gz.fail||0} sin resultado${gz.rate?", georef limitó":""} · ancla: ${gz.origenSrc||"ninguna"} ("${gz.dir||""}") · 1ra a ${gz.primerKm!=null?gz.primerKm+" km":"—"} · conCoords total ${gz.conCoords??"?"}`:""});
+          geoDiag:gz.zona!=null?`coords ${gz.geocodificadas}/${gz.zona} de la zona · esta vez: ${gz.ok||0} ok, ${gz.fail||0} sin resultado${gz.rate?", georef limitó":""} · ancla: ${gz.origenSrc||"ninguna"} ${gz.ancla||""} ("${gz.dir||""}") · centro: ${gz.centro||"—"} · 1ra a ${gz.primerKm!=null?gz.primerKm+" km":"—"} · conCoords total ${gz.conCoords??"?"}`:""});
       }catch(e){ setLocCerca({lista:[],diag:String(e?.message||"error")}); }
     })();
   }

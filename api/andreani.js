@@ -981,34 +981,30 @@ export default async function handler(req, res) {
       // TAMBIÉN control de cordura del geocoder — una dirección con texto raro
       // puede geocodificar a cientos de km del CP real del comprador (se vio
       // "Calle 49 621 Local 9 y 10" de La Plata anclada cerca de Misiones).
+      // Coordenadas válidas = dentro de Argentina. Andreani manda basura para
+      // algunas sucursales (lat/lng cambiados, ceros): promediarlas movía el
+      // "centroide de cordura" a cualquier lado y ESE centroide reemplazaba al
+      // ancla correcta del geocoder (#6207: 1ra candidata a 1093 km).
+      const enAR = (la, lo) => isFinite(la) && isFinite(lo) && la <= -21 && la >= -56 && lo <= -53 && lo >= -74;
+      geo = geo.map(s => (s.la != null && !enAR(s.la, s.lo)) ? { ...s, la: null, lo: null } : s);
+      if (origen && !enAR(origen.lat, origen.lng)) { geoStats.origenSrc = (geoStats.origenSrc || "") + "_fueraAR"; origen = null; }
+      const mediana = arr => { const a = [...arr].sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : null; };
+      const esCabaQ = /c\.?\s*a\.?\s*b\.?\s*a|capital federal|ciudad aut/i.test(loc + " " + prov) || /^1[0-4]\d\d$/.test(cp);
       let cpCent = null;
-      if (cp) {
+      if (esCabaQ) {
+        cpCent = { lat: -34.6037, lng: -58.3816, descripcion: "CABA" }; // centro fijo, no depende de datos
+      } else if (cp) {
         const delCp = geo.filter(s => String(s.p || "").replace(/\D/g, "") === cp && s.la != null);
-        if (delCp.length) {
-          cpCent = {
-            lat: delCp.reduce((a, s) => a + s.la, 0) / delCp.length,
-            lng: delCp.reduce((a, s) => a + s.lo, 0) / delCp.length,
-            descripcion: `CP ${cp}`,
-          };
-        }
+        if (delCp.length) cpCent = { lat: mediana(delCp.map(s => s.la)), lng: mediana(delCp.map(s => s.lo)), descripcion: `CP ${cp}` };
       }
-      // Sin CP (o sin sucursales con ese CP): centroide de la LOCALIDAD del
-      // pedido como cordura — "C.a.b.a." sin CP geocodificaba a Misiones (#6207).
-      if (!cpCent && (loc || prov)) {
-        const esCabaQ = /c\.?\s*a\.?\s*b\.?\s*a|capital federal|ciudad aut/i.test(loc + " " + prov);
+      if (!cpCent && loc) {
         const locN = nrmTxt(loc);
-        const deLoc = geo.filter(s => s.la != null && (esCabaQ
-          ? /^1[0-4]\d\d$/.test(String(s.p || "").replace(/\D/g, ""))
-          : (locN && nrmTxt(s.l || "").includes(locN))));
-        if (deLoc.length >= 3) {
-          cpCent = {
-            lat: deLoc.reduce((a, s) => a + s.la, 0) / deLoc.length,
-            lng: deLoc.reduce((a, s) => a + s.lo, 0) / deLoc.length,
-            descripcion: esCabaQ ? "CABA" : loc,
-          };
-        }
+        const deLoc = geo.filter(s => s.la != null && locN && nrmTxt(s.l || "").includes(locN));
+        if (deLoc.length >= 3) cpCent = { lat: mediana(deLoc.map(s => s.la)), lng: mediana(deLoc.map(s => s.lo)), descripcion: loc };
       }
-      if (origen && cpCent && distanciaM(origen.lat, origen.lng, cpCent.lat, cpCent.lng) > 150000) origen = cpCent;
+      geoStats.ancla = origen ? `${origen.lat.toFixed(3)},${origen.lng.toFixed(3)}` : null;
+      geoStats.centro = cpCent ? `${cpCent.descripcion} ${cpCent.lat.toFixed(3)},${cpCent.lng.toFixed(3)}` : null;
+      if (origen && cpCent && distanciaM(origen.lat, origen.lng, cpCent.lat, cpCent.lng) > 150000) { geoStats.origenSrc = (geoStats.origenSrc || "") + "→centro"; origen = cpCent; }
       if (!origen) origen = cpCent;
       // El listado oficial repite la misma sucursal con variantes (CP, tildes,
       // "C.A.B.A." vs nombre largo): dedupe por descripción + número de calle.
