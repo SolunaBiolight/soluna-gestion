@@ -4926,25 +4926,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   }
   const [comData,setComData]=useState(null);
   const [cuponSearch,setCuponSearch]=useState(""); // buscador de la tabla de códigos
-  // Resultados del cupón del canje abierto (ROI) — se busca una vez por código
-  // al abrir el detalle, con las ventas TN desde la creación del canje.
-  const [cuponStats,setCuponStats]=useState({});
-  useEffect(()=>{
-    const c=detail?canjes.find(x=>x._docId===detail):null;
-    const code=(c?.codigoDescuento||"").toUpperCase().trim();
-    if(!code||cuponStats[code]) return;
-    setCuponStats(prev=>({...prev,[code]:{loading:true}}));
-    (async()=>{
-      try{
-        const desde=c.createdAt?.seconds?new Date(c.createdAt.seconds*1000).toISOString().slice(0,10):fechaAR(new Date(Date.now()-90*86400000));
-        const hasta=hoyAR();
-        const r=await authFetch(`/api/orders?action=coupons&uid=${user?.uid||""}&desde=${desde}&hasta=${hasta}`);
-        const data=await r.json();
-        const cp=(data.coupons||[]).find(x=>String(x.code||"").toUpperCase()===code);
-        setCuponStats(prev=>({...prev,[code]:{loading:false,found:!!cp,usos:cp?.usosPeriodo||0,ventas:cp?.ventasPeriodo||0,descuento:cp?.descuentoPeriodo||0,desde}}));
-      }catch(_){ setCuponStats(prev=>({...prev,[code]:{loading:false,error:true}})); }
-    })();
-  },[detail]);
+  // Las métricas del cupón del canje NO se cargan en el detalle (el barrido de
+  // TN demoraba la card): el botón "Ver métricas" abre el panel del cupón, que
+  // muestra pedidos/ventas/comisión en tiempo real con su propia caché.
   const [comLoading,setComLoading]=useState(false);
   // La pestaña Cupones carga sola al entrar (rango: mes en curso). Antes había
   // que apretar "Cargar códigos" y la pestaña parecía vacía/rota.
@@ -5215,10 +5199,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     setDeleteConfirm(null);setDetail(null);
   }
 
-  async function fetchComisiones() {
+  async function fetchComisiones(fresh=false) {
     setComLoading(true); setComError(""); setComData(null);
     try {
-      const url=`/api/orders?action=coupons&uid=${user?.uid||""}&desde=${comFechaDesde}&hasta=${comFechaHasta}`;
+      const url=`/api/orders?action=coupons&uid=${user?.uid||""}&desde=${comFechaDesde}&hasta=${comFechaHasta}${fresh?"&fresh=1":""}`;
       // TN a veces tarda y la función devuelve 504 — reintentamos solos antes de mostrar error
       let r=null, lastErr=null;
       for(let intento=0;intento<3;intento++){
@@ -5272,6 +5256,21 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   // Link público del cupón (#/cupon/TOKEN): el dueño del código ve sus ventas
   // y comisión del mes en tiempo real, sin cuenta. El token se crea una vez y
   // se reusa; cada generación sincroniza el % de comisión y la comisión MP.
+  // "Ver métricas" del canje: abre el panel público del cupón en otra pestaña.
+  // Se pre-abre la ventana ANTES del await para que el popup blocker no la mate.
+  async function verMetricasCupon(c){
+    const w=window.open("","_blank");
+    try{
+      const resp=await authFetch(`/api/orders?action=cupon_link&uid=${user?.uid||""}&code=${encodeURIComponent((c.codigoDescuento||"").toUpperCase().trim())}&comisionPct=${encodeURIComponent(c.comisionPct||0)}&mpComision=${encodeURIComponent(isNaN(mpComision)?12:mpComision)}&influencer=${encodeURIComponent(c.influencer||"")}`);
+      const d=await resp.json().catch(()=>({}));
+      if(!resp.ok||!d.token) throw new Error(typeof d.error==="string"?d.error:`HTTP ${resp.status}`);
+      const url=`${ghShareOrigin()}/#/cupon/${d.token}`;
+      if(w&&!w.closed) w.location=url; else window.open(url,"_blank");
+    }catch(e){
+      try{ if(w&&!w.closed) w.close(); }catch(_){}
+      toast("No se pudo abrir el panel del cupón: "+(e.message||""),"warning",5000);
+    }
+  }
   async function compartirCuponLink(r){
     try{
       const resp=await authFetch(`/api/orders?action=cupon_link&uid=${user?.uid||""}&code=${encodeURIComponent(r.code)}&comisionPct=${encodeURIComponent(r.comisionPct||0)}&mpComision=${encodeURIComponent(isNaN(mpComision)?12:mpComision)}&influencer=${encodeURIComponent(r.influencer||"")}`);
@@ -5818,7 +5817,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     <button key={s.label} onClick={s.fn} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap"}}>{s.label}</button>
                   ))}
                 </div>
-                <AsyncButton onClick={fetchComisiones} style={{...BtnPrimary(T),fontSize:13,padding:"9px 20px",whiteSpace:"nowrap"}}>
+                <AsyncButton onClick={()=>fetchComisiones(true)} style={{...BtnPrimary(T),fontSize:13,padding:"9px 20px",whiteSpace:"nowrap"}}>
                   {comLoading?"Cargando...":"Cargar códigos"}
                 </AsyncButton>
               </div>
@@ -6576,9 +6575,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
               {(()=>{
                 const code=(c.codigoDescuento||"").toUpperCase().trim();
-                const st=cuponStats[code];
-                const neto=st?.found?(st.ventas-(st.descuento||0))*(1-mpComision/100):0;
-                const comision=neto*((parseFloat(c.comisionPct)||0)/100);
                 const guardarCupon=(cod,pct)=>{
                   save({codigoDescuento:cod,comisionPct:pct});
                   setCupEdit(false);
@@ -6587,39 +6583,24 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 return (
                   <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8}}>
-                      <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{code?"Resultados del cupón":"Código de descuento"}</span>
+                      <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Código de descuento</span>
                       {code&&!cupEdit&&(
                         <span style={{display:"inline-flex",alignItems:"center",gap:6}}>
                           <code style={{fontSize:11,fontWeight:700,color:T.purple,background:T.purpleBg,borderRadius:5,padding:"2px 8px"}}>{c.codigoDescuento}</code>
+                          {c.comisionPct&&<span style={{fontSize:10,fontWeight:700,color:T.textSm}}>{c.comisionPct}% com.</span>}
                           <button onClick={()=>setCupEdit(true)} title="Cambiar código o % de comisión" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:600,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
                         </span>
                       )}
                     </div>
                     {(!code||cupEdit)?(
                       <>
-                        {!code&&<div style={{fontSize:12,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Este canje no tiene código asignado. Asignale uno y acá vas a ver sus pedidos, ventas y comisión — sincronizado con la pestaña <strong style={{color:T.textMd}}>Códigos y comisiones</strong>.</div>}
+                        {!code&&<div style={{fontSize:12,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Este canje no tiene código asignado. Asignale uno y desde acá abrís sus métricas — sincronizado con la pestaña <strong style={{color:T.textMd}}>Códigos y comisiones</strong>.</div>}
                         <CanjeCuponEditor key={(c._docId||"")+"_"+code} T={T} iS={iS} code={c.codigoDescuento||""} pct={c.comisionPct||""} onSave={guardarCupon} onCancel={code?()=>setCupEdit(false):null} crearEnTn={crearCuponTn}/>
                       </>
-                    ):!st||st.loading?(
-                      <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSm}}><Spinner size={12} color={T.textSm}/> Buscando ventas con el cupón…</div>
-                    ):st.error?(
-                      <div style={{fontSize:12,color:T.textSm}}>No se pudieron traer las ventas del cupón. Reintentá desde la pestaña Historial.</div>
-                    ):!st.found||st.usos===0?(
-                      <div style={{fontSize:12,color:T.textSm}}>Sin ventas con este cupón todavía (desde el {new Date(st.desde+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}).</div>
                     ):(
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-                        <div>
-                          <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:2}}>Pedidos</div>
-                          <div style={{fontSize:16,fontWeight:800,color:T.text}}>{st.usos}</div>
-                        </div>
-                        <div style={{borderLeft:`1px solid ${T.borderL}`,paddingLeft:12}}>
-                          <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:2}}>Ventas generadas</div>
-                          <div style={{fontSize:16,fontWeight:800,color:T.green}}>$ {Math.round(st.ventas).toLocaleString("es-AR")}</div>
-                        </div>
-                        <div style={{borderLeft:`1px solid ${T.borderL}`,paddingLeft:12}}>
-                          <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:2}}>Comisión estimada{c.comisionPct?` (${c.comisionPct}%)`:""}</div>
-                          <div style={{fontSize:16,fontWeight:800,color:T.text}}>{c.comisionPct?`$ ${Math.round(comision).toLocaleString("es-AR")}`:"—"}</div>
-                        </div>
+                      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                        <AsyncButton onClick={()=>verMetricasCupon(c)} style={{...BtnPrimary(T),fontSize:12}}>Ver métricas</AsyncButton>
+                        <span style={{fontSize:11,color:T.textSm}}>Abre el panel del cupón con pedidos, ventas y comisión en tiempo real — el mismo link que podés compartirle al influencer.</span>
                       </div>
                     )}
                   </div>

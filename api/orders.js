@@ -2392,6 +2392,21 @@ export default async function handler(req, res) {
       const tzOffset = "-0300";
       const desdeISO = desde ? `${desde}T00:00:00${tzOffset}` : null;
       const hastaISO = hasta ? `${hasta}T23:59:59${tzOffset}` : null;
+      // Cache en Firestore por rango (mismo modelo que cupon_publico): un
+      // período cerrado no cambia (TTL 24h); uno que incluye hoy, 3 min. El
+      // barrido de TN son hasta 65 requests — la pestaña abría lentísima.
+      // fresh=1 (botón Analizar) lo saltea.
+      const dbCup = initAdmin();
+      const hoyCup = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date());
+      const cupCacheRef = dbCup.collection("users").doc(uid).collection("cache").doc(`coupons_${desde || "x"}_${hasta || "x"}`);
+      const cupTtl = (hasta && hasta < hoyCup) ? 24 * 3600000 : 3 * 60000;
+      const cupFresh = req.query.fresh === '1' || req.query.fresh === 'true';
+      if (!cupFresh) {
+        try {
+          const hit = await cupCacheRef.get();
+          if (hit.exists && Date.now() - (hit.data().ts || 0) < cupTtl) return res.status(200).json(hit.data().resp);
+        } catch (_) {}
+      }
       // Shopify: los códigos de descuento vienen en discount_codes[] de cada
       // orden — mismo agregado que TN (usos, ventas y descuento por código).
       if (platform === 'shopify') {
@@ -2480,7 +2495,9 @@ export default async function handler(req, res) {
           if (fin) break;
         }
       } catch (e) { couponsListError = e.message || "error de red"; }
-      return res.status(200).json({ coupons: Object.values(couponMap).sort((a,b) => b.usosPeriodo - a.usosPeriodo || String(a.code).localeCompare(String(b.code))), totalPedidosAnalizados: allOrders.length, couponsListError, couponsListados, periodo: { desde: desdeISO, hasta: hastaISO } });
+      const respCup = { coupons: Object.values(couponMap).sort((a,b) => b.usosPeriodo - a.usosPeriodo || String(a.code).localeCompare(String(b.code))), totalPedidosAnalizados: allOrders.length, couponsListError, couponsListados, periodo: { desde: desdeISO, hasta: hastaISO } };
+      try { await cupCacheRef.set({ ts: Date.now(), resp: respCup }); } catch (_) {}
+      return res.status(200).json(respCup);
     }
     // ── fin Coupons ───────────────────────────────────────────────────────
 
