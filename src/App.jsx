@@ -15301,7 +15301,7 @@ function AppAdmin({T, user, onBack}) {
               {/* Rentabilidad del sistema de etiquetas */}
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:14,flexWrap:"wrap"}}>
-                  <div style={{fontSize:15,fontWeight:700,color:T.text}}>Rentabilidad</div>
+                  <div style={{fontSize:15,fontWeight:700,color:T.text}}>Uso por cliente y rentabilidad</div>
                   <select value={envStatsMes||envMeses[0].v} onChange={e=>loadEnvStats(e.target.value)}
                     style={{...iS,width:"auto",marginBottom:0,padding:"6px 10px",fontSize:12,cursor:"pointer"}}>
                     {envMeses.map(m=><option key={m.v} value={m.v}>{m.label}</option>)}
@@ -15315,42 +15315,55 @@ function AppAdmin({T, user, onBack}) {
                   <div style={{fontSize:12,color:T.red,background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:8,padding:"9px 12px"}}>
                     {envStats.error}
                   </div>
-                ):!envStats.data||!(envStats.data.etiquetas>0)?(
-                  <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin etiquetas emitidas en ese mes.</div>
+                ):!envStats.data||(!(envStats.data.etiquetas>0)&&!(envStats.data.cargadoTotal>0)&&!(envStats.data.cuentas||[]).length)?(
+                  <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin actividad en ese mes.</div>
                 ):(()=>{
                   const d=envStats.data;
-                  const cuentas=[...(d.cuentas||[])].sort((a,b)=>(b.monto||0)-(a.monto||0));
+                  const cuentas=[...(d.cuentas||[])];
+                  const cols="minmax(160px,1.4fr) 70px 110px 110px 110px 100px";
                   return (
                     <>
-                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:cuentas.length?14:0}}>
+                      {/* Totales del mes — "Costo real Andreani" es lo que Andreani tiene que
+                          facturar a fin de mes: comparar contra su factura */}
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:14}}>
                         {[
-                          {label:"Facturado", val:fmtMoney(d.facturado||0), color:T.text},
-                          {label:"Costo real Andreani", val:fmtMoney(d.costoReal||0), color:T.text},
-                          {label:"Margen", val:fmtMoney(d.margen||0), color:(d.margen||0)>=0?T.green:T.red},
                           {label:"Etiquetas emitidas", val:String(d.etiquetas||0), color:T.text},
+                          {label:"Cobrado a clientes", val:fmtMoney(d.facturado||0), color:T.text, sub:"lo que pagaron en etiquetas"},
+                          {label:"Costo real Andreani", val:fmtMoney(d.costoReal||0), color:T.text, sub:"contra la factura de Andreani"},
+                          {label:"Margen", val:fmtMoney(d.margen||0), color:(d.margen||0)>=0?T.green:T.red},
+                          {label:"Saldo cargado", val:fmtMoney(d.cargadoTotal||0), color:T.accent, sub:`${d.cargasN||0} carga${d.cargasN===1?"":"s"} acreditada${d.cargasN===1?"":"s"}`},
+                          {label:"Saldo en billeteras", val:fmtMoney(d.saldoTotal||0), color:T.text, sub:"pendiente de usar (hoy)"},
                         ].map(k=>(
                           <div key={k.label} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px"}}>
                             <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{k.label}</div>
                             <div style={{fontSize:17,fontWeight:800,color:k.color,letterSpacing:-0.3}}>{k.val}</div>
+                            {k.sub&&<div style={{fontSize:10,color:T.textSm,marginTop:2}}>{k.sub}</div>}
                           </div>
                         ))}
                       </div>
                       {cuentas.length>0&&(
-                        <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 80px 110px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
-                            <span>Por cuenta</span><span style={{textAlign:"right"}}>Etiquetas</span><span style={{textAlign:"right"}}>Monto</span>
-                          </div>
-                          {cuentas.map((c,i)=>(
-                            <div key={c.uid||i} style={{display:"grid",gridTemplateColumns:"1fr 80px 110px",gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<cuentas.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
-                              <span style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                                {c.email||<span style={{fontFamily:"'Cascadia Code','Consolas',monospace",fontSize:11}}>{String(c.uid||"").slice(0,8)}…</span>}
-                              </span>
-                              <span style={{textAlign:"right",color:T.textMd}}>{c.etiquetas||0}</span>
-                              <span style={{textAlign:"right",fontWeight:700,color:T.text}}>{fmtMoney(c.monto||0)}</span>
+                        <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto"}}>
+                          <div style={{minWidth:700}}>
+                            <div style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
+                              <span>Cliente</span><span style={{textAlign:"right"}}>Etiq.</span><span style={{textAlign:"right"}}>Cobrado</span><span style={{textAlign:"right"}}>Costo Andreani</span><span style={{textAlign:"right",color:T.accent}}>Cargó saldo</span><span style={{textAlign:"right"}}>Saldo hoy</span>
                             </div>
-                          ))}
+                            {cuentas.map((c,i)=>(
+                              <div key={c.uid||i} style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<cuentas.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:(c.etiquetas||c.cargado||c.saldo)?1:0.55}}>
+                                <span style={{minWidth:0}}>
+                                  <span style={{display:"block",color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||<span style={{fontFamily:"'Cascadia Code','Consolas',monospace",fontSize:11}}>{String(c.uid||"").slice(0,8)}…</span>}</span>
+                                  {!c.habilitado&&<span style={{fontSize:9,color:T.textSm}}>ya no habilitada</span>}
+                                </span>
+                                <span style={{textAlign:"right",color:T.textMd}}>{c.etiquetas||0}</span>
+                                <span style={{textAlign:"right",fontWeight:700,color:T.text}}>{fmtMoney(c.monto||0)}</span>
+                                <span style={{textAlign:"right",color:T.textMd}}>{c.costo?fmtMoney(c.costo):"—"}</span>
+                                <span style={{textAlign:"right",color:T.accent,fontWeight:600}}>{c.cargado?fmtMoney(c.cargado):"—"}</span>
+                                <span style={{textAlign:"right",color:(c.saldo||0)>0?T.green:T.textSm,fontWeight:600}}>{fmtMoney(c.saldo||0)}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
+                      <div style={{fontSize:10.5,color:T.textSm,marginTop:10,lineHeight:1.5}}>Conciliación: la suma de "Costo Andreani" del mes tiene que coincidir con la factura de Andreani; "Cobrado" es lo que pagaron los clientes con su saldo. El costo por cliente se registra desde ahora (etiquetas anteriores solo tienen el total).</div>
                     </>
                   );
                 })()}

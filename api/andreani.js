@@ -1398,6 +1398,7 @@ export default async function handler(req, res) {
           porUid: { [uid]: {
             monto: FieldValue.increment(precio),
             etiquetas: FieldValue.increment(1),
+            costo: FieldValue.increment(Math.round(costoConDescuento(cot, cfg))), // costo Andreani por cliente (conciliación fin de mes)
           } },
         }, { merge: true });
       } catch (e) { console.error("[andreani] stats:", e.message); }
@@ -1799,20 +1800,45 @@ export default async function handler(req, res) {
         const snap = await db.collection("andreani_config").doc(`stats_${mes}`).get();
         const d = snap.exists ? snap.data() : {};
         const porUid = (d.porUid && typeof d.porUid === "object") ? d.porUid : {};
-        const uids = Object.keys(porUid).slice(0, 30);
-        const emails = {};
+        // Saldo CARGADO en el mes por cliente (cargas acreditadas, por resueltaTs)
+        const [y, m] = mes.split("-").map(Number);
+        const desdeMs = new Date(Date.UTC(y, m - 1, 1, 3)).getTime(); // 00:00 AR
+        const hastaMs = new Date(Date.UTC(y, m, 1, 3)).getTime();
+        const cargasPorUid = {};
+        let cargadoTotal = 0, cargasN = 0;
+        try {
+          const cs = await db.collection("andreani_cargas").where("estado", "==", "acreditada").limit(1000).get();
+          cs.docs.forEach(c => {
+            const cd = c.data();
+            const t = cd.resueltaTs?.toMillis?.() || cd.ts?.toMillis?.() || 0;
+            if (t < desdeMs || t >= hastaMs) return;
+            const monto = Math.round(Number(cd.monto) || 0);
+            cargasPorUid[cd.uid] = cargasPorUid[cd.uid] || { monto: 0, n: 0 };
+            cargasPorUid[cd.uid].monto += monto; cargasPorUid[cd.uid].n++;
+            cargadoTotal += monto; cargasN++;
+          });
+        } catch (_) {}
+        // Cuentas = las que emitieron + las que cargaron + las habilitadas
+        const cfgS = await getGlobalConfig(db);
+        const uids = [...new Set([...Object.keys(porUid), ...Object.keys(cargasPorUid), ...cfgS.habilitados])].slice(0, 60);
+        const info = {};
         if (uids.length) {
           try {
             const snaps = await db.getAll(...uids.map(u => db.collection("users").doc(u)));
-            snaps.forEach(s => { if (s.exists) emails[s.id] = s.data().email || ""; });
-          } catch (_) { /* sin emails: se devuelven solo uids */ }
+            snaps.forEach(s => { if (s.exists) info[s.id] = { email: s.data().email || "", saldo: Math.round(Number(s.data().andreaniSaldo) || 0) }; });
+          } catch (_) {}
         }
         const cuentas = uids.map(u => ({
           uid: u,
-          email: emails[u] || "",
+          email: info[u]?.email || "",
           monto: Math.round(Number(porUid[u]?.monto) || 0),
           etiquetas: Number(porUid[u]?.etiquetas) || 0,
-        })).sort((a, b) => b.monto - a.monto);
+          costo: Math.round(Number(porUid[u]?.costo) || 0),
+          cargado: cargasPorUid[u]?.monto || 0,
+          cargas: cargasPorUid[u]?.n || 0,
+          saldo: info[u]?.saldo ?? 0,
+          habilitado: cfgS.habilitados.includes(u),
+        })).sort((a, b) => b.monto - a.monto || b.cargado - a.cargado);
         const facturado = Math.round(Number(d.facturado) || 0);
         const costoReal = Math.round(Number(d.costoReal) || 0);
         return res.json({
@@ -1821,6 +1847,8 @@ export default async function handler(req, res) {
           costoReal,
           margen: facturado - costoReal,
           etiquetas: Number(d.etiquetas) || 0,
+          cargadoTotal, cargasN,
+          saldoTotal: cuentas.reduce((a, c) => a + (c.saldo || 0), 0),
           cuentas,
         });
       }
