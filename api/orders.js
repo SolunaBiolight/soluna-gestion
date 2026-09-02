@@ -2383,6 +2383,12 @@ export default async function handler(req, res) {
         }
         return res.status(502).json({ error: `Tienda Nube no aceptó el cupón (HTTP ${rCup.status}): ${msg}` });
       }
+      // Invalidar las cachés de cupones del usuario para que el nuevo aparezca ya
+      try {
+        const cacheCol = initAdmin().collection("users").doc(uid).collection("cache");
+        const snapC = await cacheCol.get();
+        await Promise.all(snapC.docs.filter(d => d.id.startsWith("coupons")).map(d => d.ref.delete()));
+      } catch (_) {}
       return res.json({ ok: true, creado: true, code, id: dCup?.id ?? null, type: dCup?.type || tipoCup, value: dCup?.value || String(valorCup) });
     }
 
@@ -2447,13 +2453,25 @@ export default async function handler(req, res) {
         }
         return [];
       };
-      // Lotes de 5 páginas en paralelo (antes era secuencial: hasta 25 round-trips encadenados)
+      // Con el count de TN (1 request liviano) se sabe cuántas páginas hay y se
+      // piden TODAS en una sola ronda paralela — antes eran hasta 5 rondas
+      // encadenadas de 5 páginas. Sin count → fallback a las rondas.
       let allOrders = [];
-      for (let start = 1; start <= 25; start += 5) {
-        const chunk = await Promise.all([0, 1, 2, 3, 4].map(i => couponPage(start + i)));
-        let fin = false;
-        for (const pg of chunk) { allOrders = allOrders.concat(pg); if (pg.length < 200) { fin = true; break; } }
-        if (fin) break;
+      let totalCup = null;
+      try { totalCup = await fetchTNCount(storeId, accessToken, `payment_status=paid${desdeISO ? `&created_at_min=${encodeURIComponent(desdeISO)}` : ""}${hastaISO ? `&created_at_max=${encodeURIComponent(hastaISO)}` : ""}`); } catch (_) {}
+      if (totalCup === 0) {
+        // sin pedidos pagos en el rango
+      } else if (totalCup) {
+        const nPag = Math.min(Math.ceil(totalCup / 200), 40);
+        const pages = await Promise.all(Array.from({ length: nPag }, (_, i) => couponPage(i + 1)));
+        for (const pg of pages) allOrders = allOrders.concat(pg);
+      } else {
+        for (let start = 1; start <= 25; start += 5) {
+          const chunk = await Promise.all([0, 1, 2, 3, 4].map(i => couponPage(start + i)));
+          let fin = false;
+          for (const pg of chunk) { allOrders = allOrders.concat(pg); if (pg.length < 200) { fin = true; break; } }
+          if (fin) break;
+        }
       }
       const couponMap = {};
       for (const o of allOrders) {
@@ -2469,32 +2487,51 @@ export default async function handler(req, res) {
       // se crea, sin esperar la primera venta. Best-effort: si falla, la tabla
       // sigue mostrando los detectados en pedidos.
       let couponsListError = null, couponsListados = 0;
-      try {
-        // TN lista de más viejo a más nuevo: hay que llegar a la ÚLTIMA página
-        // o los códigos recién creados quedan afuera. Lotes de 5 páginas en
-        // paralelo, hasta 40 páginas (8000 cupones).
-        const cuponPage = async (p) => {
-          const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/coupons?per_page=200&page=${p}`, { headers: tnHeaders });
-          if (r.status === 404) return [];
-          if (!r.ok) throw new Error(`TN respondió ${r.status} al listar cupones${r.status === 401 || r.status === 403 ? " (la app no tiene permiso de cupones — reconectá Tienda Nube)" : ""}`);
-          const cs = await r.json();
-          if (!Array.isArray(cs)) throw new Error("TN devolvió un formato inesperado al listar cupones");
-          return cs;
-        };
-        for (let start = 1; start <= 40; start += 5) {
-          const chunk = await Promise.all([0, 1, 2, 3, 4].map(i => cuponPage(start + i)));
-          let fin = false;
-          for (const cs of chunk) {
-            couponsListados += cs.length;
-            for (const c of cs) {
-              const code = (c.code || "").toUpperCase().trim(); if (!code || couponMap[code]) continue;
-              couponMap[code] = { code, type: c.type || "percentage", value: c.value || "0", usosPeriodo: 0, ventasPeriodo: 0, descuentoPeriodo: 0, sinUso: true };
+      // Listado oficial de cupones CACHEADO 1h (cambia rara vez; el barrido
+      // eran hasta 40 páginas por cada apertura). crear_cupon lo invalida.
+      const listRef = dbCup.collection("users").doc(uid).collection("cache").doc("coupons_list");
+      let listaCup = null;
+      if (!cupFresh) { try { const h = await listRef.get(); if (h.exists && Date.now() - (h.data().ts || 0) < 3600000) listaCup = h.data().lista || null; } catch (_) {} }
+      if (!listaCup) {
+        try {
+          const cuponPage = async (p) => {
+            const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/coupons?per_page=200&page=${p}`, { headers: tnHeaders });
+            if (r.status === 404) return [];
+            if (!r.ok) throw new Error(`TN respondió ${r.status} al listar cupones${r.status === 401 || r.status === 403 ? " (la app no tiene permiso de cupones — reconectá Tienda Nube)" : ""}`);
+            const cs = await r.json();
+            if (!Array.isArray(cs)) throw new Error("TN devolvió un formato inesperado al listar cupones");
+            return cs;
+          };
+          // Página 1 + header x-total-count → el resto en UNA ronda paralela
+          const r1 = await fetch(`https://api.tiendanube.com/v1/${storeId}/coupons?per_page=200&page=1`, { headers: tnHeaders });
+          if (r1.status === 401 || r1.status === 403) throw new Error(`TN respondió ${r1.status} al listar cupones (la app no tiene permiso de cupones — reconectá Tienda Nube)`);
+          if (!r1.ok && r1.status !== 404) throw new Error(`TN respondió ${r1.status} al listar cupones`);
+          const first = r1.status === 404 ? [] : await r1.json();
+          const totalC = parseInt(r1.headers.get("x-total-count"), 10);
+          let todasC = Array.isArray(first) ? first : [];
+          if (Number.isFinite(totalC) && totalC > 200) {
+            const nP = Math.min(Math.ceil(totalC / 200), 40);
+            const rest = await Promise.all(Array.from({ length: nP - 1 }, (_, i) => cuponPage(i + 2)));
+            for (const cs of rest) todasC = todasC.concat(cs);
+          } else if (!Number.isFinite(totalC) && todasC.length === 200) {
+            for (let start = 2; start <= 40; start += 5) {
+              const chunk = await Promise.all([0, 1, 2, 3, 4].map(i => cuponPage(start + i)));
+              let fin = false;
+              for (const cs of chunk) { todasC = todasC.concat(cs); if (cs.length < 200) { fin = true; break; } }
+              if (fin) break;
             }
-            if (cs.length < 200) { fin = true; break; }
           }
-          if (fin) break;
+          listaCup = todasC.map(c => ({ code: (c.code || "").toUpperCase().trim(), type: c.type || "percentage", value: String(c.value || "0") })).filter(c => c.code);
+          try { await listRef.set({ ts: Date.now(), lista: listaCup }); } catch (_) {}
+        } catch (e) { couponsListError = e.message || "error de red"; }
+      }
+      if (listaCup) {
+        couponsListados = listaCup.length;
+        for (const c of listaCup) {
+          if (couponMap[c.code]) continue;
+          couponMap[c.code] = { code: c.code, type: c.type, value: c.value, usosPeriodo: 0, ventasPeriodo: 0, descuentoPeriodo: 0, sinUso: true };
         }
-      } catch (e) { couponsListError = e.message || "error de red"; }
+      }
       const respCup = { coupons: Object.values(couponMap).sort((a,b) => b.usosPeriodo - a.usosPeriodo || String(a.code).localeCompare(String(b.code))), totalPedidosAnalizados: allOrders.length, couponsListError, couponsListados, periodo: { desde: desdeISO, hasta: hastaISO } };
       try { await cupCacheRef.set({ ts: Date.now(), resp: respCup }); } catch (_) {}
       return res.status(200).json(respCup);

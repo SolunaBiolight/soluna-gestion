@@ -4926,6 +4926,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   }
   const [comData,setComData]=useState(null);
   const [cuponSearch,setCuponSearch]=useState(""); // buscador de la tabla de códigos
+  const [verSinUso,setVerSinUso]=useState(false); // listar también los cupones sin uso (miles en TN)
   // Las métricas del cupón del canje NO se cargan en el detalle (el barrido de
   // TN demoraba la card): el botón "Ver métricas" abre el panel del cupón, que
   // muestra pedidos/ventas/comisión en tiempo real con su propia caché.
@@ -5199,10 +5200,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     setDeleteConfirm(null);setDetail(null);
   }
 
-  async function fetchComisiones(fresh=false) {
+  async function fetchComisiones(fresh=false, desdeO, hastaO) {
+    const dd=desdeO||comFechaDesde, hh=hastaO||comFechaHasta;
     setComLoading(true); setComError(""); setComData(null);
     try {
-      const url=`/api/orders?action=coupons&uid=${user?.uid||""}&desde=${comFechaDesde}&hasta=${comFechaHasta}${fresh?"&fresh=1":""}`;
+      const url=`/api/orders?action=coupons&uid=${user?.uid||""}&desde=${dd}&hasta=${hh}${fresh?"&fresh=1":""}`;
       // TN a veces tarda y la función devuelve 504 — reintentamos solos antes de mostrar error
       let r=null, lastErr=null;
       for(let intento=0;intento<3;intento++){
@@ -5217,7 +5219,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       const data = await r.json();
 
       if(!data.coupons||data.coupons.length===0){
-        setComError(`No se encontraron pedidos con cupones en el período ${comFechaDesde} → ${comFechaHasta}. Probá con un rango más amplio.`);
+        setComError(`No se encontraron pedidos con cupones en el período ${dd} → ${hh}. Probá con un rango más amplio.`);
         setComLoading(false);
         return;
       }
@@ -5390,6 +5392,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             );
           })}
         </div>
+        {/* En la pestaña Cupones estos bloques no aportan (pedido de Soluna) */}
+        {viewTab!=="comisiones"&&(<>
         {/* Stats — mismo patrón de tiles clickeables que Tareas/Reclamos */}
         <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
           {[
@@ -5532,6 +5536,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             </div>
           );
         })()}
+        </>)}
 
         <div style={{padding:"14px 0 8px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
           {viewTab!=="comisiones"&&<>
@@ -5785,50 +5790,46 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         {viewTab==="comisiones"&&(
           <div key="comisiones" className="gh-tab-content" style={{paddingBottom:48}}>
 
-            {/* Filtros de fecha */}
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:20}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Filtrar ventas por período</div>
-              <div style={{fontSize:12,color:T.textSm,marginBottom:14}}>Los usos totales vienen directamente de TN. Las ventas y comisiones se calculan en el rango de fechas que elegís.</div>
-              <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end"}}>
-                <div style={{flex:1,minWidth:140}}>
-                  <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Desde</div>
-                  <input type="date" value={comFechaDesde} onChange={e=>setComFechaDesde(e.target.value)} style={{...iS,fontSize:13}}/>
-                </div>
-                <div style={{flex:1,minWidth:140}}>
-                  <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Hasta</div>
-                  <input type="date" value={comFechaHasta} onChange={e=>setComFechaHasta(e.target.value)} style={{...iS,fontSize:13}}/>
-                </div>
-                {/* Comisión MP configurable */}
-                <div style={{minWidth:140}}>
-                  <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Comisión MercadoPago %</div>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <input type="number" min="0" max="50" step="0.5" value={isNaN(mpComision)?12:mpComision} onChange={e=>saveMpComision(e.target.value)}
-                      style={{...iS,fontSize:13,width:80,textAlign:"center",borderColor:T.blue+"88"}}/>
-                    <span style={{fontSize:12,color:T.textSm}}>% sobre neto</span>
-                  </div>
-                  <div style={{fontSize:10,color:T.textSm,marginTop:3}}>Se descuenta del neto antes de calcular comisiones</div>
-                </div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {[
-                    {label:"Este mes",fn:()=>{const d=new Date();d.setDate(1);setComFechaDesde(fechaAR(d));setComFechaHasta(hoyAR());}},
-                    {label:"Mes anterior",fn:()=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);const h=new Date(d);h.setMonth(h.getMonth()+1);h.setDate(0);setComFechaDesde(fechaAR(d));setComFechaHasta(fechaAR(h));}},
-                    {label:"Últimos 3 meses",fn:()=>{const d=new Date();d.setMonth(d.getMonth()-3);setComFechaDesde(fechaAR(d));setComFechaHasta(hoyAR());}},
-                  ].map(s=>(
-                    <button key={s.label} onClick={s.fn} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap"}}>{s.label}</button>
-                  ))}
-                </div>
-                <AsyncButton onClick={()=>fetchComisiones(true)} style={{...BtnPrimary(T),fontSize:13,padding:"9px 20px",whiteSpace:"nowrap"}}>
-                  {comLoading?"Cargando...":"Cargar códigos"}
-                </AsyncButton>
+            {/* Barra superior: buscador SIEMPRE visible + período + MP % + Actualizar.
+                Cambiar el período recarga solo (con caché en el servidor es instantáneo). */}
+            <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:16}}>
+              <div style={{position:"relative",flex:"1 1 260px",minWidth:200}}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,pointerEvents:"none"}}><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                <input value={cuponSearch} onChange={e=>setCuponSearch(e.target.value)} placeholder="Buscar código o influencer…"
+                  style={{...iS,fontSize:13,padding:"9px 32px 9px 34px",borderRadius:DS.r.full,width:"100%",boxSizing:"border-box",borderColor:cuponSearch?T.accent+"88":undefined}}/>
+                {cuponSearch&&<button onClick={()=>setCuponSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:13,padding:2,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
               </div>
+              <DateRangePicker T={T}
+                presets={[
+                  {id:"mes",label:"Este mes",range:()=>{const h=new Date();return [fechaAR(new Date(h.getFullYear(),h.getMonth(),1)),hoyAR()];}},
+                  {id:"mes-1",label:"Mes pasado",range:()=>{const h=new Date();return [fechaAR(new Date(h.getFullYear(),h.getMonth()-1,1)),fechaAR(new Date(h.getFullYear(),h.getMonth(),0))];}},
+                  {id:"30d",label:"Últimos 30 días",days:30},{id:"90d",label:"Últimos 90 días",days:90},
+                ]}
+                since={comFechaDesde} until={comFechaHasta}
+                onChange={(s,u)=>{setComFechaDesde(s);setComFechaHasta(u||s);fetchComisiones(false,s,u||s);}}/>
+              <div title="Comisión de Mercado Pago: se descuenta del neto antes de calcular la comisión del influencer" style={{display:"inline-flex",alignItems:"center",gap:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:"3px 8px 3px 12px",height:34,boxSizing:"border-box"}}>
+                <span style={{fontSize:11,color:T.textSm,fontWeight:600,whiteSpace:"nowrap"}}>Comisión MP</span>
+                <input type="number" min="0" max="50" step="0.5" value={isNaN(mpComision)?12:mpComision} onChange={e=>saveMpComision(e.target.value)} style={{...iS,fontSize:12,width:54,padding:"3px 6px",textAlign:"center",borderRadius:8}}/>
+                <span style={{fontSize:11,color:T.textSm}}>%</span>
+              </div>
+              <AsyncButton onClick={()=>fetchComisiones(true)} style={{...BtnPrimary(T),fontSize:12,padding:"0 16px",height:34,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",boxSizing:"border-box"}}>{comLoading?"Actualizando…":"Actualizar"}</AsyncButton>
             </div>
 
-            {/* Estado inicial */}
-            {!comLoading&&!comData&&!comError&&(
-              <div style={{textAlign:"center",padding:"48px 20px",color:T.textSm}}>
-                <div style={{fontSize:40,marginBottom:12}}>%</div>
-                <div style={{fontSize:15,fontWeight:600,color:T.textMd,marginBottom:6}}>Hacé click en "Cargar códigos"</div>
-                <div style={{fontSize:13}}>Trae todos los cupones de tu TN ordenados por usos · Si algún código está vinculado a un canje en la app, calcula la comisión automáticamente</div>
+            {/* Cargando: skeleton (antes: pantalla vacía con un "%" gigante) */}
+            {comLoading&&!comData&&(
+              <div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:20}}>
+                  {[0,1,2,3,4].map(i=>(
+                    <div key={i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+                      <Skeleton T={T} height={10} width="60%" style={{marginBottom:10}}/>
+                      <Skeleton T={T} height={22} width="45%"/>
+                    </div>
+                  ))}
+                </div>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",display:"flex",flexDirection:"column",gap:12}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSm}}><Spinner size={12} color={T.accent}/> Leyendo las ventas con cupón de tu tienda…</div>
+                  {[0,1,2,3,4,5].map(i=><Skeleton key={i} T={T} height={12} width={`${90-i*6}%`}/>)}
+                </div>
               </div>
             )}
 
@@ -5845,7 +5846,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               const totalComision=rows.filter(r=>r.comisionPct>0).reduce((s,r)=>s+r.comisionPagar,0);
               const conComision=rows.filter(r=>r.comisionPct>0&&r.comisionPagar>0);
               const qCup=cuponSearch.trim().toUpperCase();
-              const rowsVis=qCup?rows.filter(r=>String(r.code||"").toUpperCase().includes(qCup)||String(r.influencer||"").toUpperCase().includes(qCup)||String(r.usuario||"").toUpperCase().includes(qCup)):rows;
+              // Los códigos SIN uso en el período (pueden ser miles en TN) no se
+              // listan por defecto: aparecen al buscar o con "Ver también sin uso".
+              const rowsBase=(qCup||verSinUso)?rows:rows.filter(r=>r.usosPeriodo>0||r.tieneCanje);
+              const sinUsoOcultos=rows.length-rowsBase.length;
+              const rowsVis=qCup?rowsBase.filter(r=>String(r.code||"").toUpperCase().includes(qCup)||String(r.influencer||"").toUpperCase().includes(qCup)||String(r.usuario||"").toUpperCase().includes(qCup)):rowsBase;
 
               return (
                 <div>
@@ -5869,13 +5874,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflowY:"hidden",overflowX:"auto",WebkitOverflowScrolling:"touch",marginBottom:16}}>
                     <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:12,minWidth:800,flexWrap:"wrap"}}>
                       <span style={{fontSize:12,fontWeight:700,color:T.text}}>Códigos de descuento · con uso primero</span>
-                      <div style={{position:"relative",flex:"0 1 240px",minWidth:160}}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{position:"absolute",left:9,top:"50%",transform:"translateY(-50%)",color:T.textSm,pointerEvents:"none"}}><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                        <input value={cuponSearch} onChange={e=>setCuponSearch(e.target.value)} placeholder="Buscar cupón o influencer…"
-                          style={{width:"100%",background:T.bg,border:`1px solid ${cuponSearch?T.accent+"88":T.border}`,borderRadius:DS.r.full,padding:"6px 10px 6px 27px",fontSize:12,color:T.text,outline:"none",fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                        {cuponSearch&&<button onClick={()=>setCuponSearch("")} style={{position:"absolute",right:7,top:"50%",transform:"translateY(-50%)",background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:12,padding:2,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
-                      </div>
-                      <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{qCup?`${rowsVis.length} de ${rows.length} códigos`:`${rows.length} codigos · ${comData.totalPedidos} pedidos analizados${comData.couponsListados?` · ${comData.couponsListados} cupones en TN`:""}`}</span>
+                      <span style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:8}}>
+                        {qCup?`${rowsVis.length} de ${rows.length} códigos`:`${rowsVis.length} códigos · ${comData.totalPedidos} pedidos analizados`}
+                        {!qCup&&(sinUsoOcultos>0||verSinUso)&&<button onClick={()=>setVerSinUso(v=>!v)} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:99,padding:"2px 10px",fontSize:11,fontWeight:600,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{verSinUso?"Ocultar sin uso":`Ver también ${sinUsoOcultos} sin uso`}</button>}
+                      </span>
                     </div>
                     {comData.couponsListError&&(
                       <div style={{padding:"8px 18px",background:T.yellowBg,borderBottom:`1px solid ${T.yellow}33`,fontSize:11,color:T.yellow}}>
@@ -6581,15 +6583,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   toast(cod?"Código asignado al canje — se sincroniza con Códigos y comisiones":"Código quitado del canje","success",4500);
                 };
                 return (
-                  <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8}}>
-                      <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Código de descuento</span>
+                  <div style={{background:code&&!cupEdit?`linear-gradient(135deg, ${T.accentSolid}16, transparent 65%)`:T.card,border:`1px solid ${code&&!cupEdit?T.accentSolid+"44":T.border}`,borderRadius:14,padding:"16px 18px"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:code&&!cupEdit?4:10,gap:8}}>
+                      <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6}}>{code&&!cupEdit?"Código asignado":"Código de descuento"}</span>
                       {code&&!cupEdit&&(
-                        <span style={{display:"inline-flex",alignItems:"center",gap:6}}>
-                          <code style={{fontSize:11,fontWeight:700,color:T.purple,background:T.purpleBg,borderRadius:5,padding:"2px 8px"}}>{c.codigoDescuento}</code>
-                          {c.comisionPct&&<span style={{fontSize:10,fontWeight:700,color:T.textSm}}>{c.comisionPct}% com.</span>}
-                          <button onClick={()=>setCupEdit(true)} title="Cambiar código o % de comisión" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:600,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
-                        </span>
+                        <button onClick={()=>setCupEdit(true)} title="Cambiar código o % de comisión" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:600,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
                       )}
                     </div>
                     {(!code||cupEdit)?(
@@ -6598,10 +6596,17 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         <CanjeCuponEditor key={(c._docId||"")+"_"+code} T={T} iS={iS} code={c.codigoDescuento||""} pct={c.comisionPct||""} onSave={guardarCupon} onCancel={code?()=>setCupEdit(false):null} crearEnTn={crearCuponTn}/>
                       </>
                     ):(
-                      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                        <AsyncButton onClick={()=>verMetricasCupon(c)} style={{...BtnPrimary(T),fontSize:12}}>Ver métricas</AsyncButton>
-                        <span style={{fontSize:11,color:T.textSm}}>Abre el panel del cupón con pedidos, ventas y comisión en tiempo real — el mismo link que podés compartirle al influencer.</span>
-                      </div>
+                      <>
+                        <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
+                          <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:0.5,fontFamily:"'Cascadia Code','Consolas',monospace",lineHeight:1.1}}>{c.codigoDescuento}</div>
+                          <button onClick={()=>{try{navigator.clipboard.writeText(code);toast("Código copiado","success");}catch(_){}}} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 9px",fontSize:10,fontWeight:600,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Copiar</button>
+                          {c.comisionPct&&<span style={{fontSize:10,fontWeight:800,color:T.green,background:T.green+"18",border:`1px solid ${T.green}44`,borderRadius:99,padding:"2px 9px"}}>{c.comisionPct}% comisión</span>}
+                        </div>
+                        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                          <AsyncButton onClick={()=>verMetricasCupon(c)} style={{...BtnPrimary(T),fontSize:12}}>Ver métricas</AsyncButton>
+                          <span style={{fontSize:11,color:T.textSm,lineHeight:1.5,flex:1,minWidth:180}}>Pedidos, ventas y comisión en tiempo real — el mismo panel que ve el/la influencer.</span>
+                        </div>
+                      </>
                     )}
                   </div>
                 );
