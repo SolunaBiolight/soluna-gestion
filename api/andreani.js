@@ -454,6 +454,33 @@ export async function mpReconciliarCargas(db, soloUid) {
   return res;
 }
 
+// Andreani no manda coordenadas para la mayoría de sus sucursales: se
+// geocodifican acá (georef, mismo motor que las direcciones de pedidos) y se
+// cachean en andreani_config/suc_geocode {id:{la,lo}|{f:ts}}. Máx 60 por
+// llamada (lotes de 10) para no pasar el timeout; se completa en llamadas
+// sucesivas. Los fallos se reintentan recién a los 7 días.
+async function geocodeSucursalesFaltantes(db, entries) {
+  const ref = db.collection("andreani_config").doc("suc_geocode");
+  let cache = {};
+  try { const h = await ref.get(); if (h.exists) cache = h.data().m || {}; } catch (_) {}
+  const ahora = Date.now();
+  const pend = entries.filter(s => s.la == null && s.c && !(cache[String(s.id)]?.la != null) && !(cache[String(s.id)]?.f && ahora - cache[String(s.id)].f < 7 * 86400000)).slice(0, 60);
+  let nuevos = 0;
+  for (let i = 0; i < pend.length; i += 10) {
+    await Promise.all(pend.slice(i, i + 10).map(async s => {
+      try {
+        const cpS = String(s.p || "").replace(/\D/g, "");
+        const esCaba = /^1[0-4]\d\d$/.test(cpS) || /capital federal|ciudad aut|caba/i.test(nrmTxt(s.l || ""));
+        const g = await geocodeDireccion({ dir: `${s.c} ${s.n || ""}`.trim(), loc: esCaba ? "C.A.B.A." : (s.l || ""), prov: esCaba ? "Buenos Aires" : "", cp: cpS });
+        cache[String(s.id)] = g ? { la: g.lat, lo: g.lng } : { f: ahora };
+      } catch (_) { cache[String(s.id)] = { f: ahora }; }
+      nuevos++;
+    }));
+  }
+  if (nuevos) { try { await ref.set({ m: cache, ts: ahora }); } catch (_) {} }
+  return entries.map(s => (s.la == null && cache[String(s.id)]?.la != null) ? { ...s, la: cache[String(s.id)].la, lo: cache[String(s.id)].lo } : s);
+}
+
 // Listado geo minificado (solo lo que hace falta para rankear por distancia):
 // el listado completo slim supera el límite de 1MB de Firestore, este entra.
 async function sucursalesGeo(db, env, force = false) {
@@ -867,6 +894,22 @@ export default async function handler(req, res) {
           if (geo2.filter(x => x.la != null).length > geo.filter(x => x.la != null).length) geo = geo2;
         } catch (_) {}
       }
+      // Coordenadas de la ZONA del pedido (mismo CP / localidad / CABA): las
+      // que falten se geocodifican con georef y quedan cacheadas — Andreani
+      // no manda coords y sin esto las "cercanas" eran las únicas con coords
+      // (Misiones, a 1100 km — #6207).
+      try {
+        const esCabaZ = /c\.?\s*a\.?\s*b\.?\s*a|capital federal|ciudad aut/i.test(loc + " " + prov) || /^1[0-4]\d\d$/.test(cp);
+        const locZ = nrmTxt(loc);
+        const enZona = geo.filter(s => (cp && String(s.p || "").replace(/\D/g, "") === cp)
+          || (esCabaZ ? (/^1[0-4]\d\d$/.test(String(s.p || "").replace(/\D/g, "")) || /capital federal|ciudad aut|caba/i.test(nrmTxt(s.l || "")))
+                      : (locZ && nrmTxt(s.l || "").includes(locZ))));
+        if (enZona.some(s => s.la == null)) {
+          const enriq = await geocodeSucursalesFaltantes(db, enZona);
+          const byId = new Map(enriq.map(s => [String(s.id), s]));
+          geo = geo.map(s => byId.get(String(s.id)) || s);
+        }
+      } catch (_) {}
       if (!geo.length && cp) {
         try {
           geo = (await sucursalesPorCp(db, env, cp)).map(x => ({

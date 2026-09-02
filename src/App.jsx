@@ -15021,6 +15021,34 @@ function AppAdmin({T, user, onBack}) {
                         {u.isAdmin?"Quitar admin":"Dar admin"}
                       </AsyncButton>
                     </div>
+
+                    {/* Envíos con saldo (etiquetas prepagas): un click para habilitar/quitar */}
+                    {(()=>{
+                      const hab=(envCfg?.habilitados||[]).includes(u._id);
+                      return (
+                        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12,marginTop:12}}>
+                          <div>
+                            <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>Envíos con saldo (Andreani prepago)</div>
+                            <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>{envCfg?(hab?"Habilitado: ve saldo, carga y Etiquetas listas en Envíos.":"Habilita el sistema de etiquetas prepagas para esta cuenta."):"Cargando configuración…"}</div>
+                          </div>
+                          <AsyncButton onClick={async()=>{
+                            let cfg=envCfg;
+                            if(!cfg){
+                              const c=await authFetch("/api/andreani?action=admin_config").then(r=>r.json()).catch(()=>null);
+                              if(!c||c.error) throw new Error("No se pudo leer la configuración de Envíos");
+                              cfg={markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}};
+                              setEnvCfg(cfg);
+                            }
+                            const ya=(cfg.habilitados||[]).includes(u._id);
+                            if(ya&&!await appConfirm("¿Quitar Envíos con saldo a esta cuenta?",{danger:true,okLabel:"Quitar"})) return;
+                            const ok=await saveEnvCfg({...cfg,habilitados:ya?cfg.habilitados.filter(x=>x!==u._id):[...(cfg.habilitados||[]),u._id]});
+                            if(ok) toast(ya?"Envíos con saldo quitado":"Envíos con saldo habilitado — ya puede probar todo desde Envíos","success");
+                          }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px",color:hab?T.red:T.green,borderColor:hab?T.red+"44":T.green+"44",flexShrink:0}}>
+                            {hab?"Quitar":"Habilitar"}
+                          </AsyncButton>
+                        </div>
+                      );
+                    })()}
                     </div>
 
                     {/* Historial de pagos */}
@@ -15218,16 +15246,39 @@ function AppAdmin({T, user, onBack}) {
                     );
                   })}
                 </div>
-                <div style={{display:"flex",gap:8}}>
-                  <input style={{...iS,flex:1}} value={envNuevoUid} onChange={e=>setEnvNuevoUid(e.target.value)} placeholder="UID de Firebase de la cuenta a habilitar"/>
-                  <AsyncButton onClick={async()=>{
-                    const uid=envNuevoUid.trim();
-                    if(!uid){ toast("Pegá el uid de la cuenta","error"); return; }
-                    if((envCfg?.habilitados||[]).includes(uid)){ toast("Esa cuenta ya está habilitada","warning"); return; }
-                    const ok=await saveEnvCfg({...(envCfg||{markupPct:0,markupFijo:0,habilitados:[]}),habilitados:[...(envCfg?.habilitados||[]),uid]});
-                    if(ok) setEnvNuevoUid("");
-                  }} style={{...BtnPrimary(T),fontSize:13,whiteSpace:"nowrap"}}>Habilitar</AsyncButton>
-                </div>
+                {/* Habilitar por EMAIL (con sugerencias de las cuentas registradas) — pegar
+                    el uid a mano quedó como alternativa: el campo acepta ambos */}
+                {(()=>{
+                  const q=envNuevoUid.trim().toLowerCase();
+                  const match=q?usuarios.find(u=>(u.email||"").toLowerCase()===q||u._id===envNuevoUid.trim()):null;
+                  const sugeridos=q&&!match?usuarios.filter(u=>(u.email||"").toLowerCase().includes(q)||(u.nombre||"").toLowerCase().includes(q)).slice(0,6):[];
+                  return (
+                    <div>
+                      <div style={{display:"flex",gap:8}}>
+                        <input style={{...iS,flex:1}} value={envNuevoUid} onChange={e=>setEnvNuevoUid(e.target.value)} placeholder="Email de la cuenta a habilitar (o su uid)" list="gh-admin-emails"/>
+                        <datalist id="gh-admin-emails">{usuarios.map(u=><option key={u._id} value={u.email||""}>{u.nombre||""}</option>)}</datalist>
+                        <AsyncButton onClick={async()=>{
+                          const uid=match?match._id:envNuevoUid.trim();
+                          if(!uid){ toast("Escribí el email de la cuenta","error"); return; }
+                          if(!match&&uid.includes("@")){ toast("No encontré una cuenta con ese email — buscala en Usuarios primero","warning",5000); return; }
+                          if((envCfg?.habilitados||[]).includes(uid)){ toast("Esa cuenta ya está habilitada","warning"); return; }
+                          const ok=await saveEnvCfg({...(envCfg||{markupPct:0,markupFijo:0,habilitados:[]}),habilitados:[...(envCfg?.habilitados||[]),uid]});
+                          if(ok){ setEnvNuevoUid(""); toast(`Envíos con saldo habilitado para ${match?.email||uid}`,"success"); }
+                        }} style={{...BtnPrimary(T),fontSize:13,whiteSpace:"nowrap"}}>Habilitar</AsyncButton>
+                      </div>
+                      {match&&<div style={{fontSize:11,color:T.green,marginTop:6}}>✓ {match.nombre||match.email} · plan {match.plan||"free"}</div>}
+                      {sugeridos.length>0&&(
+                        <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:6}}>
+                          {sugeridos.map(u=>(
+                            <button key={u._id} onClick={()=>setEnvNuevoUid(u.email||u._id)} style={{textAlign:"left",background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                              {u.email} <span style={{color:T.textSm}}>· {u.nombre||"—"} · {u.plan||"free"}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Rentabilidad del sistema de etiquetas */}
