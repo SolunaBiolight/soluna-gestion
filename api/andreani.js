@@ -482,7 +482,7 @@ async function geocodeDireccion({ dir, loc, prov, cp }) {
   dir = clean(dir); loc = clean(loc); prov = clean(prov);
   // Sufijos de unidad ("Local 9 y 10", "Piso 2 Dpto B") confunden al geocoder
   // y devuelven anclas en cualquier lado — solo calle y altura.
-  dir = dir.replace(/[,\s]+(local(?:es)?|piso|dpto\.?|depto\.?|departamento|oficina|of\.|uf|galeria|galería|timbre|casa|pb)\b[\s\S]*$/i, "").trim();
+  dir = dir.replace(/[,\s]+(local(?:es)?|piso|dpto\.?|depto\.?|departamento|oficina|of\.|uf|galeria|galería|timbre|casa|pb|entre|e\/|esq\.?|esquina)\b[\s\S]*$/i, "").trim();
   cp = String(cp || "").replace(/\D/g, "");
   if (!dir) return null;
   // TN manda CABA como "C.A.B.A."/"Capital Federal" con provincia "Buenos Aires"
@@ -897,6 +897,22 @@ export default async function handler(req, res) {
             lat: delCp.reduce((a, s) => a + s.la, 0) / delCp.length,
             lng: delCp.reduce((a, s) => a + s.lo, 0) / delCp.length,
             descripcion: `CP ${cp}`,
+          };
+        }
+      }
+      // Sin CP (o sin sucursales con ese CP): centroide de la LOCALIDAD del
+      // pedido como cordura — "C.a.b.a." sin CP geocodificaba a Misiones (#6207).
+      if (!cpCent && (loc || prov)) {
+        const esCabaQ = /c\.?\s*a\.?\s*b\.?\s*a|capital federal|ciudad aut/i.test(loc + " " + prov);
+        const locN = nrmTxt(loc);
+        const deLoc = geo.filter(s => s.la != null && (esCabaQ
+          ? /^1[0-4]\d\d$/.test(String(s.p || "").replace(/\D/g, ""))
+          : (locN && nrmTxt(s.l || "").includes(locN))));
+        if (deLoc.length >= 3) {
+          cpCent = {
+            lat: deLoc.reduce((a, s) => a + s.la, 0) / deLoc.length,
+            lng: deLoc.reduce((a, s) => a + s.lo, 0) / deLoc.length,
+            descripcion: esCabaQ ? "CABA" : loc,
           };
         }
       }

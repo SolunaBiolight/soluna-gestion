@@ -2417,7 +2417,9 @@ function ghTplDeOficial(locs, oficial){
 // los puntos de retiro traen pegados a la calle y rompen el match contra los
 // listados de Andreani (el template dice "CALLE 49 621", no "...LOCAL 9 Y 10").
 function ghStripUnidad(s){
-  return String(s||"").replace(/[,\s]+(LOCAL(?:ES)?|PISO|DPTO\.?|DEPTO\.?|DEPARTAMENTO|OFICINA|OF\.|UF|GALERIA|GALERÍA|TIMBRE|CASA|PB)\b[\s\S]*$/i,"").trim();
+  // También "Entre X y Z" / "e/ X y Z" / "esq. X": referencias de esquina que
+  // TN pega a la calle y que mandan al geocoder a cualquier lado (#6207).
+  return String(s||"").replace(/[,\s]+(LOCAL(?:ES)?|PISO|DPTO\.?|DEPTO\.?|DEPARTAMENTO|OFICINA|OF\.|UF|GALERIA|GALERÍA|TIMBRE|CASA|PB|ENTRE|E\/|ESQ\.?|ESQUINA)\b[\s\S]*$/i,"").trim();
 }
 
 // Tokens significativos del punto de retiro ("JURAMENTO 2385") para buscar
@@ -10242,7 +10244,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               )}
               {noExacto&&!esquina&&(
                 <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.red}}>
-                  <strong>No pude confirmar el punto EXACTO que eligió el cliente.</strong> El envío va a ir a la sucursal que elijas acá — no al punto de arriba. Elegí solo si estás segura de que es el mismo lugar (misma calle y número); si no aparece, excluí el pedido y emitilo a mano en Andreani para respetar el punto del cliente.
+                  <strong>No pude confirmar el punto EXACTO que eligió el cliente.</strong> El envío va a ir a la sucursal que elijas acá — no al punto de arriba. Elegí solo si estás segura de que es el mismo lugar (misma calle y número); si no aparece (los puntos HOP nuevos suelen faltar en el Excel de Andreani), excluí el pedido y emitilo por Etiquetas listas — que elige por ID oficial y sí lo tiene — o a mano en Andreani.
                 </div>
               )}
               {/* Emisión API: lista OFICIAL por CP (se necesita el id exacto). */}
