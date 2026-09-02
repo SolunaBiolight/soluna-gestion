@@ -2365,9 +2365,10 @@ export default async function handler(req, res) {
       const valorCup = parseFloat(req.query.valor);
       if (!/^[A-Z0-9_-]{2,40}$/.test(code)) return res.status(400).json({ error: "Código inválido: solo letras, números y guiones (2 a 40 caracteres, sin espacios)." });
       if (!isFinite(valorCup) || valorCup <= 0 || (tipoCup === "percentage" && valorCup > 100)) return res.status(400).json({ error: "Valor de descuento inválido." });
+      const tnHeadersCup = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)', 'Content-Type': 'application/json' };
       const rCup = await fetch(`https://api.tiendanube.com/v1/${storeId}/coupons`, {
         method: "POST",
-        headers: { ...tnHeaders, "Content-Type": "application/json" },
+        headers: tnHeadersCup,
         body: JSON.stringify({ code, type: tipoCup, value: String(valorCup) }),
       });
       const dCup = await rCup.json().catch(() => null);
