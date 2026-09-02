@@ -231,9 +231,9 @@ async function sucursalesPorCp(db, env, cp) {
 }
 
 // Listado COMPLETO (para el buscador de sucursal de origen). Cacheado 7 días.
-async function sucursalesTodas(db, env) {
+async function sucursalesTodas(db, env, force = false) {
   const cacheRef = db.collection("andreani_config").doc("suc_all2"); // v2: con lat/lng
-  try {
+  if (!force) try {
     const hit = await cacheRef.get();
     if (hit.exists) {
       const d = hit.data();
@@ -456,16 +456,16 @@ export async function mpReconciliarCargas(db, soloUid) {
 
 // Listado geo minificado (solo lo que hace falta para rankear por distancia):
 // el listado completo slim supera el límite de 1MB de Firestore, este entra.
-async function sucursalesGeo(db, env) {
+async function sucursalesGeo(db, env, force = false) {
   const cacheRef = db.collection("andreani_config").doc("suc_geo");
-  try {
+  if (!force) try {
     const hit = await cacheRef.get();
     if (hit.exists) {
       const d = hit.data();
       if (Array.isArray(d.s) && d.s.length && Date.now() - (d.ts || 0) < SUC_TTL_MS) return d.s;
     }
   } catch (_) {}
-  const todas = await sucursalesTodas(db, env);
+  const todas = await sucursalesTodas(db, env, force);
   const s = todas.map(x => ({
     id: x.id, d: x.descripcion || "", c: x.direccion?.calle || "", n: x.direccion?.numero || "",
     l: x.direccion?.localidad || "", p: x.direccion?.codigoPostal || "", la: x.lat, lo: x.lng,
@@ -857,6 +857,16 @@ export default async function handler(req, res) {
       // disponible, al menos las del CP.
       let geo = [];
       try { geo = await sucursalesGeo(db, env); } catch (_) {}
+      // Caché "envenenada": si menos de la mitad de las sucursales tiene
+      // coordenadas, el ranking por distancia solo puede mostrar esas pocas
+      // (se vio: todas las cercanas a 1100 km, en Misiones — #6207). Se
+      // reconstruye desde Andreani salteando la caché.
+      if (geo.length > 50 && geo.filter(x => x.la != null).length < geo.length * 0.5) {
+        try {
+          const geo2 = await sucursalesGeo(db, env, true);
+          if (geo2.filter(x => x.la != null).length > geo.filter(x => x.la != null).length) geo = geo2;
+        } catch (_) {}
+      }
       if (!geo.length && cp) {
         try {
           geo = (await sucursalesPorCp(db, env, cp)).map(x => ({
@@ -939,7 +949,24 @@ export default async function handler(req, res) {
           .sort((a, b) => a.distM - b.distM))
           .slice(0, 40)
           .map(s => ({ ...expand(s), distM: s.distM }));
-        return res.json({ sucursales: conDist, origen: origen.descripcion, stats });
+        // Cordura del resultado: si la MÁS cercana está a más de 300 km, el
+        // ranking no sirve (coords parciales) → aproximación por localidad.
+        if (conDist.length && conDist[0].distM <= 300000) {
+          return res.json({ sucursales: conDist, origen: origen.descripcion, stats });
+        }
+      }
+      // Aproximación por localidad (sin CP o sin coords útiles): CABA por
+      // rango de CP 1000-1499 o nombre; otras por texto de localidad.
+      {
+        const esCabaL = /c\.?\s*a\.?\s*b\.?\s*a|capital federal|ciudad aut/i.test(loc + " " + prov);
+        const locN = nrmTxt(loc);
+        const deLoc = geo.filter(s => esCabaL
+          ? (/^1[0-4]\d\d$/.test(String(s.p || "").replace(/\D/g, "")) || /capital federal|ciudad aut|caba/i.test(nrmTxt(s.l || "")))
+          : (locN && nrmTxt(s.l || "").includes(locN)));
+        if (deLoc.length) {
+          const lista = dedupe(deLoc).slice(0, 40).map(expand);
+          return res.json({ sucursales: lista, origen: esCabaL ? "CABA" : loc, aproximado: true, stats });
+        }
       }
       // Sin coordenadas o sin ancla: aproximación por CP (mismo CP primero,
       // después el resto de la misma localidad).
