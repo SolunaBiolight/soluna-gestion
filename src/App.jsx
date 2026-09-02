@@ -8334,7 +8334,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         const d=await fetchCercanasRaw(o);
         const lista=d.sucursales.map(s=>({...s,tpl:locs?ghTplDeOficial(locs,s):null}));
         const validas=locs?lista.filter(s=>s.tpl):lista;
-        setLocCerca({lista:(locs&&validas.length?[...validas,...lista.filter(s=>!s.tpl).slice(0,5)]:lista).slice(0,18),origen:d.origen||"",aproximado:!!d.aproximado,diag:d.sinOrigen?"sin_origen":(d.stats&&!d.stats.conCoords?"sin_coords":"")});
+        const gz=d.stats?.geo||{};
+        setLocCerca({lista:(locs&&validas.length?[...validas,...lista.filter(s=>!s.tpl).slice(0,5)]:lista).slice(0,18),origen:d.origen||"",aproximado:!!d.aproximado,diag:d.sinOrigen?"sin_origen":(d.stats&&!d.stats.conCoords?"sin_coords":""),
+          geoDiag:gz.zona!=null?`coords ${gz.geocodificadas}/${gz.zona} de la zona · esta vez: ${gz.ok||0} ok, ${gz.fail||0} sin resultado${gz.rate?", georef limitó":""}`:""});
       }catch(e){ setLocCerca({lista:[],diag:String(e?.message||"error")}); }
     })();
   }
@@ -10376,6 +10378,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 <div style={{marginBottom:14}}>
                   <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
                     {locCerca?.aproximado?`Sucursales de la zona del pedido${locCerca?.origen?` (${locCerca.origen})`:""}`:esquina?"Sucursales más cercanas a la dirección del pedido":"Sucursales más cercanas al punto del pedido"}
+                    {locCerca?.aproximado&&locCerca?.geoDiag&&<span style={{display:"block",fontSize:9.5,fontWeight:400,textTransform:"none",letterSpacing:0,opacity:0.65,marginTop:2}}>Completando ubicaciones… {locCerca.geoDiag} — reabrí en unos segundos</span>}
                   </div>
                   {locCerca?.loading?(
                     <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/> Buscando sucursales cercanas...</div>

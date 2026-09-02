@@ -459,25 +459,48 @@ export async function mpReconciliarCargas(db, soloUid) {
 // cachean en andreani_config/suc_geocode {id:{la,lo}|{f:ts}}. Máx 60 por
 // llamada (lotes de 10) para no pasar el timeout; se completa en llamadas
 // sucesivas. Los fallos se reintentan recién a los 7 días.
-async function geocodeSucursalesFaltantes(db, entries) {
+async function geocodeSucursalesFaltantes(db, entries, statsOut) {
   const ref = db.collection("andreani_config").doc("suc_geocode");
   let cache = {};
   try { const h = await ref.get(); if (h.exists) cache = h.data().m || {}; } catch (_) {}
   const ahora = Date.now();
-  const pend = entries.filter(s => s.la == null && s.c && !(cache[String(s.id)]?.la != null) && !(cache[String(s.id)]?.f && ahora - cache[String(s.id)].f < 7 * 86400000)).slice(0, 60);
-  let nuevos = 0;
-  for (let i = 0; i < pend.length; i += 10) {
-    await Promise.all(pend.slice(i, i + 10).map(async s => {
+  // Fallos: se reintentan a la hora (antes 7 días — un rate-limit de georef
+  // dejaba toda la zona marcada como imposible durante una semana).
+  const pend = entries.filter(s => s.la == null && s.c && !(cache[String(s.id)]?.la != null) && !(cache[String(s.id)]?.f && ahora - cache[String(s.id)].f < 3600000)).slice(0, 60);
+  // georef directo (sin nominatim): rápido y sin rate-limit agresivo
+  const georef = async (dir, provincia, localidad) => {
+    const u = new URL("https://apis.datos.gob.ar/georef/api/direcciones");
+    u.searchParams.set("direccion", dir); u.searchParams.set("max", "1");
+    if (provincia) u.searchParams.set("provincia", provincia);
+    if (localidad) u.searchParams.set("localidad", localidad);
+    const r = await fetch(u, { signal: AbortSignal.timeout(5000) });
+    if (r.status === 429) throw new Error("rate");
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    const ub = j?.direcciones?.[0]?.ubicacion;
+    return (ub && isFinite(ub.lat) && isFinite(ub.lon)) ? { lat: +ub.lat, lng: +ub.lon } : null;
+  };
+  let ok = 0, fail = 0, rate = 0;
+  for (let i = 0; i < pend.length; i += 4) {
+    await Promise.all(pend.slice(i, i + 4).map(async s => {
+      const cpS = String(s.p || "").replace(/\D/g, "");
+      const esCaba = /^1[0-4]\d\d$/.test(cpS) || /capital federal|ciudad aut|caba/i.test(nrmTxt(s.l || ""));
+      const dir = `${s.c} ${s.n || ""}`.trim();
+      const sinVia = dir.replace(/^(avenida|avda\.?|av\.?|calle|diagonal|diag\.?|pasaje|pje\.?|boulevard|bulevar|bv\.?|blvd\.?|ruta)\s+/i, "").trim();
       try {
-        const cpS = String(s.p || "").replace(/\D/g, "");
-        const esCaba = /^1[0-4]\d\d$/.test(cpS) || /capital federal|ciudad aut|caba/i.test(nrmTxt(s.l || ""));
-        const g = await geocodeDireccion({ dir: `${s.c} ${s.n || ""}`.trim(), loc: esCaba ? "C.A.B.A." : (s.l || ""), prov: esCaba ? "Buenos Aires" : "", cp: cpS });
-        cache[String(s.id)] = g ? { la: g.lat, lo: g.lng } : { f: ahora };
-      } catch (_) { cache[String(s.id)] = { f: ahora }; }
-      nuevos++;
+        let g = await georef(dir, esCaba ? "Ciudad Autónoma de Buenos Aires" : "", esCaba ? "" : (s.l || ""));
+        if (!g && sinVia !== dir) g = await georef(sinVia, esCaba ? "Ciudad Autónoma de Buenos Aires" : "", esCaba ? "" : (s.l || ""));
+        if (!g && !esCaba) g = await georef(dir, "", "");
+        if (g) { cache[String(s.id)] = { la: g.lat, lo: g.lng }; ok++; }
+        else { cache[String(s.id)] = { f: ahora }; fail++; }
+      } catch (e) { if (String(e.message).includes("rate")) rate++; else fail++; /* no se cachea: reintenta la próxima */ }
     }));
+    if (rate) break; // georef nos frenó: seguir en la próxima llamada
   }
-  if (nuevos) { try { await ref.set({ m: cache, ts: ahora }); } catch (_) {} }
+  if (ok || fail) { try { await ref.set({ m: cache, ts: ahora }); } catch (_) {} }
+  const conCache = entries.filter(s => s.la != null || cache[String(s.id)]?.la != null).length;
+  if (statsOut) Object.assign(statsOut, { zona: entries.length, geocodificadas: conCache, pendientes: pend.length, ok, fail, rate });
+  console.log(`[cercanas] zona=${entries.length} conCoords=${conCache} intentadas=${pend.length} ok=${ok} fail=${fail} rate=${rate}`);
   return entries.map(s => (s.la == null && cache[String(s.id)]?.la != null) ? { ...s, la: cache[String(s.id)].la, lo: cache[String(s.id)].lo } : s);
 }
 
@@ -883,6 +906,7 @@ export default async function handler(req, res) {
       // Candidatas: listado geo completo (minificado y cacheado); si no está
       // disponible, al menos las del CP.
       let geo = [];
+      const geoStats = {};
       try { geo = await sucursalesGeo(db, env); } catch (_) {}
       // Caché "envenenada": si menos de la mitad de las sucursales tiene
       // coordenadas, el ranking por distancia solo puede mostrar esas pocas
@@ -905,7 +929,7 @@ export default async function handler(req, res) {
           || (esCabaZ ? (/^1[0-4]\d\d$/.test(String(s.p || "").replace(/\D/g, "")) || /capital federal|ciudad aut|caba/i.test(nrmTxt(s.l || "")))
                       : (locZ && nrmTxt(s.l || "").includes(locZ))));
         if (enZona.some(s => s.la == null)) {
-          const enriq = await geocodeSucursalesFaltantes(db, enZona);
+          const enriq = await geocodeSucursalesFaltantes(db, enZona, geoStats);
           const byId = new Map(enriq.map(s => [String(s.id), s]));
           geo = geo.map(s => byId.get(String(s.id)) || s);
         }
@@ -984,7 +1008,7 @@ export default async function handler(req, res) {
         });
       };
       const conCoords = geo.filter(s => s.la != null).length;
-      const stats = { todas: geo.length, conCoords };
+      const stats = { todas: geo.length, conCoords, geo: geoStats };
       if (origen && conCoords) {
         const conDist = dedupe(geo
           .filter(s => s.la != null)
