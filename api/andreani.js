@@ -263,7 +263,14 @@ const APP_BASE = "https://www.growithapp.com";
 async function mpWebhook(req, res, db, body) {
   const token = process.env.MP_ACCESS_TOKEN || "";
   if (!token) return res.status(200).json({ ok: true, skip: "mp_no_configurado" });
-  const dataId = String(req.query?.["data.id"] || body?.data?.id || "");
+  // El id del pago llega en distintos formatos según la versión del aviso:
+  // ?data.id=… (webhooks), {data:{id}} (body), ?id=…&topic=payment (IPN
+  // legacy) o {resource:".../payments/123"}. Antes solo se leían los dos
+  // primeros y el resto se descartaba → cargas MP que quedaban "pendientes".
+  const dataId = String(
+    req.query?.["data.id"] || body?.data?.id || req.query?.id || body?.id
+    || (String(body?.resource || req.query?.resource || "").match(/(\d+)\s*$/) || [])[1] || ""
+  ).trim();
   // Firma: x-signature "ts=...,v1=HMAC(id:<data.id>;request-id:<x-request-id>;ts:<ts>;)"
   // NO es eliminatoria: MP manda variantes del manifiesto según el origen del
   // aviso y rechazarlas perdía notificaciones reales. La seguridad de verdad
@@ -283,8 +290,14 @@ async function mpWebhook(req, res, db, body) {
     const okFirma = !!v1 && variantes.some(m => createHmac("sha256", secret).update(m).digest("hex") === v1);
     if (!okFirma) console.warn(`[mp_webhook] firma no coincide (dataId=${dataId} ts=${!!ts} v1=${!!v1} reqId=${!!reqId}) — sigo igual, la validación real es contra la API`);
   }
-  const type = String(req.query?.type || body?.type || body?.topic || "");
-  if (!/payment/.test(type) || !dataId) return res.status(200).json({ ok: true, skip: type || "sin_tipo" });
+  const type = String(req.query?.type || body?.type || body?.topic || req.query?.topic || body?.action || "");
+  if (!/payment|merchant_order/.test(type)) return res.status(200).json({ ok: true, skip: type || "sin_tipo" });
+  // Sin id legible (formato desconocido) o aviso de merchant_order: en vez de
+  // descartar, reconciliar TODAS las cargas MP pendientes contra la API.
+  if (!dataId || /merchant_order/.test(type)) {
+    try { const rr = await mpReconciliarCargas(db); console.log("[mp_webhook] sin data.id → reconciliadas:", JSON.stringify(rr)); return res.status(200).json({ ok: true, reconciliado: rr }); }
+    catch (e) { console.error("[mp_webhook] reconciliar:", e.message); return res.status(500).json({ error: e.message }); }
+  }
   // Consultar el pago REAL contra la API — nunca se confía en la notificación.
   const pr = await fetch(`${MP_BASE}/v1/payments/${encodeURIComponent(dataId)}`, {
     headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000),
