@@ -656,8 +656,18 @@ export default async function handler(req, res) {
             for (const p of batch) {
               const titleObj = p.name || {};
               const title = typeof titleObj === "string" ? titleObj : (titleObj.es || Object.values(titleObj)[0] || "(sin nombre)");
-              const stock = (p.variants || []).reduce((s, v) => s + (v.stock == null ? 0 : (parseInt(v.stock) || 0)), 0);
-              catalog.push({ link_id: `TN-${p.id}`, platform: "tiendanube", title, sku: p.variants?.[0]?.sku || "", image: p.images?.[0]?.src || null, stock });
+              const vars = p.variants || [];
+              if (vars.length > 1) {
+                // Multi-variante → UN item por talle, vinculado a su variante.
+                for (const v of vars) {
+                  const talle = (v.values || []).map(val => typeof val === "string" ? val : (val?.es || Object.values(val || {})[0])).filter(Boolean).join(" / ") || "Variante";
+                  catalog.push({ link_id: `TN-${p.id}::v${v.id}`, product_id: `TN-${p.id}`, variant_id: String(v.id), variant_title: talle,
+                    platform: "tiendanube", title: `${title} · ${talle}`, sku: v.sku || "", image: p.images?.[0]?.src || null, stock: v.stock == null ? 0 : (parseInt(v.stock) || 0) });
+                }
+              } else {
+                const stock = vars.reduce((s, v) => s + (v.stock == null ? 0 : (parseInt(v.stock) || 0)), 0);
+                catalog.push({ link_id: `TN-${p.id}`, product_id: `TN-${p.id}`, platform: "tiendanube", title, sku: vars?.[0]?.sku || "", image: p.images?.[0]?.src || null, stock });
+              }
             }
             if (batch.length < 200) break;
           } catch (e) { break; }
@@ -673,8 +683,18 @@ export default async function handler(req, res) {
             if (!r.ok) break;
             const data = await r.json();
             for (const p of (data.products || [])) {
-              const stock = (p.variants || []).reduce((s, v) => s + (parseInt(v.inventory_quantity) || 0), 0);
-              catalog.push({ link_id: `SH-${p.id}`, platform: "shopify", title: p.title, sku: p.variants?.[0]?.sku || "", image: p.image?.src || null, stock });
+              const vars = p.variants || [];
+              if (vars.length > 1) {
+                // Multi-variante → UN item por talle, vinculado a su variante (variant_id).
+                for (const v of vars) {
+                  const talle = [v.option1, v.option2, v.option3].filter(o => o && o !== "Default Title").join(" / ") || v.title || "Variante";
+                  catalog.push({ link_id: `SH-${p.id}::v${v.id}`, product_id: `SH-${p.id}`, variant_id: String(v.id), variant_title: talle,
+                    platform: "shopify", title: `${p.title} · ${talle}`, sku: v.sku || "", image: p.image?.src || null, stock: parseInt(v.inventory_quantity) || 0 });
+                }
+              } else {
+                const stock = vars.reduce((s, v) => s + (parseInt(v.inventory_quantity) || 0), 0);
+                catalog.push({ link_id: `SH-${p.id}`, product_id: `SH-${p.id}`, platform: "shopify", title: p.title, sku: vars?.[0]?.sku || "", image: p.image?.src || null, stock });
+              }
             }
             const next = (r.headers.get("link") || "").match(/<([^>]+)>;\s*rel="next"/);
             url = next ? next[1] : null;
@@ -699,7 +719,7 @@ export default async function handler(req, res) {
               });
               if (!detRes.ok) break;
               for (const d of (await detRes.json())) {
-                if (d.body) catalog.push({ link_id: `ML-${d.body.id}`, platform: "mercadolibre", title: d.body.title, sku: d.body.seller_custom_field || "", image: d.body.thumbnail, stock: parseInt(d.body.available_quantity) || 0 });
+                if (d.body) catalog.push({ link_id: `ML-${d.body.id}`, product_id: `ML-${d.body.id}`, platform: "mercadolibre", title: d.body.title, sku: d.body.seller_custom_field || "", image: d.body.thumbnail, stock: parseInt(d.body.available_quantity) || 0 });
               }
               if (ids.length < 50) break;
             }
@@ -722,7 +742,9 @@ export default async function handler(req, res) {
       const existing = itemsSnap.docs.map(d => ({ ref: d.ref, id: d.id, ...d.data() }));
       const bySku = new Map(existing.filter(i => norm(i.sku)).map(i => [norm(i.sku), i]));
       const byLink = new Map();
-      for (const i of existing) for (const l of (i.product_links || [])) byLink.set(l.product_id, i);
+      for (const i of existing) for (const l of (i.product_links || [])) byLink.set(l.link_id || l.product_id, i);
+      // Helper: construye un product_link (con variant_id si el catálogo lo trae).
+      const mkLink = g => ({ product_id: g.product_id || g.link_id, link_id: g.link_id, variant_id: g.variant_id || null, variant_title: g.variant_title || null, platform: g.platform, title: g.title, image: g.image, quantity: 1 });
 
       const PLAT_ORDER = { tiendanube: 0, shopify: 1, mercadolibre: 2 };
       let created = 0, linked = 0, unchanged = 0;
@@ -733,10 +755,10 @@ export default async function handler(req, res) {
         if (item) {
           // Item existente: solo agregar links faltantes y completar sku/canales. NO tocar stock.
           const links = [...(item.product_links || [])];
-          const have = new Set(links.map(l => l.product_id));
+          const have = new Set(links.map(l => l.link_id || l.product_id));
           let changed = false;
           for (const g of group) {
-            if (!have.has(g.link_id)) { links.push({ product_id: g.link_id, platform: g.platform, title: g.title, image: g.image, quantity: 1 }); changed = true; }
+            if (!have.has(g.link_id)) { links.push(mkLink(g)); changed = true; }
           }
           const canales = Array.from(new Set([...(item.canales || []), ...group.map(g => g.platform)]));
           const skuFix = !norm(item.sku) && !key.startsWith("__nosku__") ? { sku: primary.sku } : {};
@@ -753,7 +775,7 @@ export default async function handler(req, res) {
             id, nombre: String(primary.title).slice(0, 200), sku: key.startsWith("__nosku__") ? "" : primary.sku,
             image: primary.image || null, stock_total: stock, stock_by_warehouse: stock ? { main: stock } : {},
             canales: Array.from(new Set(group.map(g => g.platform))),
-            product_links: group.map(g => ({ product_id: g.link_id, platform: g.platform, title: g.title, image: g.image, quantity: 1 })),
+            product_links: group.map(mkLink),
             processed_orders: [], last_sync_at: null,
             created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
           };

@@ -31170,7 +31170,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   }
   const [importingCatalog,setImportingCatalog]=useState(false);
   async function importCatalog() {
-    if (!await appConfirm("Growith va a leer tu catálogo de Tienda Nube / Shopify / Mercado Libre y crear un item de inventario por cada SKU, unificando las publicaciones que compartan el mismo SKU (multicanal).\n\n• El stock inicial de los items nuevos se toma del stock de tu tienda.\n• Los items que ya existen NO se modifican (solo se les agregan vínculos faltantes).\n• No se escribe nada en tus tiendas.\n\n¿Continuar?",{okLabel:"Vincular catálogo"})) return;
+    if (!await appConfirm("Growith va a leer tu catálogo de Tienda Nube / Shopify / Mercado Libre y crear tus items de inventario automáticamente.\n\n• Los productos con VARIAS variantes (talles/colores) crean UN item por cada variante, ya vinculado a su talle → el stock de cada talle se descuenta solo.\n• Los productos de una sola variante crean un item por SKU (unificando canales).\n• El stock inicial se toma del stock de tu tienda.\n• Los items que ya existen NO se modifican (solo se les agregan vínculos faltantes).\n• No se escribe nada en tus tiendas.\n\n¿Continuar?",{okLabel:"Vincular catálogo"})) return;
     setImportingCatalog(true);
     try {
       const r = await fetch(`/api/inventory?action=import_catalog&uid=${uid}`,{method:"POST"});
