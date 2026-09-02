@@ -4623,21 +4623,55 @@ function ghCanjeAccion(c, cfg){
 // Asignar/editar el código de descuento y % comisión de un canje desde su card.
 // Componente a nivel módulo (no inline en el render) para que el input no
 // pierda el foco cuando AppCanjes re-renderiza por el snapshot de Firestore.
-function CanjeCuponEditor({T,iS,code,pct,onSave,onCancel}){
+function CanjeCuponEditor({T,iS,code,pct,onSave,onCancel,crearEnTn}){
   const [c,setC]=React.useState(code||"");
   const [p,setP]=React.useState(pct||"");
+  const [modo,setModo]=React.useState("vincular"); // vincular (ya existe) | crear (lo crea en TN)
+  const [desc,setDesc]=React.useState("");
+  const lbl={fontSize:10,color:T.textSm,fontWeight:600,marginBottom:4,textTransform:"uppercase",letterSpacing:0.4};
+  const guardar=async()=>{
+    const cod=(c||"").toUpperCase().trim();
+    if(!cod) throw new Error("Escribí el código de descuento");
+    if(modo==="crear"){
+      const v=parseFloat(desc);
+      if(!isFinite(v)||v<=0||v>100) throw new Error("Poné el % de descuento que va a dar el código (1 a 100)");
+      const r=await crearEnTn(cod,v);
+      toast(r.creado?`Código ${cod} creado en Tienda Nube (${v}% OFF) y vinculado al canje`:`El código ${cod} ya existía en Tienda Nube — vinculado al canje`,"success",6000);
+    }
+    onSave(cod,p);
+  };
   return (
-    <div style={{display:"flex",gap:8,alignItems:"flex-end",flexWrap:"wrap"}}>
-      <div style={{flex:2,minWidth:140}}>
-        <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:4,textTransform:"uppercase",letterSpacing:0.4}}>Código</div>
-        <input value={c} onChange={e=>setC(e.target.value.toUpperCase())} placeholder="SOFIA10" style={{...iS,fontFamily:"'Cascadia Code','Consolas',monospace",letterSpacing:1,fontSize:12,padding:"7px 10px"}}/>
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {crearEnTn&&(
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {[["vincular","Ya existe en la tienda"],["crear","Crearlo en Tienda Nube"]].map(([id,l])=>(
+            <button key={id} onClick={()=>setModo(id)} style={{padding:"5px 12px",fontSize:11,fontWeight:600,borderRadius:99,border:`1px solid ${modo===id?T.accentSolid:T.border}`,background:modo===id?T.accentSolid+"14":"transparent",color:modo===id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>{l}</button>
+          ))}
+        </div>
+      )}
+      <div style={{display:"flex",gap:8,alignItems:"flex-end",flexWrap:"wrap"}}>
+        <div style={{flex:2,minWidth:130}}>
+          <div style={lbl}>Código</div>
+          <input value={c} onChange={e=>setC(e.target.value.toUpperCase())} placeholder="SOFIA10" style={{...iS,fontFamily:"'Cascadia Code','Consolas',monospace",letterSpacing:1,fontSize:12,padding:"7px 10px"}}/>
+        </div>
+        {modo==="crear"&&crearEnTn&&(
+          <div style={{width:96}}>
+            <div style={lbl}>% descuento</div>
+            <input type="number" min="1" max="100" step="1" value={desc} onChange={e=>setDesc(e.target.value)} placeholder="15" style={{...iS,fontSize:12,padding:"7px 10px"}}/>
+          </div>
+        )}
+        <div style={{width:96}}>
+          <div style={lbl}>% comisión</div>
+          <input type="number" min="0" max="100" step="0.5" value={p} onChange={e=>setP(e.target.value)} placeholder="10" style={{...iS,fontSize:12,padding:"7px 10px"}}/>
+        </div>
+        <AsyncButton onClick={guardar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>{modo==="crear"&&crearEnTn?"Crear y vincular":"Vincular"}</AsyncButton>
+        {onCancel&&<Btn T={T} variant="ghost" size="sm" onClick={onCancel}>Cancelar</Btn>}
       </div>
-      <div style={{width:92}}>
-        <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:4,textTransform:"uppercase",letterSpacing:0.4}}>% comisión</div>
-        <input type="number" min="0" max="100" step="0.5" value={p} onChange={e=>setP(e.target.value)} placeholder="10" style={{...iS,fontSize:12,padding:"7px 10px"}}/>
+      <div style={{fontSize:10.5,color:T.textSm,lineHeight:1.5}}>
+        {modo==="crear"&&crearEnTn
+          ?"El descuento es lo que recibe el público al usar el código; la comisión es lo que cobra el/la influencer sobre las ventas netas."
+          :"La comisión es el % que cobra el/la influencer sobre las ventas netas hechas con su código."}
       </div>
-      <Btn T={T} variant="primary" size="sm" onClick={()=>onSave((c||"").toUpperCase().trim(),p)}>Guardar</Btn>
-      {onCancel&&<Btn T={T} variant="ghost" size="sm" onClick={onCancel}>Cancelar</Btn>}
     </div>
   );
 }
@@ -4662,7 +4696,16 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [form,setForm]=useState(null);
   const [detail,setDetail]=useState(null);
   const [cupEdit,setCupEdit]=useState(false); // edición inline del cupón en el detalle
+  const [formCupDesc,setFormCupDesc]=useState(""); // % off al crear el código desde el form
   useEffect(()=>{ setCupEdit(false); },[detail]);
+  // Crea un cupón de % de descuento en Tienda Nube (para asignarlo a un canje
+  // sin salir de Growith). Si ya existía, el backend responde yaExistia.
+  async function crearCuponTn(code,valorPct){
+    const r=await authFetch(`/api/orders?action=crear_cupon&uid=${user?.uid||""}&code=${encodeURIComponent(code)}&tipo=percentage&valor=${encodeURIComponent(valorPct)}`);
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`No se pudo crear el cupón (HTTP ${r.status})`);
+    return d;
+  }
   const [search,setSearch]=useState("");
   const [filterEstado,setFilterEstado]=useState("");
   const [filterRed,setFilterRed]=useState("");
@@ -6292,8 +6335,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     <input type="date" value={c.fechaEnvio||""} style={{...iS,fontSize:12,padding:"6px 10px"}} onChange={e=>save({fechaEnvio:e.target.value})}/>
                   </div>
                   <div>
-                    <div style={{fontSize:10,fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Programar envío</div>
-                    <input type="date" value={c.fechaEnvioProgr||""} style={{...iS,fontSize:12,padding:"6px 10px",borderColor:c.fechaEnvioProgr?"#6366f140":undefined}}
+                    <div style={{fontSize:10,fontWeight:700,color:T.accent,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Programar envío</div>
+                    <input type="date" value={c.fechaEnvioProgr||""} style={{...iS,fontSize:12,padding:"6px 10px",borderColor:c.fechaEnvioProgr?T.accentSolid+"40":undefined}}
                       onChange={async e=>{
                         await save({fechaEnvioProgr:e.target.value});
                         if(e.target.value) {
@@ -6309,7 +6352,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           }
                         }
                       }}/>
-                    {c.fechaEnvioProgr&&<div style={{fontSize:10,color:"#6366f1",marginTop:3}}>Te mandamos un mail ese día</div>}
+                    {c.fechaEnvioProgr&&<div style={{fontSize:10,color:T.accent,marginTop:3}}>Te mandamos un mail ese día</div>}
                   </div>
                 </div>
               </div>
@@ -6437,9 +6480,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               </div>
 
               {/* ── CONTENIDO COMPROMETIDO ── */}
-              <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:"12px 16px",marginBottom:12}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6}}>Contenido</div>
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Contenido</div>
                   {totalAcordados>0&&<span style={{fontSize:13,fontWeight:700,color:progreso===100?T.green:T.textMd}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>}
                 </div>
                 {totalAcordados>0&&<div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:8}}>
@@ -6543,7 +6586,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     {(!code||cupEdit)?(
                       <>
                         {!code&&<div style={{fontSize:12,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Este canje no tiene código asignado. Asignale uno y acá vas a ver sus pedidos, ventas y comisión — sincronizado con la pestaña <strong style={{color:T.textMd}}>Códigos y comisiones</strong>.</div>}
-                        <CanjeCuponEditor key={(c._docId||"")+"_"+code} T={T} iS={iS} code={c.codigoDescuento||""} pct={c.comisionPct||""} onSave={guardarCupon} onCancel={code?()=>setCupEdit(false):null}/>
+                        <CanjeCuponEditor key={(c._docId||"")+"_"+code} T={T} iS={iS} code={c.codigoDescuento||""} pct={c.comisionPct||""} onSave={guardarCupon} onCancel={code?()=>setCupEdit(false):null} crearEnTn={crearCuponTn}/>
                       </>
                     ):!st||st.loading?(
                       <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSm}}><Spinner size={12} color={T.textSm}/> Buscando ventas con el cupón…</div>
@@ -6739,19 +6782,29 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             </div>
 
             {/* Código de descuento + % comisión: vincula el canje con la pestaña
-                de Códigos y comisiones (la card muestra ventas y comisión del cupón) */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <div>
-                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Código de descuento</label>
+                de Códigos y comisiones. Si el código todavía no existe en la
+                tienda, se puede CREAR en Tienda Nube desde acá mismo. */}
+            <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 14px"}}>
+              <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:7,textTransform:"uppercase",letterSpacing:0.5}}>Código de descuento</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 100px",gap:10,marginBottom:8}}>
                 <input style={{...iS,fontFamily:"'Cascadia Code','Consolas',monospace",letterSpacing:1}} value={form.codigoDescuento||""} onChange={e=>setForm(f=>({...f,codigoDescuento:e.target.value.toUpperCase()}))} placeholder="SOFIA10" list="gh-codigos-influencers"/>
+                <input style={iS} type="number" min="0" max="100" step="0.5" value={form.comisionPct||""} onChange={e=>setForm(f=>({...f,comisionPct:e.target.value}))} placeholder="% comisión" title="% de comisión del influencer"/>
                 <datalist id="gh-codigos-influencers">
                   {influencers.filter(i=>i.codigoDescuento).map(i=><option key={i._docId} value={(i.codigoDescuento||"").toUpperCase()}>{i.nombre}</option>)}
                 </datalist>
               </div>
-              <div>
-                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>% comisión</label>
-                <input style={iS} type="number" min="0" max="100" step="0.5" value={form.comisionPct||""} onChange={e=>setForm(f=>({...f,comisionPct:e.target.value}))} placeholder="10"/>
-              </div>
+              {(form.codigoDescuento||"").trim().length>=2&&(
+                <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                  <span style={{fontSize:11,color:T.textSm}}>¿No existe todavía en tu tienda?</span>
+                  <input style={{...iS,width:70,fontSize:12,padding:"6px 8px"}} type="number" min="1" max="100" value={formCupDesc} onChange={e=>setFormCupDesc(e.target.value)} placeholder="% off"/>
+                  <AsyncButton onClick={async()=>{
+                    const v=parseFloat(formCupDesc);
+                    if(!isFinite(v)||v<=0||v>100) throw new Error("Poné el % de descuento del código (1 a 100)");
+                    const r=await crearCuponTn((form.codigoDescuento||"").toUpperCase().trim(),v);
+                    toast(r.creado?`Código ${r.code} creado en Tienda Nube (${v}% OFF) — quedó asignado a este canje al guardar`:`El código ${r.code} ya existía en Tienda Nube`,"success",6000);
+                  }} style={{...BtnSecondary(T),fontSize:11,padding:"6px 12px"}}>Crear en Tienda Nube</AsyncButton>
+                </div>
+              )}
             </div>
 
             {/* Teléfono + Email en una fila */}

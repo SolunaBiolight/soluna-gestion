@@ -410,7 +410,7 @@ export default async function handler(req, res) {
     // Sección exigida a los miembros de equipo según la acción: las métricas
     // del Dashboard son "margenes", los cupones "canjes", el resto "envios".
     const _seccion = (action === 'daily_metrics') ? 'margenes'
-      : (action === 'coupons' || action === 'cupon_link') ? 'canjes'
+      : (action === 'coupons' || action === 'cupon_link' || action === 'crear_cupon') ? 'canjes'
       : 'envios';
     if (!(await guardUid(req, res, uid, _seccion))) return;
   }
@@ -2352,6 +2352,37 @@ export default async function handler(req, res) {
       const token = randomBytes(16).toString("hex");
       await col.doc(token).set({ ...datos, createdAt: Date.now() });
       return res.status(200).json({ ok: true, token });
+    }
+
+    // ── Crear un cupón de descuento en Tienda Nube desde Growith ─────────
+    // Usado por Canjes: asignar un código a un canje creándolo en la tienda
+    // en el mismo paso. Si el código ya existía en TN, no es error: se avisa
+    // (yaExistia) y el front lo vincula igual.
+    if (action === 'crear_cupon') {
+      if (platform === 'shopify') return res.status(400).json({ error: "Crear códigos desde Growith está disponible para Tienda Nube — en Shopify crealo desde el admin y asignalo acá." });
+      const code = String(req.query.code || "").toUpperCase().trim();
+      const tipoCup = req.query.tipo === "absolute" ? "absolute" : "percentage";
+      const valorCup = parseFloat(req.query.valor);
+      if (!/^[A-Z0-9_-]{2,40}$/.test(code)) return res.status(400).json({ error: "Código inválido: solo letras, números y guiones (2 a 40 caracteres, sin espacios)." });
+      if (!isFinite(valorCup) || valorCup <= 0 || (tipoCup === "percentage" && valorCup > 100)) return res.status(400).json({ error: "Valor de descuento inválido." });
+      const rCup = await fetch(`https://api.tiendanube.com/v1/${storeId}/coupons`, {
+        method: "POST",
+        headers: { ...tnHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ code, type: tipoCup, value: String(valorCup) }),
+      });
+      const dCup = await rCup.json().catch(() => null);
+      if (!rCup.ok) {
+        const msg = JSON.stringify(dCup || {}).slice(0, 300);
+        // TN rechaza duplicados con 422: no es error para este flujo
+        if (rCup.status === 422 && /taken|already|unique|en uso|existe/i.test(msg)) {
+          return res.json({ ok: true, yaExistia: true, code });
+        }
+        if (rCup.status === 401 || rCup.status === 403) {
+          return res.status(502).json({ error: "Tienda Nube no dio permiso para crear cupones — reconectá Tienda Nube desde Configuración → Integraciones y probá de nuevo." });
+        }
+        return res.status(502).json({ error: `Tienda Nube no aceptó el cupón (HTTP ${rCup.status}): ${msg}` });
+      }
+      return res.json({ ok: true, creado: true, code, id: dCup?.id ?? null, type: dCup?.type || tipoCup, value: dCup?.value || String(valorCup) });
     }
 
     // ── Coupons (antiguo /api/coupons) ───────────────────────────────────
