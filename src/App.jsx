@@ -6240,6 +6240,29 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           const bS={width:24,height:24,border:"1px solid "+T.border,borderRadius:6,background:T.surface,color:T.text,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"};
           const save=async(fields)=>{try{await updateDoc(doc(db,"canjes",c._docId),{...fields,updatedAt:serverTimestamp()});}catch(e){}};
           const igHref=c.usuario?"https://instagram.com/"+c.usuario.replace("@",""):null;
+          // ── Sistema visual del detalle: cards uniformes + cabecera con ícono ──
+          const secStyle={background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 18px"};
+          const svgI=(paths)=><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{paths}</svg>;
+          const IC={
+            user:svgI(<><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></>),
+            truck:svgI(<><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></>),
+            box:svgI(<><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></>),
+            clap:svgI(<><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></>),
+            file:svgI(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></>),
+            tag:svgI(<><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></>),
+            edit:svgI(<><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></>),
+            pin:svgI(<><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></>),
+            mail:svgI(<><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></>),
+          };
+          // Cabecera de sección (función, no componente: no remonta los inputs al re-renderizar)
+          const secHead=(icon,label,right,mb=12)=>(
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:mb,minWidth:0}}>
+              <span style={{width:24,height:24,borderRadius:7,background:T.surface,border:`1px solid ${T.borderL}`,display:"inline-flex",alignItems:"center",justifyContent:"center",color:T.textMd,flexShrink:0}}>{icon}</span>
+              <span style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6}}>{label}</span>
+              {right?<span style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:8}}>{right}</span>:null}
+            </div>
+          );
+          const pillA={display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textMd,textDecoration:"none",background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:99,padding:"3px 10px",maxWidth:"100%"};
 
           // Campo editable inline simple
           const Field=({label,value,onSave,type="text",placeholder="",href,span=1})=>{
@@ -6273,51 +6296,39 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           return (
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
 
-              {/* ── HEADER: identidad + accesos (los links viven acá, no duplicados abajo) ── */}
-              <div style={{display:"flex",alignItems:"center",gap:14}}>
-                <Avatar src={c.foto} name={c.influencer} size={48} radius={12} T={T}/>
+              {/* ── HEADER: avatar con anillo accent, nombre editable, contacto en chips ── */}
+              <div style={{display:"flex",alignItems:"center",gap:14,padding:"2px 2px 4px"}}>
+                <div style={{padding:2,borderRadius:16,background:`linear-gradient(135deg, ${T.accentSolid}, ${T.accentSolid}22)`,flexShrink:0}}>
+                  <Avatar src={c.foto} name={c.influencer} size={52} radius={14} T={T}/>
+                </div>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:18,fontWeight:800,color:T.text,lineHeight:1.25}}>
-                    <InlineField value={c.influencer} onSave={v=>save({influencer:v})} placeholder="Nombre" T={T} iS={iS} style={{fontSize:18,fontWeight:800}}/>
+                  <div style={{fontSize:20,fontWeight:800,color:T.text,lineHeight:1.2,letterSpacing:-0.3}}>
+                    <InlineField value={c.influencer} onSave={v=>save({influencer:v})} placeholder="Nombre" T={T} iS={iS} style={{fontSize:20,fontWeight:800}}/>
                   </div>
-                  <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:4,alignItems:"center"}}>
-                    {c.telefono&&<a href={"https://wa.me/"+c.telefono.replace(/\D/g,"")} target="_blank" rel="noopener noreferrer"
-                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,color:T.textMd,textDecoration:"none"}}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill={T.green}><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                      {c.telefono}
-                    </a>}
-                    {igHref&&<a href={igHref} target="_blank" rel="noopener noreferrer"
-                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,color:T.textMd,textDecoration:"none"}}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#E1306C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
-                      {c.usuario?"@"+c.usuario.replace("@",""):"Instagram"}
-                    </a>}
-                    {c.email&&<a href={"mailto:"+c.email} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,color:T.textMd,textDecoration:"none"}}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                      {c.email}
-                    </a>}
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:7,alignItems:"center"}}>
+                    {c.telefono&&<a href={"https://wa.me/"+c.telefono.replace(/\D/g,"")} target="_blank" rel="noopener noreferrer" style={pillA}><svg width="12" height="12" viewBox="0 0 24 24" fill={T.green}><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.telefono}</span></a>}
+                    {igHref&&<a href={igHref} target="_blank" rel="noopener noreferrer" style={pillA}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#E1306C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.usuario?"@"+c.usuario.replace("@",""):"Instagram"}</span></a>}
+                    {c.email&&<a href={"mailto:"+c.email} style={pillA}><span style={{color:T.textSm,display:"inline-flex"}}>{IC.mail}</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email}</span></a>}
                   </div>
                 </div>
                 <TrackingChip c={c} size={10}/>
               </div>
 
-              {/* ── ESTADO: selector discreto, sin píldoras gritonas ── */}
-              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.card,border:"1px solid "+T.border,borderRadius:10,padding:"8px 12px"}}>
-                <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Estado</span>
-                <div style={{display:"flex",gap:2,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8,padding:2}}>
-                  {ESTADOS_C.map(est=>{
-                    const s2=getEstadoCC(T,est);
-                    const active=c.estado===est||(est==="Por enviar"&&c.estado==="Pendiente envío");
-                    return <button key={est} onClick={async()=>{if(active)return;await save({estado:est,...(est==="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});}}
-                      style={{fontSize:12,fontWeight:active?700:500,padding:"5px 12px",borderRadius:6,border:"none",background:active?T.surface:"transparent",color:active?s2.text:T.textSm,cursor:active?"default":"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      <span style={{width:6,height:6,borderRadius:"50%",background:active?s2.dot:T.borderL,flexShrink:0}}/>{est}
-                    </button>;
-                  })}
-                </div>
+              {/* ── ESTADO: control segmentado, ancho completo ── */}
+              <div style={{display:"grid",gridTemplateColumns:`repeat(${ESTADOS_C.length},1fr)`,gap:4,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:4}}>
+                {ESTADOS_C.map(est=>{
+                  const s2=getEstadoCC(T,est);
+                  const active=c.estado===est||(est==="Por enviar"&&c.estado==="Pendiente envío");
+                  return <button key={est} onClick={async()=>{if(active)return;await save({estado:est,...(est==="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});}}
+                    style={{fontSize:12,fontWeight:active?700:500,padding:"8px 6px",borderRadius:9,border:`1px solid ${active?s2.dot+"66":"transparent"}`,background:active?s2.bg:"transparent",color:active?s2.text:T.textSm,cursor:active?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:active?s2.dot:T.borderL,flexShrink:0}}/>{est}
+                  </button>;
+                })}
               </div>
 
               {/* ── DATOS CLAVE en grilla 2 columnas (contacto vive en el header) ── */}
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
-                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:12}}>Datos del canje</div>
+              <div style={secStyle}>
+                {secHead(IC.user,"Datos del canje")}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                   <Field label="WhatsApp" value={c.telefono} onSave={v=>save({telefono:v})} placeholder="5491155..."/>
                   <Field label="Email" value={c.email} onSave={v=>save({email:v})} type="email" placeholder="sofi@mail.com"/>
@@ -6376,9 +6387,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   ?("Retiro en sucursal"+(c.pickupDetails?.name?`: ${c.pickupDetails.name}`:"")+(c.pickupDetails?.address?.address?` — ${c.pickupDetails.address.address} ${c.pickupDetails.address.number||""}`.trim():""))
                   :[[c.direccion,c.dirNumero].filter(Boolean).join(" "),c.piso?`Piso ${c.piso}`:"",c.localidad,c.provincia,c.cp?`CP ${c.cp}`:""].filter(Boolean).join(", ");
                 return (
-                  <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10,flexWrap:"wrap"}}>
-                      <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Envío Andreani</span>
+                  <div style={secStyle}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+                      {secHead(IC.truck,"Envío Andreani",null,0)}
                       <AsyncButton onClick={async()=>{
                         let cx={...c};
                         const faltantes=x=>x.esSucursal?[]:[["dirección",x.direccion],["número",x.dirNumero],["CP",x.cp],["localidad",x.localidad],["provincia",x.provincia]].filter(([,v])=>!String(v||"").trim()).map(([l])=>l);
@@ -6401,12 +6412,21 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           const ok=await exportarXlsxCanje(cx);
                           if(ok) toast(cx.esSucursal?"Excel generado (envío a sucursal) — subilo al portal de Andreani y pegá el tracking acá":"Excel generado — subilo al portal de Andreani y pegá el tracking acá","success",5000);
                         }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
-                      }} style={{...BtnSecondary(T),fontSize:13,color:T.green,borderColor:T.green+"66",height:38,padding:"0 16px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",whiteSpace:"nowrap"}}>Exportar XLSX Andreani</AsyncButton>
+                      }} style={{...BtnSecondary(T),fontSize:12,color:T.green,borderColor:T.green+"66",height:32,padding:"0 14px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",whiteSpace:"nowrap"}}>Exportar XLSX Andreani</AsyncButton>
                     </div>
                     {dirTxt?(
-                      <div style={{fontSize:13,color:T.text,lineHeight:1.6}}>{dirTxt}{c.dni?<span style={{color:T.textSm}}> · DNI {c.dni}</span>:null}</div>
+                      <div style={{display:"flex",gap:10,alignItems:"flex-start",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px"}}>
+                        <span style={{color:T.accent,flexShrink:0,marginTop:2,display:"inline-flex"}}>{IC.pin}</span>
+                        <div style={{minWidth:0,flex:1}}>
+                          <div style={{fontSize:13,color:T.text,fontWeight:600,lineHeight:1.5}}>{dirTxt}</div>
+                          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
+                            <span style={{fontSize:10,fontWeight:700,color:T.textMd,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:99,padding:"2px 9px"}}>{c.esSucursal?"Retiro en sucursal":"A domicilio"}</span>
+                            {c.dni&&<span style={{fontSize:10,fontWeight:700,color:T.textMd,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:99,padding:"2px 9px"}}>DNI {c.dni}</span>}
+                          </div>
+                        </div>
+                      </div>
                     ):(
-                      <div style={{fontSize:12,color:T.textSm}}>Sin dirección cargada. Los datos de envío vienen del pedido de la tienda — corregilos ahí si están mal.</div>
+                      <div style={{fontSize:12,color:T.textSm,background:T.bg,border:`1px dashed ${T.border}`,borderRadius:10,padding:"10px 12px"}}>Sin dirección cargada. Los datos de envío vienen del pedido de la tienda — cargá el nº de pedido arriba y se completa solo.</div>
                     )}
                   </div>
                 );
@@ -6444,8 +6464,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               </Modal>
 
               {/* ── PRODUCTOS ── */}
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
-                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Productos enviados</div>
+              <div style={secStyle}>
+                {secHead(IC.box,"Productos enviados",(c.productosCanje||[]).length>0?<span style={{fontSize:11,fontWeight:700,color:T.textMd}}>{(c.productosCanje||[]).reduce((a,p)=>a+(p.cantidad||1),0)} u.</span>:null)}
                 {(c.productosCanje||[]).length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Sin productos aún</div>}
                 <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
                   {(c.productosCanje||[]).map((p,pi)=>(
@@ -6473,11 +6493,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               </div>
 
               {/* ── CONTENIDO COMPROMETIDO ── */}
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                  <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Contenido</div>
-                  {totalAcordados>0&&<span style={{fontSize:13,fontWeight:700,color:progreso===100?T.green:T.textMd}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>}
-                </div>
+              <div style={secStyle}>
+                {secHead(IC.clap,"Contenido",totalAcordados>0?<span style={{fontSize:11,fontWeight:800,color:progreso===100?T.green:T.accent,background:(progreso===100?T.green:T.accentSolid)+"18",border:`1px solid ${(progreso===100?T.green:T.accentSolid)}44`,borderRadius:99,padding:"2px 9px"}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>:null,10)}
                 {totalAcordados>0&&<div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:8}}>
                   <div style={{height:"100%",width:progreso+"%",background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s"}}/>
                 </div>}
@@ -6557,11 +6574,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               {/* ── RESULTADOS DEL CUPÓN (ROI del canje) ── */}
               {/* ── GUION: tarea asignada + acceso al PDF entregado (arriba del
                      código de descuento, pedido de Soluna) ── */}
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-                  <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Guion</span>
-                  {c.guionTareaNum&&<span style={{fontSize:11,fontWeight:700,color:T.accent}}>Tarea #{c.guionTareaNum}</span>}
-                </div>
+              <div style={secStyle}>
+                {secHead(IC.file,"Guion",c.guionTareaNum?<span style={{fontSize:11,fontWeight:700,color:T.accent}}>Tarea #{c.guionTareaNum}</span>:null)}
                 {c.guionTareaId?(
                   <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                     <AsyncButton onClick={()=>verGuion(c)} style={{...BtnPrimary(T),fontSize:12}}>Ver guion</AsyncButton>
@@ -6585,7 +6599,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 return (
                   <div style={{background:code&&!cupEdit?`linear-gradient(135deg, ${T.accentSolid}16, transparent 65%)`:T.card,border:`1px solid ${code&&!cupEdit?T.accentSolid+"44":T.border}`,borderRadius:14,padding:"16px 18px"}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:code&&!cupEdit?4:10,gap:8}}>
-                      <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6}}>{code&&!cupEdit?"Código asignado":"Código de descuento"}</span>
+                      {secHead(IC.tag,code&&!cupEdit?"Código asignado":"Código de descuento",null,0)}
                       {code&&!cupEdit&&(
                         <button onClick={()=>setCupEdit(true)} title="Cambiar código o % de comisión" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:600,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
                       )}
@@ -6613,8 +6627,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               })()}
 
               {/* ── NOTAS + HISTORIAL en una sola card (antes eran dos bloques sueltos) ── */}
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
-                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Notas y seguimiento</div>
+              <div style={secStyle}>
+                {secHead(IC.edit,"Notas y seguimiento")}
                 <NotasInline value={c.notas} onSave={v=>save({notas:v})} T={T} iS={iS}/>
                 <NotasRapidas T={T} canje={c} onAdd={addNota}/>
               </div>
