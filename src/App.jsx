@@ -4620,6 +4620,28 @@ function ghCanjeAccion(c, cfg){
   }
   return null;
 }
+// Asignar/editar el código de descuento y % comisión de un canje desde su card.
+// Componente a nivel módulo (no inline en el render) para que el input no
+// pierda el foco cuando AppCanjes re-renderiza por el snapshot de Firestore.
+function CanjeCuponEditor({T,iS,code,pct,onSave,onCancel}){
+  const [c,setC]=React.useState(code||"");
+  const [p,setP]=React.useState(pct||"");
+  return (
+    <div style={{display:"flex",gap:8,alignItems:"flex-end",flexWrap:"wrap"}}>
+      <div style={{flex:2,minWidth:140}}>
+        <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:4,textTransform:"uppercase",letterSpacing:0.4}}>Código</div>
+        <input value={c} onChange={e=>setC(e.target.value.toUpperCase())} placeholder="SOFIA10" style={{...iS,fontFamily:"'Cascadia Code','Consolas',monospace",letterSpacing:1,fontSize:12,padding:"7px 10px"}}/>
+      </div>
+      <div style={{width:92}}>
+        <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:4,textTransform:"uppercase",letterSpacing:0.4}}>% comisión</div>
+        <input type="number" min="0" max="100" step="0.5" value={p} onChange={e=>setP(e.target.value)} placeholder="10" style={{...iS,fontSize:12,padding:"7px 10px"}}/>
+      </div>
+      <Btn T={T} variant="primary" size="sm" onClick={()=>onSave((c||"").toUpperCase().trim(),p)}>Guardar</Btn>
+      {onCancel&&<Btn T={T} variant="ghost" size="sm" onClick={onCancel}>Cancelar</Btn>}
+    </div>
+  );
+}
+
 function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje, initialDetail, onClearInitialDetail, tab: tabProp, setTab: setTabProp, orders=[]}) {
   const [canjes,setCanjes]=useState([]);
   // Prefijo común del catálogo para chips cortos ("Rojo - Marco Negro" en vez
@@ -4639,6 +4661,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   ],[orders,prefProds]);
   const [form,setForm]=useState(null);
   const [detail,setDetail]=useState(null);
+  const [cupEdit,setCupEdit]=useState(false); // edición inline del cupón en el detalle
+  useEffect(()=>{ setCupEdit(false); },[detail]);
   const [search,setSearch]=useState("");
   const [filterEstado,setFilterEstado]=useState("");
   const [filterRed,setFilterRed]=useState("");
@@ -5834,7 +5858,16 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           <div style={{fontSize:14,fontWeight:700,color:r.usosPeriodo>0?T.text:T.textSm}}>{r.usosPeriodo||"--"}</div>
                           <div>
                             {r.tieneCanje
-                              ? <><div style={{fontSize:12,fontWeight:600,color:T.text}}>{r.influencer}</div>{r.usuario&&<div style={{fontSize:11,color:T.textSm}}>@{r.usuario}</div>}</>
+                              ? (()=>{
+                                  // Click → abre la card del canje vinculado a este código
+                                  const cj=canjes.find(x=>(x.codigoDescuento||"").toUpperCase().trim()===r.code);
+                                  return (
+                                    <div onClick={cj?()=>setDetail(cj._docId):undefined} title={cj?"Abrir el canje vinculado":""} style={{cursor:cj?"pointer":"default"}}>
+                                      <div style={{fontSize:12,fontWeight:600,color:cj?T.accent:T.text,textDecoration:cj?"underline":"none",textUnderlineOffset:2}}>{r.influencer}</div>
+                                      {r.usuario&&<div style={{fontSize:11,color:T.textSm}}>@{r.usuario}</div>}
+                                    </div>
+                                  );
+                                })()
                               : <span style={{fontSize:11,color:T.textSm,fontStyle:"italic"}}>Sin vincular</span>
                             }
                           </div>
@@ -6486,18 +6519,33 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               </div>
 
               {/* ── RESULTADOS DEL CUPÓN (ROI del canje) ── */}
-              {c.codigoDescuento&&(()=>{
+              {(()=>{
                 const code=(c.codigoDescuento||"").toUpperCase().trim();
                 const st=cuponStats[code];
                 const neto=st?.found?(st.ventas-(st.descuento||0))*(1-mpComision/100):0;
                 const comision=neto*((parseFloat(c.comisionPct)||0)/100);
+                const guardarCupon=(cod,pct)=>{
+                  save({codigoDescuento:cod,comisionPct:pct});
+                  setCupEdit(false);
+                  toast(cod?"Código asignado al canje — se sincroniza con Códigos y comisiones":"Código quitado del canje","success",4500);
+                };
                 return (
                   <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-                      <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Resultados del cupón</span>
-                      <code style={{fontSize:11,fontWeight:700,color:T.purple,background:T.purpleBg,borderRadius:5,padding:"2px 8px"}}>{c.codigoDescuento}</code>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8}}>
+                      <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{code?"Resultados del cupón":"Código de descuento"}</span>
+                      {code&&!cupEdit&&(
+                        <span style={{display:"inline-flex",alignItems:"center",gap:6}}>
+                          <code style={{fontSize:11,fontWeight:700,color:T.purple,background:T.purpleBg,borderRadius:5,padding:"2px 8px"}}>{c.codigoDescuento}</code>
+                          <button onClick={()=>setCupEdit(true)} title="Cambiar código o % de comisión" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:600,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
+                        </span>
+                      )}
                     </div>
-                    {!st||st.loading?(
+                    {(!code||cupEdit)?(
+                      <>
+                        {!code&&<div style={{fontSize:12,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Este canje no tiene código asignado. Asignale uno y acá vas a ver sus pedidos, ventas y comisión — sincronizado con la pestaña <strong style={{color:T.textMd}}>Códigos y comisiones</strong>.</div>}
+                        <CanjeCuponEditor key={(c._docId||"")+"_"+code} T={T} iS={iS} code={c.codigoDescuento||""} pct={c.comisionPct||""} onSave={guardarCupon} onCancel={code?()=>setCupEdit(false):null}/>
+                      </>
+                    ):!st||st.loading?(
                       <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSm}}><Spinner size={12} color={T.textSm}/> Buscando ventas con el cupón…</div>
                     ):st.error?(
                       <div style={{fontSize:12,color:T.textSm}}>No se pudieron traer las ventas del cupón. Reintentá desde la pestaña Historial.</div>
@@ -6687,6 +6735,22 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <div>
                 <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>@ Usuario</label>
                 <input style={iS} value={form.usuario||""} onChange={e=>setForm(f=>({...f,usuario:e.target.value.replace(/^@/,"")}))} placeholder="sofigarcia"/>
+              </div>
+            </div>
+
+            {/* Código de descuento + % comisión: vincula el canje con la pestaña
+                de Códigos y comisiones (la card muestra ventas y comisión del cupón) */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Código de descuento</label>
+                <input style={{...iS,fontFamily:"'Cascadia Code','Consolas',monospace",letterSpacing:1}} value={form.codigoDescuento||""} onChange={e=>setForm(f=>({...f,codigoDescuento:e.target.value.toUpperCase()}))} placeholder="SOFIA10" list="gh-codigos-influencers"/>
+                <datalist id="gh-codigos-influencers">
+                  {influencers.filter(i=>i.codigoDescuento).map(i=><option key={i._docId} value={(i.codigoDescuento||"").toUpperCase()}>{i.nombre}</option>)}
+                </datalist>
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>% comisión</label>
+                <input style={iS} type="number" min="0" max="100" step="0.5" value={form.comisionPct||""} onChange={e=>setForm(f=>({...f,comisionPct:e.target.value}))} placeholder="10"/>
               </div>
             </div>
 
