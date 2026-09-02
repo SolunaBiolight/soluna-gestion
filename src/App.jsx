@@ -26481,7 +26481,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       {[
         {n:1,txt:"Entrá a",link:"https://business.facebook.com/settings/system-users",linkTxt:"business.facebook.com → Configuración del negocio → Usuarios → Usuarios del sistema"},
         {n:2,txt:"Click en + Agregar → Ponele un nombre (ej: Growith) → Rol: Administrador → Crear usuario del sistema"},
-        {n:3,txt:"Click en el usuario creado → Asignar activos → Seleccioná tu Cuenta publicitaria, tu Página y la App (pestaña Apps, control total) → acceso completo → Guardar. Sin la App asignada, Generar token dice "No hay permisos disponibles""},
+        {n:3,txt:"Click en el usuario creado → Asignar activos → Seleccioná tu Cuenta publicitaria, tu Página y la App (pestaña Apps, control total) → acceso completo → Guardar. Sin la App asignada, Generar token dice No hay permisos disponibles"},
         {n:4,txt:"PASO CLAVE: en el mismo usuario, buscá \"Asignar apps\" → elegí TU app (la que creaste arriba) → permisos completos → Guardar. Si salteás esto, el paso siguiente no te va a dejar elegir la app."},
         {n:5,txt:"Click en Generar token → elegí esa app → caducidad: Nunca → marcá los permisos ads_management, ads_read y business_management (obligatorios) + pages_show_list y pages_read_engagement → Generar token"},
         {n:6,txt:"Copiá el token (empieza con EAA...) y pegalo acá abajo"},
