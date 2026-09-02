@@ -6330,29 +6330,40 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   <Field label="Nº de pedido" value={c.pedidoRef} onSave={v=>save({pedidoRef:v})} placeholder="12345"/>
                   <Field label="Tracking Andreani" value={c.tracking} onSave={v=>save({tracking:v,...((v||"").trim()&&(v||"").trim()!==(c.tracking||"").trim()?{trackDone:false,trackingCat:"",trackingEstado:"",trackingAviso:null}:{})})} placeholder="3600029..."
                     href={c.tracking?"https://www.andreani.com/envio/"+String(c.tracking).replace(/\s+/g,""):null}/>
+                  {/* Fecha de envío UNIFICADA: pasada/hoy = fecha real; futura =
+                      envío programado con recordatorio por mail a las 9AM */}
                   <div>
-                    <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Fecha de envío</div>
-                    <input type="date" value={c.fechaEnvio||""} style={{...iS,fontSize:12,padding:"6px 10px"}} onChange={e=>save({fechaEnvio:e.target.value})}/>
-                  </div>
-                  <div>
-                    <div style={{fontSize:10,fontWeight:700,color:T.accent,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Programar envío</div>
-                    <input type="date" value={c.fechaEnvioProgr||""} style={{...iS,fontSize:12,padding:"6px 10px",borderColor:c.fechaEnvioProgr?T.accentSolid+"40":undefined}}
-                      onChange={async e=>{
-                        await save({fechaEnvioProgr:e.target.value});
-                        if(e.target.value) {
-                          const d=new Date(e.target.value+"T09:00:00");
-                          const ms=d.getTime()-Date.now();
-                          if(ms>60000) {
-                            fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-                              action:"scheduleCanjeEmail",uid:user.uid,
-                              influencer:c.influencer, producto:c.producto||((c.productosCanje||[])[0]?.nombre||""),
-                              tracking:c.tracking||"", fechaEnvioProgr:e.target.value, delayMs:ms,
-                            })}).catch(()=>{});
-                            toast(`Programado para el ${d.toLocaleDateString("es-AR",{day:"2-digit",month:"long"})}`, "success", 3000);
-                          }
-                        }
-                      }}/>
-                    {c.fechaEnvioProgr&&<div style={{fontSize:10,color:T.accent,marginTop:3}}>Te mandamos un mail ese día</div>}
+                    {(()=>{
+                      const progr=!c.fechaEnvio&&c.fechaEnvioProgr&&c.fechaEnvioProgr>hoyAR();
+                      return (<>
+                        <div style={{fontSize:10,fontWeight:700,color:progr?T.accent:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{progr?"Envío programado":"Fecha de envío"}</div>
+                        <input type="date" value={c.fechaEnvio||c.fechaEnvioProgr||""} style={{...iS,fontSize:12,padding:"6px 10px",borderColor:progr?T.accentSolid+"40":undefined}}
+                          onChange={async e=>{
+                            const val=e.target.value;
+                            if(!val){ await save({fechaEnvio:"",fechaEnvioProgr:""}); return; }
+                            if(val>hoyAR()){
+                              // Futura → programado + recordatorio
+                              await save({fechaEnvioProgr:val,fechaEnvio:""});
+                              const d=new Date(val+"T09:00:00");
+                              const ms=d.getTime()-Date.now();
+                              if(ms>60000){
+                                fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+                                  action:"scheduleCanjeEmail",uid:user.uid,
+                                  influencer:c.influencer, producto:c.producto||((c.productosCanje||[])[0]?.nombre||""),
+                                  tracking:c.tracking||"", fechaEnvioProgr:val, delayMs:ms,
+                                })}).catch(()=>{});
+                                toast(`Envío programado para el ${d.toLocaleDateString("es-AR",{day:"2-digit",month:"long"})} — te llega un mail ese día a las 9AM`,"success",4500);
+                              }
+                            } else {
+                              // Pasada u hoy → fecha real de envío
+                              await save({fechaEnvio:val,fechaEnvioProgr:""});
+                            }
+                          }}/>
+                        <div style={{fontSize:10,color:progr?T.accent:T.textSm,marginTop:3}}>
+                          {progr?"Te mandamos un recordatorio ese día a las 9AM":"Si ponés una fecha futura, se programa con recordatorio por mail"}
+                        </div>
+                      </>);
+                    })()}
                   </div>
                 </div>
               </div>
@@ -6399,25 +6410,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   </div>
                 );
               })()}
-
-              {/* ── GUION: tarea asignada + acceso al PDF entregado ── */}
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-                  <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Guion</span>
-                  {c.guionTareaNum&&<span style={{fontSize:11,fontWeight:700,color:T.accent}}>Tarea #{c.guionTareaNum}</span>}
-                </div>
-                {c.guionTareaId?(
-                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                    <AsyncButton onClick={()=>verGuion(c)} style={{...BtnPrimary(T),fontSize:12}}>Ver guion</AsyncButton>
-                    <span style={{fontSize:11,color:T.textSm}}>Abre el último archivo subido a la tarea, listo para mandarlo por WhatsApp.</span>
-                  </div>
-                ):(
-                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                    <button onClick={()=>abrirPedirGuion(c)} style={{...BtnPrimary(T),fontSize:12}}>Pedir guion</button>
-                    <span style={{fontSize:11,color:T.textSm}}>Crea la tarea con los datos del canje y las redes del influencer, y le avisa por mail al asignado.</span>
-                  </div>
-                )}
-              </div>
 
               {/* Modal Pedir guion (portal, por encima del detalle) */}
               <Modal T={T} open={!!pedirGuion} onClose={()=>setPedirGuion(null)} title="Pedir guion" width={480} zIndex={2400}>
@@ -6562,6 +6554,26 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               </div>
 
               {/* ── RESULTADOS DEL CUPÓN (ROI del canje) ── */}
+              {/* ── GUION: tarea asignada + acceso al PDF entregado (arriba del
+                     código de descuento, pedido de Soluna) ── */}
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                  <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Guion</span>
+                  {c.guionTareaNum&&<span style={{fontSize:11,fontWeight:700,color:T.accent}}>Tarea #{c.guionTareaNum}</span>}
+                </div>
+                {c.guionTareaId?(
+                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                    <AsyncButton onClick={()=>verGuion(c)} style={{...BtnPrimary(T),fontSize:12}}>Ver guion</AsyncButton>
+                    <span style={{fontSize:11,color:T.textSm}}>Abre el último archivo subido a la tarea, listo para mandarlo por WhatsApp.</span>
+                  </div>
+                ):(
+                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                    <button onClick={()=>abrirPedirGuion(c)} style={{...BtnPrimary(T),fontSize:12}}>Pedir guion</button>
+                    <span style={{fontSize:11,color:T.textSm}}>Crea la tarea con los datos del canje y las redes del influencer, y le avisa por mail al asignado.</span>
+                  </div>
+                )}
+              </div>
+
               {(()=>{
                 const code=(c.codigoDescuento||"").toUpperCase().trim();
                 const st=cuponStats[code];
