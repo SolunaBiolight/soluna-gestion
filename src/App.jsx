@@ -8336,7 +8336,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         const validas=locs?lista.filter(s=>s.tpl):lista;
         const gz=d.stats?.geo||{};
         setLocCerca({lista:(locs&&validas.length?[...validas,...lista.filter(s=>!s.tpl).slice(0,5)]:lista).slice(0,18),origen:d.origen||"",aproximado:!!d.aproximado,diag:d.sinOrigen?"sin_origen":(d.stats&&!d.stats.conCoords?"sin_coords":""),
-          geoDiag:gz.zona!=null?`coords ${gz.geocodificadas}/${gz.zona} de la zona · esta vez: ${gz.ok||0} ok, ${gz.fail||0} sin resultado${gz.rate?", georef limitó":""}`:""});
+          geoDiag:gz.zona!=null?`coords ${gz.geocodificadas}/${gz.zona} de la zona · esta vez: ${gz.ok||0} ok, ${gz.fail||0} sin resultado${gz.rate?", georef limitó":""} · ancla: ${gz.origenSrc||"ninguna"} ("${gz.dir||""}") · 1ra a ${gz.primerKm!=null?gz.primerKm+" km":"—"} · conCoords total ${gz.conCoords??"?"}`:""});
       }catch(e){ setLocCerca({lista:[],diag:String(e?.message||"error")}); }
     })();
   }
@@ -8502,7 +8502,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // Puerta del bulk por API: la tarifa depende de la sucursal de despacho, así
   // que antes de emitir el usuario tiene que haberla confirmado. El XLSX no se
   // bloquea (el portal de Andreani resuelve el origen por su cuenta).
+  // Puerta del bulk: emitir exige (1) dirección de origen + remitente y (2)
+  // sucursal de despacho confirmada. Antes solo se pedía (2) y el backend
+  // rechazaba con "origen_no_configurado" después de elegir la sucursal.
+  const bulkPendienteRef=useRef(undefined);
   function lanzarBulkAndreani(ordersOverride){
+    if(!andreani.origenConfigurado){
+      bulkPendienteRef.current=ordersOverride;
+      toast("Antes de emitir, cargá tu dirección de origen y los datos del remitente (una sola vez)","info",5000);
+      setAndreaniOrigenOpen(true);
+      return;
+    }
     if(!andreani.sucOrigen?.confirmada){ setSucGate({orders:Array.isArray(ordersOverride)?ordersOverride:null}); return; }
     iniciarBulkAndreani(ordersOverride);
   }
@@ -10728,7 +10738,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {andreani.enabled&&(
         <Modal T={T} open={andreaniOrigenOpen} onClose={()=>setAndreaniOrigenOpen(false)} title="Datos del remitente — Andreani" width={520}>
           <AndreaniOrigenForm T={T} user={user}
-            onSaved={()=>{setAndreani(a=>({...a,origenConfigurado:true}));setAndreaniOrigenOpen(false);}}
+            onSaved={()=>{
+              setAndreani(a=>({...a,origenConfigurado:true}));setAndreaniOrigenOpen(false);
+              // Si venía de "Etiquetas listas", retomar el flujo (sigue con la sucursal de despacho)
+              if(bulkPendienteRef.current!==undefined){ const o=bulkPendienteRef.current; bulkPendienteRef.current=undefined; setTimeout(()=>{ if(!andreani.sucOrigen?.confirmada) setSucGate({orders:Array.isArray(o)?o:null}); else iniciarBulkAndreani(o); },150); }
+            }}
             onSucOrigen={suc=>setAndreani(a=>({...a,sucOrigen:suc}))}
             onCancel={()=>setAndreaniOrigenOpen(false)}/>
         </Modal>

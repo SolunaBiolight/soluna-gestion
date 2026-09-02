@@ -962,9 +962,11 @@ export default async function handler(req, res) {
       });
       // 1) Ancla: geocodificación directa de la dirección del pedido.
       let origen = null;
+      geoStats.dir = dir; geoStats.loc = loc;
       if (dir) {
         const g = await geocodeDireccion({ dir, loc, prov, cp });
-        if (g) origen = { ...g, descripcion: dir };
+        if (g) { origen = { ...g, descripcion: dir }; geoStats.origenSrc = "geocode"; }
+        else geoStats.origenSrc = "geocode_fallo";
       }
       // 2) …tokens del punto en el listado oficial…
       if (!origen && q.length >= 2) {
@@ -973,7 +975,7 @@ export default async function handler(req, res) {
           const hay = nrmTxt([s.d, s.c, s.n, s.l].filter(Boolean).join(" "));
           return tokens.every(t => hay.includes(t));
         }).filter(s => s.la != null);
-        if (cand.length) origen = { lat: cand[0].la, lng: cand[0].lo, descripcion: cand[0].d };
+        if (cand.length) { origen = { lat: cand[0].la, lng: cand[0].lo, descripcion: cand[0].d }; geoStats.origenSrc = "tokens"; }
       }
       // 3) Centroide de las sucursales del CP del pedido: fallback de ancla y
       // TAMBIÉN control de cordura del geocoder — una dirección con texto raro
@@ -1031,6 +1033,8 @@ export default async function handler(req, res) {
           .map(s => ({ ...expand(s), distM: s.distM }));
         // Cordura del resultado: si la MÁS cercana está a más de 300 km, el
         // ranking no sirve (coords parciales) → aproximación por localidad.
+        geoStats.primerKm = conDist.length ? Math.round(conDist[0].distM / 1000) : null;
+        geoStats.conCoords = conCoords;
         if (conDist.length && conDist[0].distM <= 300000) {
           return res.json({ sucursales: conDist, origen: origen.descripcion, stats });
         }
