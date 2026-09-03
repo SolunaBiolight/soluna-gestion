@@ -31137,6 +31137,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [invSearch, setInvSearch] = useState("");
   const [editingItem, setEditingItem] = useState(null); // {id?, nombre, sku, image, product_links}
   const [itemEditTab, setItemEditTab] = useState("stock"); // "stock" | "mapeo"
+  // Guía de onboarding del inventario (checklist). Se recuerda cerrada por usuario.
+  const [invGuideDismissed, setInvGuideDismissed] = useState(()=>{ try{ return localStorage.getItem(`growith_inv_guide_${uid}`)==="1"; }catch(_){ return false; } });
   const [itemSaving, setItemSaving] = useState(false);
   // Mapeo: catálogo de pubs de plataformas
   const [platformProducts, setPlatformProducts] = useState([]);
@@ -32533,6 +32535,48 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     ))}
                   </div>
                 </div>
+
+                {/* Guía de onboarding — checklist de 4 pasos para dejar el inventario andando */}
+                {!invGuideDismissed && (()=>{
+                  const guiaPasos = [
+                    { n:1, done: warehouses.length>0, title:"Creá tu depósito", desc:"Es dónde está tu stock físico (tu local, un depósito, etc.). Podés tener varios y repartir el stock entre ellos.", action: warehouses.length>0?null:{label:"Ir a Configuración", fn:()=>setTab("config")} },
+                    { n:2, done:null, title:"Configurá bien tus productos en tu tienda / Mercado Libre", desc:"ANTES de vincular: asegurate de que cada producto tenga su SKU cargado y sus variantes (talles/colores) bien creadas en Shopify / Tienda Nube / ML." },
+                    { n:3, done: invItems.length>0, title:"Vinculá tu catálogo (SKU)", desc:"Un click y Growith crea tus items solo: un item por cada variante (talle), ya vinculado a su stock. De ahí, cada venta lo descuenta automáticamente.", action: {label: invItems.length>0?"Volver a vincular":"Vincular catálogo (SKU)", fn:importCatalog} },
+                    { n:4, done:null, title:"(Opcional) Mapeá o ajustá a mano", desc:"Para packs o casos especiales: tocá 'Crear Item' → pestaña 'Mapeo de productos' → buscá el producto y elegí el talle/variante a vincular. Podés poner 'cantidad' para packs (una venta descuenta N unidades)." },
+                  ];
+                  return (
+                    <div style={{background:T.card,border:`1px solid ${T.accent}55`,borderRadius:12,padding:"16px 18px"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,gap:12}}>
+                        <div>
+                          <div style={{fontSize:14,fontWeight:800,color:T.text}}>🎯 Cómo dejar tu inventario andando</div>
+                          <div style={{fontSize:11.5,color:T.textSm,marginTop:3}}>4 pasos y listo — después el stock se descuenta solo con cada venta.</div>
+                        </div>
+                        <button onClick={()=>{ setInvGuideDismissed(true); try{ localStorage.setItem(`growith_inv_guide_${uid}`,"1"); }catch(_){} }}
+                          title="Cerrar guía" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:17,padding:0,lineHeight:1,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                        {guiaPasos.map(s=>(
+                          <div key={s.n} style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+                            <div style={{width:24,height:24,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,
+                              background: s.done===true ? T.green : (s.done===false ? T.accent+"22" : T.surface),
+                              color: s.done===true ? "#fff" : (s.done===false ? T.accent : T.textSm),
+                              border: s.done===null ? `1px solid ${T.border}` : "none"}}>
+                              {s.done===true ? "✓" : s.n}
+                            </div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:12.5,fontWeight:700,color: s.done===true?T.textSm:T.text, textDecoration: s.done===true?"line-through":"none"}}>{s.title}</div>
+                              <div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.5}}>{s.desc}</div>
+                              {s.action && <button onClick={s.action.fn} disabled={s.n===3&&importingCatalog}
+                                style={{marginTop:7,padding:"5px 12px",fontSize:11,fontWeight:700,border:"none",borderRadius:7,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                {s.n===3&&importingCatalog?<><Spinner size={10} color="#fff"/> Vinculando…</>:s.action.label}
+                              </button>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Buscador */}
                 <div style={{display:"flex",gap:8}}>
