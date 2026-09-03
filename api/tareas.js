@@ -933,7 +933,7 @@ export default async function handler(req, res) {
       // CM (verTareas) gestiona tareas; el resto solo lee lo suyo. Nada de
       // acciones de equipo/tokens/emails de aviso por esta vía.
       const ACCIONES_CM = ["getData","getProduccion","createTarea","updateTarea","updateEstado","quickUpdateTareaEstado","revertEstado","duplicateTarea","deleteTarea","addComment","addSlotEntrega","updateDeliverable","deleteDeliverable","sendRecordatorio","logUsage"];
-      const ACCIONES_LECTURA = ["getData","getProduccion","logUsage"];
+      const ACCIONES_LECTURA = ["getData","getEntregadas","getProduccion","logUsage"];
       if (!(esCM ? ACCIONES_CM : ACCIONES_LECTURA).includes(action))
         return res.status(403).json({ error: "Tu permiso no alcanza para esta acción." });
     } else {
@@ -1119,6 +1119,15 @@ export default async function handler(req, res) {
         updatedAt: now,
       }, { merge: true });
       return res.json({ ok: true });
+    }
+
+    // Poll liviano del topbar: SOLO las tareas en "entregado". Antes el topbar
+    // llamaba getData cada 60s por pestaña abierta, y getData lee TODAS las
+    // tareas + colaboradores de la cuenta: con pocos usuarios eran ~570k
+    // lecturas de Firestore por día (2/sep/2026, cuota agotada, app caída).
+    if (action === "getEntregadas") {
+      const snap = await db.collection("tareas").where("uid","==",uid).where("estado","==","entregado").limit(50).get();
+      return res.json({ tareas: snap.docs.map(d => ({ _id:d.id, titulo:d.data().titulo||"", asignadoNombre:d.data().asignadoNombre||"", estado:"entregado" })) });
     }
 
     if (action === "getData") {

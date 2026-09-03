@@ -7243,8 +7243,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   useEffect(()=>{
     if(!user?.uid) return;
     refrescarEnviosFs();
-    const iv=setInterval(refrescarEnviosFs, 60000); // el cron actualiza cada 30 min; esto refresca la vista
-    return ()=>clearInterval(iv);
+    // 5 min y solo visible: cada llamada lee todos los envíos de 60 días (cientos
+    // de docs); el cron de tracking corre cada 30 min, no hacía falta 60s.
+    const iv=setInterval(()=>{ if(document.visibilityState!=="hidden") refrescarEnviosFs(); }, 300000);
+    const onVis=()=>{ if(document.visibilityState==="visible") refrescarEnviosFs(); };
+    document.addEventListener("visibilitychange",onVis);
+    return ()=>{ clearInterval(iv); document.removeEventListener("visibilitychange",onVis); };
   },[user?.uid]);
   async function registrarEnviosFs(ordersArr){
     if(!user?.uid) return;
@@ -20658,8 +20662,12 @@ function ColaboradorBoardView({T, boardToken}) {
 
   useEffect(()=>{
     loadBoard();
-    const id=setInterval(()=>loadBoard(true),30000);
-    return()=>clearInterval(id);
+    // 2 min y solo con la pestaña visible: cada carga lee todas las tareas del
+    // tablero, y los colaboradores lo dejan abierto todo el día.
+    const id=setInterval(()=>{ if(document.visibilityState!=="hidden") loadBoard(true); },120000);
+    const onVis=()=>{ if(document.visibilityState==="visible") loadBoard(true); };
+    document.addEventListener("visibilitychange",onVis);
+    return()=>{ clearInterval(id); document.removeEventListener("visibilitychange",onVis); };
   },[boardToken]);
 
   function showToast(msg,type="success"){setToastMsg({msg,type});setTimeout(()=>setToastMsg(null),3000);}
@@ -31505,7 +31513,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // de tab o desmontar para no quedar pegado en segundo plano.
   useEffect(() => {
     if (!uid || tab !== "movimientos") return;
-    const id = setInterval(() => { loadMovements(); }, 60_000);
+    const id = setInterval(() => { if (document.visibilityState !== "hidden") loadMovements(); }, 60_000);
     return () => clearInterval(id);
     /* eslint-disable-next-line */
   }, [uid, tab]);
@@ -33504,7 +33512,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   useEffect(()=>{
     if(!uid) return;
     loadRef.current();
-    const iv = setInterval(()=>loadRef.current(undefined,undefined,undefined,true), 240000);
+    const iv = setInterval(()=>{ if(document.visibilityState!=="hidden") loadRef.current(undefined,undefined,undefined,true); }, 240000);
     // Al desmontar: invalidar la carga en vuelo (corta el polling de cache=only
     // del rango nuevo y evita setState sobre un componente desmontado).
     return ()=>{ clearInterval(iv); reqIdRef.current++; };
@@ -35590,11 +35598,15 @@ export default function App() {
     return ()=>{u1();u2();};
   },[user]);
 
-  // Polling de tareas "entregado" para notificación en topbar (via API, cada 60s)
+  // Polling de tareas "entregado" para notificación en topbar. Acción liviana
+  // (solo las entregadas), cada 5 min y nunca desde una pestaña oculta: con
+  // getData cada 60s por pestaña se leían todas las tareas de la cuenta
+  // ~1.400 veces por día por pestaña (cuota de Firestore agotada el 2/9/2026).
   useEffect(()=>{
     if(!user?.uid) return;
     const poll=()=>{
-      fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"getData",uid:user.uid})})
+      if(typeof document!=="undefined"&&document.visibilityState==="hidden") return;
+      fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"getEntregadas",uid:user.uid})})
         .then(r=>r.json()).then(d=>{
           if(d.tareas){
             const pending=d.tareas.filter(t=>t.estado==="entregado");
@@ -35605,8 +35617,10 @@ export default function App() {
         .catch(()=>{});
     };
     poll();
-    const id=setInterval(poll,60000);
-    return ()=>clearInterval(id);
+    const id=setInterval(poll,300000);
+    const onVis=()=>{ if(document.visibilityState==="visible") poll(); };
+    document.addEventListener("visibilitychange",onVis);
+    return ()=>{ clearInterval(id); document.removeEventListener("visibilitychange",onVis); };
   },[user?.uid]);
 
   // Vistas públicas (sin login, acceso por token)
