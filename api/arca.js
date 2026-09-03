@@ -3995,6 +3995,7 @@ export default async function handler(req, res) {
                 const batchUpd = db.batch();
                 compSnap.docs.forEach(d => batchUpd.set(d.ref, { anulada: true, anulada_at: new Date().toISOString(), nc_nro: ncNro }, { merge: true }));
                 if (!compSnap.empty) await batchUpd.commit();
+                try { await db.collection("users").doc(uid).collection("arca_emisiones").doc(marcaEmisionId(cuitEmit, factura.order_id)).delete(); } catch (_) {}
               } catch (_) {}
               // ML: desadjuntar factura original del pack/orden
               if (String(factura.order_id).startsWith("ML-")) {
@@ -4198,6 +4199,9 @@ export default async function handler(req, res) {
             const batchUpd = db.batch();
             compSnap.docs.forEach(d => batchUpd.set(d.ref, { anulada: true, anulada_at: new Date().toISOString(), nc_nro: ncNro }, { merge: true }));
             if (!compSnap.empty) await batchUpd.commit();
+            // Liberar la marca de idempotencia: sin esto, re-facturar la misma
+            // orden (p. ej. B anulada para emitir A) respondía "Ya facturada".
+            try { await db.collection("users").doc(uid).collection("arca_emisiones").doc(marcaEmisionId(cuitEmit, factura.order_id)).delete(); } catch (_) {}
           } catch (e) {}
           // ML: desadjuntar la factura original del pack/orden
           if (String(factura.order_id).startsWith("ML-")) {

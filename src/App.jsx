@@ -22003,6 +22003,76 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     } finally { setEmitting(false); setNotaOp(null); }
   }
 
+  // ── Re-emitir una Factura B como A: NC de la B + Factura A al CUIT, en un paso ──
+  async function reemitirComoA(resumen, batch) {
+    if (!cuitSel || emitting) return;
+    if (!resumen.orden_id) return appAlert("Esta factura no está asociada a una venta — emitila manualmente desde Factura manual.");
+    if (!Array.isArray(resumen.items) || !resumen.items.length) return appAlert("Esta factura no tiene el detalle de items guardado — anulala y volvé a facturar la venta desde Facturar.");
+    const cuitPrev = resumen.doc_tipo === "CUIT" ? resumen.doc_nro : "";
+    const cuitInput = await appPrompt(`Re-emitir como Factura A la Factura B N° ${String(resumen.comprobante).padStart(8,"0")} ($${(resumen.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}).\n\nCUIT del cliente (11 dígitos, sin guiones):`, cuitPrev || "");
+    if (cuitInput === null || cuitInput === undefined) return;
+    const cuitClean = String(cuitInput).replace(/\D/g, "");
+    if (cuitClean.length !== 11) return toast("CUIT inválido (debe tener 11 dígitos)", "error");
+    let razon = resumen.cliente || "";
+    if (!razon || /consumidor final/i.test(razon)) {
+      razon = (await appPrompt("Razón social del cliente (como figura en ARCA):", "")) || "";
+      if (!razon.trim()) return toast("Falta la razón social", "warning");
+    }
+    const msg = `Se va a:\n\n1. Emitir una Nota de Crédito B por $${(resumen.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})} que anula la Factura B N° ${String(resumen.comprobante).padStart(8,"0")}.\n2. Emitir una Factura A por el mismo importe a ${razon} (CUIT ${cuitClean}).\n\n${String(resumen.orden_id).startsWith("ML-") ? "La factura nueva reemplaza a la anterior en Mercado Libre.\n\n" : ""}Esta acción no se puede deshacer.`;
+    if (!await appConfirm(msg, { okLabel: "Emitir NC + Factura A", danger: true })) return;
+    const factura = {
+      tipo: resumen.tipo_cbte || 6,
+      punto_venta: resumen.punto_venta || batch?.punto_venta || 1,
+      comprobante: resumen.comprobante,
+      total: resumen.total,
+      doc_tipo: resumen.doc_tipo || "",
+      doc_nro: resumen.doc_nro || "",
+      cliente: resumen.cliente || "",
+      domicilio: resumen.domicilio || "",
+      order_id: resumen.orden_id,
+      items: resumen.items,
+    };
+    setEmitting(true);
+    setNotaOp({ titulo:"Paso 1 de 2 — Nota de Crédito en ARCA…", sub:`Anulando la Factura B N° ${String(resumen.comprobante).padStart(8,"0")}` });
+    try {
+      const nc = await api("emit_nc", "POST", { cuit: cuitSel, factura });
+      if (nc.error) {
+        await appAlert(`No se pudo emitir la NC — no se tocó nada.\n\nMensaje de ARCA:\n${nc.detalle || nc.error}`);
+        return;
+      }
+      if (nc.nc?.pdf_b64) { const a=document.createElement("a"); a.href="data:application/pdf;base64,"+nc.nc.pdf_b64; a.download=nc.nc.nombre_pdf; a.click(); }
+      setNotaOp({ titulo:"Paso 2 de 2 — Factura A en ARCA…", sub:`NC ${nc.nc?.letra||"B"} N° ${String(nc.nc?.comprobante||"").padStart(8,"0")} emitida ✓ — facturando a ${razon}` });
+      const orden = {
+        _platform: String(resumen.orden_id).startsWith("ML-") ? "mercadolibre" : String(resumen.orden_id).startsWith("SH-") ? "shopify" : "tiendanube",
+        nombre: razon.trim(),
+        doc_tipo: "CUIT", doc_nro: cuitClean, dni: cuitClean, iva_receptor: "RI",
+        total: resumen.total, subtotal: resumen.total, descuento: 0, envio: 0,
+        estado_pago: "paid", fecha: hoyAR(),
+        direccion: resumen.domicilio || "", ciudad: "", provincia: "",
+        items: resumen.items.map(it => ({
+          nombre: it.nombre || "Producto", nombre_original: it.nombre || "Producto",
+          cantidad: parseInt(it.cantidad) || 1, precio: parseFloat(it.precio) || 0,
+          descuento_item: parseFloat(it.descuento_item) || 0,
+        })),
+      };
+      const d = await api("emit", "POST", { cuit: cuitSel, ordenes: { [resumen.orden_id]: orden }, product_map: {}, fecha_factura: hoyAR().replace(/-/g,""), punto_venta: factura.punto_venta, exento: false, concepto: 1 });
+      const r = (d.resultados || [])[0];
+      if (d.error || !r?.ok) {
+        await appAlert(`La NC salió bien (la Factura B quedó anulada), pero ARCA rechazó la Factura A:\n\n${d.error || r?.obs || "sin detalle"}\n\nLa venta volvió a Facturar como pendiente — corregí los datos y emitila desde ahí.`);
+        return;
+      }
+      const pdf = (d.pdfs || [])[0];
+      if (pdf) downloadPDF(pdf);
+      toast(`Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")} emitida ✓`, "success");
+      if (r.letra !== "A") await appAlert(`ARCA no aceptó la Factura A para ese CUIT y emitió Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")}.\n\n${r.obs || "Verificá que el CUIT esté inscripto en IVA (padrón ARCA)."}`);
+      setNotaOp({ titulo:"Actualizando registros…", sub:"Listo ✓ — refrescando la lista" });
+      refreshDashboard();
+      await loadPendingOrders();
+    } catch(e) {
+      toast("Se cortó la conexión — verificá en Registros qué salió antes de reintentar","error");
+    } finally { setEmitting(false); setNotaOp(null); }
+  }
+
   // filasFiltradas: si Registros tiene filtros activos, solo se anulan las filas
   // visibles del lote (bRows). Siempre se excluyen las ya anuladas — antes se
   // podían re-anular emitiendo NCs duplicadas.
@@ -23642,6 +23712,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   };
                   const btnPdfS = {background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
                   const btnAnularS = {background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
+                  const btnReemitS = {background:"transparent",border:`1px solid ${T.blue}55`,color:T.blue,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
                   const btnNdS = {background:"transparent",border:`1px solid ${T.purple}55`,color:T.purple,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
                   const descargarPdfDe = async (r) => {
                     const list = await loadBatchPdfs(r._b);
@@ -23801,6 +23872,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                         {!r.anulada&&!r.nd&&(
                                           <button onClick={()=>abrirNd(r, r._b)} title="Agrega más monto a la orden — cobra un adicional asociado a esta factura" style={btnNdS}>Emitir nota de débito</button>
                                         )}
+                                        {!r.anulada&&!r.nd&&!r.recuperado_afip&&r.letra==="B"&&r.orden_id&&(
+                                          <button onClick={()=>reemitirComoA(r, r._b)} title="Emite la NC de esta Factura B y una Factura A al CUIT del cliente, en un paso" style={btnReemitS}>Re-emitir como A</button>
+                                        )}
                                         {!r.anulada&&(
                                           <button onClick={()=>{if(!r.recuperado_afip&&!r.nd)anularUnaFactura(r, r._b);}} disabled={!!r.recuperado_afip||!!r.nd} title={r.nd?"Las ND se revierten con una nota de crédito manual":r.recuperado_afip?"Recuperado de AFIP sin detalle de items — anulalo desde una factura manual o contactanos":"Emite NC para anular esta factura"} style={{...btnAnularS,opacity:(r.recuperado_afip||r.nd)?0.45:1,cursor:(r.recuperado_afip||r.nd)?"not-allowed":"pointer"}}>Anular (nota de crédito)</button>
                                         )}
@@ -23873,6 +23947,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                           )}
                                           {!r.anulada&&!r.nd&&(
                                             <button onClick={()=>abrirNd(r, b)} title="Agrega más monto a la orden — cobra un adicional asociado a esta factura" style={btnNdS}>Emitir nota de débito</button>
+                                          )}
+                                          {!r.anulada&&!r.nd&&!r.recuperado_afip&&r.letra==="B"&&r.orden_id&&(
+                                            <button onClick={()=>reemitirComoA(r, b)} title="Emite la NC de esta Factura B y una Factura A al CUIT del cliente, en un paso" style={btnReemitS}>Re-emitir como A</button>
                                           )}
                                           {!r.anulada&&(
                                             <button onClick={()=>{if(!r.recuperado_afip&&!r.nd)anularUnaFactura(r, b);}} disabled={!!r.recuperado_afip||!!r.nd} title={r.nd?"Las ND se revierten con una nota de crédito manual":r.recuperado_afip?"Recuperado de AFIP sin detalle de items — anulalo desde una factura manual o contactanos":"Emite NC para anular esta factura"} style={{...btnAnularS,opacity:(r.recuperado_afip||r.nd)?0.45:1,cursor:(r.recuperado_afip||r.nd)?"not-allowed":"pointer"}}>Anular (nota de crédito)</button>
