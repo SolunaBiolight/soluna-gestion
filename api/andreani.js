@@ -172,6 +172,13 @@ async function getGlobalConfig(db) {
 // re-verificar el token (ya lo verificamos): users/{uid}.isAdmin, ADMIN_UIDS
 // (env) o fundadores.
 const FOUNDERS = ["WJH3ArqDPQcNLha9lOinvkVi9uJ2"];
+
+// Nombres del desplegable del Excel de Andreani que el importador RECHAZA
+// (punto dado de baja, confirmado con un rechazo real). Se suma a
+// andreani_config/tpl_baja (admin_tpl_baja). Ver validar_sucursales_tpl.
+const TPL_BAJA_SEED = [
+  "PUNTO ANDREANI HOP AVENIDA RIVADAVIA 255", // #6188, 3/9/2026 — Andreani rechazó el lote entero por este punto
+];
 async function isPlatformAdmin(db, uid) {
   if (FOUNDERS.includes(uid)) return true;
   const envAdmins = String(process.env.ADMIN_UIDS || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -886,40 +893,38 @@ export default async function handler(req, res) {
       }
     }
 
-    // ── validar_sucursales_tpl: ¿los nombres del desplegable del Excel siguen
-    // operativos? El template es la única lista que acepta el importador y
-    // está desactualizada: un punto dado de baja hace que Andreani rechace el
+    // ── validar_sucursales_tpl: ¿algún nombre del desplegable del Excel está
+    // DADO DE BAJA? El template es la única lista que acepta el importador y
+    // lista puntos que ya no operan: con uno adentro Andreani rechaza el
     // archivo ENTERO sin explicación (HOP Avenida Rivadavia 255, #6188,
-    // 3/9/2026). Se contrasta cada nombre contra el listado oficial vivo.
+    // 3/9/2026). No se puede contrastar contra la API oficial: /v2/sucursales
+    // NO trae muchos puntos HOP que el Excel sí acepta (probado el 3/9: 7 HOP
+    // válidos acusados como faltantes). Por eso la fuente es una lista de
+    // bajas CONFIRMADAS (rechazo real de Andreani): seed en código +
+    // andreani_config/tpl_baja {nombres:[]} que administra el admin.
     if (action === "validar_sucursales_tpl") {
       const nombres = Array.isArray(body.nombres) ? body.nombres.map(String).filter(Boolean).slice(0, 300) : [];
       if (!nombres.length) return res.json({ faltantes: [] });
-      const N = s => nrmTxt(s).toUpperCase().replace(/[^A-Z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-      const STOP = new Set(["PUNTO", "ANDREANI", "HOP", "PICKIT", "SUCURSAL", "ESPACIO", "AVENIDA", "AVDA", "CALLE", "GENERAL", "GRAL", "CENTRO"]);
-      const partes = t => { const n = N(t); return { n, nums: [...new Set([...n.matchAll(/\d{2,}/g)].map(x => x[0]))], words: n.split(" ").filter(w => w.length >= 4 && !STOP.has(w) && !/^\d+$/.test(w)) }; };
-      const existe = (todas, tpl) => {
-        const p = partes(tpl);
-        if (!p.n) return true;
-        for (const s of todas) {
-          const hay = N([s.descripcion, s.direccion?.calle, s.direccion?.numero, s.direccion?.localidad].filter(v => v != null && v !== "").join(" "));
-          if (hay === p.n || hay.includes(p.n)) return true;
-          if (!p.nums.length && !p.words.length) return true; // nada comparable: no bloquear
-          const toks = new Set(hay.split(" "));
-          const numsOk = p.nums.every(x => toks.has(x));          // número exacto (255 ≠ 2550)
-          const wordsOk = p.nums.length ? p.words.some(w => hay.includes(w)) : p.words.every(w => hay.includes(w));
-          if (numsOk && wordsOk) return true;
-        }
-        return false;
-      };
-      try {
-        let todas = await sucursalesTodas(db, env);
-        let faltantes = nombres.filter(t => !existe(todas, t));
-        // El cache del listado dura 7 días: antes de acusar, refrescar en vivo.
-        if (faltantes.length) {
-          try { todas = await sucursalesTodas(db, env, true); faltantes = faltantes.filter(t => !existe(todas, t)); } catch (_) {}
-        }
-        return res.json({ faltantes, total_oficial: todas.length });
-      } catch (e) { return res.status(502).json({ error: e.message }); }
+      const K = s => nrmTxt(s).replace(/s+/g, " ").trim();
+      let extra = [];
+      try { const d = (await db.collection("andreani_config").doc("tpl_baja").get()).data(); extra = Array.isArray(d?.nombres) ? d.nombres : []; } catch (_) {}
+      const baja = new Set([...TPL_BAJA_SEED, ...extra].map(K));
+      return res.json({ faltantes: nombres.filter(t => baja.has(K(t))), fuente: "bajas_confirmadas" });
+    }
+
+    // ── admin_tpl_baja: agregar/quitar nombres del desplegable dados de baja
+    // (solo admin). body: { agregar:[...], quitar:[...] }
+    if (action === "admin_tpl_baja") {
+      if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
+      if (!(await isPlatformAdmin(db, uid))) return res.status(403).json({ error: "Solo admin" });
+      const ref = db.collection("andreani_config").doc("tpl_baja");
+      const cur = (await ref.get()).data()?.nombres || [];
+      const K = s => nrmTxt(s).replace(/s+/g, " ").trim();
+      const quitar = new Set((Array.isArray(body.quitar) ? body.quitar : []).map(K));
+      const agregar = (Array.isArray(body.agregar) ? body.agregar : []).map(String).map(s => s.trim()).filter(Boolean);
+      const out = [...new Map([...cur.filter(n => !quitar.has(K(n))), ...agregar].map(n => [K(n), n])).values()].slice(0, 500);
+      await ref.set({ nombres: out, updatedAt: new Date().toISOString(), by: uid });
+      return res.json({ ok: true, nombres: out, seed: TPL_BAJA_SEED });
     }
 
     // ── sucursales_buscar (buscador global: nombre, calle, número, localidad, CP)

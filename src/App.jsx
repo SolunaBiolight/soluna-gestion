@@ -7701,7 +7701,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         if(!seguir) return null;
         setExporting(true);
         const nums=new Set(afectados.map(s=>s.numero));
-        afectados.forEach(s=>{ const o=sucursalOrders.find(x=>x.numero===s.numero); if(o){ delete sucursalOverridesRef.current[ovrKey(o)]; exclOperRef.current.add(o.numero); sucNoOperRef.current.add(ovrKey(o)); const pk=ghPuntoKey(o); if(pk) delete puntoMapRef.current[pk]; } });
+        afectados.forEach(s=>{ const o=sucursalOrders.find(x=>x.numero===s.numero); if(o){ delete sucursalOverridesRef.current[ovrKey(o)]; exclOperRef.current.add(o.numero); sucNoOperRef.current[ovrKey(o)]=s.sucursal; const pk=ghPuntoKey(o); if(pk) delete puntoMapRef.current[pk]; } });
         persistOverrides(); persistSucNoOper(); persistPuntoMap();
         sucursalOrdersOk=sucursalOrders.filter(o=>!nums.has(o.numero));
         // Rearmar la hoja sin ellos (y sin sus filas de verificación duplicadas)
@@ -7813,8 +7813,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // Pedidos cuya sucursal Andreani NO está operativa (detectado al exportar):
   // en la próxima exportación no se auto-resuelven — pasan sí o sí por el
   // modal de elección (con cercanas) hasta que se les elija otra sucursal.
-  const sucNoOperRef=useRef((()=>{try{return new Set(JSON.parse(localStorage.getItem(ghKey("growith_sucNoOper"))||"[]"));}catch(_){return new Set();}})());
-  function persistSucNoOper(){try{localStorage.setItem(ghKey("growith_sucNoOper"),JSON.stringify([...sucNoOperRef.current]));}catch(_){}}
+  // Forma: { clavePedido: nombreSucursal } — guardar el nombre permite
+  // desmarcar solo si esa sucursal deja de figurar como dada de baja.
+  const sucNoOperRef=useRef((()=>{try{const v=JSON.parse(localStorage.getItem(ghKey("growith_sucNoOper"))||"{}");return (v&&typeof v==="object"&&!Array.isArray(v))?v:{};}catch(_){return {};}})());
+  function persistSucNoOper(){try{localStorage.setItem(ghKey("growith_sucNoOper"),JSON.stringify(sucNoOperRef.current));}catch(_){}}
   // Pedidos a los que se les eligió OTRA sucursal a mano porque la original no
   // opera: la verificación final contra la tienda no debe acusarlos (es una
   // decisión consciente, no un error de matcheo).
@@ -8285,10 +8287,25 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         if(locationOverridesRef.current[ovrKey(o)]) return false;
         return !findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
       });
+      // Marcas "no operativa" viejas: si esa sucursal ya no figura dada de
+      // baja (p. ej. fue un falso positivo), se desmarca y vuelve al flujo normal.
+      const noOperKeys=Object.keys(sucNoOperRef.current);
+      if(noOperKeys.length){
+        try{
+          const nombres=[...new Set(Object.values(sucNoOperRef.current))];
+          const rN=await authFetch("/api/andreani",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"validar_sucursales_tpl",nombres})});
+          const dN=await rN.json().catch(()=>null);
+          if(rN.ok&&Array.isArray(dN?.faltantes)){
+            const f=new Set(dN.faltantes);
+            for(const k of noOperKeys) if(!f.has(sucNoOperRef.current[k])) delete sucNoOperRef.current[k];
+            persistSucNoOper();
+          }
+        }catch(_){}
+      }
       const unresolvedSuc=sucursalOrdersSinEsquina.filter(o=>{
         const _ovr=sucursalOverridesRef.current[ovrKey(o)];
         if(_ovr==="EXCLUIR") return false;
-        if(sucNoOperRef.current.has(ovrKey(o))) return true; // sucursal no operativa: elegir otra a mano
+        if(sucNoOperRef.current[ovrKey(o)]) return true; // sucursal no operativa: elegir otra a mano
         if(_ovr&&(locs.sucursales||[]).includes(_ovr)) return false;
         // Override guardado que ya no existe en el desplegable: NO se trata
         // como resuelto (antes se descartaba a mitad de la generación y la
@@ -8423,7 +8440,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       setExportProgress({step:`Verificando sucursales Andreani… (${sucIdx}/${unresolvedSuc.length})`,pct:30+Math.round(25*sucIdx/unresolvedSuc.length),current:sucIdx,total:unresolvedSuc.length});
       // Memoria por punto: si este punto de retiro ya fue confirmado a mano
       // alguna vez, se reusa esa elección (validando que siga en el desplegable).
-      const forzar=sucNoOperRef.current.has(ovrKey(o)); // la sucursal automática no opera: solo modal
+      const forzar=!!sucNoOperRef.current[ovrKey(o)]; // la sucursal automática no opera: solo modal
       const memXlsx=(()=>{const pk=ghPuntoKey(o);return pk?puntoMapRef.current[pk]:null;})();
       if(!forzar&&memXlsx?.tpl&&(locs.sucursales||[]).includes(memXlsx.tpl)){
         sucursalOverridesRef.current[ovrKey(o)]=memXlsx.tpl;
@@ -8522,7 +8539,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           continue; // reabrir el modal para el mismo pedido
         }
         sucursalOverridesRef.current[ovrKey(o)]=tpl; persistOverrides();
-        if(forzar){ sucNoOperRef.current.delete(ovrKey(o)); persistSucNoOper(); sucReemplazoRef.current.add(ovrKey(o)); persistSucReemplazo(); }
+        if(forzar){ delete sucNoOperRef.current[ovrKey(o)]; persistSucNoOper(); sucReemplazoRef.current.add(ovrKey(o)); persistSucReemplazo(); }
         // Memoria por punto: la próxima vez que un pedido venga a ESTE punto,
         // se resuelve solo con esta elección.
         recordarPunto(o,{tpl});
