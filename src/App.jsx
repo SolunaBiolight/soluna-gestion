@@ -23337,6 +23337,21 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           {cuitActivo?.razon_social && <span style={{color:T.textMd}}>· {cuitActivo.razon_social}</span>}
                           {platResumen && <span style={{marginLeft:"auto",fontWeight:600,color:T.textMd}}>{platResumen}</span>}
                         </div>
+                        {/* Qué letra va a salir cada una — antes no se sabía hasta ver el resultado */}
+                        {(()=>{
+                          const vals=Object.values(ordenes||{});
+                          const letraDe=o=>esMono?"C":(o.doc_tipo==="CUIT"&&!["MONO","EXENTO"].includes(o.iva_receptor)?"A":"B");
+                          const n={A:0,B:0,C:0}; vals.forEach(o=>{n[letraDe(o)]++;});
+                          const partes=["A","B","C"].filter(l=>n[l]>0).map(l=>`${n[l]} Factura${n[l]!==1?"s":""} ${l}`);
+                          const unica=vals.length===1?vals[0]:null;
+                          return (
+                            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,fontSize:12}}>
+                              <span style={{color:T.textSm,fontWeight:600}}>Se emite:</span>
+                              {partes.map(p=><span key={p} style={{fontWeight:700,color:p.includes(" A")?T.green:T.text}}>{p}</span>)}
+                              {unica&&<span style={{color:T.textMd,marginLeft:"auto"}}>{unica.nombre||"Consumidor Final"}{unica.doc_nro?` · ${unica.doc_tipo} ${unica.doc_nro}`:" · sin documento"}{unica.iva_receptor==="RI"?" · Resp. Inscripto":unica.iva_receptor==="MONO"?" · Monotributo":unica.iva_receptor==="EXENTO"?" · IVA Exento":""}</span>}
+                            </div>
+                          );
+                        })()}
 
                         {/* Totals */}
                         <div style={{display:"grid",gridTemplateColumns:(esRI && !pvElegido?.exento)?"1fr 1fr 1fr":"1fr",gap:10,padding:"14px 16px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
