@@ -23268,6 +23268,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               {r.ok
                                 ? <div style={{fontSize:11,color:T.textSm}}>F-{r.letra} Nro {String(r.comprobante).padStart(8,"0")} · CAE {r.cae} · Vto {r.cae_vto}</div>
                                 : <div style={{fontSize:11,color:T.red}}>{r.obs}</div>}
+                              {r.ok&&r.fallback_ab&&(
+                                <div style={{fontSize:11,color:T.orange,marginTop:4,padding:"6px 8px",background:T.orange+"14",border:`1px solid ${T.orange}44`,borderRadius:6,lineHeight:1.4}}>
+                                  <b>Salió Factura B, no A.</b> {r.fallback_ab}{/10000|CLASE 'A'|CLASE "A"/i.test(r.fallback_ab)?" — Tu CUIT emisor no está habilitado por AFIP para clase A: pedí la habilitación en AFIP → Regímenes de Facturación y Registración → Habilitación de comprobantes (F.855/856).":""}
+                                </div>
+                              )}
                               {r.ok&&r.orden_id?.startsWith("ML-")&&(r.ml_uploaded
                                 ? <div style={{fontSize:10,color:T.green,marginTop:3,display:"flex",alignItems:"center",gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill={T.green} stroke="none"><circle cx="12" cy="12" r="10"/></svg>Factura adjuntada en Mercado Libre</div>
                                 : r.ml_upload_error

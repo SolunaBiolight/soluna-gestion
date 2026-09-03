@@ -2474,7 +2474,7 @@ async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, f
           if (orderId.startsWith("ML-") && !pdfBytes && !ml_upload_error) ml_upload_error = "PDF no generado — adjuntalo después desde Registros";
 
           // Con percepciones el total responde el importe FINAL (neto+iva+trib)
-          resultados.push({ orden_id: orderId, ok: true, letra, tipo_cbte: tipoCbte, comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto, total: totalComp, ...(fiscal?.imp_trib ? { imp_trib: fiscal.imp_trib } : {}), ml_uploaded, ml_upload_error });
+          resultados.push({ orden_id: orderId, ok: true, letra, tipo_cbte: tipoCbte, comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto, total: totalComp, ...(fiscal?.imp_trib ? { imp_trib: fiscal.imp_trib } : {}), ml_uploaded, ml_upload_error, ...(orden._fallback_ab ? { fallback_ab: orden._fallback_ab } : {}) });
 
           // El comprobante ya se guardó ANTES del PDF/ML — acá solo se actualiza
           // el flag de adjunto ML, o se reintenta el guardado completo si falló.
