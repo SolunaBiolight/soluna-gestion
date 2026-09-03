@@ -1675,7 +1675,7 @@ export default async function handler(req, res) {
         const agg = {};
         // fallbackName = nombre embebido en la orden (it.n): se usa solo si la
         // variante ya no está en el catálogo, así nunca mostramos el id pelado.
-        const slot = (key, canal, fallbackName) => agg[key] || (agg[key] = { key, nombre:nameByKey[key]||fallbackName||key, canal, units:0, orders:0, revenue:0, cogs:0, impuestos:0, comisiones:0, envio:0, sinCogs:false });
+        const slot = (key, canal, fallbackName) => agg[key] || (agg[key] = { key, nombre:nameByKey[key]||fallbackName||key, canal, units:0, orders:0, revenue:0, cogs:0, impuestos:0, comisiones:0, envio:0, sinCogs:false, dias:{} });
         const repartir = (o, items, imp, comis, env, canal, mlKey) => {
           const rev = parseFloat(o.revenue)||0;
           const f = String(o.fecha||"").slice(0,10);
@@ -1686,9 +1686,13 @@ export default async function handler(req, res) {
             const sh = it.w/wSum;
             const a = slot(it.k, canal, it.n);
             const entry = costEntryOf(idx, it);
+            const cg = cogsCosto(entry, priceByKey[it.k], f)*(it.qty||0);
             a.units += it.qty||0; a.orders += 1;
             a.revenue += rev*sh; a.impuestos += imp*sh; a.comisiones += comis*sh; a.envio += env*sh;
-            a.cogs += cogsCosto(entry, priceByKey[it.k], f)*(it.qty||0);
+            a.cogs += cg;
+            // Serie diaria por producto (rendimiento día a día, comparativa, CPA)
+            if (f) { const d = a.dias[f] || (a.dias[f] = { u:0, o:0, rev:0, cogs:0, imp:0, com:0, env:0 });
+              d.u += it.qty||0; d.o += 1; d.rev += rev*sh; d.cogs += cg; d.imp += imp*sh; d.com += comis*sh; d.env += env*sh; }
             if (entry == null) a.sinCogs = true; // alguna venta de este producto no matcheó costo
           }
         };
@@ -1713,6 +1717,26 @@ export default async function handler(req, res) {
         }).sort((x,y)=>y.revenue-x.revenue).slice(0, 200);
       }
       const byProduct = buildByProduct(curr.raw);
+      // Ad Spend por producto: NO hay atribución real de pauta por producto en
+      // el motor (Meta llega a nivel cuenta). Se prorratea el gasto de CADA día
+      // según la participación del producto en la facturación de ese día —
+      // etiquetado como prorrateo en el front. Da profit neto y CPA por
+      // producto y por día; la serie diaria se manda solo para los 60 primeros.
+      {
+        const adsDia = {}; for (const r of rows) if (r.Fecha) adsDia[r.Fecha] = Number(r["Ad Spend"])||0;
+        const revDia = {}; for (const p of byProduct) for (const [f,d] of Object.entries(p.dias||{})) revDia[f] = (revDia[f]||0) + d.rev;
+        byProduct.forEach((p, i) => {
+          let ads = 0;
+          for (const [f,d] of Object.entries(p.dias||{})) {
+            const a = revDia[f] > 0 ? (adsDia[f]||0) * d.rev / revDia[f] : 0;
+            ads += a;
+            d.ads = +a.toFixed(2); d.prof = +(d.rev - d.cogs - d.imp - d.com - d.env - a).toFixed(2);
+            d.rev = +d.rev.toFixed(2); d.cogs = +d.cogs.toFixed(2); d.imp = +d.imp.toFixed(2); d.com = +d.com.toFixed(2); d.env = +d.env.toFixed(2);
+          }
+          p.adSpend = +ads.toFixed(2); p.profitNeto = +(p.profit - ads).toFixed(2); p.cpa = p.orders > 0 ? +(ads/p.orders).toFixed(2) : 0;
+          if (i >= 60) delete p.dias;
+        });
+      }
 
       // ── Clientes nuevos vs recurrentes ──
       // "Recurrente" = compró también en el período anterior (aprox.: la ventana
@@ -1795,7 +1819,7 @@ export default async function handler(req, res) {
       // de una métrica (v2 = facturación TN incluye envío cobrado al cliente;
       // v3 = corte de día TN en hora argentina; v4 = envío ML real con descuentos; v5 = envío ML en cero para ventas devueltas; v6 = Net Revenue = contribución antes de pauta) para que los caches del
       // cliente (P&L mensual) descarten resultados viejos.
-      const responseBody = { engineV: 6, rows, prevRows, totals, prevTotals, prevTotalsHora, prevHasta, byDow, byChannel, byChannelDaily, sales, byProduct, clientes, facturacionBreakdown, adSpendBreakdown,
+      const responseBody = { engineV: 6, rows, prevRows, totals, prevTotals, prevTotalsHora, prevHasta, byDow, byChannel, byChannelDaily, sales, byProduct, byProductAdsModo: "prorrateo_revenue_diario", clientes, facturacionBreakdown, adSpendBreakdown,
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
         dolarSerie, dolarActual, quality,
         since, until, prevSince, prevUntil,

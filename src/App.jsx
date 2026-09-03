@@ -33277,6 +33277,56 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 // Gráfico principal de evolución (Revenue / Ad Spend / Profit) con hover.
 // Componente top-level (no inline en AppRendimiento) para que el estado de
 // hover sobreviva a los re-renders del dashboard.
+// Gráfico comparativo por producto (Dashboard → Rentabilidad por producto):
+// una línea por producto elegido, métrica seleccionable, eje de fechas común.
+function ProdCompareChart({T, series, dates, fmt, fmtDate, label}) {
+  const [hover, setHover] = useState(null);
+  const wrapRef = useRef(null);
+  const n = dates.length;
+  if (n < 2 || !series.length) return null;
+  const W=920, H=230, PL=8, PR=8, PT=14, PB=24;
+  let max = 0;
+  for (const s of series) for (const v of s.values) if (v > max) max = v;
+  if (max <= 0) max = 1;
+  const x = i => PL + (i/(n-1))*(W-PL-PR);
+  const y = v => PT + (1 - Math.max(0,v)/max)*(H-PT-PB);
+  const path = vals => vals.map((v,i)=>`${i===0?"M":"L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const onMove = e => {
+    const el = wrapRef.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width * W;
+    const i = Math.max(0, Math.min(n-1, Math.round((px-PL)/(W-PL-PR)*(n-1))));
+    setHover(i);
+  };
+  const ticks = [0.25,0.5,0.75,1];
+  const step = Math.max(1, Math.ceil(n/8));
+  return (
+    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px 10px",marginBottom:14}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:8}}>
+        <span style={{fontSize:12,fontWeight:700,color:T.text}}>{label} por día</span>
+        {series.map(s=>(
+          <span key={s.key} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:T.textMd,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={s.nombre}>
+            <span style={{width:10,height:3,borderRadius:2,background:s.color,flexShrink:0}}/>{s.nombre}
+            {hover!=null&&<b style={{color:T.text,fontVariantNumeric:"tabular-nums"}}>{fmt(s.values[hover]||0)}</b>}
+          </span>
+        ))}
+        {hover!=null&&<span style={{marginLeft:"auto",fontSize:11,color:T.textSm}}>{fmtDate(dates[hover])}</span>}
+      </div>
+      <div ref={wrapRef} onMouseMove={onMove} onMouseLeave={()=>setHover(null)} style={{position:"relative",width:"100%"}}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",display:"block"}} preserveAspectRatio="none">
+          {ticks.map(t=><line key={t} x1={PL} x2={W-PR} y1={y(max*t)} y2={y(max*t)} stroke={T.border} strokeWidth="1" strokeDasharray="3 4"/>)}
+          {series.map(s=><path key={s.key} d={path(s.values)} fill="none" stroke={s.color} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"/>)}
+          {hover!=null&&<line x1={x(hover)} x2={x(hover)} y1={PT} y2={H-PB} stroke={T.textSm} strokeWidth="1" strokeDasharray="2 3"/>}
+          {hover!=null&&series.map(s=><circle key={s.key} cx={x(hover)} cy={y(s.values[hover]||0)} r="3.5" fill={s.color} stroke={T.card} strokeWidth="1.5"/>)}
+          {dates.map((d,i)=>(i===0||i===n-1||i%step===0)&&(
+            <text key={d} x={x(i)} y={H-6} textAnchor={i===0?"start":i===n-1?"end":"middle"} fontSize="10" fill={T.textSm} fontFamily="'Inter',system-ui,sans-serif">{fmtDate(d)}</text>
+          ))}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 function RendChart({T, rows, prevRows=[], cv, fmtM, fmtDate}) {
   const [hover, setHover] = useState(null);
   // Métrica graficada: "todas" mantiene la vista clásica de 3 líneas; las
@@ -33392,6 +33442,11 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const [usdMode, setUsdMode] = useState(()=>{ try{return localStorage.getItem(ghKey("growith_margenes_usd"))==="1";}catch(_){return false;} });
   // Vista por canal estilo Escalafy: Global / solo Tienda / solo ML.
   const [canalVista, setCanalVista] = useState("global");
+  // Rentabilidad por producto: fila abierta (día a día), comparativa y métrica
+  const [prodOpen, setProdOpen] = useState(null);
+  const [prodCmpOn, setProdCmpOn] = useState(false);
+  const [prodCmp, setProdCmp] = useState(()=>new Set());
+  const [prodMetric, setProdMetric] = useState("rev");
   // Metas del negocio (umbrales de "bueno/malo" en los KPIs) — configurables,
   // guardadas en Firestore (margenesMetas). Antes estaban hardcodeadas.
   // revenueMes/profitMes: metas mensuales en $ (0 = sin meta). Se muestran en
@@ -33708,6 +33763,17 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const fmtX=(v)=>{const n=Number(v);return isNaN(n)?"—":n.toFixed(2)+"x";};
   const fmtInt=(v)=>{const n=Number(v);return isNaN(n)?"—":Math.round(n).toLocaleString("es-AR");};
   const fmtDate=(s)=>{try{return new Date(s+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short"});}catch(_){return s;}};
+  // Métricas de la comparativa por producto (sobre la serie diaria p.dias[fecha])
+  const PROD_METRICS=[
+    {id:"rev",  label:"Revenue",     val:d=>d.rev||0,  fmt:fmtM},
+    {id:"prof", label:"Profit neto", val:d=>d.prof||0, fmt:fmtM},
+    {id:"u",    label:"Unidades",    val:d=>d.u||0,    fmt:fmtInt},
+    {id:"o",    label:"Órdenes",     val:d=>d.o||0,    fmt:fmtInt},
+    {id:"ads",  label:"Ad Spend",    val:d=>d.ads||0,  fmt:fmtM},
+    {id:"cpa",  label:"CPA",         val:d=>d.o>0?(d.ads||0)/d.o:0, fmt:fmtM},
+    {id:"mg",   label:"Margen %",    val:d=>d.rev>0?(d.prof||0)/d.rev*100:0, fmt:v=>(Number(v)||0).toFixed(1)+"%"},
+  ];
+  const PROD_COLORS=[T.blue,T.green,T.orange,T.accent,"#f0b90b",T.red];
   const delta=(curr,prev)=>{if(!prev||prev===0)return null;return((curr-prev)/Math.abs(prev)*100);};
 
   // Paleta de métricas del dashboard — saturada y sobria (los tonos pastel del
@@ -34804,7 +34870,18 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             // En vista de canal, solo los productos de ESE canal.
             const lista = canalVista==="global" ? byProduct : byProduct.filter(p=>p.canal===(canalVista==="ml"?"ml":"tienda"));
             if (!lista.length) return null;
-            const perdida = lista.filter(p=>(p.profit||0)<0 && !p.sinCogs);
+            const perdida = lista.filter(p=>((p.profitNeto!=null?p.profitNeto:p.profit)||0)<0 && !p.sinCogs);
+            // CSV largo: una fila por producto y día (para analizar afuera)
+            const exportProdDiarioCsv = () => {
+              const head = ["Producto","Canal","Fecha","Unidades","Órdenes","Revenue","COGS","Comisiones","Impuestos","Envío","Ad Spend (prorrateado)","Profit neto","CPA","Margen %"].join(";");
+              const filas = [];
+              for (const p of lista) for (const [f,d] of Object.entries(p.dias||{}).sort((a,b)=>a[0]<b[0]?-1:1)) {
+                filas.push([`"${String(p.nombre).replace(/"/g,'""')}"`,p.canal==="ml"?"Mercado Libre":"Tienda",f,d.u,d.o,Math.round(d.rev),Math.round(d.cogs),Math.round(d.com),Math.round(d.imp),Math.round(d.env),Math.round(d.ads||0),Math.round(d.prof||0),d.o>0?Math.round((d.ads||0)/d.o):0,d.rev>0?((d.prof||0)/d.rev*100).toFixed(1):"0"].join(";"));
+              }
+              if(!filas.length){ toast("Todavía no hay serie diaria por producto — actualizá los datos","warning"); return; }
+              const blob = new Blob(["\ufeff"+head+"\n"+filas.join("\n")],{type:"text/csv;charset=utf-8"});
+              const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="rentabilidad_productos_diario_growith.csv"; a.click(); URL.revokeObjectURL(a.href);
+            };
             const exportProdCsv = () => {
               const head = ["Producto","Canal","Unidades","Órdenes","Revenue","COGS","Comisiones","Impuestos","Envío","Profit","Margen %"].join(";");
               const body = lista.map(p=>[`"${String(p.nombre).replace(/"/g,'""')}"`,p.canal==="ml"?"Mercado Libre":"Tienda",p.units,p.orders,Math.round(p.revenue),Math.round(p.cogs),Math.round(p.comisiones),Math.round(p.impuestos),Math.round(p.envio),Math.round(p.profit),((p.margin||0)*100).toFixed(1)].join(";")).join("\n");
@@ -34816,39 +34893,93 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:vis.productos!==false?12:0,flexWrap:"wrap"}}>
                   <span style={{width:8,height:8,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
                   <span style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Rentabilidad por producto</span>
-                  <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· margen de contribución (sin repartir Ad Spend ni costos fijos)</span>
+                  <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· tocá un producto para ver su día a día · Ad Spend prorrateado por facturación de cada día</span>
                   {perdida.length>0 && <DSBadge T={T} color={T.red} size="sm">{perdida.length} a pérdida</DSBadge>}
-                  <span style={{marginLeft:"auto",display:"inline-flex",gap:6,alignItems:"center"}}>
-                    <button onClick={exportProdCsv} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,color:T.textMd,fontSize:11,fontWeight:600,cursor:"pointer",padding:"4px 10px",fontFamily:"'Inter',system-ui,sans-serif"}}>↓ CSV</button>
+                  <span style={{marginLeft:"auto",display:"inline-flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                    <button onClick={()=>setProdCmpOn(v=>!v)} style={{background:prodCmpOn?T.accentSolid:"transparent",border:`1px solid ${prodCmpOn?T.accentSolid:T.border}`,borderRadius:8,color:prodCmpOn?"#fff":T.textMd,fontSize:11,fontWeight:600,cursor:"pointer",padding:"4px 10px",fontFamily:"'Inter',system-ui,sans-serif"}}>{prodCmpOn?`Comparando ${prodCmp.size}`:"Comparar"}</button>
+                    {prodCmpOn&&(
+                      <select value={prodMetric} onChange={e=>setProdMetric(e.target.value)} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:8,color:T.text,fontSize:11,fontWeight:600,padding:"4px 8px",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        {PROD_METRICS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
+                      </select>
+                    )}
+                    <button onClick={exportProdCsv} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,color:T.textMd,fontSize:11,fontWeight:600,cursor:"pointer",padding:"4px 10px",fontFamily:"'Inter',system-ui,sans-serif"}}>CSV</button>
+                    <button onClick={exportProdDiarioCsv} title="Una fila por producto y día" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,color:T.textMd,fontSize:11,fontWeight:600,cursor:"pointer",padding:"4px 10px",fontFamily:"'Inter',system-ui,sans-serif"}}>CSV diario</button>
                     <EyeBtn k="productos"/>
                   </span>
                 </div>
+                {vis.productos!==false && prodCmpOn && (()=>{
+                  const m = PROD_METRICS.find(x=>x.id===prodMetric)||PROD_METRICS[0];
+                  const dates = dailyRows.map(r=>r.Fecha);
+                  const sel = lista.filter(p=>prodCmp.has(p.key)).slice(0,6);
+                  if(!sel.length) return <div style={{fontSize:12,color:T.textSm,marginBottom:12}}>Marcá hasta 6 productos en la tabla para compararlos.</div>;
+                  const series = sel.map((p,i)=>({key:p.key,nombre:p.nombre,color:PROD_COLORS[i%PROD_COLORS.length],values:dates.map(f=>{const d=(p.dias||{})[f]; return d?m.val(d):0;})}));
+                  return <ProdCompareChart T={T} series={series} dates={dates} fmt={m.fmt} fmtDate={fmtDate} label={m.label}/>;
+                })()}
                 {vis.productos!==false && (
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
                     <div style={{maxHeight:420,overflow:"auto"}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",minWidth:820}}>
                         <thead style={{background:T.bg,position:"sticky",top:0,zIndex:1}}>
-                          <tr>{["Producto","Canal","Unid.","Revenue","COGS","Comisiones","Impuestos","Envío","Profit","Margen %"].map((l,i)=>(
+                          <tr>{["Producto","Canal","Unid.","Órd.","Revenue","COGS","Comis.+Imp.+Envío","Ad Spend","Profit neto","CPA","Margen"].map((l,i)=>(
                             <th key={l} style={{padding:"10px 12px",textAlign:i<2?"left":"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>{l}</th>
                           ))}</tr>
                         </thead>
                         <tbody>
-                          {lista.map(p=>(
-                            <tr key={p.key} style={{borderBottom:`1px solid ${T.borderL}`,background:(p.profit||0)<0&&!p.sinCogs?T.red+"09":"transparent"}}>
+                          {lista.map(p=>{
+                            const abierto=prodOpen===p.key;
+                            const pn=(p.profitNeto!=null?p.profitNeto:p.profit)||0;
+                            const dias=Object.entries(p.dias||{}).sort((a,b)=>a[0]<b[0]?-1:1);
+                            return (<React.Fragment key={p.key}>
+                            <tr onClick={()=>setProdOpen(abierto?null:p.key)} style={{cursor:"pointer",borderBottom:`1px solid ${T.borderL}`,background:abierto?T.accent+"0d":pn<0&&!p.sinCogs?T.red+"09":"transparent"}}>
                               <td style={{padding:"8px 12px",color:T.text,fontWeight:500,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.nombre}>
+                                {prodCmpOn&&<input type="checkbox" checked={prodCmp.has(p.key)} onClick={e=>e.stopPropagation()} onChange={()=>setProdCmp(s=>{const n=new Set(s); if(n.has(p.key)) n.delete(p.key); else if(n.size<6) n.add(p.key); return n;})} style={{marginRight:8,verticalAlign:"middle",accentColor:T.accentSolid}}/>}
+                                <span style={{display:"inline-block",width:10,color:T.textSm,marginRight:4,fontSize:10}}>{abierto?"▾":"▸"}</span>
                                 {p.nombre}{p.sinCogs&&<span title="Sin costo cargado — el profit de este producto está sobreestimado" style={{marginLeft:6,fontSize:10,color:T.yellow,fontWeight:700}}>sin costo</span>}
                               </td>
                               <td style={{padding:"8px 12px",color:T.textSm,whiteSpace:"nowrap"}}>{p.canal==="ml"?"Mercado Libre":"Tienda"}</td>
                               <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.textMd}}>{fmtInt(p.units)}</td>
+                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.textMd}}>{fmtInt(p.orders)}</td>
                               <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.blue}}>{fmtM(p.revenue)}</td>
                               <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.red}}>{fmtM(p.cogs)}</td>
-                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.textMd}}>{fmtM(p.comisiones)}</td>
-                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.textMd}}>{fmtM(p.impuestos)}</td>
-                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.orange}}>{fmtM(p.envio)}</td>
-                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:(p.profit||0)>0?T.green:(p.profit||0)<0?T.red:T.textMd}}>{fmtM(p.profit)}</td>
-                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:(p.margin||0)>=0.1?T.green:(p.margin||0)>=0?T.yellow:T.red}}>{fmtPct(p.margin)}</td>
+                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.textMd}} title="Comisiones + impuestos + envío">{fmtM((p.comisiones||0)+(p.impuestos||0)+(p.envio||0))}</td>
+                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.orange}}>{p.adSpend!=null?fmtM(p.adSpend):"—"}</td>
+                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:pn>0?T.green:pn<0?T.red:T.textMd}}>{fmtM(pn)}</td>
+                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.textMd}}>{p.cpa!=null&&p.orders>0?fmtM(p.cpa):"—"}</td>
+                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:(p.revenue>0?pn/p.revenue:0)>=0.1?T.green:(p.revenue>0?pn/p.revenue:0)>=0?T.yellow:T.red}}>{fmtPct(p.revenue>0?pn/p.revenue:0)}</td>
                             </tr>
-                          ))}
+                            {abierto&&(
+                              <tr>
+                                <td colSpan={11} style={{padding:0,background:T.bg}}>
+                                  {!dias.length ? (
+                                    <div style={{padding:"12px 16px",fontSize:12,color:T.textSm}}>Sin detalle diario todavía — se completa en la próxima actualización de datos.</div>
+                                  ) : (
+                                    <div style={{maxHeight:300,overflow:"auto"}}>
+                                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                                        <thead><tr>{["Día","Unid.","Órd.","Revenue","COGS","Ad Spend","Profit neto","CPA","Margen"].map((l,i)=>(
+                                          <th key={l} style={{padding:"7px 12px",textAlign:i===0?"left":"right",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.3,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,background:T.bg}}>{l}</th>
+                                        ))}</tr></thead>
+                                        <tbody>{dias.map(([f,d])=>{
+                                          const cpa=d.o>0?(d.ads||0)/d.o:0, mg=d.rev>0?(d.prof||0)/d.rev:0;
+                                          return (<tr key={f} style={{borderBottom:`1px solid ${T.borderL}`}}>
+                                            <td style={{padding:"6px 12px",color:T.text,whiteSpace:"nowrap"}}>{fmtDate(f)}</td>
+                                            <td style={{padding:"6px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.textMd}}>{fmtInt(d.u)}</td>
+                                            <td style={{padding:"6px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.textMd}}>{fmtInt(d.o)}</td>
+                                            <td style={{padding:"6px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.blue}}>{fmtM(d.rev)}</td>
+                                            <td style={{padding:"6px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.red}}>{fmtM(d.cogs)}</td>
+                                            <td style={{padding:"6px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.orange}}>{fmtM(d.ads||0)}</td>
+                                            <td style={{padding:"6px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:(d.prof||0)>0?T.green:(d.prof||0)<0?T.red:T.textMd}}>{fmtM(d.prof||0)}</td>
+                                            <td style={{padding:"6px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.textMd}}>{d.o>0?fmtM(cpa):"—"}</td>
+                                            <td style={{padding:"6px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:mg>=0.1?T.green:mg>=0?T.yellow:T.red}}>{fmtPct(mg)}</td>
+                                          </tr>);
+                                        })}</tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            )}
+                            </React.Fragment>);
+                          })}
                         </tbody>
                       </table>
                     </div>
