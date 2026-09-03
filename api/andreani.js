@@ -886,6 +886,42 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── validar_sucursales_tpl: ¿los nombres del desplegable del Excel siguen
+    // operativos? El template es la única lista que acepta el importador y
+    // está desactualizada: un punto dado de baja hace que Andreani rechace el
+    // archivo ENTERO sin explicación (HOP Avenida Rivadavia 255, #6188,
+    // 3/9/2026). Se contrasta cada nombre contra el listado oficial vivo.
+    if (action === "validar_sucursales_tpl") {
+      const nombres = Array.isArray(body.nombres) ? body.nombres.map(String).filter(Boolean).slice(0, 300) : [];
+      if (!nombres.length) return res.json({ faltantes: [] });
+      const N = s => nrmTxt(s).toUpperCase().replace(/[^A-Z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+      const STOP = new Set(["PUNTO", "ANDREANI", "HOP", "PICKIT", "SUCURSAL", "ESPACIO", "AVENIDA", "AVDA", "CALLE", "GENERAL", "GRAL", "CENTRO"]);
+      const partes = t => { const n = N(t); return { n, nums: [...new Set([...n.matchAll(/\d{2,}/g)].map(x => x[0]))], words: n.split(" ").filter(w => w.length >= 4 && !STOP.has(w) && !/^\d+$/.test(w)) }; };
+      const existe = (todas, tpl) => {
+        const p = partes(tpl);
+        if (!p.n) return true;
+        for (const s of todas) {
+          const hay = N([s.descripcion, s.direccion?.calle, s.direccion?.numero, s.direccion?.localidad].filter(v => v != null && v !== "").join(" "));
+          if (hay === p.n || hay.includes(p.n)) return true;
+          if (!p.nums.length && !p.words.length) return true; // nada comparable: no bloquear
+          const toks = new Set(hay.split(" "));
+          const numsOk = p.nums.every(x => toks.has(x));          // número exacto (255 ≠ 2550)
+          const wordsOk = p.nums.length ? p.words.some(w => hay.includes(w)) : p.words.every(w => hay.includes(w));
+          if (numsOk && wordsOk) return true;
+        }
+        return false;
+      };
+      try {
+        let todas = await sucursalesTodas(db, env);
+        let faltantes = nombres.filter(t => !existe(todas, t));
+        // El cache del listado dura 7 días: antes de acusar, refrescar en vivo.
+        if (faltantes.length) {
+          try { todas = await sucursalesTodas(db, env, true); faltantes = faltantes.filter(t => !existe(todas, t)); } catch (_) {}
+        }
+        return res.json({ faltantes, total_oficial: todas.length });
+      } catch (e) { return res.status(502).json({ error: e.message }); }
+    }
+
     // ── sucursales_buscar (buscador global: nombre, calle, número, localidad, CP)
     if (action === "sucursales_buscar") {
       const q = nrmTxt(String(body.q || "").trim());

@@ -160,6 +160,7 @@ growith_exportHistory      → JSON[] historial local de exportaciones (fallback
 growith_locOverrides / growith_sucOverrides → JSON overrides de localidad/sucursal pendientes de export
 growith_puntoMap           → JSON memoria por PUNTO de retiro: {nombre|dir|num|cp: {tpl, oficial:{id,...}, ts}} — elecciones manuales de sucursal reusadas en todos los pedidos futuros al mismo punto (XLSX y API)
 growith_skuCfg             → JSON posición/tamaño del estampado de SKU en rótulos
+growith_sucNoOper          → JSON[] claves de pedido cuya sucursal Andreani no está operativa (detectado al exportar) — en el próximo export van sí o sí al modal de elección
 growith_margenes_vis_{uid} → JSON visibilidad del dashboard Márgenes: {main,sec,costos,tienda,ml,canales,productos,secKpis,secKpisOrder}
 growith_margenes_fullnums  → "1" (números completos en Márgenes, sin K/M)
 growith_margenes_usd       → "1" (dashboard Márgenes en USD)

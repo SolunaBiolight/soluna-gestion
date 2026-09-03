@@ -7125,6 +7125,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [locOficialSel,setLocOficialSel]=useState(""); // id elegido en la lista oficial Andreani (modal sucursal del XLSX)
   const [verifModal,setVerifModal]=useState(null); // {items,resolve} — filas del XLSX que no coinciden con el destino de la tienda
   const verifRowsRef=useRef([]); // resultado de la verificación del último armado de Excel (lo lee exportAndreani para el toast)
+  const exclOperRef=useRef(new Set()); // pedidos sacados del último Excel porque su sucursal no está operativa en Andreani
   const [sucursalConfirmed,setSucursalConfirmed]=useState(null);
   const [esquinaModal,setEsquinaModal]=useState(null); // {orders:[...]} pedidos con esquina excluidos del export
   const [copiedToast,setCopiedToast]=useState(null);
@@ -7566,6 +7567,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     // resultado para el toast final.
     verifRowsRef.current=[];
     const verifRows=verifRowsRef.current;
+    const sucEscritas=[]; // {numero,comprador,sucursal} — lo que quedó escrito en la hoja de sucursal
 
     // Sheet1: envíos a domicilio
     function buildDomicilioRowsXml(ords, startRow){
@@ -7646,6 +7648,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         let ovr=sucursalOverridesRef.current[ovrKey(o)]||"";
         if(ovr&&!(locs.sucursales||[]).includes(ovr)){ delete sucursalOverridesRef.current[ovrKey(o)]; persistOverrides(); ovr=""; }
         const sucursal=ovr||findAndreaniSucursal(locs,o.direccion,o.pickupDetails)||"";
+        sucEscritas.push({numero:o.numero,comprador:o.comprador,sucursal});
         if(verifSucursalTplVsTienda(o,sucursal)==="warn")verifRows.push({numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:(o.pickupDetails?`${o.pickupDetails.name||""} — ${o.pickupDetails.address?.address||""} ${o.pickupDetails.address?.number||""}`:`${o.direccion||""} ${o.dirNumero||""}, ${o.localidad||o.ciudad||""}`).trim()});
         const cells=[
           sC('A'+rn,""),
@@ -7669,7 +7672,45 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     }
 
     const domRowsXml=buildDomicilioRowsXml(domicilioOrders,3);
-    const sucRowsXml=buildSucursalRowsXml(sucursalOrders,3);
+    let sucRowsXml=buildSucursalRowsXml(sucursalOrders,3);
+
+    // Freno: puntos que ya no operan. El desplegable del template es la única
+    // lista que acepta el importador de Andreani y está desactualizada — un
+    // punto dado de baja hace rechazar el archivo ENTERO sin explicación
+    // (#6188 → HOP Avenida Rivadavia 255, 3/9/2026). Se valida contra el
+    // listado oficial vivo y, si hay alguno, se ofrece exportar sin ellos.
+    exclOperRef.current=new Set();
+    let sucursalOrdersOk=sucursalOrders;
+    const nombresSuc=[...new Set(sucEscritas.map(s=>s.sucursal).filter(Boolean))];
+    if(nombresSuc.length){
+      let faltantes=[];
+      try{
+        setExportProgress({step:"Verificando que las sucursales estén operativas en Andreani…",pct:63,current:0,total:0});
+        const rS=await authFetch("/api/andreani",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"validar_sucursales_tpl",nombres:nombresSuc})});
+        const dS=await rS.json().catch(()=>null);
+        if(rS.ok&&Array.isArray(dS?.faltantes)) faltantes=dS.faltantes;
+      }catch(_){}
+      if(faltantes.length){
+        const setF=new Set(faltantes);
+        const afectados=sucEscritas.filter(s=>setF.has(s.sucursal));
+        const pl=afectados.length!==1;
+        setExporting(false);
+        const seguir=await appConfirm(
+          `Andreani no tiene operativo${pl?"s":""} ${pl?"estos puntos":"este punto"} de retiro (no figura${pl?"n":""} en su listado oficial actual, aunque el desplegable del Excel todavía lo${pl?"s":""} muestre). Con ${pl?"ellos":"él"} adentro, Andreani rechaza el archivo completo sin explicar por qué.\n\n${afectados.map(s=>`#${s.numero} ${s.comprador} → ${s.sucursal}`).join("\n")}\n\n¿Descargar el Excel sin ${pl?"esos pedidos":"ese pedido"}? ${pl?"Quedan":"Queda"} en la lista para que le${pl?"s":""} elijas otra sucursal (Ver cercanas) o lo${pl?"s":""} mandes a domicilio.`,
+          {okLabel:`Descargar sin ${pl?"esos":"ese"}`,danger:true});
+        if(!seguir) return null;
+        setExporting(true);
+        const nums=new Set(afectados.map(s=>s.numero));
+        afectados.forEach(s=>{ const o=sucursalOrders.find(x=>x.numero===s.numero); if(o){ delete sucursalOverridesRef.current[ovrKey(o)]; exclOperRef.current.add(o.numero); sucNoOperRef.current.add(ovrKey(o)); const pk=ghPuntoKey(o); if(pk) delete puntoMapRef.current[pk]; } });
+        persistOverrides(); persistSucNoOper(); persistPuntoMap();
+        sucursalOrdersOk=sucursalOrders.filter(o=>!nums.has(o.numero));
+        // Rearmar la hoja sin ellos (y sin sus filas de verificación duplicadas)
+        for(let i=verifRows.length-1;i>=0;i--) if(verifRows[i].tipo==="sucursal") verifRows.splice(i,1);
+        sucEscritas.length=0;
+        sucRowsXml=buildSucursalRowsXml(sucursalOrdersOk,3);
+        if(!sucursalOrdersOk.length&&!domicilioOrders.length){ toast("No quedó ningún pedido para exportar","warning"); return null; }
+      }
+    }
 
     // Freno de seguridad: si alguna fila del Excel no coincide con el destino
     // del pedido en la tienda, NO se descarga en silencio — modal con el
@@ -7684,7 +7725,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const quedan=[];
       for(const vr of verifRows){
         if(vr.tipo!=="sucursal"){ quedan.push(vr); continue; }
-        const o=sucursalOrders.find(x=>x.numero===vr.numero);
+        const o=sucursalOrdersOk.find(x=>x.numero===vr.numero);
         let ok=false;
         try{
           const rV=o?await verifTplContraOficial(o,vr.escrito,locs):{ok:false,diag:"pedido no encontrado"};
@@ -7769,6 +7810,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // todos los pedidos futuros al mismo punto se resuelven solos, en ambos
   // flujos (tpl = string del desplegable del Excel; oficial = id de la API).
   const puntoMapRef=useRef((()=>{try{return JSON.parse(localStorage.getItem(ghKey("growith_puntoMap"))||"{}");}catch(_){return {};}})());
+  // Pedidos cuya sucursal Andreani NO está operativa (detectado al exportar):
+  // en la próxima exportación no se auto-resuelven — pasan sí o sí por el
+  // modal de elección (con cercanas) hasta que se les elija otra sucursal.
+  const sucNoOperRef=useRef((()=>{try{return new Set(JSON.parse(localStorage.getItem(ghKey("growith_sucNoOper"))||"[]"));}catch(_){return new Set();}})());
+  function persistSucNoOper(){try{localStorage.setItem(ghKey("growith_sucNoOper"),JSON.stringify([...sucNoOperRef.current]));}catch(_){}}
   function persistPuntoMap(){try{localStorage.setItem(ghKey("growith_puntoMap"),JSON.stringify(puntoMapRef.current));}catch(_){}}
   function ghPuntoKey(o){
     const pd=o?.pickupDetails; if(!pd) return null;
@@ -8237,6 +8283,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const unresolvedSuc=sucursalOrdersSinEsquina.filter(o=>{
         const _ovr=sucursalOverridesRef.current[ovrKey(o)];
         if(_ovr==="EXCLUIR") return false;
+        if(sucNoOperRef.current.has(ovrKey(o))) return true; // sucursal no operativa: elegir otra a mano
         if(_ovr&&(locs.sucursales||[]).includes(_ovr)) return false;
         // Override guardado que ya no existe en el desplegable: NO se trata
         // como resuelto (antes se descartaba a mitad de la generación y la
@@ -8257,7 +8304,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         return;
       }
 
-      const finalOrders=selOrders.filter(o=>
+      let finalOrders=selOrders.filter(o=>
         locationOverridesRef.current[ovrKey(o)]!=="EXCLUIR" &&
         sucursalOverridesRef.current[ovrKey(o)]!=="EXCLUIR" &&
         !esquinaSet.has(o.numero)
@@ -8275,8 +8322,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       }
 
       setExportProgress({step:`Generando ${finalOrders.length} etiquetas...`,pct:60,current:finalOrders.length,total:finalOrders.length});
-      const b=await generateAndreaniXlsx(finalOrders,locs);
-      if(!b){ setExporting(false); return; } // cancelado desde el modal de verificación
+      const b0=await generateAndreaniXlsx(finalOrders,locs);
+      if(!b0){ setExporting(false); return; } // cancelado desde el modal de verificación
+      const b=b0;
+      // Pedidos con sucursal no operativa salieron del Excel: no cuentan como exportados
+      if(exclOperRef.current.size) finalOrders=finalOrders.filter(o=>!exclOperRef.current.has(o.numero));
       setExportProgress({step:"Descargando...",pct:90,current:finalOrders.length,total:finalOrders.length});
       const date=hoyAR();
       const a=document.createElement('a');
@@ -8367,8 +8417,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       setExportProgress({step:`Verificando sucursales Andreani… (${sucIdx}/${unresolvedSuc.length})`,pct:30+Math.round(25*sucIdx/unresolvedSuc.length),current:sucIdx,total:unresolvedSuc.length});
       // Memoria por punto: si este punto de retiro ya fue confirmado a mano
       // alguna vez, se reusa esa elección (validando que siga en el desplegable).
+      const forzar=sucNoOperRef.current.has(ovrKey(o)); // la sucursal automática no opera: solo modal
       const memXlsx=(()=>{const pk=ghPuntoKey(o);return pk?puntoMapRef.current[pk]:null;})();
-      if(memXlsx?.tpl&&(locs.sucursales||[]).includes(memXlsx.tpl)){
+      if(!forzar&&memXlsx?.tpl&&(locs.sucursales||[]).includes(memXlsx.tpl)){
         sucursalOverridesRef.current[ovrKey(o)]=memXlsx.tpl;
         persistOverrides();
         continue;
@@ -8383,7 +8434,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       // desplegable") o dejaba la columna vacía. Sin equivalente → modal.
       const autoOficial=matchSucursalOficial(oficiales,o);
       const autoTpl=autoOficial?ghTplDeOficial(locs,autoOficial):null;
-      if(autoTpl){
+      if(!forzar&&autoTpl){
         sucursalOverridesRef.current[ovrKey(o)]=autoTpl;
         persistOverrides();
         continue;
@@ -8393,7 +8444,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       // calle+número con resultado único), es la misma sucursal que el modal
       // marcaría como "Sugerido" — usarla directo, sin molestar.
       const autoDirecto=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
-      if(autoDirecto&&(locs.sucursales||[]).includes(autoDirecto)){
+      if(!forzar&&autoDirecto&&(locs.sucursales||[]).includes(autoDirecto)){
         sucursalOverridesRef.current[ovrKey(o)]=autoDirecto;
         persistOverrides();
         continue;
@@ -8401,9 +8452,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       // Último intento silencioso: el punto exacto en el listado COMPLETO de
       // Andreani (los HOP nuevos suelen faltar en la lista por CP), traducido
       // al desplegable del Excel. Match estricto: si no es EL punto, modal.
-      const globalOficial=await buscarPuntoExactoGlobal(o);
+      const globalOficial=forzar?null:await buscarPuntoExactoGlobal(o);
       const globalTpl=globalOficial?ghTplDeOficial(locs,globalOficial):null;
-      if(globalTpl){
+      if(!forzar&&globalTpl){
         sucursalOverridesRef.current[ovrKey(o)]=globalTpl;
         persistOverrides();
         continue;
@@ -8414,11 +8465,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       // (calle+número exactos) — la distancia NO decide nada.
       let cercaTpl=null;
       try{
-        const dCerca=await fetchCercanasRaw(o);
+        const dCerca=forzar?{sucursales:[]}:await fetchCercanasRaw(o);
         const cercaOficial=matchSucursalOficial(dCerca.sucursales,o);
         cercaTpl=cercaOficial?ghTplDeOficial(locs,cercaOficial):null;
       }catch(_){}
-      if(cercaTpl){
+      if(!forzar&&cercaTpl){
         sucursalOverridesRef.current[ovrKey(o)]=cercaTpl;
         persistOverrides();
         continue;
@@ -8430,6 +8481,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       // Modal con reintento: no se acepta un valor fuera del desplegable.
       setExporting(false); // el overlay de progreso no puede tapar el modal
       let resuelto=false;
+      const autoMatch0=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
       while(!resuelto){
         setLocOficialSel("");
         const chosen=await new Promise(resolve=>{
@@ -8451,11 +8503,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               prefill=o.direccion||"";
             }
           }
-          setLocationModal({order:o,locs,resolve,type:"sucursal",autoMatch,oficiales,noExacto:!!o.pickupDetails});
+          setLocationModal({order:o,locs,resolve,type:"sucursal",autoMatch:forzar?null:autoMatch,oficiales,noExacto:!!o.pickupDetails,noOperativa:forzar?(autoMatch||""):null});
           setLocSearch(prefill);setLocSearchType("ciudad");
         });
         if(chosen===null) return; // cancelar todo
         if(chosen==="EXCLUIR"){ sucursalOverridesRef.current[ovrKey(o)]="EXCLUIR"; persistOverrides(); resuelto=true; break; }
+        if(forzar&&chosen===(autoMatch0||"")){ toast("Esa es justamente la sucursal que Andreani no tiene operativa — elegí otra (Ver cercanas) o mandalo a domicilio","warning",6500); continue; }
         // Lo elegido puede venir de la lista oficial: traducirlo al desplegable.
         const tpl=(locs.sucursales||[]).includes(chosen)?chosen:ghTplDeOficial(locs,{descripcion:chosen});
         if(!tpl){
@@ -8463,6 +8516,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           continue; // reabrir el modal para el mismo pedido
         }
         sucursalOverridesRef.current[ovrKey(o)]=tpl; persistOverrides();
+        if(forzar){ sucNoOperRef.current.delete(ovrKey(o)); persistSucNoOper(); }
         // Memoria por punto: la próxima vez que un pedido venga a ESTE punto,
         // se resuelve solo con esta elección.
         recordarPunto(o,{tpl});
@@ -10212,7 +10266,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* Location / Sucursal Resolution Modal */}
       <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);setExportSingleOrder(null);}}} title={locationModal?.type==="sucursal"?"Elegir sucursal Andreani":"Confirmar localidad Andreani"} width={560} zIndex={2000}>
         {locationModal&&(()=>{
-          const {order,locs,resolve,type,autoMatch,oficiales,wantOficial,esquina,noExacto}=locationModal;
+          const {order,locs,resolve,type,autoMatch,oficiales,wantOficial,esquina,noExacto,noOperativa}=locationModal;
           const isSuc=type==="sucursal";
           const cpOf=isSuc?cpDestinoDe(order):"";
           const hayOficiales=isSuc&&Array.isArray(oficiales)&&oficiales.length>0;
@@ -10259,7 +10313,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   <strong>La dirección es en esquina (sin numeración)</strong> y Andreani la rechaza para envío a domicilio. Elegí una sucursal cercana para mandarlo ahí, o excluí el pedido y emitilo a mano en Andreani (carga individual) como siempre.
                 </div>
               )}
-              {noExacto&&!esquina&&(
+              {noOperativa!=null&&(
+                <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.red}}>
+                  <strong>Andreani no tiene operativa la sucursal de este pedido</strong>{noOperativa?<> (<span style={{fontWeight:700}}>{noOperativa}</span>)</>:null}: no figura en su listado oficial actual y con ella adentro rechaza el Excel completo. Elegí otra con <strong>Ver cercanas</strong> y avisale al cliente, o excluí el pedido y mandalo a domicilio.
+                </div>
+              )}
+              {noExacto&&!esquina&&noOperativa==null&&(
                 <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.red}}>
                   <strong>No pude confirmar el punto EXACTO que eligió el cliente.</strong> El envío va a ir a la sucursal que elijas acá — no al punto de arriba. Elegí solo si estás segura de que es el mismo lugar (misma calle y número); si no aparece (los puntos HOP nuevos suelen faltar en el Excel de Andreani), excluí el pedido y emitilo por Etiquetas listas — que elige por ID oficial y sí lo tiene — o a mano en Andreani.
                 </div>
