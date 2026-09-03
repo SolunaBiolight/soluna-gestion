@@ -21279,6 +21279,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [regPv, setRegPv] = useState("");               // "" | número de PV
   const [regOrigen, setRegOrigen] = useState("");       // "" | "tn" | "ml" | "manual" | "recuperado"
   const [regBusq, setRegBusq] = useState("");
+  const [regTipo, setRegTipo] = useState("");           // "" | "A" | "B" | "C" | "ND" | "NC"
+  const [regEstado, setRegEstado] = useState("");       // "" | "activas" | "anuladas"
+  const [regBatch, setRegBatch] = useState(null);       // batch_id: ver solo los comprobantes de un lote
+  const [regMenu, setRegMenu] = useState(null);         // {id, top, right} menú de acciones abierto
   // Canceladas con factura activa (para emitir sus NC en lote) — sección al final de Registros
   const [cancData, setCancData] = useState(null);   // {rows, count, truncated, amplio}
   const [cancLoading, setCancLoading] = useState(false);
@@ -21402,7 +21406,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // Paginación de la vista Comprobantes de Registros (100 por página). Se resetea al
   // tocar filtros, cambiar de vista/sub-pestaña o cambiar el período — mismo patrón que pendPage.
   const [regPage, setRegPage] = useState(1);
-  useEffect(()=>{ setRegPage(1); },[regLetra, regPv, regOrigen, regBusq, regSub, regView, regDesde, regHasta, cuitSel]);
+  useEffect(()=>{ setRegPage(1); setRegMenu(null); },[regLetra, regPv, regOrigen, regBusq, regSub, regView, regTipo, regEstado, regBatch, regDesde, regHasta, cuitSel]);
 
   // Capa api con manejo de errores: red caída o respuesta no-JSON lanzan Error
   // con mensaje útil en vez de reventar en el .json() y dejar flags de carga prendidos.
@@ -23768,38 +23772,60 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     {id:"manual",     label:"Manual",                    color:T.purple},
                     {id:"recuperado", label:"Recuperado",                color:T.textMd},
                   ];
-                  // Filtrado y totales memoizados a nivel componente (regData)
-                  const { rows, ncRows, activas, totNeto, totIva, totTotal, ncTotal, filtBatches, porLetraTot, porPvTot } = regData;
-                  // Para NCs no cuenta regOrigen (ese filtro no aplica a NCs)
-                  const filtrosActivos = regSub==="ncs" ? !!(regLetra||regPv||regBusq.trim()) : !!(regLetra||regPv||regOrigen||regBusq.trim());
-                  const pvKeys = Object.keys(porPvTot);
-                  // Paginación de la vista Comprobantes (100 por página) — el CSV exporta TODO lo filtrado
-                  const REG_PAGE_SIZE = 100;
-                  const regTotalPages = Math.max(1, Math.ceil(rows.length/REG_PAGE_SIZE));
-                  const regPageCur = Math.min(regPage, regTotalPages);
-                  const regPageRows = rows.slice((regPageCur-1)*REG_PAGE_SIZE, regPageCur*REG_PAGE_SIZE);
+                  const { rows, ncRows, filtBatches } = regData;
+                  const fmtMonto = (v) => "$ " + (v||0).toLocaleString("es-AR",{minimumFractionDigits:2});
                   const fmtFechaCbte = (r) => r.fecha_cbte
                     ? `${r.fecha_cbte.slice(8,10)}/${r.fecha_cbte.slice(5,7)}/${r.fecha_cbte.slice(0,4)}`
                     : (r._b?.emitido_at ? new Date(r._b.emitido_at).toLocaleDateString("es-AR") : "—");
-                  const fmtMonto = (v) => "$ " + (v||0).toLocaleString("es-AR",{minimumFractionDigits:2});
-                  // Export del período completo para el contador: facturas + ND (vienen en
-                  // list_batches) + NCs con montos en NEGATIVO — un solo archivo, sin
-                  // aplicar los filtros de pantalla. Separador ";" y BOM UTF-8 (Excel AR).
+                  const fmtLote = (b) => b?.emitido_at ? new Date(b.emitido_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—";
+
+                  // ── Lista unificada: facturas + ND + NC en una sola tabla ──
+                  const uni = [
+                    ...rows.map(r=>({ k:"f", r, id:`f_${r._b.batch_id}_${r._bi}`, fecha:r.fecha_cbte||String(r._b?.emitido_at||"").slice(0,10), ts:r._b?.emitido_at||"", tipo:r.nd?"ND":(r.letra||"?"), total:r.total||0 })),
+                    ...ncRows.map((n,i)=>({ k:"nc", n, id:`nc_${n.punto_venta}_${n.comprobante}_${i}`, fecha:String(n.fecha||"").slice(0,10), ts:n.fecha||"", tipo:"NC", total:-(n.total||0) })),
+                  ].filter(x=>{
+                    if (regBatch) return x.k==="f" && x.r._b?.batch_id===regBatch;
+                    if (regTipo==="NC") return x.k==="nc";
+                    if (regTipo==="ND") return x.k==="f" && !!x.r.nd;
+                    if (regTipo) { if (x.k!=="f" || x.r.nd || x.r.letra!==regTipo) return false; }
+                    if (regEstado==="activas") return x.k==="f" && !x.r.anulada;
+                    if (regEstado==="anuladas") return x.k==="f" && !!x.r.anulada;
+                    return true;
+                  }).sort((a,b)=> a.fecha!==b.fecha ? (a.fecha<b.fecha?1:-1) : (a.ts<b.ts?1:a.ts>b.ts?-1:0));
+
+                  const fActivas = uni.filter(x=>x.k==="f"&&!x.r.anulada);
+                  const fAnuladas = uni.filter(x=>x.k==="f"&&x.r.anulada).length;
+                  const ncsN = uni.filter(x=>x.k==="nc");
+                  const tNeto = fActivas.reduce((s,x)=>s+(x.r.neto||0),0);
+                  const tIva = fActivas.reduce((s,x)=>s+(x.r.iva||0),0);
+                  const tTotal = fActivas.reduce((s,x)=>s+(x.r.total||0),0);
+                  const tNc = ncsN.reduce((s,x)=>s+(x.n.total||0),0);
+                  const filtrosActivos = !!(regBusq.trim()||regTipo||regEstado||regBatch);
+                  const limpiar = () => { setRegBusq(""); setRegTipo(""); setRegEstado(""); setRegBatch(null); setRegLetra(""); setRegPv(""); setRegOrigen(""); };
+                  const loteSel = regBatch ? batches.find(b=>b.batch_id===regBatch) : null;
+
+                  // Paginación (100 por página) — el CSV exporta TODO el período
+                  const REG_PAGE_SIZE = 100;
+                  const regTotalPages = Math.max(1, Math.ceil(uni.length/REG_PAGE_SIZE));
+                  const regPageCur = Math.min(regPage, regTotalPages);
+                  const pageRows = uni.slice((regPageCur-1)*REG_PAGE_SIZE, regPageCur*REG_PAGE_SIZE);
+
+                  // Export del período completo para el contador (facturas + ND + NC en negativo)
                   const exportCsv = () => {
                     const esc = (v)=>`"${String(v??"").replace(/"/g,'""')}"`;
                     const num = (v)=>(v||0).toFixed(2).replace(".",",");
-                    const headers = ["Fecha","Tipo","PV","Número","Cliente","Doc","Neto","IVA","Total","CAE","Vto CAE"];
+                    const headers = ["Fecha","Tipo","PV","Número","Cliente","Doc","Neto","IVA","Total","CAE","Vto CAE","Estado","Orden"];
                     const todasFacturas = batches.flatMap(b=>(b.resumen||[]).map((r,i)=>({...r,_b:b,_bi:i})));
                     const lineasF = todasFacturas.map(r=>[
                       fmtFechaCbte(r), r.nd?"ND":`F${r.letra||""}`, r.punto_venta||"", String(r.comprobante||"").padStart(8,"0"),
                       r.cliente||"", r.doc_nro?`${r.doc_tipo||""} ${r.doc_nro}`.trim():"",
-                      num(r.neto), num(r.iva), num(r.total), r.cae||"", r.cae_vto||"",
+                      num(r.neto), num(r.iva), num(r.total), r.cae||"", r.cae_vto||"", r.anulada?"Anulada":"Activa", r.orden_id||"",
                     ]);
                     const lineasN = ncs.map(n=>[
                       n.fecha?new Date(n.fecha).toLocaleDateString("es-AR"):"", "NC", n.punto_venta||"", String(n.comprobante||"").padStart(8,"0"),
                       n.cliente||"", n.doc_nro||"",
                       n.neto!=null?num(-(n.neto||0)):"", n.iva!=null?num(-(n.iva||0)):"", num(-(n.total||0)),
-                      n.cae||"", n.cae_vto||"",
+                      n.cae||"", n.cae_vto||"", "NC", n.factura_origen?`Anula N° ${String(n.factura_origen.comprobante||"").padStart(8,"0")}`:"",
                     ]);
                     const csv = "﻿" + [headers.map(esc).join(";"), ...lineasF.map(l=>l.map(esc).join(";")), ...lineasN.map(l=>l.map(esc).join(";"))].join("\n");
                     const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
@@ -23809,21 +23835,20 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     a.click();
                     setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
                   };
-                  const pillS = (active,color) => ({padding:"5px 12px",fontSize:12,fontWeight:active?700:500,borderRadius:8,border:`1.5px solid ${active?color:T.border}`,background:active?color+"18":"transparent",color:active?color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",flexShrink:0,whiteSpace:"nowrap"});
-                  // Badges reutilizados en las dos vistas
-                  const BadgeAnulada = () => <span title="Anulada con Nota de Crédito" style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.red+"18",color:T.red,fontWeight:700,border:`1px solid ${T.red}44`,whiteSpace:"nowrap",flexShrink:0}}>ANULADA</span>;
-                  const BadgeRecuperada = () => <span title="reconstruida desde AFIP — sin detalle de items" style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.textSm+"18",color:T.textMd,fontWeight:700,border:`1px solid ${T.textSm}44`,whiteSpace:"nowrap",flexShrink:0}}>Recuperada de AFIP</span>;
-                  const BadgeND = ({r}) => <span title={`Nota de débito — cargo adicional${r?.factura_origen?` asociado a la factura N° ${String(r.factura_origen.comprobante||"").padStart(8,"0")}`:" asociado a una factura"}`} style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.purple+"18",color:T.purple,fontWeight:700,border:`1px solid ${T.purple}44`,whiteSpace:"nowrap",flexShrink:0}}>ND</span>;
+
+                  // ── Piezas visuales ──
+                  const TipoBadge = ({tipo}) => {
+                    const c = tipo==="NC" ? T.red : tipo==="ND" ? T.purple : T.accent;
+                    return <span style={{display:"inline-block",minWidth:30,textAlign:"center",padding:"3px 8px",borderRadius:6,fontSize:11,fontWeight:800,letterSpacing:0.3,border:`1px solid ${c}44`,color:c,background:c+"14",whiteSpace:"nowrap"}}>{tipo==="NC"||tipo==="ND"?tipo:"F"+tipo}</span>;
+                  };
+                  const Tag = ({color,title,children}) => <span title={title} style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:color+"18",color,fontWeight:700,border:`1px solid ${color}44`,whiteSpace:"nowrap",flexShrink:0}}>{children}</span>;
                   const OrigenBadge = ({r}) => {
                     const o = ORIGENES.find(x=>x.id===origenDe(r));
-                    if (!o) return null;
+                    if (!o) return <span style={{color:T.textSm}}>—</span>;
                     if (o.id==="tn"||o.id==="ml") return <span title={o.label} style={{display:"inline-flex",flexShrink:0}}><BrandIcon name={o.id} size={15}/></span>;
-                    return <span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:o.color+"1a",color:o.color,fontWeight:700,border:`1px solid ${o.color}44`,whiteSpace:"nowrap",flexShrink:0}}>{o.label}</span>;
+                    return <Tag color={o.color}>{o.label}</Tag>;
                   };
-                  const btnPdfS = {background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
-                  const btnAnularS = {background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
-                  const btnReemitS = {background:"transparent",border:`1px solid ${T.blue}55`,color:T.blue,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
-                  const btnNdS = {background:"transparent",border:`1px solid ${T.purple}55`,color:T.purple,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"};
+                  const selS = {...iS,padding:"7px 28px 7px 10px",fontSize:12,minWidth:0,boxSizing:"border-box",cursor:"pointer"};
                   const descargarPdfDe = async (r) => {
                     const list = await loadBatchPdfs(r._b);
                     if (!list) return;
@@ -23831,60 +23856,88 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     if (pdf) downloadPDF(pdf);
                     else toast("No se pudo regenerar el PDF de este comprobante","warning");
                   };
-                  const vacio = batches.length===0 && ncs.length===0;
-                  // Pie extra: desglose por letra / por PV + neto del mes descontando NCs
-                  const letrasLine = ["A","B","C"].filter(l=>porLetraTot[l]).map(l=>`${l}: ${porLetraTot[l].n} (${fmtMonto(porLetraTot[l].t)})`).join(" · ");
-                  const pieExtra = (
-                    <div style={{display:"flex",flexDirection:"column",gap:3,marginTop:6,fontSize:11,color:T.textSm}}>
-                      {letrasLine && <div>{letrasLine}</div>}
-                      {pvKeys.length>1 && <div>{pvKeys.sort((a,b)=>a-b).map(p=>`PV ${String(p).padStart(4,"0")}: ${fmtMonto(porPvTot[p])}`).join(" · ")}</div>}
-                      {ncTotal>0 && <div>Notas de crédito del mes: <span style={{color:T.red,fontWeight:600}}>− {fmtMonto(ncTotal)}</span> · Neto facturado: <strong style={{color:T.text}}>{fmtMonto(totTotal-ncTotal)}</strong></div>}
-                    </div>
+                  // Menú de acciones por fila (posición fija: no lo recorta el scroll de la tabla)
+                  const abrirMenu = (e, x) => {
+                    e.stopPropagation();
+                    if (regMenu?.id===x.id) { setRegMenu(null); return; }
+                    const rc = e.currentTarget.getBoundingClientRect();
+                    setRegMenu({ id:x.id, top:rc.bottom+4, right:Math.max(8, window.innerWidth-rc.right) });
+                  };
+                  const menuItems = (x) => {
+                    const r = x.r, b = r._b;
+                    const it = [];
+                    it.push({ l:"Descargar PDF", fn:()=>descargarPdfDe(r) });
+                    if (String(r.orden_id||"").startsWith("ML-")) it.push({ l:"Ver la venta en Mercado Libre", href:`https://www.mercadolibre.com.ar/ventas/${String(r.orden_id).replace("ML-","")}/detalle` });
+                    if (!r.anulada&&!r.nd) it.push({ l:"Emitir nota de débito", fn:()=>abrirNd(r,b), hint:"Cobra un adicional asociado a esta factura" });
+                    if (!r.anulada&&!r.nd&&!r.recuperado_afip&&r.letra==="B"&&r.orden_id) it.push({ l:"Re-emitir como Factura A", fn:()=>reemitirComoA(r,b), color:T.blue, hint:"NC de la B + Factura A al CUIT, en un paso" });
+                    if (!r.anulada) it.push({ l:"Anular con nota de crédito", fn:()=>anularUnaFactura(r,b), color:T.red, disabled:!!r.recuperado_afip||!!r.nd,
+                      hint: r.nd ? "Las ND se revierten con una NC manual" : r.recuperado_afip ? "Recuperada de AFIP sin items: anulala desde una factura manual" : "Emite una NC por el total" });
+                    return it;
+                  };
+                  const RowMenu = ({x}) => (
+                    <button onClick={(e)=>abrirMenu(e,x)} title="Acciones" style={{background:regMenu?.id===x.id?T.accent+"18":"transparent",border:`1px solid ${T.border}`,color:T.text,borderRadius:7,width:30,height:28,fontSize:16,lineHeight:1,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>⋯</button>
                   );
+                  const menuX = regMenu ? uni.find(x=>x.id===regMenu.id) : null;
+
+                  const vacio = batches.length===0 && ncs.length===0;
+                  const thS = (align="left") => ({textAlign:align,padding:"9px 10px",fontSize:10,textTransform:"uppercase",letterSpacing:0.5,color:T.textSm,fontWeight:700,whiteSpace:"nowrap",borderBottom:`1px solid ${T.border}`,background:T.bg,position:"sticky",top:0,zIndex:1});
+                  const tdS = {padding:"9px 10px",verticalAlign:"middle"};
+
                   return (
                     <Card T={T} padding="lg">
                       {/* Header */}
-                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,gap:14,flexWrap:"wrap"}}>
                         <div>
-                          <div style={{fontSize:14,fontWeight:700,color:T.text}}>Registros · <span style={{textTransform:"capitalize"}}>{mesActual}</span></div>
-                          <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Todos los comprobantes emitidos del período. Descargá PDFs, exportá el CSV para tu contador o anulá con Nota de Crédito.</div>
+                          <div style={{fontSize:14,fontWeight:700,color:T.text}}>Comprobantes emitidos · <span style={{textTransform:"capitalize"}}>{mesActual}</span></div>
+                          <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Facturas, notas de débito y notas de crédito del período en una sola lista. Las acciones de cada comprobante están en el botón ⋯ de su fila.</div>
                         </div>
                         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                          {/* Toggle de vista Lotes / Comprobantes */}
-                          {regSub==="facturas" && (
-                            <div style={{display:"inline-flex",background:T.bg,borderRadius:8,padding:2,border:"1px solid "+T.border,gap:2}}>
-                              {[{id:"lotes",label:"Lotes"},{id:"comprobantes",label:"Comprobantes"}].map(v=>(
-                                <button key={v.id} onClick={()=>setRegView(v.id)} style={{padding:"5px 12px",fontSize:11,fontWeight:regView===v.id?700:500,borderRadius:6,border:"none",background:regView===v.id?T.card:"transparent",color:regView===v.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>{v.label}</button>
-                              ))}
-                            </div>
+                          <div style={{display:"inline-flex",background:T.bg,borderRadius:8,padding:2,border:"1px solid "+T.border,gap:2}}>
+                            {[{id:"comprobantes",label:"Comprobantes"},{id:"lotes",label:`Lotes${batches.length?` (${batches.length})`:""}`}].map(v=>(
+                              <button key={v.id} onClick={()=>{setRegView(v.id); if(v.id==="lotes") setRegBatch(null);}} style={{padding:"5px 12px",fontSize:11,fontWeight:regView===v.id?700:500,borderRadius:6,border:"none",background:regView===v.id?T.card:"transparent",color:regView===v.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>{v.label}</button>
+                            ))}
+                          </div>
+                          <Btn T={T} variant="secondary" size="sm" onClick={exportCsv} disabled={vacio} title="Exporta TODAS las facturas, NDs y NCs del período en un solo CSV (NCs en negativo)">Exportar CSV</Btn>
+                        </div>
+                      </div>
+
+                      {/* Barra de filtros (solo en Comprobantes) */}
+                      {regView==="comprobantes" && (
+                        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:12}}>
+                          <div style={{position:"relative",flex:1,minWidth:200}}>
+                            <svg style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",color:T.textSm}} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                            <input type="text" placeholder="Buscar por N°, CAE, cliente, CUIT/DNI o N° de venta…" value={regBusq} onChange={e=>setRegBusq(e.target.value)}
+                              style={{...iS,width:"100%",padding:"7px 12px 7px 32px",fontSize:12,boxSizing:"border-box"}}/>
+                          </div>
+                          <select value={regTipo} onChange={e=>setRegTipo(e.target.value)} style={selS} title="Tipo de comprobante">
+                            <option value="">Todos los tipos</option>
+                            <option value="A">Factura A</option>
+                            <option value="B">Factura B</option>
+                            <option value="C">Factura C</option>
+                            <option value="ND">Notas de débito</option>
+                            <option value="NC">Notas de crédito{ncs.length?` (${ncs.length})`:""}</option>
+                          </select>
+                          <select value={regEstado} onChange={e=>setRegEstado(e.target.value)} style={selS} title="Estado">
+                            <option value="">Activas y anuladas</option>
+                            <option value="activas">Solo activas</option>
+                            <option value="anuladas">Solo anuladas</option>
+                          </select>
+                          {loteSel && (
+                            <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 10px",borderRadius:8,border:`1px solid ${T.accent}55`,background:T.accent+"12",color:T.accent,fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>
+                              Lote del {fmtLote(loteSel)}
+                              <button onClick={()=>setRegBatch(null)} title="Ver todos los comprobantes" style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:13,lineHeight:1,padding:0,fontFamily:"inherit"}}>✕</button>
+                            </span>
                           )}
-                          <Btn T={T} variant="secondary" size="sm" onClick={exportCsv} disabled={batches.length===0&&ncs.length===0} title="Exporta TODAS las facturas, NCs y NDs del período en un solo CSV (NCs en negativo)">Exportar período (contador)</Btn>
+                          {filtrosActivos && (
+                            <button onClick={limpiar} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:11,color:T.red,flexShrink:0}}>✕ Limpiar</button>
+                          )}
                         </div>
-                      </div>
-
-                      {/* Sub-división Facturas | Notas de crédito */}
-                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:12}}>
-                        {[{id:"facturas",label:`Facturas${rows.length?` (${rows.length})`:""}`},{id:"ncs",label:`Notas de crédito${ncRows.length?` (${ncRows.length})`:""}`}].map(s=>(
-                          <button key={s.id} onClick={()=>setRegSub(s.id)} style={pillS(regSub===s.id, T.accent)}>{s.label}</button>
-                        ))}
-                      </div>
-
-                      {/* Barra de filtros — solo buscador (los filtros por letra/PV/origen se sacaron a pedido de Thiago; los estados regLetra/regPv/regOrigen quedan en "" y no filtran) */}
-                      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
-                        <div style={{position:"relative",flex:1,minWidth:180}}>
-                          <svg style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",color:T.textSm}} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                          <input type="text" placeholder="Buscar por N°, CAE, cliente, doc o orden…" value={regBusq} onChange={e=>setRegBusq(e.target.value)}
-                            style={{...iS,width:"100%",padding:"7px 12px 7px 32px",fontSize:12,boxSizing:"border-box"}}/>
-                        </div>
-                        {filtrosActivos && (
-                          <button onClick={()=>{setRegLetra("");setRegPv("");setRegOrigen("");setRegBusq("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red,flexShrink:0}}>✕ Limpiar</button>
-                        )}
-                      </div>
+                      )}
 
                       {/* Contenido */}
                       {batchesLoading ? (
                         <div style={{position:"relative",overflow:"hidden",borderRadius:10}}>
-                          {[1,2,3,4].map(i=>(
+                          {[1,2,3,4,5].map(i=>(
                             <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",borderBottom:`1px solid ${T.borderL}`}}>
                               <div style={{width:26,height:14,background:T.surface,borderRadius:4,flexShrink:0}}/>
                               <div style={{height:10,flex:1,background:T.surface,borderRadius:4}}/>
@@ -23901,186 +23954,161 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               {resyncing ? <><Spinner size={12} color={T.accent}/> {resyncMsg||"Consultando AFIP…"}</> : "Recuperar desde AFIP"}
                             </button>
                           }/>
-                      ) : regSub==="ncs" ? (
-                        /* ── NOTAS DE CRÉDITO ── */
-                        ncRows.length===0 ? (
-                          <DSEmpty T={T} title="Sin notas de crédito"
-                            subtitle={filtrosActivos?"Ninguna NC coincide con los filtros aplicados.":`No emitiste notas de crédito en ${mesActual}.`}/>
-                        ) : (
-                          <>
-                            <div style={{overflowX:"auto"}}>
-                              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:720}}>
-                                <thead>
-                                  <tr style={{borderBottom:`1px solid ${T.border}`}}>
-                                    {["Fecha","Tipo","PV","N°","Cliente","Total","CAE","Factura origen",""].map((h,i)=>(
-                                      <th key={i} style={{textAlign:i===5?"right":"left",padding:"8px 10px",fontSize:10,textTransform:"uppercase",letterSpacing:0.4,color:T.textSm,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
-                                    ))}
-                                  </tr>
-                                </thead>
+                      ) : regView==="lotes" ? (
+                        /* ── LOTES: tabla plana, sin acordeón ── */
+                        <>
+                          <div style={{border:`1px solid ${T.borderL}`,borderRadius:10,overflow:"hidden"}}>
+                            <div style={{overflowX:"auto",maxHeight:560,overflowY:"auto"}}>
+                              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:640}}>
+                                <thead><tr>
+                                  <th style={thS()}>Emitido</th><th style={thS()}>Comprobantes</th><th style={thS()}>Tipos</th><th style={thS("right")}>Total</th><th style={thS("right")}></th>
+                                </tr></thead>
                                 <tbody>
-                                  {ncRows.map((n,i)=>(
-                                    <tr key={i} style={{borderBottom:`1px solid ${T.borderL}`}}>
-                                      <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap"}}>{n.fecha?new Date(n.fecha).toLocaleDateString("es-AR"):"—"}</td>
-                                      <td style={{padding:"8px 10px"}}><span style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:"1px solid "+T.red+"44",color:T.red,background:T.red+"11",whiteSpace:"nowrap"}}>NC {n.letra||"—"}</span></td>
-                                      <td style={{padding:"8px 10px",color:T.textMd}}>{n.punto_venta?String(n.punto_venta).padStart(4,"0"):"—"}</td>
-                                      <td style={{padding:"8px 10px",color:T.text,fontWeight:600,whiteSpace:"nowrap"}}>{String(n.comprobante||"").padStart(8,"0")}</td>
-                                      <td style={{padding:"8px 10px",color:T.textMd,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.cliente||"—"}</td>
-                                      <td style={{padding:"8px 10px",color:T.text,fontWeight:600,textAlign:"right",whiteSpace:"nowrap"}}>{fmtMonto(n.total)}</td>
-                                      <td style={{padding:"8px 10px",color:T.textSm,fontFamily:"monospace",fontSize:11,whiteSpace:"nowrap"}}>{n.cae||"—"}</td>
-                                      <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap"}}>{n.factura_origen?`N° ${String(n.factura_origen.comprobante||"").padStart(8,"0")}${n.factura_origen.punto_venta?` · PV ${n.factura_origen.punto_venta}`:""}`:"—"}</td>
-                                      <td style={{padding:"8px 10px"}}>{n.recuperado_afip&&<BadgeRecuperada/>}</td>
-                                    </tr>
-                                  ))}
+                                  {filtBatches.map(({b, rows: bRows})=>{
+                                    const anul = bRows.filter(r=>r.anulada).length;
+                                    const porL = bRows.reduce((acc,r)=>{const k=r.nd?"ND":"F"+(r.letra||"?");acc[k]=(acc[k]||0)+1;return acc;},{});
+                                    const abrir = () => { setRegBatch(b.batch_id); setRegView("comprobantes"); setRegPage(1); };
+                                    return (
+                                      <tr key={b.batch_id} onClick={abrir} className="gh-row" style={{borderBottom:`1px solid ${T.borderL}`,cursor:"pointer"}} title="Ver los comprobantes de este lote">
+                                        <td style={{...tdS,whiteSpace:"nowrap"}}>
+                                          <div style={{fontSize:12,fontWeight:600,color:T.text}}>{b.emitido_at ? new Date(b.emitido_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"}) : "—"}</div>
+                                          <div style={{fontSize:11,color:T.textSm}}>{b.emitido_at ? new Date(b.emitido_at).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}) + " hs" : ""}</div>
+                                        </td>
+                                        <td style={{...tdS,whiteSpace:"nowrap"}}>
+                                          <span style={{fontWeight:700,color:T.text}}>{b.cantidad}</span>
+                                          {anul>0 && <span style={{marginLeft:8}}><Tag color={T.red}>{anul} anulada{anul!==1?"s":""}</Tag></span>}
+                                          {filtrosActivos&&bRows.length!==b.cantidad && <span style={{marginLeft:8,fontSize:11,color:T.textSm}}>{bRows.length} coinciden</span>}
+                                        </td>
+                                        <td style={{...tdS,whiteSpace:"nowrap",color:T.textMd,fontSize:11}}>{Object.entries(porL).map(([k,n])=>`${n} ${k}`).join(" · ")}</td>
+                                        <td style={{...tdS,textAlign:"right",fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>{fmtMonto(b.total)}</td>
+                                        <td style={{...tdS,textAlign:"right",whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
+                                          <div style={{display:"inline-flex",gap:6,alignItems:"center"}}>
+                                            <button onClick={abrir} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.text,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ver comprobantes</button>
+                                            <button onClick={()=>downloadBatchZip(b)} disabled={loadingBatchPdfs===b.batch_id} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:6}}>
+                                              {loadingBatchPdfs===b.batch_id ? <><Spinner size={10} color="#fff"/> Descargando…</> : "Descargar ZIP"}
+                                            </button>
+                                            <button onClick={()=>anularLoteCompleto(b, bRows)} title="Emite una NC por cada factura activa del lote" style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Anular lote</button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             </div>
-                            <div style={{display:"flex",alignItems:"center",gap:14,marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL}`,fontSize:12,flexWrap:"wrap"}}>
-                              <span style={{color:T.textSm}}>Total de <span style={{textTransform:"capitalize"}}>{mesActual}</span>{filtrosActivos?" (filtrado)":""}:</span>
-                              <span style={{color:T.text,fontWeight:700}}>{ncRows.length} NC{ncRows.length!==1?"s":""}</span>
-                              <span style={{marginLeft:"auto",color:T.red,fontWeight:800,fontSize:13}}>− {fmtMonto(ncTotal)}</span>
-                            </div>
-                          </>
-                        )
-                      ) : rows.length===0 ? (
-                        <DSEmpty T={T} title="Sin comprobantes"
-                          subtitle={filtrosActivos?"Ningún comprobante coincide con los filtros aplicados.":`No hay facturas emitidas en ${mesActual}.`}/>
-                      ) : regView==="comprobantes" ? (
-                        /* ── VISTA COMPROBANTES (tabla plana) ── */
-                        <>
-                          <div style={{overflowX:"auto"}}>
-                            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:860}}>
-                              <thead>
-                                <tr style={{borderBottom:`1px solid ${T.border}`}}>
-                                  {["Fecha","Tipo","N°","Cliente","Doc","Neto","IVA","Total","Origen","CAE",""].map((h,i)=>(
-                                    <th key={i} style={{textAlign:[5,6,7].includes(i)?"right":"left",padding:"8px 10px",fontSize:10,textTransform:"uppercase",letterSpacing:0.4,color:T.textSm,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {regPageRows.map((r,i)=>(
-                                  <tr key={i} style={{borderBottom:`1px solid ${T.borderL}`,opacity:r.anulada?0.6:1}}>
-                                    <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap"}}>{fmtFechaCbte(r)}</td>
-                                    <td style={{padding:"8px 10px"}}>
-                                      <span style={{display:"inline-flex",alignItems:"center",gap:5}}>
-                                        <span style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:"1px solid "+(r.nd?T.purple:T.accent)+"44",color:r.nd?T.purple:T.accent,background:(r.nd?T.purple:T.accent)+"11",whiteSpace:"nowrap"}}>{r.nd?"ND":"F"}{r.letra}</span>
-                                        {r.nd&&<BadgeND r={r}/>}
-                                        {r.anulada&&<BadgeAnulada/>}
-                                        {r.recuperado_afip&&<BadgeRecuperada/>}
-                                      </span>
-                                    </td>
-                                    <td style={{padding:"8px 10px",color:T.text,fontWeight:600,whiteSpace:"nowrap"}}>{String(r.comprobante).padStart(8,"0")}</td>
-                                    <td style={{padding:"8px 10px",color:T.textMd,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.cliente||""}>{r.cliente||"—"}</td>
-                                    <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap"}} title={r.motivo_b||""}>{r.doc_nro?`${r.doc_tipo||""} ${r.doc_nro}`.trim():"CF"}{r.motivo_b&&<span title={r.motivo_b} style={{marginLeft:6,fontSize:9,padding:"1px 6px",borderRadius:4,background:T.yellow+"22",color:T.yellow,fontWeight:700}}>B por rechazo de A</span>}</td>
-                                    <td style={{padding:"8px 10px",color:T.textMd,textAlign:"right",whiteSpace:"nowrap"}}>{fmtMonto(r.neto)}</td>
-                                    <td style={{padding:"8px 10px",color:T.textMd,textAlign:"right",whiteSpace:"nowrap"}}>{fmtMonto(r.iva)}</td>
-                                    <td style={{padding:"8px 10px",color:T.text,fontWeight:700,textAlign:"right",whiteSpace:"nowrap"}}>{fmtMonto(r.total)}</td>
-                                    <td style={{padding:"8px 10px"}}><OrigenBadge r={r}/></td>
-                                    <td style={{padding:"8px 10px",color:T.textSm,fontFamily:"monospace",fontSize:11,whiteSpace:"nowrap"}} title={r.cae_vto?`Vto CAE ${r.cae_vto}`:undefined}>{r.cae||"—"}</td>
-                                    <td style={{padding:"8px 10px"}}>
-                                      <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
-                                        <button onClick={()=>descargarPdfDe(r)} style={btnPdfS}>Descargar</button>
-                                        {!r.anulada&&!r.nd&&(
-                                          <button onClick={()=>abrirNd(r, r._b)} title="Agrega más monto a la orden — cobra un adicional asociado a esta factura" style={btnNdS}>Emitir nota de débito</button>
-                                        )}
-                                        {!r.anulada&&!r.nd&&!r.recuperado_afip&&r.letra==="B"&&r.orden_id&&(
-                                          <button onClick={()=>reemitirComoA(r, r._b)} title="Emite la NC de esta Factura B y una Factura A al CUIT del cliente, en un paso" style={btnReemitS}>Re-emitir como A</button>
-                                        )}
-                                        {!r.anulada&&(
-                                          <button onClick={()=>{if(!r.recuperado_afip&&!r.nd)anularUnaFactura(r, r._b);}} disabled={!!r.recuperado_afip||!!r.nd} title={r.nd?"Las ND se revierten con una nota de crédito manual":r.recuperado_afip?"Recuperado de AFIP sin detalle de items — anulalo desde una factura manual o contactanos":"Emite NC para anular esta factura"} style={{...btnAnularS,opacity:(r.recuperado_afip||r.nd)?0.45:1,cursor:(r.recuperado_afip||r.nd)?"not-allowed":"pointer"}}>Anular (nota de crédito)</button>
-                                        )}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
                           </div>
-                          {/* Controles de página — mismo patrón que la lista de pendientes de Facturar */}
+                          <div style={{fontSize:11,color:T.textSm,marginTop:10}}>Cada lote es una tanda emitida junta. Tocá uno para ver y operar sus comprobantes.</div>
+                        </>
+                      ) : uni.length===0 ? (
+                        <DSEmpty T={T} title="Sin comprobantes"
+                          subtitle={filtrosActivos?"Ningún comprobante coincide con los filtros.":`No hay comprobantes emitidos en ${mesActual}.`}
+                          action={filtrosActivos?<Btn T={T} variant="secondary" size="sm" onClick={limpiar}>Limpiar filtros</Btn>:null}/>
+                      ) : (
+                        /* ── COMPROBANTES: lista unificada ── */
+                        <>
+                          <div style={{border:`1px solid ${T.borderL}`,borderRadius:10,overflow:"hidden"}}>
+                            <div style={{overflowX:"auto",maxHeight:620,overflowY:"auto"}}>
+                              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:900}}>
+                                <thead><tr>
+                                  <th style={thS()}>Fecha</th><th style={thS()}>Tipo</th><th style={thS()}>Número</th><th style={thS()}>Cliente</th><th style={thS()}>Origen</th><th style={thS("right")}>Neto</th><th style={thS("right")}>IVA</th><th style={thS("right")}>Total</th><th style={thS()}>CAE</th><th style={thS("right")}></th>
+                                </tr></thead>
+                                <tbody>
+                                  {pageRows.map(x=>{
+                                    if (x.k==="nc") {
+                                      const n = x.n;
+                                      return (
+                                        <tr key={x.id} style={{borderBottom:`1px solid ${T.borderL}`,background:T.red+"06"}}>
+                                          <td style={{...tdS,color:T.textMd,whiteSpace:"nowrap"}}>{n.fecha?new Date(n.fecha).toLocaleDateString("es-AR"):"—"}</td>
+                                          <td style={tdS}><span style={{display:"inline-flex",alignItems:"center",gap:5}}><TipoBadge tipo="NC"/><span style={{fontSize:10,color:T.textSm}}>{n.letra||""}</span>{n.recuperado_afip&&<Tag color={T.textMd} title="Reconstruida desde AFIP">Recuperada</Tag>}</span></td>
+                                          <td style={{...tdS,whiteSpace:"nowrap"}}><span style={{color:T.textSm}}>{String(n.punto_venta||0).padStart(4,"0")}-</span><span style={{color:T.text,fontWeight:700}}>{String(n.comprobante||"").padStart(8,"0")}</span></td>
+                                          <td style={{...tdS,maxWidth:220}}>
+                                            <div style={{color:T.text,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={n.cliente||""}>{n.cliente||"—"}</div>
+                                            <div style={{fontSize:11,color:T.textSm,whiteSpace:"nowrap"}}>{n.factura_origen?`Anula la N° ${String(n.factura_origen.comprobante||"").padStart(8,"0")}${n.factura_origen.punto_venta?` · PV ${n.factura_origen.punto_venta}`:""}`:(n.doc_nro||"")}</div>
+                                          </td>
+                                          <td style={tdS}><span style={{color:T.textSm}}>—</span></td>
+                                          <td style={{...tdS,textAlign:"right",color:T.textSm,whiteSpace:"nowrap"}}>{n.neto!=null?"− "+fmtMonto(n.neto):"—"}</td>
+                                          <td style={{...tdS,textAlign:"right",color:T.textSm,whiteSpace:"nowrap"}}>{n.iva!=null?"− "+fmtMonto(n.iva):"—"}</td>
+                                          <td style={{...tdS,textAlign:"right",fontWeight:700,color:T.red,whiteSpace:"nowrap"}}>− {fmtMonto(n.total)}</td>
+                                          <td style={{...tdS,color:T.textSm,fontFamily:"monospace",fontSize:11,whiteSpace:"nowrap"}}>{n.cae||"—"}</td>
+                                          <td style={tdS}></td>
+                                        </tr>
+                                      );
+                                    }
+                                    const r = x.r;
+                                    return (
+                                      <tr key={x.id} style={{borderBottom:`1px solid ${T.borderL}`,opacity:r.anulada?0.55:1,background:regMenu?.id===x.id?T.accent+"0a":"transparent"}}>
+                                        <td style={{...tdS,color:T.textMd,whiteSpace:"nowrap"}}>{fmtFechaCbte(r)}</td>
+                                        <td style={tdS}>
+                                          <span style={{display:"inline-flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                                            <TipoBadge tipo={x.tipo}/>
+                                            {r.anulada&&<Tag color={T.red} title={`Anulada con NC${r.nc_nro?` N° ${String(r.nc_nro).padStart(8,"0")}`:""}`}>Anulada</Tag>}
+                                            {r.recuperado_afip&&<Tag color={T.textMd} title="Reconstruida desde AFIP — sin detalle de items">Recuperada</Tag>}
+                                            {r.motivo_b&&<Tag color={T.yellow} title={r.motivo_b}>B por rechazo de A</Tag>}
+                                            {r.nd&&r.factura_origen&&<Tag color={T.purple} title="Nota de débito asociada">de la N° {String(r.factura_origen.comprobante||"").padStart(8,"0")}</Tag>}
+                                          </span>
+                                        </td>
+                                        <td style={{...tdS,whiteSpace:"nowrap"}}><span style={{color:T.textSm}}>{String(r.punto_venta||0).padStart(4,"0")}-</span><span style={{color:T.text,fontWeight:700}}>{String(r.comprobante).padStart(8,"0")}</span></td>
+                                        <td style={{...tdS,maxWidth:240}}>
+                                          <div style={{color:T.text,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.cliente||""}>{r.cliente||"Consumidor Final"}</div>
+                                          <div style={{fontSize:11,color:T.textSm,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.doc_nro?`${r.doc_tipo||""} ${r.doc_nro}`.trim():"Sin documento"}{r.orden_id?` · ${r.orden_id}`:""}</div>
+                                        </td>
+                                        <td style={tdS}><OrigenBadge r={r}/></td>
+                                        <td style={{...tdS,textAlign:"right",color:T.textMd,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fmtMonto(r.neto)}</td>
+                                        <td style={{...tdS,textAlign:"right",color:T.textMd,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fmtMonto(r.iva)}</td>
+                                        <td style={{...tdS,textAlign:"right",fontWeight:700,color:T.text,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fmtMonto(r.total)}</td>
+                                        <td style={{...tdS,color:T.textSm,fontFamily:"monospace",fontSize:11,whiteSpace:"nowrap"}} title={r.cae_vto?`Vto CAE ${r.cae_vto}`:undefined}>{r.cae||"—"}</td>
+                                        <td style={{...tdS,textAlign:"right"}}><RowMenu x={x}/></td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
                           {regTotalPages>1&&(
                             <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,padding:"12px 0 4px",flexWrap:"wrap"}}>
                               <button disabled={regPageCur<=1} onClick={()=>setRegPage(regPageCur-1)} style={{...BtnSecondary(T),padding:"6px 14px",fontSize:12,opacity:regPageCur<=1?0.4:1,cursor:regPageCur<=1?"not-allowed":"pointer"}}>‹ Anterior</button>
-                              <span style={{fontSize:12,color:T.textSm}}>Página <strong style={{color:T.text}}>{regPageCur}</strong> de {regTotalPages} · {rows.length.toLocaleString("es-AR")} comprobantes</span>
+                              <span style={{fontSize:12,color:T.textSm}}>Página <strong style={{color:T.text}}>{regPageCur}</strong> de {regTotalPages} · {uni.length.toLocaleString("es-AR")} comprobantes</span>
                               <button disabled={regPageCur>=regTotalPages} onClick={()=>setRegPage(regPageCur+1)} style={{...BtnSecondary(T),padding:"6px 14px",fontSize:12,opacity:regPageCur>=regTotalPages?0.4:1,cursor:regPageCur>=regTotalPages?"not-allowed":"pointer"}}>Siguiente ›</button>
                             </div>
                           )}
-                          {/* Totales del set filtrado */}
-                          <div style={{display:"flex",alignItems:"center",gap:14,marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL}`,fontSize:12,flexWrap:"wrap"}}>
-                            <span style={{color:T.textSm}}>Total de <span style={{textTransform:"capitalize"}}>{mesActual}</span>{filtrosActivos?" (filtrado)":""}:</span>
-                            <span style={{color:T.text,fontWeight:700}}>{activas.length} factura{activas.length!==1?"s":""}{rows.length!==activas.length?` (+${rows.length-activas.length} anulada${rows.length-activas.length!==1?"s":""})`:""}</span>
-                            <span style={{color:T.textMd}}>Neto {fmtMonto(totNeto)}</span>
-                            <span style={{color:T.textMd}}>IVA {fmtMonto(totIva)}</span>
-                            <span style={{marginLeft:"auto",color:T.text,fontWeight:800,fontSize:13}}>{fmtMonto(totTotal)}</span>
+                          {/* Totales de lo que se está viendo */}
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginTop:12}}>
+                            {[
+                              {l:"Facturas activas", v:String(fActivas.length), s:fAnuladas?`+ ${fAnuladas} anulada${fAnuladas!==1?"s":""}`:"", c:T.text},
+                              {l:"Neto", v:fmtMonto(tNeto), c:T.textMd},
+                              {l:"IVA", v:fmtMonto(tIva), c:T.textMd},
+                              {l:"Total facturado", v:fmtMonto(tTotal), c:T.text},
+                              ...(ncsN.length?[{l:"Notas de crédito", v:"− "+fmtMonto(tNc), s:`${ncsN.length} NC${ncsN.length!==1?"s":""}`, c:T.red}]:[]),
+                              {l:"Neto del período", v:fmtMonto(tTotal-tNc), s:filtrosActivos?"según filtros":"", c:T.accent},
+                            ].map(k=>(
+                              <div key={k.l} style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"9px 12px"}}>
+                                <div style={{fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,marginBottom:3}}>{k.l}</div>
+                                <div style={{fontSize:14,fontWeight:800,color:k.c,letterSpacing:-0.3,whiteSpace:"nowrap"}}>{k.v}</div>
+                                {k.s&&<div style={{fontSize:10,color:T.textSm,marginTop:2}}>{k.s}</div>}
+                              </div>
+                            ))}
                           </div>
-                          {pieExtra}
                         </>
-                      ) : (
-                        /* ── VISTA LOTES (cards) ── */
+                      )}
+
+                      {/* Menú de acciones flotante */}
+                      {regMenu && menuX && menuX.k==="f" && (
                         <>
-                          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(380px, 1fr))",gap:14}}>
-                            {filtBatches.map(({b, rows: bRows})=>{
-                              const fechaStr = b.emitido_at ? new Date(b.emitido_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
-                              const isExpanded = expandedBatch === b.batch_id;
-                              return (
-                                <div key={b.batch_id} style={{border:`1px solid ${isExpanded?T.accent+"55":T.border}`,borderRadius:DS.r.xl,overflow:"hidden",background:isExpanded?T.surface:T.card,transition:"all 0.18s ease",boxShadow:isExpanded?`0 4px 18px ${T.accentSolid}22`:"0 1px 3px rgba(0,0,0,0.08)"}}>
-                                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 16px",cursor:"pointer",flexWrap:"wrap"}} onClick={()=>setExpandedBatch(isExpanded ? null : b.batch_id)}>
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:isExpanded?"rotate(90deg)":"none",transition:"transform 0.15s",flexShrink:0}}><path d="M9 18l6-6-6-6"/></svg>
-                                    <div style={{flex:1,minWidth:0}}>
-                                      <div style={{fontSize:13,fontWeight:600,color:T.text}}>{fechaStr}</div>
-                                      <div style={{fontSize:11,color:T.textSm}}>{b.cantidad} factura{b.cantidad===1?"":"s"}{filtrosActivos&&bRows.length!==b.cantidad?` · ${bRows.length} coinciden con el filtro`:""}</div>
-                                    </div>
-                                    <div style={{fontSize:14,fontWeight:700,color:T.text,marginRight:8}}>{fmtMonto(b.total)}</div>
-                                    <button onClick={(e)=>{e.stopPropagation();anularLoteCompleto(b, bRows);}} title="Emite NC por cada factura activa del lote que pase los filtros" style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
-                                      Anular lote
-                                    </button>
-                                    <button onClick={(e)=>{e.stopPropagation();downloadBatchZip(b);}} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:6,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>
-                                      {loadingBatchPdfs===b.batch_id ? <><Spinner size={10} color="#fff"/> Descargando…</> : "Descargar todo el lote"}
-                                    </button>
-                                  </div>
-                                  {isExpanded && (
-                                    <div className="gh-accordion" style={{borderTop:"1px solid "+T.borderL,background:T.card,overflowX:"auto"}}>
-                                      {bRows.map((r,i)=>(
-                                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:i<bRows.length-1?"1px solid "+T.borderL:"none",minWidth:420,opacity:r.anulada?0.6:1}}>
-                                          <div style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:"1px solid "+(r.nd?T.purple:T.accent)+"44",color:r.nd?T.purple:T.accent,background:(r.nd?T.purple:T.accent)+"11",flexShrink:0}}>{r.nd?"ND":"F"}{r.letra}</div>
-                                          {r.nd&&<BadgeND r={r}/>}
-                                          {r.anulada&&<BadgeAnulada/>}
-                                          {r.recuperado_afip&&<BadgeRecuperada/>}
-                                          <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
-                                            <div style={{fontSize:12,fontWeight:500,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.orden_id}{r.cliente?` · ${r.cliente}`:""}</div>
-                                            <div style={{fontSize:11,color:T.textSm}}>N° {String(r.comprobante).padStart(8,"0")} · CAE {r.cae}</div>
-                                          </div>
-                                          <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>{fmtMonto(r.total)}</div>
-                                          <button onClick={()=>descargarPdfDe(r)} style={btnPdfS}>Descargar</button>
-                                          {String(r.orden_id||"").startsWith("ML-") && (
-                                            <a href={`https://www.mercadolibre.com.ar/ventas/${String(r.orden_id).replace("ML-","")}/detalle`} target="_blank" rel="noopener" title="Abrí la venta en Mercado Libre para borrar la factura adjunta a mano (3 puntitos del documento → Eliminar)" style={{background:PLATFORM.mercadolibre.color,border:`1px solid ${PLATFORM.mercadolibre.color}55`,color:"#333",borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap",textDecoration:"none"}}>
-                                              Ver en ML
-                                            </a>
-                                          )}
-                                          {!r.anulada&&!r.nd&&(
-                                            <button onClick={()=>abrirNd(r, b)} title="Agrega más monto a la orden — cobra un adicional asociado a esta factura" style={btnNdS}>Emitir nota de débito</button>
-                                          )}
-                                          {!r.anulada&&!r.nd&&!r.recuperado_afip&&r.letra==="B"&&r.orden_id&&(
-                                            <button onClick={()=>reemitirComoA(r, b)} title="Emite la NC de esta Factura B y una Factura A al CUIT del cliente, en un paso" style={btnReemitS}>Re-emitir como A</button>
-                                          )}
-                                          {!r.anulada&&(
-                                            <button onClick={()=>{if(!r.recuperado_afip&&!r.nd)anularUnaFactura(r, b);}} disabled={!!r.recuperado_afip||!!r.nd} title={r.nd?"Las ND se revierten con una nota de crédito manual":r.recuperado_afip?"Recuperado de AFIP sin detalle de items — anulalo desde una factura manual o contactanos":"Emite NC para anular esta factura"} style={{...btnAnularS,opacity:(r.recuperado_afip||r.nd)?0.45:1,cursor:(r.recuperado_afip||r.nd)?"not-allowed":"pointer"}}>Anular (nota de crédito)</button>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
+                          <div onClick={()=>setRegMenu(null)} style={{position:"fixed",inset:0,zIndex:60}}/>
+                          <div className="gh-dropdown" style={{position:"fixed",top:regMenu.top,right:regMenu.right,zIndex:61,minWidth:230,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,boxShadow:DS.shadow.lg,padding:6}}>
+                            <div style={{padding:"6px 10px 8px",fontSize:11,color:T.textSm,borderBottom:`1px solid ${T.borderL}`,marginBottom:4,whiteSpace:"nowrap"}}>
+                              <b style={{color:T.text}}>{menuX.tipo==="ND"?"ND":"Factura "+menuX.tipo} N° {String(menuX.r.comprobante).padStart(8,"0")}</b> · {fmtMonto(menuX.r.total)}
+                            </div>
+                            {menuItems(menuX).map(it=> it.href ? (
+                              <a key={it.l} href={it.href} target="_blank" rel="noopener" onClick={()=>setRegMenu(null)} style={{display:"block",padding:"8px 10px",fontSize:12,color:T.text,textDecoration:"none",borderRadius:6}}>{it.l}</a>
+                            ) : (
+                              <button key={it.l} disabled={!!it.disabled} title={it.hint||""} onClick={()=>{ setRegMenu(null); if(!it.disabled) it.fn(); }}
+                                style={{display:"block",width:"100%",textAlign:"left",padding:"8px 10px",fontSize:12,fontWeight:it.color?600:500,color:it.disabled?T.textSm:(it.color||T.text),background:"transparent",border:"none",borderRadius:6,cursor:it.disabled?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:it.disabled?0.6:1}}>
+                                {it.l}{it.disabled&&it.hint?<div style={{fontSize:10,color:T.textSm,fontWeight:400,marginTop:2,whiteSpace:"normal",maxWidth:240}}>{it.hint}</div>:null}
+                              </button>
+                            ))}
                           </div>
-                          {/* Totales del set filtrado */}
-                          <div style={{display:"flex",alignItems:"center",gap:14,marginTop:14,paddingTop:12,borderTop:`1px solid ${T.borderL}`,fontSize:12,flexWrap:"wrap"}}>
-                            <span style={{color:T.textSm}}>Total de <span style={{textTransform:"capitalize"}}>{mesActual}</span>{filtrosActivos?" (filtrado)":""}:</span>
-                            <span style={{color:T.text,fontWeight:700}}>{activas.length} factura{activas.length!==1?"s":""}{rows.length!==activas.length?` (+${rows.length-activas.length} anulada${rows.length-activas.length!==1?"s":""})`:""}</span>
-                            <span style={{color:T.textMd}}>Neto {fmtMonto(totNeto)}</span>
-                            <span style={{color:T.textMd}}>IVA {fmtMonto(totIva)}</span>
-                            <span style={{marginLeft:"auto",color:T.text,fontWeight:800,fontSize:13}}>{fmtMonto(totTotal)}</span>
-                          </div>
-                          {pieExtra}
                         </>
                       )}
                     </Card>
