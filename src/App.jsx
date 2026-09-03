@@ -7649,7 +7649,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         if(ovr&&!(locs.sucursales||[]).includes(ovr)){ delete sucursalOverridesRef.current[ovrKey(o)]; persistOverrides(); ovr=""; }
         const sucursal=ovr||findAndreaniSucursal(locs,o.direccion,o.pickupDetails)||"";
         sucEscritas.push({numero:o.numero,comprador:o.comprador,sucursal});
-        if(verifSucursalTplVsTienda(o,sucursal)==="warn")verifRows.push({numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:(o.pickupDetails?`${o.pickupDetails.name||""} — ${o.pickupDetails.address?.address||""} ${o.pickupDetails.address?.number||""}`:`${o.direccion||""} ${o.dirNumero||""}, ${o.localidad||o.ciudad||""}`).trim()});
+        if(!sucReemplazoRef.current.has(ovrKey(o))&&verifSucursalTplVsTienda(o,sucursal)==="warn")verifRows.push({numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:(o.pickupDetails?`${o.pickupDetails.name||""} — ${o.pickupDetails.address?.address||""} ${o.pickupDetails.address?.number||""}`:`${o.direccion||""} ${o.dirNumero||""}, ${o.localidad||o.ciudad||""}`).trim()});
         const cells=[
           sC('A'+rn,""),
           nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
@@ -7815,6 +7815,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // modal de elección (con cercanas) hasta que se les elija otra sucursal.
   const sucNoOperRef=useRef((()=>{try{return new Set(JSON.parse(localStorage.getItem(ghKey("growith_sucNoOper"))||"[]"));}catch(_){return new Set();}})());
   function persistSucNoOper(){try{localStorage.setItem(ghKey("growith_sucNoOper"),JSON.stringify([...sucNoOperRef.current]));}catch(_){}}
+  // Pedidos a los que se les eligió OTRA sucursal a mano porque la original no
+  // opera: la verificación final contra la tienda no debe acusarlos (es una
+  // decisión consciente, no un error de matcheo).
+  const sucReemplazoRef=useRef((()=>{try{return new Set(JSON.parse(localStorage.getItem(ghKey("growith_sucReemplazo"))||"[]"));}catch(_){return new Set();}})());
+  function persistSucReemplazo(){try{localStorage.setItem(ghKey("growith_sucReemplazo"),JSON.stringify([...sucReemplazoRef.current]));}catch(_){}}
   function persistPuntoMap(){try{localStorage.setItem(ghKey("growith_puntoMap"),JSON.stringify(puntoMapRef.current));}catch(_){}}
   function ghPuntoKey(o){
     const pd=o?.pickupDetails; if(!pd) return null;
@@ -8342,6 +8347,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       setSelected(new Map());
       setExportSingleOrder(null);
       locationOverridesRef.current={}; sucursalOverridesRef.current={};
+      finalOrders.forEach(o=>sucReemplazoRef.current.delete(ovrKey(o))); persistSucReemplazo();
       try{localStorage.removeItem(ghKey("growith_locOverrides"));localStorage.removeItem(ghKey("growith_sucOverrides"));}catch(_){}
       // Éxito → toast (sin modal que pida click); si quedaron pedidos en
       // esquina afuera del Excel, se abre directo su modal informativo.
@@ -8516,7 +8522,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           continue; // reabrir el modal para el mismo pedido
         }
         sucursalOverridesRef.current[ovrKey(o)]=tpl; persistOverrides();
-        if(forzar){ sucNoOperRef.current.delete(ovrKey(o)); persistSucNoOper(); }
+        if(forzar){ sucNoOperRef.current.delete(ovrKey(o)); persistSucNoOper(); sucReemplazoRef.current.add(ovrKey(o)); persistSucReemplazo(); }
         // Memoria por punto: la próxima vez que un pedido venga a ESTE punto,
         // se resuelve solo con esta elección.
         recordarPunto(o,{tpl});
