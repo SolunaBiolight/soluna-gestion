@@ -23051,7 +23051,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             const wasAnulada = !billed && !!o._was_anulada;
                             const sel = !billed && !!tnSelected[id];
                             const fechaHora = fmtFechaHora(o.fecha);
-                            const tipoFact = esMono ? "C" : (o.doc_tipo === "CUIT" ? "A" : "B");
+                            const tipoFact = esMono ? "C" : (o.doc_tipo === "CUIT" && !["MONO","EXENTO"].includes(o.iva_receptor) ? "A" : "B");
+                            const condLbl = o.iva_receptor==="RI"?" · Resp. Inscripto":o.iva_receptor==="MONO"?" · Monotributo":o.iva_receptor==="EXENTO"?" · IVA Exento":"";
                             const plat = o._platform;
                             const label = o._platform_label || PLATFORM[plat]?.abbr || "—";
                             const bg = billed ? T.green+"18" : wasAnulada ? T.textSm+"15" : sel ? T.accentSolid+"10" : "transparent";
@@ -23074,7 +23075,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                     {billed
                                       ? `✓ Facturada F${o._billed_info?.letra||""} N°${String(o._billed_info?.nro||"").padStart(8,"0")}`
                                       : wasAnulada ? "Fue facturada y anulada — podés re-facturar"
-                                      : `F${tipoFact} · ${o.doc_tipo==="CUIT"?`CUIT ${o.doc_nro}`:o.doc_tipo==="DNI"?`DNI ${o.doc_nro}`:"Consumidor Final"}`}
+                                      : `F${tipoFact} · ${o.doc_tipo==="CUIT"?`CUIT ${o.doc_nro}${condLbl}`:o.doc_tipo==="DNI"?`DNI ${o.doc_nro}`:"Consumidor Final"}`}
                                   </div>
                                 </div>
                                 <div style={{fontSize:13,fontWeight:700,color:billed?T.green:T.text,flexShrink:0}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
@@ -23346,7 +23347,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:`1px solid ${T.borderL}`}}>
                               <div style={{flex:1,minWidth:0}}>
                                 <div style={{fontSize:12,fontWeight:600,color:T.text}}>{o.nombre||"Consumidor Final"}</div>
-                                <div style={{fontSize:11,color:T.textSm}}>{id} · {esMono?"Factura C":(o.doc_tipo==="CUIT"?"Factura A":"Factura B")}{o.doc_nro?" · "+o.doc_tipo+" "+o.doc_nro:""}</div>
+                                <div style={{fontSize:11,color:T.textSm}}>{id} · {esMono?"Factura C":(o.doc_tipo==="CUIT"&&!["MONO","EXENTO"].includes(o.iva_receptor)?"Factura A":"Factura B")}{o.doc_nro?" · "+o.doc_tipo+" "+o.doc_nro:""}</div>
                               </div>
                               <div style={{fontSize:13,fontWeight:700,color:T.text,flexShrink:0}}>${o.total.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
                             </div>
@@ -23788,7 +23789,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                     </td>
                                     <td style={{padding:"8px 10px",color:T.text,fontWeight:600,whiteSpace:"nowrap"}}>{String(r.comprobante).padStart(8,"0")}</td>
                                     <td style={{padding:"8px 10px",color:T.textMd,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.cliente||""}>{r.cliente||"—"}</td>
-                                    <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap"}}>{r.doc_nro?`${r.doc_tipo||""} ${r.doc_nro}`.trim():"CF"}</td>
+                                    <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap"}} title={r.motivo_b||""}>{r.doc_nro?`${r.doc_tipo||""} ${r.doc_nro}`.trim():"CF"}{r.motivo_b&&<span title={r.motivo_b} style={{marginLeft:6,fontSize:9,padding:"1px 6px",borderRadius:4,background:T.yellow+"22",color:T.yellow,fontWeight:700}}>B por rechazo de A</span>}</td>
                                     <td style={{padding:"8px 10px",color:T.textMd,textAlign:"right",whiteSpace:"nowrap"}}>{fmtMonto(r.neto)}</td>
                                     <td style={{padding:"8px 10px",color:T.textMd,textAlign:"right",whiteSpace:"nowrap"}}>{fmtMonto(r.iva)}</td>
                                     <td style={{padding:"8px 10px",color:T.text,fontWeight:700,textAlign:"right",whiteSpace:"nowrap"}}>{fmtMonto(r.total)}</td>

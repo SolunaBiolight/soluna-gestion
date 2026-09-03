@@ -738,15 +738,46 @@ function dentroDe10DiasCorridos(yyyymmdd) { return fechaValida(yyyymmdd).ok; }
 //   7 = Sujeto No Categorizado
 //  13 = Monotributista Social
 //  15 = IVA No Alcanzado
-function condicionIvaReceptor(tipoCbte, docTipoClas) {
+// Condición IVA del receptor informada por la plataforma (ML manda
+// TAXPAYER_TYPE en billing_info): "RI" | "MONO" | "EXENTO" | "CF" | "".
+function ivaReceptorDe(o) {
+  const v = String(o?.iva_receptor || "").toUpperCase();
+  return ["RI", "MONO", "EXENTO", "CF"].includes(v) ? v : "";
+}
+function clasificarTaxpayer(txt) {
+  const t = String(txt || "").toLowerCase();
+  if (!t) return "";
+  if (/monotrib/.test(t)) return "MONO";
+  if (/exento/.test(t)) return "EXENTO";
+  if (/no\s+inscripto|no\s+responsable|consumidor|final/.test(t)) return "CF";
+  if (/inscripto|responsable/.test(t)) return "RI";
+  return "";
+}
+// ¿Corresponde intentar Factura A? CUIT válido y que la plataforma no diga
+// explícitamente que es Monotributo/Exento (a esos les va B, y AFIP rechaza
+// la A de todos modos). Sin dato de condición se intenta A como siempre y el
+// fallback A→B por rechazo del receptor cubre el resto.
+function receptorQuiereA(o) {
+  return o?.doc_tipo === "CUIT" && !["MONO", "EXENTO"].includes(ivaReceptorDe(o));
+}
+function condicionIvaReceptor(tipoCbte, docTipoClas, ivaRec = "") {
   // Factura A (1/2/3): receptor es siempre Responsable Inscripto
   if (tipoCbte === 1 || tipoCbte === 2 || tipoCbte === 3) return 1;
-  // Factura B (6/7/8) con CUIT: AFIP NO acepta 1 (RI) ni 6 (Monotributo) en clase B
-  // (esos receptores corresponden a Factura A). Sin padrón para saber la condición
-  // real, el valor válido y neutro es 7 = Sujeto No Categorizado.
-  if ((tipoCbte === 6 || tipoCbte === 7 || tipoCbte === 8) && docTipoClas === "CUIT") return 7;
+  // Factura B (6/7/8) con CUIT: AFIP NO acepta 1 (RI) en clase B (ese receptor
+  // corresponde a Factura A). Si la plataforma informó la condición se usa
+  // (6 Monotributo / 4 Exento); si no, el valor válido y neutro es
+  // 7 = Sujeto No Categorizado.
+  if ((tipoCbte === 6 || tipoCbte === 7 || tipoCbte === 8) && docTipoClas === "CUIT") {
+    if (ivaRec === "MONO") return 6;
+    if (ivaRec === "EXENTO") return 4;
+    return 7;
+  }
   // Factura C (11/12/13) con CUIT: receptor probablemente Resp. Inscripto que compra a monotributo
-  if ((tipoCbte === 11 || tipoCbte === 12 || tipoCbte === 13) && docTipoClas === "CUIT") return 1;
+  if ((tipoCbte === 11 || tipoCbte === 12 || tipoCbte === 13) && docTipoClas === "CUIT") {
+    if (ivaRec === "MONO") return 6;
+    if (ivaRec === "EXENTO") return 4;
+    return 1;
+  }
   // Cualquier otro caso: Consumidor Final
   return 5;
 }
@@ -794,7 +825,7 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
   }
   if (tipoDoc !== 99 && !Number.isFinite(nroDoc)) throw new Error(`Documento del receptor inválido (${docTipoClas} "${orden.doc_nro || orden.dni || ""}") — no se envió a AFIP.`);
 
-  const condIva = condicionIvaReceptor(tipoCbte, docTipoClas);
+  const condIva = condicionIvaReceptor(tipoCbte, docTipoClas, ivaReceptorDe(orden));
   const impOpEx = (!monotributo && exento) ? total : 0; // monto exento (sin IVA)
 
   // ── Alícuotas por producto (alic_map, solo RI gravado con items) ──
@@ -940,7 +971,7 @@ async function facturarLote(ordenesPrep, ctx) {
     }
     if (tipoDoc !== 99 && !Number.isFinite(nroDoc)) throw new Error(`Documento del receptor inválido en el lote (${docTipoClas} "${orden.doc_nro || orden.dni || ""}") — no se envió a AFIP.`);
 
-    const condIva = condicionIvaReceptor(tipoN, docTipoClas);
+    const condIva = condicionIvaReceptor(tipoN, docTipoClas, ivaReceptorDe(orden));
     const impOpEx = (!monotributo && exento) ? total : 0;
     const ivaXml = (!monotributo && !exento && iva > 0) ? `
           <ar:Iva>
@@ -2315,6 +2346,8 @@ async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, f
               cliente: orden.nombre || "Consumidor Final",
               doc_tipo: orden.doc_tipo,
               doc_nro: orden.doc_nro || orden.dni || "",
+              ...(ivaReceptorDe(orden) ? { iva_receptor: ivaReceptorDe(orden) } : {}),
+              ...(orden._fallback_ab ? { motivo_b: orden._fallback_ab } : {}),
               total: totalComp,
               neto: netoComp,
               iva: ivaComp,
@@ -2518,7 +2551,7 @@ async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, f
           if (Array.isArray(o.percepciones) && o.percepciones.length) continue;    // percepciones → solo camino individual (facturarLote no arma Tributos)
           const nroDocNum = parseInt(String(o.doc_nro || o.dni || "").replace(/\D/g, ""), 10);
           if ((o.doc_tipo === "CUIT" || o.doc_tipo === "DNI") && !Number.isFinite(nroDocNum)) continue; // doc inválido
-          const tipoPlan = isMonotributo ? 11 : (o.doc_tipo === "CUIT" ? 1 : 6);
+          const tipoPlan = isMonotributo ? 11 : (receptorQuiereA(o) ? 1 : 6);
           if (!grupos.has(tipoPlan)) grupos.set(tipoPlan, []);
           grupos.get(tipoPlan).push(ent);
         }
@@ -2680,7 +2713,7 @@ async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, f
             letra = "C"; tipoCbte = 11; cbteNro = cbteC;
             result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true, fechaImputacion, exento, optsFact(orden));
           } else {
-            const tieneCuit = orden.doc_tipo === "CUIT";
+            const tieneCuit = receptorQuiereA(orden);
             if (tieneCuit) {
               letra = "A"; tipoCbte = 1; cbteNro = cbteA;
               result = await facturar(token, sign, cuitNum, pv, cbteA, orden, 1, wsfe, false, fechaImputacion, exento, optsFact(orden));
@@ -2688,6 +2721,10 @@ async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, f
               // nunca por errores genéricos, de token (600/601) ni de
               // correlatividad (10016).
               if (!result.cae && esRechazoReceptor(result)) {
+                // Queda registrado en el comprobante (motivo_b) para que en
+                // Registros se vea POR QUÉ un CUIT terminó con Factura B.
+                orden._fallback_ab = `ARCA rechazó la Factura A (${result.err_code || "?"}): ${String(result.obs || "").slice(0, 160)}`;
+                console.log(`[arca emit] ${orderId} A→B por rechazo de receptor: ${result.err_code || "?"} ${String(result.obs || "").slice(0, 120)}`);
                 letra = "B"; tipoCbte = 6; cbteNro = cbteB;
                 result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento, optsFact(orden));
               }
@@ -2831,7 +2868,7 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
       const cacheCol = db.collection("users").doc(uid).collection("arca_cache");
       // v2: se cambió qué fecha lleva cada orden (created_at en vez de paid_at) —
       // el sufijo invalida los caches viejos que traían la fecha de pago.
-      const cacheId = `pend2_${cuitParam}_${sinceDate}_${untilDate}`;
+      const cacheId = `pend3_${cuitParam}_${sinceDate}_${untilDate}`;
       const CACHE_TTL_MS = 5 * 60 * 1000;
       let rawOrdenes = null; // órdenes normalizadas SIN _billed/_anulada (del cache o del fetch vivo)
       if (!force) {
@@ -3180,12 +3217,20 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
                 || [buyer.first_name, buyer.last_name].filter(Boolean).join(" ").trim()
                 || buyer.nickname
                 || "Consumidor Final";
-              // Doc: primero del billing_info dedicado, después del que vino en search
-              const docRaw = String(bi?.doc_number || buyer.billing_info?.doc_number || "").replace(/[.\-]/g, "");
+              // Doc: primero del billing_info dedicado, después del que vino en search.
+              // En el formato v2 de ML el documento NO viene como doc_number: viene
+              // dentro de additional_info como DOC_NUMBER (y la condición IVA
+              // como TAXPAYER_TYPE). Sin esto un RI con CUIT quedaba como
+              // Consumidor Final → Factura B.
+              const docRaw = String(bi?.doc_number || getInfo("DOC_NUMBER") || buyer.billing_info?.doc_number || "").replace(/[.\-]/g, "");
               const clas = clasificarDoc(docRaw);
+              const ivaReceptor = clasificarTaxpayer(getInfo("TAXPAYER_TYPE"));
               const shipAddr = o.shipping?.receiver_address || {};
               // billing_info también puede traer address (datos fiscales)
-              const biAddr = bi?.buyer?.billing_info?.address || bi?.address || {};
+              const biAddr = bi?.buyer?.billing_info?.address || bi?.address || {
+                street_name: getInfo("STREET_NAME"), street_number: getInfo("STREET_NUMBER"),
+                city_name: getInfo("CITY_NAME"), state_name: getInfo("STATE_NAME"),
+              };
 
               // Construir dirección con todos los datos posibles (calle + número + dpto)
               const calle = shipAddr.street_name || biAddr.street_name || "";
@@ -3203,6 +3248,7 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
                 nombre: customerName,
                 email: buyer.email || "",
                 dni: docRaw, ...clas,
+                ...(ivaReceptor ? { iva_receptor: ivaReceptor } : {}),
                 // Facturar lo que REALMENTE paga el cliente: total_amount NO resta
                 // el cupón/descuento (el comprador paga total_amount − coupon.amount).
                 total: Math.max(0, (parseFloat(o.total_amount) || 0) - (parseFloat(o.coupon?.amount) || 0)),
