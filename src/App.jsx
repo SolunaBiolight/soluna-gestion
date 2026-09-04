@@ -7233,12 +7233,43 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // de doble etiqueta). También es la base del tracking automático: el cron
   // track_all actualiza el estado Andreani de cada envío activo cada 30 min.
   const [enviosFs,setEnviosFs]=useState({});
+  // Envíos emitidos por la API de Andreani: el número de envío YA es el
+  // tracking. Antes quedaban como "etiqueta generada" (activo:false, sin
+  // tracking): la tienda nunca recibía el tracking, el cliente no tenía mail
+  // de envío y el cron de tracking no los miraba → "no aparecen los
+  // seguimientos". Ahora pasan por el mismo circuito que el paso Seguimientos
+  // del XLSX (sendTracking: tracking + fulfill en la tienda + envío activo).
+  // Si la tienda falla (pedido ya enviado, sin tienda conectada) igual queda
+  // registrado con tracking y activo para que Seguimientos y el cron lo vean.
+  const segApiRef=useRef(new Set());
+  async function activarSeguimientoApi(numero, numeroDeEnvio){
+    if(!user?.uid||!numero||!numeroDeEnvio) return;
+    const k=String(numero);
+    if(segApiRef.current.has(k)) return;
+    segApiRef.current.add(k);
+    try{ await sendTracking({pedidoNum:k,tracking:String(numeroDeEnvio)}); return; }
+    catch(e){ console.warn("activarSeguimientoApi: la tienda no tomó el tracking",e?.message); }
+    try{
+      await authFetch(`/api/update-shipping?action=envios_registrar&uid=${user.uid}`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({envios:[{numero:k,tracking:String(numeroDeEnvio),estado:"despachado",activo:true}]}),
+      });
+    }catch(_){}
+  }
   const refrescarEnviosFs=async()=>{
     if(!user?.uid) return;
     try{
       const r=await authFetch(`/api/update-shipping?action=envios_list&uid=${user.uid}`);
       const d=await r.json();
-      if(d&&d.envios) setEnviosFs(d.envios);
+      if(d&&d.envios){
+        setEnviosFs(d.envios);
+        // Reparación de los emitidos por API antes de este fix: tienen número
+        // de envío pero nunca entraron al seguimiento. Se activan de a pocos.
+        const huerfanos=Object.entries(d.envios).filter(([id,e])=>e?.andreani?.numeroDeEnvio&&!e.tracking&&e.activo!==true&&!e.entregadoAt&&!e.devolucionAt).slice(0,10);
+        if(huerfanos.length){
+          (async()=>{ for(const [id,e] of huerfanos) await activarSeguimientoApi(e.numero||id, e.andreani.numeroDeEnvio); refrescarEnviosFs(); })();
+        }
+      }
     }catch(_){}
   };
   useEffect(()=>{
@@ -8786,7 +8817,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const emitidosAhora=inc.filter(r=>r.emitido);
     if(emitidosAhora.length){
       logUsage("etiquetas",emitidosAhora.length);
-      registrarEnviosFs(emitidosAhora.map(r=>r.order));
+      (async()=>{
+        await registrarEnviosFs(emitidosAhora.map(r=>r.order));
+        for(const r of emitidosAhora) await activarSeguimientoApi(r.numero, r.emitido?.numeroDeEnvio);
+        refrescarEnviosFs();
+      })();
       try{
         const hist=JSON.parse(localStorage.getItem(ghKey("growith_exportHistory"))||"[]");
         hist.unshift({fecha:new Date().toISOString(),cantidad:emitidosAhora.length,pedidos:emitidosAhora.map(r=>r.numero),api:true});
@@ -10847,6 +10882,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           onSaldo={s=>{if(typeof s==="number")setAndreani(a=>({...a,saldo:s}));}}
           onEmitido={(numero,res)=>{
             setAndreaniEmitidos(m=>({...m,[numero]:res}));
+            const ord=andreaniOrder;
+            (async()=>{
+              if(ord) await registrarEnviosFs([ord]);
+              await activarSeguimientoApi(numero, res?.numeroDeEnvio);
+              refrescarEnviosFs();
+            })();
             if(res?.saldoBajo!==undefined){
               const est=typeof res.etiquetasEstimadas==="number"?res.etiquetasEstimadas:null;
               setAndreani(a=>({...a,saldoBajo:!!res.saldoBajo,etiquetasEstimadas:est}));
