@@ -6,7 +6,7 @@
 // Instalá: npm install node-forge xlsx pdf-lib jszip
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getFirestore, FieldPath } from "firebase-admin/firestore";
+import { getFirestore, FieldPath, FieldValue } from "firebase-admin/firestore";
 import { XMLParser } from "fast-xml-parser";
 import { getValidMLToken } from "./integrations.js";
 import { guardUid, guardCron } from "./_auth.js";
@@ -4670,6 +4670,104 @@ export default async function handler(req, res) {
     }
 
     // ── HISTORIAL: notas de crédito del CUIT (misma auth y patrón que list_batches) ──
+    // ── IVA: proyección mensual ────────────────────────────────────────────
+    // Ventas: automáticas desde arca_comprobantes (facturas + ND) y
+    // arca_notas_credito del CUIT. Compras: import del export de "Mis
+    // Comprobantes → recibidos" (ARCA no tiene web service para eso); el de
+    // "emitidos" completa ventas hechas fuera de Growith (se deduplican).
+    // Doc por mes: users/{uid}/arca_iva/{cuit}_{YYYY-MM}.
+    const ivaMesDe = s => { const k = String(s || "").slice(0, 7); return /^\d{4}-\d{2}$/.test(k) ? k : null; };
+    const ivaRound = n => Math.round((Number(n) || 0) * 100) / 100;
+    const ivaResumen = (rows) => {
+      const o = { n: 0, nNc: 0, neto: 0, iva: 0, total: 0 };
+      for (const r of rows) { const s = r.nc ? -1 : 1; if (r.nc) o.nNc++; else o.n++; o.neto += s * (Number(r.neto) || 0); o.iva += s * (Number(r.iva) || 0); o.total += s * (Number(r.tot) || 0); }
+      o.neto = ivaRound(o.neto); o.iva = ivaRound(o.iva); o.total = ivaRound(o.total);
+      return o;
+    };
+    if (action === "iva_get" && req.method === "GET") {
+      const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
+      if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
+      const [compSnap, ncSnap, ivaSnap] = await Promise.all([
+        db.collection("users").doc(uid).collection("arca_comprobantes").where("cuit_emisor", "==", cuitParam)
+          .select("fecha_cbte", "emitido_at", "tipo_cbte", "neto", "iva", "total").get(),
+        db.collection("users").doc(uid).collection("arca_notas_credito").get(),
+        db.collection("users").doc(uid).collection("arca_iva").where("cuit", "==", cuitParam).get(),
+      ]);
+      const meses = {};
+      const M = k => meses[k] || (meses[k] = { ventas: { n: 0, nNc: 0, neto: 0, iva: 0, total: 0 }, ventasExt: null, compras: null, ajustes: [], saldoAnteriorManual: null });
+      compSnap.forEach(d => {
+        const c = d.data(); const k = ivaMesDe(c.fecha_cbte || c.emitido_at); if (!k) return;
+        const v = M(k).ventas; v.n++; v.neto += Number(c.neto) || 0; v.iva += Number(c.iva) || 0; v.total += Number(c.total) || 0;
+      });
+      ncSnap.forEach(d => {
+        const c = d.data(); if (String(c.cuit || "").replace(/\D/g, "") !== cuitParam) return;
+        const k = ivaMesDe(c.fecha_cbte || c.fecha); if (!k) return;
+        const tot = Number(c.total) || 0;
+        const iva = c.iva != null ? Number(c.iva) || 0 : ([3, 8, 203, 208].includes(Number(c.tipo)) ? ivaRound(tot - tot / 1.21) : 0);
+        const neto = c.neto != null ? Number(c.neto) || 0 : tot - iva;
+        const v = M(k).ventas; v.nNc++; v.neto -= neto; v.iva -= iva; v.total -= tot;
+      });
+      for (const k of Object.keys(meses)) { const v = meses[k].ventas; v.neto = ivaRound(v.neto); v.iva = ivaRound(v.iva); v.total = ivaRound(v.total); }
+      ivaSnap.forEach(d => {
+        const x = d.data(); if (!x.mes) return; const m = M(x.mes);
+        m.compras = x.compras || null; m.ventasExt = x.ventasExt || null;
+        m.ajustes = Array.isArray(x.ajustes) ? x.ajustes : [];
+        m.saldoAnteriorManual = typeof x.saldoAnteriorManual === "number" ? x.saldoAnteriorManual : null;
+      });
+      return res.json({ meses });
+    }
+    if (action === "iva_import" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString() || "{}");
+      const cuitParam = String(body.cuit || "").replace(/\D/g, "");
+      const kind = body.kind === "ventas" ? "ventasExt" : body.kind === "compras" ? "compras" : null;
+      if (!cuitParam || !kind) return res.status(400).json({ error: "Faltan cuit o tipo de import" });
+      const rowsIn = Array.isArray(body.rows) ? body.rows.slice(0, 6000) : [];
+      if (!rowsIn.length) return res.status(400).json({ error: "El archivo no trae comprobantes" });
+      const clean = rowsIn.map(r => ({
+        f: String(r.f || "").slice(0, 10), t: Number(r.t) || 0, nc: !!r.nc, tipo: String(r.tipo || "").slice(0, 40),
+        pv: String(r.pv || "").replace(/\D/g, "").slice(0, 5), nro: String(r.nro || "").replace(/\D/g, "").slice(0, 8),
+        doc: String(r.doc || "").replace(/\D/g, "").slice(0, 11), nom: String(r.nom || "").slice(0, 60),
+        neto: ivaRound(Math.abs(r.neto)), iva: ivaRound(Math.abs(r.iva)), tot: ivaRound(Math.abs(r.tot)),
+      })).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.f));
+      let omitidos = 0;
+      let rows = clean;
+      if (kind === "ventasExt") {
+        // Deduplicar contra lo emitido en Growith (tipo + PV + número)
+        const [cs, ns] = await Promise.all([
+          db.collection("users").doc(uid).collection("arca_comprobantes").where("cuit_emisor", "==", cuitParam).select("tipo_cbte", "punto_venta", "nro").get(),
+          db.collection("users").doc(uid).collection("arca_notas_credito").get(),
+        ]);
+        const seen = new Set();
+        cs.forEach(d => { const c = d.data(); seen.add(`${Number(c.tipo_cbte)}_${Number(c.punto_venta)}_${Number(c.nro)}`); });
+        ns.forEach(d => { const c = d.data(); if (String(c.cuit || "").replace(/\D/g, "") === cuitParam) seen.add(`${Number(c.tipo)}_${Number(c.punto_venta)}_${Number(c.comprobante)}`); });
+        rows = clean.filter(r => { const k = `${r.t}_${Number(r.pv)}_${Number(r.nro)}`; if (seen.has(k)) { omitidos++; return false; } return true; });
+      }
+      const porMes = {};
+      for (const r of rows) (porMes[r.f.slice(0, 7)] || (porMes[r.f.slice(0, 7)] = [])).push(r);
+      const ahora = new Date().toISOString();
+      const archivo = String(body.archivo || "").slice(0, 80);
+      const out = {};
+      for (const [mes, list] of Object.entries(porMes)) {
+        const resumen = { ...ivaResumen(list), rows: list.slice(0, 2500), importadoAt: ahora, archivo };
+        await db.collection("users").doc(uid).collection("arca_iva").doc(`${cuitParam}_${mes}`)
+          .set({ cuit: cuitParam, mes, [kind]: resumen, updatedAt: ahora }, { merge: true });
+        out[mes] = { n: resumen.n, nNc: resumen.nNc, iva: resumen.iva, total: resumen.total };
+      }
+      return res.json({ ok: true, meses: out, omitidos });
+    }
+    if (action === "iva_set" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString() || "{}");
+      const cuitParam = String(body.cuit || "").replace(/\D/g, "");
+      const mes = String(body.mes || "");
+      if (!cuitParam || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: "Faltan cuit o mes" });
+      const patch = { cuit: cuitParam, mes, updatedAt: new Date().toISOString() };
+      if (Array.isArray(body.ajustes)) patch.ajustes = body.ajustes.slice(0, 30).map(a => ({ id: String(a.id || Date.now().toString(36)).slice(0, 20), nombre: String(a.nombre || "").slice(0, 60), monto: ivaRound(a.monto) })).filter(a => a.nombre && a.monto);
+      if ("saldoAnteriorManual" in body) patch.saldoAnteriorManual = typeof body.saldoAnteriorManual === "number" ? ivaRound(body.saldoAnteriorManual) : FieldValue.delete();
+      if (body.borrar === "compras" || body.borrar === "ventasExt") patch[body.borrar] = FieldValue.delete();
+      await db.collection("users").doc(uid).collection("arca_iva").doc(`${cuitParam}_${mes}`).set(patch, { merge: true });
+      return res.json({ ok: true });
+    }
+
     if (action === "list_ncs" && req.method === "GET") {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });

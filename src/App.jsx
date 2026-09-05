@@ -21237,6 +21237,371 @@ const origenDe = (r) => {
   return "tn";
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ARCA → IVA: proyección mensual del IVA a pagar.
+// Ventas: automáticas desde los comprobantes emitidos en Growith (facturas, ND
+// y NC del CUIT). Compras: import del CSV/XLSX de "Mis Comprobantes →
+// Comprobantes recibidos" (ARCA no expone web service para eso). El import de
+// "emitidos" completa las ventas hechas fuera de Growith (se deduplican).
+// ═══════════════════════════════════════════════════════════════════════════
+const GH_NC_TIPOS = new Set([3, 8, 13, 203, 208, 213, 53, 21]);
+function ghNumAR(s){
+  if(typeof s==="number") return s;
+  let t=String(s??"").trim().replace(/[\s$]/g,"");
+  if(!t) return 0;
+  if(t.includes(",")&&t.includes(".")) t = t.lastIndexOf(",")>t.lastIndexOf(".") ? t.replace(/\./g,"").replace(",",".") : t.replace(/,/g,"");
+  else if(t.includes(",")) t=t.replace(",",".");
+  const n=parseFloat(t); return isNaN(n)?0:n;
+}
+function ghCsvRows(text){
+  const first=text.split(/\r?\n/).find(l=>l.trim())||"";
+  const delim=[";","\t",",","|"].map(d=>[d,first.split(d).length]).sort((a,b)=>b[1]-a[1])[0][0];
+  const rows=[]; let row=[],cell="",q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){cell+='"';i++;} else q=false; } else cell+=ch; }
+    else if(ch==='"') q=true;
+    else if(ch===delim){ row.push(cell); cell=""; }
+    else if(ch==="\n"){ row.push(cell); rows.push(row); row=[]; cell=""; }
+    else if(ch!=="\r") cell+=ch;
+  }
+  if(cell||row.length){ row.push(cell); rows.push(row); }
+  return rows;
+}
+function ghXmlText(s){ return String(s||"").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&#(\d+);/g,(_,c)=>String.fromCharCode(+c)); }
+async function ghXlsxRows(file){
+  const JSZip=(await import("jszip")).default;
+  const zip=await JSZip.loadAsync(file);
+  const ss=[]; const ssXml=zip.file("xl/sharedStrings.xml") ? await zip.file("xl/sharedStrings.xml").async("string") : "";
+  for(const m of ssXml.matchAll(/<si>([\s\S]*?)<\/si>/g)) ss.push(ghXmlText([...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map(x=>x[1]).join("")));
+  const names=Object.keys(zip.files).filter(n=>/^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort();
+  if(!names.length) throw new Error("El archivo no tiene hojas");
+  const xml=await zip.file(names[0]).async("string");
+  const rows=[];
+  for(const rm of xml.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)){
+    const row=[];
+    for(const cm of rm[1].matchAll(/<c r="([A-Z]+)\d+"([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)){
+      const col=cm[1], attrs=cm[2]||"", inner=cm[3]||"";
+      const t=(attrs.match(/t="(\w+)"/)||[])[1]; let v="";
+      if(t==="s") v=ss[parseInt((inner.match(/<v>(.*?)<\/v>/)||[])[1])]||"";
+      else if(t==="inlineStr") v=ghXmlText((inner.match(/<t[^>]*>([\s\S]*?)<\/t>/)||[])[1]||"");
+      else v=ghXmlText((inner.match(/<v>(.*?)<\/v>/)||[])[1]||"");
+      let idx=0; for(const ch of col) idx=idx*26+(ch.charCodeAt(0)-64);
+      row[idx-1]=v;
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+function ghFechaCell(v){
+  const s=String(v??"").trim();
+  let m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if(m){ const y=m[3].length===2?"20"+m[3]:m[3]; return `${y}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; }
+  m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return m[0];
+  if(/^\d{4,6}(\.\d+)?$/.test(s)){ const d=new Date(Date.UTC(1899,11,30)+Math.round(parseFloat(s))*86400000); return d.toISOString().slice(0,10); }
+  return null;
+}
+// Interpreta la grilla exportada de Mis Comprobantes (recibidos o emitidos).
+// Devuelve {kind:"recibidos"|"emitidos"|null, rows:[{f,t,nc,pv,nro,doc,nom,neto,iva,tot}]}
+function ghParseMisComprobantes(grid){
+  const N=s=>String(s??"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim();
+  let hi=-1;
+  for(let i=0;i<Math.min(grid.length,30);i++){
+    const cells=(grid[i]||[]).map(N);
+    if(cells.some(c=>c==="tipo"||(c.includes("tipo")&&c.includes("comprobante")))&&cells.some(c=>c.includes("fecha"))){ hi=i; break; }
+  }
+  if(hi<0) throw new Error("No encontré la fila de encabezados (Fecha / Tipo de Comprobante). ¿Es el export de Mis Comprobantes?");
+  const H=(grid[hi]||[]).map(N);
+  const find=fn=>H.findIndex(fn);
+  const cFecha=find(h=>h.includes("fecha"));
+  const cTipo=find(h=>h==="tipo"||(h.includes("tipo")&&h.includes("comprobante")));
+  const cPv=find(h=>h.includes("punto de venta"));
+  const cNro=find(h=>(h.includes("numero")||h.includes("nro"))&&h.includes("desde"));
+  const cNro2=cNro>=0?cNro:find(h=>(h.includes("numero")||h.includes("nro"))&&!h.includes("doc")&&!h.includes("hasta"));
+  const cDoc=find(h=>h.includes("doc")&&(h.includes("nro")||h.includes("numero")||h.startsWith("n"))&&!h.includes("tipo"));
+  const cNom=find(h=>h.includes("denominacion")||h.includes("razon social")||h.includes("nombre"));
+  const cTot=find(h=>h==="imp. total"||h==="importe total"||h==="total"||(h.includes("total")&&!h.includes("iva")&&!h.includes("neto")));
+  const isIva=h=>/(^|[^a-z])iva([^a-z]|$)/.test(h)&&!h.includes("neto")&&!h.includes("no gravado")&&!h.includes("exent")&&!h.includes("condicion");
+  const ivaAll=H.map((h,i)=>isIva(h)?i:-1).filter(i=>i>=0);
+  const ivaExact=ivaAll.filter(i=>!H[i].includes("%"));
+  const cIvas=ivaExact.length?[ivaExact[0]]:ivaAll;
+  const netoAll=H.map((h,i)=>h.includes("neto")&&h.includes("gravado")&&!h.includes("no gravado")?i:-1).filter(i=>i>=0);
+  const netoExact=netoAll.filter(i=>!H[i].includes("%"));
+  const cNetos=netoExact.length?[netoExact[0]]:netoAll;
+  if(cFecha<0||cTipo<0||!cIvas.length) throw new Error("Faltan columnas (Fecha, Tipo de Comprobante o IVA) en el archivo.");
+  const kind=H.some(h=>h.includes("emisor"))?"recibidos":H.some(h=>h.includes("receptor"))?"emitidos":null;
+  const rows=[];
+  for(let i=hi+1;i<grid.length;i++){
+    const r=grid[i]||[]; const f=ghFechaCell(r[cFecha]); if(!f) continue;
+    const tipoTxt=String(r[cTipo]??"").trim(); const t=parseInt(tipoTxt)||0;
+    const nc=GH_NC_TIPOS.has(t)||/nota.*cr[eé]dito/i.test(tipoTxt);
+    const iva=cIvas.reduce((s,c)=>s+ghNumAR(r[c]),0);
+    const neto=cNetos.reduce((s,c)=>s+ghNumAR(r[c]),0);
+    const tot=cTot>=0?ghNumAR(r[cTot]):neto+iva;
+    rows.push({f,t,nc,tipo:tipoTxt.replace(/^\d+\s*-\s*/,"").slice(0,40),pv:cPv>=0?String(r[cPv]??"").trim():"",nro:cNro2>=0?String(r[cNro2]??"").trim():"",
+      doc:cDoc>=0?String(r[cDoc]??"").replace(/\D/g,""):"",nom:cNom>=0?String(r[cNom]??"").trim().slice(0,60):"",
+      neto:Math.round(Math.abs(neto)*100)/100,iva:Math.round(Math.abs(iva)*100)/100,tot:Math.round(Math.abs(tot)*100)/100});
+  }
+  if(!rows.length) throw new Error("El archivo no tiene comprobantes con fecha válida.");
+  return {kind,rows};
+}
+// Cadena mensual: saldo a favor de un mes pasa al siguiente.
+function ghIvaCalc(meses, hastaMes){
+  const keys=Object.keys(meses||{}).filter(k=>/^\d{4}-\d{2}$/.test(k)).sort();
+  const out={};
+  if(!keys.length&&!hastaMes) return out;
+  const ini=keys[0]||hastaMes; const fin=keys.length?(keys[keys.length-1]>hastaMes?keys[keys.length-1]:hastaMes):hastaMes;
+  let carry=0; let [y,m]=ini.split("-").map(Number);
+  for(let guard=0;guard<240;guard++){
+    const k=`${y}-${String(m).padStart(2,"0")}`;
+    const d=meses[k]||{};
+    const v=d.ventas||{n:0,nNc:0,neto:0,iva:0,total:0};
+    const ve=d.ventasExt||null, c=d.compras||null;
+    const ivaVentas=(v.iva||0)+(ve?ve.iva||0:0);
+    const ivaCompras=c?c.iva||0:0;
+    const saldoMes=ivaVentas-ivaCompras;
+    const ajustes=(d.ajustes||[]).reduce((s,a)=>s+(Number(a.monto)||0),0);
+    const saldoAnterior=typeof d.saldoAnteriorManual==="number"?d.saldoAnteriorManual:carry;
+    const resultado=saldoMes+ajustes-saldoAnterior;
+    const tieneDatos=(v.n||0)>0||(v.nNc||0)>0||!!c||!!ve;
+    out[k]={ivaVentas,ivaCompras,saldoMes,ajustes,saldoAnterior,saldoAnteriorAuto:carry,resultado,tieneDatos,
+      nVentas:(v.n||0)+(ve?ve.n||0:0),nNcVentas:(v.nNc||0)+(ve?ve.nNc||0:0),totVentas:(v.total||0)+(ve?ve.total||0:0),
+      nCompras:c?c.n||0:0,nNcCompras:c?c.nNc||0:0,totCompras:c?c.total||0:0};
+    carry=resultado<0?-resultado:0;
+    if(k>=fin) break;
+    m++; if(m>12){m=1;y++;}
+  }
+  return out;
+}
+function ArcaIvaTab({T, cuit, api}){
+  const hoy=hoyAR();
+  const [mes,setMes]=useState(hoy.slice(0,7));
+  const [data,setData]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [err,setErr]=useState("");
+  const [importing,setImporting]=useState(null); // "compras"|"ventas"
+  const [drag,setDrag]=useState(false);
+  const [showHow,setShowHow]=useState(false);
+  const [showComp,setShowComp]=useState(false);
+  const [simV,setSimV]=useState(""); const [simC,setSimC]=useState("");
+  const [ajNombre,setAjNombre]=useState(""); const [ajMonto,setAjMonto]=useState("");
+  const [saEdit,setSaEdit]=useState(false); const [saVal,setSaVal]=useState("");
+  const fileRef=useRef(null); const fileVentasRef=useRef(null);
+  const load=async()=>{
+    setLoading(true); setErr("");
+    try{ const d=await api("iva_get","GET",null,{cuit}); if(d?.error) throw new Error(d.error); setData(d.meses||{}); }
+    catch(e){ setErr(e.message||"No se pudo cargar"); }
+    finally{ setLoading(false); }
+  };
+  useEffect(()=>{ load(); },[cuit]);
+  const calc=useMemo(()=>ghIvaCalc(data||{},mes),[data,mes]);
+  const r=calc[mes]||{ivaVentas:0,ivaCompras:0,saldoMes:0,ajustes:0,saldoAnterior:0,saldoAnteriorAuto:0,resultado:0,tieneDatos:false,nVentas:0,nNcVentas:0,totVentas:0,nCompras:0,nNcCompras:0,totCompras:0};
+  const d=(data||{})[mes]||{};
+  const [yy,mm]=mes.split("-").map(Number);
+  const mesLabel=`${mesesNombres[mm-1][0].toUpperCase()+mesesNombres[mm-1].slice(1)} ${yy}`;
+  const shiftMes=n=>{ let y=yy,m=mm+n; if(m>12){m=1;y++;} if(m<1){m=12;y--;} setMes(`${y}-${String(m).padStart(2,"0")}`); setSaEdit(false); };
+  const mesSig=(()=>{ let y=yy,m=mm+1; if(m>12){m=1;y++;} return mesesNombres[m-1]; })();
+  const termCuit=String(cuit||"").replace(/\D/g,"").slice(-1);
+  const venceDia={"0":18,"1":18,"2":19,"3":19,"4":20,"5":20,"6":21,"7":21,"8":22,"9":22}[termCuit]||"18 al 22";
+  const esActual=mes===hoy.slice(0,7);
+  const aPagar=r.resultado>0, aFavor=r.resultado<0;
+
+  async function importar(file, kind){
+    if(!file) return;
+    setImporting(kind);
+    try{
+      const name=file.name||"archivo";
+      let grid;
+      if(/\.xlsx?$/i.test(name)) grid=await ghXlsxRows(file);
+      else grid=ghCsvRows(await file.text());
+      const {kind:detected, rows}=ghParseMisComprobantes(grid);
+      if(detected&&((kind==="compras"&&detected==="emitidos")||(kind==="ventas"&&detected==="recibidos"))){
+        const ok=await appConfirm(kind==="compras"
+          ?"Este archivo parece ser de comprobantes EMITIDOS (ventas), no recibidos. ¿Lo importo igual como compras?"
+          :"Este archivo parece ser de comprobantes RECIBIDOS (compras), no emitidos. ¿Lo importo igual como ventas?");
+        if(!ok) return;
+      }
+      const res=await api("iva_import","POST",{cuit,kind,rows,archivo:name});
+      if(res?.error) throw new Error(res.error);
+      const ms=Object.keys(res.meses||{}).sort();
+      toast(`${rows.length} comprobantes importados (${ms.map(k=>k.split("-").reverse().join("/")).join(", ")})${res.omitidos?` · ${res.omitidos} ya estaban en Growith`:""}`,"success",6000);
+      if(ms.length&&!ms.includes(mes)) setMes(ms[ms.length-1]);
+      await load();
+    }catch(e){ toast("No se pudo importar: "+(e.message||e),"error",7000); }
+    finally{ setImporting(null); if(fileRef.current) fileRef.current.value=""; if(fileVentasRef.current) fileVentasRef.current.value=""; }
+  }
+  async function guardar(patch){
+    try{ const res=await api("iva_set","POST",{cuit,mes,...patch}); if(res?.error) throw new Error(res.error); await load(); }
+    catch(e){ toast("No se pudo guardar: "+(e.message||e),"error"); }
+  }
+  const addAjuste=()=>{ const monto=ghNumAR(ajMonto); if(!ajNombre.trim()||!monto) return; guardar({ajustes:[...(d.ajustes||[]),{id:Date.now().toString(36),nombre:ajNombre.trim().slice(0,60),monto}]}); setAjNombre(""); setAjMonto(""); };
+  const delAjuste=id=>guardar({ajustes:(d.ajustes||[]).filter(a=>a.id!==id)});
+  const simVn=ghNumAR(simV), simCn=ghNumAR(simC);
+  const simRes=r.resultado+simVn*21/121-simCn*21/121;
+  const faltaCompras=simRes>0?simRes*121/21:0;
+  const proveedores=useMemo(()=>{
+    const m={}; for(const x of (d.compras?.rows||[])){ const k=x.doc||x.nom; if(!k) continue; const p=m[k]||(m[k]={nom:x.nom||x.doc,doc:x.doc,n:0,iva:0,tot:0}); const s=x.nc?-1:1; p.n++; p.iva+=s*x.iva; p.tot+=s*x.tot; }
+    return Object.values(m).sort((a,b)=>b.iva-a.iva).slice(0,10);
+  },[d.compras]);
+  const row=(label,val,opts={})=>(
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:opts.bold?14:13,fontWeight:opts.bold?800:400,color:opts.bold?T.text:T.textMd}}>
+      <span style={{display:"flex",alignItems:"center",gap:8}}>{label}</span>
+      <span style={{fontVariantNumeric:"tabular-nums",color:opts.color||(opts.bold?T.text:T.textMd),fontWeight:opts.bold?800:600,display:"flex",alignItems:"center",gap:8}}>{val}</span>
+    </div>
+  );
+  const chip=(label,onClick)=>(<button key={label} onClick={onClick} style={{padding:"3px 8px",fontSize:10,fontWeight:700,borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{label}</button>);
+  const inputSt={width:"100%",padding:"9px 12px",fontSize:13,borderRadius:8,border:`1px solid ${T.inputBorder}`,background:T.input,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"};
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      {/* Navegación de mes */}
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <div style={{display:"inline-flex",alignItems:"center",background:T.surface,borderRadius:8,padding:2}}>
+          <button onClick={()=>shiftMes(-1)} style={{padding:"5px 10px",border:"none",background:"transparent",color:T.textMd,cursor:"pointer",fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}>‹</button>
+          <span style={{padding:"5px 10px",fontSize:13,fontWeight:700,color:T.text,minWidth:150,textAlign:"center"}}>{mesLabel}</span>
+          <button onClick={()=>shiftMes(1)} disabled={mes>=hoy.slice(0,7)} style={{padding:"5px 10px",border:"none",background:"transparent",color:mes>=hoy.slice(0,7)?T.textSm:T.textMd,cursor:mes>=hoy.slice(0,7)?"default":"pointer",fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}>›</button>
+        </div>
+        <span style={{fontSize:11,color:T.textSm}}>El IVA de {mesesNombres[mm-1]} vence aprox. el {venceDia} de {mesSig} (CUIT terminado en {termCuit}).</span>
+        <span style={{marginLeft:"auto",display:"flex",gap:6}}>
+          <Btn T={T} variant="ghost" size="sm" onClick={load} disabled={loading}>{loading?"Cargando…":"Actualizar"}</Btn>
+        </span>
+      </div>
+      {err&&<div style={{padding:"10px 14px",borderRadius:8,background:T.redBg,color:T.red,fontSize:12}}>{err}</div>}
+
+      {/* Resultado */}
+      <Card T={T} padding="lg">
+        <div style={{textAlign:"center",padding:"6px 0 2px"}}>
+          <div style={{fontSize:10,fontWeight:700,color:T.textSm,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>Resultado del mes</div>
+          <DSBadge T={T} color={!r.tieneDatos?T.textSm:aPagar?T.red:aFavor?T.green:T.textMd} size="md">{!r.tieneDatos?"Sin datos todavía":aPagar?"IVA a pagar":aFavor?"Saldo a favor":"Sin saldo"}</DSBadge>
+          <div style={{fontSize:38,fontWeight:900,letterSpacing:-1,margin:"10px 0 6px",color:!r.tieneDatos?T.textSm:aPagar?T.yellow:aFavor?T.green:T.text,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(Math.abs(r.resultado))}</div>
+          <div style={{fontSize:12,color:T.textSm}}>
+            {!r.tieneDatos?"Emití facturas o importá tus compras para ver la proyección.":aPagar?`Es lo que hay que pagar de IVA por ${mesesNombres[mm-1]}${!d.compras?" — todavía sin compras cargadas":""}.`:aFavor?`Te queda saldo a favor que pasa a ${mesSig}.`:"Ventas y compras empatan este mes."}
+            {esActual&&r.tieneDatos&&<span> El mes sigue abierto: el número va a cambiar con cada factura.</span>}
+          </div>
+        </div>
+      </Card>
+
+      {/* Ventas / Compras */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:14}}>
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderLeft:`3px solid ${T.red}`,borderRadius:12,padding:18}}>
+          <div style={{fontSize:10,fontWeight:700,color:T.textSm,letterSpacing:0.8,textTransform:"uppercase"}}>IVA de ventas</div>
+          <div style={{fontSize:26,fontWeight:800,color:T.red,margin:"6px 0 2px",fontVariantNumeric:"tabular-nums"}}>{fmtMoney(r.ivaVentas)}</div>
+          <div style={{fontSize:12,color:T.textSm}}>facturaste {fmtMoney(r.totVentas)} · {r.nVentas} comprobante{r.nVentas===1?"":"s"}{r.nNcVentas?` · ${r.nNcVentas} NC`:""}</div>
+          <div style={{fontSize:11,color:T.green,marginTop:8}}>✓ de tus comprobantes emitidos en Growith{d.ventasExt?<span style={{color:T.textSm}}> + {d.ventasExt.n} del import de Mis Comprobantes</span>:null}</div>
+          <div style={{marginTop:10,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <input ref={fileVentasRef} type="file" accept=".csv,.xlsx,.xls,text/csv" style={{display:"none"}} onChange={e=>importar(e.target.files?.[0],"ventas")}/>
+            <Btn T={T} variant="ghost" size="sm" onClick={()=>fileVentasRef.current?.click()} disabled={!!importing}>{importing==="ventas"?"Importando…":"Importar emitidos"}</Btn>
+            <span style={{fontSize:10,color:T.textSm}}>Solo si facturás también fuera de Growith. Se deduplica.</span>
+            {d.ventasExt&&<button onClick={async()=>{ if(await appConfirm("¿Borrar las ventas importadas de este mes? Las emitidas en Growith quedan.")) guardar({borrar:"ventasExt"}); }} style={{background:"none",border:"none",color:T.red,fontSize:10,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Borrar import</button>}
+          </div>
+        </div>
+        <div onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);importar(e.dataTransfer.files?.[0],"compras");}}
+          style={{background:T.card,border:`1px ${drag?"dashed":"solid"} ${drag?T.accentSolid:T.border}`,borderLeft:`3px solid ${T.green}`,borderRadius:12,padding:18,transition:"border-color .15s"}}>
+          <div style={{fontSize:10,fontWeight:700,color:T.textSm,letterSpacing:0.8,textTransform:"uppercase"}}>IVA de compras</div>
+          <div style={{fontSize:26,fontWeight:800,color:T.green,margin:"6px 0 2px",fontVariantNumeric:"tabular-nums"}}>{d.compras?fmtMoney(r.ivaCompras):"—"}</div>
+          <div style={{fontSize:12,color:T.textSm}}>{d.compras?<>compraste {fmtMoney(r.totCompras)} · {r.nCompras} comprobante{r.nCompras===1?"":"s"}{r.nNcCompras?` · ${r.nNcCompras} NC`:""}</>:"Todavía no importaste las compras de este mes."}</div>
+          <div style={{fontSize:11,color:d.compras?T.green:T.textSm,marginTop:8}}>{d.compras?<>✓ de ARCA (Mis Comprobantes) · {ghFmtTs(d.compras.importadoAt)}{d.compras.archivo?` · ${d.compras.archivo}`:""}</>:"Arrastrá acá el CSV o XLSX de Mis Comprobantes → Comprobantes recibidos."}</div>
+          <div style={{marginTop:10,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,text/csv" style={{display:"none"}} onChange={e=>importar(e.target.files?.[0],"compras")}/>
+            <Btn T={T} variant={d.compras?"secondary":"primary"} size="sm" onClick={()=>fileRef.current?.click()} disabled={!!importing}>{importing==="compras"?"Importando…":d.compras?"Reimportar compras":"Importar compras"}</Btn>
+            <button onClick={()=>setShowHow(v=>!v)} style={{background:"none",border:"none",color:T.accentSolid,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{showHow?"Ocultar":"¿Cómo exporto el archivo?"}</button>
+            {d.compras&&<button onClick={async()=>{ if(await appConfirm("¿Borrar las compras importadas de este mes?")) guardar({borrar:"compras"}); }} style={{background:"none",border:"none",color:T.red,fontSize:10,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Borrar</button>}
+          </div>
+          {showHow&&(
+            <ol style={{margin:"10px 0 0",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.7}}>
+              <li>Entrá a ARCA con clave fiscal y abrí <b>Mis Comprobantes</b>.</li>
+              <li>Elegí el CUIT y andá a <b>Comprobantes recibidos</b>.</li>
+              <li>Filtrá por fecha de emisión: del 1 al último día de {mesesNombres[mm-1]} (podés traer varios meses juntos).</li>
+              <li>Abajo de la grilla tocá <b>CSV</b> o <b>Excel</b> y guardá el archivo.</li>
+              <li>Arrastralo acá o usá el botón Importar. Reimportar reemplaza las compras de cada mes que venga en el archivo.</li>
+            </ol>
+          )}
+        </div>
+      </div>
+
+      {/* Desglose */}
+      <Card T={T} padding="lg">
+        {row("Saldo del mes (ventas − compras)",fmtMoney(r.saldoMes),{color:r.saldoMes>0?T.yellow:T.green})}
+        {(d.ajustes||[]).map(a=>row(<>{a.nombre}<span style={{fontSize:10,color:T.textSm}}>ajuste</span></>,<>{a.monto<0?"− ":"+ "}{fmtMoney(Math.abs(a.monto))}<button onClick={()=>delAjuste(a.id)} title="Quitar" style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:12}}>✕</button></>,{color:a.monto<0?T.green:T.yellow}))}
+        {row(<>Saldo a favor anterior{typeof d.saldoAnteriorManual==="number"&&<span style={{fontSize:10,color:T.textSm}}>manual</span>}</>,
+          saEdit?(<><input value={saVal} onChange={e=>setSaVal(e.target.value)} placeholder={String(Math.round(r.saldoAnteriorAuto))} style={{...inputSt,width:140,padding:"5px 8px",fontSize:12}}/>
+            <Btn T={T} variant="primary" size="sm" onClick={()=>{ guardar({saldoAnteriorManual:ghNumAR(saVal)}); setSaEdit(false); }}>Guardar</Btn>
+            <Btn T={T} variant="ghost" size="sm" onClick={()=>{ guardar({saldoAnteriorManual:null}); setSaEdit(false); }}>Automático</Btn></>)
+          :(<>{r.saldoAnterior?"− ":""}{fmtMoney(r.saldoAnterior)}<button onClick={()=>{setSaVal(r.saldoAnterior?String(Math.round(r.saldoAnterior)):"");setSaEdit(true);}} style={{background:"none",border:"none",color:T.accentSolid,cursor:"pointer",fontSize:11,fontFamily:"'Inter',system-ui,sans-serif"}}>editar</button></>),
+          {color:r.saldoAnterior?T.green:T.textMd})}
+        {row(aFavor?"Queda a favor":"Queda a pagar",fmtMoney(Math.abs(r.resultado)),{bold:true,color:aPagar?T.yellow:aFavor?T.green:T.text})}
+        <div style={{display:"flex",gap:8,alignItems:"center",marginTop:12,flexWrap:"wrap"}}>
+          <input value={ajNombre} onChange={e=>setAjNombre(e.target.value)} placeholder="Ajuste (retenciones, percepciones, saldo de libre disponibilidad…)" style={{...inputSt,flex:2,minWidth:220}}/>
+          <input value={ajMonto} onChange={e=>setAjMonto(e.target.value)} placeholder="Monto (negativo resta)" style={{...inputSt,flex:1,minWidth:140}}/>
+          <Btn T={T} variant="secondary" size="sm" onClick={addAjuste} disabled={!ajNombre.trim()||!ghNumAR(ajMonto)}>Agregar ajuste</Btn>
+        </div>
+        <div style={{fontSize:10,color:T.textSm,marginTop:6}}>Los ajustes son manuales y quedan guardados en el mes. Un monto negativo baja lo que hay que pagar; positivo lo sube.</div>
+      </Card>
+
+      {/* Simulador */}
+      <Card T={T} padding="lg">
+        <div style={{fontSize:13,fontWeight:700,color:T.text}}>Simulador — ¿qué pasa si…?</div>
+        <div style={{fontSize:11,color:T.textSm,marginBottom:12}}>Metés montos hipotéticos con IVA (como los facturás) y mirás cómo queda el saldo en vivo. No se guarda nada.</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14}}>
+          {[["+ Ventas a facturar",simV,setSimV],["+ Compras a cargar",simC,setSimC]].map(([lbl,val,set])=>(
+            <div key={lbl}>
+              <div style={{fontSize:11,color:T.textMd,marginBottom:5}}>{lbl}</div>
+              <input value={val} onChange={e=>set(e.target.value)} placeholder="0" style={inputSt}/>
+              <div style={{display:"flex",gap:5,marginTop:6,flexWrap:"wrap"}}>
+                {[1,5,10,20].map(n=>chip(`+${n}M`,()=>set(String((ghNumAR(val)||0)+n*1000000))))}
+                {chip("✕",()=>set(""))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:14,paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>
+          <span style={{fontSize:13,fontWeight:700,color:T.text}}>Quedaría</span>
+          <span style={{fontSize:18,fontWeight:800,fontVariantNumeric:"tabular-nums",color:simRes>0?T.yellow:simRes<0?T.green:T.text}}>{simRes<0?"a favor ":""}{fmtMoney(Math.abs(simRes))}</span>
+        </div>
+        <div style={{fontSize:12,color:T.textMd,marginTop:8}}>
+          {simRes>0?<>Para no pagar IVA te falta cargar <b>{fmtMoney(faltaCompras)}</b> más de compras (con IVA) — o emitir notas de crédito de ventas por ese monto.</>
+          :<>Con estos números no pagás IVA{simRes<0?` y te quedan ${fmtMoney(-simRes)} a favor para ${mesSig}`:""}.</>}
+        </div>
+      </Card>
+
+      {/* Proveedores + detalle */}
+      {d.compras&&(
+        <Card T={T} padding="lg">
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <span style={{fontSize:13,fontWeight:700,color:T.text}}>De dónde sale tu crédito fiscal</span>
+            <span style={{fontSize:11,color:T.textSm}}>top proveedores por IVA</span>
+            <button onClick={()=>setShowComp(v=>!v)} style={{marginLeft:"auto",background:"none",border:"none",color:T.accentSolid,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{showComp?"Ocultar comprobantes":`Ver los ${d.compras.n} comprobantes`}</button>
+          </div>
+          {proveedores.map(p=>(
+            <div key={p.doc||p.nom} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:12}}>
+              <span style={{flex:1,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.doc}>{p.nom}</span>
+              <span style={{color:T.textSm,width:70,textAlign:"right"}}>{p.n} cbte{p.n===1?"":"s"}</span>
+              <span style={{color:T.textMd,width:110,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{fmtMoney(p.tot)}</span>
+              <span style={{color:T.green,width:110,textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(p.iva)}</span>
+            </div>
+          ))}
+          {showComp&&(
+            <div style={{overflowX:"auto",marginTop:12}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                <thead><tr>{["Fecha","Tipo","Proveedor","Neto","IVA","Total"].map((h,i)=><th key={h} style={{padding:"6px 8px",textAlign:i>=3?"right":"left",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>{h}</th>)}</tr></thead>
+                <tbody>{(d.compras.rows||[]).slice().sort((a,b)=>b.f.localeCompare(a.f)).map((x,i)=>(
+                  <tr key={i} style={{borderBottom:`1px solid ${T.borderL}`,color:x.nc?T.red:T.textMd}}>
+                    <td style={{padding:"5px 8px",whiteSpace:"nowrap"}}>{x.f.split("-").reverse().join("/")}</td>
+                    <td style={{padding:"5px 8px",whiteSpace:"nowrap"}}>{x.tipo||x.t}{x.pv?` ${String(x.pv).padStart(4,"0")}-${String(x.nro).padStart(8,"0")}`:""}</td>
+                    <td style={{padding:"5px 8px",color:T.text,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={x.doc}>{x.nom||x.doc}</td>
+                    <td style={{padding:"5px 8px",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{x.nc?"−":""}{fmtMoney(x.neto)}</td>
+                    <td style={{padding:"5px 8px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:600}}>{x.nc?"−":""}{fmtMoney(x.iva)}</td>
+                    <td style={{padding:"5px 8px",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{x.nc?"−":""}{fmtMoney(x.tot)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+      <div style={{fontSize:10,color:T.textSm}}>Proyección orientativa: no reemplaza la declaración jurada F.2002 ni al contador. Percepciones, retenciones y saldos de libre disponibilidad se cargan como ajustes.</div>
+    </div>
+  );
+}
 function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [cuits, setCuits] = useState([]);
   const [cuitSel, setCuitSel] = useState(null);
@@ -22857,6 +23222,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 tabs={[
                   {id:"facturar",  label:"Facturar", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8", badge:pendStats?.pendCount||0, badgeColor:T.accentSolid},
                   {id:"registros", label:"Registros", icon:"M21 8v13H3V8M1 3h22v5H1zM10 12h4"},
+                  {id:"iva",       label:"IVA", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"},
                   {id:"config",    label:"Configuración", icon:"M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"},
                 ]}/>
             </div>
@@ -24208,6 +24574,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   );
                 })()}
               </div>
+            )}
+
+            {/* ══ IVA — proyección mensual ══ */}
+            {tab==="iva"&&cuitSel&&(
+              <ArcaIvaTab T={T} cuit={cuitSel} api={api}/>
             )}
 
             {/* ══ CONFIGURACIÓN — CUITs + Mantenimiento ══ */}
