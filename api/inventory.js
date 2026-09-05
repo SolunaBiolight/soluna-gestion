@@ -903,9 +903,16 @@ export default async function handler(req, res) {
         stock_total: stockTotalFromSbw,
         stock_by_warehouse: finalSbw,
         canales: Array.isArray(body.canales) ? body.canales : [],
-        // product_links: [{ product_id, platform, title, image, quantity }] — cantidad descuento por venta
+        // product_links: [{ product_id, [variant_id, link_id, variant_title], platform, title, image, quantity }]
+        // Si el link apunta a una VARIANTE puntual (mapeo por talle), preservamos
+        // variant_id/link_id/variant_title — así el descuento va al talle correcto.
         product_links: Array.isArray(body.product_links) ? body.product_links.map(l => ({
           product_id: String(l.product_id || ""),
+          ...(l.variant_id ? {
+            variant_id: String(l.variant_id),
+            link_id: String(l.link_id || `${l.product_id}::v${l.variant_id}`),
+            variant_title: l.variant_title || null,
+          } : {}),
           platform: String(l.platform || ""),
           title: String(l.title || ""),
           image: l.image || null,
