@@ -1025,6 +1025,25 @@ Analizá el anuncio FULL y devolvé el JSON. Sé específico y útil — no des 
 
 export const config = { api: { bodyParser: { sizeLimit: "50mb" } } };
 
+// Llama a Gemini y devuelve JSON parseado. Usado por el Publicador conversacional.
+async function geminiJSON(apiKey, systemText, userText, maxTok = 4000) {
+  const payload = {
+    system_instruction: { parts: [{ text: systemText }] },
+    contents: [{ role: "user", parts: [{ text: userText }] }],
+    generationConfig: { response_mime_type: "application/json", temperature: 0.4, top_p: 0.95, max_output_tokens: maxTok },
+  };
+  const r = await fetch(`${GEMINI_BASE}/models/${GEMINI_TEXT_MODEL}:generateContent?key=${apiKey}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(30000),
+  });
+  const data = await r.json();
+  let text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  if (!text) throw new Error("Gemini devolvió vacío");
+  if (text.includes("```")) { text = text.split("```")[1] || ""; if (text.startsWith("json")) text = text.slice(4); }
+  const s = text.indexOf("{"), e = text.lastIndexOf("}");
+  if (s >= 0 && e > s) text = text.slice(s, e + 1);
+  return JSON.parse(text);
+}
+
 export default async function handler(req, res) {
   { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||_o.endsWith("-soluna1.vercel.app")||_o.startsWith("http://localhost"))?_o:"https://www.growithapp.com"); } // allowlist CORS
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE");
@@ -1132,6 +1151,107 @@ export default async function handler(req, res) {
   if (!(await guardUid(req, res, uid))) return;
 
   try {
+
+    // ── PUBLICADOR CONVERSACIONAL (IA) ───────────────────
+    // publisher_plan: charla con el usuario y arma el plan del anuncio (Gemini).
+    if (action === "publisher_plan" && req.method === "POST") {
+      const apiKey = process.env.GOOGLE_AI_KEY;
+      if (!apiKey) return res.status(500).json({ error: "Falta GOOGLE_AI_KEY en el servidor" });
+      const cfg = await loadMetaAccount(db, uid, acc_id);
+      if (!cfg?.access_token || !cfg?.ad_account_id) return res.status(400).json({ error: "Conectá tu cuenta de Meta Ads primero" });
+      const cur = cfg.currency || "USD";
+      const { messages = [] } = req.body || {};
+      const system = `Sos el asistente de un PUBLICADOR DE ANUNCIOS de Meta (Facebook/Instagram) dentro de Growith. Charlás con el usuario en español rioplatense (voseo), breve y claro, y armás el plan de un anuncio COMPLETO (campaña + conjunto de anuncios + anuncio).
+Respondé SIEMPRE en JSON EXACTO con esta forma:
+{
+ "reply": "<lo que le decís al usuario>",
+ "ready": <true SOLO si ya tenés lo mínimo para publicar>,
+ "missing": ["<qué falta, si algo>"],
+ "plan": {
+   "campaign": { "name": "", "objective": "OUTCOME_SALES|OUTCOME_TRAFFIC|OUTCOME_ENGAGEMENT|OUTCOME_AWARENESS|OUTCOME_LEADS" },
+   "adset": { "name": "", "daily_budget": <entero en ${cur}>, "optimization_goal": "OFFSITE_CONVERSIONS|LINK_CLICKS|REACH", "countries": ["AR"], "age_min": 18, "age_max": 65, "genders": "all|male|female", "targeting_note": "<intereses en texto>" },
+   "ad": { "name": "", "primary_text": "<copy principal, bueno: hook + beneficio + CTA>", "headline": "", "description": "", "cta": "SHOP_NOW|LEARN_MORE|SIGN_UP", "destination_url": "" }
+ }
+}
+Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y copy. El creativo (video/imagen) se elige aparte en la UI, NO lo pidas — solo asumí que lo van a poner. Si falta algo, ready:false y preguntá SOLO lo que falta (1-2 cosas por vez). Nunca inventes la URL de destino: si no la dieron, pedila. Presupuesto SIEMPRE en ${cur}. Cuando esté ready, avisá en 'reply' que el anuncio se va a crear EN PAUSA y que revise la tarjeta antes de confirmar.`;
+      const userText = "Conversación hasta ahora:\n" + (messages || []).map(m => `${m.role === "user" ? "Usuario" : "Asistente"}: ${m.text}`).join("\n") + "\n\nDevolvé el JSON del estado actual del plan.";
+      try {
+        const out = await geminiJSON(apiKey, system, userText);
+        return res.json({ ok: true, reply: out.reply || "", ready: !!out.ready, missing: out.missing || [], plan: out.plan || null, currency: cur });
+      } catch (e) {
+        return res.status(500).json({ error: "No pude armar el plan: " + e.message });
+      }
+    }
+
+    // publisher_publish: crea campaña + adset + creativo + anuncio. SIEMPRE en PAUSA.
+    if (action === "publisher_publish" && req.method === "POST") {
+      const cfg = await loadMetaAccount(db, uid, acc_id);
+      if (!cfg?.access_token || !cfg?.ad_account_id) return res.status(400).json({ error: "Conectá tu cuenta de Meta Ads primero" });
+      if (!cfg.page_id) return res.status(400).json({ error: "Configurá la Página de Facebook en tu cuenta de Meta" });
+      const token = cfg.page_access_token || cfg.access_token;
+      const { plan, creative } = req.body || {};
+      if (!plan?.campaign || !plan?.adset || !plan?.ad) return res.status(400).json({ error: "Plan incompleto" });
+      if (!plan.ad.destination_url) return res.status(400).json({ error: "Falta la URL de destino" });
+      if (!creative || (!creative.video_id && !creative.image_hash)) return res.status(400).json({ error: "Falta el creativo (video o imagen)" });
+      const act = String(cfg.ad_account_id).startsWith("act_") ? cfg.ad_account_id : `act_${cfg.ad_account_id}`;
+      const created = {};
+      try {
+        // 1) Campaña (PAUSA)
+        const camp = await metaPost(`${act}/campaigns`, {
+          name: plan.campaign.name || "Growith · Campaña",
+          objective: plan.campaign.objective || "OUTCOME_SALES",
+          status: "PAUSED",
+          special_ad_categories: JSON.stringify([]),
+        }, token);
+        created.campaign_id = camp.id;
+        // 2) AdSet (PAUSA) — presupuesto en centavos
+        const targeting = {
+          geo_locations: { countries: plan.adset.countries || ["AR"] },
+          age_min: plan.adset.age_min || 18,
+          age_max: plan.adset.age_max || 65,
+          ...(plan.adset.genders === "male" ? { genders: [1] } : plan.adset.genders === "female" ? { genders: [2] } : {}),
+        };
+        const optGoal = plan.adset.optimization_goal || (plan.campaign.objective === "OUTCOME_SALES" ? "OFFSITE_CONVERSIONS" : "LINK_CLICKS");
+        const adset = await metaPost(`${act}/adsets`, {
+          name: plan.adset.name || "Growith · AdSet",
+          campaign_id: camp.id,
+          daily_budget: String(Math.max(1, Math.round((plan.adset.daily_budget || 0) * 100))),
+          billing_event: "IMPRESSIONS",
+          optimization_goal: optGoal,
+          bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+          targeting: JSON.stringify(targeting),
+          status: "PAUSED",
+          ...(cfg.pixel_id && optGoal === "OFFSITE_CONVERSIONS" ? { promoted_object: JSON.stringify({ pixel_id: cfg.pixel_id, custom_event_type: "PURCHASE" }) } : {}),
+        }, token);
+        created.adset_id = adset.id;
+        // 3) Creativo
+        const cta = { type: plan.ad.cta || "LEARN_MORE", value: { link: plan.ad.destination_url } };
+        const oss = { page_id: cfg.page_id, ...(cfg.ig_account_id ? { instagram_actor_id: cfg.ig_account_id } : {}) };
+        if (creative.video_id) {
+          oss.video_data = { video_id: creative.video_id, ...(creative.thumbnail_url ? { image_url: creative.thumbnail_url } : {}), message: plan.ad.primary_text || "", title: plan.ad.headline || "", link_description: plan.ad.description || "", call_to_action: cta };
+        } else {
+          oss.link_data = { image_hash: creative.image_hash, link: plan.ad.destination_url, message: plan.ad.primary_text || "", name: plan.ad.headline || "", description: plan.ad.description || "", call_to_action: cta };
+        }
+        const creativeRes = await metaPost(`${act}/adcreatives`, {
+          name: plan.ad.name || "Growith · Creativo",
+          object_story_spec: JSON.stringify(oss),
+        }, token);
+        created.creative_id = creativeRes.id;
+        // 4) Anuncio (PAUSA)
+        const ad = await metaPost(`${act}/ads`, {
+          name: plan.ad.name || "Growith · Anuncio",
+          adset_id: adset.id,
+          creative: JSON.stringify({ creative_id: creativeRes.id }),
+          status: "PAUSED",
+        }, token);
+        created.ad_id = ad.id;
+        const accNum = act.replace("act_", "");
+        return res.json({ ok: true, ...created, status: "PAUSED",
+          manager_url: `https://www.facebook.com/adsmanager/manage/ads?act=${accNum}&selected_campaign_ids=${camp.id}` });
+      } catch (e) {
+        return res.status(502).json({ error: "Meta: " + e.message, created });
+      }
+    }
 
     // ── CUENTAS ──────────────────────────────────────────
 

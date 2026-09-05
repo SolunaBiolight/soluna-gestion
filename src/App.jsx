@@ -823,7 +823,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
-      subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
+      subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"publicador",label:"Publicador IA"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
       subs:[{id:"resumen",label:"Resumen"},{id:"inventario",label:"Inventario"},{id:"movimientos",label:"Movimientos"},{id:"config",label:"Configuración"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
@@ -25411,6 +25411,148 @@ function AccountSwitcher({T, accounts, activeAcc, onSwitch, onGoConnect}) {
   );
 }
 
+// ─── Publicador IA de Meta (chat conversacional → confirmá → publica en PAUSA) ───
+function MetaPublisher({ T, metaApi, accId, cur, tokenDead }) {
+  const [messages, setMessages] = React.useState([{ role: "assistant", text: "¡Hola! Contame qué anuncio querés publicar y lo armamos juntos. Ej: \"Publicá un anuncio de la malla Mo&Mu, $5000 por día, para mujeres de Argentina, que lleve a la página del producto\". Cuando esté listo te muestro todo antes de publicar 👇" }]);
+  const [input, setInput] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [plan, setPlan] = React.useState(null);
+  const [ready, setReady] = React.useState(false);
+  const [videos, setVideos] = React.useState([]);
+  const [creative, setCreative] = React.useState(null); // {video_id, name}
+  const [publishing, setPublishing] = React.useState(false);
+  const [result, setResult] = React.useState(null);
+  const scrollRef = React.useRef(null);
+
+  React.useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, ready]);
+  React.useEffect(() => {
+    if (!accId) return;
+    metaApi("all_assets", "GET", null, { acc_id: accId }).then(d => {
+      const vids = (d?.videos || d?.assets?.videos || []).map(v => ({ id: v.id, name: v.title || v.name || v.id, thumb: v.thumbnail || v.picture || null }));
+      setVideos(vids);
+    }).catch(() => {});
+  }, [accId]);
+
+  async function send() {
+    const txt = input.trim();
+    if (!txt || loading) return;
+    const next = [...messages, { role: "user", text: txt }];
+    setMessages(next); setInput(""); setLoading(true);
+    try {
+      const d = await metaApi("publisher_plan", "POST", { messages: next.filter(m => m.role !== "system") }, { acc_id: accId });
+      if (d?.error) { setMessages([...next, { role: "assistant", text: "Uy, hubo un error: " + d.error }]); }
+      else {
+        setMessages([...next, { role: "assistant", text: d.reply || "…" }]);
+        if (d.plan) setPlan(d.plan);
+        setReady(!!d.ready);
+      }
+    } catch (e) { setMessages([...next, { role: "assistant", text: "Error de red: " + e.message }]); }
+    finally { setLoading(false); }
+  }
+
+  async function publish() {
+    if (!plan || !creative?.video_id) return;
+    setPublishing(true);
+    try {
+      const d = await metaApi("publisher_publish", "POST", { plan, creative }, { acc_id: accId });
+      if (d?.error) { setResult({ error: d.error }); }
+      else { setResult({ ok: true, ...d }); setReady(false); }
+    } catch (e) { setResult({ error: e.message }); }
+    finally { setPublishing(false); }
+  }
+
+  const bubble = (role) => ({
+    alignSelf: role === "user" ? "flex-end" : "flex-start",
+    background: role === "user" ? T.accentSolid : T.card, color: role === "user" ? "#fff" : T.text,
+    border: role === "user" ? "none" : `1px solid ${T.border}`, borderRadius: 12, padding: "9px 13px",
+    fontSize: 13, lineHeight: 1.5, maxWidth: "82%", whiteSpace: "pre-wrap", fontFamily: "'Inter',system-ui,sans-serif",
+  });
+  const money = n => `${cur}${(Number(n) || 0).toLocaleString("es-AR")}`;
+
+  if (tokenDead) return <DSEmpty T={T} icon="🔌" title="Conectá tu cuenta de Meta" subtitle="Para usar el Publicador IA necesitás una cuenta de Meta Ads conectada, con Página y Pixel configurados (pestaña Cuenta)." />;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 16, maxWidth: 760 }}>
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 18px" }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: T.text }}>🤖 Publicador IA</div>
+        <div style={{ fontSize: 11.5, color: T.textSm, marginTop: 3 }}>Charlá para armar tu anuncio. Antes de publicar te muestro TODO para que confirmes. Se crea siempre <strong>en PAUSA</strong> — vos lo activás cuando quieras.</div>
+      </div>
+
+      {/* Chat */}
+      <div ref={scrollRef} style={{ background: T.bg, border: `1px solid ${T.borderL}`, borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 9, height: 340, overflowY: "auto" }}>
+        {messages.map((m, i) => <div key={i} style={bubble(m.role)}>{m.text}</div>)}
+        {loading && <div style={{ ...bubble("assistant"), color: T.textSm }}><Spinner size={12} color={T.textSm} /> pensando…</div>}
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") send(); }} placeholder="Escribí qué anuncio querés…" style={{ flex: 1, background: T.input, border: `1px solid ${T.inputBorder}`, borderRadius: 9, padding: "10px 13px", fontSize: 13, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }} />
+        <button onClick={send} disabled={loading || !input.trim()} style={{ ...BtnPrimary(T), padding: "10px 18px", fontSize: 13 }}>Enviar</button>
+      </div>
+
+      {/* Tarjeta de confirmación */}
+      {ready && plan && !result && (
+        <div style={{ background: T.card, border: `2px solid ${T.accent}`, borderRadius: 14, padding: "18px 20px" }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 12, display: "flex", alignItems: "center", gap: 7 }}>📋 Revisá antes de publicar</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+            {[
+              ["Campaña", plan.campaign?.name], ["Objetivo", (plan.campaign?.objective || "").replace("OUTCOME_", "")],
+              ["Presupuesto/día", money(plan.adset?.daily_budget)], ["País", (plan.adset?.countries || []).join(", ")],
+              ["Edad", `${plan.adset?.age_min || 18}-${plan.adset?.age_max || 65}`], ["Género", plan.adset?.genders === "male" ? "Hombres" : plan.adset?.genders === "female" ? "Mujeres" : "Todos"],
+              ["Público", plan.adset?.targeting_note], ["CTA", plan.ad?.cta],
+            ].filter(([, v]) => v).map(([k, v], i) => (
+              <div key={i} style={{ background: T.bg, borderRadius: 8, padding: "8px 11px" }}>
+                <div style={{ fontSize: 10, color: T.textSm, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3 }}>{k}</div>
+                <div style={{ fontSize: 12.5, color: T.text, fontWeight: 600, marginTop: 2 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ background: T.bg, borderRadius: 8, padding: "10px 12px", marginBottom: 14 }}>
+            <div style={{ fontSize: 10, color: T.textSm, fontWeight: 600, textTransform: "uppercase" }}>Copy del anuncio</div>
+            <div style={{ fontSize: 12.5, color: T.text, marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{plan.ad?.primary_text}</div>
+            {plan.ad?.headline && <div style={{ fontSize: 12, color: T.textMd, marginTop: 6, fontWeight: 700 }}>{plan.ad.headline}</div>}
+            <div style={{ fontSize: 11, color: T.accent, marginTop: 6, wordBreak: "break-all" }}>→ {plan.ad?.destination_url}</div>
+          </div>
+          {/* Creativo (video) */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 6 }}>🎬 Elegí el video del anuncio</div>
+            {videos.length === 0 ? (
+              <div style={{ fontSize: 11, color: T.textSm }}>No encontré videos subidos en esta cuenta. (En la Fase 2 lo vas a poder traer directo de tu Drive.) Por ahora subí un video en la pestaña "Publicar" o pegá el ID:</div>
+            ) : (
+              <select value={creative?.video_id || ""} onChange={e => { const v = videos.find(x => x.id === e.target.value); setCreative(v ? { video_id: v.id, name: v.name } : null); }}
+                style={{ width: "100%", background: T.input, border: `1px solid ${T.inputBorder}`, borderRadius: 8, padding: "9px 12px", fontSize: 12, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
+                <option value="">— Elegí un video —</option>
+                {videos.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+            )}
+            <input placeholder="…o pegá el ID de un video de Meta" onChange={e => setCreative(e.target.value.trim() ? { video_id: e.target.value.trim(), name: "Video " + e.target.value.trim() } : null)}
+              style={{ width: "100%", marginTop: 7, background: T.input, border: `1px solid ${T.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 11, color: T.text, fontFamily: "monospace" }} />
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button onClick={publish} disabled={publishing || !creative?.video_id} style={{ ...BtnPrimary(T), padding: "11px 22px", fontSize: 13, opacity: creative?.video_id ? 1 : 0.5 }}>
+              {publishing ? <><Spinner size={12} color="#fff" /> Publicando…</> : "✅ Publicar (en PAUSA)"}
+            </button>
+            <span style={{ fontSize: 11, color: T.textSm }}>Si algo no está bien, seguí escribiendo en el chat para ajustarlo.</span>
+          </div>
+        </div>
+      )}
+
+      {/* Resultado */}
+      {result && (
+        <div style={{ background: result.ok ? T.green + "18" : T.red + "18", border: `1px solid ${(result.ok ? T.green : T.red)}55`, borderRadius: 12, padding: "14px 18px" }}>
+          {result.ok ? (
+            <>
+              <div style={{ fontSize: 14, fontWeight: 800, color: T.green }}>✅ ¡Anuncio creado en PAUSA!</div>
+              <div style={{ fontSize: 12, color: T.textMd, marginTop: 5 }}>Está listo pero <strong>pausado</strong> — revisalo y activalo cuando quieras. Campaña #{String(result.campaign_id).slice(-6)}.</div>
+              {result.manager_url && <a href={result.manager_url} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 8, ...BtnSecondary(T), textDecoration: "none", fontSize: 12, padding: "7px 14px" }}>Ver en Meta Ads Manager →</a>}
+            </>
+          ) : (
+            <div style={{ fontSize: 13, color: T.red }}>❌ No se pudo publicar: {result.error}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const OBJECTIVES=[
     {id:"OUTCOME_SALES",label:"Ventas"},{id:"OUTCOME_TRAFFIC",label:"Tráfico"},
@@ -27662,6 +27804,11 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               </>
             )}
           </div>
+        )}
+
+        {/* ── PUBLICADOR IA ────────────────────────────── */}
+        {tab==="publicador"&&(
+          <MetaPublisher T={T} metaApi={metaApi} accId={activeAccId} cur={cur} tokenDead={tokenDead||!activeAccId}/>
         )}
 
         {/* ── CUENTA ──────────────────────────────────── */}
