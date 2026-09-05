@@ -1026,22 +1026,37 @@ Analizá el anuncio FULL y devolvé el JSON. Sé específico y útil — no des 
 export const config = { api: { bodyParser: { sizeLimit: "50mb" } } };
 
 // Llama a Gemini y devuelve JSON parseado. Usado por el Publicador conversacional.
-async function geminiJSON(apiKey, systemText, userText, maxTok = 4000) {
-  const payload = {
-    system_instruction: { parts: [{ text: systemText }] },
-    contents: [{ role: "user", parts: [{ text: userText }] }],
-    generationConfig: { response_mime_type: "application/json", temperature: 0.4, top_p: 0.95, max_output_tokens: maxTok },
-  };
-  const r = await fetch(`${GEMINI_BASE}/models/${GEMINI_TEXT_MODEL}:generateContent?key=${apiKey}`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(30000),
-  });
-  const data = await r.json();
-  let text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  if (!text) throw new Error("Gemini devolvió vacío");
-  if (text.includes("```")) { text = text.split("```")[1] || ""; if (text.startsWith("json")) text = text.slice(4); }
-  const s = text.indexOf("{"), e = text.lastIndexOf("}");
-  if (s >= 0 && e > s) text = text.slice(s, e + 1);
-  return JSON.parse(text);
+// gemini-2.5-flash usa "thinking" que consume max_output_tokens y puede dejar el
+// texto vacío → desactivamos thinking (thinkingBudget:0) + escalamos tokens + reintentos.
+async function geminiJSON(apiKey, systemText, userText) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const payload = {
+      system_instruction: { parts: [{ text: systemText }] },
+      contents: [{ role: "user", parts: [{ text: userText }] }],
+      generationConfig: {
+        response_mime_type: "application/json",
+        temperature: 0.4, top_p: 0.95,
+        max_output_tokens: [8000, 14000, 22000][attempt],
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    };
+    let data;
+    try {
+      const r = await fetch(`${GEMINI_BASE}/models/${GEMINI_TEXT_MODEL}:generateContent?key=${apiKey}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(30000),
+      });
+      data = await r.json();
+    } catch (e) { lastErr = e; continue; }
+    const cand = data.candidates?.[0];
+    let text = cand?.content?.parts?.[0]?.text || "";
+    if (!text) { lastErr = new Error(`vacío (finish: ${cand?.finishReason || data?.error?.message || "?"})`); continue; }
+    if (text.includes("```")) { text = text.split("```")[1] || ""; if (text.startsWith("json")) text = text.slice(4); }
+    const s = text.indexOf("{"), e = text.lastIndexOf("}");
+    if (s >= 0 && e > s) text = text.slice(s, e + 1);
+    try { return JSON.parse(text); } catch (err) { lastErr = err; continue; }
+  }
+  throw new Error(lastErr?.message || "Gemini falló");
 }
 
 export default async function handler(req, res) {
