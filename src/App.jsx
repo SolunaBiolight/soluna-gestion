@@ -823,7 +823,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
-      subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"publicador",label:"Publicador IA"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
+      subs:[{id:"analisis",label:"Análisis"},{id:"reglas",label:"Reglas"},{id:"publicador",label:"Publicador IA"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
       subs:[{id:"resumen",label:"Resumen"},{id:"inventario",label:"Inventario"},{id:"movimientos",label:"Movimientos"},{id:"config",label:"Configuración"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
@@ -25937,7 +25937,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     return ({ARS:"$",USD:"US$",BRL:"R$",MXN:"MX$",EUR:"€",CLP:"CLP$",PEN:"S/",UYU:"$U",COP:"COL$",GBP:"£"})[code] || code || "$";
   }
 
-  const [tabLocal,setTabLocal]=useState("productos");
+  const [tabLocal,setTabLocal]=useState("analisis");
   const tab = tabProp !== undefined ? tabProp : tabLocal;
   const setTab = setTabProp || setTabLocal;
   const [loading,setLoading]=useState(true);
@@ -26209,13 +26209,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   }
   // Calcula el BE efectivo de un row de Analisis segun los productos asociados
   function effectiveBeForRow(row, level, fallback) {
-    if (!row || !row.id) return fallback;
-    const ids = adProductsMap[level]?.[row.id] || [];
-    if (ids.length === 0) return fallback;
-    const matched = adProductsMap.products.filter(p => ids.includes(p.id) && (p.roas_be||0) > 0);
-    if (matched.length === 0) return fallback;
-    const sum = matched.reduce((s,p)=>s+(p.roas_be||0),0);
-    return sum / matched.length;
+    // El tablero colorea SIEMPRE por el ROAS break-even global (el que ponés en
+    // Análisis). Se sacó el BE por-producto — un solo BE para todo.
+    return fallback;
   }
   function productsForRow(row, level) {
     if (!row || !row.id) return [];
@@ -35995,7 +35991,7 @@ export default function App() {
   const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>{try{return localStorage.getItem("growith_sidebar")==="1";}catch(e){return false;}});
   const [enviosTab,setEnviosTab]=useState("panel");
   const [reclamosView,setReclamosView]=useState("reclamos");
-  const [metaTab,setMetaTab]=useState("productos");
+  const [metaTab,setMetaTab]=useState("analisis");
   const [stockTab,setStockTab]=useState(()=>{
     const parts = (typeof window!=="undefined"?window.location.hash:"").replace('#/','').split('/');
     if(parts[0]==="stock"&&parts[1]) return parts[1];
