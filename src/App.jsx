@@ -14039,7 +14039,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       </div>
     </div>
   );
-}}
+}
 
 // ===========================================
 // APP ADMIN - Panel de administrador
