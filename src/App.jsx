@@ -13737,9 +13737,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                 {isPago
                   ?<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                     {esFact&&<button onClick={()=>onNavigate("planes")} style={{...BtnPrimary(T),justifyContent:"center",fontSize:12}}>Pasar al plan Pro →</button>}
+                    {userDoc?.stripeSubscriptionId&&<AsyncButton onClick={async()=>{const r=await authFetch("/api/stripe?action=portal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid})});const d=await r.json().catch(()=>({}));if(d.url) window.location.href=d.url; else appAlert(d.error||"No se pudo abrir el portal");}} style={{...BtnSecondary(T),justifyContent:"center",fontSize:12}}>Administrar suscripción (tarjeta, facturas)</AsyncButton>}
                     {userDoc?.cancelAtPeriodEnd
-                      ?<AsyncButton onClick={async()=>{await updateDoc(doc(db,"users",user.uid),{cancelAtPeriodEnd:false});toast("Renovación reactivada ✓","success");}} style={{...BtnSecondary(T),justifyContent:"center",fontSize:12}}>Reactivar renovación</AsyncButton>
-                      :<AsyncButton onClick={async()=>{if(await appConfirm(`¿Cancelar tu suscripción ${esFact?"Facturador":"Pro"}? Seguís con acceso completo hasta el final del período pagado — solo no se renueva.`,{danger:true,okLabel:"Cancelar renovación"})){await updateDoc(doc(db,"users",user.uid),{cancelAtPeriodEnd:true});toast("Listo — tu plan sigue activo hasta el vencimiento","success");}}} style={{...BtnDanger(T),justifyContent:"center",fontSize:12}}>Cancelar suscripción</AsyncButton>}
+                      ?<AsyncButton onClick={async()=>{if(userDoc?.stripeSubscriptionId){const r=await authFetch("/api/stripe?action=cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,reactivar:true})});const d=await r.json().catch(()=>({}));if(d.error){appAlert(d.error);return;}} else await updateDoc(doc(db,"users",user.uid),{cancelAtPeriodEnd:false});toast("Renovación reactivada ✓","success");}} style={{...BtnSecondary(T),justifyContent:"center",fontSize:12}}>Reactivar renovación</AsyncButton>
+                      :<AsyncButton onClick={async()=>{if(await appConfirm(`¿Cancelar tu suscripción ${esFact?"Facturador":"Pro"}? Seguís con acceso completo hasta el final del período pagado — solo no se renueva.`,{danger:true,okLabel:"Cancelar renovación"})){if(userDoc?.stripeSubscriptionId){const r=await authFetch("/api/stripe?action=cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid})});const d=await r.json().catch(()=>({}));if(d.error){appAlert(d.error);return;}} else await updateDoc(doc(db,"users",user.uid),{cancelAtPeriodEnd:true});toast("Listo — tu plan sigue activo hasta el vencimiento","success");}}} style={{...BtnDanger(T),justifyContent:"center",fontSize:12}}>Cancelar suscripción</AsyncButton>}
                   </div>
                   :<button onClick={()=>onNavigate("planes")} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:13}}>{enTrial?"Suscribirme ahora →":"Ver planes y reactivar →"}</button>
                 }
@@ -13798,6 +13799,29 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   }
   const [anual,setAnual]=useState(false);
   const [faqOpen,setFaqOpen]=useState(null);
+  // ── Tarjeta (Stripe Checkout): el backend arma la sesión y redirige. Si la
+  // cuenta ya tiene suscripción activa, el backend cambia de plan en el acto.
+  const [stripeLoading,setStripeLoading]=useState(false);
+  async function pagarConTarjeta(){
+    if(stripeLoading) return;
+    setStripeLoading(true);
+    try{
+      const r=await authFetch("/api/stripe?action=checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,plan:PLAN.id,periodo:anual?"anual":"mensual"})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`);
+      if(d.url){ window.location.href=d.url; return; }
+      if(d.changed){ toast(`Plan cambiado a ${PLAN.nombre}${anual?" anual":""} ✓`,"success"); setTimeout(()=>window.location.reload(),900); return; }
+      if(d.already){ toast("Ya tenés ese plan activo","info"); setStripeLoading(false); return; }
+      throw new Error("Respuesta inesperada");
+    }catch(e){ appAlert("No pudimos iniciar el pago con tarjeta: "+e.message); setStripeLoading(false); }
+  }
+  // Vuelta de Stripe: #/planes?stripe=ok → pantalla de confirmación (el plan se
+  // activa por webhook en segundos; el listener del usuario actualiza userPlan).
+  useEffect(()=>{
+    const h=window.location.hash||"";
+    if(h.includes("stripe=ok")){ setStep("stripe_ok"); history.replaceState(null,"",window.location.pathname+"#/planes"); }
+    else if(h.includes("stripe=cancel")){ toast("Pago cancelado — no se cobró nada","info"); history.replaceState(null,"",window.location.pathname+"#/planes"); }
+  },[]);
   // Centavos identificatorios: cada pago pide un monto único (ej: 79.37) para
   // poder matchear la transferencia en la blockchain con esta cuenta aunque el
   // TxID venga mal o falte. Se generan una vez por sesión de pago.
@@ -13897,8 +13921,8 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   },[step]);
 
   const FAQS=[
-    {q:"¿Hay renovación automática?", a:"No. Pagás mes a mes manualmente, sin débito automático. Te avisamos antes de que venza."},
-    {q:"¿En cuánto tiempo se activa?", a:"Con USDT es automático: detectamos tu pago en la blockchain y el plan se activa solo, normalmente en menos de 15 minutos. Con transferencia en pesos lo confirmamos a mano y se activa en el día."},
+    {q:"¿Hay renovación automática?", a:"Con tarjeta sí: se renueva sola cada mes (o cada año) y podés cancelar cuando quieras desde Mi cuenta, sin penalidad ni contrato. Con USDT o transferencia pagás período a período a mano y te avisamos antes de que venza."},
+    {q:"¿En cuánto tiempo se activa?", a:"Con tarjeta es inmediato. Con USDT es automático: detectamos tu pago en la blockchain y el plan se activa solo, normalmente en menos de 15 minutos. Con transferencia en pesos lo confirmamos a mano y se activa en el día."},
     {q:"¿Puedo cancelar cuando quiero?", a:"Sí. No hay contrato ni penalidad. Tu cuenta sigue activa hasta fin del período pagado."},
     {q:"¿Qué pasa con mis datos si no renuevo?", a:"Todos tus datos quedan guardados. Si volvés a suscribirte, todo sigue igual donde lo dejaste."},
   ];
@@ -13966,6 +13990,24 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       if(!r.ok||d.error) throw new Error(d.error||"No pudimos registrar tu pago — probá de nuevo o escribinos a soporte");
       setStep("enviado");
     } catch(e){ appAlert("Error: "+e.message); }
+  }
+
+  /* ── Pantalla: vuelta de Stripe ── */
+  if(step==="stripe_ok"){
+    const activo=["facturador","medio","plus","full"].includes(userPlan)&&!isTrialExpired;
+    return (
+      <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div style={{textAlign:"center",maxWidth:420}}>
+          <div style={{display:"flex",justifyContent:"center",marginBottom:20}}>{activo?<StatusIcon type="success" size={72}/>:<Spinner size={40} color={T.accent}/>}</div>
+          <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:8}}>{activo?"¡Tu plan ya está activo!":"Confirmando tu pago…"}</div>
+          <div style={{fontSize:14,color:T.textMd,marginBottom:24,lineHeight:1.6}}>
+            {activo?<>Stripe confirmó el pago y ya tenés todo habilitado. Se renueva solo; podés cancelar cuando quieras desde Mi cuenta.</>
+            :<>Stripe está avisándonos del pago. Tarda unos segundos — esta pantalla se actualiza sola.</>}
+          </div>
+          <button onClick={onBack} style={{...BtnPrimary(T),justifyContent:"center",width:"100%"}} disabled={!activo}>{activo?"Ir a Growith":"Esperando confirmación…"}</button>
+        </div>
+      </div>
+    );
   }
 
   /* ── Pantalla: enviado ── */
@@ -14044,10 +14086,11 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         </div>
         {canjeBox}
         {[
+          {id:"stripe",titulo:stripeLoading?"Redirigiendo a Stripe…":"Tarjeta de crédito o débito",desc:"Pago seguro con Stripe. Se activa al instante y se renueva solo — cancelás cuando quieras.",color:"#635bff",icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#635bff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>},
           {id:"transfer",titulo:"Transferencia bancaria (pesos)",desc:"Transferís en ARS al alias de Growith y subís el comprobante. Lo confirmamos en el día.",color:"#22c55e",icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><path d="M5 22V11M9 22V11M15 22V11M19 22V11"/><path d="M12 2L2 8h20z"/></svg>},
           {id:"cripto",titulo:"USDT (red TRC20)",desc:"Se acredita solo en menos de 15 minutos, sin intermediarios.",color:"#26a17b",icon:<span style={{fontSize:18,fontWeight:800}}>₮</span>},
         ].map(m=>(
-          <button key={m.id} onClick={()=>{setMetodo(m.id);setStep(m.id==="cripto"?"pago_cripto":"pago_transfer");}}
+          <button key={m.id} onClick={()=>{ if(m.id==="stripe"){ pagarConTarjeta(); return; } setMetodo(m.id);setStep(m.id==="cripto"?"pago_cripto":"pago_transfer");}}
             style={{width:"100%",textAlign:"left",display:"flex",gap:14,alignItems:"center",background:T.card,border:`1.5px solid ${T.border}`,borderRadius:DS.r["2xl"],padding:"18px 20px",marginBottom:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"border-color 0.15s, transform 0.15s"}}
             onMouseEnter={e=>{e.currentTarget.style.borderColor=m.color+"88";e.currentTarget.style.transform="translateY(-1px)";}}
             onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="none";}}>
@@ -14726,7 +14769,7 @@ function AppAdmin({T, user, onBack}) {
                         <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{planLabel(p.plan)}</span>
                         {p.periodo==="anual"&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:800,background:T.accentSolid+"22",color:T.accent}}>ANUAL (12m)</span>}
                         {p.amount>0&&<span style={{fontSize:11,fontWeight:700,color:T.text}}>${p.amount}</span>}
-                        {p.method&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:T.blueBg,color:p.method==="cripto"?T.green:T.blue}}>{p.method==="cripto"?"₮ USDT":"Transf."}</span>}
+                        {p.method&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:p.method==="stripe"?T.purpleBg:T.blueBg,color:p.method==="cripto"?T.green:p.method==="stripe"?T.purple:T.blue}}>{p.method==="cripto"?"₮ USDT":p.method==="stripe"?"Tarjeta":"Transf."}</span>}
                         {p.arsMonto>0&&<span style={{fontSize:11,fontWeight:700,color:T.blue}}>${Number(p.arsMonto).toLocaleString("es-AR")} ARS{p.dolarCripto>0?<span style={{color:T.textSm,fontWeight:500}}> (dólar ${Math.round(p.dolarCripto).toLocaleString("es-AR")})</span>:null}</span>}
                         {p.tieneComprobante&&<button onClick={async()=>{
                           try{
@@ -15009,7 +15052,7 @@ function AppAdmin({T, user, onBack}) {
                               const ult=pagosReales_u[0];
                               let txt,color;
                               if(u.isTrial){ txt="Origen: prueba gratis — nunca pagó este plan"; color=T.yellow; }
-                              else if(ult){ txt=ult.method==="cripto"?"Origen: pago automático en USDT":ult.method==="credito"?"Origen: crédito de referidos":`Origen: pago confirmado a mano (${ult.currency||"transferencia"})`; color=T.green; }
+                              else if(ult){ txt=ult.method==="cripto"?"Origen: pago automático en USDT":ult.method==="stripe"?"Origen: tarjeta (Stripe, se renueva sola)":ult.method==="credito"?"Origen: crédito de referidos":`Origen: pago confirmado a mano (${ult.currency||"transferencia"})`; color=T.green; }
                               else { txt="Origen: activada a mano por admin — sin ningún pago registrado"; color=T.orange||T.yellow; }
                               return <div style={{fontSize:11,fontWeight:700,color,marginTop:4}}>{txt}</div>;
                             })()}

@@ -126,9 +126,11 @@ export default async function handler(req, res) {
       }
     }
 
-    // Plan pago: planExpiry dentro de los próximos 5 días
+    // Plan pago: planExpiry dentro de los próximos 5 días. Con tarjeta (Stripe)
+    // activa y sin cancelación pedida se renueva sola: no se avisa vencimiento.
     const planExpiry = u.planExpiry?.toDate?.();
-    if (!isTrial && u.plan && u.plan !== "free" && planExpiry && planExpiry > now && planExpiry <= in5days) {
+    const renuevaSola = u.stripeStatus === "active" && !u.cancelAtPeriodEnd;
+    if (!isTrial && !renuevaSola && u.plan && u.plan !== "free" && planExpiry && planExpiry > now && planExpiry <= in5days) {
       diasRestantes = Math.max(0, Math.ceil((planExpiry - now) / (1000*60*60*24)));
       isTrial = false;
     }
