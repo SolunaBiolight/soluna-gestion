@@ -110,8 +110,11 @@ export default async function handler(req, res) {
   results.pendientes = pendientes.length;
   if (!pendientes.length) return res.json({ ok: true, ...results });
 
-  // Ventana de blockchain: desde el pedido más viejo, con 30 min de changüí
-  const minTs = Math.min(...pendientes.map(p => toDate(p.createdAt).getTime())) - 30 * 60000;
+  // Ventana de blockchain: desde 7 días ANTES del pedido más viejo. El caso
+  // real: el cliente manda la plata a la tarde y carga el pedido a la noche —
+  // con 30 min de changüí la transferencia quedaba fuera de la ventana y el
+  // bot decía "TxID no está en la blockchain" aunque el hash fuera correcto.
+  const minTs = Math.min(...pendientes.map(p => toDate(p.createdAt).getTime())) - 7 * 86400000;
   const transfers = await fetchTransfers(minTs);
   if (transfers === null) return res.status(200).json({ ok: false, error: "trongrid", ...results });
 

@@ -14834,7 +14834,7 @@ function AppAdmin({T, user, onBack}) {
                     return (
                       <tr key={key} style={{borderBottom:i<mesesRevenue.length-1?`1px solid ${T.borderL}`:"none"}}>
                         <td style={{padding:"10px 16px",color:T.text,fontWeight:500,textTransform:"capitalize"}}>{label}</td>
-                        <td style={{padding:"10px 16px",textAlign:"right",color:val.usdt>0?T.green:T.textSm,fontWeight:600}}>{val.usdt>0?`$${val.usdt} USDT`:"—"}</td>
+                        <td style={{padding:"10px 16px",textAlign:"right",color:val.usdt>0?T.green:T.textSm,fontWeight:600}}>{val.usdt>0?`${(+val.usdt).toFixed(2)} USDT`:"—"}</td>
                         <td style={{padding:"10px 16px",textAlign:"right",color:val.ars>0?T.blue:T.textSm,fontWeight:600}}>{val.ars>0?`$${val.ars.toLocaleString("es-AR")} ARS`:"—"}</td>
                         <td style={{padding:"10px 16px",textAlign:"right",color:T.textMd}}>{val.count}</td>
                       </tr>
