@@ -13936,8 +13936,8 @@ function AppCalendarioPagos({T,user,onHome}){
     if(!(ghNumAR(form.monto)>0)&&!(esPrestamoNuevo&&ghNumAR(form.capital)>0)){ toast("Poné un monto mayor a cero","warning"); return; }
     setSaving(true);
     try{
-      await api("save",{pago:{...form,monto:ghNumAR(form.monto),capital:esPrestamoNuevo?ghNumAR(form.capital):0,tna:esPrestamoNuevo?ghNumAR(form.tna):0},aplicarSerie});
-      toast(form.id?"Pago actualizado":form.tipo==="cuotas"?(esPrestamoNuevo?"Préstamo cargado con su cuadro de cuotas":"Cuotas cargadas"):form.tipo==="mensual"?"Pago mensual cargado (12 meses)":"Pago cargado","success");
+      await api("save",{pago:{...form,monto:ghNumAR(form.monto),capital:esPrestamoNuevo?ghNumAR(form.capital):0,tna:esPrestamoNuevo?ghNumAR(form.tna):0,dividir:!form.id&&form.tipo==="mensual"&&form.dividir?{pct:Number(divPct)||50,dia:parseInt(divDia)||15}:null},aplicarSerie});
+      toast(form.id?"Pago actualizado":form.tipo==="cuotas"?(esPrestamoNuevo?"Préstamo cargado con su cuadro de cuotas":"Cuotas cargadas"):form.tipo==="mensual"?(form.dividir?"Pago mensual cargado en dos partes (12 meses)":"Pago mensual cargado (12 meses)"):"Pago cargado","success");
       setForm(null); await load();
     }catch(e){ toast(e.message,"error"); }
     finally{ setSaving(false); }
@@ -14206,7 +14206,19 @@ function AppCalendarioPagos({T,user,onHome}){
                     <div style={{gridColumn:"1 / -1",fontSize:11,color:T.textSm}}>Se generan {Math.max(0,(parseInt(form.cuotasTotal)||0)-(parseInt(form.cuotaDesde)||1)+1)} vencimientos, uno por mes, desde el {form.vence?form.vence.split("-").reverse().join("/"):"…"}{form.vence&&(parseInt(form.cuotasTotal)||0)>=(parseInt(form.cuotaDesde)||1)?` hasta el ${calpagosSumarMeses(form.vence,(parseInt(form.cuotasTotal)||1)-(parseInt(form.cuotaDesde)||1)).split("-").reverse().join("/")}`:""}.</div>
                   </div>
                 )}
-                {form.tipo==="mensual"&&<div style={{fontSize:11,color:T.textSm,marginTop:8}}>Se cargan 12 meses y se siguen generando solos. Podés cortar la serie cuando quieras.</div>}
+                {form.tipo==="mensual"&&(
+                  <div style={{marginTop:10}}>
+                    <label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:T.text,cursor:"pointer",fontWeight:600}}><input type="checkbox" checked={!!form.dividir} onChange={e=>setForm(f=>({...f,dividir:e.target.checked}))}/> Se paga en dos partes por mes (por ejemplo sueldos 50/50)</label>
+                    {form.dividir&&(
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:8}}>
+                        <div>{lbl("% primera parte")}<input style={iS} inputMode="numeric" value={divPct} onChange={e=>setDivPct(e.target.value)}/></div>
+                        <div>{lbl("Día de la segunda parte")}<input style={iS} inputMode="numeric" value={divDia} onChange={e=>setDivDia(e.target.value)}/></div>
+                        <div style={{gridColumn:"1 / -1",fontSize:11,color:T.textSm}}>{(()=>{ const p=Math.min(99,Math.max(1,Number(divPct)||0)); const m=ghNumAR(form.monto); return m>0&&form.vence?`${calpagosFmt(Math.round(m*p)/100,form.moneda)} el ${Number(form.vence.slice(8))} y ${calpagosFmt(m-Math.round(m*p)/100,form.moneda)} el ${Math.min(31,Math.max(1,parseInt(divDia)||15))} de cada mes. El monto de arriba es el total mensual.`:"Cargá el monto total del mes arriba; se reparte solo."; })()}</div>
+                      </div>
+                    )}
+                    <div style={{fontSize:11,color:T.textSm,marginTop:8}}>Se cargan 12 meses y se siguen generando solos. Podés cortar la serie cuando quieras.</div>
+                  </div>
+                )}
               </div>
             ):(
               <div style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>

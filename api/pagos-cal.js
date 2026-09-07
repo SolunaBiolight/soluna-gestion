@@ -278,9 +278,19 @@ export default async function handler(req, res) {
         }
       } else if (base.tipo === "mensual") {
         const grupo = col.doc().id;
+        // Dividido desde el alta (sueldo 50/50): dos pagos por mes.
+        const dv = p.dividir && typeof p.dividir === "object" ? { pct: Math.min(99, Math.max(1, Number(p.dividir.pct) || 50)), dia: Math.min(31, Math.max(1, parseInt(p.dividir.dia) || 15)) } : null;
         for (let i = 0; i < 12; i++) {
-          const ref = col.doc(); ids.push(ref.id);
-          batch.set(ref, { ...base, grupo, vence: sumarMeses(base.vence, i), pagado: false, creado: now, updatedAt: now });
+          const vence = sumarMeses(base.vence, i);
+          if (dv) {
+            const m1 = Math.round(base.monto * dv.pct) / 100, m2 = Math.round((base.monto - m1) * 100) / 100;
+            const r1 = col.doc(), r2 = col.doc(); ids.push(r1.id, r2.id);
+            batch.set(r1, { ...base, titulo: `${base.titulo} · 1ª parte`, monto: m1, grupo, parteMes: 1, pct: dv.pct, vence, pagado: false, creado: now, updatedAt: now });
+            batch.set(r2, { ...base, titulo: `${base.titulo} · 2ª parte`, monto: m2, grupo, parteMes: 2, pct: 100 - dv.pct, vence: mismoMesDia(vence, dv.dia), pagado: false, creado: now, updatedAt: now });
+          } else {
+            const ref = col.doc(); ids.push(ref.id);
+            batch.set(ref, { ...base, grupo, vence, pagado: false, creado: now, updatedAt: now });
+          }
         }
       } else {
         const ref = col.doc(); ids.push(ref.id);
