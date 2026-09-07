@@ -22,6 +22,8 @@ Actualmente en uso real por Soluna Biolight (anteojos blue light blocker).
 │   ├── orders.js        ← Órdenes TN
 │   ├── arca.js          ← Facturación AFIP
 │   ├── meta.js          ← Meta Ads (auth: verifyAuth + cron con CRON_SECRET)
+│   ├── stripe.js        ← Planes con tarjeta: Checkout/portal/cancel + webhook (secreto en Firestore system/stripe)
+│   ├── check-payments.js← Cron 10 min: acredita pagos USDT TRC20 (TronGrid) — medio alternativo
 │   ├── copilot.js       ← Copilot IA (Gemini + snapshot determinista de Firestore)
 │   ├── _auth.js         ← verifyAuth (Firebase ID token) — no expuesto por Vercel
 │   ├── integrations.js  ← OAuth TN + Shopify
@@ -47,6 +49,8 @@ FIREBASE_CLIENT_EMAIL
 FIREBASE_PRIVATE_KEY
 GOOGLE_AI_KEY
 CRON_SECRET               ← auth de los crons (Vercel lo manda como Bearer)
+STRIPE_SECRET_KEY         ← clave live de Stripe (LLC). El webhook secret NO es env: se crea solo y vive en Firestore system/stripe
+STRIPE_WEBHOOK_SECRET     ← opcional, pisa al de Firestore si se define
 META_APP_ID=905872205806657
 META_APP_SECRET
 NEXT_PUBLIC_META_APP_ID=905872205806657
