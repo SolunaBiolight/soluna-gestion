@@ -837,6 +837,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange"},
     { group:"RECOMPENSAS" },
     {id:"referidos",label:"Referidos", icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
+    {id:"planes",   label:"Suscripción", icon:"M2 5h20v14H2zM2 10h20M6 15h4"},
   ];
   const [closedSubs, setClosedSubs] = React.useState(new Set());
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
@@ -13330,55 +13331,6 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             </div>
           </div>
 
-          {/* Tu plan: cuál tenés hoy, hasta cuándo, y qué planes existen */}
-          {(()=>{
-            const _now=new Date();
-            const planId=userDoc?.plan||"free";
-            const pExp=userDoc?.planExpiry?.toDate?.()||null;
-            const tEnd=userDoc?.trialEnd?.toDate?.()||(userDoc?.trialEnd instanceof Date?userDoc.trialEnd:null);
-            const planVigente=planId!=="free"&&(!pExp||pExp>_now);
-            const enTrial=!planVigente&&tEnd&&tEnd>_now;
-            const esFact=planId==="facturador";
-            const esMedio=planId==="medio";
-            const planNom=esFact?"Facturador":esMedio?"Intermedio":"Pro";
-            const cAct=planVigente?(esFact?"#10b981":esMedio?"#8b5cf6":"#6366f1"):(enTrial?T.green:T.textSm);
-            const nombreAct=planVigente?planNom:(enTrial?"Prueba gratuita":"Sin plan activo");
-            const fmtF=d=>d?d.toLocaleDateString("es-AR",{day:"2-digit",month:"long"}):"";
-            const subAct=planVigente
-              ?(pExp?`Vence el ${fmtF(pExp)}`:"Activo")
-              :enTrial?`Hasta el ${fmtF(tEnd)} — todas las funciones incluidas`
-              :(planId!=="free"?`Tu plan ${planNom} venció${pExp?` el ${fmtF(pExp)}`:""} — renovalo para recuperar el acceso`:"Elegí un plan para usar Growith");
-            const actualId=planVigente?(esFact?"facturador":esMedio?"medio":"plus"):null;
-            return (
-              <div style={{borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:10}}>Tu plan</div>
-                <div style={{background:cAct+"10",border:`1px solid ${cAct}40`,borderRadius:10,padding:"12px 14px",marginBottom:10}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                    <span style={{fontSize:14,fontWeight:800,color:planVigente||enTrial?cAct:T.text}}>{nombreAct}</span>
-                    {(planVigente||enTrial)&&<span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,background:cAct,color:"#fff",borderRadius:99,padding:"2px 8px"}}>ACTIVO</span>}
-                  </div>
-                  <div style={{fontSize:12,color:T.textMd,marginTop:3,lineHeight:1.5}}>{subAct}</div>
-                </div>
-                {[
-                  {id:"facturador",n:"Facturador",c:"#10b981",p:19,d:"Solo el facturador ARCA, ilimitado"},
-                  {id:"medio",n:"Intermedio",c:"#8b5cf6",p:39,d:"Facturador + Meta, Stock, ML, Reclamos, Canjes, Tareas y Envíos"},
-                  {id:"plus",n:"Pro",c:"#6366f1",p:69,d:"Todo Growith: + Dashboard de márgenes y Copilot IA"},
-                ].map(pl=>(
-                  <div key={pl.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,border:`1px solid ${actualId===pl.id?pl.c+"66":T.borderL}`,background:actualId===pl.id?pl.c+"0d":"transparent",marginBottom:6}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <span style={{fontSize:13,fontWeight:700,color:pl.c}}>{pl.n}</span>
-                      <span style={{fontSize:11,color:T.textSm,marginLeft:8}}>{pl.d}</span>
-                    </div>
-                    <span style={{fontSize:12,fontWeight:700,color:T.text,flexShrink:0}}>USD {pl.p}<span style={{fontSize:10,fontWeight:500,color:T.textSm}}>/mes</span></span>
-                    {actualId===pl.id&&<span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,color:pl.c,flexShrink:0}}>ACTUAL</span>}
-                  </div>
-                ))}
-                <button onClick={()=>onNavigate&&onNavigate("planes")} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",width:"100%",marginTop:4}}>
-                  {planVigente?"Ver planes y renovar":"Ver planes y suscribirme"}
-                </button>
-              </div>
-            );
-          })()}
           {editProfile ? (
             <div style={{display:"flex",gap:8}}>
               <button onClick={saveProfile} disabled={pSaving} style={{...BtnPrimary(T),fontSize:12,justifyContent:"center",flex:1}}>{pSaving?"Guardando...":"Guardar"}</button>
@@ -13694,73 +13646,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
         {msg&&<div style={{background:T.greenBg,border:`1.5px solid ${T.green}55`,borderRadius:10,padding:"12px 16px",fontSize:13,color:T.green,marginBottom:16,boxShadow:`0 0 0 1px ${T.green}18, 0 4px 16px ${T.green}18`}}>{msg}</div>}
 
-        {/* Plan / Suscripción */}
+        {/* Ayuda y legal (el plan se administra en la sección Suscripción) */}
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
-          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:16}}>Suscripción</div>
-          {(()=>{
-            const PL={facturador:{n:"Facturador",c:"#10b981",p:19,d:"Solo el facturador ARCA, ilimitado."},medio:{n:"Intermedio",c:"#8b5cf6",p:39,d:"Toda la gestión del e-commerce, sin Dashboard de márgenes ni Copilot."},plus:{n:"Pro",c:"#6366f1",p:69,d:"Todo Growith: Dashboard financiero, Envíos, Stock, Facturador, Ads y Copilot IA."}};
-            const id=userDoc?.plan==="full"?"plus":userDoc?.plan;
-            const pl=PL[id]||null;
-            const toD=v=>v?.toDate?v.toDate():(v?.seconds?new Date(v.seconds*1000):(v?new Date(v):null));
-            const trialEnd=toD(userDoc?.trialEnd), expiry=toD(userDoc?.planExpiry);
-            const hoy=Date.now();
-            const isPago=!!pl&&(!expiry||expiry.getTime()>hoy);
-            const vencido=!!pl&&!!expiry&&expiry.getTime()<=hoy;
-            const diasTrial=trialEnd?Math.max(0,Math.ceil((trialEnd.getTime()-hoy)/86400000)):0;
-            const enTrial=!pl&&diasTrial>0;
-            const stripe=!!userDoc?.stripeSubscriptionId;
-            const cancela=!!userDoc?.cancelAtPeriodEnd;
-            const renueva=isPago&&stripe&&!cancela&&userDoc?.stripeStatus!=="canceled";
-            const fmtF=d=>d?d.toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"}):"";
-            const estado=isPago?(renueva?{t:"Activo · se renueva solo",c:T.green}:cancela?{t:"Activo · no se renueva",c:T.yellow}:{t:"Activo",c:T.green}):vencido?{t:"Vencido",c:T.red}:enTrial?{t:`Prueba gratis · ${diasTrial} día${diasTrial!==1?"s":""}`,c:T.green}:{t:"Prueba finalizada",c:T.orange};
-            const color=pl?pl.c:enTrial?T.green:T.textSm;
-            const portal=async()=>{ try{ const r=await authFetch("/api/stripe?action=portal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid})}); const d=await r.json().catch(()=>({})); if(d.url) window.location.href=d.url; else appAlert(d.error||"No se pudo abrir el portal de pagos"); }catch(e){ appAlert(e.message); } };
-            const cancelar=async(reactivar)=>{
-              if(!reactivar&&!(await appConfirm(`¿Cancelar la renovación del plan ${pl?.n}? Seguís con acceso completo hasta el ${fmtF(expiry)} y no se te cobra más.`,{danger:true,okLabel:"Cancelar renovación"}))) return;
-              try{
-                if(stripe){ const r=await authFetch("/api/stripe?action=cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,reactivar})}); const d=await r.json().catch(()=>({})); if(d.error) throw new Error(d.error); }
-                else await updateDoc(doc(db,"users",user.uid),{cancelAtPeriodEnd:!reactivar});
-                toast(reactivar?"Renovación reactivada ✓":"Listo — tu plan sigue activo hasta el vencimiento","success");
-              }catch(e){ appAlert(e.message); }
-            };
-            return (
-              <div style={{display:"flex",flexDirection:"column",gap:14}}>
-                <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-                  <span style={{width:44,height:44,borderRadius:12,background:color+"18",border:`1px solid ${color}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    <span style={{width:14,height:14,borderRadius:"50%",background:color}}/>
-                  </span>
-                  <div style={{flex:1,minWidth:200}}>
-                    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                      <span style={{fontSize:18,fontWeight:800,color:T.text}}>{pl?`Plan ${pl.n}`:enTrial?"Prueba gratis (todo incluido)":"Sin plan"}</span>
-                      <span style={{fontSize:11,fontWeight:700,color:estado.c,background:estado.c+"18",border:`1px solid ${estado.c}44`,borderRadius:12,padding:"2px 9px"}}>{estado.t}</span>
-                    </div>
-                    <div style={{fontSize:12,color:T.textMd,marginTop:4,lineHeight:1.5}}>{pl?pl.d:enTrial?"Tenés acceso a todo Growith durante la prueba. Elegí un plan cuando quieras para no cortar.":"Tu prueba terminó. Elegí un plan para seguir usando Growith; tus datos siguen guardados."}</div>
-                  </div>
-                  {pl&&<div style={{textAlign:"right"}}><span style={{fontSize:22,fontWeight:800,color:T.text}}>${pl.p}</span><span style={{fontSize:11,color:T.textSm}}> USD/mes</span></div>}
-                </div>
-                {(isPago||vencido||enTrial)&&(
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10}}>
-                    {[
-                      isPago&&renueva?{l:"Próximo cobro",v:fmtF(expiry)}:isPago?{l:cancela?"Acceso hasta":"Vence",v:fmtF(expiry)}:vencido?{l:"Venció",v:fmtF(expiry)}:{l:"La prueba termina",v:fmtF(trialEnd)},
-                      {l:"Medio de pago",v:stripe?"Tarjeta (Stripe)":isPago?"Pago manual":"—"},
-                    ].map(x=>(
-                      <div key={x.l} style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px"}}>
-                        <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>{x.l}</div>
-                        <div style={{fontSize:13,fontWeight:700,color:T.text,marginTop:2}}>{x.v||"—"}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                  <button onClick={()=>onNavigate("planes")} style={{...BtnPrimary(T),justifyContent:"center",fontSize:12}}>{isPago?(id==="plus"?"Ver planes":"Cambiar de plan →"):enTrial?"Elegir un plan →":"Reactivar →"}</button>
-                  {stripe&&<button onClick={portal} style={{...BtnSecondary(T),justifyContent:"center",fontSize:12}}>Tarjeta y facturas</button>}
-                  {isPago&&(cancela
-                    ?<AsyncButton onClick={()=>cancelar(true)} style={{...BtnSecondary(T),justifyContent:"center",fontSize:12}}>Reactivar renovación</AsyncButton>
-                    :<button onClick={()=>cancelar(false)} style={{background:"none",border:"none",color:T.textSm,fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",marginLeft:"auto"}}>Cancelar renovación</button>)}
-                </div>
-              </div>
-            );
-          })()}
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Ayuda y legal</div>
+          <div style={{fontSize:12,color:T.textMd,textAlign:"center"}}>Tu plan, tus pagos y tus facturas se administran desde <button onClick={()=>onNavigate("planes")} style={{background:"none",border:"none",color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:0,fontSize:12}}>Suscripción</button> en el menú.</div>
           <div style={{fontSize:12,color:T.textSm,textAlign:"center",marginTop:14}}>¿Preguntas? Escribinos a <span style={{color:T.accent}}>contacto.growith@gmail.com</span></div>
           {/* Info legal — abre la página pública combinada (privacidad + términos + eliminación de datos) */}
           <div style={{textAlign:"center",marginTop:18}}>
@@ -13790,7 +13679,8 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   const [uDoc,setUDoc]=useState(null); // stripeStatus, cancelAtPeriodEnd, refCreditUsd
   useEffect(()=>{
     if(!user?.uid) return;
-    getDoc(doc(db,"users",user.uid)).then(s=>setUDoc(s.exists()?s.data():{})).catch(()=>setUDoc({}));
+    const unsub=onSnapshot(doc(db,"users",user.uid),s=>setUDoc(s.exists()?s.data():{}),()=>setUDoc({}));
+    return ()=>unsub();
   },[user?.uid]);
   const refCred=Number(uDoc?.refCreditUsd)||0;
 
@@ -13869,6 +13759,16 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       if(d.url) window.location.href=d.url; else appAlert(d.error||"No se pudo abrir el portal de pagos");
     }catch(e){ appAlert("No se pudo abrir el portal de pagos: "+e.message); }
   }
+  async function cancelar(reactivar){
+    if(!reactivar&&!(await appConfirm(`¿Cancelar la renovación del plan ${planActual?.nombre}? Seguís con acceso completo hasta el ${planExpiry?planExpiry.toLocaleDateString("es-AR",{day:"2-digit",month:"long"}):"fin del período"} y no se te cobra más.`,{danger:true,okLabel:"Cancelar renovación"}))) return;
+    try{
+      if(uDoc?.stripeSubscriptionId){
+        const r=await authFetch("/api/stripe?action=cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,reactivar})});
+        const d=await r.json().catch(()=>({})); if(d.error) throw new Error(d.error);
+      } else await updateDoc(doc(db,"users",user.uid),{cancelAtPeriodEnd:!reactivar});
+      toast(reactivar?"Renovación reactivada ✓":"Listo — tu plan sigue activo hasta el vencimiento","success");
+    }catch(e){ appAlert(e.message); }
+  }
   // Vuelta de Stripe: #/planes?stripe=ok → confirmación (el plan se activa por
   // webhook en segundos; el listener del usuario actualiza userPlan solo).
   useEffect(()=>{
@@ -13919,7 +13819,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
             <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:6}}>Tu prueba gratuita terminó</div>
             <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,maxWidth:420,margin:"0 auto"}}>Elegí un plan para seguir usando Growith. Tus datos, facturas y configuraciones siguen guardados intactos.</div>
           </div>
-        ):(
+        ):isPago?null:(
           <div style={{textAlign:"center",marginBottom:28}}>
             <div style={{display:"inline-block",background:"#6366f118",border:"1px solid #6366f130",borderRadius:20,padding:"4px 14px",fontSize:11,fontWeight:700,color:"#6366f1",letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:14}}>Precio de lanzamiento</div>
             <h1 style={{fontSize:28,fontWeight:900,color:T.text,letterSpacing:-0.5,margin:"0 0 10px",lineHeight:1.2}}>
@@ -13930,19 +13830,39 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
           </div>
         )}
 
-        {/* Estado actual */}
-        {isPago&&planActual&&(
-          <div style={{background:planActual.color+"10",border:`1px solid ${planActual.color}40`,borderRadius:12,padding:"12px 18px",display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
-            <span style={{width:10,height:10,borderRadius:"50%",background:planActual.color,flexShrink:0}}/>
-            <div style={{flex:1,minWidth:200}}>
-              <span style={{fontSize:13,fontWeight:700,color:planActual.color}}>Plan {planActual.nombre} activo</span>
-              {venceTxt&&<span style={{fontSize:12,color:T.textSm,marginLeft:10}}>{renuevaSolo?`· Se renueva el ${venceTxt}`:uDoc?.cancelAtPeriodEnd?`· Termina el ${venceTxt} (no se renueva)`:`· Vence el ${venceTxt}`}</span>}
+        {/* Tu suscripción: estado, próximo cobro, medio de pago y acciones */}
+        {isPago&&planActual&&(()=>{
+          const cancela=!!uDoc?.cancelAtPeriodEnd;
+          const stripe=!!uDoc?.stripeSubscriptionId;
+          const estado=renuevaSolo?{t:"Se renueva sola",c:T.green}:cancela?{t:"No se renueva",c:T.yellow}:{t:"Activo",c:T.green};
+          return (
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderLeft:`3px solid ${planActual.color}`,borderRadius:14,padding:"18px 20px",marginBottom:28}}>
+              <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:220}}>
+                  <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6,marginBottom:4}}>Tu suscripción</div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                    <span style={{fontSize:20,fontWeight:800,color:T.text}}>Plan {planActual.nombre}</span>
+                    <span style={{fontSize:11,fontWeight:700,color:estado.c,background:estado.c+"18",border:`1px solid ${estado.c}44`,borderRadius:12,padding:"2px 9px"}}>{estado.t}</span>
+                  </div>
+                  <div style={{fontSize:12,color:T.textMd,marginTop:4}}>{planActual.tagline}</div>
+                </div>
+                <div style={{display:"flex",gap:22,flexWrap:"wrap"}}>
+                  <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>{renuevaSolo?"Próximo cobro":cancela?"Acceso hasta":"Vence"}</div><div style={{fontSize:14,fontWeight:700,color:T.text,marginTop:2}}>{venceTxt||"—"}</div></div>
+                  <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Importe</div><div style={{fontSize:14,fontWeight:700,color:T.text,marginTop:2}}>USD {planActual.precio_usdt}/mes</div></div>
+                  <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Medio de pago</div><div style={{fontSize:14,fontWeight:700,color:T.text,marginTop:2}}>{stripe?"Tarjeta (Stripe)":"Pago manual"}</div></div>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginTop:14,paddingTop:14,borderTop:`1px solid ${T.borderL}`}}>
+                {stripe&&<button onClick={abrirPortal} style={{...BtnSecondary(T),fontSize:12}}>Tarjeta y facturas</button>}
+                {cancela
+                  ?<AsyncButton onClick={()=>cancelar(true)} style={{...BtnPrimary(T),fontSize:12}}>Reactivar renovación</AsyncButton>
+                  :<button onClick={()=>cancelar(false)} style={{background:"none",border:"none",color:T.textSm,fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline"}}>Cancelar renovación</button>}
+                <span style={{marginLeft:"auto",fontSize:12,color:T.textSm}}>{planActualId==="plus"?"Tenés el plan completo.":"¿Querés más? Elegí un plan abajo, el cambio es inmediato."}</span>
+              </div>
             </div>
-            {uDoc?.stripeCustomerId
-              ?<button onClick={abrirPortal} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>Tarjeta y facturas</button>
-              :<span style={{fontSize:12,color:T.textSm}}>Elegí un plan abajo para pasar a cobro con tarjeta</span>}
-          </div>
-        )}
+          );
+        })()}
+        {isPago&&<div style={{textAlign:"center",fontSize:16,fontWeight:800,color:T.text,marginBottom:14}}>Cambiar de plan</div>}
         {refCred>0&&(
           <div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:12,padding:"10px 16px",fontSize:12,color:T.green,fontWeight:600,marginBottom:20,textAlign:"center"}}>
             Tenés USD {refCred.toLocaleString("es-AR",{minimumFractionDigits:2})} de crédito por referidos: se descuenta solo en el pago.
@@ -36362,6 +36282,7 @@ export default function App() {
         {id:"canjes",label:"Canjes",icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"},
         {id:"tareas",label:"Tareas",icon:"M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"},
         {id:"referidos",label:"Referidos",icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
+        {id:"planes",label:"Suscripción",icon:"M2 5h20v14H2zM2 10h20M6 15h4"},
       ].filter(it=>seccionPermitida(it.id)).map(it=>(
         <button key={it.id} onClick={()=>setPage(it.id)} style={{
           display:"inline-flex", flexShrink:0, minWidth:64, background:"transparent", border:"none", cursor:"pointer",
