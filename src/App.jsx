@@ -13757,7 +13757,7 @@ function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onC
               <div style={{position:"absolute",left:0,right:0,top:"100%",zIndex:5,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,marginTop:4,maxHeight:220,overflow:"auto",boxShadow:DS.shadow?.md||"0 8px 24px rgba(0,0,0,.25)"}}>
                 {vis.map(r=>(
                   <div key={r.key} onClick={()=>agregar(r)} style={{padding:"8px 12px",cursor:"pointer",fontSize:12,color:T.text,borderBottom:`1px solid ${T.borderL}`,display:"flex",gap:8}}>
-                    <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.nombre}{r.variante?<span style={{color:T.textMd}}> · {r.variante}</span>:null}</span>
+                    <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.variante?<><b>{r.variante}</b><span style={{color:T.textSm}}> · {r.nombre}</span></>:r.nombre}</span>
                     {r.sku&&<span style={{fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{r.sku}</span>}
                   </div>
                 ))}
@@ -13773,7 +13773,7 @@ function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onC
               <div style={{display:"grid",gridTemplateColumns:"1fr 80px 120px 110px 28px",gap:8,padding:"6px 10px",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,background:T.surface}}><span>Ítem</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Costo unit.</span><span style={{textAlign:"right"}}>Subtotal</span><span/></div>
               {items.map(x=>(
                 <div key={x.key} style={{display:"grid",gridTemplateColumns:"1fr 80px 120px 110px 28px",gap:8,padding:"6px 10px",alignItems:"center",borderTop:`1px solid ${T.borderL}`,fontSize:12}}>
-                  <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.text}}>{x.nombre}{x.variante?<span style={{color:T.textMd}}> · {x.variante}</span>:null}</span>
+                  <span style={{minWidth:0}}><div style={{fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.variante||x.nombre}</div>{(x.variante||x.sku)&&<div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.variante?x.nombre:""}{x.sku?(x.variante?" · ":"")+x.sku:""}</div>}</span>
                   <input style={{...iS,padding:"5px 8px",textAlign:"right",fontSize:12}} inputMode="numeric" value={x.cantidad} onChange={e=>setItem(x.key,{cantidad:e.target.value.replace(/\D/g,"")})}/>
                   <input style={{...iS,padding:"5px 8px",textAlign:"right",fontSize:12}} inputMode="decimal" placeholder="0" value={x.costo} onChange={e=>setItem(x.key,{costo:e.target.value})}/>
                   <span style={{textAlign:"right",fontWeight:700,color:T.text,fontVariantNumeric:"tabular-nums"}}>{fmt((Number(x.cantidad)||0)*ghNumAR(x.costo))}</span>
@@ -14104,7 +14104,7 @@ function AppCalendarioPagos({T,user,onHome}){
                         <div style={{marginTop:8,fontSize:10}}>
                           {p.items.map((it,k)=>(
                             <div key={k} style={{display:"flex",gap:6,padding:"3px 0",color:T.textMd,borderTop:k?`1px solid ${T.borderL}`:"none"}}>
-                              <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.text}}>{it.nombre}{it.variante?` · ${it.variante}`:""}</span>
+                              <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.text}} title={it.nombre}>{it.variante?<><b>{it.variante}</b><span style={{color:T.textSm}}> · {it.nombre}</span></>:it.nombre}</span>
                               <span style={{fontVariantNumeric:"tabular-nums"}}>{it.cantidad} × {calpagosFmt(it.costo,p.moneda)}</span>
                             </div>
                           ))}
