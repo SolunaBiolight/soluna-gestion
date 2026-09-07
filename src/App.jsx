@@ -835,6 +835,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange"},
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange"},
+    {id:"calendario", label:"Calendario de Pagos", icon:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18", count:alerts.calendario, badge:"red"},
     { group:"RECOMPENSAS" },
     {id:"referidos",label:"Referidos", icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
     {id:"planes",   label:"Suscripción", icon:"M2 5h20v14H2zM2 10h20M6 15h4"},
@@ -1512,7 +1513,7 @@ const SECCIONES_MIEMBRO=[
   {id:"tareas",label:"Tareas"},{id:"canjes",label:"Canjes"},{id:"envios",label:"Envíos"},
   {id:"reclamos",label:"Reclamos"},{id:"stock",label:"Stock"},{id:"meta",label:"Meta Ads"},
   {id:"ml",label:"Mercado Libre"},{id:"margenes",label:"Dashboard"},{id:"arca",label:"Facturador"},
-  {id:"copilot",label:"Copilot"},
+  {id:"copilot",label:"Copilot"},{id:"calendario",label:"Calendario de Pagos"},
 ];
 function MiembrosCuentaCard({T,user}){
   const iS=InputStyle(T);
@@ -2913,6 +2914,7 @@ const SECTION_ICONS = {
   tareas:  "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",
   config:  "M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1zM15 12a3 3 0 11-6 0 3 3 0 016 0z",
   planes:  "M2 5h20v14H2zM2 10h20M6 15h4",
+  calendario: "M3 4h18v18H3zM16 2v4M8 2v4M3 10h18",
   admin:   "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
 };
 
@@ -13669,6 +13671,294 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 // ===========================================
 // APP PLANES - Página de suscripción
 // ===========================================
+// ═══════════════════════════════════════════════════════════════════════════
+// CALENDARIO DE PAGOS — obligaciones del negocio (alquiler, préstamos, cuotas,
+// tarjetas, proveedores, impuestos, sueldos, servicios). Datos en
+// users/{uid}/pagos_cal vía /api/pagos-cal (Admin SDK). Publica el badge del
+// sidebar por evento "gh-calpagos-alert".
+// ═══════════════════════════════════════════════════════════════════════════
+const CALPAGOS_CATS=[
+  {id:"alquiler",label:"Alquiler"},{id:"prestamo",label:"Préstamo"},{id:"tarjeta",label:"Tarjeta"},{id:"proveedor",label:"Proveedor"},
+  {id:"impuestos",label:"Impuestos"},{id:"servicios",label:"Servicios"},{id:"sueldos",label:"Sueldos"},{id:"otro",label:"Otro"},
+];
+const calpagosCatLabel=id=>(CALPAGOS_CATS.find(c=>c.id===id)||CALPAGOS_CATS[7]).label;
+function calpagosSumarMeses(fecha,n){ const [y,m,d]=fecha.split("-").map(Number); const t=new Date(Date.UTC(y,m-1+n,1)); const ult=new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth()+1,0)).getUTCDate(); return `${t.getUTCFullYear()}-${String(t.getUTCMonth()+1).padStart(2,"0")}-${String(Math.min(d,ult)).padStart(2,"0")}`; }
+function calpagosFmt(monto,moneda){ return moneda==="USD"?`USD ${(Number(monto)||0).toLocaleString("es-AR",{maximumFractionDigits:0})}`:fmtMoney(monto); }
+function AppCalendarioPagos({T,user,onHome}){
+  const iS=InputStyle(T);
+  const hoy=hoyAR();
+  const [items,setItems]=useState(null);
+  const [err,setErr]=useState("");
+  const [mes,setMes]=useState(hoy.slice(0,7));
+  const [vista,setVista]=useState(()=>{try{return localStorage.getItem("growith_calpagos_vista")||"calendario";}catch(_){return "calendario";}});
+  const [catFiltro,setCatFiltro]=useState("");
+  const [form,setForm]=useState(null); // null | {id?, titulo, categoria, monto, moneda, vence, tipo, cuotasTotal, cuotaDesde, notas, grupo?, cuotaN?, cuotaTotal?}
+  const [saving,setSaving]=useState(false);
+  const [aplicarSerie,setAplicarSerie]=useState(false);
+  const [diaAbierto,setDiaAbierto]=useState(null);
+  const setVistaP=v=>{setVista(v);try{localStorage.setItem("growith_calpagos_vista",v);}catch(_){}};
+
+  const api=async(action,extra={})=>{
+    const r=await authFetch("/api/pagos-cal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,uid:user.uid,...extra})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`);
+    return d;
+  };
+  const load=async()=>{
+    try{ const d=await api("list"); setItems(d.items||[]); setErr(""); }
+    catch(e){ setErr(e.message); if(!items) setItems([]); }
+  };
+  useEffect(()=>{ if(user?.uid) load(); },[user?.uid]);
+  // Badge del sidebar: vencidos + vence hoy + vence mañana (sin pagar)
+  useEffect(()=>{
+    if(!items) return;
+    const man=sumarDiasAR(hoy,1);
+    const n=items.filter(i=>!i.pagado&&i.vence<=man).length;
+    try{ localStorage.setItem(ghKey("growith_calpagos_alert"),String(n)); }catch(_){}
+    window.dispatchEvent(new Event("gh-calpagos-alert"));
+  },[items]);
+
+  const [yy,mm]=mes.split("-").map(Number);
+  const mesLabel=`${mesesNombres[mm-1][0].toUpperCase()+mesesNombres[mm-1].slice(1)} ${yy}`;
+  const shiftMes=n=>{ let y=yy,m=mm+n; if(m>12){m=1;y++;} if(m<1){m=12;y--;} setMes(`${y}-${String(m).padStart(2,"0")}`); };
+  const lista=(items||[]).filter(i=>!catFiltro||i.categoria===catFiltro);
+  const estadoDe=i=>i.pagado?"pagado":i.vence<hoy?"vencido":i.vence===hoy?"hoy":i.vence<=sumarDiasAR(hoy,7)?"proximo":"futuro";
+  const colorEstado={pagado:T.green,vencido:T.red,hoy:T.yellow,proximo:T.orange,futuro:T.textSm};
+  const labelEstado={pagado:"Pagado",vencido:"Vencido",hoy:"Vence hoy",proximo:"Esta semana",futuro:"Pendiente"};
+
+  // KPIs
+  const sum=(arr,mon)=>arr.filter(i=>i.moneda===mon).reduce((s,i)=>s+(Number(i.monto)||0),0);
+  const fmtPar=arr=>{ const a=sum(arr,"ARS"), u=sum(arr,"USD"); const parts=[]; if(a||!u) parts.push(fmtMoney(a)); if(u) parts.push(`USD ${u.toLocaleString("es-AR",{maximumFractionDigits:0})}`); return parts.join(" + "); };
+  const pend=lista.filter(i=>!i.pagado);
+  const vencidos=pend.filter(i=>i.vence<hoy);
+  const semana=pend.filter(i=>i.vence>=hoy&&i.vence<=sumarDiasAR(hoy,7));
+  const mesPend=pend.filter(i=>i.vence.slice(0,7)===mes);
+  const mesPag=lista.filter(i=>i.pagado&&i.vence.slice(0,7)===mes);
+  const proy=n=>pend.filter(i=>i.vence>=hoy&&i.vence<=sumarDiasAR(hoy,n));
+
+  // Calendario del mes: celdas Lun..Dom
+  const primero=new Date(Date.UTC(yy,mm-1,1)); const diasMes=new Date(Date.UTC(yy,mm,0)).getUTCDate();
+  const offset=(primero.getUTCDay()+6)%7; // lunes=0
+  const celdas=[]; for(let i=0;i<offset;i++) celdas.push(null); for(let d=1;d<=diasMes;d++) celdas.push(`${mes}-${String(d).padStart(2,"0")}`); while(celdas.length%7) celdas.push(null);
+  const porDia={}; for(const i of lista) (porDia[i.vence] ||= []).push(i);
+
+  const nuevo=(vence)=>{ setAplicarSerie(false); setForm({titulo:"",categoria:"otro",monto:"",moneda:"ARS",vence:vence||hoy,tipo:"unico",cuotasTotal:"12",cuotaDesde:"1",notas:""}); };
+  const editar=(i)=>{ setAplicarSerie(false); setForm({id:i.id,titulo:i.titulo,categoria:i.categoria,monto:String(i.monto),moneda:i.moneda,vence:i.vence,tipo:i.tipo||"unico",notas:i.notas||"",grupo:i.grupo||null,cuotaN:i.cuotaN,cuotaTotal:i.cuotaTotal,pagado:!!i.pagado}); };
+  const guardar=async()=>{
+    if(!form.titulo.trim()){ toast("Poné a quién o qué se paga","warning"); return; }
+    if(!(ghNumAR(form.monto)>0)){ toast("Poné un monto mayor a cero","warning"); return; }
+    setSaving(true);
+    try{
+      await api("save",{pago:{...form,monto:ghNumAR(form.monto)},aplicarSerie});
+      toast(form.id?"Pago actualizado":form.tipo==="cuotas"?"Cuotas cargadas":form.tipo==="mensual"?"Pago mensual cargado (12 meses)":"Pago cargado","success");
+      setForm(null); await load();
+    }catch(e){ toast(e.message,"error"); }
+    finally{ setSaving(false); }
+  };
+  const marcar=async(i,pagado)=>{
+    setItems(p=>p.map(x=>x.id===i.id?{...x,pagado,pagadoAt:pagado?hoy:null}:x));
+    try{ await api("pagar",{id:i.id,pagado}); }catch(e){ toast(e.message,"error"); load(); }
+  };
+  const borrar=async(i)=>{
+    if(!(await appConfirm(`¿Borrar "${i.titulo}" del ${i.vence.split("-").reverse().join("/")}?`,{danger:true,okLabel:"Borrar"}))) return;
+    let serie=false;
+    if(i.grupo) serie=!!(await appConfirm("Es parte de una serie. ¿Borrás también todos los vencimientos pendientes de la serie?",{okLabel:"Toda la serie",cancelLabel:"Solo este"}));
+    try{ await api("delete",{id:i.id,serie}); setForm(null); await load(); toast("Borrado","success"); }catch(e){ toast(e.message,"error"); }
+  };
+
+  const Chip=({i,onClick})=>{ const e=estadoDe(i); const c=colorEstado[e]; return (
+    <div onClick={onClick} title={`${i.titulo} · ${calpagosFmt(i.monto,i.moneda)} · ${labelEstado[e]}`} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,padding:"2px 6px",borderRadius:5,background:c+"1a",color:e==="futuro"?T.textMd:c,cursor:"pointer",overflow:"hidden",whiteSpace:"nowrap",textDecoration:i.pagado?"line-through":"none",borderLeft:`2px solid ${c}`}}>
+      <span style={{overflow:"hidden",textOverflow:"ellipsis",flex:1}}>{i.titulo}</span><span style={{fontWeight:700,flexShrink:0}}>{calpagosFmt(i.monto,i.moneda)}</span>
+    </div>); };
+  const Fila=({i})=>{ const e=estadoDe(i); const c=colorEstado[e]; return (
+    <div style={{display:"grid",gridTemplateColumns:"96px 1fr 110px 130px 110px auto",gap:10,alignItems:"center",padding:"9px 0",borderTop:`1px solid ${T.borderL}`,fontSize:12}}>
+      <span style={{color:T.textMd,fontVariantNumeric:"tabular-nums"}}>{i.vence.split("-").reverse().join("/")}</span>
+      <span style={{minWidth:0}}><span onClick={()=>editar(i)} style={{fontWeight:600,color:T.text,cursor:"pointer",textDecoration:i.pagado?"line-through":"none"}}>{i.titulo}</span>{i.cuotaN&&<span style={{color:T.textSm,marginLeft:6}}>cuota {i.cuotaN}/{i.cuotaTotal}</span>}{i.tipo==="mensual"&&<span style={{color:T.textSm,marginLeft:6}}>mensual</span>}</span>
+      <span><DSBadge T={T} color={T.textSm} size="sm">{calpagosCatLabel(i.categoria)}</DSBadge></span>
+      <span style={{fontWeight:700,color:T.text,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{calpagosFmt(i.monto,i.moneda)}</span>
+      <span><DSBadge T={T} color={c} size="sm">{labelEstado[e]}</DSBadge></span>
+      <span style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+        <Btn T={T} variant={i.pagado?"ghost":"success"} size="sm" onClick={()=>marcar(i,!i.pagado)}>{i.pagado?"Desmarcar":"Pagado"}</Btn>
+        <Btn T={T} variant="ghost" size="sm" onClick={()=>editar(i)}>Editar</Btn>
+      </span>
+    </div>); };
+  const segBtn=(on)=>({padding:"5px 12px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:6,background:on?T.card:"transparent",color:on?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?"0 1px 3px rgba(0,0,0,0.12)":"none"});
+  const listaMes=lista.filter(i=>i.vence.slice(0,7)===mes).sort((a,b)=>a.vence.localeCompare(b.vence)||a.titulo.localeCompare(b.titulo));
+  const listaPend=pend.slice().sort((a,b)=>a.vence.localeCompare(b.vence));
+
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <AppTopbar T={T} section="Calendario de Pagos" sectionId="calendario" onHome={onHome}>
+        <Btn T={T} variant="primary" size="sm" onClick={()=>nuevo()}>Nuevo pago</Btn>
+      </AppTopbar>
+      <div style={{padding:"20px 24px 64px",maxWidth:1100,margin:"0 auto",width:"100%"}}>
+        {err&&<div style={{fontSize:12,color:T.red,background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:8,padding:"8px 12px",marginBottom:12}}>{err}</div>}
+
+        {/* KPIs */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:16}}>
+          {[
+            {label:"Vencidos",val:vencidos.length?fmtPar(vencidos):"—",sub:vencidos.length?`${vencidos.length} pago${vencidos.length===1?"":"s"} sin pagar`:"Nada vencido",color:vencidos.length?T.red:T.green},
+            {label:"Vence esta semana",val:semana.length?fmtPar(semana):"—",sub:`${semana.length} pago${semana.length===1?"":"s"} hasta el ${sumarDiasAR(hoy,7).split("-").reverse().slice(0,2).join("/")}`,color:semana.length?T.yellow:T.text},
+            {label:`Falta pagar en ${mesesNombres[mm-1]}`,val:mesPend.length?fmtPar(mesPend):"—",sub:`${mesPend.length} pendiente${mesPend.length===1?"":"s"}`,color:T.text},
+            {label:`Pagado en ${mesesNombres[mm-1]}`,val:mesPag.length?fmtPar(mesPag):"—",sub:`${mesPag.length} pago${mesPag.length===1?"":"s"}`,color:T.green},
+          ].map(k=>(
+            <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+              <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{k.label}</div>
+              <div style={{fontSize:20,fontWeight:800,color:k.color,letterSpacing:-0.4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{k.val}</div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:4}}>{k.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Toolbar */}
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
+          <div style={{display:"inline-flex",alignItems:"center",background:T.surface,borderRadius:8,padding:2}}>
+            <button onClick={()=>shiftMes(-1)} style={{padding:"4px 10px",border:"none",background:"transparent",color:T.textMd,cursor:"pointer",fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}>‹</button>
+            <span style={{padding:"4px 8px",fontSize:13,fontWeight:700,color:T.text,minWidth:140,textAlign:"center"}}>{mesLabel}</span>
+            <button onClick={()=>shiftMes(1)} style={{padding:"4px 10px",border:"none",background:"transparent",color:T.textMd,cursor:"pointer",fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}>›</button>
+          </div>
+          {mes!==hoy.slice(0,7)&&<Btn T={T} variant="ghost" size="sm" onClick={()=>setMes(hoy.slice(0,7))}>Hoy</Btn>}
+          <select value={catFiltro} onChange={e=>setCatFiltro(e.target.value)} style={{...iS,width:"auto",padding:"5px 10px",fontSize:12}}>
+            <option value="">Todas las categorías</option>
+            {CALPAGOS_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+          <div style={{marginLeft:"auto",display:"inline-flex",background:T.surface,borderRadius:8,padding:2}}>
+            <button onClick={()=>setVistaP("calendario")} style={segBtn(vista==="calendario")}>Calendario</button>
+            <button onClick={()=>setVistaP("lista")} style={segBtn(vista==="lista")}>Lista</button>
+          </div>
+        </div>
+
+        {items===null?(
+          <div style={{display:"flex",alignItems:"center",gap:8,color:T.textSm,fontSize:12,padding:"20px 0"}}><Spinner size={14} color={T.accent}/> Cargando…</div>
+        ):items.length===0?(
+          <DSEmpty T={T} title="Todavía no cargaste ningún pago" subtitle="Anotá alquiler, préstamos, cuotas, tarjetas, proveedores, impuestos o sueldos. Los mensuales y las cuotas se generan solos mes a mes." action={<Btn T={T} variant="primary" onClick={()=>nuevo()}>Cargar el primero</Btn>}/>
+        ):vista==="calendario"?(
+          <Card T={T} padding="md" style={{marginBottom:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+              {["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(d=><div key={d} style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,textAlign:"center",padding:"4px 0"}}>{d}</div>)}
+              {celdas.map((f,idx)=>{
+                if(!f) return <div key={"e"+idx} style={{minHeight:86,borderRadius:8,background:T.bg+"66"}}/>;
+                const arr=(porDia[f]||[]).slice().sort((a,b)=>Number(a.pagado)-Number(b.pagado));
+                const esHoy=f===hoy; const pasado=f<hoy;
+                const abierto=diaAbierto===f;
+                return (
+                  <div key={f} onClick={()=>nuevo(f)} style={{minHeight:86,borderRadius:8,border:`1px solid ${esHoy?T.accentSolid:T.borderL}`,background:esHoy?T.accentSolid+"0d":T.bg,padding:"5px 6px",cursor:"pointer",opacity:pasado?0.85:1,display:"flex",flexDirection:"column",gap:3}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{fontSize:11,fontWeight:esHoy?800:600,color:esHoy?T.accent:T.textMd}}>{Number(f.slice(8))}</span>
+                      {arr.length>0&&<span style={{fontSize:9,color:T.textSm}}>{fmtPar(arr.filter(i=>!i.pagado))||""}</span>}
+                    </div>
+                    {(abierto?arr:arr.slice(0,3)).map(i=><Chip key={i.id} i={i} onClick={e=>{e.stopPropagation();editar(i);}}/>)}
+                    {!abierto&&arr.length>3&&<span onClick={e=>{e.stopPropagation();setDiaAbierto(f);}} style={{fontSize:10,color:T.accent,fontWeight:600}}>+{arr.length-3} más</span>}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:10,fontSize:10,color:T.textSm}}>
+              {Object.entries(labelEstado).map(([k,l])=><span key={k} style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:8,height:8,borderRadius:2,background:colorEstado[k]}}/>{l}</span>)}
+              <span style={{marginLeft:"auto"}}>Tocá un día para cargar un pago en esa fecha.</span>
+            </div>
+          </Card>
+        ):(
+          <Card T={T} padding="lg" style={{marginBottom:16}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Pagos de {mesLabel}</div>
+            {listaMes.length===0?<div style={{fontSize:12,color:T.textSm,padding:"14px 0"}}>No hay pagos en este mes{catFiltro?" para esa categoría":""}.</div>
+            :<div style={{overflowX:"auto"}}><div style={{minWidth:720}}>{listaMes.map(i=><Fila key={i.id} i={i}/>)}</div></div>}
+          </Card>
+        )}
+
+        {items&&items.length>0&&(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:16}}>
+            <Card T={T} padding="lg">
+              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Comprometido a futuro</div>
+              {[30,60,90].map(n=>{ const arr=proy(n); return (
+                <div key={n} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:n>30?`1px solid ${T.borderL}`:"none",fontSize:12}}>
+                  <span style={{color:T.textMd,flex:1}}>Próximos {n} días</span>
+                  <span style={{color:T.textSm}}>{arr.length} pago{arr.length===1?"":"s"}</span>
+                  <span style={{fontWeight:800,color:T.text,fontVariantNumeric:"tabular-nums"}}>{arr.length?fmtPar(arr):"—"}</span>
+                </div>); })}
+              <div style={{fontSize:11,color:T.textSm,marginTop:8}}>Suma cuotas, mensuales y pagos únicos pendientes desde hoy.</div>
+            </Card>
+            <Card T={T} padding="lg">
+              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Próximos vencimientos</div>
+              {listaPend.length===0?<div style={{fontSize:12,color:T.textSm}}>No queda nada pendiente.</div>
+              :listaPend.slice(0,8).map((i,idx)=>{ const e=estadoDe(i); return (
+                <div key={i.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:idx>0?`1px solid ${T.borderL}`:"none",fontSize:12}}>
+                  <span style={{width:8,height:8,borderRadius:"50%",background:colorEstado[e],flexShrink:0}}/>
+                  <span style={{color:T.textMd,width:48,fontVariantNumeric:"tabular-nums"}}>{i.vence.split("-").reverse().slice(0,2).join("/")}</span>
+                  <span onClick={()=>editar(i)} style={{flex:1,minWidth:0,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer"}}>{i.titulo}{i.cuotaN?<span style={{color:T.textSm,fontWeight:400}}> · {i.cuotaN}/{i.cuotaTotal}</span>:null}</span>
+                  <span style={{fontWeight:800,color:T.text,fontVariantNumeric:"tabular-nums",flexShrink:0}}>{calpagosFmt(i.monto,i.moneda)}</span>
+                  <Btn T={T} variant="ghost" size="sm" onClick={()=>marcar(i,true)}>Pagado</Btn>
+                </div>); })}
+            </Card>
+          </div>
+        )}
+      </div>
+
+      {/* Modal alta / edición */}
+      <Modal T={T} open={!!form} onClose={()=>!saving&&setForm(null)} title={form?.id?"Editar pago":"Nuevo pago"} width={520}>
+        {form&&(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>A quién o qué se paga</div>
+              <input style={iS} placeholder="Alquiler del local, Cuota préstamo Galicia, Tarjeta Visa…" value={form.titulo} onChange={e=>setForm(f=>({...f,titulo:e.target.value}))} autoFocus/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>Categoría</div>
+                <select style={iS} value={form.categoria} onChange={e=>setForm(f=>({...f,categoria:e.target.value}))}>{CALPAGOS_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>Vencimiento{form.tipo!=="unico"&&!form.id?" (primero)":""}</div>
+                <input type="date" style={iS} value={form.vence} onChange={e=>setForm(f=>({...f,vence:e.target.value}))}/>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>Monto</div>
+                <input style={iS} inputMode="decimal" placeholder="0" value={form.monto} onChange={e=>setForm(f=>({...f,monto:e.target.value}))}/>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>Moneda</div>
+                <select style={iS} value={form.moneda} onChange={e=>setForm(f=>({...f,moneda:e.target.value}))}><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (USD)</option></select>
+              </div>
+            </div>
+            {!form.id?(
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>Se repite</div>
+                <div style={{display:"inline-flex",background:T.surface,borderRadius:8,padding:2}}>
+                  {[["unico","Una vez"],["mensual","Todos los meses"],["cuotas","En cuotas"]].map(([v,l])=><button key={v} onClick={()=>setForm(f=>({...f,tipo:v}))} style={segBtn(form.tipo===v)}>{l}</button>)}
+                </div>
+                {form.tipo==="cuotas"&&(
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}>
+                    <div><div style={{fontSize:11,color:T.textSm,marginBottom:4}}>Cantidad de cuotas</div><input style={iS} inputMode="numeric" value={form.cuotasTotal} onChange={e=>setForm(f=>({...f,cuotasTotal:e.target.value}))}/></div>
+                    <div><div style={{fontSize:11,color:T.textSm,marginBottom:4}}>Empezar desde la cuota</div><input style={iS} inputMode="numeric" value={form.cuotaDesde} onChange={e=>setForm(f=>({...f,cuotaDesde:e.target.value}))}/></div>
+                    <div style={{gridColumn:"1 / -1",fontSize:11,color:T.textSm}}>Se generan {Math.max(0,(parseInt(form.cuotasTotal)||0)-(parseInt(form.cuotaDesde)||1)+1)} vencimientos, uno por mes, desde el {form.vence?form.vence.split("-").reverse().join("/"):"…"}{form.vence&&(parseInt(form.cuotasTotal)||0)>=(parseInt(form.cuotaDesde)||1)?` hasta el ${calpagosSumarMeses(form.vence,(parseInt(form.cuotasTotal)||1)-(parseInt(form.cuotaDesde)||1)).split("-").reverse().join("/")}`:""}.</div>
+                  </div>
+                )}
+                {form.tipo==="mensual"&&<div style={{fontSize:11,color:T.textSm,marginTop:8}}>Se cargan 12 meses y se siguen generando solos. Podés cortar la serie cuando quieras.</div>}
+              </div>
+            ):(
+              <div style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                {form.cuotaN?<span>Cuota {form.cuotaN} de {form.cuotaTotal}</span>:form.tipo==="mensual"?<span>Pago mensual</span>:<span>Pago único</span>}
+                {form.grupo&&<label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={aplicarSerie} onChange={e=>setAplicarSerie(e.target.checked)}/> Aplicar monto y nombre a toda la serie pendiente</label>}
+              </div>
+            )}
+            <div>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>Notas</div>
+              <textarea style={{...iS,minHeight:60,resize:"vertical"}} placeholder="CBU, número de cuenta, referencia, lo que necesites recordar" value={form.notas} onChange={e=>setForm(f=>({...f,notas:e.target.value}))}/>
+            </div>
+            <div style={{display:"flex",gap:8,alignItems:"center",paddingTop:4}}>
+              {form.id&&<Btn T={T} variant="danger" size="sm" onClick={()=>borrar(form)} disabled={saving}>Borrar</Btn>}
+              {form.id&&form.grupo&&form.tipo==="mensual"&&<Btn T={T} variant="ghost" size="sm" disabled={saving} onClick={async()=>{ if(!(await appConfirm("¿Cortar esta serie mensual? Se borran los vencimientos futuros sin pagar y no se generan más.",{danger:true,okLabel:"Cortar serie"}))) return; try{ await api("cerrar_serie",{grupo:form.grupo}); setForm(null); await load(); toast("Serie cortada","success"); }catch(e){ toast(e.message,"error"); } }}>Cortar serie</Btn>}
+              <span style={{flex:1}}/>
+              {form.id&&<Btn T={T} variant={form.pagado?"ghost":"success"} size="sm" disabled={saving} onClick={async()=>{ await marcar(form,!form.pagado); setForm(null); }}>{form.pagado?"Marcar como no pagado":"Marcar pagado"}</Btn>}
+              <Btn T={T} variant="secondary" size="sm" onClick={()=>setForm(null)} disabled={saving}>Cancelar</Btn>
+              <Btn T={T} variant="primary" size="sm" onClick={guardar} disabled={saving}>{saving?"Guardando…":"Guardar"}</Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
 function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT_EMAIL, isTrialExpired=false}) {
   // Sección Suscripción: estado del plan, pago con tarjeta (Stripe) y cambio
   // de plan. Único medio de pago desde el 7/sep/2026.
@@ -29067,7 +29357,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                   const mTarea = t.match(/\[\[ACCION:crear_tarea:([^|\]]+)\|([^|\]]+)\|([^\]]*)\]\]/);
                   const mStock = t.match(/\[\[ACCION:ajustar_stock:([^|\]]+)\|(\d+)\|([^\]]*)\]\]/);
                   const clean = t.replace(/\[\[ACCION:[^\]]*\]\]/g,"").trim();
-                  const NOMBRES = {home:"Inicio",margenes:"Dashboard",envios:"Envíos",reclamos:"Reclamos",canjes:"Canjes",stock:"Stock",meta:"Meta Ads",ml:"Mercado Libre",arca:"Facturador",tareas:"Tareas",config:"Configuración",planes:"Planes",copilot:"Copilot"};
+                  const NOMBRES = {home:"Inicio",margenes:"Dashboard",envios:"Envíos",reclamos:"Reclamos",canjes:"Canjes",stock:"Stock",meta:"Meta Ads",ml:"Mercado Libre",arca:"Facturador",tareas:"Tareas",calendario:"Calendario de Pagos",config:"Configuración",planes:"Suscripción",copilot:"Copilot"};
                   const ejecutarMeta = async () => {
                     const [,acc,camp,status,nombre] = mMeta;
                     const verbo = status==="PAUSED"?"pausar":"activar";
@@ -35612,7 +35902,7 @@ export default function App() {
   },[user&&user.uid]);
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","copilot","margenes","arca","meta","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos"];
+  const VALID_PAGES = ["home","copilot","margenes","arca","meta","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario"];
   // Alias legacy: #/rendimiento era el nombre viejo del Dashboard (hoy #/margenes)
   const _aliasPage = (p) => p === "rendimiento" ? "margenes" : p;
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
@@ -35766,6 +36056,25 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return ()=>window.removeEventListener("keydown", onKey);
   },[]);
+
+  // Badge de Calendario de Pagos: vencidos + vence hoy + vence mañana. La sección
+  // lo publica en localStorage al cargar; al abrir la app se consulta el resumen.
+  const [calAlert,setCalAlert]=useState(0);
+  useEffect(()=>{
+    if(!user?.uid){ setCalAlert(0); return; }
+    const k=`growith_calpagos_alert_${user.uid}`;
+    const leer=()=>{ try{ setCalAlert(parseInt(localStorage.getItem(k)||"0",10)||0); }catch(_){ setCalAlert(0); } };
+    leer();
+    window.addEventListener("gh-calpagos-alert",leer);
+    (async()=>{
+      try{
+        const r=await authFetch("/api/pagos-cal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"resumen",uid:user.uid})});
+        const d=await r.json().catch(()=>({}));
+        if(r.ok&&!d.error){ const n=(d.vencidos||0)+(d.hoy||0)+(d.manana||0); try{ localStorage.setItem(k,String(n)); }catch(_){} setCalAlert(n); }
+      }catch(_){}
+    })();
+    return ()=>window.removeEventListener("gh-calpagos-alert",leer);
+  },[user?.uid]);
 
   // Badge de "Configuraciones" (Dashboard) en el sidebar: AppRendimiento publica en
   // localStorage cuántos productos vendidos no tienen costo cargado.
@@ -36232,6 +36541,7 @@ export default function App() {
         {id:"reclamos",label:"Reclamos",icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"},
         {id:"canjes",label:"Canjes",icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"},
         {id:"tareas",label:"Tareas",icon:"M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"},
+        {id:"calendario",label:"Pagos",icon:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18"},
         {id:"referidos",label:"Referidos",icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
         {id:"planes",label:"Suscripción",icon:"M2 5h20v14H2zM2 10h20M6 15h4"},
       ].filter(it=>seccionPermitida(it.id)).map(it=>(
@@ -36433,6 +36743,7 @@ export default function App() {
   else if(page==="reclamos") pageContent = adminGate("reclamos") || planGate("plus") || requiereTN("Reclamos") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
   else if(page==="canjes") pageContent = adminGate("canjes") || planGate("plus") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
   else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="calendario") pageContent = <PageView T={T} pageKey="calendario"><AppCalendarioPagos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="envios") pageContent = adminGate("envios") || planGate("plus") || requiereTN("Envíos") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
   else pageContent = <HomeScreen T={T} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
@@ -36452,7 +36763,7 @@ export default function App() {
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesAcciones, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesAcciones, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert, calendario: calAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
       {/* Multi-org F2 modals */}
       {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
       {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}

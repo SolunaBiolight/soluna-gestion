@@ -75,7 +75,8 @@ ANDREANI_CONTRATO_ESTANDAR / ANDREANI_CONTRATO_SUCURSAL  ← contratos de envío
 | `AppMetaAds` | Meta Ads | Campañas Facebook/Instagram |
 | `AppArca` | ARCA | Facturación electrónica AFIP |
 | `ConfigScreen` | Config | Integraciones, tokens, configuración |
-| `AppPlanes` | Planes | Gestión de suscripción |
+| `AppPlanes` | Suscripción | Plan, pago con tarjeta (Stripe), portal, cancelar |
+| `AppCalendarioPagos` | Calendario de Pagos | Obligaciones del negocio (alquiler, préstamos, cuotas, tarjetas…) — `api/pagos-cal.js`, Firestore `users/{uid}/pagos_cal` |
 | `AppAdmin` | Admin | Panel de administración (solo admins) |
 
 ## Navegación
@@ -188,6 +189,8 @@ growith_conceptos_{uid}    → JSON conceptos frecuentes del facturador ARCA
 growith_colab_banner_{token} / growith_pwa_banner_{token} → "1" banners cerrados en portal colaborador
 growith_expiry_dismiss_{uid}_{fecha} → "1" banner de vencimiento de plan/trial cerrado ese día
 growith_home_start_{uid}   → "1" checklist "Empecemos" del Home cerrado manualmente
+growith_calpagos_vista     → "calendario" | "lista" (vista del Calendario de Pagos)
+growith_calpagos_alert_{uid} → número de pagos vencidos/hoy/mañana (badge del sidebar; evento "gh-calpagos-alert")
 (sessionStorage) growith_copilot_conv → JSON {id,msgs} conversación activa del Copilot (cache; la verdad vive en users/{uid}/copilot_convs)
 (sessionStorage) growith_copilot_pending → prompt pendiente al abrir Copilot desde otra sección (ej. configuración guiada del Home)
 (sessionStorage) growith_colab_token / growith_board_id_{token} → sesión de portal colaborador / identidad de tablero compartido
