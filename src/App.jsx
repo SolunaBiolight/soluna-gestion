@@ -15579,45 +15579,43 @@ function RefTipoIcon({tipo, size=15}) {
     default: return <svg {...p} fill="none" stroke={c} strokeWidth="2" strokeLinecap="round"><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1L11 5"/><path d="M14 11a5 5 0 0 0-7.1 0l-2 2a5 5 0 0 0 7.1 7.1L13 19"/></svg>;
   }
 }
-function RefLinkRow({T, link}) {
+function RefLinkRow({T, link, first}) {
   const [h,setH]=React.useState(false);
   const meta=REF_TIPOS[link.tipo||"otro"]||REF_TIPOS.otro;
   return (
     <a href={link.url} target="_blank" rel="noreferrer"
       onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-      style={{display:"flex",alignItems:"center",gap:10,padding:"8px 11px",borderRadius:DS.r.md,textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",background:h?meta.color+"1f":T.surface,border:`1px solid ${h?meta.color+"55":T.border}`,transition:`all 0.15s ${DS.ease}`}}>
-      <span style={{display:"grid",placeItems:"center",width:24,height:24,borderRadius:7,background:meta.color+"22",color:meta.color,flexShrink:0}}><RefTipoIcon tipo={link.tipo||"otro"}/></span>
-      <span style={{flex:1,fontSize:DS.font.md,fontWeight:DS.w.semibold,color:h?T.text:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{link.label||meta.label}</span>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{color:meta.color,opacity:h?0.9:0.35,flexShrink:0,transition:"opacity 0.15s"}}><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>
+      style={{display:"flex",alignItems:"center",gap:10,padding:"8px 4px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",borderTop:first?"none":`1px solid ${T.borderL}`,background:h?T.surface:"transparent",borderRadius:h?6:0,transition:"background 0.12s"}}>
+      <span style={{display:"grid",placeItems:"center",width:22,height:22,borderRadius:6,background:meta.color+"1a",color:meta.color,flexShrink:0}}><RefTipoIcon tipo={link.tipo||"otro"} size={13}/></span>
+      <span style={{flex:1,fontSize:DS.font.base,fontWeight:DS.w.medium,color:h?T.text:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{link.label||meta.label}</span>
+      <span style={{fontSize:DS.font.xs,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:140,opacity:h?1:0.7}}>{String(link.url||"").replace(/^https?:\/\/(www\.)?/,"").split(/[/?#]/)[0]}</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{color:T.textSm,opacity:h?1:0.5,flexShrink:0}}><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>
     </a>
   );
 }
 function RefCard({T, refData, colabMode, onEdit, onDelete}) {
   const [h,setH]=React.useState(false);
-  const accent=refData.color||"#6366f1";
+  const accent=refData.color||T.accent;
   const links=refData.links||[];
   return (
     <div onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-      style={{background:T.card,border:`1px solid ${h?accent+"55":T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden",display:"flex",flexDirection:"column",transition:`all 0.2s ${DS.ease}`,transform:h?"translateY(-3px)":"none",boxShadow:h?`0 12px 32px rgba(0,0,0,0.22), 0 0 0 1px ${accent}22`:"0 1px 3px rgba(0,0,0,0.08)"}}>
-      <div style={{height:3,background:`linear-gradient(90deg,${accent},${accent}55)`}}/>
-      <div style={{padding:"14px 16px",display:"flex",flexDirection:"column",gap:12,flex:1}}>
-        <div style={{display:"flex",alignItems:"center",gap:11}}>
-          <div style={{width:34,height:34,borderRadius:10,background:`linear-gradient(135deg,${accent},${accent}aa)`,display:"grid",placeItems:"center",fontSize:15,fontWeight:DS.w.bold,color:"#fff",flexShrink:0,boxShadow:`0 2px 8px ${accent}40`}}>{(refData.nombre||"?")[0].toUpperCase()}</div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,lineHeight:1.2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{refData.nombre}</div>
-            <div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:2}}>{links.length} {links.length===1?"enlace":"enlaces"}</div>
+      style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"14px 16px",display:"flex",flexDirection:"column",gap:10,boxShadow:h?DS.shadow?.sm||"none":"none",transition:"box-shadow 0.15s"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{width:32,height:32,borderRadius:8,background:accent+"1f",color:accent,display:"grid",placeItems:"center",fontSize:14,fontWeight:DS.w.bold,flexShrink:0}}>{(refData.nombre||"?").charAt(0).toUpperCase()}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,lineHeight:1.2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{refData.nombre}</div>
+          <div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:2}}>{links.length} {links.length===1?"enlace":"enlaces"}</div>
+        </div>
+        {!colabMode&&(
+          <div style={{display:"flex",gap:2,opacity:h?1:0,transition:"opacity 0.15s"}}>
+            <button onClick={()=>onEdit(refData)} title="Editar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"4px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}><GhI n="edit" size={13}/></button>
+            <button onClick={()=>onDelete(refData.id)} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"4px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
           </div>
-          {!colabMode&&(
-            <div style={{display:"flex",gap:2,opacity:h?1:0,transition:"opacity 0.15s"}}>
-              <button onClick={()=>onEdit(refData)} title="Editar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"4px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}><GhI n="edit" size={12}/></button>
-              <button onClick={()=>onDelete(refData.id)} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"4px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
-            </div>
-          )}
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:7}}>
-          {links.length===0&&<div style={{fontSize:DS.font.sm,color:T.textSm,fontStyle:"italic"}}>Sin enlaces{colabMode?"":" — editá para agregar"}</div>}
-          {links.map((l,li)=><RefLinkRow key={li} T={T} link={l}/>)}
-        </div>
+        )}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",borderTop:`1px solid ${T.borderL}`,paddingTop:4}}>
+        {links.length===0&&<div style={{fontSize:DS.font.sm,color:T.textSm,padding:"6px 4px"}}>Sin enlaces{colabMode?"":". Editá para agregar."}</div>}
+        {links.map((l,li)=><RefLinkRow key={li} T={T} link={l} first={li===0}/>)}
       </div>
     </div>
   );
