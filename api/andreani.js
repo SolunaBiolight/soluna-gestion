@@ -596,6 +596,57 @@ async function geocodeDireccion({ dir, loc, prov, cp }) {
 
 // ─── Cotización (compartida entre `cotizar` y `emitir`) ────────────────────
 
+// ── Localidades oficiales de Andreani (GET /v1/localidades) ─────────────────
+// Andreani pidió que la dupla localidad/provincia salga de su catálogo y no del
+// texto de la tienda (llegaban direcciones enteras en "localidad"). El catálogo
+// es uno solo para todo el país (~30k filas, 3.5MB): se baja una vez por
+// instancia y se indexa por código postal; se renueva cada 24 h.
+let _locCat = null; // { ts, byCp: Map<cp, [{localidad, provincia, partido}]> }
+async function catalogoLocalidades() {
+  if (_locCat && Date.now() - _locCat.ts < 24 * 3600000) return _locCat.byCp;
+  const r = await fetchTimeout(`${ANDREANI_BASE}/v1/localidades`, { headers: { Accept: "application/json" } }, 20000);
+  if (!r.ok) throw new Error(`localidades HTTP ${r.status}`);
+  const arr = await r.json();
+  const byCp = new Map();
+  for (const x of (Array.isArray(arr) ? arr : [])) {
+    const item = { localidad: String(x.localidad || "").trim(), provincia: String(x.provincia || "").trim(), partido: String(x.partido || "").trim() };
+    if (!item.localidad) continue;
+    for (const cp of (x.codigosPostales || [])) { const k = String(cp).trim(); if (!byCp.has(k)) byCp.set(k, []); byCp.get(k).push(item); }
+  }
+  _locCat = { ts: Date.now(), byCp };
+  return byCp;
+}
+// Elige la localidad oficial para un CP a partir de los textos que manda la
+// tienda (localidad, ciudad, provincia). Devuelve null si no puede resolver.
+async function resolverLocalidad(cp, textos = [], region = "") {
+  try {
+    const byCp = await catalogoLocalidades();
+    const cands = byCp.get(String(cp || "").trim()) || [];
+    if (!cands.length) return null;
+    const toks = s => nrmTxt(s).split(/[^a-z0-9]+/).filter(t => t.length > 1);
+    const textoToks = new Set(textos.flatMap(t => toks(t)));
+    const regionN = nrmTxt(region);
+    let mejor = null, mejorScore = 0;
+    for (const c of cands) {
+      const ct = toks(c.localidad).filter(t => !["barrio", "de", "del", "la", "el", "los", "las"].includes(t));
+      if (!ct.length) continue;
+      let hit = 0; for (const t of ct) if (textoToks.has(t)) hit++;
+      let score = hit / ct.length;
+      if (score > 0 && regionN && nrmTxt(c.provincia).includes(regionN.split(" ")[0])) score += 0.1;
+      if (score > mejorScore) { mejorScore = score; mejor = c; }
+    }
+    if (mejor && mejorScore >= 0.5) return { ...mejor, score: mejorScore, cands: cands.length };
+    // Sin coincidencia por texto: única opción, o la de la misma provincia
+    // más "genérica" (sin " - barrio"), o la primera del catálogo.
+    if (cands.length === 1) return { ...cands[0], score: 0, cands: 1 };
+    const prov = regionN ? cands.filter(c => nrmTxt(c.provincia).includes(regionN.split(" ")[0]) || regionN.includes(nrmTxt(c.provincia).split(" ")[0])) : [];
+    const pool = prov.length ? prov : cands;
+    const sinBarrio = pool.filter(c => !c.localidad.includes(" - "));
+    const elegido = (sinBarrio.length ? sinBarrio : pool).slice().sort((a, b) => a.localidad.length - b.localidad.length)[0];
+    return { ...elegido, score: 0, cands: cands.length };
+  } catch (e) { console.warn("[andreani] resolverLocalidad:", e.message); return null; }
+}
+
 function normalizarBultos(bultos) {
   const arr = Array.isArray(bultos) ? bultos : [];
   const out = arr.map(b => ({
@@ -1300,14 +1351,21 @@ export default async function handler(req, res) {
       // solo letras, números, espacios y . , - para que ninguna etiqueta rebote.
       const limpiarTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9\s.,-]/g, " ").replace(/\s{2,}/g, " ").trim();
       const contrato = contratoDe(env, tipo);
+      // Localidad/provincia del catálogo oficial (Andreani rechazaba etiquetas
+      // con la dirección entera en "localidad"). Si el catálogo no resuelve,
+      // queda lo que mandó la tienda.
+      let locDestino = null, locOrigen = null;
+      if (tipo !== "sucursal") locDestino = await resolverLocalidad(destino.postal.codigoPostal, [destino.postal.localidad, destino.postal.ciudad, destino.postal.partido], destino.postal.region);
+      locOrigen = await resolverLocalidad(origen.codigoPostal, [origen.localidad], origen.region);
+      if (locDestino) console.log(`[andreani] localidad destino CP ${destino.postal.codigoPostal}: "${destino.postal.localidad}" → "${locDestino.localidad}" (${locDestino.provincia}, score ${locDestino.score.toFixed(2)} de ${locDestino.cands})`);
       const destinoBody = tipo === "sucursal"
         ? { sucursal: { id: Number(destino.sucursalId) } }
         : { postal: {
             codigoPostal: String(destino.postal.codigoPostal).trim(),
             calle:        limpiarTxt(destino.postal.calle),
             numero:       String(destino.postal.numero).trim(),
-            localidad:    limpiarTxt(destino.postal.localidad),
-            region:       limpiarTxt(destino.postal.region),
+            localidad:    limpiarTxt(locDestino ? locDestino.localidad : destino.postal.localidad),
+            region:       limpiarTxt(locDestino ? locDestino.provincia : destino.postal.region),
             pais: "Argentina",
             componentesDeDireccion: [
               { meta: "piso", contenido: limpiarTxt(piso || destino.postal.piso || "") },
@@ -1325,7 +1383,7 @@ export default async function handler(req, res) {
         contrato,
         origen: { postal: {
           codigoPostal: origen.codigoPostal, calle: limpiarTxt(origen.calle), numero: origen.numero,
-          localidad: limpiarTxt(origen.localidad), region: limpiarTxt(origen.region || ""), pais: "Argentina",
+          localidad: limpiarTxt(locOrigen ? locOrigen.localidad : origen.localidad), region: limpiarTxt(locOrigen ? locOrigen.provincia : (origen.region || "")), pais: "Argentina",
         } },
         destino: destinoBody,
         remitente: personaDe(remitente),
@@ -1337,6 +1395,9 @@ export default async function handler(req, res) {
           altoCm: b.altoCm,
           anchoCm: b.anchoCm,
           volumenCm: b.largoCm * b.altoCm * b.anchoCm,
+          // Pedido de Andreani: el valor declarado va en ConImpuestos; el sin
+          // impuestos se informa neto de IVA para que no quede en cero.
+          valorDeclaradoSinImpuestos: Math.round(b.valorDeclarado / 1.21),
           valorDeclaradoConImpuestos: b.valorDeclarado,
           referencias: [
             { meta: "detalle", contenido: String(productoAEntregar || "Paquete") },

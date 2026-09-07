@@ -8784,7 +8784,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             cpDestino:r.tipo==="sucursal"?cpDestinoDe(o):String(o.cp||"").trim(),
             destino:r.tipo==="sucursal"
               ?{sucursalId:String(r.oficial.id)}
-              :{postal:{codigoPostal:String(o.cp||"").trim(),calle:String(o.direccion||"").trim(),numero:String(o.dirNumero||"").trim(),localidad:String(o.localidad||o.ciudad||"").trim(),region:String(o.provincia||"").trim()}},
+              :{postal:{codigoPostal:String(o.cp||"").trim(),calle:String(o.direccion||"").trim(),numero:String(o.dirNumero||"").trim(),localidad:String(o.localidad||o.ciudad||"").trim(),ciudad:String(o.ciudad||"").trim(),region:String(o.provincia||"").trim()}},
             destinatario:{
               nombreCompleto:String(o.comprador||"").trim(),
               documentoNumero:String(o.dni||"").replace(/\D/g,""),
