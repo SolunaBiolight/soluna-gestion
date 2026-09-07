@@ -24,8 +24,11 @@ function initAdmin() {
 // ─── Admin constants (antiguo admin.js) ──────────────────────────────────
 // Precios REALES de venta (deben coincidir con los de AppPlanes en el frontend;
 // antes el MRR del panel se calculaba con valores viejos y salía ~63% bajo).
-const PLAN_PRICE_USDT = { plus: 79 };
-const PLAN_PRICE_ARS  = { plus: 79000 };
+const PLAN_PRICE_USDT = { plus: 79, medio: 39, facturador: 19 };
+const PLAN_PRICE_ARS  = { plus: 79000, medio: 39000, facturador: 19000 };
+// Nombre lindo del plan para mails / UI del backend.
+const PLAN_LABEL = { plus: "Pro", full: "Pro", medio: "Intermedio", facturador: "Facturador", free: "Free" };
+const planLabel = p => PLAN_LABEL[p] || "Pro";
 const CONFIG_DOC = "growith_app_config";
 function addMonths(date, n) { const d = new Date(date); d.setMonth(d.getMonth() + Number(n)); return d; }
 // ─── fin Admin constants ──────────────────────────────────────────────────
@@ -1040,7 +1043,7 @@ export default async function handler(req, res) {
     if (action === "crearPago") {
       if (typeof authViaTeam !== "undefined" && authViaTeam) return res.status(403).json({ error: "Solo el dueño de la cuenta puede gestionar pagos." });
       const { plan, method, currency = "", amount, txHash = "", transferRef = "", nota = "", meses = 1, periodo = "mensual", email = "" } = body;
-      if (!["facturador", "plus"].includes(plan)) return res.status(400).json({ error: "Plan inválido" });
+      if (!["facturador", "plus", "medio"].includes(plan)) return res.status(400).json({ error: "Plan inválido" });
       if (!Number(amount) || Number(amount) <= 0) return res.status(400).json({ error: "Monto inválido" });
       const metodo = method === "cripto" ? "cripto" : "transfer";
       if (metodo === "cripto" && !String(txHash).trim()) return res.status(400).json({ error: "Falta el hash de transacción (TxID)" });
@@ -1085,12 +1088,12 @@ export default async function handler(req, res) {
           const dolarCripto = Math.max(0, Number(body.dolarCripto) || 0);
           await sendEmail({
             to: "contacto.growith@gmail.com",
-            subject: `Transferencia por confirmar — ${email || uid} — ${plan === "facturador" ? "Facturador" : "Pro"}${periodo === "anual" ? " ANUAL" : ""}`,
+            subject: `Transferencia por confirmar — ${email || uid} — ${planLabel(plan)}${periodo === "anual" ? " ANUAL" : ""}`,
             html: `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px">
   <h2 style="font-size:18px">Nueva transferencia en pesos por confirmar</h2>
   <p style="font-size:14px;line-height:1.7">
     Cuenta: <strong>${String(email || uid).slice(0, 120)}</strong><br/>
-    Plan: <strong>${plan === "facturador" ? "Facturador" : "Pro"}</strong> · ${periodo === "anual" ? "Anual (12 meses)" : "Mensual"}<br/>
+    Plan: <strong>${planLabel(plan)}</strong> · ${periodo === "anual" ? "Anual (12 meses)" : "Mensual"}<br/>
     Monto esperado: <strong>${arsMonto ? `$${arsMonto.toLocaleString("es-AR")} ARS` : `USD ${Number(amount) || 0}`}</strong>${dolarCripto ? ` (dólar cripto $${Math.round(dolarCripto).toLocaleString("es-AR")})` : ""}<br/>
     ${String(transferRef).trim() ? `Referencia: <strong>${String(transferRef).trim().slice(0, 120)}</strong><br/>` : ""}
     ${String(nota).trim() ? `Nota: ${String(nota).trim().slice(0, 300)}<br/>` : ""}
@@ -2046,7 +2049,7 @@ export default async function handler(req, res) {
           const email = (uSnap.data() || {}).email;
           if (email) {
             const hasta = expiry.toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" });
-            const planNombre = plan === "facturador" ? "Facturador" : "Pro";
+            const planNombre = planLabel(plan);
             await sendEmail({
               to: email,
               subject: `Tu plan ${planNombre} está activo`,

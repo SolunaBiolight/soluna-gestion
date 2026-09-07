@@ -914,8 +914,14 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
         {GROUPS.filter(item=>!(adminOnlySections||[]).includes(item.id)||isAdmin)
           // Miembro de otro espacio: solo sus secciones habilitadas (los títulos de grupo quedan si tienen algo visible)
           .filter(item=>{ if(!seccionesMiembro) return true; if(item.group) return true; return seccionesMiembro[item.id]===true; })
-          // Plan Facturador (sin trial): solo ve Inicio y Facturador — el resto ni aparece
-          .filter(item=>{ if(userPlan!=="facturador"||isInTrial) return true; return item.group ? item.group==="FINANZAS" : ["home","arca"].includes(item.id); })
+          // Gateo por plan (sin trial): Facturador ($19) = solo Inicio + Facturador.
+          // Intermedio ($39) = TODO menos Dashboard (margenes) + Copilot. Pro = todo.
+          .filter(item=>{
+            if(isInTrial) return true;
+            if(userPlan==="facturador") return item.group ? item.group==="FINANZAS" : ["home","arca"].includes(item.id);
+            if(userPlan==="medio")      return item.group ? true : !["copilot","margenes"].includes(item.id);
+            return true;
+          })
           .map((item,i)=>{
           if(item.group) {
             if(collapsed) return null;
@@ -1023,7 +1029,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
               }
               <div style={{flex:1,minWidth:0,textAlign:"left"}}>
                 <div style={{fontSize:DS.font.md,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.displayName||user?.email?.split("@")[0]}</div>
-                <div style={{fontSize:DS.font.xs,color:T.textSm}}>{seccionesMiembro?"Miembro del equipo":userPlan==="plus"||userPlan==="full"?"Pro":userPlan==="facturador"?"Facturador":isInTrial?"Prueba gratis":"Trial vencido"}</div>
+                <div style={{fontSize:DS.font.xs,color:T.textSm}}>{seccionesMiembro?"Miembro del equipo":userPlan==="plus"||userPlan==="full"?"Pro":userPlan==="medio"?"Intermedio":userPlan==="facturador"?"Facturador":isInTrial?"Prueba gratis":"Trial vencido"}</div>
               </div>
               <span style={{color:T.textSm,fontSize:11,flexShrink:0}}>{acctOpen?"▾":"⇅"}</span>
             </button>
@@ -13315,14 +13321,16 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             const planVigente=planId!=="free"&&(!pExp||pExp>_now);
             const enTrial=!planVigente&&tEnd&&tEnd>_now;
             const esFact=planId==="facturador";
-            const cAct=planVigente?(esFact?"#10b981":"#6366f1"):(enTrial?T.green:T.textSm);
-            const nombreAct=planVigente?(esFact?"Facturador":"Pro"):(enTrial?"Prueba gratuita":"Sin plan activo");
+            const esMedio=planId==="medio";
+            const planNom=esFact?"Facturador":esMedio?"Intermedio":"Pro";
+            const cAct=planVigente?(esFact?"#10b981":esMedio?"#8b5cf6":"#6366f1"):(enTrial?T.green:T.textSm);
+            const nombreAct=planVigente?planNom:(enTrial?"Prueba gratuita":"Sin plan activo");
             const fmtF=d=>d?d.toLocaleDateString("es-AR",{day:"2-digit",month:"long"}):"";
             const subAct=planVigente
               ?(pExp?`Vence el ${fmtF(pExp)}`:"Activo")
               :enTrial?`Hasta el ${fmtF(tEnd)} — todas las funciones incluidas`
-              :(planId!=="free"?`Tu plan ${esFact?"Facturador":"Pro"} venció${pExp?` el ${fmtF(pExp)}`:""} — renovalo para recuperar el acceso`:"Elegí un plan para usar Growith");
-            const actualId=planVigente?(esFact?"facturador":"plus"):null;
+              :(planId!=="free"?`Tu plan ${planNom} venció${pExp?` el ${fmtF(pExp)}`:""} — renovalo para recuperar el acceso`:"Elegí un plan para usar Growith");
+            const actualId=planVigente?(esFact?"facturador":esMedio?"medio":"plus"):null;
             return (
               <div style={{borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:10}}>Tu plan</div>
@@ -13335,7 +13343,8 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                 </div>
                 {[
                   {id:"facturador",n:"Facturador",c:"#10b981",p:19,d:"Solo el facturador ARCA, ilimitado"},
-                  {id:"plus",n:"Pro",c:"#6366f1",p:69,d:"Todo Growith: márgenes, envíos, stock, ads, copilot"},
+                  {id:"medio",n:"Intermedio",c:"#8b5cf6",p:39,d:"Facturador + Meta, Stock, ML, Reclamos, Canjes, Tareas y Envíos"},
+                  {id:"plus",n:"Pro",c:"#6366f1",p:69,d:"Todo Growith: + Dashboard de márgenes y Copilot IA"},
                 ].map(pl=>(
                   <div key={pl.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,border:`1px solid ${actualId===pl.id?pl.c+"66":T.borderL}`,background:actualId===pl.id?pl.c+"0d":"transparent",marginBottom:6}}>
                     <div style={{flex:1,minWidth:0}}>
@@ -13810,6 +13819,24 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       ],
     },
     {
+      id:"medio", nombre:"Intermedio", color:"#8b5cf6", icon:"",
+      precio_usdt:39, precio_ars:39000,
+      precio_usdt_anual:32, precio_ars_anual:32000,
+      precio_normal:59,
+      tagline:"Toda la gestión de tu e-commerce (sin el Dashboard de márgenes ni el Copilot)",
+      features:[
+        "Todo lo del plan Facturador",
+        "Meta Ads y Mercado Ads",
+        "Stock cruzado TN + Mercado Libre + Shopify",
+        "Mercado Libre integrado",
+        "Envíos + etiquetas Andreani con SKU",
+        "Reclamos ilimitados",
+        "Canjes e influencers ilimitados",
+        "Gestión de equipo + tareas ilimitadas",
+        "Tiendas ilimitadas",
+      ],
+    },
+    {
       id:"plus", nombre:"Pro", color:"#6366f1", icon:"", destacado:true,
       precio_usdt:69, precio_ars:69000,
       precio_usdt_anual:57, precio_ars_anual:57000,
@@ -14141,7 +14168,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
           <div style={{background:(esFacturador?"#10b981":"#6366f1")+"10",border:`1px solid ${esFacturador?"#10b981":"#6366f1"}40`,borderRadius:12,padding:"12px 18px",display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={esFacturador?"#10b981":"#6366f1"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
             <div style={{flex:1}}>
-              <span style={{fontSize:13,fontWeight:700,color:esFacturador?"#10b981":"#6366f1"}}>Plan {esFacturador?"Facturador":"Pro"} activo</span>
+              <span style={{fontSize:13,fontWeight:700,color:esFacturador?"#10b981":userPlan==="medio"?"#8b5cf6":"#6366f1"}}>Plan {esFacturador?"Facturador":userPlan==="medio"?"Intermedio":"Pro"} activo</span>
               {planExpiry&&<span style={{fontSize:12,color:T.textSm,marginLeft:10}}>· Vence: {planExpiry.toLocaleDateString("es-AR",{day:"2-digit",month:"long"})}</span>}
             </div>
             <span style={{fontSize:12,color:T.textSm}}>{esFacturador?"¿Querés todo Growith? Pasate a Pro abajo →":"Para renovar, completá el pago abajo →"}</span>
@@ -25794,6 +25821,9 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead }) {
   const [publishing, setPublishing] = React.useState(false);
   const [result, setResult] = React.useState(null);
   const scrollRef = React.useRef(null);
+  // Candado: el Publicador queda en stand-by hasta ingresar la clave (solo para probarlo internamente).
+  const [unlocked, setUnlocked] = React.useState(() => { try { return localStorage.getItem("growith_pub_unlock") === "1"; } catch (_) { return false; } });
+  const [keyInput, setKeyInput] = React.useState("");
 
   React.useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, ready]);
   React.useEffect(() => {
@@ -25839,6 +25869,21 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead }) {
     fontSize: 13, lineHeight: 1.5, maxWidth: "82%", whiteSpace: "pre-wrap", fontFamily: "'Inter',system-ui,sans-serif",
   });
   const money = n => `${cur}${(Number(n) || 0).toLocaleString("es-AR")}`;
+
+  // Candado (stand-by): sin la clave no se ve el chat. Solo para pruebas internas.
+  if (!unlocked) return (
+    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 14, padding: "42px 26px", textAlign: "center", maxWidth: 420, margin: "36px auto" }}>
+      <div style={{ fontSize: 40, marginBottom: 12 }}>🔒</div>
+      <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>Publicador IA — en pruebas</div>
+      <div style={{ fontSize: 12.5, color: T.textSm, marginTop: 6, marginBottom: 18, lineHeight: 1.5 }}>Función en fase beta. Ingresá la clave para desbloquearla.</div>
+      <div style={{ display: "flex", gap: 8, maxWidth: 300, margin: "0 auto" }}>
+        <input type="password" value={keyInput} autoFocus onChange={e => setKeyInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && keyInput === "thiago123") { try { localStorage.setItem("growith_pub_unlock", "1"); } catch (_) {} setUnlocked(true); } }}
+          placeholder="Clave" style={{ flex: 1, background: T.input, border: `1px solid ${keyInput && keyInput !== "thiago123" ? T.red : T.inputBorder}`, borderRadius: 9, padding: "10px 13px", fontSize: 13, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }} />
+        <button onClick={() => { if (keyInput === "thiago123") { try { localStorage.setItem("growith_pub_unlock", "1"); } catch (_) {} setUnlocked(true); } }} style={{ ...BtnPrimary(T), padding: "10px 16px", fontSize: 13 }}>Entrar</button>
+      </div>
+    </div>
+  );
 
   if (tokenDead) return <DSEmpty T={T} icon="🔌" title="Conectá tu cuenta de Meta" subtitle="Para usar el Publicador IA necesitás una cuenta de Meta Ads conectada, con Página y Pixel configurados (pestaña Cuenta)." />;
 
