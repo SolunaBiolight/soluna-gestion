@@ -13700,31 +13700,6 @@ function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onC
   const [moneda,setMoneda]=useState(monedaInicial||"USD");
   const [catalogo,setCatalogo]=useState(null);
   const [busq,setBusq]=useState("");
-  const [vista,setVista]=useState("agenda");           // "agenda" | "fijos"
-  const [fijos,setFijos]=useState([]);
-  const [fijoForm,setFijoForm]=useState(null);         // plantilla en edición
-  const [fijoSaving,setFijoSaving]=useState(false);
-  const fijoDe=grupo=>fijos.find(x=>x.grupo===grupo||x.id===grupo)||null;
-  const nuevoFijo=()=>setFijoForm({titulo:"",categoria:"otro",monto:"",moneda:"ARS",dia:"1",dividido:false,pct:"50",dia2:"15",notas:"",activo:true});
-  const editarFijo=x=>setFijoForm({id:x.id,titulo:x.titulo,categoria:x.categoria,monto:String(x.monto),moneda:x.moneda,dia:String(x.dia),dividido:!!x.dividido,pct:String(x.pct??50),dia2:String(x.dia2??15),notas:x.notas||"",activo:x.activo!==false});
-  const guardarFijo=async(patch)=>{
-    const fx={...fijoForm,...(patch||{})};
-    if(!fx.titulo.trim()){ toast("Poné el nombre del gasto","warning"); return; }
-    if(!(ghNumAR(fx.monto)>0)){ toast("Poné el monto mensual total","warning"); return; }
-    setFijoSaving(true);
-    try{
-      const d=await api("fijo_save",{fijo:{...fx,monto:ghNumAR(fx.monto),pct:Number(fx.pct)||50,dia:parseInt(fx.dia)||1,dia2:parseInt(fx.dia2)||15}});
-      toast(fx.id?`Gasto fijo actualizado${d.creados?` · ${d.creados} vencimientos regenerados`:""}`:"Gasto fijo cargado","success");
-      setFijoForm(null); setForm(null); await load();
-    }catch(e){ toast(e.message,"error"); }
-    finally{ setFijoSaving(false); }
-  };
-  const borrarFijo=async(x)=>{
-    if(!(await appConfirm(`¿Borrar el gasto fijo "${x.titulo}"? Se eliminan sus vencimientos pendientes; los ya pagados quedan en el historial.`,{danger:true,okLabel:"Borrar"}))) return;
-    try{ await api("fijo_delete",{id:x.id}); setFijoForm(null); await load(); toast("Gasto fijo borrado","success"); }catch(e){ toast(e.message,"error"); }
-  };
-  const guardarFijoDirecto=async(x)=>{ try{ await api("fijo_save",{fijo:{...x}}); await load(); toast(x.activo?"Gasto fijo activado":"Gasto fijo pausado: se quitan sus vencimientos pendientes","success"); }catch(e){ toast(e.message,"error"); } };
-  const fijoResumen=x=>x.dividido?`${x.pct}% el ${x.dia} · ${100-x.pct}% el ${x.dia2}`:`el día ${x.dia}`;
   const [items,setItems]=useState([]);       // {key,nombre,variante,sku,cantidad,costo}
   const [planId,setPlanId]=useState("50-50");
   const [partes,setPartes]=useState(()=>CALPAGOS_PLANES[1].partes.map(p=>({...p,fecha:sumarDiasAR(fechaInicial||hoy,p.dias)})));
@@ -13862,6 +13837,31 @@ function AppCalendarioPagos({T,user,onHome}){
   const [pedidoAbierto,setPedidoAbierto]=useState(null);
   const [divPct,setDivPct]=useState("50"); const [divDia,setDivDia]=useState("15");
   const [busq,setBusq]=useState("");
+  const [vista,setVista]=useState("agenda");           // "agenda" | "fijos"
+  const [fijos,setFijos]=useState([]);
+  const [fijoForm,setFijoForm]=useState(null);         // plantilla en edición
+  const [fijoSaving,setFijoSaving]=useState(false);
+  const fijoDe=grupo=>fijos.find(x=>x.grupo===grupo||x.id===grupo)||null;
+  const nuevoFijo=()=>setFijoForm({titulo:"",categoria:"otro",monto:"",moneda:"ARS",dia:"1",dividido:false,pct:"50",dia2:"15",notas:"",activo:true});
+  const editarFijo=x=>setFijoForm({id:x.id,titulo:x.titulo,categoria:x.categoria,monto:String(x.monto),moneda:x.moneda,dia:String(x.dia),dividido:!!x.dividido,pct:String(x.pct??50),dia2:String(x.dia2??15),notas:x.notas||"",activo:x.activo!==false});
+  const guardarFijo=async(patch)=>{
+    const fx={...fijoForm,...(patch||{})};
+    if(!fx.titulo.trim()){ toast("Poné el nombre del gasto","warning"); return; }
+    if(!(ghNumAR(fx.monto)>0)){ toast("Poné el monto mensual total","warning"); return; }
+    setFijoSaving(true);
+    try{
+      const d=await api("fijo_save",{fijo:{...fx,monto:ghNumAR(fx.monto),pct:Number(fx.pct)||50,dia:parseInt(fx.dia)||1,dia2:parseInt(fx.dia2)||15}});
+      toast(fx.id?`Gasto fijo actualizado${d.creados?` · ${d.creados} vencimientos regenerados`:""}`:"Gasto fijo cargado","success");
+      setFijoForm(null); setForm(null); await load();
+    }catch(e){ toast(e.message,"error"); }
+    finally{ setFijoSaving(false); }
+  };
+  const borrarFijo=async(x)=>{
+    if(!(await appConfirm(`¿Borrar el gasto fijo "${x.titulo}"? Se eliminan sus vencimientos pendientes; los ya pagados quedan en el historial.`,{danger:true,okLabel:"Borrar"}))) return;
+    try{ await api("fijo_delete",{id:x.id}); setFijoForm(null); await load(); toast("Gasto fijo borrado","success"); }catch(e){ toast(e.message,"error"); }
+  };
+  const guardarFijoDirecto=async(x)=>{ try{ await api("fijo_save",{fijo:{...x}}); await load(); toast(x.activo?"Gasto fijo activado":"Gasto fijo pausado: se quitan sus vencimientos pendientes","success"); }catch(e){ toast(e.message,"error"); } };
+  const fijoResumen=x=>x.dividido?`${x.pct}% el ${x.dia} · ${100-x.pct}% el ${x.dia2}`:`el día ${x.dia}`;
   const bq=busq.trim().toLowerCase();
   const encontrados=bq?(items||[]).filter(i=>`${i.titulo} ${calpagosCatLabel(i.categoria)} ${i.notas||""} ${i.monto}`.toLowerCase().includes(bq)).sort((x,y)=>x.vence.localeCompare(y.vence)):[];
 
