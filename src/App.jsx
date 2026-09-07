@@ -12420,7 +12420,7 @@ function LandingPage({T, onLogin}) {
       <div id="gh-landing-precios" style={{background:T.surface+"66",borderTop:`1px solid ${T.borderL}`,borderBottom:`1px solid ${T.borderL}`,padding:"64px 20px"}}>
         <h2 style={secTitle}>Planes simples, sin letra chica</h2>
         <p style={secSub}>Probás gratis 14 días con absolutamente todo. Después elegís lo que necesitás.</p>
-        <div style={{maxWidth:760,margin:"0 auto",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:18,alignItems:"start"}}>
+        <div style={{maxWidth:1120,margin:"0 auto",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:18,alignItems:"start"}}>
           {/* Facturador */}
           <div style={{background:T.card,border:`2px solid ${T.border}`,borderRadius:18,padding:"26px 24px",textAlign:"center",position:"relative"}}>
             <div style={{fontSize:15,fontWeight:800,color:"#10b981",marginBottom:2}}>Plan Facturador</div>
@@ -12437,18 +12437,36 @@ function LandingPage({T, onLogin}) {
             </div>
             <button onClick={onLogin} style={{...BtnSecondary(T),width:"100%",justifyContent:"center",fontSize:14,padding:"12px",color:"#10b981",border:"1.5px solid #10b981"}}>Probar gratis 14 días</button>
           </div>
+          {/* Intermedio (recomendado / base) */}
+          <div style={{background:`linear-gradient(165deg, ${T.card} 60%, #8b5cf614)`,border:`2px solid #8b5cf6`,borderRadius:18,padding:"26px 24px",textAlign:"center",position:"relative",boxShadow:"0 0 0 1px #8b5cf633, 0 18px 60px #8b5cf625"}}>
+            <div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:"#8b5cf6",color:"#fff",fontSize:11,fontWeight:800,borderRadius:20,padding:"3px 14px",whiteSpace:"nowrap",letterSpacing:0.3}}>RECOMENDADO — EL MÁS ELEGIDO</div>
+            <div style={{fontSize:15,fontWeight:800,color:"#8b5cf6",marginTop:6,marginBottom:2}}>Plan Intermedio</div>
+            <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Toda la gestión de tu e-commerce</div>
+            <div style={{fontSize:14,color:T.textSm,textDecoration:"line-through",fontWeight:600}}>$59 USD/mes</div>
+            <div style={{fontSize:42,fontWeight:900,letterSpacing:-1.5,lineHeight:1.1}}>$39 <span style={{fontSize:14,fontWeight:500,color:T.textSm}}>USD/mes</span></div>
+            <div style={{fontSize:12,color:T.textSm,marginTop:4,marginBottom:16}}>o $32 USD/mes pagando anual</div>
+            <div style={{textAlign:"left",display:"flex",flexDirection:"column",gap:7,marginBottom:20}}>
+              {["Todo lo del plan Facturador","Meta Ads + Mercado Ads","Stock cruzado entre canales","Mercado Libre integrado","Envíos con etiquetas Andreani","Reclamos, Canjes y Tareas ilimitados"].map((x,i)=>(
+                <div key={x} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:i===0?T.text:T.textMd,fontWeight:i===0?700:400}}>
+                  <span style={{color:"#8b5cf6",fontWeight:800,flexShrink:0}}>✓</span>{x}
+                </div>
+              ))}
+            </div>
+            <button onClick={onLogin} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"13px",background:"#8b5cf6"}}>Probar gratis 14 días</button>
+            <div style={{fontSize:11,color:T.textSm,marginTop:10}}>Sin tarjeta · Cancelás cuando quieras</div>
+          </div>
           {/* Pro */}
-          <div style={{background:`linear-gradient(165deg, ${T.card} 60%, #6366f114)`,border:`2px solid #6366f1`,borderRadius:18,padding:"26px 24px",textAlign:"center",position:"relative",boxShadow:"0 0 0 1px #6366f133, 0 18px 60px #6366f125"}}>
-            <div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:T.green,color:"#fff",fontSize:11,fontWeight:800,borderRadius:20,padding:"3px 14px",whiteSpace:"nowrap",letterSpacing:0.3}}>RECOMENDADO — TODO INCLUIDO</div>
+          <div style={{background:T.card,border:`2px solid ${T.border}`,borderRadius:18,padding:"26px 24px",textAlign:"center",position:"relative"}}>
+            <div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:"#6366f1",color:"#fff",fontSize:11,fontWeight:800,borderRadius:20,padding:"3px 14px",whiteSpace:"nowrap",letterSpacing:0.3}}>TODO INCLUIDO</div>
             <div style={{fontSize:15,fontWeight:800,color:"#6366f1",marginTop:6,marginBottom:2}}>Plan Pro</div>
             <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Todo Growith para tu e-commerce</div>
             <div style={{fontSize:14,color:T.textSm,textDecoration:"line-through",fontWeight:600}}>$99 USD/mes</div>
             <div style={{fontSize:42,fontWeight:900,letterSpacing:-1.5,lineHeight:1.1}}>$69 <span style={{fontSize:14,fontWeight:500,color:T.textSm}}>USD/mes</span></div>
             <div style={{fontSize:12,color:T.textSm,marginTop:4,marginBottom:16}}>o $57 USD/mes pagando anual</div>
             <div style={{textAlign:"left",display:"flex",flexDirection:"column",gap:7,marginBottom:20}}>
-              {["Todo lo del plan Facturador","Dashboard de rentabilidad en tiempo real","Envíos con etiquetas Andreani (Tienda Nube y Shopify)","Stock cruzado entre canales","Meta Ads + Mercado Ads (Google Ads próximamente)","Copilot IA y gestión de equipo"].map((x,i)=>(
+              {["Todo lo del Plan Intermedio","Dashboard de rentabilidad en tiempo real","Tu profit REAL por venta (costos, comisiones, ads)","Copilot IA sobre tus datos reales"].map((x,i)=>(
                 <div key={x} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:i===0?T.text:T.textMd,fontWeight:i===0?700:400}}>
-                  <span style={{color:T.green,fontWeight:800,flexShrink:0}}>✓</span>{x}
+                  <span style={{color:"#6366f1",fontWeight:800,flexShrink:0}}>✓</span>{x}
                 </div>
               ))}
             </div>
