@@ -2912,7 +2912,7 @@ const SECTION_ICONS = {
   canjes:  "M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z",
   tareas:  "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",
   config:  "M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1zM15 12a3 3 0 11-6 0 3 3 0 016 0z",
-  planes:  "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
+  planes:  "M2 5h20v14H2zM2 10h20M6 15h4",
   admin:   "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
 };
 
@@ -13670,13 +13670,12 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 // APP PLANES - Página de suscripción
 // ===========================================
 function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT_EMAIL, isTrialExpired=false}) {
-  // Pago ÚNICAMENTE con tarjeta vía Stripe (suscripción recurrente). Los
-  // medios manuales (USDT / transferencia) se retiraron el 7/sep/2026.
+  // Sección Suscripción: estado del plan, pago con tarjeta (Stripe) y cambio
+  // de plan. Único medio de pago desde el 7/sep/2026.
   const [step,setStep]=useState("planes");
   const [anual,setAnual]=useState(false);
-  const [faqOpen,setFaqOpen]=useState(null);
-  const [loadingPlan,setLoadingPlan]=useState(null); // id del plan cuyo checkout se está armando
-  const [uDoc,setUDoc]=useState(null); // stripeStatus, cancelAtPeriodEnd, refCreditUsd
+  const [loadingPlan,setLoadingPlan]=useState(null);
+  const [uDoc,setUDoc]=useState(null);
   useEffect(()=>{
     if(!user?.uid) return;
     const unsub=onSnapshot(doc(db,"users",user.uid),s=>setUDoc(s.exists()?s.data():{}),()=>setUDoc({}));
@@ -13684,60 +13683,33 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   },[user?.uid]);
   const refCred=Number(uDoc?.refCreditUsd)||0;
 
-  // Tres planes. Ids Firestore: "facturador", "medio", "plus" (NO cambiar).
+  // Ids Firestore: "facturador", "medio", "plus" (NO cambiar).
   const PLANES=[
-    {
-      id:"facturador", nombre:"Facturador", color:"#10b981",
-      precio_usdt:19, precio_usdt_anual:16, precio_normal:29,
-      tagline:"Solo el facturador ARCA, ilimitado",
-      features:[
-        "Facturación ARCA / AFIP ilimitada",
-        "Facturás tus ventas de la tienda y Mercado Libre en un clic",
-        "La factura se adjunta sola a la venta y le llega al cliente",
-        "Facturas y notas de crédito manuales",
-        "Monotributo y Responsable Inscripto",
-        "Múltiples puntos de venta y CUITs",
-        "Proyección mensual de IVA",
-      ],
-    },
-    {
-      id:"medio", nombre:"Intermedio", color:"#8b5cf6",
-      precio_usdt:39, precio_usdt_anual:32, precio_normal:59,
-      tagline:"Toda la gestión de tu e-commerce (sin el Dashboard de márgenes ni el Copilot)",
-      features:[
-        "Todo lo del plan Facturador",
-        "Meta Ads y Mercado Ads",
-        "Stock de TN + Mercado Libre + Shopify en una sola vista",
-        "Mercado Libre integrado",
-        "Envíos + etiquetas Andreani con SKU",
-        "Reclamos ilimitados",
-        "Canjes e influencers ilimitados",
-        "Gestión de equipo + tareas ilimitadas",
-        "Tiendas ilimitadas",
-      ],
-    },
-    {
-      id:"plus", nombre:"Pro", color:"#6366f1", destacado:true,
-      precio_usdt:69, precio_usdt_anual:57, precio_normal:99,
-      tagline:"Todo Growith para gestionar tu e-commerce",
-      features:[
-        "Todo lo del plan Intermedio",
-        "Márgenes, profit y costos por venta en tiempo real",
-        "Rentabilidad por producto, día a día",
-        "Meta Ads y Google Ads cruzados con tu ganancia real",
-        "Copilot IA sobre tus datos reales",
-        "Auto-tracking Andreani y reclamos ilimitados",
-        "Tiendas y equipo ilimitados",
-      ],
-    },
+    { id:"facturador", nombre:"Facturador", color:T.green, nivel:1,
+      precio:19, precioAnual:16, precioNormal:29,
+      tagline:"Solo el facturador ARCA, sin límites.",
+      features:["Facturación ARCA / AFIP ilimitada","Facturás tus ventas de la tienda y Mercado Libre en un clic","La factura se adjunta sola a la venta y le llega al cliente","Facturas y notas de crédito manuales","Monotributo y Responsable Inscripto","Múltiples puntos de venta y CUITs","Proyección mensual de IVA"] },
+    { id:"medio", nombre:"Intermedio", color:T.purple, nivel:2,
+      precio:39, precioAnual:32, precioNormal:59,
+      tagline:"La operación completa, sin Dashboard de márgenes ni Copilot.",
+      features:["Todo lo del plan Facturador","Meta Ads y Mercado Ads","Stock de TN, Mercado Libre y Shopify en una sola vista","Mercado Libre integrado","Envíos y etiquetas Andreani con SKU","Reclamos, canjes e influencers ilimitados","Equipo y tareas ilimitadas","Tiendas ilimitadas"] },
+    { id:"plus", nombre:"Pro", color:T.accent, nivel:3, destacado:true,
+      precio:69, precioAnual:57, precioNormal:99,
+      tagline:"Todo Growith para gestionar tu e-commerce.",
+      features:["Todo lo del plan Intermedio","Márgenes, profit y costos por venta en tiempo real","Rentabilidad por producto, día a día","Meta Ads y Google Ads cruzados con tu ganancia real","Copilot IA sobre tus datos reales","Auto-tracking Andreani","Tiendas y equipo ilimitados"] },
   ];
   const planActualId=userPlan==="full"?"plus":userPlan;
-  const isPago=["facturador","medio","plus"].includes(planActualId)&&!isTrialExpired;
   const planActual=PLANES.find(p=>p.id===planActualId)||null;
-  const renuevaSolo=uDoc?.stripeStatus==="active"&&!uDoc?.cancelAtPeriodEnd;
+  const isPago=!!planActual&&!isTrialExpired;
+  const stripe=!!uDoc?.stripeSubscriptionId;
+  const cancela=!!uDoc?.cancelAtPeriodEnd;
+  const renuevaSolo=isPago&&stripe&&!cancela&&uDoc?.stripeStatus!=="canceled";
+  const toD=v=>v?.toDate?v.toDate():(v?.seconds?new Date(v.seconds*1000):(v?new Date(v):null));
+  const trialEnd=toD(uDoc?.trialEnd);
+  const diasTrial=trialEnd?Math.max(0,Math.ceil((trialEnd.getTime()-Date.now())/86400000)):0;
+  const enTrial=!isPago&&!isTrialExpired&&diasTrial>0;
+  const fmtF=d=>d?d.toLocaleDateString("es-AR",{day:"numeric",month:"long",year:"numeric"}):"—";
 
-  // ── Checkout con tarjeta (Stripe). Si ya hay suscripción activa, el backend
-  // cambia el plan en el acto con prorrateo y no pasa por Checkout.
   async function elegir(planId){
     if(loadingPlan) return;
     setLoadingPlan(planId);
@@ -13747,7 +13719,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       const d=await r.json().catch(()=>({}));
       if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`);
       if(d.url){ window.location.href=d.url; return; }
-      if(d.changed){ toast(`Plan cambiado a ${pl?.nombre}${anual?" anual":""} ✓`,"success"); setTimeout(()=>window.location.reload(),900); return; }
+      if(d.changed){ toast(`Plan cambiado a ${pl?.nombre}${anual?" anual":""}`,"success"); setLoadingPlan(null); return; }
       if(d.already){ toast("Ya tenés ese plan activo","info"); setLoadingPlan(null); return; }
       throw new Error("Respuesta inesperada");
     }catch(e){ appAlert("No pudimos iniciar el pago: "+e.message); setLoadingPlan(null); }
@@ -13760,202 +13732,181 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
     }catch(e){ appAlert("No se pudo abrir el portal de pagos: "+e.message); }
   }
   async function cancelar(reactivar){
-    if(!reactivar&&!(await appConfirm(`¿Cancelar la renovación del plan ${planActual?.nombre}? Seguís con acceso completo hasta el ${planExpiry?planExpiry.toLocaleDateString("es-AR",{day:"2-digit",month:"long"}):"fin del período"} y no se te cobra más.`,{danger:true,okLabel:"Cancelar renovación"}))) return;
+    if(!reactivar&&!(await appConfirm(`¿Cancelar la renovación del plan ${planActual?.nombre}? Seguís con acceso completo hasta el ${fmtF(planExpiry)} y no se te cobra más.`,{danger:true,okLabel:"Cancelar renovación"}))) return;
     try{
-      if(uDoc?.stripeSubscriptionId){
+      if(stripe){
         const r=await authFetch("/api/stripe?action=cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,reactivar})});
         const d=await r.json().catch(()=>({})); if(d.error) throw new Error(d.error);
       } else await updateDoc(doc(db,"users",user.uid),{cancelAtPeriodEnd:!reactivar});
-      toast(reactivar?"Renovación reactivada ✓":"Listo — tu plan sigue activo hasta el vencimiento","success");
+      toast(reactivar?"Renovación reactivada":"Listo: tu plan sigue activo hasta el vencimiento","success");
     }catch(e){ appAlert(e.message); }
   }
-  // Vuelta de Stripe: #/planes?stripe=ok → confirmación (el plan se activa por
-  // webhook en segundos; el listener del usuario actualiza userPlan solo).
   useEffect(()=>{
     const h=window.location.hash||"";
     if(h.includes("stripe=ok")){ setStep("stripe_ok"); history.replaceState(null,"",window.location.pathname+"#/planes"); }
-    else if(h.includes("stripe=cancel")){ toast("Pago cancelado — no se cobró nada","info"); history.replaceState(null,"",window.location.pathname+"#/planes"); }
+    else if(h.includes("stripe=cancel")){ toast("Pago cancelado, no se cobró nada","info"); history.replaceState(null,"",window.location.pathname+"#/planes"); }
   },[]);
 
+  const Check=({c})=>(<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:2}}><polyline points="20 6 9 17 4 12"/></svg>);
+  const Stat=({label,value,color})=>(
+    <div style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"12px 14px",minWidth:0}}>
+      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{label}</div>
+      <div style={{fontSize:15,fontWeight:800,color:color||T.text,letterSpacing:-0.2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{value}</div>
+    </div>
+  );
   const FAQS=[
-    {q:"¿Cómo se paga?", a:"Con tarjeta de crédito o débito (Visa, Mastercard, American Express y otras), en dólares, a través de Stripe. Growith nunca ve los datos de tu tarjeta."},
-    {q:"¿Se renueva sola?", a:"Sí. Se cobra automáticamente cada mes (o cada año si elegiste anual) con la tarjeta guardada. Te llega el recibo por mail en cada cobro."},
-    {q:"¿Puedo cancelar cuando quiera?", a:"Sí, desde Configuración → Suscripción, sin contrato ni penalidad. Seguís con acceso completo hasta el final del período ya pagado y no se te cobra más."},
-    {q:"¿Puedo cambiar de plan?", a:"Sí, en cualquier momento. Si subís de plan, Stripe cobra solo la diferencia proporcional por los días que quedan del período. Si bajás, el cambio aplica al instante y el saldo queda a favor."},
-    {q:"¿Qué pasa con mis datos si dejo de pagar?", a:"Todos tus datos, facturas y configuraciones quedan guardados. Si volvés a suscribirte, seguís exactamente donde lo dejaste."},
+    {q:"¿Cómo se paga?",a:"Con tarjeta de crédito o débito (Visa, Mastercard, American Express y otras), en dólares, a través de Stripe. Growith nunca ve los datos de tu tarjeta."},
+    {q:"¿Se renueva sola?",a:"Sí. Se cobra cada mes (o cada año si elegiste anual) con la tarjeta guardada, y te llega el recibo por mail en cada cobro."},
+    {q:"¿Puedo cancelar cuando quiera?",a:"Sí, desde esta misma pantalla, sin contrato ni penalidad. Seguís con acceso completo hasta el final del período pagado."},
+    {q:"¿Puedo cambiar de plan?",a:"En cualquier momento. Si subís, Stripe cobra solo la diferencia proporcional por los días que quedan. Si bajás, el cambio aplica al instante y el saldo queda a favor."},
+    {q:"¿Qué pasa con mis datos si dejo de pagar?",a:"Quedan guardados: facturas, configuraciones, todo. Si volvés a suscribirte, seguís donde lo dejaste."},
   ];
 
-  /* ── Pantalla: vuelta de Stripe ── */
   if(step==="stripe_ok"){
-    const activo=isPago;
     return (
-      <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-        <div style={{textAlign:"center",maxWidth:420}}>
-          <div style={{display:"flex",justifyContent:"center",marginBottom:20}}>{activo?<StatusIcon type="success" size={72}/>:<Spinner size={40} color={T.accent}/>}</div>
-          <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:8}}>{activo?"¡Tu plan ya está activo!":"Confirmando tu pago…"}</div>
-          <div style={{fontSize:14,color:T.textMd,marginBottom:24,lineHeight:1.6}}>
-            {activo?<>Stripe confirmó el pago y ya tenés todo habilitado. Se renueva solo; podés cancelar cuando quieras desde Configuración → Suscripción.</>
-            :<>Stripe está avisándonos del pago. Tarda unos segundos — esta pantalla se actualiza sola.</>}
+      <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <Card T={T} padding="xl" style={{maxWidth:440,width:"100%",textAlign:"center"}}>
+          <div style={{display:"flex",justifyContent:"center",marginBottom:18}}>{isPago?<StatusIcon type="success" size={64}/>:<Spinner size={36} color={T.accent}/>}</div>
+          <div style={{fontSize:20,fontWeight:800,color:T.text,marginBottom:8,letterSpacing:-0.3}}>{isPago?"Tu plan ya está activo":"Confirmando el pago"}</div>
+          <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,marginBottom:22}}>
+            {isPago?"Stripe confirmó el pago y ya tenés todo habilitado. Se renueva solo y podés cancelar cuando quieras desde Suscripción.":"Stripe nos está avisando del pago. Tarda unos segundos y esta pantalla se actualiza sola."}
           </div>
-          <button onClick={onBack} style={{...BtnPrimary(T),justifyContent:"center",width:"100%"}} disabled={!activo}>{activo?"Ir a Growith":"Esperando confirmación…"}</button>
-        </div>
+          <Btn T={T} variant="primary" size="lg" onClick={onBack} disabled={!isPago} style={{width:"100%",justifyContent:"center"}}>{isPago?"Ir a Growith":"Esperando confirmación"}</Btn>
+        </Card>
       </div>
     );
   }
 
-  /* ── Pantalla principal ── */
-  const venceTxt=planExpiry?planExpiry.toLocaleDateString("es-AR",{day:"2-digit",month:"long"}):null;
+  const seg=(on)=>({padding:"5px 14px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:6,background:on?T.card:"transparent",color:on?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?"0 1px 3px rgba(0,0,0,0.12)":"none",display:"inline-flex",alignItems:"center",gap:6});
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",paddingBottom:80}}>
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.card+"e0",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",padding:"0 20px",height:64,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:10}}>
-        {!isTrialExpired&&<button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>}
-        <SectionIcon T={T} id="planes"/>
-        <span style={{fontWeight:700,fontSize:14,color:T.text,letterSpacing:-0.2,lineHeight:"18px"}}>Suscripción</span>
-      </div>
+    <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <AppTopbar T={T} section="Suscripción" sectionId="planes" onHome={isTrialExpired?undefined:onBack}/>
+      <div style={{padding:"20px 24px 64px",maxWidth:980,margin:"0 auto",width:"100%"}}>
 
-      <div style={{maxWidth:960,margin:"0 auto",padding:"40px 20px 0"}}>
+        {/* Estado */}
         {isTrialExpired?(
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderTop:`3px solid ${T.red}`,borderRadius:DS.r["2xl"],padding:"26px 24px",marginBottom:32,textAlign:"center"}}>
-            <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:6}}>Tu prueba gratuita terminó</div>
-            <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,maxWidth:420,margin:"0 auto"}}>Elegí un plan para seguir usando Growith. Tus datos, facturas y configuraciones siguen guardados intactos.</div>
-          </div>
-        ):isPago?null:(
-          <div style={{textAlign:"center",marginBottom:28}}>
-            <div style={{display:"inline-block",background:"#6366f118",border:"1px solid #6366f130",borderRadius:20,padding:"4px 14px",fontSize:11,fontWeight:700,color:"#6366f1",letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:14}}>Precio de lanzamiento</div>
-            <h1 style={{fontSize:28,fontWeight:900,color:T.text,letterSpacing:-0.5,margin:"0 0 10px",lineHeight:1.2}}>
-              Todo lo que tu tienda necesita,<br/>
-              <span style={{background:"linear-gradient(135deg,#6366f1,#818cf8)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>en un solo lugar.</span>
-            </h1>
-            <p style={{fontSize:14,color:T.textMd,margin:0,lineHeight:1.6}}>Pago con tarjeta · Cancelás cuando quieras · Sin letra chica</p>
-          </div>
-        )}
-
-        {/* Tu suscripción: estado, próximo cobro, medio de pago y acciones */}
-        {isPago&&planActual&&(()=>{
-          const cancela=!!uDoc?.cancelAtPeriodEnd;
-          const stripe=!!uDoc?.stripeSubscriptionId;
-          const estado=renuevaSolo?{t:"Se renueva sola",c:T.green}:cancela?{t:"No se renueva",c:T.yellow}:{t:"Activo",c:T.green};
-          return (
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderLeft:`3px solid ${planActual.color}`,borderRadius:14,padding:"18px 20px",marginBottom:28}}>
-              <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-                <div style={{flex:1,minWidth:220}}>
-                  <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6,marginBottom:4}}>Tu suscripción</div>
-                  <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                    <span style={{fontSize:20,fontWeight:800,color:T.text}}>Plan {planActual.nombre}</span>
-                    <span style={{fontSize:11,fontWeight:700,color:estado.c,background:estado.c+"18",border:`1px solid ${estado.c}44`,borderRadius:12,padding:"2px 9px"}}>{estado.t}</span>
-                  </div>
-                  <div style={{fontSize:12,color:T.textMd,marginTop:4}}>{planActual.tagline}</div>
-                </div>
-                <div style={{display:"flex",gap:22,flexWrap:"wrap"}}>
-                  <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>{renuevaSolo?"Próximo cobro":cancela?"Acceso hasta":"Vence"}</div><div style={{fontSize:14,fontWeight:700,color:T.text,marginTop:2}}>{venceTxt||"—"}</div></div>
-                  <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Importe</div><div style={{fontSize:14,fontWeight:700,color:T.text,marginTop:2}}>USD {planActual.precio_usdt}/mes</div></div>
-                  <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Medio de pago</div><div style={{fontSize:14,fontWeight:700,color:T.text,marginTop:2}}>{stripe?"Tarjeta (Stripe)":"Pago manual"}</div></div>
-                </div>
-              </div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginTop:14,paddingTop:14,borderTop:`1px solid ${T.borderL}`}}>
-                {stripe&&<button onClick={abrirPortal} style={{...BtnSecondary(T),fontSize:12}}>Tarjeta y facturas</button>}
-                {cancela
-                  ?<AsyncButton onClick={()=>cancelar(true)} style={{...BtnPrimary(T),fontSize:12}}>Reactivar renovación</AsyncButton>
-                  :<button onClick={()=>cancelar(false)} style={{background:"none",border:"none",color:T.textSm,fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline"}}>Cancelar renovación</button>}
-                <span style={{marginLeft:"auto",fontSize:12,color:T.textSm}}>{planActualId==="plus"?"Tenés el plan completo.":"¿Querés más? Elegí un plan abajo, el cambio es inmediato."}</span>
-              </div>
+          <Card T={T} padding="lg" style={{borderLeft:`3px solid ${T.red}`,marginBottom:16}}>
+            <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:4}}>Tu prueba gratuita terminó</div>
+            <div style={{fontSize:13,color:T.textMd,lineHeight:1.6}}>Elegí un plan para seguir usando Growith. Tus datos, facturas y configuraciones siguen guardados intactos.</div>
+          </Card>
+        ):isPago&&planActual?(
+          <Card T={T} padding="lg" style={{marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
+              <span style={{width:10,height:10,borderRadius:"50%",background:planActual.color,flexShrink:0}}/>
+              <span style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Plan {planActual.nombre}</span>
+              <DSBadge T={T} color={renuevaSolo?T.green:cancela?T.yellow:T.green} size="sm">{renuevaSolo?"Se renueva sola":cancela?"No se renueva":"Activo"}</DSBadge>
+              <span style={{fontSize:12,color:T.textSm,marginLeft:"auto"}}>{planActual.tagline}</span>
             </div>
-          );
-        })()}
-        {isPago&&<div style={{textAlign:"center",fontSize:16,fontWeight:800,color:T.text,marginBottom:14}}>Cambiar de plan</div>}
-        {refCred>0&&(
-          <div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:12,padding:"10px 16px",fontSize:12,color:T.green,fontWeight:600,marginBottom:20,textAlign:"center"}}>
-            Tenés USD {refCred.toLocaleString("es-AR",{minimumFractionDigits:2})} de crédito por referidos: se descuenta solo en el pago.
-          </div>
-        )}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10,marginBottom:14}}>
+              <Stat label={renuevaSolo?"Próximo cobro":cancela?"Acceso hasta":"Vence"} value={fmtF(planExpiry)}/>
+              <Stat label="Importe" value={`USD ${planActual.precio} por mes`}/>
+              <Stat label="Medio de pago" value={stripe?"Tarjeta · Stripe":"Pago manual"}/>
+              {refCred>0&&<Stat label="Crédito por referidos" value={`USD ${refCred.toLocaleString("es-AR",{minimumFractionDigits:2})}`} color={T.green}/>}
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+              {stripe&&<Btn T={T} variant="secondary" size="sm" onClick={abrirPortal}>Tarjeta y facturas</Btn>}
+              {cancela
+                ?<Btn T={T} variant="primary" size="sm" onClick={()=>cancelar(true)}>Reactivar renovación</Btn>
+                :<Btn T={T} variant="ghost" size="sm" onClick={()=>cancelar(false)}>Cancelar renovación</Btn>}
+              <span style={{marginLeft:"auto",fontSize:12,color:T.textSm}}>
+                {!stripe?"Este plan se pagó a mano: cuando venza, renovalo desde acá con tarjeta.":planActualId==="plus"?"Tenés el plan completo.":"Si subís de plan, el cambio es inmediato."}
+              </span>
+            </div>
+          </Card>
+        ):enTrial?(
+          <Card T={T} padding="lg" style={{borderLeft:`3px solid ${T.green}`,marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+              <span style={{fontSize:16,fontWeight:800,color:T.text}}>Prueba gratis con todo incluido</span>
+              <DSBadge T={T} color={T.green} size="sm">{diasTrial} día{diasTrial!==1?"s":""} restante{diasTrial!==1?"s":""}</DSBadge>
+              <span style={{fontSize:12,color:T.textSm,marginLeft:"auto"}}>Termina el {fmtF(trialEnd)}</span>
+            </div>
+            <div style={{fontSize:13,color:T.textMd,marginTop:6,lineHeight:1.6}}>Elegí un plan cuando quieras. Se cobra recién al confirmar en Stripe y no cortás nada de lo que ya configuraste.</div>
+          </Card>
+        ):null}
 
-        {/* Mensual / anual */}
-        <div style={{display:"flex",justifyContent:"center",marginBottom:24}}>
-          <div style={{display:"inline-flex",background:T.surface,border:`1px solid ${T.border}`,borderRadius:30,padding:"4px 5px"}}>
-            {[["m","Mensual"],["a","Anual"]].map(([k,l])=>{
-              const on=anual===(k==="a");
-              return (
-                <button key={k} onClick={()=>setAnual(k==="a")} style={{padding:"6px 20px",borderRadius:24,fontSize:13,fontWeight:600,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:on?"#6366f1":"transparent",color:on?"#fff":T.textMd,display:"inline-flex",alignItems:"center",gap:8,transition:"all .15s"}}>
-                  {l}{k==="a"&&<span style={{background:T.green,color:"#fff",fontSize:10,fontWeight:700,borderRadius:10,padding:"1px 7px"}}>-17%</span>}
-                </button>
-              );
-            })}
+        {/* Planes */}
+        <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",margin:"8px 0 14px"}}>
+          <span style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{isPago?"Cambiar de plan":"Elegí tu plan"}</span>
+          <span style={{fontSize:12,color:T.textSm}}>Precio de lanzamiento · en dólares · cancelás cuando quieras</span>
+          <div style={{marginLeft:"auto",display:"inline-flex",background:T.surface,borderRadius:8,padding:2}}>
+            <button onClick={()=>setAnual(false)} style={seg(!anual)}>Mensual</button>
+            <button onClick={()=>setAnual(true)} style={seg(anual)}>Anual <DSBadge T={T} color={T.green} size="sm">-17%</DSBadge></button>
           </div>
         </div>
-
-        {/* Cards */}
-        <div className="gh-planes-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:20,marginBottom:28,alignItems:"start"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14,marginBottom:16,alignItems:"start"}}>
           {PLANES.map(pl=>{
-            const pU=anual?pl.precio_usdt_anual:pl.precio_usdt;
+            const pU=anual?pl.precioAnual:pl.precio;
             const esActual=isPago&&planActualId===pl.id;
-            const actualYRenueva=esActual&&renuevaSolo;
             const cargando=loadingPlan===pl.id;
-            const nivel={facturador:1,medio:2,plus:3};
-            const label=cargando?"Abriendo Stripe…"
-              :actualYRenueva?"Tu plan actual"
-              :esActual?"Reactivar renovación →"
-              :isPago&&planActual&&nivel[pl.id]>nivel[planActual.id]?`Pasar a ${pl.nombre} →`
-              :isPago&&planActual?`Cambiar a ${pl.nombre} →`
-              :"Suscribirme →";
+            let label, variant="secondary", disabled=!!loadingPlan;
+            if(cargando){ label="Abriendo Stripe"; }
+            else if(esActual){
+              if(stripe&&!cancela){ label="Plan actual"; disabled=true; }
+              else if(stripe&&cancela){ label="Reactivar renovación"; variant="primary"; }
+              else { label="Renovar con tarjeta"; variant="primary"; }
+            }
+            else if(isPago&&planActual){ label=pl.nivel>planActual.nivel?`Pasar a ${pl.nombre}`:`Cambiar a ${pl.nombre}`; variant=pl.nivel>planActual.nivel?"primary":"secondary"; }
+            else { label=`Elegir ${pl.nombre}`; variant=pl.destacado?"primary":"secondary"; }
+            const onClick=()=>{ if(esActual&&stripe&&cancela) cancelar(true); else elegir(pl.id); };
             return (
-              <div key={pl.id} style={{background:T.card,border:`2px solid ${esActual?pl.color:pl.destacado?pl.color:T.border}`,borderRadius:20,padding:"26px 24px 22px",boxShadow:pl.destacado?`0 8px 32px ${pl.color}18`:"none",position:"relative",opacity:loadingPlan&&!cargando?0.6:1}}>
-                {(pl.destacado||esActual)&&(
-                  <div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:esActual?pl.color:`linear-gradient(135deg,${pl.color},#818cf8)`,color:"#fff",fontSize:10,fontWeight:800,padding:"3px 16px",borderRadius:20,letterSpacing:"0.06em",whiteSpace:"nowrap"}}>
-                    {esActual?"TU PLAN":"RECOMENDADO"}
-                  </div>
+              <Card key={pl.id} T={T} padding="lg" style={{border:`1px solid ${esActual?pl.color+"88":pl.destacado?T.accentSolid+"66":T.border}`,position:"relative",opacity:loadingPlan&&!cargando?0.6:1}}>
+                {(esActual||pl.destacado)&&(
+                  <span style={{position:"absolute",top:14,right:14}}><DSBadge T={T} color={esActual?pl.color:T.accent} size="sm">{esActual?"Tu plan":"Recomendado"}</DSBadge></span>
                 )}
-                <div style={{textAlign:"center",marginBottom:18,marginTop:6}}>
-                  <div style={{fontSize:15,fontWeight:800,color:pl.color,marginBottom:2}}>Plan {pl.nombre}</div>
-                  <div style={{fontSize:11,color:T.textSm,marginBottom:10,minHeight:28}}>{pl.tagline}</div>
-                  <div style={{fontSize:13,color:T.textSm,textDecoration:"line-through",marginBottom:2,fontWeight:600}}>${pl.precio_normal} USD/mes</div>
-                  <div style={{display:"flex",alignItems:"flex-end",justifyContent:"center",gap:4}}>
-                    <span style={{fontSize:44,fontWeight:900,color:T.text,lineHeight:1}}>${pU}</span>
-                    <span style={{fontSize:14,color:T.textSm,marginBottom:8}}>USD/mes</span>
-                  </div>
-                  {anual
-                    ?<div style={{fontSize:11,color:T.green,fontWeight:600,marginTop:4}}>${pU*12} USD/año en un pago · ahorrás ${(pl.precio_usdt-pl.precio_usdt_anual)*12} USD</div>
-                    :<div style={{fontSize:11,color:pl.color,fontWeight:600,marginTop:4}}>o ${pl.precio_usdt_anual} USD/mes pagando anual</div>}
+                <div style={{fontSize:15,fontWeight:800,color:pl.color,marginBottom:2}}>{pl.nombre}</div>
+                <div style={{fontSize:12,color:T.textSm,minHeight:34,lineHeight:1.5,marginBottom:12}}>{pl.tagline}</div>
+                <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+                  <span style={{fontSize:32,fontWeight:900,color:T.text,letterSpacing:-1,lineHeight:1}}>USD {pU}</span>
+                  <span style={{fontSize:12,color:T.textSm}}>por mes</span>
+                  <span style={{fontSize:12,color:T.textSm,textDecoration:"line-through",marginLeft:4}}>USD {pl.precioNormal}</span>
                 </div>
-                <button onClick={()=>!actualYRenueva&&elegir(pl.id)} disabled={!!loadingPlan||actualYRenueva}
-                  style={{width:"100%",padding:"12px",borderRadius:12,fontSize:14,fontWeight:800,border:pl.destacado||esActual?"none":`1.5px solid ${pl.color}`,cursor:actualYRenueva?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:actualYRenueva?T.surface:pl.destacado||esActual?pl.color:"transparent",color:actualYRenueva?T.textSm:pl.destacado||esActual?"#fff":pl.color,marginBottom:18,transition:"opacity .15s"}}>
-                  {label}
-                </button>
-                <div style={{borderTop:`1px solid ${T.borderL}`,paddingTop:16,display:"flex",flexDirection:"column",gap:9}}>
+                <div style={{fontSize:11,color:anual?T.green:T.textSm,fontWeight:anual?600:400,marginTop:6,marginBottom:14,minHeight:16}}>
+                  {anual?`USD ${pU*12} por año en un solo pago · ahorrás USD ${(pl.precio-pl.precioAnual)*12}`:`USD ${pl.precioAnual} por mes si pagás el año`}
+                </div>
+                <Btn T={T} variant={variant} size="md" onClick={onClick} disabled={disabled} style={{width:"100%",justifyContent:"center"}}>{label}</Btn>
+                <div style={{borderTop:`1px solid ${T.borderL}`,marginTop:16,paddingTop:14,display:"flex",flexDirection:"column",gap:8}}>
                   {pl.features.map((f,i)=>(
-                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:9,fontSize:12.5,color:i===0&&pl.id!=="facturador"?T.text:T.textMd,fontWeight:i===0&&pl.id!=="facturador"?700:400}}>
-                      <span style={{color:pl.color,fontWeight:700,flexShrink:0}}>✓</span>{f}
+                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:12,lineHeight:1.45,color:i===0&&pl.nivel>1?T.text:T.textMd,fontWeight:i===0&&pl.nivel>1?700:400}}>
+                      <Check c={pl.color}/>{f}
                     </div>
                   ))}
                 </div>
-              </div>
+              </Card>
             );
           })}
         </div>
 
-        <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap",marginBottom:36}}>
-          {["Pago seguro con Stripe","Visa · Mastercard · Amex","Activación inmediata","Cancelás cuando quieras"].map((t,i)=>(
-            <div key={i} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"6px 14px",fontSize:11,color:T.textMd}}>{t}</div>
-          ))}
-        </div>
-
-        <div style={{marginBottom:36,maxWidth:560,marginLeft:"auto",marginRight:"auto"}}>
-          <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:14,textAlign:"center"}}>Preguntas frecuentes</div>
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {FAQS.map((faq,i)=>(
-              <div key={i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
-                <button onClick={()=>setFaqOpen(faqOpen===i?null:i)} style={{width:"100%",textAlign:"left",padding:"13px 16px",background:"transparent",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  <span style={{fontSize:13,fontWeight:600,color:T.text}}>{faq.q}</span>
-                  <span style={{fontSize:16,color:T.textSm,flexShrink:0,transition:"transform 0.15s",transform:faqOpen===i?"rotate(45deg)":"none",display:"inline-block"}}>+</span>
-                </button>
-                {faqOpen===i&&<div style={{padding:"10px 16px 14px",fontSize:12,color:T.textMd,lineHeight:1.6,borderTop:`1px solid ${T.borderL}`}}>{faq.a}</div>}
+        {/* Cómo funciona */}
+        <Card T={T} padding="lg" style={{marginBottom:16}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>Cómo funciona el pago</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>
+            {[
+              {n:1,t:"Elegís el plan",d:"Mensual o anual. Si ya tenés uno, el cambio se aplica en el momento."},
+              {n:2,t:"Pagás en Stripe",d:"Tarjeta de crédito o débito, en dólares. Growith no ve los datos de tu tarjeta."},
+              {n:3,t:"Se activa al instante",d:"Y se renueva sola. Facturas, tarjeta y cancelación, siempre desde esta pantalla."},
+            ].map(p=>(
+              <div key={p.n} style={{display:"flex",gap:10}}>
+                <div style={{width:26,height:26,borderRadius:"50%",background:T.accentSolid+"22",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,flexShrink:0}}>{p.n}</div>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>{p.t}</div>
+                  <div style={{fontSize:12,color:T.textSm,lineHeight:1.5}}>{p.d}</div>
+                </div>
               </div>
             ))}
           </div>
-        </div>
+        </Card>
 
-        <div style={{textAlign:"center",fontSize:12,color:T.textSm,paddingBottom:20}}>
-          ¿Preguntas? → <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:"#6366f1",fontWeight:600}}>{SUPPORT_EMAIL}</a>
-        </div>
+        {/* FAQ */}
+        <Card T={T} padding="lg">
+          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:6}}>Preguntas frecuentes</div>
+          {FAQS.map((f,i)=>(
+            <div key={i} style={{padding:"10px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
+              <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:3}}>{f.q}</div>
+              <div style={{fontSize:12,color:T.textSm,lineHeight:1.55}}>{f.a}</div>
+            </div>
+          ))}
+          <div style={{fontSize:12,color:T.textSm,marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderL}`}}>¿Otra duda? Escribinos a <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:T.accent,fontWeight:600,textDecoration:"none"}}>{SUPPORT_EMAIL}</a></div>
+        </Card>
       </div>
     </div>
   );
