@@ -13739,7 +13739,7 @@ function AppCalendarioPagos({T,user,onHome}){
   // Calendario del mes: celdas Lun..Dom
   const primero=new Date(Date.UTC(yy,mm-1,1)); const diasMes=new Date(Date.UTC(yy,mm,0)).getUTCDate();
   const offset=(primero.getUTCDay()+6)%7; // lunes=0
-  const celdas=[]; for(let i=0;i<offset;i++) celdas.push(null); for(let d=1;d<=diasMes;d++) celdas.push(`${mes}-${String(d).padStart(2,"0")}`); while(celdas.length%7) celdas.push(null);
+  const celdas=[]; for(let i=offset;i>0;i--) celdas.push({f:sumarDiasAR(`${mes}-01`,-i),fuera:true}); for(let d=1;d<=diasMes;d++) celdas.push({f:`${mes}-${String(d).padStart(2,"0")}`,fuera:false}); let kk=1; while(celdas.length%7) celdas.push({f:sumarDiasAR(`${mes}-${String(diasMes).padStart(2,"0")}`,kk++),fuera:true});
   const porDia={}; for(const i of lista) (porDia[i.vence] ||= []).push(i);
 
   const nuevo=(vence)=>{ setAplicarSerie(false); setForm({titulo:"",categoria:"otro",monto:"",moneda:"ARS",vence:vence||hoy,tipo:"unico",cuotasTotal:"12",cuotaDesde:"1",notas:""}); };
@@ -13760,15 +13760,18 @@ function AppCalendarioPagos({T,user,onHome}){
     try{ await api("pagar",{id:i.id,pagado}); }catch(e){ toast(e.message,"error"); load(); }
   };
   const borrar=async(i)=>{
-    if(!(await appConfirm(`¿Borrar "${i.titulo}" del ${i.vence.split("-").reverse().join("/")}?`,{danger:true,okLabel:"Borrar"}))) return;
     let serie=false;
-    if(i.grupo) serie=!!(await appConfirm("Es parte de una serie. ¿Borrás también todos los vencimientos pendientes de la serie?",{okLabel:"Toda la serie",cancelLabel:"Solo este"}));
+    if(i.grupo){
+      const ok=await appConfirm(`"${i.titulo}" es parte de una serie. ¿Borrar solo este vencimiento o toda la serie pendiente?`,{okLabel:"Toda la serie",cancelLabel:"Solo este"});
+      serie=!!ok;
+    } else if(!(await appConfirm(`¿Borrar "${i.titulo}" del ${i.vence.split("-").reverse().join("/")}?`,{danger:true,okLabel:"Borrar"}))) return;
     try{ await api("delete",{id:i.id,serie}); setForm(null); await load(); toast("Borrado","success"); }catch(e){ toast(e.message,"error"); }
   };
 
   const Chip=({i,onClick})=>{ const e=estadoDe(i); const c=colorEstado[e]; return (
-    <div onClick={onClick} title={`${i.titulo} · ${calpagosFmt(i.monto,i.moneda)} · ${labelEstado[e]}`} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,padding:"2px 6px",borderRadius:5,background:c+"1a",color:e==="futuro"?T.textMd:c,cursor:"pointer",overflow:"hidden",whiteSpace:"nowrap",textDecoration:i.pagado?"line-through":"none",borderLeft:`2px solid ${c}`}}>
-      <span style={{overflow:"hidden",textOverflow:"ellipsis",flex:1}}>{i.titulo}</span><span style={{fontWeight:700,flexShrink:0}}>{calpagosFmt(i.monto,i.moneda)}</span>
+    <div onClick={onClick} title={`${i.titulo} · ${calpagosFmt(i.monto,i.moneda)} · ${labelEstado[e]}`} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,padding:"2px 5px",borderRadius:4,background:e==="futuro"?T.surface:c+"14",color:i.pagado?T.textSm:T.text,cursor:"pointer",overflow:"hidden",whiteSpace:"nowrap",textDecoration:i.pagado?"line-through":"none"}}>
+      <span style={{width:6,height:6,borderRadius:"50%",background:c,flexShrink:0}}/>
+      <span style={{overflow:"hidden",textOverflow:"ellipsis",flex:1,fontWeight:500}}>{i.titulo}</span><span style={{fontWeight:700,flexShrink:0,color:i.pagado?T.textSm:T.textMd,fontVariantNumeric:"tabular-nums"}}>{calpagosFmt(i.monto,i.moneda)}</span>
     </div>); };
   const Fila=({i})=>{ const e=estadoDe(i); const c=colorEstado[e]; return (
     <div style={{display:"grid",gridTemplateColumns:"96px 1fr 110px 130px 110px auto",gap:10,alignItems:"center",padding:"9px 0",borderTop:`1px solid ${T.borderL}`,fontSize:12}}>
@@ -13788,24 +13791,22 @@ function AppCalendarioPagos({T,user,onHome}){
 
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <AppTopbar T={T} section="Calendario de Pagos" sectionId="calendario" onHome={onHome}>
-        <Btn T={T} variant="primary" size="sm" onClick={()=>nuevo()}>Nuevo pago</Btn>
-      </AppTopbar>
+      <AppTopbar T={T} section="Calendario de Pagos" sectionId="calendario" onHome={onHome}/>
       <div style={{padding:"20px 24px 64px",maxWidth:1100,margin:"0 auto",width:"100%"}}>
         {err&&<div style={{fontSize:12,color:T.red,background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:8,padding:"8px 12px",marginBottom:12}}>{err}</div>}
 
         {/* KPIs */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:16}}>
           {[
-            {label:"Vencidos",val:vencidos.length?fmtPar(vencidos):"—",sub:vencidos.length?`${vencidos.length} pago${vencidos.length===1?"":"s"} sin pagar`:"Nada vencido",color:vencidos.length?T.red:T.green},
-            {label:"Vence esta semana",val:semana.length?fmtPar(semana):"—",sub:`${semana.length} pago${semana.length===1?"":"s"} hasta el ${sumarDiasAR(hoy,7).split("-").reverse().slice(0,2).join("/")}`,color:semana.length?T.yellow:T.text},
-            {label:`Falta pagar en ${mesesNombres[mm-1]}`,val:mesPend.length?fmtPar(mesPend):"—",sub:`${mesPend.length} pendiente${mesPend.length===1?"":"s"}`,color:T.text},
-            {label:`Pagado en ${mesesNombres[mm-1]}`,val:mesPag.length?fmtPar(mesPag):"—",sub:`${mesPag.length} pago${mesPag.length===1?"":"s"}`,color:T.green},
+            {label:"Vencido",n:vencidos.length,val:fmtPar(vencidos),sub:vencidos.length?`${vencidos.length} pago${vencidos.length===1?"":"s"} sin pagar`:"Nada vencido",color:T.red},
+            {label:"Vence esta semana",n:semana.length,val:fmtPar(semana),sub:`${semana.length} pago${semana.length===1?"":"s"} hasta el ${sumarDiasAR(hoy,7).split("-").reverse().slice(0,2).join("/")}`,color:T.yellow},
+            {label:`Falta pagar en ${mesesNombres[mm-1]}`,n:mesPend.length,val:fmtPar(mesPend),sub:`${mesPend.length} pendiente${mesPend.length===1?"":"s"}`,color:T.accent},
+            {label:`Pagado en ${mesesNombres[mm-1]}`,n:mesPag.length,val:fmtPar(mesPag),sub:`${mesPag.length} pago${mesPag.length===1?"":"s"}`,color:T.green},
           ].map(k=>(
-            <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
-              <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{k.label}</div>
-              <div style={{fontSize:20,fontWeight:800,color:k.color,letterSpacing:-0.4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{k.val}</div>
-              <div style={{fontSize:11,color:T.textSm,marginTop:4}}>{k.sub}</div>
+            <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:4}}>
+              <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{width:7,height:7,borderRadius:"50%",background:k.n?k.color:T.border,flexShrink:0}}/><span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{k.label}</span></div>
+              <div style={{fontSize:22,fontWeight:800,color:k.n?T.text:T.textSm,letterSpacing:-0.5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
+              <div style={{fontSize:11,color:T.textSm}}>{k.sub}</div>
             </div>
           ))}
         </div>
@@ -13826,26 +13827,30 @@ function AppCalendarioPagos({T,user,onHome}){
             <button onClick={()=>setVistaP("calendario")} style={segBtn(vista==="calendario")}>Calendario</button>
             <button onClick={()=>setVistaP("lista")} style={segBtn(vista==="lista")}>Lista</button>
           </div>
+          <Btn T={T} variant="primary" size="md" onClick={()=>nuevo()}>Nuevo pago</Btn>
         </div>
+        {items&&items.length===0&&(
+          <div style={{background:T.accentSolid+"0d",border:`1px solid ${T.accentSolid}33`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:T.textMd,lineHeight:1.5}}>
+            <b style={{color:T.text}}>Todavía no cargaste ningún pago.</b> Anotá alquiler, préstamos, cuotas, tarjetas, proveedores, impuestos o sueldos: tocá un día del calendario o usá Nuevo pago. Los mensuales y las cuotas se generan solos.
+          </div>
+        )}
 
         {items===null?(
           <div style={{display:"flex",alignItems:"center",gap:8,color:T.textSm,fontSize:12,padding:"20px 0"}}><Spinner size={14} color={T.accent}/> Cargando…</div>
-        ):items.length===0?(
-          <DSEmpty T={T} title="Todavía no cargaste ningún pago" subtitle="Anotá alquiler, préstamos, cuotas, tarjetas, proveedores, impuestos o sueldos. Los mensuales y las cuotas se generan solos mes a mes." action={<Btn T={T} variant="primary" onClick={()=>nuevo()}>Cargar el primero</Btn>}/>
         ):vista==="calendario"?(
           <Card T={T} padding="md" style={{marginBottom:16}}>
             <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
               {["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(d=><div key={d} style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,textAlign:"center",padding:"4px 0"}}>{d}</div>)}
-              {celdas.map((f,idx)=>{
-                if(!f) return <div key={"e"+idx} style={{minHeight:86,borderRadius:8,background:T.bg+"66"}}/>;
-                const arr=(porDia[f]||[]).slice().sort((a,b)=>Number(a.pagado)-Number(b.pagado));
-                const esHoy=f===hoy; const pasado=f<hoy;
+              {celdas.map(({f,fuera},idx)=>{
+                const arr=fuera?[]:(porDia[f]||[]).slice().sort((a,b)=>Number(a.pagado)-Number(b.pagado));
+                const esHoy=f===hoy; const finde=idx%7>=5;
                 const abierto=diaAbierto===f;
+                const pendDia=arr.filter(i=>!i.pagado);
                 return (
-                  <div key={f} onClick={()=>nuevo(f)} style={{minHeight:86,borderRadius:8,border:`1px solid ${esHoy?T.accentSolid:T.borderL}`,background:esHoy?T.accentSolid+"0d":T.bg,padding:"5px 6px",cursor:"pointer",opacity:pasado?0.85:1,display:"flex",flexDirection:"column",gap:3}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <span style={{fontSize:11,fontWeight:esHoy?800:600,color:esHoy?T.accent:T.textMd}}>{Number(f.slice(8))}</span>
-                      {arr.length>0&&<span style={{fontSize:9,color:T.textSm}}>{fmtPar(arr.filter(i=>!i.pagado))||""}</span>}
+                  <div key={f} onClick={()=>!fuera&&nuevo(f)} style={{minHeight:96,borderRadius:8,border:`1px solid ${esHoy?T.accentSolid+"88":T.borderL}`,background:fuera?"transparent":finde?T.bg+"99":T.bg,padding:"6px 7px",cursor:fuera?"default":"pointer",display:"flex",flexDirection:"column",gap:3,opacity:fuera?0.35:1}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+                      <span style={{width:20,height:20,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:esHoy?800:600,color:esHoy?"#fff":T.textMd,background:esHoy?T.accentSolid:"transparent"}}>{Number(f.slice(8))}</span>
+                      {pendDia.length>0&&<span style={{fontSize:9,color:T.textSm,fontVariantNumeric:"tabular-nums"}}>{fmtPar(pendDia)}</span>}
                     </div>
                     {(abierto?arr:arr.slice(0,3)).map(i=><Chip key={i.id} i={i} onClick={e=>{e.stopPropagation();editar(i);}}/>)}
                     {!abierto&&arr.length>3&&<span onClick={e=>{e.stopPropagation();setDiaAbierto(f);}} style={{fontSize:10,color:T.accent,fontWeight:600}}>+{arr.length-3} más</span>}
