@@ -36178,6 +36178,7 @@ export default function App() {
       @media(max-width:768px){
         .hide-mobile{display:none!important;}
         .mobile-only{display:flex!important;}
+        .gh-calpagos-grid{grid-template-columns:1fr!important;}
         .stack-mobile{flex-direction:column!important;grid-template-columns:1fr!important;}
         .full-mobile{width:100%!important;min-width:0!important;}
         .pad-mobile{padding:12px 14px!important;}
