@@ -13760,11 +13760,9 @@ function AppCalendarioPagos({T,user,onHome}){
     try{ await api("pagar",{id:i.id,pagado}); }catch(e){ toast(e.message,"error"); load(); }
   };
   const borrar=async(i)=>{
+    if(!(await appConfirm(`¿Borrar "${i.titulo}" del ${i.vence.split("-").reverse().join("/")}?`,{danger:true,okLabel:"Borrar"}))) return;
     let serie=false;
-    if(i.grupo){
-      const ok=await appConfirm(`"${i.titulo}" es parte de una serie. ¿Borrar solo este vencimiento o toda la serie pendiente?`,{okLabel:"Toda la serie",cancelLabel:"Solo este"});
-      serie=!!ok;
-    } else if(!(await appConfirm(`¿Borrar "${i.titulo}" del ${i.vence.split("-").reverse().join("/")}?`,{danger:true,okLabel:"Borrar"}))) return;
+    if(i.grupo) serie=!!(await appConfirm("Es parte de una serie. ¿Borrás también todos los vencimientos pendientes de la serie?",{okLabel:"Toda la serie",cancelLabel:"Solo este"}));
     try{ await api("delete",{id:i.id,serie}); setForm(null); await load(); toast("Borrado","success"); }catch(e){ toast(e.message,"error"); }
   };
 
