@@ -173,7 +173,13 @@ export default async function handler(req, res) {
         const hoy = hoyAR(); const limite = sumarDias(hoy, 60);
         const porGrupo = {};
         // Serie dividida en partes del mes (sueldo 50/50): cada parte se extiende por su lado.
-        for (const it of items) if (it.tipo === "mensual" && it.grupo) (porGrupo[it.grupo + "|" + (it.parteMes || 0)] ||= []).push(it);
+        // Grupos ya divididos: los docs sin parteMes son los pagados de antes de
+        // dividir (no forman serie) o duplicados generados por la extensión —
+        // los pendientes sin parte se borran, y ese subgrupo no se extiende.
+        const divididos = new Set(items.filter(it => it.parteMes).map(it => it.grupo));
+        const espurios = items.filter(it => it.tipo === "mensual" && it.grupo && divididos.has(it.grupo) && !it.parteMes && !it.pagado);
+        if (espurios.length) { const b = db.batch(); espurios.forEach(it => b.delete(col.doc(it.id))); await b.commit(); items = items.filter(it => !espurios.includes(it)); }
+        for (const it of items) if (it.tipo === "mensual" && it.grupo && !(divididos.has(it.grupo) && !it.parteMes)) (porGrupo[it.grupo + "|" + (it.parteMes || 0)] ||= []).push(it);
         const nuevos = [];
         for (const [grupo, arr] of Object.entries(porGrupo)) {
           arr.sort((a, b) => a.vence.localeCompare(b.vence));

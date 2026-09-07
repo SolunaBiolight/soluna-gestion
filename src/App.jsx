@@ -13836,6 +13836,9 @@ function AppCalendarioPagos({T,user,onHome}){
   const [pedidoOpen,setPedidoOpen]=useState(false);
   const [pedidoAbierto,setPedidoAbierto]=useState(null);
   const [divPct,setDivPct]=useState("50"); const [divDia,setDivDia]=useState("15");
+  const [busq,setBusq]=useState("");
+  const bq=busq.trim().toLowerCase();
+  const encontrados=bq?(items||[]).filter(i=>`${i.titulo} ${calpagosCatLabel(i.categoria)} ${i.notas||""} ${i.monto}`.toLowerCase().includes(bq)).sort((x,y)=>x.vence.localeCompare(y.vence)):[];
 
   const api=async(action,extra={})=>{
     const r=await authFetch("/api/pagos-cal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,uid:user.uid,...extra})});
@@ -14015,7 +14018,9 @@ function AppCalendarioPagos({T,user,onHome}){
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
               <span style={{fontSize:14,fontWeight:800,color:T.text,letterSpacing:-0.2}}>Agenda</span>
               <span style={{fontSize:11,color:T.textSm}}>{pend.length} pendiente{pend.length===1?"":"s"}</span>
-              <span style={{marginLeft:"auto"}}><Btn T={T} variant="primary" size="sm" onClick={()=>nuevo()}>Nuevo pago</Btn></span>
+              <input value={busq} onChange={e=>setBusq(e.target.value)} placeholder="Buscar pago…" style={{...iS,marginLeft:"auto",width:200,padding:"6px 10px",fontSize:12}}/>
+              {bq&&<button onClick={()=>setBusq("")} style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:13}}>✕</button>}
+              <Btn T={T} variant="primary" size="sm" onClick={()=>nuevo()}>Nuevo pago</Btn>
             </div>
             {items===null?(
               <div style={{display:"flex",alignItems:"center",gap:8,color:T.textSm,fontSize:12,padding:"20px 0"}}><Spinner size={14} color={T.accent}/> Cargando…</div>
@@ -14026,6 +14031,16 @@ function AppCalendarioPagos({T,user,onHome}){
                 <Btn T={T} variant="primary" onClick={()=>nuevo()}>Cargar el primero</Btn>
               </div>
             ):(
+              bq?(
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 0 4px"}}>
+                  <span style={{fontSize:11,fontWeight:800,color:T.text,textTransform:"uppercase",letterSpacing:0.6}}>Resultados</span>
+                  <span style={{fontSize:11,color:T.textSm}}>{encontrados.length} pago{encontrados.length===1?"":"s"} para "{busq.trim()}"</span>
+                </div>
+                {encontrados.length===0&&<div style={{fontSize:12,color:T.textSm,padding:"14px 0"}}>Nada coincide. Probá con parte del nombre, la categoría o el monto.</div>}
+                {encontrados.slice(0,200).map(i=><Fila key={i.id} i={i}/>)}
+              </div>
+              ):(
               <>
                 {diaSel&&(
                   <div style={{background:T.accentSolid+"0d",border:`1px solid ${T.accentSolid}33`,borderRadius:10,padding:"10px 14px",margin:"8px 0 4px"}}>
@@ -14050,6 +14065,7 @@ function AppCalendarioPagos({T,user,onHome}){
                   </div>
                 )}
               </>
+              )
             )}
           </Card>
 
