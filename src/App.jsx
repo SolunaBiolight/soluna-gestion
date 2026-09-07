@@ -13689,14 +13689,13 @@ function AppCalendarioPagos({T,user,onHome}){
   const hoy=hoyAR();
   const [items,setItems]=useState(null);
   const [err,setErr]=useState("");
-  const [mes,setMes]=useState(hoy.slice(0,7));
-  const [vista,setVista]=useState(()=>{try{return localStorage.getItem("growith_calpagos_vista")||"calendario";}catch(_){return "calendario";}});
-  const [catFiltro,setCatFiltro]=useState("");
-  const [form,setForm]=useState(null); // null | {id?, titulo, categoria, monto, moneda, vence, tipo, cuotasTotal, cuotaDesde, notas, grupo?, cuotaN?, cuotaTotal?}
+  const [mes,setMes]=useState(hoy.slice(0,7));      // mes del mini calendario
+  const [diaSel,setDiaSel]=useState(null);          // día elegido en el mini calendario
+  const [form,setForm]=useState(null);
   const [saving,setSaving]=useState(false);
   const [aplicarSerie,setAplicarSerie]=useState(false);
-  const [diaAbierto,setDiaAbierto]=useState(null);
-  const setVistaP=v=>{setVista(v);try{localStorage.setItem("growith_calpagos_vista",v);}catch(_){}};
+  const [verPagados,setVerPagados]=useState(false);
+  const [prestamoAbierto,setPrestamoAbierto]=useState(null);
 
   const api=async(action,extra={})=>{
     const r=await authFetch("/api/pagos-cal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,uid:user.uid,...extra})});
@@ -13709,7 +13708,6 @@ function AppCalendarioPagos({T,user,onHome}){
     catch(e){ setErr(e.message); if(!items) setItems([]); }
   };
   useEffect(()=>{ if(user?.uid) load(); },[user?.uid]);
-  // Badge del sidebar: vencidos + vence hoy + vence mañana (sin pagar)
   useEffect(()=>{
     if(!items) return;
     const man=sumarDiasAR(hoy,1);
@@ -13718,39 +13716,70 @@ function AppCalendarioPagos({T,user,onHome}){
     window.dispatchEvent(new Event("gh-calpagos-alert"));
   },[items]);
 
-  const [yy,mm]=mes.split("-").map(Number);
-  const mesLabel=`${mesesNombres[mm-1][0].toUpperCase()+mesesNombres[mm-1].slice(1)} ${yy}`;
-  const shiftMes=n=>{ let y=yy,m=mm+n; if(m>12){m=1;y++;} if(m<1){m=12;y--;} setMes(`${y}-${String(m).padStart(2,"0")}`); };
-  const lista=(items||[]).filter(i=>!catFiltro||i.categoria===catFiltro);
+  const lista=items||[];
   const estadoDe=i=>i.pagado?"pagado":i.vence<hoy?"vencido":i.vence===hoy?"hoy":i.vence<=sumarDiasAR(hoy,7)?"proximo":"futuro";
   const colorEstado={pagado:T.green,vencido:T.red,hoy:T.yellow,proximo:T.orange,futuro:T.textSm};
   const labelEstado={pagado:"Pagado",vencido:"Vencido",hoy:"Vence hoy",proximo:"Esta semana",futuro:"Pendiente"};
-
-  // KPIs
   const sum=(arr,mon)=>arr.filter(i=>i.moneda===mon).reduce((s,i)=>s+(Number(i.monto)||0),0);
   const fmtPar=arr=>{ const a=sum(arr,"ARS"), u=sum(arr,"USD"); const parts=[]; if(a||!u) parts.push(fmtMoney(a)); if(u) parts.push(`USD ${u.toLocaleString("es-AR",{maximumFractionDigits:0})}`); return parts.join(" + "); };
-  const pend=lista.filter(i=>!i.pagado);
+  const fechaLarga=f=>{ const d=new Date(f+"T12:00:00"); return d.toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"}); };
+  const fechaCorta=f=>{ const d=new Date(f+"T12:00:00"); return {dia:d.toLocaleDateString("es-AR",{weekday:"short"}).replace(".",""),num:d.getDate(),mes:d.toLocaleDateString("es-AR",{month:"short"}).replace(".","")}; };
+
+  const pend=lista.filter(i=>!i.pagado).sort((a,b)=>a.vence.localeCompare(b.vence)||a.titulo.localeCompare(b.titulo));
   const vencidos=pend.filter(i=>i.vence<hoy);
   const semana=pend.filter(i=>i.vence>=hoy&&i.vence<=sumarDiasAR(hoy,7));
-  const mesPend=pend.filter(i=>i.vence.slice(0,7)===mes);
-  const mesPag=lista.filter(i=>i.pagado&&i.vence.slice(0,7)===mes);
-  const proy=n=>pend.filter(i=>i.vence>=hoy&&i.vence<=sumarDiasAR(hoy,n));
+  const mesActualPend=pend.filter(i=>i.vence.slice(0,7)===hoy.slice(0,7));
+  const prestamosPend=pend.filter(i=>i.categoria==="prestamo");
 
-  // Calendario del mes: celdas Lun..Dom
+  // Bloques de la agenda
+  const d7=sumarDiasAR(hoy,7), d14=sumarDiasAR(hoy,14), finMes=hoy.slice(0,7);
+  const bloques=[
+    {id:"vencidos",label:"Vencidos",items:vencidos,color:T.red},
+    {id:"hoy",label:"Hoy",items:pend.filter(i=>i.vence===hoy),color:T.yellow},
+    {id:"semana",label:"Esta semana",items:pend.filter(i=>i.vence>hoy&&i.vence<=d7),color:T.orange},
+    {id:"prox",label:"Próxima semana",items:pend.filter(i=>i.vence>d7&&i.vence<=d14),color:T.accent},
+    {id:"mes",label:"Resto del mes",items:pend.filter(i=>i.vence>d14&&i.vence.slice(0,7)===finMes),color:T.textMd},
+  ];
+  const masAdelante=pend.filter(i=>i.vence>d14&&i.vence.slice(0,7)!==finMes);
+  const porMes={}; for(const i of masAdelante) (porMes[i.vence.slice(0,7)] ||= []).push(i);
+  const pagadosMes=lista.filter(i=>i.pagado&&i.vence.slice(0,7)===finMes).sort((a,b)=>b.vence.localeCompare(a.vence));
+
+  // Préstamos (grupos con categoría préstamo y cuotas)
+  const prestamos=useMemo(()=>{
+    const g={}; for(const i of lista){ if(i.categoria!=="prestamo"||!i.grupo) continue; (g[i.grupo] ||= []).push(i); }
+    return Object.entries(g).map(([grupo,arr])=>{
+      arr.sort((a,b)=>(a.cuotaN||0)-(b.cuotaN||0));
+      const pagadas=arr.filter(x=>x.pagado), pendientes=arr.filter(x=>!x.pagado);
+      const info=arr.find(x=>x.prestamo)?.prestamo||null;
+      const prox=pendientes[0]||null;
+      return {grupo,titulo:arr[0].titulo,moneda:arr[0].moneda,total:arr[0].cuotaTotal||arr.length,n:arr.length,pagadas:pagadas.length,pendientes,
+        restante:pendientes.reduce((s,x)=>s+(Number(x.monto)||0),0),pagado:pagadas.reduce((s,x)=>s+(Number(x.monto)||0),0),
+        capitalRestante:prox?(prox.saldoDespues!=null?(Number(prox.saldoDespues)+Number(prox.capitalCuota||0)):null):0,
+        cuota:prox?Number(prox.monto):Number(arr[arr.length-1].monto),prox,info,cuotas:arr};
+    }).sort((a,b)=>b.restante-a.restante);
+  },[lista]);
+
+  // Mini calendario
+  const [yy,mm]=mes.split("-").map(Number);
+  const mesLabel=`${mesesNombres[mm-1][0].toUpperCase()+mesesNombres[mm-1].slice(1)} ${yy}`;
+  const shiftMes=n=>{ let y=yy,m=mm+n; if(m>12){m=1;y++;} if(m<1){m=12;y--;} setMes(`${y}-${String(m).padStart(2,"0")}`); };
   const primero=new Date(Date.UTC(yy,mm-1,1)); const diasMes=new Date(Date.UTC(yy,mm,0)).getUTCDate();
-  const offset=(primero.getUTCDay()+6)%7; // lunes=0
-  const celdas=[]; for(let i=offset;i>0;i--) celdas.push({f:sumarDiasAR(`${mes}-01`,-i),fuera:true}); for(let d=1;d<=diasMes;d++) celdas.push({f:`${mes}-${String(d).padStart(2,"0")}`,fuera:false}); let kk=1; while(celdas.length%7) celdas.push({f:sumarDiasAR(`${mes}-${String(diasMes).padStart(2,"0")}`,kk++),fuera:true});
+  const offset=(primero.getUTCDay()+6)%7;
+  const celdas=[]; for(let i=0;i<offset;i++) celdas.push(null); for(let d=1;d<=diasMes;d++) celdas.push(`${mes}-${String(d).padStart(2,"0")}`);
   const porDia={}; for(const i of lista) (porDia[i.vence] ||= []).push(i);
+  const delDia=diaSel?(porDia[diaSel]||[]).slice().sort((a,b)=>Number(a.pagado)-Number(b.pagado)):[];
 
-  const nuevo=(vence)=>{ setAplicarSerie(false); setForm({titulo:"",categoria:"otro",monto:"",moneda:"ARS",vence:vence||hoy,tipo:"unico",cuotasTotal:"12",cuotaDesde:"1",notas:""}); };
-  const editar=(i)=>{ setAplicarSerie(false); setForm({id:i.id,titulo:i.titulo,categoria:i.categoria,monto:String(i.monto),moneda:i.moneda,vence:i.vence,tipo:i.tipo||"unico",notas:i.notas||"",grupo:i.grupo||null,cuotaN:i.cuotaN,cuotaTotal:i.cuotaTotal,pagado:!!i.pagado}); };
+  const nuevo=(vence)=>{ setAplicarSerie(false); setForm({titulo:"",categoria:"otro",monto:"",moneda:"ARS",vence:vence||hoy,tipo:"unico",cuotasTotal:"12",cuotaDesde:"1",capital:"",tna:"",notas:""}); };
+  const editar=(i)=>{ setAplicarSerie(false); setForm({id:i.id,titulo:i.titulo,categoria:i.categoria,monto:String(i.monto),moneda:i.moneda,vence:i.vence,tipo:i.tipo||"unico",notas:i.notas||"",grupo:i.grupo||null,cuotaN:i.cuotaN,cuotaTotal:i.cuotaTotal,pagado:!!i.pagado,capitalCuota:i.capitalCuota,interesCuota:i.interesCuota,saldoDespues:i.saldoDespues}); };
+  const esPrestamoNuevo=form&&!form.id&&form.tipo==="cuotas"&&form.categoria==="prestamo";
+  const cuotaEstimada=(()=>{ if(!esPrestamoNuevo) return null; const cap=ghNumAR(form.capital), n=parseInt(form.cuotasTotal)||0, tna=ghNumAR(form.tna); if(!(cap>0)||n<2) return null; if(ghNumAR(form.monto)>0) return ghNumAR(form.monto); const i=tna/100/12; return i>0?cap*i/(1-Math.pow(1+i,-n)):cap/n; })();
   const guardar=async()=>{
     if(!form.titulo.trim()){ toast("Poné a quién o qué se paga","warning"); return; }
-    if(!(ghNumAR(form.monto)>0)){ toast("Poné un monto mayor a cero","warning"); return; }
+    if(!(ghNumAR(form.monto)>0)&&!(esPrestamoNuevo&&ghNumAR(form.capital)>0)){ toast("Poné un monto mayor a cero","warning"); return; }
     setSaving(true);
     try{
-      await api("save",{pago:{...form,monto:ghNumAR(form.monto)},aplicarSerie});
-      toast(form.id?"Pago actualizado":form.tipo==="cuotas"?"Cuotas cargadas":form.tipo==="mensual"?"Pago mensual cargado (12 meses)":"Pago cargado","success");
+      await api("save",{pago:{...form,monto:ghNumAR(form.monto),capital:esPrestamoNuevo?ghNumAR(form.capital):0,tna:esPrestamoNuevo?ghNumAR(form.tna):0},aplicarSerie});
+      toast(form.id?"Pago actualizado":form.tipo==="cuotas"?(esPrestamoNuevo?"Préstamo cargado con su cuadro de cuotas":"Cuotas cargadas"):form.tipo==="mensual"?"Pago mensual cargado (12 meses)":"Pago cargado","success");
       setForm(null); await load();
     }catch(e){ toast(e.message,"error"); }
     finally{ setSaving(false); }
@@ -13766,40 +13795,52 @@ function AppCalendarioPagos({T,user,onHome}){
     try{ await api("delete",{id:i.id,serie}); setForm(null); await load(); toast("Borrado","success"); }catch(e){ toast(e.message,"error"); }
   };
 
-  const Chip=({i,onClick})=>{ const e=estadoDe(i); const c=colorEstado[e]; return (
-    <div onClick={onClick} title={`${i.titulo} · ${calpagosFmt(i.monto,i.moneda)} · ${labelEstado[e]}`} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,padding:"2px 5px",borderRadius:4,background:e==="futuro"?T.surface:c+"14",color:i.pagado?T.textSm:T.text,cursor:"pointer",overflow:"hidden",whiteSpace:"nowrap",textDecoration:i.pagado?"line-through":"none"}}>
-      <span style={{width:6,height:6,borderRadius:"50%",background:c,flexShrink:0}}/>
-      <span style={{overflow:"hidden",textOverflow:"ellipsis",flex:1,fontWeight:500}}>{i.titulo}</span><span style={{fontWeight:700,flexShrink:0,color:i.pagado?T.textSm:T.textMd,fontVariantNumeric:"tabular-nums"}}>{calpagosFmt(i.monto,i.moneda)}</span>
+  const Fila=({i,compacta})=>{ const e=estadoDe(i); const c=colorEstado[e]; const fc=fechaCorta(i.vence); return (
+    <div style={{display:"flex",alignItems:"center",gap:12,padding:compacta?"8px 0":"10px 0",borderTop:`1px solid ${T.borderL}`}}>
+      <div style={{width:44,textAlign:"center",flexShrink:0,lineHeight:1.1}}>
+        <div style={{fontSize:16,fontWeight:800,color:i.pagado?T.textSm:T.text,fontVariantNumeric:"tabular-nums"}}>{fc.num}</div>
+        <div style={{fontSize:9,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4}}>{fc.dia} · {fc.mes}</div>
+      </div>
+      <span style={{width:3,alignSelf:"stretch",borderRadius:2,background:c,flexShrink:0,opacity:i.pagado?0.4:1}}/>
+      <div style={{flex:1,minWidth:0}}>
+        <div onClick={()=>editar(i)} style={{fontSize:13,fontWeight:600,color:i.pagado?T.textSm:T.text,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:i.pagado?"line-through":"none"}}>{i.titulo}</div>
+        <div style={{fontSize:11,color:T.textSm,marginTop:1,display:"flex",gap:6,flexWrap:"wrap"}}>
+          <span>{calpagosCatLabel(i.categoria)}</span>
+          {i.cuotaN&&<span>· cuota {i.cuotaN} de {i.cuotaTotal}</span>}
+          {i.tipo==="mensual"&&<span>· mensual</span>}
+          {!i.pagado&&e!=="futuro"&&<span style={{color:c,fontWeight:700}}>· {labelEstado[e]}</span>}
+        </div>
+      </div>
+      <div style={{fontSize:14,fontWeight:800,color:i.pagado?T.textSm:T.text,fontVariantNumeric:"tabular-nums",flexShrink:0}}>{calpagosFmt(i.monto,i.moneda)}</div>
+      <Btn T={T} variant={i.pagado?"ghost":"success"} size="sm" onClick={()=>marcar(i,!i.pagado)}>{i.pagado?"Desmarcar":"Pagado"}</Btn>
     </div>); };
-  const Fila=({i})=>{ const e=estadoDe(i); const c=colorEstado[e]; return (
-    <div style={{display:"grid",gridTemplateColumns:"96px 1fr 110px 130px 110px auto",gap:10,alignItems:"center",padding:"9px 0",borderTop:`1px solid ${T.borderL}`,fontSize:12}}>
-      <span style={{color:T.textMd,fontVariantNumeric:"tabular-nums"}}>{i.vence.split("-").reverse().join("/")}</span>
-      <span style={{minWidth:0}}><span onClick={()=>editar(i)} style={{fontWeight:600,color:T.text,cursor:"pointer",textDecoration:i.pagado?"line-through":"none"}}>{i.titulo}</span>{i.cuotaN&&<span style={{color:T.textSm,marginLeft:6}}>cuota {i.cuotaN}/{i.cuotaTotal}</span>}{i.tipo==="mensual"&&<span style={{color:T.textSm,marginLeft:6}}>mensual</span>}</span>
-      <span><DSBadge T={T} color={T.textSm} size="sm">{calpagosCatLabel(i.categoria)}</DSBadge></span>
-      <span style={{fontWeight:700,color:T.text,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{calpagosFmt(i.monto,i.moneda)}</span>
-      <span><DSBadge T={T} color={c} size="sm">{labelEstado[e]}</DSBadge></span>
-      <span style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-        <Btn T={T} variant={i.pagado?"ghost":"success"} size="sm" onClick={()=>marcar(i,!i.pagado)}>{i.pagado?"Desmarcar":"Pagado"}</Btn>
-        <Btn T={T} variant="ghost" size="sm" onClick={()=>editar(i)}>Editar</Btn>
-      </span>
-    </div>); };
+  const Bloque=({label,color,arr,sub})=>arr.length?(
+    <div style={{marginBottom:6}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 0 4px"}}>
+        <span style={{width:8,height:8,borderRadius:"50%",background:color}}/>
+        <span style={{fontSize:11,fontWeight:800,color:T.text,textTransform:"uppercase",letterSpacing:0.6}}>{label}</span>
+        <span style={{fontSize:11,color:T.textSm}}>{arr.length} · {fmtPar(arr)}</span>
+        {sub&&<span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{sub}</span>}
+      </div>
+      {arr.map(i=><Fila key={i.id} i={i}/>)}
+    </div>
+  ):null;
   const segBtn=(on)=>({padding:"5px 12px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:6,background:on?T.card:"transparent",color:on?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?"0 1px 3px rgba(0,0,0,0.12)":"none"});
-  const listaMes=lista.filter(i=>i.vence.slice(0,7)===mes).sort((a,b)=>a.vence.localeCompare(b.vence)||a.titulo.localeCompare(b.titulo));
-  const listaPend=pend.slice().sort((a,b)=>a.vence.localeCompare(b.vence));
+  const lbl=t=><div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>{t}</div>;
 
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
       <AppTopbar T={T} section="Calendario de Pagos" sectionId="calendario" onHome={onHome}/>
-      <div style={{padding:"20px 24px 64px",maxWidth:1100,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"20px 24px 64px",maxWidth:1140,margin:"0 auto",width:"100%"}}>
         {err&&<div style={{fontSize:12,color:T.red,background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:8,padding:"8px 12px",marginBottom:12}}>{err}</div>}
 
         {/* KPIs */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:16}}>
           {[
             {label:"Vencido",n:vencidos.length,val:fmtPar(vencidos),sub:vencidos.length?`${vencidos.length} pago${vencidos.length===1?"":"s"} sin pagar`:"Nada vencido",color:T.red},
-            {label:"Vence esta semana",n:semana.length,val:fmtPar(semana),sub:`${semana.length} pago${semana.length===1?"":"s"} hasta el ${sumarDiasAR(hoy,7).split("-").reverse().slice(0,2).join("/")}`,color:T.yellow},
-            {label:`Falta pagar en ${mesesNombres[mm-1]}`,n:mesPend.length,val:fmtPar(mesPend),sub:`${mesPend.length} pendiente${mesPend.length===1?"":"s"}`,color:T.accent},
-            {label:`Pagado en ${mesesNombres[mm-1]}`,n:mesPag.length,val:fmtPar(mesPag),sub:`${mesPag.length} pago${mesPag.length===1?"":"s"}`,color:T.green},
+            {label:"Vence esta semana",n:semana.length,val:fmtPar(semana),sub:`${semana.length} pago${semana.length===1?"":"s"} hasta el ${d7.split("-").reverse().slice(0,2).join("/")}`,color:T.yellow},
+            {label:`Falta pagar en ${mesesNombres[Number(hoy.slice(5,7))-1]}`,n:mesActualPend.length,val:fmtPar(mesActualPend),sub:`${mesActualPend.length} pendiente${mesActualPend.length===1?"":"s"}`,color:T.accent},
+            {label:"Deuda en préstamos",n:prestamosPend.length,val:fmtPar(prestamosPend),sub:prestamos.length?`${prestamos.length} préstamo${prestamos.length===1?"":"s"} · ${prestamosPend.length} cuota${prestamosPend.length===1?"":"s"} por pagar`:"Sin préstamos",color:T.purple},
           ].map(k=>(
             <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:4}}>
               <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{width:7,height:7,borderRadius:"50%",background:k.n?k.color:T.border,flexShrink:0}}/><span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{k.label}</span></div>
@@ -13809,130 +13850,151 @@ function AppCalendarioPagos({T,user,onHome}){
           ))}
         </div>
 
-        {/* Toolbar */}
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
-          <div style={{display:"inline-flex",alignItems:"center",background:T.surface,borderRadius:8,padding:2}}>
-            <button onClick={()=>shiftMes(-1)} style={{padding:"4px 10px",border:"none",background:"transparent",color:T.textMd,cursor:"pointer",fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}>‹</button>
-            <span style={{padding:"4px 8px",fontSize:13,fontWeight:700,color:T.text,minWidth:140,textAlign:"center"}}>{mesLabel}</span>
-            <button onClick={()=>shiftMes(1)} style={{padding:"4px 10px",border:"none",background:"transparent",color:T.textMd,cursor:"pointer",fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}>›</button>
-          </div>
-          {mes!==hoy.slice(0,7)&&<Btn T={T} variant="ghost" size="sm" onClick={()=>setMes(hoy.slice(0,7))}>Hoy</Btn>}
-          <select value={catFiltro} onChange={e=>setCatFiltro(e.target.value)} style={{...iS,width:"auto",padding:"5px 10px",fontSize:12}}>
-            <option value="">Todas las categorías</option>
-            {CALPAGOS_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
-          </select>
-          <div style={{marginLeft:"auto",display:"inline-flex",background:T.surface,borderRadius:8,padding:2}}>
-            <button onClick={()=>setVistaP("calendario")} style={segBtn(vista==="calendario")}>Calendario</button>
-            <button onClick={()=>setVistaP("lista")} style={segBtn(vista==="lista")}>Lista</button>
-          </div>
-          <Btn T={T} variant="primary" size="md" onClick={()=>nuevo()}>Nuevo pago</Btn>
-        </div>
-        {items&&items.length===0&&(
-          <div style={{background:T.accentSolid+"0d",border:`1px solid ${T.accentSolid}33`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:T.textMd,lineHeight:1.5}}>
-            <b style={{color:T.text}}>Todavía no cargaste ningún pago.</b> Anotá alquiler, préstamos, cuotas, tarjetas, proveedores, impuestos o sueldos: tocá un día del calendario o usá Nuevo pago. Los mensuales y las cuotas se generan solos.
-          </div>
-        )}
-
-        {items===null?(
-          <div style={{display:"flex",alignItems:"center",gap:8,color:T.textSm,fontSize:12,padding:"20px 0"}}><Spinner size={14} color={T.accent}/> Cargando…</div>
-        ):vista==="calendario"?(
-          <Card T={T} padding="md" style={{marginBottom:16}}>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
-              {["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(d=><div key={d} style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,textAlign:"center",padding:"4px 0"}}>{d}</div>)}
-              {celdas.map(({f,fuera},idx)=>{
-                const arr=fuera?[]:(porDia[f]||[]).slice().sort((a,b)=>Number(a.pagado)-Number(b.pagado));
-                const esHoy=f===hoy; const finde=idx%7>=5;
-                const abierto=diaAbierto===f;
-                const pendDia=arr.filter(i=>!i.pagado);
-                return (
-                  <div key={f} onClick={()=>!fuera&&nuevo(f)} style={{minHeight:96,borderRadius:8,border:`1px solid ${esHoy?T.accentSolid+"88":T.borderL}`,background:fuera?"transparent":finde?T.bg+"99":T.bg,padding:"6px 7px",cursor:fuera?"default":"pointer",display:"flex",flexDirection:"column",gap:3,opacity:fuera?0.35:1}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
-                      <span style={{width:20,height:20,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:esHoy?800:600,color:esHoy?"#fff":T.textMd,background:esHoy?T.accentSolid:"transparent"}}>{Number(f.slice(8))}</span>
-                      {pendDia.length>0&&<span style={{fontSize:9,color:T.textSm,fontVariantNumeric:"tabular-nums"}}>{fmtPar(pendDia)}</span>}
+        <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 300px",gap:16,alignItems:"start"}} className="gh-calpagos-grid">
+          {/* Agenda */}
+          <Card T={T} padding="lg">
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
+              <span style={{fontSize:14,fontWeight:800,color:T.text,letterSpacing:-0.2}}>Agenda</span>
+              <span style={{fontSize:11,color:T.textSm}}>{pend.length} pendiente{pend.length===1?"":"s"}</span>
+              <span style={{marginLeft:"auto"}}><Btn T={T} variant="primary" size="sm" onClick={()=>nuevo()}>Nuevo pago</Btn></span>
+            </div>
+            {items===null?(
+              <div style={{display:"flex",alignItems:"center",gap:8,color:T.textSm,fontSize:12,padding:"20px 0"}}><Spinner size={14} color={T.accent}/> Cargando…</div>
+            ):items.length===0?(
+              <div style={{padding:"28px 12px",textAlign:"center"}}>
+                <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:6}}>Todavía no cargaste ningún pago</div>
+                <div style={{fontSize:12,color:T.textSm,lineHeight:1.6,maxWidth:420,margin:"0 auto 14px"}}>Anotá alquiler, préstamos, cuotas, tarjetas, proveedores, impuestos o sueldos. Los mensuales y las cuotas se generan solos, y te avisamos por mail el día anterior a cada vencimiento.</div>
+                <Btn T={T} variant="primary" onClick={()=>nuevo()}>Cargar el primero</Btn>
+              </div>
+            ):(
+              <>
+                {diaSel&&(
+                  <div style={{background:T.accentSolid+"0d",border:`1px solid ${T.accentSolid}33`,borderRadius:10,padding:"10px 14px",margin:"8px 0 4px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:12,fontWeight:800,color:T.text,textTransform:"capitalize"}}>{fechaLarga(diaSel)}</span>
+                      <span style={{fontSize:11,color:T.textSm}}>{delDia.length?`${delDia.length} pago${delDia.length===1?"":"s"} · ${fmtPar(delDia.filter(x=>!x.pagado))||"todo pagado"}`:"Sin pagos ese día"}</span>
+                      <span style={{marginLeft:"auto",display:"flex",gap:6}}>
+                        <Btn T={T} variant="secondary" size="sm" onClick={()=>nuevo(diaSel)}>Cargar pago ese día</Btn>
+                        <Btn T={T} variant="ghost" size="sm" onClick={()=>setDiaSel(null)}>Cerrar</Btn>
+                      </span>
                     </div>
-                    {(abierto?arr:arr.slice(0,3)).map(i=><Chip key={i.id} i={i} onClick={e=>{e.stopPropagation();editar(i);}}/>)}
-                    {!abierto&&arr.length>3&&<span onClick={e=>{e.stopPropagation();setDiaAbierto(f);}} style={{fontSize:10,color:T.accent,fontWeight:600}}>+{arr.length-3} más</span>}
+                    {delDia.map(i=><Fila key={i.id} i={i} compacta/>)}
+                  </div>
+                )}
+                {pend.length===0&&<div style={{fontSize:12,color:T.textSm,padding:"18px 0"}}>No queda nada pendiente. Todo pagado.</div>}
+                {bloques.map(b=><Bloque key={b.id} label={b.label} color={b.color} arr={b.items}/>)}
+                {Object.keys(porMes).sort().map(k=>{ const [y,m]=k.split("-").map(Number); return <Bloque key={k} label={`${mesesNombres[m-1]} ${y}`} color={T.textSm} arr={porMes[k]}/>; })}
+                {pagadosMes.length>0&&(
+                  <div style={{marginTop:8,borderTop:`1px solid ${T.borderL}`,paddingTop:8}}>
+                    <button onClick={()=>setVerPagados(v=>!v)} style={{background:"none",border:"none",color:T.textSm,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:"4px 0",textTransform:"uppercase",letterSpacing:0.6}}>{verPagados?"Ocultar":"Ver"} pagados este mes ({pagadosMes.length} · {fmtPar(pagadosMes)})</button>
+                    {verPagados&&pagadosMes.map(i=><Fila key={i.id} i={i} compacta/>)}
+                  </div>
+                )}
+              </>
+            )}
+          </Card>
+
+          {/* Columna derecha: mini calendario + préstamos */}
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            <Card T={T} padding="md">
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                <button onClick={()=>shiftMes(-1)} style={{border:"none",background:"transparent",color:T.textMd,cursor:"pointer",fontSize:16,padding:"2px 8px",fontFamily:"'Inter',system-ui,sans-serif"}}>‹</button>
+                <button onClick={()=>{setMes(hoy.slice(0,7));setDiaSel(hoy);}} style={{border:"none",background:"transparent",color:T.text,cursor:"pointer",fontSize:13,fontWeight:800,fontFamily:"'Inter',system-ui,sans-serif"}}>{mesLabel}</button>
+                <button onClick={()=>shiftMes(1)} style={{border:"none",background:"transparent",color:T.textMd,cursor:"pointer",fontSize:16,padding:"2px 8px",fontFamily:"'Inter',system-ui,sans-serif"}}>›</button>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+                {["L","M","M","J","V","S","D"].map((d,i)=><div key={i} style={{fontSize:9,fontWeight:700,color:T.textSm,textAlign:"center",padding:"2px 0"}}>{d}</div>)}
+                {celdas.map((f,idx)=>{
+                  if(!f) return <div key={"e"+idx}/>;
+                  const arr=porDia[f]||[]; const pendD=arr.filter(i=>!i.pagado);
+                  const esHoy=f===hoy, sel=f===diaSel;
+                  const dots=[...new Set(arr.map(i=>colorEstado[estadoDe(i)]))].slice(0,3);
+                  return (
+                    <button key={f} onClick={()=>setDiaSel(sel?null:f)} title={arr.length?`${arr.length} pago${arr.length===1?"":"s"}`:""}
+                      style={{border:"none",background:sel?T.accentSolid+"22":"transparent",borderRadius:6,padding:"3px 0 2px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <span style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:esHoy||pendD.length?700:500,color:esHoy?"#fff":pendD.length?T.text:T.textMd,background:esHoy?T.accentSolid:"transparent"}}>{Number(f.slice(8))}</span>
+                      <span style={{display:"flex",gap:2,height:4}}>{dots.map((c,i)=><span key={i} style={{width:4,height:4,borderRadius:"50%",background:c}}/>)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:8,fontSize:9,color:T.textSm}}>
+                {["vencido","hoy","proximo","futuro","pagado"].map(k=><span key={k} style={{display:"inline-flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:"50%",background:colorEstado[k]}}/>{labelEstado[k]}</span>)}
+              </div>
+            </Card>
+
+            <Card T={T} padding="md">
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <span style={{fontSize:13,fontWeight:800,color:T.text}}>Préstamos</span>
+                <span style={{fontSize:11,color:T.textSm}}>{prestamos.length?`${prestamos.length} activo${prestamos.length===1?"":"s"}`:"ninguno"}</span>
+              </div>
+              {prestamos.length===0?(
+                <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Cargá un pago en cuotas con categoría Préstamo, con el capital y la tasa, y acá ves cuánto falta, cuánto es interés y el cuadro de cuotas.</div>
+              ):prestamos.map(p=>{
+                const pct=p.n?Math.round(p.pagadas/p.n*100):0; const abierto=prestamoAbierto===p.grupo;
+                return (
+                  <div key={p.grupo} style={{padding:"9px 0",borderTop:`1px solid ${T.borderL}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span onClick={()=>setPrestamoAbierto(abierto?null:p.grupo)} style={{flex:1,fontSize:12,fontWeight:700,color:T.text,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.titulo}</span>
+                      <span style={{fontSize:11,color:T.textSm}}>{p.pagadas}/{p.total}</span>
+                    </div>
+                    <div style={{height:4,borderRadius:2,background:T.borderL,margin:"6px 0"}}><div style={{width:`${pct}%`,height:4,borderRadius:2,background:T.purple}}/></div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:T.textSm}}>
+                      <span>Falta <b style={{color:T.text}}>{calpagosFmt(p.restante,p.moneda)}</b></span>
+                      <span>Cuota <b style={{color:T.text}}>{calpagosFmt(p.cuota,p.moneda)}</b></span>
+                    </div>
+                    {p.info&&<div style={{fontSize:10,color:T.textSm,marginTop:3}}>Capital {calpagosFmt(p.info.capital,p.moneda)}{p.info.tna?` · TNA ${p.info.tna}%`:""} · interés total {calpagosFmt(p.info.interesTotal,p.moneda)}{p.capitalRestante!=null?` · capital restante ${calpagosFmt(p.capitalRestante,p.moneda)}`:""}</div>}
+                    {p.prox&&<div style={{fontSize:10,color:T.textSm,marginTop:2}}>Próxima: cuota {p.prox.cuotaN} el {p.prox.vence.split("-").reverse().join("/")}</div>}
+                    {abierto&&(
+                      <div style={{marginTop:8,maxHeight:220,overflow:"auto",fontSize:10}}>
+                        <div style={{display:"grid",gridTemplateColumns:"28px 60px 1fr 1fr 1fr",gap:4,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.3,padding:"2px 0",borderBottom:`1px solid ${T.borderL}`}}><span>#</span><span>Vence</span><span style={{textAlign:"right"}}>Cuota</span><span style={{textAlign:"right"}}>Interés</span><span style={{textAlign:"right"}}>Saldo</span></div>
+                        {p.cuotas.map(c=>(
+                          <div key={c.id} style={{display:"grid",gridTemplateColumns:"28px 60px 1fr 1fr 1fr",gap:4,padding:"3px 0",color:c.pagado?T.textSm:T.textMd,textDecoration:c.pagado?"line-through":"none",fontVariantNumeric:"tabular-nums"}}>
+                            <span>{c.cuotaN}</span><span>{c.vence.slice(5).split("-").reverse().join("/")}</span>
+                            <span style={{textAlign:"right"}}>{Math.round(c.monto).toLocaleString("es-AR")}</span>
+                            <span style={{textAlign:"right"}}>{c.interesCuota!=null?Math.round(c.interesCuota).toLocaleString("es-AR"):"—"}</span>
+                            <span style={{textAlign:"right"}}>{c.saldoDespues!=null?Math.round(c.saldoDespues).toLocaleString("es-AR"):"—"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
-            </div>
-            <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:10,fontSize:10,color:T.textSm}}>
-              {Object.entries(labelEstado).map(([k,l])=><span key={k} style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:8,height:8,borderRadius:2,background:colorEstado[k]}}/>{l}</span>)}
-              <span style={{marginLeft:"auto"}}>Tocá un día para cargar un pago en esa fecha.</span>
-            </div>
-          </Card>
-        ):(
-          <Card T={T} padding="lg" style={{marginBottom:16}}>
-            <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Pagos de {mesLabel}</div>
-            {listaMes.length===0?<div style={{fontSize:12,color:T.textSm,padding:"14px 0"}}>No hay pagos en este mes{catFiltro?" para esa categoría":""}.</div>
-            :<div style={{overflowX:"auto"}}><div style={{minWidth:720}}>{listaMes.map(i=><Fila key={i.id} i={i}/>)}</div></div>}
-          </Card>
-        )}
-
-        {items&&items.length>0&&(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:16}}>
-            <Card T={T} padding="lg">
-              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Comprometido a futuro</div>
-              {[30,60,90].map(n=>{ const arr=proy(n); return (
-                <div key={n} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:n>30?`1px solid ${T.borderL}`:"none",fontSize:12}}>
-                  <span style={{color:T.textMd,flex:1}}>Próximos {n} días</span>
-                  <span style={{color:T.textSm}}>{arr.length} pago{arr.length===1?"":"s"}</span>
-                  <span style={{fontWeight:800,color:T.text,fontVariantNumeric:"tabular-nums"}}>{arr.length?fmtPar(arr):"—"}</span>
-                </div>); })}
-              <div style={{fontSize:11,color:T.textSm,marginTop:8}}>Suma cuotas, mensuales y pagos únicos pendientes desde hoy.</div>
-            </Card>
-            <Card T={T} padding="lg">
-              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Próximos vencimientos</div>
-              {listaPend.length===0?<div style={{fontSize:12,color:T.textSm}}>No queda nada pendiente.</div>
-              :listaPend.slice(0,8).map((i,idx)=>{ const e=estadoDe(i); return (
-                <div key={i.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:idx>0?`1px solid ${T.borderL}`:"none",fontSize:12}}>
-                  <span style={{width:8,height:8,borderRadius:"50%",background:colorEstado[e],flexShrink:0}}/>
-                  <span style={{color:T.textMd,width:48,fontVariantNumeric:"tabular-nums"}}>{i.vence.split("-").reverse().slice(0,2).join("/")}</span>
-                  <span onClick={()=>editar(i)} style={{flex:1,minWidth:0,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer"}}>{i.titulo}{i.cuotaN?<span style={{color:T.textSm,fontWeight:400}}> · {i.cuotaN}/{i.cuotaTotal}</span>:null}</span>
-                  <span style={{fontWeight:800,color:T.text,fontVariantNumeric:"tabular-nums",flexShrink:0}}>{calpagosFmt(i.monto,i.moneda)}</span>
-                  <Btn T={T} variant="ghost" size="sm" onClick={()=>marcar(i,true)}>Pagado</Btn>
-                </div>); })}
             </Card>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Modal alta / edición */}
       <Modal T={T} open={!!form} onClose={()=>!saving&&setForm(null)} title={form?.id?"Editar pago":"Nuevo pago"} width={520}>
         {form&&(
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            <div>
-              <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>A quién o qué se paga</div>
-              <input style={iS} placeholder="Alquiler del local, Cuota préstamo Galicia, Tarjeta Visa…" value={form.titulo} onChange={e=>setForm(f=>({...f,titulo:e.target.value}))} autoFocus/>
-            </div>
+            <div>{lbl("A quién o qué se paga")}<input style={iS} placeholder="Alquiler del local, Préstamo Galicia, Tarjeta Visa…" value={form.titulo} onChange={e=>setForm(f=>({...f,titulo:e.target.value}))} autoFocus/></div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>Categoría</div>
-                <select style={iS} value={form.categoria} onChange={e=>setForm(f=>({...f,categoria:e.target.value}))}>{CALPAGOS_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select>
-              </div>
-              <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>Vencimiento{form.tipo!=="unico"&&!form.id?" (primero)":""}</div>
-                <input type="date" style={iS} value={form.vence} onChange={e=>setForm(f=>({...f,vence:e.target.value}))}/>
-              </div>
-              <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>Monto</div>
-                <input style={iS} inputMode="decimal" placeholder="0" value={form.monto} onChange={e=>setForm(f=>({...f,monto:e.target.value}))}/>
-              </div>
-              <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>Moneda</div>
-                <select style={iS} value={form.moneda} onChange={e=>setForm(f=>({...f,moneda:e.target.value}))}><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (USD)</option></select>
-              </div>
+              <div>{lbl("Categoría")}<select style={iS} value={form.categoria} onChange={e=>setForm(f=>({...f,categoria:e.target.value,...(e.target.value==="prestamo"&&!f.id?{tipo:"cuotas"}:{})}))}>{CALPAGOS_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select></div>
+              <div>{lbl(form.tipo!=="unico"&&!form.id?"Primer vencimiento":"Vencimiento")}<input type="date" style={iS} value={form.vence} onChange={e=>setForm(f=>({...f,vence:e.target.value}))}/></div>
+              <div>{lbl(esPrestamoNuevo?"Cuota (si la conocés)":"Monto")}<input style={iS} inputMode="decimal" placeholder={esPrestamoNuevo&&cuotaEstimada?`calculada: ${Math.round(cuotaEstimada).toLocaleString("es-AR")}`:"0"} value={form.monto} onChange={e=>setForm(f=>({...f,monto:e.target.value}))}/></div>
+              <div>{lbl("Moneda")}<select style={iS} value={form.moneda} onChange={e=>setForm(f=>({...f,moneda:e.target.value}))}><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (USD)</option></select></div>
             </div>
             {!form.id?(
               <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>Se repite</div>
+                {lbl("Se repite")}
                 <div style={{display:"inline-flex",background:T.surface,borderRadius:8,padding:2}}>
                   {[["unico","Una vez"],["mensual","Todos los meses"],["cuotas","En cuotas"]].map(([v,l])=><button key={v} onClick={()=>setForm(f=>({...f,tipo:v}))} style={segBtn(form.tipo===v)}>{l}</button>)}
                 </div>
                 {form.tipo==="cuotas"&&(
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}>
-                    <div><div style={{fontSize:11,color:T.textSm,marginBottom:4}}>Cantidad de cuotas</div><input style={iS} inputMode="numeric" value={form.cuotasTotal} onChange={e=>setForm(f=>({...f,cuotasTotal:e.target.value}))}/></div>
-                    <div><div style={{fontSize:11,color:T.textSm,marginBottom:4}}>Empezar desde la cuota</div><input style={iS} inputMode="numeric" value={form.cuotaDesde} onChange={e=>setForm(f=>({...f,cuotaDesde:e.target.value}))}/></div>
+                    <div>{lbl("Cantidad de cuotas")}<input style={iS} inputMode="numeric" value={form.cuotasTotal} onChange={e=>setForm(f=>({...f,cuotasTotal:e.target.value}))}/></div>
+                    <div>{lbl("Empezar desde la cuota")}<input style={iS} inputMode="numeric" value={form.cuotaDesde} onChange={e=>setForm(f=>({...f,cuotaDesde:e.target.value}))}/></div>
+                    {esPrestamoNuevo&&(<>
+                      <div>{lbl("Capital prestado")}<input style={iS} inputMode="decimal" placeholder="Monto que te prestaron" value={form.capital} onChange={e=>setForm(f=>({...f,capital:e.target.value}))}/></div>
+                      <div>{lbl("Tasa anual (TNA %)")}<input style={iS} inputMode="decimal" placeholder="Ej: 85" value={form.tna} onChange={e=>setForm(f=>({...f,tna:e.target.value}))}/></div>
+                      <div style={{gridColumn:"1 / -1",fontSize:11,color:T.textSm,lineHeight:1.5}}>
+                        {cuotaEstimada?<>Cuota estimada <b style={{color:T.text}}>{calpagosFmt(cuotaEstimada,form.moneda)}</b> · total a devolver <b style={{color:T.text}}>{calpagosFmt(cuotaEstimada*(parseInt(form.cuotasTotal)||0),form.moneda)}</b> · interés <b style={{color:T.text}}>{calpagosFmt(cuotaEstimada*(parseInt(form.cuotasTotal)||0)-ghNumAR(form.capital),form.moneda)}</b>. Sistema francés: cada cuota guarda su parte de capital e interés.</>
+                        :"Con capital y tasa se calcula la cuota sola (sistema francés). Si ya sabés la cuota exacta del banco, cargala arriba y se usa esa."}
+                      </div>
+                    </>)}
                     <div style={{gridColumn:"1 / -1",fontSize:11,color:T.textSm}}>Se generan {Math.max(0,(parseInt(form.cuotasTotal)||0)-(parseInt(form.cuotaDesde)||1)+1)} vencimientos, uno por mes, desde el {form.vence?form.vence.split("-").reverse().join("/"):"…"}{form.vence&&(parseInt(form.cuotasTotal)||0)>=(parseInt(form.cuotaDesde)||1)?` hasta el ${calpagosSumarMeses(form.vence,(parseInt(form.cuotasTotal)||1)-(parseInt(form.cuotaDesde)||1)).split("-").reverse().join("/")}`:""}.</div>
                   </div>
                 )}
@@ -13940,15 +14002,13 @@ function AppCalendarioPagos({T,user,onHome}){
               </div>
             ):(
               <div style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                {form.cuotaN?<span>Cuota {form.cuotaN} de {form.cuotaTotal}</span>:form.tipo==="mensual"?<span>Pago mensual</span>:<span>Pago único</span>}
+                {form.cuotaN?<span>Cuota {form.cuotaN} de {form.cuotaTotal}{form.interesCuota!=null?` · interés ${calpagosFmt(form.interesCuota,form.moneda)} · capital ${calpagosFmt(form.capitalCuota,form.moneda)}`:""}</span>:form.tipo==="mensual"?<span>Pago mensual</span>:<span>Pago único</span>}
                 {form.grupo&&<label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={aplicarSerie} onChange={e=>setAplicarSerie(e.target.checked)}/> Aplicar monto y nombre a toda la serie pendiente</label>}
               </div>
             )}
-            <div>
-              <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>Notas</div>
-              <textarea style={{...iS,minHeight:60,resize:"vertical"}} placeholder="CBU, número de cuenta, referencia, lo que necesites recordar" value={form.notas} onChange={e=>setForm(f=>({...f,notas:e.target.value}))}/>
-            </div>
-            <div style={{display:"flex",gap:8,alignItems:"center",paddingTop:4}}>
+            <div>{lbl("Notas")}<textarea style={{...iS,minHeight:60,resize:"vertical"}} placeholder="CBU, número de cuenta, referencia, lo que necesites recordar" value={form.notas} onChange={e=>setForm(f=>({...f,notas:e.target.value}))}/></div>
+            <div style={{fontSize:11,color:T.textSm}}>Te avisamos por mail el día anterior a cada vencimiento.</div>
+            <div style={{display:"flex",gap:8,alignItems:"center",paddingTop:4,flexWrap:"wrap"}}>
               {form.id&&<Btn T={T} variant="danger" size="sm" onClick={()=>borrar(form)} disabled={saving}>Borrar</Btn>}
               {form.id&&form.grupo&&form.tipo==="mensual"&&<Btn T={T} variant="ghost" size="sm" disabled={saving} onClick={async()=>{ if(!(await appConfirm("¿Cortar esta serie mensual? Se borran los vencimientos futuros sin pagar y no se generan más.",{danger:true,okLabel:"Cortar serie"}))) return; try{ await api("cerrar_serie",{grupo:form.grupo}); setForm(null); await load(); toast("Serie cortada","success"); }catch(e){ toast(e.message,"error"); } }}>Cortar serie</Btn>}
               <span style={{flex:1}}/>

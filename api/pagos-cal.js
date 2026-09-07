@@ -15,7 +15,22 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { guardUid } from "./_auth.js";
+import { guardUid, guardCron } from "./_auth.js";
+
+async function sendEmail({ to, subject, html }) {
+  const key = process.env.RESEND_API_KEY;
+  if (!key || !to) return { error: "missing" };
+  const from = process.env.RESEND_FROM || "Growith <onboarding@resend.dev>";
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: [to], subject, html }), signal: AbortSignal.timeout(10000),
+    });
+    return r.ok ? { ok: true } : { error: (await r.json().catch(() => ({})))?.message };
+  } catch (e) { return { error: e.message }; }
+}
+const fmtARS = n => "$" + Math.round(Number(n) || 0).toLocaleString("es-AR");
+const fmtMonto = (m, mon) => mon === "USD" ? "USD " + Math.round(Number(m) || 0).toLocaleString("es-AR") : fmtARS(m);
 
 const CATEGORIAS = ["alquiler", "prestamo", "tarjeta", "proveedor", "impuestos", "servicios", "sueldos", "otro"];
 const MAX_CUOTAS = 120;
@@ -40,6 +55,34 @@ function sumarMeses(fecha, n) {
 }
 const sumarDias = (fecha, n) => new Date(Date.parse(fecha + "T12:00:00Z") + n * 86400000).toISOString().slice(0, 10);
 
+// Índice para el cron de avisos: fechas (YYYY-MM-DD) con pagos pendientes en
+// los próximos 45 días, guardadas en users/{uid}.pagosCalDias. El cron busca
+// con array-contains (sin índice compuesto) y solo lee a quien tiene algo mañana.
+async function actualizarIndiceAvisos(db, uid, col) {
+  try {
+    const hoy = hoyAR(), lim = sumarDias(hoy, 45);
+    const snap = await col.where("pagado", "==", false).get();
+    const dias = new Set();
+    snap.forEach(d => { const v = d.data().vence; if (v && v >= hoy && v <= lim) dias.add(v); });
+    await db.collection("users").doc(uid).set({ pagosCalDias: [...dias].sort() }, { merge: true });
+  } catch (e) { console.warn("[pagos-cal] indice avisos:", e.message); }
+}
+// Sistema francés: cuota fija; interés sobre saldo, capital = cuota − interés.
+// tna en % anual. Sin tasa: cuota = capital / n, sin interés.
+function cuadroAmortizacion(capital, n, tna, cuotaFija) {
+  const i = (Number(tna) || 0) / 100 / 12;
+  let cuota = Number(cuotaFija) || 0;
+  if (!cuota) cuota = i > 0 ? capital * i / (1 - Math.pow(1 + i, -n)) : capital / n;
+  const filas = []; let saldo = capital;
+  for (let k = 1; k <= n; k++) {
+    const interes = i > 0 ? saldo * i : Math.max(0, (cuota * n - capital) / n);
+    const cap = Math.min(saldo, cuota - interes);
+    saldo = Math.max(0, saldo - cap);
+    filas.push({ cuota: Math.round(cuota * 100) / 100, interes: Math.round(interes * 100) / 100, capital: Math.round(cap * 100) / 100, saldo: Math.round(saldo * 100) / 100 });
+  }
+  return filas;
+}
+
 function limpiar(p, base = {}) {
   const out = { ...base };
   if (p.titulo !== undefined) out.titulo = String(p.titulo || "").trim().slice(0, 120);
@@ -57,6 +100,46 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
+
+  // ── Cron diario: aviso por mail el día ANTERIOR al vencimiento ──────────
+  if (req.query.action === "cron_avisos") {
+    if (!guardCron(req, res)) return;
+    const db = initAdmin();
+    const manana = sumarDias(hoyAR(), 1);
+    const out = { usuarios: 0, mails: 0, errores: 0 };
+    try {
+      const us = await db.collection("users").where("pagosCalDias", "array-contains", manana).limit(500).get();
+      for (const u of us.docs) {
+        const col = db.collection("users").doc(u.id).collection("pagos_cal");
+        const snap = await col.where("vence", "==", manana).where("pagado", "==", false).get();
+        const items = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => !p.avisoAt);
+        if (!items.length) continue;
+        const email = u.data().email;
+        if (!email) continue;
+        out.usuarios++;
+        const totalARS = items.filter(p => p.moneda !== "USD").reduce((s, p) => s + (Number(p.monto) || 0), 0);
+        const totalUSD = items.filter(p => p.moneda === "USD").reduce((s, p) => s + (Number(p.monto) || 0), 0);
+        const filas = items.map(p => `<tr><td style="padding:6px 10px;border-bottom:1px solid #eee">${String(p.titulo || "").replace(/</g, "&lt;")}${p.cuotaN ? ` <span style="color:#888">cuota ${p.cuotaN}/${p.cuotaTotal}</span>` : ""}</td><td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;font-weight:600">${fmtMonto(p.monto, p.moneda)}</td></tr>`).join("");
+        const tot = [totalARS ? fmtARS(totalARS) : "", totalUSD ? "USD " + Math.round(totalUSD).toLocaleString("es-AR") : ""].filter(Boolean).join(" + ");
+        const [y, m, d] = manana.split("-");
+        const r = await sendEmail({
+          to: email,
+          subject: `Mañana vence${items.length === 1 ? "" : "n"} ${items.length} pago${items.length === 1 ? "" : "s"} por ${tot}`,
+          html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111;max-width:520px">
+            <p>Te recordamos lo que vence <strong>mañana ${d}/${m}/${y}</strong> según tu Calendario de Pagos:</p>
+            <table style="border-collapse:collapse;width:100%;font-size:14px">${filas}</table>
+            <p style="margin-top:12px"><strong>Total: ${tot}</strong></p>
+            <p style="font-size:13px;color:#666">Cuando lo pagues, marcalo como pagado en Growith → Calendario de Pagos y dejás de recibir avisos por ese vencimiento.</p>
+          </div>`,
+        });
+        if (r.ok) { out.mails++; const b = db.batch(); items.forEach(p => b.set(col.doc(p.id), { avisoAt: new Date() }, { merge: true })); await b.commit(); }
+        else out.errores++;
+      }
+    } catch (e) { console.error("[pagos-cal cron]", e.message); out.error = e.message; }
+    console.log("[pagos-cal cron_avisos]", JSON.stringify(out));
+    return res.json({ ok: true, ...out });
+  }
+
   if (req.method !== "POST") return res.status(405).json({ error: "POST" });
 
   let body = {};
@@ -98,6 +181,7 @@ export default async function handler(req, res) {
           await batch.commit();
         }
         items = items.concat(nuevos);
+        if (nuevos.length) await actualizarIndiceAvisos(db, uid, col);
       }
       items.sort((a, b) => String(a.vence).localeCompare(String(b.vence)));
       if (action === "resumen") {
@@ -125,20 +209,29 @@ export default async function handler(req, res) {
           q.docs.forEach(d => { if (d.id !== ref.id && !d.data().pagado) batch.set(d.ref, { titulo: patch.titulo ?? d.data().titulo, categoria: patch.categoria ?? d.data().categoria, monto: patch.monto ?? d.data().monto, moneda: patch.moneda ?? d.data().moneda, notas: patch.notas ?? d.data().notas, updatedAt: now }, { merge: true }); });
           await batch.commit();
         }
+        await actualizarIndiceAvisos(db, uid, col);
         return res.json({ ok: true, id: ref.id });
       }
       const base = limpiar(p, { titulo: "", categoria: "otro", monto: 0, moneda: "ARS", notas: "", tipo: "unico" });
       if (!base.titulo) return res.status(400).json({ error: "Falta el concepto (a quién o qué se paga)" });
       if (!base.vence) return res.status(400).json({ error: "Falta la fecha de vencimiento" });
-      if (!(base.monto > 0)) return res.status(400).json({ error: "El monto tiene que ser mayor a cero" });
+      if (!(base.monto > 0) && !(base.tipo === "cuotas" && Number(p.capital) > 0)) return res.status(400).json({ error: "El monto tiene que ser mayor a cero" });
       const batch = db.batch(); const ids = [];
       if (base.tipo === "cuotas") {
         const total = Math.min(MAX_CUOTAS, Math.max(2, parseInt(p.cuotasTotal) || 2));
         const desde = Math.min(total, Math.max(1, parseInt(p.cuotaDesde) || 1));
         const grupo = col.doc().id;
+        // Préstamo: capital + TNA (o cuota conocida) → cuadro de amortización.
+        // Cada cuota guarda su parte de capital e interés y el saldo restante.
+        const capital = Math.max(0, Number(p.capital) || 0);
+        const tna = Math.max(0, Number(p.tna) || 0);
+        const cuadro = capital > 0 ? cuadroAmortizacion(capital, total, tna, base.monto) : null;
+        const prestamo = capital > 0 ? { capital, tna, cuotaCalculada: cuadro[0].cuota, interesTotal: Math.round(cuadro.reduce((s, f) => s + f.interes, 0) * 100) / 100 } : null;
         for (let n = desde; n <= total; n++) {
           const ref = col.doc(); ids.push(ref.id);
-          batch.set(ref, { ...base, grupo, cuotaN: n, cuotaTotal: total, vence: sumarMeses(base.vence, n - desde), pagado: false, creado: now, updatedAt: now });
+          const f = cuadro ? cuadro[n - 1] : null;
+          batch.set(ref, { ...base, ...(f ? { monto: f.cuota, capitalCuota: f.capital, interesCuota: f.interes, saldoDespues: f.saldo } : {}), ...(prestamo ? { prestamo } : {}),
+            grupo, cuotaN: n, cuotaTotal: total, vence: sumarMeses(base.vence, n - desde), pagado: false, creado: now, updatedAt: now });
         }
       } else if (base.tipo === "mensual") {
         const grupo = col.doc().id;
@@ -151,6 +244,7 @@ export default async function handler(req, res) {
         batch.set(ref, { ...base, pagado: false, creado: now, updatedAt: now });
       }
       await batch.commit();
+      await actualizarIndiceAvisos(db, uid, col);
       return res.json({ ok: true, ids });
     }
 
@@ -159,6 +253,7 @@ export default async function handler(req, res) {
       if (!(await ref.get()).exists) return res.status(404).json({ error: "El pago no existe" });
       const pagado = !!body.pagado;
       await ref.set({ pagado, pagadoAt: pagado ? (esFecha(body.fechaPago) ? body.fechaPago : hoyAR()) : FieldValue.delete(), updatedAt: now }, { merge: true });
+      await actualizarIndiceAvisos(db, uid, col);
       return res.json({ ok: true });
     }
 
@@ -172,11 +267,13 @@ export default async function handler(req, res) {
         const batch = db.batch(); let n = 0;
         q.docs.forEach(d => { if (!d.data().pagado) { batch.delete(d.ref); n++; } });
         await batch.commit();
+        await actualizarIndiceAvisos(db, uid, col);
         return res.json({ ok: true, borrados: n });
       }
       // Borrar una sola ocurrencia de una serie mensual: marcar la serie como
       // cerrada si era la última, para que no se regenere sola.
       await ref.delete();
+      await actualizarIndiceAvisos(db, uid, col);
       return res.json({ ok: true, borrados: 1 });
     }
 
@@ -188,6 +285,7 @@ export default async function handler(req, res) {
       const batch = db.batch(); let n = 0;
       q.docs.forEach(d => { const x = d.data(); if (!x.pagado && x.vence > hoy) { batch.delete(d.ref); n++; } else batch.set(d.ref, { serieCerrada: true }, { merge: true }); });
       await batch.commit();
+      await actualizarIndiceAvisos(db, uid, col);
       return res.json({ ok: true, borrados: n });
     }
 
