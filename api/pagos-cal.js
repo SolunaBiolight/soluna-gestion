@@ -32,7 +32,7 @@ async function sendEmail({ to, subject, html }) {
 const fmtARS = n => "$" + Math.round(Number(n) || 0).toLocaleString("es-AR");
 const fmtMonto = (m, mon) => mon === "USD" ? "USD " + Math.round(Number(m) || 0).toLocaleString("es-AR") : fmtARS(m);
 
-const CATEGORIAS = ["alquiler", "prestamo", "tarjeta", "proveedor", "impuestos", "servicios", "sueldos", "otro"];
+const CATEGORIAS = ["alquiler", "prestamo", "tarjeta", "proveedor", "producto", "envio", "impuestos", "servicios", "sueldos", "otro"];
 const MAX_CUOTAS = 120;
 
 function initAdmin() {

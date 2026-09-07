@@ -13678,10 +13678,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 // sidebar por evento "gh-calpagos-alert".
 // ═══════════════════════════════════════════════════════════════════════════
 const CALPAGOS_CATS=[
-  {id:"alquiler",label:"Alquiler"},{id:"prestamo",label:"Préstamo"},{id:"tarjeta",label:"Tarjeta"},{id:"proveedor",label:"Proveedor"},
+  {id:"alquiler",label:"Alquiler"},{id:"prestamo",label:"Préstamo"},{id:"tarjeta",label:"Tarjeta"},{id:"proveedor",label:"Proveedor"},{id:"producto",label:"Producto"},{id:"envio",label:"Envío"},
   {id:"impuestos",label:"Impuestos"},{id:"servicios",label:"Servicios"},{id:"sueldos",label:"Sueldos"},{id:"otro",label:"Otro"},
 ];
-const calpagosCatLabel=id=>(CALPAGOS_CATS.find(c=>c.id===id)||CALPAGOS_CATS[7]).label;
+const calpagosCatLabel=id=>(CALPAGOS_CATS.find(c=>c.id===id)||CALPAGOS_CATS[CALPAGOS_CATS.length-1]).label;
 function calpagosSumarMeses(fecha,n){ const [y,m,d]=fecha.split("-").map(Number); const t=new Date(Date.UTC(y,m-1+n,1)); const ult=new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth()+1,0)).getUTCDate(); return `${t.getUTCFullYear()}-${String(t.getUTCMonth()+1).padStart(2,"0")}-${String(Math.min(d,ult)).padStart(2,"0")}`; }
 function calpagosFmt(monto,moneda){ return moneda==="USD"?`USD ${(Number(monto)||0).toLocaleString("es-AR",{maximumFractionDigits:0})}`:fmtMoney(monto); }
 function AppCalendarioPagos({T,user,onHome}){
