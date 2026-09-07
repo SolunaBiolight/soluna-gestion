@@ -89,6 +89,61 @@ function cuadroAmortizacion(capital, n, tna, cuotaFija) {
   return filas;
 }
 
+// ── Gastos fijos: plantilla de cada gasto recurrente (users/{uid}/pagos_fijos/{grupo})
+// La agenda se GENERA desde la plantilla: monto mensual total, día de pago y,
+// si va en dos partes, % de la primera y día de la segunda. Editar la plantilla
+// regenera los meses pendientes; lo pagado no se toca.
+function fijoLimpiar(f, base = {}) {
+  const out = { ...base };
+  if (f.titulo !== undefined) out.titulo = String(f.titulo || "").trim().replace(/ · (1ª|2ª) parte$/, "").slice(0, 120);
+  if (f.categoria !== undefined) out.categoria = CATEGORIAS.includes(f.categoria) ? f.categoria : "otro";
+  if (f.monto !== undefined) out.monto = Math.max(0, Math.round((Number(f.monto) || 0) * 100) / 100);
+  if (f.moneda !== undefined) out.moneda = f.moneda === "USD" ? "USD" : "ARS";
+  if (f.dia !== undefined) out.dia = Math.min(31, Math.max(1, parseInt(f.dia) || 1));
+  if (f.dividido !== undefined) out.dividido = !!f.dividido;
+  if (f.pct !== undefined) out.pct = Math.min(99, Math.max(1, Number(f.pct) || 50));
+  if (f.dia2 !== undefined) out.dia2 = Math.min(31, Math.max(1, parseInt(f.dia2) || 15));
+  if (f.notas !== undefined) out.notas = String(f.notas || "").slice(0, 1000);
+  if (f.activo !== undefined) out.activo = !!f.activo;
+  return out;
+}
+// Asegura las ocurrencias de los próximos 12 meses (desde el mes actual) de un
+// fijo activo. Idempotente: si ya existe la ocurrencia de ese mes/parte (pagada
+// o no) no la toca; las fechas ya pasadas no se crean.
+function generarFijo(col, batch, fijo, docsGrupo, now) {
+  const hoy = hoyAR(); const [y0, m0] = hoy.slice(0, 7).split("-").map(Number);
+  const creados = [];
+  const partes = fijo.dividido ? [1, 2] : [0];
+  for (let i = 0; i < 12; i++) {
+    const t = new Date(Date.UTC(y0, m0 - 1 + i, 1)); const mes = `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}`;
+    for (const parte of partes) {
+      const vence = mismoMesDia(`${mes}-01`, parte === 2 ? fijo.dia2 : fijo.dia);
+      if (vence < hoy) continue;
+      if (docsGrupo.some(d => (d.parteMes || 0) === parte && String(d.vence).slice(0, 7) === mes)) continue;
+      const m1 = fijo.dividido ? Math.round(fijo.monto * fijo.pct) / 100 : fijo.monto;
+      const monto = parte === 2 ? Math.round((fijo.monto - m1) * 100) / 100 : m1;
+      const ref = col.doc();
+      const doc = { titulo: parte ? `${fijo.titulo} · ${parte}ª parte` : fijo.titulo, categoria: fijo.categoria, monto, moneda: fijo.moneda, notas: fijo.notas || "", tipo: "mensual", grupo: fijo.grupo, fijoId: fijo.grupo,
+        ...(parte ? { parteMes: parte, pct: parte === 1 ? fijo.pct : 100 - fijo.pct } : {}), vence, pagado: false, creado: now, updatedAt: now };
+      batch.set(ref, doc); creados.push({ id: ref.id, ...doc }); docsGrupo.push(doc);
+    }
+  }
+  return creados;
+}
+// Series mensuales viejas (sin plantilla) → se crea la plantilla a partir del
+// último mes cargado, así pasan a editarse desde Gastos fijos.
+function fijoDesdeSerie(grupo, docs) {
+  const ult = docs.slice().sort((x, y) => String(y.vence).localeCompare(String(x.vence)))[0];
+  const mes = String(ult.vence).slice(0, 7);
+  const delMes = docs.filter(d => String(d.vence).slice(0, 7) === mes);
+  const p1 = delMes.find(d => d.parteMes === 1) || delMes.find(d => !d.parteMes) || ult;
+  const p2 = delMes.find(d => d.parteMes === 2) || null;
+  const monto = Math.round(delMes.reduce((s, d) => s + (Number(d.monto) || 0), 0) * 100) / 100;
+  return { grupo, titulo: String(p1.titulo || "").replace(/ · (1ª|2ª) parte$/, ""), categoria: p1.categoria || "otro", monto, moneda: p1.moneda || "ARS",
+    dia: Number(String(p1.vence).slice(8, 10)) || 1, dividido: !!p2, pct: p2 ? (Number(p1.pct) || 50) : 50, dia2: p2 ? Number(String(p2.vence).slice(8, 10)) || 15 : 15,
+    notas: p1.notas || "", activo: !ult.serieCerrada };
+}
+
 function limpiar(p, base = {}) {
   const out = { ...base };
   if (p.titulo !== undefined) out.titulo = String(p.titulo || "").trim().slice(0, 120);
@@ -167,6 +222,28 @@ export default async function handler(req, res) {
       const snap = await col.get();
       let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+      // Gastos fijos: migrar series viejas a plantilla y generar los 12 meses
+      // de cada plantilla activa. Después, la extensión legacy solo toca
+      // series sin plantilla (no debería quedar ninguna).
+      let fijos = [];
+      if (action === "list") {
+        const fSnap = await db.collection("users").doc(uid).collection("pagos_fijos").get();
+        fijos = fSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const conFijo = new Set(fijos.map(f => f.grupo));
+        const grupos = {}; for (const it of items) if (it.tipo === "mensual" && it.grupo) (grupos[it.grupo] ||= []).push(it);
+        const batch = db.batch(); let escrituras = 0; const nuevos = [];
+        for (const [grupo, docs] of Object.entries(grupos)) {
+          if (conFijo.has(grupo)) continue;
+          const f = fijoDesdeSerie(grupo, docs);
+          batch.set(db.collection("users").doc(uid).collection("pagos_fijos").doc(grupo), { ...f, creado: now, updatedAt: now }); escrituras++;
+          fijos.push({ id: grupo, ...f });
+        }
+        for (const f of fijos) {
+          if (f.activo === false || !(f.monto > 0)) continue;
+          const c = generarFijo(col, batch, f, grupos[f.grupo] || (grupos[f.grupo] = []), now); escrituras += c.length; nuevos.push(...c);
+        }
+        if (escrituras) { await batch.commit(); items = items.concat(nuevos); await actualizarIndiceAvisos(db, uid, col); }
+      }
       // Series mensuales: si a la última ocurrencia le quedan menos de 60 días,
       // se generan 12 meses más (misma plantilla que la última).
       if (action === "list") {
@@ -199,7 +276,8 @@ export default async function handler(req, res) {
           }
           await b.commit(); items = items.concat(extra);
         }
-        for (const it of items) if (it.tipo === "mensual" && it.grupo && !(divididos.has(it.grupo) && !it.parteMes)) (porGrupo[it.grupo + "|" + (it.parteMes || 0)] ||= []).push(it);
+        const conPlantilla = new Set(fijos.map(f => f.grupo));
+        for (const it of items) if (it.tipo === "mensual" && it.grupo && !conPlantilla.has(it.grupo) && !(divididos.has(it.grupo) && !it.parteMes)) (porGrupo[it.grupo + "|" + (it.parteMes || 0)] ||= []).push(it);
         const nuevos = [];
         for (const [grupo, arr] of Object.entries(porGrupo)) {
           arr.sort((a, b) => a.vence.localeCompare(b.vence));
@@ -222,7 +300,7 @@ export default async function handler(req, res) {
         const pend = items.filter(i => !i.pagado);
         return res.json({ vencidos: pend.filter(i => i.vence < hoy).length, hoy: pend.filter(i => i.vence === hoy).length, manana: pend.filter(i => i.vence === man).length });
       }
-      return res.json({ items: items.map(i => ({ ...i, creado: i.creado?.toDate?.()?.toISOString?.() || null, updatedAt: i.updatedAt?.toDate?.()?.toISOString?.() || null, pagadoAt: i.pagadoAt?.toDate?.()?.toISOString?.() || i.pagadoAt || null })) });
+      return res.json({ fijos: fijos.map(f => ({ ...f, creado: f.creado?.toDate?.()?.toISOString?.() || null, updatedAt: f.updatedAt?.toDate?.()?.toISOString?.() || null })), items: items.map(i => ({ ...i, creado: i.creado?.toDate?.()?.toISOString?.() || null, updatedAt: i.updatedAt?.toDate?.()?.toISOString?.() || null, pagadoAt: i.pagadoAt?.toDate?.()?.toISOString?.() || i.pagadoAt || null })) });
     }
 
     if (action === "save") {
@@ -303,21 +381,14 @@ export default async function handler(req, res) {
             grupo, cuotaN: n, cuotaTotal: total, vence: sumarMeses(base.vence, n - desde), pagado: false, creado: now, updatedAt: now });
         }
       } else if (base.tipo === "mensual") {
+        // Un pago "todos los meses" ES un gasto fijo: se crea la plantilla y
+        // desde ella se generan los meses (primer vencimiento = el elegido).
         const grupo = col.doc().id;
-        // Dividido desde el alta (sueldo 50/50): dos pagos por mes.
-        const dv = p.dividir && typeof p.dividir === "object" ? { pct: Math.min(99, Math.max(1, Number(p.dividir.pct) || 50)), dia: Math.min(31, Math.max(1, parseInt(p.dividir.dia) || 15)) } : null;
-        for (let i = 0; i < 12; i++) {
-          const vence = sumarMeses(base.vence, i);
-          if (dv) {
-            const m1 = Math.round(base.monto * dv.pct) / 100, m2 = Math.round((base.monto - m1) * 100) / 100;
-            const r1 = col.doc(), r2 = col.doc(); ids.push(r1.id, r2.id);
-            batch.set(r1, { ...base, titulo: `${base.titulo} · 1ª parte`, monto: m1, grupo, parteMes: 1, pct: dv.pct, vence, pagado: false, creado: now, updatedAt: now });
-            batch.set(r2, { ...base, titulo: `${base.titulo} · 2ª parte`, monto: m2, grupo, parteMes: 2, pct: 100 - dv.pct, vence: mismoMesDia(vence, dv.dia), pagado: false, creado: now, updatedAt: now });
-          } else {
-            const ref = col.doc(); ids.push(ref.id);
-            batch.set(ref, { ...base, grupo, vence, pagado: false, creado: now, updatedAt: now });
-          }
-        }
+        const dv = p.dividir && typeof p.dividir === "object" ? p.dividir : null;
+        const fijo = fijoLimpiar({ titulo: base.titulo, categoria: base.categoria, monto: base.monto, moneda: base.moneda, dia: base.vence.slice(8, 10), dividido: !!dv, pct: dv?.pct ?? 50, dia2: dv?.dia ?? 15, notas: base.notas, activo: true }, { grupo });
+        batch.set(db.collection("users").doc(uid).collection("pagos_fijos").doc(grupo), { ...fijo, creado: now, updatedAt: now });
+        const creados = generarFijo(col, batch, fijo, [], now);
+        ids.push(...creados.map(c => c.id));
       } else {
         const ref = col.doc(); ids.push(ref.id);
         batch.set(ref, { ...base, pagado: false, creado: now, updatedAt: now });
@@ -383,6 +454,46 @@ export default async function handler(req, res) {
       await batch.commit();
       await actualizarIndiceAvisos(db, uid, col);
       return res.json({ ok: true, meses: n });
+    }
+
+    // ── Gastos fijos ──────────────────────────────────────────────────────
+    if (action === "fijo_save") {
+      const f = body.fijo || {};
+      const fcol = db.collection("users").doc(uid).collection("pagos_fijos");
+      const existente = f.id ? await fcol.doc(String(f.id)).get() : null;
+      const prev = existente?.exists ? existente.data() : null;
+      const grupo = prev?.grupo || String(f.id || "") || col.doc().id;
+      const fijo = fijoLimpiar(f, prev ? { ...prev } : { grupo, titulo: "", categoria: "otro", monto: 0, moneda: "ARS", dia: 1, dividido: false, pct: 50, dia2: 15, notas: "", activo: true });
+      fijo.grupo = grupo;
+      if (!fijo.titulo) return res.status(400).json({ error: "Falta el nombre del gasto" });
+      if (!(fijo.monto > 0)) return res.status(400).json({ error: "El monto mensual tiene que ser mayor a cero" });
+      const cambioConfig = !prev || ["monto", "moneda", "dia", "dividido", "pct", "dia2", "titulo", "categoria", "notas", "activo"].some(k => prev[k] !== fijo[k]);
+      const batch = db.batch();
+      batch.set(fcol.doc(grupo), { ...fijo, updatedAt: now, ...(prev ? {} : { creado: now }) }, { merge: true });
+      const q = await col.where("grupo", "==", grupo).get();
+      const docs = q.docs.map(d => ({ id: d.id, ...d.data() }));
+      let borrados = 0, creados = [];
+      if (cambioConfig) {
+        // Se rehacen los pendientes desde hoy; lo pagado queda como está.
+        const hoy = hoyAR();
+        const restantes = [];
+        for (const d of docs) { if (!d.pagado && String(d.vence) >= hoy) { batch.delete(col.doc(d.id)); borrados++; } else restantes.push(d); }
+        if (fijo.activo) creados = generarFijo(col, batch, fijo, restantes, now);
+      }
+      await batch.commit();
+      await actualizarIndiceAvisos(db, uid, col);
+      return res.json({ ok: true, id: grupo, borrados, creados: creados.length });
+    }
+    if (action === "fijo_delete") {
+      const id = String(body.id || ""); if (!id) return res.status(400).json({ error: "Falta id" });
+      const fcol = db.collection("users").doc(uid).collection("pagos_fijos");
+      const q = await col.where("grupo", "==", id).get();
+      const batch = db.batch(); let n = 0;
+      q.docs.forEach(d => { const x = d.data(); if (!x.pagado) { batch.delete(d.ref); n++; } else batch.set(d.ref, { serieCerrada: true }, { merge: true }); });
+      batch.delete(fcol.doc(id));
+      await batch.commit();
+      await actualizarIndiceAvisos(db, uid, col);
+      return res.json({ ok: true, borrados: n });
     }
 
     if (action === "cerrar_serie") {
