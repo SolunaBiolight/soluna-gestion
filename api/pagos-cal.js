@@ -179,6 +179,26 @@ export default async function handler(req, res) {
         const divididos = new Set(items.filter(it => it.parteMes).map(it => it.grupo));
         const espurios = items.filter(it => it.tipo === "mensual" && it.grupo && divididos.has(it.grupo) && !it.parteMes && !it.pagado);
         if (espurios.length) { const b = db.batch(); espurios.forEach(it => b.delete(col.doc(it.id))); await b.commit(); items = items.filter(it => !espurios.includes(it)); }
+        // Pagados del mes en curso que quedaron enteros al dividir: se parten
+        // (primera parte pagada) y se crea la segunda parte pendiente.
+        const mesAct = hoy.slice(0, 7);
+        const huerfanos = items.filter(it => it.tipo === "mensual" && it.grupo && divididos.has(it.grupo) && !it.parteMes && it.pagado && String(it.vence).slice(0, 7) >= mesAct);
+        if (huerfanos.length) {
+          const b = db.batch(); const extra = [];
+          for (const it of huerfanos) {
+            const p1 = items.find(x => x.grupo === it.grupo && x.parteMes === 1), p2 = items.find(x => x.grupo === it.grupo && x.parteMes === 2);
+            if (!p1 || !p2) continue;
+            const pct = Number(p1.pct) || 50, dia = Number(String(p2.vence).slice(8, 10)) || 15;
+            const m1 = Math.round(Number(it.monto) * pct) / 100, m2 = Math.round((Number(it.monto) - m1) * 100) / 100;
+            const base = String(it.titulo || "").replace(/ · (1ª|2ª) parte$/, "");
+            b.set(col.doc(it.id), { monto: m1, titulo: `${base} · 1ª parte`, parteMes: 1, pct, updatedAt: now }, { merge: true });
+            const r2 = col.doc();
+            const d2 = { titulo: `${base} · 2ª parte`, categoria: it.categoria, monto: m2, moneda: it.moneda, notas: it.notas || "", tipo: "mensual", grupo: it.grupo, parteMes: 2, pct: 100 - pct, vence: mismoMesDia(it.vence, dia), pagado: false, creado: now, updatedAt: now };
+            b.set(r2, d2); extra.push({ id: r2.id, ...d2 });
+            it.monto = m1; it.titulo = `${base} · 1ª parte`; it.parteMes = 1; it.pct = pct;
+          }
+          await b.commit(); items = items.concat(extra);
+        }
         for (const it of items) if (it.tipo === "mensual" && it.grupo && !(divididos.has(it.grupo) && !it.parteMes)) (porGrupo[it.grupo + "|" + (it.parteMes || 0)] ||= []).push(it);
         const nuevos = [];
         for (const [grupo, arr] of Object.entries(porGrupo)) {
@@ -347,8 +367,12 @@ export default async function handler(req, res) {
       const q = await col.where("grupo", "==", grupo).get();
       if (q.docs.some(d => d.data().parteMes)) return res.status(400).json({ error: "Esta serie ya está dividida" });
       const batch = db.batch(); let n = 0;
+      const mesActual = hoyAR().slice(0, 7);
       q.docs.forEach(d => {
-        const x = d.data(); if (x.pagado) return;
+        const x = d.data();
+        // Pagado de meses anteriores: se deja como está. Pagado del mes en
+        // curso: se asume que se pagó la primera parte y se crea la segunda.
+        if (x.pagado && String(x.vence).slice(0, 7) < mesActual) return;
         const m1 = Math.round(Number(x.monto) * pct) / 100, m2 = Math.round((Number(x.monto) - m1) * 100) / 100;
         const base = String(x.titulo || "").replace(/ · (1ª|2ª) parte$/, "");
         batch.set(d.ref, { monto: m1, titulo: `${base} · ${l1}`, parteMes: 1, pct, updatedAt: now }, { merge: true });
