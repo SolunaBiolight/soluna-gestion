@@ -53,6 +53,12 @@ function sumarMeses(fecha, n) {
   const ult = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
   return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}-${String(Math.min(d, ult)).padStart(2, "0")}`;
 }
+// Misma YYYY-MM de `fecha` con el día `dia` (acotado al último día del mes).
+function mismoMesDia(fecha, dia) {
+  const [y, m] = fecha.split("-").map(Number);
+  const ult = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return `${y}-${String(m).padStart(2, "0")}-${String(Math.min(Math.max(1, parseInt(dia) || 1), ult)).padStart(2, "0")}`;
+}
 const sumarDias = (fecha, n) => new Date(Date.parse(fecha + "T12:00:00Z") + n * 86400000).toISOString().slice(0, 10);
 
 // Índice para el cron de avisos: fechas (YYYY-MM-DD) con pagos pendientes en
@@ -166,7 +172,8 @@ export default async function handler(req, res) {
       if (action === "list") {
         const hoy = hoyAR(); const limite = sumarDias(hoy, 60);
         const porGrupo = {};
-        for (const it of items) if (it.tipo === "mensual" && it.grupo) (porGrupo[it.grupo] ||= []).push(it);
+        // Serie dividida en partes del mes (sueldo 50/50): cada parte se extiende por su lado.
+        for (const it of items) if (it.tipo === "mensual" && it.grupo) (porGrupo[it.grupo + "|" + (it.parteMes || 0)] ||= []).push(it);
         const nuevos = [];
         for (const [grupo, arr] of Object.entries(porGrupo)) {
           arr.sort((a, b) => a.vence.localeCompare(b.vence));
@@ -175,7 +182,7 @@ export default async function handler(req, res) {
           const batch = db.batch();
           for (let i = 1; i <= 12; i++) {
             const ref = col.doc();
-            const doc = { titulo: ult.titulo, categoria: ult.categoria, monto: ult.monto, moneda: ult.moneda, notas: ult.notas || "", tipo: "mensual", grupo, vence: sumarMeses(ult.vence, i), pagado: false, creado: now, updatedAt: now };
+            const doc = { titulo: ult.titulo, categoria: ult.categoria, monto: ult.monto, moneda: ult.moneda, notas: ult.notas || "", tipo: "mensual", grupo: ult.grupo, ...(ult.parteMes ? { parteMes: ult.parteMes } : {}), vence: sumarMeses(ult.vence, i), pagado: false, creado: now, updatedAt: now };
             batch.set(ref, doc); nuevos.push({ id: ref.id, ...doc });
           }
           await batch.commit();
@@ -206,7 +213,9 @@ export default async function handler(req, res) {
         if (body.aplicarSerie && cur.data().grupo) {
           const q = await col.where("grupo", "==", cur.data().grupo).get();
           const batch = db.batch();
-          q.docs.forEach(d => { if (d.id !== ref.id && !d.data().pagado) batch.set(d.ref, { titulo: patch.titulo ?? d.data().titulo, categoria: patch.categoria ?? d.data().categoria, monto: patch.monto ?? d.data().monto, moneda: patch.moneda ?? d.data().moneda, notas: patch.notas ?? d.data().notas, updatedAt: now }, { merge: true }); });
+          const cambioDia = patch.vence && patch.vence !== cur.data().vence ? Number(patch.vence.slice(8, 10)) : null;
+          const miParte = cur.data().parteMes || 0;
+          q.docs.forEach(d => { const x = d.data(); if (d.id !== ref.id && !x.pagado && (x.parteMes || 0) === miParte) batch.set(d.ref, { titulo: patch.titulo ?? x.titulo, categoria: patch.categoria ?? x.categoria, monto: patch.monto ?? x.monto, moneda: patch.moneda ?? x.moneda, notas: patch.notas ?? x.notas, ...(cambioDia ? { vence: mismoMesDia(x.vence, cambioDia) } : {}), updatedAt: now }, { merge: true }); });
           await batch.commit();
         }
         await actualizarIndiceAvisos(db, uid, col);
@@ -309,6 +318,31 @@ export default async function handler(req, res) {
       await ref.delete();
       await actualizarIndiceAvisos(db, uid, col);
       return res.json({ ok: true, borrados: 1 });
+    }
+
+    // Dividir una serie mensual en dos pagos por mes (ej. sueldo 50% los
+    // primeros días y 50% a mitad de mes). Solo toca los pendientes.
+    if (action === "dividir_serie") {
+      const grupo = String(body.grupo || "");
+      const pct = Math.min(99, Math.max(1, Number(body.pct) || 50));
+      const dia = Math.min(31, Math.max(1, parseInt(body.dia) || 15));
+      const l1 = String(body.label1 || "1ª parte").trim().slice(0, 30), l2 = String(body.label2 || "2ª parte").trim().slice(0, 30);
+      if (!grupo) return res.status(400).json({ error: "Falta grupo" });
+      const q = await col.where("grupo", "==", grupo).get();
+      if (q.docs.some(d => d.data().parteMes)) return res.status(400).json({ error: "Esta serie ya está dividida" });
+      const batch = db.batch(); let n = 0;
+      q.docs.forEach(d => {
+        const x = d.data(); if (x.pagado) return;
+        const m1 = Math.round(Number(x.monto) * pct) / 100, m2 = Math.round((Number(x.monto) - m1) * 100) / 100;
+        const base = String(x.titulo || "").replace(/ · (1ª|2ª) parte$/, "");
+        batch.set(d.ref, { monto: m1, titulo: `${base} · ${l1}`, parteMes: 1, pct, updatedAt: now }, { merge: true });
+        const ref2 = col.doc();
+        batch.set(ref2, { titulo: `${base} · ${l2}`, categoria: x.categoria, monto: m2, moneda: x.moneda, notas: x.notas || "", tipo: x.tipo || "mensual", grupo, parteMes: 2, pct: 100 - pct, vence: mismoMesDia(x.vence, dia), pagado: false, creado: now, updatedAt: now });
+        n++;
+      });
+      await batch.commit();
+      await actualizarIndiceAvisos(db, uid, col);
+      return res.json({ ok: true, meses: n });
     }
 
     if (action === "cerrar_serie") {

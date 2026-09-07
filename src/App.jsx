@@ -13835,6 +13835,7 @@ function AppCalendarioPagos({T,user,onHome}){
   const [prestamoAbierto,setPrestamoAbierto]=useState(null);
   const [pedidoOpen,setPedidoOpen]=useState(false);
   const [pedidoAbierto,setPedidoAbierto]=useState(null);
+  const [divPct,setDivPct]=useState("50"); const [divDia,setDivDia]=useState("15");
 
   const api=async(action,extra={})=>{
     const r=await authFetch("/api/pagos-cal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,uid:user.uid,...extra})});
@@ -13927,7 +13928,7 @@ function AppCalendarioPagos({T,user,onHome}){
   const delDia=diaSel?(porDia[diaSel]||[]).slice().sort((a,b)=>Number(a.pagado)-Number(b.pagado)):[];
 
   const nuevo=(vence)=>{ setAplicarSerie(false); setForm({titulo:"",categoria:"otro",monto:"",moneda:"ARS",vence:vence||hoy,tipo:"unico",cuotasTotal:"12",cuotaDesde:"1",capital:"",tna:"",notas:""}); };
-  const editar=(i)=>{ setAplicarSerie(false); setForm({id:i.id,titulo:i.titulo,categoria:i.categoria,monto:String(i.monto),moneda:i.moneda,vence:i.vence,tipo:i.tipo||"unico",notas:i.notas||"",grupo:i.grupo||null,cuotaN:i.cuotaN,cuotaTotal:i.cuotaTotal,pagado:!!i.pagado,capitalCuota:i.capitalCuota,interesCuota:i.interesCuota,saldoDespues:i.saldoDespues,parteN:i.parteN,partes:i.partes,pedido:i.pedido||null}); };
+  const editar=(i)=>{ setAplicarSerie(false); setForm({id:i.id,titulo:i.titulo,categoria:i.categoria,monto:String(i.monto),moneda:i.moneda,vence:i.vence,tipo:i.tipo||"unico",notas:i.notas||"",grupo:i.grupo||null,cuotaN:i.cuotaN,cuotaTotal:i.cuotaTotal,pagado:!!i.pagado,capitalCuota:i.capitalCuota,interesCuota:i.interesCuota,saldoDespues:i.saldoDespues,parteN:i.parteN,partes:i.partes,pedido:i.pedido||null,parteMes:i.parteMes||0}); };
   const esPrestamoNuevo=form&&!form.id&&form.tipo==="cuotas"&&form.categoria==="prestamo";
   const cuotaEstimada=(()=>{ if(!esPrestamoNuevo) return null; const cap=ghNumAR(form.capital), n=parseInt(form.cuotasTotal)||0, tna=ghNumAR(form.tna); if(!(cap>0)||n<2) return null; if(ghNumAR(form.monto)>0) return ghNumAR(form.monto); const i=tna/100/12; return i>0?cap*i/(1-Math.pow(1+i,-n)):cap/n; })();
   const guardar=async()=>{
@@ -13965,7 +13966,7 @@ function AppCalendarioPagos({T,user,onHome}){
           <span>{calpagosCatLabel(i.categoria)}</span>
           {i.cuotaN&&<span>· cuota {i.cuotaN} de {i.cuotaTotal}</span>}
           {i.tipo==="pedido"&&<span>· parte {i.parteN} de {i.partes}{i.pedido?.unidades?` · ${i.pedido.unidades} u.`:""}</span>}
-          {i.tipo==="mensual"&&<span>· mensual</span>}
+          {i.tipo==="mensual"&&<span>· mensual{i.parteMes?` · ${i.parteMes}ª parte`:""}</span>}
           {!i.pagado&&e!=="futuro"&&<span style={{color:c,fontWeight:700}}>· {labelEstado[e]}</span>}
         </div>
       </div>
@@ -14211,7 +14212,19 @@ function AppCalendarioPagos({T,user,onHome}){
               <div style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                 {form.tipo==="pedido"&&form.pedido?<span>Parte {form.parteN} de {form.partes} del pedido <b style={{color:T.text}}>{form.pedido.nombre}</b> · {form.pedido.items.length} ítems, {form.pedido.unidades} unidades, total {calpagosFmt(form.pedido.total,form.moneda)}</span>
                 :form.cuotaN?<span>Cuota {form.cuotaN} de {form.cuotaTotal}{form.interesCuota!=null?` · interés ${calpagosFmt(form.interesCuota,form.moneda)} · capital ${calpagosFmt(form.capitalCuota,form.moneda)}`:""}</span>:form.tipo==="mensual"?<span>Pago mensual</span>:<span>Pago único</span>}
-                {form.grupo&&<label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={aplicarSerie} onChange={e=>setAplicarSerie(e.target.checked)}/> Aplicar monto y nombre a toda la serie pendiente</label>}
+                {form.grupo&&<label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={aplicarSerie} onChange={e=>setAplicarSerie(e.target.checked)}/> Aplicar monto, nombre y día de vencimiento a toda la serie pendiente</label>}
+              </div>
+            )}
+            {form.id&&form.grupo&&form.tipo==="mensual"&&!form.parteMes&&(
+              <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>Dividir en dos pagos por mes</div>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:8,lineHeight:1.5}}>Para sueldos que pagás en dos mitades: la primera parte queda en la fecha actual y la segunda se crea el día que elijas de cada mes. Aplica a todos los meses pendientes.</div>
+                <div style={{display:"flex",gap:8,alignItems:"flex-end",flexWrap:"wrap"}}>
+                  <div style={{width:110}}>{lbl("% primera parte")}<input style={iS} inputMode="numeric" value={divPct} onChange={e=>setDivPct(e.target.value)}/></div>
+                  <div style={{width:130}}>{lbl("Día de la segunda")}<input style={iS} inputMode="numeric" value={divDia} onChange={e=>setDivDia(e.target.value)}/></div>
+                  <div style={{fontSize:11,color:T.textSm,flex:1,minWidth:160,paddingBottom:8}}>{(()=>{ const p=Math.min(99,Math.max(1,Number(divPct)||0)); const m=ghNumAR(form.monto); return m>0?`${calpagosFmt(Math.round(m*p)/100,form.moneda)} el ${form.vence.slice(8)} y ${calpagosFmt(m-Math.round(m*p)/100,form.moneda)} el ${Math.min(31,Math.max(1,parseInt(divDia)||15))} de cada mes`:""; })()}</div>
+                  <Btn T={T} variant="secondary" size="sm" disabled={saving} onClick={async()=>{ if(!(await appConfirm(`¿Dividir "${form.titulo}" en dos pagos por mes (${divPct}% y ${100-(Number(divPct)||0)}%)? Se aplica a todos los meses pendientes de la serie.`,{okLabel:"Dividir"}))) return; try{ const d=await api("dividir_serie",{grupo:form.grupo,pct:Number(divPct)||50,dia:parseInt(divDia)||15}); setForm(null); await load(); toast(`Serie dividida: ${d.meses} meses en dos pagos`,"success"); }catch(e){ toast(e.message,"error"); } }}>Dividir serie</Btn>
+                </div>
               </div>
             )}
             <div>{lbl("Notas")}<textarea style={{...iS,minHeight:60,resize:"vertical"}} placeholder="CBU, número de cuenta, referencia, lo que necesites recordar" value={form.notas} onChange={e=>setForm(f=>({...f,notas:e.target.value}))}/></div>
