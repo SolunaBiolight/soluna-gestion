@@ -13970,7 +13970,7 @@ function AppCalendarioPagos({T,user,onHome}){
         </div>
       </div>
       <div style={{fontSize:14,fontWeight:800,color:i.pagado?T.textSm:T.text,fontVariantNumeric:"tabular-nums",flexShrink:0}}>{calpagosFmt(i.monto,i.moneda)}</div>
-      <Btn T={T} variant={i.pagado?"ghost":"success"} size="sm" onClick={()=>marcar(i,!i.pagado)}>{i.pagado?"Desmarcar":"Pagado"}</Btn>
+      {i.pagado?<span style={{display:"inline-flex",alignItems:"center",gap:8,flexShrink:0}}><DSBadge T={T} color={T.green} size="sm">Pagado</DSBadge><button onClick={()=>marcar(i,false)} style={{background:"none",border:"none",color:T.textSm,fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",padding:0}}>Deshacer</button></span>:<Btn T={T} variant="success" size="sm" onClick={()=>marcar(i,true)}>Marcar pagado</Btn>}
     </div>); };
   const Bloque=({label,color,arr,sub})=>arr.length?(
     <div style={{marginBottom:6}}>
@@ -14002,7 +14002,7 @@ function AppCalendarioPagos({T,user,onHome}){
           ].map(k=>(
             <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:4}}>
               <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{width:7,height:7,borderRadius:"50%",background:k.n?k.color:T.border,flexShrink:0}}/><span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{k.label}</span></div>
-              <div style={{fontSize:22,fontWeight:800,color:k.n?T.text:T.textSm,letterSpacing:-0.5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
+              <div style={{fontSize:20,fontWeight:800,color:k.n?T.text:T.textSm,letterSpacing:-0.5,lineHeight:1.2,fontVariantNumeric:"tabular-nums",wordBreak:"break-word"}}>{k.val}</div>
               <div style={{fontSize:11,color:T.textSm}}>{k.sub}</div>
             </div>
           ))}
