@@ -91,7 +91,7 @@ function limpiar(p, base = {}) {
   if (p.moneda !== undefined) out.moneda = p.moneda === "USD" ? "USD" : "ARS";
   if (p.vence !== undefined && esFecha(p.vence)) out.vence = p.vence;
   if (p.notas !== undefined) out.notas = String(p.notas || "").slice(0, 1000);
-  if (p.tipo !== undefined) out.tipo = ["unico", "mensual", "cuotas"].includes(p.tipo) ? p.tipo : "unico";
+  if (p.tipo !== undefined) out.tipo = ["unico", "mensual", "cuotas", "pedido"].includes(p.tipo) ? p.tipo : "unico";
   return out;
 }
 
@@ -212,6 +212,40 @@ export default async function handler(req, res) {
         await actualizarIndiceAvisos(db, uid, col);
         return res.json({ ok: true, id: ref.id });
       }
+      // ── Pedido de mercadería: N partes (%, fecha) + detalle de ítems ──
+      if (body.pedido && typeof body.pedido === "object") {
+        const pd = body.pedido;
+        const nombre = String(pd.nombre || "").trim().slice(0, 120);
+        const moneda = pd.moneda === "USD" ? "USD" : "ARS";
+        const items = (Array.isArray(pd.items) ? pd.items : []).slice(0, 80).map(it => ({
+          key: String(it.key || "").slice(0, 80), nombre: String(it.nombre || "").slice(0, 120), variante: String(it.variante || "").slice(0, 80), sku: String(it.sku || "").slice(0, 60),
+          cantidad: Math.max(0, parseInt(it.cantidad) || 0), costo: Math.max(0, Math.round((Number(it.costo) || 0) * 100) / 100),
+        })).filter(it => it.nombre && it.cantidad > 0);
+        const total = Math.round(items.reduce((s, it) => s + it.cantidad * it.costo, 0) * 100) / 100;
+        const partes = (Array.isArray(pd.partes) ? pd.partes : []).slice(0, 12).map(x => ({ label: String(x.label || "").trim().slice(0, 60), pct: Math.max(0, Number(x.pct) || 0), fecha: esFecha(x.fecha) ? x.fecha : null }));
+        if (!nombre) return res.status(400).json({ error: "Falta el nombre del pedido" });
+        if (!items.length || !(total > 0)) return res.status(400).json({ error: "El pedido necesita al menos un ítem con cantidad y costo" });
+        if (!partes.length || partes.some(x => !x.fecha || !x.label)) return res.status(400).json({ error: "Cada parte necesita nombre y fecha" });
+        const sumPct = partes.reduce((s, x) => s + x.pct, 0);
+        if (Math.abs(sumPct - 100) > 0.01) return res.status(400).json({ error: "Los porcentajes tienen que sumar 100%" });
+        const grupo = col.doc().id;
+        const unidades = items.reduce((s, it) => s + it.cantidad, 0);
+        const pedido = { nombre, moneda, items, total, unidades, partes: partes.length };
+        const batch = db.batch(); const ids = [];
+        let acum = 0;
+        partes.forEach((x, i) => {
+          const ref = col.doc(); ids.push(ref.id);
+          // La última parte absorbe el redondeo para que las partes sumen el total exacto.
+          const monto = i === partes.length - 1 ? Math.round((total - acum) * 100) / 100 : Math.round(total * x.pct) / 100;
+          acum += monto;
+          batch.set(ref, { titulo: `${nombre} · ${x.label} ${x.pct}%`, categoria: "producto", monto, moneda, notas: String(p.notas || "").slice(0, 1000), tipo: "pedido",
+            grupo, parteN: i + 1, partes: partes.length, parteLabel: x.label, pct: x.pct, pedido, vence: x.fecha, pagado: false, creado: now, updatedAt: now });
+        });
+        await batch.commit();
+        await actualizarIndiceAvisos(db, uid, col);
+        return res.json({ ok: true, ids, grupo });
+      }
+
       const base = limpiar(p, { titulo: "", categoria: "otro", monto: 0, moneda: "ARS", notas: "", tipo: "unico" });
       if (!base.titulo) return res.status(400).json({ error: "Falta el concepto (a quién o qué se paga)" });
       if (!base.vence) return res.status(400).json({ error: "Falta la fecha de vencimiento" });

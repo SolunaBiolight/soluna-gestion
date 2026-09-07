@@ -13684,6 +13684,143 @@ const CALPAGOS_CATS=[
 const calpagosCatLabel=id=>(CALPAGOS_CATS.find(c=>c.id===id)||CALPAGOS_CATS[CALPAGOS_CATS.length-1]).label;
 function calpagosSumarMeses(fecha,n){ const [y,m,d]=fecha.split("-").map(Number); const t=new Date(Date.UTC(y,m-1+n,1)); const ult=new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth()+1,0)).getUTCDate(); return `${t.getUTCFullYear()}-${String(t.getUTCMonth()+1).padStart(2,"0")}-${String(Math.min(d,ult)).padStart(2,"0")}`; }
 function calpagosFmt(monto,moneda){ return moneda==="USD"?`USD ${(Number(monto)||0).toLocaleString("es-AR",{maximumFractionDigits:0})}`:fmtMoney(monto); }
+// Pedido de mercadería (categoría Producto): variantes y cantidades a pagar +
+// plan de pagos en partes (ej. 50% al encargar y 50% antes del envío). Genera
+// un pago por parte, todos con el mismo grupo y el detalle del pedido.
+const CALPAGOS_PLANES=[
+  {id:"100",label:"100% al encargar",partes:[{label:"Pago total",pct:100,dias:0}]},
+  {id:"50-50",label:"50% al encargar · 50% antes del envío",partes:[{label:"Anticipo",pct:50,dias:0},{label:"Pre-shipping",pct:50,dias:30}]},
+  {id:"30-70",label:"30% al encargar · 70% antes del envío",partes:[{label:"Anticipo",pct:30,dias:0},{label:"Pre-shipping",pct:70,dias:30}]},
+  {id:"custom",label:"Personalizado",partes:null},
+];
+function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onConfirm}){
+  const iS=InputStyle(T);
+  const hoy=hoyAR();
+  const [nombre,setNombre]=useState("");
+  const [moneda,setMoneda]=useState(monedaInicial||"USD");
+  const [catalogo,setCatalogo]=useState(null);
+  const [busq,setBusq]=useState("");
+  const [items,setItems]=useState([]);       // {key,nombre,variante,sku,cantidad,costo}
+  const [planId,setPlanId]=useState("50-50");
+  const [partes,setPartes]=useState(()=>CALPAGOS_PLANES[1].partes.map(p=>({...p,fecha:sumarDiasAR(fechaInicial||hoy,p.dias)})));
+  const [manual,setManual]=useState("");
+  const [saving,setSaving]=useState(false);
+  useEffect(()=>{
+    if(!open) return;
+    setNombre(""); setItems([]); setBusq(""); setManual(""); setMoneda(monedaInicial||"USD"); setPlanId("50-50");
+    setPartes(CALPAGOS_PLANES[1].partes.map(p=>({...p,fecha:sumarDiasAR(fechaInicial||hoy,p.dias)})));
+    if(!user?.uid) return;
+    const key=`growith_calpagos_cat_${user.uid}`;
+    const cached=ghSwrGet(key,6*3600000); if(cached) setCatalogo(cached);
+    (async()=>{
+      try{
+        const r=await fetch(`/api/stock?action=products&uid=${user.uid}&days=7${cached?"":"&cache=only"}`);
+        const j=await r.json().catch(()=>({}));
+        const rows=(Array.isArray(j.products)?j.products:[]).flatMap(p=>(p.variants||[]).map(v=>({key:v.sku||String(v.id),nombre:p.nombre,variante:v.nombre&&v.nombre!=="Default"?v.nombre:"",sku:v.sku||""})));
+        if(rows.length){ setCatalogo(rows); ghSwrSet(key,rows); }
+        else if(!cached) setCatalogo([]);
+      }catch(_){ if(!cached) setCatalogo([]); }
+    })();
+  },[open]);
+  const q=busq.trim().toLowerCase();
+  const vis=(catalogo||[]).filter(r=>!q||`${r.nombre} ${r.variante} ${r.sku}`.toLowerCase().includes(q)).slice(0,40);
+  const agregar=r=>{ setItems(list=>{ if(list.some(x=>x.key===r.key)) return list.map(x=>x.key===r.key?{...x,cantidad:x.cantidad+1}:x); return [...list,{...r,cantidad:1,costo:""}]; }); setBusq(""); };
+  const agregarManual=()=>{ const n=manual.trim(); if(!n) return; agregar({key:"manual_"+Date.now().toString(36),nombre:n,variante:"",sku:""}); setManual(""); };
+  const setItem=(key,patch)=>setItems(list=>list.map(x=>x.key===key?{...x,...patch}:x));
+  const total=items.reduce((s,x)=>s+(Number(x.cantidad)||0)*ghNumAR(x.costo),0);
+  const unidades=items.reduce((s,x)=>s+(Number(x.cantidad)||0),0);
+  const elegirPlan=id=>{ setPlanId(id); const p=CALPAGOS_PLANES.find(x=>x.id===id); if(p?.partes) setPartes(p.partes.map(x=>({...x,fecha:sumarDiasAR(fechaInicial||hoy,x.dias)}))); else if(partes.length<2) setPartes([{label:"Anticipo",pct:50,fecha:fechaInicial||hoy},{label:"Saldo",pct:50,fecha:sumarDiasAR(fechaInicial||hoy,30)}]); };
+  const setParte=(i,patch)=>{ setPlanId("custom"); setPartes(ps=>ps.map((p,k)=>k===i?{...p,...patch}:p)); };
+  const sumPct=partes.reduce((s,p)=>s+(Number(p.pct)||0),0);
+  const ok=nombre.trim()&&items.length>0&&total>0&&Math.abs(sumPct-100)<0.01&&partes.every(p=>p.fecha&&p.label.trim());
+  const confirmar=async()=>{
+    if(!ok) return; setSaving(true);
+    try{ await onConfirm({nombre:nombre.trim(),moneda,items:items.map(x=>({key:x.key,nombre:x.nombre,variante:x.variante,sku:x.sku,cantidad:Number(x.cantidad)||0,costo:ghNumAR(x.costo)})),total:Math.round(total*100)/100,partes:partes.map(p=>({label:p.label.trim(),pct:Number(p.pct)||0,fecha:p.fecha,monto:Math.round(total*(Number(p.pct)||0))/100}))}); }
+    finally{ setSaving(false); }
+  };
+  const lbl=t=><div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>{t}</div>;
+  const fmt=v=>calpagosFmt(v,moneda);
+  return (
+    <Modal T={T} open={open} onClose={()=>!saving&&onClose()} title="Pedido de mercadería" width={680} zIndex={1100}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 160px",gap:10}}>
+          <div>{lbl("Nombre del pedido")}<input style={iS} placeholder="Pedido China septiembre, Reposición marcos negros…" value={nombre} onChange={e=>setNombre(e.target.value)} autoFocus/></div>
+          <div>{lbl("Moneda")}<select style={iS} value={moneda} onChange={e=>setMoneda(e.target.value)}><option value="USD">Dólares (USD)</option><option value="ARS">Pesos (ARS)</option></select></div>
+        </div>
+
+        {/* Ítems */}
+        <div>
+          {lbl("Productos y variantes")}
+          <div style={{position:"relative"}}>
+            <input style={iS} placeholder={catalogo===null?"Cargando tu catálogo…":catalogo.length?"Buscá por nombre, variante o SKU":"Sin catálogo conectado: cargá los ítems a mano abajo"} value={busq} onChange={e=>setBusq(e.target.value)} disabled={catalogo===null||!catalogo.length}/>
+            {q&&vis.length>0&&(
+              <div style={{position:"absolute",left:0,right:0,top:"100%",zIndex:5,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,marginTop:4,maxHeight:220,overflow:"auto",boxShadow:DS.shadow?.md||"0 8px 24px rgba(0,0,0,.25)"}}>
+                {vis.map(r=>(
+                  <div key={r.key} onClick={()=>agregar(r)} style={{padding:"8px 12px",cursor:"pointer",fontSize:12,color:T.text,borderBottom:`1px solid ${T.borderL}`,display:"flex",gap:8}}>
+                    <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.nombre}{r.variante?<span style={{color:T.textMd}}> · {r.variante}</span>:null}</span>
+                    {r.sku&&<span style={{fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{r.sku}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:8}}>
+            <input style={{...iS,flex:1}} placeholder="O escribí un ítem que no está en el catálogo (ej. Estuches negros)" value={manual} onChange={e=>setManual(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); agregarManual(); } }}/>
+            <Btn T={T} variant="secondary" size="sm" onClick={agregarManual} disabled={!manual.trim()}>Agregar</Btn>
+          </div>
+          {items.length>0&&(
+            <div style={{marginTop:10,border:`1px solid ${T.borderL}`,borderRadius:8,overflow:"hidden"}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 80px 120px 110px 28px",gap:8,padding:"6px 10px",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,background:T.surface}}><span>Ítem</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Costo unit.</span><span style={{textAlign:"right"}}>Subtotal</span><span/></div>
+              {items.map(x=>(
+                <div key={x.key} style={{display:"grid",gridTemplateColumns:"1fr 80px 120px 110px 28px",gap:8,padding:"6px 10px",alignItems:"center",borderTop:`1px solid ${T.borderL}`,fontSize:12}}>
+                  <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.text}}>{x.nombre}{x.variante?<span style={{color:T.textMd}}> · {x.variante}</span>:null}</span>
+                  <input style={{...iS,padding:"5px 8px",textAlign:"right",fontSize:12}} inputMode="numeric" value={x.cantidad} onChange={e=>setItem(x.key,{cantidad:e.target.value.replace(/\D/g,"")})}/>
+                  <input style={{...iS,padding:"5px 8px",textAlign:"right",fontSize:12}} inputMode="decimal" placeholder="0" value={x.costo} onChange={e=>setItem(x.key,{costo:e.target.value})}/>
+                  <span style={{textAlign:"right",fontWeight:700,color:T.text,fontVariantNumeric:"tabular-nums"}}>{fmt((Number(x.cantidad)||0)*ghNumAR(x.costo))}</span>
+                  <button onClick={()=>setItems(l=>l.filter(y=>y.key!==x.key))} style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:13}}>✕</button>
+                </div>
+              ))}
+              <div style={{display:"flex",justifyContent:"space-between",padding:"8px 10px",borderTop:`1px solid ${T.border}`,fontSize:12,background:T.surface}}>
+                <span style={{color:T.textSm}}>{items.length} ítem{items.length===1?"":"s"} · {unidades} unidad{unidades===1?"":"es"}</span>
+                <span style={{fontWeight:800,color:T.text}}>Total {fmt(total)}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Plan de pagos */}
+        <div>
+          {lbl("Plan de pagos")}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+            {CALPAGOS_PLANES.map(p=><button key={p.id} onClick={()=>elegirPlan(p.id)} style={{padding:"5px 11px",fontSize:11,fontWeight:planId===p.id?700:500,borderRadius:8,border:`1px solid ${planId===p.id?T.accentSolid:T.border}`,background:planId===p.id?T.accentSolid+"18":"transparent",color:planId===p.id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{p.label}</button>)}
+          </div>
+          <div style={{border:`1px solid ${T.borderL}`,borderRadius:8,overflow:"hidden"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 70px 150px 120px 28px",gap:8,padding:"6px 10px",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,background:T.surface}}><span>Parte</span><span style={{textAlign:"right"}}>%</span><span>Vence</span><span style={{textAlign:"right"}}>Monto</span><span/></div>
+            {partes.map((p,i)=>(
+              <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 70px 150px 120px 28px",gap:8,padding:"6px 10px",alignItems:"center",borderTop:`1px solid ${T.borderL}`,fontSize:12}}>
+                <input style={{...iS,padding:"5px 8px",fontSize:12}} value={p.label} onChange={e=>setParte(i,{label:e.target.value})}/>
+                <input style={{...iS,padding:"5px 8px",textAlign:"right",fontSize:12}} inputMode="decimal" value={p.pct} onChange={e=>setParte(i,{pct:e.target.value})}/>
+                <input type="date" style={{...iS,padding:"5px 8px",fontSize:12}} value={p.fecha} onChange={e=>setParte(i,{fecha:e.target.value})}/>
+                <span style={{textAlign:"right",fontWeight:700,color:T.text,fontVariantNumeric:"tabular-nums"}}>{fmt(total*(Number(p.pct)||0)/100)}</span>
+                <button onClick={()=>{ setPlanId("custom"); setPartes(ps=>ps.filter((_,k)=>k!==i)); }} disabled={partes.length<=1} style={{background:"none",border:"none",color:partes.length<=1?T.border:T.textSm,cursor:partes.length<=1?"default":"pointer",fontSize:13}}>✕</button>
+              </div>
+            ))}
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderTop:`1px solid ${T.border}`,fontSize:11,background:T.surface}}>
+              <button onClick={()=>{ setPlanId("custom"); setPartes(ps=>[...ps,{label:"Saldo",pct:0,fecha:sumarDiasAR(ps[ps.length-1]?.fecha||hoy,30)}]); }} style={{background:"none",border:"none",color:T.accent,fontWeight:700,cursor:"pointer",fontSize:11,fontFamily:"'Inter',system-ui,sans-serif",padding:0}}>+ Agregar parte</button>
+              <span style={{marginLeft:"auto",color:Math.abs(sumPct-100)<0.01?T.textSm:T.red,fontWeight:Math.abs(sumPct-100)<0.01?400:700}}>{Math.abs(sumPct-100)<0.01?"Suma 100%":`Suma ${sumPct}% (tiene que dar 100%)`}</span>
+            </div>
+          </div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Se crea un pago por cada parte, con su fecha y su monto. Todos quedan vinculados al pedido y te avisamos por mail el día anterior a cada uno.</div>
+        </div>
+
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:2}}>
+          <Btn T={T} variant="secondary" size="sm" onClick={onClose} disabled={saving}>Cancelar</Btn>
+          <Btn T={T} variant="primary" size="sm" onClick={confirmar} disabled={!ok||saving}>{saving?"Guardando…":`Crear ${partes.length} pago${partes.length===1?"":"s"}`}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 function AppCalendarioPagos({T,user,onHome}){
   const iS=InputStyle(T);
   const hoy=hoyAR();
@@ -13696,6 +13833,8 @@ function AppCalendarioPagos({T,user,onHome}){
   const [aplicarSerie,setAplicarSerie]=useState(false);
   const [verPagados,setVerPagados]=useState(false);
   const [prestamoAbierto,setPrestamoAbierto]=useState(null);
+  const [pedidoOpen,setPedidoOpen]=useState(false);
+  const [pedidoAbierto,setPedidoAbierto]=useState(null);
 
   const api=async(action,extra={})=>{
     const r=await authFetch("/api/pagos-cal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,uid:user.uid,...extra})});
@@ -13759,6 +13898,24 @@ function AppCalendarioPagos({T,user,onHome}){
     }).sort((a,b)=>b.restante-a.restante);
   },[lista]);
 
+  // Pedidos de mercadería (tipo pedido, agrupados)
+  const pedidos=useMemo(()=>{
+    const g={}; for(const i of lista){ if(i.tipo!=="pedido"||!i.grupo) continue; (g[i.grupo] ||= []).push(i); }
+    return Object.entries(g).map(([grupo,arr])=>{
+      arr.sort((x,y)=>(x.parteN||0)-(y.parteN||0));
+      const pd=arr[0].pedido||{}; const pend=arr.filter(x=>!x.pagado);
+      return {grupo,nombre:pd.nombre||arr[0].titulo,moneda:arr[0].moneda,items:pd.items||[],unidades:pd.unidades||0,total:pd.total||arr.reduce((s,x)=>s+Number(x.monto),0),
+        pagado:arr.filter(x=>x.pagado).reduce((s,x)=>s+Number(x.monto),0),pendiente:pend.reduce((s,x)=>s+Number(x.monto),0),partes:arr,prox:pend[0]||null};
+    }).sort((x,y)=>(x.prox?.vence||"9").localeCompare(y.prox?.vence||"9"));
+  },[lista]);
+  const crearPedido=async(pd)=>{
+    try{
+      await api("save",{pago:{notas:form?.notas||""},pedido:pd});
+      toast(`Pedido cargado: ${pd.partes.length} pago${pd.partes.length===1?"":"s"}`,"success");
+      setPedidoOpen(false); setForm(null); await load();
+    }catch(e){ toast(e.message,"error"); }
+  };
+
   // Mini calendario
   const [yy,mm]=mes.split("-").map(Number);
   const mesLabel=`${mesesNombres[mm-1][0].toUpperCase()+mesesNombres[mm-1].slice(1)} ${yy}`;
@@ -13770,7 +13927,7 @@ function AppCalendarioPagos({T,user,onHome}){
   const delDia=diaSel?(porDia[diaSel]||[]).slice().sort((a,b)=>Number(a.pagado)-Number(b.pagado)):[];
 
   const nuevo=(vence)=>{ setAplicarSerie(false); setForm({titulo:"",categoria:"otro",monto:"",moneda:"ARS",vence:vence||hoy,tipo:"unico",cuotasTotal:"12",cuotaDesde:"1",capital:"",tna:"",notas:""}); };
-  const editar=(i)=>{ setAplicarSerie(false); setForm({id:i.id,titulo:i.titulo,categoria:i.categoria,monto:String(i.monto),moneda:i.moneda,vence:i.vence,tipo:i.tipo||"unico",notas:i.notas||"",grupo:i.grupo||null,cuotaN:i.cuotaN,cuotaTotal:i.cuotaTotal,pagado:!!i.pagado,capitalCuota:i.capitalCuota,interesCuota:i.interesCuota,saldoDespues:i.saldoDespues}); };
+  const editar=(i)=>{ setAplicarSerie(false); setForm({id:i.id,titulo:i.titulo,categoria:i.categoria,monto:String(i.monto),moneda:i.moneda,vence:i.vence,tipo:i.tipo||"unico",notas:i.notas||"",grupo:i.grupo||null,cuotaN:i.cuotaN,cuotaTotal:i.cuotaTotal,pagado:!!i.pagado,capitalCuota:i.capitalCuota,interesCuota:i.interesCuota,saldoDespues:i.saldoDespues,parteN:i.parteN,partes:i.partes,pedido:i.pedido||null}); };
   const esPrestamoNuevo=form&&!form.id&&form.tipo==="cuotas"&&form.categoria==="prestamo";
   const cuotaEstimada=(()=>{ if(!esPrestamoNuevo) return null; const cap=ghNumAR(form.capital), n=parseInt(form.cuotasTotal)||0, tna=ghNumAR(form.tna); if(!(cap>0)||n<2) return null; if(ghNumAR(form.monto)>0) return ghNumAR(form.monto); const i=tna/100/12; return i>0?cap*i/(1-Math.pow(1+i,-n)):cap/n; })();
   const guardar=async()=>{
@@ -13807,6 +13964,7 @@ function AppCalendarioPagos({T,user,onHome}){
         <div style={{fontSize:11,color:T.textSm,marginTop:1,display:"flex",gap:6,flexWrap:"wrap"}}>
           <span>{calpagosCatLabel(i.categoria)}</span>
           {i.cuotaN&&<span>· cuota {i.cuotaN} de {i.cuotaTotal}</span>}
+          {i.tipo==="pedido"&&<span>· parte {i.parteN} de {i.partes}{i.pedido?.unidades?` · ${i.pedido.unidades} u.`:""}</span>}
           {i.tipo==="mensual"&&<span>· mensual</span>}
           {!i.pagado&&e!=="futuro"&&<span style={{color:c,fontWeight:700}}>· {labelEstado[e]}</span>}
         </div>
@@ -13923,6 +14081,49 @@ function AppCalendarioPagos({T,user,onHome}){
               </div>
             </Card>
 
+            {pedidos.length>0&&(
+              <Card T={T} padding="md">
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <span style={{fontSize:13,fontWeight:800,color:T.text}}>Pedidos de mercadería</span>
+                  <span style={{fontSize:11,color:T.textSm}}>{pedidos.filter(p=>p.pendiente>0).length} con saldo</span>
+                </div>
+                {pedidos.map(p=>{
+                  const pct=p.total?Math.round(p.pagado/p.total*100):0; const abierto=pedidoAbierto===p.grupo;
+                  return (
+                    <div key={p.grupo} style={{padding:"9px 0",borderTop:`1px solid ${T.borderL}`}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span onClick={()=>setPedidoAbierto(abierto?null:p.grupo)} style={{flex:1,fontSize:12,fontWeight:700,color:T.text,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</span>
+                        <span style={{fontSize:11,color:T.textSm}}>{p.items.length} ítem{p.items.length===1?"":"s"} · {p.unidades} u.</span>
+                      </div>
+                      <div style={{height:4,borderRadius:2,background:T.borderL,margin:"6px 0"}}><div style={{width:`${pct}%`,height:4,borderRadius:2,background:T.accentSolid}}/></div>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:T.textSm}}>
+                        <span>Pagado <b style={{color:T.text}}>{calpagosFmt(p.pagado,p.moneda)}</b> de {calpagosFmt(p.total,p.moneda)}</span>
+                        <span>{p.prox?`${p.prox.parteLabel} el ${p.prox.vence.split("-").reverse().slice(0,2).join("/")}`:"Completo"}</span>
+                      </div>
+                      {abierto&&(
+                        <div style={{marginTop:8,fontSize:10}}>
+                          {p.items.map((it,k)=>(
+                            <div key={k} style={{display:"flex",gap:6,padding:"3px 0",color:T.textMd,borderTop:k?`1px solid ${T.borderL}`:"none"}}>
+                              <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.text}}>{it.nombre}{it.variante?` · ${it.variante}`:""}</span>
+                              <span style={{fontVariantNumeric:"tabular-nums"}}>{it.cantidad} × {calpagosFmt(it.costo,p.moneda)}</span>
+                            </div>
+                          ))}
+                          <div style={{marginTop:6,paddingTop:6,borderTop:`1px solid ${T.border}`}}>
+                            {p.partes.map(x=>(
+                              <div key={x.id} style={{display:"flex",gap:6,padding:"2px 0",color:x.pagado?T.textSm:T.textMd,textDecoration:x.pagado?"line-through":"none"}}>
+                                <span style={{flex:1}}>{x.parteLabel} {x.pct}% · {x.vence.split("-").reverse().join("/")}</span>
+                                <span style={{fontWeight:700,color:x.pagado?T.textSm:T.text,fontVariantNumeric:"tabular-nums"}}>{calpagosFmt(x.monto,x.moneda)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </Card>
+            )}
+
             <Card T={T} padding="md">
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
                 <span style={{fontSize:13,fontWeight:800,color:T.text}}>Préstamos</span>
@@ -13977,6 +14178,12 @@ function AppCalendarioPagos({T,user,onHome}){
               <div>{lbl(esPrestamoNuevo?"Cuota (si la conocés)":"Monto")}<input style={iS} inputMode="decimal" placeholder={esPrestamoNuevo&&cuotaEstimada?`calculada: ${Math.round(cuotaEstimada).toLocaleString("es-AR")}`:"0"} value={form.monto} onChange={e=>setForm(f=>({...f,monto:e.target.value}))}/></div>
               <div>{lbl("Moneda")}<select style={iS} value={form.moneda} onChange={e=>setForm(f=>({...f,moneda:e.target.value}))}><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (USD)</option></select></div>
             </div>
+            {!form.id&&form.categoria==="producto"&&(
+              <div style={{background:T.accentSolid+"0d",border:`1px solid ${T.accentSolid}33`,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:220,fontSize:12,color:T.textMd,lineHeight:1.5}}><b style={{color:T.text}}>¿Es un pedido de mercadería?</b> Armalo con sus variantes y cantidades y el plan de pagos (por ejemplo 50% al encargar y 50% antes del envío). Se crea un pago por cada parte.</div>
+                <Btn T={T} variant="primary" size="sm" onClick={()=>setPedidoOpen(true)}>Armar pedido</Btn>
+              </div>
+            )}
             {!form.id?(
               <div>
                 {lbl("Se repite")}
@@ -14002,7 +14209,8 @@ function AppCalendarioPagos({T,user,onHome}){
               </div>
             ):(
               <div style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                {form.cuotaN?<span>Cuota {form.cuotaN} de {form.cuotaTotal}{form.interesCuota!=null?` · interés ${calpagosFmt(form.interesCuota,form.moneda)} · capital ${calpagosFmt(form.capitalCuota,form.moneda)}`:""}</span>:form.tipo==="mensual"?<span>Pago mensual</span>:<span>Pago único</span>}
+                {form.tipo==="pedido"&&form.pedido?<span>Parte {form.parteN} de {form.partes} del pedido <b style={{color:T.text}}>{form.pedido.nombre}</b> · {form.pedido.items.length} ítems, {form.pedido.unidades} unidades, total {calpagosFmt(form.pedido.total,form.moneda)}</span>
+                :form.cuotaN?<span>Cuota {form.cuotaN} de {form.cuotaTotal}{form.interesCuota!=null?` · interés ${calpagosFmt(form.interesCuota,form.moneda)} · capital ${calpagosFmt(form.capitalCuota,form.moneda)}`:""}</span>:form.tipo==="mensual"?<span>Pago mensual</span>:<span>Pago único</span>}
                 {form.grupo&&<label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={aplicarSerie} onChange={e=>setAplicarSerie(e.target.checked)}/> Aplicar monto y nombre a toda la serie pendiente</label>}
               </div>
             )}
@@ -14019,6 +14227,7 @@ function AppCalendarioPagos({T,user,onHome}){
           </div>
         )}
       </Modal>
+      <CalPagosPedidoModal T={T} user={user} open={pedidoOpen} onClose={()=>setPedidoOpen(false)} monedaInicial={form?.moneda==="ARS"?"ARS":"USD"} fechaInicial={form?.vence||hoy} onConfirm={crearPedido}/>
     </div>
   );
 }
