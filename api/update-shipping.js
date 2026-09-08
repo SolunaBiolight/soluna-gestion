@@ -594,9 +594,28 @@ export default async function handler(req, res) {
       // Marca de actividad para el cron de tracking
       await db.collection("users").doc(uid).set({ enviosTrackActivo: new Date().toISOString() }, { merge: true });
       const cutoff = new Date(Date.now() - 60 * 86400000).toISOString();
-      const snap = await db.collection("users").doc(uid).collection("envios").where("creado", ">", cutoff).get();
+      const col = db.collection("users").doc(uid).collection("envios");
+      const snap = await col.where("creado", ">", cutoff).get();
       const envios = {};
       snap.forEach(d => { envios[d.id] = d.data(); });
+      // Emitidos por la API de Andreani que nunca entraron al seguimiento:
+      // sin `creado` no salían en el listado y sin `activo` el cron no los
+      // miraba. Se activan acá, del lado del servidor, para que aparezcan en
+      // Seguimientos aunque el cliente no vuelva a emitir nada. El tracking a
+      // la tienda (fulfill + mail) lo completa el front (activarSeguimientoApi).
+      try {
+        const ahora = new Date().toISOString();
+        const orf = await col.where("andreani.numeroDeEnvio", ">", "").get();
+        const b = db.batch(); let n = 0;
+        orf.forEach(d => {
+          const e = d.data();
+          if (e.activo === true || e.entregadoAt || e.devolucionAt || e.tracking) return;
+          const numero = String(e.andreani.numeroDeEnvio);
+          const patch = { numero: d.id, tracking: numero, activo: true, estado: "despachado", despachadoAt: e.despachadoAt || ahora, creado: e.creado || ahora, apiHeal: true };
+          b.set(d.ref, patch, { merge: true }); envios[d.id] = { ...e, ...patch }; n++;
+        });
+        if (n) { await b.commit(); console.log(`[envios_list] ${n} envío(s) API activados para seguimiento (uid ${uid})`); }
+      } catch (e) { console.warn("[envios_list] heal API:", e.message); }
       return res.json({ envios });
     } catch (e) { return res.status(500).json({ error: e.message }); }
   }
@@ -611,7 +630,7 @@ export default async function handler(req, res) {
           const numero = String(e.numero || "").trim();
           if (!numero) return null;
           const docData = {};
-          for (const k of ["tnId","cliente","esSucursal","provincia","localidad","total","skus","estado","activo","tracking","fulfillOk","verificado"]) {
+          for (const k of ["tnId","cliente","esSucursal","provincia","localidad","total","skus","estado","activo","tracking","fulfillOk","verificado","tnDone"]) {
             if (e[k] !== undefined) docData[k] = e[k];
           }
           docData.numero = numero;

@@ -7256,12 +7256,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const k=String(numero);
     if(segApiRef.current.has(k)) return;
     segApiRef.current.add(k);
-    try{ await sendTracking({pedidoNum:k,tracking:String(numeroDeEnvio)}); return; }
+    let tiendaOk=false;
+    try{ await sendTracking({pedidoNum:k,tracking:String(numeroDeEnvio)}); tiendaOk=true; }
     catch(e){ console.warn("activarSeguimientoApi: la tienda no tomó el tracking",e?.message); }
     try{
       await authFetch(`/api/update-shipping?action=envios_registrar&uid=${user.uid}`,{
         method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({envios:[{numero:k,tracking:String(numeroDeEnvio),estado:"despachado",activo:true}]}),
+        body:JSON.stringify({envios:[{numero:k,tracking:String(numeroDeEnvio),estado:"despachado",activo:true,tnDone:true,...(tiendaOk?{}:{fulfillOk:false})}]}),
       });
     }catch(_){}
   }
@@ -7274,7 +7275,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         setEnviosFs(d.envios);
         // Reparación de los emitidos por API antes de este fix: tienen número
         // de envío pero nunca entraron al seguimiento. Se activan de a pocos.
-        const huerfanos=Object.entries(d.envios).filter(([id,e])=>e?.andreani?.numeroDeEnvio&&!e.tracking&&e.activo!==true&&!e.entregadoAt&&!e.devolucionAt).slice(0,10);
+        const huerfanos=Object.entries(d.envios).filter(([id,e])=>e?.andreani?.numeroDeEnvio&&!e.tnDone&&!e.entregadoAt&&!e.devolucionAt).slice(0,10);
         if(huerfanos.length){
           (async()=>{ for(const [id,e] of huerfanos) await activarSeguimientoApi(e.numero||id, e.andreani.numeroDeEnvio); refrescarEnviosFs(); })();
         }
