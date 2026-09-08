@@ -14302,12 +14302,51 @@ function AppCalendarioPagos({T,user,onHome}){
               </div>
             ):(
               <div style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                {form.tipo==="pedido"&&form.pedido?<span>Parte {form.parteN} de {form.partes} del pedido <b style={{color:T.text}}>{form.pedido.nombre}</b> · {form.pedido.items.length} ítems, {form.pedido.unidades} unidades, total {calpagosFmt(form.pedido.total,form.moneda)}</span>
+                {form.tipo==="pedido"&&form.pedido?<span>Parte {form.parteN} de {form.partes} del pedido <b style={{color:T.text}}>{form.pedido.nombre}</b></span>
                 :form.cuotaN?<span>Cuota {form.cuotaN} de {form.cuotaTotal}{form.interesCuota!=null?` · interés ${calpagosFmt(form.interesCuota,form.moneda)} · capital ${calpagosFmt(form.capitalCuota,form.moneda)}`:""}</span>:form.tipo==="mensual"?<span>Pago mensual</span>:<span>Pago único</span>}
                 {form.grupo&&form.tipo!=="mensual"&&<label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={aplicarSerie} onChange={e=>setAplicarSerie(e.target.checked)}/> Aplicar monto, nombre y día de vencimiento a toda la serie pendiente</label>}
                 {form.grupo&&form.tipo==="mensual"&&fijoDe(form.grupo)&&<span>· Acá cambiás solo este mes. Para el monto, el día o las partes de todos los meses, <button onClick={()=>editarFijo(fijoDe(form.grupo))} style={{background:"none",border:"none",color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:0,fontSize:12}}>editá el gasto fijo</button>.</span>}
               </div>
             )}
+            {form.id&&form.tipo==="pedido"&&form.pedido&&(()=>{
+              const pd=form.pedido; const partes=(items||[]).filter(x=>x.tipo==="pedido"&&x.grupo===form.grupo).sort((x,y)=>(x.parteN||0)-(y.parteN||0));
+              return (
+                <div style={{border:`1px solid ${T.borderL}`,borderRadius:10,overflow:"hidden"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:T.surface,fontSize:11,fontWeight:700,color:T.text}}>
+                    <span>Qué se pidió</span>
+                    <span style={{color:T.textSm,fontWeight:500}}>{pd.items.length} ítem{pd.items.length===1?"":"s"} · {pd.unidades} unidad{pd.unidades===1?"":"es"}</span>
+                    <span style={{marginLeft:"auto",color:T.text}}>Total {calpagosFmt(pd.total,form.moneda)}</span>
+                  </div>
+                  <div style={{maxHeight:260,overflow:"auto"}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 60px 110px 110px",gap:8,padding:"5px 12px",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4}}><span>Variante</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Costo unit.</span><span style={{textAlign:"right"}}>Subtotal</span></div>
+                    {pd.items.map((it,k)=>(
+                      <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 60px 110px 110px",gap:8,padding:"6px 12px",alignItems:"center",borderTop:`1px solid ${T.borderL}`,fontSize:12}}>
+                        <span style={{minWidth:0}}>
+                          <div style={{fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.variante||it.nombre}</div>
+                          {(it.variante||it.sku)&&<div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.variante?it.nombre:""}{it.sku?(it.variante?" · ":"")+it.sku:""}</div>}
+                        </span>
+                        <span style={{textAlign:"right",fontWeight:700,color:T.text,fontVariantNumeric:"tabular-nums"}}>{it.cantidad}</span>
+                        <span style={{textAlign:"right",color:T.textMd,fontVariantNumeric:"tabular-nums"}}>{calpagosFmt(it.costo,form.moneda)}</span>
+                        <span style={{textAlign:"right",fontWeight:700,color:T.text,fontVariantNumeric:"tabular-nums"}}>{calpagosFmt((Number(it.cantidad)||0)*(Number(it.costo)||0),form.moneda)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {partes.length>0&&(
+                    <div style={{borderTop:`1px solid ${T.border}`,padding:"6px 12px 8px",background:T.surface}}>
+                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Plan de pagos</div>
+                      {partes.map(x=>(
+                        <div key={x.id} style={{display:"flex",gap:8,alignItems:"center",padding:"3px 0",fontSize:12,color:x.id===form.id?T.text:x.pagado?T.textSm:T.textMd,fontWeight:x.id===form.id?700:400}}>
+                          <span style={{width:6,height:6,borderRadius:"50%",background:x.pagado?T.green:x.vence<hoy?T.red:T.textSm,flexShrink:0}}/>
+                          <span style={{flex:1}}>{x.parteLabel} {x.pct}% · {x.vence.split("-").reverse().join("/")}{x.id===form.id?" (este pago)":""}</span>
+                          <span style={{fontVariantNumeric:"tabular-nums",textDecoration:x.pagado?"line-through":"none"}}>{calpagosFmt(x.monto,x.moneda)}</span>
+                          <span style={{fontSize:10,color:x.pagado?T.green:T.textSm,width:56,textAlign:"right"}}>{x.pagado?"Pagado":"Pendiente"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div>{lbl("Notas")}<textarea style={{...iS,minHeight:60,resize:"vertical"}} placeholder="CBU, número de cuenta, referencia, lo que necesites recordar" value={form.notas} onChange={e=>setForm(f=>({...f,notas:e.target.value}))}/></div>
             <div style={{fontSize:11,color:T.textSm}}>Te avisamos por mail el día anterior a cada vencimiento.</div>
             <div style={{display:"flex",gap:8,alignItems:"center",paddingTop:4,flexWrap:"wrap"}}>
