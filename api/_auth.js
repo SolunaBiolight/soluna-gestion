@@ -27,6 +27,36 @@ function initApp() {
   });
 }
 
+// Fundadores de la plataforma: los únicos que pueden dar o quitar el flag de
+// admin a otras cuentas. Comparar contra el uid del TOKEN es seguro.
+const FOUNDERS = ["WJH3ArqDPQcNLha9lOinvkVi9uJ2"];
+export function isFounder(uid) { return FOUNDERS.includes(String(uid || "")); }
+
+// ── Modo solo lectura ("Ver como cliente" desde Admin) ───────────────────────
+// El token de impersonación lleva el claim impersonatedBy (uid del admin). Con
+// ese token toda acción de ESCRITURA se rechaza: solo pasan GET y las acciones
+// POST cuyo nombre es claramente de lectura. Las escrituras directas a Firestore
+// se bloquean del lado del front (wrappers de setDoc/updateDoc/addDoc/deleteDoc).
+const RO_READ_RX = /^(get|list|load|fetch|read|me$|resumen|status|snapshot|search|buscar|stats|movimientos|comprobante_get|iva_get|envios_list|pendientes|preview|historial|cotizar|sucursales|localidades|trazas|quote|count|poll|saldo|cargas$|catalogo|items|insights|analisis|metrics|pnl|daily|board|conv|calc|verificar|diag|consultar|padron|tracking|adminGet|adminBuscar|dashboard|ordenes|orders|productos|kpi|margenes|etiquetas_pendientes|export|csv|listar|obtener|ping|health|estado)/i;
+function _actionOf(req) {
+  try {
+    const q = req.query && req.query.action;
+    if (q) return String(q);
+    const b = req.body;
+    if (b && typeof b === "object" && b.action) return String(b.action);
+  } catch (_) {}
+  return "";
+}
+/** {ok:false,...} si el token es de impersonación y el request escribe. */
+export function readOnlyBlock(req, user) {
+  if (!user || !user.impersonatedBy) return null;
+  const method = String(req.method || "GET").toUpperCase();
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return null;
+  const action = _actionOf(req);
+  if (action && RO_READ_RX.test(action)) return null;
+  return { ok: false, code: 403, error: "Modo solo lectura: estás viendo esta cuenta como administrador y no se pueden hacer cambios.", readOnly: true };
+}
+
 // Devuelve el token decodificado o null (token ausente/inválido/vencido).
 export async function verifyAuth(req) {
   try {
@@ -73,6 +103,8 @@ export function clearTeamCache(uid) { _teamCache.delete(uid); }
 export async function requireUid(req, uid, seccion) {
   const user = await verifyAuth(req);
   if (!user) return { ok: false, code: 401, error: "Sesión inválida. Recargá la página e iniciá sesión de nuevo." };
+  const ro = readOnlyBlock(req, user);
+  if (ro) return ro;
   const target = String(uid || "").trim();
   if (!target) return { ok: false, code: 400, error: "uid requerido" };
   if (user.uid === target) return { ok: true, user };
@@ -110,13 +142,13 @@ export async function guardUid(req, res, uid, seccion) {
 export async function requireAdmin(req) {
   const user = await verifyAuth(req);
   if (!user) return { ok: false, code: 401, error: "Sesión inválida." };
+  if (user.impersonatedBy) return { ok: false, code: 403, error: "Modo solo lectura: salí de la vista de cliente para usar el panel de administración." };
   const meta = await _userMeta(user.uid);
   const envAdmins = String(process.env.ADMIN_UIDS || "").split(",").map(s => s.trim()).filter(Boolean);
   // Fundadores de la plataforma. Comparar contra el uid del TOKEN es seguro
   // (no se puede falsificar); el agujero anterior era comparar contra un uid
   // que el cliente mandaba en el body.
-  const FOUNDERS = ["WJH3ArqDPQcNLha9lOinvkVi9uJ2"];
-  if (meta.isAdmin || envAdmins.includes(user.uid) || FOUNDERS.includes(user.uid)) return { ok: true, user };
+  if (meta.isAdmin || envAdmins.includes(user.uid) || FOUNDERS.includes(user.uid)) return { ok: true, user, founder: FOUNDERS.includes(user.uid) };
   console.warn(`[auth] ${user.uid} intentó una acción de admin`);
   return { ok: false, code: 403, error: "Acción reservada a administradores." };
 }
@@ -133,7 +165,43 @@ export function isCronRequest(req) {
 
 /** `if (!guardCron(req,res)) return;` */
 export function guardCron(req, res) {
-  if (isCronRequest(req)) return true;
-  res.status(401).json({ error: "No autorizado" });
-  return false;
+  if (!isCronRequest(req)) {
+    res.status(401).json({ error: "No autorizado" });
+    return false;
+  }
+  // Heartbeat: cada cron registra su última corrida en system/crons.{nombre}
+  // (fecha, ok/error, duración y un resumen del JSON de respuesta). Se
+  // engancha en res.json así ningún cron tiene que acordarse de hacerlo.
+  try {
+    if (!res.__ghBeat) {
+      res.__ghBeat = true;
+      const name = cronName(req);
+      const t0 = Date.now();
+      const origJson = res.json.bind(res);
+      res.json = (body) => {
+        cronBeat(name, res.statusCode || 200, body, Date.now() - t0).catch(() => {});
+        return origJson(body);
+      };
+    }
+  } catch (_) {}
+  return true;
+}
+function cronName(req) {
+  try {
+    const u = new URL(String(req.url || "/"), "http://x");
+    const path = u.pathname.replace(/^\/api\//, "").replace(/\.js$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const action = u.searchParams.get("action");
+    return action ? `${path}_${action}` : path;
+  } catch (_) { return "desconocido"; }
+}
+async function cronBeat(name, status, body, ms) {
+  try {
+    initApp();
+    let resumen = "";
+    try { resumen = typeof body === "string" ? body : JSON.stringify(body); } catch (_) { resumen = ""; }
+    const ok = status < 400 && !(body && typeof body === "object" && body.error);
+    await getFirestore().collection("system").doc("crons").set({
+      [name]: { at: new Date(), ok, status, ms, resumen: String(resumen || "").slice(0, 400) },
+    }, { merge: true });
+  } catch (e) { console.warn("[cronBeat]", name, e.message); }
 }

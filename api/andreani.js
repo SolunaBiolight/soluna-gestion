@@ -179,6 +179,14 @@ const FOUNDERS = ["WJH3ArqDPQcNLha9lOinvkVi9uJ2"];
 const TPL_BAJA_SEED = [
   "PUNTO ANDREANI HOP AVENIDA RIVADAVIA 255", // #6188, 3/9/2026 — Andreani rechazó el lote entero por este punto
 ];
+// Registro de acciones admin (colección admin_log, la misma que usa tareas.js).
+async function logAdminAndreani(db, adminUid, action, targetUid, detalle, data) {
+  try {
+    let targetEmail = null;
+    if (targetUid) { try { const s = await db.collection("users").doc(String(targetUid)).get(); targetEmail = s.exists ? (s.data().email || null) : null; } catch (_) {} }
+    await db.collection("admin_log").add({ adminUid, action, targetUid: targetUid || null, targetEmail, detalle: String(detalle || "").slice(0, 300), data: data || null, at: FieldValue.serverTimestamp() });
+  } catch (e) { console.warn("[admin_log]", e.message); }
+}
 async function isPlatformAdmin(db, uid) {
   if (FOUNDERS.includes(uid)) return true;
   const envAdmins = String(process.env.ADMIN_UIDS || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -974,7 +982,10 @@ export default async function handler(req, res) {
       const quitar = new Set((Array.isArray(body.quitar) ? body.quitar : []).map(K));
       const agregar = (Array.isArray(body.agregar) ? body.agregar : []).map(String).map(s => s.trim()).filter(Boolean);
       const out = [...new Map([...cur.filter(n => !quitar.has(K(n))), ...agregar].map(n => [K(n), n])).values()].slice(0, 500);
-      await ref.set({ nombres: out, updatedAt: new Date().toISOString(), by: uid });
+      if (agregar.length || quitar.size) {
+        await ref.set({ nombres: out, updatedAt: new Date().toISOString(), by: uid });
+        await logAdminAndreani(db, uid, "sucursales_baja", null, [agregar.length ? "Agregó: " + agregar.join(", ") : "", quitar.size ? "Quitó: " + [...quitar].join(", ") : ""].filter(Boolean).join(" · "));
+      }
       return res.json({ ok: true, nombres: out, seed: TPL_BAJA_SEED });
     }
 
@@ -1757,6 +1768,7 @@ export default async function handler(req, res) {
           });
           return nuevo;
         });
+        await logAdminAndreani(db, adm.user.uid, monto > 0 ? "acreditar_saldo" : "ajustar_saldo", targetUid, `${monto > 0 ? "+" : ""}$${monto.toLocaleString("es-AR")} · saldo ${nuevoSaldo.toLocaleString("es-AR")}${nota ? " · " + nota : ""}`);
         return res.json({ ok: true, uid: targetUid, saldo: nuevoSaldo });
       }
 
@@ -1809,6 +1821,7 @@ export default async function handler(req, res) {
             });
           } catch (_) {}
         }
+        await logAdminAndreani(db, adm.user.uid, "acreditar_carga", out.uid, `Carga ${out.ref} $${out.monto.toLocaleString("es-AR")} acreditada · saldo ${out.saldo.toLocaleString("es-AR")}`);
         return res.json({ ok: true, ...out });
       }
 
@@ -1823,6 +1836,7 @@ export default async function handler(req, res) {
           if (s.data().estado !== "pendiente" && s.data().estado !== "revision") throw new Error(`Esa carga ya está ${s.data().estado}.`);
           tx.update(cRef, { estado: "rechazada", motivo, adminUid: adm.user.uid, resueltaTs: FieldValue.serverTimestamp() });
         });
+        try { const cs = await cRef.get(); await logAdminAndreani(db, adm.user.uid, "rechazar_carga", cs.data()?.uid, `Carga ${cs.data()?.ref || id} rechazada${motivo ? ": " + motivo : ""}`); } catch (_) {}
         return res.json({ ok: true });
       }
 
@@ -1873,6 +1887,8 @@ export default async function handler(req, res) {
             };
           }
           await gRef.set(upd, { merge: true });
+          const cambios = Object.keys(upd).filter(k => k !== "habilitados");
+          await logAdminAndreani(db, adm.user.uid, "config_envios", null, (cambios.length ? "Cambió " + cambios.join(", ") : "") + (upd.habilitados ? ` · ${upd.habilitados.length} cuenta(s) habilitada(s)` : ""), cambios.length ? Object.fromEntries(cambios.map(k => [k, upd[k]])) : null);
         }
         const cfg = await getGlobalConfig(db);
         return res.json({ ok: true, ...cfg });

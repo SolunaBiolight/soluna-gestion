@@ -1,8 +1,24 @@
 ﻿import React, { useState, useEffect, useMemo, useRef } from "react"; // v2
 import ReactDOM from "react-dom";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, setDoc, getDoc, query, where, getDocs, orderBy, limit } from "firebase/firestore";
-import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider, reauthenticateWithPopup } from "firebase/auth";
+import { getFirestore, collection, onSnapshot, addDoc as _fsAddDoc, updateDoc as _fsUpdateDoc, deleteDoc as _fsDeleteDoc, doc, serverTimestamp, setDoc as _fsSetDoc, getDoc, query, where, getDocs, orderBy, limit } from "firebase/firestore";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider, reauthenticateWithPopup, signInWithCustomToken } from "firebase/auth";
+// ── Modo solo lectura ("Ver como cliente" desde Admin) ──────────────────────
+// La bandera se levanta ANTES de cualquier escritura: primero desde el marcador
+// de sesión (sincrónico) y después se confirma con el claim del token.
+// Escrituras directas a Firestore bloqueadas acá; las de la API las bloquea
+// el servidor (readOnlyBlock en api/_auth.js).
+try { window.__ghReadOnly = !!sessionStorage.getItem("growith_impersonate"); } catch (_) {}
+function ghRoBlock() {
+  const msg = "Modo solo lectura: estás viendo esta cuenta como administrador y no se pueden hacer cambios.";
+  try { toast(msg, "error", 4000); } catch (_) {}
+  return Promise.reject(new Error(msg));
+}
+const ghRo = () => typeof window !== "undefined" && window.__ghReadOnly === true;
+const addDoc    = (...a) => ghRo() ? ghRoBlock() : _fsAddDoc(...a);
+const updateDoc = (...a) => ghRo() ? ghRoBlock() : _fsUpdateDoc(...a);
+const deleteDoc = (...a) => ghRo() ? ghRoBlock() : _fsDeleteDoc(...a);
+const setDoc    = (...a) => ghRo() ? ghRoBlock() : _fsSetDoc(...a);
 
 const firebaseConfig = {
   apiKey: "AIzaSyDT-cAeF1lm-xhIDtv0FZam88yhvLIcbMo",
@@ -808,8 +824,8 @@ function GrowithLogo({size=28, variant="color", darkMode=false}) {
   );
 }
 
-function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, margenesTab, setMargenesTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false, seccionesMiembro=null}) {
-  const GROUPS = [
+// Menú lateral (estático). También alimenta Admin > Sistema > Accesos por sección.
+const SIDEBAR_GROUPS_BASE = [
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
     {id:"copilot",  label:"Copilot",   icon:"M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z"},
     { group:"FINANZAS" },
@@ -824,22 +840,25 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"analisis",label:"Análisis"},{id:"reglas",label:"Reglas"},{id:"publicador",label:"Publicador IA"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
-    {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
+    {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", alertKey:"stock", badge:"red",
       subs:[{id:"resumen",label:"Resumen"},{id:"inventario",label:"Inventario"},{id:"movimientos",label:"Movimientos"},{id:"config",label:"Configuración"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
       subs:[{id:"gestion",label:"Gestión"},{id:"publicar",label:"Publicar"},{id:"preguntas",label:"Preguntas"},{id:"mensajes",label:"Mensajes"},{id:"ventas",label:"Ventas"},{id:"reputacion",label:"Reputación"}]},
     { group:"OPERACIONES" },
-    {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count:alerts.envios,
+    {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
-    {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", count:alerts.reclamos, badge:"red",
+    {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", alertKey:"reclamos", badge:"red",
       subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
-    {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange"},
-    {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange"},
-    {id:"calendario", label:"Calendario de Pagos", icon:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18", count:alerts.calendario, badge:"red"},
+    {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", alertKey:"canjes", badge:"orange"},
+    {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", alertKey:"tareas", badge:"orange"},
+    {id:"calendario", label:"Calendario de Pagos", icon:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18", alertKey:"calendario", badge:"red"},
     { group:"RECOMPENSAS" },
     {id:"referidos",label:"Referidos", icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
     {id:"planes",   label:"Suscripción", icon:"M2 5h20v14H2zM2 10h20M6 15h4"},
   ];
+
+function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, margenesTab, setMargenesTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false, seccionesMiembro=null}) {
+  const GROUPS = SIDEBAR_GROUPS_BASE.map(it=>it.alertKey?{...it,count:alerts[it.alertKey]}:it);
   const [closedSubs, setClosedSubs] = React.useState(new Set());
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
   const [acctOpen, setAcctOpen] = React.useState(false);
@@ -14789,1354 +14808,1087 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
 // ===========================================
 // APP ADMIN - Panel de administrador
 // ===========================================
+// ===========================================
+// ADMIN — panel de administración de la plataforma
+// Pestañas: Resumen (acción) · Cuentas (tabla + ficha) · Ingresos · Envíos
+// (etiquetas prepagas) · Sistema (crons, servicios, accesos, registro).
+// Backend: api/tareas.js (acciones admin*) y api/andreani.js (admin_*).
+// ===========================================
+const ADM_PRECIOS = {
+  facturador: { mensual:19, anual:16, nombre:"Facturador" },
+  medio:      { mensual:39, anual:32, nombre:"Intermedio" },
+  plus:       { mensual:69, anual:57, nombre:"Pro" },
+};
+// Crons declarados en vercel.json. maxH = horas máximas sin corrida antes de
+// marcarlo como atrasado. La clave es la que registra guardCron (system/crons).
+const ADM_CRONS = [
+  { key:"check-expiring",             label:"Avisos de vencimiento de plan",   cada:"Todos los días 10:00 UTC", maxH:26 },
+  { key:"check-payments",             label:"Cargas MP y pagos USDT",          cada:"Cada 10 minutos",          maxH:1 },
+  { key:"meta_cron_run_all",          label:"Reglas de Meta Ads",              cada:"Todos los días 11:00 UTC", maxH:26 },
+  { key:"orders_warm_margenes",       label:"Precalentado del Dashboard",      cada:"Cada 5 minutos",           maxH:1 },
+  { key:"stock_warm_all",             label:"Precalentado de Stock",           cada:"Cada 15 minutos",          maxH:1 },
+  { key:"update-shipping_track_all",  label:"Seguimiento de envíos",           cada:"Cada 30 minutos",          maxH:2 },
+  { key:"tareas_cron_deadlines",      label:"Vencimientos de tareas",          cada:"Todos los días 12:30 UTC", maxH:26 },
+  { key:"arca_cron_autopilot",        label:"Piloto automático de facturación", cada:"Cada hora",               maxH:2 },
+  { key:"pagos-cal_cron_avisos",      label:"Avisos del Calendario de Pagos",  cada:"Todos los días 12:00 UTC", maxH:26 },
+];
+const ADM_LOG_LABEL = {
+  activar_plan:"Activó plan", dar_prueba:"Dio prueba", desactivar_plan:"Desactivó plan", extender_plan:"Extendió plan", ajustar_dias:"Ajustó vencimiento",
+  confirmar_pago:"Confirmó pago", rechazar_pago:"Rechazó pago", nota:"Nota interna", dar_admin:"Dio admin", quitar_admin:"Quitó admin", accesos:"Accesos por sección",
+  crear_ficha:"Creó ficha", ver_como:"Vio como cliente", acreditar_saldo:"Acreditó saldo", ajustar_saldo:"Ajustó saldo", acreditar_carga:"Acreditó carga", rechazar_carga:"Rechazó carga",
+  config_envios:"Config. de Envíos", sucursales_baja:"Sucursales dadas de baja",
+};
+function admPlanLabel(p){ return (p==="plus"||p==="full")?"Pro":p==="medio"?"Intermedio":p==="facturador"?"Facturador":"Free"; }
+function admPlanColor(T,p){ return (p==="plus"||p==="full")?T.blue:p==="medio"?T.purple:p==="facturador"?T.green:T.textSm; }
+function admMs(v){ if(!v) return null; if(typeof v==="number") return v; if(v._seconds) return v._seconds*1000; if(v.toDate) return v.toDate().getTime(); const t=Date.parse(v); return isNaN(t)?null:t; }
+function admFecha(v,full){ const ms=admMs(v); if(!ms) return "—"; const d=new Date(ms); return full?d.toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"}); }
+function admDias(v){ const ms=admMs(v); if(!ms) return null; return Math.ceil((ms-Date.now())/86400000); }
+function admRel(v){
+  const ms=admMs(v); if(!ms) return "nunca";
+  const dif=Date.now()-ms; const h=Math.floor(dif/3600000); const d=Math.floor(dif/86400000);
+  if(dif<0) return "en "+(Math.ceil(-dif/86400000))+" d";
+  if(h<1) return "hace minutos"; if(h<24) return `hace ${h} h`; if(d===1) return "ayer"; if(d<30) return `hace ${d} días`; if(d<365) return `hace ${Math.floor(d/30)} meses`; return `hace ${Math.floor(d/365)} años`;
+}
+function admUsd(n){ const v=Number(n)||0; return "US$ "+v.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:v%1?2:0}); }
+function admMesKey(ms){ const d=new Date(ms); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }
+function admMesLabel(key){ const [y,m]=key.split("-"); const s=new Date(Number(y),Number(m)-1,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"}); return s.charAt(0).toUpperCase()+s.slice(1); }
+// Estado de una cuenta para tabla, filtros y KPIs.
+function admEstado(T,u){
+  const plan=u.plan||"free"; const dias=admDias(u.planExpiry);
+  if(u.stripeStatus==="past_due") return {id:"past_due",label:"Pago fallido",color:T.red};
+  if(plan==="free") {
+    const td=admDias(u.trialEnd);
+    if(td!==null&&td>=0) return {id:"trial",label:"Trial inicial",color:T.yellow};
+    return {id:"free",label:"Sin plan",color:T.textSm};
+  }
+  if(dias!==null&&dias<0) return {id:u.isTrial?"prueba_vencida":"vencida",label:u.isTrial?"Prueba vencida":"Vencida",color:T.red};
+  if(u.isTrial) return {id:"prueba",label:"En prueba",color:T.yellow};
+  if(u.cancelAtPeriodEnd) return {id:"cancela",label:"Cancela al vencer",color:T.orange};
+  return {id:"paga",label:"Activa",color:T.green};
+}
+function admOrigen(u,ultPago){
+  if((u.plan||"free")==="free") return {label:"—",color:null};
+  if(u.isTrial) return {label:"Prueba",color:"yellow"};
+  if(u.stripeStatus==="active"||u.stripeStatus==="past_due"||u.planActivadoBy==="stripe") return {label:"Stripe",color:"purple"};
+  if(ultPago){
+    if(ultPago.method==="stripe") return {label:"Stripe",color:"purple"};
+    if(ultPago.method==="cripto") return {label:"USDT",color:"green"};
+    if(ultPago.method==="credito") return {label:"Crédito referidos",color:"green"};
+    return {label:"Transferencia",color:"blue"};
+  }
+  return {label:"Manual",color:"orange"};
+}
+function admCsvDescargar(nombre, filas){
+  const esc=v=>{ const s=String(v??""); return /[;"\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; };
+  const txt="﻿"+filas.map(r=>r.map(esc).join(";")).join("\r\n");
+  const blob=new Blob([txt],{type:"text/csv;charset=utf-8"}); const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download=nombre; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+
 function AppAdmin({T, user, onBack}) {
   const iS = InputStyle(T);
-  const [datos, setDatos] = useState({ pagos:[], usuarios:[], stats:{} });
-  const [loading, setLoading] = useState(true);
+  const CACHE_KEY = `growith_admin_cache_${user.uid}`;
   const [tab, setTab] = useState("resumen");
+  const [datos, setDatos] = useState(()=>ghSwrGet(CACHE_KEY, 24*3600000) || { pagos:[], usuarios:[], stats:{} });
+  const [loading, setLoading] = useState(!datos.usuarios?.length);
+  const [refrescando, setRefrescando] = useState(false);
+  const [err, setErr] = useState("");
   const [sectionsConfig, setSectionsConfig] = useState([]);
-  const [savingSections, setSavingSections] = useState(false);
-  const [filterPlan, setFilterPlan] = useState("todos");
-  const [search, setSearch] = useState("");
-  const [expandedUser, setExpandedUser] = useState(null);
-  const [cuentaDiag, setCuentaDiag] = useState(null); // resultado de "buscar cuenta en Firebase Auth"
-  const [noteEdit, setNoteEdit] = useState({});
+  const [envCfg, setEnvCfg] = useState(null);
+  const [envCargas, setEnvCargas] = useState([]);
+  const [cuenta, setCuenta] = useState(null);       // uid de la ficha abierta
   const [confirmMeses, setConfirmMeses] = useState({});
-  const [uPlan,     setUPlan]     = useState({});
-  const [uCantidad, setUCantidad] = useState({});
-  const [uUnidad,   setUUnidad]   = useState({});
-  const [uDias,     setUDias]     = useState({});
-  const [usageByUid, setUsageByUid] = useState({}); // {uid: {loading, usage:[], totales}}
-  const [userLimit, setUserLimit] = useState(50); // se pinta de a 50: con cientos de cuentas la lista entera traba el navegador
 
-  // ── Tab Envíos: etiquetas Andreani prepagas (markup, habilitados, saldos) ──
-  const [envCfg, setEnvCfg] = useState(null);        // {markupPct, markupFijo, habilitados:[uid]}
-  const [envSaldos, setEnvSaldos] = useState(null);  // [{uid,email,saldo}]
-  const [envLoading, setEnvLoading] = useState(false);
-  const [envNuevoUid, setEnvNuevoUid] = useState("");
-  const [envAcred, setEnvAcred] = useState(null);    // {uid,email} → mini-form de acreditación
-  const [envAcredForm, setEnvAcredForm] = useState({monto:"", nota:""});
-  const [envMovs, setEnvMovs] = useState(null);      // {uid,email,loading,movimientos:[]} → modal
-  const [envBusca, setEnvBusca] = useState("");       // input "buscar cuenta por email"
-  const [envBuscaRes, setEnvBuscaRes] = useState(null); // null = listado completo | {sinResultados,email} | {cuentas:[...]}
-  const [envCargas, setEnvCargas] = useState([]);     // cargas de saldo pendientes de acreditar
-  // ── Rentabilidad del sistema de etiquetas (admin_stats por mes) ──
-  const envMeses = React.useMemo(()=>{
-    const out=[]; const now=new Date();
-    for(let i=0;i<6;i++){
-      const d=new Date(now.getFullYear(), now.getMonth()-i, 1);
-      const nombre=d.toLocaleDateString("es-AR",{month:"long"});
-      out.push({v:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`, label:nombre.charAt(0).toUpperCase()+nombre.slice(1)+" "+d.getFullYear()});
-    }
-    return out;
-  },[]);
-  const [envStatsMes, setEnvStatsMes] = useState(null);   // "YYYY-MM" elegido (null = todavía no cargó)
-  const [envStats, setEnvStats] = useState({loading:false, data:null, error:""});
-  async function loadEnvStats(mes) {
-    setEnvStatsMes(mes);
-    setEnvStats({loading:true, data:null, error:""});
-    try {
-      const d = await authFetch(`/api/andreani?action=admin_stats&mes=${encodeURIComponent(mes)}`).then(r=>r.json());
-      if (d?.error) setEnvStats({loading:false, data:null, error:typeof d.error==="string"?d.error:"No se pudo cargar la rentabilidad"});
-      else setEnvStats({loading:false, data:d, error:""});
-    } catch(e){ setEnvStats({loading:false, data:null, error:e.message||"Error de red cargando la rentabilidad"}); }
+  async function adminApi(body) {
+    const r = await fetch("/api/tareas", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
+    const d = await r.json().catch(()=>({}));
+    if (!r.ok || d.error) throw new Error(d.error || `Error del servidor (${r.status})`);
+    return d;
   }
-  useEffect(()=>{ if(tab==="envios" && !envStatsMes) loadEnvStats(envMeses[0].v); },[tab]);
-  async function buscarCuentaSaldo() {
-    const email = envBusca.trim();
-    if (!email) { setEnvBuscaRes(null); return; }
+  async function loadData(silencioso) {
+    if(silencioso) setRefrescando(true); else setLoading(true);
+    setErr("");
     try {
-      const d = await authFetch(`/api/andreani?action=admin_saldos&email=${encodeURIComponent(email)}`).then(r=>r.json());
-      if (d?.error) { toast("No se pudo buscar: "+d.error,"error"); return; }
-      if (d?.sinResultados || !Array.isArray(d?.cuentas) || d.cuentas.length===0) setEnvBuscaRes({sinResultados:true, email});
-      else setEnvBuscaRes({cuentas:d.cuentas});
-    } catch(e){ toast("Error buscando la cuenta: "+e.message,"error"); }
+      const d = await adminApi({action:"adminGetData"});
+      setDatos(d);
+      try { if(JSON.stringify(d).length < 2500000) ghSwrSet(CACHE_KEY, d); } catch(_){}
+    } catch(e){ setErr(e.message); }
+    setLoading(false); setRefrescando(false);
   }
-  async function loadEnvios() {
-    setEnvLoading(true);
+  async function loadSectionsConfig() {
+    try { const r=await fetch(`/api/tareas?action=getSectionsConfig&uid=${user.uid}`); const j=await r.json(); if(Array.isArray(j.adminOnlySections)) setSectionsConfig(j.adminOnlySections.filter(s=>s!=="rendimiento")); } catch(_){}
+  }
+  async function saveSectionsConfig(next) {
+    try { await adminApi({action:"setSectionsConfig", adminOnlySections:next}); setSectionsConfig(next); toast("Accesos actualizados","success"); } catch(e){ toast(e.message,"error"); }
+  }
+  async function loadEnvCfg() {
     try {
-      const [c,s] = await Promise.all([
-        authFetch("/api/andreani?action=admin_config").then(r=>r.json()).catch(()=>null),
-        authFetch("/api/andreani?action=admin_saldos").then(r=>r.json()).catch(()=>null),
-      ]);
+      const c = await authFetch("/api/andreani?action=admin_config").then(r=>r.json());
       if (c && !c.error) setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}});
-      if (s && Array.isArray(s.cuentas)) setEnvSaldos(s.cuentas);
-    } catch(e){ toast("Error cargando Envíos: "+e.message,"error"); }
-    setEnvLoading(false);
-    loadEnvCargas();
-  }
-  async function loadEnvCargas() {
-    try {
-      const d = await authFetch("/api/andreani?action=admin_cargas").then(r=>r.json());
-      if (Array.isArray(d?.cargas)) setEnvCargas(d.cargas);
     } catch(_){}
   }
+  async function saveEnvCfg(next) {
+    const body = next || envCfg; if(!body) return false;
+    const r = await authFetch("/api/andreani?action=admin_config",{ method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}}) });
+    const d = await r.json().catch(()=>({}));
+    if (!r.ok || d.error) { toast("No se pudo guardar: "+(d.error||`HTTP ${r.status}`),"error"); return false; }
+    setEnvCfg({...body}); return true;
+  }
+  async function loadEnvCargas() {
+    try { const d = await authFetch("/api/andreani?action=admin_cargas").then(r=>r.json()); if (Array.isArray(d?.cargas)) setEnvCargas(d.cargas); } catch(_){}
+  }
   async function resolverCarga(c, acreditar) {
-    const act = acreditar ? "admin_carga_acreditar" : "admin_carga_rechazar";
-    const r = await authFetch(`/api/andreani?action=${act}`,{
-      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({id:c.id}),
-    });
+    if(acreditar){ if(!await appConfirm(`¿Acreditar ${fmtMoney(c.monto)} a ${c.email||c.uid}? Verificá antes que la transferencia ${c.ref} haya entrado.`,{okLabel:"Acreditar"})) return; }
+    else { if(!await appConfirm("¿Rechazar esta carga? El cliente la va a ver como rechazada.",{danger:true,okLabel:"Rechazar"})) return; }
+    const r = await authFetch(`/api/andreani?action=${acreditar?"admin_carga_acreditar":"admin_carga_rechazar"}`,{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({id:c.id}) });
     const d = await r.json().catch(()=>({}));
     if (!r.ok || d.error) { toast("No se pudo procesar: "+(d.error||`HTTP ${r.status}`),"error"); return; }
     toast(acreditar?`${fmtMoney(c.monto)} acreditados a ${c.email||c.uid}`:"Carga rechazada","success");
     loadEnvCargas();
-    try { const s = await authFetch("/api/andreani?action=admin_saldos").then(r2=>r2.json()); if(Array.isArray(s?.cuentas)) setEnvSaldos(s.cuentas); } catch(_){}
   }
-  useEffect(()=>{ if(tab==="envios" && !envCfg && !envLoading) loadEnvios(); },[tab]);
-  async function saveEnvCfg(next) {
-    const body = next || envCfg;
-    const r = await authFetch("/api/andreani?action=admin_config",{
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}}),
-    });
-    const d = await r.json().catch(()=>({}));
-    if (!r.ok || d.error) { toast("No se pudo guardar: "+(d.error||`HTTP ${r.status}`),"error"); return false; }
-    setEnvCfg({...body});
-    toast("Configuración de Envíos guardada ✓","success");
-    return true;
-  }
-  async function acreditarSaldo() {
-    const monto = parseFloat(envAcredForm.monto);
-    if (!envAcred || !monto || monto<=0) { toast("Ingresá un monto válido","error"); return; }
-    const r = await authFetch("/api/andreani?action=admin_acreditar",{
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({uid:envAcred.uid, monto, nota:envAcredForm.nota||""}),
-    });
-    const d = await r.json().catch(()=>({}));
-    if (!r.ok || d.error) { toast("No se pudo acreditar: "+(d.error||`HTTP ${r.status}`),"error"); return; }
-    toast(`${fmtMoney(monto)} acreditados a ${envAcred.email||envAcred.uid}`,"success");
-    setEnvAcred(null); setEnvAcredForm({monto:"",nota:""});
-    try { const s = await authFetch("/api/andreani?action=admin_saldos").then(r2=>r2.json()); if(Array.isArray(s?.cuentas)) setEnvSaldos(s.cuentas); } catch(_){}
-    if (envBuscaRes?.cuentas) buscarCuentaSaldo(); // refresca el saldo de la cuenta buscada
-  }
-  async function verMovimientos(cuenta) {
-    setEnvMovs({uid:cuenta.uid, email:cuenta.email, loading:true, movimientos:[]});
-    try {
-      const d = await authFetch(`/api/andreani?action=admin_movimientos&uid=${encodeURIComponent(cuenta.uid)}`).then(r=>r.json());
-      setEnvMovs(prev=>prev&&prev.uid===cuenta.uid?{...prev, loading:false, movimientos:Array.isArray(d?.movimientos)?d.movimientos:[]}:prev);
-    } catch(e){
-      setEnvMovs(prev=>prev&&prev.uid===cuenta.uid?{...prev, loading:false, movimientos:[]}:prev);
-      toast("Error cargando movimientos","error");
-    }
-  }
+  useEffect(()=>{ loadData(!!datos.usuarios?.length); loadSectionsConfig(); loadEnvCargas(); loadEnvCfg(); },[]);
 
-  async function loadUsage(targetUid) {
-    setUsageByUid(prev=>({...prev,[targetUid]:{...(prev[targetUid]||{}),loading:true}}));
-    try {
-      const d = await adminApi({action:"adminGetUsage", targetUid, days:30});
-      setUsageByUid(prev=>({...prev,[targetUid]:{loading:false, usage:d.usage||[], totales:d.totales||{}}}));
-    } catch(e){ setUsageByUid(prev=>({...prev,[targetUid]:{loading:false, usage:[], totales:{}, error:e.message}})); }
-  }
-
-  async function adminApi(body) {
-    const r = await fetch("/api/tareas", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
-    const d = await r.json();
-    if (!r.ok || d.error) throw new Error(d.error || "Error del servidor");
-    return d;
-  }
-
-  async function loadData() {
-    setLoading(true);
-    try {
-      const d = await adminApi({action:"adminGetData"});
-      setDatos(d);
-    } catch(e){ appAlert("Error: "+e.message); }
-    setLoading(false);
-  }
-
-  async function loadSectionsConfig() {
-    try {
-      const r=await fetch(`/api/tareas?action=getSectionsConfig&uid=${user.uid}`);
-      const j=await r.json();
-      if(Array.isArray(j.adminOnlySections)) setSectionsConfig(j.adminOnlySections.filter(s=>s!=="rendimiento")); // "rendimiento" = id legacy muerto
-    }catch(_){}
-  }
-
-  async function saveSectionsConfig(newList) {
-    setSavingSections(true);
-    try {
-      await adminApi({action:"setSectionsConfig", adminOnlySections:newList});
-      setSectionsConfig(newList);
-      toast("Configuración guardada ✓","success");
-    } catch(e){ toast(e.message,"error"); }
-    setSavingSections(false);
-  }
-
-  function toggleSection(id) {
-    const next = sectionsConfig.includes(id) ? sectionsConfig.filter(s=>s!==id) : [...sectionsConfig,id];
-    saveSectionsConfig(next);
-  }
-  // Las cargas de saldo pendientes se cargan de entrada (no solo al abrir el tab
-  // Envíos): alimentan el badge "por atender" y la cola de acción del Resumen.
-  useEffect(()=>{ loadData(); loadSectionsConfig(); loadEnvCargas(); },[]);
-
-  function fmtDate(val) {
-    if (!val) return "—";
-    const d = val._seconds ? new Date(val._seconds*1000) : val?.toDate?.() || new Date(val);
-    return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});
-  }
-  function fmtDateFull(val) {
-    if (!val) return "—";
-    const d = val._seconds ? new Date(val._seconds*1000) : val?.toDate?.() || new Date(val);
-    return d.toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
-  }
-  function daysUntil(val) {
-    if (!val) return null;
-    const d = val._seconds ? new Date(val._seconds*1000) : val?.toDate?.() || new Date(val);
-    return Math.ceil((d - new Date()) / 86400000);
-  }
-
-  // Planes de pago: "plus" = Pro y "facturador" = Facturador (solo ARCA).
-  // "full" quedó de una etapa anterior; se sigue reconociendo como Pro
-  // para no romper cuentas viejas, pero no se ofrece en ningún lado.
-  const PLAN_C  = {free:T.textSm, plus:T.blue, full:T.blue, facturador:T.green};
-  const PLAN_BG = {free:T.surface, plus:T.blueBg, full:T.blueBg, facturador:T.greenBg};
-  const planLabel = p => (p==="plus"||p==="full") ? "Pro" : p==="facturador" ? "Facturador" : "Free";
-
+  // ── Derivados ──
   const { pagos=[], usuarios=[], stats={} } = datos;
-  const pagosPendientes = pagos.filter(p => p.estado === "pendiente");
-  const vencenProximos  = usuarios.filter(u => {
-    const d = daysUntil(u.planExpiry);
-    return d !== null && d <= 7 && d >= 0 && u.plan !== "free";
-  });
-  const pagosReales = pagos.filter(p => p.estado==="confirmado" && !p.isTrial && Number(p.amount)>0);
-  const byMonth = {};
-  pagosReales.forEach(p => {
-    const ts = p.createdAt?._seconds ? new Date(p.createdAt._seconds*1000) : p.createdAt?.toDate?.() || new Date();
-    const key = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,"0")}`;
-    if (!byMonth[key]) byMonth[key] = {usdt:0, ars:0, count:0};
-    if (p.currency==="USDT") byMonth[key].usdt += Number(p.amount)||0;
-    if (p.currency==="ARS")  byMonth[key].ars  += Number(p.amount)||0;
-    byMonth[key].count++;
-  });
-  const mesesRevenue = Object.entries(byMonth).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,6);
+  const founder = !!datos.founder || user.uid==="WJH3ArqDPQcNLha9lOinvkVi9uJ2";
+  const ahora = Date.now();
+  const usuariosPorUid = useMemo(()=>{ const m={}; usuarios.forEach(u=>{m[u._id]=u;}); return m; },[usuarios]);
+  const ultPagoPorUid = useMemo(()=>{ const m={}; [...pagos].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).forEach(p=>{ if(p.estado==="confirmado"&&!p.isTrial&&p.amount>0&&!m[p.uid]) m[p.uid]=p; }); return m; },[pagos]);
+  const pagosReales = useMemo(()=>pagos.filter(p=>p.estado==="confirmado"&&!p.isTrial&&p.amount>0),[pagos]);
+  const esUsd = p=>p.currency==="USD"||p.currency==="USDT";
+  const pagosPendientes = pagos.filter(p=>p.estado==="pendiente");
+  const activaPaga = u=>(u.plan||"free")!=="free"&&!u.isTrial&&(!u.planExpiry||u.planExpiry>ahora);
+  const vencenProximos = usuarios.filter(u=>{ const d=admDias(u.planExpiry); return (u.plan||"free")!=="free"&&d!==null&&d>=0&&d<=7; });
+  const pastDue = usuarios.filter(u=>u.stripeStatus==="past_due");
+  const vencidasPagas = usuarios.filter(u=>(u.plan||"free")!=="free"&&!u.isTrial&&(admDias(u.planExpiry)??1)<0);
+  const pruebasPorVencer = usuarios.filter(u=>u.isTrial&&(u.plan||"free")!=="free"&&(()=>{const d=admDias(u.planExpiry);return d!==null&&d>=0&&d<=3;})());
+  const mesKey = admMesKey(ahora);
+  const ingresosMes = pagosReales.filter(p=>p.createdAt&&admMesKey(p.createdAt)===mesKey);
+  const primerPagoUid = useMemo(()=>{ const m={}; [...pagosReales].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).forEach(p=>{ if(!m[p.uid]) m[p.uid]=p._id; }); return m; },[pagosReales]);
+  const esNueva = p => p.billingReason==="subscription_create" || (p.method!=="stripe" && primerPagoUid[p.uid]===p._id);
+  const porAtender = envCargas.length + pagosPendientes.length + pastDue.length;
 
-  const usuariosFiltrados = usuarios
-    .filter(u => {
-      if (filterPlan === "todos" || filterPlan === "vencidas") return true;
-      if (filterPlan === "prueba") return u.isTrial;
-      if (filterPlan === "pagas")  return (u.plan||"free") !== "free" && !u.isTrial;
-      return (u.plan||"free") === filterPlan;
-    })
-    .filter(u => !search || (u.email||"").toLowerCase().includes(search.toLowerCase()) || (u.nombre||"").toLowerCase().includes(search.toLowerCase()))
-    .filter(u => {
-      if (filterPlan !== "vencidas") return true;
-      const d = daysUntil(u.planExpiry);
-      return d !== null && d < 0;
-    })
-    .sort((a,b) => {
-      // Primero lo que requiere atención: vencidos, después por vencer, después el resto.
-      const da = daysUntil(a.planExpiry), db_ = daysUntil(b.planExpiry);
-      const rank = d => d===null ? 3 : d<0 ? 0 : d<=7 ? 1 : 2;
-      const ra = rank(da), rb = rank(db_);
-      if (ra !== rb) return ra - rb;
-      if (ra<=1) return (da??0) - (db_??0);
-      return (a.email||"").localeCompare(b.email||"");
-    });
-
-  async function confirmarPago(p) {
-    const meses = Number(confirmMeses[p._id] || p.meses || 1);
-    const d = await adminApi({action:"confirmarPago", pagoId:p._id, targetUid:p.uid, plan:p.plan, meses});
-    setDatos(prev => ({
-      ...prev,
-      pagos: prev.pagos.map(x => x._id===p._id ? {...x, estado:"confirmado", mesesConfirmados:meses} : x),
-      usuarios: prev.usuarios.map(u => u._id===p.uid ? {...u, plan:p.plan, planExpiry:d.expiry} : u),
-    }));
-    toast(`Plan ${p.plan} activado por ${meses} mes${meses>1?"es":""}`, "success");
-  }
-
-  async function rechazarPago(pagoId) {
-    if (!await appConfirm("¿Rechazar este pago?", {danger:true, okLabel:"Rechazar"})) return;
-    await adminApi({action:"rechazarPago", pagoId});
-    setDatos(prev => ({...prev, pagos: prev.pagos.map(x => x._id===pagoId ? {...x, estado:"rechazado"} : x)}));
-    toast("Pago rechazado", "warning");
-  }
-
-  async function desactivarPlan(uid) {
-    if (!await appConfirm("¿Desactivar plan?", {danger:true, okLabel:"Desactivar"})) return;
-    await adminApi({action:"desactivarPlan", targetUid:uid});
-    setDatos(prev => ({...prev, usuarios: prev.usuarios.map(u => u._id===uid ? {...u, plan:"free", planExpiry:null, isTrial:false} : u)}));
-    toast("Plan desactivado", "warning");
-  }
-
-  async function saveNote(uid) {
-    const note = noteEdit[uid] ?? "";
-    await adminApi({action:"addNote", targetUid:uid, note});
-    setDatos(prev => ({...prev, usuarios: prev.usuarios.map(u => u._id===uid ? {...u, adminNote:note} : u)}));
-    setNoteEdit(prev => { const n={...prev}; delete n[uid]; return n; });
-    toast("Nota guardada", "success");
-  }
-
+  // ── Acciones sobre cuentas ──
+  const actualizarUsuario = (uid, patch) => setDatos(prev=>({...prev, usuarios:prev.usuarios.map(u=>u._id===uid?{...u,...patch}:u)}));
   async function gestionarPlan(uid, plan, cantidad, unidad, isTrial) {
-    const cant = Number(cantidad);
-    if (!cant || cant < 1) return appAlert("Ingresá una cantidad válida (mínimo 1)");
-    const label = `${cant} ${unidad==="dias"?`día${cant>1?"s":""}`:cant===1?"mes":"meses"} de ${plan==="facturador"?"Facturador":"Pro"}`;
-    if (!await appConfirm(
-      isTrial ? `¿Activar ${label} como PRUEBA (no cuenta como ingreso)?` : `¿Activar ${label}?`,
-      {okLabel: isTrial ? "Activar prueba" : "Activar"}
-    )) return;
-    const d = await adminApi({action:"gestionarPlan", targetUid:uid, plan, cantidad:cant, unidad, isTrial});
-    setDatos(prev => ({
-      ...prev,
-      usuarios: prev.usuarios.map(u => u._id===uid ? {...u, plan, planExpiry:d.expiry, isTrial:!!isTrial} : u),
-    }));
-    toast(isTrial ? `Prueba ${label} activada` : `${label} activado`, isTrial?"warning":"success");
+    const cant=Number(cantidad); if(!cant||cant<1) return appAlert("Ingresá una cantidad válida (mínimo 1)");
+    const label=`${cant} ${unidad==="dias"?`día${cant>1?"s":""}`:cant===1?"mes":"meses"} de ${admPlanLabel(plan)}`;
+    if(!await appConfirm(isTrial?`¿Activar ${label} como PRUEBA (no cuenta como ingreso)?`:`¿Activar ${label}?`,{okLabel:isTrial?"Activar prueba":"Activar"})) return;
+    const d=await adminApi({action:"gestionarPlan", targetUid:uid, plan, cantidad:cant, unidad, isTrial});
+    actualizarUsuario(uid,{plan, planExpiry:admMs(d.expiry), isTrial:!!isTrial});
+    toast(isTrial?`Prueba ${label} activada`:`${label} activado`,"success");
   }
-
   async function ajustarDias(uid, dias) {
-    if (!dias || isNaN(Number(dias))) return appAlert("Ingresá una cantidad de días válida");
-    const n = Number(dias);
-    if (n === 0) return;
-    const d = await adminApi({action:"ajustarDias", targetUid:uid, dias:n});
-    setDatos(prev => ({...prev, usuarios: prev.usuarios.map(u => u._id===uid ? {...u, planExpiry:d.expiry} : u)}));
-    toast(`${n>0?"+":""}${n} días aplicados`, n>0?"success":"warning");
-    setUDias(prev => ({...prev, [uid]:""}));
+    const n=Number(dias); if(!n) return appAlert("Ingresá una cantidad de días válida");
+    const d=await adminApi({action:"ajustarDias", targetUid:uid, dias:n});
+    actualizarUsuario(uid,{planExpiry:admMs(d.expiry)});
+    toast(`${n>0?"+":""}${n} días aplicados`,"success");
+  }
+  async function desactivarPlan(uid) {
+    if(!await appConfirm("¿Desactivar el plan? La cuenta pasa a Free ahora mismo.",{danger:true,okLabel:"Desactivar"})) return;
+    await adminApi({action:"desactivarPlan", targetUid:uid});
+    actualizarUsuario(uid,{plan:"free", planExpiry:null, isTrial:false});
+    toast("Plan desactivado","warning");
+  }
+  async function saveNote(uid, note) {
+    await adminApi({action:"addNote", targetUid:uid, note});
+    actualizarUsuario(uid,{adminNote:note, adminNoteAt:Date.now()});
+    toast("Nota guardada","success");
+  }
+  async function toggleAdmin(u) {
+    if(!founder){ toast("Solo el dueño de Growith puede dar o quitar acceso de administrador","error"); return; }
+    if(!await appConfirm(u.isAdmin?`¿Quitar el acceso de administrador a ${u.email}?`:`¿Dar acceso de administrador a ${u.email}? Va a poder ver y gestionar todas las cuentas.`,{danger:!u.isAdmin?false:true,okLabel:u.isAdmin?"Quitar admin":"Dar admin"})) return;
+    const d=await adminApi({action:"toggleAdmin",targetUid:u._id});
+    if(d.ok) actualizarUsuario(u._id,{isAdmin:d.isAdmin});
+    toast(d.isAdmin?"Ahora es administrador":"Ya no es administrador","success");
+  }
+  async function toggleEnviosSaldo(u) {
+    let cfg=envCfg;
+    if(!cfg){ await loadEnvCfg(); cfg=envCfg; if(!cfg) throw new Error("No se pudo leer la configuración de Envíos"); }
+    const ya=(cfg.habilitados||[]).includes(u._id);
+    if(ya&&!await appConfirm("¿Quitar Envíos con saldo a esta cuenta?",{danger:true,okLabel:"Quitar"})) return;
+    const ok=await saveEnvCfg({...cfg,habilitados:ya?cfg.habilitados.filter(x=>x!==u._id):[...(cfg.habilitados||[]),u._id]});
+    if(ok) toast(ya?"Envíos con saldo quitado":"Envíos con saldo habilitado","success");
+  }
+  async function verComoCliente(u) {
+    if(!await appConfirm(`Vas a entrar a la cuenta de ${u.email||u._id} en modo solo lectura. Para volver a tu cuenta vas a tener que iniciar sesión de nuevo. ¿Continuar?`,{okLabel:"Ver como cliente"})) return;
+    const d=await adminApi({action:"adminImpersonar", targetUid:u._id});
+    try{ sessionStorage.setItem("growith_impersonate", JSON.stringify({uid:u._id, email:d.email||u.email||"", adminEmail:user.email||"", adminUid:user.uid, at:Date.now()})); }catch(_){}
+    try{ window.__ghReadOnly=true; }catch(_){}
+    await signInWithCustomToken(auth, d.token);
+    window.location.hash="#/home";
+    window.location.reload();
+  }
+  async function confirmarPago(p) {
+    const meses=Number(confirmMeses[p._id]||p.meses||1);
+    const d=await adminApi({action:"confirmarPago", pagoId:p._id, targetUid:p.uid, plan:p.plan, meses});
+    setDatos(prev=>({...prev, pagos:prev.pagos.map(x=>x._id===p._id?{...x,estado:"confirmado",mesesConfirmados:meses}:x), usuarios:prev.usuarios.map(u=>u._id===p.uid?{...u,plan:p.plan,planExpiry:admMs(d.expiry),isTrial:false}:u)}));
+    toast(`Plan ${admPlanLabel(p.plan)} activado por ${meses} mes${meses>1?"es":""}`,"success");
+  }
+  async function rechazarPago(pagoId) {
+    if(!await appConfirm("¿Rechazar este pago?",{danger:true,okLabel:"Rechazar"})) return;
+    await adminApi({action:"rechazarPago", pagoId});
+    setDatos(prev=>({...prev, pagos:prev.pagos.map(x=>x._id===pagoId?{...x,estado:"rechazado"}:x)}));
+    toast("Pago rechazado","warning");
+  }
+  async function verComprobante(p) {
+    const d=await adminApi({action:"pagoComprobante",pagoId:p._id});
+    if(!d?.comprobanteB64) throw new Error("Sin comprobante");
+    const bl=await fetch(d.comprobanteB64).then(x=>x.blob());
+    window.open(URL.createObjectURL(bl),"_blank");
   }
 
-  const tabStyle = (id) => ({
-    padding:"7px 18px", borderRadius:8, fontSize:13, border:"none",
-    background: tab===id ? T.card : "transparent",
-    color: tab===id ? T.text : T.textMd,
-    fontWeight: tab===id ? 600 : 400,
-    cursor:"pointer", fontFamily:"'Inter',system-ui,sans-serif",
-    boxShadow: tab===id ? "0 1px 3px rgba(0,0,0,0.2)" : "none",
-    transition:"all 0.15s"
-  });
-
-  const pillStyle = (active) => ({
-    padding:"5px 12px", borderRadius:20, fontSize:12, border:"none",
-    background: active ? T.accent : T.surface,
-    color: active ? "#fff" : T.textMd,
-    fontWeight: active ? 600 : 400,
-    cursor:"pointer", fontFamily:"'Inter',system-ui,sans-serif",
-    transition:"all 0.15s"
-  });
+  const ctx = { T, user, founder, usuarios, pagos, usuariosPorUid, ultPagoPorUid, envCfg, adminApi, gestionarPlan, ajustarDias, desactivarPlan, saveNote, toggleAdmin, toggleEnviosSaldo, verComoCliente, setCuenta };
+  const segBtn=(on)=>({padding:"6px 14px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:6,background:on?T.card:"transparent",color:on?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?"0 1px 3px rgba(0,0,0,0.12)":"none",display:"inline-flex",alignItems:"center",gap:6,whiteSpace:"nowrap"});
+  const TABS=[["resumen","Resumen"],["cuentas","Cuentas"],["ingresos","Ingresos"],["envios","Envíos"],["sistema","Sistema"]];
+  const tabDesc={resumen:"Lo que requiere tu acción y el pulso de hoy.",cuentas:"Todas las cuentas de Growith: plan, estado, origen, último login e integraciones.",ingresos:"Ingresos en dólares, nuevas suscripciones y renovaciones, referidos.",envios:"El negocio de etiquetas prepagas: precios, cuentas habilitadas, saldos y rentabilidad.",sistema:"Crons, servicios configurados, accesos por sección y registro de acciones."};
+  const lbl=t=><div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>{t}</div>;
+  const cardTitle=(t,sub,right)=>(
+    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+      <div><div style={{fontSize:14,fontWeight:700,color:T.text}}>{t}</div>{sub&&<div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.5}}>{sub}</div>}</div>
+      {right}
+    </div>
+  );
+  const chip=(label,color)=><span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:DS.r.full,background:color+"18",color,whiteSpace:"nowrap"}}>{label}</span>;
+  const cuentaBtn=(u)=><button onClick={()=>setCuenta(u._id)} style={{background:"transparent",border:"none",padding:0,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,fontWeight:600,color:T.text,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{u.email||u.nombre||u._id}</button>;
 
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
-
-      {/* Topbar */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.card+"e0",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",padding:"0 20px",height:64,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:12}}>← Inicio</button>
-          <SectionIcon T={T} id="admin"/>
-          <span style={{fontWeight:700,fontSize:14,color:T.text,letterSpacing:-0.2,lineHeight:"18px"}}>Admin</span>
-          {pagosPendientes.length>0&&(
-            <span style={{background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 8px"}}>
-              {pagosPendientes.length} pendiente{pagosPendientes.length>1?"s":""}
-            </span>
-          )}
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh"}}>
+      <AppTopbar T={T} section="Admin" sectionId="admin" onHome={onBack}>
+        {porAtender>0&&<DSBadge T={T} color={T.red} size="sm">{porAtender} por atender</DSBadge>}
+        <Btn T={T} variant="secondary" size="sm" onClick={()=>{loadData(true);loadEnvCargas();}} disabled={refrescando}>{refrescando?"Actualizando":"Actualizar"}</Btn>
+      </AppTopbar>
+      <div style={{padding:"20px 24px 64px",maxWidth:1180,margin:"0 auto",width:"100%"}}>
+        {err&&<div style={{fontSize:12,color:T.red,background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:8,padding:"8px 12px",marginBottom:12}}>{err}</div>}
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+          <div className="no-scrollbar" style={{display:"inline-flex",background:T.surface,borderRadius:8,padding:2,maxWidth:"100%",overflowX:"auto"}}>
+            {TABS.map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={segBtn(tab===v)}>{l}{v==="resumen"&&porAtender>0&&<span style={{fontSize:10,fontWeight:700,background:T.red,color:"#fff",borderRadius:10,padding:"1px 6px"}}>{porAtender}</span>}</button>)}
+          </div>
+          <span style={{fontSize:11,color:T.textSm}}>{tabDesc[tab]}</span>
         </div>
-        <AsyncButton onClick={loadData} style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px"}}>Actualizar</AsyncButton>
+
+        {loading?(
+          <div style={{textAlign:"center",padding:60}}><Spinner size={32} color={T.accent}/></div>
+        ):tab==="resumen"?(
+          <AdmResumen ctx={ctx} stats={stats} usuarios={usuarios} pagos={pagos} pagosReales={pagosReales} pagosPendientes={pagosPendientes} envCargas={envCargas} resolverCarga={resolverCarga} confirmarPago={confirmarPago} rechazarPago={rechazarPago} verComprobante={verComprobante} confirmMeses={confirmMeses} setConfirmMeses={setConfirmMeses} vencenProximos={vencenProximos} pastDue={pastDue} vencidasPagas={vencidasPagas} pruebasPorVencer={pruebasPorVencer} ingresosMes={ingresosMes} esNueva={esNueva} esUsd={esUsd} cardTitle={cardTitle} chip={chip} cuentaBtn={cuentaBtn} activaPaga={activaPaga}/>
+        ):tab==="cuentas"?(
+          <AdmCuentas ctx={ctx} cardTitle={cardTitle} chip={chip} cuentaBtn={cuentaBtn} iS={iS} loadData={loadData}/>
+        ):tab==="ingresos"?(
+          <AdmIngresos ctx={ctx} stats={stats} pagosReales={pagosReales} pagos={pagos} esNueva={esNueva} esUsd={esUsd} cardTitle={cardTitle} chip={chip} cuentaBtn={cuentaBtn} activaPaga={activaPaga}/>
+        ):tab==="envios"?(
+          <AdmEnvios ctx={ctx} envCfg={envCfg} setEnvCfg={setEnvCfg} saveEnvCfg={saveEnvCfg} cardTitle={cardTitle} lbl={lbl} iS={iS}/>
+        ):(
+          <AdmSistema ctx={ctx} sectionsConfig={sectionsConfig} saveSectionsConfig={saveSectionsConfig} cardTitle={cardTitle} chip={chip} iS={iS}/>
+        )}
       </div>
 
-      {/* Tabs */}
-      <div style={{maxWidth:960,margin:"0 auto",padding:"16px 20px 0"}}>
-        {(()=>{
-          const porAtender = pagosPendientes.length + envCargas.length;
-          const TABS=[
-            {id:"resumen",   label:"Resumen",  icon:"M3 3v18h18M18 17V9M13 17V5M8 17v-3", badge:porAtender, desc:"El pulso del negocio y todo lo que requiere tu acción: pagos, cargas de saldo y vencimientos."},
-            {id:"usuarios",  label:"Cuentas",  icon:"M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M13 7a4 4 0 11-8 0 4 4 0 018 0zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75", desc:"Todas las cuentas de Growith: plan, vencimiento, uso, historial de pagos y gestión de la suscripción."},
-            {id:"envios",    label:"Envíos",   icon:"M16 16h6m-3-3v6M1 3h15v13H1z", desc:"El negocio de etiquetas prepagas: markup, cuentas habilitadas, saldos, movimientos y rentabilidad mensual."},
-            {id:"secciones", label:"Accesos",  icon:"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", desc:"Qué secciones de la app quedan exclusivas para administradores mientras las desarrollás."},
-          ];
-          const cur=TABS.find(t=>t.id===tab);
-          return (<>
-            <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:2,marginBottom:8,width:"fit-content",flexWrap:"wrap"}}>
-              {TABS.map(t=>{const on=tab===t.id;return(
-                <button key={t.id} onClick={()=>setTab(t.id)}
-                  style={{display:"flex",alignItems:"center",gap:7,padding:"8px 16px",borderRadius:8,fontSize:13,border:"none",background:on?T.accent+"16":"transparent",color:on?T.accent:T.textMd,fontWeight:on?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?`inset 0 0 0 1px ${T.accent}3a`:"none",transition:"all 0.15s",whiteSpace:"nowrap"}}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{opacity:on?1:0.75,flexShrink:0}}><path d={t.icon}/></svg>
-                  {t.label}
-                  {(t.badge||0)>0&&<span style={{fontSize:10,fontWeight:700,background:T.red,color:"#fff",borderRadius:10,padding:"1px 7px"}}>{t.badge}</span>}
-                </button>);})}
-            </div>
-            {cur&&<div style={{fontSize:12,color:T.textSm,marginBottom:18,lineHeight:1.5}}>{cur.desc}</div>}
-          </>);
-        })()}
-      </div>
-
-      {loading&&<div style={{textAlign:"center",padding:60}}><Spinner size={36} color={T.accent}/></div>}
-
-      {/* ===== TAB RESUMEN ===== */}
-      {!loading&&tab==="resumen"&&(()=>{
-        const totalPagando = (stats.usuariosPlus||0) + (stats.usuariosFull||0) + (stats.usuariosFact||0);
-        const totalPrueba  = (stats.usuariosPlus_trial||0) + (stats.usuariosFull_trial||0) + (stats.usuariosFact_trial||0);
-        return (
-        <div style={{maxWidth:960,margin:"0 auto",padding:"0 20px"}}>
-
-          {/* KPIs */}
-          <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:20}}>
-            {[
-              {icon:"$",label:"MRR",value:stats.mrrUsdt?`$${stats.mrrUsdt} USDT`:"$0",sub:stats.mrrArs?`$${(stats.mrrArs).toLocaleString("es-AR")} ARS/mes`:"sin ingresos aún",color:stats.mrrUsdt?T.green:T.textSm},
-              (()=>{const k=`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`;const m=byMonth[k]||{usdt:0,ars:0,count:0};return {icon:"+",label:"Ingresos este mes",value:m.usdt>0?`$${m.usdt} USDT`:m.ars>0?`$${m.ars.toLocaleString("es-AR")} ARS`:"$0",sub:`${m.count} pago${m.count!==1?"s":""} confirmado${m.count!==1?"s":""}`,color:m.count>0?T.green:T.textSm};})(),
-              {icon:"u",label:"Suscripciones activas",value:totalPagando,sub:totalPrueba>0?`+ ${totalPrueba} prueba`:`${stats.totalUsuarios||0} usuarios totales`,color:totalPagando>0?T.blue:T.textSm},
-              (()=>{const n=usuarios.filter(x=>(x.plan||"free")!=="free"&&!x.isTrial&&(daysUntil(x.planExpiry)??1)<0).length;return {icon:n>0?"!":"·",label:"Vencidas sin renovar",value:n,sub:n>0?"cuentas pagas con plan vencido":"ninguna cuenta paga vencida",color:n>0?T.red:T.textSm};})(),
-              {icon:(pagosPendientes.length+envCargas.length)>0?"!":"✓",label:"Por atender",value:pagosPendientes.length+envCargas.length,sub:(pagosPendientes.length+envCargas.length)>0?[pagosPendientes.length?`${pagosPendientes.length} pago${pagosPendientes.length>1?"s":""}`:null,envCargas.length?`${envCargas.length} carga${envCargas.length>1?"s":""} de saldo`:null].filter(Boolean).join(" · "):"todo al día",color:(pagosPendientes.length+envCargas.length)>0?T.red:T.textSm},
-              {icon:vencenProximos.length>0?"!":"·",label:"Vencen esta semana",value:vencenProximos.length,sub:vencenProximos.length>0?"considerar extender":"sin vencimientos próximos",color:vencenProximos.length>0?T.yellow:T.textSm},
-            ].map((k,i)=>(
-              <div key={i} style={{background:T.card,border:`1px solid ${k.color===T.red?T.red+"55":T.border}`,borderRadius:12,padding:"16px 18px"}}>
-                <div style={{fontSize:18,marginBottom:6}}>{k.icon}</div>
-                <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>{k.label}</div>
-                <div style={{fontSize:22,fontWeight:700,color:k.color,lineHeight:1}}>{k.value}</div>
-                {k.sub&&<div style={{fontSize:11,color:T.textSm,marginTop:4}}>{k.sub}</div>}
-              </div>
-            ))}
-          </div>
-
-          {/* Alertas proactivas: pagos viejos sin confirmar + riesgo de churn */}
-          {(()=>{
-            const ahora=Date.now();
-            const alertas=[];
-            pagosPendientes.forEach(p=>{
-              const ts=p.createdAt?._seconds?p.createdAt._seconds*1000:null;
-              if(ts&&ahora-ts>24*3600e3){
-                const u2=usuarios.find(x=>x._id===p.uid);
-                alertas.push({sev:"red",msg:`El pago de ${u2?.email||p.email||p.uid} lleva ${Math.floor((ahora-ts)/3600e3)} horas sin confirmar ni rechazar.`});
-              }
-            });
-            const churn=usuarios.filter(u2=>(u2.plan||"free")!=="free"&&!u2.isTrial&&(daysUntil(u2.planExpiry)??1)<-3);
-            if(churn.length) alertas.push({sev:"yellow",msg:`${churn.length} cuenta${churn.length>1?"s":""} paga${churn.length>1?"s":""} con el plan vencido hace más de 3 días sin renovar (riesgo de churn): ${churn.slice(0,3).map(x=>x.email).join(", ")}${churn.length>3?` y ${churn.length-3} más`:""}.`});
-            if(!alertas.length) return null;
-            return (
-              <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
-                {alertas.map((a,i)=>(
-                  <div key={i} style={{padding:"10px 14px",borderRadius:10,background:(a.sev==="red"?T.red:T.yellow)+"12",border:`1px solid ${a.sev==="red"?T.red:T.yellow}44`,fontSize:12,color:a.sev==="red"?T.red:T.yellow,fontWeight:600,lineHeight:1.5}}>{a.msg}</div>
-                ))}
-              </div>
-            );
-          })()}
-
-          {/* Pagos pendientes — acción inmediata */}
-          {pagosPendientes.length>0&&(
-            <div style={{background:T.card,border:`1px solid ${T.red}44`,borderLeft:`3px solid ${T.red}`,borderRadius:12,marginBottom:20,overflow:"hidden"}}>
-              <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:13,fontWeight:700,color:T.red}}>Pagos a confirmar</span>
-                <span style={{fontSize:12,color:T.textSm}}>Revisá y confirmá o rechazá cada transferencia</span>
-              </div>
-              {pagosPendientes.map((p,i)=>{
-                const u = usuarios.find(x=>x._id===p.uid);
-                return (
-                  <div key={p._id} style={{padding:"14px 18px",borderBottom:i<pagosPendientes.length-1?`1px solid ${T.borderL}`:"none",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                    <div style={{flex:1,minWidth:200}}>
-                      <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>{u?.email||p.email||p.uid}</div>
-                      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                        <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{planLabel(p.plan)}</span>
-                        {p.periodo==="anual"&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:800,background:T.accentSolid+"22",color:T.accent}}>ANUAL (12m)</span>}
-                        {p.amount>0&&<span style={{fontSize:11,fontWeight:700,color:T.text}}>${p.amount}</span>}
-                        {p.method&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:p.method==="stripe"?T.purpleBg:T.blueBg,color:p.method==="cripto"?T.green:p.method==="stripe"?T.purple:T.blue}}>{p.method==="cripto"?"₮ USDT":p.method==="stripe"?"Tarjeta":"Transf."}</span>}
-                        {p.arsMonto>0&&<span style={{fontSize:11,fontWeight:700,color:T.blue}}>${Number(p.arsMonto).toLocaleString("es-AR")} ARS{p.dolarCripto>0?<span style={{color:T.textSm,fontWeight:500}}> (dólar ${Math.round(p.dolarCripto).toLocaleString("es-AR")})</span>:null}</span>}
-                        {p.tieneComprobante&&<button onClick={async()=>{
-                          try{
-                            const d=await adminApi({action:"pagoComprobante",pagoId:p._id});
-                            if(!d?.comprobanteB64) throw new Error("Sin comprobante");
-                            const bl=await fetch(d.comprobanteB64).then(x=>x.blob());
-                            window.open(URL.createObjectURL(bl),"_blank");
-                          }catch(e){ toast("No se pudo abrir el comprobante: "+e.message,"error"); }
-                        }} style={{fontSize:11,padding:"3px 10px",borderRadius:DS.r.full,border:`1px solid ${T.accent}55`,background:T.accent+"12",color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ver comprobante</button>}
-                        {p.transferRef&&<span style={{fontSize:11,color:T.textSm}}>Ref: <strong style={{color:T.text}}>{p.transferRef}</strong></span>}
-                        {p.txHash&&<span style={{fontSize:11,color:T.textSm,fontFamily:"monospace"}}>TX: {p.txHash.slice(0,16)}…</span>}
-                        <span style={{fontSize:11,color:T.textSm}}>{fmtDateFull(p.createdAt)}</span>
-                        {p.method==="cripto"&&p.autoCheckMotivo&&<span title="El bot de acreditación automática revisó este pago y no pudo matchearlo con una transferencia" style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:T.orange+"18",color:T.orange}}>bot: {p.autoCheckMotivo==="txid_no_encontrado"?"TxID no está en la blockchain":p.autoCheckMotivo==="ambiguo"?"monto ambiguo, revisar a mano":p.autoCheckMotivo==="ya_activado_manualmente"?"ya activado a mano — rechazar este pago":"sin match"}</span>}
-                      </div>
-                    </div>
-                    <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
-                      <select value={confirmMeses[p._id]||String(p.meses||1)}
-                        onChange={e=>setConfirmMeses(prev=>({...prev,[p._id]:e.target.value}))}
-                        style={{...iS,padding:"6px 10px",fontSize:12,width:"auto"}}>
-                        {["1","2","3","6","12"].map(m=><option key={m} value={m}>{m}m</option>)}
-                      </select>
-                      <AsyncButton onClick={()=>confirmarPago(p)} style={{...BtnPrimary(T),fontSize:12,padding:"7px 16px"}}>✓ Confirmar</AsyncButton>
-                      <AsyncButton onClick={()=>rechazarPago(p._id)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>✕</AsyncButton>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Cargas de saldo de Envíos por acreditar — misma cola de acción que
-              los pagos: se resuelven acá mismo sin ir al tab Envíos */}
-          {envCargas.length>0&&(
-            <div style={{background:T.card,border:`1px solid ${T.yellow}44`,borderLeft:`3px solid ${T.yellow}`,borderRadius:12,marginBottom:20,overflow:"hidden"}}>
-              <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:13,fontWeight:700,color:T.yellow}}>Cargas de saldo por acreditar</span>
-                <span style={{fontSize:12,color:T.textSm}}>Recargas de Envíos esperando tu confirmación</span>
-              </div>
-              {envCargas.map((c,i)=>(
-                <div key={c.id} style={{padding:"12px 18px",borderBottom:i<envCargas.length-1?`1px solid ${T.borderL}`:"none",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                  <div style={{flex:1,minWidth:180}}>
-                    <div style={{fontSize:13,fontWeight:600,color:T.text}}>{c.email||c.uid}</div>
-                    {(c.codigo||c.ref)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>Ref: <strong style={{color:T.text}}>{c.codigo||c.ref}</strong></div>}
-                  </div>
-                  <span style={{fontSize:14,fontWeight:800,color:T.text}}>{fmtMoney(c.monto)}</span>
-                  <AsyncButton onClick={()=>resolverCarga(c,true)} style={{...BtnPrimary(T),fontSize:12,padding:"7px 16px"}}>✓ Acreditar</AsyncButton>
-                  <AsyncButton onClick={()=>resolverCarga(c,false)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>✕</AsyncButton>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Vencen pronto */}
-          {vencenProximos.length>0&&(
-            <div style={{background:T.card,border:`1px solid ${T.yellow}44`,borderLeft:`3px solid ${T.yellow}`,borderRadius:12,marginBottom:20,overflow:"hidden"}}>
-              <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,fontSize:13,fontWeight:700,color:T.yellow,display:"flex",alignItems:"center",gap:6}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Vencen esta semana</div>
-              {vencenProximos.map((u,i)=>{
-                const days = daysUntil(u.planExpiry);
-                return (
-                  <div key={u._id} style={{padding:"12px 18px",borderBottom:i<vencenProximos.length-1?`1px solid ${T.borderL}`:"none",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                    <div style={{flex:1}}>
-                      <span style={{fontSize:13,fontWeight:600,color:T.text,marginRight:8}}>{u.email||u.nombre}</span>
-                      <span style={{fontSize:11,padding:"1px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[u.plan]||T.surface,color:PLAN_C[u.plan]||T.textSm,marginRight:8}}>{planLabel(u.plan)}</span>
-                      <span style={{fontSize:12,color:days<=3?T.red:T.yellow}}>vence en {days} día{days!==1?"s":""} — {fmtDate(u.planExpiry)}</span>
-                    </div>
-                    <div style={{display:"flex",gap:6}}>
-                      <AsyncButton onClick={()=>gestionarPlan(u._id,u.plan,7,"dias",false)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>+7d</AsyncButton>
-                      <AsyncButton onClick={()=>gestionarPlan(u._id,u.plan,1,"meses",false)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>+1m</AsyncButton>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Ingresos resumen — un solo plan, así que no hay distribución que mostrar */}
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px",marginBottom:20,display:"flex",gap:32,flexWrap:"wrap",alignItems:"flex-end"}}>
-            <div>
-              <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Total recaudado</div>
-              <div style={{fontSize:24,fontWeight:700,color:T.green}}>${(stats.totalUSDT||0).toLocaleString("en-US")} USDT</div>
-              {(stats.totalARS||0)>0&&<div style={{fontSize:16,fontWeight:600,color:T.blue,marginTop:2}}>${(stats.totalARS||0).toLocaleString("es-AR")} ARS</div>}
-            </div>
-            <div style={{fontSize:12,color:T.textSm,lineHeight:1.7,paddingBottom:2}}>
-              {pagosReales.length} pago{pagosReales.length!==1?"s":""} confirmado{pagosReales.length!==1?"s":""}<br/>
-              {stats.countPruebas||0} prueba{(stats.countPruebas||0)!==1?"s":""} otorgada{(stats.countPruebas||0)!==1?"s":""}
-            </div>
-          </div>
-
-          {/* Ingresos por mes */}
-          {mesesRevenue.length>0&&(
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:20}}>
-              <div style={{padding:"13px 18px",borderBottom:`1px solid ${T.border}`,fontWeight:700,fontSize:13,color:T.text}}>Ingresos por mes</div>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                <thead style={{background:T.bg}}>
-                  <tr>
-                    {["Mes","USDT","ARS","Pagos"].map(h=>(
-                      <th key={h} style={{padding:"9px 16px",textAlign:h==="Mes"?"left":"right",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",borderBottom:`1px solid ${T.border}`}}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {mesesRevenue.map(([key,val],i)=>{
-                    const [year,mon] = key.split("-");
-                    const label = new Date(Number(year),Number(mon)-1,1).toLocaleString("es-AR",{month:"long",year:"numeric"});
-                    return (
-                      <tr key={key} style={{borderBottom:i<mesesRevenue.length-1?`1px solid ${T.borderL}`:"none"}}>
-                        <td style={{padding:"10px 16px",color:T.text,fontWeight:500,textTransform:"capitalize"}}>{label}</td>
-                        <td style={{padding:"10px 16px",textAlign:"right",color:val.usdt>0?T.green:T.textSm,fontWeight:600}}>{val.usdt>0?`${(+val.usdt).toFixed(2)} USDT`:"—"}</td>
-                        <td style={{padding:"10px 16px",textAlign:"right",color:val.ars>0?T.blue:T.textSm,fontWeight:600}}>{val.ars>0?`$${val.ars.toLocaleString("es-AR")} ARS`:"—"}</td>
-                        <td style={{padding:"10px 16px",textAlign:"right",color:T.textMd}}>{val.count}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Actividad reciente */}
-          {(()=>{
-            const recent = [...pagos].sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0)).slice(0,10);
-            if (!recent.length) return null;
-            return (
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-                <div style={{padding:"13px 18px",borderBottom:`1px solid ${T.border}`,fontWeight:700,fontSize:13,color:T.text}}>Actividad reciente</div>
-                {recent.map((p,i)=>{
-                  const u = usuarios.find(x=>x._id===p.uid);
-                  const est = p.estado;
-                  return (
-                    <div key={p._id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",borderBottom:i<recent.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
-                      <span style={{fontSize:11,width:22,textAlign:"center",flexShrink:0,fontWeight:700,color:p.isTrial?T.yellow:est==="confirmado"?T.green:est==="rechazado"?T.red:T.textSm}}>{p.isTrial?"P":est==="confirmado"?"✓":est==="rechazado"?"✕":"·"}</span>
-                      <span style={{flex:1,fontSize:12,color:T.text,minWidth:130}}>{u?.email||p.email||p.uid}</span>
-                      <span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{planLabel(p.plan)}</span>
-                      {!p.isTrial&&Number(p.amount)>0&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.currency==="USDT"?T.greenBg:T.blueBg,color:p.currency==="USDT"?T.green:T.blue}}>${Number(p.amount).toFixed(p.currency==="USDT"?2:0)} {p.currency}</span>}
-                      {p.txHash&&<a href={`https://tronscan.org/#/transaction/${encodeURIComponent(p.txHash)}`} target="_blank" rel="noreferrer" title={p.txHash} style={{fontSize:10,color:T.accent,textDecoration:"none",fontFamily:"monospace",background:T.surface,border:`1px solid ${T.border}`,borderRadius:4,padding:"2px 7px"}}>Tx {String(p.txHash).slice(0,8)}… ↗</a>}
-                      {p.isTrial&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:T.yellowBg,color:T.yellow}}>prueba</span>}
-                      <span style={{fontSize:11,color:est==="pendiente"?T.yellow:est==="confirmado"?T.green:T.red,padding:"2px 7px",borderRadius:4,background:est==="pendiente"?T.yellowBg:est==="confirmado"?T.greenBg:T.redBg,fontWeight:600}}>{est}</span>
-                      <span style={{fontSize:11,color:T.textSm,whiteSpace:"nowrap"}}>{fmtDate(p.createdAt)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-
-        </div>
-        );
-      })()}
-
-      {/* ===== TAB USUARIOS ===== */}
-      {!loading&&tab==="usuarios"&&(
-        <div style={{maxWidth:960,margin:"0 auto",padding:"0 20px"}}>
-          <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
-            <input style={{...iS,fontSize:13,flex:1,minWidth:180,maxWidth:340}} placeholder="Buscar por email..." value={search} onChange={e=>setSearch(e.target.value)}/>
-            <div style={{fontSize:12,color:T.textSm,marginLeft:"auto"}}>{usuariosFiltrados.length} usuario{usuariosFiltrados.length!==1?"s":""}</div>
-          </div>
-          <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-            {[
-              ["todos","Todas",usuarios.length],
-              ["pagas","Pagas",usuarios.filter(u=>(u.plan||"free")!=="free"&&!u.isTrial).length],
-              ["facturador","Facturador",usuarios.filter(u=>u.plan==="facturador"&&!u.isTrial).length],
-              ["prueba","En prueba",usuarios.filter(u=>u.isTrial).length],
-              ["vencidas","Vencidas",usuarios.filter(u=>{const d=daysUntil(u.planExpiry);return d!==null&&d<0;}).length],
-              ["free","Sin plan",usuarios.filter(u=>(u.plan||"free")==="free"&&!u.isTrial).length],
-            ].map(([id,label,count])=>(
-              <button key={id} onClick={()=>setFilterPlan(id)} style={pillStyle(filterPlan===id)}>
-                {label} <span style={{opacity:0.7,fontSize:11}}>({count})</span>
-              </button>
-            ))}
-          </div>
-
-          {usuariosFiltrados.length===0&&(
-            <div style={{textAlign:"center",padding:40,color:T.textSm}}>
-              <div style={{marginBottom:12}}>Sin cuentas en este filtro.</div>
-              {search.includes("@")&&(
-                <AsyncButton onClick={async()=>{
-                  setCuentaDiag(null);
-                  const d=await adminApi({action:"adminBuscarCuenta",email:search.trim()});
-                  setCuentaDiag({email:search.trim(),...d});
-                  if(d?.creoDoc) loadData(); // ya tiene doc: recargar para que aparezca en la lista
-                }} style={{...BtnSecondary(T),fontSize:12,margin:"0 auto"}}>Buscar esta cuenta en Firebase Auth</AsyncButton>
-              )}
-            </div>
-          )}
-          {cuentaDiag&&(
-            <div style={{background:T.card,border:`1px solid ${cuentaDiag.encontrado?T.green+"55":T.yellow+"55"}`,borderRadius:10,padding:"12px 16px",marginBottom:14,fontSize:12,color:T.text,lineHeight:1.7}}>
-              <div style={{fontWeight:700,marginBottom:2}}>{cuentaDiag.email}</div>
-              {cuentaDiag.encontrado?(
-                <>
-                  <div>Registrada en Firebase Auth {cuentaDiag.creado?`el ${new Date(cuentaDiag.creado).toLocaleDateString("es-AR")}`:""} {cuentaDiag.providers?.length?`· acceso: ${cuentaDiag.providers.join(", ").replace("password","email/contraseña").replace("google.com","Google")}`:""}</div>
-                  <div>Último login: {cuentaDiag.ultimoLogin?new Date(cuentaDiag.ultimoLogin).toLocaleDateString("es-AR"):"nunca"} · Plan actual: {cuentaDiag.plan||"free"}</div>
-                  {cuentaDiag.creoDoc&&<div style={{color:T.green,fontWeight:600}}>No tenía ficha en la base (nunca terminó su primer ingreso) — se creó recién: ya aparece en la lista y podés asignarle el plan.</div>}
-                </>
-              ):(
-                <div style={{color:T.yellow}}>{cuentaDiag.motivo||"No encontrada."}</div>
-              )}
-              <button onClick={()=>setCuentaDiag(null)} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:11,padding:0,marginTop:4,fontFamily:"'Inter',system-ui,sans-serif"}}>Cerrar</button>
-            </div>
-          )}
-          {usuariosFiltrados.slice(0,userLimit).map(u=>{
-            const expanded = expandedUser===u._id;
-            const days = daysUntil(u.planExpiry);
-            const expiryColor = days===null||u.plan==="free" ? T.textSm : days<3 ? T.red : days<7 ? T.yellow : days>30 ? T.green : T.textMd;
-            const userPagos = pagos.filter(p=>p.uid===u._id).sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0));
-            // Pagos REALES (plata que entró) vs pruebas: las pruebas también crean
-            // docs en `pagos` (method:"prueba", confirmado, $0) y contarlas como
-            // "pagos" hacía parecer que cuentas de prueba habían pagado varias veces.
-            const pagosReales_u = userPagos.filter(p=>!p.isTrial&&p.estado==="confirmado"&&Number(p.amount)>0);
-            const pruebas_u = userPagos.filter(p=>p.isTrial);
-            const selPlan = uPlan[u._id] || (u.plan==="facturador" ? "facturador" : "plus");
-            const selDias = uDias[u._id] || "";
-            return (
-              <div key={u._id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,marginBottom:8,overflow:"hidden"}}>
-                {/* Cabecera */}
-                <div onClick={()=>{const willExpand=!expanded;setExpandedUser(willExpand?u._id:null);if(willExpand&&!usageByUid[u._id])loadUsage(u._id);}}
-                  style={{padding:"13px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                  <div style={{width:32,height:32,borderRadius:"50%",background:PLAN_BG[u.plan||"free"]||T.surface,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:PLAN_C[u.plan||"free"]||T.textSm,flexShrink:0}}>
-                    {(u.email||u.nombre||"?")[0].toUpperCase()}
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email||u.nombre}</div>
-                    <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                      <span style={{fontSize:11,padding:"1px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[u.plan||"free"]||T.surface,color:PLAN_C[u.plan||"free"]||T.textSm}}>{planLabel(u.plan)}</span>
-                      {u.isTrial&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:4,fontWeight:700,background:T.yellowBg,color:T.yellow}}>prueba</span>}
-                      {u._sinDoc&&<span title="Cuenta registrada en Auth que nunca completó el registro en la app (sin datos/plan)." style={{fontSize:10,padding:"1px 7px",borderRadius:4,fontWeight:700,background:T.textSm+"22",color:T.textSm}}>sin registro completo</span>}
-                      {u.planExpiry&&u.plan!=="free"&&days!==null&&(
-                        <span style={{fontSize:11,color:expiryColor}}>
-                          {days<0?`vencido hace ${Math.abs(days)}d`:days===0?"vence hoy":`${days}d restantes`}
-                        </span>
-                      )}
-                      {u.isAdmin&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:4,fontWeight:700,background:"#7c3aed22",color:"#a78bfa"}}>admin</span>}
-                      {u.adminNote&&<span style={{fontSize:10,color:T.textSm,fontStyle:"italic"}}>nota</span>}
-                    </div>
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                    {pagosReales_u.length>0
-                      ? <span style={{fontSize:11,color:T.green,fontWeight:700}}>{pagosReales_u.length} pago{pagosReales_u.length!==1?"s":""}</span>
-                      : pruebas_u.length>0 ? <span style={{fontSize:11,color:T.textSm}}>solo pruebas</span> : null}
-                    <span style={{fontSize:11,color:T.textSm}}>{expanded?"▲":"▼"}</span>
-                  </div>
-                </div>
-
-                {/* Panel de la cuenta como DRAWER lateral (estilo Stripe): la lista
-                    nunca pierde la posición de scroll y el detalle tiene todo el alto */}
-                {expanded&&ReactDOM.createPortal(
-                  <>
-                  <div onClick={()=>setExpandedUser(null)} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.5)",animation:"growith-fadeInFast 0.15s ease both"}}/>
-                  <div style={{position:"fixed",top:0,right:0,bottom:0,zIndex:1201,width:"min(600px,100vw)",background:T.bg,borderLeft:`1px solid ${T.border}`,boxShadow:"-24px 0 60px rgba(0,0,0,0.45)",overflowY:"auto",animation:"growith-fadeInLeft 0.18s ease both"}}>
-                  <div style={{position:"sticky",top:0,zIndex:5,display:"flex",alignItems:"center",gap:10,padding:"14px 16px",background:T.card,borderBottom:`1px solid ${T.border}`}}>
-                    <div style={{width:32,height:32,borderRadius:"50%",background:PLAN_BG[u.plan||"free"]||T.surface,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:PLAN_C[u.plan||"free"]||T.textSm,flexShrink:0}}>{(u.email||u.nombre||"?")[0].toUpperCase()}</div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email||u.nombre}</div>
-                      <div style={{fontSize:11,color:T.textSm}}>{planLabel(u.plan)}{u.isTrial?" · prueba":""}</div>
-                    </div>
-                    <ModalCloseBtn T={T} onClick={()=>setExpandedUser(null)}/>
-                  </div>
-                  <div style={{background:T.bg}}>
-
-                    {/* Resumen: suscripción + datos de la cuenta, en dos columnas */}
-                    <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:14}}>
-                      <div>
-                        <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:7}}>Suscripción</div>
-                        {u.plan==="free"?(
-                          <div style={{fontSize:13,color:T.textSm}}>Sin plan activo — cuenta gratuita</div>
-                        ):(
-                          <>
-                            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                              <span style={{fontSize:16,fontWeight:800,color:PLAN_C[u.plan],letterSpacing:-0.3}}>{planLabel(u.plan)}</span>
-                              {u.isTrial&&<span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:T.yellowBg,color:T.yellow}}>PRUEBA GRATIS</span>}
-                            </div>
-                            {days!==null&&(
-                              <div style={{fontSize:12.5,fontWeight:600,color:expiryColor,marginTop:5,lineHeight:1.5}}>
-                                {days<0?`Vencida hace ${Math.abs(days)} día${Math.abs(days)!==1?"s":""} — venció el ${fmtDate(u.planExpiry)}`
-                                 :days===0?`Vence hoy (${fmtDate(u.planExpiry)})`
-                                 :`Activa — vence el ${fmtDate(u.planExpiry)} (en ${days} día${days!==1?"s":""})`}
-                              </div>
-                            )}
-                            {/* Origen del plan vigente: prueba / pago real (auto o manual) / activación a dedo */}
-                            {(()=>{
-                              const ult=pagosReales_u[0];
-                              let txt,color;
-                              if(u.isTrial){ txt="Origen: prueba gratis — nunca pagó este plan"; color=T.yellow; }
-                              else if(ult){ txt=ult.method==="cripto"?"Origen: pago automático en USDT":ult.method==="stripe"?"Origen: tarjeta (Stripe, se renueva sola)":ult.method==="credito"?"Origen: crédito de referidos":`Origen: pago confirmado a mano (${ult.currency||"transferencia"})`; color=T.green; }
-                              else { txt="Origen: activada a mano por admin — sin ningún pago registrado"; color=T.orange||T.yellow; }
-                              return <div style={{fontSize:11,fontWeight:700,color,marginTop:4}}>{txt}</div>;
-                            })()}
-                          </>
-                        )}
-                      </div>
-                      <div>
-                        <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:7}}>Cuenta</div>
-                        <div style={{display:"flex",flexDirection:"column",gap:5,fontSize:12,color:T.textMd}}>
-                          <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
-                            <span style={{color:T.textSm}}>Integraciones:</span>
-                            {(u.stores||[]).length===0&&(u.cuits||[]).length===0
-                              ? <span style={{color:T.textSm,fontStyle:"italic"}}>ninguna conectada</span>
-                              : <>
-                                  {(u.stores||[]).map((s,i)=><span key={i} title={s.type==="tiendanube"?"Tienda Nube":s.type==="shopify"?"Shopify":s.type==="mercadolibre"?"Mercado Libre":s.type} style={{display:"inline-flex"}}><BrandIcon name={s.type} size={15}/></span>)}
-                                  {(u.cuits||[]).length>0&&<span title={`ARCA · ${(u.cuits||[]).length} CUIT`} style={{display:"inline-flex"}}><BrandIcon name="arca" size={15}/></span>}
-                                </>}
-                            {(u.teamUids||[]).length>0&&<span style={{fontSize:11,color:T.textSm}}>· {(u.teamUids||[]).length} miembro{(u.teamUids||[]).length!==1?"s":""} de equipo</span>}
-                          </div>
-                          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                            <span><strong style={{color:pagosReales_u.length?T.green:T.textSm}}>{pagosReales_u.length}</strong> pago{pagosReales_u.length!==1?"s":""} real{pagosReales_u.length!==1?"es":""}{pruebas_u.length>0&&<span style={{color:T.textSm}}> · {pruebas_u.length} prueba{pruebas_u.length!==1?"s":""}</span>}</span>
-                            <button onClick={()=>{try{navigator.clipboard.writeText(u._id);toast("UID copiado","success");}catch(_){appAlert(u._id);}}}
-                              title={u._id} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,color:T.textSm,cursor:"pointer",padding:"2px 8px",fontSize:10,fontFamily:"'Inter',system-ui,sans-serif"}}>Copiar UID</button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Uso — Envíos */}
-                    {(()=>{
-                      const u_=usageByUid[u._id];
-                      const tot=u_?.totales||{etiquetas:0,skus:0,seguimientos:0};
-                      const rows=(u_?.usage||[]).filter(r=>(r.etiquetas||0)+(r.skus||0)+(r.seguimientos||0)>0);
-                      const METRICS=[
-                        {key:"etiquetas",label:"Etiquetas",icon:"",color:T.blue},
-                        {key:"skus",label:"SKUs",icon:"",color:T.accent},
-                        {key:"seguimientos",label:"Seguimientos",icon:"",color:T.green},
-                      ];
-                      const maxDay=Math.max(1,...rows.map(r=>Math.max(r.etiquetas||0,r.skus||0,r.seguimientos||0)));
-                      return (
-                        <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`}}>
-                          <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Uso de Envíos · últimos 30 días</div>
-                          {u_?.loading?(
-                            <div style={{fontSize:12,color:T.textSm,padding:"8px 0"}}><Spinner size={14} color={T.accent}/> Cargando uso…</div>
-                          ):(tot.etiquetas+tot.skus+tot.seguimientos)===0?(
-                            <div style={{fontSize:12,color:T.textSm}}>Sin actividad en Envíos en este período.</div>
-                          ):(
-                            <>
-                              <div style={{display:"flex",gap:16,flexWrap:"wrap",marginBottom:rows.length?12:0,fontSize:12.5}}>
-                                {METRICS.map(m=>(
-                                  <span key={m.key} style={{display:"inline-flex",alignItems:"center",gap:6}}>
-                                    <span style={{width:8,height:8,borderRadius:"50%",background:m.color,display:"inline-block"}}/>
-                                    <strong style={{color:T.text,fontWeight:800}}>{tot[m.key]||0}</strong>
-                                    <span style={{color:T.textMd}}>{m.label.toLowerCase()}</span>
-                                  </span>
-                                ))}
-                              </div>
-                              {rows.length===0?(
-                                <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin detalle diario disponible.</div>
-                              ):(
-                                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                                  {rows.map(r=>(
-                                    <div key={r.date} style={{display:"flex",alignItems:"center",gap:10}}>
-                                      <span style={{fontSize:11,color:T.textSm,width:74,flexShrink:0}}>{r.date.slice(5)}</span>
-                                      <div style={{flex:1,display:"flex",gap:5}}>
-                                        {METRICS.map(m=>{
-                                          const v=r[m.key]||0;
-                                          return (
-                                            <div key={m.key} title={`${v} ${m.label}`} style={{flex:1,display:"flex",alignItems:"center",gap:5}}>
-                                              <div style={{flex:1,height:8,borderRadius:4,background:T.surface,overflow:"hidden"}}>
-                                                <div style={{height:"100%",width:`${(v/maxDay)*100}%`,background:m.color,borderRadius:4}}/>
-                                              </div>
-                                              <span style={{fontSize:11,fontWeight:600,color:v?m.color:T.textSm,width:18,textAlign:"right"}}>{v}</span>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Gestionar suscripción — cada acción en su propia caja, con
-                        explicación de qué hace (antes era una fila de controles sueltos
-                        imposible de leer sin conocer el código) */}
-                    <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`}}>
-                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:10}}>Gestionar suscripción</div>
-
-                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8}}>
-                        <div style={{fontSize:12.5,fontWeight:700,color:T.text,marginBottom:8}}>{u.plan==="free"?"Activar un plan":"Renovar o cambiar el plan"}</div>
-                        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                          <select value={selPlan} onChange={e=>setUPlan(prev=>({...prev,[u._id]:e.target.value}))}
-                            style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
-                            <option value="plus">Pro</option>
-                            <option value="facturador">Facturador</option>
-                          </select>
-                          <span style={{fontSize:12,color:T.textMd}}>durante</span>
-                          <input type="number" min="1" value={uCantidad[u._id]||"1"}
-                            onChange={e=>setUCantidad(prev=>({...prev,[u._id]:e.target.value}))}
-                            style={{...iS,fontSize:12,width:60,textAlign:"center"}}/>
-                          <select value={uUnidad[u._id]||"meses"} onChange={e=>setUUnidad(prev=>({...prev,[u._id]:e.target.value}))}
-                            style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
-                            <option value="meses">mes(es)</option>
-                            <option value="dias">día(s)</option>
-                          </select>
-                          <AsyncButton onClick={()=>gestionarPlan(u._id, selPlan, uCantidad[u._id]||1, uUnidad[u._id]||"meses", false)}
-                            style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>
-                            Activar como pago
-                          </AsyncButton>
-                          <AsyncButton onClick={()=>gestionarPlan(u._id, selPlan, uCantidad[u._id]||1, uUnidad[u._id]||"meses", true)}
-                            style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.yellow,border:`1px solid ${T.yellow}44`}}>
-                            Dar como prueba
-                          </AsyncButton>
-                        </div>
-                        <div style={{fontSize:11,color:T.textSm,marginTop:8,lineHeight:1.5}}>
-                          El tiempo se <strong style={{color:T.textMd}}>suma al vencimiento actual</strong> (si está vencida, arranca desde hoy).
-                          "Dar como prueba" no cuenta como ingreso en las métricas.
-                        </div>
-                      </div>
-
-                      {u.plan!=="free"&&(
-                        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8}}>
-                          <div style={{fontSize:12.5,fontWeight:700,color:T.text,marginBottom:8}}>Corregir el vencimiento</div>
-                          <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-                            {[-30,-7,-1,1,7,30].map(d=>(
-                              <AsyncButton key={d} onClick={()=>ajustarDias(u._id,d)}
-                                style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:d<0?T.red:T.green}}>
-                                {d>0?"+":""}{d}d
-                              </AsyncButton>
-                            ))}
-                            <input type="number" value={selDias}
-                              onChange={e=>setUDias(prev=>({...prev,[u._id]:e.target.value}))}
-                              onKeyDown={e=>e.key==="Enter"&&ajustarDias(u._id,selDias)}
-                              placeholder="± días" style={{...iS,fontSize:11,width:68,textAlign:"center"}}/>
-                            <AsyncButton onClick={()=>ajustarDias(u._id,selDias)}
-                              style={{...BtnSecondary(T),fontSize:11,padding:"4px 12px",color:Number(selDias)<0?T.red:T.green}}>
-                              Aplicar
-                            </AsyncButton>
-                          </div>
-                          <div style={{fontSize:11,color:T.textSm,marginTop:8}}>
-                            Mueve la fecha de vencimiento actual ({fmtDate(u.planExpiry)}) sin registrar ningún pago — para regalar días o corregir errores.
-                          </div>
-                        </div>
-                      )}
-
-                      {u.plan!=="free"&&(
-                        <div style={{border:`1px solid ${T.red}33`,borderRadius:10,padding:"11px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-                          <div>
-                            <div style={{fontSize:12.5,fontWeight:700,color:T.red}}>Desactivar plan</div>
-                            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>La cuenta pasa a Free ahora mismo. No borra datos ni historial de pagos.</div>
-                          </div>
-                          <AsyncButton onClick={()=>desactivarPlan(u._id)} style={{...BtnDanger(T),fontSize:11,padding:"6px 14px",flexShrink:0}}>
-                            Desactivar
-                          </AsyncButton>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Nota interna + Acceso admin lado a lado (dos cosas chicas que
-                        apiladas estiraban el panel al pedo) */}
-                    <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14}}>
-                    <div>
-                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Nota interna</div>
-                      {noteEdit[u._id]!==undefined ? (
-                        <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-                          <textarea value={noteEdit[u._id]}
-                            onChange={e=>setNoteEdit(prev=>({...prev,[u._id]:e.target.value}))}
-                            style={{...iS,fontSize:12,minHeight:56,resize:"vertical",flex:1}}
-                            placeholder="Ej: pagó tarde, le regalamos 7 días..."/>
-                          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                            <AsyncButton onClick={()=>saveNote(u._id)} style={{...BtnPrimary(T),fontSize:11,padding:"5px 12px"}}>Guardar</AsyncButton>
-                            <button onClick={()=>setNoteEdit(prev=>{const n={...prev};delete n[u._id];return n;})} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>✕</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-                          <div style={{fontSize:12,color:u.adminNote?T.text:T.textSm,flex:1,fontStyle:u.adminNote?"normal":"italic",lineHeight:1.5}}>
-                            {u.adminNote||"Sin nota"}
-                          </div>
-                          <button onClick={()=>setNoteEdit(prev=>({...prev,[u._id]:u.adminNote||""}))} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",flexShrink:0}}>Editar</button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12}}>
-                      <div>
-                        <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>Acceso admin</div>
-                        <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Habilita las secciones exclusivas de administrador para esta cuenta.</div>
-                      </div>
-                      <AsyncButton onClick={async()=>{
-                        const d=await adminApi({action:"toggleAdmin",targetUid:u._id});
-                        if(d.ok) setDatos(prev=>({...prev,usuarios:prev.usuarios.map(x=>x._id===u._id?{...x,isAdmin:d.isAdmin}:x)}));
-                      }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px",color:u.isAdmin?T.red:T.green,borderColor:u.isAdmin?T.red+"44":T.green+"44",flexShrink:0}}>
-                        {u.isAdmin?"Quitar admin":"Dar admin"}
-                      </AsyncButton>
-                    </div>
-
-                    {/* Envíos con saldo (etiquetas prepagas): un click para habilitar/quitar */}
-                    {(()=>{
-                      const hab=(envCfg?.habilitados||[]).includes(u._id);
-                      return (
-                        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12,marginTop:12}}>
-                          <div>
-                            <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>Envíos con saldo (Andreani prepago)</div>
-                            <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>{envCfg?(hab?"Habilitado: ve saldo, carga y Etiquetas listas en Envíos.":"Habilita el sistema de etiquetas prepagas para esta cuenta."):"Cargando configuración…"}</div>
-                          </div>
-                          <AsyncButton onClick={async()=>{
-                            let cfg=envCfg;
-                            if(!cfg){
-                              const c=await authFetch("/api/andreani?action=admin_config").then(r=>r.json()).catch(()=>null);
-                              if(!c||c.error) throw new Error("No se pudo leer la configuración de Envíos");
-                              cfg={markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}};
-                              setEnvCfg(cfg);
-                            }
-                            const ya=(cfg.habilitados||[]).includes(u._id);
-                            if(ya&&!await appConfirm("¿Quitar Envíos con saldo a esta cuenta?",{danger:true,okLabel:"Quitar"})) return;
-                            const ok=await saveEnvCfg({...cfg,habilitados:ya?cfg.habilitados.filter(x=>x!==u._id):[...(cfg.habilitados||[]),u._id]});
-                            if(ok) toast(ya?"Envíos con saldo quitado":"Envíos con saldo habilitado — ya puede probar todo desde Envíos","success");
-                          }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px",color:hab?T.red:T.green,borderColor:hab?T.red+"44":T.green+"44",flexShrink:0}}>
-                            {hab?"Quitar":"Habilitar"}
-                          </AsyncButton>
-                        </div>
-                      );
-                    })()}
-                    </div>
-
-                    {/* Historial de pagos */}
-                    <div style={{padding:"14px 16px"}}>
-                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Historial de pagos ({userPagos.length})</div>
-                      {userPagos.length===0
-                        ? <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Esta cuenta nunca registró un pago ni una prueba.</div>
-                        : userPagos.map(p=>(
-                          <div key={p._id} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontSize:11.5,padding:"8px 12px",background:T.surface,borderRadius:8,marginBottom:6}}>
-                            <span style={{color:T.textSm,width:72,flexShrink:0}}>{fmtDate(p.createdAt)}</span>
-                            <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{planLabel(p.plan)}</span>
-                            {p.isTrial
-                              ? <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:T.yellowBg,color:T.yellow}}>prueba gratis</span>
-                              : Number(p.amount)>0
-                                ? <span style={{color:T.text,fontWeight:700}}>${p.amount} {p.currency}{p.method?<span style={{color:T.textSm,fontWeight:500}}> · {p.method==="cripto"?"USDT":p.method==="credito"?"crédito referidos":p.method}</span>:null}</span>
-                                : <span style={{color:T.textSm}}>sin monto</span>
-                            }
-                            {p.mesesConfirmados&&<span style={{color:T.textSm}}>{p.mesesConfirmados} mes{p.mesesConfirmados>1?"es":""}</span>}
-                            {p.periodo==="anual"&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:4,fontWeight:700,background:T.accentSolid+"22",color:T.accent}}>anual</span>}
-                            <span style={{marginLeft:"auto",padding:"2px 8px",borderRadius:4,fontWeight:600,background:p.isTrial?T.surface:p.estado==="confirmado"?T.greenBg:p.estado==="pendiente"?T.yellowBg:T.redBg,color:p.isTrial?T.textSm:p.estado==="confirmado"?T.green:p.estado==="pendiente"?T.yellow:T.red}}>{p.isTrial?"prueba otorgada":p.estado}</span>
-                          </div>
-                        ))
-                      }
-                    </div>
-
-                  </div>
-                  </div>
-                  </>,
-                  document.body
-                )}
-              </div>
-            );
-          })}
-          {usuariosFiltrados.length>userLimit&&(
-            <div style={{textAlign:"center",padding:"14px 0"}}>
-              <button onClick={()=>setUserLimit(n=>n+50)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 18px"}}>
-                Ver 50 más ({usuariosFiltrados.length-userLimit} restantes)
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ===== TAB SECCIONES ===== */}
-      {tab==="secciones"&&(
-        <div style={{maxWidth:720,margin:"0 auto",padding:"0 20px"}}>
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
-            <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Control de acceso por sección</div>
-            <div style={{fontSize:13,color:T.textMd,lineHeight:1.6}}>
-              Las secciones marcadas como <strong style={{color:T.accent}}>solo admin</strong> se ocultan del sidebar y son inaccesibles para usuarios comunes.
-              Solo vos y quienes tengan el flag de admin pueden verlas.
-            </div>
-          </div>
-
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {[
-              {id:"margenes", label:"Dashboard", icon:"M18 20V10M12 20V4M6 20v-6", desc:"Dashboard financiero automático (Revenue, Profit, ROAS, Ad Spend)"},
-              {id:"meta",        label:"Meta Ads",    icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", desc:"Campañas Facebook e Instagram"},
-              {id:"stock",       label:"Stock & Estadísticas", icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z", desc:"Analytics de ventas, inventario, alertas"},
-              {id:"ml",          label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20z", desc:"Gestión de publicaciones de Mercado Libre"},
-              {id:"arca",        label:"Facturador",  icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z", desc:"Facturación electrónica AFIP/ARCA"},
-              {id:"envios",      label:"Envíos",      icon:"M16 16h6m-3-3v6M1 3h15v13H1z", desc:"Pedidos, etiquetas Andreani, seguimientos"},
-              {id:"reclamos",    label:"Reclamos",    icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7", desc:"Kanban de reclamos y devoluciones"},
-              {id:"canjes",      label:"Canjes",      icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2", desc:"Gestión de influencers y canjes"},
-              {id:"tareas",      label:"Tareas",      icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2", desc:"Delegación a colaboradores externos"},
-            ].map(s=>{
-              const isAdminOnly = sectionsConfig.includes(s.id);
-              return (
-                <div key={s.id} style={{background:T.card,border:`1px solid ${isAdminOnly?T.accent+"55":T.border}`,borderRadius:12,padding:"14px 16px",display:"flex",alignItems:"center",gap:14,transition:"border-color 0.15s"}}>
-                  <div style={{width:36,height:36,borderRadius:9,background:isAdminOnly?T.accentSolid+"18":T.surface,border:`1px solid ${isAdminOnly?T.accentSolid+"44":T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isAdminOnly?T.accentSolid:T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={s.icon}/></svg>
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:T.text}}>{s.label}</div>
-                    <div style={{fontSize:11,color:T.textSm,marginTop:1}}>{s.desc}</div>
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-                    {isAdminOnly && <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:T.accentSolid+"18",color:T.accentSolid}}>Solo admin</span>}
-                    <button disabled={savingSections} onClick={()=>toggleSection(s.id)}
-                      style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${isAdminOnly?T.red+"44":T.accentSolid+"55"}`,borderRadius:8,background:"transparent",color:isAdminOnly?T.red:T.accentSolid,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:savingSections?0.5:1,whiteSpace:"nowrap"}}>
-                      {isAdminOnly?"Hacer pública":"Solo admin"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div style={{marginTop:16,padding:"12px 16px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,fontSize:12,color:T.textSm,lineHeight:1.6}}>
-            <strong style={{color:T.text}}>Tip:</strong> Los cambios se aplican a todos los usuarios en tiempo real. Las secciones que hagas "solo admin" desaparecen del sidebar de los usuarios comunes inmediatamente.
-          </div>
-        </div>
-      )}
-
-      {/* ── ENVÍOS: etiquetas Andreani prepagas ── */}
-      {tab==="envios"&&(
-        <div style={{maxWidth:720,margin:"0 auto",padding:"0 20px"}}>
-          {envLoading&&!envCfg?(
-            <div style={{display:"flex",alignItems:"center",gap:10,padding:"32px 0",color:T.textSm,fontSize:13}}>
-              <Spinner size={15} color={T.accent}/> Cargando configuración de Envíos…
-            </div>
-          ):(
-            <>
-              {/* Config de markup */}
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
-                <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>Precio de las etiquetas</div>
-                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>
-                  La API de Andreani devuelve la tarifa de lista. Tu costo real = distribución − descuento de tu propuesta comercial + seguro (% del valor declarado, sin descuento). Precio del cliente = costo real + markup % + markup fijo.
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:14,alignItems:"end"}}>
-                  <Field T={T} label="Descuento Andreani (%)">
-                    <input style={iS} type="number" value={envCfg?.descuentoPct??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),descuentoPct:e.target.value}))} placeholder="0"/>
-                  </Field>
-                  <Field T={T} label="Seguro (% valor declarado)">
-                    <input style={iS} type="number" step="0.5" value={envCfg?.seguroPct??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),seguroPct:e.target.value}))} placeholder="1"/>
-                  </Field>
-                  <Field T={T} label="Markup (%)">
-                    <input style={iS} type="number" value={envCfg?.markupPct??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),markupPct:e.target.value}))} placeholder="0"/>
-                  </Field>
-                  <Field T={T} label="Markup fijo ($)">
-                    <input style={iS} type="number" value={envCfg?.markupFijo??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),markupFijo:e.target.value}))} placeholder="0"/>
-                  </Field>
-                </div>
-                <Field T={T} label="Sucursal de origen (código Andreani, ej: 38)">
-                  <input style={iS} value={envCfg?.sucursalOrigen??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),sucursalOrigen:e.target.value}))} placeholder="Vacío = origen default de Andreani"/>
-                </Field>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,margin:"14px 0 8px"}}>Datos para recibir las cargas de saldo</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
-                  <Field T={T} label="Alias">
-                    <input style={iS} value={envCfg?.datosPago?.alias??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),datosPago:{...(c?.datosPago||{}),alias:e.target.value}}))} placeholder="mi.alias.mp"/>
-                  </Field>
-                  <Field T={T} label="CBU / CVU (opcional)">
-                    <input style={iS} value={envCfg?.datosPago?.cbu??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),datosPago:{...(c?.datosPago||{}),cbu:e.target.value}}))} placeholder="22 dígitos"/>
-                  </Field>
-                  <Field T={T} label="Titular">
-                    <input style={iS} value={envCfg?.datosPago?.titular??""} onChange={e=>setEnvCfg(c=>({...(c||{habilitados:[]}),datosPago:{...(c?.datosPago||{}),titular:e.target.value}}))} placeholder="Nombre del titular"/>
-                  </Field>
-                </div>
-                <div style={{display:"flex",justifyContent:"flex-end"}}>
-                  <AsyncButton onClick={()=>saveEnvCfg()} disabled={!envCfg} style={{...BtnPrimary(T),fontSize:13}}>Guardar configuración</AsyncButton>
-                </div>
-              </div>
-
-              {/* Cargas de saldo pendientes de acreditar */}
-              {envCargas.length>0&&(
-                <div style={{background:T.card,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
-                  <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>Cargas pendientes</div>
-                  <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>
-                    Verificá que la transferencia haya entrado (buscá la referencia en el concepto o el monto exacto) y acreditala con un click.
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                    {envCargas.map(c=>(
-                      <div key={c.id} style={{display:"flex",alignItems:"center",gap:12,background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 12px",flexWrap:"wrap"}}>
-                        <span style={{fontSize:13,fontWeight:800,color:T.accent,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{c.ref}</span>
-                        <span style={{fontSize:14,fontWeight:800,color:T.text}}>{fmtMoney(c.monto)}</span>
-                        <span style={{fontSize:12,color:T.textMd,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:120}}>{c.email||c.uid}</span>
-                        <span style={{fontSize:11,color:T.textSm}}>{c.ts?new Date(c.ts).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):""}</span>
-                        <div style={{display:"flex",gap:8}}>
-                          <AsyncButton onClick={async()=>{
-                            if(!await appConfirm(`¿Acreditar ${fmtMoney(c.monto)} a ${c.email||c.uid}? Verificá antes que la transferencia ${c.ref} haya entrado.`,{okLabel:"Acreditar"})) return;
-                            await resolverCarga(c,true);
-                          }} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>Acreditar</AsyncButton>
-                          <AsyncButton onClick={async()=>{
-                            if(!await appConfirm("¿Rechazar esta carga? El cliente la va a ver como rechazada.",{danger:true,okLabel:"Rechazar"})) return;
-                            await resolverCarga(c,false);
-                          }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.red,borderColor:T.red+"66"}}>Rechazar</AsyncButton>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Cuentas habilitadas */}
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
-                <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>Cuentas habilitadas</div>
-                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>
-                  Solo estas cuentas ven el sistema de etiquetas prepagas en Envíos. El email de cada uid aparece en la tabla de saldos de abajo.
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
-                  {(envCfg?.habilitados||[]).length===0&&<div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Ninguna cuenta habilitada todavía.</div>}
-                  {(envCfg?.habilitados||[]).map(uid=>{
-                    const cuenta=(envSaldos||[]).find(c=>c.uid===uid);
-                    return (
-                      <div key={uid} style={{display:"flex",alignItems:"center",gap:10,background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px"}}>
-                        <span style={{fontSize:12,fontWeight:600,color:T.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                          {cuenta?.email||<span style={{fontFamily:"'Cascadia Code','Consolas',monospace"}}>{uid}</span>}
-                        </span>
-                        <span style={{fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{uid.slice(0,8)}…</span>
-                        <AsyncButton onClick={async()=>{
-                          if(!await appConfirm("¿Quitar esta cuenta del sistema de etiquetas prepagas?",{danger:true,okLabel:"Quitar"})) return;
-                          await saveEnvCfg({...envCfg,habilitados:envCfg.habilitados.filter(u=>u!==uid)});
-                        }} style={{background:"transparent",border:"none",color:T.red,cursor:"pointer",fontSize:13,padding:"2px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</AsyncButton>
-                      </div>
-                    );
-                  })}
-                </div>
-                {/* Habilitar por EMAIL (con sugerencias de las cuentas registradas) — pegar
-                    el uid a mano quedó como alternativa: el campo acepta ambos */}
-                {(()=>{
-                  const q=envNuevoUid.trim().toLowerCase();
-                  const match=q?usuarios.find(u=>(u.email||"").toLowerCase()===q||u._id===envNuevoUid.trim()):null;
-                  const sugeridos=q&&!match?usuarios.filter(u=>(u.email||"").toLowerCase().includes(q)||(u.nombre||"").toLowerCase().includes(q)).slice(0,6):[];
-                  return (
-                    <div>
-                      <div style={{display:"flex",gap:8}}>
-                        <input style={{...iS,flex:1}} value={envNuevoUid} onChange={e=>setEnvNuevoUid(e.target.value)} placeholder="Email de la cuenta a habilitar (o su uid)" list="gh-admin-emails"/>
-                        <datalist id="gh-admin-emails">{usuarios.map(u=><option key={u._id} value={u.email||""}>{u.nombre||""}</option>)}</datalist>
-                        <AsyncButton onClick={async()=>{
-                          const uid=match?match._id:envNuevoUid.trim();
-                          if(!uid){ toast("Escribí el email de la cuenta","error"); return; }
-                          if(!match&&uid.includes("@")){ toast("No encontré una cuenta con ese email — buscala en Usuarios primero","warning",5000); return; }
-                          if((envCfg?.habilitados||[]).includes(uid)){ toast("Esa cuenta ya está habilitada","warning"); return; }
-                          const ok=await saveEnvCfg({...(envCfg||{markupPct:0,markupFijo:0,habilitados:[]}),habilitados:[...(envCfg?.habilitados||[]),uid]});
-                          if(ok){ setEnvNuevoUid(""); toast(`Envíos con saldo habilitado para ${match?.email||uid}`,"success"); }
-                        }} style={{...BtnPrimary(T),fontSize:13,whiteSpace:"nowrap"}}>Habilitar</AsyncButton>
-                      </div>
-                      {match&&<div style={{fontSize:11,color:T.green,marginTop:6}}>✓ {match.nombre||match.email} · plan {match.plan||"free"}</div>}
-                      {sugeridos.length>0&&(
-                        <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:6}}>
-                          {sugeridos.map(u=>(
-                            <button key={u._id} onClick={()=>setEnvNuevoUid(u.email||u._id)} style={{textAlign:"left",background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                              {u.email} <span style={{color:T.textSm}}>· {u.nombre||"—"} · {u.plan||"free"}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-
-              {/* Rentabilidad del sistema de etiquetas */}
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:14,flexWrap:"wrap"}}>
-                  <div style={{fontSize:15,fontWeight:700,color:T.text}}>Uso por cliente y rentabilidad</div>
-                  <select value={envStatsMes||envMeses[0].v} onChange={e=>loadEnvStats(e.target.value)}
-                    style={{...iS,width:"auto",marginBottom:0,padding:"6px 10px",fontSize:12,cursor:"pointer"}}>
-                    {envMeses.map(m=><option key={m.v} value={m.v}>{m.label}</option>)}
-                  </select>
-                </div>
-                {envStats.loading?(
-                  <div style={{display:"flex",alignItems:"center",gap:8,padding:"14px 0",color:T.textSm,fontSize:12}}>
-                    <Spinner size={13} color={T.accent}/> Cargando rentabilidad…
-                  </div>
-                ):envStats.error?(
-                  <div style={{fontSize:12,color:T.red,background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:8,padding:"9px 12px"}}>
-                    {envStats.error}
-                  </div>
-                ):!envStats.data||(!(envStats.data.etiquetas>0)&&!(envStats.data.cargadoTotal>0)&&!(envStats.data.cuentas||[]).length)?(
-                  <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin actividad en ese mes.</div>
-                ):(()=>{
-                  const d=envStats.data;
-                  const cuentas=[...(d.cuentas||[])];
-                  const cols="minmax(160px,1.4fr) 70px 110px 110px 110px 100px";
-                  return (
-                    <>
-                      {/* Totales del mes — "Costo real Andreani" es lo que Andreani tiene que
-                          facturar a fin de mes: comparar contra su factura */}
-                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:14}}>
-                        {[
-                          {label:"Etiquetas emitidas", val:String(d.etiquetas||0), color:T.text},
-                          {label:"Cobrado a clientes", val:fmtMoney(d.facturado||0), color:T.text, sub:"lo que pagaron en etiquetas"},
-                          {label:"Costo real Andreani", val:fmtMoney(d.costoReal||0), color:T.text, sub:"contra la factura de Andreani"},
-                          {label:"Margen", val:fmtMoney(d.margen||0), color:(d.margen||0)>=0?T.green:T.red},
-                          {label:"Saldo cargado", val:fmtMoney(d.cargadoTotal||0), color:T.accent, sub:`${d.cargasN||0} carga${d.cargasN===1?"":"s"} acreditada${d.cargasN===1?"":"s"}`},
-                          {label:"Saldo en billeteras", val:fmtMoney(d.saldoTotal||0), color:T.text, sub:"pendiente de usar (hoy)"},
-                        ].map(k=>(
-                          <div key={k.label} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px"}}>
-                            <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{k.label}</div>
-                            <div style={{fontSize:17,fontWeight:800,color:k.color,letterSpacing:-0.3}}>{k.val}</div>
-                            {k.sub&&<div style={{fontSize:10,color:T.textSm,marginTop:2}}>{k.sub}</div>}
-                          </div>
-                        ))}
-                      </div>
-                      {cuentas.length>0&&(
-                        <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto"}}>
-                          <div style={{minWidth:700}}>
-                            <div style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
-                              <span>Cliente</span><span style={{textAlign:"right"}}>Etiq.</span><span style={{textAlign:"right"}}>Cobrado</span><span style={{textAlign:"right"}}>Costo Andreani</span><span style={{textAlign:"right",color:T.accent}}>Cargó saldo</span><span style={{textAlign:"right"}}>Saldo hoy</span>
-                            </div>
-                            {cuentas.map((c,i)=>(
-                              <div key={c.uid||i} style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<cuentas.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:(c.etiquetas||c.cargado||c.saldo)?1:0.55}}>
-                                <span style={{minWidth:0}}>
-                                  <span style={{display:"block",color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||<span style={{fontFamily:"'Cascadia Code','Consolas',monospace",fontSize:11}}>{String(c.uid||"").slice(0,8)}…</span>}</span>
-                                  {!c.habilitado&&<span style={{fontSize:9,color:T.textSm}}>ya no habilitada</span>}
-                                </span>
-                                <span style={{textAlign:"right",color:T.textMd}}>{c.etiquetas||0}</span>
-                                <span style={{textAlign:"right",fontWeight:700,color:T.text}}>{fmtMoney(c.monto||0)}</span>
-                                <span style={{textAlign:"right",color:T.textMd}}>{c.costo?fmtMoney(c.costo):"—"}</span>
-                                <span style={{textAlign:"right",color:T.accent,fontWeight:600}}>{c.cargado?fmtMoney(c.cargado):"—"}</span>
-                                <span style={{textAlign:"right",color:(c.saldo||0)>0?T.green:T.textSm,fontWeight:600}}>{fmtMoney(c.saldo||0)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <div style={{fontSize:10.5,color:T.textSm,marginTop:10,lineHeight:1.5}}>Conciliación: la suma de "Costo Andreani" del mes tiene que coincidir con la factura de Andreani; "Cobrado" es lo que pagaron los clientes con su saldo. El costo por cliente se registra desde ahora (etiquetas anteriores solo tienen el total).</div>
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Saldos */}
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-                  <div style={{fontSize:15,fontWeight:700,color:T.text}}>Saldos por cuenta</div>
-                  <AsyncButton onClick={loadEnvios} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>Actualizar</AsyncButton>
-                </div>
-                {/* Búsqueda puntual por email (la tabla completa solo lista cuentas habilitadas/con saldo) */}
-                <div style={{display:"flex",gap:8,marginBottom:12}}>
-                  <input style={{...iS,flex:1,marginBottom:0}} value={envBusca}
-                    onChange={e=>setEnvBusca(e.target.value)}
-                    onKeyDown={e=>{ if(e.key==="Enter") buscarCuentaSaldo(); }}
-                    placeholder="Buscar cuenta por email"/>
-                  <AsyncButton onClick={buscarCuentaSaldo} style={{...BtnSecondary(T),fontSize:12,whiteSpace:"nowrap"}}>Buscar</AsyncButton>
-                </div>
-                {envBuscaRes&&(
-                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
-                    {envBuscaRes.sinResultados
-                      ?<span style={{fontSize:12,color:T.yellow,background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"7px 12px"}}>No existe ninguna cuenta con el email "{envBuscaRes.email}"</span>
-                      :<span style={{fontSize:12,color:T.textMd}}>Mostrando la cuenta encontrada.</span>}
-                    <button onClick={()=>{setEnvBuscaRes(null);setEnvBusca("");}}
-                      style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,padding:0,fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline"}}>
-                      Ver todas
-                    </button>
-                  </div>
-                )}
-                {(envBuscaRes?.cuentas||envSaldos||[]).length===0?(
-                  <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>{envBuscaRes?"":"Sin cuentas con saldo todavía."}</div>
-                ):(
-                  <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 90px 100px 170px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
-                      <span>Cuenta</span><span>UID</span><span style={{textAlign:"right"}}>Saldo</span><span/>
-                    </div>
-                    {(envBuscaRes?.cuentas||envSaldos||[]).map((c,i)=>(
-                      <div key={c.uid}>
-                        <div style={{display:"grid",gridTemplateColumns:"1fr 90px 100px 170px",gap:8,padding:"10px 12px",fontSize:12,borderBottom:`1px solid ${T.borderL}`,alignItems:"center"}}>
-                          <span style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||"—"}</span>
-                          <span style={{color:T.textSm,fontSize:10,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{String(c.uid||"").slice(0,8)}…</span>
-                          <span style={{textAlign:"right",fontWeight:700,color:(c.saldo||0)>0?T.green:T.textMd}}>{fmtMoney(c.saldo||0)}</span>
-                          <span style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-                            <button onClick={()=>{setEnvAcred(envAcred?.uid===c.uid?null:{uid:c.uid,email:c.email});setEnvAcredForm({monto:"",nota:""});}}
-                              style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",color:T.green,borderColor:T.green+"55"}}>Acreditar</button>
-                            <button onClick={()=>verMovimientos(c)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Movs</button>
-                          </span>
-                        </div>
-                        {envAcred?.uid===c.uid&&(
-                          <div style={{display:"flex",gap:8,alignItems:"center",padding:"10px 12px",background:T.surface,borderBottom:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
-                            <input style={{...iS,width:130}} type="number" value={envAcredForm.monto} onChange={e=>setEnvAcredForm(s=>({...s,monto:e.target.value}))} placeholder="Monto ($)"/>
-                            <input style={{...iS,flex:1,minWidth:160}} value={envAcredForm.nota} onChange={e=>setEnvAcredForm(s=>({...s,nota:e.target.value}))} placeholder="Nota (ej: transferencia 5/8)"/>
-                            <AsyncButton onClick={acreditarSaldo} style={{...BtnPrimary(T),fontSize:12}}>Acreditar</AsyncButton>
-                            <button onClick={()=>setEnvAcred(null)} style={{...BtnSecondary(T),fontSize:12}}>Cancelar</button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* Modal movimientos de una cuenta */}
-          <Modal T={T} open={!!envMovs} onClose={()=>setEnvMovs(null)} title={`Movimientos — ${envMovs?.email||envMovs?.uid||""}`} width={560}>
-            {envMovs&&(envMovs.loading?(
-              <div style={{display:"flex",alignItems:"center",gap:8,padding:"18px 4px",color:T.textSm,fontSize:12}}>
-                <Spinner size={13} color={T.accent}/> Cargando movimientos…
-              </div>
-            ):envMovs.movimientos.length===0?(
-              <div style={{padding:"18px 4px",color:T.textSm,fontSize:12}}>Sin movimientos para esta cuenta.</div>
-            ):(
-              <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
-                <div style={{display:"grid",gridTemplateColumns:"90px 1fr 90px 90px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
-                  <span>Fecha</span><span>Concepto</span><span style={{textAlign:"right"}}>Monto</span><span style={{textAlign:"right"}}>Saldo</span>
-                </div>
-                <div style={{maxHeight:320,overflowY:"auto"}}>
-                  {envMovs.movimientos.map((m,i)=>{
-                    const esCredito=m.tipo==="credito"||m.tipo==="reverso";
-                    const concepto=m.nota||(m.tipo==="debito"?`Etiqueta ${m.numeroDeEnvio||""}`.trim():m.tipo==="reverso"?"Reverso":"Carga de saldo");
-                    return (
-                      <div key={i} style={{display:"grid",gridTemplateColumns:"90px 1fr 90px 90px",gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<envMovs.movimientos.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
-                        <span style={{color:T.textSm,fontSize:11}}>{ghFmtTs(m.ts)}</span>
-                        <span style={{color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={concepto}>{concepto}</span>
-                        <span style={{textAlign:"right",fontWeight:700,color:esCredito?T.green:T.red}}>{esCredito?"+":"−"}{fmtMoney(Math.abs(m.monto||0))}</span>
-                        <span style={{textAlign:"right",color:T.textMd}}>{fmtMoney(m.saldoDespues)}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </Modal>
-        </div>
-      )}
-
+      {cuenta&&usuariosPorUid[cuenta]&&<AdmFicha ctx={ctx} u={usuariosPorUid[cuenta]} onClose={()=>setCuenta(null)} iS={iS} lbl={lbl} chip={chip} confirmarPago={confirmarPago} rechazarPago={rechazarPago}/>}
     </div>
   );
 }
 
+// ── Resumen ──────────────────────────────────────────────────────────────────
+function AdmResumen({ctx, stats, usuarios, pagos, pagosReales, pagosPendientes, envCargas, resolverCarga, confirmarPago, rechazarPago, verComprobante, confirmMeses, setConfirmMeses, vencenProximos, pastDue, vencidasPagas, pruebasPorVencer, ingresosMes, esNueva, esUsd, cardTitle, chip, cuentaBtn, activaPaga}) {
+  const {T, setCuenta} = ctx;
+  const ahora=Date.now();
+  const mesLabel=admMesLabel(admMesKey(ahora));
+  const ingUsd=ingresosMes.filter(esUsd).reduce((s,p)=>s+p.amount,0);
+  const nuevasMes=ingresosMes.filter(esNueva).length;
+  const altasMes=usuarios.filter(u=>u.createdAt&&admMesKey(u.createdAt)===admMesKey(ahora)).length;
+  const churn=vencidasPagas.filter(u=>(admDias(u.planExpiry)??0)< -3);
+  const kpis=[
+    {label:"MRR",val:admUsd(stats.mrr||0),sub:`${stats.mrrStripe?admUsd(stats.mrrStripe)+" por Stripe":"Sin cobros por Stripe"}${stats.mrrManual?" · "+admUsd(stats.mrrManual)+" manual":""}`,color:T.green,n:stats.mrr},
+    {label:"Cuentas pagas",val:String(stats.pagas||0),sub:`${stats.pruebas||0} en prueba · ${stats.totalUsuarios||0} cuentas en total`,color:T.blue,n:stats.pagas},
+    {label:"Pagos fallidos",val:String(pastDue.length),sub:pastDue.length?"Stripe no pudo cobrar la renovación":"Ninguna tarjeta rechazada",color:T.red,n:pastDue.length},
+    {label:"Vencen en 7 días",val:String(vencenProximos.length),sub:vencenProximos.length?`${vencenProximos.filter(u=>u.stripeStatus==="active"&&!u.cancelAtPeriodEnd).length} se renuevan solas por Stripe`:"Sin vencimientos próximos",color:T.yellow,n:vencenProximos.length},
+    {label:`Ingresos de ${mesLabel.split(" ")[0].toLowerCase()}`,val:admUsd(ingUsd),sub:`${ingresosMes.length} pago${ingresosMes.length===1?"":"s"} · ${nuevasMes} nueva${nuevasMes===1?"":"s"} · ${altasMes} alta${altasMes===1?"":"s"}`,color:T.accent,n:ingUsd},
+  ];
+  // Cola de atención: una sola lista con todo lo accionable.
+  const items=[];
+  envCargas.forEach(c=>items.push({k:"carga_"+c.id,sev:"red",tipo:"Carga de saldo",titulo:c.email||c.uid,desc:`${fmtMoney(c.monto)} · ref ${c.ref||c.codigo||"—"} · ${c.ts?admRel(c.ts):""}${c.estado==="revision"?" · monto de MP distinto, revisar":""}`,acciones:<><AsyncButton onClick={()=>resolverCarga(c,true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>Acreditar</AsyncButton><AsyncButton onClick={()=>resolverCarga(c,false)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.red,borderColor:T.red+"66"}}>Rechazar</AsyncButton></>}));
+  pastDue.forEach(u=>items.push({k:"pd_"+u._id,sev:"red",tipo:"Pago fallido",titulo:u.email,desc:`Stripe no pudo cobrar ${admPlanLabel(u.plan)}${u.stripePaymentFailedAt?" · "+admRel(u.stripePaymentFailedAt):""}. Stripe reintenta solo; si no paga, se cancela.`,acciones:<><Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cuenta</Btn>{u.stripeCustomerId&&<a href={`https://dashboard.stripe.com/customers/${u.stripeCustomerId}`} target="_blank" rel="noreferrer" style={{fontSize:12,color:T.accent,fontWeight:600,textDecoration:"none",padding:"5px 8px"}}>Abrir en Stripe</a>}</>}));
+  pagosPendientes.forEach(p=>{
+    const u=usuarios.find(x=>x._id===p.uid);
+    items.push({k:"pago_"+p._id,sev:"red",tipo:"Pago manual",titulo:u?.email||p.email||p.uid,desc:`${admPlanLabel(p.plan)}${p.periodo==="anual"?" anual":""} · ${p.amount>0?"$"+p.amount+" "+(p.currency||""):""}${p.method==="cripto"?" USDT":p.method==="stripe"?" tarjeta":" transferencia"}${p.transferRef?" · ref "+p.transferRef:""}${p.txHash?" · tx "+String(p.txHash).slice(0,10)+"…":""} · ${admFecha(p.createdAt,true)}${p.autoCheckMotivo?" · bot: "+(p.autoCheckMotivo==="txid_no_encontrado"?"TxID no está en la blockchain":p.autoCheckMotivo==="ambiguo"?"monto ambiguo":p.autoCheckMotivo==="ya_activado_manualmente"?"ya activado a mano, rechazar":"sin match"):""}`,
+      acciones:<>{p.tieneComprobante&&<AsyncButton onClick={()=>verComprobante(p)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>Comprobante</AsyncButton>}<select value={confirmMeses[p._id]||String(p.meses||1)} onChange={e=>setConfirmMeses(prev=>({...prev,[p._id]:e.target.value}))} style={{...InputStyle(T),padding:"6px 8px",fontSize:12,width:"auto",marginBottom:0}}>{["1","2","3","6","12"].map(m=><option key={m} value={m}>{m} m</option>)}</select><AsyncButton onClick={()=>confirmarPago(p)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>Confirmar</AsyncButton><AsyncButton onClick={()=>rechazarPago(p._id)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.red,borderColor:T.red+"66"}}>Rechazar</AsyncButton></>});
+  });
+  pruebasPorVencer.forEach(u=>items.push({k:"pr_"+u._id,sev:"yellow",tipo:"Prueba por vencer",titulo:u.email,desc:`${admPlanLabel(u.plan)} de prueba vence ${admDias(u.planExpiry)===0?"hoy":"en "+admDias(u.planExpiry)+" días"} y no pagó. Buen momento para escribirle.`,acciones:<><Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cuenta</Btn></>}));
+  churn.forEach(u=>items.push({k:"ch_"+u._id,sev:"yellow",tipo:"Vencida sin renovar",titulo:u.email,desc:`${admPlanLabel(u.plan)} venció hace ${Math.abs(admDias(u.planExpiry))} días${u.stripeStatus==="canceled"?" · canceló en Stripe":""}. Riesgo de pérdida.`,acciones:<><Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cuenta</Btn></>}));
+  const recent=[...pagos].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,10);
+  const metodo=p=>p.isTrial?"prueba":p.method==="stripe"?"tarjeta":p.method==="cripto"?"USDT":p.method==="credito"?"crédito":p.method==="prueba"?"prueba":"transferencia";
+  return (
+    <>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:16}}>
+        {kpis.map(k=>(
+          <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:4}}>
+            <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{width:7,height:7,borderRadius:"50%",background:k.n?k.color:T.border,flexShrink:0}}/><span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{k.label}</span></div>
+            <div style={{fontSize:20,fontWeight:800,color:k.n?T.text:T.textSm,letterSpacing:-0.5,lineHeight:1.2,fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
+            <div style={{fontSize:11,color:T.textSm,lineHeight:1.4}}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+      <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(280px,1fr)",gap:16,alignItems:"start"}}>
+        <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+          <Card T={T} padding="lg">
+            {cardTitle("Requiere tu atención", items.length?`${items.length} pendiente${items.length===1?"":"s"}, lo urgente primero.`:"Nada pendiente.", items.length>0&&chip(`${items.length}`,T.red))}
+            {items.length===0?(
+              <div style={{padding:"18px 0",textAlign:"center",fontSize:13,color:T.textSm}}>Todo al día. Las cargas de saldo, los pagos fallidos y las pruebas por vencer aparecen acá.</div>
+            ):(
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {items.sort((a,b)=>(a.sev==="red"?0:1)-(b.sev==="red"?0:1)).map(it=>(
+                  <div key={it.k} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",background:T.surface,border:`1px solid ${T.borderL}`,borderLeft:`3px solid ${it.sev==="red"?T.red:T.yellow}`,borderRadius:8,flexWrap:"wrap"}}>
+                    <div style={{flex:1,minWidth:200}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>{chip(it.tipo,it.sev==="red"?T.red:T.yellow)}<span style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.titulo}</span></div>
+                      <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>{it.desc}</div>
+                    </div>
+                    <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0,flexWrap:"wrap"}}>{it.acciones}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+          <Card T={T} padding="lg">
+            {cardTitle("Actividad reciente","Últimos movimientos de suscripciones.")}
+            {recent.length===0?<div style={{fontSize:12,color:T.textSm}}>Sin movimientos todavía.</div>:(
+              <div style={{display:"flex",flexDirection:"column"}}>
+                {recent.map((p,i)=>{ const u=usuarios.find(x=>x._id===p.uid); const est=p.estado; return (
+                  <div key={p._id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<recent.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap",fontSize:12}}>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:p.isTrial?T.yellow:est==="confirmado"?T.green:est==="rechazado"?T.red:T.textSm,flexShrink:0}}/>
+                    <span style={{flex:1,minWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u?cuentaBtn(u):<span style={{color:T.text}}>{p.email||p.uid}</span>}</span>
+                    {chip(admPlanLabel(p.plan),admPlanColor(T,p.plan))}
+                    <span style={{color:T.textMd}}>{p.isTrial?"prueba":`${admUsd(p.amount).replace("US$ ",esUsd(p)?"US$ ":"$")}${esUsd(p)?"":" "+p.currency} · ${metodo(p)}${p.billingReason==="subscription_create"?" · alta":p.billingReason==="subscription_cycle"?" · renovación":""}`}</span>
+                    <span style={{color:est==="confirmado"?T.green:est==="pendiente"?T.yellow:T.red,fontWeight:600}}>{p.isTrial?"otorgada":est}</span>
+                    <span style={{color:T.textSm,whiteSpace:"nowrap"}}>{admFecha(p.createdAt)}</span>
+                  </div>
+                );})}
+              </div>
+            )}
+          </Card>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+          <Card T={T} padding="lg">
+            {cardTitle("Vencen esta semana", vencenProximos.length?"Por Stripe se renuevan solas; las manuales hay que cobrarlas.":"Sin vencimientos en los próximos 7 días.")}
+            {vencenProximos.length>0&&(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {vencenProximos.sort((a,b)=>(a.planExpiry||0)-(b.planExpiry||0)).slice(0,12).map(u=>{ const d=admDias(u.planExpiry); const auto=u.stripeStatus==="active"&&!u.cancelAtPeriodEnd; return (
+                  <div key={u._id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                    <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cuentaBtn(u)}</span>
+                    {chip(admPlanLabel(u.plan),admPlanColor(T,u.plan))}
+                    <span style={{color:d<=2?T.red:T.yellow,whiteSpace:"nowrap",fontWeight:600}}>{d===0?"hoy":`${d} d`}</span>
+                    <span style={{fontSize:10,color:auto?T.green:T.textSm,whiteSpace:"nowrap"}}>{auto?"Stripe":u.isTrial?"prueba":"manual"}</span>
+                  </div>
+                );})}
+              </div>
+            )}
+          </Card>
+          <Card T={T} padding="lg">
+            {cardTitle("Suscripciones","Cómo se reparten las cuentas activas.")}
+            {(()=>{
+              const act=usuarios.filter(activaPaga);
+              const porPlan=["plus","medio","facturador"].map(p=>({p,n:act.filter(u=>(u.plan==="full"?"plus":u.plan)===p).length}));
+              const total=act.length||1;
+              return (
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {porPlan.map(x=>(
+                    <div key={x.p}>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span style={{color:T.text,fontWeight:600}}>{ADM_PRECIOS[x.p].nombre}</span><span style={{color:T.textMd}}>{x.n} · {admUsd(x.n*ADM_PRECIOS[x.p].mensual)}/mes lista</span></div>
+                      <div style={{height:6,borderRadius:3,background:T.surface,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.round(x.n/total*100)}%`,background:admPlanColor(T,x.p),borderRadius:3}}/></div>
+                    </div>
+                  ))}
+                  <div style={{fontSize:11,color:T.textSm,marginTop:4,lineHeight:1.5}}>{stats.cancelan?`${stats.cancelan} cancela${stats.cancelan===1?"":"n"} al terminar el período. `:""}{stats.pruebas?`${stats.pruebas} en prueba otorgada.`:""}</div>
+                </div>
+              );
+            })()}
+          </Card>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Cuentas (tabla) ──────────────────────────────────────────────────────────
+function AdmCuentas({ctx, cardTitle, chip, cuentaBtn, iS, loadData}) {
+  const {T, usuarios, ultPagoPorUid, adminApi, setCuenta} = ctx;
+  const [filtro,setFiltro]=useState("todas");
+  const [q,setQ]=useState("");
+  const [orden,setOrden]=useState("atencion");
+  const [limite,setLimite]=useState(50);
+  const [diag,setDiag]=useState(null);
+  const ahora=Date.now();
+  const inactiva=u=>!u.ultimoLogin||ahora-u.ultimoLogin>30*86400000;
+  const FILTROS=[
+    ["todas","Todas",u=>true],
+    ["pagas","Pagas",u=>admEstado(T,u).id==="paga"||admEstado(T,u).id==="cancela"],
+    ["plus","Pro",u=>(u.plan==="plus"||u.plan==="full")&&!u.isTrial],
+    ["medio","Intermedio",u=>u.plan==="medio"&&!u.isTrial],
+    ["facturador","Facturador",u=>u.plan==="facturador"&&!u.isTrial],
+    ["prueba","En prueba",u=>u.isTrial&&(u.plan||"free")!=="free"],
+    ["vencidas","Vencidas",u=>["vencida","prueba_vencida"].includes(admEstado(T,u).id)],
+    ["past_due","Pago fallido",u=>u.stripeStatus==="past_due"],
+    ["free","Sin plan",u=>(u.plan||"free")==="free"],
+    ["inactivas","Inactivas 30 d",u=>inactiva(u)],
+    ["admins","Admins",u=>u.isAdmin],
+  ];
+  const conteo=Object.fromEntries(FILTROS.map(([id,,fn])=>[id,usuarios.filter(fn).length]));
+  const fn=FILTROS.find(f=>f[0]===filtro)?.[2]||(()=>true);
+  const qq=q.trim().toLowerCase();
+  const rank=u=>{ const e=admEstado(T,u).id; return e==="past_due"?0:e==="vencida"?1:e==="prueba_vencida"?2:e==="cancela"?3:e==="prueba"?4:e==="paga"?5:e==="trial"?6:7; };
+  const lista=usuarios.filter(fn).filter(u=>!qq||(u.email||"").toLowerCase().includes(qq)||(u.nombre||"").toLowerCase().includes(qq)||u._id===q.trim()||(u.stores||[]).some(s=>(s.name||"").toLowerCase().includes(qq)))
+    .sort((a,b)=>{
+      if(orden==="atencion"){ const r=rank(a)-rank(b); if(r) return r; return (a.planExpiry||9e15)-(b.planExpiry||9e15); }
+      if(orden==="login") return (b.ultimoLogin||0)-(a.ultimoLogin||0);
+      if(orden==="alta") return (b.createdAt||0)-(a.createdAt||0);
+      if(orden==="vence") return (a.planExpiry||9e15)-(b.planExpiry||9e15);
+      return (a.email||"").localeCompare(b.email||"");
+    });
+  const integr=u=>[...(u.stores||[]).map(s=>s.type),...(u.cuits?["arca"]:[]),...(u.metaAccounts?["meta"]:[])];
+  function exportar(){
+    const filas=[["Email","Nombre","Plan","Estado","Origen","Vence","Último login","Alta","Integraciones","Miembros","Stripe","Cancela al vencer","Referido por","Crédito referidos USD","Nota"]];
+    lista.forEach(u=>filas.push([u.email,u.nombre,admPlanLabel(u.plan),admEstado(T,u).label,admOrigen(u,ultPagoPorUid[u._id]).label,u.planExpiry?admFecha(u.planExpiry):"",u.ultimoLogin?admFecha(u.ultimoLogin):"",u.createdAt?admFecha(u.createdAt):"",integr(u).join(" "),(u.teamMembers||[]).length,u.stripeStatus||"",u.cancelAtPeriodEnd?"sí":"",u.refBy?(ctx.usuariosPorUid[u.refBy]?.email||u.refBy):"",u.refCreditUsd||0,u.adminNote||""]));
+    admCsvDescargar(`growith-cuentas-${new Date().toISOString().slice(0,10)}.csv`,filas);
+  }
+  const cols="minmax(200px,2fr) 90px 110px 100px 95px 100px 90px 60px";
+  return (
+    <Card T={T} padding="lg">
+      {cardTitle("Cuentas",`${lista.length} de ${usuarios.length}`,(
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <select value={orden} onChange={e=>setOrden(e.target.value)} style={{...iS,width:"auto",marginBottom:0,padding:"6px 10px",fontSize:12}}>
+            <option value="atencion">Orden: requiere atención</option><option value="login">Orden: último login</option><option value="alta">Orden: alta más reciente</option><option value="vence">Orden: vencimiento</option><option value="email">Orden: email</option>
+          </select>
+          <Btn T={T} variant="secondary" size="sm" onClick={exportar}>Exportar CSV</Btn>
+        </div>
+      ))}
+      <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
+        <input style={{...iS,fontSize:13,flex:1,minWidth:200,maxWidth:360,marginBottom:0}} placeholder="Buscar por email, nombre, tienda o uid" value={q} onChange={e=>{setQ(e.target.value);setLimite(50);}}/>
+      </div>
+      <div className="no-scrollbar" style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto",paddingBottom:2}}>
+        {FILTROS.map(([id,label])=>(
+          <button key={id} onClick={()=>{setFiltro(id);setLimite(50);}} style={{padding:"5px 11px",borderRadius:DS.r.full,fontSize:12,border:`1px solid ${filtro===id?T.accentSolid+"66":T.border}`,background:filtro===id?T.accentSolid+"18":"transparent",color:filtro===id?T.accent:T.textMd,fontWeight:filtro===id?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+            {label} <span style={{opacity:0.7,fontSize:11}}>{conteo[id]}</span>
+          </button>
+        ))}
+      </div>
+      {lista.length===0?(
+        <div style={{textAlign:"center",padding:32,color:T.textSm,fontSize:13}}>
+          <div style={{marginBottom:10}}>Sin cuentas en este filtro.</div>
+          {q.includes("@")&&<AsyncButton onClick={async()=>{ setDiag(null); const d=await adminApi({action:"adminBuscarCuenta",email:q.trim()}); setDiag({email:q.trim(),...d}); if(d?.creoDoc) loadData(true); }} style={{...BtnSecondary(T),fontSize:12}}>Buscar este email en Firebase Auth</AsyncButton>}
+        </div>
+      ):(
+        <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto"}}>
+          <div style={{minWidth:900}}>
+            <div style={{display:"grid",gridTemplateColumns:cols,gap:10,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
+              <span>Cuenta</span><span>Plan</span><span>Estado</span><span>Origen</span><span>Vence</span><span>Último login</span><span>Integraciones</span><span style={{textAlign:"right"}}>Equipo</span>
+            </div>
+            {lista.slice(0,limite).map((u,i)=>{
+              const est=admEstado(T,u); const org=admOrigen(u,ultPagoPorUid[u._id]); const d=admDias(u.planExpiry);
+              return (
+                <div key={u._id} onClick={()=>setCuenta(u._id)} style={{display:"grid",gridTemplateColumns:cols,gap:10,padding:"9px 12px",fontSize:12,borderBottom:i<Math.min(lista.length,limite)-1?`1px solid ${T.borderL}`:"none",alignItems:"center",cursor:"pointer"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <span style={{minWidth:0}}>
+                    <span style={{display:"block",color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email||u.nombre||u._id}{u.isAdmin&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:4,background:T.purpleBg,color:T.purple,verticalAlign:"middle"}}>ADMIN</span>}</span>
+                    <span style={{display:"block",fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.nombre&&u.nombre!==u.email?u.nombre:""}{u._sinDoc?" · sin registro completo":""}{u.adminNote?" · nota":""}</span>
+                  </span>
+                  <span>{chip(admPlanLabel(u.plan),admPlanColor(T,u.plan))}</span>
+                  <span>{chip(est.label,est.color)}</span>
+                  <span style={{color:T.textMd}}>{org.label}</span>
+                  <span style={{color:d===null||(u.plan||"free")==="free"?T.textSm:d<0?T.red:d<=7?T.yellow:T.textMd,whiteSpace:"nowrap"}}>{(u.plan||"free")==="free"||!u.planExpiry?"—":d<0?`hace ${Math.abs(d)} d`:d===0?"hoy":`${d} d`}</span>
+                  <span style={{color:inactiva(u)?T.textSm:T.textMd,whiteSpace:"nowrap"}}>{admRel(u.ultimoLogin)}</span>
+                  <span style={{display:"flex",gap:4,alignItems:"center"}}>{integr(u).length===0?<span style={{color:T.textSm}}>—</span>:integr(u).slice(0,4).map((t,k)=><span key={k} title={t} style={{display:"inline-flex"}}><BrandIcon name={t} size={14}/></span>)}</span>
+                  <span style={{textAlign:"right",color:(u.teamMembers||[]).length?T.textMd:T.textSm}}>{(u.teamMembers||[]).length||"—"}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {diag&&(
+        <div style={{background:T.surface,border:`1px solid ${diag.encontrado?T.green+"55":T.yellow+"55"}`,borderRadius:10,padding:"10px 14px",marginTop:12,fontSize:12,color:T.text,lineHeight:1.7}}>
+          <div style={{fontWeight:700}}>{diag.email}</div>
+          {diag.encontrado?<>
+            <div>Registrada en Firebase Auth {diag.creado?`el ${new Date(diag.creado).toLocaleDateString("es-AR")}`:""} {diag.providers?.length?`· acceso: ${diag.providers.join(", ").replace("password","email/contraseña").replace("google.com","Google")}`:""}</div>
+            <div>Último login: {diag.ultimoLogin?new Date(diag.ultimoLogin).toLocaleDateString("es-AR"):"nunca"} · plan actual: {admPlanLabel(diag.plan)}</div>
+            {diag.creoDoc&&<div style={{color:T.green,fontWeight:600}}>No tenía ficha en la base. Se creó recién: ya aparece en la lista.</div>}
+          </>:<div style={{color:T.yellow}}>{diag.motivo||"No encontrada."}</div>}
+          <button onClick={()=>setDiag(null)} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:11,padding:0,marginTop:4,fontFamily:"'Inter',system-ui,sans-serif"}}>Cerrar</button>
+        </div>
+      )}
+      {lista.length>limite&&<div style={{textAlign:"center",paddingTop:14}}><Btn T={T} variant="secondary" size="sm" onClick={()=>setLimite(n=>n+50)}>Ver 50 más ({lista.length-limite} restantes)</Btn></div>}
+    </Card>
+  );
+}
+
+// ── Ficha de cuenta (drawer) ─────────────────────────────────────────────────
+function AdmFicha({ctx, u, onClose, iS, lbl, chip, confirmarPago, rechazarPago}) {
+  const {T, founder, pagos, usuariosPorUid, ultPagoPorUid, envCfg, adminApi, gestionarPlan, ajustarDias, desactivarPlan, saveNote, toggleAdmin, toggleEnviosSaldo, verComoCliente} = ctx;
+  const [plan,setPlan]=useState(u.plan==="facturador"||u.plan==="medio"?u.plan:"plus");
+  const [cant,setCant]=useState("1");
+  const [unidad,setUnidad]=useState("meses");
+  const [dias,setDias]=useState("");
+  const [nota,setNota]=useState(null);
+  const [act,setAct]=useState({loading:true,secciones:[]});
+  useEffect(()=>{ let vivo=true; setAct({loading:true,secciones:[]}); adminApi({action:"adminGetActividad",targetUid:u._id}).then(d=>{ if(vivo) setAct({loading:false,secciones:d.secciones||[],desde:d.desde}); }).catch(e=>{ if(vivo) setAct({loading:false,secciones:[],error:e.message}); }); return ()=>{vivo=false;}; },[u._id]);
+  useEffect(()=>{ const h=e=>{ if(e.key==="Escape") onClose(); }; window.addEventListener("keydown",h); return ()=>window.removeEventListener("keydown",h); },[]);
+  const est=admEstado(T,u); const org=admOrigen(u,ultPagoPorUid[u._id]); const d=admDias(u.planExpiry);
+  const userPagos=pagos.filter(p=>p.uid===u._id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const reales=userPagos.filter(p=>!p.isTrial&&p.estado==="confirmado"&&p.amount>0);
+  const referidos=Object.values(usuariosPorUid).filter(x=>x.refBy===u._id);
+  const hab=(envCfg?.habilitados||[]).includes(u._id);
+  const sec=(t,children)=><div style={{padding:"14px 18px",borderBottom:`1px solid ${T.borderL}`}}>{lbl(t)}{children}</div>;
+  const fila=(k,v)=><div style={{display:"flex",justifyContent:"space-between",gap:12,fontSize:12,padding:"3px 0"}}><span style={{color:T.textSm}}>{k}</span><span style={{color:T.text,textAlign:"right",minWidth:0,overflowWrap:"anywhere"}}>{v}</span></div>;
+  return ReactDOM.createPortal(
+    <>
+      <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.5)",animation:"growith-fadeInFast 0.15s ease both"}}/>
+      <div style={{position:"fixed",top:0,right:0,bottom:0,zIndex:1201,width:"min(640px,100vw)",background:T.bg,borderLeft:`1px solid ${T.border}`,boxShadow:"-24px 0 60px rgba(0,0,0,0.45)",overflowY:"auto",animation:"growith-fadeInLeft 0.18s ease both",fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <div style={{position:"sticky",top:0,zIndex:5,display:"flex",alignItems:"center",gap:10,padding:"14px 18px",background:T.card,borderBottom:`1px solid ${T.border}`}}>
+          <div style={{width:34,height:34,borderRadius:"50%",background:admPlanColor(T,u.plan)+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:admPlanColor(T,u.plan),flexShrink:0}}>{(u.email||u.nombre||"?")[0].toUpperCase()}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email||u.nombre}</div>
+            <div style={{display:"flex",gap:6,alignItems:"center",marginTop:3,flexWrap:"wrap"}}>{chip(admPlanLabel(u.plan),admPlanColor(T,u.plan))}{chip(est.label,est.color)}{u.isAdmin&&chip("Admin",T.purple)}</div>
+          </div>
+          <Btn T={T} variant="secondary" size="sm" onClick={()=>verComoCliente(u)}>Ver como cliente</Btn>
+          <ModalCloseBtn T={T} onClick={onClose}/>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))"}}>
+          <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.borderL}`}}>
+            {lbl("Suscripción")}
+            {(u.plan||"free")==="free"?(
+              <div style={{fontSize:12,color:T.textSm,lineHeight:1.6}}>Sin plan.{u.trialEnd?` Trial inicial ${admDias(u.trialEnd)>=0?"vence el":"venció el"} ${admFecha(u.trialEnd)}.`:""}</div>
+            ):(<>
+              {fila("Vence",<span style={{color:d<0?T.red:d<=7?T.yellow:T.text,fontWeight:600}}>{u.planExpiry?`${admFecha(u.planExpiry)} (${d<0?`hace ${Math.abs(d)} d`:d===0?"hoy":`en ${d} d`})`:"sin fecha"}</span>)}
+              {fila("Origen",org.label)}
+              {u.stripeStatus&&fila("Stripe",<span>{u.stripeStatus==="active"?"suscripción activa":u.stripeStatus==="past_due"?"pago fallido":u.stripeStatus==="canceled"?"cancelada":u.stripeStatus}{u.cancelAtPeriodEnd?" · cancela al vencer":""}</span>)}
+              {u.stripeCustomerId&&fila("Cliente Stripe",<a href={`https://dashboard.stripe.com/customers/${u.stripeCustomerId}`} target="_blank" rel="noreferrer" style={{color:T.accent,fontWeight:600,textDecoration:"none"}}>Abrir en Stripe</a>)}
+              {u.planActivadoAt&&fila("Activado",`${admFecha(u.planActivadoAt)}${u.planActivadoBy==="stripe"?" por Stripe":u.planActivadoBy?" por admin":""}`)}
+              {fila("Pagos reales",<span>{reales.length}{reales.length?` · ${admUsd(reales.filter(p=>p.currency==="USD"||p.currency==="USDT").reduce((s,p)=>s+p.amount,0))} en total`:""}</span>)}
+            </>)}
+          </div>
+          <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.borderL}`}}>
+            {lbl("Cuenta")}
+            {fila("Alta",u.createdAt?`${admFecha(u.createdAt)} (${admRel(u.createdAt)})`:"—")}
+            {fila("Último login",<span style={{color:!u.ultimoLogin||Date.now()-u.ultimoLogin>30*86400000?T.yellow:T.text}}>{u.ultimoLogin?`${admFecha(u.ultimoLogin)} (${admRel(u.ultimoLogin)})`:"nunca"}</span>)}
+            {u.providers?.length>0&&fila("Acceso",u.providers.map(p=>p==="password"?"email y contraseña":p==="google.com"?"Google":p).join(", "))}
+            {fila("Integraciones",<span style={{display:"inline-flex",gap:5,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>{(u.stores||[]).length===0&&!u.cuits&&!u.metaAccounts?<span style={{color:T.textSm}}>ninguna</span>:<>{(u.stores||[]).map((s,i)=><span key={i} title={`${s.type}${s.name?" · "+s.name:""}`} style={{display:"inline-flex"}}><BrandIcon name={s.type} size={15}/></span>)}{u.cuits>0&&<span title={`ARCA · ${u.cuits} CUIT`} style={{display:"inline-flex"}}><BrandIcon name="arca" size={15}/></span>}{u.metaAccounts>0&&<span title="Meta Ads" style={{display:"inline-flex"}}><BrandIcon name="meta" size={15}/></span>}</>}</span>)}
+            {fila("Onboarding",u.onbDone?"completado":u._sinDoc?"nunca entró a la app":"sin completar")}
+            {fila("UID",<button onClick={()=>{try{navigator.clipboard.writeText(u._id);toast("UID copiado","success");}catch(_){appAlert(u._id);}}} title={u._id} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,color:T.textSm,cursor:"pointer",padding:"1px 8px",fontSize:10,fontFamily:"'Inter',system-ui,sans-serif"}}>{u._id.slice(0,10)}… copiar</button>)}
+          </div>
+        </div>
+
+        {sec("Equipo",(u.teamMembers||[]).length===0?<div style={{fontSize:12,color:T.textSm}}>Sin miembros de equipo.</div>:(
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {(u.teamMembers||[]).map(m=>(
+              <div key={m.uid} style={{display:"flex",gap:8,alignItems:"center",fontSize:12,flexWrap:"wrap"}}>
+                <span style={{color:T.text,fontWeight:600}}>{m.email||m.nombre||m.uid}</span>
+                <span style={{color:T.textSm}}>{m.secciones.length?m.secciones.join(", "):"sin secciones"}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+
+        {sec("Referidos",(
+          <div>
+            {fila("Código",u.refCode||"—")}
+            {fila("Referido por",u.refBy?(usuariosPorUid[u.refBy]?.email||u.refBy):"—")}
+            {fila("Trajo",referidos.length?`${referidos.length} cuenta${referidos.length===1?"":"s"} (${referidos.filter(x=>(x.plan||"free")!=="free"&&!x.isTrial).length} pagan)`:"nadie todavía")}
+            {fila("Crédito disponible",admUsd(u.refCreditUsd||0))}
+            {fila("Ganado en total",admUsd(u.refGanadoUsd||0))}
+          </div>
+        ))}
+
+        {sec("Actividad en los últimos 30 días",(
+          act.loading?<div style={{fontSize:12,color:T.textSm,display:"flex",gap:8,alignItems:"center"}}><Spinner size={13} color={T.accent}/> Cargando actividad</div>
+          :act.error?<div style={{fontSize:12,color:T.red}}>{act.error}</div>
+          :(()=>{
+            const usa=act.secciones.filter(s=>s.n>0); const noUsa=act.secciones.filter(s=>!s.n);
+            return (
+              <div>
+                {usa.length===0?<div style={{fontSize:12,color:T.textSm,marginBottom:6}}>Sin actividad registrada en ninguna sección este mes.</div>:(
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:8,marginBottom:8}}>
+                    {usa.map(s=>(
+                      <div key={s.id} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 10px"}}>
+                        <div style={{fontSize:11,color:T.textSm,fontWeight:600}}>{s.label}</div>
+                        <div style={{fontSize:15,fontWeight:800,color:T.text}}>{s.n} <span style={{fontSize:10,fontWeight:500,color:T.textSm}}>{s.unidad}</span></div>
+                        <div style={{fontSize:10,color:T.textSm}}>{s.ultima?admRel(s.ultima):""}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {noUsa.length>0&&<div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>No usó: {noUsa.map(s=>s.label+(s.total?` (${s.total} histórico)`:"")).join(", ")}.</div>}
+              </div>
+            );
+          })()
+        ))}
+
+        {sec("Gestionar suscripción",(
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px"}}>
+              <div style={{fontSize:12.5,fontWeight:700,color:T.text,marginBottom:8}}>{(u.plan||"free")==="free"?"Activar un plan":"Renovar o cambiar el plan"}</div>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                <select value={plan} onChange={e=>setPlan(e.target.value)} style={{...iS,fontSize:12,padding:"6px 10px",width:"auto",marginBottom:0}}>
+                  <option value="plus">Pro</option><option value="medio">Intermedio</option><option value="facturador">Facturador</option>
+                </select>
+                <span style={{fontSize:12,color:T.textMd}}>durante</span>
+                <input type="number" min="1" value={cant} onChange={e=>setCant(e.target.value)} style={{...iS,fontSize:12,width:60,textAlign:"center",marginBottom:0}}/>
+                <select value={unidad} onChange={e=>setUnidad(e.target.value)} style={{...iS,fontSize:12,padding:"6px 10px",width:"auto",marginBottom:0}}><option value="meses">mes(es)</option><option value="dias">día(s)</option></select>
+                <AsyncButton onClick={()=>gestionarPlan(u._id,plan,cant,unidad,false)} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Activar como pago</AsyncButton>
+                <AsyncButton onClick={()=>gestionarPlan(u._id,plan,cant,unidad,true)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.yellow,borderColor:T.yellow+"44"}}>Dar como prueba</AsyncButton>
+              </div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:8,lineHeight:1.5}}>El tiempo se suma al vencimiento actual (si está vencida, arranca desde hoy). "Dar como prueba" no cuenta como ingreso.{u.stripeStatus==="active"?" Esta cuenta cobra por Stripe: lo que actives a mano se pisa en la próxima renovación.":""}</div>
+            </div>
+            {(u.plan||"free")!=="free"&&(
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px"}}>
+                <div style={{fontSize:12.5,fontWeight:700,color:T.text,marginBottom:8}}>Corregir el vencimiento</div>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+                  {[-30,-7,-1,1,7,30].map(x=><AsyncButton key={x} onClick={()=>ajustarDias(u._id,x)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:x<0?T.red:T.green}}>{x>0?"+":""}{x} d</AsyncButton>)}
+                  <input type="number" value={dias} onChange={e=>setDias(e.target.value)} onKeyDown={e=>e.key==="Enter"&&ajustarDias(u._id,dias).then(()=>setDias(""))} placeholder="± días" style={{...iS,fontSize:11,width:70,textAlign:"center",marginBottom:0}}/>
+                  <AsyncButton onClick={async()=>{await ajustarDias(u._id,dias);setDias("");}} style={{...BtnSecondary(T),fontSize:11,padding:"4px 12px"}}>Aplicar</AsyncButton>
+                </div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:8}}>Mueve la fecha actual ({admFecha(u.planExpiry)}) sin registrar ningún pago.</div>
+              </div>
+            )}
+            {(u.plan||"free")!=="free"&&(
+              <div style={{border:`1px solid ${T.red}33`,borderRadius:10,padding:"11px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+                <div><div style={{fontSize:12.5,fontWeight:700,color:T.red}}>Desactivar plan</div><div style={{fontSize:11,color:T.textSm,marginTop:2}}>Pasa a Free ahora mismo. No borra datos ni historial.{u.stripeStatus==="active"?" No cancela la suscripción en Stripe: hacelo desde Stripe.":""}</div></div>
+                <AsyncButton onClick={()=>desactivarPlan(u._id)} style={{...BtnDanger(T),fontSize:11,padding:"6px 14px",flexShrink:0}}>Desactivar</AsyncButton>
+              </div>
+            )}
+          </div>
+        ))}
+
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.borderL}`,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
+          <div>
+            {lbl("Nota interna")}
+            {nota!==null?(
+              <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                <textarea value={nota} onChange={e=>setNota(e.target.value)} style={{...iS,fontSize:12,minHeight:56,resize:"vertical",flex:1,marginBottom:0}} placeholder="Ej: pagó tarde, le regalamos 7 días"/>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <AsyncButton onClick={async()=>{await saveNote(u._id,nota);setNota(null);}} style={{...BtnPrimary(T),fontSize:11,padding:"5px 12px"}}>Guardar</AsyncButton>
+                  <button onClick={()=>setNota(null)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>Cancelar</button>
+                </div>
+              </div>
+            ):(
+              <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                <div style={{fontSize:12,color:u.adminNote?T.text:T.textSm,flex:1,fontStyle:u.adminNote?"normal":"italic",lineHeight:1.5}}>{u.adminNote||"Sin nota"}{u.adminNote&&u.adminNoteAt&&<span style={{color:T.textSm,fontSize:10}}> · {admFecha(u.adminNoteAt)}</span>}</div>
+                <button onClick={()=>setNota(u.adminNote||"")} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",flexShrink:0}}>Editar</button>
+              </div>
+            )}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+              <div><div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4}}>Envíos con saldo</div><div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>{hab?"Habilitado: ve saldo, cargas y etiquetas prepagas.":"Etiquetas prepagas de Andreani."}</div></div>
+              <DSToggle T={T} active={hab} onToggle={()=>toggleEnviosSaldo(u).catch(e=>toast(e.message,"error"))}/>
+            </div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+              <div><div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4}}>Administrador</div><div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>{founder?"Acceso total al panel de administración.":"Solo el dueño de Growith puede cambiarlo."}</div></div>
+              {founder?<DSToggle T={T} active={!!u.isAdmin} onToggle={()=>toggleAdmin(u).catch(e=>toast(e.message,"error"))}/>:<span style={{fontSize:11,color:u.isAdmin?T.purple:T.textSm,fontWeight:600}}>{u.isAdmin?"Sí":"No"}</span>}
+            </div>
+          </div>
+        </div>
+
+        <div style={{padding:"14px 18px"}}>
+          {lbl(`Historial de pagos (${userPagos.length})`)}
+          {userPagos.length===0?<div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Nunca registró un pago ni una prueba.</div>:userPagos.map(p=>(
+            <div key={p._id} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontSize:11.5,padding:"8px 12px",background:T.surface,borderRadius:8,marginBottom:6}}>
+              <span style={{color:T.textSm,width:72,flexShrink:0}}>{admFecha(p.createdAt)}</span>
+              {chip(admPlanLabel(p.plan),admPlanColor(T,p.plan))}
+              {p.isTrial?<span style={{color:T.yellow,fontWeight:600}}>prueba {p.cantidad?`${p.cantidad} ${p.unidad}`:p.mesesConfirmados?`${p.mesesConfirmados} m`:""}</span>
+                :p.amount>0?<span style={{color:T.text,fontWeight:700}}>{p.currency==="USD"||p.currency==="USDT"?admUsd(p.amount):`$${p.amount} ${p.currency}`}<span style={{color:T.textSm,fontWeight:500}}> · {p.method==="stripe"?"tarjeta":p.method==="cripto"?"USDT":p.method==="credito"?"crédito referidos":"transferencia"}{p.periodo==="anual"?" · anual":""}{p.billingReason==="subscription_create"?" · alta":p.billingReason==="subscription_cycle"?" · renovación":""}</span></span>
+                :<span style={{color:T.textSm}}>sin monto</span>}
+              {p.refCreditAplicado>0&&<span style={{fontSize:10,color:T.green}}>crédito {admUsd(p.refCreditAplicado)}</span>}
+              {p.invoiceUrl&&<a href={p.invoiceUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:T.accent,fontWeight:600,textDecoration:"none"}}>Factura Stripe</a>}
+              <span style={{marginLeft:"auto",fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:p.isTrial?T.surface:p.estado==="confirmado"?T.greenBg:p.estado==="pendiente"?T.yellowBg:T.redBg,color:p.isTrial?T.textSm:p.estado==="confirmado"?T.green:p.estado==="pendiente"?T.yellow:T.red}}>{p.isTrial?"otorgada":p.estado}</span>
+              {p.estado==="pendiente"&&<span style={{display:"flex",gap:6}}><AsyncButton onClick={()=>confirmarPago(p)} style={{...BtnPrimary(T),fontSize:11,padding:"4px 10px"}}>Confirmar</AsyncButton><AsyncButton onClick={()=>rechazarPago(p._id)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red}}>Rechazar</AsyncButton></span>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </>,
+    document.body
+  );
+}
+
+// ── Ingresos ─────────────────────────────────────────────────────────────────
+function AdmIngresos({ctx, stats, pagosReales, pagos, esNueva, esUsd, cardTitle, chip, cuentaBtn, activaPaga}) {
+  const {T, usuarios, usuariosPorUid} = ctx;
+  const ahora=Date.now();
+  const meses=[]; for(let i=0;i<12;i++){ const d=new Date(new Date(ahora).getFullYear(),new Date(ahora).getMonth()-i,1); meses.push(admMesKey(d.getTime())); }
+  const porMes=Object.fromEntries(meses.map(k=>[k,{usd:0,ars:0,n:0,nuevas:0,renov:0,altas:0}]));
+  pagosReales.forEach(p=>{ if(!p.createdAt) return; const k=admMesKey(p.createdAt); if(!porMes[k]) return; if(esUsd(p)) porMes[k].usd+=p.amount; else if(p.currency==="ARS") porMes[k].ars+=p.amount; porMes[k].n++; if(esNueva(p)) porMes[k].nuevas++; else porMes[k].renov++; });
+  usuarios.forEach(u=>{ if(!u.createdAt) return; const k=admMesKey(u.createdAt); if(porMes[k]) porMes[k].altas++; });
+  const pagas=usuarios.filter(activaPaga);
+  const arpu=pagas.length?(stats.mrr||0)/pagas.length:0;
+  const conv=usuarios.length?Math.round(pagas.length/usuarios.length*1000)/10:0;
+  const cancelados=usuarios.filter(u=>u.stripeStatus==="canceled").length;
+  const legacy=pagosReales.filter(p=>p.method!=="stripe");
+  const refCredito=usuarios.reduce((s,u)=>s+(u.refCreditUsd||0),0);
+  const refGanado=usuarios.reduce((s,u)=>s+(u.refGanadoUsd||0),0);
+  const referidas=usuarios.filter(u=>u.refBy);
+  const topRef=Object.entries(referidas.reduce((m,u)=>{m[u.refBy]=(m[u.refBy]||0)+1;return m;},{})).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const [verLegacy,setVerLegacy]=useState(false);
+  const kpis=[
+    {label:"Total recaudado",val:admUsd(stats.totalUsd||0),sub:`${stats.pagosRealesCount||0} pagos reales${stats.totalArs?` · $${Number(stats.totalArs).toLocaleString("es-AR")} ARS históricos`:""}`,color:T.green},
+    {label:"MRR",val:admUsd(stats.mrr||0),sub:`${pagas.length} cuenta${pagas.length===1?"":"s"} paga${pagas.length===1?"":"s"} · ARPU ${admUsd(Math.round(arpu*10)/10)}`,color:T.accent},
+    {label:"Conversión",val:`${conv}%`,sub:`${pagas.length} pagan de ${usuarios.length} registradas`,color:T.blue},
+    {label:"Cancelaciones",val:String(cancelados+(stats.cancelan||0)),sub:`${cancelados} cancelada${cancelados===1?"":"s"} en Stripe · ${stats.cancelan||0} al vencer`,color:T.red},
+  ];
+  const cols="130px 110px 70px 80px 90px 70px";
+  return (
+    <>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12,marginBottom:16}}>
+        {kpis.map(k=>(
+          <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:4}}>
+            <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{width:7,height:7,borderRadius:"50%",background:k.color,flexShrink:0}}/><span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{k.label}</span></div>
+            <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.5,lineHeight:1.2,fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
+            <div style={{fontSize:11,color:T.textSm,lineHeight:1.4}}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+      <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(280px,1fr)",gap:16,alignItems:"start"}}>
+        <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+          <Card T={T} padding="lg">
+            {cardTitle("Ingresos por mes","En dólares. Nuevas = primer pago de una cuenta; renovaciones = el resto.")}
+            <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto"}}>
+              <div style={{minWidth:580}}>
+                <div style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
+                  <span>Mes</span><span style={{textAlign:"right"}}>Ingresos</span><span style={{textAlign:"right"}}>Pagos</span><span style={{textAlign:"right"}}>Nuevas</span><span style={{textAlign:"right"}}>Renovaciones</span><span style={{textAlign:"right"}}>Altas</span>
+                </div>
+                {meses.map((k,i)=>{ const m=porMes[k]; return (
+                  <div key={k} style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<meses.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:m.n||m.altas?1:0.55}}>
+                    <span style={{color:T.text,fontWeight:600}}>{admMesLabel(k)}</span>
+                    <span style={{textAlign:"right",fontWeight:700,color:m.usd?T.green:T.textSm,fontVariantNumeric:"tabular-nums"}}>{m.usd?admUsd(m.usd):"—"}{m.ars?<span style={{display:"block",fontSize:10,fontWeight:500,color:T.blue}}>${m.ars.toLocaleString("es-AR")} ARS</span>:null}</span>
+                    <span style={{textAlign:"right",color:T.textMd}}>{m.n||"—"}</span>
+                    <span style={{textAlign:"right",color:m.nuevas?T.accent:T.textSm,fontWeight:m.nuevas?700:400}}>{m.nuevas||"—"}</span>
+                    <span style={{textAlign:"right",color:T.textMd}}>{m.renov||"—"}</span>
+                    <span style={{textAlign:"right",color:T.textMd}}>{m.altas||"—"}</span>
+                  </div>
+                );})}
+              </div>
+            </div>
+          </Card>
+          <Card T={T} padding="lg">
+            {cardTitle("Pagos manuales y USDT (histórico)",`${legacy.length} pago${legacy.length===1?"":"s"} anteriores a Stripe. Ya no se reciben pagos así.`,<Btn T={T} variant="secondary" size="sm" onClick={()=>setVerLegacy(v=>!v)}>{verLegacy?"Ocultar":"Ver"}</Btn>)}
+            {verLegacy&&(legacy.length===0?<div style={{fontSize:12,color:T.textSm}}>Sin pagos manuales.</div>:(
+              <div style={{display:"flex",flexDirection:"column"}}>
+                {legacy.slice(0,100).map((p,i)=>{ const u=usuariosPorUid[p.uid]; return (
+                  <div key={p._id} style={{display:"flex",gap:10,alignItems:"center",fontSize:12,padding:"7px 0",borderBottom:i<Math.min(legacy.length,100)-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
+                    <span style={{color:T.textSm,width:72}}>{admFecha(p.createdAt)}</span>
+                    <span style={{flex:1,minWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u?cuentaBtn(u):<span>{p.email||p.uid}</span>}</span>
+                    {chip(admPlanLabel(p.plan),admPlanColor(T,p.plan))}
+                    <span style={{fontWeight:700,color:T.text}}>{esUsd(p)?admUsd(p.amount):`$${p.amount} ${p.currency}`}</span>
+                    <span style={{color:T.textSm}}>{p.method==="cripto"?"USDT":p.method==="credito"?"crédito":"transferencia"}{p.mesesConfirmados?` · ${p.mesesConfirmados} m`:""}</span>
+                    {p.txHash&&<a href={`https://tronscan.org/#/transaction/${encodeURIComponent(p.txHash)}`} target="_blank" rel="noreferrer" style={{fontSize:10,color:T.accent,textDecoration:"none"}}>tx</a>}
+                  </div>
+                );})}
+              </div>
+            ))}
+          </Card>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+          <Card T={T} padding="lg">
+            {cardTitle("Referidos","El 15% de cada pago del referido va como crédito al referente.")}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+              {[["Cuentas referidas",String(referidas.length)],["Pagan",String(referidas.filter(u=>activaPaga(u)).length)],["Crédito por usar",admUsd(refCredito)],["Crédito otorgado",admUsd(refGanado)]].map(([l,v])=>(
+                <div key={l} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 10px"}}><div style={{fontSize:10,color:T.textSm,fontWeight:600}}>{l}</div><div style={{fontSize:15,fontWeight:800,color:T.text}}>{v}</div></div>
+              ))}
+            </div>
+            {topRef.length>0&&<div>
+              <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Quienes más refieren</div>
+              {topRef.map(([uid,n])=>{ const u=usuariosPorUid[uid]; return <div key={uid} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:12,padding:"4px 0"}}><span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u?cuentaBtn(u):uid}</span><span style={{color:T.textMd,whiteSpace:"nowrap"}}>{n} · {admUsd(u?.refGanadoUsd||0)}</span></div>; })}
+            </div>}
+          </Card>
+          <Card T={T} padding="lg">
+            {cardTitle("Precios vigentes","Mismo cuadro que Stripe y la sección Suscripción.")}
+            {Object.entries(ADM_PRECIOS).map(([id,p])=>(
+              <div key={id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}><span style={{color:T.text,fontWeight:600}}>{p.nombre}</span><span style={{color:T.textMd}}>{admUsd(p.mensual)}/mes · {admUsd(p.anual)}/mes anual</span></div>
+            ))}
+          </Card>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Envíos (etiquetas prepagas) ──────────────────────────────────────────────
+function AdmEnvios({ctx, envCfg, setEnvCfg, saveEnvCfg, cardTitle, lbl, iS}) {
+  const {T, usuarios, usuariosPorUid} = ctx;
+  const [saldos,setSaldos]=useState(null);
+  const [busca,setBusca]=useState("");
+  const [buscaRes,setBuscaRes]=useState(null);
+  const [acred,setAcred]=useState(null);
+  const [acredForm,setAcredForm]=useState({monto:"",nota:""});
+  const [movs,setMovs]=useState(null);
+  const [nuevo,setNuevo]=useState("");
+  const [bajas,setBajas]=useState({loading:true,nombres:[],seed:[]});
+  const [bajaNueva,setBajaNueva]=useState("");
+  const meses=useMemo(()=>{ const out=[]; const now=new Date(); for(let i=0;i<6;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); out.push({v:admMesKey(d.getTime()),label:admMesLabel(admMesKey(d.getTime()))}); } return out; },[]);
+  const [statsMes,setStatsMes]=useState(meses[0].v);
+  const [stats,setStats]=useState({loading:true,data:null,error:""});
+  async function loadSaldos(){ try{ const s=await authFetch("/api/andreani?action=admin_saldos").then(r=>r.json()); if(Array.isArray(s?.cuentas)) setSaldos(s.cuentas); }catch(_){} }
+  async function loadStats(mes){ setStatsMes(mes); setStats({loading:true,data:null,error:""}); try{ const d=await authFetch(`/api/andreani?action=admin_stats&mes=${encodeURIComponent(mes)}`).then(r=>r.json()); if(d?.error) setStats({loading:false,data:null,error:String(d.error)}); else setStats({loading:false,data:d,error:""}); }catch(e){ setStats({loading:false,data:null,error:e.message}); } }
+  async function loadBajas(){ try{ const r=await authFetch("/api/andreani?action=admin_tpl_baja",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})}); const d=await r.json(); if(d?.ok) setBajas({loading:false,nombres:d.nombres||[],seed:d.seed||[]}); else setBajas({loading:false,nombres:[],seed:[],error:d?.error}); }catch(e){ setBajas({loading:false,nombres:[],seed:[],error:e.message}); } }
+  async function editarBajas(agregar,quitar){ const r=await authFetch("/api/andreani?action=admin_tpl_baja",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agregar,quitar})}); const d=await r.json(); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`); setBajas({loading:false,nombres:d.nombres||[],seed:d.seed||[]}); }
+  useEffect(()=>{ loadSaldos(); loadStats(meses[0].v); loadBajas(); },[]);
+  async function buscar(){ const email=busca.trim(); if(!email){ setBuscaRes(null); return; } const d=await authFetch(`/api/andreani?action=admin_saldos&email=${encodeURIComponent(email)}`).then(r=>r.json()); if(d?.error){ toast("No se pudo buscar: "+d.error,"error"); return; } if(d?.sinResultados||!Array.isArray(d?.cuentas)||!d.cuentas.length) setBuscaRes({sinResultados:true,email}); else setBuscaRes({cuentas:d.cuentas}); }
+  async function acreditar(){ const monto=parseFloat(acredForm.monto); if(!acred||!monto) { toast("Ingresá un monto válido","error"); return; } const r=await authFetch("/api/andreani?action=admin_acreditar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:acred.uid,monto,nota:acredForm.nota||""})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error){ toast("No se pudo acreditar: "+(d.error||`HTTP ${r.status}`),"error"); return; } toast(`${fmtMoney(monto)} acreditados a ${acred.email||acred.uid}`,"success"); setAcred(null); setAcredForm({monto:"",nota:""}); loadSaldos(); if(buscaRes?.cuentas) buscar(); }
+  async function verMovs(c){ setMovs({uid:c.uid,email:c.email,loading:true,movimientos:[]}); try{ const d=await authFetch(`/api/andreani?action=admin_movimientos&uid=${encodeURIComponent(c.uid)}`).then(r=>r.json()); setMovs(prev=>prev&&prev.uid===c.uid?{...prev,loading:false,movimientos:Array.isArray(d?.movimientos)?d.movimientos:[]}:prev); }catch(_){ setMovs(prev=>prev?{...prev,loading:false}:prev); toast("Error cargando movimientos","error"); } }
+  const q=nuevo.trim().toLowerCase();
+  const match=q?usuarios.find(u=>(u.email||"").toLowerCase()===q||u._id===nuevo.trim()):null;
+  const sugeridos=q&&!match?usuarios.filter(u=>(u.email||"").toLowerCase().includes(q)||(u.nombre||"").toLowerCase().includes(q)).slice(0,6):[];
+  const listaSaldos=buscaRes?.cuentas||saldos||[];
+  const upd=(patch)=>setEnvCfg(c=>({...(c||{habilitados:[]}),...patch}));
+  return (
+    <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(300px,1fr)",gap:16,alignItems:"start"}}>
+      <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+        <Card T={T} padding="lg">
+          {cardTitle("Uso por cliente y rentabilidad","Cobrado = lo que pagaron con su saldo. Costo real = lo que factura Andreani a fin de mes.",(
+            <select value={statsMes} onChange={e=>loadStats(e.target.value)} style={{...iS,width:"auto",marginBottom:0,padding:"6px 10px",fontSize:12}}>{meses.map(m=><option key={m.v} value={m.v}>{m.label}</option>)}</select>
+          ))}
+          {stats.loading?<div style={{display:"flex",alignItems:"center",gap:8,padding:"14px 0",color:T.textSm,fontSize:12}}><Spinner size={13} color={T.accent}/> Cargando</div>
+          :stats.error?<div style={{fontSize:12,color:T.red}}>{stats.error}</div>
+          :!stats.data||(!(stats.data.etiquetas>0)&&!(stats.data.cargadoTotal>0)&&!(stats.data.cuentas||[]).length)?<div style={{fontSize:12,color:T.textSm}}>Sin actividad en ese mes.</div>
+          :(()=>{ const d=stats.data; const cols="minmax(160px,1.4fr) 60px 100px 110px 100px 100px"; return (<>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:14}}>
+              {[{label:"Etiquetas",val:String(d.etiquetas||0)},{label:"Cobrado",val:fmtMoney(d.facturado||0)},{label:"Costo Andreani",val:fmtMoney(d.costoReal||0)},{label:"Margen",val:fmtMoney(d.margen||0),color:(d.margen||0)>=0?T.green:T.red},{label:"Saldo cargado",val:fmtMoney(d.cargadoTotal||0),sub:`${d.cargasN||0} carga${d.cargasN===1?"":"s"}`},{label:"En billeteras hoy",val:fmtMoney(d.saldoTotal||0)}].map(k=>(
+                <div key={k.label} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px"}}><div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{k.label}</div><div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.3}}>{k.val}</div>{k.sub&&<div style={{fontSize:10,color:T.textSm}}>{k.sub}</div>}</div>
+              ))}
+            </div>
+            {(d.cuentas||[]).length>0&&(
+              <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto"}}><div style={{minWidth:640}}>
+                <div style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}><span>Cliente</span><span style={{textAlign:"right"}}>Etiq.</span><span style={{textAlign:"right"}}>Cobrado</span><span style={{textAlign:"right"}}>Costo</span><span style={{textAlign:"right"}}>Cargó</span><span style={{textAlign:"right"}}>Saldo</span></div>
+                {d.cuentas.map((c,i)=>(
+                  <div key={c.uid||i} style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<d.cuentas.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:(c.etiquetas||c.cargado||c.saldo)?1:0.55}}>
+                    <span style={{minWidth:0}}><span style={{display:"block",color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||String(c.uid||"").slice(0,10)}</span>{!c.habilitado&&<span style={{fontSize:9,color:T.textSm}}>ya no habilitada</span>}</span>
+                    <span style={{textAlign:"right",color:T.textMd}}>{c.etiquetas||0}</span><span style={{textAlign:"right",fontWeight:700,color:T.text}}>{fmtMoney(c.monto||0)}</span><span style={{textAlign:"right",color:T.textMd}}>{c.costo?fmtMoney(c.costo):"—"}</span><span style={{textAlign:"right",color:T.accent,fontWeight:600}}>{c.cargado?fmtMoney(c.cargado):"—"}</span><span style={{textAlign:"right",color:(c.saldo||0)>0?T.green:T.textSm,fontWeight:600}}>{fmtMoney(c.saldo||0)}</span>
+                  </div>
+                ))}
+              </div></div>
+            )}
+          </>); })()}
+        </Card>
+
+        <Card T={T} padding="lg">
+          {cardTitle("Saldos por cuenta","Acreditar a mano o ver el detalle de movimientos de cada billetera.",<Btn T={T} variant="secondary" size="sm" onClick={loadSaldos}>Actualizar</Btn>)}
+          <div style={{display:"flex",gap:8,marginBottom:12}}>
+            <input style={{...iS,flex:1,marginBottom:0}} value={busca} onChange={e=>setBusca(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")buscar();}} placeholder="Buscar cuenta por email"/>
+            <AsyncButton onClick={buscar} style={{...BtnSecondary(T),fontSize:12}}>Buscar</AsyncButton>
+          </div>
+          {buscaRes&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,fontSize:12}}>{buscaRes.sinResultados?<span style={{color:T.yellow}}>No existe ninguna cuenta con el email "{buscaRes.email}".</span>:<span style={{color:T.textMd}}>Mostrando la cuenta encontrada.</span>}<button onClick={()=>{setBuscaRes(null);setBusca("");}} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>Ver todas</button></div>}
+          {listaSaldos.length===0?<div style={{fontSize:12,color:T.textSm}}>{buscaRes?"":"Sin cuentas con saldo todavía."}</div>:(
+            <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
+              {listaSaldos.map((c,i)=>(
+                <div key={c.uid}>
+                  <div style={{display:"flex",gap:10,padding:"9px 12px",fontSize:12,borderBottom:i<listaSaldos.length-1||acred?.uid===c.uid?`1px solid ${T.borderL}`:"none",alignItems:"center",flexWrap:"wrap"}}>
+                    <span style={{flex:1,minWidth:140,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||c.uid}{!c.habilitado&&<span style={{marginLeft:6,fontSize:9,color:T.textSm,fontWeight:500}}>no habilitada</span>}</span>
+                    <span style={{fontWeight:700,color:(c.saldo||0)>0?T.green:T.textMd,minWidth:80,textAlign:"right"}}>{fmtMoney(c.saldo||0)}</span>
+                    <button onClick={()=>{setAcred(acred?.uid===c.uid?null:{uid:c.uid,email:c.email});setAcredForm({monto:"",nota:""});}} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.green,borderColor:T.green+"55"}}>Acreditar</button>
+                    <button onClick={()=>verMovs(c)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>Movimientos</button>
+                  </div>
+                  {acred?.uid===c.uid&&(
+                    <div style={{display:"flex",gap:8,alignItems:"center",padding:"10px 12px",background:T.surface,borderBottom:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
+                      <input style={{...iS,width:130,marginBottom:0}} type="number" value={acredForm.monto} onChange={e=>setAcredForm(s=>({...s,monto:e.target.value}))} placeholder="Monto ($, negativo ajusta)"/>
+                      <input style={{...iS,flex:1,minWidth:160,marginBottom:0}} value={acredForm.nota} onChange={e=>setAcredForm(s=>({...s,nota:e.target.value}))} placeholder="Nota (ej: transferencia 5/8)"/>
+                      <AsyncButton onClick={acreditar} style={{...BtnPrimary(T),fontSize:12}}>Acreditar</AsyncButton>
+                      <button onClick={()=>setAcred(null)} style={{...BtnSecondary(T),fontSize:12}}>Cancelar</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+        <Card T={T} padding="lg">
+          {cardTitle("Precio de las etiquetas","Costo real = tarifa de lista menos tu descuento, más seguro. Precio al cliente = costo real más markup.")}
+          {!envCfg?<div style={{fontSize:12,color:T.textSm,display:"flex",gap:8,alignItems:"center"}}><Spinner size={13} color={T.accent}/> Cargando configuración</div>:(<>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <Field T={T} label="Descuento Andreani (%)"><input style={iS} type="number" value={envCfg.descuentoPct??""} onChange={e=>upd({descuentoPct:e.target.value})} placeholder="0"/></Field>
+              <Field T={T} label="Seguro (% valor declarado)"><input style={iS} type="number" step="0.5" value={envCfg.seguroPct??""} onChange={e=>upd({seguroPct:e.target.value})} placeholder="1"/></Field>
+              <Field T={T} label="Markup (%)"><input style={iS} type="number" value={envCfg.markupPct??""} onChange={e=>upd({markupPct:e.target.value})} placeholder="0"/></Field>
+              <Field T={T} label="Markup fijo ($)"><input style={iS} type="number" value={envCfg.markupFijo??""} onChange={e=>upd({markupFijo:e.target.value})} placeholder="0"/></Field>
+            </div>
+            <Field T={T} label="Sucursal de origen (código Andreani)"><input style={iS} value={envCfg.sucursalOrigen??""} onChange={e=>upd({sucursalOrigen:e.target.value})} placeholder="Vacío = origen default"/></Field>
+            {lbl("Datos para recibir cargas por transferencia")}
+            <Field T={T} label="Alias"><input style={iS} value={envCfg.datosPago?.alias??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),alias:e.target.value}})} placeholder="mi.alias.mp"/></Field>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <Field T={T} label="CBU / CVU"><input style={iS} value={envCfg.datosPago?.cbu??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),cbu:e.target.value}})} placeholder="22 dígitos"/></Field>
+              <Field T={T} label="Titular"><input style={iS} value={envCfg.datosPago?.titular??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),titular:e.target.value}})} placeholder="Nombre"/></Field>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end"}}><AsyncButton onClick={async()=>{ if(await saveEnvCfg()) toast("Configuración de Envíos guardada","success"); }} style={{...BtnPrimary(T),fontSize:12}}>Guardar configuración</AsyncButton></div>
+          </>)}
+        </Card>
+
+        <Card T={T} padding="lg">
+          {cardTitle("Cuentas habilitadas","Solo estas cuentas ven el sistema de etiquetas prepagas en Envíos.")}
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+            {(envCfg?.habilitados||[]).length===0&&<div style={{fontSize:12,color:T.textSm}}>Ninguna cuenta habilitada todavía.</div>}
+            {(envCfg?.habilitados||[]).map(uid=>{ const u=usuariosPorUid[uid]; const s=(saldos||[]).find(c=>c.uid===uid); return (
+              <div key={uid} style={{display:"flex",alignItems:"center",gap:8,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"7px 10px",fontSize:12}}>
+                <span style={{flex:1,minWidth:0,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:u?"pointer":"default"}} onClick={()=>u&&ctx.setCuenta(uid)}>{u?.email||s?.email||uid}</span>
+                {s&&<span style={{color:(s.saldo||0)>0?T.green:T.textSm,fontWeight:600}}>{fmtMoney(s.saldo||0)}</span>}
+                <AsyncButton onClick={async()=>{ if(!await appConfirm("¿Quitar esta cuenta del sistema de etiquetas prepagas?",{danger:true,okLabel:"Quitar"})) return; await saveEnvCfg({...envCfg,habilitados:envCfg.habilitados.filter(x=>x!==uid)}); }} style={{background:"transparent",border:"none",color:T.red,cursor:"pointer",fontSize:11,fontWeight:600,padding:"2px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}>Quitar</AsyncButton>
+              </div>
+            );})}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <input style={{...iS,flex:1,marginBottom:0}} value={nuevo} onChange={e=>setNuevo(e.target.value)} placeholder="Email de la cuenta a habilitar" list="gh-admin-emails"/>
+            <datalist id="gh-admin-emails">{usuarios.map(u=><option key={u._id} value={u.email||""}>{u.nombre||""}</option>)}</datalist>
+            <AsyncButton onClick={async()=>{ const uid=match?match._id:nuevo.trim(); if(!uid){ toast("Escribí el email de la cuenta","error"); return; } if(!match&&uid.includes("@")){ toast("No encontré una cuenta con ese email","warning",5000); return; } if((envCfg?.habilitados||[]).includes(uid)){ toast("Esa cuenta ya está habilitada","warning"); return; } const ok=await saveEnvCfg({...(envCfg||{markupPct:0,markupFijo:0,habilitados:[]}),habilitados:[...(envCfg?.habilitados||[]),uid]}); if(ok){ setNuevo(""); toast(`Envíos con saldo habilitado para ${match?.email||uid}`,"success"); } }} style={{...BtnPrimary(T),fontSize:12,whiteSpace:"nowrap"}}>Habilitar</AsyncButton>
+          </div>
+          {match&&<div style={{fontSize:11,color:T.green,marginTop:6}}>{match.nombre||match.email} · {admPlanLabel(match.plan)}</div>}
+          {sugeridos.length>0&&<div style={{display:"flex",flexDirection:"column",gap:4,marginTop:6}}>{sugeridos.map(u=><button key={u._id} onClick={()=>setNuevo(u.email||u._id)} style={{textAlign:"left",background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{u.email} <span style={{color:T.textSm}}>· {admPlanLabel(u.plan)}</span></button>)}</div>}
+        </Card>
+
+        <Card T={T} padding="lg">
+          {cardTitle("Sucursales dadas de baja","Sucursales de Andreani que ya no operan. Al exportar, los pedidos a estas sucursales van al modal de elección.")}
+          {bajas.loading?<div style={{fontSize:12,color:T.textSm}}>Cargando</div>:bajas.error?<div style={{fontSize:12,color:T.red}}>{bajas.error}</div>:(<>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
+              {bajas.seed.map(n=><span key={"s"+n} title="Confirmada por Andreani (fija)" style={{fontSize:11,padding:"3px 9px",borderRadius:DS.r.full,background:T.surface,border:`1px solid ${T.borderL}`,color:T.textSm}}>{n}</span>)}
+              {bajas.nombres.map(n=><span key={n} style={{fontSize:11,padding:"3px 4px 3px 9px",borderRadius:DS.r.full,background:T.red+"12",border:`1px solid ${T.red}33`,color:T.text,display:"inline-flex",alignItems:"center",gap:4}}>{n}<button onClick={()=>editarBajas([], [n]).catch(e=>toast(e.message,"error"))} title="Quitar de la lista" style={{background:"transparent",border:"none",color:T.red,cursor:"pointer",fontSize:11,padding:"0 4px",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:700}}>✕</button></span>)}
+              {bajas.seed.length+bajas.nombres.length===0&&<span style={{fontSize:12,color:T.textSm}}>Ninguna.</span>}
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <input style={{...iS,flex:1,marginBottom:0}} value={bajaNueva} onChange={e=>setBajaNueva(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"&&bajaNueva.trim()){ editarBajas([bajaNueva.trim()],[]).then(()=>setBajaNueva("")).catch(err=>toast(err.message,"error")); } }} placeholder="Nombre exacto de la sucursal (como en el desplegable)"/>
+              <AsyncButton onClick={async()=>{ if(!bajaNueva.trim()) return; await editarBajas([bajaNueva.trim()],[]); setBajaNueva(""); toast("Sucursal agregada","success"); }} style={{...BtnSecondary(T),fontSize:12,whiteSpace:"nowrap"}}>Agregar</AsyncButton>
+            </div>
+          </>)}
+        </Card>
+      </div>
+
+      <Modal T={T} open={!!movs} onClose={()=>setMovs(null)} title={`Movimientos · ${movs?.email||movs?.uid||""}`} width={560}>
+        {movs&&(movs.loading?<div style={{display:"flex",alignItems:"center",gap:8,padding:"18px 4px",color:T.textSm,fontSize:12}}><Spinner size={13} color={T.accent}/> Cargando</div>
+        :movs.movimientos.length===0?<div style={{padding:"18px 4px",color:T.textSm,fontSize:12}}>Sin movimientos para esta cuenta.</div>
+        :(
+          <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
+            <div style={{display:"grid",gridTemplateColumns:"90px 1fr 90px 90px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}><span>Fecha</span><span>Concepto</span><span style={{textAlign:"right"}}>Monto</span><span style={{textAlign:"right"}}>Saldo</span></div>
+            <div style={{maxHeight:340,overflowY:"auto"}}>
+              {movs.movimientos.map((m,i)=>{ const cred=m.tipo==="credito"||m.tipo==="reverso"; const concepto=m.nota||(m.tipo==="debito"?`Etiqueta ${m.numeroDeEnvio||""}`.trim():m.tipo==="reverso"?"Reverso":"Carga de saldo"); return (
+                <div key={i} style={{display:"grid",gridTemplateColumns:"90px 1fr 90px 90px",gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<movs.movimientos.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
+                  <span style={{color:T.textSm,fontSize:11}}>{ghFmtTs(m.ts)}</span><span style={{color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={concepto}>{concepto}</span><span style={{textAlign:"right",fontWeight:700,color:cred?T.green:T.red}}>{cred?"+":"−"}{fmtMoney(Math.abs(m.monto||0))}</span><span style={{textAlign:"right",color:T.textMd}}>{fmtMoney(m.saldoDespues)}</span>
+                </div>
+              );})}
+            </div>
+          </div>
+        ))}
+      </Modal>
+    </div>
+  );
+}
+
+// ── Sistema ──────────────────────────────────────────────────────────────────
+function AdmSistema({ctx, sectionsConfig, saveSectionsConfig, cardTitle, chip, iS}) {
+  const {T, adminApi, usuariosPorUid, user} = ctx;
+  const [sys,setSys]=useState({loading:true});
+  const [log,setLog]=useState({loading:true,items:[]});
+  const [logTipo,setLogTipo]=useState("todos");
+  const [logQ,setLogQ]=useState("");
+  const [saving,setSaving]=useState(false);
+  async function loadSys(){ setSys({loading:true}); try{ const d=await adminApi({action:"adminGetSystem"}); setSys({loading:false,...d}); }catch(e){ setSys({loading:false,error:e.message}); } }
+  async function loadLog(){ try{ const d=await adminApi({action:"adminGetLog",limit:300}); setLog({loading:false,items:d.items||[]}); }catch(e){ setLog({loading:false,items:[],error:e.message}); } }
+  useEffect(()=>{ loadSys(); loadLog(); },[]);
+  const secciones=SIDEBAR_GROUPS_BASE.filter(it=>it.id&&it.id!=="home");
+  const ahora=sys.ahora||Date.now();
+  const estadoCron=(c)=>{ const d=sys.crons?.[c.key]; if(!d||!d.at) return {label:"Sin registro",color:T.textSm,desc:"Se registra en la próxima corrida"}; if(!d.ok) return {label:"Error",color:T.red,desc:d.resumen||`HTTP ${d.status}`}; if(ahora-d.at>c.maxH*3600000) return {label:"Atrasado",color:T.yellow,desc:`Última corrida ${admRel(d.at)}`}; return {label:"OK",color:T.green,desc:""}; };
+  const tipos=[...new Set(log.items.map(i=>i.action))].sort();
+  const lq=logQ.trim().toLowerCase();
+  const logLista=log.items.filter(i=>logTipo==="todos"||i.action===logTipo).filter(i=>!lq||(i.targetEmail||"").toLowerCase().includes(lq)||(i.detalle||"").toLowerCase().includes(lq)||(usuariosPorUid[i.adminUid]?.email||"").toLowerCase().includes(lq));
+  return (
+    <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(300px,1fr)",gap:16,alignItems:"start"}}>
+      <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+        <Card T={T} padding="lg">
+          {cardTitle("Crons","Tareas automáticas declaradas en Vercel. Cada corrida deja su registro; si una no corre, acá se ve.",<Btn T={T} variant="secondary" size="sm" onClick={loadSys}>Actualizar</Btn>)}
+          {sys.loading?<div style={{fontSize:12,color:T.textSm,display:"flex",gap:8,alignItems:"center"}}><Spinner size={13} color={T.accent}/> Cargando</div>:sys.error?<div style={{fontSize:12,color:T.red}}>{sys.error}</div>:(
+            <div style={{display:"flex",flexDirection:"column"}}>
+              {ADM_CRONS.map((c,i)=>{ const d=sys.crons?.[c.key]; const e=estadoCron(c); return (
+                <div key={c.key} style={{display:"flex",gap:10,alignItems:"center",padding:"9px 0",borderBottom:i<ADM_CRONS.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
+                  <span style={{width:7,height:7,borderRadius:"50%",background:e.color,flexShrink:0}}/>
+                  <div style={{flex:1,minWidth:180}}>
+                    <div style={{fontSize:12.5,fontWeight:600,color:T.text}}>{c.label}</div>
+                    <div style={{fontSize:10.5,color:T.textSm}}>{c.cada}{d?.ms?` · ${(d.ms/1000).toFixed(1)} s`:""}{d?.resumen&&e.label!=="Error"?<span title={d.resumen}> · {d.resumen.slice(0,90)}{d.resumen.length>90?"…":""}</span>:null}</div>
+                    {e.desc&&<div style={{fontSize:10.5,color:e.color}}>{e.desc}</div>}
+                  </div>
+                  <span style={{fontSize:11,color:T.textMd,whiteSpace:"nowrap"}}>{d?.at?admRel(d.at):"—"}</span>
+                  {chip(e.label,e.color)}
+                </div>
+              );})}
+            </div>
+          )}
+        </Card>
+
+        <Card T={T} padding="lg">
+          {cardTitle("Registro de actividad","Todo lo que hizo un administrador: planes, saldos, accesos, vistas de cliente.",(
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              <select value={logTipo} onChange={e=>setLogTipo(e.target.value)} style={{...iS,width:"auto",marginBottom:0,padding:"6px 10px",fontSize:12}}><option value="todos">Todas las acciones</option>{tipos.map(t=><option key={t} value={t}>{ADM_LOG_LABEL[t]||t}</option>)}</select>
+              <input style={{...iS,width:180,marginBottom:0,fontSize:12}} value={logQ} onChange={e=>setLogQ(e.target.value)} placeholder="Buscar cuenta o detalle"/>
+            </div>
+          ))}
+          {log.loading?<div style={{fontSize:12,color:T.textSm}}>Cargando</div>:log.error?<div style={{fontSize:12,color:T.red}}>{log.error}</div>:logLista.length===0?<div style={{fontSize:12,color:T.textSm}}>{log.items.length?"Nada con ese filtro.":"Todavía no hay acciones registradas. A partir de ahora cada acción queda acá."}</div>:(
+            <div style={{display:"flex",flexDirection:"column",maxHeight:520,overflowY:"auto"}}>
+              {logLista.map((it,i)=>(
+                <div key={it.id} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:i<logLista.length-1?`1px solid ${T.borderL}`:"none",fontSize:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+                  <span style={{color:T.textSm,width:110,flexShrink:0,fontSize:11}}>{admFecha(it.at,true)}</span>
+                  <span style={{flexShrink:0}}>{chip(ADM_LOG_LABEL[it.action]||it.action,/quitar|rechaz|desactivar/.test(it.action)?T.red:/dar_admin|ver_como/.test(it.action)?T.purple:T.accent)}</span>
+                  <div style={{flex:1,minWidth:200}}>
+                    {it.targetEmail&&<span style={{color:T.text,fontWeight:600,cursor:it.targetUid&&usuariosPorUid[it.targetUid]?"pointer":"default"}} onClick={()=>it.targetUid&&usuariosPorUid[it.targetUid]&&ctx.setCuenta(it.targetUid)}>{it.targetEmail} </span>}
+                    <span style={{color:T.textMd}}>{it.detalle}</span>
+                    <div style={{fontSize:10,color:T.textSm}}>por {it.adminUid===user.uid?"vos":(usuariosPorUid[it.adminUid]?.email||it.adminUid)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+        <Card T={T} padding="lg">
+          {cardTitle("Servicios","Qué integración tiene sus credenciales cargadas en Vercel. Nunca se muestran valores.")}
+          {sys.loading?<div style={{fontSize:12,color:T.textSm}}>Cargando</div>:(sys.servicios||[]).map((s,i)=>(
+            <div key={s.id} style={{display:"flex",gap:8,alignItems:"center",padding:"7px 0",borderBottom:i<(sys.servicios||[]).length-1?`1px solid ${T.borderL}`:"none",fontSize:12}}>
+              <span style={{width:7,height:7,borderRadius:"50%",background:s.ok?T.green:T.red,flexShrink:0}}/>
+              <span style={{flex:1,color:T.text,fontWeight:600}}>{s.label}</span>
+              <span style={{color:T.textSm,fontSize:11,textAlign:"right"}}>{s.detalle||(s.ok?"Configurado":"Falta")}</span>
+            </div>
+          ))}
+        </Card>
+
+        <Card T={T} padding="lg">
+          {cardTitle("Accesos por sección","Las secciones marcadas como solo admin desaparecen del menú de los clientes al instante. La lista sale del menú de la app, así nunca queda desactualizada.")}
+          <div style={{display:"flex",flexDirection:"column"}}>
+            {secciones.map((s,i)=>{ const on=sectionsConfig.includes(s.id); return (
+              <div key={s.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:i<secciones.length-1?`1px solid ${T.borderL}`:"none"}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={on?T.accent:T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d={s.icon}/></svg>
+                <span style={{flex:1,fontSize:12.5,fontWeight:600,color:T.text}}>{s.label}</span>
+                {on&&chip("Solo admin",T.accent)}
+                <DSToggle T={T} active={on} onToggle={async()=>{ if(saving) return; setSaving(true); await saveSectionsConfig(on?sectionsConfig.filter(x=>x!==s.id):[...sectionsConfig,s.id]); setSaving(false); }}/>
+              </div>
+            );})}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// Banner flotante: sesión de administrador viendo la cuenta de un cliente.
+function GhImpersonBanner({T, info}) {
+  async function salir() {
+    try { sessionStorage.removeItem("growith_impersonate"); } catch (_) {}
+    try { window.__ghReadOnly = false; } catch (_) {}
+    try { await signOut(auth); } catch (_) {}
+    window.location.hash = "#/";
+    window.location.reload();
+  }
+  return (
+    <div style={{position:"fixed",left:"50%",bottom:18,transform:"translateX(-50%)",zIndex:3000,display:"flex",alignItems:"center",gap:12,padding:"9px 10px 9px 16px",borderRadius:DS.r.full,background:T.card,border:`1px solid ${T.yellow}66`,boxShadow:"0 10px 40px rgba(0,0,0,0.35)",fontFamily:"'Inter',system-ui,sans-serif",maxWidth:"calc(100vw - 24px)"}}>
+      <span style={{width:8,height:8,borderRadius:"50%",background:T.yellow,flexShrink:0}}/>
+      <span style={{fontSize:12,color:T.text,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><strong>Solo lectura.</strong> Estás viendo la cuenta de {info.email||"un cliente"} como administrador.</span>
+      <button onClick={salir} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",whiteSpace:"nowrap"}}>Volver a mi cuenta</button>
+    </div>
+  );
+}
 
 // ===========================================
 // REFERENCIAS — cards de marcas/tiendas de referencia
@@ -36603,6 +36355,7 @@ export default function App() {
   // ~1s aparecía el paywall/UpgradeWall aunque el usuario tenga plan pago vigente.
   const [planLoaded,setPlanLoaded]=useState(false);
   const [isAdmin,setIsAdmin]=useState(false);
+  const [impersonando,setImpersonando]=useState(()=>{ try{ return JSON.parse(sessionStorage.getItem("growith_impersonate")||"null"); }catch(_){ return null; } });
   const [adminOnlySections,setAdminOnlySections]=useState([]); // default, se sobreescribe al cargar ("rendimiento" legacy = "margenes")
 
   const ADMIN_UIDS=["WJH3ArqDPQcNLha9lOinvkVi9uJ2","ADMIN_UID_2"]; // ADMIN_UID_2: completar cuando tengas el segundo
@@ -36700,6 +36453,7 @@ export default function App() {
         .hide-mobile{display:none!important;}
         .mobile-only{display:flex!important;}
         .gh-calpagos-grid{grid-template-columns:1fr!important;}
+        .gh-admin-grid{grid-template-columns:1fr!important;}
         .stack-mobile{flex-direction:column!important;grid-template-columns:1fr!important;}
         .full-mobile{width:100%!important;min-width:0!important;}
         .pad-mobile{padding:12px 14px!important;}
@@ -36812,6 +36566,12 @@ export default function App() {
           }
         } catch(e){}
         setPlanLoaded(true);
+        // "Ver como cliente": el token de impersonación trae impersonatedBy.
+        try {
+          const tr=await u.getIdTokenResult();
+          if(tr?.claims?.impersonatedBy){ window.__ghReadOnly=true; setImpersonando(prev=>({...(prev||{}),email:u.email||prev?.email||"",uid:u.uid,by:tr.claims.impersonatedBy})); }
+          else { window.__ghReadOnly=false; setImpersonando(null); try{ sessionStorage.removeItem("growith_impersonate"); }catch(_){} }
+        } catch(_){}
         // Load sections config (available for all users)
         try {
           const r=await fetch(`/api/tareas?action=getSectionsConfig&uid=${u.uid}`);
@@ -37345,6 +37105,7 @@ export default function App() {
         }}/>
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
+      {impersonando&&<GhImpersonBanner T={T} info={impersonando}/>}
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
         <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesAcciones, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert, calendario: calAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
       {/* Multi-org F2 modals */}

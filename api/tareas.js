@@ -8,7 +8,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
-import { guardUid, requireAdmin, guardCron, verifyAuth, clearTeamCache } from "./_auth.js";
+import { guardUid, requireAdmin, guardCron, verifyAuth, clearTeamCache, isFounder } from "./_auth.js";
 import { acreditarComisionReferido, descontarCreditoAplicado } from "./referidos.js";
 
 function initAdmin() {
@@ -22,10 +22,21 @@ function initAdmin() {
 }
 
 // ─── Admin constants (antiguo admin.js) ──────────────────────────────────
-// Precios REALES de venta (deben coincidir con los de AppPlanes en el frontend;
-// antes el MRR del panel se calculaba con valores viejos y salía ~63% bajo).
-const PLAN_PRICE_USDT = { plus: 79, medio: 39, facturador: 19 };
-const PLAN_PRICE_ARS  = { plus: 79000, medio: 39000, facturador: 19000 };
+// Precios REALES de venta en USD (mismo cuadro que api/stripe.js y AppPlanes).
+// El MRR del panel sale de acá: mensual o anual prorrateado según el último pago.
+const PLAN_PRECIOS = {
+  facturador: { mensual: 19, anual: 16, nombre: "Facturador" },
+  medio:      { mensual: 39, anual: 32, nombre: "Intermedio" },
+  plus:       { mensual: 69, anual: 57, nombre: "Pro" },
+};
+const fechaCorta = d => { try { return new Date(d).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Argentina/Buenos_Aires" }); } catch (_) { return ""; } };
+// Registro de acciones de administración (colección admin_log): quién hizo qué,
+// sobre qué cuenta y cuándo. Best-effort: nunca rompe la acción principal.
+async function logAdmin(db, { adminUid, action, targetUid = null, targetEmail = null, detalle = "", data = null }) {
+  try {
+    await db.collection("admin_log").add({ adminUid, action: String(action || ""), targetUid: targetUid || null, targetEmail: targetEmail || null, detalle: String(detalle || "").slice(0, 300), data: data || null, at: FieldValue.serverTimestamp() });
+  } catch (e) { console.warn("[admin_log]", e.message); }
+}
 // Nombre lindo del plan para mails / UI del backend.
 const PLAN_LABEL = { plus: "Pro", full: "Pro", medio: "Intermedio", facturador: "Facturador", free: "Free" };
 const planLabel = p => PLAN_LABEL[p] || "Pro";
@@ -1823,27 +1834,30 @@ export default async function handler(req, res) {
     }
 
     // Acciones solo-admin
-    const adminActions = ["setSectionsConfig","adminGetData","adminGetUsage","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin","adminBuscarCuenta"];
+    const adminActions = ["setSectionsConfig","adminGetData","adminGetUsage","adminGetActividad","adminGetLog","adminGetSystem","adminImpersonar","pagoComprobante","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin","adminBuscarCuenta"];
     if (adminActions.includes(action)) {
       // La identidad del admin sale del TOKEN verificado, no del uid del body.
-      // Antes bastaba con mandar el uid del dueño (que estaba publicado en el
-      // bundle del front) para activarse el plan, hacerse admin o bajarse la
-      // base entera de usuarios y pagos.
       const adm = await requireAdmin(req);
       if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
       const adminNow = new Date();
+      const adminUid = adm.user.uid;
+      // Email de una cuenta (para el registro de actividad) — best-effort.
+      const emailDe = async (targetUid) => {
+        try { const s = await db.collection("users").doc(String(targetUid)).get(); return s.exists ? (s.data().email || "") : ""; } catch (_) { return ""; }
+      };
+      const log = async (accion, targetUid, detalle, data) => logAdmin(db, { adminUid, action: accion, targetUid, targetEmail: targetUid ? await emailDe(targetUid) : null, detalle, data });
 
       if (action === "setSectionsConfig") {
         const { adminOnlySections } = body;
         if (!Array.isArray(adminOnlySections)) return res.status(400).json({ error: "adminOnlySections debe ser un array" });
-        await db.collection("config").doc(CONFIG_DOC).set({ adminOnlySections, updatedAt: adminNow, updatedBy: uid }, { merge: true });
-        return res.json({ ok: true, adminOnlySections });
+        const lista = adminOnlySections.map(String).filter(Boolean).slice(0, 50);
+        await db.collection("config").doc(CONFIG_DOC).set({ adminOnlySections: lista, updatedAt: adminNow, updatedBy: uid }, { merge: true });
+        await log("accesos", null, lista.length ? `Solo admin: ${lista.join(", ")}` : "Todas las secciones públicas");
+        return res.json({ ok: true, adminOnlySections: lista });
       }
 
       // Diagnóstico de "no me aparece en la lista": busca el email DIRECTO en
-      // Firebase Auth. Si la cuenta existe pero no tiene doc en `users` (nunca
-      // completó el primer login que lo crea), lo crea mínimo para que aparezca
-      // en el listado y se le pueda gestionar el plan.
+      // Firebase Auth. Si la cuenta existe pero no tiene doc en `users`, lo crea.
       if (action === "adminBuscarCuenta") {
         const email = String(body.email || "").trim().toLowerCase();
         if (!email || !email.includes("@")) return res.status(400).json({ error: "email requerido" });
@@ -1860,6 +1874,7 @@ export default async function handler(req, res) {
           const trialEnd = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
           await uRef.set({ uid: au.uid, email: au.email || email, nombre: au.displayName || email.split("@")[0], createdAt: FieldValue.serverTimestamp(), plan: "free", trialEnd, stores: [] }, { merge: true });
           creoDoc = true;
+          await log("crear_ficha", au.uid, `Ficha creada para ${email} (existía en Auth sin doc)`);
         }
         return res.json({
           ok: true, encontrado: true, uid: au.uid,
@@ -1872,104 +1887,224 @@ export default async function handler(req, res) {
       }
 
       if (action === "adminGetData") {
-        // Topes: sin límite, con cientos de cuentas y miles de pagos esto se
-        // vuelve una respuesta de varios MB que tarda y traba el navegador.
-        // Los pagos van por fecha descendente, así que el corte deja afuera los
-        // más viejos (los pendientes, que son los accionables, siempre entran).
+        // Topes: con cientos de cuentas y miles de pagos esto se vuelve una
+        // respuesta de varios MB. Los pagos van por fecha descendente.
         const [pagSnap, usSnap] = await Promise.all([
-          db.collection("pagos").orderBy("createdAt", "desc").limit(1000).get(),
-          db.collection("users").limit(2000).get(),
+          db.collection("pagos").orderBy("createdAt", "desc").limit(1500).get(),
+          db.collection("users").limit(3000).get(),
         ]);
-        // El comprobante (imagen base64) NO viaja en el listado — inflaría la
-        // respuesta varios MB. Se pide por pago con action=pagoComprobante.
-        const pagos = pagSnap.docs.map(d => { const { comprobanteB64, ...rest } = d.data(); return { _id: d.id, ...rest, tieneComprobante: !!comprobanteB64 }; });
-        const usuarios = usSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
-        // Fuente de verdad de "quién se registró" = Firebase Auth. Cuentas que se
-        // crearon antes de que existiera el auto-doc (o que nunca dispararon su
-        // creación) no tienen doc en `users` y no aparecían acá. Traemos todos los
-        // usuarios de Auth y agregamos los que falten como registros mínimos, para
-        // que el panel muestre TODAS las cuentas. Best-effort: si Auth falla, se
-        // sigue con solo los docs de Firestore.
+        const ms = v => v?._seconds ? v._seconds * 1000 : v?.toMillis?.() ? v.toMillis() : v?.toDate?.() ? v.toDate().getTime() : (v instanceof Date ? v.getTime() : (typeof v === "string" && v ? Date.parse(v) || null : null));
+        // El comprobante (imagen base64) NO viaja en el listado.
+        const pagos = pagSnap.docs.map(d => {
+          const p = d.data();
+          return {
+            _id: d.id, uid: p.uid, email: p.email || "", plan: p.plan || "", method: p.method || "", currency: p.currency || "",
+            amount: Number(p.amount) || 0, periodo: p.periodo || "", meses: p.meses || null, mesesConfirmados: p.mesesConfirmados || null,
+            estado: p.estado || "", isTrial: !!p.isTrial, createdAt: ms(p.createdAt), confirmadoAt: ms(p.confirmadoAt), confirmadoBy: p.confirmadoBy || "",
+            billingReason: p.billingReason || "", invoiceUrl: p.invoiceUrl || null, txHash: p.txHash || null, transferRef: p.transferRef || null,
+            arsMonto: p.arsMonto || null, dolarCripto: p.dolarCripto || null, autoCheckMotivo: p.autoCheckMotivo || null,
+            refCreditAplicado: p.refCreditAplicado || 0, nota: p.nota || "", tieneComprobante: !!p.comprobanteB64,
+          };
+        });
+        // Ficha SLIM por cuenta: nunca viajan tokens de integraciones ni datos
+        // sensibles al navegador del admin. Solo lo que el panel muestra.
+        const slim = (id, d) => ({
+          _id: id, email: d.email || "", nombre: d.nombre || d.displayName || "", plan: d.plan || "free", isTrial: !!d.isTrial,
+          planExpiry: ms(d.planExpiry), trialEnd: ms(d.trialEnd), createdAt: ms(d.createdAt),
+          stripeStatus: d.stripeStatus || null, cancelAtPeriodEnd: !!d.cancelAtPeriodEnd, stripeCustomerId: d.stripeCustomerId || null, stripeSubscriptionId: d.stripeSubscriptionId || null, stripePaymentFailedAt: ms(d.stripePaymentFailedAt),
+          planActivadoBy: d.planActivadoBy || null, planActivadoAt: ms(d.planActivadoAt),
+          isAdmin: d.isAdmin === true, adminNote: d.adminNote || "", adminNoteAt: ms(d.adminNoteAt),
+          stores: (Array.isArray(d.stores) ? d.stores : []).map(s => ({ type: s.type || "", name: s.name || s.storeName || s.shop || "" })),
+          cuits: (Array.isArray(d.cuits) ? d.cuits : []).length, metaAccounts: (Array.isArray(d.metaAccounts) ? d.metaAccounts : []).length,
+          teamMembers: Object.entries((d.teamMembers && typeof d.teamMembers === "object") ? d.teamMembers : {}).map(([muid, m]) => ({ uid: muid, email: m?.email || "", nombre: m?.nombre || "", secciones: Object.keys(m?.secciones || {}).filter(k => m.secciones[k] === true) })),
+          teamUids: (Array.isArray(d.teamUids) ? d.teamUids : []).length,
+          refCode: d.refCode || null, refBy: d.refBy || null, refCreditUsd: Number(d.refCreditUsd) || 0, refGanadoUsd: Number(d.refGanadoUsd) || 0,
+          andreaniSaldo: Math.round(Number(d.andreaniSaldo) || 0), onbDone: d.onbDone === true,
+          notifEmails: (Array.isArray(d.notifEmails) ? d.notifEmails : []).length,
+        });
+        const usuarios = usSnap.docs.map(d => slim(d.id, d.data()));
+        // Fuente de verdad de "quién se registró" = Firebase Auth: se suman las
+        // cuentas sin doc, se corrige el email de login y se trae el último login.
         try {
           const yaCargados = new Set(usuarios.map(u => u._id));
           const authUsers = [];
           let pageToken = undefined;
-          for (let i = 0; i < 5; i++) { // hasta 5000 cuentas (1000 por página)
+          for (let i = 0; i < 5; i++) {
             const page = await getAuth().listUsers(1000, pageToken);
             authUsers.push(...page.users);
             if (!page.pageToken) break;
             pageToken = page.pageToken;
           }
-          // El email de LOGIN real vive en Auth: si el doc quedó con un mail
-          // viejo (cambio de email confirmado por link, fuera de la app), el
-          // listado muestra el de Auth — es el que el cliente dice usar.
           const authByUid = new Map(authUsers.map(a => [a.uid, a]));
           for (const u of usuarios) {
             const au = authByUid.get(u._id);
-            if (au?.email && String(u.email || "").toLowerCase() !== au.email.toLowerCase()) {
-              if (u.email) u.emailDoc = u.email;
-              u.email = au.email;
-            }
+            if (!au) continue;
+            if (au.email && String(u.email || "").toLowerCase() !== au.email.toLowerCase()) { if (u.email) u.emailDoc = u.email; u.email = au.email; }
+            u.ultimoLogin = au.metadata?.lastSignInTime ? Date.parse(au.metadata.lastSignInTime) || null : null;
+            u.creadoAuth = au.metadata?.creationTime ? Date.parse(au.metadata.creationTime) || null : null;
+            if (!u.createdAt && u.creadoAuth) u.createdAt = u.creadoAuth;
+            u.providers = (au.providerData || []).map(p => p.providerId);
           }
           for (const au of authUsers) {
             if (yaCargados.has(au.uid)) continue;
             usuarios.push({
-              _id: au.uid,
-              uid: au.uid,
-              email: au.email || "",
-              nombre: au.displayName || (au.email ? au.email.split("@")[0] : au.uid),
-              plan: "free",
-              createdAt: au.metadata?.creationTime ? { _seconds: Math.floor(new Date(au.metadata.creationTime).getTime() / 1000) } : null,
-              _sinDoc: true, // no tiene doc en Firestore (nunca completó registro/onboarding)
+              ...slim(au.uid, {}), email: au.email || "", nombre: au.displayName || (au.email ? au.email.split("@")[0] : au.uid),
+              createdAt: au.metadata?.creationTime ? Date.parse(au.metadata.creationTime) || null : null,
+              creadoAuth: au.metadata?.creationTime ? Date.parse(au.metadata.creationTime) || null : null,
+              ultimoLogin: au.metadata?.lastSignInTime ? Date.parse(au.metadata.lastSignInTime) || null : null,
+              providers: (au.providerData || []).map(p => p.providerId),
+              _sinDoc: true,
             });
           }
         } catch (e) { console.warn("[admin] listUsers:", e.message); }
-        const activos = usuarios.filter(u => u.plan && u.plan !== "free");
-        const activosPagos = activos.filter(u => !u.isTrial);
-        const mrrUsdt = activosPagos.reduce((s, u) => s + (PLAN_PRICE_USDT[u.plan] || 0), 0);
-        const mrrArs  = activosPagos.reduce((s, u) => s + (PLAN_PRICE_ARS[u.plan]  || 0), 0);
-        const en7dias = new Date(adminNow); en7dias.setDate(en7dias.getDate() + 7);
-        const vencenPronto = activos.filter(u => {
-          const exp = u.planExpiry?._seconds ? new Date(u.planExpiry._seconds * 1000) : u.planExpiry?.toDate?.();
-          return exp && exp >= adminNow && exp <= en7dias;
-        });
-        const pagosReales = pagos.filter(p => p.estado === "confirmado" && !p.isTrial && Number(p.amount) > 0);
-        const totalUSDT = pagosReales.filter(p => p.currency === "USDT").reduce((s,p) => s + (Number(p.amount)||0), 0);
-        const totalARS  = pagosReales.filter(p => p.currency === "ARS").reduce((s,p)  => s + (Number(p.amount)||0), 0);
+
+        // ── Métricas ──
+        const nowMs = adminNow.getTime();
+        const activaPaga = u => (u.plan || "free") !== "free" && !u.isTrial && (!u.planExpiry || u.planExpiry > nowMs);
+        const ultimoPagoReal = {};
+        for (const p of pagos) { if (p.estado === "confirmado" && !p.isTrial && p.amount > 0 && !ultimoPagoReal[p.uid]) ultimoPagoReal[p.uid] = p; }
+        let mrr = 0, mrrStripe = 0, mrrManual = 0;
+        for (const u of usuarios) {
+          if (!activaPaga(u)) continue;
+          const pr = PLAN_PRECIOS[u.plan === "full" ? "plus" : u.plan]; if (!pr) continue;
+          const periodo = ultimoPagoReal[u._id]?.periodo === "anual" ? "anual" : "mensual";
+          const v = pr[periodo];
+          mrr += v;
+          if (u.stripeStatus === "active" || u.stripeStatus === "past_due") mrrStripe += v; else mrrManual += v;
+        }
+        const esUsd = p => p.currency === "USD" || p.currency === "USDT";
+        const pagosReales = pagos.filter(p => p.estado === "confirmado" && !p.isTrial && p.amount > 0);
         const stats = {
           totalUsuarios: usuarios.length,
-          usuariosPlus: usuarios.filter(u => u.plan==="plus" && !u.isTrial).length,
-          usuariosFact: usuarios.filter(u => u.plan==="facturador" && !u.isTrial).length,
-          usuariosFact_trial: usuarios.filter(u => u.plan==="facturador" && u.isTrial).length,
-          usuariosFull: usuarios.filter(u => u.plan==="full" && !u.isTrial).length,
-          usuariosPlus_trial: usuarios.filter(u => u.plan==="plus" && u.isTrial).length,
-          usuariosFull_trial: usuarios.filter(u => u.plan==="full" && u.isTrial).length,
-          usuariosPrueba: usuarios.filter(u => u.isTrial).length,
-          pagosPendientes: pagos.filter(p => p.estado === "pendiente").length,
+          pagas: usuarios.filter(activaPaga).length,
+          pruebas: usuarios.filter(u => u.isTrial && (u.plan || "free") !== "free" && (!u.planExpiry || u.planExpiry > nowMs)).length,
+          pastDue: usuarios.filter(u => u.stripeStatus === "past_due").length,
+          cancelan: usuarios.filter(u => u.cancelAtPeriodEnd && activaPaga(u)).length,
+          mrr, mrrStripe, mrrManual,
+          totalUsd: pagosReales.filter(esUsd).reduce((s, p) => s + p.amount, 0),
+          totalArs: pagosReales.filter(p => p.currency === "ARS").reduce((s, p) => s + p.amount, 0),
           pagosRealesCount: pagosReales.length,
           countPruebas: pagos.filter(p => p.isTrial).length,
-          mrrUsdt, mrrArs, totalUSDT, totalARS, vencenPronto: vencenPronto.length,
+          pagosPendientes: pagos.filter(p => p.estado === "pendiente").length,
+          precios: PLAN_PRECIOS,
+          generadoAt: nowMs,
         };
-        return res.json({ pagos, usuarios, stats });
+        return res.json({ pagos, usuarios, stats, founder: !!adm.founder, adminUid });
       }
 
+      // Legacy (uso de Envíos por día) — lo reemplaza adminGetActividad.
       if (action === "adminGetUsage") {
         const { targetUid, days = 30 } = body;
         if (!targetUid) return res.status(400).json({ error: "targetUid requerido" });
         const snap = await db.collection("usage").where("uid", "==", targetUid).get();
-        const rows = snap.docs.map(d => d.data())
-          .sort((a, b) => (a.date < b.date ? 1 : -1))
-          .slice(0, Number(days) || 30);
-        const totales = rows.reduce((acc, r) => ({
-          etiquetas:    acc.etiquetas    + (r.etiquetas    || 0),
-          skus:         acc.skus         + (r.skus         || 0),
-          seguimientos: acc.seguimientos + (r.seguimientos || 0),
-        }), { etiquetas: 0, skus: 0, seguimientos: 0 });
+        const rows = snap.docs.map(d => d.data()).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, Number(days) || 30);
+        const totales = rows.reduce((acc, r) => ({ etiquetas: acc.etiquetas + (r.etiquetas || 0), skus: acc.skus + (r.skus || 0), seguimientos: acc.seguimientos + (r.seguimientos || 0) }), { etiquetas: 0, skus: 0, seguimientos: 0 });
         return res.json({ usage: rows, totales });
       }
 
-      // Helper transaccional: dos clicks del admin ya no suman meses dos veces
-      // (lee planExpiry y escribe la extensión de forma atómica).
+      // Actividad REAL de una cuenta en los últimos 30 días, por sección.
+      if (action === "adminGetActividad") {
+        const targetUid = String(body.targetUid || "").trim();
+        if (!targetUid) return res.status(400).json({ error: "targetUid requerido" });
+        const d30 = new Date(Date.now() - 30 * 86400000);
+        const d30s = d30.toISOString().slice(0, 10);
+        const uRef = db.collection("users").doc(targetUid);
+        const toMs = v => v?.toMillis?.() ? v.toMillis() : v?._seconds ? v._seconds * 1000 : (typeof v === "string" ? Date.parse(v) || 0 : (v instanceof Date ? v.getTime() : 0));
+        const cnt30 = (docs, campos) => {
+          let n = 0, ultima = 0;
+          for (const d of docs) {
+            const x = d.data(); let t = 0;
+            for (const c of campos) { t = toMs(x[c]); if (t) break; }
+            if (t >= d30.getTime()) n++;
+            if (t > ultima) ultima = t;
+          }
+          return { n, ultima: ultima || null, total: docs.length };
+        };
+        const safe = async (fn) => { try { return await fn(); } catch (e) { return { n: 0, ultima: null, total: 0, error: e.message }; } };
+        const [usageSnap, facturas, envios, pagosCal, fijos, tareasS, reclamos, canjes, copConvs] = await Promise.all([
+          db.collection("usage").where("uid", "==", targetUid).get().catch(() => ({ docs: [] })),
+          safe(async () => cnt30((await uRef.collection("arca_comprobantes").limit(600).get()).docs, ["emitido_at", "fecha_cbte", "createdAt"])),
+          safe(async () => cnt30((await uRef.collection("envios").limit(600).get()).docs, ["creado", "createdAt", "despachadoAt"])),
+          safe(async () => cnt30((await uRef.collection("pagos_cal").limit(300).get()).docs, ["creadoAt", "createdAt", "pagadoAt"])),
+          safe(async () => cnt30((await uRef.collection("pagos_fijos").limit(100).get()).docs, ["updatedAt", "createdAt"])),
+          safe(async () => cnt30((await db.collection("tareas").where("uid", "==", targetUid).limit(400).get()).docs, ["createdAt", "updatedAt"])),
+          safe(async () => cnt30((await db.collection("reclamos").where("ownerId", "==", targetUid).limit(400).get()).docs, ["createdAt", "updatedAt"])),
+          safe(async () => cnt30((await db.collection("canjes").where("ownerId", "==", targetUid).limit(400).get()).docs, ["createdAt", "updatedAt"])),
+          safe(async () => cnt30((await uRef.collection("copilot_convs").limit(200).get()).docs, ["updatedAt", "createdAt"])),
+        ]);
+        const usage = usageSnap.docs.map(d => d.data()).filter(r => String(r.date || "") >= d30s);
+        const sum = k => usage.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+        const ultUsage = k => { const r = usage.filter(x => Number(x[k]) > 0).map(x => x.date).sort().pop(); return r ? Date.parse(r + "T12:00:00Z") : null; };
+        const secciones = [
+          { id: "arca", label: "Facturador", n: facturas.n, ultima: facturas.ultima, unidad: "comprobantes", total: facturas.total },
+          { id: "envios", label: "Envíos", n: Math.max(envios.n, sum("etiquetas")), ultima: envios.ultima || ultUsage("etiquetas"), unidad: "etiquetas", total: envios.total },
+          { id: "seguimientos", label: "Seguimientos", n: sum("seguimientos"), ultima: ultUsage("seguimientos"), unidad: "consultas" },
+          { id: "sku", label: "SKU en rótulos", n: sum("skus"), ultima: ultUsage("skus"), unidad: "rótulos" },
+          { id: "copilot", label: "Copilot", n: sum("copilot_msgs"), ultima: ultUsage("copilot_msgs") || copConvs.ultima, unidad: "mensajes" },
+          { id: "calendario", label: "Calendario de Pagos", n: pagosCal.n, ultima: pagosCal.ultima || fijos.ultima, unidad: "pagos", total: pagosCal.total + (fijos.total ? 0 : 0), fijos: fijos.total },
+          { id: "tareas", label: "Tareas", n: tareasS.n, ultima: tareasS.ultima, unidad: "tareas", total: tareasS.total },
+          { id: "reclamos", label: "Reclamos", n: reclamos.n, ultima: reclamos.ultima, unidad: "reclamos", total: reclamos.total },
+          { id: "canjes", label: "Canjes", n: canjes.n, ultima: canjes.ultima, unidad: "canjes", total: canjes.total },
+        ];
+        return res.json({ ok: true, desde: d30s, secciones });
+      }
+
+      // Registro de acciones de administración (últimas 300).
+      if (action === "adminGetLog") {
+        const lim = Math.min(500, Math.max(20, Number(body.limit) || 300));
+        const snap = await db.collection("admin_log").orderBy("at", "desc").limit(lim).get();
+        const items = snap.docs.map(d => { const x = d.data(); return { id: d.id, ...x, at: x.at?.toMillis?.() || null }; });
+        return res.json({ ok: true, items });
+      }
+
+      // Salud del sistema: crons, servicios configurados (solo presencia, nunca valores).
+      if (action === "adminGetSystem") {
+        const [cronSnap, stripeSnap] = await Promise.all([
+          db.collection("system").doc("crons").get().catch(() => null),
+          db.collection("system").doc("stripe").get().catch(() => null),
+        ]);
+        const crons = {};
+        const cd = cronSnap?.exists ? cronSnap.data() : {};
+        for (const [k, v] of Object.entries(cd || {})) {
+          if (!v || typeof v !== "object") continue;
+          crons[k] = { at: v.at?.toMillis?.() || (v.at instanceof Date ? v.at.getTime() : null), ok: v.ok !== false, status: v.status || null, ms: v.ms || null, resumen: v.resumen || "" };
+        }
+        const sd = stripeSnap?.exists ? stripeSnap.data() : {};
+        const env = (k) => !!process.env[k];
+        const stripeKey = String(process.env.STRIPE_SECRET_KEY || "");
+        const servicios = [
+          { id: "stripe", label: "Stripe", ok: !!stripeKey, detalle: stripeKey ? (stripeKey.startsWith("sk_live") ? "Clave live" : "Clave de prueba (sk_test)") : "Sin STRIPE_SECRET_KEY" },
+          { id: "stripe_webhook", label: "Webhook de Stripe", ok: !!(sd.webhookSecret || process.env.STRIPE_WEBHOOK_SECRET), detalle: sd.webhookId ? `Creado ${sd.webhookAt?.toDate?.() ? fechaCorta(sd.webhookAt.toDate()) : ""} · portal ${sd.portalConfigId ? "configurado" : "sin configurar"}` : (process.env.STRIPE_WEBHOOK_SECRET ? "Secreto por variable de entorno" : "Se crea solo en el primer checkout") },
+          { id: "resend", label: "Emails (Resend)", ok: env("RESEND_API_KEY"), detalle: process.env.RESEND_FROM ? `Remitente ${process.env.RESEND_FROM}` : "Sin RESEND_FROM" },
+          { id: "gemini", label: "Copilot (Gemini)", ok: env("GOOGLE_AI_KEY"), detalle: env("GOOGLE_AI_KEY") ? "Clave cargada" : "Sin GOOGLE_AI_KEY" },
+          { id: "meta", label: "Meta Ads", ok: env("META_APP_ID") && env("META_APP_SECRET"), detalle: env("META_APP_SECRET") ? "App configurada" : "Falta META_APP_SECRET" },
+          { id: "andreani", label: "Andreani (etiquetas)", ok: env("ANDREANI_USER") && env("ANDREANI_PASS") && env("ANDREANI_CONTRATO_ESTANDAR"), detalle: env("ANDREANI_CONTRATO_SUCURSAL") ? "Contratos domicilio y sucursal" : "Falta contrato sucursal" },
+          { id: "mp", label: "Mercado Pago (cargas de saldo)", ok: env("MP_ACCESS_TOKEN"), detalle: env("MP_WEBHOOK_SECRET") ? "Webhook firmado" : "Sin MP_WEBHOOK_SECRET" },
+          { id: "tn", label: "Tienda Nube OAuth", ok: env("TN_CLIENT_ID") && env("TN_CLIENT_SECRET"), detalle: "" },
+          { id: "shopify", label: "Shopify OAuth", ok: env("SHOPIFY_APP_ID") && env("SHOPIFY_APP_SECRET"), detalle: "" },
+          { id: "ml", label: "Mercado Libre OAuth", ok: env("ML_CLIENT_ID") && env("ML_CLIENT_SECRET"), detalle: "" },
+          { id: "gads", label: "Google Ads", ok: env("GOOGLE_ADS_CLIENT_ID") && env("GOOGLE_ADS_CLIENT_SECRET") && env("GOOGLE_ADS_DEVELOPER_TOKEN"), detalle: env("GOOGLE_ADS_DEVELOPER_TOKEN") ? "" : "Pendiente de configurar" },
+          { id: "cron", label: "Crons (CRON_SECRET)", ok: env("CRON_SECRET"), detalle: env("CRON_SECRET") ? "Autenticación activa" : "Sin secreto: ningún cron corre" },
+          { id: "tron", label: "USDT TRC20 (TronGrid)", ok: env("TRONGRID_API_KEY"), detalle: "Medio alternativo legacy" },
+        ];
+        return res.json({ ok: true, crons, servicios, ahora: Date.now() });
+      }
+
+      // "Ver como cliente": token de sesión de la cuenta destino en modo solo lectura.
+      if (action === "adminImpersonar") {
+        const targetUid = String(body.targetUid || "").trim();
+        if (!targetUid) return res.status(400).json({ error: "targetUid requerido" });
+        if (targetUid === adminUid) return res.status(400).json({ error: "Ya estás en tu cuenta." });
+        const tSnap = await db.collection("users").doc(targetUid).get();
+        const tEmail = tSnap.exists ? (tSnap.data().email || "") : "";
+        let token;
+        try { token = await getAuth().createCustomToken(targetUid, { impersonatedBy: adminUid, ro: true }); }
+        catch (e) { return res.status(500).json({ error: "No se pudo generar la sesión: " + e.message }); }
+        await log("ver_como", targetUid, `Vista de cliente (solo lectura) de ${tEmail || targetUid}`);
+        return res.json({ ok: true, token, email: tEmail });
+      }
+
+      // Helper transaccional: dos clicks del admin ya no suman meses dos veces.
       const extenderTx = async (targetUid, updates, calcExpiry) => {
         const ref = db.collection("users").doc(targetUid);
         return db.runTransaction(async tx => {
@@ -1981,25 +2116,27 @@ export default async function handler(req, res) {
             if (cur > adminNow) base = cur;
           }
           const expiry = calcExpiry(base, userData);
-          tx.update(ref, { ...updates, planExpiry: expiry });
+          tx.set(ref, { ...updates, planExpiry: expiry }, { merge: true });
           return expiry;
         });
       };
 
       if (action === "activarPlan") {
         const { targetUid, plan, meses = 1 } = body;
+        if (!PLAN_PRECIOS[plan]) return res.status(400).json({ error: "Plan inválido" });
         const expiry = await extenderTx(targetUid, { plan, planActivadoBy: uid, planActivadoAt: adminNow }, base => addMonths(base, meses));
+        await log("activar_plan", targetUid, `${planLabel(plan)} por ${meses} mes(es) → vence ${fechaCorta(expiry)}`);
         return res.json({ ok: true, expiry });
       }
 
       if (action === "desactivarPlan") {
         const { targetUid } = body;
-        await db.collection("users").doc(targetUid).update({ plan: "free", planExpiry: null, planDesactivadoBy: uid, planDesactivadoAt: adminNow });
+        await db.collection("users").doc(targetUid).set({ plan: "free", planExpiry: null, isTrial: false, planDesactivadoBy: uid, planDesactivadoAt: adminNow }, { merge: true });
+        await log("desactivar_plan", targetUid, "Plan desactivado (pasa a Free)");
         return res.json({ ok: true });
       }
 
-      // Comprobante de un pago puntual (imagen base64) — fuera del listado
-      // para no inflar adminGetData.
+      // Comprobante de un pago puntual (imagen base64) — fuera del listado.
       if (action === "pagoComprobante") {
         const snap = await db.collection("pagos").doc(String(body.pagoId || "")).get();
         if (!snap.exists) return res.status(404).json({ error: "No se encontró el pago." });
@@ -2008,9 +2145,6 @@ export default async function handler(req, res) {
 
       if (action === "confirmarPago") {
         const { pagoId, targetUid, plan, meses = 1 } = body;
-        // Idempotente: dos clicks (o dos pestañas) sobre el mismo pago sumaban
-        // los meses dos veces. La transacción marca el pago como confirmado y
-        // falla si otro ya lo confirmó.
         const pagoRef = db.collection("pagos").doc(pagoId);
         let expiry, pagoData = null;
         try {
@@ -2026,7 +2160,7 @@ export default async function handler(req, res) {
               if (cur > adminNow) base = cur;
             }
             const exp = addMonths(base, meses);
-            tx.update(db.collection("users").doc(targetUid), { plan, planExpiry: exp, isTrial: false, cancelAtPeriodEnd: false, planActivadoBy: uid, planActivadoAt: adminNow });
+            tx.set(db.collection("users").doc(targetUid), { plan, planExpiry: exp, isTrial: false, cancelAtPeriodEnd: false, planActivadoBy: uid, planActivadoAt: adminNow }, { merge: true });
             tx.update(pagoRef, { estado: "confirmado", mesesConfirmados: Number(meses), confirmadoBy: uid, confirmadoAt: adminNow });
             return exp;
           });
@@ -2035,15 +2169,12 @@ export default async function handler(req, res) {
           if (e.message === "PAGO_INEXISTENTE") return res.status(404).json({ error: "No se encontró el pago." });
           throw e;
         }
-        // Programa de referidos (best-effort, idempotente): descuenta el crédito
-        // que el pagador aplicó y acredita el 15% a su referente.
         if (pagoData) {
           const pd = { ...pagoData, mesesConfirmados: Number(meses) };
           await descontarCreditoAplicado(db, pagoId, pd);
           await acreditarComisionReferido(db, pagoId, pd);
         }
-        // Comprobante de activación al cliente (best-effort: si el mail falla,
-        // el plan igual quedó activado).
+        await log("confirmar_pago", targetUid, `Pago ${pagoId} confirmado: ${planLabel(plan)} ${meses} mes(es)`);
         try {
           const uSnap = await db.collection("users").doc(targetUid).get();
           const email = (uSnap.data() || {}).email;
@@ -2066,64 +2197,79 @@ export default async function handler(req, res) {
 
       if (action === "rechazarPago") {
         const { pagoId, motivo = "" } = body;
+        const ps = await db.collection("pagos").doc(pagoId).get();
         await db.collection("pagos").doc(pagoId).update({ estado: "rechazado", rechazadoBy: uid, rechazadoAt: adminNow, motivoRechazo: motivo });
+        await log("rechazar_pago", ps.exists ? ps.data().uid : null, `Pago ${pagoId} rechazado${motivo ? ": " + motivo : ""}`);
         return res.json({ ok: true });
       }
 
       if (action === "addNote") {
         const { targetUid, note } = body;
-        await db.collection("users").doc(targetUid).update({ adminNote: note, adminNoteAt: adminNow, adminNoteBy: uid });
+        await db.collection("users").doc(targetUid).set({ adminNote: String(note || "").slice(0, 2000), adminNoteAt: adminNow, adminNoteBy: uid }, { merge: true });
+        await log("nota", targetUid, String(note || "").slice(0, 120) || "Nota borrada");
         return res.json({ ok: true });
       }
 
       if (action === "extenderPlan") {
         const { targetUid, meses = 1 } = body;
         const expiry = await extenderTx(targetUid, { planExtendidoBy: uid, planExtendidoAt: adminNow }, base => addMonths(base, meses));
+        await log("extender_plan", targetUid, `+${meses} mes(es) → vence ${fechaCorta(expiry)}`);
         return res.json({ ok: true, expiry });
       }
 
       if (action === "gestionarPlan") {
         const { targetUid, plan, cantidad, unidad = "meses", isTrial = false } = body;
+        if (!PLAN_PRECIOS[plan]) return res.status(400).json({ error: "Plan inválido" });
+        const cant = Number(cantidad);
+        if (!cant || cant < 1) return res.status(400).json({ error: "Cantidad inválida" });
         const expiry = await extenderTx(targetUid, { plan, isTrial: !!isTrial, planActivadoBy: uid, planActivadoAt: adminNow }, base => {
-          if (unidad === "dias") { const d = new Date(base); d.setDate(d.getDate() + Number(cantidad)); return d; }
-          return addMonths(base, Number(cantidad));
+          if (unidad === "dias") { const d = new Date(base); d.setDate(d.getDate() + cant); return d; }
+          return addMonths(base, cant);
         });
         if (isTrial) {
-          await db.collection("pagos").add({ uid: targetUid, plan, method: "prueba", currency: "—", amount: 0, isTrial: true, cantidad: Number(cantidad), unidad, estado: "confirmado", confirmadoBy: uid, confirmadoAt: adminNow, createdAt: adminNow, nota: `Prueba: ${cantidad} ${unidad} de ${plan}` });
+          await db.collection("pagos").add({ uid: targetUid, plan, method: "prueba", currency: "—", amount: 0, isTrial: true, cantidad: cant, unidad, estado: "confirmado", confirmadoBy: uid, confirmadoAt: adminNow, createdAt: adminNow, nota: `Prueba: ${cant} ${unidad} de ${plan}` });
         }
+        await log(isTrial ? "dar_prueba" : "activar_plan", targetUid, `${planLabel(plan)} ${cant} ${unidad}${isTrial ? " como prueba" : ""} → vence ${fechaCorta(expiry)}`);
         return res.json({ ok: true, expiry });
       }
 
       if (action === "activarPrueba") {
         const { targetUid, plan, meses = 1 } = body;
+        if (!PLAN_PRECIOS[plan]) return res.status(400).json({ error: "Plan inválido" });
         const expiry = await extenderTx(targetUid, { plan, isTrial: true, planActivadoBy: uid, planActivadoAt: adminNow }, base => addMonths(base, meses));
         await db.collection("pagos").add({ uid: targetUid, plan, method: "prueba", currency: "—", amount: 0, isTrial: true, mesesConfirmados: Number(meses), estado: "confirmado", confirmadoBy: uid, confirmadoAt: adminNow, createdAt: adminNow, nota: `Plan de prueba (${meses}m) activado por admin` });
+        await log("dar_prueba", targetUid, `${planLabel(plan)} ${meses} mes(es) como prueba`);
         return res.json({ ok: true, expiry });
       }
 
       if (action === "ajustarDias") {
         const { targetUid, dias } = body;
         if (!targetUid || dias === undefined) return res.status(400).json({ error: "Faltan parámetros" });
-        // Ajuste sobre el vencimiento ACTUAL (aunque esté en el pasado), atómico
         const ref = db.collection("users").doc(targetUid);
         const expiry = await db.runTransaction(async tx => {
           const snap = await tx.get(ref);
           const userData = snap.data() || {};
           const base = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
           const d = new Date(base); d.setDate(d.getDate() + Number(dias));
-          tx.update(ref, { planExpiry: d, planAjustadoBy: uid, planAjustadoAt: adminNow, planAjusteDias: Number(dias) });
+          tx.set(ref, { planExpiry: d, planAjustadoBy: uid, planAjustadoAt: adminNow, planAjusteDias: Number(dias) }, { merge: true });
           return d;
         });
+        await log("ajustar_dias", targetUid, `${Number(dias) > 0 ? "+" : ""}${Number(dias)} días → vence ${fechaCorta(expiry)}`);
         return res.json({ ok: true, expiry });
       }
 
       if (action === "toggleAdmin") {
         const { targetUid } = body;
         if (!targetUid) return res.status(400).json({ error: "Falta targetUid" });
+        // Solo el dueño de la plataforma reparte o quita el flag de admin.
+        if (!isFounder(adminUid)) return res.status(403).json({ error: "Solo el dueño de Growith puede dar o quitar acceso de administrador." });
         if (targetUid === uid) return res.status(400).json({ error: "No podés quitarte el admin a vos mismo" });
+        if (isFounder(targetUid)) return res.status(400).json({ error: "El dueño de la plataforma siempre es admin." });
         const userDoc = await db.collection("users").doc(targetUid).get();
         const current = userDoc.data()?.isAdmin || false;
         await db.collection("users").doc(targetUid).set({ isAdmin: !current }, { merge: true });
+        clearTeamCache(targetUid);
+        await log(!current ? "dar_admin" : "quitar_admin", targetUid, !current ? "Acceso de administrador otorgado" : "Acceso de administrador quitado");
         return res.json({ ok: true, isAdmin: !current });
       }
     }
