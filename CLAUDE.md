@@ -77,7 +77,7 @@ ANDREANI_CONTRATO_ESTANDAR / ANDREANI_CONTRATO_SUCURSAL  ← contratos de envío
 | `ConfigScreen` | Config | Integraciones, tokens, configuración |
 | `AppPlanes` | Suscripción | Plan, pago con tarjeta (Stripe), portal, cancelar |
 | `AppCalendarioPagos` | Calendario de Pagos | Obligaciones del negocio (alquiler, préstamos, cuotas, tarjetas…) — `api/pagos-cal.js`, Firestore `users/{uid}/pagos_cal` |
-| `AppAdmin` | Admin | Panel de administración (solo admins) |
+| `AppAdmin` | Admin | Panel de administración (solo admins): Resumen · Cuentas · Ingresos · Envíos · Sistema. Acciones `admin*` en `api/tareas.js` (precios MRR en `PLAN_PRECIOS`), `admin_*` en `api/andreani.js`. Registro de acciones en colección `admin_log`; heartbeat de crons en `system/crons` (hook en `guardCron`, lista esperada `ADM_CRONS`); accesos por sección desde `SIDEBAR_GROUPS_BASE`; "Ver como cliente" = custom token con claim `impersonatedBy` en modo solo lectura (`readOnlyBlock` en `_auth.js` + wrappers de setDoc/updateDoc/addDoc/deleteDoc). Dar/quitar admin: solo fundadores (`isFounder`) |
 
 ## Navegación
 - Hash routing sin librería: `window.location.hash` → `#/stock`, `#/envios`, etc.
@@ -191,6 +191,8 @@ growith_expiry_dismiss_{uid}_{fecha} → "1" banner de vencimiento de plan/trial
 growith_home_start_{uid}   → "1" checklist "Empecemos" del Home cerrado manualmente
 growith_calpagos_cat_{uid}  → SWR catálogo (producto/variante/SKU) para el selector de pedidos de mercadería del Calendario de Pagos
 growith_calpagos_alert_{uid} → número de pagos vencidos/hoy/mañana (badge del sidebar; evento "gh-calpagos-alert"). Avisos por mail (día anterior + mismo día, y resumen los lunes) a dueño + notifEmails + miembros con la sección: cron /api/pagos-cal?action=cron_avisos (índice users.pagosCalDias). Comprobantes en users/{uid}/pagos_cal_adj/{pagoId}
+growith_admin_cache_{uid}  → SWR {pagos,usuarios,stats} del panel Admin (fichas slim, sin tokens)
+(sessionStorage) growith_impersonate → JSON {uid,email,adminEmail,adminUid,at} sesión "Ver como cliente" (solo lectura); levanta window.__ghReadOnly antes de cualquier escritura
 (sessionStorage) growith_copilot_conv → JSON {id,msgs} conversación activa del Copilot (cache; la verdad vive en users/{uid}/copilot_convs)
 (sessionStorage) growith_copilot_pending → prompt pendiente al abrir Copilot desde otra sección (ej. configuración guiada del Home)
 (sessionStorage) growith_colab_token / growith_board_id_{token} → sesión de portal colaborador / identidad de tablero compartido
