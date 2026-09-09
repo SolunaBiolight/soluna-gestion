@@ -105,6 +105,7 @@ function fijoLimpiar(f, base = {}) {
   if (f.dia2 !== undefined) out.dia2 = Math.min(31, Math.max(1, parseInt(f.dia2) || 15));
   if (f.notas !== undefined) out.notas = String(f.notas || "").slice(0, 1000);
   if (f.activo !== undefined) out.activo = !!f.activo;
+  if (f.hasta !== undefined) out.hasta = /^\d{4}-\d{2}$/.test(String(f.hasta || "")) ? String(f.hasta) : null;
   return out;
 }
 // Asegura las ocurrencias de los próximos 12 meses (desde el mes actual) de un
@@ -116,6 +117,7 @@ function generarFijo(col, batch, fijo, docsGrupo, now) {
   const partes = fijo.dividido ? [1, 2] : [0];
   for (let i = 0; i < 12; i++) {
     const t = new Date(Date.UTC(y0, m0 - 1 + i, 1)); const mes = `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}`;
+    if (fijo.hasta && mes > fijo.hasta) break;
     for (const parte of partes) {
       const vence = mismoMesDia(`${mes}-01`, parte === 2 ? fijo.dia2 : fijo.dia);
       if (vence < hoy) continue;
@@ -166,35 +168,63 @@ export default async function handler(req, res) {
   if (req.query.action === "cron_avisos") {
     if (!guardCron(req, res)) return;
     const db = initAdmin();
-    const manana = sumarDias(hoyAR(), 1);
-    const out = { usuarios: 0, mails: 0, errores: 0 };
+    const hoy = hoyAR(), manana = sumarDias(hoy, 1);
+    const esLunes = new Date(hoy + "T12:00:00Z").getUTCDay() === 1;
+    const semana = Array.from({ length: 7 }, (_, i) => sumarDias(hoy, i));
+    const out = { usuarios: 0, mails: 0, resumenes: 0, errores: 0 };
+    // Destinatarios: dueño de la cuenta, mails de notificación extra y los
+    // miembros del equipo que tienen la sección Calendario habilitada.
+    const destinatarios = (ud) => {
+      const set = new Set();
+      if (ud.email) set.add(String(ud.email).toLowerCase());
+      for (const e of (Array.isArray(ud.notifEmails) ? ud.notifEmails : [])) if (e) set.add(String(e).toLowerCase());
+      for (const m of Object.values(ud.teamMembers || {})) if (m && m.email && m.secciones && m.secciones.calendario === true) set.add(String(m.email).toLowerCase());
+      return [...set];
+    };
+    const filasDe = items => items.map(p => `<tr><td style="padding:6px 10px;border-bottom:1px solid #eee">${p.vence.split("-").reverse().slice(0, 2).join("/")} · ${String(p.titulo || "").replace(/</g, "&lt;")}${p.cuotaN ? ` <span style="color:#888">cuota ${p.cuotaN}/${p.cuotaTotal}</span>` : ""}</td><td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;font-weight:600">${fmtMonto(p.monto, p.moneda)}</td></tr>`).join("");
+    const totDe = items => { const a = items.filter(p => p.moneda !== "USD").reduce((s, p) => s + (Number(p.monto) || 0), 0), u = items.filter(p => p.moneda === "USD").reduce((s, p) => s + (Number(p.monto) || 0), 0); return [a ? fmtARS(a) : "", u ? "USD " + Math.round(u).toLocaleString("es-AR") : ""].filter(Boolean).join(" + ") || "$0"; };
+    const wrap = (titulo, cuerpo) => `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111;max-width:520px"><p>${titulo}</p>${cuerpo}<p style="font-size:13px;color:#666">Cuando lo pagues, marcalo como pagado en Growith → Calendario de Pagos.</p></div>`;
     try {
-      const us = await db.collection("users").where("pagosCalDias", "array-contains", manana).limit(500).get();
+      // (a) Vence hoy o mañana: un solo mail por cuenta.
+      const us = await db.collection("users").where("pagosCalDias", "array-contains-any", [hoy, manana]).limit(500).get();
       for (const u of us.docs) {
+        const ud = u.data() || {};
         const col = db.collection("users").doc(u.id).collection("pagos_cal");
-        const snap = await col.where("vence", "==", manana).where("pagado", "==", false).get();
-        const items = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => !p.avisoAt);
-        if (!items.length) continue;
-        const email = u.data().email;
-        if (!email) continue;
+        const snap = await col.where("vence", "in", [hoy, manana]).where("pagado", "==", false).get();
+        const todos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const hoyItems = todos.filter(p => p.vence === hoy && !p.avisoHoyAt);
+        const manItems = todos.filter(p => p.vence === manana && !p.avisoAt);
+        if (!hoyItems.length && !manItems.length) continue;
+        const tos = destinatarios(ud); if (!tos.length) continue;
         out.usuarios++;
-        const totalARS = items.filter(p => p.moneda !== "USD").reduce((s, p) => s + (Number(p.monto) || 0), 0);
-        const totalUSD = items.filter(p => p.moneda === "USD").reduce((s, p) => s + (Number(p.monto) || 0), 0);
-        const filas = items.map(p => `<tr><td style="padding:6px 10px;border-bottom:1px solid #eee">${String(p.titulo || "").replace(/</g, "&lt;")}${p.cuotaN ? ` <span style="color:#888">cuota ${p.cuotaN}/${p.cuotaTotal}</span>` : ""}</td><td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;font-weight:600">${fmtMonto(p.monto, p.moneda)}</td></tr>`).join("");
-        const tot = [totalARS ? fmtARS(totalARS) : "", totalUSD ? "USD " + Math.round(totalUSD).toLocaleString("es-AR") : ""].filter(Boolean).join(" + ");
-        const [y, m, d] = manana.split("-");
-        const r = await sendEmail({
-          to: email,
-          subject: `Mañana vence${items.length === 1 ? "" : "n"} ${items.length} pago${items.length === 1 ? "" : "s"} por ${tot}`,
-          html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111;max-width:520px">
-            <p>Te recordamos lo que vence <strong>mañana ${d}/${m}/${y}</strong> según tu Calendario de Pagos:</p>
-            <table style="border-collapse:collapse;width:100%;font-size:14px">${filas}</table>
-            <p style="margin-top:12px"><strong>Total: ${tot}</strong></p>
-            <p style="font-size:13px;color:#666">Cuando lo pagues, marcalo como pagado en Growith → Calendario de Pagos y dejás de recibir avisos por ese vencimiento.</p>
-          </div>`,
-        });
-        if (r.ok) { out.mails++; const b = db.batch(); items.forEach(p => b.set(col.doc(p.id), { avisoAt: new Date() }, { merge: true })); await b.commit(); }
-        else out.errores++;
+        const n = hoyItems.length + manItems.length;
+        const subject = hoyItems.length && manItems.length ? `Hoy vence${hoyItems.length === 1 ? "" : "n"} ${hoyItems.length} pago${hoyItems.length === 1 ? "" : "s"} (${totDe(hoyItems)}) y mañana ${manItems.length} más`
+          : hoyItems.length ? `Hoy vence${hoyItems.length === 1 ? "" : "n"} ${hoyItems.length} pago${hoyItems.length === 1 ? "" : "s"} por ${totDe(hoyItems)}`
+          : `Mañana vence${manItems.length === 1 ? "" : "n"} ${manItems.length} pago${manItems.length === 1 ? "" : "s"} por ${totDe(manItems)}`;
+        const cuerpo = (hoyItems.length ? `<p style="margin:10px 0 4px"><strong>Vence hoy</strong> · ${totDe(hoyItems)}</p><table style="border-collapse:collapse;width:100%;font-size:14px">${filasDe(hoyItems)}</table>` : "")
+          + (manItems.length ? `<p style="margin:14px 0 4px"><strong>Vence mañana</strong> · ${totDe(manItems)}</p><table style="border-collapse:collapse;width:100%;font-size:14px">${filasDe(manItems)}</table>` : "");
+        let ok = false;
+        for (const to of tos) { const r = await sendEmail({ to, subject, html: wrap("Recordatorio de tu Calendario de Pagos:", cuerpo) }); if (r.ok) ok = true; else out.errores++; }
+        if (ok) { out.mails++; const b = db.batch(); const ts = new Date(); hoyItems.forEach(p => b.set(col.doc(p.id), { avisoHoyAt: ts }, { merge: true })); manItems.forEach(p => b.set(col.doc(p.id), { avisoAt: ts }, { merge: true })); await b.commit(); }
+        void n;
+      }
+      // (b) Lunes: resumen de la semana (idempotente por users.pagosCalResumenAt).
+      if (esLunes) {
+        const us2 = await db.collection("users").where("pagosCalDias", "array-contains-any", semana).limit(500).get();
+        for (const u of us2.docs) {
+          const ud = u.data() || {};
+          if (ud.pagosCalResumenAt === hoy) continue;
+          const col = db.collection("users").doc(u.id).collection("pagos_cal");
+          const snap = await col.where("vence", "in", semana).where("pagado", "==", false).get();
+          const items = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((x, y) => x.vence.localeCompare(y.vence));
+          if (!items.length) continue;
+          const tos = destinatarios(ud); if (!tos.length) continue;
+          const subject = `Esta semana vence${items.length === 1 ? "" : "n"} ${items.length} pago${items.length === 1 ? "" : "s"} por ${totDe(items)}`;
+          const cuerpo = `<table style="border-collapse:collapse;width:100%;font-size:14px">${filasDe(items)}</table><p style="margin-top:12px"><strong>Total de la semana: ${totDe(items)}</strong></p>`;
+          let ok = false;
+          for (const to of tos) { const r = await sendEmail({ to, subject, html: wrap(`Resumen semanal del ${hoy.split("-").reverse().slice(0, 2).join("/")} al ${semana[6].split("-").reverse().slice(0, 2).join("/")}:`, cuerpo) }); if (r.ok) ok = true; else out.errores++; }
+          if (ok) { out.resumenes++; await db.collection("users").doc(u.id).set({ pagosCalResumenAt: hoy }, { merge: true }); }
+        }
       }
     } catch (e) { console.error("[pagos-cal cron]", e.message); out.error = e.message; }
     console.log("[pagos-cal cron_avisos]", JSON.stringify(out));
@@ -312,7 +342,11 @@ export default async function handler(req, res) {
         const patch = limpiar(p);
         delete patch.tipo;
         if (!patch.titulo && p.titulo !== undefined) return res.status(400).json({ error: "Falta el concepto" });
-        await ref.set({ ...patch, updatedAt: now }, { merge: true });
+        // Ocurrencia de un gasto fijo retocada a mano: se marca para que la
+        // regeneración de la plantilla no la pise.
+        const cd = cur.data();
+        const retocada = cd.tipo === "mensual" && cd.grupo && ["monto", "vence", "titulo", "moneda"].some(k => patch[k] !== undefined && patch[k] !== cd[k]);
+        await ref.set({ ...patch, ...(retocada ? { editadoManual: true } : {}), updatedAt: now }, { merge: true });
         // Propagar cambios de monto/título/categoría al resto de la serie pendiente
         if (body.aplicarSerie && cur.data().grupo) {
           const q = await col.where("grupo", "==", cur.data().grupo).get();
@@ -407,6 +441,103 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     }
 
+    // 3. Pago parcial: se registra lo pagado y el saldo queda como pago pendiente.
+    if (action === "pagar_parcial") {
+      const ref = col.doc(String(body.id || ""));
+      const snap = await ref.get();
+      if (!snap.exists) return res.status(404).json({ error: "El pago no existe" });
+      const x = snap.data();
+      const pagadoMonto = Math.round((Number(body.monto) || 0) * 100) / 100;
+      const total = Number(x.monto) || 0;
+      if (!(pagadoMonto > 0) || pagadoMonto >= total) return res.status(400).json({ error: "El monto parcial tiene que ser mayor a cero y menor al total" });
+      const saldo = Math.round((total - pagadoMonto) * 100) / 100;
+      const fechaSaldo = esFecha(body.fechaSaldo) ? body.fechaSaldo : x.vence;
+      const batch = db.batch();
+      batch.set(ref, { monto: pagadoMonto, montoOriginal: x.montoOriginal || total, pagado: true, pagadoAt: esFecha(body.fechaPago) ? body.fechaPago : hoyAR(), parcial: true, editadoManual: true, updatedAt: now }, { merge: true });
+      const r2 = col.doc();
+      const { id: _i, ...base } = x;
+      batch.set(r2, { ...base, titulo: `${String(x.titulo || "").replace(/ · saldo$/, "")} · saldo`, monto: saldo, vence: fechaSaldo, pagado: false, pagadoAt: FieldValue.delete(), parcialDe: ref.id, editadoManual: true, avisoAt: FieldValue.delete(), avisoHoyAt: FieldValue.delete(), creado: now, updatedAt: now });
+      await batch.commit();
+      await actualizarIndiceAvisos(db, uid, col);
+      return res.json({ ok: true, saldoId: r2.id, saldo });
+    }
+
+    // 13. Postergar N días (por defecto 7)
+    if (action === "postergar") {
+      const ref = col.doc(String(body.id || ""));
+      const snap = await ref.get();
+      if (!snap.exists) return res.status(404).json({ error: "El pago no existe" });
+      const dias = Math.min(365, Math.max(1, parseInt(body.dias) || 7));
+      const nueva = sumarDias(snap.data().vence, dias);
+      await ref.set({ vence: nueva, editadoManual: true, avisoAt: FieldValue.delete(), avisoHoyAt: FieldValue.delete(), updatedAt: now }, { merge: true });
+      await actualizarIndiceAvisos(db, uid, col);
+      return res.json({ ok: true, vence: nueva });
+    }
+
+    // 4. Comprobante adjunto (imagen o PDF en base64, guardado aparte del pago)
+    if (action === "comprobante") {
+      const id = String(body.id || ""); if (!id) return res.status(400).json({ error: "Falta id" });
+      const ref = col.doc(id);
+      if (!(await ref.get()).exists) return res.status(404).json({ error: "El pago no existe" });
+      const adjCol = db.collection("users").doc(uid).collection("pagos_cal_adj");
+      if (!body.b64) {
+        await adjCol.doc(id).delete().catch(() => {});
+        await ref.set({ adjunto: FieldValue.delete(), updatedAt: now }, { merge: true });
+        return res.json({ ok: true, quitado: true });
+      }
+      const b64 = String(body.b64);
+      if (!/^data:(image\/(jpeg|jpg|png|webp)|application\/pdf);base64,/.test(b64) || b64.length > 950000) return res.status(400).json({ error: "El comprobante tiene que ser una imagen o un PDF de menos de ~700KB" });
+      const nombre = String(body.nombre || "comprobante").slice(0, 120);
+      const tipo = b64.startsWith("data:application/pdf") ? "pdf" : "imagen";
+      await adjCol.doc(id).set({ b64, nombre, tipo, ts: now });
+      await ref.set({ adjunto: { nombre, tipo, ts: hoyAR() }, updatedAt: now }, { merge: true });
+      return res.json({ ok: true });
+    }
+    if (action === "comprobante_get") {
+      const id = String(body.id || ""); if (!id) return res.status(400).json({ error: "Falta id" });
+      const s = await db.collection("users").doc(uid).collection("pagos_cal_adj").doc(id).get();
+      if (!s.exists) return res.status(404).json({ error: "No hay comprobante" });
+      return res.json({ ok: true, ...s.data(), ts: null });
+    }
+
+    // 2. Editar un pedido de mercadería ya creado: ítems y nombre; las partes
+    // pendientes se recalculan en proporción; lo pagado queda como está.
+    if (action === "pedido_update") {
+      const grupo = String(body.grupo || ""); if (!grupo) return res.status(400).json({ error: "Falta grupo" });
+      const pd = body.pedido || {};
+      const q = await col.where("grupo", "==", grupo).get();
+      const docs = q.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.tipo === "pedido").sort((x, y) => (x.parteN || 0) - (y.parteN || 0));
+      if (!docs.length) return res.status(404).json({ error: "El pedido no existe" });
+      const prev = docs[0].pedido || {};
+      const nombre = String(pd.nombre || prev.nombre || "").trim().slice(0, 120);
+      const items = (Array.isArray(pd.items) ? pd.items : []).slice(0, 80).map(it => ({
+        key: String(it.key || "").slice(0, 80), nombre: String(it.nombre || "").slice(0, 120), variante: String(it.variante || "").slice(0, 80), sku: String(it.sku || "").slice(0, 60),
+        cantidad: Math.max(0, parseInt(it.cantidad) || 0), costo: Math.max(0, Math.round((Number(it.costo) || 0) * 100) / 100),
+      })).filter(it => it.nombre && it.cantidad > 0);
+      if (!items.length) return res.status(400).json({ error: "El pedido necesita al menos un ítem" });
+      const total = Math.round(items.reduce((s, it) => s + it.cantidad * it.costo, 0) * 100) / 100;
+      const unidades = items.reduce((s, it) => s + it.cantidad, 0);
+      const pagadas = docs.filter(d => d.pagado), pendientes = docs.filter(d => !d.pagado);
+      const pagadoTotal = pagadas.reduce((s, d) => s + (Number(d.monto) || 0), 0);
+      const restante = Math.max(0, Math.round((total - pagadoTotal) * 100) / 100);
+      const pctPend = pendientes.reduce((s, d) => s + (Number(d.pct) || 0), 0) || pendientes.length;
+      const pedido = { ...prev, nombre, moneda: prev.moneda || docs[0].moneda, items, total, unidades, partes: docs.length };
+      const batch = db.batch(); let acum = 0;
+      docs.forEach(d => {
+        const patch = { pedido, updatedAt: now, titulo: `${nombre} · ${d.parteLabel || "parte " + d.parteN} ${d.pct}%` };
+        if (!d.pagado) {
+          const idx = pendientes.indexOf(d);
+          const peso = (Number(d.pct) || 1) / pctPend;
+          const monto = idx === pendientes.length - 1 ? Math.round((restante - acum) * 100) / 100 : Math.round(restante * peso * 100) / 100;
+          acum += monto; patch.monto = monto;
+        }
+        batch.set(col.doc(d.id), patch, { merge: true });
+      });
+      await batch.commit();
+      await actualizarIndiceAvisos(db, uid, col);
+      return res.json({ ok: true, total, restante });
+    }
+
     if (action === "delete") {
       const ref = col.doc(String(body.id || ""));
       const snap = await ref.get();
@@ -477,7 +608,8 @@ export default async function handler(req, res) {
         // Se rehacen los pendientes desde hoy; lo pagado queda como está.
         const hoy = hoyAR();
         const restantes = [];
-        for (const d of docs) { if (!d.pagado && String(d.vence) >= hoy) { batch.delete(col.doc(d.id)); borrados++; } else restantes.push(d); }
+        // Se conservan lo pagado y las ocurrencias retocadas a mano (editadoManual).
+        for (const d of docs) { if (!d.pagado && !d.editadoManual && String(d.vence) >= hoy) { batch.delete(col.doc(d.id)); borrados++; } else restantes.push(d); }
         if (fijo.activo) creados = generarFijo(col, batch, fijo, restantes, now);
       }
       await batch.commit();

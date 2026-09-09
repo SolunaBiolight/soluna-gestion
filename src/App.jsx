@@ -13694,7 +13694,8 @@ const CALPAGOS_PLANES=[
   {id:"30-70",label:"30% al encargar · 70% antes del envío",partes:[{label:"Anticipo",pct:30,dias:0},{label:"Pre-shipping",pct:70,dias:30}]},
   {id:"custom",label:"Personalizado",partes:null},
 ];
-function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onConfirm}){
+function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onConfirm,inicial}){
+  const editando=!!inicial;
   const iS=InputStyle(T);
   const hoy=hoyAR();
   const [nombre,setNombre]=useState("");
@@ -13708,7 +13709,7 @@ function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onC
   const [saving,setSaving]=useState(false);
   useEffect(()=>{
     if(!open) return;
-    setNombre(""); setItems([]); setBusq(""); setManual(""); setMoneda(monedaInicial||"USD"); setPlanId("50-50");
+    setNombre(inicial?.nombre||""); setItems(inicial?(inicial.items||[]).map(x=>({...x,cantidad:Number(x.cantidad)||0,costo:String(x.costo??"")})):[]); setBusq(""); setManual(""); setMoneda(inicial?.moneda||monedaInicial||"USD"); setPlanId("50-50");
     setPartes(CALPAGOS_PLANES[1].partes.map(p=>({...p,fecha:sumarDiasAR(fechaInicial||hoy,p.dias)})));
     if(!user?.uid) return;
     const key=`growith_calpagos_cat_${user.uid}`;
@@ -13733,20 +13734,20 @@ function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onC
   const elegirPlan=id=>{ setPlanId(id); const p=CALPAGOS_PLANES.find(x=>x.id===id); if(p?.partes) setPartes(p.partes.map(x=>({...x,fecha:sumarDiasAR(fechaInicial||hoy,x.dias)}))); else if(partes.length<2) setPartes([{label:"Anticipo",pct:50,fecha:fechaInicial||hoy},{label:"Saldo",pct:50,fecha:sumarDiasAR(fechaInicial||hoy,30)}]); };
   const setParte=(i,patch)=>{ setPlanId("custom"); setPartes(ps=>ps.map((p,k)=>k===i?{...p,...patch}:p)); };
   const sumPct=partes.reduce((s,p)=>s+(Number(p.pct)||0),0);
-  const ok=nombre.trim()&&items.length>0&&total>0&&Math.abs(sumPct-100)<0.01&&partes.every(p=>p.fecha&&p.label.trim());
+  const ok=nombre.trim()&&items.length>0&&total>0&&(editando||(Math.abs(sumPct-100)<0.01&&partes.every(p=>p.fecha&&p.label.trim())));
   const confirmar=async()=>{
     if(!ok) return; setSaving(true);
-    try{ await onConfirm({nombre:nombre.trim(),moneda,items:items.map(x=>({key:x.key,nombre:x.nombre,variante:x.variante,sku:x.sku,cantidad:Number(x.cantidad)||0,costo:ghNumAR(x.costo)})),total:Math.round(total*100)/100,partes:partes.map(p=>({label:p.label.trim(),pct:Number(p.pct)||0,fecha:p.fecha,monto:Math.round(total*(Number(p.pct)||0))/100}))}); }
+    try{ await onConfirm({editGrupo:inicial?.grupo||null,nombre:nombre.trim(),moneda,items:items.map(x=>({key:x.key,nombre:x.nombre,variante:x.variante,sku:x.sku,cantidad:Number(x.cantidad)||0,costo:ghNumAR(x.costo)})),total:Math.round(total*100)/100,partes:partes.map(p=>({label:p.label.trim(),pct:Number(p.pct)||0,fecha:p.fecha,monto:Math.round(total*(Number(p.pct)||0))/100}))}); }
     finally{ setSaving(false); }
   };
   const lbl=t=><div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:5}}>{t}</div>;
   const fmt=v=>calpagosFmt(v,moneda);
   return (
-    <Modal T={T} open={open} onClose={()=>!saving&&onClose()} title="Pedido de mercadería" width={680} zIndex={1100}>
+    <Modal T={T} open={open} onClose={()=>!saving&&onClose()} title={editando?"Editar pedido de mercadería":"Pedido de mercadería"} width={680} zIndex={1100}>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 160px",gap:10}}>
           <div>{lbl("Nombre del pedido")}<input style={iS} placeholder="Pedido China septiembre, Reposición marcos negros…" value={nombre} onChange={e=>setNombre(e.target.value)} autoFocus/></div>
-          <div>{lbl("Moneda")}<select style={iS} value={moneda} onChange={e=>setMoneda(e.target.value)}><option value="USD">Dólares (USD)</option><option value="ARS">Pesos (ARS)</option></select></div>
+          <div>{lbl("Moneda")}<select style={iS} value={moneda} onChange={e=>setMoneda(e.target.value)} disabled={editando}><option value="USD">Dólares (USD)</option><option value="ARS">Pesos (ARS)</option></select></div>
         </div>
 
         {/* Ítems */}
@@ -13790,6 +13791,9 @@ function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onC
         </div>
 
         {/* Plan de pagos */}
+        {editando?(
+          <div style={{fontSize:12,color:T.textMd,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px",lineHeight:1.5}}>Las partes ya pagadas no cambian. Las pendientes se recalculan en proporción con el nuevo total. Para cambiar la fecha o el nombre de una parte, editala desde la agenda.</div>
+        ):(
         <div>
           {lbl("Plan de pagos")}
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
@@ -13813,10 +13817,11 @@ function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onC
           </div>
           <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Se crea un pago por cada parte, con su fecha y su monto. Todos quedan vinculados al pedido y te avisamos por mail el día anterior a cada uno.</div>
         </div>
+        )}
 
         <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:2}}>
           <Btn T={T} variant="secondary" size="sm" onClick={onClose} disabled={saving}>Cancelar</Btn>
-          <Btn T={T} variant="primary" size="sm" onClick={confirmar} disabled={!ok||saving}>{saving?"Guardando…":`Crear ${partes.length} pago${partes.length===1?"":"s"}`}</Btn>
+          <Btn T={T} variant="primary" size="sm" onClick={confirmar} disabled={!ok||saving}>{saving?"Guardando…":editando?"Guardar cambios":`Crear ${partes.length} pago${partes.length===1?"":"s"}`}</Btn>
         </div>
       </div>
     </Modal>
@@ -13842,16 +13847,62 @@ function AppCalendarioPagos({T,user,onHome}){
   const [fijos,setFijos]=useState([]);
   const [fijoForm,setFijoForm]=useState(null);         // plantilla en edición
   const [fijoSaving,setFijoSaving]=useState(false);
+  const [histMes,setHistMes]=useState(hoy.slice(0,7));
+  const [histCat,setHistCat]=useState("");
+  const [parcial,setParcial]=useState(null);           // {monto, fechaSaldo} dentro del modal de edición
+  const [adjBusy,setAdjBusy]=useState(false);
+  const [pedidoEdit,setPedidoEdit]=useState(null);     // pedido en edición (abre el modal de pedido precargado)
+  const adjRef=useRef(null);
+  // Comprobante: imagen comprimida a JPEG (≤600KB) o PDF (≤700KB) en base64
+  const leerAdjunto=file=>new Promise((res,rej)=>{
+    if(!file) return rej(new Error("Sin archivo"));
+    if(file.type==="application/pdf"){ if(file.size>700000) return rej(new Error("El PDF pesa más de 700KB")); const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=()=>rej(new Error("No se pudo leer el PDF")); fr.readAsDataURL(file); return; }
+    if(!/^image\//.test(file.type)) return rej(new Error("Subí una imagen o un PDF"));
+    const url=URL.createObjectURL(file); const img=new Image();
+    img.onload=()=>{ const MAX=1600; let w=img.width,h=img.height; if(Math.max(w,h)>MAX){const k=MAX/Math.max(w,h);w=Math.round(w*k);h=Math.round(h*k);} const cv=document.createElement("canvas"); cv.width=w; cv.height=h; cv.getContext("2d").drawImage(img,0,0,w,h); URL.revokeObjectURL(url); let q=0.85,b64=cv.toDataURL("image/jpeg",q); while(b64.length>600000&&q>0.35){q-=0.15;b64=cv.toDataURL("image/jpeg",q);} if(b64.length>600000) rej(new Error("La imagen pesa demasiado, probá con una captura")); else res(b64); };
+    img.onerror=()=>rej(new Error("No se pudo leer la imagen")); img.src=url;
+  });
+  const subirComprobante=async(file)=>{
+    if(!form?.id||!file) return; setAdjBusy(true);
+    try{ const b64=await leerAdjunto(file); await api("comprobante",{id:form.id,b64,nombre:file.name||"comprobante"}); setForm(f=>({...f,adjunto:{nombre:file.name||"comprobante",tipo:b64.startsWith("data:application/pdf")?"pdf":"imagen"}})); await load(); toast("Comprobante guardado","success"); }
+    catch(e){ toast(e.message,"error"); }
+    finally{ setAdjBusy(false); if(adjRef.current) adjRef.current.value=""; }
+  };
+  const verComprobante=async()=>{
+    if(!form?.id) return; setAdjBusy(true);
+    try{ const d=await api("comprobante_get",{id:form.id}); const [meta,data]=String(d.b64).split(","); const mime=(meta.match(/^data:([^;]+)/)||[])[1]||"application/octet-stream"; const bin=atob(data); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i); const url=URL.createObjectURL(new Blob([arr],{type:mime})); window.open(url,"_blank"); setTimeout(()=>URL.revokeObjectURL(url),60000); }
+    catch(e){ toast(e.message,"error"); }
+    finally{ setAdjBusy(false); }
+  };
+  const quitarComprobante=async()=>{ if(!form?.id) return; if(!(await appConfirm("¿Quitar el comprobante adjunto?",{danger:true,okLabel:"Quitar"}))) return; try{ await api("comprobante",{id:form.id,b64:null}); setForm(f=>({...f,adjunto:null})); await load(); }catch(e){ toast(e.message,"error"); } };
+  const postergar=async(i,dias=7)=>{ try{ const d=await api("postergar",{id:i.id,dias}); await load(); toast(`Postergado al ${d.vence.split("-").reverse().join("/")}`,"success"); if(form?.id===i.id) setForm(f=>({...f,vence:d.vence})); }catch(e){ toast(e.message,"error"); } };
+  const duplicar=(i)=>{ setAplicarSerie(false); setParcial(null); setForm({titulo:i.titulo.replace(/ · (1ª|2ª) parte$/,""),categoria:i.categoria,monto:String(i.monto),moneda:i.moneda,vence:i.vence,tipo:"unico",cuotasTotal:"12",cuotaDesde:"1",capital:"",tna:"",notas:i.notas||""}); toast("Copia lista: ajustá la fecha y guardá","info"); };
+  const confirmarParcial=async()=>{
+    const m=ghNumAR(parcial?.monto); const tot=ghNumAR(form?.monto);
+    if(!(m>0)||m>=tot){ toast("El monto parcial tiene que ser mayor a cero y menor al total","warning"); return; }
+    try{ await api("pagar_parcial",{id:form.id,monto:m,fechaSaldo:parcial.fechaSaldo||form.vence}); setParcial(null); setForm(null); await load(); toast(`Pago parcial registrado: el saldo de ${calpagosFmt(tot-m,form.moneda)} queda pendiente`,"success"); }
+    catch(e){ toast(e.message,"error"); }
+  };
+  const exportarCsv=()=>{
+    const rows=histLista;
+    if(!rows.length){ toast("No hay pagos en ese mes","warning"); return; }
+    const esc=v=>`"${String(v??"").replace(/"/g,'""')}"`;
+    const head=["Vencimiento","Pagado el","Concepto","Categoría","Tipo","Monto","Moneda","Estado","Notas"].join(";");
+    const lines=rows.map(i=>[i.vence.split("-").reverse().join("/"),i.pagado&&i.pagadoAt?String(i.pagadoAt).slice(0,10).split("-").reverse().join("/"):"",esc(i.titulo),calpagosCatLabel(i.categoria),i.tipo==="pedido"?"Pedido":i.tipo==="cuotas"?`Cuota ${i.cuotaN}/${i.cuotaTotal}`:i.tipo==="mensual"?"Gasto fijo":"Único",String(Math.round((Number(i.monto)||0)*100)/100).replace(".",","),i.moneda,i.pagado?"Pagado":i.vence<hoy?"Vencido":"Pendiente",esc(i.notas||"")].join(";"));
+    const blob=new Blob(["\ufeff"+head+"\n"+lines.join("\n")],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`pagos_${histMes}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  };
   const fijoDe=grupo=>fijos.find(x=>x.grupo===grupo||x.id===grupo)||null;
-  const nuevoFijo=()=>setFijoForm({titulo:"",categoria:"otro",monto:"",moneda:"ARS",dia:"1",dividido:false,pct:"50",dia2:"15",notas:"",activo:true});
-  const editarFijo=x=>setFijoForm({id:x.id,titulo:x.titulo,categoria:x.categoria,monto:String(x.monto),moneda:x.moneda,dia:String(x.dia),dividido:!!x.dividido,pct:String(x.pct??50),dia2:String(x.dia2??15),notas:x.notas||"",activo:x.activo!==false});
+  const nuevoFijo=()=>setFijoForm({titulo:"",categoria:"",monto:"",moneda:"ARS",dia:"1",dividido:false,pct:"50",dia2:"15",notas:"",activo:true,hasta:""});
+  const editarFijo=x=>setFijoForm({id:x.id,titulo:x.titulo,categoria:x.categoria,monto:String(x.monto),moneda:x.moneda,dia:String(x.dia),dividido:!!x.dividido,pct:String(x.pct??50),dia2:String(x.dia2??15),notas:x.notas||"",activo:x.activo!==false,hasta:x.hasta||""});
   const guardarFijo=async(patch)=>{
     const fx={...fijoForm,...(patch||{})};
     if(!fx.titulo.trim()){ toast("Poné el nombre del gasto","warning"); return; }
+    if(!fx.categoria){ toast("Elegí una categoría","warning"); return; }
     if(!(ghNumAR(fx.monto)>0)){ toast("Poné el monto mensual total","warning"); return; }
     setFijoSaving(true);
     try{
-      const d=await api("fijo_save",{fijo:{...fx,monto:ghNumAR(fx.monto),pct:Number(fx.pct)||50,dia:parseInt(fx.dia)||1,dia2:parseInt(fx.dia2)||15}});
+      const d=await api("fijo_save",{fijo:{...fx,monto:ghNumAR(fx.monto),pct:Number(fx.pct)||50,dia:parseInt(fx.dia)||1,dia2:parseInt(fx.dia2)||15,hasta:fx.hasta||null}});
       toast(fx.id?`Gasto fijo actualizado${d.creados?` · ${d.creados} vencimientos regenerados`:""}`:"Gasto fijo cargado","success");
       setFijoForm(null); setForm(null); await load();
     }catch(e){ toast(e.message,"error"); }
@@ -13862,7 +13913,7 @@ function AppCalendarioPagos({T,user,onHome}){
     try{ await api("fijo_delete",{id:x.id}); setFijoForm(null); await load(); toast("Gasto fijo borrado","success"); }catch(e){ toast(e.message,"error"); }
   };
   const guardarFijoDirecto=async(x)=>{ try{ await api("fijo_save",{fijo:{...x}}); await load(); toast(x.activo?"Gasto fijo activado":"Gasto fijo pausado: se quitan sus vencimientos pendientes","success"); }catch(e){ toast(e.message,"error"); } };
-  const fijoResumen=x=>x.dividido?`${x.pct}% el ${x.dia} · ${100-x.pct}% el ${x.dia2}`:`el día ${x.dia}`;
+  const fijoResumen=x=>(x.dividido?`${x.pct}% el ${x.dia} · ${100-x.pct}% el ${x.dia2}`:`el día ${x.dia}`)+(x.hasta?` · hasta ${x.hasta.split("-").reverse().join("/")}`:"");
   const bq=busq.trim().toLowerCase();
   const encontrados=bq?(items||[]).filter(i=>`${i.titulo} ${calpagosCatLabel(i.categoria)} ${i.notas||""} ${i.monto}`.toLowerCase().includes(bq)).sort((x,y)=>x.vence.localeCompare(y.vence)):[];
 
@@ -13898,6 +13949,17 @@ function AppCalendarioPagos({T,user,onHome}){
   const vencidos=pend.filter(i=>i.vence<hoy);
   const semana=pend.filter(i=>i.vence>=hoy&&i.vence<=sumarDiasAR(hoy,7));
   const mesActualPend=pend.filter(i=>i.vence.slice(0,7)===hoy.slice(0,7));
+  const mesActualTodos=lista.filter(i=>i.vence.slice(0,7)===hoy.slice(0,7));
+  const mesActualPag=mesActualTodos.filter(i=>i.pagado);
+  // Desglose del mes por categoría (pagado + pendiente)
+  const porCategoria=CALPAGOS_CATS.map(cat=>{ const arr=mesActualTodos.filter(i=>i.categoria===cat.id); return {id:cat.id,label:cat.label,n:arr.length,ars:sum(arr,"ARS"),usd:sum(arr,"USD"),pagARS:sum(arr.filter(i=>i.pagado),"ARS"),pagUSD:sum(arr.filter(i=>i.pagado),"USD")}; }).filter(x=>x.n>0).sort((a,b)=>(b.ars+b.usd*1000)-(a.ars+a.usd*1000));
+  const maxCat=Math.max(1,...porCategoria.map(x=>x.ars+x.usd*1000));
+  // Historial: pagos del mes elegido (por vencimiento), filtrados por categoría
+  const histLista=lista.filter(i=>i.vence.slice(0,7)===histMes&&(!histCat||i.categoria===histCat)).sort((a,b)=>a.vence.localeCompare(b.vence)||a.titulo.localeCompare(b.titulo));
+  const histPag=histLista.filter(i=>i.pagado), histPend=histLista.filter(i=>!i.pagado);
+  const [hy,hm]=histMes.split("-").map(Number);
+  const histLabel=`${mesesNombres[hm-1][0].toUpperCase()+mesesNombres[hm-1].slice(1)} ${hy}`;
+  const shiftHist=n=>{ let y=hy,m=hm+n; if(m>12){m=1;y++;} if(m<1){m=12;y--;} setHistMes(`${y}-${String(m).padStart(2,"0")}`); };
   const prestamosPend=pend.filter(i=>i.categoria==="prestamo");
 
   // Bloques de la agenda
@@ -13940,11 +14002,17 @@ function AppCalendarioPagos({T,user,onHome}){
   },[lista]);
   const crearPedido=async(pd)=>{
     try{
-      await api("save",{pago:{notas:form?.notas||""},pedido:pd});
-      toast(`Pedido cargado: ${pd.partes.length} pago${pd.partes.length===1?"":"s"}`,"success");
-      setPedidoOpen(false); setForm(null); await load();
+      if(pd.editGrupo){
+        const d=await api("pedido_update",{grupo:pd.editGrupo,pedido:pd});
+        toast(`Pedido actualizado: total ${calpagosFmt(d.total,pd.moneda)}${d.restante!==undefined?` · pendiente ${calpagosFmt(d.restante,pd.moneda)}`:""}`,"success");
+      } else {
+        await api("save",{pago:{notas:form?.notas||""},pedido:pd});
+        toast(`Pedido cargado: ${pd.partes.length} pago${pd.partes.length===1?"":"s"}`,"success");
+      }
+      setPedidoOpen(false); setPedidoEdit(null); setForm(null); await load();
     }catch(e){ toast(e.message,"error"); }
   };
+  const editarPedido=()=>{ const pd=form?.pedido; if(!pd) return; setPedidoEdit({grupo:form.grupo,nombre:pd.nombre,moneda:pd.moneda||form.moneda,items:pd.items||[]}); setPedidoOpen(true); };
 
   // Mini calendario
   const [yy,mm]=mes.split("-").map(Number);
@@ -13956,16 +14024,17 @@ function AppCalendarioPagos({T,user,onHome}){
   const porDia={}; for(const i of lista) (porDia[i.vence] ||= []).push(i);
   const delDia=diaSel?(porDia[diaSel]||[]).slice().sort((a,b)=>Number(a.pagado)-Number(b.pagado)):[];
 
-  const nuevo=(vence)=>{ setAplicarSerie(false); setForm({titulo:"",categoria:"otro",monto:"",moneda:"ARS",vence:vence||hoy,tipo:"unico",cuotasTotal:"12",cuotaDesde:"1",capital:"",tna:"",notas:""}); };
-  const editar=(i)=>{ setAplicarSerie(false); setForm({id:i.id,titulo:i.titulo,categoria:i.categoria,monto:String(i.monto),moneda:i.moneda,vence:i.vence,tipo:i.tipo||"unico",notas:i.notas||"",grupo:i.grupo||null,cuotaN:i.cuotaN,cuotaTotal:i.cuotaTotal,pagado:!!i.pagado,capitalCuota:i.capitalCuota,interesCuota:i.interesCuota,saldoDespues:i.saldoDespues,parteN:i.parteN,partes:i.partes,pedido:i.pedido||null,parteMes:i.parteMes||0}); };
+  const nuevo=(vence)=>{ setAplicarSerie(false); setParcial(null); setForm({titulo:"",categoria:"",monto:"",moneda:"ARS",vence:vence||hoy,tipo:"unico",cuotasTotal:"12",cuotaDesde:"1",yaPague:false,capital:"",tna:"",notas:""}); };
+  const editar=(i)=>{ setAplicarSerie(false); setParcial(null); setForm({adjunto:i.adjunto||null,parcialDe:i.parcialDe||null,editadoManual:!!i.editadoManual,id:i.id,titulo:i.titulo,categoria:i.categoria,monto:String(i.monto),moneda:i.moneda,vence:i.vence,tipo:i.tipo||"unico",notas:i.notas||"",grupo:i.grupo||null,cuotaN:i.cuotaN,cuotaTotal:i.cuotaTotal,pagado:!!i.pagado,capitalCuota:i.capitalCuota,interesCuota:i.interesCuota,saldoDespues:i.saldoDespues,parteN:i.parteN,partes:i.partes,pedido:i.pedido||null,parteMes:i.parteMes||0}); };
   const esPrestamoNuevo=form&&!form.id&&form.tipo==="cuotas"&&form.categoria==="prestamo";
   const cuotaEstimada=(()=>{ if(!esPrestamoNuevo) return null; const cap=ghNumAR(form.capital), n=parseInt(form.cuotasTotal)||0, tna=ghNumAR(form.tna); if(!(cap>0)||n<2) return null; if(ghNumAR(form.monto)>0) return ghNumAR(form.monto); const i=tna/100/12; return i>0?cap*i/(1-Math.pow(1+i,-n)):cap/n; })();
   const guardar=async()=>{
     if(!form.titulo.trim()){ toast("Poné a quién o qué se paga","warning"); return; }
+    if(!form.categoria){ toast("Elegí una categoría","warning"); return; }
     if(!(ghNumAR(form.monto)>0)&&!(esPrestamoNuevo&&ghNumAR(form.capital)>0)){ toast("Poné un monto mayor a cero","warning"); return; }
     setSaving(true);
     try{
-      await api("save",{pago:{...form,monto:ghNumAR(form.monto),capital:esPrestamoNuevo?ghNumAR(form.capital):0,tna:esPrestamoNuevo?ghNumAR(form.tna):0,dividir:!form.id&&form.tipo==="mensual"&&form.dividir?{pct:Number(divPct)||50,dia:parseInt(divDia)||15}:null},aplicarSerie});
+      await api("save",{pago:{...form,cuotaDesde:form.yaPague?form.cuotaDesde:"1",monto:ghNumAR(form.monto),capital:esPrestamoNuevo?ghNumAR(form.capital):0,tna:esPrestamoNuevo?ghNumAR(form.tna):0,dividir:!form.id&&form.tipo==="mensual"&&form.dividir?{pct:Number(divPct)||50,dia:parseInt(divDia)||15}:null},aplicarSerie});
       toast(form.id?"Pago actualizado":form.tipo==="cuotas"?(esPrestamoNuevo?"Préstamo cargado con su cuadro de cuotas":"Cuotas cargadas"):form.tipo==="mensual"?(form.dividir?"Pago mensual cargado en dos partes (12 meses)":"Pago mensual cargado (12 meses)"):"Pago cargado","success");
       setForm(null); await load();
     }catch(e){ toast(e.message,"error"); }
@@ -14000,7 +14069,8 @@ function AppCalendarioPagos({T,user,onHome}){
         </div>
       </div>
       <div style={{fontSize:14,fontWeight:800,color:i.pagado?T.textSm:T.text,fontVariantNumeric:"tabular-nums",flexShrink:0}}>{calpagosFmt(i.monto,i.moneda)}</div>
-      {i.pagado?<span style={{display:"inline-flex",alignItems:"center",gap:8,flexShrink:0}}><DSBadge T={T} color={T.green} size="sm">Pagado</DSBadge><button onClick={()=>marcar(i,false)} style={{background:"none",border:"none",color:T.textSm,fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",padding:0}}>Deshacer</button></span>:<Btn T={T} variant="success" size="sm" onClick={()=>marcar(i,true)}>Marcar pagado</Btn>}
+      {i.pagado?<span style={{display:"inline-flex",alignItems:"center",gap:8,flexShrink:0}}><DSBadge T={T} color={T.green} size="sm">Pagado</DSBadge>{i.adjunto&&<span title={`Comprobante: ${i.adjunto.nombre}`} style={{fontSize:10,color:T.textSm}}>adj.</span>}<button onClick={()=>marcar(i,false)} style={{background:"none",border:"none",color:T.textSm,fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",padding:0}}>Deshacer</button></span>
+      :<span style={{display:"inline-flex",alignItems:"center",gap:6,flexShrink:0}}><button onClick={()=>postergar(i,7)} title="Postergar 7 días" style={{background:"none",border:`1px solid ${T.border}`,borderRadius:6,color:T.textSm,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:"4px 7px"}}>+7 días</button><Btn T={T} variant="success" size="sm" onClick={()=>marcar(i,true)}>Marcar pagado</Btn></span>}
     </div>); };
   const Bloque=({label,color,arr,sub})=>arr.length?(
     <div style={{marginBottom:6}}>
@@ -14026,7 +14096,7 @@ function AppCalendarioPagos({T,user,onHome}){
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:16}}>
           {[
             {label:"Vencido",n:vencidos.length,val:fmtPar(vencidos),sub:vencidos.length?`${vencidos.length} pago${vencidos.length===1?"":"s"} sin pagar`:"Nada vencido",color:T.red},
-            {label:"Vence esta semana",n:semana.length,val:fmtPar(semana),sub:`${semana.length} pago${semana.length===1?"":"s"} hasta el ${d7.split("-").reverse().slice(0,2).join("/")}`,color:T.yellow},
+            {label:`Total de ${mesesNombres[Number(hoy.slice(5,7))-1]}`,n:mesActualTodos.length,val:fmtPar(mesActualTodos),sub:`${mesActualPag.length} pagado${mesActualPag.length===1?"":"s"} · ${mesActualPend.length} pendiente${mesActualPend.length===1?"":"s"}`,color:T.yellow},
             {label:`Falta pagar en ${mesesNombres[Number(hoy.slice(5,7))-1]}`,n:mesActualPend.length,val:fmtPar(mesActualPend),sub:`${mesActualPend.length} pendiente${mesActualPend.length===1?"":"s"}`,color:T.accent},
             {label:"Deuda en préstamos",n:prestamosPend.length,val:fmtPar(prestamosPend),sub:prestamos.length?`${prestamos.length} préstamo${prestamos.length===1?"":"s"} · ${prestamosPend.length} cuota${prestamosPend.length===1?"":"s"} por pagar`:"Sin préstamos",color:T.purple},
           ].map(k=>(
@@ -14040,11 +14110,33 @@ function AppCalendarioPagos({T,user,onHome}){
 
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
           <div style={{display:"inline-flex",background:T.surface,borderRadius:8,padding:2}}>
-            {[["agenda","Agenda"],["fijos",`Gastos fijos${fijos.length?` (${fijos.length})`:""}`]].map(([v,l])=><button key={v} onClick={()=>setVista(v)} style={segBtn(vista===v)}>{l}</button>)}
+            {[["agenda","Agenda"],["fijos",`Gastos fijos${fijos.length?` (${fijos.length})`:""}`],["historial","Historial"]].map(([v,l])=><button key={v} onClick={()=>setVista(v)} style={segBtn(vista===v)}>{l}</button>)}
           </div>
-          <span style={{fontSize:11,color:T.textSm}}>{vista==="fijos"?"Cada gasto recurrente se configura una sola vez; la agenda se genera desde acá.":"Lo que vence, ordenado por fecha. Lo recurrente se administra en Gastos fijos."}</span>
+          <span style={{fontSize:11,color:T.textSm}}>{vista==="fijos"?"Cada gasto recurrente se configura una sola vez; la agenda se genera desde acá.":vista==="historial"?"Todo lo del mes, pagado y pendiente, por categoría. Exportable para el contador.":"Lo que vence, ordenado por fecha. Lo recurrente se administra en Gastos fijos."}</span>
         </div>
-        {vista==="fijos"?(
+        {vista==="historial"?(
+          <Card T={T} padding="lg">
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:8}}>
+              <div style={{display:"inline-flex",alignItems:"center",background:T.surface,borderRadius:8,padding:2}}>
+                <button onClick={()=>shiftHist(-1)} style={{padding:"4px 10px",border:"none",background:"transparent",color:T.textMd,cursor:"pointer",fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}>‹</button>
+                <span style={{padding:"4px 8px",fontSize:13,fontWeight:700,color:T.text,minWidth:140,textAlign:"center"}}>{histLabel}</span>
+                <button onClick={()=>shiftHist(1)} style={{padding:"4px 10px",border:"none",background:"transparent",color:T.textMd,cursor:"pointer",fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}>›</button>
+              </div>
+              <select value={histCat} onChange={e=>setHistCat(e.target.value)} style={{...iS,width:"auto",padding:"5px 10px",fontSize:12}}>
+                <option value="">Todas las categorías</option>
+                {CALPAGOS_CATS.map(x=><option key={x.id} value={x.id}>{x.label}</option>)}
+              </select>
+              <span style={{marginLeft:"auto",display:"flex",gap:8}}><Btn T={T} variant="secondary" size="sm" onClick={exportarCsv} disabled={!histLista.length}>Exportar CSV</Btn></span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:10}}>
+              {[{l:"Total del mes",v:fmtPar(histLista),c:T.text},{l:"Pagado",v:fmtPar(histPag),c:T.green},{l:"Pendiente",v:fmtPar(histPend),c:histPend.some(i=>i.vence<hoy)?T.red:T.accent}].map(k=>(
+                <div key={k.l} style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px"}}><div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{k.l}</div><div style={{fontSize:16,fontWeight:800,color:k.c,marginTop:2,fontVariantNumeric:"tabular-nums"}}>{k.v}</div></div>
+              ))}
+            </div>
+            {histLista.length===0?<div style={{fontSize:12,color:T.textSm,padding:"18px 0"}}>No hay pagos en {histLabel}{histCat?" para esa categoría":""}.</div>
+            :histLista.map(i=><Fila key={i.id} i={i} compacta/>)}
+          </Card>
+        ):vista==="fijos"?(
           <Card T={T} padding="lg">
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
               <span style={{fontSize:14,fontWeight:800,color:T.text,letterSpacing:-0.2}}>Gastos fijos</span>
@@ -14161,6 +14253,28 @@ function AppCalendarioPagos({T,user,onHome}){
               </div>
             </Card>
 
+            {porCategoria.length>0&&(
+              <Card T={T} padding="md">
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <span style={{fontSize:13,fontWeight:800,color:T.text}}>{mesesNombres[Number(hoy.slice(5,7))-1][0].toUpperCase()+mesesNombres[Number(hoy.slice(5,7))-1].slice(1)} por categoría</span>
+                  <span style={{fontSize:11,color:T.textSm}}>{fmtPar(mesActualTodos)}</span>
+                </div>
+                {porCategoria.map(x=>(
+                  <div key={x.id} style={{padding:"5px 0"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                      <span style={{color:T.text,fontWeight:600}}>{x.label} <span style={{color:T.textSm,fontWeight:400}}>· {x.n}</span></span>
+                      <span style={{color:T.text,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{fmtPar(mesActualTodos.filter(i=>i.categoria===x.id))}</span>
+                    </div>
+                    <div style={{height:4,borderRadius:2,background:T.borderL,position:"relative"}}>
+                      <div style={{width:`${Math.round((x.ars+x.usd*1000)/maxCat*100)}%`,height:4,borderRadius:2,background:T.accentSolid+"66"}}/>
+                      <div style={{position:"absolute",left:0,top:0,width:`${Math.round((x.pagARS+x.pagUSD*1000)/maxCat*100)}%`,height:4,borderRadius:2,background:T.green}}/>
+                    </div>
+                  </div>
+                ))}
+                <div style={{fontSize:9,color:T.textSm,marginTop:6}}>Verde: ya pagado. Violeta: total del mes.</div>
+              </Card>
+            )}
+
             {pedidos.length>0&&(
               <Card T={T} padding="md">
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
@@ -14254,7 +14368,7 @@ function AppCalendarioPagos({T,user,onHome}){
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             <div>{lbl("A quién o qué se paga")}<input style={iS} placeholder="Alquiler del local, Préstamo Galicia, Tarjeta Visa…" value={form.titulo} onChange={e=>setForm(f=>({...f,titulo:e.target.value}))} autoFocus/></div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <div>{lbl("Categoría")}<select style={iS} value={form.categoria} onChange={e=>setForm(f=>({...f,categoria:e.target.value,...(e.target.value==="prestamo"&&!f.id?{tipo:"cuotas"}:{})}))}>{CALPAGOS_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select></div>
+              <div>{lbl("Categoría")}<select style={{...iS,color:form.categoria?T.text:T.textSm}} value={form.categoria} onChange={e=>setForm(f=>({...f,categoria:e.target.value,...(e.target.value==="prestamo"&&!f.id?{tipo:"cuotas"}:{})}))}><option value="">Elegí una categoría</option>{CALPAGOS_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select></div>
               <div>{lbl(form.tipo!=="unico"&&!form.id?"Primer vencimiento":"Vencimiento")}<input type="date" style={iS} value={form.vence} onChange={e=>setForm(f=>({...f,vence:e.target.value}))}/></div>
               <div>{lbl(esPrestamoNuevo?"Cuota (si la conocés)":"Monto")}<input style={iS} inputMode="decimal" placeholder={esPrestamoNuevo&&cuotaEstimada?`calculada: ${Math.round(cuotaEstimada).toLocaleString("es-AR")}`:"0"} value={form.monto} onChange={e=>setForm(f=>({...f,monto:e.target.value}))}/></div>
               <div>{lbl("Moneda")}<select style={iS} value={form.moneda} onChange={e=>setForm(f=>({...f,moneda:e.target.value}))}><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (USD)</option></select></div>
@@ -14274,7 +14388,10 @@ function AppCalendarioPagos({T,user,onHome}){
                 {form.tipo==="cuotas"&&(
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}>
                     <div>{lbl("Cantidad de cuotas")}<input style={iS} inputMode="numeric" value={form.cuotasTotal} onChange={e=>setForm(f=>({...f,cuotasTotal:e.target.value}))}/></div>
-                    <div>{lbl("Empezar desde la cuota")}<input style={iS} inputMode="numeric" value={form.cuotaDesde} onChange={e=>setForm(f=>({...f,cuotaDesde:e.target.value}))}/></div>
+                    <div style={{display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
+                      <label style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,color:T.textMd,cursor:"pointer",paddingBottom:form.yaPague?0:9}}><input type="checkbox" checked={!!form.yaPague} onChange={e=>setForm(f=>({...f,yaPague:e.target.checked,cuotaDesde:e.target.checked?f.cuotaDesde:"1"}))}/> Ya pagué cuotas</label>
+                      {form.yaPague&&<input style={{...iS,marginTop:4}} inputMode="numeric" placeholder="Próxima cuota a pagar (ej. 4)" value={form.cuotaDesde} onChange={e=>setForm(f=>({...f,cuotaDesde:e.target.value}))}/>}
+                    </div>
                     {esPrestamoNuevo&&(<>
                       <div>{lbl("Capital prestado")}<input style={iS} inputMode="decimal" placeholder="Monto que te prestaron" value={form.capital} onChange={e=>setForm(f=>({...f,capital:e.target.value}))}/></div>
                       <div>{lbl("Tasa anual (TNA %)")}<input style={iS} inputMode="decimal" placeholder="Ej: 85" value={form.tna} onChange={e=>setForm(f=>({...f,tna:e.target.value}))}/></div>
@@ -14348,9 +14465,39 @@ function AppCalendarioPagos({T,user,onHome}){
               );
             })()}
             <div>{lbl("Notas")}<textarea style={{...iS,minHeight:60,resize:"vertical"}} placeholder="CBU, número de cuenta, referencia, lo que necesites recordar" value={form.notas} onChange={e=>setForm(f=>({...f,notas:e.target.value}))}/></div>
-            <div style={{fontSize:11,color:T.textSm}}>Te avisamos por mail el día anterior a cada vencimiento.</div>
+            {form.id&&(
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:12,color:T.textMd}}>
+                <span style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4}}>Comprobante</span>
+                <input ref={adjRef} type="file" accept="image/*,application/pdf" style={{display:"none"}} onChange={e=>subirComprobante(e.target.files?.[0])}/>
+                {form.adjunto?(<>
+                  <span style={{color:T.text}}>{form.adjunto.nombre}</span>
+                  <Btn T={T} variant="ghost" size="sm" onClick={verComprobante} disabled={adjBusy}>Ver</Btn>
+                  <Btn T={T} variant="ghost" size="sm" onClick={()=>adjRef.current?.click()} disabled={adjBusy}>Reemplazar</Btn>
+                  <button onClick={quitarComprobante} disabled={adjBusy} style={{background:"none",border:"none",color:T.textSm,fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",padding:0}}>Quitar</button>
+                </>):(<>
+                  <Btn T={T} variant="ghost" size="sm" onClick={()=>adjRef.current?.click()} disabled={adjBusy}>{adjBusy?"Subiendo…":"Adjuntar (opcional)"}</Btn>
+                  <span style={{fontSize:11,color:T.textSm}}>Captura de la transferencia o factura del proveedor, imagen o PDF.</span>
+                </>)}
+              </div>
+            )}
+            {form.id&&!form.pagado&&parcial&&(
+              <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:6}}>Pago parcial</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div>{lbl("Cuánto pagaste")}<input style={iS} inputMode="decimal" placeholder="0" value={parcial.monto} onChange={e=>setParcial(p=>({...p,monto:e.target.value}))} autoFocus/></div>
+                  <div>{lbl("El saldo vence el")}<input type="date" style={iS} value={parcial.fechaSaldo} onChange={e=>setParcial(p=>({...p,fechaSaldo:e.target.value}))}/></div>
+                </div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:6}}>{ghNumAR(parcial.monto)>0&&ghNumAR(parcial.monto)<ghNumAR(form.monto)?`Queda un saldo de ${calpagosFmt(ghNumAR(form.monto)-ghNumAR(parcial.monto),form.moneda)} como pago pendiente.`:"Este pago queda como pagado por el monto que ingreses y el resto pasa a un pago nuevo."}</div>
+                <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}}><Btn T={T} variant="ghost" size="sm" onClick={()=>setParcial(null)}>Cancelar</Btn><Btn T={T} variant="success" size="sm" onClick={confirmarParcial}>Registrar pago parcial</Btn></div>
+              </div>
+            )}
+            <div style={{fontSize:11,color:T.textSm}}>Te avisamos por mail el día anterior y el mismo día de cada vencimiento, y un resumen los lunes.</div>
             <div style={{display:"flex",gap:8,alignItems:"center",paddingTop:4,flexWrap:"wrap"}}>
               {form.id&&<Btn T={T} variant="danger" size="sm" onClick={()=>borrar(form)} disabled={saving}>Borrar</Btn>}
+              {form.id&&<Btn T={T} variant="ghost" size="sm" onClick={()=>duplicar(form)} disabled={saving}>Duplicar</Btn>}
+              {form.id&&!form.pagado&&<Btn T={T} variant="ghost" size="sm" onClick={()=>postergar(form,7)} disabled={saving}>Postergar 7 días</Btn>}
+              {form.id&&!form.pagado&&!parcial&&<Btn T={T} variant="ghost" size="sm" onClick={()=>setParcial({monto:"",fechaSaldo:form.vence})} disabled={saving}>Pago parcial</Btn>}
+              {form.id&&form.tipo==="pedido"&&form.pedido&&<Btn T={T} variant="ghost" size="sm" onClick={editarPedido} disabled={saving}>Editar pedido</Btn>}
               <span style={{flex:1}}/>
               {form.id&&<Btn T={T} variant={form.pagado?"ghost":"success"} size="sm" disabled={saving} onClick={async()=>{ await marcar(form,!form.pagado); setForm(null); }}>{form.pagado?"Marcar como no pagado":"Marcar pagado"}</Btn>}
               <Btn T={T} variant="secondary" size="sm" onClick={()=>setForm(null)} disabled={saving}>Cancelar</Btn>
@@ -14364,7 +14511,7 @@ function AppCalendarioPagos({T,user,onHome}){
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             <div>{lbl("Nombre del gasto")}<input style={iS} placeholder="Alquiler del local, Sueldo Abeja, Internet…" value={fijoForm.titulo} onChange={e=>setFijoForm(f=>({...f,titulo:e.target.value}))} autoFocus/></div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <div>{lbl("Categoría")}<select style={iS} value={fijoForm.categoria} onChange={e=>setFijoForm(f=>({...f,categoria:e.target.value}))}>{CALPAGOS_CATS.map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
+              <div>{lbl("Categoría")}<select style={{...iS,color:fijoForm.categoria?T.text:T.textSm}} value={fijoForm.categoria} onChange={e=>setFijoForm(f=>({...f,categoria:e.target.value}))}><option value="">Elegí una categoría</option>{CALPAGOS_CATS.map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
               <div>{lbl("Moneda")}<select style={iS} value={fijoForm.moneda} onChange={e=>setFijoForm(f=>({...f,moneda:e.target.value}))}><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (USD)</option></select></div>
               <div>{lbl("Monto mensual total")}<input style={iS} inputMode="decimal" placeholder="0" value={fijoForm.monto} onChange={e=>setFijoForm(f=>({...f,monto:e.target.value}))}/></div>
               <div>{lbl(fijoForm.dividido?"Día de la primera parte":"Día de pago")}<input style={iS} inputMode="numeric" value={fijoForm.dia} onChange={e=>setFijoForm(f=>({...f,dia:e.target.value.replace(/\D/g,"")}))}/></div>
@@ -14377,7 +14524,10 @@ function AppCalendarioPagos({T,user,onHome}){
                 <div style={{gridColumn:"1 / -1",fontSize:11,color:T.textSm}}>{(()=>{ const m=ghNumAR(fijoForm.monto), p=Math.min(99,Math.max(1,Number(fijoForm.pct)||0)); const m1=Math.round(m*p)/100; return m>0?`${calpagosFmt(m1,fijoForm.moneda)} el día ${parseInt(fijoForm.dia)||1} y ${calpagosFmt(m-m1,fijoForm.moneda)} el día ${parseInt(fijoForm.dia2)||15}, todos los meses.`:"El monto de arriba es el total del mes; se reparte solo."; })()}</div>
               </div>
             )}
-            <div>{lbl("Notas")}<textarea style={{...iS,minHeight:54,resize:"vertical"}} placeholder="CBU, alias, referencia" value={fijoForm.notas} onChange={e=>setFijoForm(f=>({...f,notas:e.target.value}))}/></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div>{lbl("Termina en (opcional)")}<input type="month" style={iS} value={fijoForm.hasta||""} onChange={e=>setFijoForm(f=>({...f,hasta:e.target.value}))}/><div style={{fontSize:10,color:T.textSm,marginTop:3}}>Último mes que se paga. Vacío: sin fin.</div></div>
+              <div>{lbl("Notas")}<textarea style={{...iS,minHeight:54,resize:"vertical"}} placeholder="CBU, alias, referencia" value={fijoForm.notas} onChange={e=>setFijoForm(f=>({...f,notas:e.target.value}))}/></div>
+            </div>
             <label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:T.textMd,cursor:"pointer"}}><input type="checkbox" checked={fijoForm.activo!==false} onChange={e=>setFijoForm(f=>({...f,activo:e.target.checked}))}/> Activo (genera vencimientos mes a mes)</label>
             {fijoForm.id&&<div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Al guardar se rehacen los vencimientos pendientes desde hoy con esta configuración. Los ya pagados no cambian.</div>}
             <div style={{display:"flex",gap:8,alignItems:"center",paddingTop:4}}>
@@ -14389,7 +14539,7 @@ function AppCalendarioPagos({T,user,onHome}){
           </div>
         )}
       </Modal>
-      <CalPagosPedidoModal T={T} user={user} open={pedidoOpen} onClose={()=>setPedidoOpen(false)} monedaInicial={form?.moneda==="ARS"?"ARS":"USD"} fechaInicial={form?.vence||hoy} onConfirm={crearPedido}/>
+      <CalPagosPedidoModal T={T} user={user} open={pedidoOpen} onClose={()=>{setPedidoOpen(false);setPedidoEdit(null);}} monedaInicial={form?.moneda==="ARS"?"ARS":"USD"} fechaInicial={form?.vence||hoy} onConfirm={crearPedido} inicial={pedidoEdit}/>
     </div>
   );
 }
