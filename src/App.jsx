@@ -1810,7 +1810,7 @@ function DSBadge({T, color, children, size="md"}) {
 // --- Constants ---
 const MOTIVOS_R = ["Producto dañado","Producto incorrecto","No cumple expectativas","Talle o medida incorrecta","Error en el pedido","Llegó incompleto","Se rompió con el uso","Otro"];
 const ESTADOS_R = ["Nuevo","Contactado","Esperando producto","Producto recibido","Envío en camino","Resuelto","Rechazado"];
-const TIPOS_R = ["Cambio","Devolución"];
+const TIPOS_R = ["Cambio","Devolución","Contracargo","Reclamo"];
 // El catálogo de productos NO se hardcodea: sale de los pedidos reales de cada
 // cuenta. Los campos de producto son texto libre con sugerencias (datalist),
 // así funcionan igual para una óptica, una marca de ropa o un kiosco.
@@ -2271,9 +2271,10 @@ function getEstadoCC(T, estado) {
   return m[estado] || { dot:T.textSm, bg:T.borderL, text:T.textSm };
 }
 function getTipoRC(T, tipo) {
-  return tipo === "Cambio"
-    ? { bg:T.purpleBg, text:T.purple }
-    : { bg:T.orangeBg, text:T.orange };
+  if (tipo === "Cambio") return { bg:T.purpleBg, text:T.purple };
+  if (tipo === "Contracargo") return { bg:(T.redBg||T.red+"15"), text:T.red };
+  if (tipo === "Reclamo") return { bg:(T.blueBg||T.blue+"15"), text:T.blue };
+  return { bg:T.orangeBg, text:T.orange }; // Devolución
 }
 
 function buildOrdersFromAPI(data) {
@@ -3711,6 +3712,30 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       .catch(()=>{});
   },[activeR?._docId]);
 
+  // ── Sync de contracargos/reclamos de Mercado Pago + reclamos de Mercado Libre ──
+  // Reusa el token ML (que también autentica contra MP). Crea las tarjetas solas
+  // en el tablero (colección `reclamos`, origen "mp"/"ml"). Auto al abrir la
+  // sección (throttle 10 min) + botón manual. Fire-and-forget: el onSnapshot de
+  // arriba pinta las nuevas tarjetas apenas el backend las escribe.
+  const [syncingMP,setSyncingMP]=useState(false);
+  const syncReclamosMP=React.useCallback(async(manual=false)=>{
+    if(!user?.uid) return;
+    const KEY=`growith_reclamossync_${user.uid}`;
+    if(!manual){ const last=Number(localStorage.getItem(KEY)||0); if(Date.now()-last < 10*60000) return; }
+    setSyncingMP(true);
+    try{
+      const r=await authFetch(`/api/integrations?platform=mercadolibre&action=reclamos_sync&uid=${user.uid}`,{method:"POST"});
+      const d=await r.json().catch(()=>({}));
+      localStorage.setItem(KEY,String(Date.now()));
+      if(manual){
+        if(d.ok){ const n=(d.report?.creados||0); toast(n>0?`${n} nuevo(s) importado(s) de MP/ML ✓`:"Sincronizado, sin novedades","success"); }
+        else toast("No se pudo sincronizar"+(d.error?": "+d.error:""),"error");
+      }
+    }catch(e){ if(manual) toast("Error al sincronizar","error"); }
+    setSyncingMP(false);
+  },[user?.uid]);
+  useEffect(()=>{ syncReclamosMP(false); },[user?.uid]);
+
   // -- Render --
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
@@ -3730,6 +3755,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         ]}/>
         <button onClick={fetchOrders} disabled={ordersStatus==="loading"} title="Actualizar pedidos" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",opacity:ordersStatus==="loading"?0.5:1,minWidth:32,justifyContent:"center"}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}</button>
         <button onClick={refrescarTrackingReclamos} disabled={refrescandoTrk} title="Consultar Andreani ahora para todos los reclamos con tracking" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",display:"inline-flex",alignItems:"center",gap:6,opacity:refrescandoTrk?0.6:1}}>{refrescandoTrk?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>}Actualizar envíos</button>
+        <button onClick={()=>syncReclamosMP(true)} disabled={syncingMP} title="Traer contracargos y reclamos de Mercado Pago / Mercado Libre" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",display:"inline-flex",alignItems:"center",gap:6,opacity:syncingMP?0.6:1}}>{syncingMP?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}MP/ML</button>
         <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px"}}>+ Nuevo reclamo</button>
       </AppTopbar>
 
@@ -4005,6 +4031,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                                   {urgente&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"12",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
                                   {hasTracking&&!r.trackCambioEstado&&!r.trackDevolEstado&&<span title="Tiene tracking — consultando estado con Andreani" style={{fontSize:9,fontWeight:700,color:T.blue,background:T.blue+"15",borderRadius:4,padding:"2px 7px"}}>TRK</span>}
                                   {r.notasInternas&&<span title="Tiene notas" style={{fontSize:9,fontWeight:700,color:T.yellow,background:T.yellow+"15",borderRadius:4,padding:"2px 7px"}}>NOTA</span>}
+                                  {r.origen==="mp"&&<span title="Importado de Mercado Pago" style={{fontSize:9,fontWeight:800,color:T.blue,background:T.blue+"15",borderRadius:4,padding:"2px 7px"}}>MP</span>}
+                                  {r.origen==="ml"&&<span title="Importado de Mercado Libre" style={{fontSize:9,fontWeight:800,color:T.orange,background:T.orange+"15",borderRadius:4,padding:"2px 7px"}}>ML</span>}
                                 </div>
                               </div>
                               {nombre&&<div style={{fontSize:14,fontWeight:700,color:T.text,lineHeight:1.4,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>}

@@ -6,7 +6,7 @@
 // Routing: ?platform=shopify|tiendanube|mercadolibre & ?action=connect|disconnect|...
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { guardUid } from "./_auth.js";
 import { signState } from "./tn-callback.js";
 import crypto from "crypto";
@@ -652,6 +652,130 @@ async function mlShipProbe(req, res, db) {
   return res.json({ ok:true, userId: tok.userId, count: out.length, orders: out, fullSample });
 }
 
+// ─── Reclamos + contracargos MP/ML → tablero de Reclamos ────────────────────
+// Trae automáticamente al tablero (colección `reclamos`): contracargos de MP,
+// disputas/mediaciones de MP y reclamos de Mercado Libre. Reusa el token de ML
+// (que también autentica contra la API de MP para el mismo vendedor). Cada
+// fuente es INDEPENDIENTE: si una falla por scope/permisos, se saltea y se
+// reporta, sin romper las demás. Idempotente: doc-id determinístico por origen
+// → nunca duplica, y en re-sync NO pisa lo que el usuario editó a mano (estado,
+// notas, resolución); solo refresca el estado del origen.
+async function reclamosSync(req, res, db) {
+  const uid = req.query.uid || req.body?.uid;
+  const debug = req.query.debug === "1";
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
+
+  let tok;
+  try { tok = await getValidMLToken(db, uid); }
+  catch (e) { return res.json({ ok: false, step: "token", error: e.message }); }
+  if (!tok?.accessToken) return res.json({ ok: false, step: "token", error: "Sin token ML/MP — conectá Mercado Libre" });
+
+  const auth = { Authorization: `Bearer ${tok.accessToken}` };
+  const since = new Date(Date.now() - 90 * 86400000);
+  const sinceISO = since.toISOString();
+  const untilISO = new Date().toISOString();
+  const now = new Date().toISOString();
+  const report = { mp_contracargos: 0, mp_mediaciones: 0, ml_reclamos: 0, creados: 0, actualizados: 0, errores: {} };
+  const samples = {};
+  const toUpsert = [];
+
+  // Escanea pagos MP por status (charged_back / in_mediation) y los mapea a reclamos.
+  async function mpPayments(status, tipo, fuente) {
+    const url = `https://api.mercadopago.com/v1/payments/search?status=${status}&sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(sinceISO)}&end_date=${encodeURIComponent(untilISO)}&limit=50`;
+    const r = await fetch(url, { headers: auth });
+    if (r.status !== 200) { report.errores[fuente] = `MP HTTP ${r.status}`; return; }
+    const body = await r.json();
+    const results = body.results || [];
+    if (debug) samples[fuente] = results.slice(0, 3);
+    for (const p of results) {
+      const amount = p.transaction_amount || 0;
+      const nombre = [p.payer?.first_name, p.payer?.last_name].filter(Boolean).join(" ") || p.payer?.email || "";
+      toUpsert.push({
+        docId: `${uid}_mp_${p.id}`,
+        origen: "mp", fuente, origenStatus: p.status_detail || p.status,
+        origenUrl: `https://www.mercadopago.com.ar/activities/detail/${p.id}`,
+        reclamo: {
+          orderNum: String(p.order?.id || p.external_reference || p.id),
+          tipo, motivo: tipo === "Contracargo" ? "Contracargo de Mercado Pago" : "Disputa / mediación de Mercado Pago",
+          descripcion: `Pago MP ${p.id} · ${p.status_detail || p.status} · $${Number(amount).toLocaleString("es-AR")}`,
+          clienteNombre: nombre, clienteEmail: p.payer?.email || "", clienteTotal: String(amount),
+        },
+      });
+      if (tipo === "Contracargo") report.mp_contracargos++; else report.mp_mediaciones++;
+    }
+  }
+
+  // Contracargos y mediaciones de MP (proven: /payments/search ya funciona con este token).
+  try { await mpPayments("charged_back", "Contracargo", "mp_contracargo"); }
+  catch (e) { report.errores.mp_contracargo = e.message; }
+  try { await mpPayments("in_mediation", "Reclamo", "mp_mediacion"); }
+  catch (e) { report.errores.mp_mediacion = e.message; }
+
+  // Reclamos de Mercado Libre (post-purchase claims). Probamos v1 y v2; si el
+  // token no tiene scope de post-venta, degrada y se reporta.
+  try {
+    let claims = [], ok = false;
+    for (const ver of ["v1", "v2"]) {
+      const r = await fetch(`https://api.mercadolibre.com/post-purchase/${ver}/claims/search?limit=50&sort=date_created,desc`, { headers: auth });
+      if (r.status === 200) {
+        const body = await r.json();
+        claims = body.data || body.results || [];
+        if (debug) samples.ml_reclamos = { version: ver, sample: claims.slice(0, 3) };
+        ok = true; break;
+      } else if (r.status !== 404) {
+        report.errores.ml_reclamos = `ML HTTP ${r.status}`;
+      }
+    }
+    if (!ok && !report.errores.ml_reclamos) report.errores.ml_reclamos = "endpoint no disponible (404)";
+    for (const c of claims) {
+      const oid = c.resource_id || c.order_id || (c.resource === "order" ? c.resource_id : "") || "";
+      const razon = c.reason_id || c.reason?.name || c.type || "Reclamo";
+      toUpsert.push({
+        docId: `${uid}_ml_${c.id}`,
+        origen: "ml", fuente: "ml_reclamo", origenStatus: c.status || c.stage || "",
+        origenUrl: oid ? `https://www.mercadolibre.com.ar/ventas/${oid}/detalle` : "",
+        reclamo: {
+          orderNum: String(oid || c.id),
+          tipo: "Reclamo", motivo: `Reclamo Mercado Libre — ${razon}`,
+          descripcion: `Claim ML ${c.id} · ${c.type || "reclamo"} · etapa ${c.stage || "-"} · ${c.status || "-"}`,
+          clienteNombre: "", clienteEmail: "", clienteTotal: "",
+        },
+      });
+      report.ml_reclamos++;
+    }
+  } catch (e) { report.errores.ml_reclamos = e.message; }
+
+  // Upsert idempotente. Nuevo → tarjeta completa en "Nuevo". Existente → solo
+  // refresca el estado del origen, sin tocar lo editado a mano.
+  for (const it of toUpsert) {
+    try {
+      const ref = db.collection("reclamos").doc(it.docId);
+      const snap = await ref.get();
+      if (!snap.exists) {
+        await ref.set({
+          ...it.reclamo,
+          estado: "Nuevo", resolucion: "", notas: "", notasInternas: "",
+          trackingCambio: "", trackingDevolucion: "",
+          productosRecibe: [], productosEnvia: [],
+          estadoRecepcion: "", estadoReembolso: "", clienteProductos: [], clienteTelefono: "",
+          ownerId: uid, origen: it.origen, fuente: it.fuente, extId: it.docId,
+          origenUrl: it.origenUrl, origenStatus: it.origenStatus,
+          historial: [{ accion: `Importado de ${it.origen.toUpperCase()}`, fecha: now }],
+          createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+          resolvedAt: null, lastSyncedAt: now,
+        });
+        report.creados++;
+      } else {
+        await ref.set({ origenStatus: it.origenStatus, origenUrl: it.origenUrl, lastSyncedAt: now, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        report.actualizados++;
+      }
+    } catch (e) { report.errores[it.docId] = e.message; }
+  }
+
+  return res.json({ ok: true, report, ...(debug ? { samples } : {}) });
+}
+
 export default async function handler(req, res) {
   { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||_o.endsWith("-soluna1.vercel.app")||_o.startsWith("http://localhost"))?_o:"https://www.growithapp.com"); } // allowlist CORS
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE");
@@ -698,6 +822,7 @@ export default async function handler(req, res) {
       if (action === "callback" && req.method === "GET") return mercadolibreOauthCallback(req, res, db);
       if (action === "disconnect" && req.method === "POST") return mercadolibreDisconnect(req, res, db);
       if (action === "mp_probe" && req.method === "GET") return mpProbe(req, res, db);
+      if (action === "reclamos_sync" && (req.method === "POST" || req.method === "GET")) return reclamosSync(req, res, db);
       if (action === "mlads_probe" && req.method === "GET") return mlAdsProbe(req, res, db);
       if (action === "mlship_probe" && req.method === "GET") return mlShipProbe(req, res, db);
     }
