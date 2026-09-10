@@ -776,6 +776,114 @@ async function reclamosSync(req, res, db) {
   return res.json({ ok: true, report, ...(debug ? { samples } : {}) });
 }
 
+// ─── Conversación de un reclamo (leer hilo + responder al comprador) ─────────
+// Las tarjetas del tablero guardan su origen en el doc-id: `{uid}_ml_{claimId}`
+// (reclamo ML → el id ES el claim) o `{uid}_mp_{paymentId}` (contracargo/disputa
+// MP → hay que resolver el claim asociado al pago). Estas funciones reusan el
+// token de ML (que autentica contra MP y contra la API de post-venta de ML).
+
+// Resuelve el claim de post-venta para una tarjeta. Devuelve { claimId, ... } +
+// las URLs intentadas (para diagnóstico). Para MP: pago → order → claim.
+async function resolveClaim(auth, origen, rawId) {
+  const tried = [];
+  if (origen === "ml") return { claimId: String(rawId), tried };
+  // MP: el rawId es un payment_id. Traemos el pago para sacar el order de ML.
+  let payStatus = null, orderId = null;
+  try {
+    const pr = await fetch(`https://api.mercadopago.com/v1/payments/${rawId}`, { headers: auth });
+    tried.push(`GET /v1/payments/${rawId} → ${pr.status}`);
+    if (pr.ok) { const pay = await pr.json(); payStatus = pay.status; orderId = pay.order?.id || null; }
+  } catch (e) { tried.push(`payments error: ${e.message}`); }
+  const candidates = [];
+  if (orderId) candidates.push(`https://api.mercadolibre.com/post-purchase/v1/claims/search?resource=order&resource_id=${orderId}`);
+  candidates.push(`https://api.mercadolibre.com/post-purchase/v1/claims/search?payment_id=${rawId}`);
+  for (const url of candidates) {
+    try {
+      const r = await fetch(url, { headers: auth });
+      tried.push(`GET ${url.replace("https://api.mercadolibre.com","")} → ${r.status}`);
+      if (r.ok) { const b = await r.json(); const c = (b.data || b.results || [])[0]; if (c?.id) return { claimId: String(c.id), orderId, payStatus, tried }; }
+    } catch (e) { tried.push(`claims search error: ${e.message}`); }
+  }
+  return { claimId: null, orderId, payStatus, tried };
+}
+
+// Normaliza el token + docId comunes a leer y responder.
+async function reclamoCtx(req, res, db) {
+  const uid = req.query.uid || req.body?.uid;
+  const docId = req.query.docId || req.body?.docId;
+  if (!uid) { res.status(400).json({ error: "Falta uid" }); return null; }
+  if (!(await guardUid(req, res, uid))) return null;
+  if (!docId) { res.status(400).json({ error: "Falta docId" }); return null; }
+  // docId = `${uid}_${origen}_${id}` — el uid puede tener "_", así que parseamos por el prefijo conocido.
+  const rest = docId.startsWith(uid + "_") ? docId.slice(uid.length + 1) : docId;
+  const origen = rest.startsWith("ml_") ? "ml" : rest.startsWith("mp_") ? "mp" : null;
+  const rawId = origen ? rest.slice(3) : null;
+  if (!origen || !rawId) { res.status(400).json({ error: "docId no es un reclamo MP/ML" }); return null; }
+  let tok;
+  try { tok = await getValidMLToken(db, uid); } catch (e) { res.json({ ok: false, step: "token", error: e.message }); return null; }
+  if (!tok?.accessToken) { res.json({ ok: false, step: "token", error: "Sin token ML/MP — conectá Mercado Libre" }); return null; }
+  return { uid, docId, origen, rawId, auth: { Authorization: `Bearer ${tok.accessToken}` } };
+}
+
+// GET: lee el hilo de mensajes del reclamo (comprador ↔ vendedor).
+async function reclamoThread(req, res, db) {
+  const ctx = await reclamoCtx(req, res, db);
+  if (!ctx) return;
+  const debug = req.query.debug === "1";
+  const resolved = await resolveClaim(ctx.auth, ctx.origen, ctx.rawId);
+  if (!resolved.claimId) {
+    return res.json({ ok: true, claimId: null, messages: [], note: "No se encontró un reclamo/claim asociado por API — respondelo desde el panel de Mercado Pago/Libre.", ...(debug ? { tried: resolved.tried } : {}) });
+  }
+  const raw = {};
+  let claimInfo = {}, messages = [];
+  try {
+    const cr = await fetch(`https://api.mercadolibre.com/post-purchase/v1/claims/${resolved.claimId}`, { headers: ctx.auth });
+    if (cr.ok) { const c = await cr.json(); claimInfo = { stage: c.stage, status: c.status, type: c.type }; if (debug) raw.claim = c; }
+  } catch (e) { raw.claimErr = e.message; }
+  try {
+    const mr = await fetch(`https://api.mercadolibre.com/post-purchase/v1/claims/${resolved.claimId}/messages`, { headers: ctx.auth });
+    raw.messagesStatus = mr.status;
+    if (mr.ok) {
+      const body = await mr.json();
+      const arr = Array.isArray(body) ? body : (body.data || body.results || body.messages || []);
+      messages = arr.map(m => ({
+        from: m.sender_role || m.from?.role || m.role || "",
+        text: m.message || m.text || (m.receiver && m.message) || "",
+        date: m.date_created || m.date || m.last_updated || "",
+      })).filter(m => m.text);
+      if (debug) raw.messagesRaw = arr.slice(0, 5);
+    }
+  } catch (e) { raw.messagesErr = e.message; }
+  return res.json({ ok: true, claimId: resolved.claimId, ...claimInfo, messages, ...(debug ? { tried: resolved.tried, raw } : {}) });
+}
+
+// POST: responde (manda un mensaje al comprador dentro del reclamo).
+async function reclamoReply(req, res, db) {
+  const ctx = await reclamoCtx(req, res, db);
+  if (!ctx) return;
+  const message = (req.body?.message || "").toString().trim();
+  if (!message) return res.status(400).json({ error: "Mensaje vacío" });
+  const resolved = await resolveClaim(ctx.auth, ctx.origen, ctx.rawId);
+  if (!resolved.claimId) return res.json({ ok: false, error: "No se encontró el claim para responder por API — usá el panel de MP/ML.", tried: resolved.tried });
+  // Probamos los dos formatos conocidos del endpoint de envío de mensaje.
+  const attempts = [
+    { url: `https://api.mercadolibre.com/post-purchase/v1/claims/${resolved.claimId}/actions/send-message`, body: { receiver_role: "complainant", message } },
+    { url: `https://api.mercadolibre.com/post-purchase/v1/claims/${resolved.claimId}/messages`, body: { receiver_role: "complainant", message } },
+  ];
+  const tried = [];
+  for (const a of attempts) {
+    try {
+      const r = await fetch(a.url, { method: "POST", headers: { ...ctx.auth, "Content-Type": "application/json" }, body: JSON.stringify(a.body) });
+      const txt = await r.text();
+      tried.push(`POST ${a.url.replace("https://api.mercadolibre.com","")} → ${r.status}`);
+      if (r.ok) return res.json({ ok: true, claimId: resolved.claimId });
+      // 400/409 con detalle: devolvemos el motivo (ej. no es tu turno de responder).
+      if (r.status !== 404) return res.json({ ok: false, status: r.status, error: txt.slice(0, 300), tried });
+    } catch (e) { tried.push(`error: ${e.message}`); }
+  }
+  return res.json({ ok: false, error: "No se pudo enviar el mensaje por API (endpoint no disponible).", tried });
+}
+
 export default async function handler(req, res) {
   { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||_o.endsWith("-soluna1.vercel.app")||_o.startsWith("http://localhost"))?_o:"https://www.growithapp.com"); } // allowlist CORS
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE");
@@ -823,6 +931,8 @@ export default async function handler(req, res) {
       if (action === "disconnect" && req.method === "POST") return mercadolibreDisconnect(req, res, db);
       if (action === "mp_probe" && req.method === "GET") return mpProbe(req, res, db);
       if (action === "reclamos_sync" && (req.method === "POST" || req.method === "GET")) return reclamosSync(req, res, db);
+      if (action === "reclamo_thread" && req.method === "GET") return reclamoThread(req, res, db);
+      if (action === "reclamo_reply" && req.method === "POST") return reclamoReply(req, res, db);
       if (action === "mlads_probe" && req.method === "GET") return mlAdsProbe(req, res, db);
       if (action === "mlship_probe" && req.method === "GET") return mlShipProbe(req, res, db);
     }

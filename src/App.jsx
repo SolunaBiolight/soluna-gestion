@@ -848,7 +848,7 @@ const SIDEBAR_GROUPS_BASE = [
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
     {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", alertKey:"reclamos", badge:"red",
-      subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
+      subs:[{id:"reclamos",label:"Reclamos"},{id:"mp",label:"Reclamos MP"},{id:"historial",label:"Historial"}]},
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", alertKey:"canjes", badge:"orange"},
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", alertKey:"tareas", badge:"orange"},
     {id:"calendario", label:"Calendario de Pagos", icon:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18", alertKey:"calendario", badge:"red"},
@@ -1008,6 +1008,9 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
                         {sub.label}
                         {item.id==="margenes"&&sub.id==="costos"&&(alerts.costos||0)>0&&(
                           <span title={`${alerts.costos} producto(s) vendidos sin costo cargado`} style={{marginLeft:"auto",fontSize:9,fontWeight:DS.w.bold,background:T.yellow+"1f",color:T.yellow,border:`1px solid ${T.yellow}44`,borderRadius:DS.r.full,padding:"0 5px",lineHeight:"14px",flexShrink:0}}>{alerts.costos}</span>
+                        )}
+                        {item.id==="reclamos"&&sub.id==="mp"&&(alerts.reclamosMp||0)>0&&(
+                          <span title={`${alerts.reclamosMp} reclamo(s) de Mercado Pago/Libre sin resolver`} style={{marginLeft:"auto",fontSize:9,fontWeight:DS.w.bold,background:T.red+"1f",color:T.red,border:`1px solid ${T.red}44`,borderRadius:DS.r.full,padding:"0 5px",lineHeight:"14px",flexShrink:0}}>{alerts.reclamosMp}</span>
                         )}
                       </button>
                     );
@@ -3646,9 +3649,15 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     setSlaConfig({dias});
   }
 
-  // Stats — solo reclamos abiertos (no Resuelto/Rechazado)
+  // Los reclamos importados de MP/ML viven en su propia sección ("Reclamos MP"),
+  // NO se mezclan con los manuales del tablero.
+  const esMpReclamo=(r)=>r.origen==="mp"||r.origen==="ml";
+  const reclamosMp=reclamos.filter(esMpReclamo);
+  const reclamosManual=reclamos.filter(r=>!esMpReclamo(r));
+
+  // Stats — solo reclamos abiertos (no Resuelto/Rechazado), manuales
   const hace3=fechaAR(new Date(Date.now()-slaConfig.dias*86400000));
-  const abiertos=reclamos.filter(r=>!["Resuelto","Rechazado"].includes(r.estado));
+  const abiertos=reclamosManual.filter(r=>!["Resuelto","Rechazado"].includes(r.estado));
   const stats={
     pendientes:abiertos.length,
     cambios:abiertos.filter(r=>r.tipo==="Cambio").length,
@@ -3736,6 +3745,37 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   },[user?.uid]);
   useEffect(()=>{ syncReclamosMP(false); },[user?.uid]);
 
+  // ── Conversación de un reclamo MP/ML (leer hilo + responder al comprador) ──
+  const [mpThread,setMpThread]=useState(null);   // {loading}|{claimId,messages,note,...}
+  const [mpReplyText,setMpReplyText]=useState("");
+  const [mpReplying,setMpReplying]=useState(false);
+  const loadMpThread=React.useCallback(async(docId)=>{
+    if(!user?.uid||!docId) return;
+    setMpThread({loading:true});
+    try{
+      const r=await authFetch(`/api/integrations?platform=mercadolibre&action=reclamo_thread&uid=${user.uid}&docId=${encodeURIComponent(docId)}`);
+      setMpThread(await r.json());
+    }catch(e){ setMpThread({error:e.message}); }
+  },[user?.uid]);
+  const sendMpReply=async(docId)=>{
+    const msg=mpReplyText.trim(); if(!msg||!docId) return;
+    setMpReplying(true);
+    try{
+      const r=await authFetch(`/api/integrations?platform=mercadolibre&action=reclamo_reply&uid=${user.uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({docId,message:msg})});
+      const d=await r.json().catch(()=>({}));
+      if(d.ok){ toast("Respuesta enviada al comprador ✓","success"); setMpReplyText(""); loadMpThread(docId); }
+      else toast("No se pudo enviar"+(d.error?": "+String(d.error).slice(0,90):""),"error");
+    }catch(e){ toast("Error al enviar","error"); }
+    setMpReplying(false);
+  };
+  // Al abrir un reclamo MP/ML en el drawer, cargamos su conversación.
+  useEffect(()=>{
+    const r=reclamos.find(x=>x._docId===activeReclamo);
+    setMpReplyText("");
+    if(r&&(r.origen==="mp"||r.origen==="ml")) loadMpThread(r._docId);
+    else setMpThread(null);
+  },[activeReclamo]);
+
   // -- Render --
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
@@ -3746,7 +3786,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         <TopbarMoreMenu T={T} items={[
           {label:"Exportar CSV",onClick:()=>{
           const headers=["Pedido","Cliente","Email","Tipo","Estado","Días abierto","Tracking cambio","Tracking devolución","Motivo","Notas"];
-          const rows=reclamos.map(r=>{const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):"";;return[r.orderNum,r.clienteNombre||"",r.clienteEmail||"",r.tipo,r.estado,dias,r.trackingCambio||"",r.trackingDevolucion||"",(r.motivo||"").replace(/\n/g," "),(r.notasInternas||"").replace(/\n/g," ")];});
+          const rows=reclamosManual.map(r=>{const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):"";;return[r.orderNum,r.clienteNombre||"",r.clienteEmail||"",r.tipo,r.estado,dias,r.trackingCambio||"",r.trackingDevolucion||"",(r.motivo||"").replace(/\n/g," "),(r.notasInternas||"").replace(/\n/g," ")];});
           const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
           const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}));a.download=`reclamos_${hoyAR()}.csv`;a.click();
           toast("CSV exportado ✓","success");
@@ -3844,7 +3884,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
             {/* Buscador siempre visible */}
             {(()=>{
               const sq2=search.toLowerCase();
-              const matchCount=search.length>=2?reclamos.filter(r=>r.orderNum?.toLowerCase().includes(sq2)||r.clienteNombre?.toLowerCase().includes(sq2)||r.clienteEmail?.toLowerCase().includes(sq2)).length:0;
+              const matchCount=search.length>=2?reclamosManual.filter(r=>r.orderNum?.toLowerCase().includes(sq2)||r.clienteNombre?.toLowerCase().includes(sq2)||r.clienteEmail?.toLowerCase().includes(sq2)).length:0;
               return(
               <div style={{marginBottom:16}}>
                 <div style={{position:"relative"}}>
@@ -3926,7 +3966,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 {ESTADOS_R.map(estado=>{
                   const sc=getEstadoRC(T,estado);
                   const sq=search.toLowerCase();
-                  const items=reclamos.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo)&&(!search||r.orderNum?.toLowerCase().includes(sq)||r.clienteNombre?.toLowerCase().includes(sq)||r.clienteEmail?.toLowerCase().includes(sq)));
+                  const items=reclamosManual.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo)&&(!search||r.orderNum?.toLowerCase().includes(sq)||r.clienteNombre?.toLowerCase().includes(sq)||r.clienteEmail?.toLowerCase().includes(sq)));
                   if(!items.length) return null;
                   return (
                     <div key={estado}>
@@ -3982,7 +4022,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 {ESTADOS_R.map(estado=>{
                   const sc=getEstadoRC(T,estado);
                   const sq=search.toLowerCase();
-                  const items=reclamos.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo)&&(!search||r.orderNum?.toLowerCase().includes(sq)||r.clienteNombre?.toLowerCase().includes(sq)||r.clienteEmail?.toLowerCase().includes(sq)));
+                  const items=reclamosManual.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo)&&(!search||r.orderNum?.toLowerCase().includes(sq)||r.clienteNombre?.toLowerCase().includes(sq)||r.clienteEmail?.toLowerCase().includes(sq)));
                   const isDragOver=dragOverEstado===estado;
                   return(
                     <div key={estado}
@@ -4064,6 +4104,48 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         )}
 
 
+
+        {view==="mp"&&(
+          <div style={{padding:"4px 0 48px"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:16}}>
+              <div>
+                <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.4}}>Reclamos de Mercado Pago / Libre</div>
+                <div style={{fontSize:12.5,color:T.textSm,marginTop:2}}>Contracargos y disputas importados solos. Respondés al comprador desde acá.</div>
+              </div>
+              <button onClick={()=>syncReclamosMP(true)} disabled={syncingMP} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",display:"inline-flex",alignItems:"center",gap:6,opacity:syncingMP?0.6:1}}>{syncingMP?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}Sincronizar</button>
+            </div>
+            {reclamosMp.length===0?(
+              <DSEmpty T={T} icon="📥" title="Sin reclamos de MP/ML" subtitle="Cuando entre un contracargo o disputa de Mercado Pago/Libre, aparece acá solo. Tocá Sincronizar para traer los últimos." action={<Btn T={T} variant="secondary" onClick={()=>syncReclamosMP(true)}>Sincronizar ahora</Btn>}/>
+            ):(
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
+                {[...reclamosMp].sort((a,b)=>{const ra=["Resuelto","Rechazado"].includes(a.estado)?1:0,rb=["Resuelto","Rechazado"].includes(b.estado)?1:0;return ra-rb||((b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));}).map(r=>{
+                  const sc=getEstadoRC(T,r.estado);const tc=getTipoRC(T,r.tipo);const isActive=activeReclamo===r._docId;
+                  return(
+                    <div key={r._docId} onClick={()=>setActiveReclamo(isActive?null:r._docId)}
+                      style={{background:isActive?T.accentSolid+"14":T.card,border:`1.5px solid ${isActive?T.accentSolid:T.border}`,borderRadius:DS.r.xl,padding:"14px 16px",cursor:"pointer",transition:"border-color 0.15s, background 0.12s",display:"flex",flexDirection:"column",gap:8}}
+                      onMouseEnter={e=>{if(!isActive){e.currentTarget.style.borderColor=T.textSm+"66";}}}
+                      onMouseLeave={e=>{if(!isActive){e.currentTarget.style.borderColor=T.border;}}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6}}>
+                          <span style={{width:8,height:8,borderRadius:"50%",background:sc.dot,flexShrink:0}}/>
+                          <span style={{fontSize:11,fontWeight:600,color:sc.text}}>{r.estado}</span>
+                        </div>
+                        <span style={{fontSize:9,fontWeight:800,color:r.origen==="mp"?T.blue:T.orange,background:(r.origen==="mp"?T.blue:T.orange)+"15",borderRadius:4,padding:"2px 7px"}}>{r.origen==="mp"?"MP":"ML"}</span>
+                      </div>
+                      <div style={{fontSize:14,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.clienteNombre||r.clienteEmail||`#${r.orderNum}`}</div>
+                      <div style={{fontSize:11.5,color:T.textSm,lineHeight:1.5,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{r.motivo}</div>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8,borderTop:`1px solid ${T.borderL||T.border}`}}>
+                        <span style={{fontSize:10,fontWeight:600,color:tc.text,background:tc.bg,borderRadius:DS.r.sm,padding:"2px 6px"}}>{r.tipo}</span>
+                        <span style={{fontSize:11,color:T.accent,fontWeight:500}}>#{r.orderNum}</span>
+                      </div>
+                      <div style={{fontSize:11,fontWeight:600,color:T.accent,display:"flex",alignItems:"center",gap:5,marginTop:2}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Abrir y responder</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {view==="config"&&(
           <div style={{padding:"24px 0 48px",maxWidth:520}}>
@@ -4154,6 +4236,37 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 );
               })()}
             </div>
+            {/* Conversación del reclamo MP/ML — leer hilo + responder al comprador */}
+            {activeR&&(activeR.origen==="mp"||activeR.origen==="ml")&&(
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+                  Conversación con el comprador
+                  {activeR.origenUrl&&<a href={activeR.origenUrl} target="_blank" rel="noopener noreferrer" style={{marginLeft:"auto",fontSize:10,color:T.accent,textDecoration:"none",textTransform:"none",fontWeight:600}}>Abrir en {activeR.origen==="mp"?"Mercado Pago":"Mercado Libre"} ↗</a>}
+                </div>
+                {(!mpThread||mpThread.loading)?(
+                  <div style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:8,padding:"8px 0"}}><Spinner size={13} color={T.textSm}/>Cargando conversación…</div>
+                ):(mpThread.ok&&!mpThread.claimId)?(
+                  <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 14px",fontSize:12.5,color:T.textMd,lineHeight:1.55}}>{mpThread.note||"No se pudo abrir la conversación por API."} Respondelo desde el panel de {activeR.origen==="mp"?"Mercado Pago":"Mercado Libre"}.</div>
+                ):(
+                  <div>
+                    <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 12px",marginBottom:8,maxHeight:240,overflowY:"auto",display:"flex",flexDirection:"column",gap:8}}>
+                      {(mpThread.messages||[]).length===0&&<div style={{fontSize:12,color:T.textSm,textAlign:"center",padding:"8px 0"}}>Sin mensajes todavía. Escribile al comprador abajo.</div>}
+                      {(mpThread.messages||[]).map((m,i)=>{const mio=/respondent|seller|vendedor/i.test(m.from||"");return(
+                        <div key={i} style={{alignSelf:mio?"flex-end":"flex-start",maxWidth:"85%",background:mio?T.accentSolid+"1c":T.card,border:`1px solid ${mio?T.accentSolid+"44":T.border}`,borderRadius:DS.r.lg,padding:"7px 10px"}}>
+                          <div style={{fontSize:9,fontWeight:700,color:mio?T.accent:T.textSm,marginBottom:2,textTransform:"uppercase",letterSpacing:0.3}}>{mio?"Vos":"Comprador"}</div>
+                          <div style={{fontSize:12.5,color:T.text,lineHeight:1.45,whiteSpace:"pre-wrap"}}>{m.text}</div>
+                          {m.date&&<div style={{fontSize:9,color:T.textSm,marginTop:3}}>{new Date(m.date).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</div>}
+                        </div>
+                      );})}
+                    </div>
+                    <textarea value={mpReplyText} onChange={e=>setMpReplyText(e.target.value)} placeholder="Escribí tu respuesta al comprador…" rows={3} style={{...InputStyle(T),width:"100%",resize:"vertical",fontSize:13,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"}}/>
+                    <div style={{display:"flex",justifyContent:"flex-end",marginTop:6}}>
+                      <button onClick={()=>sendMpReply(activeR._docId)} disabled={mpReplying||!mpReplyText.trim()} style={{...BtnPrimary(T),fontSize:12,padding:"7px 16px",opacity:(mpReplying||!mpReplyText.trim())?0.55:1,display:"inline-flex",alignItems:"center",gap:6}}>{mpReplying?<Spinner size={12} color="#fff"/>:null}Responder al comprador</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             {/* Productos del pedido */}
             {activeOrder?.productos?.length>0&&(
               <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 14px",marginBottom:14}}>
@@ -36465,6 +36578,7 @@ export default function App() {
   const [totalOrdersCount,setTotalOrdersCount]=useState(null);
   const [fbStatus,setFbStatus]=useState("connecting");
   const [reclamosCount,setReclamosCount]=useState(0);
+  const [reclamosMpCount,setReclamosMpCount]=useState(0);
   const [canjesCount,setCanjesCount]=useState(0);
   const [canjesAcciones,setCanjesAcciones]=useState(0); // badge sidebar: acciones vencidas, no total
   const [costosAlert,setCostosAlert]=useState(0); // badge "Configuraciones" del Dashboard: productos vendidos sin costo (lo publica AppRendimiento vía localStorage + evento)
@@ -36885,7 +36999,13 @@ export default function App() {
     if(!user) return;
     const q1=query(collection(db,"reclamos"),where("ownerId","==",user.uid));
     const q2=query(collection(db,"canjes"),where("ownerId","==",user.uid));
-    const u1=onSnapshot(q1,snap=>{setReclamosCount(snap.size);setFbStatus("ok");},()=>setFbStatus("error"));
+    const u1=onSnapshot(q1,snap=>{
+      // Separamos reclamos manuales de los importados de MP/ML: son alertas distintas.
+      let manual=0, mp=0;
+      snap.docs.forEach(d=>{const r=d.data(); const esMp=r.origen==="mp"||r.origen==="ml";
+        if(esMp){ if(!["Resuelto","Rechazado"].includes(r.estado)) mp++; } else { manual++; }});
+      setReclamosCount(manual); setReclamosMpCount(mp); setFbStatus("ok");
+    },()=>setFbStatus("error"));
     const u2=onSnapshot(q2,snap=>{
       const canjesData=snap.docs.map(d=>({...d.data(),_docId:d.id}));
       setCanjesCount(canjesData.length);
@@ -37231,7 +37351,7 @@ export default function App() {
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       {impersonando&&<GhImpersonBanner T={T} info={impersonando}/>}
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesAcciones, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert, calendario: calAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, reclamosMp: reclamosMpCount, canjes: canjesAcciones, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert, calendario: calAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
       {/* Multi-org F2 modals */}
       {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
       {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}
