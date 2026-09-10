@@ -15981,13 +15981,13 @@ function AdmSistema({ctx, sectionsConfig, saveSectionsConfig}) {
           {sys.loading?<AdmSkeleton T={T} filas={6}/>:(sys.servicios||[]).map((s,i)=><div key={s.id} style={{display:"flex",gap:8,alignItems:"center",padding:"7px 0",borderBottom:i<(sys.servicios||[]).length-1?`1px solid ${T.borderL}`:"none",fontSize:12}}><span style={{width:7,height:7,borderRadius:"50%",background:s.ok?T.green:T.red,flexShrink:0}}/><span style={{flex:1,color:T.text,fontWeight:600}}>{s.label}</span><span style={{color:T.textSm,fontSize:11,textAlign:"right"}}>{s.detalle||(s.ok?"Configurado":"Falta")}</span></div>)}
         </Card>
         <Card T={T} padding="lg">
-          <AdmTitulo T={T} t="Accesos por sección" sub="Pública = la ven todos los clientes. Solo admin = desaparece del menú de los clientes al instante (para desarrollar sin que la vean)."/>
+          <AdmTitulo T={T} t="Accesos por sección" sub="Todos = la ven todos los clientes. Admin = desaparece del menú de los clientes al instante (para desarrollar sin que la vean)."/>
           {secciones.map((s,i)=>{ const on=sectionsConfig.includes(s.id); return (
             <div key={s.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:i<secciones.length-1?`1px solid ${T.borderL}`:"none"}}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={on?T.accent:T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d={s.icon}/></svg>
               <span style={{flex:1,fontSize:12.5,fontWeight:600,color:T.text}}>{s.label}</span>
               <div style={{display:"inline-flex",background:T.surface,borderRadius:8,padding:2}}>
-                {[[false,"Pública",T.green],[true,"Solo admin",T.accent]].map(([v,l,col])=>{ const sel=on===v; return <button key={l} onClick={()=>{ if(sel) return; saveSectionsConfig(v?[...sectionsConfig,s.id]:sectionsConfig.filter(x=>x!==s.id)).catch(e=>toast(e.message,"error")); }} style={{padding:"4px 11px",fontSize:11,fontWeight:sel?700:500,border:"none",borderRadius:6,background:sel?T.card:"transparent",color:sel?col:T.textSm,cursor:sel?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:sel?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"}}>{l}</button>; })}
+                {[[false,"Todos",T.green],[true,"Admin",T.accent]].map(([v,l,col])=>{ const sel=on===v; return <button key={l} onClick={()=>{ if(sel) return; saveSectionsConfig(v?[...sectionsConfig,s.id]:sectionsConfig.filter(x=>x!==s.id)).catch(e=>toast(e.message,"error")); }} style={{padding:"4px 11px",fontSize:11,fontWeight:sel?700:500,border:"none",borderRadius:6,background:sel?T.card:"transparent",color:sel?col:T.textSm,cursor:sel?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:sel?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"}}>{l}</button>; })}
               </div>
             </div>
           );})}
