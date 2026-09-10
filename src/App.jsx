@@ -15021,6 +15021,118 @@ function admCsvDescargar(nombre, filas){
   const a=document.createElement("a"); a.href=url; a.download=nombre; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
 
+const ADM_CAT = { en_camino:["En camino","blue"], en_sucursal:["En sucursal","orange"], entregado:["Entregado","green"], devolucion:["Devolución","red"], visita_fallida:["Visita fallida","red"], otro:["Sin ingreso","textSm"], desconocido:["Sin datos","textSm"], pendiente:["Pendiente","textSm"] };
+function admCatDe(e){ if(e.entregadoAt) return "entregado"; if(e.devolucionAt) return "devolucion"; return e.categoria||(e.andreani?.numeroDeEnvio?"otro":"desconocido"); }
+function admIso(v){ if(!v) return null; if(typeof v==="number") return v; const t=Date.parse(v); return isFinite(t)?t:null; }
+// Trazas de un envío (API oficial con las credenciales de la plataforma; si no
+// lo ve, tracking público) — mismo endpoint que usa Seguimientos.
+function AdmTrazasModal({T, envio, onClose}) {
+  const numero=envio?.andreani?.numeroDeEnvio||envio?.tracking||"";
+  const [st,setSt]=useState({loading:true,eventos:[],estado:null,error:""});
+  useEffect(()=>{ let vivo=true; setSt({loading:true,eventos:[],estado:null,error:""}); if(!numero){ setSt({loading:false,eventos:[],estado:null,error:"Este envío no tiene número de seguimiento."}); return; }
+    fetch(`/api/update-shipping?action=tracking&tracking=${encodeURIComponent(numero)}`).then(r=>r.json()).then(d=>{ if(!vivo) return; setSt({loading:false,eventos:Array.isArray(d?.eventos)?d.eventos:[],estado:d?.estado||null,error:d?.error&&!d?.estado?String(d.error):""}); }).catch(e=>{ if(vivo) setSt({loading:false,eventos:[],estado:null,error:e.message}); });
+    return ()=>{ vivo=false; }; },[numero]);
+  const fechaEv=ev=>{ const f=ev?.fecha||ev?.Fecha||ev?.fechaHora||ev?.fechaEvento||ev?.timestamp||ev?.date||null; const s=(f&&typeof f==="object")?[f.dia||"",f.hora||""].join("T"):f; const t=s?Date.parse(s):NaN; return isFinite(t)?t:null; };
+  const txtEv=ev=>ev?.estado||ev?.Estado||ev?.evento||ev?.descripcion||ev?.Descripcion||ev?.accion||ev?.motivo||"";
+  const descEv=ev=>{ const d=ev?.descripcion||ev?.Descripcion||ev?.detalle||ev?.sucursal||ev?.Sucursal||""; return d&&d!==txtEv(ev)?String(typeof d==="object"?(d.nombre||d.descripcion||""):d):""; };
+  const evs=[...st.eventos].map(ev=>({t:fechaEv(ev),estado:txtEv(ev),desc:descEv(ev)})).sort((a,b)=>(b.t||0)-(a.t||0));
+  return (
+    <Modal T={T} open={!!envio} onClose={onClose} title={`Seguimiento · ${numero||"sin número"}`} width={560} zIndex={1300}>
+      {envio&&(
+        <div>
+          <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",fontSize:12,color:T.textMd,marginBottom:12}}>
+            <span>Pedido <strong style={{color:T.text}}>#{envio.numero}</strong></span>
+            {envio.cliente&&<span>· {envio.cliente}</span>}
+            {(envio.localidad||envio.provincia)&&<span>· {[envio.localidad,envio.provincia].filter(Boolean).join(", ")}</span>}
+            <span>· {envio.esSucursal||envio.andreani?.tipo==="sucursal"?"a sucursal":"a domicilio"}</span>
+            {numero&&<a href={`https://www.andreani.com/envio/${numero}`} target="_blank" rel="noreferrer" style={{marginLeft:"auto",color:T.accent,fontWeight:600,textDecoration:"none"}}>Abrir en Andreani</a>}
+          </div>
+          {st.loading?<div style={{display:"flex",alignItems:"center",gap:8,padding:"14px 0",color:T.textSm,fontSize:12}}><Spinner size={13} color={T.accent}/> Consultando a Andreani</div>
+          :st.error?<div style={{fontSize:12,color:T.red}}>{st.error}</div>
+          :(<>
+            {st.estado&&<div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Estado actual: {st.estado}</div>}
+            {evs.length===0?<div style={{fontSize:12,color:T.textSm}}>Andreani no devolvió eventos para este envío todavía.</div>:(
+              <div style={{borderLeft:`2px solid ${T.border}`,marginLeft:6,paddingLeft:14,display:"flex",flexDirection:"column",gap:10,maxHeight:380,overflowY:"auto"}}>
+                {evs.map((ev,i)=>(
+                  <div key={i} style={{position:"relative"}}>
+                    <span style={{position:"absolute",left:-20,top:5,width:9,height:9,borderRadius:"50%",background:i===0?T.accent:T.border}}/>
+                    <div style={{fontSize:12.5,fontWeight:i===0?700:500,color:i===0?T.text:T.textMd}}>{ev.estado||"—"}</div>
+                    {ev.desc&&<div style={{fontSize:11,color:T.textSm}}>{ev.desc}</div>}
+                    <div style={{fontSize:10.5,color:T.textSm}}>{ev.t?new Date(ev.t).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):""}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>)}
+        </div>
+      )}
+    </Modal>
+  );
+}
+// Sección "Envíos" de la ficha de una cuenta: etiquetas de los últimos 90 días.
+function AdmFichaEnvios({ctx, u, chip}) {
+  const {T, authFetchAdm} = ctx;
+  const [st,setSt]=useState({loading:true,data:null,error:""});
+  const [q,setQ]=useState(""); const [filtro,setFiltro]=useState("todos"); const [limite,setLimite]=useState(40);
+  const [trazas,setTrazas]=useState(null);
+  async function load(){ setSt(s=>({...s,loading:true,error:""})); try{ const r=await authFetch("/api/andreani?action=admin_envios",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:u._id,dias:90})}); const d=await r.json(); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`); setSt({loading:false,data:d,error:""}); }catch(e){ setSt({loading:false,data:null,error:e.message}); } }
+  useEffect(()=>{ load(); },[u._id]);
+  const envios=st.data?.envios||[];
+  const api=envios.filter(e=>e.andreani?.numeroDeEnvio);
+  const gasto=api.reduce((s,e)=>s+(e.andreani?.precio||0),0);
+  const problemas=envios.filter(e=>e.problema);
+  const porCat={}; envios.forEach(e=>{ const k=admCatDe(e); porCat[k]=(porCat[k]||0)+1; });
+  const qq=q.trim().toLowerCase();
+  const lista=envios.filter(e=>filtro==="todos"||(filtro==="problema"?!!e.problema:filtro==="api"?!!e.andreani?.numeroDeEnvio:admCatDe(e)===filtro))
+    .filter(e=>!qq||String(e.numero||"").includes(qq)||String(e.andreani?.numeroDeEnvio||e.tracking||"").includes(qq)||(e.cliente||"").toLowerCase().includes(qq)||(e.localidad||"").toLowerCase().includes(qq));
+  const col=k=>{ const c=(ADM_CAT[k]||ADM_CAT.desconocido)[1]; return c==="textSm"?T.textSm:T[c]; };
+  function exportar(){
+    const filas=[["Pedido","Fecha","Destinatario","Localidad","Provincia","Tipo","Número de envío","Estado","Categoría","Costo","Despachado","Entregado","Problema"]];
+    lista.forEach(e=>filas.push([e.numero,e.creado?admFecha(admIso(e.creado)):"",e.cliente,e.localidad,e.provincia,e.esSucursal||e.andreani?.tipo==="sucursal"?"sucursal":"domicilio",e.andreani?.numeroDeEnvio||e.tracking||"",e.estadoAndreani||"",(ADM_CAT[admCatDe(e)]||[""])[0],e.andreani?.precio||"",e.despachadoAt?admFecha(admIso(e.despachadoAt)):"",e.entregadoAt?admFecha(admIso(e.entregadoAt)):"",e.problema?e.problema.msg:""]));
+    admCsvDescargar(`envios-${(u.email||u._id).replace(/[^a-z0-9]/gi,"_")}-${new Date().toISOString().slice(0,10)}.csv`,filas);
+  }
+  return (
+    <div>
+      {st.loading?<div style={{fontSize:12,color:T.textSm,display:"flex",gap:8,alignItems:"center"}}><Spinner size={13} color={T.accent}/> Cargando envíos</div>
+      :st.error?<div style={{fontSize:12,color:T.red}}>{st.error}</div>
+      :(<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8,marginBottom:10}}>
+          {[["Etiquetas API",String(api.length),`de ${envios.length} envíos registrados`],["Gasto en etiquetas",fmtMoney(gasto),"últimos 90 días"],["Saldo",fmtMoney(st.data?.saldo||0),st.data?.habilitado?"prepago habilitado":"sin prepago"],["Con problema",String(problemas.length),problemas.length?"requieren atención":"todo en orden"]].map(([l,v,s])=>(
+            <div key={l} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 10px"}}><div style={{fontSize:10,color:T.textSm,fontWeight:600}}>{l}</div><div style={{fontSize:15,fontWeight:800,color:l==="Con problema"&&problemas.length?T.red:T.text}}>{v}</div><div style={{fontSize:10,color:T.textSm}}>{s}</div></div>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+          {Object.entries(porCat).sort((a,b)=>b[1]-a[1]).map(([k,n])=><button key={k} onClick={()=>setFiltro(filtro===k?"todos":k)} style={{background:"transparent",border:`1px solid ${filtro===k?col(k):T.border}`,borderRadius:DS.r.full,padding:"3px 9px",fontSize:11,color:col(k),fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{(ADM_CAT[k]||ADM_CAT.desconocido)[0]} {n}</button>)}
+          {problemas.length>0&&<button onClick={()=>setFiltro(filtro==="problema"?"todos":"problema")} style={{background:filtro==="problema"?T.red+"18":"transparent",border:`1px solid ${T.red}66`,borderRadius:DS.r.full,padding:"3px 9px",fontSize:11,color:T.red,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Con problema {problemas.length}</button>}
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+          <input value={q} onChange={e=>{setQ(e.target.value);setLimite(40);}} placeholder="Pedido, número de envío, destinatario o localidad" style={{...InputStyle(T),flex:1,marginBottom:0,fontSize:12}}/>
+          <Btn T={T} variant="secondary" size="sm" onClick={exportar} disabled={!lista.length}>CSV</Btn>
+          <Btn T={T} variant="secondary" size="sm" onClick={load}>Actualizar</Btn>
+        </div>
+        {lista.length===0?<div style={{fontSize:12,color:T.textSm}}>{envios.length?"Nada con ese filtro.":"Sin envíos registrados en los últimos 90 días. Solo se ven las etiquetas emitidas desde Growith (API o Excel registrado); las generadas fuera no pasan por acá."}</div>:(
+          <div style={{border:`1px solid ${T.borderL}`,borderRadius:8,overflow:"hidden"}}>
+            {lista.slice(0,limite).map((e,i)=>{ const k=admCatDe(e); const num=e.andreani?.numeroDeEnvio||e.tracking; return (
+              <div key={e.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 10px",borderTop:i>0?`1px solid ${T.borderL}`:"none",fontSize:12,flexWrap:"wrap"}}>
+                <span style={{width:6,height:6,borderRadius:"50%",background:col(k),flexShrink:0}}/>
+                <div style={{flex:1,minWidth:180}}>
+                  <div style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>#{e.numero}{e.cliente?` · ${e.cliente}`:""}<span style={{color:T.textSm,fontWeight:400}}>{e.localidad?` · ${e.localidad}`:""}{e.esSucursal||e.andreani?.tipo==="sucursal"?" · sucursal":""}</span></div>
+                  <div style={{fontSize:10.5,color:T.textSm}}>{e.creado?admFecha(admIso(e.creado)):""}{e.estadoAndreani?` · ${e.estadoAndreani}`:""}{e.problema&&<span style={{color:e.problema.sev==="red"?T.red:T.orange,fontWeight:600}}> · {e.problema.msg}</span>}</div>
+                </div>
+                <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:DS.r.full,background:col(k)+"18",color:col(k),whiteSpace:"nowrap"}}>{(ADM_CAT[k]||ADM_CAT.desconocido)[0]}</span>
+                {e.andreani?.precio>0&&<span style={{color:T.textMd,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fmtMoney(e.andreani.precio)}</span>}
+                {num?<button onClick={()=>setTrazas(e)} title="Ver seguimiento" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 8px",fontSize:11,color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Cascadia Code','Consolas',monospace"}}>{num}</button>:<span style={{fontSize:10,color:T.textSm}}>sin número</span>}
+              </div>
+            );})}
+            {lista.length>limite&&<div style={{textAlign:"center",padding:8,borderTop:`1px solid ${T.borderL}`}}><button onClick={()=>setLimite(n=>n+40)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 12px"}}>Ver más ({lista.length-limite})</button></div>}
+          </div>
+        )}
+      </>)}
+      <AdmTrazasModal T={T} envio={trazas} onClose={()=>setTrazas(null)}/>
+    </div>
+  );
+}
+
 function AppAdmin({T, user, onBack}) {
   const iS = InputStyle(T);
   const CACHE_KEY = `growith_admin_cache_${user.uid}`;
@@ -15033,6 +15145,12 @@ function AppAdmin({T, user, onBack}) {
   const [envCfg, setEnvCfg] = useState(null);
   const [envCargas, setEnvCargas] = useState([]);
   const [cuenta, setCuenta] = useState(null);       // uid de la ficha abierta
+  const [envProblemas, setEnvProblemas] = useState({loading:true,envios:[],cuentas:0});
+  async function loadEnvProblemas() {
+    setEnvProblemas(s=>({...s,loading:true}));
+    try { const r=await authFetch("/api/andreani?action=admin_envios_problemas"); const d=await r.json(); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`); setEnvProblemas({loading:false,envios:d.envios||[],cuentas:d.cuentas||0,revisados:d.revisados||0,truncado:!!d.truncado}); }
+    catch(e){ setEnvProblemas({loading:false,envios:[],cuentas:0,error:e.message}); }
+  }
   const [confirmMeses, setConfirmMeses] = useState({});
 
   async function adminApi(body) {
@@ -15083,7 +15201,7 @@ function AppAdmin({T, user, onBack}) {
     toast(acreditar?`${fmtMoney(c.monto)} acreditados a ${c.email||c.uid}`:"Carga rechazada","success");
     loadEnvCargas();
   }
-  useEffect(()=>{ loadData(!!datos.usuarios?.length); loadSectionsConfig(); loadEnvCargas(); loadEnvCfg(); },[]);
+  useEffect(()=>{ loadData(!!datos.usuarios?.length); loadSectionsConfig(); loadEnvCargas(); loadEnvCfg(); loadEnvProblemas(); },[]);
 
   // ── Derivados ──
   const { pagos=[], usuarios=[], stats={} } = datos;
@@ -15103,7 +15221,8 @@ function AppAdmin({T, user, onBack}) {
   const ingresosMes = pagosReales.filter(p=>p.createdAt&&admMesKey(p.createdAt)===mesKey);
   const primerPagoUid = useMemo(()=>{ const m={}; [...pagosReales].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).forEach(p=>{ if(!m[p.uid]) m[p.uid]=p._id; }); return m; },[pagosReales]);
   const esNueva = p => p.billingReason==="subscription_create" || (p.method!=="stripe" && primerPagoUid[p.uid]===p._id);
-  const porAtender = envCargas.length + pagosPendientes.length + pastDue.length;
+  const envProbRojos = (envProblemas.envios||[]).filter(e=>e.problema?.sev==="red").length;
+  const porAtender = envCargas.length + pagosPendientes.length + pastDue.length + (envProbRojos?1:0);
 
   // ── Acciones sobre cuentas ──
   const actualizarUsuario = (uid, patch) => setDatos(prev=>({...prev, usuarios:prev.usuarios.map(u=>u._id===uid?{...u,...patch}:u)}));
@@ -15175,7 +15294,7 @@ function AppAdmin({T, user, onBack}) {
     window.open(URL.createObjectURL(bl),"_blank");
   }
 
-  const ctx = { T, user, founder, usuarios, pagos, usuariosPorUid, ultPagoPorUid, envCfg, adminApi, gestionarPlan, ajustarDias, desactivarPlan, saveNote, toggleAdmin, toggleEnviosSaldo, verComoCliente, setCuenta };
+  const ctx = { T, user, founder, usuarios, pagos, usuariosPorUid, ultPagoPorUid, envCfg, adminApi, gestionarPlan, ajustarDias, desactivarPlan, saveNote, toggleAdmin, toggleEnviosSaldo, verComoCliente, setCuenta, setTab, envProblemas, loadEnvProblemas };
   const segBtn=(on)=>({padding:"6px 14px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:6,background:on?T.card:"transparent",color:on?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?"0 1px 3px rgba(0,0,0,0.12)":"none",display:"inline-flex",alignItems:"center",gap:6,whiteSpace:"nowrap"});
   const TABS=[["resumen","Resumen"],["cuentas","Cuentas"],["ingresos","Ingresos"],["envios","Envíos"],["sistema","Sistema"]];
   const tabDesc={resumen:"Lo que requiere tu acción y el pulso de hoy.",cuentas:"Todas las cuentas de Growith: plan, estado, origen, último login e integraciones.",ingresos:"Ingresos en dólares, nuevas suscripciones y renovaciones, referidos.",envios:"El negocio de etiquetas prepagas: precios, cuentas habilitadas, saldos y rentabilidad.",sistema:"Crons, servicios configurados, accesos por sección y registro de acciones."};
@@ -15226,7 +15345,7 @@ function AppAdmin({T, user, onBack}) {
 
 // ── Resumen ──────────────────────────────────────────────────────────────────
 function AdmResumen({ctx, stats, usuarios, pagos, pagosReales, pagosPendientes, envCargas, resolverCarga, confirmarPago, rechazarPago, verComprobante, confirmMeses, setConfirmMeses, vencenProximos, pastDue, vencidasPagas, pruebasPorVencer, ingresosMes, esNueva, esUsd, cardTitle, chip, cuentaBtn, activaPaga}) {
-  const {T, setCuenta} = ctx;
+  const {T, setCuenta, setTab, envProblemas} = ctx;
   const ahora=Date.now();
   const mesLabel=admMesLabel(admMesKey(ahora));
   const ingUsd=ingresosMes.filter(esUsd).reduce((s,p)=>s+p.amount,0);
@@ -15249,6 +15368,10 @@ function AdmResumen({ctx, stats, usuarios, pagos, pagosReales, pagosPendientes, 
     items.push({k:"pago_"+p._id,sev:"red",tipo:"Pago manual",titulo:u?.email||p.email||p.uid,desc:`${admPlanLabel(p.plan)}${p.periodo==="anual"?" anual":""} · ${p.amount>0?"$"+p.amount+" "+(p.currency||""):""}${p.method==="cripto"?" USDT":p.method==="stripe"?" tarjeta":" transferencia"}${p.transferRef?" · ref "+p.transferRef:""}${p.txHash?" · tx "+String(p.txHash).slice(0,10)+"…":""} · ${admFecha(p.createdAt,true)}${p.autoCheckMotivo?" · bot: "+(p.autoCheckMotivo==="txid_no_encontrado"?"TxID no está en la blockchain":p.autoCheckMotivo==="ambiguo"?"monto ambiguo":p.autoCheckMotivo==="ya_activado_manualmente"?"ya activado a mano, rechazar":"sin match"):""}`,
       acciones:<>{p.tieneComprobante&&<AsyncButton onClick={()=>verComprobante(p)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>Comprobante</AsyncButton>}<select value={confirmMeses[p._id]||String(p.meses||1)} onChange={e=>setConfirmMeses(prev=>({...prev,[p._id]:e.target.value}))} style={{...InputStyle(T),padding:"6px 8px",fontSize:12,width:"auto",marginBottom:0}}>{["1","2","3","6","12"].map(m=><option key={m} value={m}>{m} m</option>)}</select><AsyncButton onClick={()=>confirmarPago(p)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>Confirmar</AsyncButton><AsyncButton onClick={()=>rechazarPago(p._id)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.red,borderColor:T.red+"66"}}>Rechazar</AsyncButton></>});
   });
+  {
+    const pr=envProblemas?.envios||[]; const rojos=pr.filter(e=>e.problema?.sev==="red");
+    if(pr.length) items.push({k:"envprob",sev:rojos.length?"red":"yellow",tipo:"Envíos con problema",titulo:`${pr.length} envío${pr.length===1?"":"s"} en ${new Set(pr.map(e=>e.uid)).size} cuenta${new Set(pr.map(e=>e.uid)).size===1?"":"s"}`,desc:[rojos.length?`${rojos.length} urgente${rojos.length===1?"":"s"} (devolución o plazo de sucursal por vencer)`:"",pr.filter(e=>e.problema?.tipo==="sin_despacho").length?`${pr.filter(e=>e.problema?.tipo==="sin_despacho").length} etiqueta${pr.filter(e=>e.problema?.tipo==="sin_despacho").length===1?"":"s"} emitida${pr.filter(e=>e.problema?.tipo==="sin_despacho").length===1?"":"s"} sin despacho`:"",pr.filter(e=>e.problema?.tipo==="quieto").length?`${pr.filter(e=>e.problema?.tipo==="quieto").length} sin movimiento`:""].filter(Boolean).join(" · ")||"Revisá el detalle en Envíos.",acciones:<><Btn T={T} variant="secondary" size="sm" onClick={()=>setTab("envios")}>Ver en Envíos</Btn></>});
+  }
   pruebasPorVencer.forEach(u=>items.push({k:"pr_"+u._id,sev:"yellow",tipo:"Prueba por vencer",titulo:u.email,desc:`${admPlanLabel(u.plan)} de prueba vence ${admDias(u.planExpiry)===0?"hoy":"en "+admDias(u.planExpiry)+" días"} y no pagó. Buen momento para escribirle.`,acciones:<><Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cuenta</Btn></>}));
   churn.forEach(u=>items.push({k:"ch_"+u._id,sev:"yellow",tipo:"Vencida sin renovar",titulo:u.email,desc:`${admPlanLabel(u.plan)} venció hace ${Math.abs(admDias(u.planExpiry))} días${u.stripeStatus==="canceled"?" · canceló en Stripe":""}. Riesgo de pérdida.`,acciones:<><Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cuenta</Btn></>}));
   const recent=[...pagos].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,10);
@@ -15522,6 +15645,8 @@ function AdmFicha({ctx, u, onClose, iS, lbl, chip, confirmarPago, rechazarPago})
           </div>
         ))}
 
+        {sec("Envíos · últimos 90 días",<AdmFichaEnvios ctx={ctx} u={u} chip={chip}/>)}
+
         {sec("Referidos",(
           <div>
             {fila("Código",u.refCode||"—")}
@@ -15747,7 +15872,8 @@ function AdmIngresos({ctx, stats, pagosReales, pagos, esNueva, esUsd, cardTitle,
 
 // ── Envíos (etiquetas prepagas) ──────────────────────────────────────────────
 function AdmEnvios({ctx, envCfg, setEnvCfg, saveEnvCfg, cardTitle, lbl, iS}) {
-  const {T, usuarios, usuariosPorUid} = ctx;
+  const {T, usuarios, usuariosPorUid, envProblemas, loadEnvProblemas, setCuenta} = ctx;
+  const [trazasP,setTrazasP]=useState(null);
   const [saldos,setSaldos]=useState(null);
   const [busca,setBusca]=useState("");
   const [buscaRes,setBuscaRes]=useState(null);
@@ -15779,13 +15905,33 @@ function AdmEnvios({ctx, envCfg, setEnvCfg, saveEnvCfg, cardTitle, lbl, iS}) {
     <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(300px,1fr)",gap:16,alignItems:"start"}}>
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
         <Card T={T} padding="lg">
+          {cardTitle("Envíos con problema en la plataforma",`Envíos activos de todas las cuentas con devolución, visita fallida, plazo de sucursal por vencer, sin movimiento hace 7 días o etiqueta emitida que nunca se despachó.${envProblemas?.cuentas?` Revisadas ${envProblemas.cuentas} cuentas activas.`:""}${envProblemas?.truncado?" Lista parcial por tiempo: actualizá para completar.":""}`,<Btn T={T} variant="secondary" size="sm" onClick={loadEnvProblemas} disabled={envProblemas?.loading}>Actualizar</Btn>)}
+          {envProblemas?.loading?<div style={{fontSize:12,color:T.textSm,display:"flex",gap:8,alignItems:"center"}}><Spinner size={13} color={T.accent}/> Revisando envíos activos</div>
+          :envProblemas?.error?<div style={{fontSize:12,color:T.red}}>{envProblemas.error}</div>
+          :!(envProblemas?.envios||[]).length?<div style={{fontSize:12,color:T.textSm}}>Ningún envío con problema ahora mismo.</div>:(
+            <div style={{border:`1px solid ${T.borderL}`,borderRadius:8,overflow:"hidden",maxHeight:440,overflowY:"auto"}}>
+              {envProblemas.envios.map((e,i)=>{ const num=e.andreani?.numeroDeEnvio||e.tracking; const u=usuariosPorUid[e.uid]; return (
+                <div key={e.uid+"_"+e.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 10px",borderTop:i>0?`1px solid ${T.borderL}`:"none",fontSize:12,flexWrap:"wrap",borderLeft:`3px solid ${e.problema.sev==="red"?T.red:T.orange}`}}>
+                  <div style={{flex:1,minWidth:200}}>
+                    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}><button onClick={()=>u&&setCuenta(e.uid)} style={{background:"transparent",border:"none",padding:0,cursor:u?"pointer":"default",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:700,color:T.text}}>{e.email||e.uid}</button><span style={{color:T.textSm}}>#{e.numero}{e.cliente?` · ${e.cliente}`:""}{e.localidad?` · ${e.localidad}`:""}</span></div>
+                    <div style={{fontSize:11,color:e.problema.sev==="red"?T.red:T.orange,fontWeight:600}}>{e.problema.msg}</div>
+                    {e.estadoAndreani&&<div style={{fontSize:10.5,color:T.textSm}}>{e.estadoAndreani}</div>}
+                  </div>
+                  {num?<button onClick={()=>setTrazasP(e)} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 8px",fontSize:11,color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Cascadia Code','Consolas',monospace"}}>{num}</button>:null}
+                </div>
+              );})}
+            </div>
+          )}
+          <AdmTrazasModal T={T} envio={trazasP} onClose={()=>setTrazasP(null)}/>
+        </Card>
+        <Card T={T} padding="lg">
           {cardTitle("Uso por cliente y rentabilidad","Cobrado = lo que pagaron con su saldo. Costo real = lo que factura Andreani a fin de mes.",(
             <select value={statsMes} onChange={e=>loadStats(e.target.value)} style={{...iS,width:"auto",marginBottom:0,padding:"6px 10px",fontSize:12}}>{meses.map(m=><option key={m.v} value={m.v}>{m.label}</option>)}</select>
           ))}
           {stats.loading?<div style={{display:"flex",alignItems:"center",gap:8,padding:"14px 0",color:T.textSm,fontSize:12}}><Spinner size={13} color={T.accent}/> Cargando</div>
           :stats.error?<div style={{fontSize:12,color:T.red}}>{stats.error}</div>
           :!stats.data||(!(stats.data.etiquetas>0)&&!(stats.data.cargadoTotal>0)&&!(stats.data.cuentas||[]).length)?<div style={{fontSize:12,color:T.textSm}}>Sin actividad en ese mes.</div>
-          :(()=>{ const d=stats.data; const cols="minmax(160px,1.4fr) 60px 100px 110px 100px 100px"; return (<>
+          :(()=>{ const d=stats.data; const cols="minmax(160px,1.4fr) 60px 100px 100px 90px 100px 100px"; return (<>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:14}}>
               {[{label:"Etiquetas",val:String(d.etiquetas||0)},{label:"Cobrado",val:fmtMoney(d.facturado||0)},{label:"Costo Andreani",val:fmtMoney(d.costoReal||0)},{label:"Margen",val:fmtMoney(d.margen||0),color:(d.margen||0)>=0?T.green:T.red},{label:"Saldo cargado",val:fmtMoney(d.cargadoTotal||0),sub:`${d.cargasN||0} carga${d.cargasN===1?"":"s"}`},{label:"En billeteras hoy",val:fmtMoney(d.saldoTotal||0)}].map(k=>(
                 <div key={k.label} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px"}}><div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{k.label}</div><div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.3}}>{k.val}</div>{k.sub&&<div style={{fontSize:10,color:T.textSm}}>{k.sub}</div>}</div>
@@ -15793,11 +15939,11 @@ function AdmEnvios({ctx, envCfg, setEnvCfg, saveEnvCfg, cardTitle, lbl, iS}) {
             </div>
             {(d.cuentas||[]).length>0&&(
               <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto"}}><div style={{minWidth:640}}>
-                <div style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}><span>Cliente</span><span style={{textAlign:"right"}}>Etiq.</span><span style={{textAlign:"right"}}>Cobrado</span><span style={{textAlign:"right"}}>Costo</span><span style={{textAlign:"right"}}>Cargó</span><span style={{textAlign:"right"}}>Saldo</span></div>
+                <div style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}><span>Cliente</span><span style={{textAlign:"right"}}>Etiq.</span><span style={{textAlign:"right"}}>Cobrado</span><span style={{textAlign:"right"}}>Costo</span><span style={{textAlign:"right"}}>Margen</span><span style={{textAlign:"right"}}>Cargó</span><span style={{textAlign:"right"}}>Saldo</span></div>
                 {d.cuentas.map((c,i)=>(
                   <div key={c.uid||i} style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<d.cuentas.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:(c.etiquetas||c.cargado||c.saldo)?1:0.55}}>
-                    <span style={{minWidth:0}}><span style={{display:"block",color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||String(c.uid||"").slice(0,10)}</span>{!c.habilitado&&<span style={{fontSize:9,color:T.textSm}}>ya no habilitada</span>}</span>
-                    <span style={{textAlign:"right",color:T.textMd}}>{c.etiquetas||0}</span><span style={{textAlign:"right",fontWeight:700,color:T.text}}>{fmtMoney(c.monto||0)}</span><span style={{textAlign:"right",color:T.textMd}}>{c.costo?fmtMoney(c.costo):"—"}</span><span style={{textAlign:"right",color:T.accent,fontWeight:600}}>{c.cargado?fmtMoney(c.cargado):"—"}</span><span style={{textAlign:"right",color:(c.saldo||0)>0?T.green:T.textSm,fontWeight:600}}>{fmtMoney(c.saldo||0)}</span>
+                    <span style={{minWidth:0}}><span onClick={()=>usuariosPorUid[c.uid]&&setCuenta(c.uid)} style={{display:"block",color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:usuariosPorUid[c.uid]?"pointer":"default"}}>{i<3&&c.etiquetas?<span style={{color:T.accent,marginRight:4}}>{i+1}.</span>:null}{c.email||String(c.uid||"").slice(0,10)}</span>{!c.habilitado&&<span style={{fontSize:9,color:T.textSm}}>ya no habilitada</span>}</span>
+                    <span style={{textAlign:"right",color:T.textMd}}>{c.etiquetas||0}</span><span style={{textAlign:"right",fontWeight:700,color:T.text}}>{fmtMoney(c.monto||0)}</span><span style={{textAlign:"right",color:T.textMd}}>{c.costo?fmtMoney(c.costo):"—"}</span><span style={{textAlign:"right",fontWeight:600,color:c.costo?((c.monto-c.costo)>=0?T.green:T.red):T.textSm}}>{c.costo?fmtMoney(c.monto-c.costo):"—"}</span><span style={{textAlign:"right",color:T.accent,fontWeight:600}}>{c.cargado?fmtMoney(c.cargado):"—"}</span><span style={{textAlign:"right",color:(c.saldo||0)>0?T.green:T.textSm,fontWeight:600}}>{fmtMoney(c.saldo||0)}</span>
                   </div>
                 ))}
               </div></div>

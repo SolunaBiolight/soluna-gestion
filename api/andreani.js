@@ -1791,10 +1791,74 @@ export default async function handler(req, res) {
     }
 
     // ── ACCIONES ADMIN ────────────────────────────────────────────────────
-    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_punto_map"];
+    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_punto_map", "admin_envios", "admin_envios_problemas"];
     if (adminActions.includes(action)) {
       const adm = await requireAdmin(req);
       if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
+
+      // Envíos de UNA cuenta (ficha del cliente): etiquetas de los últimos N días
+      // con su estado de seguimiento. Solo lo que el panel muestra.
+      const slimEnvio = (id, e) => ({
+        id, numero: e.numero || id, tnId: e.tnId || null, cliente: e.cliente || "", localidad: e.localidad || "", provincia: e.provincia || "",
+        esSucursal: !!e.esSucursal, creado: e.creado || null, despachadoAt: e.despachadoAt || null, entregadoAt: e.entregadoAt || null, devolucionAt: e.devolucionAt || null,
+        categoria: e.categoria || null, estadoAndreani: e.estadoAndreani || null, estadoDesde: e.estadoDesde || null, enSucursalDesde: e.enSucursalDesde || null,
+        activo: e.activo === true, tracking: e.tracking || null, total: e.total || null, apiHeal: !!e.apiHeal, lastCheck: e.lastCheck || null,
+        andreani: e.andreani ? { numeroDeEnvio: e.andreani.numeroDeEnvio || null, precio: Number(e.andreani.precio) || 0, tipo: e.andreani.tipo || null, fechaEstimadaDeEntrega: e.andreani.fechaEstimadaDeEntrega || null, ts: e.andreani.ts?.toMillis?.() || null, dudoso: !!e.andreani.dudosoTs } : null,
+      });
+      // Clasificación de problemas (misma lógica que la pestaña Seguimientos del cliente).
+      const problemaDe = (e, ahora) => {
+        const dias = iso => { const t = iso ? Date.parse(iso) : NaN; return isFinite(t) ? Math.floor((ahora - t) / 86400000) : null; };
+        const num = e.andreani?.numeroDeEnvio;
+        if (e.categoria === "devolucion" || e.devolucionAt) return { tipo: "devolucion", sev: "red", msg: "está volviendo (devolución)" };
+        if (!e.activo) return null;
+        if (e.categoria === "visita_fallida") return { tipo: "visita_fallida", sev: "amber", msg: "visita fallida — puede reintentarse o ir a sucursal" };
+        if (e.categoria === "en_sucursal") { const d = dias(e.enSucursalDesde); if (d != null && d >= 3) return { tipo: "sucursal", sev: d >= 5 ? "red" : "amber", msg: `en sucursal hace ${d} días sin retirar${d >= 5 ? " — el plazo está por vencer" : ""}` }; return null; }
+        const dEst = dias(e.estadoDesde || e.despachadoAt || e.creado);
+        const sinIngreso = !e.estadoAndreani || /no ingresad|pendiente de ingreso|sin movimientos/i.test(String(e.estadoAndreani));
+        if (num && sinIngreso) { const dc = dias(e.andreani?.ts ? new Date(e.andreani.ts).toISOString() : e.creado); if (dc != null && dc >= 3) return { tipo: "sin_despacho", sev: "amber", msg: `etiqueta emitida hace ${dc} días y Andreani nunca registró el ingreso del paquete` }; return null; }
+        if ((e.categoria === "en_camino" || e.categoria === "otro" || e.categoria === "desconocido") && dEst != null && dEst >= 7) return { tipo: "quieto", sev: "amber", msg: `sin movimiento hace ${dEst} días` };
+        return null;
+      };
+      if (action === "admin_envios") {
+        const targetUid = String(body.uid || "").trim();
+        if (!targetUid) return res.status(400).json({ error: "uid requerido" });
+        const dias = Math.min(365, Math.max(7, Number(body.dias) || 90));
+        const cutoff = new Date(Date.now() - dias * 86400000).toISOString();
+        const [uSnap, snap] = await Promise.all([
+          db.collection("users").doc(targetUid).get(),
+          db.collection("users").doc(targetUid).collection("envios").where("creado", ">", cutoff).limit(500).get(),
+        ]);
+        const ahora = Date.now();
+        const envios = snap.docs.map(d => { const s = slimEnvio(d.id, d.data()); s.problema = problemaDe(d.data(), ahora); return s; })
+          .sort((a, b) => String(b.creado || "").localeCompare(String(a.creado || "")));
+        const ud = uSnap.exists ? uSnap.data() : {};
+        return res.json({ ok: true, dias, envios, saldo: Math.round(Number(ud.andreaniSaldo) || 0), email: ud.email || "", habilitado: (await getGlobalConfig(db)).habilitados.includes(targetUid), trackActivo: ud.enviosTrackActivo || null });
+      }
+      // Envíos con problema en TODA la plataforma: mismas cuentas que rota el cron
+      // de seguimiento (activas en Envíos los últimos 45 días), envíos activos.
+      if (action === "admin_envios_problemas") {
+        const t0 = Date.now();
+        const cutoffU = new Date(t0 - 45 * 86400000).toISOString();
+        const uSnap = await db.collection("users").where("enviosTrackActivo", ">", cutoffU).limit(150).get();
+        const out = []; let cuentas = 0, revisados = 0, truncado = false;
+        for (const u of uSnap.docs) {
+          if (Date.now() - t0 > 20000) { truncado = true; break; }
+          cuentas++;
+          const ud = u.data();
+          let eSnap;
+          try { eSnap = await u.ref.collection("envios").where("activo", "==", true).limit(80).get(); } catch (_) { continue; }
+          for (const d of eSnap.docs) {
+            revisados++;
+            const e = d.data();
+            const p = problemaDe(e, Date.now());
+            if (p) out.push({ ...slimEnvio(d.id, e), problema: p, uid: u.id, email: ud.email || "" });
+          }
+        }
+        // Devoluciones recientes ya cerradas (activo=false) no entran: el cliente ya las vio en su tablero.
+        const orden = { red: 0, amber: 1 };
+        out.sort((a, b) => (orden[a.problema.sev] - orden[b.problema.sev]) || String(b.creado || "").localeCompare(String(a.creado || "")));
+        return res.json({ ok: true, envios: out, cuentas, revisados, truncado, ahora: Date.now() });
+      }
 
       // Memoria global de puntos: listar y podar (POST {quitar:key}).
       if (action === "admin_punto_map") {
