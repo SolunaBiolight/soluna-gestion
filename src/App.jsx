@@ -7789,7 +7789,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         if(!seguir) return null;
         setExporting(true);
         const nums=new Set(afectados.map(s=>s.numero));
-        afectados.forEach(s=>{ const o=sucursalOrders.find(x=>x.numero===s.numero); if(o){ delete sucursalOverridesRef.current[ovrKey(o)]; exclOperRef.current.add(o.numero); sucNoOperRef.current[ovrKey(o)]=s.sucursal; const pk=ghPuntoKey(o); if(pk) delete puntoMapRef.current[pk]; } });
+        afectados.forEach(s=>{ const o=sucursalOrders.find(x=>x.numero===s.numero); if(o){ delete sucursalOverridesRef.current[ovrKey(o)]; exclOperRef.current.add(o.numero); sucNoOperRef.current[ovrKey(o)]=s.sucursal; olvidarPunto(ghPuntoKey(o)); } });
         persistOverrides(); persistSucNoOper(); persistPuntoMap();
         sucursalOrdersOk=sucursalOrders.filter(o=>!nums.has(o.numero));
         // Rearmar la hoja sin ellos (y sin sus filas de verificación duplicadas)
@@ -7841,8 +7841,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           }
           const oV=sucursalOrders.find(x=>x.numero===vr.numero);
           delete sucursalOverridesRef.current[oV?ovrKey(oV):vr.numero];
-          const pkV=oV?ghPuntoKey(oV):null;
-          if(pkV) delete puntoMapRef.current[pkV];
+          olvidarPunto(oV?ghPuntoKey(oV):null);
         }
         persistOverrides(); persistPuntoMap();
         setExportProgress({step:"",pct:0,current:0,total:0});
@@ -7911,6 +7910,38 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const sucReemplazoRef=useRef((()=>{try{return new Set(JSON.parse(localStorage.getItem(ghKey("growith_sucReemplazo"))||"[]"));}catch(_){return new Set();}})());
   function persistSucReemplazo(){try{localStorage.setItem(ghKey("growith_sucReemplazo"),JSON.stringify([...sucReemplazoRef.current]));}catch(_){}}
   function persistPuntoMap(){try{localStorage.setItem(ghKey("growith_puntoMap"),JSON.stringify(puntoMapRef.current));}catch(_){}}
+  // Memoria GLOBAL de la plataforma (andreani_config/punto_map_global): solo
+  // elecciones verificadas (misma calle y número). Se consulta después de la
+  // propia. La propia vive en Firestore (users/{uid}/envios_cfg/punto_map) y
+  // se sincroniza entre dispositivos y miembros; localStorage queda como cache.
+  const globalMapRef=useRef({});
+  useEffect(()=>{
+    if(!user?.uid) return;
+    let vivo=true;
+    (async()=>{
+      try{
+        const r=await authFetch(`/api/andreani?action=punto_map_get&uid=${encodeURIComponent(user.uid)}`);
+        const d=await r.json().catch(()=>null);
+        if(!vivo||!r.ok||!d?.ok) return;
+        // Servidor manda sobre el cache local (una elección hecha en otra compu
+        // o por un miembro tiene que aplicar acá también).
+        puntoMapRef.current={...puntoMapRef.current,...(d.propio||{})};
+        persistPuntoMap();
+        globalMapRef.current=d.global||{};
+      }catch(_){}
+    })();
+    return ()=>{ vivo=false; };
+  },[user?.uid]);
+  // Elección recordada para el punto del pedido: propia primero, global después.
+  function memoriaPunto(o){
+    const pk=ghPuntoKey(o); if(!pk) return null;
+    return puntoMapRef.current[pk]||globalMapRef.current[pk]||null;
+  }
+  function olvidarPunto(pk){
+    if(!pk) return;
+    delete puntoMapRef.current[pk]; persistPuntoMap();
+    if(user?.uid) authFetch("/api/andreani?action=punto_map_del",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,key:pk})}).catch(()=>{});
+  }
   function ghPuntoKey(o){
     const pd=o?.pickupDetails; if(!pd) return null;
     const nom=nrmSucTxt(pd.name);
@@ -7927,6 +7958,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     // corregido por API seguía aplicándose en el XLSX, y viceversa).
     puntoMapRef.current[pk]={...datos,ts:Date.now()};
     persistPuntoMap();
+    // Firestore: propia siempre; global solo si el match estricto (misma calle
+    // y número, o nombre del punto) confirma que ES el punto del cliente.
+    if(user?.uid){
+      const verificado=!!(datos?.oficial&&matchSucursalOficial([datos.oficial],o));
+      const pd=o?.pickupDetails||{};
+      const punto={nombre:pd.name||"",dir:`${pd.address?.address||""} ${pd.address?.number||""}`.trim(),loc:pd.address?.locality||pd.address?.city||"",cp:String(pd.address?.zipcode||pd.address?.zip_code||o?.cp||"")};
+      authFetch("/api/andreani?action=punto_map_set",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,key:pk,datos,verificado,punto})}).catch(()=>{});
+    }
   }
 
   // Listado OFICIAL de sucursales Andreani por CP (API), cacheado en memoria
@@ -8579,9 +8618,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       // Memoria por punto: si este punto de retiro ya fue confirmado a mano
       // alguna vez, se reusa esa elección (validando que siga en el desplegable).
       const forzar=!!sucNoOperRef.current[ovrKey(o)]; // la sucursal automática no opera: solo modal
-      const memXlsx=(()=>{const pk=ghPuntoKey(o);return pk?puntoMapRef.current[pk]:null;})();
+      const memXlsx=memoriaPunto(o);
       const memXlsxConf=memXlsx?.tpl?conflictoTpl(o,memXlsx.tpl):null;
-      if(memXlsxConf?.grave){ const pk=ghPuntoKey(o); if(pk){ delete puntoMapRef.current[pk]; persistPuntoMap(); } }
+      if(memXlsxConf?.grave) olvidarPunto(ghPuntoKey(o));
       if(!forzar&&memXlsx?.tpl&&!memXlsxConf?.grave&&(locs.sucursales||[]).includes(memXlsx.tpl)){
         sucursalOverridesRef.current[ovrKey(o)]=memXlsx.tpl;
         persistOverrides();
@@ -8776,7 +8815,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       if(!isSucursalOrder(o)){ rows.push(mkRow(o)); continue; }
       // Memoria por punto: elección confirmada a mano en un pedido anterior al
       // MISMO punto de retiro → se reusa directo (id oficial guardado).
-      const memApi=(()=>{const pk=ghPuntoKey(o);return pk?puntoMapRef.current[pk]:null;})();
+      const memApi=memoriaPunto(o);
       const memConf=memApi?.oficial?conflictoSucursal(o,memApi.oficial):null;
       if(memApi?.oficial?.id!=null&&!memConf?.grave){
         rows.push(mkRow(o,{oficial:memApi.oficial,verif:verifSucursalVsTienda(o,memApi.oficial),deMemoria:true}));
@@ -8784,7 +8823,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       }
       // La elección recordada contradice al punto (otro número/CP): se descarta
       // la memoria y el pedido pasa por el selector con el aviso a la vista.
-      if(memConf?.grave){ const pk=ghPuntoKey(o); if(pk){ delete puntoMapRef.current[pk]; persistPuntoMap(); } }
+      if(memConf?.grave) olvidarPunto(ghPuntoKey(o));
       const oficiales=await fetchSucursalesOficiales(cpDestinoDe(o));
       let ofc=Array.isArray(oficiales)&&oficiales.length?matchSucursalOficial(oficiales,o):null;
       // El punto exacto puede no estar en la lista por CP (HOP nuevos): antes
@@ -15718,6 +15757,8 @@ function AdmEnvios({ctx, envCfg, setEnvCfg, saveEnvCfg, cardTitle, lbl, iS}) {
   const [nuevo,setNuevo]=useState("");
   const [bajas,setBajas]=useState({loading:true,nombres:[],seed:[]});
   const [bajaNueva,setBajaNueva]=useState("");
+  const [pmap,setPmap]=useState({loading:true,entries:[]});
+  async function loadPuntoMap(quitar){ try{ const r=await authFetch("/api/andreani?action=admin_punto_map",quitar?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({quitar})}:undefined); const d=await r.json(); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`); setPmap({loading:false,entries:d.entries||[]}); if(quitar) toast("Quitado de la memoria global","success"); }catch(e){ setPmap({loading:false,entries:[],error:e.message}); } }
   const meses=useMemo(()=>{ const out=[]; const now=new Date(); for(let i=0;i<6;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); out.push({v:admMesKey(d.getTime()),label:admMesLabel(admMesKey(d.getTime()))}); } return out; },[]);
   const [statsMes,setStatsMes]=useState(meses[0].v);
   const [stats,setStats]=useState({loading:true,data:null,error:""});
@@ -15725,7 +15766,7 @@ function AdmEnvios({ctx, envCfg, setEnvCfg, saveEnvCfg, cardTitle, lbl, iS}) {
   async function loadStats(mes){ setStatsMes(mes); setStats({loading:true,data:null,error:""}); try{ const d=await authFetch(`/api/andreani?action=admin_stats&mes=${encodeURIComponent(mes)}`).then(r=>r.json()); if(d?.error) setStats({loading:false,data:null,error:String(d.error)}); else setStats({loading:false,data:d,error:""}); }catch(e){ setStats({loading:false,data:null,error:e.message}); } }
   async function loadBajas(){ try{ const r=await authFetch("/api/andreani?action=admin_tpl_baja",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})}); const d=await r.json(); if(d?.ok) setBajas({loading:false,nombres:d.nombres||[],seed:d.seed||[]}); else setBajas({loading:false,nombres:[],seed:[],error:d?.error}); }catch(e){ setBajas({loading:false,nombres:[],seed:[],error:e.message}); } }
   async function editarBajas(agregar,quitar){ const r=await authFetch("/api/andreani?action=admin_tpl_baja",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agregar,quitar})}); const d=await r.json(); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`); setBajas({loading:false,nombres:d.nombres||[],seed:d.seed||[]}); }
-  useEffect(()=>{ loadSaldos(); loadStats(meses[0].v); loadBajas(); },[]);
+  useEffect(()=>{ loadSaldos(); loadStats(meses[0].v); loadBajas(); loadPuntoMap(); },[]);
   async function buscar(){ const email=busca.trim(); if(!email){ setBuscaRes(null); return; } const d=await authFetch(`/api/andreani?action=admin_saldos&email=${encodeURIComponent(email)}`).then(r=>r.json()); if(d?.error){ toast("No se pudo buscar: "+d.error,"error"); return; } if(d?.sinResultados||!Array.isArray(d?.cuentas)||!d.cuentas.length) setBuscaRes({sinResultados:true,email}); else setBuscaRes({cuentas:d.cuentas}); }
   async function acreditar(){ const monto=parseFloat(acredForm.monto); if(!acred||!monto) { toast("Ingresá un monto válido","error"); return; } const r=await authFetch("/api/andreani?action=admin_acreditar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:acred.uid,monto,nota:acredForm.nota||""})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error){ toast("No se pudo acreditar: "+(d.error||`HTTP ${r.status}`),"error"); return; } toast(`${fmtMoney(monto)} acreditados a ${acred.email||acred.uid}`,"success"); setAcred(null); setAcredForm({monto:"",nota:""}); loadSaldos(); if(buscaRes?.cuentas) buscar(); }
   async function verMovs(c){ setMovs({uid:c.uid,email:c.email,loading:true,movimientos:[]}); try{ const d=await authFetch(`/api/andreani?action=admin_movimientos&uid=${encodeURIComponent(c.uid)}`).then(r=>r.json()); setMovs(prev=>prev&&prev.uid===c.uid?{...prev,loading:false,movimientos:Array.isArray(d?.movimientos)?d.movimientos:[]}:prev); }catch(_){ setMovs(prev=>prev?{...prev,loading:false}:prev); toast("Error cargando movimientos","error"); } }
@@ -15836,6 +15877,23 @@ function AdmEnvios({ctx, envCfg, setEnvCfg, saveEnvCfg, cardTitle, lbl, iS}) {
           </div>
           {match&&<div style={{fontSize:11,color:T.green,marginTop:6}}>{match.nombre||match.email} · {admPlanLabel(match.plan)}</div>}
           {sugeridos.length>0&&<div style={{display:"flex",flexDirection:"column",gap:4,marginTop:6}}>{sugeridos.map(u=><button key={u._id} onClick={()=>setNuevo(u.email||u._id)} style={{textAlign:"left",background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{u.email} <span style={{color:T.textSm}}>· {admPlanLabel(u.plan)}</span></button>)}</div>}
+        </Card>
+
+        <Card T={T} padding="lg">
+          {cardTitle("Memoria global de puntos de retiro","Puntos HOP resueltos y verificados por cualquier cuenta (misma calle y número). Sirven para todas las cuentas; si uno está mal, quitalo.",<Btn T={T} variant="secondary" size="sm" onClick={()=>loadPuntoMap()}>Actualizar</Btn>)}
+          {pmap.loading?<div style={{fontSize:12,color:T.textSm}}>Cargando</div>:pmap.error?<div style={{fontSize:12,color:T.red}}>{pmap.error}</div>:pmap.entries.length===0?<div style={{fontSize:12,color:T.textSm}}>Todavía no hay puntos verificados. Se agregan solos cuando una cuenta elige a mano un punto y coincide en calle y número.</div>:(
+            <div style={{display:"flex",flexDirection:"column",maxHeight:360,overflowY:"auto"}}>
+              {pmap.entries.map((e,i)=>(
+                <div key={e.key} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:i<pmap.entries.length-1?`1px solid ${T.borderL}`:"none",fontSize:12}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.punto?[e.punto.nombre,e.punto.dir,e.punto.loc].filter(Boolean).join(" · "):e.key.split("|").filter(Boolean).join(" · ")}</div>
+                    <div style={{color:T.textSm,fontSize:11}}>va a {e.oficial?.descripcion||e.tpl}{e.oficial?.direccion?` (${[e.oficial.direccion.calle,e.oficial.direccion.numero,e.oficial.direccion.localidad].filter(Boolean).join(" ")})`:""}{e.byEmail?` · por ${e.byEmail}`:""}{e.ts?` · ${admRel(e.ts)}`:""}</div>
+                  </div>
+                  <AsyncButton onClick={async()=>{ if(!await appConfirm("¿Quitar este punto de la memoria global? Las cuentas volverán a resolverlo a mano.",{danger:true,okLabel:"Quitar"})) return; await loadPuntoMap(e.key); }} style={{background:"transparent",border:"none",color:T.red,cursor:"pointer",fontSize:11,fontWeight:600,padding:"2px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}>Quitar</AsyncButton>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
 
         <Card T={T} padding="lg">

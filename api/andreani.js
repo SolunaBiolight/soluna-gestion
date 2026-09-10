@@ -24,8 +24,8 @@
 
 import { randomBytes, createHmac } from "crypto";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { verifyAuth, requireAdmin } from "./_auth.js";
+import { getFirestore, FieldValue, FieldPath } from "firebase-admin/firestore";
+import { verifyAuth, requireAdmin, guardUid } from "./_auth.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -942,6 +942,58 @@ export default async function handler(req, res) {
     }
 
     // ── sucursales ────────────────────────────────────────────────────────
+    // ── Memoria de puntos de retiro ─────────────────────────────────────────
+    // Clave = ghPuntoKey del front (nombre|calle|número|CP del punto que eligió
+    // el cliente en la tienda). Dos niveles:
+    //  · propia: users/{owner}/envios_cfg/punto_map {entries} — sincroniza la
+    //    elección manual entre dispositivos y miembros de la cuenta.
+    //  · global: andreani_config/punto_map_global {entries} — SOLO elecciones
+    //    verificadas (misma calle y número que el punto), así una elección
+    //    equivocada nunca se propaga a todas las cuentas. El admin la puede podar.
+    if (action === "punto_map_get" || action === "punto_map_set" || action === "punto_map_del") {
+      const owner = String(body.uid || req.query?.uid || uid).trim();
+      if (!(await guardUid(req, res, owner, "envios"))) return;
+      const propioRef = db.collection("users").doc(owner).collection("envios_cfg").doc("punto_map");
+      const globalRef = db.collection("andreani_config").doc("punto_map_global");
+      if (action === "punto_map_get") {
+        const [p, g] = await Promise.all([propioRef.get().catch(() => null), globalRef.get().catch(() => null)]);
+        return res.json({ ok: true, propio: p?.exists ? (p.data().entries || {}) : {}, global: g?.exists ? (g.data().entries || {}) : {} });
+      }
+      if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
+      const key = String(body.key || "").trim().slice(0, 400);
+      if (!key) return res.status(400).json({ error: "key requerida" });
+      if (action === "punto_map_del") {
+        await propioRef.set({ entries: {} }, { merge: true });
+        await propioRef.update(new FieldPath("entries", key), FieldValue.delete()).catch(() => {});
+        return res.json({ ok: true });
+      }
+      const datos = body.datos && typeof body.datos === "object" ? body.datos : {};
+      const entry = {
+        ts: Date.now(),
+        ...(datos.tpl ? { tpl: String(datos.tpl).slice(0, 200) } : {}),
+        ...(datos.oficial && typeof datos.oficial === "object" ? { oficial: {
+          id: datos.oficial.id ?? null, codigo: datos.oficial.codigo ?? null, numero: datos.oficial.numero ?? null,
+          descripcion: String(datos.oficial.descripcion || "").slice(0, 200),
+          direccion: datos.oficial.direccion && typeof datos.oficial.direccion === "object" ? {
+            calle: String(datos.oficial.direccion.calle || "").slice(0, 120), numero: String(datos.oficial.direccion.numero || "").slice(0, 20),
+            localidad: String(datos.oficial.direccion.localidad || "").slice(0, 80), codigoPostal: String(datos.oficial.direccion.codigoPostal || "").slice(0, 12),
+          } : null,
+        } } : {}),
+      };
+      if (!entry.tpl && !entry.oficial) return res.status(400).json({ error: "datos requeridos" });
+      await propioRef.set({ entries: { [key]: entry } }, { merge: true });
+      // A la memoria global solo si el front verificó el match estricto y hay id oficial.
+      let global = false;
+      if (body.verificado === true && entry.oficial && entry.oficial.id != null) {
+        let email = "";
+        try { email = (await db.collection("users").doc(owner).get()).data()?.email || ""; } catch (_) {}
+        const punto = body.punto && typeof body.punto === "object" ? { nombre: String(body.punto.nombre || "").slice(0, 120), dir: String(body.punto.dir || "").slice(0, 160), loc: String(body.punto.loc || "").slice(0, 80), cp: String(body.punto.cp || "").slice(0, 12) } : null;
+        await globalRef.set({ entries: { [key]: { ...entry, by: owner, byEmail: email, punto } } }, { merge: true });
+        global = true;
+      }
+      return res.json({ ok: true, global });
+    }
+
     if (action === "sucursales") {
       const cp = String(body.cp || "").replace(/\D/g, "");
       if (!cp) return res.status(400).json({ error: "cp requerido" });
@@ -1739,10 +1791,24 @@ export default async function handler(req, res) {
     }
 
     // ── ACCIONES ADMIN ────────────────────────────────────────────────────
-    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar"];
+    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_punto_map"];
     if (adminActions.includes(action)) {
       const adm = await requireAdmin(req);
       if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
+
+      // Memoria global de puntos: listar y podar (POST {quitar:key}).
+      if (action === "admin_punto_map") {
+        const gRef = db.collection("andreani_config").doc("punto_map_global");
+        const quitar = req.method === "POST" ? String(body.quitar || "").trim() : "";
+        if (quitar) {
+          await gRef.update(new FieldPath("entries", quitar), FieldValue.delete()).catch(() => {});
+          await logAdminAndreani(db, adm.user.uid, "punto_map_global", null, `Quitó de la memoria global: ${quitar.slice(0, 120)}`);
+        }
+        const g = await gRef.get();
+        const entries = g.exists ? (g.data().entries || {}) : {};
+        const lista = Object.entries(entries).map(([key, v]) => ({ key, ...v })).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+        return res.json({ ok: true, entries: lista });
+      }
 
       if (action === "admin_acreditar") {
         const targetUid = String(body.uid || "").trim();
