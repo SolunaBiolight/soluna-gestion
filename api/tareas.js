@@ -2052,8 +2052,12 @@ export default async function handler(req, res) {
       // Registro de acciones de administración (últimas 300).
       if (action === "adminGetLog") {
         const lim = Math.min(500, Math.max(20, Number(body.limit) || 300));
-        const snap = await db.collection("admin_log").orderBy("at", "desc").limit(lim).get();
-        const items = snap.docs.map(d => { const x = d.data(); return { id: d.id, ...x, at: x.at?.toMillis?.() || null }; });
+        // Por cuenta: igualdad sin orderBy (no requiere índice compuesto), se ordena acá.
+        const tUid = String(body.targetUid || "").trim();
+        const snap = tUid
+          ? await db.collection("admin_log").where("targetUid", "==", tUid).limit(lim).get()
+          : await db.collection("admin_log").orderBy("at", "desc").limit(lim).get();
+        const items = snap.docs.map(d => { const x = d.data(); return { id: d.id, ...x, at: x.at?.toMillis?.() || null }; }).sort((x, y) => (y.at || 0) - (x.at || 0));
         return res.json({ ok: true, items });
       }
 

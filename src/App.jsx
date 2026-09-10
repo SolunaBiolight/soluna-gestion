@@ -14946,17 +14946,15 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
 // ===========================================
 // ===========================================
 // ADMIN — panel de administración de la plataforma
-// Pestañas: Resumen (acción) · Cuentas (tabla + ficha) · Ingresos · Envíos
-// (etiquetas prepagas) · Sistema (crons, servicios, accesos, registro).
-// Backend: api/tareas.js (acciones admin*) y api/andreani.js (admin_*).
+// Pestañas: Resumen · Clientes · Ingresos · Logística · Sistema. Ficha de
+// cliente como pantalla propia (#/admin/cliente/<uid>). Backend: api/tareas.js
+// (acciones admin*) y api/andreani.js (admin_*).
 // ===========================================
 const ADM_PRECIOS = {
   facturador: { mensual:19, anual:16, nombre:"Facturador" },
   medio:      { mensual:39, anual:32, nombre:"Intermedio" },
   plus:       { mensual:69, anual:57, nombre:"Pro" },
 };
-// Crons declarados en vercel.json. maxH = horas máximas sin corrida antes de
-// marcarlo como atrasado. La clave es la que registra guardCron (system/crons).
 const ADM_CRONS = [
   { key:"check-expiring",             label:"Avisos de vencimiento de plan",   cada:"Todos los días 10:00 UTC", maxH:26 },
   { key:"check-payments",             label:"Cargas MP y pagos USDT",          cada:"Cada 10 minutos",          maxH:1 },
@@ -14972,8 +14970,11 @@ const ADM_LOG_LABEL = {
   activar_plan:"Activó plan", dar_prueba:"Dio prueba", desactivar_plan:"Desactivó plan", extender_plan:"Extendió plan", ajustar_dias:"Ajustó vencimiento",
   confirmar_pago:"Confirmó pago", rechazar_pago:"Rechazó pago", nota:"Nota interna", dar_admin:"Dio admin", quitar_admin:"Quitó admin", accesos:"Accesos por sección",
   crear_ficha:"Creó ficha", ver_como:"Vio como cliente", acreditar_saldo:"Acreditó saldo", ajustar_saldo:"Ajustó saldo", acreditar_carga:"Acreditó carga", rechazar_carga:"Rechazó carga",
-  config_envios:"Config. de Envíos", sucursales_baja:"Sucursales dadas de baja",
+  config_envios:"Config. de logística", sucursales_baja:"Sucursales dadas de baja", punto_map_global:"Memoria de puntos",
 };
+const ADM_CAT = { en_camino:["En camino","blue"], en_sucursal:["En sucursal","orange"], entregado:["Entregado","green"], devolucion:["Devolución","red"], visita_fallida:["Visita fallida","red"], otro:["Sin ingreso","textSm"], desconocido:["Sin datos","textSm"], pendiente:["Pendiente","textSm"] };
+const ADM_TABS=[["resumen","Resumen"],["clientes","Clientes"],["ingresos","Ingresos"],["logistica","Logística"],["sistema","Sistema"]];
+const ADM_TAB_DESC={resumen:"Lo que requiere tu acción y el pulso de hoy.",clientes:"Todas las cuentas: plan, estado, origen, último login e integraciones.",ingresos:"Ingresos en dólares, evolución del MRR, nuevas suscripciones y referidos.",logistica:"El negocio de etiquetas prepagas: operación, rentabilidad y configuración.",sistema:"Crons, servicios, accesos por sección y registro de acciones."};
 function admPlanLabel(p){ return (p==="plus"||p==="full")?"Pro":p==="medio"?"Intermedio":p==="facturador"?"Facturador":"Free"; }
 function admPlanColor(T,p){ return (p==="plus"||p==="full")?T.blue:p==="medio"?T.purple:p==="facturador"?T.green:T.textSm; }
 function admMs(v){ if(!v) return null; if(typeof v==="number") return v; if(v._seconds) return v._seconds*1000; if(v.toDate) return v.toDate().getTime(); const t=Date.parse(v); return isNaN(t)?null:t; }
@@ -14987,45 +14988,86 @@ function admRel(v){
 }
 function admUsd(n){ const v=Number(n)||0; return "US$ "+v.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:v%1?2:0}); }
 function admMesKey(ms){ const d=new Date(ms); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }
-function admMesLabel(key){ const [y,m]=key.split("-"); const s=new Date(Number(y),Number(m)-1,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"}); return s.charAt(0).toUpperCase()+s.slice(1); }
-// Estado de una cuenta para tabla, filtros y KPIs.
+function admMesLabel(key,corto){ const [y,m]=key.split("-"); const s=new Date(Number(y),Number(m)-1,1).toLocaleDateString("es-AR",corto?{month:"short"}:{month:"long",year:"numeric"}); return s.charAt(0).toUpperCase()+s.slice(1).replace(".",""); }
 function admEstado(T,u){
   const plan=u.plan||"free"; const dias=admDias(u.planExpiry);
   if(u.stripeStatus==="past_due") return {id:"past_due",label:"Pago fallido",color:T.red};
-  if(plan==="free") {
-    const td=admDias(u.trialEnd);
-    if(td!==null&&td>=0) return {id:"trial",label:"Trial inicial",color:T.yellow};
-    return {id:"free",label:"Sin plan",color:T.textSm};
-  }
+  if(plan==="free"){ const td=admDias(u.trialEnd); if(td!==null&&td>=0) return {id:"trial",label:"Trial inicial",color:T.yellow}; return {id:"free",label:"Sin plan",color:T.textSm}; }
   if(dias!==null&&dias<0) return {id:u.isTrial?"prueba_vencida":"vencida",label:u.isTrial?"Prueba vencida":"Vencida",color:T.red};
   if(u.isTrial) return {id:"prueba",label:"En prueba",color:T.yellow};
   if(u.cancelAtPeriodEnd) return {id:"cancela",label:"Cancela al vencer",color:T.orange};
   return {id:"paga",label:"Activa",color:T.green};
 }
 function admOrigen(u,ultPago){
-  if((u.plan||"free")==="free") return {label:"—",color:null};
-  if(u.isTrial) return {label:"Prueba",color:"yellow"};
-  if(u.stripeStatus==="active"||u.stripeStatus==="past_due"||u.planActivadoBy==="stripe") return {label:"Stripe",color:"purple"};
-  if(ultPago){
-    if(ultPago.method==="stripe") return {label:"Stripe",color:"purple"};
-    if(ultPago.method==="cripto") return {label:"USDT",color:"green"};
-    if(ultPago.method==="credito") return {label:"Crédito referidos",color:"green"};
-    return {label:"Transferencia",color:"blue"};
-  }
-  return {label:"Manual",color:"orange"};
+  if((u.plan||"free")==="free") return {label:"—"};
+  if(u.isTrial) return {label:"Prueba"};
+  if(u.stripeStatus==="active"||u.stripeStatus==="past_due"||u.planActivadoBy==="stripe") return {label:"Stripe"};
+  if(ultPago){ if(ultPago.method==="stripe") return {label:"Stripe"}; if(ultPago.method==="cripto") return {label:"USDT"}; if(ultPago.method==="credito") return {label:"Crédito referidos"}; return {label:"Transferencia"}; }
+  return {label:"Manual"};
 }
+// Etiquetas en lenguaje claro para pagos (sin "confirmado" / "subscription_cycle").
+function admPagoEstado(p){ if(p.isTrial) return "Prueba otorgada"; return p.estado==="confirmado"?"Pagado":p.estado==="pendiente"?"Pendiente":p.estado==="rechazado"?"Rechazado":p.estado||"—"; }
+function admPagoMetodo(p){ return p.isTrial||p.method==="prueba"?"prueba":p.method==="stripe"?"tarjeta":p.method==="cripto"?"USDT":p.method==="credito"?"crédito de referidos":"transferencia"; }
+function admPagoTipo(p){ return p.billingReason==="subscription_create"?"alta":p.billingReason==="subscription_cycle"?"renovación":p.billingReason==="subscription_update"?"cambio de plan":""; }
+function admStripeLabel(s){ return s==="active"?"suscripción activa":s==="past_due"?"pago fallido":s==="canceled"?"cancelada":s==="trialing"?"en prueba":s||""; }
 function admCsvDescargar(nombre, filas){
   const esc=v=>{ const s=String(v??""); return /[;"\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; };
   const txt="﻿"+filas.map(r=>r.map(esc).join(";")).join("\r\n");
   const blob=new Blob([txt],{type:"text/csv;charset=utf-8"}); const url=URL.createObjectURL(blob);
   const a=document.createElement("a"); a.href=url; a.download=nombre; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
-
-const ADM_CAT = { en_camino:["En camino","blue"], en_sucursal:["En sucursal","orange"], entregado:["Entregado","green"], devolucion:["Devolución","red"], visita_fallida:["Visita fallida","red"], otro:["Sin ingreso","textSm"], desconocido:["Sin datos","textSm"], pendiente:["Pendiente","textSm"] };
 function admCatDe(e){ if(e.entregadoAt) return "entregado"; if(e.devolucionAt) return "devolucion"; return e.categoria||(e.andreani?.numeroDeEnvio?"otro":"desconocido"); }
 function admIso(v){ if(!v) return null; if(typeof v==="number") return v; const t=Date.parse(v); return isFinite(t)?t:null; }
-// Trazas de un envío (API oficial con las credenciales de la plataforma; si no
-// lo ve, tracking público) — mismo endpoint que usa Seguimientos.
+function admApi(body, uid) {
+  return fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid})}).then(async r=>{ const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(d.error||`Error del servidor (${r.status})`); return d; });
+}
+async function admAndreani(action, body, method) {
+  const r=await authFetch(`/api/andreani?action=${action}`, body?{method:method||"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:undefined);
+  const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`); return d;
+}
+
+// ── Piezas de UI compartidas del panel (un solo sistema: Btn + DSBadge) ──
+// Btn con manejo de promesa: se deshabilita mientras corre y muestra el error como toast.
+function AdmBtn({onClick, children, ...props}) {
+  const [busy,setBusy]=useState(false);
+  return <Btn {...props} disabled={props.disabled||busy} onClick={async e=>{ if(busy) return; setBusy(true); try{ await onClick(e); }catch(err){ console.error(err); try{ toast(String(err?.message||"Algo falló, probá de nuevo"),"error",6000); }catch(_){} } finally{ setBusy(false); } }}>{children}</Btn>;
+}
+function AdmKpi({T, label, val, sub, color, n}) {
+  return (
+    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:4}}>
+      <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{width:7,height:7,borderRadius:"50%",background:n?color:T.border,flexShrink:0}}/><span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{label}</span></div>
+      <div style={{fontSize:20,fontWeight:800,color:n?T.text:T.textSm,letterSpacing:-0.5,lineHeight:1.2,fontVariantNumeric:"tabular-nums"}}>{val}</div>
+      {sub&&<div style={{fontSize:11,color:T.textSm,lineHeight:1.4}}>{sub}</div>}
+    </div>
+  );
+}
+function AdmTitulo({T, t, sub, right}) {
+  return (
+    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+      <div style={{minWidth:0}}><div style={{fontSize:14,fontWeight:700,color:T.text}}>{t}</div>{sub&&<div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.5}}>{sub}</div>}</div>
+      {right&&<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>{right}</div>}
+    </div>
+  );
+}
+function AdmSkeleton({T, filas=4}) {
+  return <div style={{display:"flex",flexDirection:"column",gap:10,padding:"4px 0"}}>{Array.from({length:filas}).map((_,i)=><Skeleton key={i} T={T} width={`${[78,62,88,55,70][i%5]}%`} height={14}/>)}</div>;
+}
+function AdmVacio({T, titulo, sub}) {
+  return <div style={{textAlign:"center",padding:"22px 12px"}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>{titulo}</div>{sub&&<div style={{fontSize:12,color:T.textSm,marginTop:4,lineHeight:1.5}}>{sub}</div>}</div>;
+}
+function AdmSeg({T, value, onChange, opciones}) {
+  return (
+    <div className="no-scrollbar" style={{display:"inline-flex",background:T.surface,borderRadius:8,padding:2,maxWidth:"100%",overflowX:"auto"}}>
+      {opciones.map(([v,l,badge])=>{ const on=value===v; return <button key={v} onClick={()=>onChange(v)} style={{padding:"6px 14px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:6,background:on?T.card:"transparent",color:on?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?"0 1px 3px rgba(0,0,0,0.12)":"none",display:"inline-flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>{l}{badge>0&&<span style={{fontSize:10,fontWeight:700,background:T.red,color:"#fff",borderRadius:10,padding:"1px 6px"}}>{badge}</span>}</button>; })}
+    </div>
+  );
+}
+function AdmFila({T, k, v}) { return <div style={{display:"flex",justifyContent:"space-between",gap:12,fontSize:12,padding:"4px 0"}}><span style={{color:T.textSm}}>{k}</span><span style={{color:T.text,textAlign:"right",minWidth:0,overflowWrap:"anywhere"}}>{v}</span></div>; }
+function AdmLbl({T, children}) { return <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>{children}</div>; }
+function AdmInput({T, style, ...p}) { return <input {...p} style={{...InputStyle(T),marginBottom:0,fontSize:12,...(style||{})}}/>; }
+function AdmSelect({T, style, children, ...p}) { return <select {...p} style={{...InputStyle(T),marginBottom:0,fontSize:12,width:"auto",padding:"6px 10px",...(style||{})}}>{children}</select>; }
+
+// Trazas de un envío (API oficial de la plataforma; si no lo ve, tracking público).
 function AdmTrazasModal({T, envio, onClose}) {
   const numero=envio?.andreani?.numeroDeEnvio||envio?.tracking||"";
   const [st,setSt]=useState({loading:true,eventos:[],estado:null,error:""});
@@ -15047,11 +15089,11 @@ function AdmTrazasModal({T, envio, onClose}) {
             <span>· {envio.esSucursal||envio.andreani?.tipo==="sucursal"?"a sucursal":"a domicilio"}</span>
             {numero&&<a href={`https://www.andreani.com/envio/${numero}`} target="_blank" rel="noreferrer" style={{marginLeft:"auto",color:T.accent,fontWeight:600,textDecoration:"none"}}>Abrir en Andreani</a>}
           </div>
-          {st.loading?<div style={{display:"flex",alignItems:"center",gap:8,padding:"14px 0",color:T.textSm,fontSize:12}}><Spinner size={13} color={T.accent}/> Consultando a Andreani</div>
+          {st.loading?<AdmSkeleton T={T} filas={4}/>
           :st.error?<div style={{fontSize:12,color:T.red}}>{st.error}</div>
           :(<>
             {st.estado&&<div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Estado actual: {st.estado}</div>}
-            {evs.length===0?<div style={{fontSize:12,color:T.textSm}}>Andreani no devolvió eventos para este envío todavía.</div>:(
+            {evs.length===0?<AdmVacio T={T} titulo="Sin eventos todavía" sub="Andreani no devolvió movimientos para este envío."/>:(
               <div style={{borderLeft:`2px solid ${T.border}`,marginLeft:6,paddingLeft:14,display:"flex",flexDirection:"column",gap:10,maxHeight:380,overflowY:"auto"}}>
                 {evs.map((ev,i)=>(
                   <div key={i} style={{position:"relative"}}>
@@ -15069,81 +15111,61 @@ function AdmTrazasModal({T, envio, onClose}) {
     </Modal>
   );
 }
-// Sección "Envíos" de la ficha de una cuenta: etiquetas de los últimos 90 días.
-function AdmFichaEnvios({ctx, u, chip}) {
-  const {T, authFetchAdm} = ctx;
-  const [st,setSt]=useState({loading:true,data:null,error:""});
-  const [q,setQ]=useState(""); const [filtro,setFiltro]=useState("todos"); const [limite,setLimite]=useState(40); const [fuente,setFuente]=useState("todas");
-  const [trazas,setTrazas]=useState(null);
-  async function load(){ setSt(s=>({...s,loading:true,error:""})); try{ const r=await authFetch("/api/andreani?action=admin_envios",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:u._id,dias:90})}); const d=await r.json(); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`); setSt({loading:false,data:d,error:""}); }catch(e){ setSt({loading:false,data:null,error:e.message}); } }
-  useEffect(()=>{ load(); },[u._id]);
-  const envios=st.data?.envios||[];
-  const api=envios.filter(e=>e.andreani?.numeroDeEnvio);
-  const gasto=api.reduce((s,e)=>s+(e.andreani?.precio||0),0);
-  const problemas=envios.filter(e=>e.problema);
-  const porCat={}; envios.forEach(e=>{ const k=admCatDe(e); porCat[k]=(porCat[k]||0)+1; });
-  const qq=q.trim().toLowerCase();
-  const excelN=envios.length-api.length;
-  const lista=envios.filter(e=>fuente==="todas"||(fuente==="api"?!!e.andreani?.numeroDeEnvio:!e.andreani?.numeroDeEnvio)).filter(e=>filtro==="todos"||(filtro==="problema"?!!e.problema:admCatDe(e)===filtro))
-    .filter(e=>!qq||String(e.numero||"").includes(qq)||String(e.andreani?.numeroDeEnvio||e.tracking||"").includes(qq)||(e.cliente||"").toLowerCase().includes(qq)||(e.localidad||"").toLowerCase().includes(qq));
-  const col=k=>{ const c=(ADM_CAT[k]||ADM_CAT.desconocido)[1]; return c==="textSm"?T.textSm:T[c]; };
-  function exportar(){
-    const filas=[["Pedido","Fecha","Destinatario","Localidad","Provincia","Tipo","Número de envío","Estado","Categoría","Costo","Despachado","Entregado","Problema"]];
-    lista.forEach(e=>filas.push([e.numero,e.creado?admFecha(admIso(e.creado)):"",e.cliente,e.localidad,e.provincia,e.esSucursal||e.andreani?.tipo==="sucursal"?"sucursal":"domicilio",e.andreani?.numeroDeEnvio||e.tracking||"",e.estadoAndreani||"",(ADM_CAT[admCatDe(e)]||[""])[0],e.andreani?.precio||"",e.despachadoAt?admFecha(admIso(e.despachadoAt)):"",e.entregadoAt?admFecha(admIso(e.entregadoAt)):"",e.problema?e.problema.msg:""]));
-    admCsvDescargar(`envios-${(u.email||u._id).replace(/[^a-z0-9]/gi,"_")}-${new Date().toISOString().slice(0,10)}.csv`,filas);
-  }
+// Movimientos de la billetera de una cuenta.
+function AdmMovsModal({T, cuenta, onClose}) {
+  const [st,setSt]=useState({loading:true,movs:[],saldo:null});
+  useEffect(()=>{ let vivo=true; if(!cuenta) return; setSt({loading:true,movs:[],saldo:null}); authFetch(`/api/andreani?action=admin_movimientos&uid=${encodeURIComponent(cuenta.uid)}`).then(r=>r.json()).then(d=>{ if(vivo) setSt({loading:false,movs:Array.isArray(d?.movimientos)?d.movimientos:[],saldo:d?.saldo??null}); }).catch(()=>{ if(vivo) setSt({loading:false,movs:[],saldo:null,error:"No se pudieron cargar los movimientos"}); }); return ()=>{ vivo=false; }; },[cuenta?.uid]);
   return (
-    <div>
-      {st.loading?<div style={{fontSize:12,color:T.textSm,display:"flex",gap:8,alignItems:"center"}}><Spinner size={13} color={T.accent}/> Cargando envíos</div>
-      :st.error?<div style={{fontSize:12,color:T.red}}>{st.error}</div>
-      :(<>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8,marginBottom:10}}>
-          {[["Etiquetas API",String(api.length),`de ${envios.length} envíos registrados`],["Gasto en etiquetas",fmtMoney(gasto),"últimos 90 días"],["Saldo",fmtMoney(st.data?.saldo||0),st.data?.habilitado?"prepago habilitado":"sin prepago"],["Con problema",String(problemas.length),problemas.length?"requieren atención":"todo en orden"]].map(([l,v,s])=>(
-            <div key={l} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 10px"}}><div style={{fontSize:10,color:T.textSm,fontWeight:600}}>{l}</div><div style={{fontSize:15,fontWeight:800,color:l==="Con problema"&&problemas.length?T.red:T.text}}>{v}</div><div style={{fontSize:10,color:T.textSm}}>{s}</div></div>
-          ))}
-        </div>
-        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
-          <div style={{display:"inline-flex",background:T.surface,borderRadius:8,padding:2}}>
-            {[["todas",`Todas ${envios.length}`],["api",`Por API ${api.length}`],["excel",`Por Excel ${excelN}`]].map(([v,l])=><button key={v} onClick={()=>{setFuente(v);setLimite(40);}} style={{padding:"5px 12px",fontSize:12,fontWeight:fuente===v?700:500,border:"none",borderRadius:6,background:fuente===v?T.card:"transparent",color:fuente===v?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:fuente===v?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"}}>{l}</button>)}
-          </div>
-          <span style={{fontSize:11,color:T.textSm}}>Por API = etiquetas prepagas emitidas desde Growith con seguimiento. Por Excel = pedidos exportados a la carga masiva de Andreani.</span>
-        </div>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-          {Object.entries(porCat).sort((a,b)=>b[1]-a[1]).map(([k,n])=><button key={k} onClick={()=>setFiltro(filtro===k?"todos":k)} style={{background:"transparent",border:`1px solid ${filtro===k?col(k):T.border}`,borderRadius:DS.r.full,padding:"3px 9px",fontSize:11,color:col(k),fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{(ADM_CAT[k]||ADM_CAT.desconocido)[0]} {n}</button>)}
-          {problemas.length>0&&<button onClick={()=>setFiltro(filtro==="problema"?"todos":"problema")} style={{background:filtro==="problema"?T.red+"18":"transparent",border:`1px solid ${T.red}66`,borderRadius:DS.r.full,padding:"3px 9px",fontSize:11,color:T.red,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Con problema {problemas.length}</button>}
-        </div>
-        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
-          <input value={q} onChange={e=>{setQ(e.target.value);setLimite(40);}} placeholder="Pedido, número de envío, destinatario o localidad" style={{...InputStyle(T),flex:1,marginBottom:0,fontSize:12}}/>
-          <Btn T={T} variant="secondary" size="sm" onClick={exportar} disabled={!lista.length}>CSV</Btn>
-          <Btn T={T} variant="secondary" size="sm" onClick={load}>Actualizar</Btn>
-        </div>
-        {lista.length===0?<div style={{fontSize:12,color:T.textSm}}>{envios.length?"Nada con ese filtro.":"Sin envíos registrados en los últimos 90 días. Solo se ven las etiquetas emitidas desde Growith (API o Excel registrado); las generadas fuera no pasan por acá."}</div>:(
-          <div style={{border:`1px solid ${T.borderL}`,borderRadius:8,overflow:"hidden"}}>
-            {lista.slice(0,limite).map((e,i)=>{ const k=admCatDe(e); const num=e.andreani?.numeroDeEnvio||e.tracking; return (
-              <div key={e.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 10px",borderTop:i>0?`1px solid ${T.borderL}`:"none",fontSize:12,flexWrap:"wrap"}}>
-                <span style={{width:6,height:6,borderRadius:"50%",background:col(k),flexShrink:0}}/>
-                <div style={{flex:1,minWidth:180}}>
-                  <div style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>#{e.numero}{e.cliente?` · ${e.cliente}`:""}<span style={{color:T.textSm,fontWeight:400}}>{e.localidad?` · ${e.localidad}`:""}{e.esSucursal||e.andreani?.tipo==="sucursal"?" · sucursal":""}</span></div>
-                  <div style={{fontSize:10.5,color:T.textSm}}>{e.creado?admFecha(admIso(e.creado)):""}{e.estadoAndreani?` · ${e.estadoAndreani}`:""}{e.problema&&<span style={{color:e.problema.sev==="red"?T.red:T.orange,fontWeight:600}}> · {e.problema.msg}</span>}</div>
-                </div>
-                <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:DS.r.full,background:col(k)+"18",color:col(k),whiteSpace:"nowrap"}}>{(ADM_CAT[k]||ADM_CAT.desconocido)[0]}</span>
-                {e.andreani?.precio>0&&<span style={{color:T.textMd,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fmtMoney(e.andreani.precio)}</span>}
-                {num?<button onClick={()=>setTrazas(e)} title="Ver seguimiento" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 8px",fontSize:11,color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Cascadia Code','Consolas',monospace"}}>{num}</button>:<span style={{fontSize:10,color:T.textSm}}>sin número</span>}
+    <Modal T={T} open={!!cuenta} onClose={onClose} title={`Movimientos · ${cuenta?.email||cuenta?.uid||""}`} width={560} zIndex={1300}>
+      {cuenta&&(st.loading?<AdmSkeleton T={T}/>:st.error?<div style={{fontSize:12,color:T.red}}>{st.error}</div>:st.movs.length===0?<AdmVacio T={T} titulo="Sin movimientos" sub="Esta cuenta todavía no cargó saldo ni emitió etiquetas."/>:(
+        <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
+          {st.saldo!=null&&<div style={{padding:"8px 12px",fontSize:12,color:T.textMd,borderBottom:`1px solid ${T.borderL}`}}>Saldo actual <strong style={{color:T.text}}>{fmtMoney(st.saldo)}</strong></div>}
+          <div style={{display:"grid",gridTemplateColumns:"90px 1fr 90px 90px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}><span>Fecha</span><span>Concepto</span><span style={{textAlign:"right"}}>Monto</span><span style={{textAlign:"right"}}>Saldo</span></div>
+          <div style={{maxHeight:340,overflowY:"auto"}}>
+            {st.movs.map((m,i)=>{ const cred=m.tipo==="credito"||m.tipo==="reverso"; const concepto=m.nota||(m.tipo==="debito"?`Etiqueta ${m.numeroDeEnvio||""}`.trim():m.tipo==="reverso"?"Reverso":"Carga de saldo"); return (
+              <div key={i} style={{display:"grid",gridTemplateColumns:"90px 1fr 90px 90px",gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<st.movs.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
+                <span style={{color:T.textSm,fontSize:11}}>{ghFmtTs(m.ts)}</span><span style={{color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={concepto}>{concepto}</span><span style={{textAlign:"right",fontWeight:700,color:cred?T.green:T.red}}>{cred?"+":"−"}{fmtMoney(Math.abs(m.monto||0))}</span><span style={{textAlign:"right",color:T.textMd}}>{fmtMoney(m.saldoDespues)}</span>
               </div>
             );})}
-            {lista.length>limite&&<div style={{textAlign:"center",padding:8,borderTop:`1px solid ${T.borderL}`}}><button onClick={()=>setLimite(n=>n+40)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 12px"}}>Ver más ({lista.length-limite})</button></div>}
           </div>
-        )}
-      </>)}
-      <AdmTrazasModal T={T} envio={trazas} onClose={()=>setTrazas(null)}/>
-    </div>
+        </div>
+      ))}
+    </Modal>
+  );
+}
+// Acreditar (o ajustar) saldo a una cuenta.
+function AdmAcreditarModal({T, cuenta, onClose, onDone}) {
+  const [monto,setMonto]=useState(""); const [nota,setNota]=useState("");
+  useEffect(()=>{ setMonto(""); setNota(""); },[cuenta?.uid]);
+  return (
+    <Modal T={T} open={!!cuenta} onClose={onClose} title={`Acreditar saldo · ${cuenta?.email||""}`} width={440} zIndex={1300}>
+      {cuenta&&(
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{fontSize:12,color:T.textMd,lineHeight:1.5}}>Suma saldo a la billetera de etiquetas prepagas. Un monto negativo lo descuenta (ajuste). Queda registrado en los movimientos y en el registro de actividad.</div>
+          <Field T={T} label="Monto ($)"><AdmInput T={T} type="number" value={monto} onChange={e=>setMonto(e.target.value)} placeholder="Ej: 20000" autoFocus/></Field>
+          <Field T={T} label="Nota"><AdmInput T={T} value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: transferencia del 5/9"/></Field>
+          <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+            <Btn T={T} variant="secondary" size="sm" onClick={onClose}>Cancelar</Btn>
+            <AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{ const m=Math.round(parseFloat(monto)); if(!m) throw new Error("Ingresá un monto válido"); const d=await admAndreani("admin_acreditar",{uid:cuenta.uid,monto:m,nota}); toast(`${fmtMoney(m)} ${m>0?"acreditados":"descontados"} · saldo ${fmtMoney(d.saldo)}`,"success"); onDone&&onDone(d.saldo); onClose(); }}>Acreditar</AdmBtn>
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
 
+
+// ── Contenedor ───────────────────────────────────────────────────────────────
+// Rutas internas: #/admin/<tab> y #/admin/cliente/<uid> (recarga y "atrás" del
+// navegador funcionan; el link a una ficha se puede compartir).
+function admLeerHash(){ const h=String(window.location.hash||"").replace(/^#\/?/,""); const p=h.split("/"); if(p[0]!=="admin") return {tab:"resumen",cuenta:null}; if(p[1]==="cliente"&&p[2]) return {tab:"clientes",cuenta:decodeURIComponent(p[2])}; const t=ADM_TABS.find(x=>x[0]===p[1])?p[1]:"resumen"; return {tab:t,cuenta:null}; }
 function AppAdmin({T, user, onBack}) {
-  const iS = InputStyle(T);
   const CACHE_KEY = `growith_admin_cache_${user.uid}`;
-  const [tab, setTab] = useState("resumen");
+  const [ruta,setRuta]=useState(()=>admLeerHash());
+  const tab=ruta.tab, cuenta=ruta.cuenta;
+  const irA=(t,c)=>{ const h=c?`#/admin/cliente/${encodeURIComponent(c)}`:(t&&t!=="resumen"?`#/admin/${t}`:"#/admin"); if(window.location.hash!==h) window.location.hash=h; else setRuta({tab:t||"resumen",cuenta:c||null}); };
+  const setTab=t=>irA(t,null); const setCuenta=c=>irA(c?"clientes":tab,c);
+  useEffect(()=>{ const h=()=>setRuta(admLeerHash()); window.addEventListener("hashchange",h); return ()=>window.removeEventListener("hashchange",h); },[]);
   const [datos, setDatos] = useState(()=>ghSwrGet(CACHE_KEY, 24*3600000) || { pagos:[], usuarios:[], stats:{} });
   const [loading, setLoading] = useState(!datos.usuarios?.length);
   const [refrescando, setRefrescando] = useState(false);
@@ -15151,60 +15173,37 @@ function AppAdmin({T, user, onBack}) {
   const [sectionsConfig, setSectionsConfig] = useState([]);
   const [envCfg, setEnvCfg] = useState(null);
   const [envCargas, setEnvCargas] = useState([]);
-  const [cuenta, setCuenta] = useState(null);       // uid de la ficha abierta
+  const [statsMes, setStatsMes] = useState(null);   // admin_stats del mes actual (etiquetas por cuenta)
   const [confirmMeses, setConfirmMeses] = useState({});
-
-  async function adminApi(body) {
-    const r = await fetch("/api/tareas", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
-    const d = await r.json().catch(()=>({}));
-    if (!r.ok || d.error) throw new Error(d.error || `Error del servidor (${r.status})`);
-    return d;
-  }
+  const [busca,setBusca]=useState("");
+  const adminApi = body => admApi(body, user.uid);
   async function loadData(silencioso) {
     if(silencioso) setRefrescando(true); else setLoading(true);
     setErr("");
-    try {
-      const d = await adminApi({action:"adminGetData"});
-      setDatos(d);
-      try { if(JSON.stringify(d).length < 2500000) ghSwrSet(CACHE_KEY, d); } catch(_){}
-    } catch(e){ setErr(e.message); }
+    try { const d = await adminApi({action:"adminGetData"}); setDatos(d); try { if(JSON.stringify(d).length < 2500000) ghSwrSet(CACHE_KEY, d); } catch(_){} }
+    catch(e){ setErr(e.message); }
     setLoading(false); setRefrescando(false);
   }
-  async function loadSectionsConfig() {
-    try { const r=await fetch(`/api/tareas?action=getSectionsConfig&uid=${user.uid}`); const j=await r.json(); if(Array.isArray(j.adminOnlySections)) setSectionsConfig(j.adminOnlySections.filter(s=>s!=="rendimiento")); } catch(_){}
-  }
-  async function saveSectionsConfig(next) {
-    try { await adminApi({action:"setSectionsConfig", adminOnlySections:next}); setSectionsConfig(next); toast("Accesos actualizados","success"); } catch(e){ toast(e.message,"error"); }
-  }
-  async function loadEnvCfg() {
-    try {
-      const c = await authFetch("/api/andreani?action=admin_config").then(r=>r.json());
-      if (c && !c.error) setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}});
-    } catch(_){}
-  }
+  async function loadSectionsConfig() { try { const r=await fetch(`/api/tareas?action=getSectionsConfig&uid=${user.uid}`); const j=await r.json(); if(Array.isArray(j.adminOnlySections)) setSectionsConfig(j.adminOnlySections.filter(s=>s!=="rendimiento")); } catch(_){} }
+  async function saveSectionsConfig(next) { await adminApi({action:"setSectionsConfig", adminOnlySections:next}); setSectionsConfig(next); toast("Accesos actualizados","success"); }
+  async function loadEnvCfg() { try { const c=await admAndreani("admin_config"); setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}}); } catch(_){} }
   async function saveEnvCfg(next) {
     const body = next || envCfg; if(!body) return false;
-    const r = await authFetch("/api/andreani?action=admin_config",{ method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}}) });
-    const d = await r.json().catch(()=>({}));
-    if (!r.ok || d.error) { toast("No se pudo guardar: "+(d.error||`HTTP ${r.status}`),"error"); return false; }
+    try { await admAndreani("admin_config",{markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}}); }
+    catch(e){ toast("No se pudo guardar: "+e.message,"error"); return false; }
     setEnvCfg({...body}); return true;
   }
-  async function loadEnvCargas() {
-    try { const d = await authFetch("/api/andreani?action=admin_cargas").then(r=>r.json()); if (Array.isArray(d?.cargas)) setEnvCargas(d.cargas); } catch(_){}
-  }
+  async function loadEnvCargas() { try { const d = await admAndreani("admin_cargas"); if (Array.isArray(d?.cargas)) setEnvCargas(d.cargas); } catch(_){} }
+  async function loadStatsMes() { try { const d=await admAndreani(`admin_stats&mes=${admMesKey(Date.now())}`); setStatsMes(d); } catch(_){} }
   async function resolverCarga(c, acreditar) {
     if(acreditar){ if(!await appConfirm(`¿Acreditar ${fmtMoney(c.monto)} a ${c.email||c.uid}? Verificá antes que la transferencia ${c.ref} haya entrado.`,{okLabel:"Acreditar"})) return; }
     else { if(!await appConfirm("¿Rechazar esta carga? El cliente la va a ver como rechazada.",{danger:true,okLabel:"Rechazar"})) return; }
-    const r = await authFetch(`/api/andreani?action=${acreditar?"admin_carga_acreditar":"admin_carga_rechazar"}`,{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({id:c.id}) });
-    const d = await r.json().catch(()=>({}));
-    if (!r.ok || d.error) { toast("No se pudo procesar: "+(d.error||`HTTP ${r.status}`),"error"); return; }
+    await admAndreani(acreditar?"admin_carga_acreditar":"admin_carga_rechazar",{id:c.id});
     toast(acreditar?`${fmtMoney(c.monto)} acreditados a ${c.email||c.uid}`:"Carga rechazada","success");
     loadEnvCargas();
   }
-  useEffect(()=>{ loadData(!!datos.usuarios?.length); loadSectionsConfig(); loadEnvCargas(); loadEnvCfg(); },[]);
+  useEffect(()=>{ loadData(!!datos.usuarios?.length); loadSectionsConfig(); loadEnvCargas(); loadEnvCfg(); loadStatsMes(); },[]);
 
-  // ── Derivados ──
   const { pagos=[], usuarios=[], stats={} } = datos;
   const founder = !!datos.founder || user.uid==="WJH3ArqDPQcNLha9lOinvkVi9uJ2";
   const ahora = Date.now();
@@ -15214,20 +15213,16 @@ function AppAdmin({T, user, onBack}) {
   const esUsd = p=>p.currency==="USD"||p.currency==="USDT";
   const pagosPendientes = pagos.filter(p=>p.estado==="pendiente");
   const activaPaga = u=>(u.plan||"free")!=="free"&&!u.isTrial&&(!u.planExpiry||u.planExpiry>ahora);
-  const vencenProximos = usuarios.filter(u=>{ const d=admDias(u.planExpiry); return (u.plan||"free")!=="free"&&d!==null&&d>=0&&d<=7; });
   const pastDue = usuarios.filter(u=>u.stripeStatus==="past_due");
-  const vencidasPagas = usuarios.filter(u=>(u.plan||"free")!=="free"&&!u.isTrial&&(admDias(u.planExpiry)??1)<0);
-  const pruebasPorVencer = usuarios.filter(u=>u.isTrial&&(u.plan||"free")!=="free"&&(()=>{const d=admDias(u.planExpiry);return d!==null&&d>=0&&d<=3;})());
-  const mesKey = admMesKey(ahora);
-  const ingresosMes = pagosReales.filter(p=>p.createdAt&&admMesKey(p.createdAt)===mesKey);
+  const etiquetasMes = useMemo(()=>{ const m={}; (statsMes?.cuentas||[]).forEach(c=>{ m[c.uid]=c; }); return m; },[statsMes]);
+  const porAtender = envCargas.length + pagosPendientes.length + pastDue.length;
   const primerPagoUid = useMemo(()=>{ const m={}; [...pagosReales].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).forEach(p=>{ if(!m[p.uid]) m[p.uid]=p._id; }); return m; },[pagosReales]);
   const esNueva = p => p.billingReason==="subscription_create" || (p.method!=="stripe" && primerPagoUid[p.uid]===p._id);
-  const porAtender = envCargas.length + pagosPendientes.length + pastDue.length;
 
   // ── Acciones sobre cuentas ──
   const actualizarUsuario = (uid, patch) => setDatos(prev=>({...prev, usuarios:prev.usuarios.map(u=>u._id===uid?{...u,...patch}:u)}));
   async function gestionarPlan(uid, plan, cantidad, unidad, isTrial) {
-    const cant=Number(cantidad); if(!cant||cant<1) return appAlert("Ingresá una cantidad válida (mínimo 1)");
+    const cant=Number(cantidad); if(!cant||cant<1) throw new Error("Ingresá una cantidad válida (mínimo 1)");
     const label=`${cant} ${unidad==="dias"?`día${cant>1?"s":""}`:cant===1?"mes":"meses"} de ${admPlanLabel(plan)}`;
     if(!await appConfirm(isTrial?`¿Activar ${label} como PRUEBA (no cuenta como ingreso)?`:`¿Activar ${label}?`,{okLabel:isTrial?"Activar prueba":"Activar"})) return;
     const d=await adminApi({action:"gestionarPlan", targetUid:uid, plan, cantidad:cant, unidad, isTrial});
@@ -15235,32 +15230,22 @@ function AppAdmin({T, user, onBack}) {
     toast(isTrial?`Prueba ${label} activada`:`${label} activado`,"success");
   }
   async function ajustarDias(uid, dias) {
-    const n=Number(dias); if(!n) return appAlert("Ingresá una cantidad de días válida");
+    const n=Number(dias); if(!n) throw new Error("Ingresá una cantidad de días válida");
     const d=await adminApi({action:"ajustarDias", targetUid:uid, dias:n});
-    actualizarUsuario(uid,{planExpiry:admMs(d.expiry)});
-    toast(`${n>0?"+":""}${n} días aplicados`,"success");
+    actualizarUsuario(uid,{planExpiry:admMs(d.expiry)}); toast(`${n>0?"+":""}${n} días aplicados`,"success");
   }
   async function desactivarPlan(uid) {
     if(!await appConfirm("¿Desactivar el plan? La cuenta pasa a Free ahora mismo.",{danger:true,okLabel:"Desactivar"})) return;
-    await adminApi({action:"desactivarPlan", targetUid:uid});
-    actualizarUsuario(uid,{plan:"free", planExpiry:null, isTrial:false});
-    toast("Plan desactivado","warning");
+    await adminApi({action:"desactivarPlan", targetUid:uid}); actualizarUsuario(uid,{plan:"free", planExpiry:null, isTrial:false}); toast("Plan desactivado","warning");
   }
-  async function saveNote(uid, note) {
-    await adminApi({action:"addNote", targetUid:uid, note});
-    actualizarUsuario(uid,{adminNote:note, adminNoteAt:Date.now()});
-    toast("Nota guardada","success");
-  }
+  async function saveNote(uid, note) { await adminApi({action:"addNote", targetUid:uid, note}); actualizarUsuario(uid,{adminNote:note, adminNoteAt:Date.now()}); toast("Nota guardada","success"); }
   async function toggleAdmin(u) {
-    if(!founder){ toast("Solo el dueño de Growith puede dar o quitar acceso de administrador","error"); return; }
-    if(!await appConfirm(u.isAdmin?`¿Quitar el acceso de administrador a ${u.email}?`:`¿Dar acceso de administrador a ${u.email}? Va a poder ver y gestionar todas las cuentas.`,{danger:!u.isAdmin?false:true,okLabel:u.isAdmin?"Quitar admin":"Dar admin"})) return;
-    const d=await adminApi({action:"toggleAdmin",targetUid:u._id});
-    if(d.ok) actualizarUsuario(u._id,{isAdmin:d.isAdmin});
-    toast(d.isAdmin?"Ahora es administrador":"Ya no es administrador","success");
+    if(!founder) throw new Error("Solo el dueño de Growith puede dar o quitar acceso de administrador");
+    if(!await appConfirm(u.isAdmin?`¿Quitar el acceso de administrador a ${u.email}?`:`¿Dar acceso de administrador a ${u.email}? Va a poder ver y gestionar todas las cuentas.`,{danger:!!u.isAdmin,okLabel:u.isAdmin?"Quitar admin":"Dar admin"})) return;
+    const d=await adminApi({action:"toggleAdmin",targetUid:u._id}); if(d.ok) actualizarUsuario(u._id,{isAdmin:d.isAdmin}); toast(d.isAdmin?"Ahora es administrador":"Ya no es administrador","success");
   }
   async function toggleEnviosSaldo(u) {
-    let cfg=envCfg;
-    if(!cfg){ await loadEnvCfg(); cfg=envCfg; if(!cfg) throw new Error("No se pudo leer la configuración de Envíos"); }
+    const cfg=envCfg; if(!cfg) throw new Error("La configuración de logística todavía no cargó, probá de nuevo");
     const ya=(cfg.habilitados||[]).includes(u._id);
     if(ya&&!await appConfirm("¿Quitar Envíos con saldo a esta cuenta?",{danger:true,okLabel:"Quitar"})) return;
     const ok=await saveEnvCfg({...cfg,habilitados:ya?cfg.habilitados.filter(x=>x!==u._id):[...(cfg.habilitados||[]),u._id]});
@@ -15271,9 +15256,7 @@ function AppAdmin({T, user, onBack}) {
     const d=await adminApi({action:"adminImpersonar", targetUid:u._id});
     try{ sessionStorage.setItem("growith_impersonate", JSON.stringify({uid:u._id, email:d.email||u.email||"", adminEmail:user.email||"", adminUid:user.uid, at:Date.now()})); }catch(_){}
     try{ window.__ghReadOnly=true; }catch(_){}
-    await signInWithCustomToken(auth, d.token);
-    window.location.hash="#/home";
-    window.location.reload();
+    await signInWithCustomToken(auth, d.token); window.location.hash="#/home"; window.location.reload();
   }
   async function confirmarPago(p) {
     const meses=Number(confirmMeses[p._id]||p.meses||1);
@@ -15283,119 +15266,101 @@ function AppAdmin({T, user, onBack}) {
   }
   async function rechazarPago(pagoId) {
     if(!await appConfirm("¿Rechazar este pago?",{danger:true,okLabel:"Rechazar"})) return;
-    await adminApi({action:"rechazarPago", pagoId});
-    setDatos(prev=>({...prev, pagos:prev.pagos.map(x=>x._id===pagoId?{...x,estado:"rechazado"}:x)}));
-    toast("Pago rechazado","warning");
+    await adminApi({action:"rechazarPago", pagoId}); setDatos(prev=>({...prev, pagos:prev.pagos.map(x=>x._id===pagoId?{...x,estado:"rechazado"}:x)})); toast("Pago rechazado","warning");
   }
-  async function verComprobante(p) {
-    const d=await adminApi({action:"pagoComprobante",pagoId:p._id});
-    if(!d?.comprobanteB64) throw new Error("Sin comprobante");
-    const bl=await fetch(d.comprobanteB64).then(x=>x.blob());
-    window.open(URL.createObjectURL(bl),"_blank");
-  }
+  async function verComprobante(p) { const d=await adminApi({action:"pagoComprobante",pagoId:p._id}); if(!d?.comprobanteB64) throw new Error("Sin comprobante"); const bl=await fetch(d.comprobanteB64).then(x=>x.blob()); window.open(URL.createObjectURL(bl),"_blank"); }
 
-  const ctx = { T, user, founder, usuarios, pagos, usuariosPorUid, ultPagoPorUid, envCfg, adminApi, gestionarPlan, ajustarDias, desactivarPlan, saveNote, toggleAdmin, toggleEnviosSaldo, verComoCliente, setCuenta, setTab };
-  const segBtn=(on)=>({padding:"6px 14px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:6,background:on?T.card:"transparent",color:on?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?"0 1px 3px rgba(0,0,0,0.12)":"none",display:"inline-flex",alignItems:"center",gap:6,whiteSpace:"nowrap"});
-  const TABS=[["resumen","Resumen"],["cuentas","Cuentas"],["ingresos","Ingresos"],["envios","Envíos"],["sistema","Sistema"]];
-  const tabDesc={resumen:"Lo que requiere tu acción y el pulso de hoy.",cuentas:"Todas las cuentas de Growith: plan, estado, origen, último login e integraciones.",ingresos:"Ingresos en dólares, nuevas suscripciones y renovaciones, referidos.",envios:"El negocio de etiquetas prepagas: precios, cuentas habilitadas, saldos y rentabilidad.",sistema:"Crons, servicios configurados, accesos por sección y registro de acciones."};
-  const lbl=t=><div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>{t}</div>;
-  const cardTitle=(t,sub,right)=>(
-    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,marginBottom:12,flexWrap:"wrap"}}>
-      <div><div style={{fontSize:14,fontWeight:700,color:T.text}}>{t}</div>{sub&&<div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.5}}>{sub}</div>}</div>
-      {right}
-    </div>
-  );
-  const chip=(label,color)=><span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:DS.r.full,background:color+"18",color,whiteSpace:"nowrap"}}>{label}</span>;
-  const cuentaBtn=(u)=><button onClick={()=>setCuenta(u._id)} style={{background:"transparent",border:"none",padding:0,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,fontWeight:600,color:T.text,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{u.email||u.nombre||u._id}</button>;
+  const ctx = { T, user, founder, usuarios, pagos, pagosReales, usuariosPorUid, ultPagoPorUid, envCfg, etiquetasMes, statsMes, adminApi, gestionarPlan, ajustarDias, desactivarPlan, saveNote, toggleAdmin, toggleEnviosSaldo, verComoCliente, confirmarPago, rechazarPago, verComprobante, confirmMeses, setConfirmMeses, setCuenta, setTab, activaPaga, esUsd, esNueva, envCargas, resolverCarga, pagosPendientes, pastDue, loadData, actualizarUsuario };
+  // Buscador global: email, nombre, tienda o uid → abre la ficha.
+  const bq=busca.trim().toLowerCase();
+  const sugeridos=bq.length>=2?usuarios.filter(u=>(u.email||"").toLowerCase().includes(bq)||(u.nombre||"").toLowerCase().includes(bq)||u._id===busca.trim()||(u.stores||[]).some(s=>(s.name||"").toLowerCase().includes(bq))).slice(0,7):[];
+  const abrir=u=>{ setBusca(""); setCuenta(u._id); };
+  const uFicha=cuenta?usuariosPorUid[cuenta]:null;
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh"}}>
       <AppTopbar T={T} section="Admin" sectionId="admin" onHome={onBack}>
+        <div style={{position:"relative"}}>
+          <AdmInput T={T} value={busca} onChange={e=>setBusca(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"&&sugeridos[0]) abrir(sugeridos[0]); if(e.key==="Escape") setBusca(""); }} placeholder="Buscar cliente por email, nombre o tienda" style={{width:280,maxWidth:"60vw",padding:"7px 10px"}}/>
+          {sugeridos.length>0&&(
+            <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,zIndex:50,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,boxShadow:"0 12px 32px rgba(0,0,0,0.3)",overflow:"hidden"}}>
+              {sugeridos.map(u=>{ const e=admEstado(T,u); return (
+                <button key={u._id} onClick={()=>abrir(u)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",padding:"8px 12px",background:"transparent",border:"none",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}} onMouseEnter={ev=>ev.currentTarget.style.background=T.surface} onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
+                  <span style={{flex:1,minWidth:0,fontSize:12,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email}<span style={{color:T.textSm,fontWeight:400}}>{u.nombre&&u.nombre!==u.email?` · ${u.nombre}`:""}</span></span>
+                  <DSBadge T={T} color={admPlanColor(T,u.plan)} size="sm">{admPlanLabel(u.plan)}</DSBadge><DSBadge T={T} color={e.color} size="sm">{e.label}</DSBadge>
+                </button>
+              );})}
+            </div>
+          )}
+        </div>
         {porAtender>0&&<DSBadge T={T} color={T.red} size="sm">{porAtender} por atender</DSBadge>}
-        <Btn T={T} variant="secondary" size="sm" onClick={()=>{loadData(true);loadEnvCargas();}} disabled={refrescando}>{refrescando?"Actualizando":"Actualizar"}</Btn>
+        <Btn T={T} variant="secondary" size="sm" onClick={()=>{loadData(true);loadEnvCargas();loadStatsMes();}} disabled={refrescando}>{refrescando?"Actualizando":"Actualizar"}</Btn>
       </AppTopbar>
       <div style={{padding:"20px 24px 64px",maxWidth:1180,margin:"0 auto",width:"100%"}}>
         {err&&<div style={{fontSize:12,color:T.red,background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:8,padding:"8px 12px",marginBottom:12}}>{err}</div>}
-        {cuenta&&usuariosPorUid[cuenta]?<AdmFicha ctx={ctx} u={usuariosPorUid[cuenta]} onClose={()=>setCuenta(null)} iS={iS} lbl={lbl} chip={chip} confirmarPago={confirmarPago} rechazarPago={rechazarPago}/>:(<>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,flexWrap:"wrap"}}>
-          <div className="no-scrollbar" style={{display:"inline-flex",background:T.surface,borderRadius:8,padding:2,maxWidth:"100%",overflowX:"auto"}}>
-            {TABS.map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={segBtn(tab===v)}>{l}{v==="resumen"&&porAtender>0&&<span style={{fontSize:10,fontWeight:700,background:T.red,color:"#fff",borderRadius:10,padding:"1px 6px"}}>{porAtender}</span>}</button>)}
+        {cuenta&&!loading&&!uFicha&&<Card T={T} padding="lg"><AdmVacio T={T} titulo="No encontré esa cuenta" sub="Puede que el link sea viejo o que la cuenta ya no exista."/><div style={{textAlign:"center"}}><Btn T={T} variant="secondary" size="sm" onClick={()=>setTab("clientes")}>Volver a Clientes</Btn></div></Card>}
+        {uFicha?<AdmFicha ctx={ctx} u={uFicha} onClose={()=>setTab("clientes")}/>:(<>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+            <AdmSeg T={T} value={tab} onChange={setTab} opciones={ADM_TABS.map(([v,l])=>[v,l,v==="resumen"?porAtender:0])}/>
+            <span style={{fontSize:11,color:T.textSm}}>{ADM_TAB_DESC[tab]}</span>
           </div>
-          <span style={{fontSize:11,color:T.textSm}}>{tabDesc[tab]}</span>
-        </div>
-
-        {loading?(
-          <div style={{textAlign:"center",padding:60}}><Spinner size={32} color={T.accent}/></div>
-        ):tab==="resumen"?(
-          <AdmResumen ctx={ctx} stats={stats} usuarios={usuarios} pagos={pagos} pagosReales={pagosReales} pagosPendientes={pagosPendientes} envCargas={envCargas} resolverCarga={resolverCarga} confirmarPago={confirmarPago} rechazarPago={rechazarPago} verComprobante={verComprobante} confirmMeses={confirmMeses} setConfirmMeses={setConfirmMeses} vencenProximos={vencenProximos} pastDue={pastDue} vencidasPagas={vencidasPagas} pruebasPorVencer={pruebasPorVencer} ingresosMes={ingresosMes} esNueva={esNueva} esUsd={esUsd} cardTitle={cardTitle} chip={chip} cuentaBtn={cuentaBtn} activaPaga={activaPaga}/>
-        ):tab==="cuentas"?(
-          <AdmCuentas ctx={ctx} cardTitle={cardTitle} chip={chip} cuentaBtn={cuentaBtn} iS={iS} loadData={loadData}/>
-        ):tab==="ingresos"?(
-          <AdmIngresos ctx={ctx} stats={stats} pagosReales={pagosReales} pagos={pagos} esNueva={esNueva} esUsd={esUsd} cardTitle={cardTitle} chip={chip} cuentaBtn={cuentaBtn} activaPaga={activaPaga}/>
-        ):tab==="envios"?(
-          <AdmEnvios ctx={ctx} envCfg={envCfg} setEnvCfg={setEnvCfg} saveEnvCfg={saveEnvCfg} cardTitle={cardTitle} lbl={lbl} iS={iS}/>
-        ):(
-          <AdmSistema ctx={ctx} sectionsConfig={sectionsConfig} saveSectionsConfig={saveSectionsConfig} cardTitle={cardTitle} chip={chip} iS={iS}/>
-        )}
+          {loading?(
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12}}>{Array.from({length:5}).map((_,i)=><Card key={i} T={T} padding="md"><Skeleton T={T} width="50%" height={10}/><Skeleton T={T} width="70%" height={22} style={{marginTop:10}}/><Skeleton T={T} width="60%" height={10} style={{marginTop:8}}/></Card>)}</div>
+          ):tab==="resumen"?<AdmResumen ctx={ctx} stats={stats}/>
+          :tab==="clientes"?<AdmClientes ctx={ctx}/>
+          :tab==="ingresos"?<AdmIngresos ctx={ctx} stats={stats}/>
+          :tab==="logistica"?<AdmLogistica ctx={ctx} envCfg={envCfg} setEnvCfg={setEnvCfg} saveEnvCfg={saveEnvCfg}/>
+          :<AdmSistema ctx={ctx} sectionsConfig={sectionsConfig} saveSectionsConfig={saveSectionsConfig}/>}
         </>)}
       </div>
-
     </div>
   );
 }
 
 // ── Resumen ──────────────────────────────────────────────────────────────────
-function AdmResumen({ctx, stats, usuarios, pagos, pagosReales, pagosPendientes, envCargas, resolverCarga, confirmarPago, rechazarPago, verComprobante, confirmMeses, setConfirmMeses, vencenProximos, pastDue, vencidasPagas, pruebasPorVencer, ingresosMes, esNueva, esUsd, cardTitle, chip, cuentaBtn, activaPaga}) {
-  const {T, setCuenta} = ctx;
-  const ahora=Date.now();
-  const mesLabel=admMesLabel(admMesKey(ahora));
+function AdmResumen({ctx, stats}) {
+  const {T, usuarios, pagos, pagosReales, envCargas, resolverCarga, confirmarPago, rechazarPago, verComprobante, confirmMeses, setConfirmMeses, pastDue, esNueva, esUsd, activaPaga, setCuenta} = ctx;
+  const ahora=Date.now(); const mesKey=admMesKey(ahora); const mesLabel=admMesLabel(mesKey);
+  const pagosPendientes=pagos.filter(p=>p.estado==="pendiente");
+  const vencenProximos=usuarios.filter(u=>{ const d=admDias(u.planExpiry); return (u.plan||"free")!=="free"&&d!==null&&d>=0&&d<=7; });
+  const pruebasPorVencer=usuarios.filter(u=>u.isTrial&&(u.plan||"free")!=="free"&&(()=>{const d=admDias(u.planExpiry);return d!==null&&d>=0&&d<=3;})());
+  const churn=usuarios.filter(u=>(u.plan||"free")!=="free"&&!u.isTrial&&(admDias(u.planExpiry)??0)< -3);
+  const ingresosMes=pagosReales.filter(p=>p.createdAt&&admMesKey(p.createdAt)===mesKey);
   const ingUsd=ingresosMes.filter(esUsd).reduce((s,p)=>s+p.amount,0);
   const nuevasMes=ingresosMes.filter(esNueva).length;
-  const altasMes=usuarios.filter(u=>u.createdAt&&admMesKey(u.createdAt)===admMesKey(ahora)).length;
-  const churn=vencidasPagas.filter(u=>(admDias(u.planExpiry)??0)< -3);
-  const kpis=[
-    {label:"MRR",val:admUsd(stats.mrr||0),sub:`${stats.mrrStripe?admUsd(stats.mrrStripe)+" por Stripe":"Sin cobros por Stripe"}${stats.mrrManual?" · "+admUsd(stats.mrrManual)+" manual":""}`,color:T.green,n:stats.mrr},
-    {label:"Cuentas pagas",val:String(stats.pagas||0),sub:`${stats.pruebas||0} en prueba · ${stats.totalUsuarios||0} cuentas en total`,color:T.blue,n:stats.pagas},
-    {label:"Pagos fallidos",val:String(pastDue.length),sub:pastDue.length?"Stripe no pudo cobrar la renovación":"Ninguna tarjeta rechazada",color:T.red,n:pastDue.length},
-    {label:"Vencen en 7 días",val:String(vencenProximos.length),sub:vencenProximos.length?`${vencenProximos.filter(u=>u.stripeStatus==="active"&&!u.cancelAtPeriodEnd).length} se renuevan solas por Stripe`:"Sin vencimientos próximos",color:T.yellow,n:vencenProximos.length},
-    {label:`Ingresos de ${mesLabel.split(" ")[0].toLowerCase()}`,val:admUsd(ingUsd),sub:`${ingresosMes.length} pago${ingresosMes.length===1?"":"s"} · ${nuevasMes} nueva${nuevasMes===1?"":"s"} · ${altasMes} alta${altasMes===1?"":"s"}`,color:T.accent,n:ingUsd},
-  ];
-  // Cola de atención: una sola lista con todo lo accionable.
+  const altasMes=usuarios.filter(u=>u.createdAt&&admMesKey(u.createdAt)===mesKey).length;
+  const cuentaBtn=u=><button onClick={()=>setCuenta(u._id)} style={{background:"transparent",border:"none",padding:0,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,fontWeight:600,color:T.text,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{u.email||u.nombre||u._id}</button>;
   const items=[];
-  envCargas.forEach(c=>items.push({k:"carga_"+c.id,sev:"red",tipo:"Carga de saldo",titulo:c.email||c.uid,desc:`${fmtMoney(c.monto)} · ref ${c.ref||c.codigo||"—"} · ${c.ts?admRel(c.ts):""}${c.estado==="revision"?" · monto de MP distinto, revisar":""}`,acciones:<><AsyncButton onClick={()=>resolverCarga(c,true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>Acreditar</AsyncButton><AsyncButton onClick={()=>resolverCarga(c,false)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.red,borderColor:T.red+"66"}}>Rechazar</AsyncButton></>}));
-  pastDue.forEach(u=>items.push({k:"pd_"+u._id,sev:"red",tipo:"Pago fallido",titulo:u.email,desc:`Stripe no pudo cobrar ${admPlanLabel(u.plan)}${u.stripePaymentFailedAt?" · "+admRel(u.stripePaymentFailedAt):""}. Stripe reintenta solo; si no paga, se cancela.`,acciones:<><Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cuenta</Btn>{u.stripeCustomerId&&<a href={`https://dashboard.stripe.com/customers/${u.stripeCustomerId}`} target="_blank" rel="noreferrer" style={{fontSize:12,color:T.accent,fontWeight:600,textDecoration:"none",padding:"5px 8px"}}>Abrir en Stripe</a>}</>}));
-  pagosPendientes.forEach(p=>{
-    const u=usuarios.find(x=>x._id===p.uid);
-    items.push({k:"pago_"+p._id,sev:"red",tipo:"Pago manual",titulo:u?.email||p.email||p.uid,desc:`${admPlanLabel(p.plan)}${p.periodo==="anual"?" anual":""} · ${p.amount>0?"$"+p.amount+" "+(p.currency||""):""}${p.method==="cripto"?" USDT":p.method==="stripe"?" tarjeta":" transferencia"}${p.transferRef?" · ref "+p.transferRef:""}${p.txHash?" · tx "+String(p.txHash).slice(0,10)+"…":""} · ${admFecha(p.createdAt,true)}${p.autoCheckMotivo?" · bot: "+(p.autoCheckMotivo==="txid_no_encontrado"?"TxID no está en la blockchain":p.autoCheckMotivo==="ambiguo"?"monto ambiguo":p.autoCheckMotivo==="ya_activado_manualmente"?"ya activado a mano, rechazar":"sin match"):""}`,
-      acciones:<>{p.tieneComprobante&&<AsyncButton onClick={()=>verComprobante(p)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>Comprobante</AsyncButton>}<select value={confirmMeses[p._id]||String(p.meses||1)} onChange={e=>setConfirmMeses(prev=>({...prev,[p._id]:e.target.value}))} style={{...InputStyle(T),padding:"6px 8px",fontSize:12,width:"auto",marginBottom:0}}>{["1","2","3","6","12"].map(m=><option key={m} value={m}>{m} m</option>)}</select><AsyncButton onClick={()=>confirmarPago(p)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>Confirmar</AsyncButton><AsyncButton onClick={()=>rechazarPago(p._id)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.red,borderColor:T.red+"66"}}>Rechazar</AsyncButton></>});
+  envCargas.forEach(c=>items.push({k:"carga_"+c.id,sev:"red",tipo:"Carga de saldo",titulo:c.email||c.uid,desc:`${fmtMoney(c.monto)} · ref ${c.ref||c.codigo||"—"} · ${c.ts?admRel(c.ts):""}${c.estado==="revision"?" · monto de MP distinto, revisar":""}`,acciones:<><AdmBtn T={T} variant="primary" size="sm" onClick={()=>resolverCarga(c,true)}>Acreditar</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>resolverCarga(c,false)}>Rechazar</AdmBtn></>}));
+  pastDue.forEach(u=>items.push({k:"pd_"+u._id,sev:"red",tipo:"Pago fallido",titulo:u.email,desc:`Stripe no pudo cobrar ${admPlanLabel(u.plan)}${u.stripePaymentFailedAt?" · "+admRel(u.stripePaymentFailedAt):""}. Stripe reintenta solo; si no paga, se cancela.`,acciones:<><Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cliente</Btn>{u.stripeCustomerId&&<a href={`https://dashboard.stripe.com/customers/${u.stripeCustomerId}`} target="_blank" rel="noreferrer" style={{fontSize:12,color:T.accent,fontWeight:600,textDecoration:"none",padding:"5px 8px"}}>Abrir en Stripe</a>}</>}));
+  pagosPendientes.forEach(p=>{ const u=usuarios.find(x=>x._id===p.uid);
+    items.push({k:"pago_"+p._id,sev:"red",tipo:"Pago manual",titulo:u?.email||p.email||p.uid,desc:`${admPlanLabel(p.plan)}${p.periodo==="anual"?" anual":""} · ${p.amount>0?"$"+p.amount+" "+(p.currency||""):""} ${admPagoMetodo(p)}${p.transferRef?" · ref "+p.transferRef:""}${p.txHash?" · tx "+String(p.txHash).slice(0,10)+"…":""} · ${admFecha(p.createdAt,true)}`,
+      acciones:<>{p.tieneComprobante&&<AdmBtn T={T} variant="secondary" size="sm" onClick={()=>verComprobante(p)}>Comprobante</AdmBtn>}<AdmSelect T={T} value={confirmMeses[p._id]||String(p.meses||1)} onChange={e=>setConfirmMeses(prev=>({...prev,[p._id]:e.target.value}))}>{["1","2","3","6","12"].map(m=><option key={m} value={m}>{m} m</option>)}</AdmSelect><AdmBtn T={T} variant="primary" size="sm" onClick={()=>confirmarPago(p)}>Confirmar</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>rechazarPago(p._id)}>Rechazar</AdmBtn></>});
   });
-  pruebasPorVencer.forEach(u=>items.push({k:"pr_"+u._id,sev:"yellow",tipo:"Prueba por vencer",titulo:u.email,desc:`${admPlanLabel(u.plan)} de prueba vence ${admDias(u.planExpiry)===0?"hoy":"en "+admDias(u.planExpiry)+" días"} y no pagó. Buen momento para escribirle.`,acciones:<><Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cuenta</Btn></>}));
-  churn.forEach(u=>items.push({k:"ch_"+u._id,sev:"yellow",tipo:"Vencida sin renovar",titulo:u.email,desc:`${admPlanLabel(u.plan)} venció hace ${Math.abs(admDias(u.planExpiry))} días${u.stripeStatus==="canceled"?" · canceló en Stripe":""}. Riesgo de pérdida.`,acciones:<><Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cuenta</Btn></>}));
+  pruebasPorVencer.forEach(u=>items.push({k:"pr_"+u._id,sev:"yellow",tipo:"Prueba por vencer",titulo:u.email,desc:`${admPlanLabel(u.plan)} de prueba vence ${admDias(u.planExpiry)===0?"hoy":"en "+admDias(u.planExpiry)+" días"} y no pagó. Buen momento para escribirle.`,acciones:<Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cliente</Btn>}));
+  churn.forEach(u=>items.push({k:"ch_"+u._id,sev:"yellow",tipo:"Vencida sin renovar",titulo:u.email,desc:`${admPlanLabel(u.plan)} venció hace ${Math.abs(admDias(u.planExpiry))} días${u.stripeStatus==="canceled"?" · canceló en Stripe":""}. Riesgo de pérdida.`,acciones:<Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cliente</Btn>}));
+  items.sort((a,b)=>(a.sev==="red"?0:1)-(b.sev==="red"?0:1));
   const recent=[...pagos].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,10);
-  const metodo=p=>p.isTrial?"prueba":p.method==="stripe"?"tarjeta":p.method==="cripto"?"USDT":p.method==="credito"?"crédito":p.method==="prueba"?"prueba":"transferencia";
+  const act=usuarios.filter(activaPaga); const total=act.length||1;
   return (
     <>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:16}}>
-        {kpis.map(k=>(
-          <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:4}}>
-            <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{width:7,height:7,borderRadius:"50%",background:k.n?k.color:T.border,flexShrink:0}}/><span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{k.label}</span></div>
-            <div style={{fontSize:20,fontWeight:800,color:k.n?T.text:T.textSm,letterSpacing:-0.5,lineHeight:1.2,fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
-            <div style={{fontSize:11,color:T.textSm,lineHeight:1.4}}>{k.sub}</div>
-          </div>
-        ))}
+        <AdmKpi T={T} label="MRR" val={admUsd(stats.mrr||0)} sub={`${stats.mrrStripe?admUsd(stats.mrrStripe)+" por Stripe":"Sin cobros por Stripe"}${stats.mrrManual?" · "+admUsd(stats.mrrManual)+" manual":""}`} color={T.green} n={stats.mrr}/>
+        <AdmKpi T={T} label="Clientes pagos" val={String(stats.pagas||0)} sub={`${stats.pruebas||0} en prueba · ${stats.totalUsuarios||0} cuentas en total`} color={T.blue} n={stats.pagas}/>
+        <AdmKpi T={T} label="Pagos fallidos" val={String(pastDue.length)} sub={pastDue.length?"Stripe no pudo cobrar la renovación":"Ninguna tarjeta rechazada"} color={T.red} n={pastDue.length}/>
+        <AdmKpi T={T} label="Vencen en 7 días" val={String(vencenProximos.length)} sub={vencenProximos.length?`${vencenProximos.filter(u=>u.stripeStatus==="active"&&!u.cancelAtPeriodEnd).length} se renuevan solas por Stripe`:"Sin vencimientos próximos"} color={T.yellow} n={vencenProximos.length}/>
+        <AdmKpi T={T} label={`Ingresos de ${mesLabel.split(" ")[0].toLowerCase()}`} val={admUsd(ingUsd)} sub={`${ingresosMes.length} pago${ingresosMes.length===1?"":"s"} · ${nuevasMes} nueva${nuevasMes===1?"":"s"} · ${altasMes} alta${altasMes===1?"":"s"}`} color={T.accent} n={ingUsd}/>
       </div>
       <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(280px,1fr)",gap:16,alignItems:"start"}}>
         <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
           <Card T={T} padding="lg">
-            {cardTitle("Requiere tu atención", items.length?`${items.length} pendiente${items.length===1?"":"s"}, lo urgente primero.`:"Nada pendiente.", items.length>0&&chip(`${items.length}`,T.red))}
-            {items.length===0?(
-              <div style={{padding:"18px 0",textAlign:"center",fontSize:13,color:T.textSm}}>Todo al día. Las cargas de saldo, los pagos fallidos y las pruebas por vencer aparecen acá.</div>
-            ):(
+            <AdmTitulo T={T} t="Requiere tu atención" sub={items.length?`${items.length} pendiente${items.length===1?"":"s"}, lo urgente primero.`:"Nada pendiente."} right={items.length>0&&<DSBadge T={T} color={T.red} size="sm">{items.length}</DSBadge>}/>
+            {items.length===0?<AdmVacio T={T} titulo="Todo al día" sub="Las cargas de saldo, los pagos fallidos y las pruebas por vencer aparecen acá."/>:(
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {items.sort((a,b)=>(a.sev==="red"?0:1)-(b.sev==="red"?0:1)).map(it=>(
+                {items.map(it=>(
                   <div key={it.k} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",background:T.surface,border:`1px solid ${T.borderL}`,borderLeft:`3px solid ${it.sev==="red"?T.red:T.yellow}`,borderRadius:8,flexWrap:"wrap"}}>
                     <div style={{flex:1,minWidth:200}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>{chip(it.tipo,it.sev==="red"?T.red:T.yellow)}<span style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.titulo}</span></div>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}><DSBadge T={T} color={it.sev==="red"?T.red:T.yellow} size="sm">{it.tipo}</DSBadge><span style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.titulo}</span></div>
                       <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>{it.desc}</div>
                     </div>
                     <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0,flexWrap:"wrap"}}>{it.acciones}</div>
@@ -15405,16 +15370,16 @@ function AdmResumen({ctx, stats, usuarios, pagos, pagosReales, pagosPendientes, 
             )}
           </Card>
           <Card T={T} padding="lg">
-            {cardTitle("Actividad reciente","Últimos movimientos de suscripciones.")}
-            {recent.length===0?<div style={{fontSize:12,color:T.textSm}}>Sin movimientos todavía.</div>:(
-              <div style={{display:"flex",flexDirection:"column"}}>
-                {recent.map((p,i)=>{ const u=usuarios.find(x=>x._id===p.uid); const est=p.estado; return (
+            <AdmTitulo T={T} t="Actividad reciente" sub="Últimos movimientos de suscripciones."/>
+            {recent.length===0?<AdmVacio T={T} titulo="Sin movimientos todavía"/>:(
+              <div>
+                {recent.map((p,i)=>{ const u=usuarios.find(x=>x._id===p.uid); const est=admPagoEstado(p); return (
                   <div key={p._id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<recent.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap",fontSize:12}}>
-                    <span style={{width:6,height:6,borderRadius:"50%",background:p.isTrial?T.yellow:est==="confirmado"?T.green:est==="rechazado"?T.red:T.textSm,flexShrink:0}}/>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:p.isTrial?T.yellow:p.estado==="confirmado"?T.green:p.estado==="rechazado"?T.red:T.textSm,flexShrink:0}}/>
                     <span style={{flex:1,minWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u?cuentaBtn(u):<span style={{color:T.text}}>{p.email||p.uid}</span>}</span>
-                    {chip(admPlanLabel(p.plan),admPlanColor(T,p.plan))}
-                    <span style={{color:T.textMd}}>{p.isTrial?"prueba":`${admUsd(p.amount).replace("US$ ",esUsd(p)?"US$ ":"$")}${esUsd(p)?"":" "+p.currency} · ${metodo(p)}${p.billingReason==="subscription_create"?" · alta":p.billingReason==="subscription_cycle"?" · renovación":""}`}</span>
-                    <span style={{color:est==="confirmado"?T.green:est==="pendiente"?T.yellow:T.red,fontWeight:600}}>{p.isTrial?"otorgada":est}</span>
+                    <DSBadge T={T} color={admPlanColor(T,p.plan)} size="sm">{admPlanLabel(p.plan)}</DSBadge>
+                    <span style={{color:T.textMd}}>{p.isTrial?"prueba":`${esUsd(p)?admUsd(p.amount):"$"+p.amount+" "+p.currency} · ${admPagoMetodo(p)}${admPagoTipo(p)?" · "+admPagoTipo(p):""}`}</span>
+                    <span style={{color:p.estado==="confirmado"?T.green:p.estado==="pendiente"?T.yellow:T.red,fontWeight:600}}>{est}</span>
                     <span style={{color:T.textSm,whiteSpace:"nowrap"}}>{admFecha(p.createdAt)}</span>
                   </div>
                 );})}
@@ -15424,38 +15389,29 @@ function AdmResumen({ctx, stats, usuarios, pagos, pagosReales, pagosPendientes, 
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
           <Card T={T} padding="lg">
-            {cardTitle("Vencen esta semana", vencenProximos.length?"Por Stripe se renuevan solas; las manuales hay que cobrarlas.":"Sin vencimientos en los próximos 7 días.")}
-            {vencenProximos.length>0&&(
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {vencenProximos.sort((a,b)=>(a.planExpiry||0)-(b.planExpiry||0)).slice(0,12).map(u=>{ const d=admDias(u.planExpiry); const auto=u.stripeStatus==="active"&&!u.cancelAtPeriodEnd; return (
-                  <div key={u._id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                    <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cuentaBtn(u)}</span>
-                    {chip(admPlanLabel(u.plan),admPlanColor(T,u.plan))}
-                    <span style={{color:d<=2?T.red:T.yellow,whiteSpace:"nowrap",fontWeight:600}}>{d===0?"hoy":`${d} d`}</span>
-                    <span style={{fontSize:10,color:auto?T.green:T.textSm,whiteSpace:"nowrap"}}>{auto?"Stripe":u.isTrial?"prueba":"manual"}</span>
-                  </div>
-                );})}
-              </div>
-            )}
+            <AdmTitulo T={T} t="Vencen esta semana" sub={vencenProximos.length?"Por Stripe se renuevan solas; las manuales hay que cobrarlas.":"Sin vencimientos en los próximos 7 días."}/>
+            {vencenProximos.length>0&&<div style={{display:"flex",flexDirection:"column"}}>
+              {vencenProximos.sort((a,b)=>(a.planExpiry||0)-(b.planExpiry||0)).slice(0,12).map(u=>{ const d=admDias(u.planExpiry); const auto=u.stripeStatus==="active"&&!u.cancelAtPeriodEnd; return (
+                <div key={u._id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                  <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cuentaBtn(u)}</span>
+                  <DSBadge T={T} color={admPlanColor(T,u.plan)} size="sm">{admPlanLabel(u.plan)}</DSBadge>
+                  <span style={{color:d<=2?T.red:T.yellow,whiteSpace:"nowrap",fontWeight:600}}>{d===0?"hoy":`${d} d`}</span>
+                  <span style={{fontSize:10,color:auto?T.green:T.textSm,whiteSpace:"nowrap"}}>{auto?"Stripe":u.isTrial?"prueba":"manual"}</span>
+                </div>
+              );})}
+            </div>}
           </Card>
           <Card T={T} padding="lg">
-            {cardTitle("Suscripciones","Cómo se reparten las cuentas activas.")}
-            {(()=>{
-              const act=usuarios.filter(activaPaga);
-              const porPlan=["plus","medio","facturador"].map(p=>({p,n:act.filter(u=>(u.plan==="full"?"plus":u.plan)===p).length}));
-              const total=act.length||1;
-              return (
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {porPlan.map(x=>(
-                    <div key={x.p}>
-                      <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span style={{color:T.text,fontWeight:600}}>{ADM_PRECIOS[x.p].nombre}</span><span style={{color:T.textMd}}>{x.n} · {admUsd(x.n*ADM_PRECIOS[x.p].mensual)}/mes lista</span></div>
-                      <div style={{height:6,borderRadius:3,background:T.surface,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.round(x.n/total*100)}%`,background:admPlanColor(T,x.p),borderRadius:3}}/></div>
-                    </div>
-                  ))}
-                  <div style={{fontSize:11,color:T.textSm,marginTop:4,lineHeight:1.5}}>{stats.cancelan?`${stats.cancelan} cancela${stats.cancelan===1?"":"n"} al terminar el período. `:""}{stats.pruebas?`${stats.pruebas} en prueba otorgada.`:""}</div>
+            <AdmTitulo T={T} t="Suscripciones" sub="Cómo se reparten los clientes activos."/>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {["plus","medio","facturador"].map(p=>{ const n=act.filter(u=>(u.plan==="full"?"plus":u.plan)===p).length; return (
+                <div key={p}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span style={{color:T.text,fontWeight:600}}>{ADM_PRECIOS[p].nombre}</span><span style={{color:T.textMd}}>{n} · {admUsd(n*ADM_PRECIOS[p].mensual)}/mes lista</span></div>
+                  <div style={{height:6,borderRadius:3,background:T.surface,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.round(n/total*100)}%`,background:admPlanColor(T,p),borderRadius:3}}/></div>
                 </div>
-              );
-            })()}
+              );})}
+              <div style={{fontSize:11,color:T.textSm,marginTop:4,lineHeight:1.5}}>{stats.cancelan?`${stats.cancelan} cancela${stats.cancelan===1?"":"n"} al terminar el período. `:""}{stats.pruebas?`${stats.pruebas} en prueba otorgada.`:""}</div>
+            </div>
           </Card>
         </div>
       </div>
@@ -15463,109 +15419,79 @@ function AdmResumen({ctx, stats, usuarios, pagos, pagosReales, pagosPendientes, 
   );
 }
 
-// ── Cuentas (tabla) ──────────────────────────────────────────────────────────
-function AdmCuentas({ctx, cardTitle, chip, cuentaBtn, iS, loadData}) {
-  const {T, usuarios, ultPagoPorUid, adminApi, setCuenta} = ctx;
-  const [filtro,setFiltro]=useState("todas");
-  const [q,setQ]=useState("");
-  const [orden,setOrden]=useState("atencion");
-  const [limite,setLimite]=useState(50);
-  const [diag,setDiag]=useState(null);
+// ── Clientes (tabla ordenable + tarjetas en mobile) ──────────────────────────
+function AdmClientes({ctx}) {
+  const {T, usuarios, ultPagoPorUid, usuariosPorUid, adminApi, setCuenta, etiquetasMes, loadData} = ctx;
+  const [filtro,setFiltro]=useState("todas"); const [q,setQ]=useState(""); const [orden,setOrden]=useState({k:"atencion",d:1}); const [limite,setLimite]=useState(50); const [diag,setDiag]=useState(null);
   const ahora=Date.now();
   const inactiva=u=>!u.ultimoLogin||ahora-u.ultimoLogin>30*86400000;
-  const FILTROS=[
-    ["todas","Todas",u=>true],
-    ["pagas","Pagas",u=>admEstado(T,u).id==="paga"||admEstado(T,u).id==="cancela"],
-    ["plus","Pro",u=>(u.plan==="plus"||u.plan==="full")&&!u.isTrial],
-    ["medio","Intermedio",u=>u.plan==="medio"&&!u.isTrial],
-    ["facturador","Facturador",u=>u.plan==="facturador"&&!u.isTrial],
-    ["prueba","En prueba",u=>u.isTrial&&(u.plan||"free")!=="free"],
-    ["vencidas","Vencidas",u=>["vencida","prueba_vencida"].includes(admEstado(T,u).id)],
-    ["past_due","Pago fallido",u=>u.stripeStatus==="past_due"],
-    ["free","Sin plan",u=>(u.plan||"free")==="free"],
-    ["inactivas","Inactivas 30 d",u=>inactiva(u)],
-    ["admins","Admins",u=>u.isAdmin],
-  ];
+  const FILTROS=[["todas","Todas",u=>true],["pagas","Pagas",u=>["paga","cancela"].includes(admEstado(T,u).id)],["plus","Pro",u=>(u.plan==="plus"||u.plan==="full")&&!u.isTrial],["medio","Intermedio",u=>u.plan==="medio"&&!u.isTrial],["facturador","Facturador",u=>u.plan==="facturador"&&!u.isTrial],["prueba","En prueba",u=>u.isTrial&&(u.plan||"free")!=="free"],["vencidas","Vencidas",u=>["vencida","prueba_vencida"].includes(admEstado(T,u).id)],["past_due","Pago fallido",u=>u.stripeStatus==="past_due"],["free","Sin plan",u=>(u.plan||"free")==="free"],["inactivas","Inactivas 30 d",u=>inactiva(u)],["logistica","Con etiquetas",u=>(etiquetasMes[u._id]?.etiquetas||0)>0],["admins","Admins",u=>u.isAdmin]];
   const conteo=Object.fromEntries(FILTROS.map(([id,,fn])=>[id,usuarios.filter(fn).length]));
   const fn=FILTROS.find(f=>f[0]===filtro)?.[2]||(()=>true);
   const qq=q.trim().toLowerCase();
   const rank=u=>{ const e=admEstado(T,u).id; return e==="past_due"?0:e==="vencida"?1:e==="prueba_vencida"?2:e==="cancela"?3:e==="prueba"?4:e==="paga"?5:e==="trial"?6:7; };
+  const etq=u=>etiquetasMes[u._id]?.etiquetas||0;
+  const COLS=[["cuenta","Cuenta",u=>(u.email||"").toLowerCase()],["plan","Plan",u=>admPlanLabel(u.plan)],["estado","Estado",u=>rank(u)],["origen","Origen",u=>admOrigen(u,ultPagoPorUid[u._id]).label],["vence","Vence",u=>u.planExpiry||9e15],["login","Último login",u=>-(u.ultimoLogin||0)],["integr","Integraciones",u=>-((u.stores||[]).length+(u.cuits?1:0)+(u.metaAccounts?1:0))],["etq","Etiquetas mes",u=>-etq(u)]];
   const lista=usuarios.filter(fn).filter(u=>!qq||(u.email||"").toLowerCase().includes(qq)||(u.nombre||"").toLowerCase().includes(qq)||u._id===q.trim()||(u.stores||[]).some(s=>(s.name||"").toLowerCase().includes(qq)))
-    .sort((a,b)=>{
-      if(orden==="atencion"){ const r=rank(a)-rank(b); if(r) return r; return (a.planExpiry||9e15)-(b.planExpiry||9e15); }
-      if(orden==="login") return (b.ultimoLogin||0)-(a.ultimoLogin||0);
-      if(orden==="alta") return (b.createdAt||0)-(a.createdAt||0);
-      if(orden==="vence") return (a.planExpiry||9e15)-(b.planExpiry||9e15);
-      return (a.email||"").localeCompare(b.email||"");
-    });
+    .sort((a,b)=>{ if(orden.k==="atencion"){ const r=rank(a)-rank(b); if(r) return r; return (a.planExpiry||9e15)-(b.planExpiry||9e15); } const col=COLS.find(c=>c[0]===orden.k); if(!col) return 0; const va=col[2](a), vb=col[2](b); const r=typeof va==="string"?va.localeCompare(vb):(va-vb); return r*orden.d; });
   const integr=u=>[...(u.stores||[]).map(s=>s.type),...(u.cuits?["arca"]:[]),...(u.metaAccounts?["meta"]:[])];
   function exportar(){
-    const filas=[["Email","Nombre","Plan","Estado","Origen","Vence","Último login","Alta","Integraciones","Miembros","Stripe","Cancela al vencer","Referido por","Crédito referidos USD","Nota"]];
-    lista.forEach(u=>filas.push([u.email,u.nombre,admPlanLabel(u.plan),admEstado(T,u).label,admOrigen(u,ultPagoPorUid[u._id]).label,u.planExpiry?admFecha(u.planExpiry):"",u.ultimoLogin?admFecha(u.ultimoLogin):"",u.createdAt?admFecha(u.createdAt):"",integr(u).join(" "),(u.teamMembers||[]).length,u.stripeStatus||"",u.cancelAtPeriodEnd?"sí":"",u.refBy?(ctx.usuariosPorUid[u.refBy]?.email||u.refBy):"",u.refCreditUsd||0,u.adminNote||""]));
-    admCsvDescargar(`growith-cuentas-${new Date().toISOString().slice(0,10)}.csv`,filas);
+    const filas=[["Email","Nombre","Plan","Estado","Origen","Vence","Último login","Alta","Integraciones","Etiquetas mes","Miembros","Stripe","Cancela al vencer","Referido por","Crédito referidos USD","Nota"]];
+    lista.forEach(u=>filas.push([u.email,u.nombre,admPlanLabel(u.plan),admEstado(T,u).label,admOrigen(u,ultPagoPorUid[u._id]).label,u.planExpiry?admFecha(u.planExpiry):"",u.ultimoLogin?admFecha(u.ultimoLogin):"",u.createdAt?admFecha(u.createdAt):"",integr(u).join(" "),etq(u),(u.teamMembers||[]).length,u.stripeStatus?admStripeLabel(u.stripeStatus):"",u.cancelAtPeriodEnd?"sí":"",u.refBy?(usuariosPorUid[u.refBy]?.email||u.refBy):"",u.refCreditUsd||0,u.adminNote||""]));
+    admCsvDescargar(`growith-clientes-${new Date().toISOString().slice(0,10)}.csv`,filas);
   }
-  const cols="minmax(200px,2fr) 90px 110px 100px 95px 100px 90px 60px";
+  const cols="minmax(200px,2fr) 90px 110px 100px 95px 100px 90px 70px";
+  const th=(k,l,right)=>{ const on=orden.k===k; return <button key={k} onClick={()=>setOrden(o=>o.k===k?{k,d:-o.d}:{k,d:1})} style={{background:"transparent",border:"none",padding:0,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,color:on?T.accent:T.textSm,textAlign:right?"right":"left",display:"flex",justifyContent:right?"flex-end":"flex-start",gap:3}}>{l}{on&&<span style={{fontSize:9}}>{orden.d>0?"asc":"desc"}</span>}</button>; };
+  const venceTxt=u=>{ const d=admDias(u.planExpiry); return (u.plan||"free")==="free"||!u.planExpiry?"—":d<0?`hace ${Math.abs(d)} d`:d===0?"hoy":`${d} d`; };
+  const venceColor=u=>{ const d=admDias(u.planExpiry); return d===null||(u.plan||"free")==="free"?T.textSm:d<0?T.red:d<=7?T.yellow:T.textMd; };
   return (
     <Card T={T} padding="lg">
-      {cardTitle("Cuentas",`${lista.length} de ${usuarios.length}`,(
-        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-          <select value={orden} onChange={e=>setOrden(e.target.value)} style={{...iS,width:"auto",marginBottom:0,padding:"6px 10px",fontSize:12}}>
-            <option value="atencion">Orden: requiere atención</option><option value="login">Orden: último login</option><option value="alta">Orden: alta más reciente</option><option value="vence">Orden: vencimiento</option><option value="email">Orden: email</option>
-          </select>
-          <Btn T={T} variant="secondary" size="sm" onClick={exportar}>Exportar CSV</Btn>
-        </div>
-      ))}
-      <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
-        <input style={{...iS,fontSize:13,flex:1,minWidth:200,maxWidth:360,marginBottom:0}} placeholder="Buscar por email, nombre, tienda o uid" value={q} onChange={e=>{setQ(e.target.value);setLimite(50);}}/>
-      </div>
+      <AdmTitulo T={T} t="Clientes" sub={`${lista.length} de ${usuarios.length}`} right={<><AdmSelect T={T} value={orden.k} onChange={e=>setOrden({k:e.target.value,d:1})}><option value="atencion">Orden: requiere atención</option>{COLS.map(c=><option key={c[0]} value={c[0]}>Orden: {c[1].toLowerCase()}</option>)}</AdmSelect><Btn T={T} variant="secondary" size="sm" onClick={exportar}>Exportar CSV</Btn></>}/>
+      <AdmInput T={T} value={q} onChange={e=>{setQ(e.target.value);setLimite(50);}} placeholder="Buscar por email, nombre, tienda o uid" style={{maxWidth:380,marginBottom:10,fontSize:13}}/>
       <div className="no-scrollbar" style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto",paddingBottom:2}}>
         {FILTROS.map(([id,label])=>(
-          <button key={id} onClick={()=>{setFiltro(id);setLimite(50);}} style={{padding:"5px 11px",borderRadius:DS.r.full,fontSize:12,border:`1px solid ${filtro===id?T.accentSolid+"66":T.border}`,background:filtro===id?T.accentSolid+"18":"transparent",color:filtro===id?T.accent:T.textMd,fontWeight:filtro===id?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
-            {label} <span style={{opacity:0.7,fontSize:11}}>{conteo[id]}</span>
-          </button>
+          <button key={id} onClick={()=>{setFiltro(id);setLimite(50);}} style={{padding:"5px 11px",borderRadius:DS.r.full,fontSize:12,border:`1px solid ${filtro===id?T.accentSolid+"66":T.border}`,background:filtro===id?T.accentSolid+"18":"transparent",color:filtro===id?T.accent:T.textMd,fontWeight:filtro===id?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>{label} <span style={{opacity:0.7,fontSize:11}}>{conteo[id]}</span></button>
         ))}
       </div>
       {lista.length===0?(
-        <div style={{textAlign:"center",padding:32,color:T.textSm,fontSize:13}}>
-          <div style={{marginBottom:10}}>Sin cuentas en este filtro.</div>
-          {q.includes("@")&&<AsyncButton onClick={async()=>{ setDiag(null); const d=await adminApi({action:"adminBuscarCuenta",email:q.trim()}); setDiag({email:q.trim(),...d}); if(d?.creoDoc) loadData(true); }} style={{...BtnSecondary(T),fontSize:12}}>Buscar este email en Firebase Auth</AsyncButton>}
-        </div>
-      ):(
-        <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto"}}>
+        <AdmVacio T={T} titulo="Sin cuentas en este filtro" sub={q.includes("@")?"Si el cliente dice que se registró y no aparece, buscalo en Firebase Auth.":""}/>
+      ):(<>
+        <div className="hide-mobile" style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto"}}>
           <div style={{minWidth:900}}>
-            <div style={{display:"grid",gridTemplateColumns:cols,gap:10,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
-              <span>Cuenta</span><span>Plan</span><span>Estado</span><span>Origen</span><span>Vence</span><span>Último login</span><span>Integraciones</span><span style={{textAlign:"right"}}>Equipo</span>
+            <div style={{display:"grid",gridTemplateColumns:cols,gap:10,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
+              {th("cuenta","Cuenta")}{th("plan","Plan")}{th("estado","Estado")}{th("origen","Origen")}{th("vence","Vence")}{th("login","Último login")}{th("integr","Integraciones")}{th("etq","Etiq. mes",true)}
             </div>
-            {lista.slice(0,limite).map((u,i)=>{
-              const est=admEstado(T,u); const org=admOrigen(u,ultPagoPorUid[u._id]); const d=admDias(u.planExpiry);
-              return (
-                <div key={u._id} onClick={()=>setCuenta(u._id)} style={{display:"grid",gridTemplateColumns:cols,gap:10,padding:"9px 12px",fontSize:12,borderBottom:i<Math.min(lista.length,limite)-1?`1px solid ${T.borderL}`:"none",alignItems:"center",cursor:"pointer"}}
-                  onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                  <span style={{minWidth:0}}>
-                    <span style={{display:"block",color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email||u.nombre||u._id}{u.isAdmin&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:4,background:T.purpleBg,color:T.purple,verticalAlign:"middle"}}>ADMIN</span>}</span>
-                    <span style={{display:"block",fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.nombre&&u.nombre!==u.email?u.nombre:""}{u._sinDoc?" · sin registro completo":""}{u.adminNote?" · nota":""}</span>
-                  </span>
-                  <span>{chip(admPlanLabel(u.plan),admPlanColor(T,u.plan))}</span>
-                  <span>{chip(est.label,est.color)}</span>
-                  <span style={{color:T.textMd}}>{org.label}</span>
-                  <span style={{color:d===null||(u.plan||"free")==="free"?T.textSm:d<0?T.red:d<=7?T.yellow:T.textMd,whiteSpace:"nowrap"}}>{(u.plan||"free")==="free"||!u.planExpiry?"—":d<0?`hace ${Math.abs(d)} d`:d===0?"hoy":`${d} d`}</span>
-                  <span style={{color:inactiva(u)?T.textSm:T.textMd,whiteSpace:"nowrap"}}>{admRel(u.ultimoLogin)}</span>
-                  <span style={{display:"flex",gap:4,alignItems:"center"}}>{integr(u).length===0?<span style={{color:T.textSm}}>—</span>:integr(u).slice(0,4).map((t,k)=><span key={k} title={t} style={{display:"inline-flex"}}><BrandIcon name={t} size={14}/></span>)}</span>
-                  <span style={{textAlign:"right",color:(u.teamMembers||[]).length?T.textMd:T.textSm}}>{(u.teamMembers||[]).length||"—"}</span>
-                </div>
-              );
-            })}
+            {lista.slice(0,limite).map((u,i)=>{ const est=admEstado(T,u); const org=admOrigen(u,ultPagoPorUid[u._id]); return (
+              <div key={u._id} onClick={()=>setCuenta(u._id)} style={{display:"grid",gridTemplateColumns:cols,gap:10,padding:"9px 12px",fontSize:12,borderBottom:i<Math.min(lista.length,limite)-1?`1px solid ${T.borderL}`:"none",alignItems:"center",cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <span style={{minWidth:0}}>
+                  <span style={{display:"block",color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email||u.nombre||u._id}{u.isAdmin&&<span style={{marginLeft:6,verticalAlign:"middle"}}><DSBadge T={T} color={T.purple} size="sm">Admin</DSBadge></span>}</span>
+                  <span style={{display:"block",fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.nombre&&u.nombre!==u.email?u.nombre:""}{u._sinDoc?" · sin registro completo":""}{u.adminNote?" · nota":""}</span>
+                </span>
+                <span><DSBadge T={T} color={admPlanColor(T,u.plan)} size="sm">{admPlanLabel(u.plan)}</DSBadge></span>
+                <span><DSBadge T={T} color={est.color} size="sm">{est.label}</DSBadge></span>
+                <span style={{color:T.textMd}}>{org.label}</span>
+                <span style={{color:venceColor(u),whiteSpace:"nowrap"}}>{venceTxt(u)}</span>
+                <span style={{color:inactiva(u)?T.textSm:T.textMd,whiteSpace:"nowrap"}}>{admRel(u.ultimoLogin)}</span>
+                <span style={{display:"flex",gap:4,alignItems:"center"}}>{integr(u).length===0?<span style={{color:T.textSm}}>—</span>:integr(u).slice(0,4).map((t,k)=><span key={k} title={t} style={{display:"inline-flex"}}><BrandIcon name={t} size={14}/></span>)}</span>
+                <span style={{textAlign:"right",color:etq(u)?T.text:T.textSm,fontWeight:etq(u)?600:400}}>{etq(u)||"—"}</span>
+              </div>
+            );})}
           </div>
         </div>
-      )}
+        <div className="mobile-only" style={{flexDirection:"column",gap:8}}>
+          {lista.slice(0,limite).map(u=>{ const est=admEstado(T,u); return (
+            <div key={u._id} onClick={()=>setCuenta(u._id)} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px",cursor:"pointer"}}>
+              <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email||u.nombre}</div>
+              <div style={{display:"flex",gap:6,alignItems:"center",marginTop:5,flexWrap:"wrap",fontSize:11,color:T.textSm}}><DSBadge T={T} color={admPlanColor(T,u.plan)} size="sm">{admPlanLabel(u.plan)}</DSBadge><DSBadge T={T} color={est.color} size="sm">{est.label}</DSBadge><span>vence {venceTxt(u)}</span><span>· login {admRel(u.ultimoLogin)}</span></div>
+            </div>
+          );})}
+        </div>
+      </>)}
+      {q.includes("@")&&lista.length===0&&<div style={{textAlign:"center",marginTop:8}}><AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ setDiag(null); const d=await adminApi({action:"adminBuscarCuenta",email:q.trim()}); setDiag({email:q.trim(),...d}); if(d?.creoDoc) loadData(true); }}>Buscar este email en Firebase Auth</AdmBtn></div>}
       {diag&&(
         <div style={{background:T.surface,border:`1px solid ${diag.encontrado?T.green+"55":T.yellow+"55"}`,borderRadius:10,padding:"10px 14px",marginTop:12,fontSize:12,color:T.text,lineHeight:1.7}}>
           <div style={{fontWeight:700}}>{diag.email}</div>
-          {diag.encontrado?<>
-            <div>Registrada en Firebase Auth {diag.creado?`el ${new Date(diag.creado).toLocaleDateString("es-AR")}`:""} {diag.providers?.length?`· acceso: ${diag.providers.join(", ").replace("password","email/contraseña").replace("google.com","Google")}`:""}</div>
-            <div>Último login: {diag.ultimoLogin?new Date(diag.ultimoLogin).toLocaleDateString("es-AR"):"nunca"} · plan actual: {admPlanLabel(diag.plan)}</div>
-            {diag.creoDoc&&<div style={{color:T.green,fontWeight:600}}>No tenía ficha en la base. Se creó recién: ya aparece en la lista.</div>}
-          </>:<div style={{color:T.yellow}}>{diag.motivo||"No encontrada."}</div>}
+          {diag.encontrado?<><div>Registrada en Firebase Auth {diag.creado?`el ${new Date(diag.creado).toLocaleDateString("es-AR")}`:""} {diag.providers?.length?`· acceso: ${diag.providers.join(", ").replace("password","email/contraseña").replace("google.com","Google")}`:""}</div><div>Último login: {diag.ultimoLogin?new Date(diag.ultimoLogin).toLocaleDateString("es-AR"):"nunca"} · plan actual: {admPlanLabel(diag.plan)}</div>{diag.creoDoc&&<div style={{color:T.green,fontWeight:600}}>No tenía ficha en la base. Se creó recién: ya aparece en la lista.</div>}</>:<div style={{color:T.yellow}}>{diag.motivo||"No encontrada."}</div>}
           <button onClick={()=>setDiag(null)} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:11,padding:0,marginTop:4,fontFamily:"'Inter',system-ui,sans-serif"}}>Cerrar</button>
         </div>
       )}
@@ -15574,293 +15500,332 @@ function AdmCuentas({ctx, cardTitle, chip, cuentaBtn, iS, loadData}) {
   );
 }
 
-// ── Ficha de cuenta (drawer) ─────────────────────────────────────────────────
-function AdmFicha({ctx, u, onClose, iS, lbl, chip, confirmarPago, rechazarPago}) {
-  const {T, founder, pagos, usuariosPorUid, ultPagoPorUid, envCfg, adminApi, gestionarPlan, ajustarDias, desactivarPlan, saveNote, toggleAdmin, toggleEnviosSaldo, verComoCliente} = ctx;
+
+// ── Ficha de cliente (pantalla propia) ───────────────────────────────────────
+function AdmFichaEnvios({ctx, u}) {
+  const {T} = ctx;
+  const [st,setSt]=useState({loading:true,data:null,error:""});
+  const [q,setQ]=useState(""); const [filtro,setFiltro]=useState("todos"); const [fuente,setFuente]=useState("todas"); const [limite,setLimite]=useState(40);
+  const [trazas,setTrazas]=useState(null);
+  async function load(){ setSt(s=>({...s,loading:true,error:""})); try{ const d=await admAndreani("admin_envios",{uid:u._id,dias:90}); setSt({loading:false,data:d,error:""}); }catch(e){ setSt({loading:false,data:null,error:e.message}); } }
+  useEffect(()=>{ load(); },[u._id]);
+  const envios=st.data?.envios||[];
+  const api=envios.filter(e=>e.andreani?.numeroDeEnvio); const excelN=envios.length-api.length;
+  const gasto=api.reduce((s,e)=>s+(e.andreani?.precio||0),0);
+  const problemas=envios.filter(e=>e.problema);
+  const porCat={}; envios.forEach(e=>{ const k=admCatDe(e); porCat[k]=(porCat[k]||0)+1; });
+  const qq=q.trim().toLowerCase();
+  const lista=envios.filter(e=>fuente==="todas"||(fuente==="api"?!!e.andreani?.numeroDeEnvio:!e.andreani?.numeroDeEnvio)).filter(e=>filtro==="todos"||(filtro==="problema"?!!e.problema:admCatDe(e)===filtro))
+    .filter(e=>!qq||String(e.numero||"").includes(qq)||String(e.andreani?.numeroDeEnvio||e.tracking||"").includes(qq)||(e.cliente||"").toLowerCase().includes(qq)||(e.localidad||"").toLowerCase().includes(qq));
+  const col=k=>{ const c=(ADM_CAT[k]||ADM_CAT.desconocido)[1]; return c==="textSm"?T.textSm:T[c]; };
+  function exportar(){
+    const filas=[["Pedido","Fecha","Destinatario","Localidad","Provincia","Tipo","Número de envío","Estado","Categoría","Costo","Despachado","Entregado","Problema"]];
+    lista.forEach(e=>filas.push([e.numero,e.creado?admFecha(admIso(e.creado)):"",e.cliente,e.localidad,e.provincia,e.esSucursal||e.andreani?.tipo==="sucursal"?"sucursal":"domicilio",e.andreani?.numeroDeEnvio||e.tracking||"",e.estadoAndreani||"",(ADM_CAT[admCatDe(e)]||[""])[0],e.andreani?.precio||"",e.despachadoAt?admFecha(admIso(e.despachadoAt)):"",e.entregadoAt?admFecha(admIso(e.entregadoAt)):"",e.problema?e.problema.msg:""]));
+    admCsvDescargar(`envios-${(u.email||u._id).replace(/[^a-z0-9]/gi,"_")}-${new Date().toISOString().slice(0,10)}.csv`,filas);
+  }
+  return (
+    <Card T={T} padding="lg">
+      <AdmTitulo T={T} t="Envíos · últimos 90 días" sub={st.data?`${envios.length} envío${envios.length===1?"":"s"} registrado${envios.length===1?"":"s"}${st.data.truncado?" (lista parcial: hay más de 4000)":""}.`:""} right={<><Btn T={T} variant="secondary" size="sm" onClick={exportar} disabled={!lista.length}>CSV</Btn><Btn T={T} variant="secondary" size="sm" onClick={load}>Actualizar</Btn></>}/>
+      {st.loading?<AdmSkeleton T={T} filas={6}/>
+      :st.error?<div style={{fontSize:12,color:T.red}}>{st.error}</div>
+      :(<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8,marginBottom:12}}>
+          {[["Por API",String(api.length),"etiquetas prepagas"],["Por Excel",String(excelN),"carga masiva"],["Gasto en etiquetas",fmtMoney(gasto),"90 días"],["Saldo",fmtMoney(st.data?.saldo||0),st.data?.habilitado?"prepago habilitado":"sin prepago"],["Con problema",String(problemas.length),problemas.length?"requieren atención":"todo en orden"]].map(([l,v,s])=>(
+            <div key={l} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 10px"}}><div style={{fontSize:10,color:T.textSm,fontWeight:600}}>{l}</div><div style={{fontSize:15,fontWeight:800,color:l==="Con problema"&&problemas.length?T.red:T.text}}>{v}</div><div style={{fontSize:10,color:T.textSm}}>{s}</div></div>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:8}}>
+          <AdmSeg T={T} value={fuente} onChange={v=>{setFuente(v);setLimite(40);}} opciones={[["todas",`Todas ${envios.length}`],["api",`Por API ${api.length}`],["excel",`Por Excel ${excelN}`]]}/>
+          <AdmInput T={T} value={q} onChange={e=>{setQ(e.target.value);setLimite(40);}} placeholder="Pedido, número de envío, destinatario o localidad" style={{flex:1,minWidth:200}}/>
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+          {Object.entries(porCat).sort((a,b)=>b[1]-a[1]).map(([k,n])=><button key={k} onClick={()=>setFiltro(filtro===k?"todos":k)} style={{background:filtro===k?col(k)+"18":"transparent",border:`1px solid ${filtro===k?col(k):T.border}`,borderRadius:DS.r.full,padding:"3px 9px",fontSize:11,color:col(k),fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{(ADM_CAT[k]||ADM_CAT.desconocido)[0]} {n}</button>)}
+          {problemas.length>0&&<button onClick={()=>setFiltro(filtro==="problema"?"todos":"problema")} style={{background:filtro==="problema"?T.red+"18":"transparent",border:`1px solid ${T.red}66`,borderRadius:DS.r.full,padding:"3px 9px",fontSize:11,color:T.red,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Con problema {problemas.length}</button>}
+        </div>
+        {lista.length===0?<AdmVacio T={T} titulo={envios.length?"Nada con ese filtro":"Sin envíos en los últimos 90 días"} sub={envios.length?"":"Solo se ven las etiquetas que pasaron por Growith (API o Excel registrado)."}/>:(
+          <div style={{border:`1px solid ${T.borderL}`,borderRadius:8,overflow:"hidden"}}>
+            {lista.slice(0,limite).map((e,i)=>{ const k=admCatDe(e); const num=e.andreani?.numeroDeEnvio||e.tracking; return (
+              <div key={e.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 10px",borderTop:i>0?`1px solid ${T.borderL}`:"none",fontSize:12,flexWrap:"wrap"}}>
+                <span style={{width:6,height:6,borderRadius:"50%",background:col(k),flexShrink:0}}/>
+                <div style={{flex:1,minWidth:180}}>
+                  <div style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>#{e.numero}{e.cliente?` · ${e.cliente}`:""}<span style={{color:T.textSm,fontWeight:400}}>{e.localidad?` · ${e.localidad}`:""}{e.esSucursal||e.andreani?.tipo==="sucursal"?" · sucursal":""}</span></div>
+                  <div style={{fontSize:10.5,color:T.textSm}}>{e.creado?admFecha(admIso(e.creado)):""}{e.estadoAndreani?` · ${e.estadoAndreani}`:""}{e.problema&&<span style={{color:e.problema.sev==="red"?T.red:T.orange,fontWeight:600}}> · {e.problema.msg}</span>}</div>
+                </div>
+                <DSBadge T={T} color={col(k)} size="sm">{(ADM_CAT[k]||ADM_CAT.desconocido)[0]}</DSBadge>
+                {e.andreani?.precio>0&&<span style={{color:T.textMd,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fmtMoney(e.andreani.precio)}</span>}
+                {num?<button onClick={()=>setTrazas(e)} title="Ver seguimiento" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 8px",fontSize:11,color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Cascadia Code','Consolas',monospace"}}>{num}</button>:<span style={{fontSize:10,color:T.textSm}}>sin número</span>}
+              </div>
+            );})}
+            {lista.length>limite&&<div style={{textAlign:"center",padding:8,borderTop:`1px solid ${T.borderL}`}}><Btn T={T} variant="secondary" size="sm" onClick={()=>setLimite(n=>n+40)}>Ver más ({lista.length-limite})</Btn></div>}
+          </div>
+        )}
+      </>)}
+      <AdmTrazasModal T={T} envio={trazas} onClose={()=>setTrazas(null)}/>
+    </Card>
+  );
+}
+
+function AdmFicha({ctx, u, onClose}) {
+  const {T, founder, pagos, usuariosPorUid, ultPagoPorUid, envCfg, adminApi, gestionarPlan, ajustarDias, desactivarPlan, saveNote, toggleAdmin, toggleEnviosSaldo, verComoCliente, confirmarPago, rechazarPago, user, actualizarUsuario} = ctx;
   const [plan,setPlan]=useState(u.plan==="facturador"||u.plan==="medio"?u.plan:"plus");
-  const [cant,setCant]=useState("1");
-  const [unidad,setUnidad]=useState("meses");
-  const [dias,setDias]=useState("");
-  const [nota,setNota]=useState(null);
+  const [cant,setCant]=useState("1"); const [unidad,setUnidad]=useState("meses"); const [dias,setDias]=useState(""); const [nota,setNota]=useState(null);
   const [act,setAct]=useState({loading:true,secciones:[]});
-  useEffect(()=>{ let vivo=true; setAct({loading:true,secciones:[]}); adminApi({action:"adminGetActividad",targetUid:u._id}).then(d=>{ if(vivo) setAct({loading:false,secciones:d.secciones||[],desde:d.desde}); }).catch(e=>{ if(vivo) setAct({loading:false,secciones:[],error:e.message}); }); return ()=>{vivo=false;}; },[u._id]);
-  useEffect(()=>{ const h=e=>{ if(e.key==="Escape"&&!document.querySelector('[data-gh-modal]')) onClose(); }; window.addEventListener("keydown",h); try{ window.scrollTo({top:0}); }catch(_){} return ()=>window.removeEventListener("keydown",h); },[u._id]);
+  const [log,setLog]=useState({loading:true,items:[]});
+  const [acred,setAcred]=useState(null); const [movs,setMovs]=useState(null); const [saldo,setSaldo]=useState(null);
+  useEffect(()=>{ let vivo=true; setAct({loading:true,secciones:[]}); adminApi({action:"adminGetActividad",targetUid:u._id}).then(d=>{ if(vivo) setAct({loading:false,secciones:d.secciones||[]}); }).catch(e=>{ if(vivo) setAct({loading:false,secciones:[],error:e.message}); }); return ()=>{vivo=false;}; },[u._id]);
+  const loadLog=()=>adminApi({action:"adminGetLog",targetUid:u._id,limit:100}).then(d=>setLog({loading:false,items:d.items||[]})).catch(e=>setLog({loading:false,items:[],error:e.message}));
+  useEffect(()=>{ setLog({loading:true,items:[]}); loadLog(); try{ window.scrollTo({top:0}); }catch(_){} },[u._id]);
   const est=admEstado(T,u); const org=admOrigen(u,ultPagoPorUid[u._id]); const d=admDias(u.planExpiry);
   const userPagos=pagos.filter(p=>p.uid===u._id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
   const reales=userPagos.filter(p=>!p.isTrial&&p.estado==="confirmado"&&p.amount>0);
   const referidos=Object.values(usuariosPorUid).filter(x=>x.refBy===u._id);
   const hab=(envCfg?.habilitados||[]).includes(u._id);
-  const sec=(t,children)=><Card T={T} padding="lg"><div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>{t}</div>{children}</Card>;
-  const fila=(k,v)=><div style={{display:"flex",justifyContent:"space-between",gap:12,fontSize:12,padding:"3px 0"}}><span style={{color:T.textSm}}>{k}</span><span style={{color:T.text,textAlign:"right",minWidth:0,overflowWrap:"anywhere"}}>{v}</span></div>;
+  const F=(k,v)=><AdmFila T={T} k={k} v={v}/>;
+  const cardT=(t,children,right)=><Card T={T} padding="lg"><AdmTitulo T={T} t={t} right={right}/>{children}</Card>;
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif"}}>
+    <div>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
-        <Btn T={T} variant="secondary" size="sm" onClick={onClose}>Volver a Cuentas</Btn>
+        <Btn T={T} variant="secondary" size="sm" onClick={onClose}>Volver a Clientes</Btn>
         <div style={{width:36,height:36,borderRadius:"50%",background:admPlanColor(T,u.plan)+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color:admPlanColor(T,u.plan),flexShrink:0}}>{(u.email||u.nombre||"?")[0].toUpperCase()}</div>
         <div style={{flex:1,minWidth:200}}>
           <div style={{fontSize:16,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email||u.nombre}{u.nombre&&u.nombre!==u.email?<span style={{fontSize:12,fontWeight:500,color:T.textSm}}> · {u.nombre}</span>:null}</div>
-          <div style={{display:"flex",gap:6,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>{chip(admPlanLabel(u.plan),admPlanColor(T,u.plan))}{chip(est.label,est.color)}{u.isAdmin&&chip("Admin",T.purple)}{hab&&chip("Envíos con saldo",T.blue)}</div>
+          <div style={{display:"flex",gap:6,alignItems:"center",marginTop:4,flexWrap:"wrap"}}><DSBadge T={T} color={admPlanColor(T,u.plan)} size="sm">{admPlanLabel(u.plan)}</DSBadge><DSBadge T={T} color={est.color} size="sm">{est.label}</DSBadge>{u.isAdmin&&<DSBadge T={T} color={T.purple} size="sm">Admin</DSBadge>}{hab&&<DSBadge T={T} color={T.blue} size="sm">Envíos con saldo</DSBadge>}</div>
         </div>
-        <Btn T={T} variant="secondary" size="sm" onClick={()=>verComoCliente(u)}>Ver como cliente</Btn>
       </div>
       <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1.35fr)",gap:16,alignItems:"start"}}>
         <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
-        <Card T={T} padding="lg"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16}}>
-          <div>
-            {lbl("Suscripción")}
-            {(u.plan||"free")==="free"?(
-              <div style={{fontSize:12,color:T.textSm,lineHeight:1.6}}>Sin plan.{u.trialEnd?` Trial inicial ${admDias(u.trialEnd)>=0?"vence el":"venció el"} ${admFecha(u.trialEnd)}.`:""}</div>
-            ):(<>
-              {fila("Vence",<span style={{color:d<0?T.red:d<=7?T.yellow:T.text,fontWeight:600}}>{u.planExpiry?`${admFecha(u.planExpiry)} (${d<0?`hace ${Math.abs(d)} d`:d===0?"hoy":`en ${d} d`})`:"sin fecha"}</span>)}
-              {fila("Origen",org.label)}
-              {u.stripeStatus&&fila("Stripe",<span>{u.stripeStatus==="active"?"suscripción activa":u.stripeStatus==="past_due"?"pago fallido":u.stripeStatus==="canceled"?"cancelada":u.stripeStatus}{u.cancelAtPeriodEnd?" · cancela al vencer":""}</span>)}
-              {u.stripeCustomerId&&fila("Cliente Stripe",<a href={`https://dashboard.stripe.com/customers/${u.stripeCustomerId}`} target="_blank" rel="noreferrer" style={{color:T.accent,fontWeight:600,textDecoration:"none"}}>Abrir en Stripe</a>)}
-              {u.planActivadoAt&&fila("Activado",`${admFecha(u.planActivadoAt)}${u.planActivadoBy==="stripe"?" por Stripe":u.planActivadoBy?" por admin":""}`)}
-              {fila("Pagos reales",<span>{reales.length}{reales.length?` · ${admUsd(reales.filter(p=>p.currency==="USD"||p.currency==="USDT").reduce((s,p)=>s+p.amount,0))} en total`:""}</span>)}
-            </>)}
-          </div>
-          <div>
-            {lbl("Cuenta")}
-            {fila("Alta",u.createdAt?`${admFecha(u.createdAt)} (${admRel(u.createdAt)})`:"—")}
-            {fila("Último login",<span style={{color:!u.ultimoLogin||Date.now()-u.ultimoLogin>30*86400000?T.yellow:T.text}}>{u.ultimoLogin?`${admFecha(u.ultimoLogin)} (${admRel(u.ultimoLogin)})`:"nunca"}</span>)}
-            {u.providers?.length>0&&fila("Acceso",u.providers.map(p=>p==="password"?"email y contraseña":p==="google.com"?"Google":p).join(", "))}
-            {fila("Integraciones",<span style={{display:"inline-flex",gap:5,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>{(u.stores||[]).length===0&&!u.cuits&&!u.metaAccounts?<span style={{color:T.textSm}}>ninguna</span>:<>{(u.stores||[]).map((s,i)=><span key={i} title={`${s.type}${s.name?" · "+s.name:""}`} style={{display:"inline-flex"}}><BrandIcon name={s.type} size={15}/></span>)}{u.cuits>0&&<span title={`ARCA · ${u.cuits} CUIT`} style={{display:"inline-flex"}}><BrandIcon name="arca" size={15}/></span>}{u.metaAccounts>0&&<span title="Meta Ads" style={{display:"inline-flex"}}><BrandIcon name="meta" size={15}/></span>}</>}</span>)}
-            {fila("Onboarding",u.onbDone?"completado":u._sinDoc?"nunca entró a la app":"sin completar")}
-            {fila("UID",<button onClick={()=>{try{navigator.clipboard.writeText(u._id);toast("UID copiado","success");}catch(_){appAlert(u._id);}}} title={u._id} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,color:T.textSm,cursor:"pointer",padding:"1px 8px",fontSize:10,fontFamily:"'Inter',system-ui,sans-serif"}}>{u._id.slice(0,10)}… copiar</button>)}
-          </div>
-        </div></Card>
-
-        {sec("Gestionar suscripción",(
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px"}}>
-              <div style={{fontSize:12.5,fontWeight:700,color:T.text,marginBottom:8}}>{(u.plan||"free")==="free"?"Activar un plan":"Renovar o cambiar el plan"}</div>
-              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                <select value={plan} onChange={e=>setPlan(e.target.value)} style={{...iS,fontSize:12,padding:"6px 10px",width:"auto",marginBottom:0}}>
-                  <option value="plus">Pro</option><option value="medio">Intermedio</option><option value="facturador">Facturador</option>
-                </select>
-                <span style={{fontSize:12,color:T.textMd}}>durante</span>
-                <input type="number" min="1" value={cant} onChange={e=>setCant(e.target.value)} style={{...iS,fontSize:12,width:60,textAlign:"center",marginBottom:0}}/>
-                <select value={unidad} onChange={e=>setUnidad(e.target.value)} style={{...iS,fontSize:12,padding:"6px 10px",width:"auto",marginBottom:0}}><option value="meses">mes(es)</option><option value="dias">día(s)</option></select>
-                <AsyncButton onClick={()=>gestionarPlan(u._id,plan,cant,unidad,false)} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Activar como pago</AsyncButton>
-                <AsyncButton onClick={()=>gestionarPlan(u._id,plan,cant,unidad,true)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.yellow,borderColor:T.yellow+"44"}}>Dar como prueba</AsyncButton>
-              </div>
-              <div style={{fontSize:11,color:T.textSm,marginTop:8,lineHeight:1.5}}>El tiempo se suma al vencimiento actual (si está vencida, arranca desde hoy). "Dar como prueba" no cuenta como ingreso.{u.stripeStatus==="active"?" Esta cuenta cobra por Stripe: lo que actives a mano se pisa en la próxima renovación.":""}</div>
+          <Card T={T} padding="lg"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16}}>
+            <div>
+              <AdmLbl T={T}>Suscripción</AdmLbl>
+              {(u.plan||"free")==="free"?<div style={{fontSize:12,color:T.textSm,lineHeight:1.6}}>Sin plan.{u.trialEnd?` Trial inicial ${admDias(u.trialEnd)>=0?"vence el":"venció el"} ${admFecha(u.trialEnd)}.`:""}</div>:(<>
+                {F("Vence",<span style={{color:d<0?T.red:d<=7?T.yellow:T.text,fontWeight:600}}>{u.planExpiry?`${admFecha(u.planExpiry)} (${d<0?`hace ${Math.abs(d)} d`:d===0?"hoy":`en ${d} d`})`:"sin fecha"}</span>)}
+                {F("Origen",org.label)}
+                {u.stripeStatus&&F("Stripe",<span>{admStripeLabel(u.stripeStatus)}{u.cancelAtPeriodEnd?" · cancela al vencer":""}</span>)}
+                {u.stripeCustomerId&&F("Cliente Stripe",<a href={`https://dashboard.stripe.com/customers/${u.stripeCustomerId}`} target="_blank" rel="noreferrer" style={{color:T.accent,fontWeight:600,textDecoration:"none"}}>Abrir en Stripe</a>)}
+                {u.planActivadoAt&&F("Activado",`${admFecha(u.planActivadoAt)}${u.planActivadoBy==="stripe"?" por Stripe":u.planActivadoBy?" por admin":""}`)}
+                {F("Pagos reales",<span>{reales.length}{reales.length?` · ${admUsd(reales.filter(p=>p.currency==="USD"||p.currency==="USDT").reduce((s,p)=>s+p.amount,0))} en total`:""}</span>)}
+              </>)}
             </div>
-            {(u.plan||"free")!=="free"&&(
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px"}}>
-                <div style={{fontSize:12.5,fontWeight:700,color:T.text,marginBottom:8}}>Corregir el vencimiento</div>
-                <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-                  {[-30,-7,-1,1,7,30].map(x=><AsyncButton key={x} onClick={()=>ajustarDias(u._id,x)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:x<0?T.red:T.green}}>{x>0?"+":""}{x} d</AsyncButton>)}
-                  <input type="number" value={dias} onChange={e=>setDias(e.target.value)} onKeyDown={e=>e.key==="Enter"&&ajustarDias(u._id,dias).then(()=>setDias(""))} placeholder="± días" style={{...iS,fontSize:11,width:70,textAlign:"center",marginBottom:0}}/>
-                  <AsyncButton onClick={async()=>{await ajustarDias(u._id,dias);setDias("");}} style={{...BtnSecondary(T),fontSize:11,padding:"4px 12px"}}>Aplicar</AsyncButton>
+            <div>
+              <AdmLbl T={T}>Cuenta</AdmLbl>
+              {F("Alta",u.createdAt?`${admFecha(u.createdAt)} (${admRel(u.createdAt)})`:"—")}
+              {F("Último login",<span style={{color:!u.ultimoLogin||Date.now()-u.ultimoLogin>30*86400000?T.yellow:T.text}}>{u.ultimoLogin?`${admFecha(u.ultimoLogin)} (${admRel(u.ultimoLogin)})`:"nunca"}</span>)}
+              {u.providers?.length>0&&F("Acceso",u.providers.map(p=>p==="password"?"email y contraseña":p==="google.com"?"Google":p).join(", "))}
+              {F("Integraciones",<span style={{display:"inline-flex",gap:5,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>{(u.stores||[]).length===0&&!u.cuits&&!u.metaAccounts?<span style={{color:T.textSm}}>ninguna</span>:<>{(u.stores||[]).map((s,i)=><span key={i} title={`${s.type}${s.name?" · "+s.name:""}`} style={{display:"inline-flex"}}><BrandIcon name={s.type} size={15}/></span>)}{u.cuits>0&&<span title={`ARCA · ${u.cuits} CUIT`} style={{display:"inline-flex"}}><BrandIcon name="arca" size={15}/></span>}{u.metaAccounts>0&&<span title="Meta Ads" style={{display:"inline-flex"}}><BrandIcon name="meta" size={15}/></span>}</>}</span>)}
+              {F("Onboarding",u.onbDone?"completado":u._sinDoc?"nunca entró a la app":"sin completar")}
+              {F("UID",<button onClick={()=>{try{navigator.clipboard.writeText(u._id);toast("UID copiado","success");}catch(_){appAlert(u._id);}}} title={u._id} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,color:T.textSm,cursor:"pointer",padding:"1px 8px",fontSize:10,fontFamily:"'Inter',system-ui,sans-serif"}}>{u._id.slice(0,10)}… copiar</button>)}
+            </div>
+          </div></Card>
+
+          {cardT("Gestionar suscripción",(
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div>
+                <div style={{fontSize:12,color:T.textMd,marginBottom:6}}>{(u.plan||"free")==="free"?"Activar un plan":"Renovar o cambiar el plan"}</div>
+                <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                  <AdmSelect T={T} value={plan} onChange={e=>setPlan(e.target.value)}><option value="plus">Pro</option><option value="medio">Intermedio</option><option value="facturador">Facturador</option></AdmSelect>
+                  <span style={{fontSize:12,color:T.textMd}}>durante</span>
+                  <AdmInput T={T} type="number" min="1" value={cant} onChange={e=>setCant(e.target.value)} style={{width:60,textAlign:"center"}}/>
+                  <AdmSelect T={T} value={unidad} onChange={e=>setUnidad(e.target.value)}><option value="meses">mes(es)</option><option value="dias">día(s)</option></AdmSelect>
+                  <AdmBtn T={T} variant="primary" size="sm" onClick={()=>gestionarPlan(u._id,plan,cant,unidad,false)}>Activar como pago</AdmBtn>
+                  <AdmBtn T={T} variant="secondary" size="sm" onClick={()=>gestionarPlan(u._id,plan,cant,unidad,true)}>Dar como prueba</AdmBtn>
                 </div>
-                <div style={{fontSize:11,color:T.textSm,marginTop:8}}>Mueve la fecha actual ({admFecha(u.planExpiry)}) sin registrar ningún pago.</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>Se suma al vencimiento actual (si está vencida, arranca hoy). La prueba no cuenta como ingreso.{u.stripeStatus==="active"?" Cobra por Stripe: lo que actives a mano se pisa en la próxima renovación.":""}</div>
               </div>
-            )}
-            {(u.plan||"free")!=="free"&&(
-              <div style={{border:`1px solid ${T.red}33`,borderRadius:10,padding:"11px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-                <div><div style={{fontSize:12.5,fontWeight:700,color:T.red}}>Desactivar plan</div><div style={{fontSize:11,color:T.textSm,marginTop:2}}>Pasa a Free ahora mismo. No borra datos ni historial.{u.stripeStatus==="active"?" No cancela la suscripción en Stripe: hacelo desde Stripe.":""}</div></div>
-                <AsyncButton onClick={()=>desactivarPlan(u._id)} style={{...BtnDanger(T),fontSize:11,padding:"6px 14px",flexShrink:0}}>Desactivar</AsyncButton>
-              </div>
-            )}
-          </div>
-        ))}
-
-        <Card T={T} padding="lg"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
-          <div>
-            {lbl("Nota interna")}
-            {nota!==null?(
-              <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-                <textarea value={nota} onChange={e=>setNota(e.target.value)} style={{...iS,fontSize:12,minHeight:56,resize:"vertical",flex:1,marginBottom:0}} placeholder="Ej: pagó tarde, le regalamos 7 días"/>
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  <AsyncButton onClick={async()=>{await saveNote(u._id,nota);setNota(null);}} style={{...BtnPrimary(T),fontSize:11,padding:"5px 12px"}}>Guardar</AsyncButton>
-                  <button onClick={()=>setNota(null)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>Cancelar</button>
+              {(u.plan||"free")!=="free"&&(<>
+                <div style={{borderTop:`1px solid ${T.borderL}`,paddingTop:12}}>
+                  <div style={{fontSize:12,color:T.textMd,marginBottom:6}}>Corregir el vencimiento ({admFecha(u.planExpiry)}) sin registrar pago</div>
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+                    {[-30,-7,-1,1,7,30].map(x=><AdmBtn key={x} T={T} variant="secondary" size="sm" onClick={()=>ajustarDias(u._id,x)}>{x>0?"+":""}{x} d</AdmBtn>)}
+                    <AdmInput T={T} type="number" value={dias} onChange={e=>setDias(e.target.value)} placeholder="± días" style={{width:70,textAlign:"center"}}/>
+                    <AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{await ajustarDias(u._id,dias);setDias("");}}>Aplicar</AdmBtn>
+                  </div>
                 </div>
-              </div>
-            ):(
-              <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-                <div style={{fontSize:12,color:u.adminNote?T.text:T.textSm,flex:1,fontStyle:u.adminNote?"normal":"italic",lineHeight:1.5}}>{u.adminNote||"Sin nota"}{u.adminNote&&u.adminNoteAt&&<span style={{color:T.textSm,fontSize:10}}> · {admFecha(u.adminNoteAt)}</span>}</div>
-                <button onClick={()=>setNota(u.adminNote||"")} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",flexShrink:0}}>Editar</button>
-              </div>
-            )}
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
-              <div><div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4}}>Envíos con saldo</div><div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>{hab?"Habilitado: ve saldo, cargas y etiquetas prepagas.":"Etiquetas prepagas de Andreani."}</div></div>
-              <DSToggle T={T} active={hab} onToggle={()=>toggleEnviosSaldo(u).catch(e=>toast(e.message,"error"))}/>
-            </div>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
-              <div><div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4}}>Administrador</div><div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>{founder?"Acceso total al panel de administración.":"Solo el dueño de Growith puede cambiarlo."}</div></div>
-              {founder?<DSToggle T={T} active={!!u.isAdmin} onToggle={()=>toggleAdmin(u).catch(e=>toast(e.message,"error"))}/>:<span style={{fontSize:11,color:u.isAdmin?T.purple:T.textSm,fontWeight:600}}>{u.isAdmin?"Sí":"No"}</span>}
-            </div>
-          </div>
-        </div></Card>
-
-        <Card T={T} padding="lg">
-          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Historial de pagos ({userPagos.length})</div>
-          {userPagos.length===0?<div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Nunca registró un pago ni una prueba.</div>:userPagos.map(p=>(
-            <div key={p._id} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontSize:11.5,padding:"8px 12px",background:T.surface,borderRadius:8,marginBottom:6}}>
-              <span style={{color:T.textSm,width:72,flexShrink:0}}>{admFecha(p.createdAt)}</span>
-              {chip(admPlanLabel(p.plan),admPlanColor(T,p.plan))}
-              {p.isTrial?<span style={{color:T.yellow,fontWeight:600}}>prueba {p.cantidad?`${p.cantidad} ${p.unidad}`:p.mesesConfirmados?`${p.mesesConfirmados} m`:""}</span>
-                :p.amount>0?<span style={{color:T.text,fontWeight:700}}>{p.currency==="USD"||p.currency==="USDT"?admUsd(p.amount):`$${p.amount} ${p.currency}`}<span style={{color:T.textSm,fontWeight:500}}> · {p.method==="stripe"?"tarjeta":p.method==="cripto"?"USDT":p.method==="credito"?"crédito referidos":"transferencia"}{p.periodo==="anual"?" · anual":""}{p.billingReason==="subscription_create"?" · alta":p.billingReason==="subscription_cycle"?" · renovación":""}</span></span>
-                :<span style={{color:T.textSm}}>sin monto</span>}
-              {p.refCreditAplicado>0&&<span style={{fontSize:10,color:T.green}}>crédito {admUsd(p.refCreditAplicado)}</span>}
-              {p.invoiceUrl&&<a href={p.invoiceUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:T.accent,fontWeight:600,textDecoration:"none"}}>Factura Stripe</a>}
-              <span style={{marginLeft:"auto",fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:p.isTrial?T.surface:p.estado==="confirmado"?T.greenBg:p.estado==="pendiente"?T.yellowBg:T.redBg,color:p.isTrial?T.textSm:p.estado==="confirmado"?T.green:p.estado==="pendiente"?T.yellow:T.red}}>{p.isTrial?"otorgada":p.estado}</span>
-              {p.estado==="pendiente"&&<span style={{display:"flex",gap:6}}><AsyncButton onClick={()=>confirmarPago(p)} style={{...BtnPrimary(T),fontSize:11,padding:"4px 10px"}}>Confirmar</AsyncButton><AsyncButton onClick={()=>rechazarPago(p._id)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red}}>Rechazar</AsyncButton></span>}
+                <div style={{borderTop:`1px solid ${T.borderL}`,paddingTop:12,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+                  <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}><span style={{color:T.red,fontWeight:700,fontSize:12}}>Desactivar plan.</span> Pasa a Free ahora mismo, sin borrar datos.{u.stripeStatus==="active"?" No cancela la suscripción en Stripe.":""}</div>
+                  <AdmBtn T={T} variant="danger" size="sm" onClick={()=>desactivarPlan(u._id)}>Desactivar</AdmBtn>
+                </div>
+              </>)}
             </div>
           ))}
-        </Card>
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
-        {sec("Envíos · últimos 90 días",<AdmFichaEnvios ctx={ctx} u={u} chip={chip}/>)}
 
-        {sec("Actividad en los últimos 30 días",(
-          act.loading?<div style={{fontSize:12,color:T.textSm,display:"flex",gap:8,alignItems:"center"}}><Spinner size={13} color={T.accent}/> Cargando actividad</div>
-          :act.error?<div style={{fontSize:12,color:T.red}}>{act.error}</div>
-          :(()=>{
-            const usa=act.secciones.filter(s=>s.n>0); const noUsa=act.secciones.filter(s=>!s.n);
-            return (
+          <Card T={T} padding="lg"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
+            <div>
+              <AdmLbl T={T}>Nota interna</AdmLbl>
+              {nota!==null?(
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <textarea value={nota} onChange={e=>setNota(e.target.value)} style={{...InputStyle(T),fontSize:12,minHeight:56,resize:"vertical",marginBottom:0}} placeholder="Ej: pagó tarde, le regalamos 7 días"/>
+                  <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}><Btn T={T} variant="secondary" size="sm" onClick={()=>setNota(null)}>Cancelar</Btn><AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{await saveNote(u._id,nota);setNota(null);}}>Guardar</AdmBtn></div>
+                </div>
+              ):(
+                <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                  <div style={{fontSize:12,color:u.adminNote?T.text:T.textSm,flex:1,fontStyle:u.adminNote?"normal":"italic",lineHeight:1.5}}>{u.adminNote||"Sin nota"}{u.adminNote&&u.adminNoteAt&&<span style={{color:T.textSm,fontSize:10}}> · {admFecha(u.adminNoteAt)}</span>}</div>
+                  <Btn T={T} variant="secondary" size="sm" onClick={()=>setNota(u.adminNote||"")}>Editar</Btn>
+                </div>
+              )}
+            </div>
+            <div>
+              <AdmLbl T={T}>Accesos</AdmLbl>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"4px 0"}}><div style={{fontSize:12,color:T.text}}>Envíos con saldo<div style={{fontSize:11,color:T.textSm}}>Etiquetas prepagas de Andreani.</div></div><DSToggle T={T} active={hab} onToggle={()=>toggleEnviosSaldo(u).catch(e=>toast(e.message,"error"))}/></div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"4px 0"}}><div style={{fontSize:12,color:T.text}}>Administrador<div style={{fontSize:11,color:T.textSm}}>{founder?"Acceso total al panel.":"Solo el dueño puede cambiarlo."}</div></div>{founder?<DSToggle T={T} active={!!u.isAdmin} onToggle={()=>toggleAdmin(u).catch(e=>toast(e.message,"error"))}/>:<span style={{fontSize:11,color:u.isAdmin?T.purple:T.textSm,fontWeight:600}}>{u.isAdmin?"Sí":"No"}</span>}</div>
+            </div>
+          </div></Card>
+
+          {cardT(`Historial de pagos (${userPagos.length})`,(
+            userPagos.length===0?<AdmVacio T={T} titulo="Sin pagos ni pruebas"/>:userPagos.map(p=>(
+              <div key={p._id} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontSize:11.5,padding:"8px 12px",background:T.surface,borderRadius:8,marginBottom:6}}>
+                <span style={{color:T.textSm,width:72,flexShrink:0}}>{admFecha(p.createdAt)}</span>
+                <DSBadge T={T} color={admPlanColor(T,p.plan)} size="sm">{admPlanLabel(p.plan)}</DSBadge>
+                {p.isTrial?<span style={{color:T.yellow,fontWeight:600}}>prueba {p.cantidad?`${p.cantidad} ${p.unidad}`:p.mesesConfirmados?`${p.mesesConfirmados} m`:""}</span>
+                  :p.amount>0?<span style={{color:T.text,fontWeight:700}}>{p.currency==="USD"||p.currency==="USDT"?admUsd(p.amount):`$${p.amount} ${p.currency}`}<span style={{color:T.textSm,fontWeight:500}}> · {admPagoMetodo(p)}{p.periodo==="anual"?" · anual":""}{admPagoTipo(p)?" · "+admPagoTipo(p):""}</span></span>
+                  :<span style={{color:T.textSm}}>sin monto</span>}
+                {p.refCreditAplicado>0&&<span style={{fontSize:10,color:T.green}}>crédito {admUsd(p.refCreditAplicado)}</span>}
+                {p.invoiceUrl&&<a href={p.invoiceUrl} target="_blank" rel="noreferrer" style={{fontSize:10,color:T.accent,fontWeight:600,textDecoration:"none"}}>Factura Stripe</a>}
+                <span style={{marginLeft:"auto"}}><DSBadge T={T} color={p.isTrial?T.textSm:p.estado==="confirmado"?T.green:p.estado==="pendiente"?T.yellow:T.red} size="sm">{admPagoEstado(p)}</DSBadge></span>
+                {p.estado==="pendiente"&&<span style={{display:"flex",gap:6}}><AdmBtn T={T} variant="primary" size="sm" onClick={()=>confirmarPago(p)}>Confirmar</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>rechazarPago(p._id)}>Rechazar</AdmBtn></span>}
+              </div>
+            ))
+          ))}
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+          {cardT("Acciones",(
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <AdmBtn T={T} variant="primary" size="sm" onClick={()=>verComoCliente(u)}>Ver como cliente</AdmBtn>
+              <Btn T={T} variant="secondary" size="sm" onClick={()=>setAcred({uid:u._id,email:u.email})}>Acreditar saldo</Btn>
+              <Btn T={T} variant="secondary" size="sm" onClick={()=>setMovs({uid:u._id,email:u.email})}>Movimientos de saldo</Btn>
+              <AdmBtn T={T} variant="secondary" size="sm" onClick={()=>gestionarPlan(u._id,plan,cant,unidad,true)}>Dar prueba</AdmBtn>
+              {u.stripeCustomerId&&<a href={`https://dashboard.stripe.com/customers/${u.stripeCustomerId}`} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Abrir en Stripe</a>}
+              {saldo!=null&&<span style={{fontSize:12,color:T.textMd,alignSelf:"center"}}>Saldo {fmtMoney(saldo)}</span>}
+            </div>
+          ))}
+          <AdmFichaEnvios ctx={ctx} u={u}/>
+          {cardT("Actividad en los últimos 30 días",(
+            act.loading?<AdmSkeleton T={T} filas={3}/>:act.error?<div style={{fontSize:12,color:T.red}}>{act.error}</div>:(()=>{ const usa=act.secciones.filter(s=>s.n>0); const noUsa=act.secciones.filter(s=>!s.n); return (
               <div>
-                {usa.length===0?<div style={{fontSize:12,color:T.textSm,marginBottom:6}}>Sin actividad registrada en ninguna sección este mes.</div>:(
+                {usa.length===0?<AdmVacio T={T} titulo="Sin actividad este mes" sub="No usó ninguna sección en los últimos 30 días."/>:(
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:8,marginBottom:8}}>
-                    {usa.map(s=>(
-                      <div key={s.id} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 10px"}}>
-                        <div style={{fontSize:11,color:T.textSm,fontWeight:600}}>{s.label}</div>
-                        <div style={{fontSize:15,fontWeight:800,color:T.text}}>{s.n} <span style={{fontSize:10,fontWeight:500,color:T.textSm}}>{s.unidad}</span></div>
-                        <div style={{fontSize:10,color:T.textSm}}>{s.ultima?admRel(s.ultima):""}</div>
-                      </div>
-                    ))}
+                    {usa.map(s=><div key={s.id} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 10px"}}><div style={{fontSize:11,color:T.textSm,fontWeight:600}}>{s.label}</div><div style={{fontSize:15,fontWeight:800,color:T.text}}>{s.n} <span style={{fontSize:10,fontWeight:500,color:T.textSm}}>{s.unidad}</span></div><div style={{fontSize:10,color:T.textSm}}>{s.ultima?admRel(s.ultima):""}</div></div>)}
                   </div>
                 )}
                 {noUsa.length>0&&<div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>No usó: {noUsa.map(s=>s.label+(s.total?` (${s.total} histórico)`:"")).join(", ")}.</div>}
               </div>
-            );
-          })()
-        ))}
-
-        {sec("Equipo",(u.teamMembers||[]).length===0?<div style={{fontSize:12,color:T.textSm}}>Sin miembros de equipo.</div>:(
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {(u.teamMembers||[]).map(m=>(
-              <div key={m.uid} style={{display:"flex",gap:8,alignItems:"center",fontSize:12,flexWrap:"wrap"}}>
-                <span style={{color:T.text,fontWeight:600}}>{m.email||m.nombre||m.uid}</span>
-                <span style={{color:T.textSm}}>{m.secciones.length?m.secciones.join(", "):"sin secciones"}</span>
+            ); })()
+          ))}
+          {cardT("Relaciones",(
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16}}>
+              <div>
+                <AdmLbl T={T}>Equipo</AdmLbl>
+                {(u.teamMembers||[]).length===0?<div style={{fontSize:12,color:T.textSm}}>Sin miembros de equipo.</div>:(u.teamMembers||[]).map(m=><div key={m.uid} style={{fontSize:12,padding:"3px 0"}}><span style={{color:T.text,fontWeight:600}}>{m.email||m.nombre||m.uid}</span> <span style={{color:T.textSm}}>{m.secciones.length?m.secciones.join(", "):"sin secciones"}</span></div>)}
               </div>
-            ))}
-          </div>
-        ))}
-
-        {sec("Referidos",(
-          <div>
-            {fila("Código",u.refCode||"—")}
-            {fila("Referido por",u.refBy?(usuariosPorUid[u.refBy]?.email||u.refBy):"—")}
-            {fila("Trajo",referidos.length?`${referidos.length} cuenta${referidos.length===1?"":"s"} (${referidos.filter(x=>(x.plan||"free")!=="free"&&!x.isTrial).length} pagan)`:"nadie todavía")}
-            {fila("Crédito disponible",admUsd(u.refCreditUsd||0))}
-            {fila("Ganado en total",admUsd(u.refGanadoUsd||0))}
-          </div>
-        ))}
-
+              <div>
+                <AdmLbl T={T}>Referidos</AdmLbl>
+                {F("Código",u.refCode||"—")}
+                {F("Referido por",u.refBy?(usuariosPorUid[u.refBy]?.email||u.refBy):"—")}
+                {F("Trajo",referidos.length?`${referidos.length} cuenta${referidos.length===1?"":"s"} (${referidos.filter(x=>(x.plan||"free")!=="free"&&!x.isTrial).length} pagan)`:"nadie todavía")}
+                {F("Crédito disponible",admUsd(u.refCreditUsd||0))}
+                {F("Ganado en total",admUsd(u.refGanadoUsd||0))}
+              </div>
+            </div>
+          ))}
+          {cardT("Historial de acciones sobre esta cuenta",(
+            log.loading?<AdmSkeleton T={T} filas={3}/>:log.error?<div style={{fontSize:12,color:T.red}}>{log.error}</div>:log.items.length===0?<AdmVacio T={T} titulo="Sin acciones registradas" sub="Desde el 8/9 cada acción admin queda acá."/>:(
+              <div style={{maxHeight:320,overflowY:"auto"}}>
+                {log.items.map((it,i)=>(
+                  <div key={it.id} style={{display:"flex",gap:10,padding:"7px 0",borderBottom:i<log.items.length-1?`1px solid ${T.borderL}`:"none",fontSize:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+                    <span style={{color:T.textSm,width:105,flexShrink:0,fontSize:11}}>{admFecha(it.at,true)}</span>
+                    <DSBadge T={T} color={/quitar|rechaz|desactivar/.test(it.action)?T.red:/dar_admin|ver_como/.test(it.action)?T.purple:T.accent} size="sm">{ADM_LOG_LABEL[it.action]||it.action}</DSBadge>
+                    <span style={{flex:1,minWidth:160,color:T.textMd}}>{it.detalle}<span style={{fontSize:10,color:T.textSm}}> · por {it.adminUid===user.uid?"vos":(usuariosPorUid[it.adminUid]?.email||it.adminUid)}</span></span>
+                  </div>
+                ))}
+              </div>
+            )
+          ),<Btn T={T} variant="secondary" size="sm" onClick={()=>{setLog({loading:true,items:[]});loadLog();}}>Actualizar</Btn>)}
         </div>
       </div>
+      <AdmAcreditarModal T={T} cuenta={acred} onClose={()=>setAcred(null)} onDone={s=>{ setSaldo(s); actualizarUsuario(u._id,{andreaniSaldo:s}); loadLog(); }}/>
+      <AdmMovsModal T={T} cuenta={movs} onClose={()=>setMovs(null)}/>
     </div>
   );
 }
 
+
 // ── Ingresos ─────────────────────────────────────────────────────────────────
-function AdmIngresos({ctx, stats, pagosReales, pagos, esNueva, esUsd, cardTitle, chip, cuentaBtn, activaPaga}) {
-  const {T, usuarios, usuariosPorUid} = ctx;
+function AdmIngresos({ctx, stats}) {
+  const {T, usuarios, usuariosPorUid, pagosReales, esNueva, esUsd, activaPaga, setCuenta} = ctx;
   const ahora=Date.now();
-  const meses=[]; for(let i=0;i<12;i++){ const d=new Date(new Date(ahora).getFullYear(),new Date(ahora).getMonth()-i,1); meses.push(admMesKey(d.getTime())); }
-  const porMes=Object.fromEntries(meses.map(k=>[k,{usd:0,ars:0,n:0,nuevas:0,renov:0,altas:0}]));
-  pagosReales.forEach(p=>{ if(!p.createdAt) return; const k=admMesKey(p.createdAt); if(!porMes[k]) return; if(esUsd(p)) porMes[k].usd+=p.amount; else if(p.currency==="ARS") porMes[k].ars+=p.amount; porMes[k].n++; if(esNueva(p)) porMes[k].nuevas++; else porMes[k].renov++; });
+  const meses=[]; for(let i=11;i>=0;i--){ const d=new Date(new Date(ahora).getFullYear(),new Date(ahora).getMonth()-i,1); meses.push(admMesKey(d.getTime())); }
+  const porMes=Object.fromEntries(meses.map(k=>[k,{usd:0,ars:0,n:0,nuevas:0,renov:0,altas:0,mrr:0}]));
+  const idx=Object.fromEntries(meses.map((k,i)=>[k,i]));
+  pagosReales.forEach(p=>{ if(!p.createdAt) return; const k=admMesKey(p.createdAt); if(porMes[k]){ if(esUsd(p)) porMes[k].usd+=p.amount; else if(p.currency==="ARS") porMes[k].ars+=p.amount; porMes[k].n++; if(esNueva(p)) porMes[k].nuevas++; else porMes[k].renov++; }
+    // MRR reconocido: cada pago en USD se reparte en los meses que cubre.
+    if(esUsd(p)){ const n=Math.max(1,Number(p.mesesConfirmados||p.meses||(p.periodo==="anual"?12:1))); const d0=new Date(p.createdAt); for(let j=0;j<n;j++){ const kk=admMesKey(new Date(d0.getFullYear(),d0.getMonth()+j,1).getTime()); if(porMes[kk]) porMes[kk].mrr+=p.amount/n; } } });
   usuarios.forEach(u=>{ if(!u.createdAt) return; const k=admMesKey(u.createdAt); if(porMes[k]) porMes[k].altas++; });
-  const pagas=usuarios.filter(activaPaga);
-  const arpu=pagas.length?(stats.mrr||0)/pagas.length:0;
-  const conv=usuarios.length?Math.round(pagas.length/usuarios.length*1000)/10:0;
+  const maxMrr=Math.max(1,...meses.map(k=>porMes[k].mrr));
+  const pagas=usuarios.filter(activaPaga); const arpu=pagas.length?(stats.mrr||0)/pagas.length:0; const conv=usuarios.length?Math.round(pagas.length/usuarios.length*1000)/10:0;
   const cancelados=usuarios.filter(u=>u.stripeStatus==="canceled").length;
   const legacy=pagosReales.filter(p=>p.method!=="stripe");
-  const refCredito=usuarios.reduce((s,u)=>s+(u.refCreditUsd||0),0);
-  const refGanado=usuarios.reduce((s,u)=>s+(u.refGanadoUsd||0),0);
+  const refCredito=usuarios.reduce((s,u)=>s+(u.refCreditUsd||0),0), refGanado=usuarios.reduce((s,u)=>s+(u.refGanadoUsd||0),0);
   const referidas=usuarios.filter(u=>u.refBy);
   const topRef=Object.entries(referidas.reduce((m,u)=>{m[u.refBy]=(m[u.refBy]||0)+1;return m;},{})).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const [verLegacy,setVerLegacy]=useState(false);
-  const kpis=[
-    {label:"Total recaudado",val:admUsd(stats.totalUsd||0),sub:`${stats.pagosRealesCount||0} pagos reales${stats.totalArs?` · $${Number(stats.totalArs).toLocaleString("es-AR")} ARS históricos`:""}`,color:T.green},
-    {label:"MRR",val:admUsd(stats.mrr||0),sub:`${pagas.length} cuenta${pagas.length===1?"":"s"} paga${pagas.length===1?"":"s"} · ARPU ${admUsd(Math.round(arpu*10)/10)}`,color:T.accent},
-    {label:"Conversión",val:`${conv}%`,sub:`${pagas.length} pagan de ${usuarios.length} registradas`,color:T.blue},
-    {label:"Cancelaciones",val:String(cancelados+(stats.cancelan||0)),sub:`${cancelados} cancelada${cancelados===1?"":"s"} en Stripe · ${stats.cancelan||0} al vencer`,color:T.red},
-  ];
+  const cuentaBtn=u=><button onClick={()=>setCuenta(u._id)} style={{background:"transparent",border:"none",padding:0,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:600,color:T.text,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{u.email||u.nombre||u._id}</button>;
   const cols="130px 110px 70px 80px 90px 70px";
   return (
     <>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12,marginBottom:16}}>
-        {kpis.map(k=>(
-          <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:4}}>
-            <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{width:7,height:7,borderRadius:"50%",background:k.color,flexShrink:0}}/><span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{k.label}</span></div>
-            <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.5,lineHeight:1.2,fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
-            <div style={{fontSize:11,color:T.textSm,lineHeight:1.4}}>{k.sub}</div>
-          </div>
-        ))}
+        <AdmKpi T={T} label="Total recaudado" val={admUsd(stats.totalUsd||0)} sub={`${stats.pagosRealesCount||0} pagos reales${stats.totalArs?` · $${Number(stats.totalArs).toLocaleString("es-AR")} ARS históricos`:""}`} color={T.green} n={1}/>
+        <AdmKpi T={T} label="MRR" val={admUsd(stats.mrr||0)} sub={`${pagas.length} cliente${pagas.length===1?"":"s"} pago${pagas.length===1?"":"s"} · ARPU ${admUsd(Math.round(arpu*10)/10)}`} color={T.accent} n={1}/>
+        <AdmKpi T={T} label="Conversión" val={`${conv}%`} sub={`${pagas.length} pagan de ${usuarios.length} registradas`} color={T.blue} n={1}/>
+        <AdmKpi T={T} label="Cancelaciones" val={String(cancelados+(stats.cancelan||0))} sub={`${cancelados} cancelada${cancelados===1?"":"s"} en Stripe · ${stats.cancelan||0} al vencer`} color={T.red} n={1}/>
       </div>
       <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(280px,1fr)",gap:16,alignItems:"start"}}>
         <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
           <Card T={T} padding="lg">
-            {cardTitle("Ingresos por mes","En dólares. Nuevas = primer pago de una cuenta; renovaciones = el resto.")}
-            <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto"}}>
-              <div style={{minWidth:580}}>
-                <div style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
-                  <span>Mes</span><span style={{textAlign:"right"}}>Ingresos</span><span style={{textAlign:"right"}}>Pagos</span><span style={{textAlign:"right"}}>Nuevas</span><span style={{textAlign:"right"}}>Renovaciones</span><span style={{textAlign:"right"}}>Altas</span>
+            <AdmTitulo T={T} t="Evolución del MRR" sub="Ingreso mensual reconocido: cada pago se reparte entre los meses que cubre (anual en 12). Debajo, nuevas suscripciones por mes."/>
+            <div style={{display:"grid",gridTemplateColumns:`repeat(${meses.length},1fr)`,gap:6,alignItems:"end",height:150,padding:"0 2px"}}>
+              {meses.map(k=>{ const m=porMes[k]; const h=Math.max(2,Math.round(m.mrr/maxMrr*120)); const esActual=k===admMesKey(ahora); return (
+                <div key={k} title={`${admMesLabel(k)}: ${admUsd(Math.round(m.mrr))} · ${m.nuevas} nueva${m.nuevas===1?"":"s"}`} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,minWidth:0}}>
+                  <span style={{fontSize:9,color:T.textSm,whiteSpace:"nowrap"}}>{m.mrr?admUsd(Math.round(m.mrr)).replace("US$ ",""):""}</span>
+                  <div style={{width:"100%",height:h,borderRadius:4,background:esActual?T.accent:T.accentSolid+"66"}}/>
+                  <span style={{fontSize:9,color:T.textSm,whiteSpace:"nowrap"}}>{admMesLabel(k,true)}</span>
+                  <span style={{fontSize:9,color:m.nuevas?T.green:T.border,fontWeight:700}}>{m.nuevas?"+"+m.nuevas:"·"}</span>
                 </div>
-                {meses.map((k,i)=>{ const m=porMes[k]; return (
-                  <div key={k} style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<meses.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:m.n||m.altas?1:0.55}}>
-                    <span style={{color:T.text,fontWeight:600}}>{admMesLabel(k)}</span>
-                    <span style={{textAlign:"right",fontWeight:700,color:m.usd?T.green:T.textSm,fontVariantNumeric:"tabular-nums"}}>{m.usd?admUsd(m.usd):"—"}{m.ars?<span style={{display:"block",fontSize:10,fontWeight:500,color:T.blue}}>${m.ars.toLocaleString("es-AR")} ARS</span>:null}</span>
-                    <span style={{textAlign:"right",color:T.textMd}}>{m.n||"—"}</span>
-                    <span style={{textAlign:"right",color:m.nuevas?T.accent:T.textSm,fontWeight:m.nuevas?700:400}}>{m.nuevas||"—"}</span>
-                    <span style={{textAlign:"right",color:T.textMd}}>{m.renov||"—"}</span>
-                    <span style={{textAlign:"right",color:T.textMd}}>{m.altas||"—"}</span>
-                  </div>
-                );})}
-              </div>
+              );})}
             </div>
           </Card>
           <Card T={T} padding="lg">
-            {cardTitle("Pagos manuales y USDT (histórico)",`${legacy.length} pago${legacy.length===1?"":"s"} anteriores a Stripe. Ya no se reciben pagos así.`,<Btn T={T} variant="secondary" size="sm" onClick={()=>setVerLegacy(v=>!v)}>{verLegacy?"Ocultar":"Ver"}</Btn>)}
-            {verLegacy&&(legacy.length===0?<div style={{fontSize:12,color:T.textSm}}>Sin pagos manuales.</div>:(
-              <div style={{display:"flex",flexDirection:"column"}}>
-                {legacy.slice(0,100).map((p,i)=>{ const u=usuariosPorUid[p.uid]; return (
-                  <div key={p._id} style={{display:"flex",gap:10,alignItems:"center",fontSize:12,padding:"7px 0",borderBottom:i<Math.min(legacy.length,100)-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
-                    <span style={{color:T.textSm,width:72}}>{admFecha(p.createdAt)}</span>
-                    <span style={{flex:1,minWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u?cuentaBtn(u):<span>{p.email||p.uid}</span>}</span>
-                    {chip(admPlanLabel(p.plan),admPlanColor(T,p.plan))}
-                    <span style={{fontWeight:700,color:T.text}}>{esUsd(p)?admUsd(p.amount):`$${p.amount} ${p.currency}`}</span>
-                    <span style={{color:T.textSm}}>{p.method==="cripto"?"USDT":p.method==="credito"?"crédito":"transferencia"}{p.mesesConfirmados?` · ${p.mesesConfirmados} m`:""}</span>
-                    {p.txHash&&<a href={`https://tronscan.org/#/transaction/${encodeURIComponent(p.txHash)}`} target="_blank" rel="noreferrer" style={{fontSize:10,color:T.accent,textDecoration:"none"}}>tx</a>}
-                  </div>
-                );})}
+            <AdmTitulo T={T} t="Ingresos por mes" sub="En dólares. Nuevas = primer pago de una cuenta; renovaciones = el resto."/>
+            <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto"}}><div style={{minWidth:580}}>
+              <div style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}><span>Mes</span><span style={{textAlign:"right"}}>Cobrado</span><span style={{textAlign:"right"}}>Pagos</span><span style={{textAlign:"right"}}>Nuevas</span><span style={{textAlign:"right"}}>Renovaciones</span><span style={{textAlign:"right"}}>Altas</span></div>
+              {[...meses].reverse().map((k,i)=>{ const m=porMes[k]; return (
+                <div key={k} style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<meses.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:m.n||m.altas?1:0.55}}>
+                  <span style={{color:T.text,fontWeight:600}}>{admMesLabel(k)}</span>
+                  <span style={{textAlign:"right",fontWeight:700,color:m.usd?T.green:T.textSm,fontVariantNumeric:"tabular-nums"}}>{m.usd?admUsd(m.usd):"—"}{m.ars?<span style={{display:"block",fontSize:10,fontWeight:500,color:T.blue}}>${m.ars.toLocaleString("es-AR")} ARS</span>:null}</span>
+                  <span style={{textAlign:"right",color:T.textMd}}>{m.n||"—"}</span><span style={{textAlign:"right",color:m.nuevas?T.accent:T.textSm,fontWeight:m.nuevas?700:400}}>{m.nuevas||"—"}</span><span style={{textAlign:"right",color:T.textMd}}>{m.renov||"—"}</span><span style={{textAlign:"right",color:T.textMd}}>{m.altas||"—"}</span>
+                </div>
+              );})}
+            </div></div>
+          </Card>
+          <Card T={T} padding="lg">
+            <AdmTitulo T={T} t="Pagos manuales y USDT (histórico)" sub={`${legacy.length} pago${legacy.length===1?"":"s"} anteriores a Stripe.`} right={<Btn T={T} variant="secondary" size="sm" onClick={()=>setVerLegacy(v=>!v)}>{verLegacy?"Ocultar":"Ver"}</Btn>}/>
+            {verLegacy&&(legacy.length===0?<AdmVacio T={T} titulo="Sin pagos manuales"/>:legacy.slice(0,100).map((p,i)=>{ const u=usuariosPorUid[p.uid]; return (
+              <div key={p._id} style={{display:"flex",gap:10,alignItems:"center",fontSize:12,padding:"7px 0",borderBottom:i<Math.min(legacy.length,100)-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
+                <span style={{color:T.textSm,width:72}}>{admFecha(p.createdAt)}</span><span style={{flex:1,minWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u?cuentaBtn(u):<span>{p.email||p.uid}</span>}</span><DSBadge T={T} color={admPlanColor(T,p.plan)} size="sm">{admPlanLabel(p.plan)}</DSBadge><span style={{fontWeight:700,color:T.text}}>{esUsd(p)?admUsd(p.amount):`$${p.amount} ${p.currency}`}</span><span style={{color:T.textSm}}>{admPagoMetodo(p)}{p.mesesConfirmados?` · ${p.mesesConfirmados} m`:""}</span>{p.txHash&&<a href={`https://tronscan.org/#/transaction/${encodeURIComponent(p.txHash)}`} target="_blank" rel="noreferrer" style={{fontSize:10,color:T.accent,textDecoration:"none"}}>tx</a>}
               </div>
-            ))}
+            );}))}
           </Card>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
           <Card T={T} padding="lg">
-            {cardTitle("Referidos","El 15% de cada pago del referido va como crédito al referente.")}
+            <AdmTitulo T={T} t="Referidos" sub="El 15% de cada pago del referido va como crédito al referente."/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-              {[["Cuentas referidas",String(referidas.length)],["Pagan",String(referidas.filter(u=>activaPaga(u)).length)],["Crédito por usar",admUsd(refCredito)],["Crédito otorgado",admUsd(refGanado)]].map(([l,v])=>(
-                <div key={l} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 10px"}}><div style={{fontSize:10,color:T.textSm,fontWeight:600}}>{l}</div><div style={{fontSize:15,fontWeight:800,color:T.text}}>{v}</div></div>
-              ))}
+              {[["Cuentas referidas",String(referidas.length)],["Pagan",String(referidas.filter(u=>activaPaga(u)).length)],["Crédito por usar",admUsd(refCredito)],["Crédito otorgado",admUsd(refGanado)]].map(([l,v])=><div key={l} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 10px"}}><div style={{fontSize:10,color:T.textSm,fontWeight:600}}>{l}</div><div style={{fontSize:15,fontWeight:800,color:T.text}}>{v}</div></div>)}
             </div>
-            {topRef.length>0&&<div>
-              <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Quienes más refieren</div>
-              {topRef.map(([uid,n])=>{ const u=usuariosPorUid[uid]; return <div key={uid} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:12,padding:"4px 0"}}><span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u?cuentaBtn(u):uid}</span><span style={{color:T.textMd,whiteSpace:"nowrap"}}>{n} · {admUsd(u?.refGanadoUsd||0)}</span></div>; })}
-            </div>}
+            {topRef.length>0&&<div><AdmLbl T={T}>Quienes más refieren</AdmLbl>{topRef.map(([uid,n])=>{ const u=usuariosPorUid[uid]; return <div key={uid} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:12,padding:"4px 0"}}><span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u?cuentaBtn(u):uid}</span><span style={{color:T.textMd,whiteSpace:"nowrap"}}>{n} · {admUsd(u?.refGanadoUsd||0)}</span></div>; })}</div>}
           </Card>
           <Card T={T} padding="lg">
-            {cardTitle("Precios vigentes","Mismo cuadro que Stripe y la sección Suscripción.")}
-            {Object.entries(ADM_PRECIOS).map(([id,p])=>(
-              <div key={id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}><span style={{color:T.text,fontWeight:600}}>{p.nombre}</span><span style={{color:T.textMd}}>{admUsd(p.mensual)}/mes · {admUsd(p.anual)}/mes anual</span></div>
-            ))}
+            <AdmTitulo T={T} t="Precios vigentes" sub="Mismo cuadro que Stripe y la sección Suscripción."/>
+            {Object.entries(ADM_PRECIOS).map(([id,p])=><div key={id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}><span style={{color:T.text,fontWeight:600}}>{p.nombre}</span><span style={{color:T.textMd}}>{admUsd(p.mensual)}/mes · {admUsd(p.anual)}/mes anual</span></div>)}
           </Card>
         </div>
       </div>
@@ -15868,282 +15833,199 @@ function AdmIngresos({ctx, stats, pagosReales, pagos, esNueva, esUsd, cardTitle,
   );
 }
 
-// ── Envíos (etiquetas prepagas) ──────────────────────────────────────────────
-function AdmEnvios({ctx, envCfg, setEnvCfg, saveEnvCfg, cardTitle, lbl, iS}) {
-  const {T, usuarios, usuariosPorUid, setCuenta} = ctx;
-  const [saldos,setSaldos]=useState(null);
-  const [busca,setBusca]=useState("");
-  const [buscaRes,setBuscaRes]=useState(null);
-  const [acred,setAcred]=useState(null);
-  const [acredForm,setAcredForm]=useState({monto:"",nota:""});
-  const [movs,setMovs]=useState(null);
-  const [nuevo,setNuevo]=useState("");
-  const [bajas,setBajas]=useState({loading:true,nombres:[],seed:[]});
-  const [bajaNueva,setBajaNueva]=useState("");
+// ── Logística (etiquetas prepagas): Operación · Rentabilidad · Configuración ─
+function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
+  const {T, usuarios, usuariosPorUid, setCuenta, envCargas, resolverCarga, statsMes} = ctx;
+  const [vista,setVista]=useState("operacion");
+  const [saldos,setSaldos]=useState(null); const [busca,setBusca]=useState(""); const [buscaRes,setBuscaRes]=useState(null);
+  const [acred,setAcred]=useState(null); const [movs,setMovs]=useState(null);
+  const [nuevo,setNuevo]=useState(""); const [bajas,setBajas]=useState({loading:true,nombres:[],seed:[]}); const [bajaNueva,setBajaNueva]=useState("");
   const [pmap,setPmap]=useState({loading:true,entries:[]});
-  async function loadPuntoMap(quitar){ try{ const r=await authFetch("/api/andreani?action=admin_punto_map",quitar?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({quitar})}:undefined); const d=await r.json(); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`); setPmap({loading:false,entries:d.entries||[]}); if(quitar) toast("Quitado de la memoria global","success"); }catch(e){ setPmap({loading:false,entries:[],error:e.message}); } }
   const meses=useMemo(()=>{ const out=[]; const now=new Date(); for(let i=0;i<6;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); out.push({v:admMesKey(d.getTime()),label:admMesLabel(admMesKey(d.getTime()))}); } return out; },[]);
-  const [statsMes,setStatsMes]=useState(meses[0].v);
-  const [stats,setStats]=useState({loading:true,data:null,error:""});
-  async function loadSaldos(){ try{ const s=await authFetch("/api/andreani?action=admin_saldos").then(r=>r.json()); if(Array.isArray(s?.cuentas)) setSaldos(s.cuentas); }catch(_){} }
-  async function loadStats(mes){ setStatsMes(mes); setStats({loading:true,data:null,error:""}); try{ const d=await authFetch(`/api/andreani?action=admin_stats&mes=${encodeURIComponent(mes)}`).then(r=>r.json()); if(d?.error) setStats({loading:false,data:null,error:String(d.error)}); else setStats({loading:false,data:d,error:""}); }catch(e){ setStats({loading:false,data:null,error:e.message}); } }
-  async function loadBajas(){ try{ const r=await authFetch("/api/andreani?action=admin_tpl_baja",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})}); const d=await r.json(); if(d?.ok) setBajas({loading:false,nombres:d.nombres||[],seed:d.seed||[]}); else setBajas({loading:false,nombres:[],seed:[],error:d?.error}); }catch(e){ setBajas({loading:false,nombres:[],seed:[],error:e.message}); } }
-  async function editarBajas(agregar,quitar){ const r=await authFetch("/api/andreani?action=admin_tpl_baja",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agregar,quitar})}); const d=await r.json(); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`); setBajas({loading:false,nombres:d.nombres||[],seed:d.seed||[]}); }
-  useEffect(()=>{ loadSaldos(); loadStats(meses[0].v); loadBajas(); loadPuntoMap(); },[]);
-  async function buscar(){ const email=busca.trim(); if(!email){ setBuscaRes(null); return; } const d=await authFetch(`/api/andreani?action=admin_saldos&email=${encodeURIComponent(email)}`).then(r=>r.json()); if(d?.error){ toast("No se pudo buscar: "+d.error,"error"); return; } if(d?.sinResultados||!Array.isArray(d?.cuentas)||!d.cuentas.length) setBuscaRes({sinResultados:true,email}); else setBuscaRes({cuentas:d.cuentas}); }
-  async function acreditar(){ const monto=parseFloat(acredForm.monto); if(!acred||!monto) { toast("Ingresá un monto válido","error"); return; } const r=await authFetch("/api/andreani?action=admin_acreditar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:acred.uid,monto,nota:acredForm.nota||""})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error){ toast("No se pudo acreditar: "+(d.error||`HTTP ${r.status}`),"error"); return; } toast(`${fmtMoney(monto)} acreditados a ${acred.email||acred.uid}`,"success"); setAcred(null); setAcredForm({monto:"",nota:""}); loadSaldos(); if(buscaRes?.cuentas) buscar(); }
-  async function verMovs(c){ setMovs({uid:c.uid,email:c.email,loading:true,movimientos:[]}); try{ const d=await authFetch(`/api/andreani?action=admin_movimientos&uid=${encodeURIComponent(c.uid)}`).then(r=>r.json()); setMovs(prev=>prev&&prev.uid===c.uid?{...prev,loading:false,movimientos:Array.isArray(d?.movimientos)?d.movimientos:[]}:prev); }catch(_){ setMovs(prev=>prev?{...prev,loading:false}:prev); toast("Error cargando movimientos","error"); } }
-  const q=nuevo.trim().toLowerCase();
-  const match=q?usuarios.find(u=>(u.email||"").toLowerCase()===q||u._id===nuevo.trim()):null;
-  const sugeridos=q&&!match?usuarios.filter(u=>(u.email||"").toLowerCase().includes(q)||(u.nombre||"").toLowerCase().includes(q)).slice(0,6):[];
+  const [mes,setMes]=useState(meses[0].v); const [stats,setStats]=useState({loading:!statsMes,data:statsMes||null,error:""});
+  async function loadSaldos(){ try{ const s=await admAndreani("admin_saldos"); if(Array.isArray(s?.cuentas)) setSaldos(s.cuentas); }catch(_){} }
+  async function loadStats(m){ setMes(m); setStats({loading:true,data:null,error:""}); try{ setStats({loading:false,data:await admAndreani(`admin_stats&mes=${encodeURIComponent(m)}`),error:""}); }catch(e){ setStats({loading:false,data:null,error:e.message}); } }
+  async function loadBajas(){ try{ const d=await admAndreani("admin_tpl_baja",{}); setBajas({loading:false,nombres:d.nombres||[],seed:d.seed||[]}); }catch(e){ setBajas({loading:false,nombres:[],seed:[],error:e.message}); } }
+  async function editarBajas(agregar,quitar){ const d=await admAndreani("admin_tpl_baja",{agregar,quitar}); setBajas({loading:false,nombres:d.nombres||[],seed:d.seed||[]}); }
+  async function loadPuntoMap(quitar){ try{ const d=quitar?await admAndreani("admin_punto_map",{quitar}):await admAndreani("admin_punto_map"); setPmap({loading:false,entries:d.entries||[]}); if(quitar) toast("Quitado de la memoria global","success"); }catch(e){ setPmap({loading:false,entries:[],error:e.message}); } }
+  useEffect(()=>{ loadSaldos(); if(!statsMes) loadStats(meses[0].v); loadBajas(); loadPuntoMap(); },[]);
+  async function buscar(){ const email=busca.trim(); if(!email){ setBuscaRes(null); return; } const d=await admAndreani(`admin_saldos&email=${encodeURIComponent(email)}`); if(d?.sinResultados||!Array.isArray(d?.cuentas)||!d.cuentas.length) setBuscaRes({sinResultados:true,email}); else setBuscaRes({cuentas:d.cuentas}); }
+  const q=nuevo.trim().toLowerCase(); const match=q?usuarios.find(u=>(u.email||"").toLowerCase()===q||u._id===nuevo.trim()):null; const sugeridos=q&&!match?usuarios.filter(u=>(u.email||"").toLowerCase().includes(q)||(u.nombre||"").toLowerCase().includes(q)).slice(0,6):[];
   const listaSaldos=buscaRes?.cuentas||saldos||[];
-  const upd=(patch)=>setEnvCfg(c=>({...(c||{habilitados:[]}),...patch}));
+  const upd=patch=>setEnvCfg(c=>({...(c||{habilitados:[]}),...patch}));
+  const clienteBtn=(uid,label)=><button onClick={()=>usuariosPorUid[uid]&&setCuenta(uid)} style={{background:"transparent",border:"none",padding:0,cursor:usuariosPorUid[uid]?"pointer":"default",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:600,color:T.text,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{label}</button>;
   return (
-    <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(300px,1fr)",gap:16,alignItems:"start"}}>
-      <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
-        <Card T={T} padding="lg">
-          {cardTitle("Uso por cliente y rentabilidad","Cobrado = lo que pagaron con su saldo. Costo real = lo que factura Andreani a fin de mes.",(
-            <select value={statsMes} onChange={e=>loadStats(e.target.value)} style={{...iS,width:"auto",marginBottom:0,padding:"6px 10px",fontSize:12}}>{meses.map(m=><option key={m.v} value={m.v}>{m.label}</option>)}</select>
-          ))}
-          {stats.loading?<div style={{display:"flex",alignItems:"center",gap:8,padding:"14px 0",color:T.textSm,fontSize:12}}><Spinner size={13} color={T.accent}/> Cargando</div>
-          :stats.error?<div style={{fontSize:12,color:T.red}}>{stats.error}</div>
-          :!stats.data||(!(stats.data.etiquetas>0)&&!(stats.data.cargadoTotal>0)&&!(stats.data.cuentas||[]).length)?<div style={{fontSize:12,color:T.textSm}}>Sin actividad en ese mes.</div>
-          :(()=>{ const d=stats.data; const cols="minmax(160px,1.4fr) 60px 100px 100px 90px 100px 100px"; return (<>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:14}}>
-              {[{label:"Etiquetas",val:String(d.etiquetas||0)},{label:"Cobrado",val:fmtMoney(d.facturado||0)},{label:"Costo Andreani",val:fmtMoney(d.costoReal||0)},{label:"Margen",val:fmtMoney(d.margen||0),color:(d.margen||0)>=0?T.green:T.red},{label:"Saldo cargado",val:fmtMoney(d.cargadoTotal||0),sub:`${d.cargasN||0} carga${d.cargasN===1?"":"s"}`},{label:"En billeteras hoy",val:fmtMoney(d.saldoTotal||0)}].map(k=>(
-                <div key={k.label} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px"}}><div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{k.label}</div><div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.3}}>{k.val}</div>{k.sub&&<div style={{fontSize:10,color:T.textSm}}>{k.sub}</div>}</div>
-              ))}
-            </div>
-            {(d.cuentas||[]).length>0&&(
-              <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto"}}><div style={{minWidth:640}}>
-                <div style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}><span>Cliente</span><span style={{textAlign:"right"}}>Etiq.</span><span style={{textAlign:"right"}}>Cobrado</span><span style={{textAlign:"right"}}>Costo</span><span style={{textAlign:"right"}}>Margen</span><span style={{textAlign:"right"}}>Cargó</span><span style={{textAlign:"right"}}>Saldo</span></div>
-                {d.cuentas.map((c,i)=>(
-                  <div key={c.uid||i} style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<d.cuentas.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:(c.etiquetas||c.cargado||c.saldo)?1:0.55}}>
-                    <span style={{minWidth:0}}><span onClick={()=>usuariosPorUid[c.uid]&&setCuenta(c.uid)} style={{display:"block",color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:usuariosPorUid[c.uid]?"pointer":"default"}}>{i<3&&c.etiquetas?<span style={{color:T.accent,marginRight:4}}>{i+1}.</span>:null}{c.email||String(c.uid||"").slice(0,10)}</span>{!c.habilitado&&<span style={{fontSize:9,color:T.textSm}}>ya no habilitada</span>}</span>
-                    <span style={{textAlign:"right",color:T.textMd}}>{c.etiquetas||0}</span><span style={{textAlign:"right",fontWeight:700,color:T.text}}>{fmtMoney(c.monto||0)}</span><span style={{textAlign:"right",color:T.textMd}}>{c.costo?fmtMoney(c.costo):"—"}</span><span style={{textAlign:"right",fontWeight:600,color:c.costo?((c.monto-c.costo)>=0?T.green:T.red):T.textSm}}>{c.costo?fmtMoney(c.monto-c.costo):"—"}</span><span style={{textAlign:"right",color:T.accent,fontWeight:600}}>{c.cargado?fmtMoney(c.cargado):"—"}</span><span style={{textAlign:"right",color:(c.saldo||0)>0?T.green:T.textSm,fontWeight:600}}>{fmtMoney(c.saldo||0)}</span>
+    <>
+      <div style={{marginBottom:14}}><AdmSeg T={T} value={vista} onChange={setVista} opciones={[["operacion","Operación",envCargas.length],["rentabilidad","Rentabilidad"],["config","Configuración"]]}/></div>
+      {vista==="operacion"&&(
+        <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.4fr) minmax(300px,1fr)",gap:16,alignItems:"start"}}>
+          <Card T={T} padding="lg">
+            <AdmTitulo T={T} t="Saldos por cuenta" sub="Acreditar a mano o ver los movimientos de cada billetera." right={<Btn T={T} variant="secondary" size="sm" onClick={loadSaldos}>Actualizar</Btn>}/>
+            <div style={{display:"flex",gap:8,marginBottom:12}}><AdmInput T={T} value={busca} onChange={e=>setBusca(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")buscar().catch(err=>toast(err.message,"error"));}} placeholder="Buscar cuenta por email" style={{flex:1}}/><AdmBtn T={T} variant="secondary" size="sm" onClick={buscar}>Buscar</AdmBtn></div>
+            {buscaRes&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,fontSize:12}}>{buscaRes.sinResultados?<span style={{color:T.yellow}}>No existe ninguna cuenta con el email "{buscaRes.email}".</span>:<span style={{color:T.textMd}}>Mostrando la cuenta encontrada.</span>}<button onClick={()=>{setBuscaRes(null);setBusca("");}} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>Ver todas</button></div>}
+            {saldos===null&&!buscaRes?<AdmSkeleton T={T}/>:listaSaldos.length===0?<AdmVacio T={T} titulo="Sin cuentas con saldo"/>:(
+              <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
+                {listaSaldos.map((c,i)=>(
+                  <div key={c.uid} style={{display:"flex",gap:10,padding:"9px 12px",fontSize:12,borderBottom:i<listaSaldos.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",flexWrap:"wrap"}}>
+                    <span style={{flex:1,minWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{clienteBtn(c.uid,c.email||c.uid)}{!c.habilitado&&<span style={{marginLeft:6,fontSize:9,color:T.textSm}}>no habilitada</span>}</span>
+                    <span style={{fontWeight:700,color:(c.saldo||0)>0?T.green:T.textMd,minWidth:80,textAlign:"right"}}>{fmtMoney(c.saldo||0)}</span>
+                    <Btn T={T} variant="secondary" size="sm" onClick={()=>setAcred({uid:c.uid,email:c.email})}>Acreditar</Btn>
+                    <Btn T={T} variant="secondary" size="sm" onClick={()=>setMovs({uid:c.uid,email:c.email})}>Movimientos</Btn>
                   </div>
                 ))}
-              </div></div>
+              </div>
             )}
+          </Card>
+          <Card T={T} padding="lg">
+            <AdmTitulo T={T} t="Cargas de saldo por acreditar" sub="Transferencias que esperan tu confirmación. Las de Mercado Pago se acreditan solas."/>
+            {envCargas.length===0?<AdmVacio T={T} titulo="Nada pendiente"/>:envCargas.map(c=>(
+              <div key={c.id} style={{padding:"9px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:8}}><span style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||c.uid}</span><span style={{fontWeight:800,color:T.text}}>{fmtMoney(c.monto)}</span></div>
+                <div style={{fontSize:11,color:T.textSm,margin:"2px 0 6px"}}>ref {c.ref||"—"}{c.ts?` · ${admRel(c.ts)}`:""}{c.estado==="revision"?" · monto de MP distinto, revisar":""}</div>
+                <div style={{display:"flex",gap:6}}><AdmBtn T={T} variant="primary" size="sm" onClick={()=>resolverCarga(c,true)}>Acreditar</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>resolverCarga(c,false)}>Rechazar</AdmBtn></div>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
+      {vista==="rentabilidad"&&(
+        <Card T={T} padding="lg">
+          <AdmTitulo T={T} t="Uso por cliente y rentabilidad" sub="Cobrado = lo que pagaron con su saldo. Costo real = lo que factura Andreani a fin de mes. Los tres primeros son el ranking del mes." right={<AdmSelect T={T} value={mes} onChange={e=>loadStats(e.target.value)}>{meses.map(m=><option key={m.v} value={m.v}>{m.label}</option>)}</AdmSelect>}/>
+          {stats.loading?<AdmSkeleton T={T} filas={5}/>:stats.error?<div style={{fontSize:12,color:T.red}}>{stats.error}</div>:!stats.data||(!(stats.data.etiquetas>0)&&!(stats.data.cargadoTotal>0)&&!(stats.data.cuentas||[]).length)?<AdmVacio T={T} titulo="Sin actividad en ese mes"/>:(()=>{ const d=stats.data; const cols="minmax(160px,1.4fr) 60px 100px 100px 90px 100px 100px"; return (<>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:14}}>
+              {[{label:"Etiquetas",val:String(d.etiquetas||0)},{label:"Cobrado",val:fmtMoney(d.facturado||0)},{label:"Costo Andreani",val:fmtMoney(d.costoReal||0)},{label:"Margen",val:fmtMoney(d.margen||0),color:(d.margen||0)>=0?T.green:T.red},{label:"Saldo cargado",val:fmtMoney(d.cargadoTotal||0),sub:`${d.cargasN||0} carga${d.cargasN===1?"":"s"}`},{label:"En billeteras hoy",val:fmtMoney(d.saldoTotal||0)}].map(k=><div key={k.label} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px"}}><div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{k.label}</div><div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.3}}>{k.val}</div>{k.sub&&<div style={{fontSize:10,color:T.textSm}}>{k.sub}</div>}</div>)}
+            </div>
+            {(d.cuentas||[]).length>0&&<div style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto"}}><div style={{minWidth:700}}>
+              <div style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}><span>Cliente</span><span style={{textAlign:"right"}}>Etiq.</span><span style={{textAlign:"right"}}>Cobrado</span><span style={{textAlign:"right"}}>Costo</span><span style={{textAlign:"right"}}>Margen</span><span style={{textAlign:"right"}}>Cargó</span><span style={{textAlign:"right"}}>Saldo</span></div>
+              {d.cuentas.map((c,i)=>(
+                <div key={c.uid||i} style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<d.cuentas.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:(c.etiquetas||c.cargado||c.saldo)?1:0.55}}>
+                  <span style={{minWidth:0}}>{clienteBtn(c.uid,<>{i<3&&c.etiquetas?<span style={{color:T.accent,marginRight:4}}>{i+1}.</span>:null}{c.email||String(c.uid||"").slice(0,10)}</>)}{!c.habilitado&&<span style={{display:"block",fontSize:9,color:T.textSm}}>ya no habilitada</span>}</span>
+                  <span style={{textAlign:"right",color:T.textMd}}>{c.etiquetas||0}</span><span style={{textAlign:"right",fontWeight:700,color:T.text}}>{fmtMoney(c.monto||0)}</span><span style={{textAlign:"right",color:T.textMd}}>{c.costo?fmtMoney(c.costo):"—"}</span><span style={{textAlign:"right",fontWeight:600,color:c.costo?((c.monto-c.costo)>=0?T.green:T.red):T.textSm}}>{c.costo?fmtMoney(c.monto-c.costo):"—"}</span><span style={{textAlign:"right",color:T.accent,fontWeight:600}}>{c.cargado?fmtMoney(c.cargado):"—"}</span><span style={{textAlign:"right",color:(c.saldo||0)>0?T.green:T.textSm,fontWeight:600}}>{fmtMoney(c.saldo||0)}</span>
+                </div>
+              ))}
+            </div></div>}
           </>); })()}
         </Card>
-
-        <Card T={T} padding="lg">
-          {cardTitle("Saldos por cuenta","Acreditar a mano o ver el detalle de movimientos de cada billetera.",<Btn T={T} variant="secondary" size="sm" onClick={loadSaldos}>Actualizar</Btn>)}
-          <div style={{display:"flex",gap:8,marginBottom:12}}>
-            <input style={{...iS,flex:1,marginBottom:0}} value={busca} onChange={e=>setBusca(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")buscar();}} placeholder="Buscar cuenta por email"/>
-            <AsyncButton onClick={buscar} style={{...BtnSecondary(T),fontSize:12}}>Buscar</AsyncButton>
-          </div>
-          {buscaRes&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,fontSize:12}}>{buscaRes.sinResultados?<span style={{color:T.yellow}}>No existe ninguna cuenta con el email "{buscaRes.email}".</span>:<span style={{color:T.textMd}}>Mostrando la cuenta encontrada.</span>}<button onClick={()=>{setBuscaRes(null);setBusca("");}} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>Ver todas</button></div>}
-          {listaSaldos.length===0?<div style={{fontSize:12,color:T.textSm}}>{buscaRes?"":"Sin cuentas con saldo todavía."}</div>:(
-            <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
-              {listaSaldos.map((c,i)=>(
-                <div key={c.uid}>
-                  <div style={{display:"flex",gap:10,padding:"9px 12px",fontSize:12,borderBottom:i<listaSaldos.length-1||acred?.uid===c.uid?`1px solid ${T.borderL}`:"none",alignItems:"center",flexWrap:"wrap"}}>
-                    <span style={{flex:1,minWidth:140,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||c.uid}{!c.habilitado&&<span style={{marginLeft:6,fontSize:9,color:T.textSm,fontWeight:500}}>no habilitada</span>}</span>
-                    <span style={{fontWeight:700,color:(c.saldo||0)>0?T.green:T.textMd,minWidth:80,textAlign:"right"}}>{fmtMoney(c.saldo||0)}</span>
-                    <button onClick={()=>{setAcred(acred?.uid===c.uid?null:{uid:c.uid,email:c.email});setAcredForm({monto:"",nota:""});}} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.green,borderColor:T.green+"55"}}>Acreditar</button>
-                    <button onClick={()=>verMovs(c)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>Movimientos</button>
-                  </div>
-                  {acred?.uid===c.uid&&(
-                    <div style={{display:"flex",gap:8,alignItems:"center",padding:"10px 12px",background:T.surface,borderBottom:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
-                      <input style={{...iS,width:130,marginBottom:0}} type="number" value={acredForm.monto} onChange={e=>setAcredForm(s=>({...s,monto:e.target.value}))} placeholder="Monto ($, negativo ajusta)"/>
-                      <input style={{...iS,flex:1,minWidth:160,marginBottom:0}} value={acredForm.nota} onChange={e=>setAcredForm(s=>({...s,nota:e.target.value}))} placeholder="Nota (ej: transferencia 5/8)"/>
-                      <AsyncButton onClick={acreditar} style={{...BtnPrimary(T),fontSize:12}}>Acreditar</AsyncButton>
-                      <button onClick={()=>setAcred(null)} style={{...BtnSecondary(T),fontSize:12}}>Cancelar</button>
-                    </div>
-                  )}
+      )}
+      {vista==="config"&&(
+        <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:16,alignItems:"start"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+            <Card T={T} padding="lg">
+              <AdmTitulo T={T} t="Precio de las etiquetas" sub="Costo real = tarifa de lista menos tu descuento, más seguro. Precio al cliente = costo real más markup."/>
+              {!envCfg?<AdmSkeleton T={T}/>:(<>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <Field T={T} label="Descuento Andreani (%)"><AdmInput T={T} type="number" value={envCfg.descuentoPct??""} onChange={e=>upd({descuentoPct:e.target.value})} placeholder="0"/></Field>
+                  <Field T={T} label="Seguro (% valor declarado)"><AdmInput T={T} type="number" step="0.5" value={envCfg.seguroPct??""} onChange={e=>upd({seguroPct:e.target.value})} placeholder="1"/></Field>
+                  <Field T={T} label="Markup (%)"><AdmInput T={T} type="number" value={envCfg.markupPct??""} onChange={e=>upd({markupPct:e.target.value})} placeholder="0"/></Field>
+                  <Field T={T} label="Markup fijo ($)"><AdmInput T={T} type="number" value={envCfg.markupFijo??""} onChange={e=>upd({markupFijo:e.target.value})} placeholder="0"/></Field>
                 </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
-
-      <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
-        <Card T={T} padding="lg">
-          {cardTitle("Precio de las etiquetas","Costo real = tarifa de lista menos tu descuento, más seguro. Precio al cliente = costo real más markup.")}
-          {!envCfg?<div style={{fontSize:12,color:T.textSm,display:"flex",gap:8,alignItems:"center"}}><Spinner size={13} color={T.accent}/> Cargando configuración</div>:(<>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <Field T={T} label="Descuento Andreani (%)"><input style={iS} type="number" value={envCfg.descuentoPct??""} onChange={e=>upd({descuentoPct:e.target.value})} placeholder="0"/></Field>
-              <Field T={T} label="Seguro (% valor declarado)"><input style={iS} type="number" step="0.5" value={envCfg.seguroPct??""} onChange={e=>upd({seguroPct:e.target.value})} placeholder="1"/></Field>
-              <Field T={T} label="Markup (%)"><input style={iS} type="number" value={envCfg.markupPct??""} onChange={e=>upd({markupPct:e.target.value})} placeholder="0"/></Field>
-              <Field T={T} label="Markup fijo ($)"><input style={iS} type="number" value={envCfg.markupFijo??""} onChange={e=>upd({markupFijo:e.target.value})} placeholder="0"/></Field>
-            </div>
-            <Field T={T} label="Sucursal de origen (código Andreani)"><input style={iS} value={envCfg.sucursalOrigen??""} onChange={e=>upd({sucursalOrigen:e.target.value})} placeholder="Vacío = origen default"/></Field>
-            {lbl("Datos para recibir cargas por transferencia")}
-            <Field T={T} label="Alias"><input style={iS} value={envCfg.datosPago?.alias??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),alias:e.target.value}})} placeholder="mi.alias.mp"/></Field>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <Field T={T} label="CBU / CVU"><input style={iS} value={envCfg.datosPago?.cbu??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),cbu:e.target.value}})} placeholder="22 dígitos"/></Field>
-              <Field T={T} label="Titular"><input style={iS} value={envCfg.datosPago?.titular??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),titular:e.target.value}})} placeholder="Nombre"/></Field>
-            </div>
-            <div style={{display:"flex",justifyContent:"flex-end"}}><AsyncButton onClick={async()=>{ if(await saveEnvCfg()) toast("Configuración de Envíos guardada","success"); }} style={{...BtnPrimary(T),fontSize:12}}>Guardar configuración</AsyncButton></div>
-          </>)}
-        </Card>
-
-        <Card T={T} padding="lg">
-          {cardTitle("Cuentas habilitadas","Solo estas cuentas ven el sistema de etiquetas prepagas en Envíos.")}
-          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
-            {(envCfg?.habilitados||[]).length===0&&<div style={{fontSize:12,color:T.textSm}}>Ninguna cuenta habilitada todavía.</div>}
-            {(envCfg?.habilitados||[]).map(uid=>{ const u=usuariosPorUid[uid]; const s=(saldos||[]).find(c=>c.uid===uid); return (
-              <div key={uid} style={{display:"flex",alignItems:"center",gap:8,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"7px 10px",fontSize:12}}>
-                <span style={{flex:1,minWidth:0,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:u?"pointer":"default"}} onClick={()=>u&&ctx.setCuenta(uid)}>{u?.email||s?.email||uid}</span>
-                {s&&<span style={{color:(s.saldo||0)>0?T.green:T.textSm,fontWeight:600}}>{fmtMoney(s.saldo||0)}</span>}
-                <AsyncButton onClick={async()=>{ if(!await appConfirm("¿Quitar esta cuenta del sistema de etiquetas prepagas?",{danger:true,okLabel:"Quitar"})) return; await saveEnvCfg({...envCfg,habilitados:envCfg.habilitados.filter(x=>x!==uid)}); }} style={{background:"transparent",border:"none",color:T.red,cursor:"pointer",fontSize:11,fontWeight:600,padding:"2px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}>Quitar</AsyncButton>
+                <Field T={T} label="Sucursal de origen (código Andreani)"><AdmInput T={T} value={envCfg.sucursalOrigen??""} onChange={e=>upd({sucursalOrigen:e.target.value})} placeholder="Vacío = origen default"/></Field>
+                <AdmLbl T={T}>Datos para recibir cargas por transferencia</AdmLbl>
+                <Field T={T} label="Alias"><AdmInput T={T} value={envCfg.datosPago?.alias??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),alias:e.target.value}})} placeholder="mi.alias.mp"/></Field>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><Field T={T} label="CBU / CVU"><AdmInput T={T} value={envCfg.datosPago?.cbu??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),cbu:e.target.value}})} placeholder="22 dígitos"/></Field><Field T={T} label="Titular"><AdmInput T={T} value={envCfg.datosPago?.titular??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),titular:e.target.value}})} placeholder="Nombre"/></Field></div>
+                <div style={{display:"flex",justifyContent:"flex-end"}}><AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{ if(await saveEnvCfg()) toast("Configuración guardada","success"); }}>Guardar configuración</AdmBtn></div>
+              </>)}
+            </Card>
+            <Card T={T} padding="lg">
+              <AdmTitulo T={T} t="Cuentas habilitadas" sub="Solo estas cuentas ven las etiquetas prepagas en Envíos."/>
+              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+                {(envCfg?.habilitados||[]).length===0&&<div style={{fontSize:12,color:T.textSm}}>Ninguna todavía.</div>}
+                {(envCfg?.habilitados||[]).map(uid=>{ const u=usuariosPorUid[uid]; const s=(saldos||[]).find(c=>c.uid===uid); return (
+                  <div key={uid} style={{display:"flex",alignItems:"center",gap:8,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"7px 10px",fontSize:12}}>
+                    <span style={{flex:1,minWidth:0}}>{clienteBtn(uid,u?.email||s?.email||uid)}</span>{s&&<span style={{color:(s.saldo||0)>0?T.green:T.textSm,fontWeight:600}}>{fmtMoney(s.saldo||0)}</span>}
+                    <AdmBtn T={T} variant="ghost" size="sm" onClick={async()=>{ if(!await appConfirm("¿Quitar esta cuenta de las etiquetas prepagas?",{danger:true,okLabel:"Quitar"})) return; await saveEnvCfg({...envCfg,habilitados:envCfg.habilitados.filter(x=>x!==uid)}); }} style={{color:T.red}}>Quitar</AdmBtn>
+                  </div>
+                );})}
               </div>
-            );})}
+              <div style={{display:"flex",gap:8}}><AdmInput T={T} value={nuevo} onChange={e=>setNuevo(e.target.value)} placeholder="Email de la cuenta a habilitar" list="gh-admin-emails" style={{flex:1}}/><datalist id="gh-admin-emails">{usuarios.map(u=><option key={u._id} value={u.email||""}>{u.nombre||""}</option>)}</datalist><AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{ const uid=match?match._id:nuevo.trim(); if(!uid) throw new Error("Escribí el email de la cuenta"); if(!match&&uid.includes("@")) throw new Error("No encontré una cuenta con ese email"); if((envCfg?.habilitados||[]).includes(uid)) throw new Error("Esa cuenta ya está habilitada"); if(await saveEnvCfg({...(envCfg||{markupPct:0,markupFijo:0,habilitados:[]}),habilitados:[...(envCfg?.habilitados||[]),uid]})){ setNuevo(""); toast(`Habilitada ${match?.email||uid}`,"success"); } }}>Habilitar</AdmBtn></div>
+              {match&&<div style={{fontSize:11,color:T.green,marginTop:6}}>{match.nombre||match.email} · {admPlanLabel(match.plan)}</div>}
+              {sugeridos.length>0&&<div style={{display:"flex",flexDirection:"column",gap:4,marginTop:6}}>{sugeridos.map(u=><button key={u._id} onClick={()=>setNuevo(u.email||u._id)} style={{textAlign:"left",background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{u.email} <span style={{color:T.textSm}}>· {admPlanLabel(u.plan)}</span></button>)}</div>}
+            </Card>
           </div>
-          <div style={{display:"flex",gap:8}}>
-            <input style={{...iS,flex:1,marginBottom:0}} value={nuevo} onChange={e=>setNuevo(e.target.value)} placeholder="Email de la cuenta a habilitar" list="gh-admin-emails"/>
-            <datalist id="gh-admin-emails">{usuarios.map(u=><option key={u._id} value={u.email||""}>{u.nombre||""}</option>)}</datalist>
-            <AsyncButton onClick={async()=>{ const uid=match?match._id:nuevo.trim(); if(!uid){ toast("Escribí el email de la cuenta","error"); return; } if(!match&&uid.includes("@")){ toast("No encontré una cuenta con ese email","warning",5000); return; } if((envCfg?.habilitados||[]).includes(uid)){ toast("Esa cuenta ya está habilitada","warning"); return; } const ok=await saveEnvCfg({...(envCfg||{markupPct:0,markupFijo:0,habilitados:[]}),habilitados:[...(envCfg?.habilitados||[]),uid]}); if(ok){ setNuevo(""); toast(`Envíos con saldo habilitado para ${match?.email||uid}`,"success"); } }} style={{...BtnPrimary(T),fontSize:12,whiteSpace:"nowrap"}}>Habilitar</AsyncButton>
-          </div>
-          {match&&<div style={{fontSize:11,color:T.green,marginTop:6}}>{match.nombre||match.email} · {admPlanLabel(match.plan)}</div>}
-          {sugeridos.length>0&&<div style={{display:"flex",flexDirection:"column",gap:4,marginTop:6}}>{sugeridos.map(u=><button key={u._id} onClick={()=>setNuevo(u.email||u._id)} style={{textAlign:"left",background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{u.email} <span style={{color:T.textSm}}>· {admPlanLabel(u.plan)}</span></button>)}</div>}
-        </Card>
-
-        <Card T={T} padding="lg">
-          {cardTitle("Memoria global de puntos de retiro","Puntos HOP resueltos y verificados por cualquier cuenta (misma calle y número). Sirven para todas las cuentas; si uno está mal, quitalo.",<Btn T={T} variant="secondary" size="sm" onClick={()=>loadPuntoMap()}>Actualizar</Btn>)}
-          {pmap.loading?<div style={{fontSize:12,color:T.textSm}}>Cargando</div>:pmap.error?<div style={{fontSize:12,color:T.red}}>{pmap.error}</div>:pmap.entries.length===0?<div style={{fontSize:12,color:T.textSm}}>Todavía no hay puntos verificados. Se agregan solos cuando una cuenta elige a mano un punto y coincide en calle y número.</div>:(
-            <div style={{display:"flex",flexDirection:"column",maxHeight:360,overflowY:"auto"}}>
-              {pmap.entries.map((e,i)=>(
-                <div key={e.key} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:i<pmap.entries.length-1?`1px solid ${T.borderL}`:"none",fontSize:12}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.punto?[e.punto.nombre,e.punto.dir,e.punto.loc].filter(Boolean).join(" · "):e.key.split("|").filter(Boolean).join(" · ")}</div>
-                    <div style={{color:T.textSm,fontSize:11}}>va a {e.oficial?.descripcion||e.tpl}{e.oficial?.direccion?` (${[e.oficial.direccion.calle,e.oficial.direccion.numero,e.oficial.direccion.localidad].filter(Boolean).join(" ")})`:""}{e.byEmail?` · por ${e.byEmail}`:""}{e.ts?` · ${admRel(e.ts)}`:""}</div>
+          <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+            <Card T={T} padding="lg">
+              <AdmTitulo T={T} t="Memoria global de puntos de retiro" sub="Puntos HOP resueltos y verificados por cualquier cuenta (misma calle y número). Sirven para todos; si uno está mal, quitalo." right={<Btn T={T} variant="secondary" size="sm" onClick={()=>loadPuntoMap()}>Actualizar</Btn>}/>
+              {pmap.loading?<AdmSkeleton T={T}/>:pmap.error?<div style={{fontSize:12,color:T.red}}>{pmap.error}</div>:pmap.entries.length===0?<AdmVacio T={T} titulo="Todavía no hay puntos verificados" sub="Se agregan solos cuando una cuenta elige a mano un punto y coincide en calle y número."/>:(
+                <div style={{maxHeight:360,overflowY:"auto"}}>{pmap.entries.map((e,i)=>(
+                  <div key={e.key} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:i<pmap.entries.length-1?`1px solid ${T.borderL}`:"none",fontSize:12}}>
+                    <div style={{flex:1,minWidth:0}}><div style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.punto?[e.punto.nombre,e.punto.dir,e.punto.loc].filter(Boolean).join(" · "):e.key.split("|").filter(Boolean).join(" · ")}</div><div style={{color:T.textSm,fontSize:11}}>va a {e.oficial?.descripcion||e.tpl}{e.oficial?.direccion?` (${[e.oficial.direccion.calle,e.oficial.direccion.numero,e.oficial.direccion.localidad].filter(Boolean).join(" ")})`:""}{e.byEmail?` · por ${e.byEmail}`:""}{e.ts?` · ${admRel(e.ts)}`:""}</div></div>
+                    <AdmBtn T={T} variant="ghost" size="sm" style={{color:T.red}} onClick={async()=>{ if(!await appConfirm("¿Quitar este punto de la memoria global?",{danger:true,okLabel:"Quitar"})) return; await loadPuntoMap(e.key); }}>Quitar</AdmBtn>
                   </div>
-                  <AsyncButton onClick={async()=>{ if(!await appConfirm("¿Quitar este punto de la memoria global? Las cuentas volverán a resolverlo a mano.",{danger:true,okLabel:"Quitar"})) return; await loadPuntoMap(e.key); }} style={{background:"transparent",border:"none",color:T.red,cursor:"pointer",fontSize:11,fontWeight:600,padding:"2px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}>Quitar</AsyncButton>
+                ))}</div>
+              )}
+            </Card>
+            <Card T={T} padding="lg">
+              <AdmTitulo T={T} t="Sucursales dadas de baja" sub="Sucursales de Andreani que ya no operan. Al exportar, los pedidos a estas van al selector."/>
+              {bajas.loading?<AdmSkeleton T={T} filas={2}/>:bajas.error?<div style={{fontSize:12,color:T.red}}>{bajas.error}</div>:(<>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
+                  {bajas.seed.map(n=><span key={"s"+n} title="Confirmada por Andreani (fija)" style={{fontSize:11,padding:"3px 9px",borderRadius:DS.r.full,background:T.surface,border:`1px solid ${T.borderL}`,color:T.textSm}}>{n}</span>)}
+                  {bajas.nombres.map(n=><span key={n} style={{fontSize:11,padding:"3px 4px 3px 9px",borderRadius:DS.r.full,background:T.red+"12",border:`1px solid ${T.red}33`,color:T.text,display:"inline-flex",alignItems:"center",gap:4}}>{n}<button onClick={()=>editarBajas([],[n]).catch(e=>toast(e.message,"error"))} title="Quitar" style={{background:"transparent",border:"none",color:T.red,cursor:"pointer",fontSize:11,padding:"0 4px",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:700}}>✕</button></span>)}
+                  {bajas.seed.length+bajas.nombres.length===0&&<span style={{fontSize:12,color:T.textSm}}>Ninguna.</span>}
                 </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        <Card T={T} padding="lg">
-          {cardTitle("Sucursales dadas de baja","Sucursales de Andreani que ya no operan. Al exportar, los pedidos a estas sucursales van al modal de elección.")}
-          {bajas.loading?<div style={{fontSize:12,color:T.textSm}}>Cargando</div>:bajas.error?<div style={{fontSize:12,color:T.red}}>{bajas.error}</div>:(<>
-            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
-              {bajas.seed.map(n=><span key={"s"+n} title="Confirmada por Andreani (fija)" style={{fontSize:11,padding:"3px 9px",borderRadius:DS.r.full,background:T.surface,border:`1px solid ${T.borderL}`,color:T.textSm}}>{n}</span>)}
-              {bajas.nombres.map(n=><span key={n} style={{fontSize:11,padding:"3px 4px 3px 9px",borderRadius:DS.r.full,background:T.red+"12",border:`1px solid ${T.red}33`,color:T.text,display:"inline-flex",alignItems:"center",gap:4}}>{n}<button onClick={()=>editarBajas([], [n]).catch(e=>toast(e.message,"error"))} title="Quitar de la lista" style={{background:"transparent",border:"none",color:T.red,cursor:"pointer",fontSize:11,padding:"0 4px",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:700}}>✕</button></span>)}
-              {bajas.seed.length+bajas.nombres.length===0&&<span style={{fontSize:12,color:T.textSm}}>Ninguna.</span>}
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              <input style={{...iS,flex:1,marginBottom:0}} value={bajaNueva} onChange={e=>setBajaNueva(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"&&bajaNueva.trim()){ editarBajas([bajaNueva.trim()],[]).then(()=>setBajaNueva("")).catch(err=>toast(err.message,"error")); } }} placeholder="Nombre exacto de la sucursal (como en el desplegable)"/>
-              <AsyncButton onClick={async()=>{ if(!bajaNueva.trim()) return; await editarBajas([bajaNueva.trim()],[]); setBajaNueva(""); toast("Sucursal agregada","success"); }} style={{...BtnSecondary(T),fontSize:12,whiteSpace:"nowrap"}}>Agregar</AsyncButton>
-            </div>
-          </>)}
-        </Card>
-      </div>
-
-      <Modal T={T} open={!!movs} onClose={()=>setMovs(null)} title={`Movimientos · ${movs?.email||movs?.uid||""}`} width={560}>
-        {movs&&(movs.loading?<div style={{display:"flex",alignItems:"center",gap:8,padding:"18px 4px",color:T.textSm,fontSize:12}}><Spinner size={13} color={T.accent}/> Cargando</div>
-        :movs.movimientos.length===0?<div style={{padding:"18px 4px",color:T.textSm,fontSize:12}}>Sin movimientos para esta cuenta.</div>
-        :(
-          <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
-            <div style={{display:"grid",gridTemplateColumns:"90px 1fr 90px 90px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}><span>Fecha</span><span>Concepto</span><span style={{textAlign:"right"}}>Monto</span><span style={{textAlign:"right"}}>Saldo</span></div>
-            <div style={{maxHeight:340,overflowY:"auto"}}>
-              {movs.movimientos.map((m,i)=>{ const cred=m.tipo==="credito"||m.tipo==="reverso"; const concepto=m.nota||(m.tipo==="debito"?`Etiqueta ${m.numeroDeEnvio||""}`.trim():m.tipo==="reverso"?"Reverso":"Carga de saldo"); return (
-                <div key={i} style={{display:"grid",gridTemplateColumns:"90px 1fr 90px 90px",gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<movs.movimientos.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
-                  <span style={{color:T.textSm,fontSize:11}}>{ghFmtTs(m.ts)}</span><span style={{color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={concepto}>{concepto}</span><span style={{textAlign:"right",fontWeight:700,color:cred?T.green:T.red}}>{cred?"+":"−"}{fmtMoney(Math.abs(m.monto||0))}</span><span style={{textAlign:"right",color:T.textMd}}>{fmtMoney(m.saldoDespues)}</span>
-                </div>
-              );})}
-            </div>
+                <div style={{display:"flex",gap:8}}><AdmInput T={T} value={bajaNueva} onChange={e=>setBajaNueva(e.target.value)} placeholder="Nombre exacto de la sucursal (como en el desplegable)" style={{flex:1}}/><AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ if(!bajaNueva.trim()) return; await editarBajas([bajaNueva.trim()],[]); setBajaNueva(""); toast("Sucursal agregada","success"); }}>Agregar</AdmBtn></div>
+              </>)}
+            </Card>
           </div>
-        ))}
-      </Modal>
-    </div>
+        </div>
+      )}
+      <AdmAcreditarModal T={T} cuenta={acred} onClose={()=>setAcred(null)} onDone={()=>loadSaldos()}/>
+      <AdmMovsModal T={T} cuenta={movs} onClose={()=>setMovs(null)}/>
+    </>
   );
 }
 
 // ── Sistema ──────────────────────────────────────────────────────────────────
-function AdmSistema({ctx, sectionsConfig, saveSectionsConfig, cardTitle, chip, iS}) {
-  const {T, adminApi, usuariosPorUid, user} = ctx;
-  const [sys,setSys]=useState({loading:true});
-  const [log,setLog]=useState({loading:true,items:[]});
-  const [logTipo,setLogTipo]=useState("todos");
-  const [logQ,setLogQ]=useState("");
-  const [saving,setSaving]=useState(false);
-  async function loadSys(){ setSys({loading:true}); try{ const d=await adminApi({action:"adminGetSystem"}); setSys({loading:false,...d}); }catch(e){ setSys({loading:false,error:e.message}); } }
+function AdmSistema({ctx, sectionsConfig, saveSectionsConfig}) {
+  const {T, adminApi, usuariosPorUid, user, setCuenta} = ctx;
+  const [sys,setSys]=useState({loading:true}); const [log,setLog]=useState({loading:true,items:[]}); const [logTipo,setLogTipo]=useState("todos"); const [logQ,setLogQ]=useState("");
+  async function loadSys(){ setSys({loading:true}); try{ setSys({loading:false,...(await adminApi({action:"adminGetSystem"}))}); }catch(e){ setSys({loading:false,error:e.message}); } }
   async function loadLog(){ try{ const d=await adminApi({action:"adminGetLog",limit:300}); setLog({loading:false,items:d.items||[]}); }catch(e){ setLog({loading:false,items:[],error:e.message}); } }
   useEffect(()=>{ loadSys(); loadLog(); },[]);
   const secciones=SIDEBAR_GROUPS_BASE.filter(it=>it.id&&it.id!=="home");
   const ahora=sys.ahora||Date.now();
-  const estadoCron=(c)=>{ const d=sys.crons?.[c.key]; if(!d||!d.at) return {label:"Sin registro",color:T.textSm,desc:"Se registra en la próxima corrida"}; if(!d.ok) return {label:"Error",color:T.red,desc:d.resumen||`HTTP ${d.status}`}; if(ahora-d.at>c.maxH*3600000) return {label:"Atrasado",color:T.yellow,desc:`Última corrida ${admRel(d.at)}`}; return {label:"OK",color:T.green,desc:""}; };
-  const tipos=[...new Set(log.items.map(i=>i.action))].sort();
-  const lq=logQ.trim().toLowerCase();
+  const estadoCron=c=>{ const d=sys.crons?.[c.key]; if(!d||!d.at) return {label:"Sin registro",color:T.textSm,desc:"Se registra en la próxima corrida"}; if(!d.ok) return {label:"Error",color:T.red,desc:d.resumen||`HTTP ${d.status}`}; if(ahora-d.at>c.maxH*3600000) return {label:"Atrasado",color:T.yellow,desc:`Última corrida ${admRel(d.at)}`}; return {label:"OK",color:T.green,desc:""}; };
+  const tipos=[...new Set(log.items.map(i=>i.action))].sort(); const lq=logQ.trim().toLowerCase();
   const logLista=log.items.filter(i=>logTipo==="todos"||i.action===logTipo).filter(i=>!lq||(i.targetEmail||"").toLowerCase().includes(lq)||(i.detalle||"").toLowerCase().includes(lq)||(usuariosPorUid[i.adminUid]?.email||"").toLowerCase().includes(lq));
   return (
     <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(300px,1fr)",gap:16,alignItems:"start"}}>
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
         <Card T={T} padding="lg">
-          {cardTitle("Crons","Tareas automáticas declaradas en Vercel. Cada corrida deja su registro; si una no corre, acá se ve.",<Btn T={T} variant="secondary" size="sm" onClick={loadSys}>Actualizar</Btn>)}
-          {sys.loading?<div style={{fontSize:12,color:T.textSm,display:"flex",gap:8,alignItems:"center"}}><Spinner size={13} color={T.accent}/> Cargando</div>:sys.error?<div style={{fontSize:12,color:T.red}}>{sys.error}</div>:(
-            <div style={{display:"flex",flexDirection:"column"}}>
-              {ADM_CRONS.map((c,i)=>{ const d=sys.crons?.[c.key]; const e=estadoCron(c); return (
-                <div key={c.key} style={{display:"flex",gap:10,alignItems:"center",padding:"9px 0",borderBottom:i<ADM_CRONS.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
-                  <span style={{width:7,height:7,borderRadius:"50%",background:e.color,flexShrink:0}}/>
-                  <div style={{flex:1,minWidth:180}}>
-                    <div style={{fontSize:12.5,fontWeight:600,color:T.text}}>{c.label}</div>
-                    <div style={{fontSize:10.5,color:T.textSm}}>{c.cada}{d?.ms?` · ${(d.ms/1000).toFixed(1)} s`:""}{d?.resumen&&e.label!=="Error"?<span title={d.resumen}> · {d.resumen.slice(0,90)}{d.resumen.length>90?"…":""}</span>:null}</div>
-                    {e.desc&&<div style={{fontSize:10.5,color:e.color}}>{e.desc}</div>}
-                  </div>
-                  <span style={{fontSize:11,color:T.textMd,whiteSpace:"nowrap"}}>{d?.at?admRel(d.at):"—"}</span>
-                  {chip(e.label,e.color)}
-                </div>
-              );})}
+          <AdmTitulo T={T} t="Crons" sub="Tareas automáticas de Vercel. Cada corrida deja su registro; si una no corre, acá se ve." right={<Btn T={T} variant="secondary" size="sm" onClick={loadSys}>Actualizar</Btn>}/>
+          {sys.loading?<AdmSkeleton T={T} filas={6}/>:sys.error?<div style={{fontSize:12,color:T.red}}>{sys.error}</div>:ADM_CRONS.map((c,i)=>{ const d=sys.crons?.[c.key]; const e=estadoCron(c); return (
+            <div key={c.key} style={{display:"flex",gap:10,alignItems:"center",padding:"9px 0",borderBottom:i<ADM_CRONS.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
+              <span style={{width:7,height:7,borderRadius:"50%",background:e.color,flexShrink:0}}/>
+              <div style={{flex:1,minWidth:180}}><div style={{fontSize:12.5,fontWeight:600,color:T.text}}>{c.label}</div><div style={{fontSize:10.5,color:T.textSm}}>{c.cada}{d?.ms?` · ${(d.ms/1000).toFixed(1)} s`:""}{d?.resumen&&e.label!=="Error"?<span title={d.resumen}> · {d.resumen.slice(0,90)}{d.resumen.length>90?"…":""}</span>:null}</div>{e.desc&&<div style={{fontSize:10.5,color:e.color}}>{e.desc}</div>}</div>
+              <span style={{fontSize:11,color:T.textMd,whiteSpace:"nowrap"}}>{d?.at?admRel(d.at):"—"}</span><DSBadge T={T} color={e.color} size="sm">{e.label}</DSBadge>
             </div>
-          )}
+          );})}
         </Card>
-
         <Card T={T} padding="lg">
-          {cardTitle("Registro de actividad","Todo lo que hizo un administrador: planes, saldos, accesos, vistas de cliente.",(
-            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-              <select value={logTipo} onChange={e=>setLogTipo(e.target.value)} style={{...iS,width:"auto",marginBottom:0,padding:"6px 10px",fontSize:12}}><option value="todos">Todas las acciones</option>{tipos.map(t=><option key={t} value={t}>{ADM_LOG_LABEL[t]||t}</option>)}</select>
-              <input style={{...iS,width:180,marginBottom:0,fontSize:12}} value={logQ} onChange={e=>setLogQ(e.target.value)} placeholder="Buscar cuenta o detalle"/>
-            </div>
-          ))}
-          {log.loading?<div style={{fontSize:12,color:T.textSm}}>Cargando</div>:log.error?<div style={{fontSize:12,color:T.red}}>{log.error}</div>:logLista.length===0?<div style={{fontSize:12,color:T.textSm}}>{log.items.length?"Nada con ese filtro.":"Todavía no hay acciones registradas. A partir de ahora cada acción queda acá."}</div>:(
-            <div style={{display:"flex",flexDirection:"column",maxHeight:520,overflowY:"auto"}}>
-              {logLista.map((it,i)=>(
-                <div key={it.id} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:i<logLista.length-1?`1px solid ${T.borderL}`:"none",fontSize:12,alignItems:"flex-start",flexWrap:"wrap"}}>
-                  <span style={{color:T.textSm,width:110,flexShrink:0,fontSize:11}}>{admFecha(it.at,true)}</span>
-                  <span style={{flexShrink:0}}>{chip(ADM_LOG_LABEL[it.action]||it.action,/quitar|rechaz|desactivar/.test(it.action)?T.red:/dar_admin|ver_como/.test(it.action)?T.purple:T.accent)}</span>
-                  <div style={{flex:1,minWidth:200}}>
-                    {it.targetEmail&&<span style={{color:T.text,fontWeight:600,cursor:it.targetUid&&usuariosPorUid[it.targetUid]?"pointer":"default"}} onClick={()=>it.targetUid&&usuariosPorUid[it.targetUid]&&ctx.setCuenta(it.targetUid)}>{it.targetEmail} </span>}
-                    <span style={{color:T.textMd}}>{it.detalle}</span>
-                    <div style={{fontSize:10,color:T.textSm}}>por {it.adminUid===user.uid?"vos":(usuariosPorUid[it.adminUid]?.email||it.adminUid)}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
+          <AdmTitulo T={T} t="Registro de actividad" sub="Todo lo que hizo un administrador: planes, saldos, accesos, vistas de cliente." right={<><AdmSelect T={T} value={logTipo} onChange={e=>setLogTipo(e.target.value)}><option value="todos">Todas las acciones</option>{tipos.map(t=><option key={t} value={t}>{ADM_LOG_LABEL[t]||t}</option>)}</AdmSelect><AdmInput T={T} value={logQ} onChange={e=>setLogQ(e.target.value)} placeholder="Buscar cuenta o detalle" style={{width:180}}/></>}/>
+          {log.loading?<AdmSkeleton T={T} filas={5}/>:log.error?<div style={{fontSize:12,color:T.red}}>{log.error}</div>:logLista.length===0?<AdmVacio T={T} titulo={log.items.length?"Nada con ese filtro":"Sin acciones registradas todavía"}/>:(
+            <div style={{maxHeight:520,overflowY:"auto"}}>{logLista.map((it,i)=>(
+              <div key={it.id} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:i<logLista.length-1?`1px solid ${T.borderL}`:"none",fontSize:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+                <span style={{color:T.textSm,width:110,flexShrink:0,fontSize:11}}>{admFecha(it.at,true)}</span>
+                <DSBadge T={T} color={/quitar|rechaz|desactivar/.test(it.action)?T.red:/dar_admin|ver_como/.test(it.action)?T.purple:T.accent} size="sm">{ADM_LOG_LABEL[it.action]||it.action}</DSBadge>
+                <div style={{flex:1,minWidth:200}}>{it.targetEmail&&<span style={{color:T.text,fontWeight:600,cursor:it.targetUid&&usuariosPorUid[it.targetUid]?"pointer":"default"}} onClick={()=>it.targetUid&&usuariosPorUid[it.targetUid]&&setCuenta(it.targetUid)}>{it.targetEmail} </span>}<span style={{color:T.textMd}}>{it.detalle}</span><div style={{fontSize:10,color:T.textSm}}>por {it.adminUid===user.uid?"vos":(usuariosPorUid[it.adminUid]?.email||it.adminUid)}</div></div>
+              </div>
+            ))}</div>
           )}
         </Card>
       </div>
-
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
         <Card T={T} padding="lg">
-          {cardTitle("Servicios","Qué integración tiene sus credenciales cargadas en Vercel. Nunca se muestran valores.")}
-          {sys.loading?<div style={{fontSize:12,color:T.textSm}}>Cargando</div>:(sys.servicios||[]).map((s,i)=>(
-            <div key={s.id} style={{display:"flex",gap:8,alignItems:"center",padding:"7px 0",borderBottom:i<(sys.servicios||[]).length-1?`1px solid ${T.borderL}`:"none",fontSize:12}}>
-              <span style={{width:7,height:7,borderRadius:"50%",background:s.ok?T.green:T.red,flexShrink:0}}/>
-              <span style={{flex:1,color:T.text,fontWeight:600}}>{s.label}</span>
-              <span style={{color:T.textSm,fontSize:11,textAlign:"right"}}>{s.detalle||(s.ok?"Configurado":"Falta")}</span>
-            </div>
-          ))}
+          <AdmTitulo T={T} t="Servicios" sub="Qué integración tiene sus credenciales cargadas. Nunca se muestran valores."/>
+          {sys.loading?<AdmSkeleton T={T} filas={6}/>:(sys.servicios||[]).map((s,i)=><div key={s.id} style={{display:"flex",gap:8,alignItems:"center",padding:"7px 0",borderBottom:i<(sys.servicios||[]).length-1?`1px solid ${T.borderL}`:"none",fontSize:12}}><span style={{width:7,height:7,borderRadius:"50%",background:s.ok?T.green:T.red,flexShrink:0}}/><span style={{flex:1,color:T.text,fontWeight:600}}>{s.label}</span><span style={{color:T.textSm,fontSize:11,textAlign:"right"}}>{s.detalle||(s.ok?"Configurado":"Falta")}</span></div>)}
         </Card>
-
         <Card T={T} padding="lg">
-          {cardTitle("Accesos por sección","Las secciones marcadas como solo admin desaparecen del menú de los clientes al instante. La lista sale del menú de la app, así nunca queda desactualizada.")}
-          <div style={{display:"flex",flexDirection:"column"}}>
-            {secciones.map((s,i)=>{ const on=sectionsConfig.includes(s.id); return (
-              <div key={s.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:i<secciones.length-1?`1px solid ${T.borderL}`:"none"}}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={on?T.accent:T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d={s.icon}/></svg>
-                <span style={{flex:1,fontSize:12.5,fontWeight:600,color:T.text}}>{s.label}</span>
-                {on&&chip("Solo admin",T.accent)}
-                <DSToggle T={T} active={on} onToggle={async()=>{ if(saving) return; setSaving(true); await saveSectionsConfig(on?sectionsConfig.filter(x=>x!==s.id):[...sectionsConfig,s.id]); setSaving(false); }}/>
-              </div>
-            );})}
-          </div>
+          <AdmTitulo T={T} t="Accesos por sección" sub="Las secciones en solo admin desaparecen del menú de los clientes al instante. La lista sale del menú de la app."/>
+          {secciones.map((s,i)=>{ const on=sectionsConfig.includes(s.id); return (
+            <div key={s.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:i<secciones.length-1?`1px solid ${T.borderL}`:"none"}}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={on?T.accent:T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d={s.icon}/></svg>
+              <span style={{flex:1,fontSize:12.5,fontWeight:600,color:T.text}}>{s.label}</span>{on&&<DSBadge T={T} color={T.accent} size="sm">Solo admin</DSBadge>}
+              <DSToggle T={T} active={on} onToggle={()=>saveSectionsConfig(on?sectionsConfig.filter(x=>x!==s.id):[...sectionsConfig,s.id]).catch(e=>toast(e.message,"error"))}/>
+            </div>
+          );})}
         </Card>
       </div>
     </div>
