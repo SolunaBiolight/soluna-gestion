@@ -7222,6 +7222,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [pdfPending,setPdfPending]=useState(false);
   const [pdfResults,setPdfResults]=useState([]);
   const [pdfProcessing,setPdfProcessing]=useState(false);
+  // Seguimientos v2: filtros, fuente, buscador, modo despacho plegable, trazas
+  const [segFiltro,setSegFiltro]=useState("todos");
+  const [segFuente,setSegFuente]=useState("todas");
+  const [segQ,setSegQ]=useState("");
+  const [segLimite,setSegLimite]=useState(60);
+  const [segScanOpen,setSegScanOpen]=useState(false);
+  const [segMasAlertas,setSegMasAlertas]=useState(false);
+  const [segTrazas,setSegTrazas]=useState(null);
   const [sendingTracking,setSendingTracking]=useState({});
   const [trackingSent,setTrackingSent]=useState({});
   const [seguimientoProgress,setSeguimientoProgress]=useState({active:false,current:0,total:0,last:"",done:false,ok:0,fail:0});
@@ -10108,235 +10116,190 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           const activos=envios.filter(e=>e.activo);
           const hoy=Date.now();
           const dias=iso=>iso?Math.floor((hoy-Date.parse(iso))/86400000):null;
-          const CAT={en_camino:["En camino",T.blue],en_sucursal:["En sucursal — retirar",T.orange],entregado:["Entregado",T.green],devolucion:["En devolución",T.red],visita_fallida:["Visita fallida",T.red],desconocido:["Sin datos aún",T.textSm],otro:["En proceso",T.textSm]};
-          // Alertas de excepción
-          const alertas=[];
-          for(const e of activos){
-            if(e.categoria==="en_sucursal"){ const d=dias(e.enSucursalDesde); if(d!=null&&d>=3) alertas.push({sev:"red",envio:e,tipo:"sucursal",msg:`#${e.numero} está en sucursal hace ${d} días sin retirar — si vence el plazo, vuelve.`}); }
-            if(e.categoria==="visita_fallida") alertas.push({sev:"amber",envio:e,tipo:"fallida",msg:`#${e.numero}: visita fallida — puede reintentarse o ir a sucursal.`});
-            if(e.categoria==="devolucion") alertas.push({sev:"red",envio:e,tipo:"devolucion",msg:`#${e.numero} está volviendo (devolución).`});
-            const dEstado=dias(e.estadoDesde||e.despachadoAt);
-            if((e.categoria==="en_camino"||e.categoria==="otro"||e.categoria==="desconocido")&&dEstado!=null&&dEstado>=7) alertas.push({sev:"amber",envio:e,tipo:"quieto",msg:`#${e.numero} sin movimiento hace ${dEstado} días.`});
-          }
-          // Métricas logísticas
+          const catDe=e=>e.entregadoAt?"entregado":e.devolucionAt?"devolucion":(!e.tracking&&!e.andreani?.numeroDeEnvio)?"sin_tracking":(e.categoria||"desconocido");
+          const CAT={en_camino:["En camino",T.blue],en_sucursal:["En sucursal",T.orange],entregado:["Entregado",T.green],devolucion:["Devolución",T.red],visita_fallida:["Visita fallida",T.red],desconocido:["Sin datos aún",T.textSm],otro:["En proceso",T.textSm],sin_tracking:["Etiqueta generada",T.textSm]};
+          // Problemas (misma lógica que el cron y el Admin)
+          const problemaDe=e=>{
+            if(e.devolucionAt||e.categoria==="devolucion") return {sev:"red",tipo:"devolucion",msg:"está volviendo (devolución)"};
+            if(!e.activo) return null;
+            if(e.categoria==="visita_fallida") return {sev:"amber",tipo:"fallida",msg:"visita fallida, Andreani reintenta o va a sucursal"};
+            if(e.categoria==="en_sucursal"){ const d=dias(e.enSucursalDesde); if(d!=null&&d>=3) return {sev:d>=5?"red":"amber",tipo:"sucursal",msg:`en sucursal hace ${d} días sin retirar${d>=5?", el plazo está por vencer":""}`}; return null; }
+            const dEst=dias(e.estadoDesde||e.despachadoAt||e.creado);
+            if((e.categoria==="en_camino"||e.categoria==="otro"||e.categoria==="desconocido")&&e.tracking&&dEst!=null&&dEst>=7) return {sev:"amber",tipo:"quieto",msg:`sin movimiento hace ${dEst} días`};
+            return null;
+          };
+          const conProblema=envios.map(e=>({e,p:problemaDe(e)})).filter(x=>x.p);
           const entregados30=envios.filter(e=>e.entregadoAt&&dias(e.entregadoAt)<=30);
-          const tiemposEntrega=entregados30.filter(e=>e.despachadoAt).map(e=>(Date.parse(e.entregadoAt)-Date.parse(e.despachadoAt))/86400000).filter(d=>d>=0&&d<40);
-          const tPromEntrega=tiemposEntrega.length?tiemposEntrega.reduce((a,b)=>a+b,0)/tiemposEntrega.length:null;
+          const tiempos=entregados30.filter(e=>e.despachadoAt).map(e=>(Date.parse(e.entregadoAt)-Date.parse(e.despachadoAt))/86400000).filter(d=>d>=0&&d<40);
+          const tProm=tiempos.length?tiempos.reduce((a,b)=>a+b,0)/tiempos.length:null;
           const ultimos30=envios.filter(e=>dias(e.creado)<=30);
           const pctSuc=ultimos30.length?Math.round(ultimos30.filter(e=>e.esSucursal).length/ultimos30.length*100):null;
+          const esApi=e=>!!e.andreani?.numeroDeEnvio;
+          const q=segQ.trim().toLowerCase();
+          const lista=envios
+            .filter(e=>segFuente==="todas"||(segFuente==="api"?esApi(e):!esApi(e)))
+            .filter(e=>segFiltro==="todos"?true:segFiltro==="problema"?!!problemaDe(e):segFiltro==="activos"?e.activo:catDe(e)===segFiltro)
+            .filter(e=>!q||String(e.numero||"").includes(q)||String(e.tracking||e.andreani?.numeroDeEnvio||"").includes(q)||(e.cliente||"").toLowerCase().includes(q)||(e.localidad||"").toLowerCase().includes(q));
+          const conteo=k=>envios.filter(e=>k==="activos"?e.activo:k==="problema"?!!problemaDe(e):catDe(e)===k).length;
+          const aviso=(e,p)=>{ const trk=e.tracking||e.andreani?.numeroDeEnvio||""; const link=trk?`https://www.andreani.com/envio/${trk}`:""; return p?.tipo==="sucursal"?`¡Hola! Tu pedido ya está esperándote en la sucursal de Andreani. Acordate de pasar a retirarlo antes de que venza el plazo, así no vuelve al remitente.${link?` Podés ver los detalles acá: ${link}`:""}`:p?.tipo==="fallida"?`¡Hola! Andreani pasó por tu domicilio pero no pudo entregar tu pedido. Va a reintentar la entrega o podés retirarlo por la sucursal.${link?` Seguilo acá: ${link}`:""}`:`¡Hola! Te paso el seguimiento de tu pedido para que veas dónde está.${link?` ${link}`:""}`; };
+          const copiar=(txt,msg)=>{ try{ navigator.clipboard.writeText(txt); toast(msg||"Copiado","success"); }catch(_){ toast("No se pudo copiar","warning"); } };
+          const pdfPend=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]);
+          const kpi=(label,val,sub,color,n)=>(
+            <div key={label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:4}}>
+              <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{width:7,height:7,borderRadius:"50%",background:n?color:T.border,flexShrink:0}}/><span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{label}</span></div>
+              <div style={{fontSize:20,fontWeight:800,color:n?T.text:T.textSm,letterSpacing:-0.5,lineHeight:1.2,fontVariantNumeric:"tabular-nums"}}>{val}</div>
+              <div style={{fontSize:11,color:T.textSm,lineHeight:1.4}}>{sub}</div>
+            </div>
+          );
+          const segBtn=(on)=>({padding:"5px 12px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:6,background:on?T.card:"transparent",color:on?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"});
           return (
-          <div key="seguimientos" className="gh-tab-content" style={{maxWidth:900,margin:"0 auto",paddingBottom:48}}>
+          <div key="seguimientos" className="gh-tab-content" style={{maxWidth:1100,margin:"0 auto",paddingBottom:48}}>
 
-            {/* Enviar seguimientos: subir el PDF de rótulos Andreani */}
-            <div style={{marginBottom:8}}>
-            <label htmlFor="seg-file-input" style={{display:"block",background:T.card,border:`2px dashed ${pdfFile?T.accentSolid:T.border}`,borderRadius:16,padding:"32px 24px",marginBottom:20,textAlign:"center",cursor:"pointer",transition:"all 0.2s ease"}}>
-              <input id="seg-file-input" type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f){setPdfFile(f);setPdfResults([]);setTrackingSent({});parsePdf(f,"tracking");}}}/>
-              {pdfProcessing
-                ? <div>
-                    <div style={{width:44,height:44,border:`3px solid ${T.accentSolid}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite",margin:"0 auto 14px"}}/>
-                    <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>Analizando PDF...</div>
-                    <div style={{fontSize:13,color:T.textSm}}>Extrayendo números de seguimiento</div>
-                  </div>
-                : pdfFile
-                  ? <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12}}>
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                      <div style={{textAlign:"left"}}>
-                        <div style={{fontSize:14,fontWeight:600,color:T.text}}>{pdfFile.name}</div>
-                        <div style={{fontSize:12,color:T.accent,marginTop:2}}>Click para cambiar</div>
-                      </div>
-                    </div>
-                  : <div>
-                      <div style={{display:"flex",justifyContent:"center",marginBottom:12}}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
-                      <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Subí el PDF de rótulos Andreani</div>
-                      <div style={{fontSize:13,color:T.textSm,marginBottom:16,lineHeight:1.6}}>Extrae el N° de seguimiento de cada etiqueta<br/>y lo envía automáticamente a tu tienda</div>
-                      <div style={{display:"inline-block",background:T.accentSolid,color:"#fff",borderRadius:8,padding:"8px 22px",fontSize:13,fontWeight:600}}>Seleccionar PDF</div>
-                    </div>
-              }
-            </label>
+            {/* Barra: título + acciones chicas */}
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+              <div style={{flex:1,minWidth:200}}>
+                <div style={{fontSize:15,fontWeight:700,color:T.text}}>Seguimientos</div>
+                <div style={{fontSize:11,color:T.textSm}}>{envios.length} envío{envios.length===1?"":"s"} de los últimos 60 días · el estado se actualiza solo cada 30 minutos.</div>
+              </div>
+              {pdfResults.length>0&&!showPdfUp&&<button onClick={()=>setShowPdfUp(true)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",color:pdfPend.length?T.orange:T.green,borderColor:(pdfPend.length?T.orange:T.green)+"66"}}>{pdfPend.length?`PDF: ${pdfPend.length} sin enviar`:"PDF: todo enviado"}</button>}
+              <Btn T={T} variant="secondary" size="sm" onClick={()=>setShowPdfUp(true)}>Subir PDF de rótulos</Btn>
+              <Btn T={T} variant="secondary" size="sm" onClick={()=>setSegScanOpen(v=>!v)}>{segScanOpen?"Cerrar despacho":"Modo despacho"}</Btn>
+              <AsyncButton onClick={refrescarEnviosFs} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Actualizar</AsyncButton>
+            </div>
 
-            {/* Resultados */}
-            {pdfResults.length>0&&(()=>{
-              const pending=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]);
-              const sentCount=Object.values(trackingSent).filter(v=>v==="ok").length;
-              const errorCount=Object.values(trackingSent).filter(v=>v==="error").length;
-              const pct=pdfResults.length>0?Math.round((sentCount/pdfResults.length)*100):0;
+            {/* KPIs */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:16}}>
+              {kpi("En seguimiento",String(activos.length),activos.length?"envíos activos con Andreani":"nada en curso",T.accent,activos.length)}
+              {kpi("En camino",String(activos.filter(e=>e.categoria==="en_camino").length),"viajando al destino",T.blue,activos.filter(e=>e.categoria==="en_camino").length)}
+              {kpi("En sucursal",String(activos.filter(e=>e.categoria==="en_sucursal").length),"esperando que retiren",T.orange,activos.filter(e=>e.categoria==="en_sucursal").length)}
+              {kpi("Con problema",String(conProblema.length),conProblema.length?`${conProblema.filter(x=>x.p.sev==="red").length} urgente${conProblema.filter(x=>x.p.sev==="red").length===1?"":"s"}`:"todo en orden",T.red,conProblema.length)}
+              {kpi("Entregados en 30 días",String(entregados30.length),tProm!=null?`${tProm.toFixed(1)} días promedio desde el despacho`:"últimos 30 días",T.green,entregados30.length)}
+              {kpi("A sucursal",pctSuc!=null?`${pctSuc}%`:"—","de los envíos del mes",T.purple,pctSuc)}
+            </div>
 
-              return (<div>
-                {/* Cards resumen */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
-                    <div style={{fontSize:11,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Detectados</div>
-                    <div style={{fontSize:28,fontWeight:800,color:T.text,letterSpacing:-1}}>{pdfResults.length}</div>
-                    <div style={{fontSize:12,color:T.textSm}}>seguimientos</div>
-                  </div>
-                  <div style={{background:T.card,border:`1px solid ${sentCount>0?T.green+"44":T.border}`,borderRadius:12,padding:"16px 18px"}}>
-                    <div style={{fontSize:11,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Enviados</div>
-                    <div style={{fontSize:28,fontWeight:800,color:sentCount>0?T.green:T.textSm,letterSpacing:-1}}>{sentCount}</div>
-                    <div style={{fontSize:12,color:T.textSm}}>a tu tienda</div>
-                  </div>
-                  <div style={{background:T.card,border:`1px solid ${pending.length>0?T.orange+"44":T.border}`,borderRadius:12,padding:"16px 18px"}}>
-                    <div style={{fontSize:11,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Pendientes</div>
-                    <div style={{fontSize:28,fontWeight:800,color:pending.length>0?T.orange:T.textSm,letterSpacing:-1}}>{pending.length}</div>
-                    <div style={{fontSize:12,color:T.textSm}}>sin enviar</div>
-                  </div>
+            {/* Modo despacho (plegable) */}
+            {segScanOpen&&(
+              <Card T={T} padding="md" style={{marginBottom:16}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <span style={{fontSize:12,fontWeight:700,color:T.text}}>Modo despacho</span>
+                  <input autoFocus value={scanValue} onChange={e=>setScanValue(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")procesarScan();}} placeholder="Escaneá el código del rótulo (o tipeá tracking / N° pedido) y Enter" style={{...iS,flex:1,minWidth:220,fontSize:13,marginBottom:0}}/>
+                  <span style={{fontSize:10,color:T.textSm}}>Verifica que el paquete escaneado corresponde a un envío registrado</span>
                 </div>
+                {scanLog.length>0&&<div style={{marginTop:8,display:"flex",flexDirection:"column",gap:3,maxHeight:120,overflowY:"auto"}}>{scanLog.map((s,i)=><div key={i} style={{fontSize:11,color:s.ok?T.green:T.red,fontWeight:600}}>{s.ok?`✓ #${s.numero} verificado`:`✕ ${s.tracking}: no corresponde a ningún envío registrado`}</div>)}</div>}
+              </Card>
+            )}
 
-                {/* Barra progreso si hay enviados */}
-                {sentCount>0&&(
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:16}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-                      <span style={{fontSize:13,fontWeight:600,color:T.text}}>Progreso de envío</span>
-                      <span style={{fontSize:13,fontWeight:700,color:pct===100?T.green:T.accent}}>{pct}%</span>
+            {/* Requiere atención */}
+            {conProblema.length>0&&(
+              <Card T={T} padding="lg" style={{marginBottom:16}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+                  <div><div style={{fontSize:14,fontWeight:700,color:T.text}}>Requiere atención</div><div style={{fontSize:11,color:T.textSm}}>Un clic y tenés el aviso listo para pegarle al cliente por WhatsApp o mail.</div></div>
+                  <DSBadge T={T} color={T.red} size="sm">{conProblema.length}</DSBadge>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {conProblema.sort((a,b)=>(a.p.sev==="red"?0:1)-(b.p.sev==="red"?0:1)).slice(0,segMasAlertas?200:6).map(({e,p})=>{ const trk=e.tracking||e.andreani?.numeroDeEnvio||""; return (
+                    <div key={e.numero} style={{display:"flex",alignItems:"center",gap:10,background:T.surface,border:`1px solid ${T.borderL}`,borderLeft:`3px solid ${p.sev==="red"?T.red:T.orange}`,borderRadius:8,padding:"8px 12px",fontSize:12,flexWrap:"wrap"}}>
+                      <div style={{flex:1,minWidth:200}}><span style={{fontWeight:700,color:T.text}}>#{e.numero}</span>{e.cliente?<span style={{color:T.textMd}}> · {e.cliente}</span>:null}{e.localidad?<span style={{color:T.textSm}}> · {e.localidad}</span>:null}<div style={{color:p.sev==="red"?T.red:T.orange,fontWeight:600,fontSize:11}}>{p.msg}</div></div>
+                      {p.tipo!=="devolucion"&&<Btn T={T} variant="secondary" size="sm" onClick={()=>copiar(aviso(e,p),"Aviso copiado, pegalo en WhatsApp o mail")}>Copiar aviso</Btn>}
+                      {trk&&<Btn T={T} variant="secondary" size="sm" onClick={()=>setSegTrazas(e)}>Ver seguimiento</Btn>}
                     </div>
-                    <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden"}}>
-                      <div style={{height:"100%",width:`${pct}%`,background:pct===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s ease"}}/>
-                    </div>
-                  </div>
-                )}
+                  );})}
+                  {conProblema.length>6&&<button onClick={()=>setSegMasAlertas(v=>!v)} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,padding:"4px 0",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left"}}>{segMasAlertas?"Ver menos":`Ver los ${conProblema.length}`}</button>}
+                </div>
+              </Card>
+            )}
 
-                {/* Botón enviar todos */}
-                {pending.length>0&&(
-                  <AsyncButton onClick={sendAllTracking} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:14,padding:"13px 20px",marginBottom:16}}>
-                    Enviar {pending.length} seguimiento{pending.length!==1?"s":""} pendiente{pending.length!==1?"s":""}
-                  </AsyncButton>
-                )}
-                {pending.length===0&&sentCount>0&&(
-                  <div style={{background:T.greenBg,border:`1.5px solid ${T.green}55`,borderRadius:10,padding:"12px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:10,boxShadow:`0 0 0 1px ${T.green}18, 0 4px 16px ${T.green}18`}}>
-                    <span style={{fontSize:16,color:T.green}}>✓</span>
-                    <span style={{fontSize:13,fontWeight:600,color:T.green}}>Todos los seguimientos enviados</span>
+            {/* Lista de envíos */}
+            <Card T={T} padding="lg">
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:8}}>
+                <div className="no-scrollbar" style={{display:"inline-flex",background:T.surface,borderRadius:8,padding:2,maxWidth:"100%",overflowX:"auto"}}>
+                  {[["todos","Todos",envios.length],["activos","En curso",conteo("activos")],["en_camino","En camino",conteo("en_camino")],["en_sucursal","En sucursal",conteo("en_sucursal")],["entregado","Entregados",conteo("entregado")],["problema","Con problema",conProblema.length],["sin_tracking","Sin tracking",conteo("sin_tracking")]].map(([v,l,n])=><button key={v} onClick={()=>{setSegFiltro(v);setSegLimite(60);}} style={segBtn(segFiltro===v)}>{l} <span style={{opacity:0.6,fontSize:11}}>{n}</span></button>)}
+                </div>
+                <div style={{display:"inline-flex",background:T.surface,borderRadius:8,padding:2}}>
+                  {[["todas","Todas"],["api","Por API"],["excel","Por Excel"]].map(([v,l])=><button key={v} onClick={()=>{setSegFuente(v);setSegLimite(60);}} style={segBtn(segFuente===v)}>{l}</button>)}
+                </div>
+                <input value={segQ} onChange={e=>{setSegQ(e.target.value);setSegLimite(60);}} placeholder="Pedido, tracking, cliente o localidad" style={{...iS,flex:1,minWidth:200,fontSize:12,marginBottom:0}}/>
+              </div>
+              {envios.length===0?(
+                <div style={{padding:"32px 12px",textAlign:"center"}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>Todavía no hay envíos registrados</div><div style={{fontSize:12,color:T.textSm,marginTop:4,lineHeight:1.5}}>Generá etiquetas desde el Panel de Envíos o subí los rótulos en "SKU en Rótulos": desde ahí cada envío entra al seguimiento automático.</div></div>
+              ):lista.length===0?(
+                <div style={{padding:"24px 12px",textAlign:"center",fontSize:12,color:T.textSm}}>Nada con ese filtro.</div>
+              ):(
+                <div style={{border:`1px solid ${T.borderL}`,borderRadius:10,overflowX:"auto"}}><div style={{minWidth:760}}>
+                  <div style={{display:"grid",gridTemplateColumns:"80px minmax(180px,1.6fr) 120px minmax(160px,1.4fr) 90px 150px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
+                    <span>Pedido</span><span>Destinatario</span><span>Estado</span><span>Último movimiento</span><span style={{textAlign:"right"}}>Tiempo</span><span style={{textAlign:"right"}}>Seguimiento</span>
                   </div>
-                )}
-
-                {/* Lista */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-                  <div style={{display:"grid",gridTemplateColumns:"80px 1fr 80px",gap:8,padding:"8px 18px",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
-                    <span>Pedido</span><span>Destinatario + Tracking</span><span style={{textAlign:"right"}}>Estado</span>
-                  </div>
-                  {pdfResults.map((r,i)=>{
-                    const sentState=trackingSent[r.pedidoNum]; // "ok" | "error" | undefined
-                    const sending=sendingTracking[r.pedidoNum];
+                  {lista.slice(0,segLimite).map((e,i)=>{
+                    const k=catDe(e); const [lbl,col]=CAT[k]||CAT.otro; const p=problemaDe(e); const trk=e.tracking||e.andreani?.numeroDeEnvio||"";
+                    const tiempo=e.entregadoAt&&e.despachadoAt?`${Math.max(0,Math.round((Date.parse(e.entregadoAt)-Date.parse(e.despachadoAt))/86400000))} d`:e.despachadoAt?`${dias(e.despachadoAt)} d`:e.creado?`${dias(e.creado)} d`:"";
+                    const final=!e.activo&&(e.entregadoAt||e.devolucionAt);
                     return (
-                      <div key={i} style={{display:"grid",gridTemplateColumns:"80px 1fr 80px",gap:8,padding:"12px 18px",borderBottom:i<pdfResults.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:sentState==="ok"?T.green+"08":sentState==="error"?T.red+"08":"transparent",transition:"background 0.2s ease"}}>
-                        <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{r.pedidoNum||"--"}</span>
-                        <div>
-                          {r.destinatario&&<div style={{fontSize:13,color:T.text,fontWeight:500,marginBottom:2}}>{r.destinatario}</div>}
-                          <div style={{fontSize:11,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",letterSpacing:"0.02em"}}>{r.tracking||"Sin tracking"}</div>
+                      <div key={e.numero||i} style={{display:"grid",gridTemplateColumns:"80px minmax(180px,1.6fr) 120px minmax(160px,1.4fr) 90px 150px",gap:8,padding:"9px 12px",borderBottom:i<Math.min(lista.length,segLimite)-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:final?0.7:1,fontSize:12}}>
+                        <span style={{fontWeight:700,color:T.accent,fontSize:13}}>#{e.numero}</span>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.cliente||"—"}{e.verificado&&<span title="Verificado por escaneo" style={{marginLeft:6,fontSize:10,color:T.green}}>✓</span>}</div>
+                          <div style={{fontSize:10.5,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[e.localidad,e.provincia].filter(Boolean).join(", ")||""}{e.esSucursal?" · sucursal":""}{esApi(e)?" · API":""}{e.creado?` · ${new Date(e.creado).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}`:""}</div>
                         </div>
-                        <div style={{display:"flex",justifyContent:"flex-end"}}>
-                          {sentState==="ok"
-                            ? <span style={{fontSize:12,color:T.green,fontWeight:600}}>✓ Ok</span>
-                            : sentState==="warn"
-                            ? <span title="El tracking se guardó pero TN no marcó la orden como enviada — el cliente no recibió el aviso" style={{fontSize:12,color:T.orange,fontWeight:600}}>Sin aviso</span>
-                            : sentState==="error"
-                              ? <span style={{fontSize:12,color:T.red,fontWeight:600}}>✗ Error</span>
-                              : sending
-                                ? <Spinner size={13} color={T.yellow}/>
-                                : sendBatchActive
-                                  ? <span style={{fontSize:11,color:T.textSm}}>En cola...</span>
-                                  : r.tracking&&r.pedidoNum
-                                    ? <AsyncButton onClick={()=>sendTracking(r)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>Enviar</AsyncButton>
-                                    : <span style={{fontSize:11,color:T.red}}>Sin datos</span>
-                          }
+                        <span><DSBadge T={T} color={col} size="sm">{lbl}</DSBadge></span>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:11,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={e.estadoAndreani||""}>{e.estadoAndreani||(trk?"esperando el primer chequeo":"sin tracking aún")}</div>
+                          {p&&<div style={{fontSize:10.5,color:p.sev==="red"?T.red:T.orange,fontWeight:600}}>{p.msg}</div>}
+                        </div>
+                        <span style={{textAlign:"right",color:T.textSm,fontVariantNumeric:"tabular-nums"}} title={e.entregadoAt?"despacho a entrega":"desde el despacho"}>{tiempo}</span>
+                        <div style={{display:"flex",gap:4,justifyContent:"flex-end",alignItems:"center"}}>
+                          {trk?<>
+                            <button onClick={()=>setSegTrazas(e)} title="Ver seguimiento" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 7px",fontSize:10.5,color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Cascadia Code','Consolas',monospace"}}>{trk}</button>
+                            <button onClick={()=>copiar(`https://www.andreani.com/envio/${trk}`,"Link de seguimiento copiado")} title="Copiar link" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 6px",fontSize:10,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Link</button>
+                          </>:<span style={{fontSize:10,color:T.textSm}}>—</span>}
                         </div>
                       </div>
                     );
                   })}
-                </div>
-              </div>);
-            })()}
-            </div>
-
-            {/* Métricas */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:16}}>
-              {[
-                {label:"En seguimiento",val:activos.length,color:T.accent,hint:"envíos activos"},
-                {label:"En camino",val:activos.filter(e=>e.categoria==="en_camino").length,color:T.blue,hint:"con Andreani"},
-                {label:"En sucursal",val:activos.filter(e=>e.categoria==="en_sucursal").length,color:T.orange,hint:"esperando retiro"},
-                {label:"Entregados (30d)",val:entregados30.length,color:T.green,hint:tPromEntrega!=null?`~${tPromEntrega.toFixed(1)} días desp.→entrega`:"últimos 30 días"},
-                ...(pctSuc!=null?[{label:"% a sucursal",val:pctSuc+"%",color:T.purple||T.accent,hint:"últimos 30 días"}]:[]),
-              ].map(k=>(
-                <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
-                  <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:4,textTransform:"uppercase",letterSpacing:0.4}}>{k.label}</div>
-                  <div style={{fontSize:22,fontWeight:800,color:k.color,letterSpacing:-0.5}}>{k.val}</div>
-                  <div style={{fontSize:9,color:T.textSm,marginTop:2}}>{k.hint}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Alertas de excepción — accionables: un click y tenés el aviso listo
-                para pegarle al cliente por WhatsApp/mail */}
-            {alertas.length>0&&(
-              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
-                {alertas.slice(0,8).map((a,i)=>{
-                  const trk=a.envio?.tracking||"";
-                  const linkSeg=trk?`https://www.andreani.com/envio/${trk}`:"";
-                  const aviso=a.tipo==="sucursal"
-                    ?`¡Hola! Tu pedido ya está esperándote en la sucursal de Andreani. Acordate de pasar a retirarlo antes de que venza el plazo, así no vuelve al remitente.${linkSeg?` Podés ver los detalles acá: ${linkSeg}`:""}`
-                    :a.tipo==="fallida"
-                    ?`¡Hola! Andreani pasó por tu domicilio pero no pudo entregar tu pedido. Va a reintentar la entrega o podés retirarlo por la sucursal.${linkSeg?` Seguilo acá: ${linkSeg}`:""}`
-                    :`¡Hola! Te paso el seguimiento de tu pedido para que veas dónde está.${linkSeg?` ${linkSeg}`:""}`;
-                  return (
-                    <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:(a.sev==="red"?T.red:T.orange)+"12",border:`1px solid ${(a.sev==="red"?T.red:T.orange)}33`,borderRadius:DS.r.lg,padding:"8px 14px",fontSize:12,color:T.text,flexWrap:"wrap"}}>
-                      <span style={{flexShrink:0,width:8,height:8,borderRadius:"50%",background:a.sev==="red"?T.red:T.orange,display:"inline-block"}}/>
-                      <span style={{flex:1,minWidth:180}}>{a.msg}</span>
-                      {a.tipo!=="devolucion"&&(
-                        <button onClick={()=>{try{navigator.clipboard.writeText(aviso);toast("Aviso copiado — pegalo en WhatsApp o mail","success");}catch(_){toast("No se pudo copiar","warning");}}}
-                          style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",flexShrink:0}}>Copiar aviso</button>
-                      )}
-                      {linkSeg&&<a href={linkSeg} target="_blank" rel="noreferrer" style={{fontSize:11,fontWeight:600,color:T.accent,textDecoration:"none",flexShrink:0}}>Ver tracking</a>}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Modo despacho: escanear rótulo (lector USB/Bluetooth o tipeo) */}
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 16px",marginBottom:16}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                <span style={{fontSize:12,fontWeight:700,color:T.text}}>Modo despacho</span>
-                <input value={scanValue} onChange={e=>setScanValue(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")procesarScan();}}
-                  placeholder="Escaneá el código del rótulo (o tipeá tracking / N° pedido) y Enter"
-                  style={{...iS,flex:1,minWidth:220,fontSize:13}}/>
-                <span style={{fontSize:10,color:T.textSm}}>Verifica que el paquete escaneado corresponde a un envío registrado</span>
-              </div>
-              {scanLog.length>0&&(
-                <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:3,maxHeight:120,overflowY:"auto"}}>
-                  {scanLog.map((s,i)=>(
-                    <div key={i} style={{fontSize:11,color:s.ok?T.green:T.red,fontWeight:600}}>
-                      {s.ok?`✓ #${s.numero} verificado`:`✗ ${s.tracking} — no corresponde a ningún envío registrado`}
-                    </div>
-                  ))}
-                </div>
+                  {lista.length>segLimite&&<div style={{textAlign:"center",padding:8,borderTop:`1px solid ${T.borderL}`}}><Btn T={T} variant="secondary" size="sm" onClick={()=>setSegLimite(n=>n+60)}>Ver más ({lista.length-segLimite})</Btn></div>}
+                </div></div>
               )}
-            </div>
+            </Card>
 
-            {/* Tabla de envíos */}
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
-              <div style={{padding:"10px 16px",borderBottom:`1px solid ${T.borderL}`,fontSize:11,color:T.textSm}}>
-                {envios.length} envíos de los últimos 60 días · el estado se actualiza solo cada 30 min (aunque la app esté cerrada)
-              </div>
-              {envios.length===0&&<div style={{padding:"36px",textAlign:"center",color:T.textSm,fontSize:13}}>Todavía no hay envíos registrados. Generá etiquetas y subí los rótulos en "SKU en Rótulos" — desde ahí cada envío entra al seguimiento automático.</div>}
-              <div style={{overflowX:"auto"}}><div style={{minWidth:640}}>
-                {envios.slice(0,120).map((e,i)=>{
-                  const [lbl,col]=CAT[e.categoria]||CAT.otro;
-                  const final=!e.activo&&(e.entregadoAt||e.devolucionAt);
-                  return (
-                    <div key={e.numero||i} style={{display:"grid",gridTemplateColumns:"90px 1fr 150px 170px 90px",gap:8,padding:"10px 16px",borderBottom:`0.5px solid ${T.borderL}`,alignItems:"center",opacity:final?0.65:1}}>
-                      <span style={{fontWeight:700,color:T.accent,fontSize:13}}>#{e.numero}</span>
-                      <div style={{minWidth:0}}>
-                        <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.cliente||"—"}{e.verificado&&<span title="Verificado por escaneo" style={{marginLeft:6,fontSize:10,color:T.green}}>✓</span>}</div>
-                        {e.tracking
-                          ? <a href={`https://www.andreani.com/envio/${e.tracking}`} target="_blank" rel="noreferrer" style={{fontSize:10,color:T.textSm,textDecoration:"none"}}>{e.tracking} ↗</a>
-                          : <span style={{fontSize:10,color:T.textSm}}>sin tracking aún</span>}
+            <AdmTrazasModal T={T} envio={segTrazas} onClose={()=>setSegTrazas(null)}/>
+
+            {/* Modal: subir PDF de rótulos y mandar seguimientos a la tienda */}
+            <Modal T={T} open={showPdfUp} onClose={()=>setShowPdfUp(false)} title="Subir PDF de rótulos" width={640}>
+              <div style={{fontSize:12,color:T.textMd,lineHeight:1.5,marginBottom:12}}>Extrae el número de seguimiento de cada etiqueta y lo manda a tu tienda: el pedido queda marcado como enviado y el cliente recibe el aviso.</div>
+              <label htmlFor="seg-file-input" style={{display:"block",background:T.surface,border:`2px dashed ${pdfFile?T.accentSolid:T.border}`,borderRadius:12,padding:"20px 16px",marginBottom:14,textAlign:"center",cursor:"pointer"}}>
+                <input id="seg-file-input" type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f){setPdfFile(f);setPdfResults([]);setTrackingSent({});parsePdf(f,"tracking");}}}/>
+                {pdfProcessing
+                  ? <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,fontSize:13,color:T.text}}><Spinner size={16} color={T.accent}/> Analizando el PDF, extrayendo números de seguimiento</div>
+                  : pdfFile
+                    ? <div style={{fontSize:13,color:T.text,fontWeight:600}}>{pdfFile.name}<div style={{fontSize:11,color:T.accent,fontWeight:500,marginTop:2}}>Clic para cambiar de archivo</div></div>
+                    : <div style={{fontSize:13,color:T.text,fontWeight:600}}>Elegí el PDF de rótulos de Andreani<div style={{fontSize:11,color:T.textSm,fontWeight:500,marginTop:2}}>El mismo que imprimís</div></div>}
+              </label>
+              {pdfResults.length>0&&(()=>{
+                const sentCount=Object.values(trackingSent).filter(v=>v==="ok"||v==="warn").length;
+                const errorCount=Object.values(trackingSent).filter(v=>v==="error").length;
+                const pct=pdfResults.length?Math.round((sentCount/pdfResults.length)*100):0;
+                return (<div>
+                  <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",fontSize:12,marginBottom:10}}>
+                    <span><strong style={{color:T.text}}>{pdfResults.length}</strong> <span style={{color:T.textSm}}>detectados</span></span>
+                    <span><strong style={{color:sentCount?T.green:T.text}}>{sentCount}</strong> <span style={{color:T.textSm}}>enviados</span></span>
+                    <span><strong style={{color:pdfPend.length?T.orange:T.text}}>{pdfPend.length}</strong> <span style={{color:T.textSm}}>pendientes</span></span>
+                    {errorCount>0&&<span><strong style={{color:T.red}}>{errorCount}</strong> <span style={{color:T.textSm}}>con error</span></span>}
+                    <span style={{marginLeft:"auto"}}>{pdfPend.length>0?<AsyncButton onClick={sendAllTracking} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Enviar {pdfPend.length} pendiente{pdfPend.length!==1?"s":""}</AsyncButton>:sentCount>0?<DSBadge T={T} color={T.green} size="sm">Todo enviado</DSBadge>:null}</span>
+                  </div>
+                  {sentCount>0&&<div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:10}}><div style={{height:"100%",width:`${pct}%`,background:pct===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s ease"}}/></div>}
+                  <div style={{border:`1px solid ${T.borderL}`,borderRadius:10,overflow:"hidden",maxHeight:320,overflowY:"auto"}}>
+                    {pdfResults.map((r,i)=>{ const st=trackingSent[r.pedidoNum]; const sending=sendingTracking[r.pedidoNum]; return (
+                      <div key={i} style={{display:"grid",gridTemplateColumns:"70px 1fr 90px",gap:8,padding:"8px 12px",borderBottom:i<pdfResults.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",fontSize:12}}>
+                        <span style={{fontWeight:700,color:T.accent}}>#{r.pedidoNum||"--"}</span>
+                        <div style={{minWidth:0}}>{r.destinatario&&<div style={{color:T.text,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.destinatario}</div>}<div style={{fontSize:10.5,color:T.textSm,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{r.tracking||"Sin tracking"}</div></div>
+                        <div style={{display:"flex",justifyContent:"flex-end"}}>
+                          {st==="ok"?<DSBadge T={T} color={T.green} size="sm">Enviado</DSBadge>:st==="warn"?<span title="El tracking se guardó pero la tienda no marcó la orden como enviada"><DSBadge T={T} color={T.orange} size="sm">Sin aviso</DSBadge></span>:st==="error"?<DSBadge T={T} color={T.red} size="sm">Error</DSBadge>:sending?<Spinner size={13} color={T.yellow}/>:sendBatchActive?<span style={{fontSize:11,color:T.textSm}}>En cola</span>:r.tracking&&r.pedidoNum?<AsyncButton onClick={()=>sendTracking(r)} style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px"}}>Enviar</AsyncButton>:<span style={{fontSize:11,color:T.red}}>Sin datos</span>}
+                        </div>
                       </div>
-                      <DSBadge T={T} color={e.tracking?col:T.textSm} size="sm">{e.tracking?lbl:"Etiqueta generada"}</DSBadge>
-                      <span style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={e.estadoAndreani||""}>{e.estadoAndreani||(e.tracking?"esperando 1er chequeo":"")}</span>
-                      <span style={{fontSize:10,color:T.textSm,textAlign:"right"}}>{e.creado?new Date(e.creado).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span>
-                    </div>
-                  );
-                })}
-              </div></div>
-            </div>
+                    );})}
+                  </div>
+                </div>);
+              })()}
+            </Modal>
 
           </div>
           );
