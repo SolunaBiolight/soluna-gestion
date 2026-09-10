@@ -15145,12 +15145,6 @@ function AppAdmin({T, user, onBack}) {
   const [envCfg, setEnvCfg] = useState(null);
   const [envCargas, setEnvCargas] = useState([]);
   const [cuenta, setCuenta] = useState(null);       // uid de la ficha abierta
-  const [envProblemas, setEnvProblemas] = useState({loading:true,envios:[],cuentas:0});
-  async function loadEnvProblemas() {
-    setEnvProblemas(s=>({...s,loading:true}));
-    try { const r=await authFetch("/api/andreani?action=admin_envios_problemas"); const d=await r.json(); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`); setEnvProblemas({loading:false,envios:d.envios||[],cuentas:d.cuentas||0,revisados:d.revisados||0,truncado:!!d.truncado}); }
-    catch(e){ setEnvProblemas({loading:false,envios:[],cuentas:0,error:e.message}); }
-  }
   const [confirmMeses, setConfirmMeses] = useState({});
 
   async function adminApi(body) {
@@ -15201,7 +15195,7 @@ function AppAdmin({T, user, onBack}) {
     toast(acreditar?`${fmtMoney(c.monto)} acreditados a ${c.email||c.uid}`:"Carga rechazada","success");
     loadEnvCargas();
   }
-  useEffect(()=>{ loadData(!!datos.usuarios?.length); loadSectionsConfig(); loadEnvCargas(); loadEnvCfg(); loadEnvProblemas(); },[]);
+  useEffect(()=>{ loadData(!!datos.usuarios?.length); loadSectionsConfig(); loadEnvCargas(); loadEnvCfg(); },[]);
 
   // ── Derivados ──
   const { pagos=[], usuarios=[], stats={} } = datos;
@@ -15221,8 +15215,7 @@ function AppAdmin({T, user, onBack}) {
   const ingresosMes = pagosReales.filter(p=>p.createdAt&&admMesKey(p.createdAt)===mesKey);
   const primerPagoUid = useMemo(()=>{ const m={}; [...pagosReales].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).forEach(p=>{ if(!m[p.uid]) m[p.uid]=p._id; }); return m; },[pagosReales]);
   const esNueva = p => p.billingReason==="subscription_create" || (p.method!=="stripe" && primerPagoUid[p.uid]===p._id);
-  const envProbRojos = (envProblemas.envios||[]).filter(e=>e.problema?.sev==="red").length;
-  const porAtender = envCargas.length + pagosPendientes.length + pastDue.length + (envProbRojos?1:0);
+  const porAtender = envCargas.length + pagosPendientes.length + pastDue.length;
 
   // ── Acciones sobre cuentas ──
   const actualizarUsuario = (uid, patch) => setDatos(prev=>({...prev, usuarios:prev.usuarios.map(u=>u._id===uid?{...u,...patch}:u)}));
@@ -15294,7 +15287,7 @@ function AppAdmin({T, user, onBack}) {
     window.open(URL.createObjectURL(bl),"_blank");
   }
 
-  const ctx = { T, user, founder, usuarios, pagos, usuariosPorUid, ultPagoPorUid, envCfg, adminApi, gestionarPlan, ajustarDias, desactivarPlan, saveNote, toggleAdmin, toggleEnviosSaldo, verComoCliente, setCuenta, setTab, envProblemas, loadEnvProblemas };
+  const ctx = { T, user, founder, usuarios, pagos, usuariosPorUid, ultPagoPorUid, envCfg, adminApi, gestionarPlan, ajustarDias, desactivarPlan, saveNote, toggleAdmin, toggleEnviosSaldo, verComoCliente, setCuenta, setTab };
   const segBtn=(on)=>({padding:"6px 14px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:6,background:on?T.card:"transparent",color:on?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?"0 1px 3px rgba(0,0,0,0.12)":"none",display:"inline-flex",alignItems:"center",gap:6,whiteSpace:"nowrap"});
   const TABS=[["resumen","Resumen"],["cuentas","Cuentas"],["ingresos","Ingresos"],["envios","Envíos"],["sistema","Sistema"]];
   const tabDesc={resumen:"Lo que requiere tu acción y el pulso de hoy.",cuentas:"Todas las cuentas de Growith: plan, estado, origen, último login e integraciones.",ingresos:"Ingresos en dólares, nuevas suscripciones y renovaciones, referidos.",envios:"El negocio de etiquetas prepagas: precios, cuentas habilitadas, saldos y rentabilidad.",sistema:"Crons, servicios configurados, accesos por sección y registro de acciones."};
@@ -15345,7 +15338,7 @@ function AppAdmin({T, user, onBack}) {
 
 // ── Resumen ──────────────────────────────────────────────────────────────────
 function AdmResumen({ctx, stats, usuarios, pagos, pagosReales, pagosPendientes, envCargas, resolverCarga, confirmarPago, rechazarPago, verComprobante, confirmMeses, setConfirmMeses, vencenProximos, pastDue, vencidasPagas, pruebasPorVencer, ingresosMes, esNueva, esUsd, cardTitle, chip, cuentaBtn, activaPaga}) {
-  const {T, setCuenta, setTab, envProblemas} = ctx;
+  const {T, setCuenta} = ctx;
   const ahora=Date.now();
   const mesLabel=admMesLabel(admMesKey(ahora));
   const ingUsd=ingresosMes.filter(esUsd).reduce((s,p)=>s+p.amount,0);
@@ -15368,10 +15361,6 @@ function AdmResumen({ctx, stats, usuarios, pagos, pagosReales, pagosPendientes, 
     items.push({k:"pago_"+p._id,sev:"red",tipo:"Pago manual",titulo:u?.email||p.email||p.uid,desc:`${admPlanLabel(p.plan)}${p.periodo==="anual"?" anual":""} · ${p.amount>0?"$"+p.amount+" "+(p.currency||""):""}${p.method==="cripto"?" USDT":p.method==="stripe"?" tarjeta":" transferencia"}${p.transferRef?" · ref "+p.transferRef:""}${p.txHash?" · tx "+String(p.txHash).slice(0,10)+"…":""} · ${admFecha(p.createdAt,true)}${p.autoCheckMotivo?" · bot: "+(p.autoCheckMotivo==="txid_no_encontrado"?"TxID no está en la blockchain":p.autoCheckMotivo==="ambiguo"?"monto ambiguo":p.autoCheckMotivo==="ya_activado_manualmente"?"ya activado a mano, rechazar":"sin match"):""}`,
       acciones:<>{p.tieneComprobante&&<AsyncButton onClick={()=>verComprobante(p)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>Comprobante</AsyncButton>}<select value={confirmMeses[p._id]||String(p.meses||1)} onChange={e=>setConfirmMeses(prev=>({...prev,[p._id]:e.target.value}))} style={{...InputStyle(T),padding:"6px 8px",fontSize:12,width:"auto",marginBottom:0}}>{["1","2","3","6","12"].map(m=><option key={m} value={m}>{m} m</option>)}</select><AsyncButton onClick={()=>confirmarPago(p)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>Confirmar</AsyncButton><AsyncButton onClick={()=>rechazarPago(p._id)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.red,borderColor:T.red+"66"}}>Rechazar</AsyncButton></>});
   });
-  {
-    const pr=envProblemas?.envios||[]; const rojos=pr.filter(e=>e.problema?.sev==="red");
-    if(pr.length) items.push({k:"envprob",sev:rojos.length?"red":"yellow",tipo:"Envíos con problema",titulo:`${pr.length} envío${pr.length===1?"":"s"} en ${new Set(pr.map(e=>e.uid)).size} cuenta${new Set(pr.map(e=>e.uid)).size===1?"":"s"}`,desc:[rojos.length?`${rojos.length} urgente${rojos.length===1?"":"s"} (devolución o plazo de sucursal por vencer)`:"",pr.filter(e=>e.problema?.tipo==="sin_despacho").length?`${pr.filter(e=>e.problema?.tipo==="sin_despacho").length} etiqueta${pr.filter(e=>e.problema?.tipo==="sin_despacho").length===1?"":"s"} emitida${pr.filter(e=>e.problema?.tipo==="sin_despacho").length===1?"":"s"} sin despacho`:"",pr.filter(e=>e.problema?.tipo==="quieto").length?`${pr.filter(e=>e.problema?.tipo==="quieto").length} sin movimiento`:""].filter(Boolean).join(" · ")||"Revisá el detalle en Envíos.",acciones:<><Btn T={T} variant="secondary" size="sm" onClick={()=>setTab("envios")}>Ver en Envíos</Btn></>});
-  }
   pruebasPorVencer.forEach(u=>items.push({k:"pr_"+u._id,sev:"yellow",tipo:"Prueba por vencer",titulo:u.email,desc:`${admPlanLabel(u.plan)} de prueba vence ${admDias(u.planExpiry)===0?"hoy":"en "+admDias(u.planExpiry)+" días"} y no pagó. Buen momento para escribirle.`,acciones:<><Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cuenta</Btn></>}));
   churn.forEach(u=>items.push({k:"ch_"+u._id,sev:"yellow",tipo:"Vencida sin renovar",titulo:u.email,desc:`${admPlanLabel(u.plan)} venció hace ${Math.abs(admDias(u.planExpiry))} días${u.stripeStatus==="canceled"?" · canceló en Stripe":""}. Riesgo de pérdida.`,acciones:<><Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cuenta</Btn></>}));
   const recent=[...pagos].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,10);
@@ -15872,8 +15861,7 @@ function AdmIngresos({ctx, stats, pagosReales, pagos, esNueva, esUsd, cardTitle,
 
 // ── Envíos (etiquetas prepagas) ──────────────────────────────────────────────
 function AdmEnvios({ctx, envCfg, setEnvCfg, saveEnvCfg, cardTitle, lbl, iS}) {
-  const {T, usuarios, usuariosPorUid, envProblemas, loadEnvProblemas, setCuenta} = ctx;
-  const [trazasP,setTrazasP]=useState(null);
+  const {T, usuarios, usuariosPorUid, setCuenta} = ctx;
   const [saldos,setSaldos]=useState(null);
   const [busca,setBusca]=useState("");
   const [buscaRes,setBuscaRes]=useState(null);
@@ -15904,26 +15892,6 @@ function AdmEnvios({ctx, envCfg, setEnvCfg, saveEnvCfg, cardTitle, lbl, iS}) {
   return (
     <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(300px,1fr)",gap:16,alignItems:"start"}}>
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
-        <Card T={T} padding="lg">
-          {cardTitle("Envíos con problema en la plataforma",`Envíos activos de todas las cuentas con devolución, visita fallida, plazo de sucursal por vencer, sin movimiento hace 7 días o etiqueta emitida que nunca se despachó.${envProblemas?.cuentas?` Revisadas ${envProblemas.cuentas} cuentas activas.`:""}${envProblemas?.truncado?" Lista parcial por tiempo: actualizá para completar.":""}`,<Btn T={T} variant="secondary" size="sm" onClick={loadEnvProblemas} disabled={envProblemas?.loading}>Actualizar</Btn>)}
-          {envProblemas?.loading?<div style={{fontSize:12,color:T.textSm,display:"flex",gap:8,alignItems:"center"}}><Spinner size={13} color={T.accent}/> Revisando envíos activos</div>
-          :envProblemas?.error?<div style={{fontSize:12,color:T.red}}>{envProblemas.error}</div>
-          :!(envProblemas?.envios||[]).length?<div style={{fontSize:12,color:T.textSm}}>Ningún envío con problema ahora mismo.</div>:(
-            <div style={{border:`1px solid ${T.borderL}`,borderRadius:8,overflow:"hidden",maxHeight:440,overflowY:"auto"}}>
-              {envProblemas.envios.map((e,i)=>{ const num=e.andreani?.numeroDeEnvio||e.tracking; const u=usuariosPorUid[e.uid]; return (
-                <div key={e.uid+"_"+e.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 10px",borderTop:i>0?`1px solid ${T.borderL}`:"none",fontSize:12,flexWrap:"wrap",borderLeft:`3px solid ${e.problema.sev==="red"?T.red:T.orange}`}}>
-                  <div style={{flex:1,minWidth:200}}>
-                    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}><button onClick={()=>u&&setCuenta(e.uid)} style={{background:"transparent",border:"none",padding:0,cursor:u?"pointer":"default",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:700,color:T.text}}>{e.email||e.uid}</button><span style={{color:T.textSm}}>#{e.numero}{e.cliente?` · ${e.cliente}`:""}{e.localidad?` · ${e.localidad}`:""}</span></div>
-                    <div style={{fontSize:11,color:e.problema.sev==="red"?T.red:T.orange,fontWeight:600}}>{e.problema.msg}</div>
-                    {e.estadoAndreani&&<div style={{fontSize:10.5,color:T.textSm}}>{e.estadoAndreani}</div>}
-                  </div>
-                  {num?<button onClick={()=>setTrazasP(e)} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 8px",fontSize:11,color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Cascadia Code','Consolas',monospace"}}>{num}</button>:null}
-                </div>
-              );})}
-            </div>
-          )}
-          <AdmTrazasModal T={T} envio={trazasP} onClose={()=>setTrazasP(null)}/>
-        </Card>
         <Card T={T} padding="lg">
           {cardTitle("Uso por cliente y rentabilidad","Cobrado = lo que pagaron con su saldo. Costo real = lo que factura Andreani a fin de mes.",(
             <select value={statsMes} onChange={e=>loadStats(e.target.value)} style={{...iS,width:"auto",marginBottom:0,padding:"6px 10px",fontSize:12}}>{meses.map(m=><option key={m.v} value={m.v}>{m.label}</option>)}</select>
