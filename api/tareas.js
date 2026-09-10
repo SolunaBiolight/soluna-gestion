@@ -2084,7 +2084,8 @@ export default async function handler(req, res) {
           { id: "meta", label: "Meta Ads", ok: env("META_APP_ID") && env("META_APP_SECRET"), detalle: env("META_APP_SECRET") ? "App configurada" : "Falta META_APP_SECRET" },
           { id: "andreani", label: "Andreani (etiquetas)", ok: env("ANDREANI_USER") && env("ANDREANI_PASS") && env("ANDREANI_CONTRATO_ESTANDAR"), detalle: env("ANDREANI_CONTRATO_SUCURSAL") ? "Contratos domicilio y sucursal" : "Falta contrato sucursal" },
           { id: "mp", label: "Mercado Pago (cargas de saldo)", ok: env("MP_ACCESS_TOKEN"), detalle: env("MP_WEBHOOK_SECRET") ? "Webhook firmado" : "Sin MP_WEBHOOK_SECRET" },
-          { id: "tn", label: "Tienda Nube OAuth", ok: env("TN_CLIENT_ID") && env("TN_CLIENT_SECRET"), detalle: "" },
+          // El client id tiene default en código (tn-callback.js: 30036); lo único obligatorio es el secreto.
+          { id: "tn", label: "Tienda Nube OAuth", ok: env("TN_CLIENT_SECRET"), detalle: env("TN_CLIENT_SECRET") ? `App ${process.env.TN_CLIENT_ID || "30036"}` : "Falta TN_CLIENT_SECRET" },
           { id: "shopify", label: "Shopify OAuth", ok: env("SHOPIFY_APP_ID") && env("SHOPIFY_APP_SECRET"), detalle: "" },
           { id: "ml", label: "Mercado Libre OAuth", ok: env("ML_CLIENT_ID") && env("ML_CLIENT_SECRET"), detalle: "" },
           { id: "gads", label: "Google Ads", ok: env("GOOGLE_ADS_CLIENT_ID") && env("GOOGLE_ADS_CLIENT_SECRET") && env("GOOGLE_ADS_DEVELOPER_TOKEN"), detalle: env("GOOGLE_ADS_DEVELOPER_TOKEN") ? "" : "Pendiente de configurar" },
