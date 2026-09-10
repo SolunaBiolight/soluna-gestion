@@ -1832,8 +1832,10 @@ export default async function handler(req, res) {
         // cliente no vuelva a abrir Envíos.
         const [uSnap, snap, apiSnap] = await Promise.all([
           db.collection("users").doc(targetUid).get(),
-          col.where("creado", ">", cutoff).limit(500).get(),
-          col.where("andreani.numeroDeEnvio", ">", "").limit(500).get().catch(() => ({ docs: [] })),
+          // Del más nuevo al más viejo: sin orderBy, el límite dejaba los 500 más
+          // VIEJOS de la ventana (shineboost: 3000 pedidos en 90 días y se veían 500).
+          col.where("creado", ">", cutoff).orderBy("creado", "desc").limit(4000).get(),
+          col.where("andreani.numeroDeEnvio", ">", "").limit(2000).get().catch(() => ({ docs: [] })),
         ]);
         const ahora = Date.now();
         const docs = new Map();
@@ -1856,7 +1858,7 @@ export default async function handler(req, res) {
           .map(([id, e]) => { const s = slimEnvio(id, e); s.creado = s.creado || fechaDe(e) || null; s.problema = problemaDe(e, ahora); return s; })
           .sort((a, b) => String(b.creado || "").localeCompare(String(a.creado || "")));
         const ud = uSnap.exists ? uSnap.data() : {};
-        return res.json({ ok: true, dias, envios, activados: heal, saldo: Math.round(Number(ud.andreaniSaldo) || 0), email: ud.email || "", habilitado: (await getGlobalConfig(db)).habilitados.includes(targetUid), trackActivo: ud.enviosTrackActivo || null });
+        return res.json({ ok: true, dias, envios, total: envios.length, truncado: snap.size >= 4000, activados: heal, saldo: Math.round(Number(ud.andreaniSaldo) || 0), email: ud.email || "", habilitado: (await getGlobalConfig(db)).habilitados.includes(targetUid), trackActivo: ud.enviosTrackActivo || null });
       }
       // Envíos con problema en TODA la plataforma: mismas cuentas que rota el cron
       // de seguimiento (activas en Envíos los últimos 45 días), envíos activos.
