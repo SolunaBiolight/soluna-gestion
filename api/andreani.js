@@ -1824,15 +1824,39 @@ export default async function handler(req, res) {
         if (!targetUid) return res.status(400).json({ error: "uid requerido" });
         const dias = Math.min(365, Math.max(7, Number(body.dias) || 90));
         const cutoff = new Date(Date.now() - dias * 86400000).toISOString();
-        const [uSnap, snap] = await Promise.all([
+        const col = db.collection("users").doc(targetUid).collection("envios");
+        // Dos fuentes: por fecha de creación Y por número de envío de la API.
+        // Las etiquetas emitidas por API que nunca entraron al seguimiento no
+        // tienen `creado` (caso Leo: 5 etiquetas y la ficha marcaba 0). Acá se
+        // activan igual que en envios_list, así el cron las trackea aunque el
+        // cliente no vuelva a abrir Envíos.
+        const [uSnap, snap, apiSnap] = await Promise.all([
           db.collection("users").doc(targetUid).get(),
-          db.collection("users").doc(targetUid).collection("envios").where("creado", ">", cutoff).limit(500).get(),
+          col.where("creado", ">", cutoff).limit(500).get(),
+          col.where("andreani.numeroDeEnvio", ">", "").limit(500).get().catch(() => ({ docs: [] })),
         ]);
         const ahora = Date.now();
-        const envios = snap.docs.map(d => { const s = slimEnvio(d.id, d.data()); s.problema = problemaDe(d.data(), ahora); return s; })
+        const docs = new Map();
+        snap.docs.forEach(d => docs.set(d.id, d.data()));
+        let heal = 0;
+        try {
+          const ahoraIso = new Date(ahora).toISOString();
+          const b = db.batch();
+          apiSnap.docs.forEach(d => {
+            const e = d.data();
+            if (!docs.has(d.id)) docs.set(d.id, e);
+            if (e.activo === true || e.entregadoAt || e.devolucionAt || e.tracking) return;
+            const patch = { numero: d.id, tracking: String(e.andreani.numeroDeEnvio), activo: true, estado: "despachado", despachadoAt: e.despachadoAt || ahoraIso, creado: e.creado || (e.andreani?.ts?.toDate?.() ? e.andreani.ts.toDate().toISOString() : ahoraIso), apiHeal: true };
+            b.set(d.ref, patch, { merge: true }); docs.set(d.id, { ...e, ...patch }); heal++;
+          });
+          if (heal) await b.commit();
+        } catch (e) { console.warn("[admin_envios] heal API:", e.message); }
+        const fechaDe = e => e.creado || (e.andreani?.ts?.toDate?.() ? e.andreani.ts.toDate().toISOString() : "");
+        const envios = [...docs.entries()].filter(([, e]) => !fechaDe(e) || fechaDe(e) > cutoff)
+          .map(([id, e]) => { const s = slimEnvio(id, e); s.creado = s.creado || fechaDe(e) || null; s.problema = problemaDe(e, ahora); return s; })
           .sort((a, b) => String(b.creado || "").localeCompare(String(a.creado || "")));
         const ud = uSnap.exists ? uSnap.data() : {};
-        return res.json({ ok: true, dias, envios, saldo: Math.round(Number(ud.andreaniSaldo) || 0), email: ud.email || "", habilitado: (await getGlobalConfig(db)).habilitados.includes(targetUid), trackActivo: ud.enviosTrackActivo || null });
+        return res.json({ ok: true, dias, envios, activados: heal, saldo: Math.round(Number(ud.andreaniSaldo) || 0), email: ud.email || "", habilitado: (await getGlobalConfig(db)).habilitados.includes(targetUid), trackActivo: ud.enviosTrackActivo || null });
       }
       // Envíos con problema en TODA la plataforma: mismas cuentas que rota el cron
       // de seguimiento (activas en Envíos los últimos 45 días), envíos activos.
