@@ -8030,6 +8030,56 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     if(!o?.pickupDetails||!suc) return null;
     return matchSucursalOficial([suc],o)?"ok":"warn";
   }
+  // ¿Esta sucursal oficial CONTRADICE el punto que eligió el cliente? Devuelve
+  // {msg, grave} o null. "Distinto" no es lo mismo que "no verificable": acá
+  // solo se acusa evidencia positiva — misma calle con otro número, u otro CP /
+  // otra localidad. Caso real: el cliente pidió "Balbín 3301, CABA" y se emitió
+  // a "MyM logística — Balbín 5617, San Martín" porque compartían la calle.
+  // grave = número distinto en la misma calle o CP distinto (no se reusa de memoria).
+  function conflictoSucursal(o,suc){
+    const pd=o?.pickupDetails; if(!pd||!suc) return null;
+    const d=suc.direccion||{};
+    const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL","DOCTOR","DR"]);
+    const calleRaw=nrmSucTxt(ghStripUnidad(pd.address?.address));
+    const numCampo=String(pd.address?.number||"").replace(/D.*/,"").trim();
+    const num=numCampo||(calleRaw.match(/\b(\d{1,5})\s*$/)||[])[1]||"";
+    const calleSola=num?calleRaw.replace(new RegExp("\\b"+num+"\\s*$"),"").trim():calleRaw;
+    let sCalle=nrmSucTxt(d.calle); let sNum=String(d.numero||"").replace(/\D.*/,"").trim();
+    if(!sNum){ const m=sCalle.match(/\b(\d{1,5})\s*$/); if(m){ sNum=m[1]; sCalle=sCalle.replace(/\b\d{1,5}\s*$/,"").trim(); } }
+    const calleToks=calleSola.split(" ").filter(w=>w.length>=4&&!GEN.has(w));
+    const mismaCalle=!!(calleToks.length&&sCalle&&calleToks.some(t=>sCalle.includes(t)));
+    const razones=[]; let grave=false;
+    if(mismaCalle&&num&&sNum&&num!==sNum){ razones.push(`es ${(d.calle||"la misma calle").trim()} ${sNum}, no ${num}`); grave=true; }
+    const esCaba=s=>/\bC\s*A\s*B\s*A\b|CAPITAL FEDERAL|CIUDAD AUTONOMA|CIUDAD DE BUENOS AIRES/.test(s);
+    const locTnRaw=String(pd.address?.locality||pd.address?.city||"").trim();
+    const locTn=nrmSucTxt(locTnRaw); const cpTn=String(pd.address?.zipcode||pd.address?.zip_code||"").replace(/\D/g,"");
+    const locSuc=nrmSucTxt(d.localidad||""); const cpSuc=String(d.codigoPostal||"").replace(/\D/g,"");
+    const cabaTn=esCaba(locTn)||/^1[0-4]\d\d$/.test(cpTn); const cabaSuc=esCaba(locSuc)||/^1[0-4]\d\d$/.test(cpSuc);
+    if(cabaTn!==cabaSuc&&(locTn||cpTn)&&(locSuc||cpSuc)){
+      razones.push(`está en ${d.localidad||"otra localidad"}${cpSuc?` (CP ${cpSuc})`:""} y el cliente eligió ${locTnRaw||"CABA"}${cpTn?` (CP ${cpTn})`:""}`); grave=true;
+    } else if(cpTn&&cpSuc&&cpTn!==cpSuc&&!(cabaTn&&cabaSuc)){
+      razones.push(`CP ${cpSuc} (${d.localidad||""}) y el cliente eligió CP ${cpTn}${locTnRaw?` (${locTnRaw})`:""}`); grave=true;
+    } else if(locTn&&locSuc&&!(cabaTn&&cabaSuc)&&!locTn.includes(locSuc)&&!locSuc.includes(locTn)){
+      razones.push(`figura en ${d.localidad} y el cliente eligió ${locTnRaw}`);
+    }
+    return razones.length?{msg:razones.join(" · "),grave}:null;
+  }
+  // Ídem contra el STRING del desplegable del Excel: solo acusa número distinto
+  // en la misma calle (el texto del template rara vez trae localidad).
+  function conflictoTpl(o,tplStr){
+    const pd=o?.pickupDetails; if(!pd||!tplStr) return null;
+    const s=nrmSucTxt(tplStr);
+    const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL","DOCTOR","DR"]);
+    const calleRaw=nrmSucTxt(ghStripUnidad(pd.address?.address));
+    const numCampo=String(pd.address?.number||"").replace(/\D.*/,"").trim();
+    const num=numCampo||(calleRaw.match(/\b(\d{1,5})\s*$/)||[])[1]||"";
+    const calleSola=num?calleRaw.replace(new RegExp("\\b"+num+"\\s*$"),"").trim():calleRaw;
+    const toks=calleSola.split(" ").filter(w=>w.length>=4&&!GEN.has(w));
+    if(!num||!toks.length||!toks.some(t=>s.includes(t))) return null;
+    const nums=s.match(/\b\d{2,5}\b/g)||[];
+    if(nums.length&&!nums.includes(num)) return {msg:`el desplegable dice ${nums.join("/")}, el cliente eligió ${num}`,grave:true};
+    return null;
+  }
   // Ídem pero contra el STRING del desplegable del Excel (flujo XLSX). Los
   // nombres del desplegable suelen NO traer número y a veces ni la calle
   // ("SAN ISIDRO (CENTRO)"), así que acá se detectan CONTRADICCIONES, no
@@ -8530,7 +8580,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       // alguna vez, se reusa esa elección (validando que siga en el desplegable).
       const forzar=!!sucNoOperRef.current[ovrKey(o)]; // la sucursal automática no opera: solo modal
       const memXlsx=(()=>{const pk=ghPuntoKey(o);return pk?puntoMapRef.current[pk]:null;})();
-      if(!forzar&&memXlsx?.tpl&&(locs.sucursales||[]).includes(memXlsx.tpl)){
+      const memXlsxConf=memXlsx?.tpl?conflictoTpl(o,memXlsx.tpl):null;
+      if(memXlsxConf?.grave){ const pk=ghPuntoKey(o); if(pk){ delete puntoMapRef.current[pk]; persistPuntoMap(); } }
+      if(!forzar&&memXlsx?.tpl&&!memXlsxConf?.grave&&(locs.sucursales||[]).includes(memXlsx.tpl)){
         sucursalOverridesRef.current[ovrKey(o)]=memXlsx.tpl;
         persistOverrides();
         continue;
@@ -8725,10 +8777,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       // Memoria por punto: elección confirmada a mano en un pedido anterior al
       // MISMO punto de retiro → se reusa directo (id oficial guardado).
       const memApi=(()=>{const pk=ghPuntoKey(o);return pk?puntoMapRef.current[pk]:null;})();
-      if(memApi?.oficial?.id!=null){
+      const memConf=memApi?.oficial?conflictoSucursal(o,memApi.oficial):null;
+      if(memApi?.oficial?.id!=null&&!memConf?.grave){
         rows.push(mkRow(o,{oficial:memApi.oficial,verif:verifSucursalVsTienda(o,memApi.oficial),deMemoria:true}));
         continue;
       }
+      // La elección recordada contradice al punto (otro número/CP): se descarta
+      // la memoria y el pedido pasa por el selector con el aviso a la vista.
+      if(memConf?.grave){ const pk=ghPuntoKey(o); if(pk){ delete puntoMapRef.current[pk]; persistPuntoMap(); } }
       const oficiales=await fetchSucursalesOficiales(cpDestinoDe(o));
       let ofc=Array.isArray(oficiales)&&oficiales.length?matchSucursalOficial(oficiales,o):null;
       // El punto exacto puede no estar en la lista por CP (HOP nuevos): antes
@@ -10447,7 +10503,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     {oficiales.map(s=>{
                       const d=s.direccion||{};
                       const dir=[`${d.calle||""} ${d.numero||""}`.trim(),d.localidad].filter(Boolean).join(", ");
-                      return <option key={s.id} value={String(s.id)}>{s.descripcion}{dir?` — ${dir}`:""}</option>;
+                      const cf=conflictoSucursal(order,s);
+                      return <option key={s.id} value={String(s.id)}>{cf?"(!) ":""}{s.descripcion}{dir?` — ${dir}`:""}{cf?" — NO coincide con el punto":""}</option>;
                     })}
                   </select>
                   {/* Detalle COMPLETO de la elegida: el desplegable nativo corta el
@@ -10461,13 +10518,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       <div style={{background:T.bg,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"10px 12px",marginBottom:10}}>
                         <div style={{fontSize:13,fontWeight:700,color:T.text,wordBreak:"break-word"}}>{s.descripcion}</div>
                         <div style={{fontSize:12,color:T.textMd,marginTop:2,wordBreak:"break-word"}}>{[`${d.calle||""} ${d.numero||""}`.trim(),d.localidad,d.codigoPostal?`CP ${d.codigoPostal}`:""].filter(Boolean).join(" · ")}</div>
-                        {order.pickupDetails&&<div style={{fontSize:11,color:T.textSm,marginTop:4}}>Compará calle y número contra el punto de arriba antes de confirmar.</div>}
+                        {(()=>{ const cf=conflictoSucursal(order,s); return cf
+                          ? <div style={{fontSize:11,color:T.red,marginTop:4,fontWeight:600}}>No es el punto que eligió el cliente: {cf.msg}. El paquete va a ir a ESTA sucursal.</div>
+                          : order.pickupDetails?<div style={{fontSize:11,color:T.textSm,marginTop:4}}>Compará calle y número contra el punto de arriba antes de confirmar.</div>:null; })()}
                       </div>
                     );
                   })()}
-                  <button disabled={!locOficialSel} onClick={()=>{
+                  <button disabled={!locOficialSel} onClick={async()=>{
                     const s=oficiales.find(x=>String(x.id)===locOficialSel);
                     if(!s) return;
+                    const cf=conflictoSucursal(order,s);
+                    if(cf&&!await appConfirm(`Esta sucursal NO coincide con el punto que eligió el cliente: ${cf.msg}. El paquete va a ir a ${s.descripcion}. ¿Usarla igual?`,{danger:true,okLabel:"Usar igual"})) return;
                     resolve(wantOficial?{oficial:s}:(s.descripcion||s.codigo||""));setLocationModal(null);
                   }} style={{...BtnPrimary(T),fontSize:13,width:"100%",justifyContent:"center",opacity:locOficialSel?1:0.45,cursor:locOficialSel?"pointer":"not-allowed"}}>
                     Usar esta sucursal
@@ -10586,14 +10647,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                         // desplegable del Excel (tpl). Emisión API (esquina):
                         // lo que importa es el id oficial de la sucursal.
                         const clickable=wantOficial?s.id!=null:!!s.tpl;
+                        const cf=conflictoSucursal(order,s);
                         return (
-                          <div key={(s.id??s.descripcion)+"_"+i} onClick={clickable?()=>{resolve(wantOficial?{oficial:s}:s.tpl);setLocationModal(null);}:undefined}
+                          <div key={(s.id??s.descripcion)+"_"+i} onClick={clickable?async()=>{
+                              if(cf&&!await appConfirm(`Esta sucursal NO coincide con el punto que eligió el cliente: ${cf.msg}. El paquete va a ir a ${s.descripcion}. ¿Usarla igual?`,{danger:true,okLabel:"Usar igual"})) return;
+                              resolve(wantOficial?{oficial:s}:s.tpl);setLocationModal(null);
+                            }:undefined}
                             style={{padding:"10px 14px",cursor:clickable?"pointer":"default",opacity:clickable?1:0.45,borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s",display:"flex",alignItems:"center",gap:10}}
                             onMouseEnter={e=>{if(clickable)e.currentTarget.style.background=T.card;}}
                             onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                             <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:13,color:T.text,fontWeight:600}}>{s.descripcion}</div>
+                              <div style={{fontSize:13,color:T.text,fontWeight:600,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{s.descripcion}{cf&&<span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:DS.r.full,background:T.red+"18",color:T.red}}>{cf.grave?"No coincide":"Otra localidad"}</span>}</div>
                               {(dir||loc)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>{[dir,loc].filter(Boolean).join(" — ")}{!clickable&&!wantOficial&&<span style={{color:T.yellow}}> · no está en el desplegable de carga masiva</span>}</div>}
+                              {cf&&<div style={{fontSize:11,color:T.red,marginTop:2}}>{cf.msg}</div>}
                             </div>
                             {s.distM!=null&&<span style={{fontSize:11,fontWeight:700,color:T.accent,flexShrink:0,whiteSpace:"nowrap"}}>{ghFmtDist(s.distM)}</span>}
                           </div>
@@ -10787,6 +10853,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                               {r.tipo==="sucursal"&&r.verif==="ok"&&(
                                 <div style={{color:T.green,fontSize:11,marginTop:2,fontWeight:600}}>✓ Coincide con el punto elegido en tu tienda</div>
                               )}
+                              {(()=>{ const cf=r.tipo==="sucursal"&&r.oficial?conflictoSucursal(r.order,r.oficial):null; return cf&&(
+                                <div style={{color:T.red,fontSize:11,marginTop:2,fontWeight:700}}>No es el punto que eligió el cliente: {cf.msg}. Cambiá la sucursal antes de emitir.</div>
+                              ); })()}
                               {r.tipo==="sucursal"&&r.verif==="warn"&&!r.deMemoria&&(
                                 <div style={{color:T.yellow,fontSize:11,marginTop:2,fontWeight:600}}>Distinto del punto que eligió el cliente ({r.order.pickupDetails?.name||"punto de retiro"}) — revisá antes de emitir</div>
                               )}
