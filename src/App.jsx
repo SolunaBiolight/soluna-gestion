@@ -12994,6 +12994,9 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   const [connectingMeta,setConnectingMeta]=useState(false);
   const [showMetaModal,setShowMetaModal]=useState(false);
   const [metaMode,setMetaMode]=useState(META_OAUTH_OK?"oauth":"token"); // "oauth" | "token"
+  // Google Drive: token OAuth (drive.readonly) para el picker de videos del Publicador.
+  const [driveOk,setDriveOk]=useState(()=>!!_getSavedDriveToken());
+  const [driveConnecting,setDriveConnecting]=useState(false);
   const [metaToken,setMetaToken]=useState("");
   const [adminWaPhone,setAdminWaPhone]=useState("");
   const [waPhoneSaved,setWaPhoneSaved]=useState(false);
@@ -13411,6 +13414,27 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                 try { await authFetch(`/api/google-ads?action=disconnect&uid=${user.uid}`, {method:"POST"}); setMsg("Google Ads desvinculado"); }
                 catch(e) { appAlert("Error: "+e.message); }
               },
+            },
+            {
+              key:"gdrive", label:"Google Drive",
+              sub: driveOk
+                ? "Conectado — el Publicador saca los videos de acá"
+                : (GDRIVE_CLIENT_ID
+                    ? "Conectá tu Drive para elegir videos en el Publicador de Meta"
+                    : "Configuración pendiente en Vercel (VITE_GOOGLE_CLIENT_ID)"),
+              connected: driveOk, disabled:false, soon: !GDRIVE_CLIENT_ID, brand:"#00ac47", iconBg:"#fff",
+              icon:<svg width="30" height="27" viewBox="0 0 87.3 78"><path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/><path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.2z" fill="#ea4335"/><path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.85 0H34.45c-1.65 0-3.2.45-4.55 1.2z" fill="#00832d"/><path d="M59.8 54H27.5L13.75 77.8c1.35.8 2.9 1.2 4.55 1.2h50.7c1.65 0 3.2-.45 4.55-1.2z" fill="#2684fc"/><path d="M73.4 27.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 54h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>,
+              onConnect: ()=>{
+                if(!GDRIVE_API_KEY||!GDRIVE_CLIENT_ID){ appAlert("Falta configurar Google Drive en Vercel (VITE_GOOGLE_API_KEY y VITE_GOOGLE_CLIENT_ID)."); return; }
+                if(!_gisReady){ toast("Cargando Google Drive, probá de nuevo en unos segundos…","info"); return; }
+                setDriveConnecting(true);
+                // SINCRÓNICO (sin await) para no bloquear el popup del gesto del usuario.
+                _requestDriveToken(
+                  ()=>{ setDriveConnecting(false); setDriveOk(true); toast("Google Drive conectado ✓","success"); },
+                  (err)=>{ setDriveConnecting(false); appAlert("No se pudo conectar Google Drive: "+err); }
+                );
+              },
+              onDisconnect: ()=>{ try{ sessionStorage.removeItem("_gdt"); }catch(e){} setDriveOk(false); setMsg("Google Drive desvinculado"); },
             },
           ].map(p=>{
             return (
