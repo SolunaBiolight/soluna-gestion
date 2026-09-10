@@ -420,7 +420,10 @@ function _requestDriveToken(onDone, onFail) {
   try {
     const client = window.google.accounts.oauth2.initTokenClient({
       client_id: GDRIVE_CLIENT_ID,
-      scope: "https://www.googleapis.com/auth/drive.readonly",
+      // drive.file (NO restringido) en vez de drive.readonly (restringido): evita
+      // la pantalla "Google no verificó esta app / continuar a sitio no seguro".
+      // Alcanza porque la app usa el Picker → acceso solo al archivo que el user elige.
+      scope: "https://www.googleapis.com/auth/drive.file",
       callback: r => {
         clearTimeout(timeout);
         if (r.access_token) {
