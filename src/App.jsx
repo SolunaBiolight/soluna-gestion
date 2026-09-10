@@ -14797,11 +14797,10 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
               {stripe&&<Btn T={T} variant="secondary" size="sm" onClick={abrirPortal}>Tarjeta y facturas</Btn>}
-              {cancela
-                ?<Btn T={T} variant="primary" size="sm" onClick={()=>cancelar(true)}>Reactivar renovación</Btn>
-                :<Btn T={T} variant="ghost" size="sm" onClick={()=>cancelar(false)}>Cancelar renovación</Btn>}
+              {/* Cancelar la renovación se hace desde el portal de Stripe (Tarjeta y facturas), no desde acá. Reactivar sí, un clic. */}
+              {cancela&&<Btn T={T} variant="primary" size="sm" onClick={()=>cancelar(true)}>Reactivar renovación</Btn>}
               <span style={{marginLeft:"auto",fontSize:12,color:T.textSm}}>
-                {!stripe?"Este plan se pagó a mano: cuando venza, renovalo desde acá con tarjeta.":planActualId==="plus"?"Tenés el plan completo.":"Si subís de plan, el cambio es inmediato."}
+                {!stripe?"Este plan se pagó a mano: cuando venza, renovalo desde acá con tarjeta.":planActualId==="plus"?"Tenés el plan completo. La renovación se administra desde Tarjeta y facturas.":"Si subís de plan, el cambio es inmediato. La renovación se administra desde Tarjeta y facturas."}
               </span>
             </div>
           </Card>
