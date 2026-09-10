@@ -163,7 +163,7 @@ growith_andreani_fmt       → "a4" | "termica" (formato de descarga de etiqueta
 (sessionStorage) growith_saldo_bajo_dismiss → "1" banner de saldo bajo de Envíos cerrado en esta sesión
 growith_exportHistory      → JSON[] historial local de exportaciones (fallback del historial en Firestore users/{uid}/envios)
 growith_locOverrides / growith_sucOverrides → JSON overrides de localidad/sucursal pendientes de export
-growith_puntoMap           → JSON memoria por PUNTO de retiro: {nombre|dir|num|cp: {tpl, oficial:{id,...}, ts}} — elecciones manuales de sucursal reusadas en todos los pedidos futuros al mismo punto (XLSX y API)
+growith_puntoMap           → JSON CACHE de la memoria por PUNTO de retiro: {nombre|dir|num|cp: {tpl, oficial:{id,...}, ts}}. La verdad vive en Firestore users/{uid}/envios_cfg/punto_map (acciones punto_map_get/set/del de api/andreani.js, sincronizada entre dispositivos y miembros) + memoria GLOBAL andreani_config/punto_map_global (solo elecciones verificadas por calle+número; Admin > Envíos la lista y poda con admin_punto_map). Orden: propia → global → auto-match → selector. Una entrada que contradice al punto (conflictoSucursal: otro número/CP/localidad) se descarta y no se reusa
 growith_skuCfg             → JSON posición/tamaño del estampado de SKU en rótulos
 growith_sucNoOper          → JSON[] claves de pedido cuya sucursal Andreani no está operativa (detectado al exportar) — en el próximo export van sí o sí al modal de elección
 growith_sucReemplazo       → JSON[] claves de pedido con sucursal elegida a mano en reemplazo de una no operativa (la verificación final no los acusa; se limpia al exportar)
