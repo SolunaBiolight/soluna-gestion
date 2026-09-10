@@ -32347,6 +32347,11 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // Items (central inventory entities + mapping)
   const [invItems, setInvItems] = useState([]);
   const [invItemsLoading, setInvItemsLoading] = useState(false);
+  // Fuente del stock que se muestra ARRIBA (proyección/KPIs): "central" = tu
+  // inventario cargado abajo (default, la verdad del usuario) · "tienda" = el
+  // stock que reporta TN/Shopify/ML. Se cambia con el botón del header.
+  const [modoStock, setModoStock] = useState(()=>{ try{ return localStorage.getItem(`growith_stock_src_${uid}`)==="tienda"?"tienda":"central"; }catch(e){ return "central"; } });
+  const setStockSrc = (m)=>{ setModoStock(m); try{ localStorage.setItem(`growith_stock_src_${uid}`, m); }catch(e){} };
   const [invSearch, setInvSearch] = useState("");
   const [editingItem, setEditingItem] = useState(null); // {id?, nombre, sku, image, product_links}
   const [itemEditTab, setItemEditTab] = useState("stock"); // "stock" | "mapeo"
@@ -32844,23 +32849,44 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // tu stock real (depósito), no el -2.154 de la tienda. Se propaga solo a stock/días/
   // proyección/KPIs porque todos derivan de p.stock_total y p.variants[].stock.
   const invBySku = (()=>{ const m=new Map(); for(const it of invItems){ const k=String(it.sku||"").trim().toUpperCase(); if(k&&!m.has(k)) m.set(k,it); } return m; })();
+  // Item central por variant_id (de los product_links) — para cuando el SKU de la
+  // variante no coincide pero sí quedó mapeada por variante.
+  const invByVar = (()=>{ const m=new Map(); for(const it of invItems){ for(const l of (it.product_links||[])){ const vid=(l.variant_id!=null&&l.variant_id!=="")?String(l.variant_id):null; if(vid&&!m.has(vid)) m.set(vid,it); } } return m; })();
+  const itemForVariant = (v) => {
+    const k=String(v.sku||"").trim().toUpperCase(); if(k&&invBySku.has(k)) return invBySku.get(k);
+    const vid=v.id!=null?String(v.id):(v.variant_id!=null?String(v.variant_id):""); if(vid&&invByVar.has(vid)) return invByVar.get(vid);
+    return null;
+  };
   const itemForProduct = (p) => {
-    for (const v of (p.variants||[])) { const k=String(v.sku||"").trim().toUpperCase(); if(k&&invBySku.has(k)) return invBySku.get(k); }
+    for (const v of (p.variants||[])) { const it=itemForVariant(v); if(it) return it; }
     const linkIds=[`TN-${p.id}`,`SH-${p.id}`,`ML-${p.id}`];
     return invItems.find(it=>(it.product_links||[]).some(l=>linkIds.includes(l.product_id)))||null;
   };
+  // Stock que se muestra ARRIBA:
+  // - modo "tienda": el de TN/Shopify/ML tal cual (solo si el usuario tocó el botón).
+  // - modo "central" (default): el inventario cargado abajo. Cada variante toma el
+  //   stock de SU item central; el total del producto es la SUMA (antes agarraba
+  //   UN solo item y por eso Malla mostraba 162 en vez de la suma real). Variante
+  //   sin item central → 0. Producto sin NINGÚN item central → 0 y flag _noInv.
+  const sinCentral = invItems.length===0; // usuario sin inventario cargado → no forzar 0s
   const allProducts = (data?.products||[]).map(p=>{
+    if (modoStock==="tienda" || sinCentral) return p;
+    const tienda = p.stock_total; // stock reportado por la tienda (para comparar)
+    const vars = p.variants||[];
+    let matched=false;
+    const variants = vars.map(v=>{ const it=itemForVariant(v); if(it){ matched=true; return {...v, stock: Math.max(0, parseInt(it.stock_total)||0)}; } return {...v, stock: 0}; });
+    if (matched) return {...p, stock_total: variants.reduce((s,v)=>s+(v.stock||0),0), variants, _invStock:true, _tiendaStock:tienda};
     const it = itemForProduct(p);
-    if (!it) return p;
-    const invStock = Math.max(0, parseInt(it.stock_total)||0);
-    // 1 variante: le pasamos el stock del depósito directo. Multi-variante: no se
-    // puede repartir, así que dejamos las variantes como están y solo overrideamos el total.
-    const variants = (p.variants||[]).length===1 ? [{...p.variants[0], stock: invStock}] : (p.variants||[]);
-    return {...p, stock_total: invStock, variants, _invStock: true};
+    if (it) {
+      const invStock = Math.max(0, parseInt(it.stock_total)||0);
+      const variants2 = vars.length===1 ? [{...vars[0], stock: invStock}] : vars.map(v=>({...v}));
+      return {...p, stock_total: invStock, variants: variants2, _invStock:true, _tiendaStock:tienda};
+    }
+    return {...p, stock_total: 0, variants: vars.map(v=>({...v, stock: 0})), _noInv:true, _tiendaStock:tienda};
   });
 
   // Alertas activas
-  const alertas = allProducts.filter(p=>enabledFor(p)).flatMap(p=>{
+  const alertas = allProducts.filter(p=>enabledFor(p)&&!p._noInv).flatMap(p=>{
     const thr = thresholdFor(p);
     return p.variants.filter(v=>{
       const vd = dLeft(v.stock, vrate(v));
@@ -33158,15 +33184,19 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   {(()=>{
                     const it=itemForProduct(p);
                     if(!it) return null;
+                    // Central del producto = el que ya está en p.stock_total en modo central
+                    // (suma de los items por variante). En modo tienda usamos el item representativo.
+                    const invTotal = (p._invStock&&modoStock==="central") ? (p.stock_total||0) : (it.stock_total||0);
+                    const tiendaTotal = p._tiendaStock!=null ? p._tiendaStock : (p.stock_total||0);
                     const whsWithStock=Object.entries(it.stock_by_warehouse||{}).filter(([,q])=>(parseInt(q)||0)>0);
-                    const desync = (it.stock_total||0)!==(p.stock_total||0);
+                    const desync = (invTotal||0)!==(tiendaTotal||0);
                     return (
                       <div style={{padding:"8px 16px 8px 58px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:T.bg+"22"}}>
                         <span style={{fontSize:11,color:T.textSm}}>Inventario Growith:</span>
-                        <span style={{fontSize:11,fontWeight:700,color:T.text,background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"2px 8px"}}>{fmt(it.stock_total||0)} uds</span>
+                        <span style={{fontSize:11,fontWeight:700,color:T.text,background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"2px 8px"}}>{fmt(invTotal)} uds</span>
                         {whsWithStock.map(([whId,q])=>{const w=warehouses.find(x=>x.id===whId);return <span key={whId} style={{fontSize:10,color:T.textMd,background:T.surface,borderRadius:5,padding:"2px 7px"}}>{w?.name||(whId==="main"?"Principal":whId)}: {q}</span>;})}
-                        {it.costo_unitario>0&&<span style={{fontSize:10,color:T.textSm}}>Valorizado: <strong style={{color:T.text}}>${Math.round((it.stock_total||0)*it.costo_unitario).toLocaleString("es-AR")}</strong></span>}
-                        {desync&&<span title="El stock del inventario de Growith difiere del que reporta tu tienda. Editá el item o reprocesá ventas para alinearlos." style={{fontSize:10,fontWeight:600,color:T.yellow||T.yellow,background:(T.yellow||T.yellow)+"18",borderRadius:5,padding:"2px 7px"}}>≠ tienda ({fmt(p.stock_total||0)})</span>}
+                        {it.costo_unitario>0&&<span style={{fontSize:10,color:T.textSm}}>Valorizado: <strong style={{color:T.text}}>${Math.round((invTotal||0)*it.costo_unitario).toLocaleString("es-AR")}</strong></span>}
+                        {desync&&<span title="El stock de tu inventario Growith difiere del que reporta tu tienda (TN/Shopify)." style={{fontSize:10,fontWeight:600,color:T.yellow||T.yellow,background:(T.yellow||T.yellow)+"18",borderRadius:5,padding:"2px 7px"}}>tienda: {fmt(tiendaTotal)}</span>}
                         <button onClick={(e)=>{e.stopPropagation();setTab("inventario");openEditItem(it);}} style={{fontSize:10,fontWeight:600,color:T.accent,background:"transparent",border:`1px solid ${T.accent}44`,borderRadius:5,padding:"2px 8px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar item</button>
                       </div>
                     );
@@ -33294,6 +33324,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               ? `${Math.round((new Date(dateTo)-new Date(dateFrom))/86400000)+1} días`
               : `últimos ${days} días`}
           </span>
+          {/* Fuente del stock: central (tu inventario) vs tienda (TN/Shopify) */}
+          {invItems.length>0&&<button onClick={()=>setStockSrc(modoStock==="central"?"tienda":"central")}
+            title={modoStock==="central"?"Arriba se muestra TU inventario (el de abajo). Tocá para ver el stock que reporta TN/Shopify.":"Arriba se muestra el stock de TN/Shopify. Tocá para volver a tu inventario cargado."}
+            style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 11px",fontSize:11,fontWeight:600,border:`1px solid ${modoStock==="tienda"?T.yellow:T.border}`,borderRadius:6,background:modoStock==="tienda"?(T.yellowBg||T.yellow+"18"):"transparent",color:modoStock==="tienda"?T.yellow:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s"}}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            {modoStock==="central"?"Poner stock de TN/Shopify":"Mostrando TN/Shopify — volver a mi stock"}
+          </button>}
           {/* Comparativa */}
           {dataPrev&&(()=>{
             const prevU=dataPrev.total_units||0, currU=data?.total_units||0;
