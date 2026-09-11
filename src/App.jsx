@@ -2376,6 +2376,10 @@ function buildOrdersFromAPI(data) {
         return fulfillName||name.includes('sucursal')||name.includes('hop')||name.includes('retiro')||name==='punto de retiro'||!!o.shipping_pickup_details||false;
       })(),
       pickupDetails:o.shipping_pickup_details||null,
+      // Método "Growith · Andreani" elegido en el checkout de Shopify: trae el
+      // id OFICIAL de la sucursal → Envíos emite directo, sin adivinar el punto.
+      andreaniSucursalId:o.andreani_sucursal_id||o.shipping_pickup_details?.andreaniSucursalId||null,
+      andreaniCheckout:!!o.andreani_checkout,
       canal:o.storefront||'', tracking:o.shipping_tracking_number||'',
       linkOrden:o.admin_url||(o.id?`https://www.tiendanube.com/admin/orders/${o.id}`:""),
       fechaPago:o.paid_at||'', fechaEnvio:o.shipped_at||'',
@@ -8158,6 +8162,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // cuentas con Andreani prepago habilitado; si la API falla devuelve null y
   // el flujo del XLSX cae al matching clásico del template (plan B intacto).
   const andreaniSucsCpCacheRef=useRef({}); // cp -> Promise<[{id,codigo,descripcion,direccion,...}]|null>
+  // Sucursal oficial por id (pedidos del checkout de Shopify). Primero la
+  // lista del CP (cacheada), después el backend busca en el listado completo.
+  async function fetchSucursalOficialPorId(id,cp){
+    const sid=String(id||"").trim(); if(!sid) return null;
+    try{ const l=await fetchSucursalesOficiales(cp); const hit=Array.isArray(l)?l.find(x=>String(x.id)===sid):null; if(hit) return hit; }catch(_){}
+    try{ const r=await authFetch(`/api/andreani?action=sucursal_por_id&id=${encodeURIComponent(sid)}&cp=${encodeURIComponent(String(cp||""))}`); const d=await r.json().catch(()=>null); return d?.sucursal||null; }catch(_){ return null; }
+  }
   function fetchSucursalesOficiales(cp){
     const cpStr=String(cp||"").trim();
     if(!cpStr||!andreani.enabled) return Promise.resolve(null);
@@ -9005,6 +9016,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         continue;
       }
       if(!isSucursalOrder(o)){ rows.push(mkRow(o)); continue; }
+      // Elegida en el checkout (método Growith·Andreani): el pedido trae el id
+      // oficial → se toma tal cual, sin memoria ni match por texto.
+      if(o.andreaniSucursalId){
+        const ofcCk=await fetchSucursalOficialPorId(o.andreaniSucursalId,cpDestinoDe(o));
+        if(ofcCk){ rows.push(mkRow(o,{oficial:ofcCk,verif:"ok",deCheckout:true})); continue; }
+      }
       // Memoria por punto: elección confirmada a mano en un pedido anterior al
       // MISMO punto de retiro → se reusa directo (id oficial guardado).
       const memApi=memoriaPunto(o);
@@ -11781,6 +11798,9 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
       const list=Array.isArray(d?.sucursales)?d.sucursales:[];
       setSucs(list);
       if(list.length===1) setSucId(String(list[0].id));
+      // Elegida en el checkout de Shopify: viene con id oficial → preseleccionar.
+      const ck=String(o.andreaniSucursalId||"");
+      if(ck&&list.some(x=>String(x.id)===ck)) setSucId(ck);
     }catch(_){ setSucs([]); }
     setSucLoading(false);
   }
@@ -13054,6 +13074,122 @@ function DSToggle({T, active, onToggle}) {
 // Renombrar la tienda activa · mover ESTA tienda a otro perfil (pasaje, solo
 // para la tienda principal = mi propio uid) · eliminar mi cuenta (oculta 30
 // días, purga total después, cancela el cobro).
+// ── Andreani en el checkout de Shopify (CarrierService "Growith · Andreani") ──
+// Registra el transportista en la tienda, muestra el estado (permiso, plan,
+// alta) y deja configurar precio/gratis/sucursales/bulto. El paso final lo
+// hace el vendedor en Shopify (agregar la tarifa de la app a la zona Argentina).
+function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
+  const uid = user?.uid;
+  const [st,setSt] = React.useState(null);      // respuesta de carrier_status
+  const [err,setErr] = React.useState("");
+  const [busy,setBusy] = React.useState(false);
+  const [cfg,setCfg] = React.useState({gratisDesde:"",sucursalesMax:"5",recargoPct:"0",recargoFijo:"0",domicilio:true,sucursal:true,kilos:"1",largoCm:"20",altoCm:"10",anchoCm:"15",valorDeclaradoMax:""});
+  const [saving,setSaving] = React.useState(false);
+  const [open,setOpen] = React.useState(false);
+  const iS = InputStyle(T);
+  const load = async () => {
+    setErr("");
+    try{
+      const r = await authFetch(`/api/integrations?platform=shopify&action=carrier_status&uid=${uid}`);
+      const d = await r.json().catch(()=>({}));
+      if(!r.ok||d.error&&typeof d.error==="string"&&!d.shop) throw new Error(d.error||`HTTP ${r.status}`);
+      setSt(d);
+      const c = d.config||{};
+      setCfg({gratisDesde:c.gratisDesde?String(c.gratisDesde):"",sucursalesMax:String(c.sucursalesMax||5),recargoPct:String(c.recargoPct||0),recargoFijo:String(c.recargoFijo||0),domicilio:c.domicilio!==false,sucursal:c.sucursal!==false,kilos:String(c.bulto?.kilos||1),largoCm:String(c.bulto?.largoCm||20),altoCm:String(c.bulto?.altoCm||10),anchoCm:String(c.bulto?.anchoCm||15),valorDeclaradoMax:c.bulto?.valorDeclaradoMax?String(c.bulto.valorDeclaradoMax):""});
+    }catch(e){ setErr(e.message); }
+  };
+  React.useEffect(()=>{ if(uid&&shStore) load(); /* eslint-disable-next-line */ },[uid, shStore?.shop]);
+  const post = async (action, body={}) => {
+    const r = await authFetch(`/api/integrations?platform=shopify&action=${action}&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid,...body})});
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok||d.error) { const e=new Error(d.detail||d.error||`HTTP ${r.status}`); e.code=d.error; throw e; }
+    return d;
+  };
+  const activar = async () => {
+    setBusy(true); setErr("");
+    try{ await post("carrier_enable"); toast("Andreani activado en el checkout ✓ — falta agregarlo a la zona de envío en Shopify (paso 2)","success"); await load(); setOpen(true); }
+    catch(e){ setErr(e.message); if(e.code==="scope") toast("Reconectá Shopify para dar el permiso de envíos","warning"); }
+    setBusy(false);
+  };
+  const desactivar = async () => {
+    if(!(await appConfirm("¿Desactivar Andreani en el checkout? Los compradores dejan de ver las opciones de Andreani de Growith."))) return;
+    setBusy(true); setErr("");
+    try{ await post("carrier_disable"); toast("Desactivado","success"); await load(); }catch(e){ setErr(e.message); }
+    setBusy(false);
+  };
+  const guardar = async () => {
+    setSaving(true); setErr("");
+    try{
+      await post("carrier_config",{config:{gratisDesde:Number(cfg.gratisDesde)||0,sucursalesMax:Number(cfg.sucursalesMax)||5,recargoPct:Number(cfg.recargoPct)||0,recargoFijo:Number(cfg.recargoFijo)||0,domicilio:!!cfg.domicilio,sucursal:!!cfg.sucursal,bulto:{kilos:Number(cfg.kilos)||1,largoCm:Number(cfg.largoCm)||20,altoCm:Number(cfg.altoCm)||10,anchoCm:Number(cfg.anchoCm)||15,valorDeclaradoMax:Number(cfg.valorDeclaradoMax)||0}}});
+      toast("Configuración del checkout guardada ✓","success");
+    }catch(e){ setErr(e.message); }
+    setSaving(false);
+  };
+  if(!shStore) return null;
+  const activo = !!(st?.registered && st?.carrier?.active !== false);
+  const scopeFalta = st && (st.scopeOk === false || st.error?.error === "scope");
+  const set = k => e => setCfg(c=>({...c,[k]:e.target.type==="checkbox"?e.target.checked:e.target.value}));
+  const Lbl = ({children}) => <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:3,textTransform:"uppercase",letterSpacing:0.4}}>{children}</div>;
+  return (
+    <div style={{background:T.card,border:`1px solid ${activo?T.green+"55":T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:6}}>
+        <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>Andreani en el checkout de Shopify</div>
+        {st && <span style={{fontSize:10,fontWeight:800,letterSpacing:0.4,borderRadius:99,padding:"2px 9px",background:activo?T.green+"22":T.yellow+"22",color:activo?T.green:T.yellow}}>{activo?"ACTIVO":"NO ACTIVO"}</span>}
+        <span style={{marginLeft:"auto"}}><GhTip T={T} text="Growith se registra en tu Shopify como transportista. En cada checkout, Shopify le pregunta a Growith el precio y Growith responde 'Andreani a domicilio' y 'Andreani Sucursal · X' (una por sucursal cercana al CP del comprador) con la tarifa real de Andreani. El pedido queda con la sucursal exacta y la etiqueta se imprime desde Envíos."/></span>
+      </div>
+      <div style={{fontSize:12,color:T.textMd,lineHeight:1.55,marginBottom:12}}>El comprador elige <strong style={{color:T.text}}>Andreani a domicilio</strong> o <strong style={{color:T.text}}>retiro en una sucursal Andreani</strong> (lista de sucursales cercanas a su CP) y paga el envío al precio de tu etiqueta Growith. Después imprimís la etiqueta desde <strong style={{color:T.text}}>Envíos</strong> con la sucursal ya elegida.</div>
+      {err && <div style={{background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:8,padding:"8px 12px",fontSize:12,color:T.red,marginBottom:10,lineHeight:1.5}}>{err}</div>}
+      {!st && !err && <div style={{fontSize:12,color:T.textSm}}><Spinner size={12} color={T.textSm}/> Consultando Shopify…</div>}
+      {scopeFalta && (
+        <div style={{background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:8,padding:"10px 12px",fontSize:12,color:T.text,marginBottom:10,lineHeight:1.5,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{flex:1,minWidth:220}}>Shopify todavía no le dio a Growith el permiso de <strong>envíos</strong> (se agregó ahora). Reconectá Shopify una vez — no se pierde nada — y volvé acá.</span>
+          <button onClick={onReconectar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 14px"}}>Reconectar Shopify</button>
+        </div>
+      )}
+      {st?.error && st.error.error!=="scope" && <div style={{background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:8,padding:"10px 12px",fontSize:12,color:T.text,marginBottom:10,lineHeight:1.5}}>{st.error.detail||st.error.error}</div>}
+      {st && !scopeFalta && (
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
+          {activo
+            ? <button onClick={desactivar} disabled={busy} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.red,borderColor:T.red+"44"}}>{busy?"…":"Desactivar"}</button>
+            : <button onClick={activar} disabled={busy} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>{busy?<><Spinner size={12} color="#fff"/> Activando…</>:"Activar Andreani en el checkout"}</button>}
+          <button onClick={()=>setOpen(o=>!o)} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px"}}>{open?"Ocultar configuración":"Configurar precios y sucursales"}</button>
+          {st.otros?.length>0 && <span style={{fontSize:11,color:T.textSm}}>Otras apps de envío en tu Shopify: {st.otros.map(o=>o.name).join(", ")} — desactivalas en Shopify para que no se dupliquen las opciones.</span>}
+        </div>
+      )}
+      {st && activo && (
+        <div style={{background:T.bg,border:`1px solid ${T.borderL||T.border}`,borderRadius:10,padding:"12px 14px",fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:12}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:4}}>Paso 2 · en Shopify (una sola vez)</div>
+          Configuración → <strong style={{color:T.text}}>Envíos y entrega</strong> → tu perfil general → zona <strong style={{color:T.text}}>Argentina</strong> → <strong style={{color:T.text}}>Agregar tarifa</strong> → "Usar una app o transportista para calcular tarifas" → elegí <strong style={{color:T.text}}>Growith · Andreani</strong> y marcá "Mostrar automáticamente los servicios nuevos" → Guardar. Si tenés otra app de Andreani en esa zona, quitá su tarifa para que no salga dos veces.
+        </div>
+      )}
+      {open && st && (
+        <div style={{borderTop:`1px solid ${T.borderL||T.border}`,paddingTop:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:10}}>
+            <div><Lbl>Envío gratis desde ($)</Lbl><input value={cfg.gratisDesde} onChange={set("gratisDesde")} placeholder="0 = nunca" style={iS}/></div>
+            <div><Lbl>Sucursales a mostrar</Lbl><input value={cfg.sucursalesMax} onChange={set("sucursalesMax")} type="number" min="1" max="12" style={iS}/></div>
+            <div><Lbl>Recargo sobre la tarifa (%)</Lbl><input value={cfg.recargoPct} onChange={set("recargoPct")} type="number" style={iS}/></div>
+            <div><Lbl>Recargo fijo ($)</Lbl><input value={cfg.recargoFijo} onChange={set("recargoFijo")} type="number" style={iS}/></div>
+          </div>
+          <div style={{display:"flex",gap:16,flexWrap:"wrap",marginBottom:10,fontSize:12,color:T.text}}>
+            <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={cfg.domicilio} onChange={set("domicilio")}/> Ofrecer envío a domicilio</label>
+            <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={cfg.sucursal} onChange={set("sucursal")}/> Ofrecer retiro en sucursal</label>
+          </div>
+          <Lbl>Bulto por defecto para cotizar (si el producto no tiene peso cargado en Shopify)</Lbl>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:10,marginBottom:10}}>
+            <div><Lbl>Peso (kg)</Lbl><input value={cfg.kilos} onChange={set("kilos")} type="number" step="0.1" style={iS}/></div>
+            <div><Lbl>Largo (cm)</Lbl><input value={cfg.largoCm} onChange={set("largoCm")} type="number" style={iS}/></div>
+            <div><Lbl>Alto (cm)</Lbl><input value={cfg.altoCm} onChange={set("altoCm")} type="number" style={iS}/></div>
+            <div><Lbl>Ancho (cm)</Lbl><input value={cfg.anchoCm} onChange={set("anchoCm")} type="number" style={iS}/></div>
+            <div><Lbl>Tope valor declarado ($)</Lbl><input value={cfg.valorDeclaradoMax} onChange={set("valorDeclaradoMax")} placeholder="sin tope" style={iS}/></div>
+          </div>
+          <div style={{fontSize:11,color:T.textSm,lineHeight:1.5,marginBottom:10}}>El precio que ve el comprador = tarifa de tu etiqueta Growith (Andreani + IVA) + recargo. El valor declarado (seguro) es el subtotal del carrito, con tope opcional.</div>
+          <button onClick={guardar} disabled={saving} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>{saving?"Guardando…":"Guardar"}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PerfilTiendasCard({T, user, userDoc, setMsg}) {
   const authUid = auth.currentUser?.uid;
   const esPrincipal = user?.uid === authUid;
@@ -13677,6 +13813,9 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             );
           })}
         </div>
+
+        {/* Andreani en el checkout de Shopify (CarrierService) */}
+        {shStore && <AndreaniCheckoutCard T={T} user={user} shStore={shStore} onReconectar={()=>setShowShopifyModal(true)}/>}
 
         {/* Cuentas de Mercado Libre / Mercado Pago — rol por cuenta (para multi-tienda) */}
         {mlStore && (()=>{

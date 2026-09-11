@@ -43,7 +43,8 @@ async function readBody(req) {
 
 const SHOPIFY_APP_ID     = process.env.SHOPIFY_APP_ID     || "";
 const SHOPIFY_APP_SECRET = process.env.SHOPIFY_APP_SECRET || "";
-const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products";
+// read_shipping/write_shipping: CarrierService (tarifas Andreani en el checkout).
+const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping";
 const SHOPIFY_APP_URL = "https://www.growithapp.com";
 // Shopify NO permite el query param reservado "action" en la redirect URL, así
 // que la dejamos sin él. El callback llega con "platform=shopify" + el "code" que
@@ -238,6 +239,119 @@ async function shopifyOauthCallback(req, res, db) {
   }
 
   return res.redirect(`${SHOPIFY_APP_URL}?shopify_success=1`);
+}
+
+// ─── CarrierService "Growith · Andreani" (tarifas en el checkout) ───────────
+// Shopify llama a /api/shopify-rates?uid=<uid> en cada checkout con destino +
+// ítems y mostramos "Andreani a domicilio" + "Andreani Sucursal · X" (una por
+// sucursal cercana) con el precio de Growith. Requiere scope write_shipping y
+// que la tienda tenga habilitadas las tarifas calculadas por apps (plan).
+const SHOPIFY_RATES_URL = `${SHOPIFY_APP_URL}/api/shopify-rates`;
+const SH_API = "2024-10";
+async function shStoreDe(db, uid) {
+  const d = (await db.collection("users").doc(uid).get()).data() || {};
+  const sh = (d.stores || []).find(s => s.type === "shopify" && s.accessToken && s.shop);
+  return { sh, userData: d };
+}
+async function shApi(sh, path, opts = {}) {
+  const r = await fetch(`https://${sh.shop}/admin/api/${SH_API}/${path}`, {
+    ...opts,
+    headers: { "X-Shopify-Access-Token": sh.accessToken, "Content-Type": "application/json", ...(opts.headers || {}) },
+  });
+  let j = null; try { j = await r.json(); } catch (_) {}
+  return { ok: r.ok, status: r.status, j };
+}
+function carrierErr(status, j) {
+  if (status === 403 || status === 401) return { error: "scope", detail: "Shopify no dio permiso de envíos a Growith. Reconectá Shopify (vuelve a pedir el permiso write_shipping) y probá de nuevo." };
+  const msg = j?.errors ? (typeof j.errors === "string" ? j.errors : JSON.stringify(j.errors)) : `HTTP ${status}`;
+  if (/carrier.?calculated|not enabled|plan/i.test(msg)) return { error: "plan", detail: "Tu tienda no tiene habilitadas las tarifas calculadas por apps (Carrier-calculated shipping). Shopify las incluye en el plan Advanced o pagando anual; también las activan gratis pidiéndolas al soporte de Shopify. Detalle: " + msg };
+  return { error: "shopify", detail: msg };
+}
+async function carrierFind(sh) {
+  const r = await shApi(sh, "carrier_services.json");
+  if (!r.ok) return { err: carrierErr(r.status, r.j) };
+  const list = r.j?.carrier_services || [];
+  return { carrier: list.find(c => String(c.callback_url || "").startsWith(SHOPIFY_RATES_URL)) || null, list };
+}
+async function shopifyCarrierStatus(req, res, db) {
+  const uid = req.query.uid;
+  if (!(await guardUid(req, res, uid))) return;
+  const { sh, userData } = await shStoreDe(db, uid);
+  if (!sh) return res.status(400).json({ error: "Shopify no conectado" });
+  let scopes = null;
+  try { const r = await shApi(sh, "../oauth/access_scopes.json"); if (r.ok) scopes = (r.j?.access_scopes || []).map(x => x.handle); } catch (_) {}
+  const f = await carrierFind(sh);
+  return res.json({
+    shop: sh.shop,
+    scopeOk: scopes ? scopes.includes("write_shipping") : (f.err?.error === "scope" ? false : null),
+    registered: !!f.carrier, carrier: f.carrier ? { id: f.carrier.id, name: f.carrier.name, active: f.carrier.active, callback_url: f.carrier.callback_url } : null,
+    otros: (f.list || []).filter(c => !String(c.callback_url || "").startsWith(SHOPIFY_RATES_URL)).map(c => ({ id: c.id, name: c.name, active: c.active })),
+    config: userData.andreaniCheckout || null,
+    error: f.err || null,
+    rates_url: `${SHOPIFY_RATES_URL}?uid=${uid}`,
+  });
+}
+async function shopifyCarrierEnable(req, res, db) {
+  const body = JSON.parse((await readBody(req)).toString() || "{}");
+  const uid = body.uid || req.query.uid;
+  if (!(await guardUid(req, res, uid))) return;
+  const { sh, userData } = await shStoreDe(db, uid);
+  if (!sh) return res.status(400).json({ error: "Shopify no conectado" });
+  const f = await carrierFind(sh);
+  if (f.err) return res.status(400).json(f.err);
+  const callback_url = `${SHOPIFY_RATES_URL}?uid=${uid}`;
+  let carrier = f.carrier;
+  if (carrier) {
+    const r = await shApi(sh, `carrier_services/${carrier.id}.json`, { method: "PUT", body: JSON.stringify({ carrier_service: { id: carrier.id, name: "Growith · Andreani", callback_url, active: true, service_discovery: true } }) });
+    if (!r.ok) return res.status(400).json(carrierErr(r.status, r.j));
+    carrier = r.j?.carrier_service || carrier;
+  } else {
+    const r = await shApi(sh, "carrier_services.json", { method: "POST", body: JSON.stringify({ carrier_service: { name: "Growith · Andreani", callback_url, service_discovery: true, format: "json" } }) });
+    if (!r.ok) return res.status(400).json(carrierErr(r.status, r.j));
+    carrier = r.j?.carrier_service || null;
+  }
+  const prev = userData.andreaniCheckout || {};
+  const cfg = { ...prev, activo: true, carrierId: carrier?.id || prev.carrierId || null, shop: sh.shop, activadoAt: new Date().toISOString() };
+  await db.collection("users").doc(uid).set({ andreaniCheckout: cfg }, { merge: true });
+  return res.json({ ok: true, carrier: carrier ? { id: carrier.id, name: carrier.name, active: carrier.active } : null, config: cfg });
+}
+async function shopifyCarrierDisable(req, res, db) {
+  const body = JSON.parse((await readBody(req)).toString() || "{}");
+  const uid = body.uid || req.query.uid;
+  if (!(await guardUid(req, res, uid))) return;
+  const { sh, userData } = await shStoreDe(db, uid);
+  if (!sh) return res.status(400).json({ error: "Shopify no conectado" });
+  const f = await carrierFind(sh);
+  if (f.carrier) { const r = await shApi(sh, `carrier_services/${f.carrier.id}.json`, { method: "DELETE" }); if (!r.ok && r.status !== 404) return res.status(400).json(carrierErr(r.status, r.j)); }
+  const cfg = { ...(userData.andreaniCheckout || {}), activo: false, carrierId: null };
+  await db.collection("users").doc(uid).set({ andreaniCheckout: cfg }, { merge: true });
+  return res.json({ ok: true, config: cfg });
+}
+// Config de las tarifas del checkout (gratis desde, cuántas sucursales,
+// recargo, bulto por defecto). Nunca toca `activo`/`carrierId`.
+async function shopifyCarrierConfig(req, res, db) {
+  const body = JSON.parse((await readBody(req)).toString() || "{}");
+  const uid = body.uid || req.query.uid;
+  if (!(await guardUid(req, res, uid))) return;
+  const c = body.config || {};
+  const num = (v, d, min, max) => { const n = Number(v); return isFinite(n) ? Math.min(max, Math.max(min, n)) : d; };
+  const patch = {
+    gratisDesde: num(c.gratisDesde, 0, 0, 1e9),
+    sucursalesMax: Math.round(num(c.sucursalesMax, 5, 1, 12)),
+    recargoPct: num(c.recargoPct, 0, -50, 200),
+    recargoFijo: num(c.recargoFijo, 0, -1e6, 1e6),
+    domicilio: c.domicilio !== false,
+    sucursal: c.sucursal !== false,
+    bulto: { kilos: num(c.bulto?.kilos, 1, 0.1, 50), largoCm: Math.round(num(c.bulto?.largoCm, 20, 1, 200)), altoCm: Math.round(num(c.bulto?.altoCm, 10, 1, 200)), anchoCm: Math.round(num(c.bulto?.anchoCm, 15, 1, 200)), valorDeclaradoMax: num(c.bulto?.valorDeclaradoMax, 0, 0, 1e9) },
+    updatedAt: new Date().toISOString(),
+  };
+  const ref = db.collection("users").doc(uid);
+  const prev = ((await ref.get()).data() || {}).andreaniCheckout || {};
+  const cfg = { ...prev, ...patch };
+  await ref.set({ andreaniCheckout: cfg }, { merge: true });
+  // Invalida la caché de tarifas de esta tienda (cambió el precio/bulto).
+  try { const qs = await db.collection("andreani_config").where("ratesUid", "==", uid).get(); await Promise.all(qs.docs.map(d => d.ref.delete())); } catch (_) {}
+  return res.json({ ok: true, config: cfg });
 }
 
 async function shopifyDisconnect(req, res, db) {
@@ -1048,6 +1162,11 @@ export default async function handler(req, res) {
       // Webhooks obligatorios de privacidad (customers/data_request, customers/redact,
       // shop/redact) — todos a esta URL, distinguidos por el header X-Shopify-Topic.
       if (action === "compliance" && req.method === "POST") return shopifyCompliance(req, res, db);
+      // Tarifas Andreani en el checkout (CarrierService)
+      if (action === "carrier_status" && req.method === "GET") return shopifyCarrierStatus(req, res, db);
+      if (action === "carrier_enable" && req.method === "POST") return shopifyCarrierEnable(req, res, db);
+      if (action === "carrier_disable" && req.method === "POST") return shopifyCarrierDisable(req, res, db);
+      if (action === "carrier_config" && req.method === "POST") return shopifyCarrierConfig(req, res, db);
     }
 
     if (platform === "tiendanube") {

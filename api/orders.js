@@ -2208,8 +2208,13 @@ export default async function handler(req, res) {
         // sintético para que el matcheo de sucursal Andreani y su verificación
         // contra la tienda trabajen igual que con Tienda Nube.
         shipping_pickup_details: /sucursal|punto|hop|retiro|pickup/i.test(o.shipping_lines?.[0]?.title || "")
-          ? { name: o.shipping_lines[0].title, address: { address: calle, number: numero === "0" ? "" : numero, locality: sh.city || "", city: sh.city || "", zipcode: sh.zip || "", province: sh.province || "" } }
+          ? { name: o.shipping_lines[0].title, address: { address: calle, number: numero === "0" ? "" : numero, locality: sh.city || "", city: sh.city || "", zipcode: sh.zip || "", province: sh.province || "" },
+              // Tarifa Growith·Andreani elegida en el checkout: el código trae el
+              // id OFICIAL de la sucursal → Envíos emite sin adivinar el punto.
+              andreaniSucursalId: (/^ANDREANI_SUC_(\d+)/.exec(String(o.shipping_lines?.[0]?.code || "")) || [])[1] || null }
           : null,
+        andreani_sucursal_id: (/^ANDREANI_SUC_(\d+)/.exec(String(o.shipping_lines?.[0]?.code || "")) || [])[1] || null,
+        andreani_checkout: /^ANDREANI_(SUC_\d+|DOM)$/.test(String(o.shipping_lines?.[0]?.code || "")),
         shipping_tracking_number: fulfillments[0]?.tracking_number || "",
         payment_details: { method: o.payment_gateway_names?.[0] || "" },
         gateway_name: o.payment_gateway_names?.[0] || "",

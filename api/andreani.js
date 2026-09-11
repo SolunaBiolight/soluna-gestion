@@ -44,7 +44,7 @@ const TOKEN_TTL_MS = 12 * 3600000;      // 12 horas
 const SUC_TTL_MS   = 7 * 86400000;      // 7 días
 const FETCH_TIMEOUT_MS = 25000;         // 25s por request a Andreani
 
-function andreaniEnv() {
+export function andreaniEnv() {
   const user     = process.env.ANDREANI_USER;
   const pass     = process.env.ANDREANI_PASS;
   const cliente  = process.env.ANDREANI_CLIENTE;
@@ -136,7 +136,7 @@ async function andreaniError(r, contexto) {
 
 // ─── Markup / habilitación (andreani_config/global) ────────────────────────
 
-async function getGlobalConfig(db) {
+export async function getGlobalConfig(db) {
   try {
     const snap = await db.collection("andreani_config").doc("global").get();
     const d = snap.exists ? snap.data() : {};
@@ -187,7 +187,7 @@ async function logAdminAndreani(db, adminUid, action, targetUid, detalle, data) 
     await db.collection("admin_log").add({ adminUid, action, targetUid: targetUid || null, targetEmail, detalle: String(detalle || "").slice(0, 300), data: data || null, at: FieldValue.serverTimestamp() });
   } catch (e) { console.warn("[admin_log]", e.message); }
 }
-async function isPlatformAdmin(db, uid) {
+export async function isPlatformAdmin(db, uid) {
   if (FOUNDERS.includes(uid)) return true;
   const envAdmins = String(process.env.ADMIN_UIDS || "").split(",").map(s => s.trim()).filter(Boolean);
   if (envAdmins.includes(uid)) return true;
@@ -226,7 +226,7 @@ function distanciaM(lat1, lng1, lat2, lng2) {
   return Math.round(2 * R * Math.asin(Math.sqrt(a)));
 }
 
-async function sucursalesPorCp(db, env, cp) {
+export async function sucursalesPorCp(db, env, cp) {
   // suc2_: el slim viejo cacheado no traía lat/lng (orden por distancia)
   const cacheRef = db.collection("andreani_config").doc(`suc2_${cp}`);
   try {
@@ -246,7 +246,7 @@ async function sucursalesPorCp(db, env, cp) {
 }
 
 // Listado COMPLETO (para el buscador de sucursal de origen). Cacheado 7 días.
-async function sucursalesTodas(db, env, force = false) {
+export async function sucursalesTodas(db, env, force = false) {
   const cacheRef = db.collection("andreani_config").doc("suc_all2"); // v2: con lat/lng
   if (!force) try {
     const hit = await cacheRef.get();
@@ -655,7 +655,7 @@ async function resolverLocalidad(cp, textos = [], region = "") {
   } catch (e) { console.warn("[andreani] resolverLocalidad:", e.message); return null; }
 }
 
-function normalizarBultos(bultos) {
+export function normalizarBultos(bultos) {
   const arr = Array.isArray(bultos) ? bultos : [];
   const out = arr.map(b => ({
     kilos:  Number(b.kilos)  || 0,
@@ -675,7 +675,7 @@ function normalizarBultos(bultos) {
 
 // GET /v1/tarifas — bultos en formato indexado plano bultos[i][campo].
 // Devuelve {tarifaTotal (número, con IVA), pesoAforado, raw}.
-async function cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen }) {
+export async function cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen }) {
   const params = new URLSearchParams();
   params.set("cpDestino", String(cpDestino));
   params.set("contrato", contratoDe(env, tipo));
@@ -709,7 +709,7 @@ async function cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrige
 
 // Sucursal de origen efectiva para tarifar: la confirmada por el usuario;
 // fallback al valor global de config (legacy) o nada.
-function sucOrigenDe(uData, cfg) {
+export function sucOrigenDe(uData, cfg) {
   const so = uData?.andreaniSucOrigen;
   if (so?.confirmada) return String(so.numero || so.codigo || so.id || "") || cfg.sucursalOrigen || "";
   return cfg.sucursalOrigen || "";
@@ -793,7 +793,7 @@ function costoConDescuento(cot, cfg) {
   const seguroContrato = (c.valorDeclarado || 0) * ((cfg.seguroPct ?? 1) / 100) * 1.21;
   return distribucion * desc + seguroContrato;
 }
-function precioConMarkup(cot, cfg) {
+export function precioConMarkup(cot, cfg) {
   // Piso de $1: un precio 0 o negativo jamás debe llegar al débito de saldo.
   return Math.max(1, Math.ceil(costoConDescuento(cot, cfg) * (1 + cfg.markupPct / 100) + cfg.markupFijo));
 }
@@ -1039,6 +1039,18 @@ export default async function handler(req, res) {
         await logAdminAndreani(db, uid, "sucursales_baja", null, [agregar.length ? "Agregó: " + agregar.join(", ") : "", quitar.size ? "Quitó: " + [...quitar].join(", ") : ""].filter(Boolean).join(" · "));
       }
       return res.json({ ok: true, nombres: out, seed: TPL_BAJA_SEED });
+    }
+
+    // ── sucursal_por_id: la sucursal oficial por id (pedidos del checkout de
+    // Shopify traen el id en el código del método de envío: ANDREANI_SUC_<id>).
+    if (action === "sucursal_por_id") {
+      const id = String(body.id || "").trim();
+      if (!id) return res.status(400).json({ error: "id requerido" });
+      const cp = String(body.cp || "").replace(/\D/g, "");
+      let s = null;
+      try { if (cp) s = (await sucursalesPorCp(db, env, cp)).find(x => String(x.id) === id) || null; } catch (_) {}
+      if (!s) { try { s = (await sucursalesTodas(db, env)).find(x => String(x.id) === id) || null; } catch (e) { return res.status(502).json({ error: e.message }); } }
+      return res.json({ sucursal: s });
     }
 
     // ── sucursales_buscar (buscador global: nombre, calle, número, localidad, CP)

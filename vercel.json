@@ -9,7 +9,8 @@
     "api/update-shipping.js": { "maxDuration": 60 },
     "api/check-expiring.js": { "maxDuration": 60 },
     "api/check-payments.js": { "maxDuration": 60 },
-    "api/tareas.js": { "maxDuration": 60 }
+    "api/tareas.js": { "maxDuration": 60 },
+    "api/shopify-rates.js": { "maxDuration": 15 }
   },
   "rewrites": [
     { "source": "/__/auth/:path*", "destination": "https://soluna-gestion.firebaseapp.com/__/auth/:path*" },
