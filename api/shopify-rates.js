@@ -16,7 +16,7 @@
 // a lo cacheado o a lista vacía (Shopify muestra los otros métodos).
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { andreaniEnv, getGlobalConfig, sucursalesPorCp, cotizarAndreani, precioConMarkup, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
+import { andreaniEnv, getGlobalConfig, sucursalesPorCp, sucursalesTodas, cotizarAndreani, precioConMarkup, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -58,6 +58,24 @@ function descSucursal(s) {
   const loc = d.localidad || d.ciudad || "";
   const hor = s.horarioDeAtencion ? ` · ${s.horarioDeAtencion}` : "";
   return clip(`Retirás en ${[dir, loc].filter(Boolean).join(", ")}${hor}`, 140);
+}
+
+// Sucursales para ofrecer en el checkout: las del CP exacto primero y, si no
+// alcanzan, las de CPs vecinos (la numeración postal argentina es geográfica:
+// 1425 ↔ 1414/1426/1428 son barrios linderos). Andreani filtra por CP exacto
+// y en muchos CP devuelve 1 sola; la app vieja mostraba varias cercanas.
+async function sucursalesCercanasCp(db, env, cp, max) {
+  const exactas = await sucursalesPorCp(db, env, cp);
+  if (exactas.length >= max) return exactas.slice(0, max);
+  let todas = [];
+  try { todas = await sucursalesTodas(db, env); } catch (_) { return exactas; }
+  const n = Number(cp);
+  const ids = new Set(exactas.map(s => String(s.id)));
+  const cpDe = s => Number(String(s.direccion?.codigoPostal || "").replace(/\D/g, "").slice(0, 4));
+  const vecinas = todas
+    .filter(s => !ids.has(String(s.id)) && isFinite(cpDe(s)) && Math.abs(cpDe(s) - n) <= 60)
+    .sort((a, b) => Math.abs(cpDe(a) - n) - Math.abs(cpDe(b) - n));
+  return [...exactas, ...vecinas].slice(0, max);
 }
 
 // Motor de tarifas. Devuelve {rates, why} — `why` explica por qué no hubo
@@ -111,7 +129,7 @@ export async function computeRates(db, uid, rate, { shopHdr = "", t0 = Date.now(
     const [dom, suc, sucursales] = await Promise.all([
       quiereDom ? cotiza("domicilio").catch(e => { errs.push("domicilio: " + e.message); return null; }) : Promise.resolve(null),
       quiereSuc ? cotiza("sucursal").catch(e => { errs.push("sucursal: " + e.message); return null; }) : Promise.resolve(null),
-      quiereSuc ? sucursalesPorCp(db, env, cp).catch(e => { errs.push("sucursales: " + e.message); return []; }) : Promise.resolve([]),
+      quiereSuc ? sucursalesCercanasCp(db, env, cp, Math.max(1, Math.min(12, Number(ac.sucursalesMax) || 5))).catch(e => { errs.push("sucursales: " + e.message); return []; }) : Promise.resolve([]),
     ]);
     if ((dom != null || suc != null) && !(cached && cached.dom === dom && cached.suc === suc)) {
       cacheRef.set({ ratesUid: uid, cp, ts: Date.now(), dom: dom ?? null, suc: suc ?? null }).catch(() => {});
