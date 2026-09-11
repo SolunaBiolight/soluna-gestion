@@ -13084,7 +13084,7 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
   const [st,setSt] = React.useState(null);      // respuesta de carrier_status
   const [err,setErr] = React.useState("");
   const [busy,setBusy] = React.useState(false);
-  const [cfg,setCfg] = React.useState({gratisDesde:"",sucursalesMax:"5",recargoPct:"0",recargoFijo:"0",domicilio:true,sucursal:true,kilos:"1",largoCm:"20",altoCm:"10",anchoCm:"15",valorDeclaradoMax:""});
+  const [cfg,setCfg] = React.useState({gratisDesde:"",sucursalesMax:"3",recargoPct:"0",recargoFijo:"0",domicilio:true,sucursal:true,kilos:"1",largoCm:"20",altoCm:"10",anchoCm:"15",valorDeclaradoMax:""});
   const [saving,setSaving] = React.useState(false);
   const [open,setOpen] = React.useState(false);
   const iS = InputStyle(T);
@@ -13096,7 +13096,7 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
       if(!r.ok||d.error&&typeof d.error==="string"&&!d.shop) throw new Error(d.error||`HTTP ${r.status}`);
       setSt(d);
       const c = d.config||{};
-      setCfg({gratisDesde:c.gratisDesde?String(c.gratisDesde):"",sucursalesMax:String(c.sucursalesMax||5),recargoPct:String(c.recargoPct||0),recargoFijo:String(c.recargoFijo||0),domicilio:c.domicilio!==false,sucursal:c.sucursal!==false,kilos:String(c.bulto?.kilos||1),largoCm:String(c.bulto?.largoCm||20),altoCm:String(c.bulto?.altoCm||10),anchoCm:String(c.bulto?.anchoCm||15),valorDeclaradoMax:c.bulto?.valorDeclaradoMax?String(c.bulto.valorDeclaradoMax):""});
+      setCfg({gratisDesde:c.gratisDesde?String(c.gratisDesde):"",sucursalesMax:String(c.sucursalesMax||3),recargoPct:String(c.recargoPct||0),recargoFijo:String(c.recargoFijo||0),domicilio:c.domicilio!==false,sucursal:c.sucursal!==false,kilos:String(c.bulto?.kilos||1),largoCm:String(c.bulto?.largoCm||20),altoCm:String(c.bulto?.altoCm||10),anchoCm:String(c.bulto?.anchoCm||15),valorDeclaradoMax:c.bulto?.valorDeclaradoMax?String(c.bulto.valorDeclaradoMax):""});
     }catch(e){ setErr(e.message); }
   };
   React.useEffect(()=>{ if(uid&&shStore) load(); /* eslint-disable-next-line */ },[uid, shStore?.shop]);

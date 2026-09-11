@@ -347,7 +347,7 @@ async function shopifyCarrierConfig(req, res, db) {
   const num = (v, d, min, max) => { const n = Number(v); return isFinite(n) ? Math.min(max, Math.max(min, n)) : d; };
   const patch = {
     gratisDesde: num(c.gratisDesde, 0, 0, 1e9),
-    sucursalesMax: Math.round(num(c.sucursalesMax, 5, 1, 12)),
+    sucursalesMax: Math.round(num(c.sucursalesMax, 3, 1, 12)),
     recargoPct: num(c.recargoPct, 0, -50, 200),
     recargoFijo: num(c.recargoFijo, 0, -1e6, 1e6),
     domicilio: c.domicilio !== false,

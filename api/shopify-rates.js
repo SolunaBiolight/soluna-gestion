@@ -258,7 +258,7 @@ export async function computeRates(db, uid, rate, { shopHdr = "", t0 = Date.now(
     const [dom, suc, sucursales] = await Promise.all([
       quiereDom ? cotiza("domicilio").catch(e => { errs.push("domicilio: " + e.message); return null; }) : Promise.resolve(null),
       quiereSuc ? cotiza("sucursal").catch(e => { errs.push("sucursal: " + e.message); return null; }) : Promise.resolve(null),
-      quiereSuc ? sucursalesParaCheckout(db, env, { cp, loc: dest.city, prov: dest.province }, Math.max(1, Math.min(12, Number(ac.sucursalesMax) || 5))).catch(e => { errs.push("sucursales: " + e.message); return []; }) : Promise.resolve([]),
+      quiereSuc ? sucursalesParaCheckout(db, env, { cp, loc: dest.city, prov: dest.province }, Math.max(1, Math.min(12, Number(ac.sucursalesMax) || 3))).catch(e => { errs.push("sucursales: " + e.message); return []; }) : Promise.resolve([]),
     ]);
     if ((dom != null || suc != null) && !(cached && cached.dom === dom && cached.suc === suc)) {
       cacheRef.set({ ratesUid: uid, cp, ts: Date.now(), dom: dom ?? null, suc: suc ?? null }).catch(() => {});
@@ -272,11 +272,11 @@ export async function computeRates(db, uid, rate, { shopHdr = "", t0 = Date.now(
       // para que la más cercana quede SIEMPRE arriba, cada posición suma $10
       // al precio (5.790 / 5.800 / 5.810…). Con envío gratis (todas $0) se
       // antepone un numerito ①②③ que ordena igual.
-      const CIRC = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩", "⑪", "⑫"];
+      // (Con envío gratis todas valen $0 y Shopify las ordena alfabético; por
+      // eso el default es solo 3 sucursales, todas a ≤10 km.)
       sucursales.forEach((s, i) => {
         const precio = gratis ? 0 : recargo(suc) + i * 10;
-        const nombre = gratis ? tituloSucursal(s).replace("Andreani Sucursal · ", `Andreani Sucursal ${CIRC[i] || ""} `) : tituloSucursal(s);
-        rates.push({ service_name: nombre, service_code: `ANDREANI_SUC_${s.id}`, total_price: cents(precio), currency, description: descSucursal(s) });
+        rates.push({ service_name: tituloSucursal(s), service_code: `ANDREANI_SUC_${s.id}`, total_price: cents(precio), currency, description: descSucursal(s) });
       });
     } else if (suc != null && quiereSuc) errs.push(`sin sucursales Andreani para el CP ${cp}`);
     return rates;
