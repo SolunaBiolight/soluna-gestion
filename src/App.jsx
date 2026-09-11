@@ -812,10 +812,11 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
         {canDelete && (
           <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,paddingTop:14,marginTop:8}}>
             {!confirmDel ? (
-              <button onClick={()=>setConfirmDel(true)} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"8px 12px",borderRadius:10}}>Eliminar esta tienda</button>
+              <button onClick={()=>setConfirmDel(true)} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"8px 12px",borderRadius:10}}>Eliminar</button>
             ) : (
               <div style={{background:T.red+"10",border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px",boxShadow:`0 0 0 1px ${T.red}18, 0 4px 12px ${T.red}14`}}>
-                <div style={{fontSize:12,color:T.text,fontWeight:600,marginBottom:8}}>¿Eliminar "{org.name}"? La tienda queda oculta 30 días (recuperable por soporte) y después se borra con todos sus datos. Deja de facturarse al instante.</div>
+                <div style={{fontSize:12,color:T.text,fontWeight:700,marginBottom:4}}>¿Eliminar la tienda "{org.name}"?</div>
+                <div style={{fontSize:11.5,color:T.textMd,lineHeight:1.5,marginBottom:8}}>⚠️ Junto con la tienda se borra <strong style={{color:T.text}}>todo su historial</strong> (pedidos, reclamos, canjes, tareas, facturación, márgenes) y <strong style={{color:T.text}}>todas sus vinculaciones</strong> (Tienda Nube/Shopify, Mercado Libre, Meta Ads, Google, ARCA, Andreani). Deja de facturarse al instante. Queda oculta 30 días por si te arrepentís; después se borra definitivamente.</div>
                 <div style={{display:"flex",gap:6}}>
                   <button onClick={()=>setConfirmDel(false)} disabled={saving} style={{...BtnSecondary(T),flex:1,padding:"7px",fontSize:11,borderRadius:8,justifyContent:"center"}}>Cancelar</button>
                   <button onClick={handleDelete} disabled={saving} style={{...BtnDanger(T),flex:1,padding:"7px",fontSize:11,borderRadius:8,justifyContent:"center",background:T.red,color:"#fff",boxShadow:`0 2px 12px ${T.red}55`}}>{saving?"Borrando...":"Sí, borrar"}</button>
@@ -13034,8 +13035,6 @@ function PerfilTiendasCard({T, user, userDoc, setMsg}) {
   const [showEliminar,setShowEliminar] = React.useState(false);
   const [confirmTxt,setConfirmTxt] = React.useState("");
   const [eliminando,setEliminando] = React.useState(false);
-  const [showEliminarTienda,setShowEliminarTienda] = React.useState(false);
-  const [eliminandoTienda,setEliminandoTienda] = React.useState(false);
   React.useEffect(()=>{ setNombre(userDoc?.nombreTienda || userDoc?.nombre || ""); },[userDoc?.nombreTienda, userDoc?.nombre]);
   const api = async (action, extra={}) => {
     const r = await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,uid:authUid,...extra})});
@@ -13058,15 +13057,6 @@ function PerfilTiendasCard({T, user, userDoc, setMsg}) {
     try{ await api("tiendaTransferir",{emailDestino:em}); appAlert(`Listo. La tienda ahora pertenece a ${em}. Entrá con ese perfil para verla.`); setTimeout(()=>window.location.reload(),800); }
     catch(e){ appAlert("No se pudo mover: "+e.message); }
     setMoviendo(false);
-  }
-  async function eliminarTienda(){
-    if(esPrincipal||eliminandoTienda) return;
-    setEliminandoTienda(true);
-    try{
-      await api("tiendaEliminar",{tiendaUid:user.uid});
-      toast("Tienda eliminada (recuperable 30 días) — volviendo a tu tienda principal…","success");
-      setTimeout(()=>window.location.reload(),600);
-    }catch(e){ appAlert("No se pudo eliminar: "+e.message); setEliminandoTienda(false); }
   }
   async function eliminarCuenta(){
     if(confirmTxt!=="ELIMINAR") return;
@@ -13109,24 +13099,6 @@ function PerfilTiendasCard({T, user, userDoc, setMsg}) {
           )}
         </div>
       )}
-
-      {/* Eliminar ESTA tienda (adicional). La principal es la cuenta misma → "Eliminar mi cuenta". */}
-      <div style={{borderTop:`1px solid ${T.border}`,paddingTop:12,marginTop:12}}>
-        {esPrincipal ? (
-          <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Esta es tu <strong style={{color:T.textMd}}>tienda principal</strong> (es tu cuenta): para eliminarla usá <strong style={{color:T.textMd}}>"Eliminar mi cuenta"</strong> más abajo. Las tiendas adicionales se eliminan desde acá o desde el selector → Gestionar.</div>
-        ) : !showEliminarTienda ? (
-          <button onClick={()=>setShowEliminarTienda(true)} style={{...BtnDanger(T),fontSize:12,padding:"8px 12px"}}>Eliminar esta tienda</button>
-        ) : (
-          <div style={{background:T.red+"10",border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px"}}>
-            <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>Eliminar la tienda "{nombre||userDoc?.nombreTienda||""}"</div>
-            <div style={{fontSize:11,color:T.textMd,marginBottom:8,lineHeight:1.5}}>Queda oculta 30 días (recuperable por soporte) y después se borra con todos sus datos e integraciones. Deja de facturarse al instante. Volvés a tu tienda principal.</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              <button onClick={eliminarTienda} disabled={eliminandoTienda} style={{...BtnDanger(T),fontSize:12,padding:"8px 14px",background:T.red,color:"#fff",opacity:eliminandoTienda?0.6:1}}>{eliminandoTienda?"Eliminando…":"Sí, eliminar esta tienda"}</button>
-              <button onClick={()=>setShowEliminarTienda(false)} disabled={eliminandoTienda} style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px"}}>Cancelar</button>
-            </div>
-          </div>
-        )}
-      </div>
 
       <div style={{borderTop:`1px solid ${T.border}`,paddingTop:12,marginTop:12}}>
         {!showEliminar ? (
