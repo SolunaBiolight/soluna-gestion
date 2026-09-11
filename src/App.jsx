@@ -958,6 +958,9 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
         </div>
       )}
 
+      {/* Selector de TIENDA del perfil (multi-tienda): arriba del menú; el perfil (login) queda abajo a la izquierda */}
+      <OrgSwitcher T={T} user={user} userPlan={userPlan} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={onOpenCreateOrg} onOpenManageOrg={onOpenManageOrg} collapsed={collapsed}/>
+
       {/* Nav */}
       <nav style={{flex:1,padding:DS.sp.sm,display:"flex",flexDirection:"column",gap:2,overflowY:"auto"}}>
         {GROUPS.filter(item=>!(adminOnlySections||[]).includes(item.id)||isAdmin)
