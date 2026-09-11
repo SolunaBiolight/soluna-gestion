@@ -2999,8 +2999,18 @@ function TopbarMoreMenu({T, items}) {
   const [pos,setPos]=React.useState({top:0,right:0});
   const list=(items||[]).filter(Boolean);
   if(!list.length) return null;
-  return (
-    <div style={{position:"relative",flexShrink:0}}>
+  return (<>
+    {/* Celu: sin desplegable — las acciones van como botones sueltos en la
+        línea de controles (el único desplegable en celu es la barra de abajo). */}
+    <div className="mobile-only" style={{display:"none",alignItems:"center",gap:6,flexShrink:0}}>
+      {list.map((it,i)=>(
+        <button key={i} disabled={it.disabled} onClick={it.disabled?undefined:()=>{it.onClick&&it.onClick();}}
+          style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",opacity:it.disabled?0.5:1,whiteSpace:"nowrap"}}>
+          {it.icon||null}{it.label}
+        </button>
+      ))}
+    </div>
+    <div className="hide-mobile" style={{position:"relative",flexShrink:0}}>
       <button title="Más acciones"
         onClick={e=>{const r=e.currentTarget.getBoundingClientRect();setPos({top:r.bottom+6,right:Math.max(10,window.innerWidth-r.right)});setOpen(o=>!o);}}
         style={{...BtnSecondary(T),fontSize:14,padding:"7px 10px",lineHeight:1,fontWeight:DS.w.bold,color:T.textMd}}>⋯</button>
@@ -3018,7 +3028,7 @@ function TopbarMoreMenu({T, items}) {
         </div>
       </>)}
     </div>
-  );
+  </>);
 }
 
 // --- Shared AppTopbar ---
@@ -3030,11 +3040,10 @@ function AppTopbar({T, section, sectionId, onHelp, onHome, children, top=48}) {
   const iconPath = sectionId ? SECTION_ICONS[sectionId] : null;
   return (
     <div style={{borderBottom:`1px solid ${T.border}`,background:T.card+"e0",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",padding:"0 24px",position:"sticky",top,zIndex:30}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:64,gap:16,maxWidth:1400,margin:"0 auto"}}>
+      {/* En celu (.gh-topbar-row) la fila se parte en dos: título arriba y los
+          controles en una segunda línea completa, sin "⋯" ni scroll cortado. */}
+      <div className="gh-topbar-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:64,gap:16,maxWidth:1400,margin:"0 auto"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0,minWidth:0}}>
-          <button onClick={onHome} className="mobile-only" style={{display:"none",alignItems:"center",gap:6,padding:"5px 10px",fontSize:DS.font.sm,fontWeight:DS.w.medium,borderRadius:DS.r.md,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-          </button>
           {/* Ícono de la sección (fallback: logo Growith si no se pasa sectionId) */}
           {iconPath
             ? <div style={{width:32,height:32,borderRadius:DS.r.md,background:T.accentSolid+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
@@ -3046,7 +3055,7 @@ function AppTopbar({T, section, sectionId, onHelp, onHome, children, top=48}) {
         {/* En mobile la fila de controles no se corta: scrollea horizontal (sin barra) */}
         {/* padding vertical: el overflow-x recorta el borde/glow superior de los
             botones en hover si quedan al ras del contenedor */}
-        <div className="no-scrollbar" style={{display:"flex",alignItems:"center",gap:6,overflowX:"auto",WebkitOverflowScrolling:"touch",maxWidth:"100%",minWidth:0,padding:"3px 0"}}>
+        <div className="no-scrollbar gh-topbar-ctl" style={{display:"flex",alignItems:"center",gap:6,overflowX:"auto",WebkitOverflowScrolling:"touch",maxWidth:"100%",minWidth:0,padding:"3px 0"}}>
           {children}
           {onHelp&&(
             <button onClick={onHelp} title="¿Cómo funciona esta sección?"
@@ -3062,7 +3071,7 @@ function AppTopbar({T, section, sectionId, onHelp, onHome, children, top=48}) {
 function AppTabs({T, tabs, active, onChange, size="normal"}) {
   const isLarge = size==="large";
   return (
-    <div style={{background:T.surface,borderBottom:"1px solid "+T.border,padding:isLarge?"12px 24px":"10px 24px",position:"sticky",top:113,zIndex:20}}>
+    <div className="no-scrollbar gh-apptabs" style={{background:T.surface,borderBottom:"1px solid "+T.border,padding:isLarge?"12px 24px":"10px 24px",position:"sticky",top:113,zIndex:20}}>
       <div style={{display:"inline-flex",background:T.bg,borderRadius:isLarge?12:10,padding:3,border:"1px solid "+T.border,gap:isLarge?3:2}}>
         {tabs.map(t=>{
           const isActive=active===t.id;
@@ -35017,6 +35026,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const [showGuia,setShowGuia]=useState(false); // guía "¿Cómo funciona?" del topbar
   const [extraMenu, setExtraMenu] = useState(false); // menú ⋯ (compartir / reprocesar)
   const [extraMenuPos, setExtraMenuPos] = useState({top:0,right:10});
+  const [editPanels, setEditPanels] = useState(false); // personalizador de paneles (✎ del topbar)
+  const [editPanelsPos, setEditPanelsPos] = useState({top:0,right:10});
 
   // Imagen del resumen del período (canvas propio, sin librerías): 4 números
   // hero + curva de profit diario, lista para WhatsApp. En mobile usa el share
@@ -35091,6 +35102,34 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     }).catch(()=>{});
     /* eslint-disable-next-line */
   },[user?.uid]);
+  // Paneles del dashboard: orden y visibilidad se personalizan desde el ✎ del
+  // topbar (mismo mecanismo que "Personalizar métricas"). Se persisten en
+  // `vis.panelOrder` / `vis.panels` junto con el resto de la visibilidad.
+  const PANELS = [
+    {id:"metrics",   label:"Métricas principales"},
+    {id:"dow",       label:"Profit diario por semana"},
+    {id:"costos",    label:"Costos"},
+    {id:"canal",     label:"Comparativa por canal"},
+    {id:"clientes",  label:"Clientes y caja"},
+    {id:"canales",   label:"Canales de marketing"},
+    {id:"productos", label:"Rentabilidad por producto"},
+    {id:"ventas",    label:"Costos por venta"},
+  ];
+  const panelsOrdered = () => { const o=Array.isArray(vis.panelOrder)?vis.panelOrder:[]; return [...PANELS].sort((a,b)=>{ const ia=o.indexOf(a.id), ib=o.indexOf(b.id); return (ia<0?999:ia)-(ib<0?999:ib); }); };
+  const panelOn = id => (vis.panels||{})[id]!==false;
+  const panelsReorder = (from,to) => {
+    if(!from||!to||from===to) return;
+    const cur = panelsOrdered().map(p=>p.id);
+    const fi=cur.indexOf(from), tiOrig=cur.indexOf(to); if(fi<0||tiOrig<0) return;
+    cur.splice(fi,1);
+    let ti=cur.indexOf(to); if(fi<tiOrig) ti+=1;
+    cur.splice(ti,0,from);
+    updVis({panelOrder:cur});
+  };
+  // Envuelve cada panel: el contenedor es flex-column y `order` lo reubica sin
+  // tocar el JSX de cada sección. Es una función (no un componente) para que
+  // los hijos no se remonten en cada render (inputs, tablas con estado).
+  const panelWrap = (id, node) => <div key={id} style={{order:panelsOrdered().findIndex(p=>p.id===id)+1,display:panelOn(id)?undefined:"none"}}>{node}</div>;
   const EyeBtn = ({k}) => (
     <button onClick={()=>updVis({[k]:!vis[k]})} title={vis[k]!==false?"Ocultar sección":"Mostrar sección"} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"2px 4px",display:"inline-flex",alignItems:"center"}}>
       {vis[k]!==false
@@ -35596,6 +35635,48 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             document.body
           )}
         </div>
+        {/* Personalizador de paneles: arrastrar reordena, el interruptor
+            muestra/oculta cada sección del dashboard. */}
+        <div style={{position:"relative"}}>
+          <button onClick={e=>{const r=e.currentTarget.getBoundingClientRect(); setEditPanelsPos({top:r.bottom+6,right:Math.max(10,window.innerWidth-r.right)}); setEditPanels(v=>!v);}} title="Personalizar paneles (orden y visibilidad)"
+            style={{...InputStyle(T),width:34,height:34,padding:0,borderRadius:DS.r.full,background:editPanels?T.accent+"18":"transparent",borderColor:editPanels?T.accent+"66":T.border,boxSizing:"border-box",display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",lineHeight:1,color:editPanels?T.accent:T.textMd}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </button>
+          {editPanels&&ReactDOM.createPortal(
+            <>
+              <div onClick={()=>setEditPanels(false)} style={{position:"fixed",inset:0,zIndex:60}}/>
+              <div className="gh-dropdown" style={{position:"fixed",top:editPanelsPos.top,right:editPanelsPos.right,zIndex:61,width:"min(320px,calc(100vw - 20px))",boxSizing:"border-box",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,boxShadow:"0 2px 6px rgba(0,0,0,0.12), 0 16px 48px rgba(0,0,0,0.28)",padding:"14px 14px 12px",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>Personalizar paneles</div>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Arrastrá desde <span style={{color:T.textMd}}>⠿</span> para cambiar el orden. El interruptor muestra u oculta el panel.</div>
+                <div style={{display:"flex",flexDirection:"column",gap:2,maxHeight:340,overflowY:"auto",margin:"0 -4px",padding:"0 4px"}}>
+                  {panelsOrdered().map(p=>{
+                    const on=panelOn(p.id);
+                    return (
+                      <div key={p.id}
+                        draggable
+                        onDragStart={()=>setDragKpi(p.id)}
+                        onDragOver={e=>e.preventDefault()}
+                        onDrop={e=>{e.preventDefault(); panelsReorder(dragKpi,p.id); setDragKpi(null);}}
+                        onDragEnd={()=>setDragKpi(null)}
+                        className="gh-hover-surface"
+                        style={{display:"flex",alignItems:"center",gap:10,padding:"7px 8px",borderRadius:DS.r.md,cursor:"grab",opacity:dragKpi===p.id?0.35:1,border:dragKpi&&dragKpi!==p.id?`1px dashed ${T.border}`:"1px dashed transparent",transition:"opacity 0.12s"}}>
+                        <span style={{color:T.textSm,fontSize:13,lineHeight:1,flexShrink:0,cursor:"grab"}}>⠿</span>
+                        <span style={{flex:1,fontSize:12.5,fontWeight:600,color:on?T.text:T.textSm}}>{p.label}</span>
+                        <DSToggle T={T} active={on} onToggle={()=>updVis({panels:{...(vis.panels||{}),[p.id]:!on}})}/>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{display:"flex",gap:8,alignItems:"center",marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL||T.border}`}}>
+                  <Btn T={T} variant="ghost" size="sm" onClick={()=>updVis({panels:{},panelOrder:[]})}>Restablecer</Btn>
+                  <div style={{flex:1}}/>
+                  <Btn T={T} variant="primary" size="sm" onClick={()=>setEditPanels(false)}>Listo</Btn>
+                </div>
+              </div>
+            </>,
+            document.body
+          )}
+        </div>
       </AppTopbar>
 
       <MargenesTabsBar T={T} tab={tab||"dashboard"} setTab={setTab}/>
@@ -35665,16 +35746,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
         {rendData&&(()=>{
           // Mantener el dashboard visible durante la recarga (sin flash de
           // pantalla vacía al cambiar período) — se atenúa levemente.
-          return(<div style={{opacity:loading?0.55:1,transition:"opacity .2s",pointerEvents:loading?"none":"auto"}}>
-
-          {/* Status row — la fecha vive SOLO en el selector del topbar; acá queda
-              el estado de actualización, alineado a la derecha. */}
-          <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
-            <span style={{fontSize:10,color:T.textSm,marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:6}}>
-              {revalidando && <span style={{display:"inline-flex",alignItems:"center",gap:5,color:T.accent,fontWeight:600}}><Spinner size={9} color={T.accent}/> actualizando en vivo…</span>}
-              act. {new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}
-            </span>
-          </div>
+          {/* flex-column: cada panel lleva `order` (ver panelWrap) para que el
+              usuario pueda reordenarlos desde el ✎ del topbar. */}
+          return(<div style={{opacity:loading?0.55:1,transition:"opacity .2s",pointerEvents:loading?"none":"auto",display:"flex",flexDirection:"column"}}>
 
           {/* Checklist de configuración inicial — sin costos cargados el profit es mentira */}
           {setupVacio && (
@@ -35716,9 +35790,14 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               fbOk && {id:"fb", plain:true, label:"Desglose facturación"},
               abOk && {id:"ab", plain:true, label:"Desglose inversión"},
             ].filter(Boolean);
-            if (!chips.length) return null;
+            // El "act. HH:MM" va en esta misma línea, a la derecha (sin fila
+            // propia arriba que dejaba un hueco muerto).
             return (
               <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
+                <span style={{fontSize:10,color:T.textSm,marginLeft:"auto",order:99,display:"inline-flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
+                  {revalidando && <span style={{display:"inline-flex",alignItems:"center",gap:5,color:T.accent,fontWeight:600}}><Spinner size={9} color={T.accent}/> actualizando en vivo…</span>}
+                  act. {new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}
+                </span>
                 {chips.map(c=>c.plain?(
                   <button key={c.id} onClick={()=>setOpenInfo(o=>o===c.id?null:c.id)}
                     style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 8px",fontSize:DS.font.sm,fontWeight:openInfo===c.id?DS.w.bold:DS.w.medium,border:"none",background:"transparent",color:openInfo===c.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3}}>
@@ -35815,7 +35894,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             const row = (lbl, val, hint, strong) => (
               <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:10,padding:"3px 0"}}>
                 <span style={{fontSize:DS.font.md,color:strong?T.text:T.textMd,fontWeight:strong?DS.w.bold:DS.w.medium}}>{lbl}{hint&&<span style={{fontSize:DS.font.sm,color:T.textSm,fontWeight:DS.w.regular,marginLeft:6}}>{hint}</span>}</span>
-                <span style={{fontSize:DS.font.md,color:strong?T.text:T.textMd,fontWeight:DS.w.bold,fontVariantNumeric:"tabular-nums"}}>{val}</span>
+                <span style={{fontSize:DS.font.md,color:strong?T.text:T.textMd,fontWeight:DS.w.bold,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",flexShrink:0}}>{val}</span>
               </div>
             );
             const TIPO_LBL = {oficial:"oficial",blue:"blue",mep:"MEP",cripto:"cripto",manual:"manual"};
@@ -35879,6 +35958,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {/* (El resumen de ayer vive fusionado con la proyección en la tira de
               stats debajo del gráfico — una sola franja, sin cajitas sueltas.) */}
 
+          {panelWrap("metrics", <>
           {/* Hero KPIs */}
           <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"6px 0 12px",display:"flex",alignItems:"center",gap:10}}>Métricas Principales <span style={{marginLeft:"auto",display:"inline-flex",gap:4,alignItems:"center"}}><button onClick={()=>{setEditMetas(s=>!s); setMetasDraft(metas);}} title="Configurar metas (ROAS y margen objetivo)" style={{background:editMetas?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editMetas?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H8a1.65 1.65 0 001-1.51V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V8a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button><button onClick={()=>setEditSecKpis(s=>!s)} title="Elegir qué KPIs se muestran" style={{background:editSecKpis?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editSecKpis?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button><EyeBtn k="sec"/><EyeBtn k="main"/></span></div>
           {editMetas && (
@@ -36061,13 +36141,15 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               </div>
             );
           })()}
+          </>)}
 
+          {panelWrap("dow", <>
           {/* Performance por día de semana */}
-          {vis.main!==false && byDow.some(d=>d.days>0) && (()=>{
+          {byDow.some(d=>d.days>0) && (()=>{
             const maxAbs = Math.max(...byDow.map(d=>Math.abs(d.avgProfit||0)), 1);
-            return (
+            return (<>
+              <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"0 0 10px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>Profit diario por semana<span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· profit promedio por día de la semana{byDowFuente?` · ${byDowFuente} (el rango elegido es muy corto para el promedio semanal)`:""}</span></div>
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 16px",marginBottom:18}}>
-                <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:10}}>Profit promedio por día de semana{byDowFuente&&<span style={{fontWeight:DS.w.medium,textTransform:"none",letterSpacing:0}}> · {byDowFuente} (el rango elegido es muy corto para el promedio semanal)</span>}</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8,alignItems:"end"}}>
                   {[1,2,3,4,5,6,0].map(dow=>{
                     const d = byDow[dow]||{};
@@ -36085,9 +36167,11 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                   })}
                 </div>
               </div>
-            );
+            </>);
           })()}
+          </>)}
 
+          {panelWrap("costos", <>
           {/* Desglose de costos — estilo Escalafy */}
           <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"26px 0 10px",display:"flex",alignItems:"center",gap:8}}>Costos<span style={{marginLeft:"auto"}}><EyeBtn k="costos"/></span></div>
           {vis.costos!==false && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:18}}>
@@ -36107,7 +36191,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               </div>
             ))}
           </div>}
+          </>)}
 
+          {panelWrap("canal", <>
           {/* Comparativa por canal — una tabla en vez de tableros duplicados */}
           {rendData.byChannel && (()=>{
             const bc = rendData.byChannel;
@@ -36179,7 +36265,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               </div>
             );
           })()}
+          </>)}
 
+          {panelWrap("clientes", <>
           {/* Clientes y caja */}
           {(clientes || (cashflow.liberado||0)>0 || (cashflow.retenido||0)>0) && (
             <div style={{marginBottom:18}}>
@@ -36217,7 +36305,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {clientes && (clientes.sinDato||0)>0 && <div style={{fontSize:10,color:T.textSm,marginTop:4}}>{clientes.sinDato} orden(es) sin identificación de cliente quedan fuera del conteo.</div>}
             </div>
           )}
+          </>)}
 
+          {panelWrap("canales", <>
           {/* Canales de Marketing — tabla comparativa ordenable (estilo Escalafy) */}
           {rendData.byChannel && (()=>{
             const bc = rendData.byChannel;
@@ -36374,7 +36464,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               </div>
             </>);
           })()}
+          </>)}
 
+          {panelWrap("productos", <>
           {/* Rentabilidad por producto */}
           {byProduct.length>0 && (()=>{
             // En vista de canal, solo los productos de ESE canal.
@@ -36498,10 +36590,11 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               </div>
             );
           })()}
+          </>)}
 
+          {panelWrap("ventas", <>
           {/* divisor antes de la tabla */}
           <div style={{borderTop:`1px solid ${T.border}`,marginBottom:18,paddingTop:2}}/>
-
 
           {/* Costos por venta */}
           {(()=>{
@@ -36534,7 +36627,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               const blob = new Blob(["﻿"+head+"\n"+body],{type:"text/csv;charset=utf-8"});
               const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="costos_por_venta_growith.csv"; a.click(); URL.revokeObjectURL(a.href);
             };
-            return (
+            return (<>
+              <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"0 0 10px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>Costos por venta<span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· costos reales de cada orden</span></div>
               <div id="gh-ventas-tabla" style={{background:T.card,border:`1px solid ${ventasFlash?T.accentSolid:T.border}`,boxShadow:ventasFlash?`0 0 0 3px ${T.accentSolid}33`:"none",transition:"border-color .3s, box-shadow .3s",borderRadius:12,overflow:"hidden",scrollMarginTop:120}}>
                 <div style={{padding:"10px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                   <span style={{fontSize:11,color:T.textSm,fontWeight:600}}>{sales.length}{sales.length!==salesAll.length?` de ${salesAll.length}`:""} ventas · costos reales por orden (sin Ad Spend, que es a nivel cuenta)</span>
@@ -36624,9 +36718,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                   </table>
                 </div>
               </div>
-            );
+            </>);
           })()}
-
+          </>)}
 
           </div>);
         })()}
@@ -37091,6 +37185,14 @@ export default function App() {
       @media(max-width:768px){
         .hide-mobile{display:none!important;}
         .mobile-only{display:flex!important;}
+        /* Topbar de sección en celu: título en una línea y TODOS los controles
+           en la línea de abajo (sin scroll cortado ni "⋯"). */
+        .gh-topbar-row{height:auto!important;flex-wrap:wrap!important;padding:10px 0!important;gap:8px 16px!important;}
+        .gh-topbar-ctl{width:100%!important;flex-wrap:wrap!important;overflow:visible!important;padding:0!important;}
+        .gh-topbar-ctl>div{flex-wrap:wrap!important;max-width:100%!important;}
+        /* Sub-tabs: siempre visibles, deslizables si no entran (y sin sticky,
+           porque el topbar ya no mide 64px fijos en celu). */
+        .gh-apptabs{position:static!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch;}
         .gh-calpagos-grid{grid-template-columns:1fr!important;}
         .gh-admin-grid{grid-template-columns:1fr!important;}
         .stack-mobile{flex-direction:column!important;grid-template-columns:1fr!important;}
@@ -37506,17 +37608,7 @@ export default function App() {
           <span style={{fontSize:10, fontWeight:page===it.id?700:500}}>{it.label}</span>
         </button>
       ))}
-      {/* Anteúltima: Tiendas (selector multi-tienda) · Última: Cuenta (hoja de cuenta) */}
-      {orgs.length>0&&(
-        <button onClick={()=>setMobileTiendasOpen(true)} style={{display:"inline-flex", flexShrink:0, minWidth:64, background:"transparent", border:"none", cursor:"pointer", flexDirection:"column", alignItems:"center", gap:2, padding:"6px 6px", color:mobileTiendasOpen?T.accent:T.textMd, fontFamily:"'Inter',system-ui,sans-serif"}}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l1-5h16l1 5M3 9a3 3 0 006 0 3 3 0 006 0 3 3 0 006 0M5 9v11h14V9M9 20v-6h6v6"/></svg>
-          <span style={{fontSize:10, fontWeight:500}}>Tiendas</span>
-        </button>
-      )}
-      <button onClick={()=>setMobileMenuOpen(true)} style={{display:"inline-flex", flexShrink:0, minWidth:64, background:"transparent", border:"none", cursor:"pointer", flexDirection:"column", alignItems:"center", gap:2, padding:"6px 6px", color:mobileMenuOpen?T.accent:T.textMd, fontFamily:"'Inter',system-ui,sans-serif"}}>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        <span style={{fontSize:10, fontWeight:500}}>Cuenta</span>
-      </button>
+      {/* Tiendas y Cuenta viven arriba a la izquierda (MobileTopHeader), no acá. */}
     </div>
   );
 
@@ -37530,9 +37622,22 @@ export default function App() {
       background:T.surface, borderBottom:`1px solid ${T.border}`,
       padding:"9px 14px", alignItems:"center", justifyContent:"space-between", gap:10, height:52, boxSizing:"border-box",
     }}>
-      <div style={{display:"flex",alignItems:"center",gap:9,minWidth:0}}>
-        <GrowithLogo size={22} variant="color"/>
-        <span style={{fontWeight:DS.w.bold,fontSize:DS.font.xl,color:T.text,letterSpacing:-0.3}}>Growith</span>
+      {/* Izquierda: cuenta (avatar) + tienda activa (chip que abre el selector).
+          Es el mismo par "perfil + switcher" del sidebar de escritorio. */}
+      <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0,flex:1}}>
+        <button onClick={()=>setMobileMenuOpen(true)} title="Mi cuenta" style={{display:"flex",alignItems:"center",background:"transparent",border:"none",cursor:"pointer",padding:0,borderRadius:DS.r.full,flexShrink:0}}>
+          {user?.photoURL
+            ?<img src={user.photoURL} alt="" style={{width:32,height:32,borderRadius:DS.r.full,border:`1px solid ${T.border}`}}/>
+            :<div style={{width:32,height:32,borderRadius:DS.r.full,background:T.accentSolid+"33",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:DS.w.bold,fontSize:DS.font.lg}}>{_mInitial}</div>
+          }
+        </button>
+        {orgs.length>0&&(()=>{ const a=orgs.find(o=>o.id===activeOrgId)||orgs[0]; return (
+          <button onClick={()=>setMobileTiendasOpen(true)} title="Cambiar de tienda" style={{display:"flex",alignItems:"center",gap:7,minWidth:0,maxWidth:"100%",padding:"4px 8px 4px 4px",background:T.card,border:`1px solid ${T.border}`,borderRadius:10,cursor:"pointer",color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <span style={{width:24,height:24,borderRadius:6,background:a.color||T.accent,color:"#fff",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,flexShrink:0}}>{(a.name||"?").trim().charAt(0).toUpperCase()}</span>
+            <span style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{a.name}</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+        ); })()}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
         {isInTrial&&!user?.esMiembro&&(
@@ -37540,12 +37645,7 @@ export default function App() {
             <GhI n={trialExpiring?"alert":"gift"} size={12}/> {trialDaysLeft===1?"último día":`${trialDaysLeft}d`}
           </button>
         )}
-        <button onClick={()=>setMobileMenuOpen(true)} title="Mi cuenta" style={{display:"flex",alignItems:"center",gap:6,background:"transparent",border:"none",cursor:"pointer",padding:2,borderRadius:DS.r.full}}>
-          {user?.photoURL
-            ?<img src={user.photoURL} alt="" style={{width:32,height:32,borderRadius:DS.r.full,border:`1px solid ${T.border}`}}/>
-            :<div style={{width:32,height:32,borderRadius:DS.r.full,background:T.accentSolid+"33",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:DS.w.bold,fontSize:DS.font.lg}}>{_mInitial}</div>
-          }
-        </button>
+        <GrowithLogo size={22} variant="color"/>
       </div>
     </div>
   );
@@ -37568,7 +37668,7 @@ export default function App() {
               <span style={{width:30,height:30,borderRadius:8,background:o.color||T.accent,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,flexShrink:0}}>{(o.name||"?").trim().charAt(0).toUpperCase()}</span>
               <div style={{minWidth:0,flex:1}}>
                 <div style={{fontSize:14,fontWeight:700,whiteSpace:"normal",wordBreak:"break-word",lineHeight:1.25}}>{o.name}</div>
-                <div style={{fontSize:11,color:T.textSm}}>{o.rol==="miembro"?"Miembro del equipo":(o.esSelf?"Tienda principal · Dueño":"Tienda adicional · Dueño")}{act?" · activa":""}</div>
+                {(o.rol==="miembro"||act) && <div style={{fontSize:11,color:T.textSm}}>{o.rol==="miembro"?"Miembro del equipo":""}{o.rol==="miembro"&&act?" · ":""}{act?"activa":""}</div>}
               </div>
               {act
                 ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
