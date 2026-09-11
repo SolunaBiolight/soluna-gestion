@@ -95,7 +95,7 @@ const esRetiroPublico = s => s.entrega && s.atencion && !/planta/i.test(s.tipo |
 const SUC_LIST_TTL_MS = 7 * 86400000;
 async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
   const nrm = v => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
-  const cacheRef = db.collection("andreani_config").doc(`rates_suc_${cp}_${nrm(loc) || "x"}`);
+  const cacheRef = db.collection("andreani_config").doc(`rates_suc2_${cp}_${nrm(loc) || "x"}`);
   try {
     const c = (await cacheRef.get()).data();
     if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return c.lista.slice(0, max);
