@@ -8161,7 +8161,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       return kc&&(kn||kcp)?`${kc}|${kn}|${kcp}`:nrmSucTxt(s.descripcion)+"|"+kn;
     };
     const unicas=[...new Map(cands.map(s=>[key(s),s])).values()];
-    return unicas.length===1?unicas[0]:null;
+    if(unicas.length===1) return unicas[0];
+    // El listado repite el MISMO punto con la dirección escrita distinto (número
+    // con espacio, CP en una variante y no en otra): si todas las candidatas
+    // llevan el mismo nombre oficial, son una sola (#6383: "SAN MIGUEL (CENTRO)" x3).
+    const nombres=new Set(unicas.map(s=>nrmSucTxt(s.descripcion)).filter(Boolean));
+    if(unicas.length>1&&nombres.size===1&&unicas.every(s=>nrmSucTxt(s.descripcion))) return unicas[0];
+    return null;
   }
   // Fallback: el punto exacto puede existir en el listado COMPLETO de Andreani
   // aunque no aparezca en la lista por CP (típico de puntos HOP nuevos, que
@@ -8380,7 +8386,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             const dirKey=s=>[nrmSucTxt(s.direccion?.calle),String(s.direccion?.numero||"").replace(/\D/g,""),String(s.direccion?.codigoPostal||"").replace(/\D/g,"")].join("|");
             const dirsU=[...new Set(enCalle.map(dirKey))];
             D.push(`enCalle=${enCalle.map(s=>s.descripcion).slice(0,3).join("/")||"0"} dirs=${dirsU.length}`);
-            if(enCalle.length&&dirsU.length===1){
+            const nombresU=new Set(enCalle.map(s=>nrmSucTxt(s.descripcion)).filter(Boolean));
+            if(enCalle.length&&(dirsU.length===1||(nombresU.size===1&&enCalle.every(s=>nrmSucTxt(s.descripcion))))){
               for(const sV of enCalle){
                 const tplU=ghTplDeOficial(locs,sV);
                 if(tplU&&nrmSucTxt(tplU)===tplN){ D.push(`variante "${sV.descripcion}"→ok`); return R(true); }
