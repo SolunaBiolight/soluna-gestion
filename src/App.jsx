@@ -13210,7 +13210,7 @@ function EnviosCheckoutTab({T, user}) {
   return (
     <div key="checkout" className="gh-tab-content" style={{maxWidth:1100,margin:"0 auto",paddingBottom:48}}>
       <div style={{marginBottom:14}}>
-        <div style={{fontSize:DS.font["2xl"],fontWeight:DS.w.black,color:T.text,letterSpacing:-0.4}}>Andreani en el checkout</div>
+        <div style={{fontSize:DS.font["2xl"],fontWeight:DS.w.black,color:T.text,letterSpacing:-0.4}}>Andreani en el checkout <span style={{fontSize:DS.font.md,fontWeight:DS.w.medium,color:T.textSm}}>(solo Shopify)</span></div>
         <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:2}}>Que el comprador elija Andreani a domicilio o retiro en sucursal directo en el checkout de tu tienda, con el precio de tu etiqueta Growith.</div>
       </div>
       {cargando ? <div style={{fontSize:12,color:T.textSm}}><Spinner size={12} color={T.textSm}/> Cargando…</div>
