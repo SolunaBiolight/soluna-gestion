@@ -6,6 +6,7 @@
 // Routing: ?platform=shopify|tiendanube|mercadolibre & ?action=connect|disconnect|...
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
+import { computeRates as andreaniComputeRates } from "./shopify-rates.js";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { guardUid } from "./_auth.js";
 import { signState } from "./tn-callback.js";
@@ -281,7 +282,16 @@ async function shopifyCarrierStatus(req, res, db) {
   let scopes = null;
   try { const r = await shApi(sh, "../oauth/access_scopes.json"); if (r.ok) scopes = (r.j?.access_scopes || []).map(x => x.handle); } catch (_) {}
   const f = await carrierFind(sh);
+  // Autotest: cotiza un checkout de prueba (CP del origen del vendedor o 1425)
+  // para que la card muestre si Growith va a responder tarifas y, si no, por qué.
+  let test = null;
+  try {
+    const cpTest = String(userData.andreaniOrigen?.codigoPostal || "1425").replace(/\D/g, "") || "1425";
+    const out = await andreaniComputeRates(db, uid, { destination: { country: "AR", postal_code: cpTest, city: "" }, items: [{ quantity: 1, grams: 500, price: 2000000, requires_shipping: true }], currency: "ARS" }, { shopHdr: "" });
+    test = { cp: cpTest, rates: out.rates.map(r => ({ name: r.service_name, code: r.service_code, precio: Math.round(Number(r.total_price) / 100) })), why: out.why || "" };
+  } catch (e) { test = { cp: null, rates: [], why: e.message }; }
   return res.json({
+    test,
     shop: sh.shop,
     scopeOk: scopes ? scopes.includes("write_shipping") : (f.err?.error === "scope" ? false : null),
     registered: !!f.carrier, carrier: f.carrier ? { id: f.carrier.id, name: f.carrier.name, active: f.carrier.active, callback_url: f.carrier.callback_url } : null,

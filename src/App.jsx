@@ -13147,6 +13147,13 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
         </div>
       )}
       {st?.error && st.error.error!=="scope" && <div style={{background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:8,padding:"10px 12px",fontSize:12,color:T.text,marginBottom:10,lineHeight:1.5}}>{st.error.detail||st.error.error}</div>}
+      {st?.test && (
+        <div style={{background:(st.test.rates?.length?T.green:T.red)+"10",border:`1px solid ${st.test.rates?.length?T.green:T.red}44`,borderRadius:8,padding:"9px 12px",fontSize:12,color:T.text,marginBottom:10,lineHeight:1.5}}>
+          <strong>Prueba de cotización</strong> (CP {st.test.cp||"—"}): {st.test.rates?.length
+            ? <>{st.test.rates.length} opción{st.test.rates.length!==1?"es":""} — {st.test.rates.slice(0,4).map(r=>`${r.name} $${r.precio.toLocaleString("es-AR")}`).join(" · ")}{st.test.rates.length>4?" …":""}</>
+            : <span style={{color:T.red}}>sin tarifas — {st.test.why||"Andreani no respondió"}</span>}
+        </div>
+      )}
       {st && !scopeFalta && (
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
           {activo
