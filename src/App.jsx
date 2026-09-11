@@ -35026,8 +35026,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const [showGuia,setShowGuia]=useState(false); // guía "¿Cómo funciona?" del topbar
   const [extraMenu, setExtraMenu] = useState(false); // menú ⋯ (compartir / reprocesar)
   const [extraMenuPos, setExtraMenuPos] = useState({top:0,right:10});
-  const [editPanels, setEditPanels] = useState(false); // personalizador de paneles (✎ del topbar)
-  const [editPanelsPos, setEditPanelsPos] = useState({top:0,right:10});
+  const [editPanels, setEditPanels] = useState(false); // personalizador de paneles (✎ junto al selector de canal)
 
   // Imagen del resumen del período (canvas propio, sin librerías): 4 números
   // hero + curva de profit diario, lista para WhatsApp. En mobile usa el share
@@ -35635,48 +35634,6 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             document.body
           )}
         </div>
-        {/* Personalizador de paneles: arrastrar reordena, el interruptor
-            muestra/oculta cada sección del dashboard. */}
-        <div style={{position:"relative"}}>
-          <button onClick={e=>{const r=e.currentTarget.getBoundingClientRect(); setEditPanelsPos({top:r.bottom+6,right:Math.max(10,window.innerWidth-r.right)}); setEditPanels(v=>!v);}} title="Personalizar paneles (orden y visibilidad)"
-            style={{...InputStyle(T),width:34,height:34,padding:0,borderRadius:DS.r.full,background:editPanels?T.accent+"18":"transparent",borderColor:editPanels?T.accent+"66":T.border,boxSizing:"border-box",display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",lineHeight:1,color:editPanels?T.accent:T.textMd}}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-          </button>
-          {editPanels&&ReactDOM.createPortal(
-            <>
-              <div onClick={()=>setEditPanels(false)} style={{position:"fixed",inset:0,zIndex:60}}/>
-              <div className="gh-dropdown" style={{position:"fixed",top:editPanelsPos.top,right:editPanelsPos.right,zIndex:61,width:"min(320px,calc(100vw - 20px))",boxSizing:"border-box",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,boxShadow:"0 2px 6px rgba(0,0,0,0.12), 0 16px 48px rgba(0,0,0,0.28)",padding:"14px 14px 12px",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>Personalizar paneles</div>
-                <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Arrastrá desde <span style={{color:T.textMd}}>⠿</span> para cambiar el orden. El interruptor muestra u oculta el panel.</div>
-                <div style={{display:"flex",flexDirection:"column",gap:2,maxHeight:340,overflowY:"auto",margin:"0 -4px",padding:"0 4px"}}>
-                  {panelsOrdered().map(p=>{
-                    const on=panelOn(p.id);
-                    return (
-                      <div key={p.id}
-                        draggable
-                        onDragStart={()=>setDragKpi(p.id)}
-                        onDragOver={e=>e.preventDefault()}
-                        onDrop={e=>{e.preventDefault(); panelsReorder(dragKpi,p.id); setDragKpi(null);}}
-                        onDragEnd={()=>setDragKpi(null)}
-                        className="gh-hover-surface"
-                        style={{display:"flex",alignItems:"center",gap:10,padding:"7px 8px",borderRadius:DS.r.md,cursor:"grab",opacity:dragKpi===p.id?0.35:1,border:dragKpi&&dragKpi!==p.id?`1px dashed ${T.border}`:"1px dashed transparent",transition:"opacity 0.12s"}}>
-                        <span style={{color:T.textSm,fontSize:13,lineHeight:1,flexShrink:0,cursor:"grab"}}>⠿</span>
-                        <span style={{flex:1,fontSize:12.5,fontWeight:600,color:on?T.text:T.textSm}}>{p.label}</span>
-                        <DSToggle T={T} active={on} onToggle={()=>updVis({panels:{...(vis.panels||{}),[p.id]:!on}})}/>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div style={{display:"flex",gap:8,alignItems:"center",marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL||T.border}`}}>
-                  <Btn T={T} variant="ghost" size="sm" onClick={()=>updVis({panels:{},panelOrder:[]})}>Restablecer</Btn>
-                  <div style={{flex:1}}/>
-                  <Btn T={T} variant="primary" size="sm" onClick={()=>setEditPanels(false)}>Listo</Btn>
-                </div>
-              </div>
-            </>,
-            document.body
-          )}
-        </div>
       </AppTopbar>
 
       <MargenesTabsBar T={T} tab={tab||"dashboard"} setTab={setTab}/>
@@ -35936,8 +35893,11 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               ...(bc.hasMl?[{id:"ml", label:"Mercado Libre", brand:"mercadolibre"}]:[]),
             ];
             if (!bc.hasMl && canalVista==="ml") setCanalVista("global");
-            return (
-              <div style={{display:"inline-flex",background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:2,gap:2,marginBottom:18,flexWrap:"wrap"}}>
+            return (<>
+              {/* Fila: burbuja de canal a la izquierda (ancho propio, no se
+                  estira) + ✎ "Personalizar paneles" a la derecha del todo. */}
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:18}}>
+              <div style={{display:"inline-flex",background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:2,gap:2,flexWrap:"wrap"}}>
                 {opts.map(o=>{
                   const on=canalVista===o.id;
                   return (
@@ -35950,7 +35910,47 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                   );
                 })}
               </div>
-            );
+              <button onClick={()=>setEditPanels(v=>!v)} title="Personalizar paneles (orden y visibilidad)" style={{marginLeft:"auto",background:editPanels?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editPanels?T.accent:T.textSm,padding:"4px 6px",borderRadius:6,display:"inline-flex",alignItems:"center",flexShrink:0}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              </button>
+              </div>
+              {editPanels && (
+                // Misma interfaz que "Personalizar métricas": flota sobre el
+                // contenido (height:0 + absolute), alineado a la derecha.
+                <div style={{position:"relative",zIndex:80,height:0}}>
+                <div style={{position:"absolute",right:0,top:-12,display:"flex",justifyContent:"flex-end"}}>
+                  <div className="gh-dropdown" style={{width:320,maxWidth:"100%",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,boxShadow:"0 2px 6px rgba(0,0,0,0.12), 0 16px 48px rgba(0,0,0,0.28)",padding:"14px 14px 12px",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>Personalizar paneles</div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Arrastrá desde <span style={{color:T.textMd}}>⠿</span> para cambiar el orden. El interruptor muestra u oculta el panel.</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:2,maxHeight:340,overflowY:"auto",margin:"0 -4px",padding:"0 4px"}}>
+                      {panelsOrdered().map(p=>{
+                        const on=panelOn(p.id);
+                        return (
+                          <div key={p.id}
+                            draggable
+                            onDragStart={()=>setDragKpi(p.id)}
+                            onDragOver={e=>e.preventDefault()}
+                            onDrop={e=>{e.preventDefault(); panelsReorder(dragKpi,p.id); setDragKpi(null);}}
+                            onDragEnd={()=>setDragKpi(null)}
+                            className="gh-hover-surface"
+                            style={{display:"flex",alignItems:"center",gap:10,padding:"7px 8px",borderRadius:DS.r.md,cursor:"grab",opacity:dragKpi===p.id?0.35:1,border:dragKpi&&dragKpi!==p.id?`1px dashed ${T.border}`:"1px dashed transparent",transition:"opacity 0.12s"}}>
+                            <span style={{color:T.textSm,fontSize:13,lineHeight:1,flexShrink:0,cursor:"grab"}}>⠿</span>
+                            <span style={{flex:1,fontSize:12.5,fontWeight:600,color:on?T.text:T.textSm}}>{p.label}</span>
+                            <DSToggle T={T} active={on} onToggle={()=>updVis({panels:{...(vis.panels||{}),[p.id]:!on}})}/>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{display:"flex",gap:8,alignItems:"center",marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL||T.border}`}}>
+                      <Btn T={T} variant="ghost" size="sm" onClick={()=>updVis({panels:{},panelOrder:[]})}>Restablecer</Btn>
+                      <div style={{flex:1}}/>
+                      <Btn T={T} variant="primary" size="sm" onClick={()=>setEditPanels(false)}>Listo</Btn>
+                    </div>
+                  </div>
+                </div>
+                </div>
+              )}
+            </>);
           })()}
 
           {canalVista==="global" && (<>
