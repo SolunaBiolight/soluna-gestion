@@ -134,6 +134,9 @@ Ambas producen el mismo resultado visual. Usá la que más te convenga en cada c
 | Mercado Libre | ✅ Activo | Firestore `users/{uid}.stores[]` type="mercadolibre" |
 | Meta Ads | ⚠️ Token vencido | Firestore `users/{uid}.metaAccounts[]` |
 | ARCA (AFIP) | ✅ Activo | Firestore `users/{uid}.cuits[]` |
+| Andreani en checkout Shopify | ✅ CarrierService | `users/{uid}.andreaniCheckout` {activo, carrierId, gratisDesde, sucursalesMax, recargoPct/Fijo, domicilio, sucursal, bulto} |
+
+**Andreani en el checkout de Shopify** (`api/shopify-rates.js`, público — lo llama Shopify, sin auth): Growith se registra como transportista "Growith · Andreani" (`integrations?platform=shopify&action=carrier_enable`, requiere scope `write_shipping` → tiendas viejas deben reconectar Shopify). En cada checkout responde `Andreani a domicilio` (`ANDREANI_DOM`) + `Andreani Sucursal · X` (`ANDREANI_SUC_<id oficial>`) con el precio de la etiqueta Growith (+ recargo/gratis de la tienda). Regla dura: SIEMPRE 200 `{rates:[]}` y < 10 s (caché `andreani_config/rates_*` 6 h). El pedido trae `andreani_sucursal_id` (orders.js) → Envíos emite directo a esa sucursal. Paso manual del vendedor: agregar la tarifa de la app a la zona Argentina en Shopify → Envíos y entrega.
 
 ## Reglas de trabajo — MUY IMPORTANTE
 
