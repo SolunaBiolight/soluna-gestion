@@ -1198,6 +1198,74 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
       }
     }
 
+    // publisher_video_from_url: sube a Meta un video desde un link de Google Drive
+    // (o cualquier URL pública). Reemplaza al picker OAuth de Drive (el popup de
+    // Google devolvía popup_closed y no entregaba el token). Flujo: link → URL de
+    // descarga directa → validamos que sea público (si es HTML, no está
+    // compartido) → Meta lo ingiere solo (advideos file_url) → esperamos "ready".
+    // Con {video_id} en vez de {url} solo consulta el estado (para el polling).
+    if (action === "publisher_video_from_url" && req.method === "POST") {
+      const cfg = await loadMetaAccount(db, uid, acc_id);
+      if (!cfg?.access_token || !cfg?.ad_account_id) return res.status(400).json({ error: "Conectá tu cuenta de Meta Ads primero" });
+      const token = cfg.page_access_token || cfg.access_token;
+      const act = String(cfg.ad_account_id).startsWith("act_") ? cfg.ad_account_id : `act_${cfg.ad_account_id}`;
+      const { url, title, video_id: existingId } = req.body || {};
+
+      // Solo consulta de estado de un video ya subido.
+      if (existingId && !url) {
+        try {
+          const st = await metaGet(String(existingId), { fields: "status" }, token);
+          const vs = st.status?.video_status || null;
+          return res.json({ ok: true, video_id: String(existingId), ready: vs === "ready", status: vs });
+        } catch (e) { return res.status(502).json({ error: "No pude consultar el estado del video: " + e.message }); }
+      }
+
+      const raw = String(url || "").trim();
+      if (!/^https?:\/\//i.test(raw)) return res.status(400).json({ error: "Pegá un link válido (https://…)" });
+      // Google Drive: extraemos el id del archivo de cualquiera de sus formatos de link.
+      let directUrl = raw, isDrive = false;
+      if (/drive\.google\.com|docs\.google\.com/i.test(raw)) {
+        const m = raw.match(/\/d\/([\w-]{10,})/) || raw.match(/[?&]id=([\w-]{10,})/);
+        if (!m) return res.status(400).json({ error: "No reconozco ese link de Drive. Usá el botón Compartir → Copiar enlace del video." });
+        isDrive = true;
+        // drive.usercontent + confirm=t: descarga directa sin la página de "no se pudo analizar virus" (archivos grandes).
+        directUrl = `https://drive.usercontent.google.com/download?id=${m[1]}&export=download&confirm=t`;
+      }
+
+      // Validación: el link tiene que devolver el VIDEO, no una página HTML (= no es público).
+      try {
+        const probe = await fetch(directUrl, { method: "GET", headers: { Range: "bytes=0-0" }, redirect: "follow" });
+        const ct = String(probe.headers.get("content-type") || "").toLowerCase();
+        try { await probe.arrayBuffer(); } catch (_) {}
+        if (!probe.ok && probe.status !== 206) return res.status(400).json({ error: `No pude leer el video (HTTP ${probe.status}). ${isDrive ? "Verificá que esté compartido como \"Cualquier persona con el enlace\"." : ""}` });
+        if (ct.includes("text/html")) return res.status(400).json({ error: isDrive ? "El video NO es público. En Drive: click derecho → Compartir → Acceso general: \"Cualquier persona con el enlace\" (Lector) → guardá y volvé a pegar el link." : "Ese link devuelve una página web, no un archivo de video." });
+      } catch (e) {
+        return res.status(400).json({ error: "No pude acceder al link: " + e.message });
+      }
+
+      // Meta ingiere el video desde la URL (no pasan bytes por nuestro server).
+      let videoId;
+      try {
+        const up = await metaPost(`${act}/advideos`, { file_url: directUrl, title: String(title || "Video Drive").slice(0, 60) }, token);
+        videoId = up?.id;
+      } catch (e) { return res.status(502).json({ error: "Meta rechazó el video: " + e.message }); }
+      if (!videoId) return res.status(502).json({ error: "Meta no devolvió video_id" });
+
+      // Polling corto (~12s). Si no llega, el front sigue consultando con {video_id}.
+      let ready = false, lastStatus = null;
+      const delays = [1000, 1500, 2000, 2500, 2500, 2500];
+      for (let i = 0; i < delays.length && !ready; i++) {
+        await new Promise(r => setTimeout(r, delays[i]));
+        try {
+          const st = await metaGet(videoId, { fields: "status" }, token);
+          lastStatus = st.status?.video_status || null;
+          if (lastStatus === "ready") ready = true;
+          if (lastStatus === "error") return res.status(502).json({ error: "Meta falló al procesar el video (¿formato/tamaño?)", video_id: videoId });
+        } catch (_) {}
+      }
+      return res.json({ ok: true, video_id: String(videoId), ready, status: lastStatus, source: isDrive ? "drive" : "url" });
+    }
+
     // publisher_publish: crea campaña + adset + creativo + anuncio. SIEMPRE en PAUSA.
     if (action === "publisher_publish" && req.method === "POST") {
       const cfg = await loadMetaAccount(db, uid, acc_id);

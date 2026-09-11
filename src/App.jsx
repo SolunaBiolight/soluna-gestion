@@ -13430,8 +13430,8 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               sub: driveOk
                 ? "Conectado — el Publicador saca los videos de acá"
                 : (GDRIVE_CLIENT_ID
-                    ? "Conectá tu Drive para elegir videos en el Publicador de Meta"
-                    : "Configuración pendiente en Vercel (VITE_GOOGLE_CLIENT_ID)"),
+                    ? "No hace falta conectar: en el Publicador pegás el link del video de Drive (compartido con enlace). Conectar habilita además el selector."
+                    : "En el Publicador pegás el link del video de Drive (compartido con enlace)."),
               connected: driveOk, disabled:false, soon: !GDRIVE_CLIENT_ID, brand:"#00ac47", iconBg:"#fff",
               icon:<svg width="30" height="27" viewBox="0 0 87.3 78"><path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/><path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.2z" fill="#ea4335"/><path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.85 0H34.45c-1.65 0-3.2.45-4.55 1.2z" fill="#00832d"/><path d="M59.8 54H27.5L13.75 77.8c1.35.8 2.9 1.2 4.55 1.2h50.7c1.65 0 3.2-.45 4.55-1.2z" fill="#2684fc"/><path d="M73.4 27.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 54h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>,
               onConnect: ()=>{
@@ -26354,7 +26354,32 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead }) {
   const [plan, setPlan] = React.useState(null);
   const [ready, setReady] = React.useState(false);
   const [videos, setVideos] = React.useState([]);
-  const [creative, setCreative] = React.useState(null); // {video_id, name}
+  const [creative, setCreative] = React.useState(null); // {video_id, name, ready?}
+  // Video desde Google Drive por link (sin popup OAuth): el backend lo pasa a Meta
+  // y espera que quede "ready". Si tarda, seguimos consultando el estado.
+  const [driveUrl, setDriveUrl] = React.useState("");
+  const [driveBusy, setDriveBusy] = React.useState(false);
+  const [driveMsg, setDriveMsg] = React.useState("");
+  async function useDriveVideo() {
+    const u = driveUrl.trim(); if (!u || driveBusy) return;
+    setDriveBusy(true); setDriveMsg("⏫ Subiendo a Meta desde Drive…");
+    try {
+      const d = await metaApi("publisher_video_from_url", "POST", { url: u, title: plan?.campaign?.name || "Video Drive" }, { acc_id: accId });
+      if (d?.error || !d?.video_id) { setDriveMsg("❌ " + (d?.error || "No se pudo subir el video")); setDriveBusy(false); return; }
+      setCreative({ video_id: d.video_id, name: "Video de Drive", ready: !!d.ready });
+      if (d.ready) { setDriveMsg("✅ Video listo para publicar"); setDriveBusy(false); return; }
+      setDriveMsg("⏳ Meta está procesando el video…");
+      for (let i = 0; i < 24; i++) { // hasta ~60s
+        await new Promise(r => setTimeout(r, 2500));
+        const s = await metaApi("publisher_video_from_url", "POST", { video_id: d.video_id }, { acc_id: accId });
+        if (s?.ready) { setCreative(c => c ? { ...c, ready: true } : c); setDriveMsg("✅ Video listo para publicar"); setDriveBusy(false); return; }
+        if (s?.status === "error") { setDriveMsg("❌ Meta falló al procesar el video (revisá formato/tamaño)"); setDriveBusy(false); return; }
+      }
+      setCreative(c => c ? { ...c, ready: true } : c); // dejamos publicar igual; si Meta no terminó, avisa al publicar
+      setDriveMsg("⏳ Sigue procesando. Probá Publicar en un momento.");
+    } catch (e) { setDriveMsg("❌ " + e.message); }
+    setDriveBusy(false);
+  }
   const [publishing, setPublishing] = React.useState(false);
   const [result, setResult] = React.useState(null);
   const scrollRef = React.useRef(null);
@@ -26467,8 +26492,24 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead }) {
           {/* Creativo (video) */}
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 6 }}>🎬 Elegí el video del anuncio</div>
+            {/* Google Drive por link — sin popup. El archivo tiene que estar compartido "Cualquier persona con el enlace". */}
+            <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: T.text, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                <svg width="13" height="12" viewBox="0 0 87.3 78"><path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/><path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.2z" fill="#ea4335"/><path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.85 0H34.45c-1.65 0-3.2.45-4.55 1.2z" fill="#00832d"/><path d="M59.8 54H27.5L13.75 77.8c1.35.8 2.9 1.2 4.55 1.2h50.7c1.65 0 3.2-.45 4.55-1.2z" fill="#2684fc"/><path d="M73.4 27.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 54h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>
+                Desde Google Drive (pegá el link del video)
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input value={driveUrl} onChange={e => setDriveUrl(e.target.value)} onKeyDown={e => { if (e.key === "Enter") useDriveVideo(); }} placeholder="https://drive.google.com/file/d/…/view" disabled={driveBusy}
+                  style={{ flex: 1, background: T.input, border: `1px solid ${T.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }} />
+                <button onClick={useDriveVideo} disabled={driveBusy || !driveUrl.trim()} style={{ ...BtnPrimary(T), padding: "8px 14px", fontSize: 12, opacity: (driveBusy || !driveUrl.trim()) ? 0.55 : 1, display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                  {driveBusy ? <><Spinner size={11} color="#fff" /> Subiendo…</> : "Usar este video"}
+                </button>
+              </div>
+              <div style={{ fontSize: 10.5, color: T.textSm, marginTop: 6, lineHeight: 1.45 }}>En Drive: click derecho al video → <strong style={{ color: T.textMd }}>Compartir</strong> → Acceso general: <strong style={{ color: T.textMd }}>"Cualquier persona con el enlace"</strong> → Copiar enlace.</div>
+              {driveMsg && <div style={{ fontSize: 11.5, color: driveMsg.startsWith("❌") ? T.red : driveMsg.startsWith("✅") ? T.green : T.textMd, marginTop: 6, fontWeight: 600 }}>{driveMsg}</div>}
+            </div>
             {videos.length === 0 ? (
-              <div style={{ fontSize: 11, color: T.textSm }}>No encontré videos subidos en esta cuenta. (En la Fase 2 lo vas a poder traer directo de tu Drive.) Por ahora subí un video en la pestaña "Publicar" o pegá el ID:</div>
+              <div style={{ fontSize: 11, color: T.textSm }}>O elegí un video ya subido a Meta (no encontré ninguno en esta cuenta) o pegá su ID:</div>
             ) : (
               <select value={creative?.video_id || ""} onChange={e => { const v = videos.find(x => x.id === e.target.value); setCreative(v ? { video_id: v.id, name: v.name } : null); }}
                 style={{ width: "100%", background: T.input, border: `1px solid ${T.inputBorder}`, borderRadius: 8, padding: "9px 12px", fontSize: 12, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
@@ -26480,7 +26521,7 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead }) {
               style={{ width: "100%", marginTop: 7, background: T.input, border: `1px solid ${T.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 11, color: T.text, fontFamily: "monospace" }} />
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <button onClick={publish} disabled={publishing || !creative?.video_id} style={{ ...BtnPrimary(T), padding: "11px 22px", fontSize: 13, opacity: creative?.video_id ? 1 : 0.5 }}>
+            <button onClick={publish} disabled={publishing || !creative?.video_id || creative?.ready === false} style={{ ...BtnPrimary(T), padding: "11px 22px", fontSize: 13, opacity: (creative?.video_id && creative?.ready !== false) ? 1 : 0.5 }}>
               {publishing ? <><Spinner size={12} color="#fff" /> Publicando…</> : "✅ Publicar (en PAUSA)"}
             </button>
             <span style={{ fontSize: 11, color: T.textSm }}>Si algo no está bien, seguí escribiendo en el chat para ajustarlo.</span>
