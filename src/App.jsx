@@ -13021,6 +13021,9 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   // sola y se prende automáticamente cuando se cargue GOOGLE_DRIVE_CLIENT_SECRET.
   const [driveConfigured,setDriveConfigured]=useState(null); // null=cargando
   useEffect(()=>{ if(!user?.uid) return; authFetch(`/api/integrations?platform=googledrive&action=status&uid=${user.uid}`).then(r=>r.json()).then(d=>setDriveConfigured(!!d.configured)).catch(()=>setDriveConfigured(false)); },[user?.uid]);
+  // TikTok Ads: mismo patrón — "PRONTO" hasta que existan TIKTOK_APP_ID/SECRET en el server.
+  const [tiktokConfigured,setTiktokConfigured]=useState(null);
+  useEffect(()=>{ if(!user?.uid) return; authFetch(`/api/integrations?platform=tiktokads&action=status&uid=${user.uid}`).then(r=>r.json()).then(d=>setTiktokConfigured(!!d.configured)).catch(()=>setTiktokConfigured(false)); },[user?.uid]);
   const [metaToken,setMetaToken]=useState("");
   const [adminWaPhone,setAdminWaPhone]=useState("");
   const [waPhoneSaved,setWaPhoneSaved]=useState(false);
@@ -13461,6 +13464,30 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               },
               onDisconnect: async ()=>{
                 try { await authFetch(`/api/integrations?platform=googledrive&action=disconnect&uid=${user.uid}`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ uid: user.uid }) }); setDriveOk(false); setMsg("Google Drive desvinculado"); }
+                catch(e) { appAlert("Error: "+e.message); }
+              },
+            },
+            {
+              key:"tiktok", label:"TikTok Ads",
+              // Conexión por REDIRECCIÓN (Marketing API). "PRONTO" automático hasta que el server tenga TIKTOK_APP_ID/SECRET.
+              sub: userDoc?.tiktokAds?.connected
+                ? `Conectado${(userDoc.tiktokAds.advertisers||[]).length ? ` · ${(userDoc.tiktokAds.advertisers||[]).length} cuenta(s)` : ""}`
+                : (tiktokConfigured===false
+                    ? "Próximamente — gasto y campañas de TikTok en el Dashboard"
+                    : "Conectá tu cuenta publicitaria de TikTok para traer gasto y campañas"),
+              connected: !!userDoc?.tiktokAds?.connected, disabled:false, soon: tiktokConfigured===false && !userDoc?.tiktokAds?.connected, brand:"#FE2C55", iconBg:"#000",
+              icon:<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z" fill="#69C9D0"/><path d="M15.5 2c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V2h3.2z" fill="#EE1D52"/><path d="M16 2.5c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V2.5H16z" fill="#fff"/></svg>,
+              onConnect: async ()=>{
+                try {
+                  const r = await authFetch(`/api/integrations?platform=tiktokads&action=oauth_start&uid=${user.uid}`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ uid: user.uid }) });
+                  const j = await r.json();
+                  if (j.url) { window.location.href = j.url; return; }
+                  if (j.setup) { appAlert("TikTok Ads todavía no está configurado en el servidor:\n\n" + (j.steps||[]).map((s,i)=>`${i+1}. ${s}`).join("\n\n")); return; }
+                  appAlert(j.error || "No se pudo iniciar la conexión con TikTok.");
+                } catch(e) { appAlert("Error: "+e.message); }
+              },
+              onDisconnect: async ()=>{
+                try { await authFetch(`/api/integrations?platform=tiktokads&action=disconnect&uid=${user.uid}`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ uid: user.uid }) }); setMsg("TikTok Ads desvinculado"); }
                 catch(e) { appAlert("Error: "+e.message); }
               },
             },

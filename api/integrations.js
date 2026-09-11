@@ -10,6 +10,7 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { guardUid } from "./_auth.js";
 import { signState } from "./tn-callback.js";
 import { driveEnv, signDriveState, getValidDriveToken, DRIVE_REDIRECT_URI, DRIVE_SCOPES } from "./google-drive-callback.js";
+import { tiktokEnv, signTiktokState, tiktokAdvertisers, TIKTOK_REDIRECT_URI } from "./tiktok-ads-callback.js";
 import crypto from "crypto";
 
 function initAdmin() {
@@ -501,7 +502,7 @@ export async function getValidMLToken(db, uid, targetUserId = null) {
 
 // ─── Handler principal ──────────────────────────────────────────
 
-const PLATFORMS = ["shopify", "tiendanube", "mercadolibre", "googledrive"];
+const PLATFORMS = ["shopify", "tiendanube", "mercadolibre", "googledrive", "tiktokads"];
 
 // ── Sondeo: ¿el token de ML sirve para leer pagos de Mercado Pago? ──
 // Diagnóstico para decidir cómo calcular la comisión real de MP en ventas
@@ -845,6 +846,73 @@ async function gdriveDisconnect(req, res, db) {
   return res.json({ ok: true });
 }
 
+// ─── TikTok Ads (OAuth por redirección, Marketing API v1.3) ──────────────────
+// Mismo patrón que Google Drive: el usuario va a TikTok en la misma pestaña y
+// vuelve por /api/tiktok-ads-callback. Sin env TIKTOK_APP_ID/SECRET la app
+// muestra "PRONTO" (status.configured=false) y se prende sola al cargarlos.
+function tiktokSetupError() {
+  return {
+    error: "Falta configurar TikTok Ads en el servidor.",
+    setup: true,
+    steps: [
+      "Crear una app en TikTok for Business Developers (business-api.tiktok.com) con scopes Ad Account Management + Reporting.",
+      `En la app, 'Advertiser redirect URL' = ${TIKTOK_REDIRECT_URI}`,
+      "Vercel → Environment Variables → TIKTOK_APP_ID y TIKTOK_APP_SECRET → Redeploy.",
+    ],
+  };
+}
+
+async function tiktokOauthStart(req, res, db) {
+  const uid = req.body?.uid || req.query.uid;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
+  const { appId, secret } = tiktokEnv();
+  if (!appId || !secret) return res.status(400).json(tiktokSetupError());
+  const url = new URL("https://business-api.tiktok.com/portal/auth");
+  url.searchParams.set("app_id", appId);
+  url.searchParams.set("state", `${uid}.${signTiktokState(uid)}`);
+  url.searchParams.set("redirect_uri", TIKTOK_REDIRECT_URI);
+  return res.json({ url: url.toString() });
+}
+
+async function tiktokStatus(req, res, db) {
+  const uid = req.query.uid;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
+  const t = (await db.collection("users").doc(uid).get()).data()?.tiktokAds || null;
+  const { appId, secret } = tiktokEnv();
+  return res.json({ connected: !!t?.access_token, advertisers: t?.advertisers || [], advertiser_id: t?.advertiser_id || null, configured: !!(appId && secret), redirect_uri: TIKTOK_REDIRECT_URI });
+}
+
+// Elegir la cuenta publicitaria activa (si el usuario tiene varias).
+async function tiktokSetAdvertiser(req, res, db) {
+  const uid = req.body?.uid || req.query.uid;
+  const advertiserId = String(req.body?.advertiser_id || "");
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
+  const ref = db.collection("users").doc(uid);
+  const t = (await ref.get()).data()?.tiktokAds;
+  if (!t?.access_token) return res.status(400).json({ error: "TikTok Ads no está conectado" });
+  if (!(t.advertisers || []).some(a => a.id === advertiserId)) return res.status(400).json({ error: "Esa cuenta publicitaria no está en tu lista" });
+  await ref.set({ tiktokAds: { ...t, advertiser_id: advertiserId } }, { merge: true });
+  return res.json({ ok: true, advertiser_id: advertiserId });
+}
+
+async function tiktokDisconnect(req, res, db) {
+  const uid = req.body?.uid || req.query.uid;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
+  const ref = db.collection("users").doc(uid);
+  const t = (await ref.get()).data()?.tiktokAds;
+  // Revocar en TikTok (best-effort) y borrar local.
+  if (t?.access_token) {
+    const { appId, secret } = tiktokEnv();
+    try { await fetch("https://business-api.tiktok.com/open_api/v1.3/oauth2/revoke_token/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app_id: appId, secret, access_token: t.access_token }) }); } catch (_) {}
+  }
+  await ref.set({ tiktokAds: { connected: false, access_token: null, advertisers: [], advertiser_id: null, disconnectedAt: new Date().toISOString() } }, { merge: true });
+  return res.json({ ok: true });
+}
+
 // ─── Conversación de un reclamo (leer hilo + responder al comprador) ─────────
 // Las tarjetas del tablero guardan su origen en el doc-id: `{uid}_ml_{claimId}`
 // (reclamo ML → el id ES el claim) o `{uid}_mp_{paymentId}` (contracargo/disputa
@@ -992,6 +1060,13 @@ export default async function handler(req, res) {
         if (!(await guardUid(req, res, uid))) return;
         return res.json({ state: `${uid}.${signState(uid)}` });
       }
+    }
+
+    if (platform === "tiktokads") {
+      if (action === "oauth_start" && req.method === "POST") return tiktokOauthStart(req, res, db);
+      if (action === "status" && req.method === "GET") return tiktokStatus(req, res, db);
+      if (action === "set_advertiser" && req.method === "POST") return tiktokSetAdvertiser(req, res, db);
+      if (action === "disconnect" && req.method === "POST") return tiktokDisconnect(req, res, db);
     }
 
     if (platform === "googledrive") {

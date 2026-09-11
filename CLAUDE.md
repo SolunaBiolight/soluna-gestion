@@ -51,6 +51,8 @@ GOOGLE_AI_KEY
 CRON_SECRET               ← auth de los crons (Vercel lo manda como Bearer)
 STRIPE_SECRET_KEY         ← clave live de Stripe (LLC). El webhook secret NO es env: se crea solo y vive en Firestore system/stripe
 STRIPE_WEBHOOK_SECRET     ← opcional, pisa al de Firestore si se define
+GOOGLE_DRIVE_CLIENT_SECRET ← secreto del cliente OAuth web (proyecto Growith-Gestion, contacto.growith@gmail.com). El client_id es VITE_GOOGLE_CLIENT_ID. Redirect URI registrada: https://www.growithapp.com/api/google-drive-callback. Sin esta var, Drive se muestra "PRONTO" solo
+TIKTOK_APP_ID / TIKTOK_APP_SECRET ← app de TikTok for Business Developers (scopes Ad Account Management + Reporting). Redirect: https://www.growithapp.com/api/tiktok-ads-callback. Sin estas vars, TikTok Ads se muestra "PRONTO" solo
 META_APP_ID=905872205806657
 META_APP_SECRET
 NEXT_PUBLIC_META_APP_ID=905872205806657
