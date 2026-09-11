@@ -411,16 +411,19 @@ function _showDrivePicker(token, onSelect, onCancel, opts = {}) {
   const P = window.google.picker;
   const myDrive = new P.DocsView().setIncludeFolders(true).setSelectFolderEnabled(false);
   const shared  = new P.DocsView(P.ViewId.DOCS).setEnableDrives(true).setIncludeFolders(true);
-  if (opts.videosOnly) {
-    const mimes = "video/mp4,video/quicktime,video/x-m4v,video/webm,video/x-matroska,video/x-msvideo,video/mpeg";
-    myDrive.setMimeTypes(mimes); shared.setMimeTypes(mimes);
-  }
+  const VID = "video/mp4,video/quicktime,video/x-m4v,video/webm,video/x-matroska,video/x-msvideo,video/mpeg";
+  const IMG = "image/jpeg,image/png,image/webp,image/gif";
+  const DOCS = "application/vnd.google-apps.document,text/plain,text/markdown";
+  const mimes = opts.videosOnly ? VID : opts.mediaOnly ? `${VID},${IMG}` : opts.docsOnly ? DOCS : null;
+  if (mimes) { myDrive.setMimeTypes(mimes); shared.setMimeTypes(mimes); }
   // setAppId (número de proyecto = prefijo del client_id) es OBLIGATORIO con el
   // scope drive.file: sin él, la app no recibe acceso al archivo elegido.
   const appId = String(GDRIVE_CLIENT_ID).split("-")[0];
-  new P.PickerBuilder()
+  const pb = new P.PickerBuilder()
     .setTitle(opts.title || "Elegir archivo de Google Drive")
-    .addView(myDrive).addView(shared)
+    .addView(myDrive).addView(shared);
+  if (opts.multiple) pb.enableFeature(P.Feature.MULTISELECT_ENABLED);
+  pb
     .setOAuthToken(token)
     .setDeveloperKey(GDRIVE_API_KEY)
     .setAppId(appId)
@@ -428,8 +431,9 @@ function _showDrivePicker(token, onSelect, onCancel, opts = {}) {
     .enableFeature(P.Feature.SUPPORT_DRIVES)
     .setCallback(data => {
       if (data.action === window.google.picker.Action.PICKED && data.docs?.[0]) {
-        const d = data.docs[0];
-        onSelect({ name: d.name, url: d.url, id: d.id, mimeType: d.mimeType });
+        const mapD = d => ({ name: d.name, url: d.url, id: d.id, mimeType: d.mimeType });
+        // multiple → array con todos los elegidos; si no, el primero (como siempre)
+        onSelect(opts.multiple ? data.docs.map(mapD) : mapD(data.docs[0]));
       } else if (data.action === window.google.picker.Action.CANCEL) {
         if (onCancel) onCancel();
       }
@@ -26989,6 +26993,80 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [resSaving,setResSaving]=useState(false);
 
   const uid=user?.uid;
+  // ── Google Drive en el Studio (Publicar): elegir creativos (videos/imágenes)
+  // y copys (Google Docs) directo desde Drive. Usa la conexión por redirección
+  // de la tienda (users/{uid}.googleDrive) + el Picker de Google; el archivo se
+  // baja al navegador y entra por el MISMO pipeline que "Subir anuncios".
+  const [studioDrive,setStudioDrive]=useState(null);      // null=cargando · false=no conectado · {email}
+  const [studioDriveCfg,setStudioDriveCfg]=useState(true); // false = falta el secret en el server → se oculta
+  const [studioDriveBusy,setStudioDriveBusy]=useState(false);
+  useEffect(()=>{ if(!uid) return; (async()=>{
+    try{ const r=await authFetch(`/api/integrations?platform=googledrive&action=status&uid=${uid}`); const d=await r.json(); setStudioDrive(d.connected?{email:d.email}:false); setStudioDriveCfg(!!d.configured); }
+    catch(_){ setStudioDrive(false); }
+  })(); },[uid]);
+  async function studioDriveConnect(){
+    try{
+      const r=await authFetch(`/api/integrations?platform=googledrive&action=oauth_start&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid})});
+      const j=await r.json();
+      if(j.url){ window.location.href=j.url; return; }
+      appAlert(j.error||"No se pudo iniciar la conexión con Google Drive.");
+    }catch(e){ appAlert("Error: "+e.message); }
+  }
+  async function studioDriveToken(){
+    const r=await authFetch(`/api/integrations?platform=googledrive&action=token&uid=${uid}`); const j=await r.json();
+    if(!j.access_token) throw new Error(j.error||"No pude obtener acceso a Drive");
+    await _loadDriveScripts();
+    return j.access_token;
+  }
+  // Creativos: Picker multiselección → descarga (Drive API, con el token) → handleUploadMultiple.
+  async function studioDrivePickCreatives(){
+    if(studioDriveBusy||uploadingFile) return;
+    setStudioDriveBusy(true);
+    try{
+      const tok=await studioDriveToken();
+      setStudioDriveBusy(false);
+      _showDrivePicker(tok, async picked=>{
+        const list=Array.isArray(picked)?picked:[picked];
+        setStudioDriveBusy(true);
+        toast(`Bajando ${list.length} archivo${list.length===1?"":"s"} de Drive…`,"info");
+        const files=[];
+        for(const f of list){
+          try{
+            const r=await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media&supportsAllDrives=true`,{headers:{Authorization:`Bearer ${tok}`}});
+            if(!r.ok) throw new Error(`HTTP ${r.status}`);
+            const b=await r.blob();
+            files.push(new File([b], f.name, {type: f.mimeType||b.type||""}));
+          }catch(e){ toast(`No pude bajar "${f.name}" de Drive: ${e.message}`,"error"); }
+        }
+        setStudioDriveBusy(false);
+        if(files.length) handleUploadMultiple(files);
+      }, ()=>{}, {mediaOnly:true, multiple:true, title:"Elegí los creativos de tu Drive (videos o imágenes)"});
+    }catch(e){ setStudioDriveBusy(false); toast("Drive: "+e.message,"error"); }
+  }
+  // Copy: Picker de Google Docs / .txt → texto plano → copy del creativo.
+  async function studioDriveCopy(c){
+    if(studioDriveBusy) return;
+    setStudioDriveBusy(true);
+    try{
+      const tok=await studioDriveToken();
+      setStudioDriveBusy(false);
+      _showDrivePicker(tok, async f=>{
+        setStudioDriveBusy(true);
+        try{
+          const esDoc = f.mimeType==="application/vnd.google-apps.document";
+          const url = esDoc ? `https://www.googleapis.com/drive/v3/files/${f.id}/export?mimeType=text/plain` : `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media&supportsAllDrives=true`;
+          const r=await fetch(url,{headers:{Authorization:`Bearer ${tok}`}});
+          if(!r.ok) throw new Error(`HTTP ${r.status}`);
+          const text=(await r.text()).replace(/^\uFEFF/,"").trim();
+          if(!text) throw new Error("el documento está vacío");
+          setCreatives(prev=>prev.map(x=>x.id===c.id?{...x,copy:text}:x));
+          handlePatch(c,{copy:text});
+          toast(`Copy cargado desde "${f.name}" ✓`,"success");
+        }catch(e){ toast("No pude leer el doc: "+e.message,"error"); }
+        setStudioDriveBusy(false);
+      }, ()=>{}, {docsOnly:true, title:"Elegí el Google Doc con el copy"});
+    }catch(e){ setStudioDriveBusy(false); toast("Drive: "+e.message,"error"); }
+  }
   const activeAcc=accounts.find(a=>a.id===activeAccId)||null;
   // Símbolo de la moneda REAL de la cuenta publicitaria (US$ si es cuenta en dólares)
   const cur=currencySymbol(activeAcc?.currency||"ARS");
@@ -29360,6 +29438,15 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     {uploadingFile?<><Spinner size={12} color={T.green}/> Subiendo...</>:<><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",verticalAlign:"middle",marginRight:5}}><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Subir nuevo</>}
                     <input type="file" accept="image/*,video/*" multiple disabled={uploadingFile} style={{display:"none"}} onChange={e=>{const fs=e.target.files; if(fs?.length){handleUploadMultiple(fs); e.target.value="";}}}/>
                   </label>
+                  {/* Google Drive: mismos creativos, pero elegidos desde tu Drive */}
+                  {studioDriveCfg && studioDrive!==null && (studioDrive ? (
+                    <button onClick={studioDrivePickCreatives} disabled={studioDriveBusy||uploadingFile} title={`Google Drive · ${studioDrive.email||""}`} style={{...BtnPri,padding:"8px 14px",background:"transparent",color:"#4285f4",border:"1px solid #4285f466",display:"inline-flex",alignItems:"center",gap:6,opacity:(studioDriveBusy||uploadingFile)?0.6:1}}>
+                      {studioDriveBusy ? <Spinner size={12} color="#4285f4"/> : <svg width="14" height="12" viewBox="0 0 87.3 78"><path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/><path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75L86.1 57.5c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.5z" fill="#ea4335"/><path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.9 0H34.4c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/><path d="M59.8 53H27.5L13.75 76.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/><path d="M73.4 26.5L60.7 4.5c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 53h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>}
+                      {studioDriveBusy ? "Drive…" : "Elegir de Drive"}
+                    </button>
+                  ) : (
+                    <button onClick={studioDriveConnect} style={{...BtnSec,display:"inline-flex",alignItems:"center",gap:6,color:"#4285f4",borderColor:"#4285f466"}} title="Autorizás una vez en Google y volvés acá. Solo ve los archivos que vos elegís.">Conectar Google Drive</button>
+                  ))}
                 </div>
 
                 {/* Drop zone */}
@@ -29468,7 +29555,15 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                         {/* Copy: lo pegás vos (traído de afuera). Sin IA. */}
                         <div style={{marginTop:4}}>
-                          <div style={{fontSize:11,fontWeight:700,color:c.copy?.trim()?T.green:T.textSm,letterSpacing:0.4,marginBottom:6,textTransform:"uppercase"}}>Copy {c.copy?.trim()?`· ${c.copy.split(/\s+/).filter(Boolean).length} palabras`:"· pegá el texto del anuncio"}</div>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                            <div style={{fontSize:11,fontWeight:700,color:c.copy?.trim()?T.green:T.textSm,letterSpacing:0.4,textTransform:"uppercase",flex:1,minWidth:0}}>Copy {c.copy?.trim()?`· ${c.copy.split(/\s+/).filter(Boolean).length} palabras`:"· pegá el texto del anuncio"}</div>
+                            {studioDriveCfg && studioDrive && !c._isTemp && (
+                              <button onClick={()=>studioDriveCopy(c)} disabled={studioDriveBusy} title="Traer el copy desde un Google Doc (o .txt) de tu Drive" style={{background:"transparent",border:`1px solid #4285f455`,color:"#4285f4",borderRadius:6,padding:"3px 9px",fontSize:10.5,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:5,opacity:studioDriveBusy?0.6:1,flexShrink:0}}>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+                                Doc de Drive
+                              </button>
+                            )}
+                          </div>
                           <textarea value={c.copy||""} onChange={e=>{const u={...c,copy:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{copy:e.target.value})} placeholder="Pegá acá el texto del anuncio que ya escribiste afuera…" style={{...iS,minHeight:110,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,lineHeight:1.5,whiteSpace:"pre-wrap"}}/>
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
                             <input value={c.title||""} onChange={e=>{const u={...c,title:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{title:e.target.value})} placeholder="Titular (opcional, ≤40)" style={iS}/>
