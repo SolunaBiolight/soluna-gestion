@@ -36368,6 +36368,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           })()}
 
           </>)}
+          </>)}
 
           {/* ── Vista de UN canal (Tienda o ML) — tablero completo propio ── */}
           {canalVista!=="global" && rendData.byChannel && (()=>{
@@ -36464,7 +36465,6 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               </div>
             </>);
           })()}
-          </>)}
 
           {panelWrap("productos", <>
           {/* Rentabilidad por producto */}
