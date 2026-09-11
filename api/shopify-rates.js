@@ -137,7 +137,7 @@ async function anclaComprador(db, { cp, loc, prov }, pub) {
 // los puntos HOP en la API, esto es lo que evita listas "raras".
 const RADIO_M = 10000;
 async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
-  const cacheRef = db.collection("andreani_config").doc(`rates_suc5_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
+  const cacheRef = db.collection("andreani_config").doc(`rates_suc6_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
   try {
     const c = (await cacheRef.get()).data();
     if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return c.lista.slice(0, max);
@@ -150,7 +150,10 @@ async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
       const conDist = pub.filter(s => enARll(s.lat, s.lng))
         .map(s => ({ ...s, distM: distanciaM(ancla.lat, ancla.lng, s.lat, s.lng) }))
         .sort((a, b) => a.distM - b.distM);
-      const cerca = dedupeSucursales(conDist).filter(s => s.distM <= RADIO_M);
+      // Las ubicadas EN el CP del comprador van arriba de todo; el resto por distancia.
+      const cpS = String(cp);
+      const enCp = s => String(s.direccion?.codigoPostal || "").replace(/\D/g, "").slice(0, 4) === cpS;
+      const cerca = dedupeSucursales(conDist).filter(s => s.distM <= RADIO_M).sort((a, b) => (enCp(b) - enCp(a)) || (a.distM - b.distM));
       lista = cerca.length ? cerca : (conDist.length ? [conDist[0]] : []);
     } else {
       // Sin ancla: las que Andreani define que atienden el CP (mismo CP primero).
