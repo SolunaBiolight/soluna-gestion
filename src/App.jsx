@@ -14074,8 +14074,8 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                   <li>Entrá a la app → <strong style={{color:T.text}}>Versiones → Crear versión</strong>. Ahí adentro está todo lo de los pasos 3 y 4.</li>
                   <li>En <strong style={{color:T.text}}>Alcances (scopes)</strong> pegá TODOS estos de una (van separados por comas):
                     <div style={{marginTop:5,display:"flex",alignItems:"center",gap:6}}>
-                      <code style={{flex:1,minWidth:0,background:T.bg,padding:"6px 8px",borderRadius:5,fontSize:9.5,color:T.accent,wordBreak:"break-all"}}>read_all_orders,read_customers,read_orders,write_orders,read_products</code>
-                      <button onClick={()=>{navigator.clipboard.writeText("read_all_orders,read_customers,read_orders,write_orders,read_products");toast("Scopes copiados ✓","success");}} style={{...BtnSecondary(T),fontSize:10,padding:"5px 9px",flexShrink:0}}>Copiar</button>
+                      <code style={{flex:1,minWidth:0,background:T.bg,padding:"6px 8px",borderRadius:5,fontSize:9.5,color:T.accent,wordBreak:"break-all"}}>read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping</code>
+                      <button onClick={()=>{navigator.clipboard.writeText("read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping");toast("Scopes copiados ✓","success");}} style={{...BtnSecondary(T),fontSize:10,padding:"5px 9px",flexShrink:0}}>Copiar</button>
                     </div>
                   </li>
                   <li>En <strong style={{color:T.text}}>URL de redireccionamiento</strong> pegá exactamente esta:
