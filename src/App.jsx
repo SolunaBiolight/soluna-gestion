@@ -60,6 +60,19 @@ function ghKey(base) {
   const uid = auth.currentUser?.uid;
   return uid ? `${base}_${uid}` : base;
 }
+// Escritura al doc users/{uid} de la TIENDA activa. Si la tienda es el propio
+// login → updateDoc directo (las reglas lo permiten). Si es otra tienda del
+// perfil (multi-tienda) → va por el backend (tenantPatch), porque las reglas
+// solo dejan escribir el doc al uid == auth.
+async function ghUserPatch(uid, patch) {
+  const me = auth.currentUser?.uid;
+  if (!uid) return;
+  if (uid === me) return updateDoc(doc(db, "users", uid), patch);
+  const r = await authFetch("/api/tareas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "tenantPatch", uid: me, tiendaUid: uid, patch }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+  return d;
+}
 
 // fetch con identidad: adjunta el ID token de Firebase. Los endpoints con
 // datos personales de clientes (listados de pedidos, tracking, rótulos) lo
@@ -598,7 +611,7 @@ function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenC
   if (!Array.isArray(orgs) || orgs.length === 0) return null;
   const active = orgs.find(o => o.id === activeOrgId) || orgs[0];
   const others = orgs.filter(o => o.id !== active.id);
-  const planAllowsMore = userPlan === "total" || orgs.length < 2;
+  const planAllowsMore = true; // multi-tienda: sin tope; cada tienda adicional se factura aparte
   const initialOf = (name) => (name||"?").trim().charAt(0).toUpperCase() || "?";
   const userInitial = (user?.displayName||user?.email||"?").trim().charAt(0).toUpperCase();
 
@@ -614,7 +627,7 @@ function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenC
       <button
         ref={btnRef}
         onClick={()=>setOpen(o=>!o)}
-        title={collapsed?`Organización: ${active.name}`:undefined}
+        title={collapsed?`Tienda: ${active.name}`:undefined}
         style={{
           width:"100%",display:"flex",alignItems:"center",gap:DS.sp.sm,
           padding:collapsed?"6px":"7px 10px",
@@ -641,9 +654,9 @@ function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenC
             <OrgAvatar org={active} size={34}/>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{active.name}</div>
-              <div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:1}}>Admin</div>
+              <div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:1}}>{active.rol==="miembro"?"Miembro del equipo":(active.esSelf?"Tienda principal · Dueño":"Tienda adicional · Dueño")}</div>
             </div>
-            <button onClick={()=>{ setOpen(false); onOpenManageOrg(active.id); }} title="Gestionar organización" style={{display:"flex",alignItems:"center",gap:5,background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textMd,padding:"6px 10px",fontSize:DS.font.sm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <button onClick={()=>{ setOpen(false); onOpenManageOrg(active.id); }} title="Gestionar tienda" style={{display:"flex",alignItems:"center",gap:5,background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textMd,padding:"6px 10px",fontSize:DS.font.sm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
               Gestionar
             </button>
@@ -655,7 +668,7 @@ function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenC
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{color:T.textSm,marginBottom:6,opacity:0.7}}>
                 <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/>
               </svg>
-              <div style={{fontSize:DS.font.sm,color:T.textSm}}>No hay otras organizaciones</div>
+              <div style={{fontSize:DS.font.sm,color:T.textSm}}>No tenés otras tiendas todavía</div>
             </div>
           ) : (
             <div style={{marginBottom:DS.sp.xs}}>
@@ -676,10 +689,10 @@ function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenC
           <button
             onClick={()=>{ setOpen(false); onOpenCreateOrg(); }}
             disabled={!planAllowsMore}
-            title={planAllowsMore?"Crear nueva organización":"Tu plan permite hasta 2 organizaciones. Pasate a Total para más."}
+            title="Crear otra tienda (cada tienda adicional se factura aparte)"
             style={{display:"flex",alignItems:"center",gap:DS.sp.sm,width:"100%",padding:"10px 12px",border:`1px solid ${T.border}`,background:planAllowsMore?T.bg:"transparent",borderRadius:DS.r.md,cursor:planAllowsMore?"pointer":"not-allowed",color:planAllowsMore?T.text:T.textSm,fontFamily:"'Inter',system-ui,sans-serif",opacity:planAllowsMore?1:0.65}}>
             <span style={{width:26,height:26,borderRadius:DS.r.md,background:planAllowsMore?T.accentSolid+"22":"transparent",border:planAllowsMore?"none":`1px dashed ${T.border}`,color:planAllowsMore?T.accent:T.textSm,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:DS.w.bold,flexShrink:0,lineHeight:1}}>+</span>
-            <span style={{flex:1,fontSize:DS.font.md,fontWeight:DS.w.semibold,textAlign:"left"}}>Crear organización</span>
+            <span style={{flex:1,fontSize:DS.font.md,fontWeight:DS.w.semibold,textAlign:"left"}}>Nueva tienda</span>
             {!planAllowsMore && <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.accent+"22",color:T.accent,fontWeight:DS.w.bold,letterSpacing:0.3,textTransform:"uppercase"}}>Total</span>}
           </button>
         </div>,
@@ -695,7 +708,8 @@ function NewOrgModal({T, onClose, onCreate, existingCount, userPlan}) {
   const [color, setColor] = React.useState("#7c3aed");
   const [saving, setSaving] = React.useState(false);
   const COLORS = ["#7c3aed","#ec4899",T.orange,T.yellow,T.green,"#06b6d4",T.blue,T.red];
-  const overLimit = userPlan !== "total" && existingCount >= 2;
+  const overLimit = false; // multi-tienda: sin tope; la tienda adicional se factura aparte
+  const EXTRA_USD = { facturador: 5, medio: 10, plus: 15, full: 15 }[userPlan] || 0;
 
   async function handleSave() {
     if (!name.trim()) return;
@@ -711,8 +725,8 @@ function NewOrgModal({T, onClose, onCreate, existingCount, userPlan}) {
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:440,padding:"24px 26px",boxShadow:DS.shadow.xl,animation:"growith-modalIn 0.22s cubic-bezier(0.22,1,0.36,1) both"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
           <div>
-            <div style={{fontSize:17,fontWeight:700,color:T.text}}>Nueva organización</div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Vas a empezar de cero — vas a conectar TN/Shopify/ML/Meta y ARCA después.</div>
+            <div style={{fontSize:17,fontWeight:700,color:T.text}}>Nueva tienda</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Arranca vacía: conectás su TN/Shopify, ML, Meta, ARCA, etc. desde Configuración. Mismo login, mismo pago{EXTRA_USD?` + USD ${EXTRA_USD}/mes por esta tienda adicional`:""}.</div>
           </div>
           <ModalCloseBtn T={T} onClick={onClose} disabled={saving} /></div>
 
@@ -758,7 +772,8 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
   const [saving, setSaving] = React.useState(false);
   const [confirmDel, setConfirmDel] = React.useState(false);
   const COLORS = ["#7c3aed","#ec4899",T.orange,T.yellow,T.green,"#06b6d4",T.blue,T.red];
-  const canDelete = totalOrgs > 1; // no se puede borrar la única org
+  // Solo se borran tiendas ADICIONALES propias (la principal se elimina con "Eliminar mi cuenta" en Config).
+  const canDelete = org.id !== auth.currentUser?.uid && org.rol === "owner";
 
   async function handleSave() {
     if (!name.trim()) return;
@@ -778,7 +793,7 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
     <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!saving&&onClose()}>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:440,padding:"24px 26px",boxShadow:DS.shadow.xl,animation:"growith-modalIn 0.22s cubic-bezier(0.22,1,0.36,1) both"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
-          <div style={{fontSize:17,fontWeight:700,color:T.text}}>Gestionar organización</div>
+          <div style={{fontSize:17,fontWeight:700,color:T.text}}>Gestionar tienda</div>
           <ModalCloseBtn T={T} onClick={onClose} disabled={saving} /></div>
 
         <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:5}}>Nombre</label>
@@ -796,10 +811,10 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
         {canDelete && (
           <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,paddingTop:14,marginTop:8}}>
             {!confirmDel ? (
-              <button onClick={()=>setConfirmDel(true)} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"8px 12px",borderRadius:10}}>Borrar esta organización</button>
+              <button onClick={()=>setConfirmDel(true)} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"8px 12px",borderRadius:10}}>Eliminar esta tienda</button>
             ) : (
               <div style={{background:T.red+"10",border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px",boxShadow:`0 0 0 1px ${T.red}18, 0 4px 12px ${T.red}14`}}>
-                <div style={{fontSize:12,color:T.text,fontWeight:600,marginBottom:8}}>¿Borrar "{org.name}"? Se pierden las integraciones de esa org. Esta acción no se puede deshacer.</div>
+                <div style={{fontSize:12,color:T.text,fontWeight:600,marginBottom:8}}>¿Eliminar "{org.name}"? La tienda queda oculta 30 días (recuperable por soporte) y después se borra con todos sus datos. Deja de facturarse al instante.</div>
                 <div style={{display:"flex",gap:6}}>
                   <button onClick={()=>setConfirmDel(false)} disabled={saving} style={{...BtnSecondary(T),flex:1,padding:"7px",fontSize:11,borderRadius:8,justifyContent:"center"}}>Cancelar</button>
                   <button onClick={handleDelete} disabled={saving} style={{...BtnDanger(T),flex:1,padding:"7px",fontSize:11,borderRadius:8,justifyContent:"center",background:T.red,color:"#fff",boxShadow:`0 2px 12px ${T.red}55`}}>{saving?"Borrando...":"Sí, borrar"}</button>
@@ -5070,7 +5085,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     const updated={...comisionesPagadas,[code]:{fecha:new Date().toISOString(),monto}};
     setComisionesPagadas(updated);
     try{localStorage.setItem(`growith_compaid_${user?.uid}`,JSON.stringify(updated));}catch(_){}
-    if(user?.uid){try{await setDoc(doc(db,"users",user.uid),{comisionesPagadas:updated},{merge:true});}catch(_){}}
+    if(user?.uid){try{await ghUserPatch(user.uid,{comisionesPagadas:updated});}catch(_){}}
     toast(`Comisión de ${code} marcada como pagada ✓`,"success");
   }
   // Comisiones UGC - overrides guardados en localStorage + Firestore
@@ -12999,6 +13014,106 @@ function DSToggle({T, active, onToggle}) {
 // ===========================================
 // CONFIG SCREEN
 // ===========================================
+// ── Card "Perfil y tiendas" (Config) — multi-tienda ──────────────────────────
+// Renombrar la tienda activa · mover ESTA tienda a otro perfil (pasaje, solo
+// para la tienda principal = mi propio uid) · eliminar mi cuenta (oculta 30
+// días, purga total después, cancela el cobro).
+function PerfilTiendasCard({T, user, userDoc, setMsg}) {
+  const authUid = auth.currentUser?.uid;
+  const esPrincipal = user?.uid === authUid;
+  const iS = InputStyle(T);
+  const [nombre,setNombre] = React.useState("");
+  const [savingNombre,setSavingNombre] = React.useState(false);
+  const [emailDestino,setEmailDestino] = React.useState("");
+  const [moviendo,setMoviendo] = React.useState(false);
+  const [showMover,setShowMover] = React.useState(false);
+  const [showEliminar,setShowEliminar] = React.useState(false);
+  const [confirmTxt,setConfirmTxt] = React.useState("");
+  const [eliminando,setEliminando] = React.useState(false);
+  React.useEffect(()=>{ setNombre(userDoc?.nombreTienda || userDoc?.nombre || ""); },[userDoc?.nombreTienda, userDoc?.nombre]);
+  const api = async (action, extra={}) => {
+    const r = await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,uid:authUid,...extra})});
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`);
+    return d;
+  };
+  async function guardarNombre(){
+    if(!nombre.trim()) return;
+    setSavingNombre(true);
+    try{ await api("tiendaRenombrar",{tiendaUid:user.uid,nombre:nombre.trim()}); toast("Nombre de la tienda guardado ✓","success"); setTimeout(()=>window.location.reload(),600); }
+    catch(e){ appAlert("No se pudo guardar: "+e.message); }
+    setSavingNombre(false);
+  }
+  async function mover(){
+    const em = emailDestino.trim().toLowerCase();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { appAlert("Poné un email válido."); return; }
+    if(!await appConfirm(`¿Mover ESTA tienda (con todas sus integraciones y datos) al perfil ${em}?\n\nEse perfil pasa a ser el dueño. Este usuario (${auth.currentUser?.email||""}) deja de tener acceso a la tienda.`,{danger:true,okLabel:"Sí, mover la tienda"})) return;
+    setMoviendo(true);
+    try{ await api("tiendaTransferir",{emailDestino:em}); appAlert(`Listo. La tienda ahora pertenece a ${em}. Entrá con ese perfil para verla.`); setTimeout(()=>window.location.reload(),800); }
+    catch(e){ appAlert("No se pudo mover: "+e.message); }
+    setMoviendo(false);
+  }
+  async function eliminarCuenta(){
+    if(confirmTxt!=="ELIMINAR") return;
+    setEliminando(true);
+    try{
+      await api("cuentaEliminar",{confirm:"ELIMINAR"});
+      try{ await signOut(auth); }catch(_){}
+      appAlert("Tu cuenta fue eliminada. Los datos quedan ocultos 30 días y después se borran definitivamente.");
+      setTimeout(()=>{ window.location.hash=""; window.location.reload(); },600);
+    }catch(e){ appAlert("No se pudo eliminar: "+e.message); setEliminando(false); }
+  }
+  return (
+    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
+      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Perfil y tiendas</div>
+      <div style={{fontSize:11,color:T.textSm,marginBottom:14,lineHeight:1.5}}>
+        Tu perfil <strong style={{color:T.text}}>{auth.currentUser?.email||""}</strong> puede tener varias tiendas; cada una con sus propias integraciones. Cambiás de tienda desde el selector del menú (arriba a la izquierda). {esPrincipal?"Esta es tu tienda principal.":"Esta es una tienda adicional de tu perfil."}
+      </div>
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+        <div style={{flex:"1 1 220px"}}>
+          <label style={{display:"block",fontSize:11,fontWeight:600,color:T.textMd,marginBottom:4}}>Nombre de esta tienda</label>
+          <input value={nombre} onChange={e=>setNombre(e.target.value)} maxLength={60} placeholder='Ej. "Mo&Mu" o "VisioVance"' style={{...iS,marginBottom:0}}/>
+        </div>
+        <button onClick={guardarNombre} disabled={savingNombre||!nombre.trim()} style={{...BtnPrimary(T),fontSize:12,padding:"9px 16px",alignSelf:"flex-end",opacity:(savingNombre||!nombre.trim())?0.6:1}}>{savingNombre?"Guardando…":"Guardar"}</button>
+      </div>
+
+      {esPrincipal && (
+        <div style={{borderTop:`1px solid ${T.border}`,paddingTop:12,marginTop:4}}>
+          {!showMover ? (
+            <button onClick={()=>setShowMover(true)} style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px"}}>Mover esta tienda a otro perfil…</button>
+          ) : (
+            <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px"}}>
+              <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>Mover esta tienda a otro perfil</div>
+              <div style={{fontSize:11,color:T.textSm,marginBottom:8,lineHeight:1.5}}>Sirve para juntar varias cuentas en un solo login. El perfil destino tiene que existir en Growith. Si tu perfil queda sin tiendas, tu plan viaja con la tienda (la suscripción de Stripe la reasigna soporte).</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <input type="email" value={emailDestino} onChange={e=>setEmailDestino(e.target.value)} placeholder="email del perfil destino" style={{...iS,marginBottom:0,flex:"1 1 220px"}}/>
+                <button onClick={mover} disabled={moviendo||!emailDestino.trim()} style={{...BtnPrimary(T),fontSize:12,padding:"8px 14px",opacity:(moviendo||!emailDestino.trim())?0.6:1}}>{moviendo?"Moviendo…":"Mover tienda"}</button>
+                <button onClick={()=>setShowMover(false)} disabled={moviendo} style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px"}}>Cancelar</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{borderTop:`1px solid ${T.border}`,paddingTop:12,marginTop:12}}>
+        {!showEliminar ? (
+          <button onClick={()=>setShowEliminar(true)} style={{...BtnDanger(T),fontSize:12,padding:"8px 12px"}}>Eliminar mi cuenta</button>
+        ) : (
+          <div style={{background:T.red+"10",border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px"}}>
+            <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>Eliminar mi cuenta y todas mis tiendas</div>
+            <div style={{fontSize:11,color:T.textMd,marginBottom:8,lineHeight:1.5}}>Se cancela el cobro al instante. Tus datos quedan ocultos 30 días (por si te arrepentís, escribinos) y después se borran <strong>definitivamente</strong>. Escribí <strong>ELIMINAR</strong> para confirmar.</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <input value={confirmTxt} onChange={e=>setConfirmTxt(e.target.value)} placeholder="ELIMINAR" style={{...iS,marginBottom:0,flex:"0 1 160px",fontFamily:"monospace"}}/>
+              <button onClick={eliminarCuenta} disabled={eliminando||confirmTxt!=="ELIMINAR"} style={{...BtnDanger(T),fontSize:12,padding:"8px 14px",background:T.red,color:"#fff",opacity:(eliminando||confirmTxt!=="ELIMINAR")?0.6:1}}>{eliminando?"Eliminando…":"Eliminar definitivamente"}</button>
+              <button onClick={()=>{setShowEliminar(false);setConfirmTxt("");}} disabled={eliminando} style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px"}}>Cancelar</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   const [userDoc,setUserDoc]=useState(null);
   const [saving,setSaving]=useState(false);
@@ -13190,7 +13305,9 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
       const nombre = pNombre.trim();
       const email = pEmail.trim();
       // Guardamos en Firestore (lo que ven los desarrolladores en el panel admin).
-      await updateDoc(doc(db,"users",user.uid), { nombre, email });
+      // Tienda propia (uid == login): nombre + email. Otra tienda del perfil: solo el nombre (el email es del perfil).
+      if (user.uid === auth.currentUser?.uid) await updateDoc(doc(db,"users",user.uid), { nombre, email });
+      else await ghUserPatch(user.uid, { nombre });
       setUserDoc(d => ({ ...(d||{}), nombre, email }));
       // Actualizamos también el displayName de Firebase Auth (lo que muestra la
       // barra lateral). El email de LOGIN no se toca (seguís entrando con el mismo).
@@ -13361,7 +13478,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
     if(!await appConfirm(`¿Desvincular ${storeType}?`,{danger:true,okLabel:"Desvincular"})) return;
     setSaving(true);
     const stores=(userDoc?.stores||[]).filter(s=>s.type!==storeType);
-    await updateDoc(doc(db,"users",user.uid),{stores});
+    await ghUserPatch(user.uid,{stores});
     setSaving(false);
     setMsg(`${storeType} desvinculado.`);
   }
@@ -13369,7 +13486,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   async function toggleAlerta(key) {
     const current=userDoc?.alertas||{recordatorio:true,sinrespuesta:true,contenido:true};
     const updated={...current,[key]:!current[key]};
-    await updateDoc(doc(db,"users",user.uid),{alertas:updated});
+    await ghUserPatch(user.uid,{alertas:updated});
   }
 
   const tnStore=userDoc?.stores?.find(s=>s.type==="tiendanube");
@@ -13387,6 +13504,9 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
       <div style={{maxWidth:960,margin:"0 auto",padding:"20px 24px 80px"}}>
 
         {/* Tiendas */}
+        {/* ── Perfil y tiendas (multi-tienda) ── */}
+        <PerfilTiendasCard T={T} user={user} userDoc={userDoc} setMsg={setMsg}/>
+
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Integraciones</div>
           <div style={{fontSize:11,color:T.textSm,marginBottom:16,lineHeight:1.5}}>
@@ -13532,7 +13652,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             if(role==="both"){ mp=u; ventas=u; }
             else if(role==="mp"){ mp=u; const oml=others.find(a=>["ml","both"].includes(roleOf(a.userId))); ventas=oml?oml.userId:"__none__"; }
             else { ventas=u; const omp=others.find(a=>["mp","both"].includes(roleOf(a.userId))); mp=omp?omp.userId:"__none__"; }
-            try{ await updateDoc(doc(db,"users",user.uid),{margenesMlMp:mp,margenesMlVentas:ventas}); toast("Guardado ✓","success"); }catch(e){ toast("Error: "+e.message,"error"); }
+            try{ await ghUserPatch(user.uid,{margenesMlMp:mp,margenesMlVentas:ventas}); toast("Guardado ✓","success"); }catch(e){ toast("Error: "+e.message,"error"); }
           };
           const OPTS = [{k:"mp",lbl:"Shopify/TN",ico:""},{k:"ml",lbl:"Mercado Libre",ico:""},{k:"both",lbl:"Ambos",ico:""}];
           return (
@@ -14872,15 +14992,15 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
     { id:"facturador", nombre:"Facturador", color:T.green, nivel:1,
       precio:19, precioAnual:16, precioNormal:29,
       tagline:"Solo el facturador ARCA, sin límites.",
-      features:["Facturación ARCA / AFIP ilimitada","Facturás tus ventas de la tienda y Mercado Libre en un clic","La factura se adjunta sola a la venta y le llega al cliente","Facturas y notas de crédito manuales","Monotributo y Responsable Inscripto","Múltiples puntos de venta y CUITs","Proyección mensual de IVA"] },
+      features:["Facturación ARCA / AFIP ilimitada","Facturás tus ventas de la tienda y Mercado Libre en un clic","La factura se adjunta sola a la venta y le llega al cliente","Facturas y notas de crédito manuales","Monotributo y Responsable Inscripto","Múltiples puntos de venta y CUITs","Proyección mensual de IVA","Varias tiendas en un solo login: +USD 5/mes por tienda adicional"] },
     { id:"medio", nombre:"Intermedio", color:T.purple, nivel:2,
       precio:39, precioAnual:32, precioNormal:59,
       tagline:"La operación completa, sin Dashboard de márgenes ni Copilot.",
-      features:["Todo lo del plan Facturador","Meta Ads y Mercado Ads","Stock de TN, Mercado Libre y Shopify en una sola vista","Mercado Libre integrado","Envíos y etiquetas Andreani con SKU","Reclamos, canjes e influencers ilimitados","Equipo y tareas ilimitadas","Tiendas ilimitadas"] },
+      features:["Todo lo del plan Facturador","Meta Ads y Mercado Ads","Stock de TN, Mercado Libre y Shopify en una sola vista","Mercado Libre integrado","Envíos y etiquetas Andreani con SKU","Reclamos, canjes e influencers ilimitados","Equipo y tareas ilimitadas","Varias tiendas en un solo login: +USD 10/mes por tienda adicional"] },
     { id:"plus", nombre:"Pro", color:T.accent, nivel:3, destacado:true,
       precio:69, precioAnual:57, precioNormal:99,
       tagline:"Todo Growith para gestionar tu e-commerce.",
-      features:["Todo lo del plan Intermedio","Márgenes, profit y costos por venta en tiempo real","Rentabilidad por producto, día a día","Meta Ads y Google Ads cruzados con tu ganancia real","Copilot IA sobre tus datos reales","Auto-tracking Andreani","Tiendas y equipo ilimitados"] },
+      features:["Todo lo del plan Intermedio","Márgenes, profit y costos por venta en tiempo real","Rentabilidad por producto, día a día","Meta Ads y Google Ads cruzados con tu ganancia real","Copilot IA sobre tus datos reales","Auto-tracking Andreani","Varias tiendas en un solo login: +USD 15/mes por tienda adicional"] },
   ];
   const planActualId=userPlan==="full"?"plus":userPlan;
   const planActual=PLANES.find(p=>p.id===planActualId)||null;
@@ -14899,7 +15019,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
     setLoadingPlan(planId);
     const pl=PLANES.find(p=>p.id===planId);
     try{
-      const r=await authFetch("/api/stripe?action=checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,plan:planId,periodo:anual?"anual":"mensual"})});
+      const r=await authFetch("/api/stripe?action=checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:(auth.currentUser?.uid||user.uid),plan:planId,periodo:anual?"anual":"mensual"})});
       const d=await r.json().catch(()=>({}));
       if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`);
       if(d.url){ window.location.href=d.url; return; }
@@ -14910,7 +15030,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   }
   async function abrirPortal(){
     try{
-      const r=await authFetch("/api/stripe?action=portal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid})});
+      const r=await authFetch("/api/stripe?action=portal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:(auth.currentUser?.uid||user.uid)})});
       const d=await r.json().catch(()=>({}));
       if(d.url) window.location.href=d.url; else appAlert(d.error||"No se pudo abrir el portal de pagos");
     }catch(e){ appAlert("No se pudo abrir el portal de pagos: "+e.message); }
@@ -14919,9 +15039,9 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
     if(!reactivar&&!(await appConfirm(`¿Cancelar la renovación del plan ${planActual?.nombre}? Seguís con acceso completo hasta el ${fmtF(planExpiry)} y no se te cobra más.`,{danger:true,okLabel:"Cancelar renovación"}))) return;
     try{
       if(stripe){
-        const r=await authFetch("/api/stripe?action=cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,reactivar})});
+        const r=await authFetch("/api/stripe?action=cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:(auth.currentUser?.uid||user.uid),reactivar})});
         const d=await r.json().catch(()=>({})); if(d.error) throw new Error(d.error);
-      } else await updateDoc(doc(db,"users",user.uid),{cancelAtPeriodEnd:!reactivar});
+      } else await updateDoc(doc(db,"users",auth.currentUser?.uid||user.uid),{cancelAtPeriodEnd:!reactivar}); // el plan vive en el PERFIL
       toast(reactivar?"Renovación reactivada":"Listo: tu plan sigue activo hasta el vencimiento","success");
     }catch(e){ appAlert(e.message); }
   }
@@ -26392,7 +26512,7 @@ function AccountSwitcher({T, accounts, activeAcc, onSwitch, onGoConnect}) {
 }
 
 // ─── Publicador IA de Meta (chat conversacional → confirmá → publica en PAUSA) ───
-function MetaPublisher({ T, metaApi, accId, cur, tokenDead }) {
+function MetaPublisher({ T, metaApi, accId, cur, tokenDead, uid: uidProp }) {
   const [messages, setMessages] = React.useState([{ role: "assistant", text: "¡Hola! Contame qué anuncio querés publicar y lo armamos juntos. Ej: \"Publicá un anuncio de la malla Mo&Mu, $5000 por día, para mujeres de Argentina, que lleve a la página del producto\". Cuando esté listo te muestro todo antes de publicar 👇" }]);
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -26406,7 +26526,7 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead }) {
   const [driveBusy, setDriveBusy] = React.useState(false);
   const [driveMsg, setDriveMsg] = React.useState("");
   // ── Google Drive conectado (OAuth por redirección) + Picker + subida a Meta por partes ──
-  const _uid = auth.currentUser?.uid;
+  const _uid = uidProp || auth.currentUser?.uid; // uid de la TIENDA activa (multi-tienda), no del login
   const [driveConn, setDriveConn] = React.useState(null);   // null=cargando · false=no conectado · {email}
   const [drivePick, setDrivePick] = React.useState(null);   // {id,name} elegido en el Picker
   const [driveProg, setDriveProg] = React.useState(null);   // {pct,txt} progreso de subida a Meta
@@ -28933,7 +29053,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
         {/* ── PUBLICADOR IA ────────────────────────────── */}
         {tab==="publicador"&&(
-          <MetaPublisher T={T} metaApi={metaApi} accId={activeAccId} cur={cur} tokenDead={tokenDead||!activeAccId}/>
+          <MetaPublisher T={T} metaApi={metaApi} accId={activeAccId} cur={cur} tokenDead={tokenDead||!activeAccId} uid={uid}/>
         )}
 
         {/* ── CUENTA ──────────────────────────────────── */}
@@ -34947,7 +35067,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   // Persistencia de la personalización del dashboard (orden/visibilidad de cards,
   // secciones): localStorage para lectura instantánea + Firestore (users.margenesVis)
   // para que sobreviva a otros dispositivos, incógnito y limpiezas de caché.
-  function updVis(patch){ setVis(v=>{ const n={...v,...patch}; try{localStorage.setItem(`growith_margenes_vis_${user?.uid}`,JSON.stringify(n));}catch(_){} if(user?.uid) setDoc(doc(db,"users",user.uid),{margenesVis:n},{merge:true}).catch(()=>{}); return n; }); }
+  function updVis(patch){ setVis(v=>{ const n={...v,...patch}; try{localStorage.setItem(`growith_margenes_vis_${user?.uid}`,JSON.stringify(n));}catch(_){} if(user?.uid) ghUserPatch(user.uid,{margenesVis:n}).catch(()=>{}); return n; }); }
   useEffect(()=>{
     if(!user?.uid) return;
     getDoc(doc(db,"users",user.uid)).then(s=>{
@@ -36668,10 +36788,15 @@ export default function App() {
   // effects con dep [user] (onSnapshot de canjes/reclamos, etc.) se
   // des-suscribían y re-suscribían en loop — para los miembros la app quedaba
   // pesadísima y los clicks del sidebar tardaban en reflejarse.
+  // Multi-tienda: `miembroDe` describe el ESPACIO activo. ownerId = uid de la
+  // tienda activa cuando NO es mi propio doc (tienda adicional propia o espacio
+  // ajeno donde soy miembro). rol "owner" → acceso total (Config incluida);
+  // rol "miembro" → solo sus secciones (modo miembro clásico). tiendas[] alimenta
+  // el switcher del sidebar.
   const user = React.useMemo(()=>(
     (authUser && miembroDe && miembroDe.ownerId)
-      ? {...authUser, uid:miembroDe.ownerId, authUid:authUser.uid, esMiembro:true}
-      : authUser
+      ? {...authUser, uid:miembroDe.ownerId, authUid:authUser.uid, esMiembro:miembroDe.rol!=="owner", esTiendaAjena:true, tiendaRol:miembroDe.rol}
+      : (authUser ? {...authUser, authUid:authUser.uid, esMiembro:false, esTiendaAjena:false, tiendaRol:"owner"} : authUser)
   ),[authUser, miembroDe]);
   useEffect(()=>{
     if(!authUser){ setMiembroDe(authUser===null?null:undefined); return; }
@@ -36681,8 +36806,11 @@ export default function App() {
         const r=await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"workspace"})});
         const d=await r.json().catch(()=>({}));
         if(!alive) return;
-        const info=d&&d.ownerId?{ownerId:d.ownerId,secciones:d.secciones||{},ownerNombre:d.ownerNombre||""}:null;
-        miembroDeRef.current=info;
+        const tiendas=Array.isArray(d?.tiendas)?d.tiendas:[];
+        // info != null siempre que haya respuesta: guarda tiendas/activa aunque la
+        // activa sea mi propio doc (ownerId null → la app opera sobre authUser.uid).
+        const info=d?{ownerId:d.ownerId||null,rol:d.activeRol||"owner",secciones:d.secciones||{},ownerNombre:d.ownerNombre||"",tiendas,activeTiendaUid:d.activeTiendaUid||authUser.uid,selfMovida:!!d.selfMovida,selfMovidaA:d.selfMovidaA||null,extra:{tiendasExtra:d.ownerCtx?.tiendasExtra||0,extraUsdMensual:d.ownerCtx?.extraUsdMensual||0}}:null;
+        miembroDeRef.current=info&&info.ownerId?info:null;
         setMiembroDe(info);
         // Modo miembro: las puertas del front (plan/trial, "conectá Tienda
         // Nube") tienen que evaluar al DUEÑO, no al miembro — el doc del dueño
@@ -36817,8 +36945,11 @@ export default function App() {
   // F1 sólo muestra el switcher y persiste la org activa. Las secciones siguen
   // leyendo de userDoc top-level (espejo); F2+ refactorea sección por sección
   // a leer desde la org activa directamente.
-  const [orgs,setOrgs]=useState([]);
-  const [activeOrgId,setActiveOrgId]=useState(null);
+  // Multi-tienda: el switcher del sidebar se alimenta de las tiendas del perfil
+  // (vienen del workspace). Mantengo los nombres orgs/activeOrgId para no tocar
+  // la firma del Sidebar. id = uid de la tienda.
+  const orgs = React.useMemo(()=>(miembroDe?.tiendas||[]).map(t=>({id:t.uid,name:t.nombre,color:t.color||"#7c3aed",rol:t.rol,esSelf:!!t.esSelf})),[miembroDe]);
+  const activeOrgId = miembroDe?.activeTiendaUid || authUser?.uid || null;
   const [onboardingDone,setOnboardingDone]=useState(()=>{try{return localStorage.getItem("growith_onb_done")==="1";}catch(e){return true;}});
   const [orders,setOrders]=useState([]);
   const [ordersStatus,setOrdersStatus]=useState("idle");
@@ -37136,111 +37267,50 @@ export default function App() {
       }
       prevTnRef.current=newId;
 
-      // ── Multi-org F1: capturar orgs y migrar si hace falta ──
-      const userOrgs = Array.isArray(d.orgs) ? d.orgs : [];
-      const userActiveOrgId = d.active_org_id || (userOrgs[0]?.id || null);
-      setOrgs(userOrgs);
-      setActiveOrgId(userActiveOrgId);
-
-      // Migración default-org: una vez por sesión, si no hay orgs creadas.
-      // Crea "Mi organización" con una COPIA de los datos top-level actuales —
-      // así el switcher tiene algo que mostrar y nada se rompe. Las secciones
-      // siguen leyendo top-level (espejo) hasta que F2+ las refactoree.
-      if (!orgsMigratedRef.current && userOrgs.length === 0) {
-        orgsMigratedRef.current = true;
-        const defaultOrg = {
-          id: "org_default",
-          name: "Mi organización",
-          color: "#7c3aed",
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          // Snapshot de datos actuales del user — cada org se autocontiene a futuro:
-          stores: Array.isArray(d.stores) ? d.stores : [],
-          cuits: Array.isArray(d.cuits) ? d.cuits : [],
-          meta_active_account: d.meta_active_account || null,
-          brand_context: d.brand_context || "",
-          alertas: d.alertas || {recordatorio:true,sinrespuesta:true,contenido:true},
-        };
-        updateDoc(doc(db,"users",user.uid),{
-          orgs: [defaultOrg],
-          active_org_id: "org_default",
-        }).catch(e => console.error("[multi-org] migración default falló:", e?.message));
-      }
+      // (Multi-org F1 retirada: las "orgs" dentro de un mismo doc se reemplazaron
+      // por tiendas reales — cada tienda es un doc users/{uid} — ver workspace.)
     });
     return ()=>unsub();
   },[user?.uid]);
 
-  // Multi-org F1: switch entre orgs. Por ahora sólo persiste active_org_id;
-  // F2+ va a sincronizar los espejos top-level (stores, meta_active_account, etc.)
-  // con la org elegida para que las secciones se rerenderean al cambiar.
-  const onSwitchOrg = React.useCallback(async (orgId) => {
-    if (!user || !orgId) return;
-    try {
-      await updateDoc(doc(db,"users",user.uid),{ active_org_id: orgId });
-    } catch (e) {
-      console.error("[multi-org] switch org falló:", e?.message);
-    }
-  },[user?.uid]);
+  // ── Multi-tienda: acciones del PERFIL (login) sobre sus tiendas ──
+  // Todas van al backend con uid = mi login (no la tienda activa) y después
+  // recargan la app: cambiar de tienda re-inicializa todos los efectos/caches
+  // (están atados a user.uid), y recargar es lo más simple y robusto.
+  const tiendaApi = React.useCallback(async (action, extra={}) => {
+    const me = authUser?.uid; if (!me) throw new Error("Sin sesión");
+    const r = await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,uid:me,...extra})});
+    const d = await r.json().catch(()=>({}));
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    return d;
+  },[authUser?.uid]);
 
-  // Multi-org F2: modales de Crear y Gestionar
+  const onSwitchOrg = React.useCallback(async (tiendaUid) => {
+    if (!tiendaUid || tiendaUid === activeOrgId) return;
+    try { await tiendaApi("tiendaActivar",{tiendaUid}); window.location.reload(); }
+    catch (e) { appAlert("No se pudo cambiar de tienda: " + e.message); }
+  },[tiendaApi, activeOrgId]);
+
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
   const [manageOrgId, setManageOrgId] = useState(null);
 
   const onCreateOrg = React.useCallback(async ({name, color}) => {
-    if (!user) return false;
     if (!name?.trim()) return false;
-    if (userPlan !== "total" && orgs.length >= 2) return false;
-    const newOrg = {
-      id: "org_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,7),
-      name: name.trim(),
-      color: color || "#7c3aed",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      // arranca en 0 — sin integraciones; el user las conecta desde Config
-      stores: [],
-      cuits: [],
-      meta_active_account: null,
-      brand_context: "",
-      alertas: {recordatorio:true,sinrespuesta:true,contenido:true},
-    };
-    try {
-      await updateDoc(doc(db,"users",user.uid),{
-        orgs: [...orgs, newOrg],
-        active_org_id: newOrg.id,
-      });
-      return true;
-    } catch (e) {
-      console.error("[multi-org] crear org falló:", e?.message);
-      return false;
-    }
-  },[user?.uid, userPlan, orgs]);
+    try { await tiendaApi("tiendaCrear",{nombre:name.trim(),color:color||"#7c3aed"}); toast("Tienda creada ✓ — entrando…","success"); setTimeout(()=>window.location.reload(),500); return true; }
+    catch (e) { appAlert("No se pudo crear la tienda: " + e.message); return false; }
+  },[tiendaApi]);
 
   const onSaveOrg = React.useCallback(async (orgPatch) => {
-    if (!user || !orgPatch?.id) return false;
-    try {
-      const updated = orgs.map(o => o.id === orgPatch.id ? {...o, ...orgPatch} : o);
-      await updateDoc(doc(db,"users",user.uid),{ orgs: updated });
-      return true;
-    } catch (e) {
-      console.error("[multi-org] guardar org falló:", e?.message);
-      return false;
-    }
-  },[user?.uid, orgs]);
+    if (!orgPatch?.id) return false;
+    try { await tiendaApi("tiendaRenombrar",{tiendaUid:orgPatch.id,nombre:orgPatch.name,color:orgPatch.color}); toast("Guardado ✓","success"); setTimeout(()=>window.location.reload(),400); return true; }
+    catch (e) { appAlert("No se pudo guardar: " + e.message); return false; }
+  },[tiendaApi]);
 
-  const onDeleteOrg = React.useCallback(async (orgId) => {
-    if (!user || !orgId) return false;
-    if (orgs.length <= 1) return false; // no borrar la única
-    try {
-      const filtered = orgs.filter(o => o.id !== orgId);
-      const patch = { orgs: filtered };
-      if (activeOrgId === orgId) patch.active_org_id = filtered[0].id;
-      await updateDoc(doc(db,"users",user.uid),patch);
-      return true;
-    } catch (e) {
-      console.error("[multi-org] borrar org falló:", e?.message);
-      return false;
-    }
-  },[user?.uid, orgs, activeOrgId]);
+  const onDeleteOrg = React.useCallback(async (tiendaUid) => {
+    if (!tiendaUid || tiendaUid === authUser?.uid) return false;
+    try { await tiendaApi("tiendaEliminar",{tiendaUid}); toast("Tienda eliminada (se puede recuperar 30 días)","success"); setTimeout(()=>window.location.reload(),500); return true; }
+    catch (e) { appAlert("No se pudo eliminar: " + e.message); return false; }
+  },[tiendaApi, authUser?.uid]);
 
   useEffect(()=>{
     if(!user) return;
@@ -37349,6 +37419,23 @@ export default function App() {
   if(miembroDe===undefined) return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{animation:"growith-bounceIn 0.6s cubic-bezier(0.34,1.56,0.64,1) both"}}><GrowithLogo size={96} variant="color"/></div>
+    </div>
+  );
+
+  // Tienda MOVIDA a otro perfil y este login no tiene ninguna otra: no hay
+  // nada que operar. Aviso + opción de eliminar este usuario.
+  if(miembroDe && miembroDe.selfMovida && (!miembroDe.tiendas || miembroDe.tiendas.length===0)) return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{maxWidth:460,width:"100%",background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:"28px 30px",textAlign:"center"}}>
+        <GrowithLogo size={56} variant="color"/>
+        <div style={{fontSize:18,fontWeight:800,color:T.text,marginTop:14}}>Esta tienda se movió a otro perfil</div>
+        <div style={{fontSize:13,color:T.textMd,marginTop:8,lineHeight:1.55}}>La tienda que estaba en <strong>{authUser?.email||"este usuario"}</strong> ahora pertenece a <strong>{miembroDe.selfMovidaA||"otro perfil"}</strong>. Entrá con ese perfil para verla. Este usuario ya no tiene tiendas.</div>
+        <div style={{display:"flex",gap:8,justifyContent:"center",marginTop:18,flexWrap:"wrap"}}>
+          <button onClick={async()=>{ try{ await signOut(auth); }catch(_){} window.location.reload(); }} style={{...BtnSecondary(T),padding:"10px 16px",fontSize:13}}>Cambiar de cuenta</button>
+          <button onClick={async()=>{ if(!await appConfirm("¿Eliminar este usuario? Ya no tiene tiendas; solo se borra el login.",{danger:true,okLabel:"Eliminar usuario"})) return; try{ const r=await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"cuentaEliminar",uid:authUser.uid,confirm:"ELIMINAR"})}); const d=await r.json().catch(()=>({})); if(d.error) throw new Error(d.error); try{ await signOut(auth); }catch(_){} window.location.reload(); }catch(e){ appAlert("No se pudo eliminar: "+e.message); } }} style={{...BtnDanger(T),padding:"10px 16px",fontSize:13}}>Eliminar este usuario</button>
+        </div>
+      </div>
+      <AppPromptHost T={T}/>
     </div>
   );
 
