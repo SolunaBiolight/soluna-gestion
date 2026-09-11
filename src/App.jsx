@@ -898,7 +898,7 @@ const SIDEBAR_GROUPS_BASE = [
       subs:[{id:"gestion",label:"Gestión"},{id:"publicar",label:"Publicar"},{id:"preguntas",label:"Preguntas"},{id:"mensajes",label:"Mensajes"},{id:"ventas",label:"Ventas"},{id:"reputacion",label:"Reputación"}]},
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
-      subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
+      subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"},{id:"checkout",label:"Checkout Shopify"}]},
     {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", alertKey:"reclamos", badge:"red",
       subs:[{id:"reclamos",label:"Reclamos"},{id:"mp",label:"Reclamos MP"},{id:"historial",label:"Historial"}]},
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", alertKey:"canjes", badge:"orange"},
@@ -10312,6 +10312,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         )}
 
         {/* -- SEGUIMIENTOS: panel de tracking de TODOS los envíos activos -- */}
+        {tab==="checkout"&&(<EnviosCheckoutTab T={T} user={user}/>)}
         {tab==="seguimientos"&&(()=>{
           const envios=Object.values(enviosFs).sort((a,b)=>String(b.creado||"").localeCompare(String(a.creado||"")));
           const activos=envios.filter(e=>e.activo);
@@ -13197,6 +13198,34 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
   );
 }
 
+// ── Envíos → Checkout Shopify: la config de "Andreani en el checkout" vive acá
+// (antes estaba en Configuración). Lee el doc de la tienda para saber si hay
+// Shopify conectado; reconectar se hace desde Configuración → Integraciones.
+function EnviosCheckoutTab({T, user}) {
+  const [userDoc,setUserDoc] = React.useState(null);
+  const [cargando,setCargando] = React.useState(true);
+  React.useEffect(()=>{ let vivo=true; (async()=>{ try{ const snap=await getDoc(doc(db,"users",user.uid)); if(vivo) setUserDoc(snap.exists()?snap.data():{}); }catch(_){ if(vivo) setUserDoc({}); } if(vivo) setCargando(false); })(); return ()=>{ vivo=false; }; },[user?.uid]);
+  const shStore = userDoc?.stores?.find(s=>s.type==="shopify");
+  const tnStore = userDoc?.stores?.find(s=>s.type==="tiendanube");
+  return (
+    <div key="checkout" className="gh-tab-content" style={{maxWidth:1100,margin:"0 auto",paddingBottom:48}}>
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:DS.font["2xl"],fontWeight:DS.w.black,color:T.text,letterSpacing:-0.4}}>Andreani en el checkout</div>
+        <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:2}}>Que el comprador elija Andreani a domicilio o retiro en sucursal directo en el checkout de tu tienda, con el precio de tu etiqueta Growith.</div>
+      </div>
+      {cargando ? <div style={{fontSize:12,color:T.textSm}}><Spinner size={12} color={T.textSm}/> Cargando…</div>
+      : shStore ? <AndreaniCheckoutCard T={T} user={user} shStore={shStore} onReconectar={()=>{ window.location.hash="#/config"; }}/>
+      : (
+        <div style={{background:T.card,border:`1px dashed ${T.borderL||T.border}`,borderRadius:12,padding:"28px 22px",textAlign:"center",color:T.textSm,fontSize:13,lineHeight:1.6}}>
+          {tnStore
+            ? <>Esta tienda está conectada con <strong style={{color:T.text}}>Tienda Nube</strong>. Tienda Nube ya trae Andreani (domicilio y sucursales) en su checkout: los pedidos entran a Growith con la sucursal elegida y la etiqueta se emite desde el Panel de Envíos.</>
+            : <>Esta función es para tiendas <strong style={{color:T.text}}>Shopify</strong>. Conectá tu Shopify desde <strong style={{color:T.text}}>Configuración → Integraciones</strong> y volvé acá.</>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PerfilTiendasCard({T, user, userDoc, setMsg}) {
   const authUid = auth.currentUser?.uid;
   const esPrincipal = user?.uid === authUid;
@@ -13821,9 +13850,6 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
           })}
         </div>
 
-        {/* Andreani en el checkout de Shopify (CarrierService) */}
-        {shStore && <AndreaniCheckoutCard T={T} user={user} shStore={shStore} onReconectar={()=>setShowShopifyModal(true)}/>}
-
         {/* Cuentas de Mercado Libre / Mercado Pago — rol por cuenta (para multi-tienda) */}
         {mlStore && (()=>{
           const mlAccts = (userDoc?.stores||[]).filter(s=>s.type==="mercadolibre"||s.type==="meli").map(s=>({userId:String(s.userId||""),nombre:s.nickname||s.email||("ML #"+(s.userId||""))})).filter(s=>s.userId);
@@ -14094,8 +14120,13 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                 <div>
                   <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>1 · Tu dominio Shopify</div>
                   <input value={shopifyShop} onChange={e=>setShopifyShop(e.target.value)} placeholder="ej: tu-tienda.myshopify.com" style={iS} disabled={connectingShopify}/>
+                  {(()=>{ const raw=String(shopifyShop||"").trim().toLowerCase().replace(/^https?:\/\//,"").replace(/\/.*$/,""); if(!raw) return null; const base=raw.replace(/\.myshopify\.com$/,""); const ok=/^[a-z0-9][a-z0-9-]*$/.test(base); const esPropio=/\.(com|com\.ar|ar|net|shop|store|app)$/i.test(base); return (
+                    <div style={{fontSize:11,marginTop:6,padding:"6px 10px",borderRadius:6,background:(ok&&!esPropio?T.green:T.red)+"14",border:`1px solid ${(ok&&!esPropio?T.green:T.red)}44`,color:T.text}}>
+                      {ok&&!esPropio ? <>Se va a conectar: <strong>{base}.myshopify.com</strong>{!/\.myshopify\.com$/.test(raw)&&<span style={{color:T.textSm}}> (completamos el .myshopify.com por vos)</span>}</> : <>Eso parece tu dominio propio o tiene caracteres inválidos. Tiene que ser el nativo de Shopify: <strong>algo.myshopify.com</strong></>}
+                    </div>
+                  ); })()}
                   <div style={{fontSize:10,color:T.textSm,marginTop:4,lineHeight:1.55}}>
-                    Es el dominio <strong style={{color:T.text}}>NATIVO</strong> que te dio Shopify, escrito <strong style={{color:T.text}}>completo hasta el <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>.myshopify.com</code></strong> (ej: <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>tu-tienda.myshopify.com</code>).<br/>
+                    Pegá el dominio <strong style={{color:T.text}}>completo</strong>, incluido el <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>.myshopify.com</code> (ej: <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>tu-tienda.myshopify.com</code>). Si escribís solo <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10}}>tu-tienda</code> también sirve: lo completamos nosotros.<br/>
                     <strong style={{color:T.red}}>NO uses tu dominio propio</strong> (ej: <code style={{color:T.red}}>tutienda.com</code> / <code style={{color:T.red}}>.com.ar</code>).<br/>
                     ¿Dónde lo encontrás? En tu admin de Shopify → <strong style={{color:T.text}}>Configuración → Dominios</strong> → el que tiene el sello <strong style={{color:T.text}}>"Predeterminado de Shopify"</strong> (ese termina en .myshopify.com).
                   </div>
