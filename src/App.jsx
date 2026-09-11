@@ -73,6 +73,11 @@ async function ghUserPatch(uid, patch) {
   if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
   return d;
 }
+// (?) de ayuda: círculo chiquito que muestra el texto al pasar el mouse.
+function GhTip({ T, text }) {
+  return <span title={text} aria-label={text} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 14, height: 14, borderRadius: "50%", border: `1px solid ${T.textSm}`, color: T.textSm, fontSize: 9, fontWeight: 800, marginLeft: 5, cursor: "help", flexShrink: 0, verticalAlign: "middle", lineHeight: 1 }}>?</span>;
+}
+const DRIVE_TIP = "Solo accedemos a los videos que vos elegís. No vemos el resto de tu Drive. Google lo llama permiso \"drive.file\": la app únicamente puede abrir los archivos que seleccionás en el selector.";
 
 // fetch con identidad: adjunta el ID token de Firebase. Los endpoints con
 // datos personales de clientes (listados de pedidos, tracking, rótulos) lo
@@ -13572,10 +13577,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               key:"gdrive", label:"Google Drive",
               // Conexión por REDIRECCIÓN (sin popup): el token queda en users/{uid}.googleDrive.
               sub: userDoc?.googleDrive?.connected
-                ? `${userDoc.googleDrive.email || "Conectado"} — elegís los videos desde el Publicador de Meta`
+                ? <>{userDoc.googleDrive.email || "Conectado"} — elegís los videos desde el Publicador de Meta<GhTip T={T} text={DRIVE_TIP}/></>
                 : (driveConfigured===false
                     ? "Próximamente — elegir los videos del anuncio directo desde tu Drive"
-                    : "Conectá tu Drive para elegir los videos del anuncio desde el Publicador de Meta"),
+                    : <>Conectá tu Drive para elegir los videos del anuncio desde el Publicador de Meta<GhTip T={T} text={DRIVE_TIP}/></>),
               connected: !!userDoc?.googleDrive?.connected, disabled:false, soon: driveConfigured===false && !userDoc?.googleDrive?.connected, brand:"#00ac47", iconBg:"#fff",
               icon:<svg width="30" height="27" viewBox="0 0 87.3 78"><path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/><path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.2z" fill="#ea4335"/><path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.85 0H34.45c-1.65 0-3.2.45-4.55 1.2z" fill="#00832d"/><path d="M59.8 54H27.5L13.75 77.8c1.35.8 2.9 1.2 4.55 1.2h50.7c1.65 0 3.2-.45 4.55-1.2z" fill="#2684fc"/><path d="M73.4 27.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 54h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>,
               onConnect: async ()=>{
@@ -26732,6 +26737,7 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead, uid: uidProp }) {
                   <svg width="15" height="13" viewBox="0 0 87.3 78"><path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/><path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.2z" fill="#ea4335"/><path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.85 0H34.45c-1.65 0-3.2.45-4.55 1.2z" fill="#00832d"/><path d="M59.8 54H27.5L13.75 77.8c1.35.8 2.9 1.2 4.55 1.2h50.7c1.65 0 3.2-.45 4.55-1.2z" fill="#2684fc"/><path d="M73.4 27.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 54h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>
                   Google Drive
                   {driveConn && driveConn.email && <span style={{ fontSize: 10.5, fontWeight: 500, color: T.textSm }}>· {driveConn.email}</span>}
+                  <GhTip T={T} text={DRIVE_TIP}/>
                 </div>
                 {driveConn === null ? (
                   <span style={{ fontSize: 11, color: T.textSm, display: "inline-flex", alignItems: "center", gap: 6 }}><Spinner size={11} color={T.textSm} /> Verificando…</span>
