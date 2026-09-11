@@ -125,10 +125,12 @@ async function anclaComprador(db, { cp, loc, prov }, pub) {
   if (g && enARll(g.lat, g.lng)) { ref.set({ lat: g.lat, lng: g.lng, src, ts: Date.now(), ratesUid: "_geo" }).catch(() => {}); return { ...g, src }; }
   const cpS = String(cp);
   const enCp = pub.filter(s => String(s.direccion?.codigoPostal || "").replace(/\D/g, "").slice(0, 4) === cpS && enARll(s.lat, s.lng));
-  if (enCp.length) {
-    const med = arr => { const a = [...arr].sort((x, y) => x - y); return a[Math.floor(a.length / 2)]; };
-    return { lat: med(enCp.map(s => s.lat)), lng: med(enCp.map(s => s.lng)), src: "cp" };
-  }
+  const med = arr => { const a = [...arr].sort((x, y) => x - y); return a[Math.floor(a.length / 2)]; };
+  if (enCp.length) return { lat: med(enCp.map(s => s.lat)), lng: med(enCp.map(s => s.lng)), src: "cp" };
+  // Último recurso (típico CABA: Palermo figura con CP 1414 y atiende 1425):
+  // el centro de las sucursales que ATIENDEN ese CP según Andreani.
+  const sirve = pub.filter(s => s.cps.includes(cpS) && enARll(s.lat, s.lng));
+  if (sirve.length) return { lat: med(sirve.map(s => s.lat)), lng: med(sirve.map(s => s.lng)), src: "sirve" };
   return null;
 }
 
@@ -139,7 +141,7 @@ const RADIO_M = 10000;
 let _dbg = {}; // diagnóstico de la última selección (solo se devuelve con ?debug=1)
 async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
   _dbg = { cp, loc };
-  const cacheRef = db.collection("andreani_config").doc(`rates_suc6_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
+  const cacheRef = db.collection("andreani_config").doc(`rates_suc7_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
   try {
     const c = (await cacheRef.get()).data();
     if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return c.lista.slice(0, max);
