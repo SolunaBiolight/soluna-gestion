@@ -36985,6 +36985,7 @@ export default function App() {
   const [alertas,setAlertas]=useState([]);
   const [darkMode,setDarkMode]=useState(()=>{ try { return localStorage.getItem("growith_theme")!=="light"; } catch(e){ return true; } });
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false); // hoja de cuenta en celular (cambiar cuenta / config / tema / salir)
+  const [mobileTiendasOpen,setMobileTiendasOpen]=useState(false); // hoja de tiendas en celular (multi-tienda)
   const [userPlan,setUserPlan]=useState("free"); // free | plus | full
   const [planExpiry,setPlanExpiry]=useState(null); // Date or null
   const [trialEnd,setTrialEnd]=useState(null);    // Date or null — fin del período de prueba
@@ -37478,6 +37479,7 @@ export default function App() {
       background:T.surface+"f5", backdropFilter:"blur(16px)",
       borderTop:`1px solid ${T.border}`,
       padding:"6px 4px 8px", overflowX:"auto", whiteSpace:"nowrap",
+      WebkitOverflowScrolling:"touch", scrollSnapType:"x proximity", overscrollBehaviorX:"contain",
     }}>
       {[
         {id:"home",label:"Inicio",icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
@@ -37486,6 +37488,7 @@ export default function App() {
         {id:"arca",label:"Facturador",icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M9 13h6M9 17h6M9 9h1"},
         {id:"meta",label:"Meta Ads",icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"},
         {id:"stock",label:"Stock",icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"},
+        {id:"ml",label:"Mercado Libre",icon:"M3 12a9 9 0 1018 0 9 9 0 00-18 0zM7 12c1.5-2 3-3 5-3s3.5 1 5 3c-1.5 2-3 3-5 3s-3.5-1-5-3z"},
         {id:"envios",label:"Envíos",icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"},
         {id:"reclamos",label:"Reclamos",icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"},
         {id:"canjes",label:"Canjes",icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"},
@@ -37503,6 +37506,17 @@ export default function App() {
           <span style={{fontSize:10, fontWeight:page===it.id?700:500}}>{it.label}</span>
         </button>
       ))}
+      {/* Anteúltima: Tiendas (selector multi-tienda) · Última: Cuenta (hoja de cuenta) */}
+      {orgs.length>0&&(
+        <button onClick={()=>setMobileTiendasOpen(true)} style={{display:"inline-flex", flexShrink:0, minWidth:64, background:"transparent", border:"none", cursor:"pointer", flexDirection:"column", alignItems:"center", gap:2, padding:"6px 6px", color:mobileTiendasOpen?T.accent:T.textMd, fontFamily:"'Inter',system-ui,sans-serif"}}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l1-5h16l1 5M3 9a3 3 0 006 0 3 3 0 006 0 3 3 0 006 0M5 9v11h14V9M9 20v-6h6v6"/></svg>
+          <span style={{fontSize:10, fontWeight:500}}>Tiendas</span>
+        </button>
+      )}
+      <button onClick={()=>setMobileMenuOpen(true)} style={{display:"inline-flex", flexShrink:0, minWidth:64, background:"transparent", border:"none", cursor:"pointer", flexDirection:"column", alignItems:"center", gap:2, padding:"6px 6px", color:mobileMenuOpen?T.accent:T.textMd, fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span style={{fontSize:10, fontWeight:500}}>Cuenta</span>
+      </button>
     </div>
   );
 
@@ -37540,6 +37554,39 @@ export default function App() {
   // cambia el email de acceso), alternar tema y cerrar sesión. Reusa la misma
   // maquinaria del switcher del sidebar (ghReadAccounts / ghSwitchAccount).
   const _mOtherAccounts = ghReadAccounts().filter(a=>a.email!==user?.email);
+  // Hoja de TIENDAS en celular (multi-tienda): lista de tiendas del perfil,
+  // cambiar con un toque, gestionar la activa y crear una nueva.
+  const MobileTiendasSheet = () => !mobileTiendasOpen ? null : ReactDOM.createPortal(
+    <div className="gh-modal-backdrop" style={{position:"fixed",inset:0,zIndex:9500,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"rgba(0,0,0,0.5)",backdropFilter:"blur(2px)"}} onClick={()=>setMobileTiendasOpen(false)}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.bg,borderTopLeftRadius:20,borderTopRightRadius:20,borderTop:`1px solid ${T.border}`,boxShadow:"0 -16px 48px rgba(0,0,0,0.4)",padding:"10px 14px calc(18px + env(safe-area-inset-bottom))",maxHeight:"85vh",overflowY:"auto",animation:"growith-panelUp 0.24s cubic-bezier(0.4,0,0.2,1)",fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <div style={{width:38,height:4,borderRadius:99,background:T.border,margin:"2px auto 14px"}}/>
+        <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,padding:"0 6px 8px"}}>Tus tiendas</div>
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+          {orgs.map(o=>{ const act=o.id===activeOrgId; return (
+            <button key={o.id} onClick={()=>{ if(act){ setMobileTiendasOpen(false); return; } setMobileTiendasOpen(false); onSwitchOrg(o.id); }}
+              style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"11px 12px",background:act?T.accentSolid+"18":T.card,border:`1px solid ${act?T.accentSolid:T.border}`,borderRadius:12,cursor:"pointer",color:T.text,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif"}}>
+              <span style={{width:30,height:30,borderRadius:8,background:o.color||T.accent,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,flexShrink:0}}>{(o.name||"?").trim().charAt(0).toUpperCase()}</span>
+              <div style={{minWidth:0,flex:1}}>
+                <div style={{fontSize:14,fontWeight:700,whiteSpace:"normal",wordBreak:"break-word",lineHeight:1.25}}>{o.name}</div>
+                <div style={{fontSize:11,color:T.textSm}}>{o.rol==="miembro"?"Miembro del equipo":(o.esSelf?"Tienda principal · Dueño":"Tienda adicional · Dueño")}{act?" · activa":""}</div>
+              </div>
+              {act
+                ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>}
+            </button>
+          ); })}
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          {(()=>{ const a=orgs.find(o=>o.id===activeOrgId); return a&&a.rol==="owner" ? (
+            <button onClick={()=>{ setMobileTiendasOpen(false); setManageOrgId(a.id); }} style={{...BtnSecondary(T),flex:1,padding:"11px 12px",fontSize:13,borderRadius:12,justifyContent:"center"}}>Gestionar "{a.name.length>14?a.name.slice(0,14)+"…":a.name}"</button>
+          ) : null; })()}
+          <button onClick={()=>{ setMobileTiendasOpen(false); setCreateOrgOpen(true); }} style={{...BtnPrimary(T),flex:1,padding:"11px 12px",fontSize:13,borderRadius:12,justifyContent:"center"}}>+ Nueva tienda</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+
   const MobileAccountSheet = () => !mobileMenuOpen ? null : ReactDOM.createPortal(
     <div className="gh-modal-backdrop" style={{position:"fixed",inset:0,zIndex:9500,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"rgba(0,0,0,0.5)",backdropFilter:"blur(2px)"}} onClick={()=>setMobileMenuOpen(false)}>
       <div onClick={e=>e.stopPropagation()} style={{background:T.bg,borderTopLeftRadius:20,borderTopRightRadius:20,borderTop:`1px solid ${T.border}`,boxShadow:"0 -16px 48px rgba(0,0,0,0.4)",padding:"10px 14px calc(18px + env(safe-area-inset-bottom))",maxHeight:"85vh",overflowY:"auto",animation:"growith-panelUp 0.24s cubic-bezier(0.4,0,0.2,1)",fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -37551,8 +37598,14 @@ export default function App() {
             :<div style={{width:44,height:44,borderRadius:DS.r.full,background:T.accentSolid+"33",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:DS.w.bold,fontSize:20,flexShrink:0}}>{_mInitial}</div>
           }
           <div style={{minWidth:0,flex:1}}>
-            <div style={{fontSize:15,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.displayName||user?.email?.split("@")[0]}</div>
-            <div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.email}</div>
+            <div style={{fontSize:15,fontWeight:700,color:T.text,whiteSpace:"normal",wordBreak:"break-word",lineHeight:1.25}}>{user?.displayName||user?.email?.split("@")[0]}</div>
+            <div style={{fontSize:12,color:T.textSm,whiteSpace:"normal",wordBreak:"break-all",lineHeight:1.3}}>{user?.email}</div>
+            {orgs.length>0&&(()=>{ const a=orgs.find(o=>o.id===activeOrgId)||orgs[0]; return (
+              <div style={{display:"flex",alignItems:"center",gap:6,marginTop:6,whiteSpace:"normal"}}>
+                <span style={{width:16,height:16,borderRadius:4,background:a.color||T.accent,color:"#fff",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800,flexShrink:0}}>{(a.name||"?").trim().charAt(0).toUpperCase()}</span>
+                <span style={{fontSize:12,color:T.text,fontWeight:600,wordBreak:"break-word",lineHeight:1.3}}>Tienda: {a.name}</span>
+              </div>
+            ); })()}
           </div>
         </div>
 
@@ -37801,6 +37854,7 @@ export default function App() {
       </div>
       <MobileBottomNav/>
       <MobileAccountSheet/>
+      <MobileTiendasSheet/>
       <ToastContainer T={T}/>
       <AppPromptHost T={T}/>
       {user && <AndreaniPollingService uid={user.uid} onAlerts={setAndreaniAlertCount}/>}
