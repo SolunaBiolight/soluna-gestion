@@ -41,6 +41,16 @@ const PRECIOS = {
   medio:      { mensual: 39, anual: 32, nombre: "Intermedio" },
   plus:       { mensual: 69, anual: 57, nombre: "Pro" },
 };
+// Multi-tienda: el plan incluye 1 tienda; cada tienda ADICIONAL suma esto por
+// mes (USD). Mismo cuadro que api/tareas.js (PLAN_EXTRA_TIENDA) y AppPlanes.
+const PRECIO_EXTRA_TIENDA = { facturador: 5, medio: 10, plus: 15 };
+const tiendasExtraDe = (d) => (Array.isArray(d?.tiendas) ? d.tiendas : []).filter(t => t && t.uid && !t.deleted).length;
+// Ítem de suscripción "Tienda adicional" (precio inline, cantidad = tiendas extra).
+const extraPriceData = (plan, periodo) => {
+  const anual = periodo === "anual";
+  const unit = (PRECIO_EXTRA_TIENDA[plan] || 0) * (anual ? 12 : 1);
+  return { currency: "usd", unit_amount: Math.round(unit * 100), recurring: { interval: anual ? "year" : "month" }, product_data: { name: `Growith — Tienda adicional (${PRECIOS[plan]?.nombre || plan}) — ${anual ? "anual" : "mensual"}`, metadata: { kind: "tienda_extra", plan, periodo } } };
+};
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -199,6 +209,42 @@ async function procesarInvoicePaid(db, inv) {
 }
 
 // Cuerpo crudo: la firma del webhook se calcula sobre los bytes exactos que manda Stripe.
+// ── Multi-tienda: sincroniza el ítem "Tienda adicional" de la suscripción ──
+// Lo llama tareas.js al crear/eliminar tiendas y el cambio de plan (re-precio).
+// Estrategia simple y robusta: si hay ítem extra lo borra y, si corresponden
+// tiendas extra, agrega uno nuevo con el precio del plan vigente y la cantidad
+// actual — todo en UNA actualización con prorrateo facturado.
+export async function syncTiendasExtra(db, uid) {
+  const userRef = db.collection("users").doc(uid);
+  const u = (await userRef.get()).data() || {};
+  if (!u.stripeSubscriptionId) return { skipped: "sin_suscripcion" };
+  const sub = await stripe("GET", `/subscriptions/${u.stripeSubscriptionId}`).catch(() => null);
+  if (!sub || !["active", "trialing", "past_due"].includes(sub.status)) return { skipped: "suscripcion_inactiva" };
+  const plan = sub.metadata?.plan || u.plan; const periodo = sub.metadata?.periodo || "mensual";
+  const extra = tiendasExtraDe(u);
+  const items = sub.items?.data || [];
+  const planItemId = items.find(i => i.id === u.stripePlanItemId)?.id || items.find(i => i.id !== u.stripeExtraItemId)?.id || items[0]?.id;
+  const extraItem = items.find(i => i.id === u.stripeExtraItemId) || items.find(i => i.id !== planItemId) || null;
+  const cambios = [];
+  if (extraItem) cambios.push({ id: extraItem.id, deleted: true });
+  if (extra > 0 && PRECIO_EXTRA_TIENDA[plan]) cambios.push({ price_data: extraPriceData(plan, periodo), quantity: extra });
+  if (!cambios.length) return { ok: true, extra, sinCambios: true };
+  const upd = await stripe("POST", `/subscriptions/${sub.id}`, { items: cambios, proration_behavior: "always_invoice" });
+  const nuevoExtra = (upd.items?.data || []).find(i => i.id !== planItemId && i.id !== extraItem?.id) || null;
+  await userRef.set({ stripePlanItemId: planItemId || null, stripeExtraItemId: nuevoExtra ? nuevoExtra.id : null, tiendasExtraFacturadas: extra }, { merge: true });
+  return { ok: true, extra, itemId: nuevoExtra?.id || null };
+}
+
+// Cancela la suscripción YA (sin esperar fin de período). Lo usa "Eliminar cuenta".
+export async function cancelarSuscripcionAhora(db, uid) {
+  const userRef = db.collection("users").doc(uid);
+  const u = (await userRef.get()).data() || {};
+  if (!u.stripeSubscriptionId) return { skipped: "sin_suscripcion" };
+  try { await stripe("DELETE", `/subscriptions/${u.stripeSubscriptionId}`); } catch (e) { if (!/No such subscription|already canceled/i.test(e.message || "")) throw e; }
+  await userRef.set({ stripeStatus: "canceled", cancelAtPeriodEnd: false, stripeSubscriptionId: null, stripeExtraItemId: null, stripePlanItemId: null }, { merge: true });
+  return { ok: true };
+}
+
 export const config = { api: { bodyParser: false } };
 
 export default async function handler(req, res) {
@@ -268,6 +314,8 @@ export default async function handler(req, res) {
             metadata: { uid, plan, periodo },
           });
           await userRef.set({ plan, cancelAtPeriodEnd: false, stripeStatus: upd.status || "active", ...(upd.current_period_end ? { planExpiry: new Date(upd.current_period_end * 1000) } : {}), planActivadoBy: "stripe", planActivadoAt: new Date() }, { merge: true });
+          // El precio de la tienda adicional depende del plan → re-preciar el ítem extra.
+          try { await syncTiendasExtra(db, uid); } catch (e) { console.warn("[stripe] sync extra tras cambio de plan:", e.message); }
           return res.json({ changed: true, plan, periodo });
         }
       }
@@ -290,7 +338,11 @@ export default async function handler(req, res) {
       }
       const session = await stripe("POST", "/checkout/sessions", {
         mode: "subscription", customer, locale: "es",
-        line_items: [{ price_data: priceData(plan, periodo), quantity: 1 }],
+        line_items: [
+          { price_data: priceData(plan, periodo), quantity: 1 },
+          // Tiendas adicionales del perfil (multi-tienda): un ítem con cantidad.
+          ...(tiendasExtraDe(u) > 0 ? [{ price_data: extraPriceData(plan, periodo), quantity: tiendasExtraDe(u) }] : []),
+        ],
         ...(discounts ? { discounts } : { allow_promotion_codes: true }),
         subscription_data: { metadata: { uid, plan, periodo, refCreditAplicado: cred, email: u.email || "" } },
         metadata: { uid, plan, periodo },

@@ -40,6 +40,11 @@ async function logAdmin(db, { adminUid, action, targetUid = null, targetEmail = 
 // Nombre lindo del plan para mails / UI del backend.
 const PLAN_LABEL = { plus: "Pro", full: "Pro", medio: "Intermedio", facturador: "Facturador", free: "Free" };
 const planLabel = p => PLAN_LABEL[p] || "Pro";
+// Multi-tienda: el plan incluye 1 tienda; cada tienda ADICIONAL suma esto por
+// mes (USD). Mismo cuadro que api/stripe.js (PRECIO_EXTRA_TIENDA) y AppPlanes.
+const PLAN_EXTRA_TIENDA = { facturador: 5, medio: 10, plus: 15, full: 15 };
+const tiendasExtraDe = (d) => (Array.isArray(d?.tiendas) ? d.tiendas : []).filter(t => t && t.uid && !t.deleted).length;
+const extraUsdDe = (d) => { const p = d?.plan === "full" ? "plus" : d?.plan; return (PLAN_EXTRA_TIENDA[p] || 0) * tiendasExtraDe(d); };
 const CONFIG_DOC = "growith_app_config";
 function addMonths(date, n) { const d = new Date(date); d.setMonth(d.getMonth() + Number(n)); return d; }
 // ─── fin Admin constants ──────────────────────────────────────────────────
@@ -898,33 +903,130 @@ export default async function handler(req, res) {
       };
       const myUid = authUser.uid;
       const myEmail = String(authUser.email || "").toLowerCase().trim();
-      let q = await db.collection("users").where("teamUids", "array-contains", myUid).limit(1).get();
-      if (!q.empty) {
-        const d = q.docs[0].data() || {};
-        const m = (d.teamMembers || {})[myUid];
-        return res.json({ ok: true, ownerId: q.docs[0].id, secciones: m ? (m.secciones || {}) : null, ownerNombre: d.nombre || d.email || "", miembroNombre: m?.nombre || "", ownerCtx: ownerCtx(d) });
-      }
+
+      // ── Multi-tienda ────────────────────────────────────────────────
+      // Un PERFIL (login) puede tener varias TIENDAS. Cada tienda es un doc
+      // users/{uid} completo (integraciones + datos). El perfil figura en
+      // teamUids/teamMembers de cada tienda que posee (rol "owner") → las
+      // reglas de Firestore y requireUid ya le dan acceso; el front opera
+      // "sobre otro uid" igual que el modo miembro. Devolvemos TODAS las
+      // tiendas (propias + espacios donde soy miembro) y cuál está activa.
+      const myRef = db.collection("users").doc(myUid);
+      const mySnap = await myRef.get();
+      const my = mySnap.data() || {};
+      const selfMovida = !!(my.ownerUid && my.ownerUid !== myUid); // mi doc ya no es mío (tienda movida)
+      const selfBorrada = my.deleted === true;
+
+      // 1) Invitación pendiente por email → la reclamamos (como antes).
       if (myEmail) {
-        q = await db.collection("users").where("teamInviteEmails", "array-contains", myEmail).limit(1).get();
-        if (!q.empty) {
-          const ref = q.docs[0].ref;
-          const out = await db.runTransaction(async tx => {
+        const qi = await db.collection("users").where("teamInviteEmails", "array-contains", myEmail).limit(1).get();
+        if (!qi.empty) {
+          const ref = qi.docs[0].ref;
+          await db.runTransaction(async tx => {
             const s = await tx.get(ref); const d = s.data() || {};
             const invites = Array.isArray(d.teamInvites) ? d.teamInvites : [];
             const inv = invites.find(i => String(i.email || "").toLowerCase() === myEmail);
-            if (!inv) return null;
+            if (!inv) return;
             tx.update(ref, {
               teamMembers: { ...(d.teamMembers || {}), [myUid]: { email: myEmail, nombre: inv.nombre || "", secciones: inv.secciones || {}, desde: Date.now() } },
               teamUids: FieldValue.arrayUnion(myUid),
               teamInvites: invites.filter(i => String(i.email || "").toLowerCase() !== myEmail),
               teamInviteEmails: FieldValue.arrayRemove(myEmail),
             });
-            return { ownerId: ref.id, secciones: inv.secciones || {}, ownerNombre: d.nombre || d.email || "", miembroNombre: inv.nombre || "", ownerCtx: ownerCtx(d) };
-          });
-          if (out) { clearTeamCache(out.ownerId); return res.json({ ok: true, ...out }); }
+          }).catch(() => {});
+          clearTeamCache(ref.id);
         }
       }
-      return res.json({ ok: true, ownerId: null });
+
+      // 2) Todos los espacios donde figuro en teamUids (tiendas propias + equipos ajenos).
+      const qs = await db.collection("users").where("teamUids", "array-contains", myUid).get();
+      const tiendas = [];
+      const docsById = {};
+      if (!selfMovida && !selfBorrada) {
+        tiendas.push({ uid: myUid, nombre: my.nombreTienda || my.nombre || my.email || "Mi tienda", color: my.colorTienda || "#7c3aed", rol: "owner", esSelf: true });
+        docsById[myUid] = my;
+      }
+      for (const doc of qs.docs) {
+        const d = doc.data() || {};
+        if (d.deleted === true) continue;
+        const m = (d.teamMembers || {})[myUid] || {};
+        const esOwner = d.ownerUid === myUid || m.rol === "owner";
+        tiendas.push({ uid: doc.id, nombre: d.nombreTienda || d.nombre || d.email || "Tienda", color: d.colorTienda || "#7c3aed", rol: esOwner ? "owner" : "miembro", esSelf: false, secciones: esOwner ? null : (m.secciones || {}), ownerNombre: d.nombre || d.email || "" });
+        docsById[doc.id] = d;
+      }
+      // Tiendas propias: mantenemos el plan del PERFIL espejado en el doc de la
+      // tienda (por si algún endpoint mira users/{tienda}.plan).
+      for (const t of tiendas) {
+        if (t.rol !== "owner" || t.esSelf) continue;
+        const d = docsById[t.uid];
+        const espejo = { plan: my.plan || "free", planExpiry: my.planExpiry || null, trialEnd: my.trialEnd || null, isTrial: my.isTrial === true };
+        const distinto = (d.plan || "free") !== espejo.plan || String(d.planExpiry?.toMillis?.() || d.planExpiry || "") !== String(my.planExpiry?.toMillis?.() || my.planExpiry || "");
+        if (distinto) db.collection("users").doc(t.uid).set(espejo, { merge: true }).catch(() => {});
+      }
+
+      // 3) Tienda activa: la guardada en el perfil si sigue existiendo; si no, la propia; si no, la primera.
+      let activeUid = my.active_tienda_uid && tiendas.some(t => t.uid === my.active_tienda_uid) ? my.active_tienda_uid : null;
+      if (!activeUid) activeUid = (tiendas.find(t => t.esSelf) || tiendas.find(t => t.rol === "owner") || tiendas[0])?.uid || null;
+      const active = tiendas.find(t => t.uid === activeUid) || null;
+
+      // 4) Contexto de puertas del front: plan del PERFIL para tiendas propias
+      //    (un pago cubre todas), plan del dueño para espacios ajenos; tiendas
+      //    conectadas siempre del doc de la tienda activa.
+      let ctx = null;
+      if (active) {
+        const dAct = docsById[active.uid] || {};
+        ctx = active.rol === "owner" ? { ...ownerCtx({ ...my, uid: myUid }), stores: ownerCtx(dAct).stores } : ownerCtx(dAct);
+        ctx.tiendasExtra = tiendasExtraDe(my);
+        ctx.extraUsdMensual = extraUsdDe(my);
+        ctx.extraPorTienda = PLAN_EXTRA_TIENDA[my.plan === "full" ? "plus" : my.plan] || 0;
+      }
+
+      // Compatibilidad con el modo miembro viejo: ownerId/secciones apuntan a la activa si no es mi doc.
+      const esAjena = active && active.uid !== myUid;
+      return res.json({
+        ok: true,
+        tiendas,
+        activeTiendaUid: activeUid,
+        activeRol: active?.rol || null,
+        selfMovida, selfMovidaA: selfMovida ? (my.ownerEmail || null) : null,
+        ownerId: esAjena ? active.uid : null,
+        secciones: esAjena ? (active.rol === "owner" ? null : (active.secciones || {})) : null,
+        ownerNombre: esAjena ? (active.ownerNombre || active.nombre || "") : "",
+        miembroNombre: esAjena && active.rol !== "owner" ? (((docsById[active.uid] || {}).teamMembers || {})[myUid]?.nombre || "") : "",
+        ownerCtx: ctx,
+      });
+    }
+
+    // ── CRON: purga total de cuentas eliminadas hace ≥30 días ────────────────
+    // Vercel Cron (Bearer CRON_SECRET). Borra el doc users/{uid} con TODAS sus
+    // subcolecciones y los documentos de las colecciones raíz que llevan el uid
+    // (reclamos/canjes por ownerId; tareas/colaboradores/pagos por uid).
+    if (action === "cron_purgar_cuentas" || req.query.action === "cron_purgar_cuentas") {
+      const secret = process.env.CRON_SECRET || "";
+      const hdr = String(req.headers.authorization || "");
+      if (!secret || hdr !== `Bearer ${secret}`) return res.status(401).json({ error: "No autorizado" });
+      const nowIso = new Date().toISOString();
+      const vencidas = await db.collection("users").where("deleted", "==", true).limit(20).get();
+      const purgadas = [], errores = [];
+      for (const doc of vencidas.docs) {
+        const d = doc.data() || {};
+        if (!d.purgeAt || d.purgeAt > nowIso) continue;
+        try {
+          const uidP = doc.id;
+          const ROOT = [["reclamos", "ownerId"], ["canjes", "ownerId"], ["tareas", "uid"], ["colaboradores", "uid"], ["pagos", "uid"]];
+          for (const [col, campo] of ROOT) {
+            let snap;
+            do {
+              snap = await db.collection(col).where(campo, "==", uidP).limit(300).get();
+              const batch = db.batch(); snap.docs.forEach(x => batch.delete(x.ref)); if (!snap.empty) await batch.commit();
+            } while (!snap.empty);
+          }
+          await db.recursiveDelete(doc.ref); // doc + subcolecciones
+          purgadas.push(uidP);
+        } catch (e) { errores.push({ uid: doc.id, error: e.message }); }
+      }
+      if (purgadas.length) await logAdmin(db, { adminUid: "cron", action: "cuentas_purgadas", detalle: purgadas.join(",") });
+      return res.json({ ok: true, purgadas, errores });
     }
 
     // ── ACCIONES AUTENTICADAS (uid + token de Firebase atado a ese uid) ───────
@@ -1030,6 +1132,168 @@ export default async function handler(req, res) {
         });
         clearTeamCache(uid);
         return res.json({ ok: true });
+      }
+    }
+
+    // ── MULTI-TIENDA: gestión de tiendas del PERFIL ─────────────────────────
+    // Estas acciones las hace el LOGIN sobre sí mismo (uid = su propio uid, no
+    // el de la tienda activa). Un miembro/colaborador/admin no gestiona tiendas ajenas.
+    if (["tiendaCrear", "tiendaActivar", "tiendaRenombrar", "tiendaEliminar", "tenantPatch", "tiendaTransferir", "cuentaEliminar"].includes(action)) {
+      const me = await verifyAuth(req);
+      if (!me || me.uid !== uid) return res.status(403).json({ error: "Solo el dueño del perfil puede hacer esto." });
+      if (colabAuth) return res.status(403).json({ error: "No autorizado" });
+      const myRef = db.collection("users").doc(uid);
+      const my = (await myRef.get()).data() || {};
+      const BLOQUEADAS = ["plan", "planExpiry", "trialEnd", "isTrial", "isAdmin", "teamMembers", "teamUids", "teamInvites", "teamInviteEmails", "ownerUid", "ownerEmail", "tiendas", "active_tienda_uid", "email", "uid", "deleted", "deletedAt", "purgeAt", "esTienda", "refCreditUsd"];
+      const esOwnerDe = (tid, d) => tid === uid ? !(d.ownerUid && d.ownerUid !== uid) : d.ownerUid === uid;
+      const syncStripe = async () => { try { const { syncTiendasExtra } = await import("./stripe.js"); await syncTiendasExtra(db, uid); } catch (e) { console.warn("[tiendas] stripe sync:", e.message); } };
+
+      if (action === "tiendaCrear") {
+        const nombre = String(body.nombre || "").trim().slice(0, 60);
+        const color = /^#[0-9a-fA-F]{6}$/.test(String(body.color || "")) ? body.color : "#7c3aed";
+        if (!nombre) return res.status(400).json({ error: "Poné un nombre para la tienda." });
+        if (my.ownerUid && my.ownerUid !== uid) return res.status(403).json({ error: "Este usuario ya no tiene un perfil propio (su tienda fue movida)." });
+        if ((my.plan || "free") === "free" && !(my.trialEnd && new Date(my.trialEnd?.toDate?.() || my.trialEnd) > new Date())) return res.status(402).json({ error: "Para agregar tiendas necesitás un plan activo." });
+        const tid = "t_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        const now = new Date().toISOString();
+        await db.collection("users").doc(tid).set({
+          uid: tid, esTienda: true, nombreTienda: nombre, colorTienda: color, nombre, email: my.email || "",
+          ownerUid: uid, ownerEmail: my.email || "",
+          teamUids: [uid], teamMembers: { [uid]: { email: my.email || "", nombre: my.nombre || "Dueño", rol: "owner", secciones: {}, desde: Date.now() } },
+          stores: [], cuits: [], metaAccounts: [],
+          plan: my.plan || "free", planExpiry: my.planExpiry || null, trialEnd: my.trialEnd || null, isTrial: my.isTrial === true,
+          onbDone: true, createdAt: FieldValue.serverTimestamp(), createdAtIso: now,
+        });
+        await myRef.set({ tiendas: FieldValue.arrayUnion({ uid: tid, nombre, color, rol: "owner", createdAt: now }), active_tienda_uid: tid }, { merge: true });
+        clearTeamCache(tid);
+        await syncStripe();
+        return res.json({ ok: true, tienda: { uid: tid, nombre, color, rol: "owner" } });
+      }
+
+      if (action === "tiendaActivar") {
+        const tid = String(body.tiendaUid || "").trim();
+        if (!tid) return res.status(400).json({ error: "Falta tiendaUid" });
+        if (tid !== uid) {
+          const d = (await db.collection("users").doc(tid).get()).data();
+          if (!d || d.deleted || !(Array.isArray(d.teamUids) && d.teamUids.includes(uid))) return res.status(403).json({ error: "No tenés acceso a esa tienda." });
+        }
+        await myRef.set({ active_tienda_uid: tid }, { merge: true });
+        return res.json({ ok: true, activeTiendaUid: tid });
+      }
+
+      if (action === "tiendaRenombrar") {
+        const tid = String(body.tiendaUid || uid).trim();
+        const nombre = String(body.nombre || "").trim().slice(0, 60);
+        const color = /^#[0-9a-fA-F]{6}$/.test(String(body.color || "")) ? body.color : null;
+        if (!nombre) return res.status(400).json({ error: "Poné un nombre." });
+        const tRef = db.collection("users").doc(tid);
+        const d = (await tRef.get()).data();
+        if (!d || !esOwnerDe(tid, d)) return res.status(403).json({ error: "Solo el dueño puede renombrar la tienda." });
+        await tRef.set({ nombreTienda: nombre, ...(color ? { colorTienda: color } : {}) }, { merge: true });
+        if (tid !== uid) {
+          const lista = (Array.isArray(my.tiendas) ? my.tiendas : []).map(t => t.uid === tid ? { ...t, nombre, ...(color ? { color } : {}) } : t);
+          await myRef.set({ tiendas: lista }, { merge: true });
+        }
+        return res.json({ ok: true });
+      }
+
+      if (action === "tiendaEliminar") {
+        // Solo tiendas ADICIONALES (t_...). La propia se elimina con cuentaEliminar.
+        const tid = String(body.tiendaUid || "").trim();
+        if (!tid || tid === uid) return res.status(400).json({ error: "Para eliminar tu tienda principal, eliminá la cuenta." });
+        const tRef = db.collection("users").doc(tid);
+        const d = (await tRef.get()).data();
+        if (!d || d.ownerUid !== uid) return res.status(403).json({ error: "Solo el dueño puede eliminar la tienda." });
+        const purgeAt = new Date(Date.now() + 30 * 86400000).toISOString();
+        await tRef.set({ deleted: true, deletedAt: new Date().toISOString(), purgeAt, deletedBy: uid }, { merge: true });
+        const lista = (Array.isArray(my.tiendas) ? my.tiendas : []).map(t => t.uid === tid ? { ...t, deleted: true } : t);
+        const patch = { tiendas: lista };
+        if (my.active_tienda_uid === tid) patch.active_tienda_uid = uid;
+        await myRef.set(patch, { merge: true });
+        clearTeamCache(tid);
+        await syncStripe();
+        return res.json({ ok: true, purgeAt });
+      }
+
+      if (action === "tenantPatch") {
+        // Escrituras del front al doc de una tienda ajena (las reglas solo dejan
+        // escribir el doc al uid == auth). Solo el DUEÑO y solo campos no sensibles.
+        const tid = String(body.tiendaUid || "").trim();
+        const patch = (body.patch && typeof body.patch === "object") ? body.patch : null;
+        if (!tid || !patch) return res.status(400).json({ error: "Faltan tiendaUid/patch" });
+        const malas = Object.keys(patch).filter(k => BLOQUEADAS.includes(k) || k.startsWith("stripe") || k.includes("."));
+        if (malas.length) return res.status(400).json({ error: "Campos no permitidos: " + malas.join(", ") });
+        const tRef = db.collection("users").doc(tid);
+        const d = (await tRef.get()).data();
+        if (!d || !esOwnerDe(tid, d)) return res.status(403).json({ error: "Solo el dueño puede modificar la tienda." });
+        await tRef.set(patch, { merge: true });
+        return res.json({ ok: true });
+      }
+
+      if (action === "tiendaTransferir") {
+        // "Pasaje": mover ESTA tienda (mi doc) a otro perfil por email. El otro
+        // perfil pasa a ser dueño; este login deja de serlo. Si me quedo sin
+        // tiendas, mi plan viaja con la tienda (la suscripción de Stripe se
+        // reasigna a mano). Pensado para el caso puntual de Thiago; retirar después.
+        const emailDestino = String(body.emailDestino || "").toLowerCase().trim();
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailDestino)) return res.status(400).json({ error: "Email inválido" });
+        if (my.ownerUid && my.ownerUid !== uid) return res.status(403).json({ error: "Esta tienda ya fue movida." });
+        let au; try { au = await getAuth().getUserByEmail(emailDestino); } catch (_) { au = null; }
+        if (!au) return res.status(404).json({ error: "Ese email no tiene cuenta en Growith. Que se registre primero y volvé a intentar." });
+        if (au.uid === uid) return res.status(400).json({ error: "Ese sos vos." });
+        const tRef = db.collection("users").doc(au.uid);
+        const tSnap = await tRef.get();
+        if (!tSnap.exists) return res.status(404).json({ error: "El perfil destino todavía no inició sesión en Growith." });
+        const target = tSnap.data() || {};
+        const nombre = my.nombreTienda || my.nombre || my.email || "Tienda";
+        const now = new Date().toISOString();
+        const meQuedoSinTiendas = tiendasExtraDe(my) === 0;
+        await myRef.set({
+          ownerUid: au.uid, ownerEmail: emailDestino, transferidaAt: now, transferidaDesde: my.email || "",
+          teamUids: FieldValue.arrayUnion(au.uid),
+          teamMembers: { ...(my.teamMembers || {}), [au.uid]: { email: emailDestino, nombre: target.nombre || "Dueño", rol: "owner", secciones: {}, desde: Date.now() } },
+        }, { merge: true });
+        const targetPatch = { tiendas: FieldValue.arrayUnion({ uid, nombre, color: my.colorTienda || "#7c3aed", rol: "owner", createdAt: now, transferida: true }), active_tienda_uid: uid };
+        // Plan viaja con la tienda si el perfil viejo queda sin tiendas y el destino no tiene uno mejor.
+        if (meQuedoSinTiendas && (my.plan || "free") !== "free" && (target.plan || "free") === "free") {
+          Object.assign(targetPatch, { plan: my.plan, planExpiry: my.planExpiry || null, isTrial: false, planActivadoBy: "transferencia", planActivadoAt: new Date(), planTransferidoDe: uid });
+        }
+        await tRef.set(targetPatch, { merge: true });
+        clearTeamCache(uid); clearTeamCache(au.uid);
+        try { const { syncTiendasExtra } = await import("./stripe.js"); await syncTiendasExtra(db, au.uid); } catch (_) {}
+        await logAdmin(db, { adminUid: uid, action: "tienda_transferida", targetUid: au.uid, targetEmail: emailDestino, detalle: `Tienda ${uid} → perfil ${emailDestino}${meQuedoSinTiendas ? " (plan incluido)" : ""}` });
+        return res.json({ ok: true, destino: emailDestino });
+      }
+
+      if (action === "cuentaEliminar") {
+        if (String(body.confirm || "") !== "ELIMINAR") return res.status(400).json({ error: "Escribí ELIMINAR para confirmar." });
+        const now = new Date().toISOString();
+        const purgeAt = new Date(Date.now() + 30 * 86400000).toISOString();
+        // 1) Cobro: cancelar la suscripción de Stripe AHORA (no se cobra más).
+        try { const { cancelarSuscripcionAhora } = await import("./stripe.js"); await cancelarSuscripcionAhora(db, uid); } catch (e) { console.warn("[cuentaEliminar] stripe:", e.message); }
+        // 2) Tiendas adicionales propias → ocultas (se purgan a los 30 días).
+        for (const t of (Array.isArray(my.tiendas) ? my.tiendas : [])) {
+          if (!t?.uid || t.deleted) continue;
+          await db.collection("users").doc(t.uid).set({ deleted: true, deletedAt: now, purgeAt, deletedBy: uid }, { merge: true }).catch(() => {});
+        }
+        // 3) Mi tienda principal (si sigue siendo mía) → oculta 30 días.
+        if (!(my.ownerUid && my.ownerUid !== uid)) {
+          await myRef.set({ deleted: true, deletedAt: now, purgeAt, plan: "free", planExpiry: null, isTrial: false }, { merge: true });
+        }
+        // 4) Salir de los equipos ajenos donde figuro.
+        const qs = await db.collection("users").where("teamUids", "array-contains", uid).get();
+        for (const doc of qs.docs) {
+          const d = doc.data() || {};
+          if (d.ownerUid === uid) continue; // mis tiendas (ya marcadas)
+          const members = { ...(d.teamMembers || {}) }; delete members[uid];
+          await doc.ref.set({ teamMembers: members, teamUids: FieldValue.arrayRemove(uid) }, { merge: true }).catch(() => {});
+          clearTeamCache(doc.id);
+        }
+        // 5) Borrar el login. La purga total de datos la hace cron_purgar_cuentas a los 30 días.
+        try { await getAuth().deleteUser(uid); } catch (e) { console.warn("[cuentaEliminar] deleteUser:", e.message); }
+        clearTeamCache(uid);
+        await logAdmin(db, { adminUid: uid, action: "cuenta_eliminada", targetUid: uid, targetEmail: my.email || "", detalle: `Login borrado; datos ocultos hasta ${purgeAt}` });
+        return res.json({ ok: true, purgeAt });
       }
     }
 

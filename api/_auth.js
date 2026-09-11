@@ -75,11 +75,16 @@ async function _userMeta(uid) {
   const hit = _teamCache.get(uid);
   if (hit && Date.now() - hit.at < 60000) return hit;
   initApp();
-  let team = [], members = {}, isAdmin = false, email = "";
+  let team = [], members = {}, isAdmin = false, email = "", ownerUid = null, deleted = false;
   try {
     const snap = await getFirestore().collection("users").doc(uid).get();
     if (snap.exists) {
       const d = snap.data() || {};
+      // Multi-tienda: ownerUid = perfil (login) dueño de esta tienda. Ausente =
+      // la cuenta es dueña de sí misma (caso clásico). deleted = cuenta en
+      // ventana de 30 días antes de la purga: nadie opera sobre ella.
+      ownerUid = d.ownerUid ? String(d.ownerUid) : null;
+      deleted = d.deleted === true;
       team = Array.isArray(d.teamUids) ? d.teamUids : [];
       // Miembros con permisos POR SECCIÓN: {uid:{email,nombre,secciones:{envios:true,...}}}
       members = (d.teamMembers && typeof d.teamMembers === "object") ? d.teamMembers : {};
@@ -87,7 +92,7 @@ async function _userMeta(uid) {
       email = d.email || "";
     }
   } catch (_) {}
-  const meta = { at: Date.now(), team, members, isAdmin, email };
+  const meta = { at: Date.now(), team, members, isAdmin, email, ownerUid, deleted };
   if (_teamCache.size > 500) _teamCache.clear();
   _teamCache.set(uid, meta);
   return meta;
@@ -107,9 +112,18 @@ export async function requireUid(req, uid, seccion) {
   if (ro) return ro;
   const target = String(uid || "").trim();
   if (!target) return { ok: false, code: 400, error: "uid requerido" };
-  if (user.uid === target) return { ok: true, user };
-  // ¿el solicitante está habilitado como equipo en la cuenta destino?
   const meta = await _userMeta(target);
+  // Cuenta en ventana de borrado: nadie opera sobre ella (ni su ex dueño).
+  if (meta.deleted) return { ok: false, code: 403, error: "Esta cuenta está eliminada." };
+  if (user.uid === target) {
+    // Tienda MOVIDA a otro perfil: el login original ya no es dueño de su
+    // propio doc — no puede operar sobre la tienda aunque el id coincida.
+    if (meta.ownerUid && meta.ownerUid !== user.uid) return { ok: false, code: 403, error: "Esta tienda fue movida a otro perfil. Este usuario ya no tiene acceso." };
+    return { ok: true, user };
+  }
+  // Perfil DUEÑO de esta tienda (multi-tienda): acceso total, como el dueño clásico.
+  if (meta.ownerUid && meta.ownerUid === user.uid) return { ok: true, user, viaOwner: true };
+  // ¿el solicitante está habilitado como equipo en la cuenta destino?
   const member = meta.members ? meta.members[user.uid] : null;
   if (member) {
     // Miembro con permisos por sección: si el endpoint declara sección, se

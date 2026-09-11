@@ -24,6 +24,7 @@
     { "path": "/api/update-shipping?action=track_all", "schedule": "*/30 * * * *" },
     { "path": "/api/tareas?action=cron_deadlines", "schedule": "30 12 * * *" },
     { "path": "/api/arca?action=cron_autopilot", "schedule": "5 * * * *" },
-    { "path": "/api/pagos-cal?action=cron_avisos", "schedule": "0 12 * * *" }
+    { "path": "/api/pagos-cal?action=cron_avisos", "schedule": "0 12 * * *" },
+    { "path": "/api/tareas?action=cron_purgar_cuentas", "schedule": "30 10 * * *" }
   ]
 }
