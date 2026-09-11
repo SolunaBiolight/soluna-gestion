@@ -1124,10 +1124,15 @@ export default async function handler(req, res) {
       } catch (e) { console.warn("[cron-token-refresh] sweep failed:", e.message); }
 
       // 2) Evaluación de reglas activas
-      const allRules = await db.collectionGroup("meta_rules").where("active", "==", true).get();
+      // Sin .where(): un collectionGroup CON filtro exige un índice de grupo en
+      // Firestore (FAILED_PRECONDITION "requires a COLLECTION_GROUP_ASC index")
+      // que hay que crear a mano en la consola. Sin filtro no requiere índice;
+      // filtramos `active` en memoria (son pocas reglas por cuenta).
+      const allRules = await db.collectionGroup("meta_rules").get();
       const tasks = new Map();
       allRules.docs.forEach(d => {
         const data = d.data();
+        if (data.active !== true) return;
         const ownerUid = d.ref.parent.parent.id;
         if (data.acc_id) tasks.set(`${ownerUid}|${data.acc_id}`, { uid: ownerUid, accId: data.acc_id });
       });

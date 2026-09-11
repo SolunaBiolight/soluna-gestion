@@ -54,7 +54,11 @@ export default async function handler(req, res) {
   // cuentas Growith donde esté conectada (el doc id de meta_accounts = fb user id).
   try {
     const db = initAdmin();
-    const snap = await db.collectionGroup("meta_accounts").where("user_id", "==", fbUserId).get();
+    // collectionGroup CON .where() exige un índice de grupo en Firestore (falla con
+    // FAILED_PRECONDITION si no existe). Sin filtro no lo necesita; filtramos en memoria.
+    const _allAccs = await db.collectionGroup("meta_accounts").get();
+    const _docs = _allAccs.docs.filter(d => String(d.data()?.user_id || "") === String(fbUserId));
+    const snap = { docs: _docs, empty: _docs.length === 0, size: _docs.length };
     const batch = db.batch();
     snap.docs.forEach(d => {
       batch.delete(d.ref);
