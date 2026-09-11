@@ -268,10 +268,16 @@ export async function computeRates(db, uid, rate, { shopHdr = "", t0 = Date.now(
       rates.push({ service_name: "Andreani a domicilio", service_code: "ANDREANI_DOM", total_price: cents(gratis ? 0 : recargo(dom)), currency, description: "2 a 5 días hábiles · Andreani te lo lleva a la dirección que cargaste" });
     }
     if (suc != null && sucursales.length) {
-      // El orden ya viene por cercanía (CP exacto primero, después vecinos).
-      for (const s of sucursales) {
-        rates.push({ service_name: tituloSucursal(s), service_code: `ANDREANI_SUC_${s.id}`, total_price: cents(gratis ? 0 : recargo(suc)), currency, description: descSucursal(s) });
-      }
+      // Shopify ordena por precio y, a igual precio, por NOMBRE (alfabético):
+      // para que la más cercana quede SIEMPRE arriba, cada posición suma $10
+      // al precio (5.790 / 5.800 / 5.810…). Con envío gratis (todas $0) se
+      // antepone un numerito ①②③ que ordena igual.
+      const CIRC = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩", "⑪", "⑫"];
+      sucursales.forEach((s, i) => {
+        const precio = gratis ? 0 : recargo(suc) + i * 10;
+        const nombre = gratis ? tituloSucursal(s).replace("Andreani Sucursal · ", `Andreani Sucursal ${CIRC[i] || ""} `) : tituloSucursal(s);
+        rates.push({ service_name: nombre, service_code: `ANDREANI_SUC_${s.id}`, total_price: cents(precio), currency, description: descSucursal(s) });
+      });
     } else if (suc != null && quiereSuc) errs.push(`sin sucursales Andreani para el CP ${cp}`);
     return rates;
   })();
