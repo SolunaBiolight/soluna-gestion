@@ -16,7 +16,7 @@
 // a lo cacheado o a lista vacía (Shopify muestra los otros métodos).
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { andreaniEnv, andreaniFetch, slimSucursal, getGlobalConfig, sucursalesPorCp, sucursalesTodas, sucursalesCercanasCore, cotizarAndreani, precioConMarkup, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
+import { andreaniEnv, andreaniFetch, slimSucursal, distanciaM, getGlobalConfig, sucursalesPorCp, sucursalesTodas, sucursalesCercanasCore, cotizarAndreani, precioConMarkup, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -95,36 +95,46 @@ const esRetiroPublico = s => s.entrega && s.atencion && !/planta/i.test(s.tipo |
 const SUC_LIST_TTL_MS = 7 * 86400000;
 async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
   const nrm = v => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
-  const cacheRef = db.collection("andreani_config").doc(`rates_suc2_${cp}_${nrm(loc) || "x"}`);
+  const cacheRef = db.collection("andreani_config").doc(`rates_suc3_${cp}_${nrm(loc) || "x"}`);
   try {
     const c = (await cacheRef.get()).data();
     if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return c.lista.slice(0, max);
   } catch (_) {}
   let lista = [];
-  // 1) Las que ATIENDEN ese CP según Andreani (codigosPostalesAtendidos):
-  //    mismo CP primero, después misma localidad, después el resto.
   try {
-    const b2c = await sucursalesB2CCheckout(db, env);
-    const locN = nrm(loc);
-    const sirve = b2c.filter(s => esRetiroPublico(s) && s.cps.includes(String(cp)));
-    const score = s => (String(s.direccion?.codigoPostal || "") === String(cp) ? 2 : 0) + (locN && nrm(s.direccion?.localidad).includes(locN) ? 1 : 0);
-    lista = sirve.sort((a, b) => score(b) - score(a));
+    const pub = (await sucursalesB2CCheckout(db, env)).filter(esRetiroPublico);
+    const enAR = s => s.lat != null && s.lng != null && s.lat <= -21 && s.lat >= -56 && s.lng <= -53 && s.lng >= -74;
+    const mediana = arr => { const a = [...arr].sort((x, y) => x - y); return a[Math.floor(a.length / 2)]; };
+    const med = arr => ({ lat: mediana(arr.map(s => s.lat)), lng: mediana(arr.map(s => s.lng)) });
+    const cpS = String(cp);
+    // 1) Las que Andreani define que ATIENDEN ese CP.
+    const sirve = pub.filter(s => s.cps.includes(cpS));
+    // Ancla: sucursales ubicadas EN ese CP (o, si no hay, las que lo atienden).
+    const mismoCp = pub.filter(s => String(s.direccion?.codigoPostal || "").replace(/\D/g, "").slice(0, 4) === cpS && enAR(s));
+    const base = mismoCp.length ? mismoCp : sirve.filter(enAR);
+    const anchor = base.length ? med(base) : null;
+    const dist = s => (anchor && enAR(s)) ? distanciaM(anchor.lat, anchor.lng, s.lat, s.lng) : null;
+    // Mismo CP primero; después por distancia al ancla (sin coords, al final).
+    const rank = s => (String(s.direccion?.codigoPostal || "").replace(/\D/g, "").slice(0, 4) === cpS ? 0 : 1e9) + (dist(s) ?? 5e8);
+    lista = [...sirve].sort((a, b) => rank(a) - rank(b));
+    // 2) Si son pocas, completar con las más cercanas al ancla (hasta 25 km).
+    if (lista.length < max && anchor) {
+      const ids = new Set(lista.map(s => String(s.id)));
+      const fill = pub.filter(s => !ids.has(String(s.id)) && dist(s) != null && dist(s) <= 25000).sort((a, b) => dist(a) - dist(b));
+      lista = [...lista, ...fill];
+    }
   } catch (_) {}
-  // 2) Si Andreani no define suficientes para ese CP, completar por distancia.
-  if (lista.length < Math.min(3, max)) try {
+  // 3) Sin listado B2C: motor de cercanías de Envíos o CP exacto + vecinos.
+  if (!lista.length) try {
     const out = await Promise.race([
       sucursalesCercanasCore(db, env, { q: "", cp, dir: "", loc: loc || "", prov: prov || "" }),
       new Promise(r => setTimeout(() => r(null), 5500)),
     ]);
-    if (out && Array.isArray(out.sucursales) && out.sucursales.length && !out.sinOrigen) {
-      // Ranking real por distancia: cortar lo que quede muy lejos (> 25 km)
-      const ids = new Set(lista.map(s => String(s.id)));
-      lista = [...lista, ...out.sucursales.filter(s => !ids.has(String(s.id)) && (s.distM == null || s.distM <= 25000))];
-    }
+    if (out && Array.isArray(out.sucursales) && out.sucursales.length && !out.sinOrigen) lista = out.sucursales.filter(s => s.distM == null || s.distM <= 25000);
   } catch (_) {}
   if (!lista.length) lista = await sucursalesCercanasCp(db, env, cp, 12);
   lista = dedupeSucursales(lista.filter(esPuntoPublico)).slice(0, 12)
-    .map(s => ({ id: s.id, descripcion: s.descripcion || "", direccion: s.direccion || null, horarioDeAtencion: s.horarioDeAtencion || "", distM: s.distM ?? null }));
+    .map(s => ({ id: s.id, descripcion: s.descripcion || "", direccion: s.direccion || null, horarioDeAtencion: s.horarioDeAtencion || "" }));
   if (lista.length) cacheRef.set({ ratesUid: "_suc", cp, ts: Date.now(), lista }).catch(() => {});
   return lista.slice(0, max);
 }
