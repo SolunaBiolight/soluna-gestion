@@ -820,6 +820,161 @@ async function envioPerteneceAlUid(db, uid, numero) {
 
 // ─── Handler ───────────────────────────────────────────────────────────────
 
+// Motor de cercanías (lo usan la acción sucursales_cercanas y el checkout de
+// Shopify): ancla = geocodificación de la dirección → tokens → centroide del
+// CP/localidad; ranking por distancia con dedupe. Devuelve {sucursales,
+// origen, aproximado?, sinOrigen?, stats, error?} — nunca lanza.
+export async function sucursalesCercanasCore(db, env, body) {
+  const q = nrmTxt(String(body.q || "").trim());
+  const cp = String(body.cp || "").replace(/\D/g, "");
+  const dir = String(body.dir || "").trim();
+  const loc = String(body.loc || "").trim();
+  const prov = String(body.prov || "").trim();
+  // Candidatas: listado geo completo (minificado y cacheado); si no está
+  // disponible, al menos las del CP.
+  let geo = [];
+  const geoStats = {};
+  try { geo = await sucursalesGeo(db, env); } catch (_) {}
+  // Caché "envenenada": si menos de la mitad de las sucursales tiene
+  // coordenadas, el ranking por distancia solo puede mostrar esas pocas
+  // (se vio: todas las cercanas a 1100 km, en Misiones — #6207). Se
+  // reconstruye desde Andreani salteando la caché.
+  if (geo.length > 50 && geo.filter(x => x.la != null).length < geo.length * 0.5) {
+    try {
+      const geo2 = await sucursalesGeo(db, env, true);
+      if (geo2.filter(x => x.la != null).length > geo.filter(x => x.la != null).length) geo = geo2;
+    } catch (_) {}
+  }
+  // Coordenadas de la ZONA del pedido (mismo CP / localidad / CABA): las
+  // que falten se geocodifican con georef y quedan cacheadas — Andreani
+  // no manda coords y sin esto las "cercanas" eran las únicas con coords
+  // (Misiones, a 1100 km — #6207).
+  try {
+    const esCabaZ = /c\.?\s*a\.?\s*b\.?\s*a|capital federal|ciudad aut/i.test(loc + " " + prov) || /^1[0-4]\d\d$/.test(cp);
+    const locZ = nrmTxt(loc);
+    const enZona = geo.filter(s => (cp && String(s.p || "").replace(/\D/g, "") === cp)
+      || (esCabaZ ? (/^1[0-4]\d\d$/.test(String(s.p || "").replace(/\D/g, "")) || /capital federal|ciudad aut|caba/i.test(nrmTxt(s.l || "")))
+                  : (locZ && nrmTxt(s.l || "").includes(locZ))));
+    if (enZona.some(s => s.la == null)) {
+      const enriq = await geocodeSucursalesFaltantes(db, enZona, geoStats);
+      const byId = new Map(enriq.map(s => [String(s.id), s]));
+      geo = geo.map(s => byId.get(String(s.id)) || s);
+    }
+  } catch (_) {}
+  if (!geo.length && cp) {
+    try {
+      geo = (await sucursalesPorCp(db, env, cp)).map(x => ({
+        id: x.id, d: x.descripcion || "", c: x.direccion?.calle || "", n: x.direccion?.numero || "",
+        l: x.direccion?.localidad || "", p: x.direccion?.codigoPostal || "", la: x.lat, lo: x.lng,
+      }));
+    } catch (e) { return { sucursales: [], error: e.message }; }
+  }
+  const expand = s => ({
+    id: s.id, descripcion: s.d,
+    direccion: { calle: s.c, numero: s.n, localidad: s.l, codigoPostal: s.p },
+    lat: s.la ?? null, lng: s.lo ?? null,
+  });
+  // 1) Ancla: geocodificación directa de la dirección del pedido.
+  let origen = null;
+  geoStats.dir = dir; geoStats.loc = loc;
+  if (dir) {
+    const g = await geocodeDireccion({ dir, loc, prov, cp });
+    if (g) { origen = { ...g, descripcion: dir }; geoStats.origenSrc = "geocode"; }
+    else geoStats.origenSrc = "geocode_fallo";
+  }
+  // 2) …tokens del punto en el listado oficial…
+  if (!origen && q.length >= 2) {
+    const tokens = q.split(/\s+/).filter(Boolean);
+    const cand = geo.filter(s => {
+      const hay = nrmTxt([s.d, s.c, s.n, s.l].filter(Boolean).join(" "));
+      return tokens.every(t => hay.includes(t));
+    }).filter(s => s.la != null);
+    if (cand.length) { origen = { lat: cand[0].la, lng: cand[0].lo, descripcion: cand[0].d }; geoStats.origenSrc = "tokens"; }
+  }
+  // 3) Centroide de las sucursales del CP del pedido: fallback de ancla y
+  // TAMBIÉN control de cordura del geocoder — una dirección con texto raro
+  // puede geocodificar a cientos de km del CP real del comprador (se vio
+  // "Calle 49 621 Local 9 y 10" de La Plata anclada cerca de Misiones).
+  // Coordenadas válidas = dentro de Argentina. Andreani manda basura para
+  // algunas sucursales (lat/lng cambiados, ceros): promediarlas movía el
+  // "centroide de cordura" a cualquier lado y ESE centroide reemplazaba al
+  // ancla correcta del geocoder (#6207: 1ra candidata a 1093 km).
+  const enAR = (la, lo) => isFinite(la) && isFinite(lo) && la <= -21 && la >= -56 && lo <= -53 && lo >= -74;
+  geo = geo.map(s => (s.la != null && !enAR(s.la, s.lo)) ? { ...s, la: null, lo: null } : s);
+  if (origen && !enAR(origen.lat, origen.lng)) { geoStats.origenSrc = (geoStats.origenSrc || "") + "_fueraAR"; origen = null; }
+  const mediana = arr => { const a = [...arr].sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : null; };
+  const esCabaQ = /c\.?\s*a\.?\s*b\.?\s*a|capital federal|ciudad aut/i.test(loc + " " + prov) || /^1[0-4]\d\d$/.test(cp);
+  let cpCent = null;
+  if (esCabaQ) {
+    cpCent = { lat: -34.6037, lng: -58.3816, descripcion: "CABA" }; // centro fijo, no depende de datos
+  } else if (cp) {
+    const delCp = geo.filter(s => String(s.p || "").replace(/\D/g, "") === cp && s.la != null);
+    if (delCp.length) cpCent = { lat: mediana(delCp.map(s => s.la)), lng: mediana(delCp.map(s => s.lo)), descripcion: `CP ${cp}` };
+  }
+  if (!cpCent && loc) {
+    const locN = nrmTxt(loc);
+    const deLoc = geo.filter(s => s.la != null && locN && nrmTxt(s.l || "").includes(locN));
+    if (deLoc.length >= 3) cpCent = { lat: mediana(deLoc.map(s => s.la)), lng: mediana(deLoc.map(s => s.lo)), descripcion: loc };
+  }
+  geoStats.ancla = origen ? `${origen.lat.toFixed(3)},${origen.lng.toFixed(3)}` : null;
+  geoStats.centro = cpCent ? `${cpCent.descripcion} ${cpCent.lat.toFixed(3)},${cpCent.lng.toFixed(3)}` : null;
+  if (origen && cpCent && distanciaM(origen.lat, origen.lng, cpCent.lat, cpCent.lng) > 150000) { geoStats.origenSrc = (geoStats.origenSrc || "") + "→centro"; origen = cpCent; }
+  if (!origen) origen = cpCent;
+  // El listado oficial repite la misma sucursal con variantes (CP, tildes,
+  // "C.A.B.A." vs nombre largo): dedupe por descripción + número de calle.
+  const dedupe = arr => {
+    const vistos = new Set();
+    return arr.filter(s => {
+      const num = (String(s.c || "") + " " + String(s.n || "")).match(/\d{2,}/);
+      const k = nrmTxt(s.d).replace(/[^a-z0-9]/g, "") + "|" + (num ? num[0] : "");
+      if (vistos.has(k)) return false;
+      vistos.add(k);
+      return true;
+    });
+  };
+  const conCoords = geo.filter(s => s.la != null).length;
+  const stats = { todas: geo.length, conCoords, geo: geoStats };
+  if (origen && conCoords) {
+    const conDist = dedupe(geo
+      .filter(s => s.la != null)
+      .map(s => ({ ...s, distM: distanciaM(origen.lat, origen.lng, s.la, s.lo) }))
+      .sort((a, b) => a.distM - b.distM))
+      .slice(0, 40)
+      .map(s => ({ ...expand(s), distM: s.distM }));
+    // Cordura del resultado: si la MÁS cercana está a más de 300 km, el
+    // ranking no sirve (coords parciales) → aproximación por localidad.
+    geoStats.primerKm = conDist.length ? Math.round(conDist[0].distM / 1000) : null;
+    geoStats.conCoords = conCoords;
+    if (conDist.length && conDist[0].distM <= 300000) {
+      return { sucursales: conDist, origen: origen.descripcion, stats };
+    }
+  }
+  // Aproximación por localidad (sin CP o sin coords útiles): CABA por
+  // rango de CP 1000-1499 o nombre; otras por texto de localidad.
+  {
+    const esCabaL = /c\.?\s*a\.?\s*b\.?\s*a|capital federal|ciudad aut/i.test(loc + " " + prov);
+    const locN = nrmTxt(loc);
+    const deLoc = geo.filter(s => esCabaL
+      ? (/^1[0-4]\d\d$/.test(String(s.p || "").replace(/\D/g, "")) || /capital federal|ciudad aut|caba/i.test(nrmTxt(s.l || "")))
+      : (locN && nrmTxt(s.l || "").includes(locN)));
+    if (deLoc.length) {
+      const lista = dedupe(deLoc).slice(0, 40).map(expand);
+      return { sucursales: lista, origen: esCabaL ? "CABA" : loc, aproximado: true, stats };
+    }
+  }
+  // Sin coordenadas o sin ancla: aproximación por CP (mismo CP primero,
+  // después el resto de la misma localidad).
+  if (cp) {
+    const mismoCp = geo.filter(s => String(s.p || "").replace(/\D/g, "") === cp);
+    const locCp = nrmTxt(mismoCp[0]?.l || loc || "");
+    const mismaLoc = locCp ? geo.filter(s => nrmTxt(s.l || "") === locCp && !mismoCp.includes(s)) : [];
+    const lista = dedupe([...mismoCp, ...mismaLoc]).slice(0, 40).map(expand);
+    if (lista.length) return { sucursales: lista, origen: `CP ${cp}`, aproximado: true, stats };
+  }
+  return { sucursales: [], sinOrigen: true, stats };
+
+}
+
 export default async function handler(req, res) {
   { const _o = String(req.headers.origin || ""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o) || /^https:\/\/[a-z0-9-]+-soluna1\.vercel\.app$/.test(_o) || /^http:\/\/localhost(:\d+)?$/.test(_o)) ? _o : "https://www.growithapp.com"); } // allowlist CORS (regex anclada: "evil-soluna1.vercel.app" y "localhost.evil.com" no pasan)
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -1078,153 +1233,9 @@ export default async function handler(req, res) {
     // exista en ningún listado. Fallbacks: tokens del punto en el listado
     // oficial → centroide del CP → aproximación por CP sin distancias.
     if (action === "sucursales_cercanas") {
-      const q = nrmTxt(String(body.q || "").trim());
-      const cp = String(body.cp || "").replace(/\D/g, "");
-      const dir = String(body.dir || "").trim();
-      const loc = String(body.loc || "").trim();
-      const prov = String(body.prov || "").trim();
-      // Candidatas: listado geo completo (minificado y cacheado); si no está
-      // disponible, al menos las del CP.
-      let geo = [];
-      const geoStats = {};
-      try { geo = await sucursalesGeo(db, env); } catch (_) {}
-      // Caché "envenenada": si menos de la mitad de las sucursales tiene
-      // coordenadas, el ranking por distancia solo puede mostrar esas pocas
-      // (se vio: todas las cercanas a 1100 km, en Misiones — #6207). Se
-      // reconstruye desde Andreani salteando la caché.
-      if (geo.length > 50 && geo.filter(x => x.la != null).length < geo.length * 0.5) {
-        try {
-          const geo2 = await sucursalesGeo(db, env, true);
-          if (geo2.filter(x => x.la != null).length > geo.filter(x => x.la != null).length) geo = geo2;
-        } catch (_) {}
-      }
-      // Coordenadas de la ZONA del pedido (mismo CP / localidad / CABA): las
-      // que falten se geocodifican con georef y quedan cacheadas — Andreani
-      // no manda coords y sin esto las "cercanas" eran las únicas con coords
-      // (Misiones, a 1100 km — #6207).
-      try {
-        const esCabaZ = /c\.?\s*a\.?\s*b\.?\s*a|capital federal|ciudad aut/i.test(loc + " " + prov) || /^1[0-4]\d\d$/.test(cp);
-        const locZ = nrmTxt(loc);
-        const enZona = geo.filter(s => (cp && String(s.p || "").replace(/\D/g, "") === cp)
-          || (esCabaZ ? (/^1[0-4]\d\d$/.test(String(s.p || "").replace(/\D/g, "")) || /capital federal|ciudad aut|caba/i.test(nrmTxt(s.l || "")))
-                      : (locZ && nrmTxt(s.l || "").includes(locZ))));
-        if (enZona.some(s => s.la == null)) {
-          const enriq = await geocodeSucursalesFaltantes(db, enZona, geoStats);
-          const byId = new Map(enriq.map(s => [String(s.id), s]));
-          geo = geo.map(s => byId.get(String(s.id)) || s);
-        }
-      } catch (_) {}
-      if (!geo.length && cp) {
-        try {
-          geo = (await sucursalesPorCp(db, env, cp)).map(x => ({
-            id: x.id, d: x.descripcion || "", c: x.direccion?.calle || "", n: x.direccion?.numero || "",
-            l: x.direccion?.localidad || "", p: x.direccion?.codigoPostal || "", la: x.lat, lo: x.lng,
-          }));
-        } catch (e) { return res.status(502).json({ error: e.message }); }
-      }
-      const expand = s => ({
-        id: s.id, descripcion: s.d,
-        direccion: { calle: s.c, numero: s.n, localidad: s.l, codigoPostal: s.p },
-        lat: s.la ?? null, lng: s.lo ?? null,
-      });
-      // 1) Ancla: geocodificación directa de la dirección del pedido.
-      let origen = null;
-      geoStats.dir = dir; geoStats.loc = loc;
-      if (dir) {
-        const g = await geocodeDireccion({ dir, loc, prov, cp });
-        if (g) { origen = { ...g, descripcion: dir }; geoStats.origenSrc = "geocode"; }
-        else geoStats.origenSrc = "geocode_fallo";
-      }
-      // 2) …tokens del punto en el listado oficial…
-      if (!origen && q.length >= 2) {
-        const tokens = q.split(/\s+/).filter(Boolean);
-        const cand = geo.filter(s => {
-          const hay = nrmTxt([s.d, s.c, s.n, s.l].filter(Boolean).join(" "));
-          return tokens.every(t => hay.includes(t));
-        }).filter(s => s.la != null);
-        if (cand.length) { origen = { lat: cand[0].la, lng: cand[0].lo, descripcion: cand[0].d }; geoStats.origenSrc = "tokens"; }
-      }
-      // 3) Centroide de las sucursales del CP del pedido: fallback de ancla y
-      // TAMBIÉN control de cordura del geocoder — una dirección con texto raro
-      // puede geocodificar a cientos de km del CP real del comprador (se vio
-      // "Calle 49 621 Local 9 y 10" de La Plata anclada cerca de Misiones).
-      // Coordenadas válidas = dentro de Argentina. Andreani manda basura para
-      // algunas sucursales (lat/lng cambiados, ceros): promediarlas movía el
-      // "centroide de cordura" a cualquier lado y ESE centroide reemplazaba al
-      // ancla correcta del geocoder (#6207: 1ra candidata a 1093 km).
-      const enAR = (la, lo) => isFinite(la) && isFinite(lo) && la <= -21 && la >= -56 && lo <= -53 && lo >= -74;
-      geo = geo.map(s => (s.la != null && !enAR(s.la, s.lo)) ? { ...s, la: null, lo: null } : s);
-      if (origen && !enAR(origen.lat, origen.lng)) { geoStats.origenSrc = (geoStats.origenSrc || "") + "_fueraAR"; origen = null; }
-      const mediana = arr => { const a = [...arr].sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : null; };
-      const esCabaQ = /c\.?\s*a\.?\s*b\.?\s*a|capital federal|ciudad aut/i.test(loc + " " + prov) || /^1[0-4]\d\d$/.test(cp);
-      let cpCent = null;
-      if (esCabaQ) {
-        cpCent = { lat: -34.6037, lng: -58.3816, descripcion: "CABA" }; // centro fijo, no depende de datos
-      } else if (cp) {
-        const delCp = geo.filter(s => String(s.p || "").replace(/\D/g, "") === cp && s.la != null);
-        if (delCp.length) cpCent = { lat: mediana(delCp.map(s => s.la)), lng: mediana(delCp.map(s => s.lo)), descripcion: `CP ${cp}` };
-      }
-      if (!cpCent && loc) {
-        const locN = nrmTxt(loc);
-        const deLoc = geo.filter(s => s.la != null && locN && nrmTxt(s.l || "").includes(locN));
-        if (deLoc.length >= 3) cpCent = { lat: mediana(deLoc.map(s => s.la)), lng: mediana(deLoc.map(s => s.lo)), descripcion: loc };
-      }
-      geoStats.ancla = origen ? `${origen.lat.toFixed(3)},${origen.lng.toFixed(3)}` : null;
-      geoStats.centro = cpCent ? `${cpCent.descripcion} ${cpCent.lat.toFixed(3)},${cpCent.lng.toFixed(3)}` : null;
-      if (origen && cpCent && distanciaM(origen.lat, origen.lng, cpCent.lat, cpCent.lng) > 150000) { geoStats.origenSrc = (geoStats.origenSrc || "") + "→centro"; origen = cpCent; }
-      if (!origen) origen = cpCent;
-      // El listado oficial repite la misma sucursal con variantes (CP, tildes,
-      // "C.A.B.A." vs nombre largo): dedupe por descripción + número de calle.
-      const dedupe = arr => {
-        const vistos = new Set();
-        return arr.filter(s => {
-          const num = (String(s.c || "") + " " + String(s.n || "")).match(/\d{2,}/);
-          const k = nrmTxt(s.d).replace(/[^a-z0-9]/g, "") + "|" + (num ? num[0] : "");
-          if (vistos.has(k)) return false;
-          vistos.add(k);
-          return true;
-        });
-      };
-      const conCoords = geo.filter(s => s.la != null).length;
-      const stats = { todas: geo.length, conCoords, geo: geoStats };
-      if (origen && conCoords) {
-        const conDist = dedupe(geo
-          .filter(s => s.la != null)
-          .map(s => ({ ...s, distM: distanciaM(origen.lat, origen.lng, s.la, s.lo) }))
-          .sort((a, b) => a.distM - b.distM))
-          .slice(0, 40)
-          .map(s => ({ ...expand(s), distM: s.distM }));
-        // Cordura del resultado: si la MÁS cercana está a más de 300 km, el
-        // ranking no sirve (coords parciales) → aproximación por localidad.
-        geoStats.primerKm = conDist.length ? Math.round(conDist[0].distM / 1000) : null;
-        geoStats.conCoords = conCoords;
-        if (conDist.length && conDist[0].distM <= 300000) {
-          return res.json({ sucursales: conDist, origen: origen.descripcion, stats });
-        }
-      }
-      // Aproximación por localidad (sin CP o sin coords útiles): CABA por
-      // rango de CP 1000-1499 o nombre; otras por texto de localidad.
-      {
-        const esCabaL = /c\.?\s*a\.?\s*b\.?\s*a|capital federal|ciudad aut/i.test(loc + " " + prov);
-        const locN = nrmTxt(loc);
-        const deLoc = geo.filter(s => esCabaL
-          ? (/^1[0-4]\d\d$/.test(String(s.p || "").replace(/\D/g, "")) || /capital federal|ciudad aut|caba/i.test(nrmTxt(s.l || "")))
-          : (locN && nrmTxt(s.l || "").includes(locN)));
-        if (deLoc.length) {
-          const lista = dedupe(deLoc).slice(0, 40).map(expand);
-          return res.json({ sucursales: lista, origen: esCabaL ? "CABA" : loc, aproximado: true, stats });
-        }
-      }
-      // Sin coordenadas o sin ancla: aproximación por CP (mismo CP primero,
-      // después el resto de la misma localidad).
-      if (cp) {
-        const mismoCp = geo.filter(s => String(s.p || "").replace(/\D/g, "") === cp);
-        const locCp = nrmTxt(mismoCp[0]?.l || loc || "");
-        const mismaLoc = locCp ? geo.filter(s => nrmTxt(s.l || "") === locCp && !mismoCp.includes(s)) : [];
-        const lista = dedupe([...mismoCp, ...mismaLoc]).slice(0, 40).map(expand);
-        if (lista.length) return res.json({ sucursales: lista, origen: `CP ${cp}`, aproximado: true, stats });
-      }
-      return res.json({ sucursales: [], sinOrigen: true, stats });
+      const out = await sucursalesCercanasCore(db, env, body);
+      if (out.error) return res.status(502).json({ error: out.error });
+      return res.json(out);
     }
 
     // ── sucursal_origen (desde dónde se emiten los envíos del usuario) ─────

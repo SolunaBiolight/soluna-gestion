@@ -16,7 +16,7 @@
 // a lo cacheado o a lista vacía (Shopify muestra los otros métodos).
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { andreaniEnv, getGlobalConfig, sucursalesPorCp, sucursalesTodas, cotizarAndreani, precioConMarkup, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
+import { andreaniEnv, getGlobalConfig, sucursalesPorCp, sucursalesTodas, sucursalesCercanasCore, cotizarAndreani, precioConMarkup, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -57,7 +57,43 @@ function descSucursal(s) {
   const dir = [d.calle, d.numero].filter(Boolean).join(" ");
   const loc = d.localidad || d.ciudad || "";
   const hor = s.horarioDeAtencion ? ` · ${s.horarioDeAtencion}` : "";
-  return clip(`Retirás en ${[dir, loc].filter(Boolean).join(", ")}${hor}`, 140);
+  return clip(`3 a 5 días hábiles · Retirás en ${[dir, loc].filter(Boolean).join(", ")}${hor}`, 150);
+}
+
+// Puntos que NO son de retiro para el público (depósitos, receptorías,
+// puntos "in house" de un cliente): nunca al checkout.
+const NO_PUBLICO_RX = /in ?house|receptor[ií]a|dep[oó]sito|planta|centro de distribuci[oó]n|\bcd\b|\bhub\b|log[ií]stica/i;
+const esPuntoPublico = s => !NO_PUBLICO_RX.test(String(s.descripcion || ""));
+
+// Sucursales por CERCANÍA real (motor de Envíos): ancla = centroide del CP /
+// localidad del comprador (coords cacheadas; no se geocodifica la dirección
+// para no gastar los 10 s de Shopify) → ranking por distancia. La lista
+// ordenada se cachea 7 días por CP+localidad. Si el motor no responde a
+// tiempo o viene vacío, cae al método por CP exacto + CPs vecinos.
+const SUC_LIST_TTL_MS = 7 * 86400000;
+async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
+  const nrm = v => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
+  const cacheRef = db.collection("andreani_config").doc(`rates_suc_${cp}_${nrm(loc) || "x"}`);
+  try {
+    const c = (await cacheRef.get()).data();
+    if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return c.lista.slice(0, max);
+  } catch (_) {}
+  let lista = [];
+  try {
+    const out = await Promise.race([
+      sucursalesCercanasCore(db, env, { q: "", cp, dir: "", loc: loc || "", prov: prov || "" }),
+      new Promise(r => setTimeout(() => r(null), 5500)),
+    ]);
+    if (out && Array.isArray(out.sucursales) && out.sucursales.length && !out.sinOrigen) {
+      // Si es ranking real por distancia, cortar lo que quede muy lejos (> 25 km)
+      lista = out.sucursales.filter(s => s.distM == null || s.distM <= 25000);
+    }
+  } catch (_) {}
+  if (!lista.length) lista = await sucursalesCercanasCp(db, env, cp, 12);
+  lista = dedupeSucursales(lista.filter(esPuntoPublico)).slice(0, 12)
+    .map(s => ({ id: s.id, descripcion: s.descripcion || "", direccion: s.direccion || null, horarioDeAtencion: s.horarioDeAtencion || "", distM: s.distM ?? null }));
+  if (lista.length) cacheRef.set({ ratesUid: "_suc", cp, ts: Date.now(), lista }).catch(() => {});
+  return lista.slice(0, max);
 }
 
 // Sucursales para ofrecer en el checkout: las del CP exacto primero y, si no
@@ -145,14 +181,14 @@ export async function computeRates(db, uid, rate, { shopHdr = "", t0 = Date.now(
     const [dom, suc, sucursales] = await Promise.all([
       quiereDom ? cotiza("domicilio").catch(e => { errs.push("domicilio: " + e.message); return null; }) : Promise.resolve(null),
       quiereSuc ? cotiza("sucursal").catch(e => { errs.push("sucursal: " + e.message); return null; }) : Promise.resolve(null),
-      quiereSuc ? sucursalesCercanasCp(db, env, cp, Math.max(1, Math.min(12, Number(ac.sucursalesMax) || 5))).catch(e => { errs.push("sucursales: " + e.message); return []; }) : Promise.resolve([]),
+      quiereSuc ? sucursalesParaCheckout(db, env, { cp, loc: dest.city, prov: dest.province }, Math.max(1, Math.min(12, Number(ac.sucursalesMax) || 5))).catch(e => { errs.push("sucursales: " + e.message); return []; }) : Promise.resolve([]),
     ]);
     if ((dom != null || suc != null) && !(cached && cached.dom === dom && cached.suc === suc)) {
       cacheRef.set({ ratesUid: uid, cp, ts: Date.now(), dom: dom ?? null, suc: suc ?? null }).catch(() => {});
     }
     const rates = [];
     if (dom != null) {
-      rates.push({ service_name: "Andreani a domicilio", service_code: "ANDREANI_DOM", total_price: cents(gratis ? 0 : recargo(dom)), currency, description: "Te lo lleva Andreani a la dirección que cargaste" });
+      rates.push({ service_name: "Andreani a domicilio", service_code: "ANDREANI_DOM", total_price: cents(gratis ? 0 : recargo(dom)), currency, description: "2 a 5 días hábiles · Andreani te lo lleva a la dirección que cargaste" });
     }
     if (suc != null && sucursales.length) {
       // El orden ya viene por cercanía (CP exacto primero, después vecinos).
@@ -167,7 +203,7 @@ export async function computeRates(db, uid, rate, { shopHdr = "", t0 = Date.now(
   if (rates) return { rates, why: rates.length ? "" : (errs.join(" · ") || "Andreani no devolvió tarifas"), errs };
   console.error(`[shopify-rates] timeout uid=${uid} cp=${cp}`);
   if (cached && typeof cached.dom === "number" && quiereDom) {
-    return { rates: [{ service_name: "Andreani a domicilio", service_code: "ANDREANI_DOM", total_price: cents(gratis ? 0 : recargo(cached.dom)), currency, description: "Te lo lleva Andreani a la dirección que cargaste" }], why: "timeout (se usó la caché)" };
+    return { rates: [{ service_name: "Andreani a domicilio", service_code: "ANDREANI_DOM", total_price: cents(gratis ? 0 : recargo(cached.dom)), currency, description: "2 a 5 días hábiles · Andreani te lo lleva a la dirección que cargaste" }], why: "timeout (se usó la caché)" };
   }
   return { rates: [], why: "Andreani tardó más de 10 s" };
 }
