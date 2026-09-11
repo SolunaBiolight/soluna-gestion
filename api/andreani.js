@@ -1208,6 +1208,30 @@ export default async function handler(req, res) {
       return res.json({ sucursal: s });
     }
 
+    // ── admin_probe: diagnóstico de la API de Andreani (solo admin). Permite
+    // probar variantes de /v2/sucursales (canal, tipo, CP) para ver qué
+    // devuelve la cuenta real — p.ej. dónde están los puntos HOP.
+    if (action === "admin_probe") {
+      if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
+      if (!(await isPlatformAdmin(db, uid))) return res.status(403).json({ error: "Solo admin" });
+      const path = String(body.path || "").trim();
+      if (!/^\/v[12]\/(sucursales|tarifas|localidades|provincias)(\/|\?|$)/.test(path)) return res.status(400).json({ error: "Solo se permite /v1|v2/sucursales, tarifas, localidades o provincias" });
+      const t0 = Date.now();
+      const r = await andreaniFetch(db, env, path);
+      const txt = await r.text();
+      let j = null; try { j = JSON.parse(txt); } catch (_) {}
+      const lista = Array.isArray(j) ? j : (Array.isArray(j?.sucursales) ? j.sucursales : null);
+      const cuenta = k => { const m = new Map(); for (const x of lista || []) { const v = String(x?.[k] ?? ""); m.set(v, (m.get(v) || 0) + 1); } return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15); };
+      return res.json({
+        status: r.status, ms: Date.now() - t0, count: lista ? lista.length : null,
+        keys: lista?.[0] ? Object.keys(lista[0]) : null,
+        porTipo: lista ? { tipoDeSucursal: cuenta("tipoDeSucursal"), tipo: cuenta("tipo"), canal: cuenta("canal") } : null,
+        hop: lista ? lista.filter(x => /hop/i.test(String(x?.descripcion || "") + " " + String(x?.tipoDeSucursal || x?.tipo || ""))).length : null,
+        sample: lista ? lista.slice(0, 3) : null,
+        raw: lista ? null : txt.slice(0, 1500),
+      });
+    }
+
     // ── sucursales_buscar (buscador global: nombre, calle, número, localidad, CP)
     if (action === "sucursales_buscar") {
       const q = nrmTxt(String(body.q || "").trim());

@@ -16426,12 +16426,31 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
                 <div style={{display:"flex",gap:8}}><AdmInput T={T} value={bajaNueva} onChange={e=>setBajaNueva(e.target.value)} placeholder="Nombre exacto de la sucursal (como en el desplegable)" style={{flex:1}}/><AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ if(!bajaNueva.trim()) return; await editarBajas([bajaNueva.trim()],[]); setBajaNueva(""); toast("Sucursal agregada","success"); }}>Agregar</AdmBtn></div>
               </>)}
             </Card>
+            <Card T={T} padding="lg">
+              <AdmTitulo T={T} t="Diagnóstico API Andreani" sub="Consultá la API oficial con la cuenta de la plataforma para ver qué devuelve (sucursales por canal/tipo, tarifas)."/>
+              <AdmProbe T={T}/>
+            </Card>
           </div>
         </div>
       )}
       <AdmAcreditarModal T={T} cuenta={acred} onClose={()=>setAcred(null)} onDone={()=>loadSaldos()}/>
       <AdmMovsModal T={T} cuenta={movs} onClose={()=>setMovs(null)}/>
     </>
+  );
+}
+
+// ── Diagnóstico de la API de Andreani (solo admin) ──
+function AdmProbe({T}){
+  const [path,setPath]=useState("/v2/sucursales?codigoPostal=1754&canal=B2C");
+  const [out,setOut]=useState(null); const [busy,setBusy]=useState(false);
+  const run=async(p)=>{ const pp=p||path; setBusy(true); setOut(null); try{ const d=await admAndreani("admin_probe",{path:pp}); setOut(d); }catch(e){ setOut({error:e.message}); } setBusy(false); };
+  const PRESETS=[["CP B2C","/v2/sucursales?codigoPostal=1754&canal=B2C"],["CP sin canal","/v2/sucursales?codigoPostal=1754"],["CP HOP","/v2/sucursales?codigoPostal=1754&canal=HOP"],["Todas","/v2/sucursales"],["Todas B2C","/v2/sucursales?canal=B2C"],["Todas HOP","/v2/sucursales?canal=HOP"],["tipo HOP","/v2/sucursales?codigoPostal=1754&tipoDeSucursal=HOP"]];
+  return (
+    <div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{PRESETS.map(([l,p])=><AdmBtn key={l} T={T} variant="ghost" size="sm" onClick={()=>{setPath(p);return run(p);}}>{l}</AdmBtn>)}</div>
+      <div style={{display:"flex",gap:8,marginBottom:8}}><AdmInput T={T} value={path} onChange={e=>setPath(e.target.value)} style={{flex:1,fontFamily:"monospace",fontSize:12}}/><AdmBtn T={T} size="sm" onClick={()=>run()}>{busy?"…":"Consultar"}</AdmBtn></div>
+      {out&&<pre style={{fontSize:11,lineHeight:1.45,background:T.bg,border:`1px solid ${T.borderL||T.border}`,borderRadius:8,padding:10,maxHeight:360,overflow:"auto",whiteSpace:"pre-wrap",wordBreak:"break-all",color:out.error?T.red:T.text}}>{JSON.stringify(out,null,2)}</pre>}
+    </div>
   );
 }
 
