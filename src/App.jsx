@@ -389,15 +389,25 @@ function _loadDriveScripts() {
 
 // Abre el picker con un token ya disponible.
 // IMPORTANTE: debe llamarse desde un click directo del usuario (no desde callback async)
-function _showDrivePicker(token, onSelect, onCancel) {
-  const myDrive = new window.google.picker.DocsView().setIncludeFolders(true).setSelectFolderEnabled(false);
-  const shared  = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS).setEnableDrives(true).setIncludeFolders(true);
-  new window.google.picker.PickerBuilder()
-    .setTitle("Elegir archivo de Google Drive")
+function _showDrivePicker(token, onSelect, onCancel, opts = {}) {
+  const P = window.google.picker;
+  const myDrive = new P.DocsView().setIncludeFolders(true).setSelectFolderEnabled(false);
+  const shared  = new P.DocsView(P.ViewId.DOCS).setEnableDrives(true).setIncludeFolders(true);
+  if (opts.videosOnly) {
+    const mimes = "video/mp4,video/quicktime,video/x-m4v,video/webm,video/x-matroska,video/x-msvideo,video/mpeg";
+    myDrive.setMimeTypes(mimes); shared.setMimeTypes(mimes);
+  }
+  // setAppId (número de proyecto = prefijo del client_id) es OBLIGATORIO con el
+  // scope drive.file: sin él, la app no recibe acceso al archivo elegido.
+  const appId = String(GDRIVE_CLIENT_ID).split("-")[0];
+  new P.PickerBuilder()
+    .setTitle(opts.title || "Elegir archivo de Google Drive")
     .addView(myDrive).addView(shared)
     .setOAuthToken(token)
     .setDeveloperKey(GDRIVE_API_KEY)
-    .enableFeature(window.google.picker.Feature.SUPPORT_DRIVES)
+    .setAppId(appId)
+    .setOrigin(window.location.protocol + "//" + window.location.host)
+    .enableFeature(P.Feature.SUPPORT_DRIVES)
     .setCallback(data => {
       if (data.action === window.google.picker.Action.PICKED && data.docs?.[0]) {
         const d = data.docs[0];
@@ -13427,24 +13437,26 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             },
             {
               key:"gdrive", label:"Google Drive",
-              sub: driveOk
-                ? "Conectado — el Publicador saca los videos de acá"
-                : (GDRIVE_CLIENT_ID
-                    ? "No hace falta conectar: en el Publicador pegás el link del video de Drive (compartido con enlace). Conectar habilita además el selector."
-                    : "En el Publicador pegás el link del video de Drive (compartido con enlace)."),
-              connected: driveOk, disabled:false, soon: !GDRIVE_CLIENT_ID, brand:"#00ac47", iconBg:"#fff",
+              // Conexión por REDIRECCIÓN (sin popup): el token queda en users/{uid}.googleDrive.
+              sub: userDoc?.googleDrive?.connected
+                ? `${userDoc.googleDrive.email || "Conectado"} — elegís los videos desde el Publicador de Meta`
+                : "Conectá tu Drive para elegir los videos del anuncio desde el Publicador de Meta",
+              connected: !!userDoc?.googleDrive?.connected, disabled:false, soon:false, brand:"#00ac47", iconBg:"#fff",
               icon:<svg width="30" height="27" viewBox="0 0 87.3 78"><path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/><path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.2z" fill="#ea4335"/><path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.85 0H34.45c-1.65 0-3.2.45-4.55 1.2z" fill="#00832d"/><path d="M59.8 54H27.5L13.75 77.8c1.35.8 2.9 1.2 4.55 1.2h50.7c1.65 0 3.2-.45 4.55-1.2z" fill="#2684fc"/><path d="M73.4 27.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 54h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>,
-              onConnect: ()=>{
-                if(!GDRIVE_API_KEY||!GDRIVE_CLIENT_ID){ appAlert("Falta configurar Google Drive en Vercel (VITE_GOOGLE_API_KEY y VITE_GOOGLE_CLIENT_ID)."); return; }
-                if(!_gisReady){ toast("Cargando Google Drive, probá de nuevo en unos segundos…","info"); return; }
-                setDriveConnecting(true);
-                // SINCRÓNICO (sin await) para no bloquear el popup del gesto del usuario.
-                _requestDriveToken(
-                  ()=>{ setDriveConnecting(false); setDriveOk(true); toast("Google Drive conectado ✓","success"); },
-                  (err)=>{ setDriveConnecting(false); appAlert("No se pudo conectar Google Drive: "+err); }
-                );
+              onConnect: async ()=>{
+                // Redirección de página completa a Google (nada de popups → no puede dar popup_closed).
+                try {
+                  const r = await authFetch(`/api/integrations?platform=googledrive&action=oauth_start&uid=${user.uid}`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ uid: user.uid }) });
+                  const j = await r.json();
+                  if (j.url) { window.location.href = j.url; return; }
+                  if (j.setup) { appAlert("Google Drive todavía no está configurado en el servidor:\n\n" + (j.steps||[]).map((s,i)=>`${i+1}. ${s}`).join("\n\n")); return; }
+                  appAlert(j.error || "No se pudo iniciar la conexión con Google Drive.");
+                } catch(e) { appAlert("Error: "+e.message); }
               },
-              onDisconnect: ()=>{ try{ sessionStorage.removeItem("_gdt"); }catch(e){} setDriveOk(false); setMsg("Google Drive desvinculado"); },
+              onDisconnect: async ()=>{
+                try { await authFetch(`/api/integrations?platform=googledrive&action=disconnect&uid=${user.uid}`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ uid: user.uid }) }); setDriveOk(false); setMsg("Google Drive desvinculado"); }
+                catch(e) { appAlert("Error: "+e.message); }
+              },
             },
           ].map(p=>{
             return (
@@ -26360,6 +26372,67 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead }) {
   const [driveUrl, setDriveUrl] = React.useState("");
   const [driveBusy, setDriveBusy] = React.useState(false);
   const [driveMsg, setDriveMsg] = React.useState("");
+  // ── Google Drive conectado (OAuth por redirección) + Picker + subida a Meta por partes ──
+  const _uid = auth.currentUser?.uid;
+  const [driveConn, setDriveConn] = React.useState(null);   // null=cargando · false=no conectado · {email}
+  const [drivePick, setDrivePick] = React.useState(null);   // {id,name} elegido en el Picker
+  const [driveProg, setDriveProg] = React.useState(null);   // {pct,txt} progreso de subida a Meta
+  const [driveWorking, setDriveWorking] = React.useState(false);
+  React.useEffect(() => { (async () => {
+    try { const r = await authFetch(`/api/integrations?platform=googledrive&action=status&uid=${_uid}`); const d = await r.json(); setDriveConn(d.connected ? { email: d.email } : false); }
+    catch (_) { setDriveConn(false); }
+  })(); }, [_uid]);
+  async function connectDrive() {
+    try {
+      const r = await authFetch(`/api/integrations?platform=googledrive&action=oauth_start&uid=${_uid}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uid: _uid }) });
+      const j = await r.json();
+      if (j.url) { window.location.href = j.url; return; }
+      if (j.setup) { appAlert("Google Drive todavía no está configurado en el servidor:\n\n" + (j.steps || []).map((s, i) => `${i + 1}. ${s}`).join("\n\n")); return; }
+      appAlert(j.error || "No se pudo iniciar la conexión con Google Drive.");
+    } catch (e) { appAlert("Error: " + e.message); }
+  }
+  async function pickFromDrive() {
+    if (driveWorking) return;
+    setDriveWorking(true); setDriveProg({ pct: 0, txt: "Abriendo tu Drive…" });
+    try {
+      const r = await authFetch(`/api/integrations?platform=googledrive&action=token&uid=${_uid}`);
+      const j = await r.json();
+      if (!j.access_token) { setDriveProg({ pct: 0, txt: "❌ " + (j.error || "No pude obtener acceso a Drive") }); setDriveWorking(false); return; }
+      await _loadDriveScripts();
+      setDriveProg(null); setDriveWorking(false);
+      _showDrivePicker(j.access_token, f => startDriveUpload(f), () => {}, { videosOnly: true, title: "Elegí el video del anuncio" });
+    } catch (e) { setDriveProg({ pct: 0, txt: "❌ " + e.message }); setDriveWorking(false); }
+  }
+  async function startDriveUpload(f) {
+    setDrivePick(f); setCreative(null); setDriveWorking(true);
+    setDriveProg({ pct: 0, txt: "Preparando subida a Meta…" });
+    try {
+      const s = await metaApi("drive_meta_upload_start", "POST", { file_id: f.id, title: f.name }, { acc_id: accId });
+      if (s?.error) { setDriveProg({ pct: 0, txt: "❌ " + s.error }); setDriveWorking(false); return; }
+      let { session, video_id, size, start, end } = s;
+      let guard = 0;
+      while (end > start && guard++ < 400) {
+        const c = await metaApi("drive_meta_upload_chunk", "POST", { file_id: f.id, session, start, end }, { acc_id: accId });
+        if (c?.error) { setDriveProg({ pct: Math.round(start / size * 100), txt: "❌ " + c.error }); setDriveWorking(false); return; }
+        start = c.start; end = c.end;
+        setDriveProg({ pct: Math.min(99, Math.round(start / size * 100)), txt: `Subiendo a Meta… ${Math.min(99, Math.round(start / size * 100))}%` });
+        if (c.done) break;
+      }
+      const fin = await metaApi("drive_meta_upload_finish", "POST", { session, title: f.name }, { acc_id: accId });
+      if (fin?.error) { setDriveProg({ pct: 99, txt: "❌ " + fin.error }); setDriveWorking(false); return; }
+      setCreative({ video_id: String(video_id), name: f.name, ready: false });
+      setDriveProg({ pct: 100, txt: "⏳ Meta está procesando el video…" });
+      for (let i = 0; i < 40; i++) { // hasta ~100s
+        await new Promise(r => setTimeout(r, 2500));
+        const st = await metaApi("publisher_video_from_url", "POST", { video_id: String(video_id) }, { acc_id: accId });
+        if (st?.ready) { setCreative(c => c ? { ...c, ready: true } : c); setDriveProg({ pct: 100, txt: "✅ Video listo para publicar" }); setDriveWorking(false); return; }
+        if (st?.status === "error") { setDriveProg({ pct: 100, txt: "❌ Meta falló al procesar el video (revisá formato/tamaño)" }); setDriveWorking(false); return; }
+      }
+      setCreative(c => c ? { ...c, ready: true } : c);
+      setDriveProg({ pct: 100, txt: "⏳ Sigue procesando en Meta. Probá Publicar en un momento." });
+    } catch (e) { setDriveProg({ pct: 0, txt: "❌ " + e.message }); }
+    setDriveWorking(false);
+  }
   async function useDriveVideo() {
     const u = driveUrl.trim(); if (!u || driveBusy) return;
     setDriveBusy(true); setDriveMsg("⏫ Subiendo a Meta desde Drive…");
@@ -26492,21 +26565,46 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead }) {
           {/* Creativo (video) */}
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 6 }}>🎬 Elegí el video del anuncio</div>
-            {/* Google Drive por link — sin popup. El archivo tiene que estar compartido "Cualquier persona con el enlace". */}
-            <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: T.text, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
-                <svg width="13" height="12" viewBox="0 0 87.3 78"><path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/><path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.2z" fill="#ea4335"/><path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.85 0H34.45c-1.65 0-3.2.45-4.55 1.2z" fill="#00832d"/><path d="M59.8 54H27.5L13.75 77.8c1.35.8 2.9 1.2 4.55 1.2h50.7c1.65 0 3.2-.45 4.55-1.2z" fill="#2684fc"/><path d="M73.4 27.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 54h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>
-                Desde Google Drive (pegá el link del video)
+            {/* Google Drive — conexión por redirección + Picker de Google (ve TODO tu Drive) + subida a Meta por partes. Sin popup, sin compartir el archivo. */}
+            <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 180 }}>
+                  <svg width="15" height="13" viewBox="0 0 87.3 78"><path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/><path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.2z" fill="#ea4335"/><path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.85 0H34.45c-1.65 0-3.2.45-4.55 1.2z" fill="#00832d"/><path d="M59.8 54H27.5L13.75 77.8c1.35.8 2.9 1.2 4.55 1.2h50.7c1.65 0 3.2-.45 4.55-1.2z" fill="#2684fc"/><path d="M73.4 27.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 54h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>
+                  Google Drive
+                  {driveConn && driveConn.email && <span style={{ fontSize: 10.5, fontWeight: 500, color: T.textSm }}>· {driveConn.email}</span>}
+                </div>
+                {driveConn === null ? (
+                  <span style={{ fontSize: 11, color: T.textSm, display: "inline-flex", alignItems: "center", gap: 6 }}><Spinner size={11} color={T.textSm} /> Verificando…</span>
+                ) : driveConn ? (
+                  <button onClick={pickFromDrive} disabled={driveWorking} style={{ ...BtnPrimary(T), padding: "8px 14px", fontSize: 12, opacity: driveWorking ? 0.6 : 1, display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                    {driveWorking ? <><Spinner size={11} color="#fff" /> Trabajando…</> : "📂 Elegir video de mi Drive"}
+                  </button>
+                ) : (
+                  <button onClick={connectDrive} style={{ ...BtnSecondary(T), padding: "8px 14px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", color: T.accent, borderColor: T.accent + "66" }}>Conectar Google Drive</button>
+                )}
               </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <input value={driveUrl} onChange={e => setDriveUrl(e.target.value)} onKeyDown={e => { if (e.key === "Enter") useDriveVideo(); }} placeholder="https://drive.google.com/file/d/…/view" disabled={driveBusy}
-                  style={{ flex: 1, background: T.input, border: `1px solid ${T.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }} />
-                <button onClick={useDriveVideo} disabled={driveBusy || !driveUrl.trim()} style={{ ...BtnPrimary(T), padding: "8px 14px", fontSize: 12, opacity: (driveBusy || !driveUrl.trim()) ? 0.55 : 1, display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-                  {driveBusy ? <><Spinner size={11} color="#fff" /> Subiendo…</> : "Usar este video"}
-                </button>
-              </div>
-              <div style={{ fontSize: 10.5, color: T.textSm, marginTop: 6, lineHeight: 1.45 }}>En Drive: click derecho al video → <strong style={{ color: T.textMd }}>Compartir</strong> → Acceso general: <strong style={{ color: T.textMd }}>"Cualquier persona con el enlace"</strong> → Copiar enlace.</div>
-              {driveMsg && <div style={{ fontSize: 11.5, color: driveMsg.startsWith("❌") ? T.red : driveMsg.startsWith("✅") ? T.green : T.textMd, marginTop: 6, fontWeight: 600 }}>{driveMsg}</div>}
+              {driveConn === false && <div style={{ fontSize: 10.5, color: T.textSm, marginTop: 6 }}>Te lleva a Google a autorizar (una sola vez) y volvés acá. Solo ve los videos que vos elegís.</div>}
+              {drivePick && <div style={{ fontSize: 11.5, color: T.text, marginTop: 8, fontWeight: 600 }}>🎬 {drivePick.name}</div>}
+              {driveProg && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ height: 6, background: T.border, borderRadius: 99, overflow: "hidden" }}>
+                    <div style={{ width: `${driveProg.pct}%`, height: "100%", background: driveProg.txt.startsWith("❌") ? T.red : driveProg.txt.startsWith("✅") ? T.green : T.accentSolid, transition: "width 0.3s" }} />
+                  </div>
+                  <div style={{ fontSize: 11.5, marginTop: 5, fontWeight: 600, color: driveProg.txt.startsWith("❌") ? T.red : driveProg.txt.startsWith("✅") ? T.green : T.textMd }}>{driveProg.txt}</div>
+                </div>
+              )}
+              {/* Alternativa plegada: pegar un link público (por si el video está en otro lado) */}
+              <details style={{ marginTop: 10 }}>
+                <summary style={{ fontSize: 10.5, color: T.textSm, cursor: "pointer" }}>¿Preferís pegar un link público del video?</summary>
+                <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                  <input value={driveUrl} onChange={e => setDriveUrl(e.target.value)} onKeyDown={e => { if (e.key === "Enter") useDriveVideo(); }} placeholder="https://drive.google.com/file/d/…/view (compartido con enlace) o URL .mp4" disabled={driveBusy}
+                    style={{ flex: 1, background: T.input, border: `1px solid ${T.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }} />
+                  <button onClick={useDriveVideo} disabled={driveBusy || !driveUrl.trim()} style={{ ...BtnSecondary(T), padding: "8px 12px", fontSize: 12, opacity: (driveBusy || !driveUrl.trim()) ? 0.55 : 1, whiteSpace: "nowrap" }}>
+                    {driveBusy ? "Subiendo…" : "Usar link"}
+                  </button>
+                </div>
+                {driveMsg && <div style={{ fontSize: 11.5, color: driveMsg.startsWith("❌") ? T.red : driveMsg.startsWith("✅") ? T.green : T.textMd, marginTop: 6, fontWeight: 600 }}>{driveMsg}</div>}
+              </details>
             </div>
             {videos.length === 0 ? (
               <div style={{ fontSize: 11, color: T.textSm }}>O elegí un video ya subido a Meta (no encontré ninguno en esta cuenta) o pegá su ID:</div>

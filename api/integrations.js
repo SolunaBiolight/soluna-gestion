@@ -9,6 +9,7 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { guardUid } from "./_auth.js";
 import { signState } from "./tn-callback.js";
+import { driveEnv, signDriveState, getValidDriveToken, DRIVE_REDIRECT_URI, DRIVE_SCOPES } from "./google-drive-callback.js";
 import crypto from "crypto";
 
 function initAdmin() {
@@ -500,7 +501,7 @@ export async function getValidMLToken(db, uid, targetUserId = null) {
 
 // ─── Handler principal ──────────────────────────────────────────
 
-const PLATFORMS = ["shopify", "tiendanube", "mercadolibre"];
+const PLATFORMS = ["shopify", "tiendanube", "mercadolibre", "googledrive"];
 
 // ── Sondeo: ¿el token de ML sirve para leer pagos de Mercado Pago? ──
 // Diagnóstico para decidir cómo calcular la comisión real de MP en ventas
@@ -776,6 +777,74 @@ async function reclamosSync(req, res, db) {
   return res.json({ ok: true, report, ...(debug ? { samples } : {}) });
 }
 
+// ─── Google Drive (OAuth por redirección, sin popup) ─────────────────────────
+// El popup de GIS devolvía popup_closed sin entregar el token. Acá el usuario va
+// a Google en la misma pestaña y vuelve por /api/google-drive-callback. Scope
+// drive.file (no restringido, sin cartel). El Picker del front usa el token de
+// `token` para mostrar TODO el Drive; lo que el usuario elige queda accesible.
+function gdriveSetupError() {
+  return {
+    error: "Falta configurar Google Drive en el servidor.",
+    setup: true,
+    steps: [
+      "Vercel → Settings → Environment Variables → agregar GOOGLE_DRIVE_CLIENT_SECRET (secreto del cliente OAuth web del proyecto Growith-Gestion, cuenta contacto.growith@gmail.com).",
+      `Google Cloud → Google Auth Platform → Clientes → cliente web → URIs de redirección autorizados → agregar ${DRIVE_REDIRECT_URI}`,
+      "Redeploy en Vercel y volver a tocar Conectar.",
+    ],
+  };
+}
+
+async function gdriveOauthStart(req, res, db) {
+  const uid = req.body?.uid || req.query.uid;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
+  const { clientId, clientSecret } = driveEnv();
+  if (!clientId || !clientSecret) return res.status(400).json(gdriveSetupError());
+  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("redirect_uri", DRIVE_REDIRECT_URI);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", DRIVE_SCOPES);
+  url.searchParams.set("access_type", "offline");   // → refresh_token
+  url.searchParams.set("prompt", "consent");        // fuerza refresh_token aunque ya haya consentido
+  url.searchParams.set("include_granted_scopes", "true");
+  url.searchParams.set("state", `${uid}.${signDriveState(uid)}`);
+  return res.json({ url: url.toString() });
+}
+
+async function gdriveStatus(req, res, db) {
+  const uid = req.query.uid;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
+  const g = (await db.collection("users").doc(uid).get()).data()?.googleDrive || null;
+  const { clientId, clientSecret } = driveEnv();
+  return res.json({ connected: !!g?.refresh_token, email: g?.email || null, configured: !!(clientId && clientSecret), redirect_uri: DRIVE_REDIRECT_URI });
+}
+
+// Access token corto para el Google Picker del navegador (drive.file).
+async function gdriveToken(req, res, db) {
+  const uid = req.query.uid;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
+  try {
+    const t = await getValidDriveToken(db, uid);
+    if (!t) return res.status(400).json({ error: "Google Drive no está conectado", not_connected: true });
+    return res.json({ access_token: t.accessToken, email: t.email });
+  } catch (e) { return res.status(502).json({ error: e.message }); }
+}
+
+async function gdriveDisconnect(req, res, db) {
+  const uid = req.body?.uid || req.query.uid;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
+  const ref = db.collection("users").doc(uid);
+  const g = (await ref.get()).data()?.googleDrive;
+  // Revocar en Google (best-effort) y borrar local.
+  if (g?.refresh_token) { try { await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(g.refresh_token)}`, { method: "POST" }); } catch (_) {} }
+  await ref.set({ googleDrive: { connected: false, email: null, refresh_token: null, access_token: null, expires_at: null, disconnectedAt: new Date().toISOString() } }, { merge: true });
+  return res.json({ ok: true });
+}
+
 // ─── Conversación de un reclamo (leer hilo + responder al comprador) ─────────
 // Las tarjetas del tablero guardan su origen en el doc-id: `{uid}_ml_{claimId}`
 // (reclamo ML → el id ES el claim) o `{uid}_mp_{paymentId}` (contracargo/disputa
@@ -923,6 +992,13 @@ export default async function handler(req, res) {
         if (!(await guardUid(req, res, uid))) return;
         return res.json({ state: `${uid}.${signState(uid)}` });
       }
+    }
+
+    if (platform === "googledrive") {
+      if (action === "oauth_start" && req.method === "POST") return gdriveOauthStart(req, res, db);
+      if (action === "status" && req.method === "GET") return gdriveStatus(req, res, db);
+      if (action === "token" && req.method === "GET") return gdriveToken(req, res, db);
+      if (action === "disconnect" && req.method === "POST") return gdriveDisconnect(req, res, db);
     }
 
     if (platform === "mercadolibre") {

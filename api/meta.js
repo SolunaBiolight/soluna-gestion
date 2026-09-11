@@ -11,6 +11,7 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { createHmac } from "crypto";
 import { guardUid, guardCron } from "./_auth.js";
+import { getValidDriveToken } from "./google-drive-callback.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -1196,6 +1197,65 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
       } catch (e) {
         return res.status(500).json({ error: "No pude armar el plan: " + e.message });
       }
+    }
+
+    // ── Drive → Meta por partes (resumable upload) ─────────────────────────
+    // El video queda PRIVADO en Drive: el server lo lee con el token del usuario
+    // (drive.file: solo archivos elegidos en el Picker) y lo empuja a Meta en
+    // chunks. El FRONT dirige el loop (start → chunk×N → finish) para que cada
+    // llamada sea corta y entre en el maxDuration de Vercel, y muestra progreso.
+    if ((action === "drive_meta_upload_start" || action === "drive_meta_upload_chunk" || action === "drive_meta_upload_finish") && req.method === "POST") {
+      const cfg = await loadMetaAccount(db, uid, acc_id);
+      if (!cfg?.access_token || !cfg?.ad_account_id) return res.status(400).json({ error: "Conectá tu cuenta de Meta Ads primero" });
+      const token = cfg.page_access_token || cfg.access_token;
+      const act = String(cfg.ad_account_id).startsWith("act_") ? cfg.ad_account_id : `act_${cfg.ad_account_id}`;
+      let drive;
+      try { drive = await getValidDriveToken(db, uid); } catch (e) { return res.status(502).json({ error: e.message }); }
+      if (!drive) return res.status(400).json({ error: "Google Drive no está conectado", not_connected: true });
+      const dh = { Authorization: `Bearer ${drive.accessToken}` };
+      const { file_id, session, start, end, title } = req.body || {};
+
+      if (action === "drive_meta_upload_start") {
+        if (!file_id) return res.status(400).json({ error: "Falta file_id" });
+        const mr = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file_id)}?fields=id,name,size,mimeType&supportsAllDrives=true`, { headers: dh });
+        const meta = await mr.json().catch(() => ({}));
+        if (!mr.ok) return res.status(400).json({ error: `No puedo leer ese archivo de Drive (${mr.status}). Elegilo de nuevo desde el selector de Drive.`, detail: meta?.error?.message });
+        const size = Number(meta.size || 0);
+        if (!size) return res.status(400).json({ error: "Drive no informa el tamaño del archivo (¿es un video subido, no un Google Doc?)" });
+        if (!/^video\//i.test(meta.mimeType || "")) return res.status(400).json({ error: `Ese archivo no es un video (${meta.mimeType || "tipo desconocido"})` });
+        let st;
+        try { st = await metaPost(`${act}/advideos`, { upload_phase: "start", file_size: String(size) }, token); }
+        catch (e) { return res.status(502).json({ error: "Meta no abrió la sesión de subida: " + e.message }); }
+        return res.json({ ok: true, session: st.upload_session_id, video_id: String(st.video_id), size, start: Number(st.start_offset || 0), end: Number(st.end_offset || 0), name: meta.name, mime: meta.mimeType });
+      }
+
+      if (action === "drive_meta_upload_chunk") {
+        if (!file_id || !session) return res.status(400).json({ error: "Faltan file_id/session" });
+        const s = Number(start), e = Number(end);
+        if (!(e > s)) return res.json({ ok: true, start: s, end: e, done: true });
+        // Leemos exactamente [start, end) de Drive (end es exclusivo en Meta).
+        const cr = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file_id)}?alt=media&supportsAllDrives=true`, { headers: { ...dh, Range: `bytes=${s}-${e - 1}` }, signal: AbortSignal.timeout(40000) });
+        if (!cr.ok && cr.status !== 206) return res.status(502).json({ error: `Drive no entregó el trozo (${cr.status})` });
+        const buf = Buffer.from(await cr.arrayBuffer());
+        const fd = new FormData();
+        fd.append("access_token", token);
+        fd.append("upload_phase", "transfer");
+        fd.append("upload_session_id", String(session));
+        fd.append("start_offset", String(s));
+        fd.append("video_file_chunk", new Blob([buf]), "chunk.bin");
+        const tr = await fetch(`${META_BASE}/${act}/advideos`, { method: "POST", body: fd, signal: AbortSignal.timeout(45000) });
+        const tj = await tr.json().catch(() => ({}));
+        if (tj.error) return res.status(502).json({ error: "Meta rechazó el trozo: " + (tj.error.message || "") });
+        const ns = Number(tj.start_offset), ne = Number(tj.end_offset);
+        return res.json({ ok: true, start: ns, end: ne, done: !(ne > ns) });
+      }
+
+      // finish
+      if (!session) return res.status(400).json({ error: "Falta session" });
+      try {
+        const fj = await metaPost(`${act}/advideos`, { upload_phase: "finish", upload_session_id: String(session), title: String(title || "Video Drive").slice(0, 60) }, token);
+        return res.json({ ok: true, success: !!fj.success });
+      } catch (e) { return res.status(502).json({ error: "Meta no cerró la subida: " + e.message }); }
     }
 
     // publisher_video_from_url: sube a Meta un video desde un link de Google Drive
