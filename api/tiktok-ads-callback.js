@@ -32,7 +32,7 @@ function initAdmin() {
 }
 
 export function tiktokEnv() {
-  return { appId: process.env.TIKTOK_APP_ID || "", secret: process.env.TIKTOK_APP_SECRET || "" };
+  return { appId: String(process.env.TIKTOK_APP_ID || "").trim(), secret: String(process.env.TIKTOK_APP_SECRET || "").trim() };
 }
 
 export function signTiktokState(uid) {

@@ -40,8 +40,10 @@ function initAdmin() {
 // (VITE_GOOGLE_CLIENT_ID); el secreto es solo de servidor.
 export function driveEnv() {
   return {
-    clientId: process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || "",
-    clientSecret: process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || "",
+    // trim(): una variable pegada con salto de línea al final mandaba
+    // "client_id=...apps.googleusercontent.com%0A" → Google: 401 invalid_client.
+    clientId: String(process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || "").trim(),
+    clientSecret: String(process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || "").trim(),
   };
 }
 
