@@ -6,13 +6,23 @@
     <link rel="icon" type="image/png" href="/logo-color.png"/>
     <title>Growith — Gestión integral para tu e-commerce</title>
     <meta name="description" content="Growith es la plataforma de gestión integral para e-commerce: ventas, envíos, stock, facturación y rentabilidad en tiempo real, con Tienda Nube, Shopify, Mercado Libre, Meta Ads y Google Ads conectados en un solo lugar." />
+    <style>
+      /* Pantalla de carga: mismo fondo oscuro y logo que el splash de la app, así
+         no hay ningún destello de contenido antes de que monte React. */
+      html, body { margin: 0; background: #0f1117; }
+      #gh-splash { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #0f1117; }
+      #gh-splash img { width: 96px; height: 96px; object-fit: contain; animation: gh-in .6s cubic-bezier(.34,1.56,.64,1) both; }
+      @keyframes gh-in { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
+      /* Texto estático para robots sin JavaScript (verificación de marca de
+         Google, SEO): queda en el DOM pero NUNCA visible para una persona. */
+      .gh-seo { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+    </style>
   </head>
   <body>
-    <!-- Contenido estático visible para robots sin JavaScript (verificación de
-         marca de Google, SEO). React lo reemplaza al montar en #root. -->
     <div id="root">
-      <div style="font-family:system-ui,sans-serif;max-width:640px;margin:80px auto;padding:0 24px;color:#444;line-height:1.7">
-        <h1 style="color:#111">Growith</h1>
+      <div id="gh-splash" aria-hidden="true"><img src="/logo-color.png" alt=""/></div>
+      <div class="gh-seo">
+        <h1>Growith</h1>
         <p><strong>Growith es una plataforma de gestión integral para comercios electrónicos.</strong>
         Centraliza en un solo lugar las ventas, los envíos, el stock, la facturación electrónica
         y la rentabilidad en tiempo real del negocio, conectando Tienda Nube, Shopify,
