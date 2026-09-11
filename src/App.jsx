@@ -592,8 +592,8 @@ function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenC
     // Compute position from button
     if (btnRef.current) {
       const r = btnRef.current.getBoundingClientRect();
-      // El selector vive ARRIBA del menú → el desplegable abre hacia abajo.
-      setDropPos({top: r.bottom + 6, left: r.left, width: Math.max(260, r.width)});
+      // El selector vive ABAJO (arriba del bloque de perfil) → el desplegable abre hacia arriba.
+      setDropPos({top: r.top - 6, left: r.left, width: Math.max(260, r.width)});
     }
     const onClick = (e) => {
       if (btnRef.current?.contains(e.target)) return;
@@ -649,7 +649,7 @@ function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenC
         )}
       </button>
       {open && ReactDOM.createPortal(
-        <div ref={dropRef} style={{position:"fixed",top:dropPos.top,left:dropPos.left,width:dropPos.width,maxHeight:"calc(100vh - 80px)",overflowY:"auto",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:DS.sp.xs,zIndex:9998,boxShadow:"0 10px 40px rgba(0,0,0,0.55)"}}>
+        <div ref={dropRef} style={{position:"fixed",bottom:`calc(100vh - ${dropPos.top}px)`,left:dropPos.left,width:dropPos.width,maxHeight:"calc(100vh - 80px)",overflowY:"auto",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:DS.sp.xs,zIndex:9998,boxShadow:"0 10px 40px rgba(0,0,0,0.55)"}}>
           {/* Card de la org activa con Gestionar */}
           <div style={{display:"flex",alignItems:"center",gap:DS.sp.sm,padding:`${DS.sp.sm}px ${DS.sp.sm}px`,background:T.bg,borderRadius:DS.r.md,marginBottom:DS.sp.xs}}>
             <OrgAvatar org={active} size={34}/>
@@ -959,9 +959,6 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
         </div>
       )}
 
-      {/* Selector de TIENDA del perfil (multi-tienda): arriba del menú; el perfil (login) queda abajo a la izquierda */}
-      <OrgSwitcher T={T} user={user} userPlan={userPlan} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={onOpenCreateOrg} onOpenManageOrg={onOpenManageOrg} collapsed={collapsed}/>
-
       {/* Nav */}
       <nav style={{flex:1,padding:DS.sp.sm,display:"flex",flexDirection:"column",gap:2,overflowY:"auto"}}>
         {GROUPS.filter(item=>!(adminOnlySections||[]).includes(item.id)||isAdmin)
@@ -1073,6 +1070,9 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
           </div>
         </div>
       )}
+
+      {/* Selector de TIENDA del perfil (multi-tienda): justo arriba del bloque de perfil (abajo a la izquierda). Abre hacia arriba. */}
+      <OrgSwitcher T={T} user={user} userPlan={userPlan} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={onOpenCreateOrg} onOpenManageOrg={onOpenManageOrg} collapsed={collapsed}/>
 
       {/* User Section */}
       <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,padding:DS.sp.sm,marginTop:DS.sp.sm}}>
