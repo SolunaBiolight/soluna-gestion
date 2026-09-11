@@ -75,7 +75,23 @@ async function sucursalesCercanasCp(db, env, cp, max) {
   const vecinas = todas
     .filter(s => !ids.has(String(s.id)) && isFinite(cpDe(s)) && Math.abs(cpDe(s) - n) <= 60)
     .sort((a, b) => Math.abs(cpDe(a) - n) - Math.abs(cpDe(b) - n));
-  return [...exactas, ...vecinas].slice(0, max);
+  return dedupeSucursales([...exactas, ...vecinas]).slice(0, max);
+}
+// Andreani lista el mismo local varias veces (sucursal + punto HOP + locker,
+// ids distintos): al comprador se le muestra una sola vez (misma calle+número
+// o mismo nombre base).
+function dedupeSucursales(lista) {
+  const nrm = v => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const seen = new Set(); const out = [];
+  for (const s of lista) {
+    const d = s.direccion || {};
+    const kDir = nrm(d.calle) && nrm(d.numero) ? `d:${nrm(d.calle)}|${nrm(d.numero)}` : "";
+    const kNom = `n:${nrm(String(s.descripcion || "").replace(/\(.*?\)/g, ""))}`;
+    if ((kDir && seen.has(kDir)) || seen.has(kNom)) continue;
+    if (kDir) seen.add(kDir); seen.add(kNom);
+    out.push(s);
+  }
+  return out;
 }
 
 // Motor de tarifas. Devuelve {rates, why} — `why` explica por qué no hubo
@@ -139,14 +155,8 @@ export async function computeRates(db, uid, rate, { shopHdr = "", t0 = Date.now(
       rates.push({ service_name: "Andreani a domicilio", service_code: "ANDREANI_DOM", total_price: cents(gratis ? 0 : recargo(dom)), currency, description: "Te lo lleva Andreani a la dirección que cargaste" });
     }
     if (suc != null && sucursales.length) {
-      const max = Math.max(1, Math.min(12, Number(ac.sucursalesMax) || 5));
-      const locDest = String(dest.city || "").toLowerCase();
-      const orden = [...sucursales].sort((a, b2) => {
-        const sa = (String(a.direccion?.codigoPostal || "") === cp ? 2 : 0) + (locDest && String(a.direccion?.localidad || "").toLowerCase().includes(locDest) ? 1 : 0);
-        const sb = (String(b2.direccion?.codigoPostal || "") === cp ? 2 : 0) + (locDest && String(b2.direccion?.localidad || "").toLowerCase().includes(locDest) ? 1 : 0);
-        return sb - sa;
-      }).slice(0, max);
-      for (const s of orden) {
+      // El orden ya viene por cercanía (CP exacto primero, después vecinos).
+      for (const s of sucursales) {
         rates.push({ service_name: tituloSucursal(s), service_code: `ANDREANI_SUC_${s.id}`, total_price: cents(gratis ? 0 : recargo(suc)), currency, description: descSucursal(s) });
       }
     } else if (suc != null && quiereSuc) errs.push(`sin sucursales Andreani para el CP ${cp}`);
