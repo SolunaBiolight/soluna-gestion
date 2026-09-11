@@ -16,7 +16,7 @@
 // a lo cacheado o a lista vacía (Shopify muestra los otros métodos).
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { andreaniEnv, andreaniFetch, slimSucursal, distanciaM, geocodeDireccion, getGlobalConfig, sucursalesPorCp, sucursalesTodas, sucursalesCercanasCore, cotizarAndreani, precioConMarkup, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
+import { andreaniEnv, andreaniFetch, slimSucursal, distanciaM, getGlobalConfig, sucursalesPorCp, sucursalesTodas, sucursalesCercanasCore, cotizarAndreani, precioConMarkup, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -113,15 +113,15 @@ async function geocodeLocalidad({ loc, prov, cp }) {
   return (c && isFinite(c.lat) && isFinite(c.lon)) ? { lat: +c.lat, lng: +c.lon } : null;
 }
 
-// Ancla = dónde está el comprador: dirección geocodificada (cache 30 días) →
-// centroide de la localidad → mediana de las sucursales ubicadas en su CP.
-async function anclaComprador(db, { cp, dir, loc, prov }, pub) {
-  const key = (nrmK(`${dir}|${loc}|${cp}`) || String(cp)).slice(0, 90);
-  const ref = db.collection("andreani_config").doc(`geo_ck_${key}`);
+// Ancla = zona del comprador. NO se usa la dirección escrita (es impredecible
+// y el geocoder cae en cualquier lado): centroide oficial de la localidad
+// (georef, cache 30 días) → mediana de las sucursales ubicadas en su CP.
+async function anclaComprador(db, { cp, loc, prov }, pub) {
+  const key = (nrmK(`${loc}|${cp}`) || String(cp)).slice(0, 90);
+  const ref = db.collection("andreani_config").doc(`geo_ck2_${key}`);
   try { const c = (await ref.get()).data(); if (c && enARll(c.lat, c.lng) && Date.now() - (c.ts || 0) < 30 * 86400000) return { lat: c.lat, lng: c.lng, src: c.src || "cache" }; } catch (_) {}
   let g = null, src = "";
-  if (dir) { try { g = await Promise.race([geocodeDireccion({ dir, loc, prov, cp }), sleep(3500)]); if (g) src = "dir"; } catch (_) {} }
-  if (!g) { try { g = await Promise.race([geocodeLocalidad({ loc, prov, cp }), sleep(2500)]); if (g) src = "loc"; } catch (_) {} }
+  try { g = await Promise.race([geocodeLocalidad({ loc, prov, cp }), sleep(2500)]); if (g) src = "loc"; } catch (_) {}
   if (g && enARll(g.lat, g.lng)) { ref.set({ lat: g.lat, lng: g.lng, src, ts: Date.now(), ratesUid: "_geo" }).catch(() => {}); return { ...g, src }; }
   const cpS = String(cp);
   const enCp = pub.filter(s => String(s.direccion?.codigoPostal || "").replace(/\D/g, "").slice(0, 4) === cpS && enARll(s.lat, s.lng));
@@ -136,8 +136,8 @@ async function anclaComprador(db, { cp, dir, loc, prov }, pub) {
 // distancia; si no hay ninguna a 10 km, únicamente la más cercana. Hasta tener
 // los puntos HOP en la API, esto es lo que evita listas "raras".
 const RADIO_M = 10000;
-async function sucursalesParaCheckout(db, env, { cp, dir, loc, prov }, max) {
-  const cacheRef = db.collection("andreani_config").doc(`rates_suc4_${cp}_${(nrmK(dir || loc) || "x").slice(0, 60)}`);
+async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
+  const cacheRef = db.collection("andreani_config").doc(`rates_suc5_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
   try {
     const c = (await cacheRef.get()).data();
     if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return c.lista.slice(0, max);
@@ -145,7 +145,7 @@ async function sucursalesParaCheckout(db, env, { cp, dir, loc, prov }, max) {
   let lista = [];
   try {
     const pub = (await sucursalesB2CCheckout(db, env)).filter(esRetiroPublico);
-    const ancla = await anclaComprador(db, { cp, dir, loc, prov }, pub);
+    const ancla = await anclaComprador(db, { cp, loc, prov }, pub);
     if (ancla) {
       const conDist = pub.filter(s => enARll(s.lat, s.lng))
         .map(s => ({ ...s, distM: distanciaM(ancla.lat, ancla.lng, s.lat, s.lng) }))
@@ -250,7 +250,7 @@ export async function computeRates(db, uid, rate, { shopHdr = "", t0 = Date.now(
     const [dom, suc, sucursales] = await Promise.all([
       quiereDom ? cotiza("domicilio").catch(e => { errs.push("domicilio: " + e.message); return null; }) : Promise.resolve(null),
       quiereSuc ? cotiza("sucursal").catch(e => { errs.push("sucursal: " + e.message); return null; }) : Promise.resolve(null),
-      quiereSuc ? sucursalesParaCheckout(db, env, { cp, dir: [dest.address1, dest.address2].filter(Boolean).join(" "), loc: dest.city, prov: dest.province }, Math.max(1, Math.min(12, Number(ac.sucursalesMax) || 5))).catch(e => { errs.push("sucursales: " + e.message); return []; }) : Promise.resolve([]),
+      quiereSuc ? sucursalesParaCheckout(db, env, { cp, loc: dest.city, prov: dest.province }, Math.max(1, Math.min(12, Number(ac.sucursalesMax) || 5))).catch(e => { errs.push("sucursales: " + e.message); return []; }) : Promise.resolve([]),
     ]);
     if ((dom != null || suc != null) && !(cached && cached.dom === dom && cached.suc === suc)) {
       cacheRef.set({ ratesUid: uid, cp, ts: Date.now(), dom: dom ?? null, suc: suc ?? null }).catch(() => {});
