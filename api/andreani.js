@@ -105,7 +105,7 @@ async function getAndreaniToken(db, env, force = false) {
 }
 
 // Request autenticado con retry: ante 401 re-loguea UNA vez y reintenta.
-async function andreaniFetch(db, env, path, opts = {}) {
+export async function andreaniFetch(db, env, path, opts = {}) {
   let token = await getAndreaniToken(db, env);
   const doFetch = (tk) => fetchTimeout(`${ANDREANI_BASE}${path}`, {
     ...opts,
@@ -199,7 +199,7 @@ export async function isPlatformAdmin(db, uid) {
 
 // ─── Sucursales (por CP y listado completo para el buscador) ───────────────
 
-function slimSucursal(s) {
+export function slimSucursal(s) {
   // Coordenadas: Andreani las manda con distintos nombres según el endpoint —
   // se prueban todas las formas conocidas. Sin coords la sucursal igual sirve
   // (solo no participa del orden por distancia).

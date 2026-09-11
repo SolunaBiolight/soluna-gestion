@@ -16,7 +16,7 @@
 // a lo cacheado o a lista vacía (Shopify muestra los otros métodos).
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { andreaniEnv, getGlobalConfig, sucursalesPorCp, sucursalesTodas, sucursalesCercanasCore, cotizarAndreani, precioConMarkup, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
+import { andreaniEnv, andreaniFetch, slimSucursal, getGlobalConfig, sucursalesPorCp, sucursalesTodas, sucursalesCercanasCore, cotizarAndreani, precioConMarkup, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -62,8 +62,30 @@ function descSucursal(s) {
 
 // Puntos que NO son de retiro para el público (depósitos, receptorías,
 // puntos "in house" de un cliente): nunca al checkout.
-const NO_PUBLICO_RX = /in ?house|receptor[ií]a|dep[oó]sito|planta|centro de distribuci[oó]n|\bcd\b|\bhub\b|log[ií]stica/i;
+const NO_PUBLICO_RX = /in ?house|receptor[ií]a|dep[oó]sito|planta|\bcds?\b|\bhub\b|log[ií]stica|no usar|devoluci|mercado central|procesamiento/i;
 const esPuntoPublico = s => !NO_PUBLICO_RX.test(String(s.descripcion || ""));
+
+// Listado B2C completo con lo que el slim de andreani.js descarta y acá es
+// clave: `codigosPostalesAtendidos` (qué CPs atiende cada sucursal — es la
+// propia definición de Andreani de "sucursal para este CP"), tipo y si hace
+// atención al cliente / entrega envíos. Cacheado 7 días.
+async function sucursalesB2CCheckout(db, env) {
+  const ref = db.collection("andreani_config").doc("suc_b2c_checkout");
+  try { const c = (await ref.get()).data(); if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return c.lista; } catch (_) {}
+  const r = await andreaniFetch(db, env, "/v2/sucursales?canal=B2C");
+  if (!r.ok) throw new Error(`sucursales B2C HTTP ${r.status}`);
+  const raw = await r.json();
+  const arr = Array.isArray(raw) ? raw : (raw?.sucursales || []);
+  const lista = arr.map(x => {
+    const sl = slimSucursal(x); const da = x.datosAdicionales || {};
+    return { id: sl.id, descripcion: sl.descripcion, direccion: sl.direccion, horarioDeAtencion: sl.horarioDeAtencion, lat: sl.lat, lng: sl.lng,
+      cps: Array.isArray(x.codigosPostalesAtendidos) ? x.codigosPostalesAtendidos.map(String) : [],
+      tipo: String(da.tipo || ""), atencion: da.seHaceAtencionAlCliente !== false, entrega: da.entregaEnvios !== false };
+  });
+  try { await ref.set({ ts: Date.now(), lista }); } catch (_) { /* >1MB: sin cache */ }
+  return lista;
+}
+const esRetiroPublico = s => s.entrega && s.atencion && !/planta/i.test(s.tipo || "") && esPuntoPublico(s);
 
 // Sucursales por CERCANÍA real (motor de Envíos): ancla = centroide del CP /
 // localidad del comprador (coords cacheadas; no se geocodifica la dirección
@@ -79,14 +101,25 @@ async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
     if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return c.lista.slice(0, max);
   } catch (_) {}
   let lista = [];
+  // 1) Las que ATIENDEN ese CP según Andreani (codigosPostalesAtendidos):
+  //    mismo CP primero, después misma localidad, después el resto.
   try {
+    const b2c = await sucursalesB2CCheckout(db, env);
+    const locN = nrm(loc);
+    const sirve = b2c.filter(s => esRetiroPublico(s) && s.cps.includes(String(cp)));
+    const score = s => (String(s.direccion?.codigoPostal || "") === String(cp) ? 2 : 0) + (locN && nrm(s.direccion?.localidad).includes(locN) ? 1 : 0);
+    lista = sirve.sort((a, b) => score(b) - score(a));
+  } catch (_) {}
+  // 2) Si Andreani no define suficientes para ese CP, completar por distancia.
+  if (lista.length < Math.min(3, max)) try {
     const out = await Promise.race([
       sucursalesCercanasCore(db, env, { q: "", cp, dir: "", loc: loc || "", prov: prov || "" }),
       new Promise(r => setTimeout(() => r(null), 5500)),
     ]);
     if (out && Array.isArray(out.sucursales) && out.sucursales.length && !out.sinOrigen) {
-      // Si es ranking real por distancia, cortar lo que quede muy lejos (> 25 km)
-      lista = out.sucursales.filter(s => s.distM == null || s.distM <= 25000);
+      // Ranking real por distancia: cortar lo que quede muy lejos (> 25 km)
+      const ids = new Set(lista.map(s => String(s.id)));
+      lista = [...lista, ...out.sucursales.filter(s => !ids.has(String(s.id)) && (s.distM == null || s.distM <= 25000))];
     }
   } catch (_) {}
   if (!lista.length) lista = await sucursalesCercanasCp(db, env, cp, 12);
