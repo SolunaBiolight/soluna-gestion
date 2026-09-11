@@ -555,7 +555,7 @@ async function sucursalesGeo(db, env, force = false) {
 // Geocodificación directa de la dirección del pedido: no depende de que el
 // punto exista en ningún listado. georef (API oficial argentina, sin key) y
 // Nominatim/OSM de respaldo.
-async function geocodeDireccion({ dir, loc, prov, cp }) {
+export async function geocodeDireccion({ dir, loc, prov, cp }) {
   const clean = s => String(s || "").replace(/\bs\/?n\.?\b/gi, " ").replace(/\s+/g, " ").trim();
   dir = clean(dir); loc = clean(loc); prov = clean(prov);
   // Sufijos de unidad ("Local 9 y 10", "Piso 2 Dpto B") confunden al geocoder
