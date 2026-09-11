@@ -30563,17 +30563,52 @@ function MLPreguntas({ T, uid }) {
 
 // ── MENSAJES post-venta ─────────────────────────────────────────────────
 // Lista las ventas recientes y abre el hilo del pack elegido.
-function MLMensajes({ T, uid, initialOrder }) {
+function MLMensajes({ T, uid, initialOrder, onBackToInbox }) {
   const [sel, setSel] = useState(initialOrder || null);
   useEffect(() => { if (initialOrder) setSel(initialOrder); }, [initialOrder]);
   const [thread, setThread] = useState([]); const [loadingT, setLoadingT] = useState(false); const [text, setText] = useState(""); const [sending, setSending] = useState(false); const [sellerId, setSellerId] = useState(null);
-  const loadThread = async (o) => { if (!o) return; setLoadingT(true); setThread([]); try { const j = await ghMlApi(uid, "ml_messages", { pack_id: o.pack_id }); setThread(j.messages || []); setSellerId(j.seller_id); } catch (e) { toast("No se pudo abrir el chat: " + e.message, "error"); } finally { setLoadingT(false); } };
+  // Bandeja: conversaciones con mensajes (últimas ventas), no la lista de ventas.
+  const [inbox, setInbox] = useState([]); const [loadingI, setLoadingI] = useState(true); const [errI, setErrI] = useState(null);
+  const loadInbox = async () => { setLoadingI(true); setErrI(null); try { const j = await ghMlApi(uid, "ml_inbox", { limit: 50 }); setInbox(j.conversations || []); } catch (e) { setErrI(e.message); } finally { setLoadingI(false); } };
+  useEffect(() => { loadInbox(); /* eslint-disable-next-line */ }, [uid]);
+  const loadThread = async (o) => { if (!o) return; setLoadingT(true); setThread([]); try { const j = await ghMlApi(uid, "ml_messages", { pack_id: o.pack_id, mark_read: 1 }); setThread(j.messages || []); setSellerId(j.seller_id); setInbox(prev => prev.map(c => c.pack_id === String(o.pack_id) ? { ...c, unread: 0 } : c)); } catch (e) { toast("No se pudo abrir el chat: " + e.message, "error"); } finally { setLoadingT(false); } };
   useEffect(() => { if (sel) loadThread(sel); /* eslint-disable-next-line */ }, [sel?.pack_id]);
-  const enviar = async () => { const t = text.trim(); if (!t || !sel) return; setSending(true); try { await ghMlApi(uid, "ml_send_message", {}, { data: { pack_id: sel.pack_id, to_user_id: sel.buyer_id, text: t } }); setText(""); await loadThread(sel); } catch (e) { toast("Error: " + e.message, "error"); } finally { setSending(false); } };
-  if (!sel) return <MLVentas T={T} uid={uid} onOpenMessages={setSel} />;
+  const enviar = async () => { const t = text.trim(); if (!t || !sel) return; setSending(true); try { await ghMlApi(uid, "ml_send_message", {}, { data: { pack_id: sel.pack_id, to_user_id: sel.buyer_id, text: t } }); setText(""); await loadThread(sel); setInbox(prev => prev.some(c => c.pack_id === String(sel.pack_id)) ? prev.map(c => c.pack_id === String(sel.pack_id) ? { ...c, last_text: t, last_mine: true, last_date: new Date().toISOString(), unread: 0 } : c) : prev); } catch (e) { toast("Error: " + e.message, "error"); } finally { setSending(false); } };
+  if (!sel) {
+    const fmtF = d => { try { const x = new Date(d); const hoy = new Date(); return x.toDateString() === hoy.toDateString() ? x.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : x.toLocaleDateString("es-AR", { day: "2-digit", month: "short" }); } catch (_) { return ""; } };
+    const sinLeer = inbox.reduce((a, c) => a + (c.unread > 0 ? 1 : 0), 0);
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <div style={{ fontSize: 12, color: T.textSm }}>{inbox.length} conversación{inbox.length !== 1 ? "es" : ""}{sinLeer ? <span style={{ color: T.accent, fontWeight: 700 }}> · {sinLeer} sin leer</span> : null} <span style={{ color: T.textSm }}>· últimas 50 ventas</span></div>
+          <button onClick={loadInbox} disabled={loadingI} style={{ ...BtnSecondary(T), fontSize: 12, padding: "6px 12px" }}>{loadingI ? <Spinner size={12} color={T.text} /> : "↻"} Actualizar</button>
+        </div>
+        {loadingI && !inbox.length ? <div style={{ padding: 50, textAlign: "center" }}><Spinner size={22} color={T.accent} /></div> :
+          errI ? <div style={{ background: T.card, border: `1px solid ${T.red}44`, borderRadius: 12, padding: 20, color: T.red, fontSize: 13 }}>No se pudieron cargar los mensajes: {errI}</div> :
+            !inbox.length ? <div style={{ background: T.card, border: `1px dashed ${T.borderL}`, borderRadius: 12, padding: "40px 20px", textAlign: "center", color: T.textSm, fontSize: 13 }}>No hay conversaciones con compradores en tus últimas ventas. Para escribirle a un comprador, abrí la venta desde la pestaña <strong style={{ color: T.text }}>Ventas</strong>.</div> :
+              inbox.map(c => (
+                <button key={c.pack_id} onClick={() => setSel(c)} style={{ background: c.unread ? T.accent + "10" : T.card, border: `1px solid ${c.unread ? T.accent + "55" : T.border}`, borderRadius: 12, padding: "12px 16px", display: "flex", gap: 12, alignItems: "flex-start", cursor: "pointer", textAlign: "left", width: "100%", fontFamily: "'Inter',system-ui,sans-serif", color: T.text }}>
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: T.accent + "22", color: T.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>{(c.buyer || "?").trim().charAt(0).toUpperCase()}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                      <span style={{ fontSize: 13, fontWeight: c.unread ? 800 : 700, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.buyer || "Comprador"}</span>
+                      <span style={{ fontSize: 11, color: T.textSm, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>#{c.pack_id}</span>
+                      <span style={{ marginLeft: "auto", fontSize: 11, color: c.unread ? T.accent : T.textSm, fontWeight: c.unread ? 700 : 500, flexShrink: 0 }}>{fmtF(c.last_date)}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: c.unread ? T.text : T.textMd, fontWeight: c.unread ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.45 }}>{c.last_mine ? <span style={{ color: T.textSm }}>Vos: </span> : null}{c.last_text}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+                      <span style={{ fontSize: 11, color: T.textSm, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(c.items || []).map(it => `${it.qty}× ${it.title}`).join(" · ")}</span>
+                      {c.unread > 0 && <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, color: "#fff", background: T.accentSolid, borderRadius: 20, padding: "1px 7px", flexShrink: 0 }}>{c.unread}</span>}
+                    </div>
+                  </div>
+                </button>
+              ))}
+      </div>
+    );
+  }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <button onClick={() => setSel(null)} style={{ ...BtnSecondary(T), fontSize: 12, padding: "6px 12px", alignSelf: "flex-start" }}>← Volver a ventas</button>
+      <button onClick={() => { setSel(null); onBackToInbox && onBackToInbox(); }} style={{ ...BtnSecondary(T), fontSize: 12, padding: "6px 12px", alignSelf: "flex-start" }}>← Volver a mensajes</button>
       <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 16px" }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>#{sel.pack_id} · {sel.buyer || "Comprador"}</div>
         {(sel.items || []).map((it, i) => <div key={i} style={{ fontSize: 11, color: T.textSm }}>{it.qty}× {it.title}</div>)}
@@ -30884,6 +30919,8 @@ function MLPublicar({ T, uid }) {
 // APP MERCADO LIBRE — Gestión + Bulk Edit
 // ===========================================
 function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
+  // Venta elegida desde "Ventas → Mensajes": abre directo ese chat en la pestaña Mensajes.
+  const [msgOrder, setMsgOrder] = useState(null);
   const uid = user?.uid;
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -31075,9 +31112,9 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
           </div>
         )}
         {tab==="reputacion" ? <MLReputacion T={T} uid={uid}/> :
-         tab==="ventas" ? <MLVentas T={T} uid={uid}/> :
+         tab==="ventas" ? <MLVentas T={T} uid={uid} onOpenMessages={o=>{ setMsgOrder(o); setTab && setTab("mensajes"); }}/> :
          tab==="preguntas" ? <MLPreguntas T={T} uid={uid}/> :
-         tab==="mensajes" ? <MLMensajes T={T} uid={uid}/> :
+         tab==="mensajes" ? <MLMensajes T={T} uid={uid} initialOrder={msgOrder} onBackToInbox={()=>setMsgOrder(null)}/> :
          tab==="publicar" ? <MLPublicar T={T} uid={uid}/> :
          tab==="analytics" ? (
           <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"60px 30px",textAlign:"center"}}>

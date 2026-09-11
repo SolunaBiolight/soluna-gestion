@@ -1684,13 +1684,55 @@ export default async function handler(req, res) {
       } catch (e) { return mlErr(res, e); }
     }
 
+    // BANDEJA de mensajes post-venta. ML no tiene un endpoint de "inbox":
+    // se toman las últimas ventas (por pack) y se lee el hilo de cada una;
+    // se devuelven solo las que tienen mensajes, ordenadas por el último,
+    // con el conteo de no leídos (/messages/unread) del vendedor.
+    if (action === "ml_inbox" && req.method === "GET") {
+      const limit = Math.min(parseInt(req.query.limit) || 50, 50);
+      try {
+        const t = await mlToken();
+        const o = await mlApi(t.accessToken, `/orders/search?seller=${t.userId}&sort=date_desc&limit=${limit}&offset=0`);
+        const packs = new Map();
+        for (const r of (o.results || [])) { const pid = String(r.pack_id || r.id); if (!packs.has(pid)) packs.set(pid, r); }
+        const unread = {};
+        try {
+          const u = await mlApi(t.accessToken, `/messages/unread?role=seller&tag=post_sale`);
+          for (const x of (u.results || [])) { const m = /\/packs\/(\d+)/.exec(x.resource || ""); if (m) unread[m[1]] = x.count || 1; }
+        } catch (_) { /* sin conteo de no leídos, no es crítico */ }
+        const cola = [...packs.entries()]; const convs = [];
+        const worker = async () => {
+          while (cola.length) {
+            const [pid, r] = cola.shift();
+            try {
+              const m = await mlApi(t.accessToken, `/messages/packs/${pid}/sellers/${t.userId}?tag=post_sale&mark_as_read=false`);
+              const msgs = (m.messages || []).map(x => ({ text: x.text || "", date: x.message_date?.created || x.date_created, mine: String(x.from?.user_id) === String(t.userId) }))
+                .sort((a, b) => new Date(a.date) - new Date(b.date));
+              if (!msgs.length) continue;
+              const last = msgs[msgs.length - 1];
+              convs.push({
+                pack_id: pid, order_id: r.id, date: r.date_created, status: r.status,
+                buyer: r.buyer?.nickname || `${r.buyer?.first_name || ""} ${r.buyer?.last_name || ""}`.trim(), buyer_id: r.buyer?.id || null,
+                items: (r.order_items || []).map(oi => ({ title: oi.item?.title, qty: oi.quantity })),
+                last_text: last.text, last_date: last.date, last_mine: last.mine, count: msgs.length, unread: unread[pid] || 0,
+              });
+            } catch (_) { /* pack sin hilo o sin permiso: se omite */ }
+          }
+        };
+        await Promise.all(Array.from({ length: 5 }, worker));
+        convs.sort((a, b) => new Date(b.last_date) - new Date(a.last_date));
+        return res.json({ ok: true, seller_id: t.userId, scanned: packs.size, conversations: convs });
+      } catch (e) { return mlErr(res, e); }
+    }
+
     // MENSAJES post-venta de un pack: hilo completo comprador↔vendedor.
+    // mark_read=1 → ML los marca como leídos (se usa al abrir el chat).
     if (action === "ml_messages" && req.method === "GET") {
       const pack = String(req.query.pack_id || "").trim();
       if (!pack) return res.status(400).json({ error: "Falta pack_id" });
       try {
         const t = await mlToken();
-        const m = await mlApi(t.accessToken, `/messages/packs/${pack}/sellers/${t.userId}?tag=post_sale&mark_as_read=false`);
+        const m = await mlApi(t.accessToken, `/messages/packs/${pack}/sellers/${t.userId}?tag=post_sale&mark_as_read=${req.query.mark_read === "1" ? "true" : "false"}`);
         const msgs = (m.messages || []).map(x => ({ id: x.id, from: x.from?.user_id, to: x.to?.user_id, text: x.text || "", date: x.message_date?.created || x.date_created, mine: String(x.from?.user_id) === String(t.userId) }));
         return res.json({ ok: true, seller_id: t.userId, messages: msgs });
       } catch (e) { return mlErr(res, e); }
