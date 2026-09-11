@@ -942,7 +942,7 @@ export default async function handler(req, res) {
       const qs = await db.collection("users").where("teamUids", "array-contains", myUid).get();
       const tiendas = [];
       const docsById = {};
-      if (!selfMovida && !selfBorrada) {
+      if (!selfMovida && !selfBorrada && my.tiendaEliminada !== true) {
         tiendas.push({ uid: myUid, nombre: my.nombreTienda || my.nombre || my.email || "Mi tienda", color: my.colorTienda || "#7c3aed", rol: "owner", esSelf: true });
         docsById[myUid] = my;
       }
@@ -1023,6 +1023,29 @@ export default async function handler(req, res) {
           }
           await db.recursiveDelete(doc.ref); // doc + subcolecciones
           purgadas.push(uidP);
+        } catch (e) { errores.push({ uid: doc.id, error: e.message }); }
+      }
+      // Tiendas PRINCIPALES eliminadas (tiendaEliminada): se purgan los datos
+      // pero el doc users/{uid} se conserva (es el perfil/login/plan).
+      const principales = await db.collection("users").where("tiendaEliminada", "==", true).limit(20).get();
+      for (const doc of principales.docs) {
+        const d = doc.data() || {};
+        if (!d.tiendaPurgeAt || d.tiendaPurgeAt > nowIso) continue;
+        try {
+          const uidP = doc.id;
+          const ROOT = [["reclamos", "ownerId"], ["canjes", "ownerId"], ["tareas", "uid"], ["colaboradores", "uid"]];
+          for (const [col, campo] of ROOT) {
+            let snap;
+            do {
+              snap = await db.collection(col).where(campo, "==", uidP).limit(300).get();
+              const batch = db.batch(); snap.docs.forEach(x => batch.delete(x.ref)); if (!snap.empty) await batch.commit();
+            } while (!snap.empty);
+          }
+          const subs = await doc.ref.listCollections();
+          for (const sub of subs) await db.recursiveDelete(sub);
+          // Sigue oculta del selector (tiendaEliminada:true); tiendaPurgeAt:null evita re-purgar.
+          await doc.ref.set({ tiendaEliminada: true, tiendaPurgada: true, tiendaPurgadaAt: nowIso, tiendaPurgeAt: null }, { merge: true });
+          purgadas.push(uidP + " (principal)");
         } catch (e) { errores.push({ uid: doc.id, error: e.message }); }
       }
       if (purgadas.length) await logAdmin(db, { adminUid: "cron", action: "cuentas_purgadas", detalle: purgadas.join(",") });
@@ -1200,7 +1223,26 @@ export default async function handler(req, res) {
       if (action === "tiendaEliminar") {
         // Solo tiendas ADICIONALES (t_...). La propia se elimina con cuentaEliminar.
         const tid = String(body.tiendaUid || "").trim();
-        if (!tid || tid === uid) return res.status(400).json({ error: "Para eliminar tu tienda principal, eliminá la cuenta." });
+        if (!tid) return res.status(400).json({ error: "Falta tiendaUid" });
+        if (tid === uid) {
+          // Tienda PRINCIPAL (= mi propio doc): no se puede borrar el doc porque
+          // ahí viven el perfil/login/plan. Se "vacía": integraciones fuera,
+          // datos ocultos 30 días (purga por cron sin borrar el doc) y queda
+          // fuera del selector. Requiere tener otra tienda a la que pasar.
+          if (my.ownerUid && my.ownerUid !== uid) return res.status(403).json({ error: "Esta tienda ya fue movida a otro perfil." });
+          const otras = (Array.isArray(my.tiendas) ? my.tiendas : []).filter(t => t && t.uid && !t.deleted);
+          if (!otras.length) return res.status(400).json({ error: "Es tu única tienda. Para borrar todo, usá \"Eliminar mi cuenta\"." });
+          const purgeAt = new Date(Date.now() + 30 * 86400000).toISOString();
+          await myRef.set({
+            tiendaEliminada: true, tiendaEliminadaAt: new Date().toISOString(), tiendaPurgeAt: purgeAt,
+            stores: [], cuits: [], metaAccounts: [], meta_active_account: null,
+            googleAds: { connected: false }, googleDrive: { connected: false, refresh_token: null, access_token: null }, tiktokAds: { connected: false, access_token: null, advertisers: [] },
+            active_tienda_uid: otras[0].uid,
+          }, { merge: true });
+          clearTeamCache(uid);
+          await logAdmin(db, { adminUid: uid, action: "tienda_principal_eliminada", targetUid: uid, targetEmail: my.email || "", detalle: `Vaciada; purga de datos ${purgeAt}` });
+          return res.json({ ok: true, purgeAt, principal: true });
+        }
         const tRef = db.collection("users").doc(tid);
         const d = (await tRef.get()).data();
         if (!d || d.ownerUid !== uid) return res.status(403).json({ error: "Solo el dueño puede eliminar la tienda." });

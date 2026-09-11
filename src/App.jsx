@@ -773,8 +773,9 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
   const [saving, setSaving] = React.useState(false);
   const [confirmDel, setConfirmDel] = React.useState(false);
   const COLORS = ["#7c3aed","#ec4899",T.orange,T.yellow,T.green,"#06b6d4",T.blue,T.red];
-  // Solo se borran tiendas ADICIONALES propias (la principal se elimina con "Eliminar mi cuenta" en Config).
-  const canDelete = org.id !== auth.currentUser?.uid && org.rol === "owner";
+  // Cualquier tienda propia se puede eliminar. La principal (= mi login) se
+  // "vacía": el perfil, el login y el plan siguen; requiere tener otra tienda.
+  const canDelete = org.rol === "owner";
 
   async function handleSave() {
     if (!name.trim()) return;
@@ -816,7 +817,7 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
             ) : (
               <div style={{background:T.red+"10",border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px",boxShadow:`0 0 0 1px ${T.red}18, 0 4px 12px ${T.red}14`}}>
                 <div style={{fontSize:12,color:T.text,fontWeight:700,marginBottom:4}}>¿Eliminar la tienda "{org.name}"?</div>
-                <div style={{fontSize:11.5,color:T.textMd,lineHeight:1.5,marginBottom:8}}>⚠️ Junto con la tienda se borra <strong style={{color:T.text}}>todo su historial</strong> (pedidos, reclamos, canjes, tareas, facturación, márgenes) y <strong style={{color:T.text}}>todas sus vinculaciones</strong> (Tienda Nube/Shopify, Mercado Libre, Meta Ads, Google, ARCA, Andreani). Deja de facturarse al instante. Queda oculta 30 días por si te arrepentís; después se borra definitivamente.</div>
+                <div style={{fontSize:11.5,color:T.textMd,lineHeight:1.5,marginBottom:8}}>⚠️ Junto con la tienda se borra <strong style={{color:T.text}}>todo su historial</strong> (pedidos, reclamos, canjes, tareas, facturación, márgenes) y <strong style={{color:T.text}}>todas sus vinculaciones</strong> (Tienda Nube/Shopify, Mercado Libre, Meta Ads, Google, ARCA, Andreani). Deja de facturarse al instante. Queda oculta 30 días por si te arrepentís; después se borra definitivamente.{org.esSelf?" Es tu tienda principal: tu perfil, tu login y tu plan siguen igual; pasás a otra de tus tiendas.":""}</div>
                 <div style={{display:"flex",gap:6}}>
                   <button onClick={()=>setConfirmDel(false)} disabled={saving} style={{...BtnSecondary(T),flex:1,padding:"7px",fontSize:11,borderRadius:8,justifyContent:"center"}}>Cancelar</button>
                   <button onClick={handleDelete} disabled={saving} style={{...BtnDanger(T),flex:1,padding:"7px",fontSize:11,borderRadius:8,justifyContent:"center",background:T.red,color:"#fff",boxShadow:`0 2px 12px ${T.red}55`}}>{saving?"Borrando...":"Sí, borrar"}</button>
@@ -13072,7 +13073,7 @@ function PerfilTiendasCard({T, user, userDoc, setMsg}) {
     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
       <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Perfil y tiendas</div>
       <div style={{fontSize:11,color:T.textSm,marginBottom:14,lineHeight:1.5}}>
-        Tu perfil <strong style={{color:T.text}}>{auth.currentUser?.email||""}</strong> puede tener varias tiendas; cada una con sus propias integraciones. Cambiás de tienda desde el selector del menú (arriba a la izquierda). {esPrincipal?"Esta es tu tienda principal.":"Esta es una tienda adicional de tu perfil."}
+        Tu perfil <strong style={{color:T.text}}>{auth.currentUser?.email||""}</strong> puede tener varias tiendas; cada una con sus propias integraciones. Cambiás de tienda desde el selector del menú (abajo a la izquierda). {esPrincipal?"Esta es tu tienda principal.":"Esta es una tienda adicional de tu perfil."}
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
         <div style={{flex:"1 1 220px"}}>
@@ -13696,8 +13697,8 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
           );
         })()}
 
-        {/* Troubleshooting: ya conectado pero sin publicaciones en Stock */}
-        {(shStore || mlStore) && (
+        {/* Troubleshooting de permisos (Stock/ML) — oculto a pedido de Thiago; se conserva por si hay que reactivarlo */}
+        {false && (shStore || mlStore) && (
           <details style={{background:T.card,border:`1px solid ${T.yellow||T.yellow}55`,borderRadius:12,padding:"14px 18px",marginTop:14}}>
             <summary style={{cursor:"pointer",fontSize:13,fontWeight:700,color:T.yellow||T.yellow,listStyle:"none",display:"flex",alignItems:"center",gap:8}}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ¿Ya conectaste pero no aparecen publicaciones en Stock o Gestión ML?
@@ -37328,7 +37329,7 @@ export default function App() {
   },[tiendaApi]);
 
   const onDeleteOrg = React.useCallback(async (tiendaUid) => {
-    if (!tiendaUid || tiendaUid === authUser?.uid) return false;
+    if (!tiendaUid) return false;
     try { await tiendaApi("tiendaEliminar",{tiendaUid}); try { localStorage.removeItem(`growith_tienda_activa_${authUser?.uid}`); } catch(_) {} toast("Tienda eliminada (se puede recuperar 30 días)","success"); setTimeout(()=>window.location.reload(),500); return true; }
     catch (e) { appAlert("No se pudo eliminar: " + e.message); return false; }
   },[tiendaApi, authUser?.uid]);
