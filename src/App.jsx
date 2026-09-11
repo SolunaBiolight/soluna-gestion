@@ -36808,10 +36808,20 @@ export default function App() {
     let alive=true;
     (async()=>{
       try{
+        // La tienda en la que ESTE dispositivo estaba parado manda: se sincroniza
+        // al perfil antes de pedir el workspace (si el hint es inválido, el backend
+        // lo rechaza y queda la activa del perfil).
+        let hint=null; try { hint=localStorage.getItem(`growith_tienda_activa_${authUser.uid}`); } catch(_) {}
+        if(hint){
+          try { await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"tiendaActivar",uid:authUser.uid,tiendaUid:hint})}); }
+          catch(_) {}
+        }
         const r=await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"workspace"})});
         const d=await r.json().catch(()=>({}));
         if(!alive) return;
         const tiendas=Array.isArray(d?.tiendas)?d.tiendas:[];
+        // Si el hint ya no existe (tienda eliminada/movida), lo limpiamos.
+        if(hint && !tiendas.some(t=>t.uid===hint)){ try { localStorage.removeItem(`growith_tienda_activa_${authUser.uid}`); } catch(_) {} }
         // info != null siempre que haya respuesta: guarda tiendas/activa aunque la
         // activa sea mi propio doc (ownerId null → la app opera sobre authUser.uid).
         const info=d?{ownerId:d.ownerId||null,rol:d.activeRol||"owner",secciones:d.secciones||{},ownerNombre:d.ownerNombre||"",tiendas,activeTiendaUid:d.activeTiendaUid||authUser.uid,selfMovida:!!d.selfMovida,selfMovidaA:d.selfMovidaA||null,extra:{tiendasExtra:d.ownerCtx?.tiendasExtra||0,extraUsdMensual:d.ownerCtx?.extraUsdMensual||0}}:null;
@@ -37292,16 +37302,22 @@ export default function App() {
 
   const onSwitchOrg = React.useCallback(async (tiendaUid) => {
     if (!tiendaUid || tiendaUid === activeOrgId) return;
-    try { await tiendaApi("tiendaActivar",{tiendaUid}); window.location.reload(); }
+    try {
+      await tiendaApi("tiendaActivar",{tiendaUid});
+      // Preferencia de ESTE dispositivo: al recargar, esta tienda manda aunque
+      // otra pestaña/dispositivo haya cambiado la activa del perfil.
+      try { localStorage.setItem(`growith_tienda_activa_${authUser?.uid}`, tiendaUid); } catch(_) {}
+      window.location.reload();
+    }
     catch (e) { appAlert("No se pudo cambiar de tienda: " + e.message); }
-  },[tiendaApi, activeOrgId]);
+  },[tiendaApi, activeOrgId, authUser?.uid]);
 
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
   const [manageOrgId, setManageOrgId] = useState(null);
 
   const onCreateOrg = React.useCallback(async ({name, color}) => {
     if (!name?.trim()) return false;
-    try { await tiendaApi("tiendaCrear",{nombre:name.trim(),color:color||"#7c3aed"}); toast("Tienda creada ✓ — entrando…","success"); setTimeout(()=>window.location.reload(),500); return true; }
+    try { await tiendaApi("tiendaCrear",{nombre:name.trim(),color:color||"#7c3aed"}); try { localStorage.removeItem(`growith_tienda_activa_${authUser?.uid}`); } catch(_) {} toast("Tienda creada ✓ — entrando…","success"); setTimeout(()=>window.location.reload(),500); return true; }
     catch (e) { appAlert("No se pudo crear la tienda: " + e.message); return false; }
   },[tiendaApi]);
 
@@ -37313,7 +37329,7 @@ export default function App() {
 
   const onDeleteOrg = React.useCallback(async (tiendaUid) => {
     if (!tiendaUid || tiendaUid === authUser?.uid) return false;
-    try { await tiendaApi("tiendaEliminar",{tiendaUid}); toast("Tienda eliminada (se puede recuperar 30 días)","success"); setTimeout(()=>window.location.reload(),500); return true; }
+    try { await tiendaApi("tiendaEliminar",{tiendaUid}); try { localStorage.removeItem(`growith_tienda_activa_${authUser?.uid}`); } catch(_) {} toast("Tienda eliminada (se puede recuperar 30 días)","success"); setTimeout(()=>window.location.reload(),500); return true; }
     catch (e) { appAlert("No se pudo eliminar: " + e.message); return false; }
   },[tiendaApi, authUser?.uid]);
 
