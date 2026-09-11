@@ -660,7 +660,7 @@ function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenC
             <OrgAvatar org={active} size={34}/>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{active.name}</div>
-              <div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:1}}>{active.rol==="miembro"?"Miembro del equipo":(active.esSelf?"Tienda principal · Dueño":"Tienda adicional · Dueño")}</div>
+              {active.rol==="miembro"&&<div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:1}}>Miembro del equipo</div>}
             </div>
             <button onClick={()=>{ setOpen(false); onOpenManageOrg(active.id); }} title="Gestionar tienda" style={{display:"flex",alignItems:"center",gap:5,background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textMd,padding:"6px 10px",fontSize:DS.font.sm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -732,10 +732,22 @@ function NewOrgModal({T, onClose, onCreate, existingCount, userPlan}) {
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
           <div>
             <div style={{fontSize:17,fontWeight:700,color:T.text}}>Nueva tienda</div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Arranca vacía: conectás su TN/Shopify, ML, Meta, ARCA, etc. desde Configuración. Mismo login, mismo pago{EXTRA_USD?` + USD ${EXTRA_USD}/mes por esta tienda adicional`:""}.</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Arranca vacía: conectás su TN/Shopify, ML, Meta, ARCA, etc. desde Configuración. Mismo login, mismo pago.</div>
           </div>
           <ModalCloseBtn T={T} onClick={onClose} disabled={saving} /></div>
 
+        {/* Costo: a partir de la segunda tienda se suma al plan de la cuenta
+            (Facturador +5 · Intermedio +10 · Pro +15 USD/mes). */}
+        {existingCount>=1 && (
+          <div style={{display:"flex",alignItems:"flex-start",gap:10,padding:"11px 13px",background:T.accent+"10",border:`1px solid ${T.accent}33`,borderRadius:10,marginBottom:14}}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:1}}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <div style={{fontSize:12,color:T.text,lineHeight:1.5}}>
+              {EXTRA_USD
+                ? <><strong>+ USD {EXTRA_USD}/mes</strong> por esta tienda (plan {({facturador:"Facturador",medio:"Intermedio",plus:"Pro",full:"Pro"})[userPlan]||userPlan}). Se suma a tu suscripción actual, prorrateado desde hoy; si la eliminás, deja de cobrarse al instante.</>
+                : <>Cada tienda a partir de la segunda se suma a tu plan: <strong>+5 USD/mes</strong> en Facturador, <strong>+10</strong> en Intermedio y <strong>+15</strong> en Pro. Mientras estés en prueba no se cobra.</>}
+            </div>
+          </div>
+        )}
         {overLimit ? (
           <div style={{padding:"18px 16px",background:`linear-gradient(135deg,${T.yellowBg||T.yellow+"14"},${T.yellowBg||T.yellow+"08"})`,border:`1.5px solid ${T.yellow||T.yellow}44`,borderRadius:12,marginBottom:14,boxShadow:`0 0 0 1px ${T.yellow||T.yellow}18, 0 4px 16px ${T.yellow||T.yellow}18`}}>
             <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:6}}>Llegaste al límite de tu plan</div>
@@ -822,7 +834,7 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
             ) : (
               <div style={{background:T.red+"10",border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px",boxShadow:`0 0 0 1px ${T.red}18, 0 4px 12px ${T.red}14`}}>
                 <div style={{fontSize:12,color:T.text,fontWeight:700,marginBottom:4}}>¿Eliminar la tienda "{org.name}"?</div>
-                <div style={{fontSize:11.5,color:T.textMd,lineHeight:1.5,marginBottom:8}}>⚠️ Junto con la tienda se borra <strong style={{color:T.text}}>todo su historial</strong> (pedidos, reclamos, canjes, tareas, facturación, márgenes) y <strong style={{color:T.text}}>todas sus vinculaciones</strong> (Tienda Nube/Shopify, Mercado Libre, Meta Ads, Google, ARCA, Andreani). Deja de facturarse al instante. Queda oculta 30 días por si te arrepentís; después se borra definitivamente.{org.esSelf?" Es tu tienda principal: tu perfil, tu login y tu plan siguen igual; pasás a otra de tus tiendas.":""}</div>
+                <div style={{fontSize:11.5,color:T.textMd,lineHeight:1.5,marginBottom:8}}>⚠️ Junto con la tienda se borra <strong style={{color:T.text}}>todo su historial</strong> (pedidos, reclamos, canjes, tareas, facturación, márgenes) y <strong style={{color:T.text}}>todas sus vinculaciones</strong> (Tienda Nube/Shopify, Mercado Libre, Meta Ads, Google, ARCA, Andreani). Deja de facturarse al instante. Queda oculta 30 días por si te arrepentís; después se borra definitivamente.{org.esSelf?" Tu perfil, tu login y tu plan siguen igual; pasás a otra de tus tiendas.":""}</div>
                 <div style={{display:"flex",gap:6}}>
                   <button onClick={()=>setConfirmDel(false)} disabled={saving} style={{...BtnSecondary(T),flex:1,padding:"7px",fontSize:11,borderRadius:8,justifyContent:"center"}}>Cancelar</button>
                   <button onClick={handleDelete} disabled={saving} style={{...BtnDanger(T),flex:1,padding:"7px",fontSize:11,borderRadius:8,justifyContent:"center",background:T.red,color:"#fff",boxShadow:`0 2px 12px ${T.red}55`}}>{saving?"Borrando...":"Sí, borrar"}</button>
@@ -13087,7 +13099,7 @@ function PerfilTiendasCard({T, user, userDoc, setMsg}) {
     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
       <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Perfil y tiendas</div>
       <div style={{fontSize:11,color:T.textSm,marginBottom:14,lineHeight:1.5}}>
-        Tu perfil <strong style={{color:T.text}}>{auth.currentUser?.email||""}</strong> puede tener varias tiendas; cada una con sus propias integraciones. Cambiás de tienda desde el selector del menú (abajo a la izquierda). {esPrincipal?"Esta es tu tienda principal.":"Esta es una tienda adicional de tu perfil."}
+        Tu perfil <strong style={{color:T.text}}>{auth.currentUser?.email||""}</strong> puede tener varias tiendas; cada una con sus propias integraciones. Cambiás de tienda desde el selector del menú (abajo a la izquierda).
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
         <div style={{flex:"1 1 220px"}}>
@@ -13314,9 +13326,14 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
     await signOut(auth);
   }
 
+  // La card "Cuenta" es del PERFIL (login), no de la tienda activa: cuando
+  // se está mirando otra tienda del perfil, userDoc es el doc de esa tienda.
+  const esMiDoc = user?.uid === auth.currentUser?.uid;
+  const cuentaNombre = esMiDoc ? (userDoc?.nombre || user?.displayName) : (auth.currentUser?.displayName || auth.currentUser?.email?.split("@")[0]);
+  const cuentaEmail  = esMiDoc ? (userDoc?.email || user?.email) : auth.currentUser?.email;
   function startEditProfile() {
-    setPNombre(userDoc?.nombre || user?.displayName || "");
-    setPEmail(userDoc?.email || user?.email || "");
+    setPNombre(cuentaNombre || "");
+    setPEmail(cuentaEmail || "");
     setEditProfile(true);
   }
   async function saveProfile() {
@@ -13326,9 +13343,9 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
       const email = pEmail.trim();
       // Guardamos en Firestore (lo que ven los desarrolladores en el panel admin).
       // Tienda propia (uid == login): nombre + email. Otra tienda del perfil: solo el nombre (el email es del perfil).
-      if (user.uid === auth.currentUser?.uid) await updateDoc(doc(db,"users",user.uid), { nombre, email });
-      else await ghUserPatch(user.uid, { nombre });
-      setUserDoc(d => ({ ...(d||{}), nombre, email }));
+      // Siempre al doc del PERFIL (mi login): esta card es a nivel cuenta.
+      await updateDoc(doc(db,"users",auth.currentUser.uid), { nombre, email });
+      if (esMiDoc) setUserDoc(d => ({ ...(d||{}), nombre, email }));
       // Actualizamos también el displayName de Firebase Auth (lo que muestra la
       // barra lateral). El email de LOGIN no se toca (seguís entrando con el mismo).
       try { if (nombre && auth.currentUser) await updateProfile(auth.currentUser, { displayName: nombre }); } catch(_) {}
@@ -13777,8 +13794,8 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                 </div>
               ) : (
                 <>
-                  <div style={{fontSize:15,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userDoc?.nombre||user?.displayName||"Usuario"}</div>
-                  <div style={{fontSize:12,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userDoc?.email||user?.email}</div>
+                  <div style={{fontSize:15,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cuentaNombre||"Usuario"}</div>
+                  <div style={{fontSize:12,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cuentaEmail}</div>
                 </>
               )}
             </div>
@@ -32560,7 +32577,7 @@ function MargenesPnl({ T, uid }) {
     try {
       const c = JSON.parse(localStorage.getItem(cacheKey(mes))||"null");
       if (!c?.totals) return null;
-      if (c.v !== 6) return null; // motor viejo (pre-envío en facturación): recalcular
+      if (c.v !== 7) return null; // motor viejo / sin huella de integraciones: recalcular
       if (mes === mesActual && Date.now()-(c.ts||0) > 3600000) return null; // mes corriente: refresco horario
       return c.totals;
     } catch(_) { return null; }
@@ -32572,40 +32589,49 @@ function MargenesPnl({ T, uid }) {
     const hasta = mes===mesActual ? hoyAr : finMes;
     return [desde, hasta];
   };
-  const cargarMes = async (mes, force) => {
-    if (!force) { const hit = leerCache(mes); if (hit) { setMeses(p=>({...p,[mes]:hit})); return; } }
+  const guardarMes = (mes, j) => {
+    const t = j.totals || {};
+    setMeses(p=>({...p,[mes]:t}));
+    try { localStorage.setItem(cacheKey(mes), JSON.stringify({ v:7, ts:Date.now(), fp:j.fp||null, totals:t })); } catch(_) {}
+  };
+  // soloCache=true: pinta lo local y lo valida contra la caché del servidor
+  // (que descarta meses calculados con otras integraciones o con 0 órdenes).
+  // Devuelve false si el mes quedó pendiente de cálculo en vivo.
+  const cargarMes = async (mes, force, soloCache=false) => {
+    const [desde,hasta] = rangoDe(mes);
+    const base = `/api/orders?action=daily_metrics&uid=${uid}&date_from=${desde}&date_to=${hasta}`;
+    if (!force) {
+      const hit = leerCache(mes);
+      if (hit) setMeses(p=>({...p,[mes]:hit}));
+      try {
+        const rc = await fetch(base+"&cache=only"); const jc = await rc.json();
+        if (!jc.noCache && !jc.error && jc.totals && jc.engineV === 6) { guardarMes(mes, jc); return true; }
+      } catch(_) { if (hit) return true; }
+      // El servidor dice que lo guardado no vale (o no hay nada): lo local
+      // tampoco sirve → se recalcula en vivo.
+      if (hit) { try{ localStorage.removeItem(cacheKey(mes)); }catch(_){} setMeses(p=>{ const n={...p}; delete n[mes]; return n; }); }
+      if (soloCache) return false;
+    }
     setCargando(mes);
     setErrorMes(p=>({...p,[mes]:null}));
     try {
-      const [desde,hasta] = rangoDe(mes);
-      const base = `/api/orders?action=daily_metrics&uid=${uid}&date_from=${desde}&date_to=${hasta}`;
-      // Primero la caché del servidor (si otro dispositivo o el warmer ya
-      // calculó este mes, es instantáneo); si no hay, cálculo en vivo (~30s).
-      let j = null;
-      if (!force) { try { const rc = await fetch(base+"&cache=only"); const jc = await rc.json(); if (!jc.noCache && !jc.error && jc.totals && jc.engineV === 6) j = jc; } catch(_) {} }
-      if (!j) {
-        const r = await fetch(base);
-        j = await r.json();
-        if (j.error) throw new Error(j.error);
-      }
-      const t = j.totals || {};
-      setMeses(p=>({...p,[mes]:t}));
-      try { localStorage.setItem(cacheKey(mes), JSON.stringify({ v:6, ts:Date.now(), totals:t })); } catch(_) {}
+      const r = await fetch(base);
+      const j = await r.json();
+      if (j.error) throw new Error(j.error);
+      guardarMes(mes, j);
     } catch(e) { setErrorMes(p=>({...p,[mes]:e.message})); }
     finally { setCargando(null); }
+    return true;
   };
-  // Al entrar: cache instantáneo + carga secuencial de los que falten (máx 3 auto).
+  // Al entrar: pinta lo guardado y lo valida contra el servidor; los meses que
+  // falten (o quedaron inválidos) se calculan en vivo de a uno (máx 3 auto).
   useEffect(()=>{
     if (!uid) return;
     let vivo = true;
     (async ()=>{
       const pendientes = [];
-      for (const mes of listaMeses) {
-        const hit = leerCache(mes);
-        if (hit) setMeses(p=>({...p,[mes]:hit}));
-        else pendientes.push(mes);
-      }
-      for (const mes of pendientes.slice(0,3)) { if (!vivo) return; await cargarMes(mes); }
+      for (const mes of listaMeses) { if (!vivo) return; const ok = await cargarMes(mes, false, true); if (!ok) pendientes.push(mes); }
+      for (const mes of pendientes.slice(0,3)) { if (!vivo) return; await cargarMes(mes, true); }
     })();
     return ()=>{ vivo = false; };
   },[uid]);

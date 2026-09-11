@@ -461,6 +461,21 @@ export default async function handler(req, res) {
       // sea reciente.
       const cacheKey = req.query.date_from ? `${since}_${until}` : `d${days}`;
       const cacheRef = db.collection("users").doc(uid).collection("margenes_cache").doc(cacheKey);
+      const userSnap = await db.collection("users").doc(uid).get();
+      const userData = userSnap.data() || {};
+      const stores = userData.stores || [];
+      const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
+      // Huella de integraciones del momento del cálculo. Si después se conecta
+      // (o cambia) una tienda / ML / Meta / Google, la caché de ese rango deja
+      // de valer: antes un mes cerrado calculado con la mitad de las fuentes
+      // quedaba "guardado para siempre" como si fuera la verdad.
+      const fp = [
+        ...stores.map(s => `${s.type}:${s.storeId || s.shop || s.user_id || s.id || ""}`).sort(),
+        `meta:${metaAccountsSnap.docs.filter(d => (d.data() || {}).access_token).length}`,
+        `gads:${userData.googleAds?.refresh_token ? 1 : 0}`,
+      ].join("|");
+      const hoyArg = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date());
+      const rangoCerrado = !!req.query.date_from && until < hoyArg;
       if (req.query.cache === "only") {
         // Registrar el rango en el warmer APENAS se detecta el miss (antes se
         // registraba recién al final del cálculo exitoso): así el cron
@@ -483,13 +498,16 @@ export default async function handler(req, res) {
         const cd = cs.data() || {};
         try {
           const body = JSON.parse(cd.body || "{}");
+          // Caché inválida: huella de integraciones distinta, o rango cerrado
+          // sin huella (motor viejo) o con 0 órdenes (se calculó cuando la
+          // tienda todavía no tenía fuentes) → recalcular en vivo.
+          const fpStale = body.fp !== undefined ? body.fp !== fp : rangoCerrado;
+          const vacio = rangoCerrado && !((body.totals || {}).orders > 0);
+          if (fpStale || vacio) { await registrarMiss(); return res.json({ noCache: true, stale: fpStale ? "integraciones" : "sin_ordenes" }); }
           body.cachedAt = cd.cachedAt || null;
           return res.json(body);
         } catch(_) { await registrarMiss(); return res.json({ noCache: true }); }
       }
-      const userSnap = await db.collection("users").doc(uid).get();
-      const userData = userSnap.data() || {};
-      const stores = userData.stores || [];
       // Con varios ML conectados: qué cuenta se usa para leer los pagos de MP
       // (comisiones de Shopify) y cuál para importar las ventas de ML. Vacío =
       // primera cuenta (comportamiento de siempre con 1 solo ML).
@@ -634,7 +652,6 @@ export default async function handler(req, res) {
           return { fee, rev, feeByRef, feeByPayId, cashflow:{ liberado:+liberado.toFixed(2), retenido:+retenido.toFixed(2) }, financingFee:+financingFee.toFixed(2), retenciones:+retenciones.toFixed(2) };
         } catch(_) { return { fee:0, rev:0, feeByRef:{}, feeByPayId:{} }; }
       }
-      const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
       // Solo exige token: fetchMetaAll descubre las cuentas publicitarias vía
       // /me/adaccounts, así que no necesita ad_account_id pre-elegido. (Antes el
       // filtro exigía ad_account_id y una reconexión que lo borraba dejaba el
@@ -1819,7 +1836,7 @@ export default async function handler(req, res) {
       // de una métrica (v2 = facturación TN incluye envío cobrado al cliente;
       // v3 = corte de día TN en hora argentina; v4 = envío ML real con descuentos; v5 = envío ML en cero para ventas devueltas; v6 = Net Revenue = contribución antes de pauta) para que los caches del
       // cliente (P&L mensual) descarten resultados viejos.
-      const responseBody = { engineV: 6, rows, prevRows, totals, prevTotals, prevTotalsHora, prevHasta, byDow, byChannel, byChannelDaily, sales, byProduct, byProductAdsModo: "prorrateo_revenue_diario", clientes, facturacionBreakdown, adSpendBreakdown,
+      const responseBody = { engineV: 6, fp, rows, prevRows, totals, prevTotals, prevTotalsHora, prevHasta, byDow, byChannel, byChannelDaily, sales, byProduct, byProductAdsModo: "prorrateo_revenue_diario", clientes, facturacionBreakdown, adSpendBreakdown,
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
         dolarSerie, dolarActual, quality,
         since, until, prevSince, prevUntil,
