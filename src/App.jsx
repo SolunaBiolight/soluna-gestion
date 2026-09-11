@@ -30633,9 +30633,9 @@ function MLMensajes({ T, uid, initialOrder, onBackToInbox }) {
       <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 12, padding: 14, minHeight: 200, maxHeight: 420, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
         {loadingT ? <div style={{ margin: "auto" }}><Spinner size={20} color={T.accent} /></div> :
           !thread.length ? <div style={{ margin: "auto", color: T.textSm, fontSize: 12 }}>Sin mensajes todavía. Escribí el primero.</div> :
-            thread.map(m => (
+            [...thread].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0)).map(m => (
               <div key={m.id} style={{ alignSelf: m.mine ? "flex-end" : "flex-start", maxWidth: "78%", background: m.mine ? T.accent + "22" : T.card, border: `1px solid ${m.mine ? T.accent + "44" : T.border}`, borderRadius: 12, padding: "8px 12px" }}>
-                <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{m.text}</div>
+                <div style={{ fontSize: 12, color: m.text ? T.text : T.textSm, whiteSpace: "pre-wrap", lineHeight: 1.45, fontStyle: m.text ? "normal" : "italic" }}>{m.text || "📎 Adjunto (se ve en Mercado Libre)"}</div>
                 <div style={{ fontSize: 9, color: T.textSm, marginTop: 3, textAlign: "right" }}>{m.date ? new Date(m.date).toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}</div>
               </div>
             ))}
