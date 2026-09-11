@@ -13017,6 +13017,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   // Google Drive: token OAuth (drive.readonly) para el picker de videos del Publicador.
   const [driveOk,setDriveOk]=useState(()=>!!_getSavedDriveToken());
   const [driveConnecting,setDriveConnecting]=useState(false);
+  // ¿Está configurado el secret en el server? Si no, la card queda en "PRONTO"
+  // sola y se prende automáticamente cuando se cargue GOOGLE_DRIVE_CLIENT_SECRET.
+  const [driveConfigured,setDriveConfigured]=useState(null); // null=cargando
+  useEffect(()=>{ if(!user?.uid) return; authFetch(`/api/integrations?platform=googledrive&action=status&uid=${user.uid}`).then(r=>r.json()).then(d=>setDriveConfigured(!!d.configured)).catch(()=>setDriveConfigured(false)); },[user?.uid]);
   const [metaToken,setMetaToken]=useState("");
   const [adminWaPhone,setAdminWaPhone]=useState("");
   const [waPhoneSaved,setWaPhoneSaved]=useState(false);
@@ -13440,8 +13444,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               // Conexión por REDIRECCIÓN (sin popup): el token queda en users/{uid}.googleDrive.
               sub: userDoc?.googleDrive?.connected
                 ? `${userDoc.googleDrive.email || "Conectado"} — elegís los videos desde el Publicador de Meta`
-                : "Conectá tu Drive para elegir los videos del anuncio desde el Publicador de Meta",
-              connected: !!userDoc?.googleDrive?.connected, disabled:false, soon:false, brand:"#00ac47", iconBg:"#fff",
+                : (driveConfigured===false
+                    ? "Próximamente — elegir los videos del anuncio directo desde tu Drive"
+                    : "Conectá tu Drive para elegir los videos del anuncio desde el Publicador de Meta"),
+              connected: !!userDoc?.googleDrive?.connected, disabled:false, soon: driveConfigured===false && !userDoc?.googleDrive?.connected, brand:"#00ac47", iconBg:"#fff",
               icon:<svg width="30" height="27" viewBox="0 0 87.3 78"><path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/><path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.2z" fill="#ea4335"/><path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.85 0H34.45c-1.65 0-3.2.45-4.55 1.2z" fill="#00832d"/><path d="M59.8 54H27.5L13.75 77.8c1.35.8 2.9 1.2 4.55 1.2h50.7c1.65 0 3.2-.45 4.55-1.2z" fill="#2684fc"/><path d="M73.4 27.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 54h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>,
               onConnect: async ()=>{
                 // Redirección de página completa a Google (nada de popups → no puede dar popup_closed).
@@ -26378,8 +26384,9 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead }) {
   const [drivePick, setDrivePick] = React.useState(null);   // {id,name} elegido en el Picker
   const [driveProg, setDriveProg] = React.useState(null);   // {pct,txt} progreso de subida a Meta
   const [driveWorking, setDriveWorking] = React.useState(false);
+  const [driveCfg, setDriveCfg] = React.useState(true);    // false = falta el secret en el server → "Próximamente"
   React.useEffect(() => { (async () => {
-    try { const r = await authFetch(`/api/integrations?platform=googledrive&action=status&uid=${_uid}`); const d = await r.json(); setDriveConn(d.connected ? { email: d.email } : false); }
+    try { const r = await authFetch(`/api/integrations?platform=googledrive&action=status&uid=${_uid}`); const d = await r.json(); setDriveConn(d.connected ? { email: d.email } : false); setDriveCfg(!!d.configured); }
     catch (_) { setDriveConn(false); }
   })(); }, [_uid]);
   async function connectDrive() {
@@ -26579,11 +26586,14 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead }) {
                   <button onClick={pickFromDrive} disabled={driveWorking} style={{ ...BtnPrimary(T), padding: "8px 14px", fontSize: 12, opacity: driveWorking ? 0.6 : 1, display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
                     {driveWorking ? <><Spinner size={11} color="#fff" /> Trabajando…</> : "📂 Elegir video de mi Drive"}
                   </button>
+                ) : !driveCfg ? (
+                  <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, background: T.yellow, color: "#000", borderRadius: 99, padding: "3px 9px" }}>PRÓXIMAMENTE</span>
                 ) : (
                   <button onClick={connectDrive} style={{ ...BtnSecondary(T), padding: "8px 14px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", color: T.accent, borderColor: T.accent + "66" }}>Conectar Google Drive</button>
                 )}
               </div>
-              {driveConn === false && <div style={{ fontSize: 10.5, color: T.textSm, marginTop: 6 }}>Te lleva a Google a autorizar (una sola vez) y volvés acá. Solo ve los videos que vos elegís.</div>}
+              {driveConn === false && !driveCfg && <div style={{ fontSize: 10.5, color: T.textSm, marginTop: 6 }}>Muy pronto vas a poder elegir el video directo desde tu Drive. Mientras tanto, usá un video ya subido a Meta (abajo).</div>}
+              {driveConn === false && driveCfg && <div style={{ fontSize: 10.5, color: T.textSm, marginTop: 6 }}>Te lleva a Google a autorizar (una sola vez) y volvés acá. Solo ve los videos que vos elegís.</div>}
               {drivePick && <div style={{ fontSize: 11.5, color: T.text, marginTop: 8, fontWeight: 600 }}>🎬 {drivePick.name}</div>}
               {driveProg && (
                 <div style={{ marginTop: 8 }}>
