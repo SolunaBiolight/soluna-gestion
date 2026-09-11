@@ -136,7 +136,9 @@ async function anclaComprador(db, { cp, loc, prov }, pub) {
 // distancia; si no hay ninguna a 10 km, únicamente la más cercana. Hasta tener
 // los puntos HOP en la API, esto es lo que evita listas "raras".
 const RADIO_M = 10000;
+let _dbg = {}; // diagnóstico de la última selección (solo se devuelve con ?debug=1)
 async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
+  _dbg = { cp, loc };
   const cacheRef = db.collection("andreani_config").doc(`rates_suc6_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
   try {
     const c = (await cacheRef.get()).data();
@@ -160,7 +162,8 @@ async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
       const cpS = String(cp);
       lista = pub.filter(s => s.cps.includes(cpS)).sort((a, b) => (String(b.direccion?.codigoPostal || "") === cpS) - (String(a.direccion?.codigoPostal || "") === cpS));
     }
-  } catch (_) {}
+    _dbg.ancla = ancla ? ancla.src : "ninguna"; _dbg.candidatas = lista.length;
+  } catch (e) { _dbg.error = e.message; console.error("[shopify-rates] sucursales:", e.message); }
   if (!lista.length) lista = (await sucursalesCercanasCp(db, env, cp, 3)).slice(0, 1);
   lista = dedupeSucursales(lista.filter(esPuntoPublico)).slice(0, 12)
     .map(s => ({ id: s.id, descripcion: s.descripcion || "", direccion: s.direccion || null, horarioDeAtencion: s.horarioDeAtencion || "", distM: s.distM ?? null }));
@@ -293,6 +296,7 @@ export default async function handler(req, res) {
     const shopHdr = String(req.headers["x-shopify-shop-domain"] || "").toLowerCase();
     const out = await computeRates(db, uid, body.rate || {}, { shopHdr, t0 });
     if (out.why) console.error(`[shopify-rates] uid=${uid}: ${out.why}`);
+    if (req.query.debug === "1") return res.status(200).json({ rates: out.rates, why: out.why || "", errs: out.errs || [], sucursales: _dbg });
     return respond(out.rates);
   } catch (e) {
     console.error("[shopify-rates]", e.message);
