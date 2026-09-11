@@ -194,6 +194,9 @@ growith_home_start_{uid}   → "1" checklist "Empecemos" del Home cerrado manual
 growith_calpagos_cat_{uid}  → SWR catálogo (producto/variante/SKU) para el selector de pedidos de mercadería del Calendario de Pagos
 growith_calpagos_alert_{uid} → número de pagos vencidos/hoy/mañana (badge del sidebar; evento "gh-calpagos-alert"). Avisos por mail (día anterior + mismo día, y resumen los lunes) a dueño + notifEmails + miembros con la sección: cron /api/pagos-cal?action=cron_avisos (índice users.pagosCalDias). Comprobantes en users/{uid}/pagos_cal_adj/{pagoId}
 growith_admin_cache_{uid}  → SWR {pagos,usuarios,stats} del panel Admin (fichas slim, sin tokens)
+growith_tienda_activa_{authUid} → uid de la TIENDA en la que este dispositivo está parado (multi-tienda). Al cargar se sincroniza al perfil (tiendaActivar) antes del workspace, así recargar te deja en la misma tienda aunque otra pestaña/dispositivo haya cambiado la activa. Se borra al crear/eliminar tienda
+growith_reclamossync_{uid} → timestamp del último sync de contracargos/reclamos MP+ML al tablero de Reclamos (throttle 10 min)
+growith_stock_src_{uid}    → "central" | "tienda": fuente del stock que muestra la tabla de arriba de Stock (inventario central por default; botón "Poner stock de TN/Shopify")
 (sessionStorage) growith_impersonate → JSON {uid,email,adminEmail,adminUid,at} sesión "Ver como cliente" (solo lectura); levanta window.__ghReadOnly antes de cualquier escritura
 (sessionStorage) growith_copilot_conv → JSON {id,msgs} conversación activa del Copilot (cache; la verdad vive en users/{uid}/copilot_convs)
 (sessionStorage) growith_copilot_pending → prompt pendiente al abrir Copilot desde otra sección (ej. configuración guiada del Home)
