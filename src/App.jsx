@@ -10583,7 +10583,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 <div style={{fontSize:11,color:T.textSm}}>{envios.length} envío{envios.length===1?"":"s"} de los últimos 60 días · el estado se actualiza solo cada 30 minutos.</div>
               </div>
               {pdfResults.length>0&&!showPdfUp&&<button onClick={()=>setShowPdfUp(true)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",color:pdfPend.length?T.orange:T.green,borderColor:(pdfPend.length?T.orange:T.green)+"66"}}>{pdfPend.length?`PDF: ${pdfPend.length} sin enviar`:"PDF: todo enviado"}</button>}
-              <Btn T={T} variant="secondary" size="sm" onClick={()=>setShowPdfUp(true)}>Subir PDF de rótulos</Btn>
+              <Btn T={T} variant="primary" size="md" onClick={()=>setShowPdfUp(true)} icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}>Subir PDF de rótulos</Btn>
               <Btn T={T} variant="secondary" size="sm" onClick={()=>setSegScanOpen(v=>!v)}>{segScanOpen?"Cerrar despacho":"Modo despacho"}</Btn>
               <AsyncButton onClick={refrescarEnviosFs} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Actualizar</AsyncButton>
             </div>
