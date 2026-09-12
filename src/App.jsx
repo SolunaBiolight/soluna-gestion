@@ -419,8 +419,15 @@ function _showDrivePicker(token, onSelect, onCancel, opts = {}) {
   // setAppId (número de proyecto = prefijo del client_id) es OBLIGATORIO con el
   // scope drive.file: sin él, la app no recibe acceso al archivo elegido.
   const appId = String(GDRIVE_CLIENT_ID).split("-")[0];
+  // Panel compacto y CENTRADO (por defecto Google lo estira casi a pantalla
+  // completa y queda pegado arriba) + interfaz en español. El color/estilo
+  // no se puede tocar: es un iframe de Google.
+  const pw = Math.min(920, Math.max(360, window.innerWidth - 64));
+  const ph = Math.min(600, Math.max(400, window.innerHeight - 120));
   const pb = new P.PickerBuilder()
     .setTitle(opts.title || "Elegir archivo de Google Drive")
+    .setLocale("es")
+    .setSize(pw, ph)
     .addView(myDrive).addView(shared);
   if (opts.multiple) pb.enableFeature(P.Feature.MULTISELECT_ENABLED);
   pb
