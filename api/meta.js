@@ -114,7 +114,13 @@ async function metaGet(path, params, token) {
     const d = await r.json();
     if (!d.error) return d;
     const code = d.error.code;
-    const errMsg = `Meta · ${d.error.message} (${code})`;
+    // Detalle completo: el (100) "Invalid parameter" a secas no dice QUÉ
+    // parámetro; Meta lo manda en error_user_msg / error_data (o, si no hay
+    // nada, se muestra el JSON crudo del error).
+    const e = d.error;
+    const detalle = [e.error_user_title, e.error_user_msg, e.error_data ? (typeof e.error_data === "string" ? e.error_data : JSON.stringify(e.error_data)) : ""].filter(Boolean).join(" — ")
+      || JSON.stringify({ ...e, message: undefined, code: undefined, fbtrace_id: undefined }).slice(0, 300);
+    const errMsg = `Meta · ${e.message} (${code}${e.error_subcode ? `/${e.error_subcode}` : ""})${detalle && detalle !== "{}" ? `: ${detalle}` : ""}`;
     if (!META_RATE_LIMIT_CODES.has(code) || attempt === META_RETRY_DELAYS_MS.length) {
       throw new Error(errMsg);
     }
@@ -133,7 +139,13 @@ async function metaPost(path, payload, token) {
     const d = await r.json();
     if (!d.error) return d;
     const code = d.error.code;
-    const errMsg = `Meta · ${d.error.message} (${code})`;
+    // Detalle completo: el (100) "Invalid parameter" a secas no dice QUÉ
+    // parámetro; Meta lo manda en error_user_msg / error_data (o, si no hay
+    // nada, se muestra el JSON crudo del error).
+    const e = d.error;
+    const detalle = [e.error_user_title, e.error_user_msg, e.error_data ? (typeof e.error_data === "string" ? e.error_data : JSON.stringify(e.error_data)) : ""].filter(Boolean).join(" — ")
+      || JSON.stringify({ ...e, message: undefined, code: undefined, fbtrace_id: undefined }).slice(0, 300);
+    const errMsg = `Meta · ${e.message} (${code}${e.error_subcode ? `/${e.error_subcode}` : ""})${detalle && detalle !== "{}" ? `: ${detalle}` : ""}`;
     if (!META_RATE_LIMIT_CODES.has(code) || attempt === META_RETRY_DELAYS_MS.length) {
       throw new Error(errMsg);
     }
