@@ -411,8 +411,8 @@ function _showDrivePicker(token, onSelect, onCancel, opts = {}) {
   const P = window.google.picker;
   // Una sola vista en modo LISTA (más limpia que la grilla de carpetas de
   // Google), con carpetas navegables y unidades compartidas incluidas.
-  const myDrive = new P.DocsView(P.ViewId.DOCS).setIncludeFolders(true).setSelectFolderEnabled(false).setEnableDrives(true).setMode(P.DocsViewMode.LIST);
-  const shared  = null;
+  // (setEnableDrives en esta vista la abría en "Unidades compartidas", vacía.)
+  const myDrive = new P.DocsView().setIncludeFolders(true).setSelectFolderEnabled(false).setMode(P.DocsViewMode.LIST);
   const VID = "video/mp4,video/quicktime,video/x-m4v,video/webm,video/x-matroska,video/x-msvideo,video/mpeg";
   const IMG = "image/jpeg,image/png,image/webp,image/gif";
   const DOCS = "application/vnd.google-apps.document,text/plain,text/markdown";
