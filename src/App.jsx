@@ -37545,6 +37545,11 @@ export default function App() {
       }
       input,button,select,textarea{font-family:inherit;}
       .mobile-only{display:none!important;}
+      /* Google Picker (Drive): Google lo posiciona ABSOLUTO respecto del
+         documento → al scrollear la página se iba para arriba. Fijo, centrado,
+         con bordes redondeados y fondo oscuro para que se sienta parte de la app. */
+      .picker-dialog{position:fixed!important;top:50%!important;left:50%!important;transform:translate(-50%,-50%)!important;margin:0!important;border-radius:14px!important;overflow:hidden!important;border:1px solid rgba(255,255,255,0.08)!important;box-shadow:0 24px 80px rgba(0,0,0,0.6)!important;z-index:10001!important;}
+      .picker-dialog-bg{position:fixed!important;inset:0!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;background:#0f1117!important;opacity:0.72!important;z-index:10000!important;}
       .no-scrollbar::-webkit-scrollbar{display:none;}
       .no-scrollbar{scrollbar-width:none;-ms-overflow-style:none;}
       @media(max-width:768px){
