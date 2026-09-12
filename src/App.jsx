@@ -27236,7 +27236,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         for(const f of list){
           try{
             const r=await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media&supportsAllDrives=true`,{headers:{Authorization:`Bearer ${tok}`}});
-            if(!r.ok) throw new Error(`HTTP ${r.status}`);
+            if(!r.ok){ let det=""; try{ const j=await r.json(); det=j?.error?.message||j?.error?.errors?.[0]?.reason||""; }catch(_){} throw new Error(`HTTP ${r.status}${det?` · ${det}`:""}`); }
             const b=await r.blob();
             files.push(new File([b], f.name, {type: f.mimeType||b.type||""}));
           }catch(e){ toast(`No pude bajar "${f.name}" de Drive: ${e.message}`,"error"); }
