@@ -7601,6 +7601,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const [segScanOpen,setSegScanOpen]=useState(false);
   const [segMasAlertas,setSegMasAlertas]=useState(false);
   const [segTrazas,setSegTrazas]=useState(null);
+  const [segFicha,setSegFicha]=useState(null);       // envío abierto en su ficha
+  const [segCaso,setSegCaso]=useState(null);         // {envio, motivo} → modal de gestión
+  const [segCasos,setSegCasos]=useState([]);         // gestiones abiertas/cerradas de la cuenta
+  const [segCfgOpen,setSegCfgOpen]=useState(false);
+  const [enviosCfg,setEnviosCfg]=useState({});       // users/{uid}.enviosCfg: avisosDueno, avisosComprador, sucursalDias, quietoDias
+  async function cargarCasos(){ try{ const r=await authFetch("/api/andreani?action=casos"); const d=await r.json().catch(()=>({})); if(r.ok&&Array.isArray(d?.casos)) setSegCasos(d.casos); }catch(_){} }
+  useEffect(()=>{ if(tab==="seguimientos"&&user?.uid){ cargarCasos(); getDoc(doc(db,"users",user.uid)).then(sn=>{ const c=sn.data()?.enviosCfg; if(c&&typeof c==="object") setEnviosCfg(c); }).catch(()=>{}); } // eslint-disable-next-line
+  },[tab,user?.uid]);
+  async function guardarEnviosCfg(patch){ const next={...enviosCfg,...patch}; setEnviosCfg(next); try{ await ghUserPatch(user.uid,{enviosCfg:next}); }catch(_){ toast("No se pudo guardar","warning"); } }
   const [sendingTracking,setSendingTracking]=useState({});
   const [trackingSent,setTrackingSent]=useState({});
   const [seguimientoProgress,setSeguimientoProgress]=useState({active:false,current:0,total:0,last:"",done:false,ok:0,fail:0});
@@ -7744,6 +7753,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           esSucursal:!!o.esSucursal, provincia:o.provincia||"", localidad:o.localidad||o.ciudad||"",
           total:parseFloat(o.total)||0, skus:(o.productos||[]).map(p=>p.sku).filter(Boolean),
           estado:"etiqueta_generada", activo:false,
+          destinatario:{nombre:o.comprador||"",email:o.email||"",telefono:o.telefono||""},
         }))}),
       });
       refrescarEnviosFs();
@@ -9162,6 +9172,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       valorDeclarado:parseFloat(exportCfg.valor)||0,
     }];
   }
+  // Paquete de UNA fila del lote: el propio (r.paq) o el configurado.
+  function bultosDe(r){
+    const q=r?.paq; if(!q) return bultosDeCfg();
+    return [{kilos:(parseFloat(q.peso)||200)/1000,largoCm:parseInt(q.prof)||5,altoCm:parseInt(q.alto)||5,anchoCm:parseInt(q.ancho)||5,valorDeclarado:parseFloat(q.valor)||0}];
+  }
+  const paqTxt=q=>`${parseFloat(q.peso)||200} g · ${parseInt(q.alto)||5}×${parseInt(q.ancho)||5}×${parseInt(q.prof)||5} cm · ${fmtMoney(parseFloat(q.valor)||0)}`;
+  // Perfiles de paquete guardados (ej. "caja chica", "caja grande") para el lote.
+  const [paqPerfiles,setPaqPerfiles]=useState(()=>{ try{ const v=JSON.parse(localStorage.getItem(ghKey("growith_paqPerfiles"))||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; } });
+  function savePaqPerfiles(list){ setPaqPerfiles(list); try{ localStorage.setItem(ghKey("growith_paqPerfiles"),JSON.stringify(list)); }catch(_){} }
+  const [paqEdit,setPaqEdit]=useState(null); // nº de pedido de la fila con el paquete en edición
+  function setPaqFila(r,q){ r.paq=q; r.cot=null; r.cotError=""; r.incluido=true; pushBulk("revision"); cotizarBulk(); }
   // Resumen de una línea del paquete configurado (para mostrarlo donde se usa)
   function paqResumen(){
     return `${parseFloat(exportCfg.peso)||200} g · ${parseInt(exportCfg.alto)||5}×${parseInt(exportCfg.ancho)||5}×${parseInt(exportCfg.prof)||5} cm · ${fmtMoney(parseFloat(exportCfg.valor)||0)} declarado`;
@@ -9285,7 +9306,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         try{
           const resp=await authFetch("/api/andreani?action=cotizar",{
             method:"POST",headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({tipo:r.tipo,cpDestino:r.tipo==="sucursal"?cpDestinoDe(r.order):String(r.order.cp||"").trim(),bultos:bultosDeCfg()}),
+            body:JSON.stringify({tipo:r.tipo,cpDestino:r.tipo==="sucursal"?cpDestinoDe(r.order):String(r.order.cp||"").trim(),bultos:bultosDe(r)}),
           });
           const d=await resp.json().catch(()=>({}));
           if(!resp.ok||d.error||typeof d.precio!=="number"){
@@ -9352,7 +9373,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               email:String(o.email||"").trim(),
               telefono:String(o.telefono||"").trim(),
             },
-            bultos:bultosDeCfg(),
+            bultos:bultosDe(r),
             productoAEntregar:(o.productos||[]).map(p=>`${p.cantidad||1}x ${p.sku||p.nombre}`).join(", ").slice(0,140)||"Paquete",
             piso:o.piso||"", departamento:"",
           }),
@@ -10540,15 +10561,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           const catDe=e=>e.entregadoAt?"entregado":e.devolucionAt?"devolucion":(!e.tracking&&!e.andreani?.numeroDeEnvio)?"sin_tracking":(e.categoria||"desconocido");
           const CAT={en_camino:["En camino",T.blue],en_sucursal:["En sucursal",T.orange],entregado:["Entregado",T.green],devolucion:["Devolución",T.red],visita_fallida:["Visita fallida",T.red],desconocido:["Sin datos aún",T.textSm],otro:["En proceso",T.textSm],sin_tracking:["Etiqueta generada",T.textSm]};
           // Problemas (misma lógica que el cron y el Admin)
+          const sucD=Math.max(1,Number(enviosCfg.sucursalDias)||3), quietoD=Math.max(2,Number(enviosCfg.quietoDias)||7);
           const problemaDe=e=>{
+            if(e.andreani?.anulada) return null;
             if(e.devolucionAt||e.categoria==="devolucion") return {sev:"red",tipo:"devolucion",msg:"está volviendo (devolución)"};
             if(!e.activo) return null;
             if(e.categoria==="visita_fallida") return {sev:"amber",tipo:"fallida",msg:"visita fallida, Andreani reintenta o va a sucursal"};
-            if(e.categoria==="en_sucursal"){ const d=dias(e.enSucursalDesde); if(d!=null&&d>=3) return {sev:d>=5?"red":"amber",tipo:"sucursal",msg:`en sucursal hace ${d} días sin retirar${d>=5?", el plazo está por vencer":""}`}; return null; }
+            if(e.categoria==="en_sucursal"){ const d=dias(e.enSucursalDesde); if(d!=null&&d>=sucD) return {sev:d>=sucD+2?"red":"amber",tipo:"sucursal",msg:`en sucursal hace ${d} días sin retirar${d>=sucD+2?", el plazo está por vencer":""}`}; return null; }
             const dEst=dias(e.estadoDesde||e.despachadoAt||e.creado);
-            if((e.categoria==="en_camino"||e.categoria==="otro"||e.categoria==="desconocido")&&e.tracking&&dEst!=null&&dEst>=7) return {sev:"amber",tipo:"quieto",msg:`sin movimiento hace ${dEst} días`};
+            if(e.andreani?.numeroDeEnvio&&ghEnvioSinIngreso(e)){ const dc=dias(ghTsMs(e.andreani?.ts)?new Date(ghTsMs(e.andreani.ts)).toISOString():e.creado); if(dc!=null&&dc>=3) return {sev:"amber",tipo:"sin_despacho",msg:`etiqueta emitida hace ${dc} días y Andreani no registró el ingreso`}; return null; }
+            if((e.categoria==="en_camino"||e.categoria==="otro"||e.categoria==="desconocido")&&(e.tracking||e.andreani?.numeroDeEnvio)&&dEst!=null&&dEst>=quietoD) return {sev:"amber",tipo:"quieto",msg:`sin movimiento hace ${dEst} días`};
             return null;
           };
+          const casosAbiertos=segCasos.filter(c=>["abierto","enviado","respondido"].includes(c.estado));
           const conProblema=envios.map(e=>({e,p:problemaDe(e)})).filter(x=>x.p);
           const entregados30=envios.filter(e=>e.entregadoAt&&dias(e.entregadoAt)<=30);
           const tiempos=entregados30.filter(e=>e.despachadoAt).map(e=>(Date.parse(e.entregadoAt)-Date.parse(e.despachadoAt))/86400000).filter(d=>d>=0&&d<40);
@@ -10586,6 +10611,29 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               <Btn T={T} variant="primary" size="md" onClick={()=>setShowPdfUp(true)} icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}>Subir PDF de rótulos</Btn>
               <Btn T={T} variant="secondary" size="sm" onClick={()=>setSegScanOpen(v=>!v)}>{segScanOpen?"Cerrar despacho":"Modo despacho"}</Btn>
               <AsyncButton onClick={refrescarEnviosFs} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Actualizar</AsyncButton>
+              <div style={{position:"relative"}}>
+                <button onClick={()=>setSegCfgOpen(v=>!v)} title="Avisos y umbrales" style={{width:30,height:30,borderRadius:8,background:"transparent",border:`1px solid ${segCfgOpen?T.accent:T.border}`,color:segCfgOpen?T.accent:T.textSm,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                </button>
+                {segCfgOpen&&(
+                  <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:60,width:300,background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",boxShadow:"0 12px 32px rgba(0,0,0,0.35)"}}>
+                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:10}}>Avisos de envíos</div>
+                    {[["avisosDueno","Resumen diario por mail cuando hay envíos con problema"],["avisosComprador","Avisar al comprador por mail cuando el paquete está en sucursal o falló la visita"]].map(([k,l])=>(
+                      <div key={k} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:9}}>
+                        <span style={{fontSize:11,color:T.textMd,lineHeight:1.4}}>{l}</span>
+                        <DSToggle T={T} active={enviosCfg[k]!==false} onToggle={()=>guardarEnviosCfg({[k]:enviosCfg[k]===false})}/>
+                      </div>
+                    ))}
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,margin:"10px 0 6px"}}>Umbrales (días)</div>
+                    {[["sucursalDias","En sucursal sin retirar",3],["quietoDias","Sin movimiento",7]].map(([k,l,def])=>(
+                      <div key={k} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:7}}>
+                        <span style={{fontSize:11,color:T.textMd}}>{l}</span>
+                        <input type="number" min={1} value={enviosCfg[k]??def} onChange={ev=>{ const v=Number(ev.target.value); if(isFinite(v)&&v>=1) guardarEnviosCfg({[k]:v}); }} style={{width:56,padding:"4px 8px",borderRadius:7,border:`1px solid ${T.inputBorder}`,background:T.card,color:T.text,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",textAlign:"center"}}/>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* KPIs */}
@@ -10630,6 +10678,24 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               </Card>
             )}
 
+            {/* Gestiones con Andreani en curso */}
+            {casosAbiertos.length>0&&(
+              <Card T={T} padding="lg" style={{marginBottom:16}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+                  <div><div style={{fontSize:14,fontWeight:700,color:T.text}}>Gestiones con Andreani</div><div style={{fontSize:11,color:T.textSm}}>Reclamos, cambios y anulaciones que estamos siguiendo por vos. Te avisamos por mail con cada novedad.</div></div>
+                  <DSBadge T={T} color={T.accent} size="sm">{casosAbiertos.length}</DSBadge>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {casosAbiertos.slice(0,8).map(c=>{ const ev=enviosFs[c.numero]||Object.values(enviosFs).find(x=>String(x.numero)===String(c.numero)); const cc=ghEnvioCasoColor(T,c.estado); return (
+                    <div key={c.id} onClick={()=>{ if(ev) setSegFicha(ev); }} style={{display:"flex",alignItems:"center",gap:10,background:T.surface,border:`1px solid ${T.borderL}`,borderLeft:`3px solid ${cc}`,borderRadius:8,padding:"8px 12px",fontSize:12,flexWrap:"wrap",cursor:ev?"pointer":"default"}}>
+                      <div style={{flex:1,minWidth:200}}><span style={{fontWeight:700,color:T.text}}>#{c.numero}</span>{c.cliente?<span style={{color:T.textMd}}> · {c.cliente}</span>:null}<div style={{color:T.textMd,fontSize:11.5}}>{c.motivoLabel}{c.historial?.length?<span style={{color:T.textSm}}> · {c.historial[c.historial.length-1].texto.slice(0,90)}</span>:null}</div></div>
+                      <DSBadge T={T} color={cc} size="sm">{c.estadoLabel}</DSBadge>
+                    </div>
+                  );})}
+                </div>
+              </Card>
+            )}
+
             {/* Lista de envíos */}
             <Card T={T} padding="lg">
               <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:8}}>
@@ -10655,7 +10721,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     const tiempo=e.entregadoAt&&e.despachadoAt?`${Math.max(0,Math.round((Date.parse(e.entregadoAt)-Date.parse(e.despachadoAt))/86400000))} d`:e.despachadoAt?`${dias(e.despachadoAt)} d`:e.creado?`${dias(e.creado)} d`:"";
                     const final=!e.activo&&(e.entregadoAt||e.devolucionAt);
                     return (
-                      <div key={e.numero||i} style={{display:"grid",gridTemplateColumns:"80px minmax(180px,1.6fr) 120px minmax(160px,1.4fr) 90px 150px",gap:8,padding:"9px 12px",borderBottom:i<Math.min(lista.length,segLimite)-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:final?0.7:1,fontSize:12}}>
+                      <div key={e.numero||i} onClick={()=>setSegFicha(e)} title="Abrir la ficha del envío" style={{display:"grid",gridTemplateColumns:"80px minmax(180px,1.6fr) 120px minmax(160px,1.4fr) 90px 150px",gap:8,padding:"9px 12px",borderBottom:i<Math.min(lista.length,segLimite)-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:final?0.7:1,fontSize:12,cursor:"pointer"}}
+                        onMouseEnter={ev=>ev.currentTarget.style.background=T.surface} onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
                         <span style={{fontWeight:700,color:T.accent,fontSize:13}}>#{e.numero}</span>
                         <div style={{minWidth:0}}>
                           <div style={{fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.cliente||"—"}{e.verificado&&<span title="Verificado por escaneo" style={{marginLeft:6,fontSize:10,color:T.green}}>✓</span>}</div>
@@ -10663,14 +10730,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         </div>
                         <span><DSBadge T={T} color={col} size="sm">{lbl}</DSBadge></span>
                         <div style={{minWidth:0}}>
-                          <div style={{fontSize:11,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={e.estadoAndreani||""}>{e.estadoAndreani||(trk?"esperando el primer chequeo":"sin tracking aún")}</div>
+                          <div style={{fontSize:11,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={e.estadoAndreani||""}>{e.andreani?.anulada?"Etiqueta anulada":(e.estadoAndreani||(trk?"esperando el primer chequeo":"sin tracking aún"))}</div>
                           {p&&<div style={{fontSize:10.5,color:p.sev==="red"?T.red:T.orange,fontWeight:600}}>{p.msg}</div>}
+                          {esApi(e)&&!p&&<div style={{fontSize:10.5,color:T.textSm}}>{fmtMoney(e.andreani?.precio||0)}{e.andreani?.fechaEstimadaDeEntrega&&!e.entregadoAt?` · llega ~${ghFechaCorta(e.andreani.fechaEstimadaDeEntrega)}`:""}</div>}
                         </div>
                         <span style={{textAlign:"right",color:T.textSm,fontVariantNumeric:"tabular-nums"}} title={e.entregadoAt?"despacho a entrega":"desde el despacho"}>{tiempo}</span>
                         <div style={{display:"flex",gap:4,justifyContent:"flex-end",alignItems:"center"}}>
                           {trk?<>
-                            <button onClick={()=>setSegTrazas(e)} title="Ver seguimiento" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 7px",fontSize:10.5,color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Cascadia Code','Consolas',monospace"}}>{trk}</button>
-                            <button onClick={()=>copiar(`https://www.andreani.com/envio/${trk}`,"Link de seguimiento copiado")} title="Copiar link" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 6px",fontSize:10,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Link</button>
+                            <button onClick={ev=>{ev.stopPropagation();setSegFicha(e);}} title="Abrir la ficha del envío" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 7px",fontSize:10.5,color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Cascadia Code','Consolas',monospace"}}>{trk}</button>
+                            <button onClick={ev=>{ev.stopPropagation();copiar(`https://www.andreani.com/envio/${trk}`,"Link de seguimiento copiado");}} title="Copiar link" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 6px",fontSize:10,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Link</button>
                           </>:<span style={{fontSize:10,color:T.textSm}}>—</span>}
                         </div>
                       </div>
@@ -10682,6 +10750,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             </Card>
 
             <AdmTrazasModal T={T} envio={segTrazas} onClose={()=>setSegTrazas(null)}/>
+            <EnvioFichaModal T={T} envio={segFicha} onClose={()=>setSegFicha(null)}
+              catInfo={segFicha?(CAT[catDe(segFicha)]||CAT.otro):null} problema={segFicha?problemaDe(segFicha):null}
+              casos={segFicha?segCasos.filter(c=>String(c.numero)===String(segFicha.numero)):[]}
+              onDescargar={descargarEtiquetaBulk}
+              onCaso={motivo=>setSegCaso({envio:segFicha,motivo})}
+              onComentar={async(id,texto)=>{ const r=await authFetch("/api/andreani?action=caso_comentar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,texto})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:"No se pudo enviar"); await cargarCasos(); toast("Comentario enviado","success"); }}/>
+            <EnvioCasoModal T={T} data={segCaso} onClose={()=>setSegCaso(null)} onCreated={()=>{ setSegCaso(null); cargarCasos(); }}/>
 
             {/* Modal: subir PDF de rótulos y mandar seguimientos a la tienda */}
             <Modal T={T} open={showPdfUp} onClose={()=>setShowPdfUp(false)} title="Subir PDF de rótulos" width={640}>
@@ -11247,12 +11322,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             return (
               <div>
                 <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>Revisá los envíos antes de emitir. Cada etiqueta se debita del saldo al confirmar.</div>
-                <div style={{fontSize:11,color:T.textSm,marginBottom:12}}>Paquete: <strong style={{color:T.textMd}}>{paqResumen()}</strong></div>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:11,color:T.textSm,marginBottom:12}}>
+                  <span>Paquete por defecto: <strong style={{color:T.textMd}}>{paqResumen()}</strong></span>
+                  {paqPerfiles.length>0&&<select defaultValue="" onChange={e=>{ const pf=paqPerfiles.find(x=>x.nombre===e.target.value); e.target.value=""; if(!pf) return; rows.filter(r=>!r.emitido).forEach(r=>{ r.paq={...pf}; r.cot=null; r.cotError=""; r.incluido=true; }); pushBulk("revision"); cotizarBulk(); }} style={{...iS,marginBottom:0,width:"auto",fontSize:11,padding:"3px 8px"}}><option value="">Aplicar un perfil a todos…</option>{paqPerfiles.map(pf=><option key={pf.nombre} value={pf.nombre}>{pf.nombre} — {paqTxt(pf)}</option>)}</select>}
+                  <button onClick={async()=>{ const nombre=await appPrompt("Nombre del perfil de paquete (se guarda con el peso, medidas y valor declarado del paquete por defecto):","Caja chica"); if(!nombre) return; const pf={nombre:String(nombre).trim().slice(0,30),peso:exportCfg.peso,alto:exportCfg.alto,ancho:exportCfg.ancho,prof:exportCfg.prof,valor:exportCfg.valor}; savePaqPerfiles([...paqPerfiles.filter(x=>x.nombre!==pf.nombre),pf]); toast("Perfil guardado","success"); }} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>Guardar el paquete por defecto como perfil</button>
+                  {paqPerfiles.length>0&&<button onClick={async()=>{ const nombre=await appPrompt("¿Qué perfil querés borrar?\n"+paqPerfiles.map(x=>"• "+x.nombre).join("\n"),paqPerfiles[0].nombre); if(!nombre) return; savePaqPerfiles(paqPerfiles.filter(x=>x.nombre!==String(nombre).trim())); }} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:11,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>Borrar un perfil</button>}
+                </div>
                 <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"auto",maxHeight:320,marginBottom:14}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
                     <thead><tr>
-                      {["","Pedido","Destinatario","Destino","Precio"].map((h,i)=>(
-                        <th key={i} style={{textAlign:i===4?"right":"left",padding:"8px 10px",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,color:T.textSm,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,background:T.card}}>{h}</th>
+                      {["","Pedido","Destinatario","Destino","Paquete","Precio"].map((h,i)=>(
+                        <th key={i} style={{textAlign:i===5?"right":"left",padding:"8px 10px",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,color:T.textSm,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,background:T.card}}>{h}</th>
                       ))}
                     </tr></thead>
                     <tbody>
@@ -11295,7 +11375,27 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                                 </div>
                               )}
                             </td>
-                            <td style={{padding:"7px 10px",textAlign:"right",fontWeight:600,color:T.text,whiteSpace:"nowrap"}}>{r.cot?fmtMoney(r.cot.precio):"—"}</td>
+                            <td style={{padding:"7px 10px",color:T.textMd,fontSize:11,minWidth:150}}>
+                              {r.emitido?<span>{paqTxt(r.paq||exportCfg)}</span>:paqEdit===r.numero?(()=>{ const q=r.paq||{peso:exportCfg.peso,alto:exportCfg.alto,ancho:exportCfg.ancho,prof:exportCfg.prof,valor:exportCfg.valor}; const inp=(k,l,w)=><label style={{display:"inline-flex",flexDirection:"column",gap:2,fontSize:9,color:T.textSm}}>{l}<input type="number" min="0" defaultValue={q[k]} data-k={k} style={{...iS,marginBottom:0,width:w||52,fontSize:11,padding:"3px 6px"}}/></label>; return (
+                                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                                  <div data-paq={r.numero} style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"flex-end"}}>{inp("peso","g")}{inp("alto","alto")}{inp("ancho","ancho")}{inp("prof","largo")}{inp("valor","$ decl.",70)}</div>
+                                  <div style={{display:"flex",gap:6}}>
+                                    <button onClick={ev=>{ const box=ev.currentTarget.parentElement.previousSibling; const nq={}; box.querySelectorAll("input[data-k]").forEach(el=>{ nq[el.dataset.k]=el.value; }); setPaqEdit(null); setPaqFila(r,nq); }} style={{...BtnPrimary(T),fontSize:10,padding:"3px 9px"}}>Aplicar y recotizar</button>
+                                    <button onClick={()=>setPaqEdit(null)} style={{...BtnSecondary(T),fontSize:10,padding:"3px 9px"}}>Cancelar</button>
+                                  </div>
+                                </div>
+                              ); })():(
+                                <div style={{display:"flex",flexDirection:"column",gap:3,alignItems:"flex-start"}}>
+                                  <span style={{color:r.paq?T.text:T.textMd}}>{paqTxt(r.paq||exportCfg)}{r.paq?"":" (default)"}</span>
+                                  <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                                    {paqPerfiles.length>0&&<select value="" onChange={e=>{ const pf=paqPerfiles.find(x=>x.nombre===e.target.value); if(pf) setPaqFila(r,{...pf}); }} style={{...iS,marginBottom:0,width:"auto",fontSize:10,padding:"2px 6px"}}><option value="">Perfil…</option>{paqPerfiles.map(pf=><option key={pf.nombre} value={pf.nombre}>{pf.nombre}</option>)}</select>}
+                                    <button onClick={()=>setPaqEdit(r.numero)} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 8px",fontSize:10,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
+                                    {r.paq&&<button onClick={()=>setPaqFila(r,null)} title="Volver al paquete por defecto" style={{background:"transparent",border:"none",fontSize:10,color:T.textSm,cursor:"pointer",padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>default</button>}
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                            <td style={{padding:"7px 10px",textAlign:"right",fontWeight:600,color:T.text,whiteSpace:"nowrap"}}>{r.cot?fmtMoney(r.cot.precio):r.incluido&&!r.cotError?<Spinner size={11} color={T.textSm}/>:"—"}</td>
                           </tr>
                         );
                       })}
@@ -11399,6 +11499,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       {/* ── Andreani prepago: saldo, datos del remitente y emisión directa ── */}
       {andreani.enabled&&(
         <AndreaniSaldoModal T={T} open={andreaniSaldoOpen} onClose={()=>setAndreaniSaldoOpen(false)}
+          onOpenEnvio={m=>{ const ev=Object.values(enviosFs).find(x=>(m.envioId&&String(x.numero)===String(m.envioId))||(m.numeroDeEnvio&&x.andreani?.numeroDeEnvio===m.numeroDeEnvio)); if(ev){ setAndreaniSaldoOpen(false); setTab("seguimientos"); setSegFicha(ev); } else toast("Ese envío ya no está en los últimos 60 días de Seguimientos","info"); }}
           etiquetasEstimadas={andreani.etiquetasEstimadas} saldoBajo={!!andreani.saldoBajo}
           saldo={andreani.saldo}
           sucOrigen={andreani.sucOrigen}
@@ -11513,7 +11614,8 @@ function ghFmtTs(v){
 }
 
 // Modal "Saldo de envíos": saldo actual, últimos movimientos y cómo cargar.
-function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, sucOrigen, onSucOrigen, etiquetasEstimadas=null, saldoBajo=false}){
+function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, sucOrigen, onSucOrigen, etiquetasEstimadas=null, saldoBajo=false, onOpenEnvio}){
+  const [mesMov,setMesMov]=useState("");
   const iS=InputStyle(T);
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(false);
@@ -11584,7 +11686,25 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
     const [col,lbl]=map[c.estado]||[T.textSm,c.estado];
     return <span style={{fontSize:10,fontWeight:700,color:col,background:col+"18",border:`1px solid ${col}44`,borderRadius:5,padding:"2px 7px",whiteSpace:"nowrap"}}>{lbl}</span>;
   };
-  const movs=Array.isArray(data?.movimientos)?data.movimientos:[];
+  const movsTodos=Array.isArray(data?.movimientos)?data.movimientos:[];
+  const mesDe=m=>{ const t=ghTsMs(m.ts); return t?new Date(t).toLocaleDateString("en-CA",{year:"numeric",month:"2-digit"}).slice(0,7):""; };
+  const mesesMov=[...new Set(movsTodos.map(mesDe).filter(Boolean))].sort().reverse();
+  const movs=mesMov?movsTodos.filter(m=>mesDe(m)===mesMov):movsTodos;
+  const conceptoDe=m=>m.nota||(m.tipo==="debito"?`Etiqueta ${m.numeroDeEnvio||""}`.trim():m.tipo==="reverso"?"Reverso":m.tipo==="contracargo"?"Contracargo":"Carga de saldo");
+  const exportarMovs=()=>{
+    const filas=[["Fecha","Concepto","Tipo","Nº de envío","Pedido","Monto","Saldo después"],...movs.map(m=>[ghFmtTs(m.ts),conceptoDe(m),m.tipo||"",m.numeroDeEnvio||"",m.envioId||"",(m.tipo==="debito"||m.tipo==="contracargo"?-1:1)*Math.abs(m.monto||0),m.saldoDespues??""])];
+    const csv=filas.map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(";")).join("\n");
+    const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`saldo_envios${mesMov?"_"+mesMov:""}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  };
+  const adjuntarComprobante=async(c,file)=>{
+    try{
+      const data64=/^image\//.test(file.type)?await ghImagenDataUrl(file,1400,0.75):await ghArchivoDataUrl(file);
+      if(data64.length>720*1024*1.37) throw new Error("El archivo es muy grande (máximo 700 KB).");
+      const r=await authFetch("/api/andreani?action=carga_comprobante",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:c.id,comprobante:data64})});
+      const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:"No se pudo adjuntar");
+      toast("Comprobante adjuntado","success"); refrescarCargas();
+    }catch(e){ toast(e.message,"warning"); }
+  };
   const saldoActual=typeof data?.saldo==="number"?data.saldo:saldo;
   const cargasVisibles=cargas.filter(c=>["pendiente","rechazada","revision","contracargo"].includes(c.estado)).slice(0,5);
   return (
@@ -11655,6 +11775,9 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
                 <span style={{color:T.textSm,fontSize:11}}>{c.ts?new Date(c.ts).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span>
                 <span style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
                   {estadoChip(c)}
+                  {["pendiente","revision"].includes(c.estado)&&c.metodo!=="mp"&&(
+                    <label title="Adjuntar el comprobante de la transferencia" style={{fontSize:10,fontWeight:600,color:T.accent,cursor:"pointer",whiteSpace:"nowrap"}}>{c.tieneComprobante?"Comprobante ✓":"Adjuntar comprobante"}<input type="file" accept="image/*,application/pdf" style={{display:"none"}} onChange={ev=>{ const f=ev.target.files?.[0]; if(f) adjuntarComprobante(c,f); ev.target.value=""; }}/></label>
+                  )}
                   {c.estado==="pendiente"&&(
                     <button title="Cancelar esta carga" onClick={async()=>{
                       const r=await authFetch("/api/andreani?action=carga_cancelar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:c.id})});
@@ -11679,7 +11802,11 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
           <AndreaniSucOrigenCard T={T} sucOrigen={sucOrigen} onChange={onSucOrigen}/>
         </div>
       )}
-      <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,margin:"8px 0"}}>Últimos movimientos</div>
+      <div style={{display:"flex",alignItems:"center",gap:8,margin:"8px 0",flexWrap:"wrap"}}>
+        <span style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Movimientos</span>
+        {mesesMov.length>1&&<select value={mesMov} onChange={e=>setMesMov(e.target.value)} style={{...iS,marginBottom:0,width:"auto",fontSize:11,padding:"4px 8px"}}><option value="">Todos</option>{mesesMov.map(m=><option key={m} value={m}>{new Date(m+"-15T12:00:00").toLocaleDateString("es-AR",{month:"long",year:"numeric"})}</option>)}</select>}
+        {movs.length>0&&<button onClick={exportarMovs} style={{...BtnSecondary(T),fontSize:10.5,padding:"4px 9px",marginLeft:"auto"}}>Exportar CSV</button>}
+      </div>
       {loading?(
         <div style={{display:"flex",alignItems:"center",gap:8,padding:"18px 4px",color:T.textSm,fontSize:12}}>
           <Spinner size={13} color={T.accent}/> Cargando movimientos…
@@ -11694,11 +11821,12 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
           <div style={{maxHeight:260,overflowY:"auto"}}>
             {movs.map((m,i)=>{
               const esCredito=m.tipo==="credito"||m.tipo==="reverso";
-              const concepto=m.nota||(m.tipo==="debito"?`Etiqueta ${m.numeroDeEnvio||""}`.trim():m.tipo==="reverso"?"Reverso":"Carga de saldo");
+              const concepto=conceptoDe(m);
+              const abrible=!!onOpenEnvio&&!!(m.numeroDeEnvio||m.envioId);
               return (
                 <div key={i} style={{display:"grid",gridTemplateColumns:"90px 1fr 90px 90px",gap:8,padding:"9px 12px",fontSize:12,borderBottom:i<movs.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
                   <span style={{color:T.textSm,fontSize:11}}>{ghFmtTs(m.ts)}</span>
-                  <span style={{color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={concepto}>{concepto}</span>
+                  <span onClick={abrible?()=>onOpenEnvio(m):undefined} title={abrible?"Abrir la ficha del envío":concepto} style={{color:abrible?T.accent:T.text,cursor:abrible?"pointer":"default",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{concepto}{m.envioId?<span style={{color:T.textSm}}> · #{m.envioId}</span>:null}</span>
                   <span style={{textAlign:"right",fontWeight:700,color:esCredito?T.green:T.red}}>{esCredito?"+":"−"}{fmtMoney(Math.abs(m.monto||0))}</span>
                   <span style={{textAlign:"right",color:T.textMd}}>{fmtMoney(m.saldoDespues)}</span>
                 </div>
@@ -12315,7 +12443,7 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
 // ===========================================
 // HOME SCREEN
 // ===========================================
-function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas, user, userPlan="free", planExpiry, isAdmin=false, darkMode, onToggleDark, connectedStores={}}) {
+function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas, user, userPlan="free", planExpiry, isAdmin=false, darkMode, onToggleDark, connectedStores={}, enviosProblemas=0}) {
   // Cuenta recién creada: sin tienda conectada los KPIs muestran $0 y "todo en
   // orden", que se lee como "la app no hace nada". Mostramos qué falta hacer.
   // Solo con connectedStores.loaded: mientras carga (o si la carga falla) no se
@@ -12449,6 +12577,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   const CAT_META = {
     reclamos: {label:"Reclamos", icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>, color:T.red, nav:"reclamos"},
     stock:    {label:"Stock",    icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>, color:T.red, nav:"stock"},
+    envios:   {label:"Envíos",  nav:"envios", color:T.orange, icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>},
     canjes:   {label:"Canjes",  icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/></svg>, color:T.orange, nav:"canjes"},
   };
   const grouped = {
@@ -12456,6 +12585,11 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
       icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>,
       titulo:`${reclamosCount} reclamo${reclamosCount!==1?"s":""} abierto${reclamosCount!==1?"s":""}`,
       sub:"Requieren seguimiento",badge:String(reclamosCount),badgeColor:T.red,accion:()=>onNavigate("reclamos"),
+    }]:[],
+    envios: enviosProblemas>0?[{
+      icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.orange} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
+      titulo:`${enviosProblemas} envío${enviosProblemas!==1?"s":""} con problema`,
+      sub:"Devoluciones, visitas fallidas, en sucursal sin retirar o sin movimiento",badge:String(enviosProblemas),badgeColor:T.orange,accion:()=>onNavigate("envios"),
     }]:[],
     stock:[
       ...stockAlertas.filter(a=>a.status==="empty").map(a=>({icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>,titulo:`Sin stock: ${a.producto}`,sub:a.variante,badge:"Sin stock",badgeColor:T.red,accion:()=>onNavigate("stock")})),
@@ -12609,7 +12743,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
           </div>
         ):(
           <div style={{display:"flex",flexDirection:"column",gap:DS.sp.xl}}>
-            {["reclamos","stock","canjes"].map(cat=>{
+            {["reclamos","envios","stock","canjes"].map(cat=>{
               const items=grouped[cat];
               if(!items||items.length===0) return null;
               const meta=CAT_META[cat];
@@ -15783,6 +15917,242 @@ function AdmInput({T, style, ...p}) { return <input {...p} style={{...InputStyle
 function AdmSelect({T, style, children, ...p}) { return <select {...p} style={{...InputStyle(T),marginBottom:0,fontSize:12,width:"auto",padding:"6px 10px",...(style||{})}}>{children}</select>; }
 
 // Trazas de un envío (API oficial de la plataforma; si no lo ve, tracking público).
+// ── Envíos por API: helpers y piezas compartidas (cliente y Admin) ──────────
+const ENVIO_CASO_MOTIVOS=[
+  ["demora","Demorado, sin movimiento o no llegó"],
+  ["danado","Llegó dañado o incompleto"],
+  ["entrega","Entregado mal o devolución injustificada"],
+  ["cambio","Cambiar domicilio o reprogramar la entrega"],
+  ["anulacion","Anular etiqueta sin usar"],
+  ["otro","Otra gestión"],
+];
+const ENVIO_CASO_ESTADO={abierto:["Abierto","yellow"],enviado:["Enviado a Andreani","blue"],respondido:["Andreani respondió","purple"],resuelto:["Resuelto","green"],rechazado:["Rechazado","red"]};
+function ghEnvioCasoColor(T,estado){ const k=(ENVIO_CASO_ESTADO[estado]||[null,"textSm"])[1]; return T[k]||T.textSm; }
+// Misma regla que el backend: se puede anular solo si Andreani nunca registró el ingreso.
+function ghEnvioSinIngreso(e){
+  if(!e||!e.andreani?.numeroDeEnvio) return false;
+  if(e.entregadoAt||e.devolucionAt||e.andreani?.anulada) return false;
+  if(["en_camino","en_sucursal","entregado","devolucion","visita_fallida"].includes(e.categoria||"")) return false;
+  const txt=String(e.estadoAndreani||"");
+  return !txt||/no ingresad|pendiente de ingreso|sin movimientos/i.test(txt);
+}
+function ghTsMs(v){ if(!v) return null; if(typeof v==="number") return v; if(v.toMillis) return v.toMillis(); if(typeof v==="object"){ const sec=v._seconds??v.seconds; if(isFinite(sec)) return sec*1000; } const t=Date.parse(v); return isFinite(t)?t:null; }
+function ghFechaCorta(v){ const t=ghTsMs(v); return t?new Date(t).toLocaleDateString("es-AR",{day:"2-digit",month:"short"}):""; }
+// Imagen → data URL reducida (para fotos de un reclamo o comprobantes).
+function ghImagenDataUrl(file,maxW=1200,q=0.72){
+  return new Promise((resolve,reject)=>{
+    if(!file||!/^image\//.test(file.type)) return reject(new Error("Elegí una imagen (JPG, PNG o WebP)."));
+    const url=URL.createObjectURL(file); const img=new Image();
+    img.onload=()=>{ try{ const sc=Math.min(1,maxW/Math.max(img.naturalWidth,img.naturalHeight)); const c=document.createElement("canvas"); c.width=Math.round(img.naturalWidth*sc); c.height=Math.round(img.naturalHeight*sc); c.getContext("2d").drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url); resolve(c.toDataURL("image/jpeg",q)); }catch(e){ reject(e); } };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error("No pude leer la imagen.")); };
+    img.src=url;
+  });
+}
+function ghArchivoDataUrl(file){ return new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(String(r.result||"")); r.onerror=()=>reject(new Error("No pude leer el archivo.")); r.readAsDataURL(file); }); }
+// Línea de tiempo de trazas de un envío (API oficial → scraping, vía update-shipping).
+function EnvioTrazas({T, numero}){
+  const [st,setSt]=useState({loading:true,eventos:[],estado:null,error:""});
+  useEffect(()=>{ let vivo=true; setSt({loading:true,eventos:[],estado:null,error:""}); if(!numero){ setSt({loading:false,eventos:[],estado:null,error:"Este envío no tiene número de seguimiento."}); return; }
+    fetch(`/api/update-shipping?action=tracking&tracking=${encodeURIComponent(numero)}`).then(r=>r.json()).then(d=>{ if(!vivo) return; setSt({loading:false,eventos:Array.isArray(d?.eventos)?d.eventos:[],estado:d?.estado||null,error:d?.error&&!d?.estado?String(d.error):""}); }).catch(e=>{ if(vivo) setSt({loading:false,eventos:[],estado:null,error:e.message}); });
+    return ()=>{ vivo=false; }; },[numero]);
+  const fechaEv=ev=>{ const f=ev?.fecha||ev?.Fecha||ev?.fechaHora||ev?.fechaEvento||ev?.timestamp||ev?.date||null; const s2=(f&&typeof f==="object")?[f.dia||"",f.hora||""].join("T"):f; const t=s2?Date.parse(s2):NaN; return isFinite(t)?t:null; };
+  const txtEv=ev=>ev?.estado||ev?.Estado||ev?.evento||ev?.descripcion||ev?.Descripcion||ev?.accion||ev?.motivo||"";
+  const descEv=ev=>{ const d=ev?.descripcion||ev?.Descripcion||ev?.detalle||ev?.sucursal||ev?.Sucursal||""; return d&&d!==txtEv(ev)?String(typeof d==="object"?(d.nombre||d.descripcion||""):d):""; };
+  const evs=[...st.eventos].map(ev=>({t:fechaEv(ev),estado:txtEv(ev),desc:descEv(ev)})).sort((a,b)=>(b.t||0)-(a.t||0));
+  if(st.loading) return <AdmSkeleton T={T} filas={3}/>;
+  if(st.error) return <div style={{fontSize:12,color:T.red}}>{st.error}</div>;
+  return (<>
+    {st.estado&&<div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Estado actual: {st.estado}</div>}
+    {evs.length===0?<div style={{fontSize:12,color:T.textSm}}>Andreani todavía no registró movimientos para este envío.</div>:(
+      <div style={{borderLeft:`2px solid ${T.border}`,marginLeft:6,paddingLeft:14,display:"flex",flexDirection:"column",gap:10,maxHeight:300,overflowY:"auto"}}>
+        {evs.map((ev,i)=>(
+          <div key={i} style={{position:"relative"}}>
+            <span style={{position:"absolute",left:-20,top:5,width:9,height:9,borderRadius:"50%",background:i===0?T.accent:T.border}}/>
+            <div style={{fontSize:12.5,fontWeight:i===0?700:500,color:i===0?T.text:T.textMd}}>{ev.estado||"—"}</div>
+            {ev.desc&&<div style={{fontSize:11,color:T.textSm}}>{ev.desc}</div>}
+            <div style={{fontSize:10.5,color:T.textSm}}>{ev.t?new Date(ev.t).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):""}</div>
+          </div>
+        ))}
+      </div>
+    )}
+  </>);
+}
+// Ficha de UNA etiqueta (cliente): todo lo del envío en un lugar + acciones.
+function EnvioFichaModal({T, envio:e, onClose, catInfo, problema, casos=[], onDescargar, onCaso, onComentar, onRefrescar}){
+  const [coment,setComent]=useState("");
+  useEffect(()=>{ setComent(""); },[e?.numero]);
+  if(!e) return null;
+  const num=e.andreani?.numeroDeEnvio||""; const trk=num||e.tracking||"";
+  const esApi=!!num; const [lbl,col]=catInfo||["",T.textSm];
+  const copiar=(txt,msg)=>{ try{ navigator.clipboard.writeText(txt); toast(msg||"Copiado","success"); }catch(_){ toast("No se pudo copiar","warning"); } };
+  const filaD=(k,v,extra)=>v?<div style={{minWidth:0}}><div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:2}}>{k}</div><div style={{fontSize:13,color:T.text,fontWeight:500,overflowWrap:"anywhere"}}>{v}{extra}</div></div>:null;
+  const puedeAnular=esApi&&ghEnvioSinIngreso(e)&&!casos.some(c=>c.motivo==="anulacion"&&["abierto","enviado","respondido"].includes(c.estado));
+  const anulada=!!e.andreani?.anulada;
+  const dest=e.destinatario||{};
+  const fEmit=ghFechaCorta(e.andreani?.ts)||ghFechaCorta(e.creado);
+  const fEst=e.andreani?.fechaEstimadaDeEntrega?ghFechaCorta(e.andreani.fechaEstimadaDeEntrega):"";
+  const sec={background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"};
+  const h=(t)=><div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>{t}</div>;
+  return (
+    <Modal T={T} open={!!e} onClose={onClose} title={`Envío · pedido #${e.numero}`} width={640} zIndex={1300}>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {/* Cabecera */}
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <DSBadge T={T} color={anulada?T.textSm:col} size="md">{anulada?"Etiqueta anulada":lbl}</DSBadge>
+          <span style={{fontSize:11,fontWeight:700,color:esApi?T.accent:T.textMd,background:(esApi?T.accent:T.textMd)+"14",border:`1px solid ${esApi?T.accent:T.textMd}33`,borderRadius:5,padding:"2px 8px"}}>{esApi?"Emitida por API":"Etiqueta por Excel"}</span>
+          <span style={{fontSize:12,color:T.textMd}}>{e.esSucursal||e.andreani?.tipo==="sucursal"?"Retiro en sucursal":"A domicilio"}</span>
+          {trk&&<a href={`https://www.andreani.com/envio/${trk}`} target="_blank" rel="noreferrer" style={{marginLeft:"auto",fontSize:12,color:T.accent,fontWeight:600,textDecoration:"none"}}>Abrir en Andreani ↗</a>}
+        </div>
+        {problema&&<div style={{background:(problema.sev==="red"?T.red:T.orange)+"14",border:`1px solid ${problema.sev==="red"?T.red:T.orange}44`,borderRadius:10,padding:"9px 12px",fontSize:12,color:problema.sev==="red"?T.red:T.orange,fontWeight:600}}>Atención: {problema.msg}</div>}
+        {/* Datos */}
+        <div style={sec}>
+          {h("Datos de la etiqueta")}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:12}}>
+            {filaD("Número de seguimiento",trk?<span style={{fontFamily:"'Cascadia Code','Consolas',monospace"}}>{trk}</span>:null,trk?<button onClick={()=>copiar(trk,"Número copiado")} style={{marginLeft:6,background:"transparent",border:`1px solid ${T.border}`,borderRadius:5,padding:"1px 7px",fontSize:10,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Copiar</button>:null)}
+            {filaD("Destinatario",dest.nombre||e.cliente||"")}
+            {filaD("Destino",[e.localidad,e.provincia].filter(Boolean).join(", "))}
+            {filaD("Etiqueta emitida",fEmit)}
+            {filaD("Entrega estimada",fEst)}
+            {esApi&&filaD("Precio cobrado",fmtMoney(e.andreani?.precio||0))}
+            {esApi&&filaD("Contrato",e.andreani?.tipo==="sucursal"?"Sucursal":"Estándar")}
+            {filaD("Despachado",e.despachadoAt?ghFechaCorta(e.despachadoAt):"")}
+            {filaD("Entregado",e.entregadoAt?ghFechaCorta(e.entregadoAt):"")}
+            {filaD("Email del comprador",dest.email||"")}
+            {filaD("Teléfono",dest.telefono||"")}
+            {filaD("Último chequeo",e.lastCheck?new Date(e.lastCheck).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"")}
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
+            {esApi&&!anulada&&<Btn T={T} variant="primary" size="sm" onClick={()=>onDescargar&&onDescargar(num)}>Descargar etiqueta</Btn>}
+            {trk&&<Btn T={T} variant="secondary" size="sm" onClick={()=>copiar(`https://www.andreani.com/envio/${trk}`,"Link de seguimiento copiado")}>Copiar link</Btn>}
+            {trk&&!anulada&&<Btn T={T} variant="secondary" size="sm" onClick={()=>onCaso&&onCaso(null)}>Pedir una gestión a Andreani</Btn>}
+            {puedeAnular&&<Btn T={T} variant="secondary" size="sm" onClick={()=>onCaso&&onCaso("anulacion")} style={{color:T.red,borderColor:T.red+"66"}}>Anular etiqueta</Btn>}
+          </div>
+          {esApi&&!anulada&&!puedeAnular&&!e.entregadoAt&&<div style={{fontSize:10.5,color:T.textSm,marginTop:8}}>Una etiqueta solo se puede anular mientras Andreani no haya registrado el ingreso del paquete.</div>}
+        </div>
+        {/* Gestiones */}
+        {casos.length>0&&(
+          <div style={sec}>
+            {h("Gestiones con Andreani")}
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {casos.map(c=>{ const cc=ghEnvioCasoColor(T,c.estado); return (
+                <div key={c.id} style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+                    <span style={{fontSize:13,fontWeight:700,color:T.text}}>{c.motivoLabel}</span>
+                    <DSBadge T={T} color={cc} size="sm">{c.estadoLabel}</DSBadge>
+                    <span style={{fontSize:10.5,color:T.textSm,marginLeft:"auto"}}>{c.ts?new Date(c.ts).toLocaleDateString("es-AR",{day:"2-digit",month:"short"}):""}</span>
+                  </div>
+                  {(c.historial||[]).slice(-5).map((hh,i)=>(
+                    <div key={i} style={{fontSize:11.5,color:hh.por==="admin"?T.text:T.textMd,padding:"3px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
+                      <span style={{fontSize:10,fontWeight:700,color:hh.por==="admin"?T.accent:T.textSm,marginRight:6}}>{hh.por==="admin"?"Growith":hh.por==="sistema"?"Sistema":"Vos"}</span>{hh.texto}
+                      <span style={{fontSize:10,color:T.textSm,marginLeft:6}}>{hh.at?new Date(hh.at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span>
+                    </div>
+                  ))}
+                  {["abierto","enviado","respondido"].includes(c.estado)&&(
+                    <div style={{display:"flex",gap:6,marginTop:8}}>
+                      <input value={coment} onChange={ev=>setComent(ev.target.value)} placeholder="Agregar un comentario o dato nuevo…" style={{...InputStyle(T),marginBottom:0,fontSize:12,flex:1}}/>
+                      <AsyncButton onClick={async()=>{ if(!coment.trim()) return; await onComentar(c.id,coment.trim()); setComent(""); }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>Enviar</AsyncButton>
+                    </div>
+                  )}
+                </div>
+              );})}
+            </div>
+          </div>
+        )}
+        {/* Trazas */}
+        <div style={sec}>
+          {h("Historial de Andreani")}
+          <EnvioTrazas T={T} numero={trk}/>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+// Pedir una gestión a Andreani (reclamo / cambio / anulación) por un envío.
+function EnvioCasoModal({T, data, onClose, onCreated}){
+  const e=data?.envio;
+  const [motivo,setMotivo]=useState("demora"); const [desc,setDesc]=useState(""); const [dir,setDir]=useState(""); const [fotos,setFotos]=useState([]); const [err,setErr]=useState("");
+  useEffect(()=>{ setMotivo(data?.motivo||"demora"); setDesc(""); setDir(""); setFotos([]); setErr(""); },[data]);
+  if(!e) return null;
+  const trk=e.andreani?.numeroDeEnvio||e.tracking||"";
+  const iS=InputStyle(T);
+  const ayuda={
+    demora:"Contanos desde cuándo no se mueve o qué te dijo el cliente. Nosotros lo pedimos a Andreani y te avisamos por mail cuando respondan.",
+    danado:"Andreani exige fotos: del paquete con la etiqueta visible, del paquete abierto y del producto dañado. Tiene que reportarse dentro de las 48 horas de la entrega.",
+    entrega:"Describí qué pasó (lo entregaron a otra persona, dice entregado y no llegó, lo devolvieron sin avisar).",
+    cambio:"Indicá la nueva dirección completa o la fecha y franja en la que pueden entregar. Andreani lo aplica si el paquete todavía no salió a reparto.",
+    anulacion:"La etiqueta se anula si Andreani nunca registró el paquete. Si se aprueba, el importe vuelve a tu saldo de envíos.",
+    otro:"Contanos qué necesitás y lo gestionamos con la ejecutiva de cuenta.",
+  }[motivo];
+  const agregarFotos=async(files)=>{ setErr(""); const out=[]; for(const f of Array.from(files||[]).slice(0,4-fotos.length)){ try{ out.push(await ghImagenDataUrl(f,1200,0.72)); }catch(ex){ setErr(ex.message); } } setFotos(p=>[...p,...out].slice(0,4)); };
+  return (
+    <Modal T={T} open={!!e} onClose={onClose} title={`Gestión con Andreani · ${trk}`} width={520} zIndex={1400}>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div style={{fontSize:12,color:T.textMd}}>Pedido <strong style={{color:T.text}}>#{e.numero}</strong>{e.cliente?` · ${e.cliente}`:""}{e.localidad?` · ${e.localidad}`:""}</div>
+        <div>
+          <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>¿Qué necesitás?</div>
+          <div style={{display:"flex",flexDirection:"column",gap:5}}>
+            {ENVIO_CASO_MOTIVOS.filter(([k])=>k!=="anulacion"||(data?.motivo==="anulacion")||ghEnvioSinIngreso(e)).map(([k,l])=>{ const on=motivo===k; return (
+              <button key={k} onClick={()=>setMotivo(k)} style={{textAlign:"left",padding:"8px 12px",borderRadius:9,border:`1.5px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid+"14":"transparent",color:on?T.accent:T.textMd,fontSize:12.5,fontWeight:on?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
+            );})}
+          </div>
+        </div>
+        <div style={{fontSize:11.5,color:T.textSm,lineHeight:1.5,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 12px"}}>{ayuda}</div>
+        {motivo==="cambio"&&<div><div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Nueva dirección o fecha</div><input value={dir} onChange={ev=>setDir(ev.target.value)} placeholder="Calle 123, piso, localidad, CP — o 'viernes por la mañana'" style={{...iS,marginBottom:0}}/></div>}
+        <div><div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{motivo==="anulacion"?"Comentario (opcional)":"Qué pasó"}</div><textarea value={desc} onChange={ev=>setDesc(ev.target.value)} rows={3} placeholder={motivo==="anulacion"?"Ej: el cliente canceló la compra":"Una o dos líneas alcanzan"} style={{...iS,marginBottom:0,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif"}}/></div>
+        {motivo==="danado"&&(
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Fotos (hasta 4)</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+              {fotos.map((f,i)=><div key={i} style={{position:"relative"}}><img src={f} alt="" style={{width:64,height:64,objectFit:"cover",borderRadius:8,border:`1px solid ${T.border}`}}/><button onClick={()=>setFotos(p=>p.filter((_,j)=>j!==i))} style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:99,border:"none",background:T.red,color:"#fff",fontSize:11,cursor:"pointer",lineHeight:1}}>✕</button></div>)}
+              {fotos.length<4&&<label style={{width:64,height:64,borderRadius:8,border:`1.5px dashed ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:T.textSm,fontSize:22}}>+<input type="file" accept="image/*" multiple style={{display:"none"}} onChange={ev=>agregarFotos(ev.target.files)}/></label>}
+            </div>
+          </div>
+        )}
+        {err&&<div style={{fontSize:12,color:T.red}}>{err}</div>}
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <Btn T={T} variant="secondary" size="sm" onClick={onClose}>Cancelar</Btn>
+          <AsyncButton onClick={async()=>{
+            setErr("");
+            const r=await authFetch("/api/andreani?action=caso_crear",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({numero:String(e.numero),motivo,descripcion:desc.trim(),nuevaDireccion:dir.trim(),fotos})});
+            const d=await r.json().catch(()=>({}));
+            if(!r.ok||d.error){ setErr(typeof d.error==="string"?d.error:`No se pudo enviar (HTTP ${r.status})`); return; }
+            toast(motivo==="anulacion"?"Pedido de anulación enviado: te avisamos por mail cuando se resuelva":"Gestión enviada: la seguimos con Andreani y te avisamos por mail","success",5000);
+            onCreated&&onCreated(d.id);
+          }} style={{...BtnPrimary(T),fontSize:13,minWidth:140,justifyContent:"center"}}>{motivo==="anulacion"?"Pedir anulación":"Enviar gestión"}</AsyncButton>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+// Lee una tabla desde CSV o XLSX (sin librerías: XLSX = zip + XML). Devuelve filas de strings.
+async function ghLeerTablaArchivo(file){
+  const nombre=String(file?.name||"").toLowerCase();
+  if(nombre.endsWith(".xlsx")||nombre.endsWith(".xlsm")){
+    if(!window.JSZip){ await new Promise((resolve,reject)=>{ const sc=document.createElement("script"); sc.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"; sc.onload=resolve; sc.onerror=()=>reject(new Error("No se pudo cargar el lector de Excel")); document.head.appendChild(sc); }); }
+    const zip=await window.JSZip.loadAsync(await file.arrayBuffer());
+    const ssFile=zip.file("xl/sharedStrings.xml"); const strings=[];
+    if(ssFile){ const xml=await ssFile.async("string"); const rx=/<si>([\s\S]*?)<\/si>/g; let m; while((m=rx.exec(xml))!==null){ strings.push((m[1].match(/<t[^>]*>([\s\S]*?)<\/t>/g)||[]).map(t=>t.replace(/<[^>]+>/g,"")).join("")); } }
+    const sheetName=Object.keys(zip.files).filter(k=>/^xl\/worksheets\/sheet\d+\.xml$/.test(k)).sort()[0];
+    if(!sheetName) throw new Error("El Excel no tiene hojas.");
+    const xml=await zip.file(sheetName).async("string");
+    const colIdx=ref=>{ const l=(ref.match(/^[A-Z]+/)||[""])[0]; let n2=0; for(const ch of l) n2=n2*26+(ch.charCodeAt(0)-64); return n2-1; };
+    const filas=[]; const rowRx=/<row[^>]*>([\s\S]*?)<\/row>/g; let rm;
+    while((rm=rowRx.exec(xml))!==null){
+      const fila=[]; const cellRx=/<c r="([A-Z]+\d+)"([^>]*)>([\s\S]*?)<\/c>/g; let cm;
+      while((cm=cellRx.exec(rm[1]))!==null){
+        const attrs=cm[2]; const inner=cm[3]; let val="";
+        const v=(inner.match(/<v>([\s\S]*?)<\/v>/)||[])[1];
+        if(/t="s"/.test(attrs)) val=strings[Number(v)]||""; else if(/t="inlineStr"/.test(attrs)) val=(inner.match(/<t[^>]*>([\s\S]*?)<\/t>/)||[])[1]||""; else val=v||"";
+        fila[colIdx(cm[1])]=String(val).replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").trim();
+      }
+      if(fila.some(x=>x)) filas.push(Array.from(fila,x=>x||""));
+    }
+    return filas;
+  }
+  const txt=await file.text();
+  const sep=(txt.split("\n")[0].match(/;/g)||[]).length>=(txt.split("\n")[0].match(/,/g)||[]).length?";":",";
+  return txt.split(/\r?\n/).filter(l=>l.trim()).map(l=>{ const out=[]; let cur="",q=false; for(const ch of l){ if(ch==='"'){ q=!q; continue; } if(ch===sep&&!q){ out.push(cur.trim()); cur=""; continue; } cur+=ch; } out.push(cur.trim()); return out; });
+}
 function AdmTrazasModal({T, envio, onClose}) {
   const numero=envio?.andreani?.numeroDeEnvio||envio?.tracking||"";
   const [st,setSt]=useState({loading:true,eventos:[],estado:null,error:""});
@@ -15850,18 +16220,20 @@ function AdmMovsModal({T, cuenta, onClose}) {
 }
 // Acreditar (o ajustar) saldo a una cuenta.
 function AdmAcreditarModal({T, cuenta, onClose, onDone}) {
-  const [monto,setMonto]=useState(""); const [nota,setNota]=useState("");
-  useEffect(()=>{ setMonto(""); setNota(""); },[cuenta?.uid]);
+  const [monto,setMonto]=useState(""); const [nota,setNota]=useState(""); const [tipo,setTipo]=useState("credito"); const [numEnvio,setNumEnvio]=useState("");
+  useEffect(()=>{ setMonto(""); setNota(""); setTipo("credito"); setNumEnvio(""); },[cuenta?.uid]);
   return (
     <Modal T={T} open={!!cuenta} onClose={onClose} title={`Acreditar saldo · ${cuenta?.email||""}`} width={440} zIndex={1300}>
       {cuenta&&(
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
           <div style={{fontSize:12,color:T.textMd,lineHeight:1.5}}>Suma saldo a la billetera de etiquetas prepagas. Un monto negativo lo descuenta (ajuste). Queda registrado en los movimientos y en el registro de actividad.</div>
+          <Field T={T} label="Tipo"><AdmSelect T={T} value={tipo} onChange={e=>setTipo(e.target.value)} style={{width:"100%"}}><option value="credito">Acreditación o ajuste</option><option value="reintegro">Reintegro (etiqueta anulada, cobro de más)</option></AdmSelect></Field>
           <Field T={T} label="Monto ($)"><AdmInput T={T} type="number" value={monto} onChange={e=>setMonto(e.target.value)} placeholder="Ej: 20000" autoFocus/></Field>
-          <Field T={T} label="Nota"><AdmInput T={T} value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: transferencia del 5/9"/></Field>
+          <Field T={T} label={tipo==="reintegro"?"Motivo (obligatorio)":"Nota"}><AdmInput T={T} value={nota} onChange={e=>setNota(e.target.value)} placeholder={tipo==="reintegro"?"Ej: etiqueta anulada por Andreani":"Ej: transferencia del 5/9"}/></Field>
+          {tipo==="reintegro"&&<Field T={T} label="Nº de envío (opcional)"><AdmInput T={T} value={numEnvio} onChange={e=>setNumEnvio(e.target.value)} placeholder="36000..."/></Field>}
           <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
             <Btn T={T} variant="secondary" size="sm" onClick={onClose}>Cancelar</Btn>
-            <AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{ const m=Math.round(parseFloat(monto)); if(!m) throw new Error("Ingresá un monto válido"); const d=await admAndreani("admin_acreditar",{uid:cuenta.uid,monto:m,nota}); toast(`${fmtMoney(m)} ${m>0?"acreditados":"descontados"} · saldo ${fmtMoney(d.saldo)}`,"success"); onDone&&onDone(d.saldo); onClose(); }}>Acreditar</AdmBtn>
+            <AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{ const m=Math.round(parseFloat(monto)); if(!m) throw new Error("Ingresá un monto válido"); const d=await admAndreani("admin_acreditar",{uid:cuenta.uid,monto:m,nota,tipo,numeroDeEnvio:numEnvio.trim()}); toast(`${fmtMoney(m)} ${m>0?"acreditados":"descontados"} · saldo ${fmtMoney(d.saldo)}`,"success"); onDone&&onDone(d.saldo); onClose(); }}>Acreditar</AdmBtn>
           </div>
         </div>
       )}
@@ -15904,7 +16276,7 @@ function AppAdmin({T, user, onBack}) {
   async function loadEnvCfg() { try { const c=await admAndreani("admin_config"); setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}}); } catch(_){} }
   async function saveEnvCfg(next) {
     const body = next || envCfg; if(!body) return false;
-    try { await admAndreani("admin_config",{markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}}); }
+    try { await admAndreani("admin_config",{markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}, ejecutivaWa:String(body.ejecutivaWa||"").replace(/D/g,""), ejecutivaNombre:String(body.ejecutivaNombre||"").trim(), anulacionDias:Math.min(Math.max(parseInt(body.anulacionDias)||14,3),90)}); }
     catch(e){ toast("No se pudo guardar: "+e.message,"error"); return false; }
     setEnvCfg({...body}); return true;
   }
@@ -16549,11 +16921,163 @@ function AdmIngresos({ctx, stats}) {
 }
 
 // ── Logística (etiquetas prepagas): Operación · Rentabilidad · Configuración ─
+// Cola de gestiones ante Andreani (reclamos / cambios / anulaciones) de toda la plataforma.
+function AdmCasos({T, usuariosPorUid, setCuenta}){
+  const [st,setSt]=useState({loading:true,casos:[],ejecutivaWa:"",ejecutivaNombre:"",error:""});
+  const [todos,setTodos]=useState(false); const [edit,setEdit]=useState(null); // {id, estado, nota, reintegrar}
+  const [fotos,setFotos]=useState(null);
+  async function load(t){ setSt(x=>({...x,loading:true,error:""})); try{ const d=await admAndreani(`admin_casos${(t??todos)?"&todos=1":""}`); setSt({loading:false,casos:d.casos||[],ejecutivaWa:d.ejecutivaWa||"",ejecutivaNombre:d.ejecutivaNombre||"",error:""}); }catch(e){ setSt(x=>({...x,loading:false,error:e.message})); } }
+  useEffect(()=>{ load(false); },[]);
+  const textoWa=c=>[
+    `Hola${st.ejecutivaNombre?" "+st.ejecutivaNombre:""}! Te paso una gestión de ${c.tienda||c.email||"un cliente"} (cliente de Growith):`,
+    `• Envío: ${c.numeroDeEnvio||c.tracking} — pedido #${c.numero}`,
+    `• Destinatario: ${c.cliente||"-"}${c.localidad?" · "+c.localidad:""} · ${c.esSucursal?"retiro en sucursal":"a domicilio"}`,
+    `• Motivo: ${c.motivoLabel}`,
+    c.descripcion?`• Detalle: ${c.descripcion}`:"",
+    c.nuevaDireccion?`• Nueva dirección / fecha: ${c.nuevaDireccion}`:"",
+    c.fotos?`• Tengo ${c.fotos} foto${c.fotos!==1?"s":""} del daño, te las mando a continuación.`:"",
+    c.motivo==="anulacion"?"Pedimos la anulación de la etiqueta y el reintegro del envío, ya que nunca ingresó a la red.":"¿Me confirmás qué pasó y cómo seguimos?",
+    "Gracias!",
+  ].filter(Boolean).join("\n");
+  const mandarWa=async c=>{
+    const txt=textoWa(c);
+    if(st.ejecutivaWa){ window.open(`https://wa.me/${st.ejecutivaWa}?text=${encodeURIComponent(txt)}`,"_blank","noopener"); }
+    else { try{ await navigator.clipboard.writeText(txt); }catch(_){} toast("Texto copiado. Cargá el WhatsApp de la ejecutiva en Configuración para abrir el chat directo.","info",6000); }
+    if(c.estado==="abierto"){ try{ await admAndreani("admin_caso_estado",{id:c.id,estado:"enviado",nota:"Enviado a la ejecutiva de Andreani por WhatsApp"}); load(); }catch(_){} }
+  };
+  const guardarEstado=async()=>{ const e=edit; if(!e) return; await admAndreani("admin_caso_estado",{id:e.id,estado:e.estado,nota:e.nota,reintegrar:!!e.reintegrar}); toast("Gestión actualizada"+(e.reintegrar?" y saldo reintegrado":""),"success"); setEdit(null); load(); };
+  const verFotos=async c=>{ try{ const d=await admAndreani(`admin_caso_fotos&id=${encodeURIComponent(c.id)}`); setFotos(d.fotos||[]); }catch(e){ toast(e.message,"error"); } };
+  const lista=st.casos;
+  return (
+    <Card T={T} padding="lg">
+      <AdmTitulo T={T} t="Gestiones ante Andreani" sub="Reclamos, cambios y anulaciones que abren los clientes (o el sistema). Un clic arma el WhatsApp para la ejecutiva." right={<div style={{display:"flex",gap:6,alignItems:"center"}}><button onClick={()=>{ setTodos(v=>!v); load(!todos); }} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}>{todos?"Solo abiertas":"Ver todas"}</button><Btn T={T} variant="secondary" size="sm" onClick={()=>load()}>Actualizar</Btn></div>}/>
+      {st.loading?<AdmSkeleton T={T}/>:st.error?<div style={{fontSize:12,color:T.red}}>{st.error}</div>:lista.length===0?<AdmVacio T={T} titulo="Sin gestiones abiertas" sub="Cuando un cliente pida algo a Andreani desde la ficha de un envío, aparece acá."/>:(
+        <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:520,overflowY:"auto"}}>
+          {lista.map(c=>{ const cc=ghEnvioCasoColor(T,c.estado); const u=usuariosPorUid[c.uid]; const abierto=["abierto","enviado","respondido"].includes(c.estado); return (
+            <div key={c.id} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderLeft:`3px solid ${cc}`,borderRadius:10,padding:"10px 12px",fontSize:12}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <button onClick={()=>u&&setCuenta(c.uid)} style={{background:"transparent",border:"none",padding:0,cursor:u?"pointer":"default",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12.5,fontWeight:700,color:T.text}}>{c.tienda||c.email||c.uid}</button>
+                {c.origen==="sistema"&&<span style={{fontSize:9,fontWeight:800,color:T.purple,background:T.purple+"18",border:`1px solid ${T.purple}44`,borderRadius:99,padding:"1px 7px"}}>AUTOMÁTICA</span>}
+                {c.nuevoCliente&&abierto&&<span style={{fontSize:9,fontWeight:800,color:T.accent,background:T.accent+"18",border:`1px solid ${T.accent}44`,borderRadius:99,padding:"1px 7px"}}>NUEVO</span>}
+                <DSBadge T={T} color={cc} size="sm">{c.estadoLabel}</DSBadge>
+                <span style={{marginLeft:"auto",fontSize:10.5,color:T.textSm}}>{c.ts?admRel(c.ts):""}</span>
+              </div>
+              <div style={{marginTop:4,color:T.textMd}}><strong style={{color:T.text}}>{c.motivoLabel}</strong> · envío <span style={{fontFamily:"'Cascadia Code','Consolas',monospace"}}>{c.numeroDeEnvio||c.tracking}</span> · pedido #{c.numero}{c.cliente?` · ${c.cliente}`:""}{c.precio?` · ${fmtMoney(c.precio)}`:""}{c.reintegrado?" · reintegrado":""}</div>
+              {c.descripcion&&<div style={{marginTop:3,color:T.textSm,whiteSpace:"pre-wrap"}}>{c.descripcion}</div>}
+              {c.nuevaDireccion&&<div style={{marginTop:3,color:T.textSm}}>Nueva dirección / fecha: {c.nuevaDireccion}</div>}
+              {(c.historial||[]).slice(-3).map((h,i)=><div key={i} style={{fontSize:11,color:T.textSm,marginTop:2}}><span style={{fontWeight:700,color:h.por==="admin"?T.accent:T.textMd}}>{h.por==="admin"?"Vos":h.por==="sistema"?"Sistema":"Cliente"}</span> · {h.texto} <span style={{opacity:.7}}>{h.at?new Date(h.at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span></div>)}
+              {edit?.id===c.id?(
+                <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 10px"}}>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                    <AdmSelect T={T} value={edit.estado} onChange={e=>setEdit(x=>({...x,estado:e.target.value}))}>{Object.entries(ENVIO_CASO_ESTADO).map(([k,[l]])=><option key={k} value={k}>{l}</option>)}</AdmSelect>
+                    {c.motivo==="anulacion"&&!c.reintegrado&&edit.estado==="resuelto"&&<label style={{fontSize:11,color:T.text,display:"inline-flex",alignItems:"center",gap:6}}><input type="checkbox" checked={!!edit.reintegrar} onChange={e=>setEdit(x=>({...x,reintegrar:e.target.checked}))}/> Reintegrar {fmtMoney(c.precio)} al saldo del cliente y anular la etiqueta</label>}
+                  </div>
+                  <AdmInput T={T} value={edit.nota} onChange={e=>setEdit(x=>({...x,nota:e.target.value}))} placeholder="Nota para el cliente (qué respondió Andreani, qué sigue)"/>
+                  <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}><Btn T={T} variant="secondary" size="sm" onClick={()=>setEdit(null)}>Cancelar</Btn><AdmBtn T={T} variant="primary" size="sm" onClick={guardarEstado}>Guardar</AdmBtn></div>
+                </div>
+              ):(
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                  <AdmBtn T={T} variant="primary" size="sm" onClick={()=>mandarWa(c)}>WhatsApp a la ejecutiva</AdmBtn>
+                  <Btn T={T} variant="secondary" size="sm" onClick={()=>setEdit({id:c.id,estado:c.estado==="abierto"?"enviado":c.estado,nota:"",reintegrar:false})}>Cambiar estado</Btn>
+                  {c.fotos>0&&<Btn T={T} variant="secondary" size="sm" onClick={()=>verFotos(c)}>Ver fotos ({c.fotos})</Btn>}
+                  {(c.numeroDeEnvio||c.tracking)&&<a href={`https://www.andreani.com/envio/${c.numeroDeEnvio||c.tracking}`} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Andreani ↗</a>}
+                </div>
+              )}
+            </div>
+          );})}
+        </div>
+      )}
+      <Modal T={T} open={!!fotos} onClose={()=>setFotos(null)} title="Fotos del reclamo" width={720} zIndex={1400}>
+        {fotos&&(fotos.length===0?<div style={{fontSize:12,color:T.textSm}}>Sin fotos.</div>:<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10}}>{fotos.map((f,i)=><a key={i} href={f} target="_blank" rel="noreferrer"><img src={f} alt="" style={{width:"100%",borderRadius:10,border:`1px solid ${T.border}`}}/></a>)}</div>)}
+      </Modal>
+    </Card>
+  );
+}
+// Envíos con problema en toda la plataforma (lo calcula el backend; acá se ve lo que se viene).
+function AdmProblemasPlataforma({T, usuariosPorUid, setCuenta}){
+  const [open,setOpen]=useState(false); const [st,setSt]=useState(null);
+  async function load(){ setSt({loading:true}); try{ const d=await admAndreani("admin_envios_problemas"); setSt({loading:false,envios:d.envios||[],cuentas:d.cuentas||0,truncado:!!d.truncado}); }catch(e){ setSt({loading:false,envios:[],error:e.message}); } }
+  return (
+    <Card T={T} padding="lg">
+      <AdmTitulo T={T} t="Envíos con problema en la plataforma" sub="Devoluciones, visitas fallidas, en sucursal sin retirar, sin ingreso o sin movimiento, de todas las cuentas." right={<Btn T={T} variant="secondary" size="sm" onClick={()=>{ setOpen(true); load(); }}>{st&&!st.loading?"Actualizar":"Ver"}</Btn>}/>
+      {!open?<div style={{fontSize:12,color:T.textSm}}>Tocá "Ver" para recorrer las cuentas activas (tarda unos segundos).</div>:st?.loading?<AdmSkeleton T={T}/>:st?.error?<div style={{fontSize:12,color:T.red}}>{st.error}</div>:(st?.envios||[]).length===0?<AdmVacio T={T} titulo="Sin problemas detectados" sub={`${st?.cuentas||0} cuentas revisadas`}/>:(
+        <div style={{maxHeight:420,overflowY:"auto",border:`1px solid ${T.border}`,borderRadius:10}}>
+          {st.envios.map((e,i)=>{ const col=e.problema?.sev==="red"?T.red:T.orange; const u=usuariosPorUid[e.uid]; return (
+            <div key={e.uid+e.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 12px",borderBottom:i<st.envios.length-1?`1px solid ${T.borderL}`:"none",fontSize:12,flexWrap:"wrap"}}>
+              <span style={{width:7,height:7,borderRadius:"50%",background:col,flexShrink:0}}/>
+              <div style={{flex:1,minWidth:200}}>
+                <button onClick={()=>u&&setCuenta(e.uid)} style={{background:"transparent",border:"none",padding:0,cursor:u?"pointer":"default",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:700,color:T.text}}>{e.email||e.uid}</button>
+                <span style={{color:T.textMd}}> · #{e.numero}{e.cliente?" · "+e.cliente:""}{e.andreani?.numeroDeEnvio?" · API":""}</span>
+                <div style={{fontSize:11,color:col,fontWeight:600}}>{e.problema?.msg}</div>
+              </div>
+              {(e.andreani?.numeroDeEnvio||e.tracking)&&<a href={`https://www.andreani.com/envio/${e.andreani?.numeroDeEnvio||e.tracking}`} target="_blank" rel="noreferrer" style={{fontSize:11,color:T.accent,textDecoration:"none",fontWeight:600}}>Andreani ↗</a>}
+            </div>
+          );})}
+          {st.truncado&&<div style={{fontSize:11,color:T.textSm,padding:8}}>Se cortó a los 20 segundos: no se revisaron todas las cuentas.</div>}
+        </div>
+      )}
+    </Card>
+  );
+}
+// Conciliación contra el detalle de facturación de Andreani (CSV / XLSX).
+function AdmConciliacion({T, usuariosPorUid}){
+  const [tabla,setTabla]=useState(null); const [colNum,setColNum]=useState(-1); const [colCosto,setColCosto]=useState(-1); const [res,setRes]=useState(null); const [busy,setBusy]=useState(false);
+  const cargar=async(file)=>{
+    try{
+      const filas=await ghLeerTablaArchivo(file); if(filas.length<2) throw new Error("El archivo está vacío.");
+      const ancho=Math.max(...filas.map(f=>f.length)); const head=filas[0];
+      const score=(i,rx)=>filas.slice(1).filter(f=>rx.test(String(f[i]||"").replace(/[\s.]/g,""))).length;
+      let bestN=-1,bestNs=0; for(let i=0;i<ancho;i++){ const sc=score(i,/^\d{13,16}$/); if(sc>bestNs){ bestNs=sc; bestN=i; } }
+      let bestC=-1; for(let i=0;i<ancho;i++){ if(/total|importe|neto|precio|monto|tarifa/i.test(String(head[i]||""))&&i!==bestN){ bestC=i; break; } }
+      if(bestC<0){ let bestSum=0; for(let i=0;i<ancho;i++){ if(i===bestN) continue; const sum=filas.slice(1).reduce((a,f)=>a+(parseFloat(String(f[i]||"").replace(/\./g,"").replace(",","."))||0),0); if(sum>bestSum){ bestSum=sum; bestC=i; } } }
+      setTabla({filas,ancho,head,nombre:file.name}); setColNum(bestN); setColCosto(bestC); setRes(null);
+    }catch(e){ toast(e.message,"error"); }
+  };
+  const num=v=>parseFloat(String(v||"").replace(/\$/g,"").replace(/\s/g,"").replace(/\.(?=\d{3}(\D|$))/g,"").replace(",","."))||0;
+  const conciliar=async()=>{
+    if(!tabla||colNum<0||colCosto<0){ toast("Elegí las columnas de número de envío y costo","warning"); return; }
+    setBusy(true);
+    try{ const filas=tabla.filas.slice(1).map(f=>({numero:String(f[colNum]||"").replace(/\D/g,""),costo:num(f[colCosto])})).filter(f=>f.numero.length>=10); const d=await admAndreani("admin_conciliar",{filas}); setRes(d); }
+    catch(e){ toast(e.message,"error"); }
+    setBusy(false);
+  };
+  const exportar=()=>{ if(!res) return; const rows=[["Nº envío","Cuenta","Pedido","Mes","Cobrado al cliente","Costo modelo","Costo factura","Diferencia modelo-factura"],...res.filas.map(f=>[f.numero,usuariosPorUid[f.uid]?.email||f.uid||"",f.envioId||"",f.mes||"",f.precio??"",f.costoModelo??"",f.costoFactura,f.diff??""])]; const csv=rows.map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(";")).join("\n"); const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="conciliacion_andreani.csv"; a.click(); URL.revokeObjectURL(a.href); };
+  const r=res?.resumen;
+  return (
+    <Card T={T} padding="lg" style={{marginTop:16}}>
+      <AdmTitulo T={T} t="Conciliar la factura de Andreani" sub="Subí el detalle de facturación (CSV o Excel con una fila por envío) y se cruza por número de envío con lo cobrado a cada cliente." right={<AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ const d=await admAndreani("admin_idx_backfill",{}); toast(`Índice reconstruido: ${d.escritos} etiquetas de ${d.cuentas} cuentas`,"success",5000); }}>Reconstruir índice</AdmBtn>}/>
+      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+        <label style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",cursor:"pointer",display:"inline-flex",alignItems:"center"}}>{tabla?tabla.nombre:"Elegir archivo (.csv / .xlsx)"}<input type="file" accept=".csv,.xlsx,.xlsm,text/csv" style={{display:"none"}} onChange={e=>{ const f=e.target.files?.[0]; if(f) cargar(f); e.target.value=""; }}/></label>
+        {tabla&&<>
+          <span style={{fontSize:11,color:T.textSm}}>{tabla.filas.length-1} filas</span>
+          <label style={{fontSize:11,color:T.textMd,display:"inline-flex",alignItems:"center",gap:4}}>Nº envío <AdmSelect T={T} value={colNum} onChange={e=>setColNum(Number(e.target.value))}>{Array.from({length:tabla.ancho},(_,i)=><option key={i} value={i}>{tabla.head[i]||`Col ${i+1}`}</option>)}</AdmSelect></label>
+          <label style={{fontSize:11,color:T.textMd,display:"inline-flex",alignItems:"center",gap:4}}>Costo <AdmSelect T={T} value={colCosto} onChange={e=>setColCosto(Number(e.target.value))}>{Array.from({length:tabla.ancho},(_,i)=><option key={i} value={i}>{tabla.head[i]||`Col ${i+1}`}</option>)}</AdmSelect></label>
+          <AdmBtn T={T} variant="primary" size="sm" onClick={conciliar} disabled={busy}>{busy?"Cruzando…":"Conciliar"}</AdmBtn>
+        </>}
+      </div>
+      {r&&(<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:12}}>
+          {[{label:"Filas",val:String(r.total)},{label:"Encontradas",val:String(r.encontrados),sub:r.noEncontrados?`${r.noEncontrados} sin match`:"todas"},{label:"Facturado Andreani",val:fmtMoney(r.facturado)},{label:"Cobrado a clientes",val:fmtMoney(r.cobrado)},{label:"Margen real",val:fmtMoney(r.margenReal),color:r.margenReal>=0?T.green:T.red},{label:"Costo modelo",val:fmtMoney(r.costoModelo),sub:`dif. ${fmtMoney(r.costoModelo-r.facturado)}`}].map(k=><AdmKpi key={k.label} T={T} label={k.label} val={k.val} sub={k.sub} color={k.color} n={1}/>)}
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><Btn T={T} variant="secondary" size="sm" onClick={exportar}>Exportar CSV</Btn></div>
+        <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto",maxHeight:380,overflowY:"auto"}}><div style={{minWidth:760}}>
+          <div style={{display:"grid",gridTemplateColumns:"150px 1fr 90px 100px 100px 100px 100px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface,position:"sticky",top:0}}><span>Nº envío</span><span>Cuenta</span><span>Pedido</span><span style={{textAlign:"right"}}>Cobrado</span><span style={{textAlign:"right"}}>Costo modelo</span><span style={{textAlign:"right"}}>Factura</span><span style={{textAlign:"right"}}>Dif.</span></div>
+          {res.filas.map((f,i)=>(
+            <div key={f.numero+i} style={{display:"grid",gridTemplateColumns:"150px 1fr 90px 100px 100px 100px 100px",gap:8,padding:"7px 12px",fontSize:12,borderBottom:`1px solid ${T.borderL}`,alignItems:"center",opacity:f.uid?1:0.55}}>
+              <span style={{fontFamily:"'Cascadia Code','Consolas',monospace",fontSize:11}}>{f.numero}</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.uid?(usuariosPorUid[f.uid]?.email||f.uid):"sin match en Growith"}</span><span>{f.envioId?"#"+f.envioId:"—"}</span>
+              <span style={{textAlign:"right"}}>{f.precio!=null?fmtMoney(f.precio):"—"}</span><span style={{textAlign:"right",color:T.textMd}}>{f.costoModelo!=null?fmtMoney(f.costoModelo):"—"}</span><span style={{textAlign:"right"}}>{fmtMoney(f.costoFactura)}</span><span style={{textAlign:"right",fontWeight:700,color:f.diff==null?T.textSm:Math.abs(f.diff)<50?T.textSm:f.diff>0?T.green:T.red}}>{f.diff!=null?fmtMoney(f.diff):"—"}</span>
+            </div>
+          ))}
+        </div></div>
+      </>)}
+    </Card>
+  );
+}
 function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
   const {T, usuarios, usuariosPorUid, setCuenta, envCargas, resolverCarga, statsMes} = ctx;
   const [vista,setVista]=useState("operacion");
   const [saldos,setSaldos]=useState(null); const [busca,setBusca]=useState(""); const [buscaRes,setBuscaRes]=useState(null);
-  const [acred,setAcred]=useState(null); const [movs,setMovs]=useState(null);
+  const [acred,setAcred]=useState(null); const [movs,setMovs]=useState(null); const [compVer,setCompVer]=useState(null);
   const [nuevo,setNuevo]=useState(""); const [bajas,setBajas]=useState({loading:true,nombres:[],seed:[]}); const [bajaNueva,setBajaNueva]=useState("");
   const [pmap,setPmap]=useState({loading:true,entries:[]});
   const meses=useMemo(()=>{ const out=[]; const now=new Date(); for(let i=0;i<6;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); out.push({v:admMesKey(d.getTime()),label:admMesLabel(admMesKey(d.getTime()))}); } return out; },[]);
@@ -16597,10 +17121,16 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
               <div key={c.id} style={{padding:"9px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",gap:8}}><span style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||c.uid}</span><span style={{fontWeight:800,color:T.text}}>{fmtMoney(c.monto)}</span></div>
                 <div style={{fontSize:11,color:T.textSm,margin:"2px 0 6px"}}>ref {c.ref||"—"}{c.ts?` · ${admRel(c.ts)}`:""}{c.estado==="revision"?" · monto de MP distinto, revisar":""}</div>
-                <div style={{display:"flex",gap:6}}><AdmBtn T={T} variant="primary" size="sm" onClick={()=>resolverCarga(c,true)}>Acreditar</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>resolverCarga(c,false)}>Rechazar</AdmBtn></div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{c.tieneComprobante&&<AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ const d=await admAndreani(`admin_carga_comprobante&id=${encodeURIComponent(c.id)}`); setCompVer({...c,comprobante:d.comprobante}); }}>Ver comprobante</AdmBtn>}<AdmBtn T={T} variant="primary" size="sm" onClick={()=>resolverCarga(c,true)}>Acreditar</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>resolverCarga(c,false)}>Rechazar</AdmBtn></div>
               </div>
             ))}
           </Card>
+        </div>
+      )}
+      {vista==="operacion"&&(
+        <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.4fr) minmax(300px,1fr)",gap:16,alignItems:"start",marginTop:16}}>
+          <AdmCasos T={T} usuariosPorUid={usuariosPorUid} setCuenta={setCuenta}/>
+          <AdmProblemasPlataforma T={T} usuariosPorUid={usuariosPorUid} setCuenta={setCuenta}/>
         </div>
       )}
       {vista==="rentabilidad"&&(
@@ -16622,6 +17152,7 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
           </>); })()}
         </Card>
       )}
+      {vista==="rentabilidad"&&<AdmConciliacion T={T} usuariosPorUid={usuariosPorUid}/>}
       {vista==="config"&&(
         <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:16,alignItems:"start"}}>
           <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
@@ -16635,6 +17166,12 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
                   <Field T={T} label="Markup fijo ($)"><AdmInput T={T} type="number" value={envCfg.markupFijo??""} onChange={e=>upd({markupFijo:e.target.value})} placeholder="0"/></Field>
                 </div>
                 <Field T={T} label="Sucursal de origen (código Andreani)"><AdmInput T={T} value={envCfg.sucursalOrigen??""} onChange={e=>upd({sucursalOrigen:e.target.value})} placeholder="Vacío = origen default"/></Field>
+                <AdmLbl T={T}>Ejecutiva de cuenta de Andreani</AdmLbl>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                  <Field T={T} label="Nombre"><AdmInput T={T} value={envCfg.ejecutivaNombre??""} onChange={e=>upd({ejecutivaNombre:e.target.value})} placeholder="Ej: Carla"/></Field>
+                  <Field T={T} label="WhatsApp (con 549)"><AdmInput T={T} value={envCfg.ejecutivaWa??""} onChange={e=>upd({ejecutivaWa:e.target.value.replace(/\D/g,"")})} placeholder="5491155555555"/></Field>
+                  <Field T={T} label="Anulación automática (días sin ingreso)"><AdmInput T={T} type="number" min="3" max="90" value={envCfg.anulacionDias??14} onChange={e=>upd({anulacionDias:e.target.value})}/></Field>
+                </div>
                 <AdmLbl T={T}>Datos para recibir cargas por transferencia</AdmLbl>
                 <Field T={T} label="Alias"><AdmInput T={T} value={envCfg.datosPago?.alias??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),alias:e.target.value}})} placeholder="mi.alias.mp"/></Field>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><Field T={T} label="CBU / CVU"><AdmInput T={T} value={envCfg.datosPago?.cbu??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),cbu:e.target.value}})} placeholder="22 dígitos"/></Field><Field T={T} label="Titular"><AdmInput T={T} value={envCfg.datosPago?.titular??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),titular:e.target.value}})} placeholder="Nombre"/></Field></div>
@@ -16689,6 +17226,9 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
       )}
       <AdmAcreditarModal T={T} cuenta={acred} onClose={()=>setAcred(null)} onDone={()=>loadSaldos()}/>
       <AdmMovsModal T={T} cuenta={movs} onClose={()=>setMovs(null)}/>
+      <Modal T={T} open={!!compVer} onClose={()=>setCompVer(null)} title={`Comprobante · ${compVer?.ref||""} · ${compVer?fmtMoney(compVer.monto):""}`} width={720} zIndex={1400}>
+        {compVer&&(!compVer.comprobante?<div style={{fontSize:12,color:T.textSm}}>La carga no tiene comprobante.</div>:/^data:application\/pdf/.test(compVer.comprobante)?<iframe title="comprobante" src={compVer.comprobante} style={{width:"100%",height:520,border:`1px solid ${T.border}`,borderRadius:10,background:"#fff"}}/>:<img src={compVer.comprobante} alt="" style={{width:"100%",borderRadius:10,border:`1px solid ${T.border}`}}/>)}
+      </Modal>
     </>
   );
 }
@@ -37629,6 +38169,7 @@ export default function App() {
   const [canjesTab,setCanjesTab]=useState("activos");
   const [cmdOpen,setCmdOpen]=useState(false);
   const [andreaniAlertCount,setAndreaniAlertCount]=useState(0);
+  const [enviosProblemasN,setEnviosProblemasN]=useState(0); // lo calcula el cron (users/{uid}.enviosProblemasN)
   const [tareasForReview,setTareasForReview]=useState(0);
   const [tareasParaRevisarList,setTareasParaRevisarList]=useState([]);
   const [pendingOpenTaskId,setPendingOpenTaskId]=useState(null);
@@ -37968,6 +38509,7 @@ export default function App() {
       const meta=(d.metaAccounts||[]).length>0;
       const arca=(d.cuits||[]).length>0;
       setConnectedStores({tn:!!tn,shopify:!!shopify,ml:!!ml,meta,arca,loaded:true});
+      setEnviosProblemasN(Number(d.enviosProblemasN)||0);
       const newId=tn?.storeId||null;
       if(prevTnRef.current!==null && prevTnRef.current!==newId) {
         try{ localStorage.removeItem(`growith_orders_${user.uid}`); }catch(e){}
@@ -38436,7 +38978,7 @@ export default function App() {
   else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="calendario") pageContent = <PageView T={T} pageKey="calendario"><AppCalendarioPagos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="envios") pageContent = adminGate("envios") || planGate("plus") || requiereTN("Envíos") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} canjesPedidos={canjesPedidos} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
-  else pageContent = <HomeScreen T={T} onNavigate={(p, docId)=>{
+  else pageContent = <HomeScreen T={T} enviosProblemas={enviosProblemasN} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
     setPage(p);
   }} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user} userPlan={userPlan} planExpiry={planExpiry} isAdmin={isAdmin} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
@@ -38455,7 +38997,7 @@ export default function App() {
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       {impersonando&&<GhImpersonBanner T={T} info={impersonando}/>}
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, reclamosMp: reclamosMpCount, canjes: canjesAcciones, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert, calendario: calAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, reclamosMp: reclamosMpCount, canjes: canjesAcciones, stock: 0, envios: enviosProblemasN, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert, calendario: calAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
       {/* Multi-org F2 modals */}
       {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
       {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}

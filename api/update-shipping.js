@@ -2,7 +2,44 @@ import { createCipheriv } from "crypto";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { guardUid, guardCron, verifyAuth } from "./_auth.js";
-import { trazasOficialAndreani, trazasDebugAndreani } from "./andreani.js";
+import { trazasOficialAndreani, trazasDebugAndreani, getGlobalConfig, envioSinIngreso, CASO_MOTIVOS } from "./andreani.js";
+import { FieldValue } from "firebase-admin/firestore";
+
+// Mail simple (Resend), best-effort: nunca rompe el cron.
+async function mailEnvios(to, subject, html) {
+  if (!to || !process.env.RESEND_API_KEY) return false;
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: process.env.RESEND_FROM || "Growith <onboarding@resend.dev>", to, subject, html }),
+      signal: AbortSignal.timeout(8000),
+    });
+    return r.ok;
+  } catch (e) { console.error("[envios mail]", e.message); return false; }
+}
+const esc = (v) => String(v ?? "").replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+const mailShell = (titulo, sub, cuerpo) => `<div style="font-family:Inter,system-ui,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
+  <div style="background:linear-gradient(135deg,#6366f1,#a78bfa);padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
+    <div style="font-size:18px;font-weight:700;color:#fff">${esc(titulo)}</div>
+    ${sub ? `<div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px">${esc(sub)}</div>` : ""}
+  </div>
+  ${cuerpo}
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px">Growith — Envíos</p>
+</div>`;
+// Problemas por envío (misma lógica que Seguimientos y Admin) con umbrales por cuenta.
+function problemaEnvio(e, ahora, cfg) {
+  const dias = iso => { const t = iso ? Date.parse(iso) : NaN; return isFinite(t) ? Math.floor((ahora - t) / 86400000) : null; };
+  const sucD = Math.max(1, Number(cfg?.sucursalDias) || 3), quietoD = Math.max(2, Number(cfg?.quietoDias) || 7);
+  if (e.categoria === "devolucion" || e.devolucionAt) return { tipo: "devolucion", sev: "red", msg: "está volviendo (devolución)" };
+  if (!e.activo) return null;
+  if (e.categoria === "visita_fallida") return { tipo: "visita_fallida", sev: "amber", msg: "visita fallida — Andreani reintenta o lo lleva a sucursal" };
+  if (e.categoria === "en_sucursal") { const d = dias(e.enSucursalDesde); if (d != null && d >= sucD) return { tipo: "sucursal", sev: d >= sucD + 2 ? "red" : "amber", msg: `en sucursal hace ${d} días sin retirar${d >= sucD + 2 ? " — el plazo está por vencer" : ""}` }; return null; }
+  const dEst = dias(e.estadoDesde || e.despachadoAt || e.creado);
+  if (e.andreani?.numeroDeEnvio && envioSinIngreso(e)) { const dc = dias(e.andreani?.ts?.toDate ? e.andreani.ts.toDate().toISOString() : e.creado); if (dc != null && dc >= 3) return { tipo: "sin_despacho", sev: "amber", msg: `etiqueta emitida hace ${dc} días y Andreani nunca registró el ingreso` }; return null; }
+  if ((e.categoria === "en_camino" || e.categoria === "otro" || e.categoria === "desconocido") && (e.tracking || e.andreani?.numeroDeEnvio) && dEst != null && dEst >= quietoD) return { tipo: "quieto", sev: "amber", msg: `sin movimiento hace ${dEst} días` };
+  return null;
+}
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -310,9 +347,13 @@ export default async function handler(req, res) {
         activos.push(d);
       }
 
-      let revisados = 0, actualizados = 0;
+      let revisados = 0, actualizados = 0, avisosComprador = 0, digests = 0, anulacionesAuto = [];
+      let cfgGlobal = null; try { cfgGlobal = await getGlobalConfig(db); } catch (_) { cfgGlobal = { anulacionDias: 14 }; }
       for (const uDoc of activos) {
         if (!quedaTiempoEnvios()) break;
+        const ud = uDoc.data() || {};
+        const cfgU = ud.enviosCfg || {};
+        const tiendaNombre = String(ud.storeName || ud.nombreTienda || ud.nombre || "").trim() || "la tienda";
         // Envíos activos con tracking, no finalizados, sin chequear hace 25+ min.
         const envSnap = await uDoc.ref.collection("envios").where("activo", "==", true).limit(60).get();
         const pendientes = envSnap.docs
@@ -347,11 +388,87 @@ export default async function handler(req, res) {
             if (cat === "en_sucursal" && e.categoria !== "en_sucursal") upd.enSucursalDesde = ahora;
             if (cat === "entregado") { upd.activo = false; upd.entregadoAt = ahora; }
             if (cat === "devolucion") { upd.activo = false; upd.devolucionAt = ahora; }
+            // Aviso al COMPRADOR (mail) cuando el paquete llega a sucursal o
+            // falla una visita: lo importante, una sola vez por cambio de estado.
+            const emailComprador = String(e.destinatario?.email || "").trim();
+            if (cat !== e.categoria && (cat === "en_sucursal" || cat === "visita_fallida") && emailComprador && cfgU.avisosComprador !== false && !(e.avisosComprador || {})[cat]) {
+              const trk = numOficial || e.tracking;
+              const link = `https://www.andreani.com/envio/${trk}`;
+              const esSuc = cat === "en_sucursal";
+              const ok = await mailEnvios(emailComprador,
+                esSuc ? `Tu pedido de ${tiendaNombre} te espera en la sucursal de Andreani` : `No pudimos entregar tu pedido de ${tiendaNombre}`,
+                mailShell(esSuc ? "Tu paquete está en sucursal" : "Visita fallida", `Pedido de ${tiendaNombre}`,
+                  `<p style="font-size:14px">Andreani informa: <strong>${esc(out.estado)}</strong></p>
+  <p style="font-size:14px">${esSuc
+    ? "Ya podés pasar a retirarlo con tu DNI. Los envíos a sucursal tienen unos días de plazo antes de volver al remitente, así que no lo dejes pasar."
+    : "El repartidor no encontró a nadie en el domicilio. Andreani suele hacer una segunda visita en los próximos días; si tampoco pueden entregarlo, el paquete queda en la sucursal más cercana para que lo retires."}</p>
+  <div style="margin:14px 0;padding:10px 14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #22c55e;font-size:13px">Seguimiento: <strong>${esc(trk)}</strong><br/><a href="${link}" style="color:#6366f1">Ver el estado en Andreani</a></div>
+  <p style="font-size:12px;color:#6b7280">Este aviso lo envía Growith en nombre de ${esc(tiendaNombre)}.</p>`));
+              if (ok) { upd.avisosComprador = { ...(e.avisosComprador || {}), [cat]: ahora }; avisosComprador++; }
+            }
             await d.ref.set(upd, { merge: true });
             actualizados++;
           }));
         }
+        // ── Por cuenta: problemas del día (badge + resumen al dueño) y
+        //    anulación automática de etiquetas nunca ingresadas ──
+        try {
+          const ahoraMs = Date.now();
+          const docsAct = envSnap.docs.map(d => ({ id: d.id, ref: d.ref, e: d.data() }));
+          const problemas = docsAct.map(x => ({ ...x, p: problemaEnvio(x.e, ahoraMs, cfgU) })).filter(x => x.p);
+          const updU = { enviosProblemasN: problemas.length, enviosProblemasAt: ahora };
+          const ultimo = Date.parse(ud.enviosDigestAt || "") || 0;
+          if (problemas.length && cfgU.avisosDueno !== false && ud.email && ahoraMs - ultimo > 20 * 3600000) {
+            const filas = problemas.sort((a, b) => (a.p.sev === "red" ? 0 : 1) - (b.p.sev === "red" ? 0 : 1)).slice(0, 15).map(x => {
+              const trk = x.e.andreani?.numeroDeEnvio || x.e.tracking || "";
+              return `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:13px"><strong>#${esc(x.e.numero || x.id)}</strong>${x.e.cliente ? " · " + esc(x.e.cliente) : ""}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:13px;color:${x.p.sev === "red" ? "#dc2626" : "#d97706"}">${esc(x.p.msg)}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:12px">${trk ? `<a href="https://www.andreani.com/envio/${esc(trk)}" style="color:#6366f1">${esc(trk)}</a>` : ""}</td></tr>`;
+            }).join("");
+            const ok = await mailEnvios(String(ud.email).trim(), `${problemas.length} envío${problemas.length === 1 ? "" : "s"} con problema en ${tiendaNombre}`,
+              mailShell("Envíos que requieren atención", `${problemas.length} en total`,
+                `<table style="width:100%;border-collapse:collapse">${filas}</table>
+  ${problemas.length > 15 ? `<p style="font-size:12px;color:#6b7280">y ${problemas.length - 15} más.</p>` : ""}
+  <p style="font-size:13px;margin-top:14px">Abrí Envíos &rarr; Seguimientos: cada envío tiene su ficha con el historial completo y el botón para pedir una gestión a Andreani. Este resumen llega como máximo una vez por día; se desactiva desde el engranaje de Seguimientos.</p>`));
+            if (ok) { updU.enviosDigestAt = ahora; digests++; }
+          }
+          // Anulación automática: etiqueta emitida hace N días que nunca
+          // ingresó → caso interno (origen sistema) para pedir el reintegro a
+          // Andreani. Al cliente no se le avisa (decisión de negocio).
+          const nDias = Number(cfgGlobal?.anulacionDias) || 14;
+          for (const x of docsAct) {
+            const e = x.e;
+            if (!e.andreani?.numeroDeEnvio || e.andreani?.anulacionAutoTs || !envioSinIngreso(e)) continue;
+            const tsEm = e.andreani.ts?.toDate ? e.andreani.ts.toDate().getTime() : Date.parse(e.creado || "");
+            if (!isFinite(tsEm) || ahoraMs - tsEm < nDias * 86400000) continue;
+            try {
+              const dias = Math.floor((ahoraMs - tsEm) / 86400000);
+              const casoRef = await db.collection("envios_casos").add({
+                uid: uDoc.id, email: String(ud.email || ""), tienda: tiendaNombre === "la tienda" ? "" : tiendaNombre,
+                numero: String(e.numero || x.id), numeroDeEnvio: e.andreani.numeroDeEnvio, tracking: e.andreani.numeroDeEnvio, cliente: e.cliente || "",
+                localidad: [e.localidad, e.provincia].filter(Boolean).join(", "), esSucursal: !!e.esSucursal,
+                motivo: "anulacion", descripcion: `Etiqueta emitida hace ${dias} días sin ingreso a Andreani: pedir anulación y reintegro a Andreani (regla automática de ${nDias} días).`,
+                nuevaDireccion: "", fotos: [], estado: "abierto", origen: "sistema", precio: Number(e.andreani.precio) || 0, reintegrado: false, nuevoCliente: false,
+                historial: [{ at: ahora, por: "sistema", texto: `Abierto automáticamente: ${dias} días sin ingreso.` }],
+                ts: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+              });
+              await x.ref.set({ andreani: { anulacionAutoTs: ahora, casoAutoId: casoRef.id } }, { merge: true });
+              anulacionesAuto.push({ cuenta: ud.email || uDoc.id, numero: e.numero || x.id, numeroDeEnvio: e.andreani.numeroDeEnvio, precio: Number(e.andreani.precio) || 0, dias });
+            } catch (err) { console.error("[track_all anulacion auto]", err.message); }
+          }
+          await uDoc.ref.set(updU, { merge: true });
+        } catch (err) { console.error("[track_all cuenta]", err.message); }
         marcarUsers.push(uDoc.ref);
+      }
+      // Resumen al founder de las anulaciones automáticas abiertas en esta corrida.
+      if (anulacionesAuto.length) {
+        try {
+          const f = await db.collection("users").doc("WJH3ArqDPQcNLha9lOinvkVi9uJ2").get();
+          const to = f.exists ? String(f.data().email || "").trim() : "";
+          const total = anulacionesAuto.reduce((a, x) => a + x.precio, 0);
+          if (to) await mailEnvios(to, `${anulacionesAuto.length} etiqueta${anulacionesAuto.length === 1 ? "" : "s"} sin usar para pedir reintegro a Andreani`,
+            mailShell("Anulaciones automáticas", `$${total.toLocaleString("es-AR")} cobrados a clientes en etiquetas nunca despachadas`,
+              `<table style="width:100%;border-collapse:collapse">${anulacionesAuto.map(x => `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:13px">${esc(x.cuenta)}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:13px">#${esc(x.numero)} · ${esc(x.numeroDeEnvio)}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:13px;text-align:right">${x.dias} d · $${x.precio.toLocaleString("es-AR")}</td></tr>`).join("")}</table>
+  <p style="font-size:13px;margin-top:14px">Los casos están en Admin &rarr; Logística &rarr; Operación &rarr; Gestiones: con un clic armás el WhatsApp para la ejecutiva de Andreani.</p>`));
+        } catch (_) {}
       }
       // Marca de rotación de las cuentas consumidas (best-effort: si falla, la
       // próxima corrida vuelve a agarrar las mismas — no se pierde nada).
@@ -570,7 +687,7 @@ export default async function handler(req, res) {
           })).then(rs => rs.forEach(r => { if (r.status === "rejected") console.error("[canje-reminder]:", r.reason?.message || r.reason); }));
         }
       } catch (e) { console.error("[track_all canjes]:", e.message); }
-      return res.json({ ok: true, usuarios: activos.length, revisados, actualizados, canjesRevisados, canjesActualizados });
+      return res.json({ ok: true, usuarios: activos.length, revisados, actualizados, avisosComprador, digests, anulacionesAuto: anulacionesAuto.length, canjesRevisados, canjesActualizados });
     } catch (e) {
       console.error("track_all error:", e.message);
       return res.status(500).json({ error: e.message });
@@ -632,6 +749,9 @@ export default async function handler(req, res) {
           const docData = {};
           for (const k of ["tnId","cliente","esSucursal","provincia","localidad","total","skus","estado","activo","tracking","fulfillOk","verificado","tnDone"]) {
             if (e[k] !== undefined) docData[k] = e[k];
+          }
+          if (e.destinatario && typeof e.destinatario === "object") {
+            docData.destinatario = { nombre: String(e.destinatario.nombre || "").slice(0, 120), email: String(e.destinatario.email || "").trim().slice(0, 160), telefono: String(e.destinatario.telefono || "").slice(0, 25) };
           }
           docData.numero = numero;
           if (e.estado === "despachado") docData.despachadoAt = ahora;

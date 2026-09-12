@@ -111,11 +111,29 @@ export async function andreaniFetch(db, env, path, opts = {}) {
     ...opts,
     headers: { ...(opts.headers || {}), "x-authorization-token": tk },
   });
-  let r = await doFetch(token);
-  if (r.status === 401) {
-    token = await getAndreaniToken(db, env, true);
-    r = await doFetch(token);
+  // Reintentos: ante 429 o 5xx (o red caída) se espera y se reintenta hasta 2
+  // veces. Un POST (crear orden) solo se reintenta por 429: un 5xx después de
+  // crear la orden es ambiguo y lo maneja el flujo "dudoso" de emitir.
+  const esPost = String(opts.method || "GET").toUpperCase() === "POST";
+  const reintentable = (st) => st === 429 || (!esPost && st >= 500 && st <= 504);
+  const esperas = [700, 1800];
+  let r = null, ultimoErr = null;
+  for (let intento = 0; intento <= esperas.length; intento++) {
+    try {
+      r = await doFetch(token);
+      ultimoErr = null;
+      if (r.status === 401) {
+        token = await getAndreaniToken(db, env, true);
+        r = await doFetch(token);
+      }
+      if (!reintentable(r.status) || intento === esperas.length) return r;
+    } catch (e) {
+      ultimoErr = e;
+      if (esPost || intento === esperas.length) throw e;
+    }
+    await new Promise(rs => setTimeout(rs, esperas[intento]));
   }
+  if (ultimoErr) throw ultimoErr;
   return r;
 }
 
@@ -162,10 +180,60 @@ export async function getGlobalConfig(db) {
         titular: String(d.datosPago.titular || "").trim(),
         cbu:     String(d.datosPago.cbu || "").trim(),
       } : { alias: "", titular: "", cbu: "" },
+      // Ejecutiva de cuenta de Andreani: los casos (reclamos, anulaciones) se
+      // le mandan por WhatsApp desde Admin con el texto ya armado.
+      ejecutivaWa: String(d.ejecutivaWa || "").replace(/\D/g, "").slice(0, 20),
+      ejecutivaNombre: String(d.ejecutivaNombre || "").trim().slice(0, 60),
+      // Etiquetas emitidas que nunca ingresaron a Andreani en N días: se abre
+      // solo un caso de anulación para pedir el reintegro a Andreani.
+      anulacionDias: Math.min(Math.max(Math.round(Number(d.anulacionDias) || 14), 3), 90),
     };
   } catch (_) {
-    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, seguroPct: 1, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" } };
+    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, seguroPct: 1, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" }, ejecutivaWa: "", ejecutivaNombre: "", anulacionDias: 14 };
   }
+}
+
+// ── Casos (gestiones ante Andreani) ─────────────────────────────────────────
+// Colección raíz `envios_casos`: {uid, email, tienda, numero (pedido), numeroDeEnvio,
+// tracking, cliente, motivo, descripcion, fotos[], nuevaDireccion, estado,
+// origen: cliente|sistema, precio, reintegrado, historial[], ts, updatedAt}.
+export const CASO_MOTIVOS = {
+  demora:      "Demorado, sin movimiento o no llegó",
+  danado:      "Llegó dañado o incompleto",
+  entrega:     "Entregado mal o devolución injustificada",
+  cambio:      "Cambiar domicilio o reprogramar la entrega",
+  anulacion:   "Anular etiqueta sin usar",
+  otro:        "Otra gestión",
+};
+export const CASO_ESTADOS = ["abierto", "enviado", "respondido", "resuelto", "rechazado"];
+const CASO_ESTADO_LABEL = { abierto: "Abierto", enviado: "Enviado a Andreani", respondido: "Andreani respondió", resuelto: "Resuelto", rechazado: "Rechazado" };
+// Una etiqueta se puede anular solo si Andreani nunca registró el ingreso del paquete.
+export function envioSinIngreso(e) {
+  if (!e || !e.andreani?.numeroDeEnvio) return false;
+  if (e.entregadoAt || e.devolucionAt || e.andreani?.anulada) return false;
+  const cat = e.categoria || "";
+  if (["en_camino", "en_sucursal", "entregado", "devolucion", "visita_fallida"].includes(cat)) return false;
+  const txt = String(e.estadoAndreani || "");
+  return !txt || /no ingresad|pendiente de ingreso|sin movimientos/i.test(txt);
+}
+function casoSlim(id, c) {
+  return {
+    id, uid: c.uid, email: c.email || "", tienda: c.tienda || "", numero: c.numero || "", numeroDeEnvio: c.numeroDeEnvio || "", tracking: c.tracking || "",
+    cliente: c.cliente || "", localidad: c.localidad || "", motivo: c.motivo || "otro", motivoLabel: CASO_MOTIVOS[c.motivo] || "Otra gestión",
+    descripcion: c.descripcion || "", nuevaDireccion: c.nuevaDireccion || "", fotos: Array.isArray(c.fotos) ? c.fotos.length : 0,
+    estado: c.estado || "abierto", estadoLabel: CASO_ESTADO_LABEL[c.estado] || c.estado || "", origen: c.origen || "cliente",
+    precio: Number(c.precio) || 0, reintegrado: !!c.reintegrado, nuevoCliente: !!c.nuevoCliente,
+    historial: Array.isArray(c.historial) ? c.historial.slice(-30) : [],
+    ts: c.ts?.toMillis?.() || null, updatedAt: c.updatedAt?.toMillis?.() || null,
+  };
+}
+function validarDataUrl(v, maxBytes, tipos) {
+  const str = String(v || "");
+  const m = str.match(/^data:([a-z0-9.+\/-]+);base64,([A-Za-z0-9+\/=]+)$/i);
+  if (!m) return null;
+  if (!tipos.some(t => m[1].toLowerCase().startsWith(t))) return null;
+  if (Math.floor(m[2].length * 3 / 4) > maxBytes) return null;
+  return str;
 }
 
 // ¿Es admin de la plataforma? Mismo criterio que _auth.requireAdmin, pero sin
@@ -1005,7 +1073,7 @@ export default async function handler(req, res) {
 
     // Toda acción que ESCRIBE exige POST (un GET con token en un prefetch o un
     // log no debe poder mutar estado). emitir y sucursal_origen ya lo chequean adentro.
-    const ACCIONES_POST = new Set(["save_origen", "carga_solicitar", "carga_mp", "carga_cancelar", "admin_acreditar", "admin_carga_acreditar", "admin_carga_rechazar"]);
+    const ACCIONES_POST = new Set(["save_origen", "carga_solicitar", "carga_mp", "carga_cancelar", "carga_comprobante", "caso_crear", "caso_comentar", "admin_acreditar", "admin_carga_acreditar", "admin_carga_rechazar", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill"]);
     if (ACCIONES_POST.has(action) && req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
 
     // Webhook de Mercado Pago: lo llama MP, no un usuario — sin sesión
@@ -1363,7 +1431,10 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "sucursal_origen_no_confirmada", detail: "Confirmá desde qué sucursal Andreani despachás tus envíos antes de emitir etiquetas." });
       }
 
-      const envioRef = envioId ? userRef.collection("envios").doc(String(envioId)) : null;
+      // Toda emisión va atada a un pedido: es lo que protege contra la doble
+      // emisión (lock + idempotencia por envioId) y lo que ve Seguimientos.
+      if (!envioId || !String(envioId).trim()) return res.status(400).json({ error: "envioId requerido: la etiqueta tiene que corresponder a un pedido." });
+      const envioRef = userRef.collection("envios").doc(String(envioId));
 
       // f. IDEMPOTENCIA: si el envío ya fue emitido, devolver lo guardado.
       if (envioRef) {
@@ -1594,7 +1665,18 @@ export default async function handler(req, res) {
         ts: FieldValue.serverTimestamp(),
       };
       const writes = [movRef.set({ numeroDeEnvio }, { merge: true })];
-      if (envioRef) writes.push(envioRef.set({ andreani: andreaniInfo }, { merge: true }));
+      // Contacto del destinatario: lo usa el cron para avisarle "está en
+      // sucursal" / "visita fallida" por mail (si la cuenta lo tiene activo).
+      const destinatarioSlim = {
+        nombre: String(destinatario.nombreCompleto || "").trim().slice(0, 120),
+        email: String(destinatario.email || "").trim().slice(0, 160),
+        telefono: String(destinatario.telefono || "").replace(/[^\d+]/g, "").slice(0, 25),
+      };
+      if (envioRef) writes.push(envioRef.set({ andreani: andreaniInfo, destinatario: destinatarioSlim }, { merge: true }));
+      // Índice por número de envío (conciliación contra la factura de Andreani).
+      writes.push(db.collection("andreani_idx").doc(numeroDeEnvio).set({
+        uid, envioId: String(envioId), precio, costo: Math.round(costoConDescuento(cot, cfg)), tipo, mes: mesAR(), ts: FieldValue.serverTimestamp(),
+      }, { merge: true }).catch(e => console.error("[andreani] idx:", e.message)));
       await Promise.all(writes);
 
       // Stats mensuales de rentabilidad (best-effort, fuera de la transacción).
@@ -1728,8 +1810,10 @@ export default async function handler(req, res) {
       const ref = "GW-" + Array.from(randomBytes(4)).map(b => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 32]).join("");
       const uSnap = await userRef.get();
       const email = String(uSnap.data()?.email || user.email || "").trim();
+      const comprobante = validarDataUrl(body.comprobante, 700 * 1024, ["image/", "application/pdf"]);
       const docRef = await cargasCol.add({
         uid, email, monto, ref, estado: "pendiente", ts: FieldValue.serverTimestamp(),
+        ...(comprobante ? { comprobante, comprobanteTs: FieldValue.serverTimestamp() } : {}),
       });
       // Aviso al admin (best-effort): hay una carga esperando acreditación.
       try {
@@ -1748,6 +1832,98 @@ export default async function handler(req, res) {
         }
       } catch (_) {}
       return res.json({ ok: true, carga: { id: docRef.id, ref, monto, estado: "pendiente" }, datosPago: cfg.datosPago });
+    }
+
+    // Adjuntar (o reemplazar) el comprobante de una carga por transferencia propia.
+    if (action === "carga_comprobante") {
+      const id = String(body.id || "").trim();
+      const comprobante = validarDataUrl(body.comprobante, 700 * 1024, ["image/", "application/pdf"]);
+      if (!id || !comprobante) return res.status(400).json({ error: "Adjuntá una imagen o PDF de hasta 700 KB." });
+      const ref = db.collection("andreani_cargas").doc(id);
+      const snap = await ref.get();
+      if (!snap.exists || snap.data().uid !== uid) return res.status(404).json({ error: "Carga no encontrada" });
+      if (!["pendiente", "revision"].includes(snap.data().estado)) return res.status(400).json({ error: "Esa carga ya fue resuelta." });
+      await ref.set({ comprobante, comprobanteTs: FieldValue.serverTimestamp() }, { merge: true });
+      return res.json({ ok: true });
+    }
+
+    // ── Casos: gestiones ante Andreani (reclamos, cambios, anulaciones) ──
+    if (action === "casos") {
+      const snap = await db.collection("envios_casos").where("uid", "==", uid).limit(150).get();
+      const casos = snap.docs.map(d => casoSlim(d.id, d.data())).sort((a, b) => (b.updatedAt || b.ts || 0) - (a.updatedAt || a.ts || 0));
+      return res.json({ ok: true, casos, motivos: CASO_MOTIVOS });
+    }
+    if (action === "caso_crear") {
+      if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
+      const numero = String(body.numero || "").trim();
+      const motivo = CASO_MOTIVOS[body.motivo] ? String(body.motivo) : "otro";
+      const descripcion = String(body.descripcion || "").trim().slice(0, 1500);
+      const nuevaDireccion = String(body.nuevaDireccion || "").trim().slice(0, 300);
+      if (!numero) return res.status(400).json({ error: "numero requerido" });
+      if (!descripcion && motivo !== "anulacion") return res.status(400).json({ error: "Contanos qué pasó (una o dos líneas alcanzan)." });
+      if (motivo === "cambio" && !nuevaDireccion) return res.status(400).json({ error: "Indicá la nueva dirección o la fecha en que pueden entregar." });
+      const eSnap = await userRef.collection("envios").doc(numero).get();
+      if (!eSnap.exists) return res.status(404).json({ error: "No encontramos ese envío en tu historial." });
+      const e = eSnap.data();
+      const numeroDeEnvio = e.andreani?.numeroDeEnvio || "";
+      const tracking = e.tracking || numeroDeEnvio || "";
+      if (!tracking) return res.status(400).json({ error: "Ese envío todavía no tiene número de seguimiento." });
+      if (motivo === "anulacion") {
+        if (!numeroDeEnvio) return res.status(400).json({ error: "Solo se pueden anular etiquetas emitidas desde Growith." });
+        if (!envioSinIngreso(e)) return res.status(400).json({ error: "El paquete ya ingresó a la red de Andreani: la etiqueta no se puede anular." });
+      }
+      if (motivo === "danado") {
+        const desde = e.entregadoAt ? Date.parse(e.entregadoAt) : NaN;
+        if (isFinite(desde) && Date.now() - desde > 3 * 86400000) return res.status(400).json({ error: "Andreani solo toma reclamos por daños dentro de las 48 horas de la entrega." });
+      }
+      const fotos = (Array.isArray(body.fotos) ? body.fotos : []).slice(0, 4).map(f => validarDataUrl(f, 450 * 1024, ["image/"])).filter(Boolean);
+      if (motivo === "danado" && fotos.length === 0) return res.status(400).json({ error: "Para un reclamo por daño Andreani exige fotos: del paquete con la etiqueta visible y del producto dañado." });
+      // Un caso abierto por envío y motivo; máximo 20 casos abiertos por cuenta.
+      const abiertos = await db.collection("envios_casos").where("uid", "==", uid).limit(200).get();
+      const vivos = abiertos.docs.filter(d => ["abierto", "enviado", "respondido"].includes(d.data().estado));
+      if (vivos.length >= 20) return res.status(400).json({ error: "Tenés 20 gestiones abiertas: esperá a que se resuelvan antes de abrir otra." });
+      const dup = vivos.find(d => d.data().numero === numero && d.data().motivo === motivo);
+      if (dup) return res.status(400).json({ error: "Ya hay una gestión abierta por este envío con ese motivo.", id: dup.id });
+      const uSnap = await userRef.get();
+      const ud = uSnap.data() || {};
+      const tienda = String(ud.storeName || ud.nombreTienda || ud.nombre || "").trim();
+      const ahoraIso = new Date().toISOString();
+      const docRef = await db.collection("envios_casos").add({
+        uid, email: String(ud.email || user.email || "").trim(), tienda,
+        numero, numeroDeEnvio, tracking, cliente: e.cliente || "", localidad: [e.localidad, e.provincia].filter(Boolean).join(", "),
+        esSucursal: !!e.esSucursal, motivo, descripcion, nuevaDireccion, fotos,
+        estado: "abierto", origen: "cliente", precio: Number(e.andreani?.precio) || 0, reintegrado: false, nuevoCliente: true,
+        historial: [{ at: ahoraIso, por: "cliente", texto: descripcion || "Solicitud de anulación de etiqueta" }],
+        ts: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+      });
+      // Aviso al founder (best-effort).
+      try {
+        const f = await db.collection("users").doc(FOUNDERS[0]).get();
+        const to = f.exists ? String(f.data().email || "").trim() : "";
+        if (to) await sendEmail({
+          to, subject: `Gestión Andreani nueva: ${CASO_MOTIVOS[motivo]} · ${tienda || ud.email || uid}`,
+          html: `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
+  <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:16px">Nueva gestión ante Andreani</div>
+  <p style="font-size:14px"><strong>${tienda || ud.email || uid}</strong> abrió una gestión por el envío <strong>${tracking}</strong> (pedido #${numero}).</p>
+  <p style="font-size:14px">Motivo: <strong>${CASO_MOTIVOS[motivo]}</strong></p>
+  ${descripcion ? `<p style="font-size:13px;white-space:pre-wrap">${descripcion.replace(/</g, "&lt;")}</p>` : ""}
+  <p style="font-size:13px">Desde Admin &rarr; Logística &rarr; Operación armás el WhatsApp para la ejecutiva con un clic.</p>
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px">Growith — Envíos</p>
+</div>`,
+        });
+      } catch (_) {}
+      return res.json({ ok: true, id: docRef.id });
+    }
+    if (action === "caso_comentar") {
+      if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
+      const id = String(body.id || "").trim();
+      const texto = String(body.texto || "").trim().slice(0, 1000);
+      if (!id || !texto) return res.status(400).json({ error: "Escribí el comentario." });
+      const ref = db.collection("envios_casos").doc(id);
+      const snap = await ref.get();
+      if (!snap.exists || snap.data().uid !== uid) return res.status(404).json({ error: "Gestión no encontrada" });
+      await ref.set({ historial: FieldValue.arrayUnion({ at: new Date().toISOString(), por: "cliente", texto }), nuevoCliente: true, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      return res.json({ ok: true });
     }
 
     // Carga con Mercado Pago: crea la carga + preferencia de Checkout Pro y
@@ -1838,7 +2014,7 @@ export default async function handler(req, res) {
     }
 
     // ── ACCIONES ADMIN ────────────────────────────────────────────────────
-    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_punto_map", "admin_envios", "admin_envios_problemas"];
+    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_carga_comprobante", "admin_punto_map", "admin_envios", "admin_envios_problemas", "admin_casos", "admin_caso_fotos", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill"];
     if (adminActions.includes(action)) {
       const adm = await requireAdmin(req);
       if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
@@ -1951,8 +2127,10 @@ export default async function handler(req, res) {
         const targetUid = String(body.uid || "").trim();
         const monto = Math.round(Number(body.monto));
         const nota = String(body.nota || "").trim();
+        const esReintegro = body.tipo === "reintegro";
         if (!targetUid) return res.status(400).json({ error: "uid requerido" });
         if (!isFinite(monto) || monto === 0) return res.status(400).json({ error: "monto inválido (entero distinto de 0; negativo para ajustes)" });
+        if (esReintegro && (monto <= 0 || !nota)) return res.status(400).json({ error: "Un reintegro necesita monto positivo y motivo." });
         const tRef = db.collection("users").doc(targetUid);
         const tMov = tRef.collection("andreani_mov").doc();
         const nuevoSaldo = await db.runTransaction(async (tx) => {
@@ -1962,16 +2140,17 @@ export default async function handler(req, res) {
           const nuevo = saldo + monto;
           tx.set(tRef, { andreaniSaldo: nuevo }, { merge: true });
           tx.set(tMov, {
-            tipo: "credito",
+            tipo: esReintegro ? "reverso" : "credito",
             monto,
             saldoDespues: nuevo,
-            nota: nota || (monto > 0 ? "Acreditación de saldo" : "Ajuste de saldo"),
+            nota: esReintegro ? `Reintegro: ${nota}` : (nota || (monto > 0 ? "Acreditación de saldo" : "Ajuste de saldo")),
+            numeroDeEnvio: String(body.numeroDeEnvio || "").trim() || null,
             adminUid: adm.user.uid,
             ts: FieldValue.serverTimestamp(),
           });
           return nuevo;
         });
-        await logAdminAndreani(db, adm.user.uid, monto > 0 ? "acreditar_saldo" : "ajustar_saldo", targetUid, `${monto > 0 ? "+" : ""}$${monto.toLocaleString("es-AR")} · saldo ${nuevoSaldo.toLocaleString("es-AR")}${nota ? " · " + nota : ""}`);
+        await logAdminAndreani(db, adm.user.uid, esReintegro ? "reintegrar_saldo" : (monto > 0 ? "acreditar_saldo" : "ajustar_saldo"), targetUid, `${monto > 0 ? "+" : ""}$${monto.toLocaleString("es-AR")} · saldo ${nuevoSaldo.toLocaleString("es-AR")}${nota ? " · " + nota : ""}`);
         return res.json({ ok: true, uid: targetUid, saldo: nuevoSaldo });
       }
 
@@ -1981,8 +2160,128 @@ export default async function handler(req, res) {
         const snap = await db.collection("andreani_cargas").where("estado", "in", ["pendiente", "revision"]).limit(50).get();
         const cargas = snap.docs.map(d => ({ id: d.id, ...d.data() }))
           .sort((a, b) => (a.ts?.toMillis?.() || 0) - (b.ts?.toMillis?.() || 0))
-          .map(c => ({ id: c.id, uid: c.uid, email: c.email || "", ref: c.ref, monto: c.monto, ts: c.ts?.toMillis?.() || null, estado: c.estado, motivo: c.motivo || "" }));
+          .map(c => ({ id: c.id, uid: c.uid, email: c.email || "", ref: c.ref, monto: c.monto, ts: c.ts?.toMillis?.() || null, estado: c.estado, motivo: c.motivo || "", metodo: c.metodo || "transferencia", tieneComprobante: !!c.comprobante }));
         return res.json({ ok: true, cargas });
+      }
+      if (action === "admin_carga_comprobante") {
+        const id = String(body.id || "").trim();
+        const snap = id ? await db.collection("andreani_cargas").doc(id).get() : null;
+        if (!snap || !snap.exists) return res.status(404).json({ error: "Carga no encontrada" });
+        return res.json({ ok: true, comprobante: snap.data().comprobante || null, ref: snap.data().ref || "", monto: snap.data().monto || 0 });
+      }
+
+      // ── Casos: cola de gestiones ante Andreani de toda la plataforma ──
+      if (action === "admin_casos") {
+        const todos = body.todos === "1" || body.todos === true;
+        const snap = todos
+          ? await db.collection("envios_casos").orderBy("ts", "desc").limit(200).get().catch(() => db.collection("envios_casos").limit(200).get())
+          : await db.collection("envios_casos").where("estado", "in", ["abierto", "enviado", "respondido"]).limit(200).get();
+        const casos = snap.docs.map(d => casoSlim(d.id, d.data())).sort((a, b) => (b.updatedAt || b.ts || 0) - (a.updatedAt || a.ts || 0));
+        const cfg = await getGlobalConfig(db);
+        return res.json({ ok: true, casos, ejecutivaWa: cfg.ejecutivaWa, ejecutivaNombre: cfg.ejecutivaNombre });
+      }
+      if (action === "admin_caso_fotos") {
+        const id = String(body.id || "").trim();
+        const snap = id ? await db.collection("envios_casos").doc(id).get() : null;
+        if (!snap || !snap.exists) return res.status(404).json({ error: "Caso no encontrado" });
+        return res.json({ ok: true, fotos: Array.isArray(snap.data().fotos) ? snap.data().fotos : [] });
+      }
+      // Cambiar el estado de un caso (+ nota al historial, + reintegro al
+      // saldo si es una anulación resuelta a favor). Avisa al cliente por mail,
+      // salvo en los casos que abrió el sistema (anulaciones automáticas).
+      if (action === "admin_caso_estado") {
+        const id = String(body.id || "").trim();
+        const estado = CASO_ESTADOS.includes(body.estado) ? String(body.estado) : "";
+        const nota = String(body.nota || "").trim().slice(0, 1000);
+        const reintegrar = body.reintegrar === true || body.reintegrar === "1";
+        if (!id || !estado) return res.status(400).json({ error: "id y estado válidos requeridos" });
+        const ref = db.collection("envios_casos").doc(id);
+        const snap = await ref.get();
+        if (!snap.exists) return res.status(404).json({ error: "Caso no encontrado" });
+        const c = snap.data();
+        let reintegro = null;
+        if (reintegrar && !c.reintegrado) {
+          const tRef = db.collection("users").doc(c.uid);
+          const eRef = tRef.collection("envios").doc(String(c.numero));
+          const tMov = tRef.collection("andreani_mov").doc();
+          reintegro = await db.runTransaction(async (tx) => {
+            const [uS, eS] = await Promise.all([tx.get(tRef), tx.get(eRef)]);
+            const e = eS.exists ? eS.data() : {};
+            const monto = Math.round(Number(c.precio) || Number(e.andreani?.precio) || 0);
+            if (!(monto > 0)) throw new Error("El envío no tiene precio registrado: hacé el reintegro a mano desde Saldos.");
+            if (e.andreani?.anulada) throw new Error("Esa etiqueta ya fue anulada y reintegrada.");
+            const saldo = Math.round(Number(uS.data()?.andreaniSaldo) || 0);
+            const nuevo = saldo + monto;
+            tx.set(tRef, { andreaniSaldo: nuevo }, { merge: true });
+            tx.set(tMov, { tipo: "reverso", monto, saldoDespues: nuevo, nota: `Reintegro por anulación de etiqueta ${c.numeroDeEnvio || ""}`.trim(), numeroDeEnvio: c.numeroDeEnvio || null, envioId: String(c.numero), adminUid: adm.user.uid, casoId: id, ts: FieldValue.serverTimestamp() });
+            if (eS.exists) tx.set(eRef, { activo: false, andreani: { anulada: true, anuladaAt: new Date().toISOString() } }, { merge: true });
+            return { monto, saldo: nuevo };
+          });
+        }
+        const evento = { at: new Date().toISOString(), por: "admin", estado, texto: nota || (reintegro ? `Etiqueta anulada y ${reintegro.monto.toLocaleString("es-AR")} reintegrados al saldo` : CASO_ESTADO_LABEL[estado]) };
+        await ref.set({ estado, nuevoCliente: false, ...(reintegro ? { reintegrado: true, reintegroMonto: reintegro.monto } : {}), historial: FieldValue.arrayUnion(evento), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        await logAdminAndreani(db, adm.user.uid, "caso_envio", c.uid, `${CASO_MOTIVOS[c.motivo] || c.motivo} · ${c.numeroDeEnvio || c.tracking || ""} → ${CASO_ESTADO_LABEL[estado] || estado}${reintegro ? ` · reintegro $${reintegro.monto.toLocaleString("es-AR")}` : ""}`, { casoId: id, estado, nota });
+        // Mail al cliente (no en las anulaciones que abrió el sistema).
+        if (c.origen !== "sistema" && c.email) {
+          try {
+            await sendEmail({
+              to: c.email, subject: `Tu gestión con Andreani (${c.tracking || c.numeroDeEnvio}): ${CASO_ESTADO_LABEL[estado] || estado}`,
+              html: `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
+  <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:16px">${CASO_ESTADO_LABEL[estado] || estado}</div>
+  <p style="font-size:14px">Gestión por el envío <strong>${c.tracking || c.numeroDeEnvio}</strong> (pedido #${c.numero}) — ${CASO_MOTIVOS[c.motivo] || ""}.</p>
+  ${nota ? `<p style="font-size:13px;white-space:pre-wrap;background:#f9fafb;border-radius:8px;padding:10px 14px">${nota.replace(/</g, "&lt;")}</p>` : ""}
+  ${reintegro ? `<p style="font-size:14px">Se reintegraron <strong>$${reintegro.monto.toLocaleString("es-AR")}</strong> a tu saldo de envíos.</p>` : ""}
+  <p style="font-size:13px">Podés ver el detalle en Envíos &rarr; Seguimientos &rarr; el envío &rarr; Gestiones.</p>
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px">Growith — Envíos</p>
+</div>`,
+            });
+          } catch (_) {}
+        }
+        return res.json({ ok: true, estado, reintegro });
+      }
+
+      // ── Conciliación contra la factura de Andreani ──
+      // Recibe filas {numero, costo} (del detalle de facturación que manda
+      // Andreani) y las cruza por número de envío con el índice de emisiones.
+      if (action === "admin_conciliar") {
+        const filas = (Array.isArray(body.filas) ? body.filas : []).slice(0, 600)
+          .map(f => ({ numero: String(f.numero || "").replace(/\D/g, ""), costo: Math.round(Number(f.costo) || 0) }))
+          .filter(f => f.numero.length >= 10);
+        if (!filas.length) return res.status(400).json({ error: "No hay números de envío en el archivo." });
+        const out = []; let encontrados = 0, cobrado = 0, facturado = 0, costoModelo = 0;
+        for (let i = 0; i < filas.length; i += 100) {
+          const refs = filas.slice(i, i + 100).map(f => db.collection("andreani_idx").doc(f.numero));
+          const snaps = await db.getAll(...refs);
+          snaps.forEach((sn, j) => {
+            const f = filas[i + j];
+            const d = sn.exists ? sn.data() : null;
+            if (d) { encontrados++; cobrado += Number(d.precio) || 0; facturado += f.costo; costoModelo += Number(d.costo) || 0; }
+            out.push({ numero: f.numero, costoFactura: f.costo, uid: d?.uid || null, envioId: d?.envioId || null, precio: d ? Number(d.precio) || 0 : null, costoModelo: d ? Number(d.costo) || 0 : null, mes: d?.mes || null, diff: d ? (Number(d.costo) || 0) - f.costo : null });
+          });
+        }
+        return res.json({ ok: true, filas: out, resumen: { total: filas.length, encontrados, noEncontrados: filas.length - encontrados, cobrado, facturado, costoModelo, margenReal: cobrado - facturado } });
+      }
+      // Reconstruye el índice andreani_idx para etiquetas emitidas antes de
+      // que existiera (lee los envíos por API de las cuentas habilitadas).
+      if (action === "admin_idx_backfill") {
+        const cfg = await getGlobalConfig(db);
+        const uids = [...new Set([...cfg.habilitados, ...FOUNDERS])];
+        let escritos = 0, vistos = 0; const t0 = Date.now();
+        for (const u of uids) {
+          if (Date.now() - t0 > 40000) break;
+          let snap; try { snap = await db.collection("users").doc(u).collection("envios").limit(1500).get(); } catch (_) { continue; }
+          const wb = [];
+          for (const d of snap.docs) {
+            const e = d.data(); const num = e.andreani?.numeroDeEnvio; if (!num) continue; vistos++;
+            wb.push({ num, data: { uid: u, envioId: d.id, precio: Number(e.andreani.precio) || 0, tipo: e.andreani.tipo || null, mes: e.andreani.ts?.toDate ? new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit" }).format(e.andreani.ts.toDate()) : null, ts: e.andreani.ts || FieldValue.serverTimestamp() } });
+          }
+          for (let i = 0; i < wb.length; i += 400) {
+            const b = db.batch();
+            wb.slice(i, i + 400).forEach(x => b.set(db.collection("andreani_idx").doc(x.num), x.data, { merge: true }));
+            await b.commit(); escritos += Math.min(400, wb.length - i);
+          }
+        }
+        return res.json({ ok: true, cuentas: uids.length, vistos, escritos });
       }
 
       // Acreditar una carga: transacción única — marca la carga como acreditada
@@ -2080,6 +2379,13 @@ export default async function handler(req, res) {
               const out = prev.filter(u => !upd.habilitados.includes(u));
               if (out.length) console.warn(`[andreani] admin_config quitó habilitados: ${out.join(",")} (por ${adm.user.uid})`);
             } catch (_) {}
+          }
+          if (body.ejecutivaWa !== undefined) upd.ejecutivaWa = String(body.ejecutivaWa || "").replace(/\D/g, "").slice(0, 20);
+          if (body.ejecutivaNombre !== undefined) upd.ejecutivaNombre = String(body.ejecutivaNombre || "").trim().slice(0, 60);
+          if (body.anulacionDias !== undefined) {
+            const v = Math.round(Number(body.anulacionDias));
+            if (!isFinite(v) || v < 3 || v > 90) return res.status(400).json({ error: "anulacionDias inválido (3-90)" });
+            upd.anulacionDias = v;
           }
           if (body.datosPago !== undefined) {
             const p = body.datosPago || {};
