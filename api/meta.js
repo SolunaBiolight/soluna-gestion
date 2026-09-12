@@ -2719,6 +2719,11 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
       if (cbo_daily_budget_ars) {
         payload.daily_budget = String(Math.round(parseFloat(cbo_daily_budget_ars) * 100));
         payload.bid_strategy = bid_strategy || "LOWEST_COST_WITHOUT_CAP";
+      } else {
+        // Meta (sep-2026, subcódigo 4834011): en campañas ABO es OBLIGATORIO
+        // indicar si los adsets comparten hasta 20% del presupuesto. false =
+        // cada adset gasta solo lo suyo (comportamiento de siempre).
+        payload.is_adset_budget_sharing_enabled = "false";
       }
       const result = await metaPost(`${cfg.ad_account_id}/campaigns`, payload, cfg.access_token);
       return res.json({ ok: true, id: result.id, name: payload.name, objective: payload.objective, is_cbo: Boolean(cbo_daily_budget_ars) });
@@ -2774,6 +2779,10 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
         if (!cbo || cbo <= 0) return res.status(400).json({ error: "CBO necesita presupuesto > 0" });
         campPayload.daily_budget = String(Math.round(cbo * 100));
         campPayload.bid_strategy = "LOWEST_COST_WITHOUT_CAP";
+      } else {
+        // Meta (sep-2026, subcódigo 4834011): obligatorio en ABO. false = los
+        // adsets no comparten presupuesto entre sí.
+        campPayload.is_adset_budget_sharing_enabled = "false";
       }
       let campRes;
       try { campRes = await metaPost(`${cfg.ad_account_id}/campaigns`, campPayload, cfg.access_token); }
