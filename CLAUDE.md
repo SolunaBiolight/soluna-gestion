@@ -72,7 +72,7 @@ ANDREANI_CONTRATO_ESTANDAR / ANDREANI_CONTRATO_SUCURSAL  ← contratos de envío
 | `AppCopilot` | Copilot | Chat IA sobre datos reales (solo lectura, no inventa cifras) |
 | `AppEnvios` | Envíos | Pedidos TN, etiquetas Andreani, seguimientos |
 | `AppReclamos` | Reclamos | Pipeline kanban de reclamos y cambios |
-| `AppCanjes` | Canjes | Gestión de influencers y canjes |
+| `AppCanjes` | Canjes | Influencers y canjes (colección raíz `canjes`, `ownerId`). Piezas de contenido `piezas:[{id,tipo,estado:pendiente|entregada|publicada,fechaLimite,link}]` (los contadores `contenido[]` se derivan de ahí con `ghContenidoDePiezas`; `ghPiezasDe` expande canjes viejos), carpeta de Drive por influencer (`driveFolder` en `influencers` y en el canje). Vínculo con Envíos: App pasa `canjesPedidos` (nº pedido → canje) a AppEnvios, que marca el pedido con chip "Canje" y al emitir etiqueta (API) o subir el PDF de rótulos (Excel) escribe `tracking/etiquetaVia/etiquetaAt` en el canje (`marcarCanjeEnvio`); el cron de canjes en `update-shipping.js` sigue el tracking |
 | `AppStock` | Stock | Analytics conectado a TN/Shopify/ML |
 | `AppMetaAds` | Meta Ads | Campañas Facebook/Instagram |
 | `AppArca` | ARCA | Facturación electrónica AFIP |
