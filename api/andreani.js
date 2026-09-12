@@ -189,9 +189,13 @@ export async function getGlobalConfig(db) {
       anulacionDias: Math.min(Math.max(Math.round(Number(d.anulacionDias) || 14), 3), 90),
       // Mail de operaciones: recibe las gestiones nuevas y las anulaciones automáticas.
       emailGestiones: String(d.emailGestiones || "contacto.growith@gmail.com").trim().slice(0, 160),
+      // Portal de la ejecutiva (#/andreani/<token>): recibe un mail por cada
+      // gestión nueva y resuelve todo desde ahí. El token lo genera ejecutivaTokenAsegurar.
+      ejecutivaEmail: String(d.ejecutivaEmail || "").trim().slice(0, 160),
+      ejecutivaToken: String(d.ejecutivaToken || "").trim(),
     };
   } catch (_) {
-    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, seguroPct: 1, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" }, ejecutivaWa: "", ejecutivaNombre: "", anulacionDias: 14, emailGestiones: "contacto.growith@gmail.com" };
+    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, seguroPct: 1, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" }, ejecutivaWa: "", ejecutivaNombre: "", anulacionDias: 14, emailGestiones: "contacto.growith@gmail.com", ejecutivaEmail: "", ejecutivaToken: "" };
   }
 }
 
@@ -224,10 +228,100 @@ function casoSlim(id, c) {
     cliente: c.cliente || "", localidad: c.localidad || "", motivo: c.motivo || "otro", motivoLabel: CASO_MOTIVOS[c.motivo] || "Otra gestión",
     descripcion: c.descripcion || "", nuevaDireccion: c.nuevaDireccion || "", fotos: Array.isArray(c.fotos) ? c.fotos.length : 0,
     estado: c.estado || "abierto", estadoLabel: CASO_ESTADO_LABEL[c.estado] || c.estado || "", origen: c.origen || "cliente",
-    precio: Number(c.precio) || 0, reintegrado: !!c.reintegrado, nuevoCliente: !!c.nuevoCliente,
+    precio: Number(c.precio) || 0, reintegrado: !!c.reintegrado, nuevoCliente: !!c.nuevoCliente, nuevoAndreani: !!c.nuevoAndreani,
     historial: Array.isArray(c.historial) ? c.historial.slice(-30) : [],
     ts: c.ts?.toMillis?.() || null, updatedAt: c.updatedAt?.toMillis?.() || null,
   };
+}
+const PORTAL_ORIGIN = "https://www.growithapp.com";
+export async function ejecutivaTokenAsegurar(db, regenerar) {
+  const ref = db.collection("andreani_config").doc("global");
+  const snap = await ref.get();
+  let tok = String(snap.data()?.ejecutivaToken || "").trim();
+  if (!tok || regenerar) {
+    tok = randomBytes(16).toString("hex");
+    await ref.set({ ejecutivaToken: tok, ejecutivaTokenTs: FieldValue.serverTimestamp() }, { merge: true });
+  }
+  return tok;
+}
+export const portalEjecutivaLink = (tok) => `${PORTAL_ORIGIN}/#/andreani/${tok}`;
+// Mail a la ejecutiva con una o varias gestiones + link al portal (best-effort).
+export async function mailEjecutiva(db, cfg, casos, titulo) {
+  const to = String(cfg?.ejecutivaEmail || "").trim();
+  if (!to || !casos?.length) return false;
+  const tok = await ejecutivaTokenAsegurar(db);
+  const esc = v => String(v ?? "").replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+  const filas = casos.slice(0, 20).map(c => `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:13px"><strong>${esc(c.tienda || c.email || "Cliente Growith")}</strong></td><td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:13px"><a href="https://www.andreani.com/envio/${esc(c.numeroDeEnvio || c.tracking)}" style="color:#6366f1">${esc(c.numeroDeEnvio || c.tracking)}</a></td><td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:13px">${esc(CASO_MOTIVOS[c.motivo] || c.motivo)}</td></tr>`).join("");
+  const html = `<div style="font-family:Inter,system-ui,sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
+  <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:6px">${esc(titulo)}</div>
+  <p style="font-size:13px;color:#6b7280;margin:0 0 16px">Gestiones de clientes de Growith sobre envíos emitidos con la cuenta de Soluna.</p>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:18px">${filas}</table>
+  ${casos.length > 20 ? `<p style="font-size:12px;color:#6b7280">y ${casos.length - 20} más.</p>` : ""}
+  <p style="text-align:center;margin:22px 0"><a href="${portalEjecutivaLink(tok)}" style="display:inline-block;background:#6366f1;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 22px;border-radius:10px">Abrir el portal de gestiones</a></p>
+  <p style="font-size:12px;color:#6b7280">En el portal ves el detalle, las fotos y el historial de cada gestión, y respondés directamente: el cliente recibe tu respuesta al instante. Guardá el link, es siempre el mismo.</p>
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px">Growith — Envíos</p>
+</div>`;
+  const r = await sendEmail({ to, subject: titulo, html });
+  return !!r?.ok;
+}
+// ── Portal público de la ejecutiva: sin sesión, autenticado por token ──
+async function portalEjecutiva(req, res, db, body, action) {
+  const cfg = await getGlobalConfig(db);
+  const tok = String(body.token || "").trim();
+  if (!cfg.ejecutivaToken || tok.length < 20 || tok !== cfg.ejecutivaToken) return res.status(403).json({ error: "Link inválido o vencido. Pedile uno nuevo a Growith." });
+  const col = db.collection("envios_casos");
+  if (action === "portal_ejecutiva") {
+    const [ab, ce] = await Promise.all([
+      col.where("estado", "in", ["abierto", "enviado", "respondido"]).limit(200).get(),
+      col.where("estado", "in", ["resuelto", "rechazado"]).limit(200).get(),
+    ]);
+    const slim = d => { const c = casoSlim(d.id, d.data()); delete c.email; delete c.uid; return { ...c, esSucursal: !!d.data().esSucursal }; };
+    const abiertos = ab.docs.map(slim).sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    const cerrados = ce.docs.map(slim).sort((a, b) => (b.updatedAt || b.ts || 0) - (a.updatedAt || a.ts || 0)).slice(0, 60);
+    return res.json({ ok: true, abiertos, cerrados, nombre: cfg.ejecutivaNombre || "" });
+  }
+  if (action === "portal_ejecutiva_fotos") {
+    const snap = await col.doc(String(body.id || "")).get();
+    if (!snap.exists) return res.status(404).json({ error: "Gestión no encontrada" });
+    return res.json({ ok: true, fotos: Array.isArray(snap.data().fotos) ? snap.data().fotos : [] });
+  }
+  if (action === "portal_ejecutiva_responder") {
+    if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
+    const id = String(body.id || "").trim();
+    const estado = ["respondido", "resuelto", "rechazado"].includes(body.estado) ? String(body.estado) : "respondido";
+    const texto = String(body.texto || "").trim().slice(0, 1500);
+    if (!id || !texto) return res.status(400).json({ error: "Escribí la respuesta." });
+    const ref = col.doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: "Gestión no encontrada" });
+    const c = snap.data();
+    const evento = { at: new Date().toISOString(), por: "andreani", estado, texto };
+    await ref.set({ estado, nuevoCliente: false, nuevoAndreani: true, historial: FieldValue.arrayUnion(evento), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    const lbl = CASO_ESTADO_LABEL[estado] || estado;
+    const escT = v => String(v ?? "").replace(/</g, "&lt;");
+    // Al cliente (no en las anulaciones automáticas): respuesta directa de Andreani.
+    if (c.origen !== "sistema" && c.email) {
+      try { await sendEmail({ to: c.email, subject: `Andreani respondió tu gestión (${c.tracking || c.numeroDeEnvio}): ${lbl}`, html: `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
+  <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:16px">${lbl}</div>
+  <p style="font-size:14px">Gestión por el envío <strong>${escT(c.tracking || c.numeroDeEnvio)}</strong> (pedido #${escT(c.numero)}) — ${escT(CASO_MOTIVOS[c.motivo] || "")}.</p>
+  <p style="font-size:13px;white-space:pre-wrap;background:#f9fafb;border-radius:8px;padding:10px 14px"><strong>Andreani:</strong> ${escT(texto)}</p>
+  <p style="font-size:13px">Podés responder desde Envíos &rarr; Seguimientos &rarr; el envío &rarr; Gestiones.</p>
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px">Growith — Envíos</p>
+</div>` }); } catch (_) {}
+    }
+    // A operaciones: para ver la respuesta y, si es una anulación aprobada, hacer el reintegro desde Admin.
+    if (cfg.emailGestiones) {
+      try { await sendEmail({ to: cfg.emailGestiones, subject: `Andreani respondió: ${CASO_MOTIVOS[c.motivo] || c.motivo} · ${c.tienda || c.email || ""} → ${lbl}`, html: `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
+  <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:16px">Andreani respondió por el portal</div>
+  <p style="font-size:14px"><strong>${escT(c.tienda || c.email || "")}</strong> · envío <strong>${escT(c.numeroDeEnvio || c.tracking)}</strong> · ${escT(CASO_MOTIVOS[c.motivo] || "")} → <strong>${lbl}</strong></p>
+  <p style="font-size:13px;white-space:pre-wrap;background:#f9fafb;border-radius:8px;padding:10px 14px">${escT(texto)}</p>
+  ${c.motivo === "anulacion" && estado === "resuelto" && !c.reintegrado ? '<p style="font-size:13px;color:#b45309"><strong>Anulación aprobada:</strong> hacé el reintegro al saldo del cliente desde Admin &rarr; Logística &rarr; Gestiones (Cambiar estado &rarr; Resuelto &rarr; Reintegrar).</p>' : ""}
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px">Growith — Envíos</p>
+</div>` }); } catch (_) {}
+    }
+    return res.json({ ok: true, estado });
+  }
+  return res.status(400).json({ error: "acción inválida" });
 }
 function validarDataUrl(v, maxBytes, tipos) {
   const str = String(v || "");
@@ -1081,6 +1175,8 @@ export default async function handler(req, res) {
     // Webhook de Mercado Pago: lo llama MP, no un usuario — sin sesión
     // Firebase. Se valida con la firma HMAC de MP (MP_WEBHOOK_SECRET).
     if (action === "mp_webhook") return await mpWebhook(req, res, db, body);
+    // Portal de la ejecutiva de Andreani: sin sesión Firebase, autenticado por token.
+    if (action === "portal_ejecutiva" || action === "portal_ejecutiva_fotos" || action === "portal_ejecutiva_responder") return await portalEjecutiva(req, res, db, body, action);
 
     // Todas las acciones exigen sesión válida. La identidad sale del TOKEN.
     const user = await verifyAuth(req);
@@ -1898,6 +1994,11 @@ export default async function handler(req, res) {
         historial: [{ at: ahoraIso, por: "cliente", texto: descripcion || "Solicitud de anulación de etiqueta" }],
         ts: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
       });
+      // A la ejecutiva de Andreani: mail con el link al portal (best-effort).
+      try {
+        const cfgE = await getGlobalConfig(db);
+        await mailEjecutiva(db, cfgE, [{ tienda, email: ud.email, numeroDeEnvio, tracking, motivo }], `Gestión nueva de ${tienda || "un cliente de Growith"}: ${CASO_MOTIVOS[motivo]}`);
+      } catch (_) {}
       // Aviso al mail de operaciones (best-effort).
       try {
         const to = (await getGlobalConfig(db)).emailGestiones;
@@ -2015,7 +2116,7 @@ export default async function handler(req, res) {
     }
 
     // ── ACCIONES ADMIN ────────────────────────────────────────────────────
-    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_carga_comprobante", "admin_punto_map", "admin_envios", "admin_envios_problemas", "admin_casos", "admin_caso_fotos", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill"];
+    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_carga_comprobante", "admin_punto_map", "admin_envios", "admin_envios_problemas", "admin_casos", "admin_caso_fotos", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill", "admin_ejecutiva_token"];
     if (adminActions.includes(action)) {
       const adm = await requireAdmin(req);
       if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
@@ -2179,7 +2280,14 @@ export default async function handler(req, res) {
           : await db.collection("envios_casos").where("estado", "in", ["abierto", "enviado", "respondido"]).limit(200).get();
         const casos = snap.docs.map(d => casoSlim(d.id, d.data())).sort((a, b) => (b.updatedAt || b.ts || 0) - (a.updatedAt || a.ts || 0));
         const cfg = await getGlobalConfig(db);
-        return res.json({ ok: true, casos, ejecutivaWa: cfg.ejecutivaWa, ejecutivaNombre: cfg.ejecutivaNombre });
+        const tokE = await ejecutivaTokenAsegurar(db);
+        return res.json({ ok: true, casos, ejecutivaWa: cfg.ejecutivaWa, ejecutivaNombre: cfg.ejecutivaNombre, ejecutivaEmail: cfg.ejecutivaEmail, portalLink: portalEjecutivaLink(tokE) });
+      }
+      if (action === "admin_ejecutiva_token") {
+        const regenerar = req.method === "POST" && (body.regenerar === true || body.regenerar === "1");
+        const tokE = await ejecutivaTokenAsegurar(db, regenerar);
+        if (regenerar) await logAdminAndreani(db, adm.user.uid, "portal_ejecutiva_token", null, "Regeneró el link del portal de la ejecutiva");
+        return res.json({ ok: true, link: portalEjecutivaLink(tokE) });
       }
       if (action === "admin_caso_fotos") {
         const id = String(body.id || "").trim();
@@ -2220,7 +2328,7 @@ export default async function handler(req, res) {
           });
         }
         const evento = { at: new Date().toISOString(), por: "admin", estado, texto: nota || (reintegro ? `Etiqueta anulada y ${reintegro.monto.toLocaleString("es-AR")} reintegrados al saldo` : CASO_ESTADO_LABEL[estado]) };
-        await ref.set({ estado, nuevoCliente: false, ...(reintegro ? { reintegrado: true, reintegroMonto: reintegro.monto } : {}), historial: FieldValue.arrayUnion(evento), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        await ref.set({ estado, nuevoCliente: false, nuevoAndreani: false, ...(reintegro ? { reintegrado: true, reintegroMonto: reintegro.monto } : {}), historial: FieldValue.arrayUnion(evento), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         await logAdminAndreani(db, adm.user.uid, "caso_envio", c.uid, `${CASO_MOTIVOS[c.motivo] || c.motivo} · ${c.numeroDeEnvio || c.tracking || ""} → ${CASO_ESTADO_LABEL[estado] || estado}${reintegro ? ` · reintegro $${reintegro.monto.toLocaleString("es-AR")}` : ""}`, { casoId: id, estado, nota });
         // Mail al cliente (no en las anulaciones que abrió el sistema).
         if (c.origen !== "sistema" && c.email) {
@@ -2381,6 +2489,7 @@ export default async function handler(req, res) {
               if (out.length) console.warn(`[andreani] admin_config quitó habilitados: ${out.join(",")} (por ${adm.user.uid})`);
             } catch (_) {}
           }
+          if (body.ejecutivaEmail !== undefined) upd.ejecutivaEmail = String(body.ejecutivaEmail || "").trim().slice(0, 160);
           if (body.emailGestiones !== undefined) upd.emailGestiones = String(body.emailGestiones || "").trim().slice(0, 160);
           if (body.ejecutivaWa !== undefined) upd.ejecutivaWa = String(body.ejecutivaWa || "").replace(/\D/g, "").slice(0, 20);
           if (body.ejecutivaNombre !== undefined) upd.ejecutivaNombre = String(body.ejecutivaNombre || "").trim().slice(0, 60);

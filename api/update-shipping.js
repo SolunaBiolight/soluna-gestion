@@ -2,7 +2,7 @@ import { createCipheriv } from "crypto";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { guardUid, guardCron, verifyAuth } from "./_auth.js";
-import { trazasOficialAndreani, trazasDebugAndreani, getGlobalConfig, envioSinIngreso, CASO_MOTIVOS } from "./andreani.js";
+import { trazasOficialAndreani, trazasDebugAndreani, getGlobalConfig, envioSinIngreso, CASO_MOTIVOS, mailEjecutiva } from "./andreani.js";
 import { FieldValue } from "firebase-admin/firestore";
 
 // Mail simple (Resend), best-effort: nunca rompe el cron.
@@ -460,6 +460,7 @@ export default async function handler(req, res) {
       }
       // Resumen al founder de las anulaciones automáticas abiertas en esta corrida.
       if (anulacionesAuto.length) {
+        try { await mailEjecutiva(db, cfgGlobal, anulacionesAuto.map(x => ({ tienda: x.cuenta, numeroDeEnvio: x.numeroDeEnvio, motivo: "anulacion" })), `${anulacionesAuto.length} etiqueta${anulacionesAuto.length === 1 ? "" : "s"} sin usar: pedido de anulación y reintegro`); } catch (_) {}
         try {
           const to = String(cfgGlobal?.emailGestiones || "contacto.growith@gmail.com").trim();
           const total = anulacionesAuto.reduce((a, x) => a + x.precio, 0);

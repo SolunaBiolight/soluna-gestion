@@ -16043,7 +16043,7 @@ function EnvioFichaModal({T, envio:e, onClose, catInfo, problema, casos=[], onDe
                   </div>
                   {(c.historial||[]).slice(-5).map((hh,i)=>(
                     <div key={i} style={{fontSize:11.5,color:hh.por==="admin"?T.text:T.textMd,padding:"3px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
-                      <span style={{fontSize:10,fontWeight:700,color:hh.por==="admin"?T.accent:T.textSm,marginRight:6}}>{hh.por==="admin"?"Growith":hh.por==="sistema"?"Sistema":"Vos"}</span>{hh.texto}
+                      <span style={{fontSize:10,fontWeight:700,color:hh.por==="andreani"?T.green:hh.por==="admin"?T.accent:T.textSm,marginRight:6}}>{hh.por==="andreani"?"Andreani":hh.por==="admin"?"Growith":hh.por==="sistema"?"Sistema":"Vos"}</span>{hh.texto}
                       <span style={{fontSize:10,color:T.textSm,marginLeft:6}}>{hh.at?new Date(hh.at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span>
                     </div>
                   ))}
@@ -16276,7 +16276,7 @@ function AppAdmin({T, user, onBack}) {
   async function loadEnvCfg() { try { const c=await admAndreani("admin_config"); setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}}); } catch(_){} }
   async function saveEnvCfg(next) {
     const body = next || envCfg; if(!body) return false;
-    try { await admAndreani("admin_config",{markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}, ejecutivaWa:String(body.ejecutivaWa||"").replace(/D/g,""), ejecutivaNombre:String(body.ejecutivaNombre||"").trim(), emailGestiones:String(body.emailGestiones||"").trim(), anulacionDias:Math.min(Math.max(parseInt(body.anulacionDias)||14,3),90)}); }
+    try { await admAndreani("admin_config",{markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}, ejecutivaWa:String(body.ejecutivaWa||"").replace(/D/g,""), ejecutivaNombre:String(body.ejecutivaNombre||"").trim(), ejecutivaEmail:String(body.ejecutivaEmail||"").trim(), emailGestiones:String(body.emailGestiones||"").trim(), anulacionDias:Math.min(Math.max(parseInt(body.anulacionDias)||14,3),90)}); }
     catch(e){ toast("No se pudo guardar: "+e.message,"error"); return false; }
     setEnvCfg({...body}); return true;
   }
@@ -16921,12 +16921,101 @@ function AdmIngresos({ctx, stats}) {
 }
 
 // ── Logística (etiquetas prepagas): Operación · Rentabilidad · Configuración ─
+// ─── Portal de la ejecutiva de Andreani (#/andreani/TOKEN) ───
+// Sin login: ve todas las gestiones de los clientes de Growith y responde desde acá.
+function AndreaniPortalView({token}){
+  const T=DARK;
+  const [st,setSt]=useState({loading:true,abiertos:[],cerrados:[],nombre:"",error:""});
+  const [vista,setVista]=useState("abiertas"); const [q,setQ]=useState("");
+  const [resp,setResp]=useState({}); // id → {estado,texto}
+  const [fotos,setFotos]=useState(null);
+  const api=async(action,body)=>{ const r=await fetch(`/api/andreani?action=${action}&token=${encodeURIComponent(token)}${body?"":""}`,body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,token})}:undefined); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`); return d; };
+  const load=async()=>{ setSt(x=>({...x,loading:true,error:""})); try{ const d=await api("portal_ejecutiva"); setSt({loading:false,abiertos:d.abiertos||[],cerrados:d.cerrados||[],nombre:d.nombre||"",error:""}); }catch(e){ setSt(x=>({...x,loading:false,error:e.message})); } };
+  useEffect(()=>{ load(); },[token]);
+  const lista=(vista==="abiertas"?st.abiertos:st.cerrados).filter(c=>{ const s=q.trim().toLowerCase(); if(!s) return true; return [c.tienda,c.numeroDeEnvio,c.tracking,c.numero,c.cliente,c.motivoLabel].some(v=>String(v||"").toLowerCase().includes(s)); });
+  const enviar=async(c)=>{ const r=resp[c.id]||{}; if(!(r.texto||"").trim()){ toast("Escribí la respuesta","warning"); return; } await api("portal_ejecutiva_responder",{id:c.id,estado:r.estado||"respondido",texto:r.texto.trim()}); toast("Respuesta enviada: el cliente ya la recibió","success"); setResp(x=>({...x,[c.id]:{estado:"respondido",texto:""}})); load(); };
+  const iS=InputStyle(T);
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <div style={{maxWidth:900,margin:"0 auto",padding:"28px 20px 60px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6,flexWrap:"wrap"}}>
+          <div style={{width:38,height:38,borderRadius:10,background:T.accent+"22",display:"flex",alignItems:"center",justifyContent:"center",color:T.accent}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
+          <div><div style={{fontSize:20,fontWeight:800,letterSpacing:-0.3}}>Gestiones Growith · Andreani</div><div style={{fontSize:12,color:T.textSm}}>{st.nombre?`Hola ${st.nombre}. `:""}Gestiones de los clientes de Growith sobre envíos de la cuenta Soluna. Cada respuesta le llega al cliente al instante.</div></div>
+          <Btn T={T} variant="secondary" size="sm" onClick={load} style={{marginLeft:"auto"}}>Actualizar</Btn>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",margin:"16px 0 12px"}}>
+          <div style={{display:"inline-flex",background:T.card,border:`1px solid ${T.border}`,borderRadius:99,padding:2,gap:2}}>
+            {[["abiertas",`Pendientes (${st.abiertos.length})`],["cerradas",`Resueltas (${st.cerrados.length})`]].map(([id,l])=>{ const on=vista===id; return <button key={id} onClick={()=>setVista(id)} style={{fontSize:12,fontWeight:on?700:500,padding:"6px 14px",borderRadius:99,border:"none",background:on?T.surface:"transparent",color:on?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>; })}
+          </div>
+          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por envío, tienda, destinatario…" style={{...iS,marginBottom:0,flex:1,minWidth:220,fontSize:13}}/>
+        </div>
+        {st.loading?<AdmSkeleton T={T} filas={4}/>:st.error?<div style={{background:T.red+"14",border:`1px solid ${T.red}44`,borderRadius:10,padding:"14px 16px",color:T.red,fontSize:13}}>{st.error}</div>:lista.length===0?<div style={{padding:"40px 12px",textAlign:"center",color:T.textSm,fontSize:13}}>{vista==="abiertas"?"No hay gestiones pendientes. Gracias.":"Todavía no hay gestiones resueltas."}</div>:(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {lista.map(c=>{ const cc=ghEnvioCasoColor(T,c.estado); const r=resp[c.id]||{estado:"respondido",texto:""}; const abierto=["abierto","enviado","respondido"].includes(c.estado); return (
+              <div key={c.id} style={{background:T.card,border:`1px solid ${T.border}`,borderLeft:`4px solid ${cc}`,borderRadius:12,padding:"14px 16px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:6}}>
+                  <span style={{fontSize:15,fontWeight:800}}>{c.motivoLabel}</span>
+                  <DSBadge T={T} color={cc} size="sm">{c.estadoLabel}</DSBadge>
+                  {c.origen==="sistema"&&<span style={{fontSize:9,fontWeight:800,color:T.purple,background:T.purple+"18",border:`1px solid ${T.purple}44`,borderRadius:99,padding:"1px 7px"}}>AUTOMÁTICA</span>}
+                  <span style={{marginLeft:"auto",fontSize:11,color:T.textSm}}>{c.ts?new Date(c.ts).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}):""}</span>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8,fontSize:12.5,marginBottom:8}}>
+                  <div><div style={{fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase"}}>Envío</div><a href={`https://www.andreani.com/envio/${c.numeroDeEnvio||c.tracking}`} target="_blank" rel="noreferrer" style={{color:T.accent,fontWeight:700,fontFamily:"'Cascadia Code','Consolas',monospace",textDecoration:"none"}}>{c.numeroDeEnvio||c.tracking} ↗</a></div>
+                  <div><div style={{fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase"}}>Cliente Growith</div>{c.tienda||"—"}</div>
+                  <div><div style={{fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase"}}>Destinatario</div>{c.cliente||"—"}{c.localidad?` · ${c.localidad}`:""}{c.esSucursal?" · sucursal":" · domicilio"}</div>
+                  <div><div style={{fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase"}}>Pedido</div>#{c.numero}</div>
+                </div>
+                {c.descripcion&&<div style={{fontSize:13,lineHeight:1.5,whiteSpace:"pre-wrap",background:T.surface,borderRadius:8,padding:"8px 12px",marginBottom:6}}>{c.descripcion}</div>}
+                {c.nuevaDireccion&&<div style={{fontSize:12.5,marginBottom:6}}><strong>Nueva dirección / fecha:</strong> {c.nuevaDireccion}</div>}
+                {c.fotos>0&&<button onClick={async()=>{ try{ const d=await api(`portal_ejecutiva_fotos&id=${encodeURIComponent(c.id)}`); setFotos(d.fotos||[]); }catch(e){ toast(e.message,"error"); } }} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",marginBottom:8}}>Ver fotos ({c.fotos})</button>}
+                {(c.historial||[]).length>0&&<div style={{borderTop:`1px solid ${T.borderL}`,paddingTop:8,marginTop:4,display:"flex",flexDirection:"column",gap:3}}>
+                  {c.historial.slice(-6).map((h,i)=><div key={i} style={{fontSize:12,color:T.textMd}}><span style={{fontWeight:700,color:h.por==="andreani"?T.green:h.por==="admin"?T.accent:T.textSm}}>{h.por==="andreani"?"Andreani":h.por==="admin"?"Growith":h.por==="sistema"?"Sistema":"Cliente"}</span> · {h.texto} <span style={{fontSize:10.5,color:T.textSm}}>{h.at?new Date(h.at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span></div>)}
+                </div>}
+                {abierto&&(
+                  <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:6}}>
+                    <textarea value={r.texto} onChange={e=>setResp(x=>({...x,[c.id]:{...r,texto:e.target.value}}))} rows={2} placeholder="Tu respuesta para el cliente (qué pasó, qué sigue, plazo)" style={{...iS,marginBottom:0,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                      <select value={r.estado} onChange={e=>setResp(x=>({...x,[c.id]:{...r,estado:e.target.value}}))} style={{...iS,marginBottom:0,width:"auto",fontSize:12}}><option value="respondido">En gestión (respondí, sigue abierta)</option><option value="resuelto">Resuelta</option><option value="rechazado">No corresponde / rechazada</option></select>
+                      <AsyncButton onClick={()=>enviar(c)} style={{...BtnPrimary(T),fontSize:12,marginLeft:"auto"}}>Enviar respuesta</AsyncButton>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );})}
+          </div>
+        )}
+        <div style={{marginTop:28,fontSize:11,color:T.textSm,textAlign:"center"}}>Growith · Este link es personal. Si lo recibió alguien más, avisá a contacto.growith@gmail.com.</div>
+      </div>
+      <Modal T={T} open={!!fotos} onClose={()=>setFotos(null)} title="Fotos" width={720}>
+        {fotos&&(fotos.length===0?<div style={{fontSize:12,color:T.textSm}}>Sin fotos.</div>:<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10}}>{fotos.map((f,i)=><a key={i} href={f} target="_blank" rel="noreferrer"><img src={f} alt="" style={{width:"100%",borderRadius:10,border:`1px solid ${T.border}`}}/></a>)}</div>)}
+      </Modal>
+    </div>
+  );
+}
+// Link del portal de la ejecutiva (se genera solo; se puede regenerar si se filtró).
+function AdmPortalLink({T}){
+  const [link,setLink]=useState("");
+  const load=async(regenerar)=>{ try{ const d=regenerar?await admAndreani("admin_ejecutiva_token",{regenerar:true}):await admAndreani("admin_ejecutiva_token"); setLink(d.link||""); }catch(e){ toast(e.message,"error"); } };
+  useEffect(()=>{ load(false); },[]);
+  return (
+    <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px",margin:"4px 0 14px"}}>
+      <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Portal de la ejecutiva</div>
+      <div style={{fontSize:11.5,color:T.textMd,marginBottom:8,lineHeight:1.5}}>Va en cada mail que le llega. Ahí ve todas las gestiones, las fotos y el historial, y responde: el cliente recibe la respuesta al instante y vos la ves en la cola. Si el link se filtró, regeneralo (el anterior deja de funcionar).</div>
+      <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+        <code style={{flex:1,minWidth:200,fontSize:11,color:T.text,background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,padding:"6px 8px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{link||"…"}</code>
+        <Btn T={T} variant="secondary" size="sm" onClick={()=>{ try{ navigator.clipboard.writeText(link); toast("Link copiado","success"); }catch(_){} }} disabled={!link}>Copiar</Btn>
+        <a href={link||"#"} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Abrir</a>
+        <AdmBtn T={T} variant="ghost" size="sm" style={{color:T.red}} onClick={async()=>{ if(!await appConfirm("¿Regenerar el link del portal? El link actual deja de funcionar y hay que mandarle el nuevo a la ejecutiva.",{danger:true,okLabel:"Regenerar"})) return; await load(true); toast("Link regenerado","success"); }}>Regenerar</AdmBtn>
+      </div>
+    </div>
+  );
+}
 // Cola de gestiones ante Andreani (reclamos / cambios / anulaciones) de toda la plataforma.
 function AdmCasos({T, usuariosPorUid, setCuenta}){
-  const [st,setSt]=useState({loading:true,casos:[],ejecutivaWa:"",ejecutivaNombre:"",error:""});
+  const [st,setSt]=useState({loading:true,casos:[],ejecutivaWa:"",ejecutivaNombre:"",ejecutivaEmail:"",portalLink:"",error:""});
   const [todos,setTodos]=useState(false); const [edit,setEdit]=useState(null); // {id, estado, nota, reintegrar}
   const [fotos,setFotos]=useState(null);
-  async function load(t){ setSt(x=>({...x,loading:true,error:""})); try{ const d=await admAndreani(`admin_casos${(t??todos)?"&todos=1":""}`); setSt({loading:false,casos:d.casos||[],ejecutivaWa:d.ejecutivaWa||"",ejecutivaNombre:d.ejecutivaNombre||"",error:""}); }catch(e){ setSt(x=>({...x,loading:false,error:e.message})); } }
+  async function load(t){ setSt(x=>({...x,loading:true,error:""})); try{ const d=await admAndreani(`admin_casos${(t??todos)?"&todos=1":""}`); setSt({loading:false,casos:d.casos||[],ejecutivaWa:d.ejecutivaWa||"",ejecutivaNombre:d.ejecutivaNombre||"",ejecutivaEmail:d.ejecutivaEmail||"",portalLink:d.portalLink||"",error:""}); }catch(e){ setSt(x=>({...x,loading:false,error:e.message})); } }
   useEffect(()=>{ load(false); },[]);
   const textoWa=c=>[
     `Hola${st.ejecutivaNombre?" "+st.ejecutivaNombre:""}! Te paso una gestión de ${c.tienda||c.email||"un cliente"} (cliente de Growith):`,
@@ -16937,6 +17026,7 @@ function AdmCasos({T, usuariosPorUid, setCuenta}){
     c.nuevaDireccion?`• Nueva dirección / fecha: ${c.nuevaDireccion}`:"",
     c.fotos?`• Tengo ${c.fotos} foto${c.fotos!==1?"s":""} del daño, te las mando a continuación.`:"",
     c.motivo==="anulacion"?"Pedimos la anulación de la etiqueta y el reintegro del envío, ya que nunca ingresó a la red.":"¿Me confirmás qué pasó y cómo seguimos?",
+    st.portalLink?`Lo podés responder directo en el portal: ${st.portalLink}`:"",
     "Gracias!",
   ].filter(Boolean).join("\n");
   const mandarWa=async c=>{
@@ -16950,7 +17040,7 @@ function AdmCasos({T, usuariosPorUid, setCuenta}){
   const lista=st.casos;
   return (
     <Card T={T} padding="lg">
-      <AdmTitulo T={T} t="Gestiones ante Andreani" sub="Reclamos, cambios y anulaciones que abren los clientes (o el sistema). Un clic arma el WhatsApp para la ejecutiva." right={<div style={{display:"flex",gap:6,alignItems:"center"}}><button onClick={()=>{ setTodos(v=>!v); load(!todos); }} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}>{todos?"Solo abiertas":"Ver todas"}</button><Btn T={T} variant="secondary" size="sm" onClick={()=>load()}>Actualizar</Btn></div>}/>
+      <AdmTitulo T={T} t="Gestiones ante Andreani" sub={`Reclamos, cambios y anulaciones de los clientes (o del sistema). La ejecutiva las recibe por mail${st.ejecutivaEmail?" ("+st.ejecutivaEmail+")":" — cargá su mail en Configuración"} y las resuelve desde su portal; el WhatsApp queda para urgencias.`} right={<div style={{display:"flex",gap:6,alignItems:"center"}}><button onClick={()=>{ setTodos(v=>!v); load(!todos); }} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}>{todos?"Solo abiertas":"Ver todas"}</button><Btn T={T} variant="secondary" size="sm" onClick={()=>load()}>Actualizar</Btn></div>}/>
       {st.loading?<AdmSkeleton T={T}/>:st.error?<div style={{fontSize:12,color:T.red}}>{st.error}</div>:lista.length===0?<AdmVacio T={T} titulo="Sin gestiones abiertas" sub="Cuando un cliente pida algo a Andreani desde la ficha de un envío, aparece acá."/>:(
         <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:520,overflowY:"auto"}}>
           {lista.map(c=>{ const cc=ghEnvioCasoColor(T,c.estado); const u=usuariosPorUid[c.uid]; const abierto=["abierto","enviado","respondido"].includes(c.estado); return (
@@ -16959,13 +17049,14 @@ function AdmCasos({T, usuariosPorUid, setCuenta}){
                 <button onClick={()=>u&&setCuenta(c.uid)} style={{background:"transparent",border:"none",padding:0,cursor:u?"pointer":"default",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12.5,fontWeight:700,color:T.text}}>{c.tienda||c.email||c.uid}</button>
                 {c.origen==="sistema"&&<span style={{fontSize:9,fontWeight:800,color:T.purple,background:T.purple+"18",border:`1px solid ${T.purple}44`,borderRadius:99,padding:"1px 7px"}}>AUTOMÁTICA</span>}
                 {c.nuevoCliente&&abierto&&<span style={{fontSize:9,fontWeight:800,color:T.accent,background:T.accent+"18",border:`1px solid ${T.accent}44`,borderRadius:99,padding:"1px 7px"}}>NUEVO</span>}
+                {c.nuevoAndreani&&<span style={{fontSize:9,fontWeight:800,color:T.green,background:T.green+"18",border:`1px solid ${T.green}44`,borderRadius:99,padding:"1px 7px"}}>ANDREANI RESPONDIÓ</span>}
                 <DSBadge T={T} color={cc} size="sm">{c.estadoLabel}</DSBadge>
                 <span style={{marginLeft:"auto",fontSize:10.5,color:T.textSm}}>{c.ts?admRel(c.ts):""}</span>
               </div>
               <div style={{marginTop:4,color:T.textMd}}><strong style={{color:T.text}}>{c.motivoLabel}</strong> · envío <span style={{fontFamily:"'Cascadia Code','Consolas',monospace"}}>{c.numeroDeEnvio||c.tracking}</span> · pedido #{c.numero}{c.cliente?` · ${c.cliente}`:""}{c.precio?` · ${fmtMoney(c.precio)}`:""}{c.reintegrado?" · reintegrado":""}</div>
               {c.descripcion&&<div style={{marginTop:3,color:T.textSm,whiteSpace:"pre-wrap"}}>{c.descripcion}</div>}
               {c.nuevaDireccion&&<div style={{marginTop:3,color:T.textSm}}>Nueva dirección / fecha: {c.nuevaDireccion}</div>}
-              {(c.historial||[]).slice(-3).map((h,i)=><div key={i} style={{fontSize:11,color:T.textSm,marginTop:2}}><span style={{fontWeight:700,color:h.por==="admin"?T.accent:T.textMd}}>{h.por==="admin"?"Vos":h.por==="sistema"?"Sistema":"Cliente"}</span> · {h.texto} <span style={{opacity:.7}}>{h.at?new Date(h.at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span></div>)}
+              {(c.historial||[]).slice(-3).map((h,i)=><div key={i} style={{fontSize:11,color:T.textSm,marginTop:2}}><span style={{fontWeight:700,color:h.por==="andreani"?T.green:h.por==="admin"?T.accent:T.textMd}}>{h.por==="andreani"?"Andreani":h.por==="admin"?"Vos":h.por==="sistema"?"Sistema":"Cliente"}</span> · {h.texto} <span style={{opacity:.7}}>{h.at?new Date(h.at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span></div>)}
               {edit?.id===c.id?(
                 <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 10px"}}>
                   <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
@@ -16977,7 +17068,7 @@ function AdmCasos({T, usuariosPorUid, setCuenta}){
                 </div>
               ):(
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-                  <AdmBtn T={T} variant="primary" size="sm" onClick={()=>mandarWa(c)}>WhatsApp a la ejecutiva</AdmBtn>
+                  <Btn T={T} variant="secondary" size="sm" onClick={()=>mandarWa(c)} title="Solo para urgencias: la vía normal es el portal">WhatsApp (urgencias)</Btn>
                   <Btn T={T} variant="secondary" size="sm" onClick={()=>setEdit({id:c.id,estado:c.estado==="abierto"?"enviado":c.estado,nota:"",reintegrar:false})}>Cambiar estado</Btn>
                   {c.fotos>0&&<Btn T={T} variant="secondary" size="sm" onClick={()=>verFotos(c)}>Ver fotos ({c.fotos})</Btn>}
                   {(c.numeroDeEnvio||c.tracking)&&<a href={`https://www.andreani.com/envio/${c.numeroDeEnvio||c.tracking}`} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Andreani ↗</a>}
@@ -17170,9 +17261,11 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                   <Field T={T} label="Mail de operaciones (recibe las gestiones)"><AdmInput T={T} value={envCfg.emailGestiones??""} onChange={e=>upd({emailGestiones:e.target.value})} placeholder="contacto.growith@gmail.com"/></Field>
                   <Field T={T} label="Nombre"><AdmInput T={T} value={envCfg.ejecutivaNombre??""} onChange={e=>upd({ejecutivaNombre:e.target.value})} placeholder="Ej: Carla"/></Field>
-                  <Field T={T} label="WhatsApp (con 549)"><AdmInput T={T} value={envCfg.ejecutivaWa??""} onChange={e=>upd({ejecutivaWa:e.target.value.replace(/\D/g,"")})} placeholder="5491155555555"/></Field>
+                  <Field T={T} label="Mail de la ejecutiva (recibe cada gestión)"><AdmInput T={T} type="email" value={envCfg.ejecutivaEmail??""} onChange={e=>upd({ejecutivaEmail:e.target.value})} placeholder="ejecutiva@andreani.com"/></Field>
+                  <Field T={T} label="WhatsApp (urgencias, con 549)"><AdmInput T={T} value={envCfg.ejecutivaWa??""} onChange={e=>upd({ejecutivaWa:e.target.value.replace(/\D/g,"")})} placeholder="5491155555555"/></Field>
                   <Field T={T} label="Anulación automática (días sin ingreso)"><AdmInput T={T} type="number" min="3" max="90" value={envCfg.anulacionDias??14} onChange={e=>upd({anulacionDias:e.target.value})}/></Field>
                 </div>
+                <AdmPortalLink T={T}/>
                 <AdmLbl T={T}>Datos para recibir cargas por transferencia</AdmLbl>
                 <Field T={T} label="Alias"><AdmInput T={T} value={envCfg.datosPago?.alias??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),alias:e.target.value}})} placeholder="mi.alias.mp"/></Field>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><Field T={T} label="CBU / CVU"><AdmInput T={T} value={envCfg.datosPago?.cbu??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),cbu:e.target.value}})} placeholder="22 dígitos"/></Field><Field T={T} label="Titular"><AdmInput T={T} value={envCfg.datosPago?.titular??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),titular:e.target.value}})} placeholder="Nombre"/></Field></div>
@@ -38102,6 +38195,9 @@ export default function App() {
   // Panel público de cupón: #/cupon/TOKEN (el dueño del código ve su comisión)
   const _cupMatch = _initialHash.match(/^cupon\/([a-f0-9]{20,64})/i);
   const [cuponToken, setCuponToken] = useState(_cupMatch ? _cupMatch[1] : null);
+  // Portal de la ejecutiva de Andreani: #/andreani/TOKEN (resuelve las gestiones de todos los clientes)
+  const _ejeMatch = _initialHash.match(/^andreani\/([a-f0-9]{20,64})/i);
+  const [ejecutivaToken] = useState(_ejeMatch ? _ejeMatch[1] : null);
   const [page,_setPage]=useState(()=>{const p=_aliasPage(_initialHash.split("/")[0]);return VALID_PAGES.includes(p)?p:"home";});
   const setPage = (p) => {
     _setPage(p);
@@ -38651,6 +38747,7 @@ export default function App() {
   if(colabToken) return <ColaboradorPortalUnificado T={T} token={colabToken}/>;
   if(boardToken) return <ColaboradorBoardView T={T} boardToken={boardToken}/>;
   if(cuponToken) return <CuponPublicoView token={cuponToken}/>;
+  if(ejecutivaToken) return <AndreaniPortalView token={ejecutivaToken}/>;
 
   // Loading
   if(user===undefined) return (
