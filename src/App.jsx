@@ -409,26 +409,29 @@ function _loadDriveScripts() {
 // IMPORTANTE: debe llamarse desde un click directo del usuario (no desde callback async)
 function _showDrivePicker(token, onSelect, onCancel, opts = {}) {
   const P = window.google.picker;
-  const myDrive = new P.DocsView().setIncludeFolders(true).setSelectFolderEnabled(false);
-  const shared  = new P.DocsView(P.ViewId.DOCS).setEnableDrives(true).setIncludeFolders(true);
+  // Una sola vista en modo LISTA (más limpia que la grilla de carpetas de
+  // Google), con carpetas navegables y unidades compartidas incluidas.
+  const myDrive = new P.DocsView(P.ViewId.DOCS).setIncludeFolders(true).setSelectFolderEnabled(false).setEnableDrives(true).setMode(P.DocsViewMode.LIST);
+  const shared  = null;
   const VID = "video/mp4,video/quicktime,video/x-m4v,video/webm,video/x-matroska,video/x-msvideo,video/mpeg";
   const IMG = "image/jpeg,image/png,image/webp,image/gif";
   const DOCS = "application/vnd.google-apps.document,text/plain,text/markdown";
   const mimes = opts.videosOnly ? VID : opts.mediaOnly ? `${VID},${IMG}` : opts.docsOnly ? DOCS : null;
-  if (mimes) { myDrive.setMimeTypes(mimes); shared.setMimeTypes(mimes); }
+  if (mimes) myDrive.setMimeTypes(mimes);
   // setAppId (número de proyecto = prefijo del client_id) es OBLIGATORIO con el
   // scope drive.file: sin él, la app no recibe acceso al archivo elegido.
   const appId = String(GDRIVE_CLIENT_ID).split("-")[0];
   // Panel compacto y CENTRADO (por defecto Google lo estira casi a pantalla
   // completa y queda pegado arriba) + interfaz en español. El color/estilo
   // no se puede tocar: es un iframe de Google.
-  const pw = Math.min(920, Math.max(360, window.innerWidth - 64));
-  const ph = Math.min(600, Math.max(400, window.innerHeight - 120));
+  const pw = Math.min(860, Math.max(360, window.innerWidth - 64));
+  const ph = Math.min(560, Math.max(380, window.innerHeight - 140));
   const pb = new P.PickerBuilder()
     .setTitle(opts.title || "Elegir archivo de Google Drive")
     .setLocale("es")
     .setSize(pw, ph)
-    .addView(myDrive).addView(shared);
+    .addView(myDrive)
+    .enableFeature(P.Feature.NAV_HIDDEN); // sin barra lateral: solo la lista
   if (opts.multiple) pb.enableFeature(P.Feature.MULTISELECT_ENABLED);
   pb
     .setOAuthToken(token)
