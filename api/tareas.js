@@ -943,7 +943,7 @@ export default async function handler(req, res) {
       const tiendas = [];
       const docsById = {};
       if (!selfMovida && !selfBorrada && my.tiendaEliminada !== true) {
-        tiendas.push({ uid: myUid, nombre: my.nombreTienda || my.nombre || my.email || "Mi tienda", color: my.colorTienda || "#7c3aed", rol: "owner", esSelf: true });
+        tiendas.push({ uid: myUid, nombre: my.nombreTienda || my.nombre || my.email || "Mi tienda", color: my.colorTienda || "#7c3aed", foto: my.fotoTienda || null, rol: "owner", esSelf: true });
         docsById[myUid] = my;
       }
       for (const doc of qs.docs) {
@@ -951,7 +951,7 @@ export default async function handler(req, res) {
         if (d.deleted === true) continue;
         const m = (d.teamMembers || {})[myUid] || {};
         const esOwner = d.ownerUid === myUid || m.rol === "owner";
-        tiendas.push({ uid: doc.id, nombre: d.nombreTienda || d.nombre || d.email || "Tienda", color: d.colorTienda || "#7c3aed", rol: esOwner ? "owner" : "miembro", esSelf: false, secciones: esOwner ? null : (m.secciones || {}), ownerNombre: d.nombre || d.email || "" });
+        tiendas.push({ uid: doc.id, nombre: d.nombreTienda || d.nombre || d.email || "Tienda", color: d.colorTienda || "#7c3aed", foto: d.fotoTienda || null, rol: esOwner ? "owner" : "miembro", esSelf: false, secciones: esOwner ? null : (m.secciones || {}), ownerNombre: d.nombre || d.email || "" });
         docsById[doc.id] = d;
       }
       // Tiendas propias: mantenemos el plan del PERFIL espejado en el doc de la
@@ -986,6 +986,7 @@ export default async function handler(req, res) {
       return res.json({
         ok: true,
         tiendas,
+        fotoPerfil: my.fotoPerfil || null, // foto subida en Config → Cuenta (pisa la de Google)
         activeTiendaUid: activeUid,
         activeRol: active?.rol || null,
         selfMovida, selfMovidaA: selfMovida ? (my.ownerEmail || null) : null,
@@ -1208,11 +1209,18 @@ export default async function handler(req, res) {
         const tid = String(body.tiendaUid || uid).trim();
         const nombre = String(body.nombre || "").trim().slice(0, 60);
         const color = /^#[0-9a-fA-F]{6}$/.test(String(body.color || "")) ? body.color : null;
+        // Foto de la tienda: data URL chica (el front la reduce a ~160px) o "" para quitarla.
+        let fotoPatch = {};
+        if (typeof body.foto === "string") {
+          if (body.foto === "") fotoPatch = { fotoTienda: null };
+          else if (/^data:image\/(jpeg|png|webp);base64,/.test(body.foto) && body.foto.length <= 120000) fotoPatch = { fotoTienda: body.foto };
+          else return res.status(400).json({ error: "Foto inválida (tiene que ser JPG/PNG/WebP y liviana)." });
+        }
         if (!nombre) return res.status(400).json({ error: "Poné un nombre." });
         const tRef = db.collection("users").doc(tid);
         const d = (await tRef.get()).data();
         if (!d || !esOwnerDe(tid, d)) return res.status(403).json({ error: "Solo el dueño puede renombrar la tienda." });
-        await tRef.set({ nombreTienda: nombre, ...(color ? { colorTienda: color } : {}) }, { merge: true });
+        await tRef.set({ nombreTienda: nombre, ...(color ? { colorTienda: color } : {}), ...fotoPatch }, { merge: true });
         if (tid !== uid) {
           const lista = (Array.isArray(my.tiendas) ? my.tiendas : []).map(t => t.uid === tid ? { ...t, nombre, ...(color ? { color } : {}) } : t);
           await myRef.set({ tiendas: lista }, { merge: true });

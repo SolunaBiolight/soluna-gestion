@@ -64,6 +64,29 @@ function ghKey(base) {
 // login → updateDoc directo (las reglas lo permiten). Si es otra tienda del
 // perfil (multi-tienda) → va por el backend (tenantPatch), porque las reglas
 // solo dejan escribir el doc al uid == auth.
+// Reduce una imagen a un cuadrado (recorte centrado) y la devuelve como data
+// URL JPEG liviana (~5-15 KB): se guarda directo en Firestore, sin Storage.
+// La usan la foto de tienda (Gestionar tienda) y la foto de perfil (Cuenta).
+function ghResizeImage(file, size = 160) {
+  return new Promise((resolve, reject) => {
+    if (!file || !/^image\//.test(file.type)) return reject(new Error("Elegí una imagen (JPG, PNG o WebP)."));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const side = Math.min(img.naturalWidth, img.naturalHeight);
+        const sx = (img.naturalWidth - side) / 2, sy = (img.naturalHeight - side) / 2;
+        const c = document.createElement("canvas"); c.width = size; c.height = size;
+        c.getContext("2d").drawImage(img, sx, sy, side, side, 0, 0, size, size);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL("image/jpeg", 0.85));
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("No pude leer la imagen.")); };
+    img.src = url;
+  });
+}
+
 async function ghUserPatch(uid, patch) {
   const me = auth.currentUser?.uid;
   if (!uid) return;
@@ -636,14 +659,16 @@ function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenC
   const userInitial = (user?.displayName||user?.email||"?").trim().charAt(0).toUpperCase();
 
   // Avatar de la org: cuadrado redondeado con la inicial sobre color de la org
-  const OrgAvatar = ({org, size=22}) => (
+  const OrgAvatar = ({org, size=22}) => org.foto ? (
+    <img src={org.foto} alt="" style={{width:size,height:size,borderRadius:Math.max(4, size/4.5),objectFit:"cover",flexShrink:0,display:"block"}}/>
+  ) : (
     <span style={{width:size,height:size,borderRadius:Math.max(4, size/4.5),background:org.color||T.accent,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:DS.w.bold,fontSize:Math.round(size*0.5),flexShrink:0,letterSpacing:0.3,boxShadow:"inset 0 -1px 0 rgba(0,0,0,0.15)"}}>
       {initialOf(org.name)}
     </span>
   );
 
   return (
-    <div style={{padding:`${DS.sp.xs}px ${DS.sp.sm}px 0`}}>
+    <div style={{padding:`${DS.sp.sm}px ${DS.sp.sm}px 0`,borderTop:`1px solid ${T.border}`,marginTop:DS.sp.sm}}>
       <button
         ref={btnRef}
         onClick={()=>setOpen(o=>!o)}
@@ -801,8 +826,15 @@ function NewOrgModal({T, onClose, onCreate, existingCount, userPlan}) {
 function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
   const [name, setName] = React.useState(org.name||"");
   const [color, setColor] = React.useState(org.color||"#7c3aed");
+  const [foto, setFoto] = React.useState(org.foto||null);       // data URL actual (null = sin foto)
+  const [fotoDirty, setFotoDirty] = React.useState(false);       // solo se manda si cambió
   const [saving, setSaving] = React.useState(false);
   const [confirmDel, setConfirmDel] = React.useState(false);
+  async function elegirFoto(e){
+    const f=e.target.files?.[0]; e.target.value="";
+    if(!f) return;
+    try{ setFoto(await ghResizeImage(f,160)); setFotoDirty(true); }catch(err){ toast(err.message||"No pude procesar la imagen","error"); }
+  }
   const COLORS = ["#7c3aed","#ec4899",T.orange,T.yellow,T.green,"#06b6d4",T.blue,T.red];
   // Cualquier tienda propia se puede eliminar. La principal (= mi login) se
   // "vacía": el perfil, el login y el plan siguen; requiere tener otra tienda.
@@ -811,7 +843,7 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
   async function handleSave() {
     if (!name.trim()) return;
     setSaving(true);
-    const ok = await onSave({ ...org, name: name.trim(), color, updated_at: new Date().toISOString() });
+    const ok = await onSave({ ...org, name: name.trim(), color, ...(fotoDirty ? { foto: foto || "" } : {}), updated_at: new Date().toISOString() });
     setSaving(false);
     if (ok) onClose();
   }
@@ -832,6 +864,18 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
         <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:5}}>Nombre</label>
         <input value={name} onChange={e=>setName(e.target.value)} maxLength={40}
           style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:10,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",marginBottom:16}}/>
+
+        <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:8}}>Foto</label>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+          {foto
+            ? <img src={foto} alt="" style={{width:48,height:48,borderRadius:12,objectFit:"cover",border:`1px solid ${T.border}`}}/>
+            : <span style={{width:48,height:48,borderRadius:12,background:color,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:20}}>{(name||"?").trim().charAt(0).toUpperCase()||"?"}</span>}
+          <label style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",cursor:"pointer"}}>
+            {foto?"Cambiar foto":"Subir foto"}
+            <input type="file" accept="image/*" style={{display:"none"}} onChange={elegirFoto}/>
+          </label>
+          {foto && <button onClick={()=>{ setFoto(null); setFotoDirty(true); }} style={{background:"transparent",border:"none",color:T.textSm,fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Quitar</button>}
+        </div>
 
         <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:8}}>Color</label>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
@@ -1107,8 +1151,8 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       {/* Selector de TIENDA del perfil (multi-tienda): justo arriba del bloque de perfil (abajo a la izquierda). Abre hacia arriba. */}
       <OrgSwitcher T={T} user={user} userPlan={userPlan} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={onOpenCreateOrg} onOpenManageOrg={onOpenManageOrg} collapsed={collapsed}/>
 
-      {/* User Section */}
-      <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,padding:DS.sp.sm,marginTop:DS.sp.sm}}>
+      {/* User Section (la línea divisoria va ARRIBA del selector de tiendas: tiendas + cuenta forman un solo bloque) */}
+      <div className="gh-accordion" style={{padding:DS.sp.sm}}>
         {!collapsed&&(
           <div style={{position:"relative",marginBottom:DS.sp.xs}}>
             <button onClick={()=>setAcctOpen(o=>!o)} title="Cambiar de cuenta" style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:DS.sp.sm,width:"100%",background:"transparent",border:"none",cursor:"pointer",borderRadius:DS.r.md,fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -13995,6 +14039,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
           ) : (
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               <button onClick={startEditProfile} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1,minWidth:140}}>Editar nombre y mail</button>
+              <label style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1,minWidth:140,cursor:"pointer"}}>
+                Cambiar foto
+                <input type="file" accept="image/*" style={{display:"none"}} onChange={async e=>{ const f=e.target.files?.[0]; e.target.value=""; if(!f) return; try{ const d=await ghResizeImage(f,160); await updateDoc(doc(db,"users",auth.currentUser.uid),{fotoPerfil:d}); toast("Foto de perfil actualizada ✓","success"); setTimeout(()=>window.location.reload(),500); }catch(err){ toast(err.message||"No pude guardar la foto","error"); } }}/>
+              </label>
               <button onClick={handleSignOut} style={{...BtnSecondary(T),fontSize:12,color:T.red,border:`1px solid ${T.red}33`,justifyContent:"center",flex:1,minWidth:140}}>Cerrar sesión</button>
             </div>
           )}
@@ -29798,10 +29846,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         }
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                        <label title="Cuando un ad termina de subir y procesarse en Meta, se publica solo. No esperás nada — al final ves el panel de resultados." style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:autoPublishEnabled?T.accent:T.textMd,cursor:studioMode==="shared"?"pointer":"not-allowed",fontWeight:autoPublishEnabled?700:400,opacity:studioMode==="shared"?1:0.5}}>
-                          <input type="checkbox" checked={autoPublishEnabled} disabled={studioMode!=="shared"} onChange={e=>setAutoPublishEnabled(e.target.checked)} style={{width:14,height:14}}/>
-                          Auto-publicar al toque
-                        </label>
+                        {/* (checkbox "Auto-publicar al toque" retirado — solo queda Publicar) */}
                         {autoPublishEnabled && (autoPubStats.ok>0 || autoPubStats.errors.length>0) && (
                           <span title={autoPubStats.errors.length>0 ? autoPubStats.errors.map(e=>`${e.filename}: ${e.error}`).join("\n") : "Todos OK"} style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:autoPubStats.errors.length>0?T.red+"22":T.green+"22",color:autoPubStats.errors.length>0?T.red:T.green,fontWeight:700,letterSpacing:0.3,cursor:autoPubStats.errors.length>0?"help":"default"}}>
                             {autoPubStats.ok} ✓{autoPubStats.errors.length>0?` · ${autoPubStats.errors.length} ✗`:""}
@@ -30799,19 +30844,19 @@ function MLReputacion({ T, uid }) {
 }
 
 // ── VENTAS / ÓRDENES ────────────────────────────────────────────────────
-function MLVentas({ T, uid, onOpenMessages }) {
+function MLVentas({ T, uid, onOpenMessages, refreshKey }) {
   const [orders, setOrders] = useState([]); const [loading, setLoading] = useState(true); const [err, setErr] = useState(null);
   const [offset, setOffset] = useState(0); const [total, setTotal] = useState(0);
   const load = async (off) => { setLoading(true); setErr(null); try { const j = await ghMlApi(uid, "ml_orders", { offset: off, limit: 40 }); setOrders(j.orders || []); setTotal(j.total || 0); setOffset(off); } catch (e) { setErr(e.message); } finally { setLoading(false); } };
   useEffect(() => { load(0); /* eslint-disable-next-line */ }, [uid]);
+  useEffect(() => { if (refreshKey) load(offset); /* eslint-disable-next-line */ }, [refreshKey]);
   const STATUS = { paid: { l: "Pagada", c: T.green }, confirmed: { l: "Confirmada", c: T.accent }, cancelled: { l: "Cancelada", c: T.red }, invalid: { l: "Inválida", c: T.textSm }, payment_required: { l: "Pago pendiente", c: T.orange }, payment_in_process: { l: "Procesando pago", c: T.orange } };
   if (loading && !orders.length) return <div style={{ padding: 50, textAlign: "center" }}><Spinner size={22} color={T.accent} /></div>;
   if (err) return <div style={{ background: T.card, border: `1px solid ${T.red}44`, borderRadius: 12, padding: 20, color: T.red, fontSize: 13 }}>No se pudieron cargar las ventas: {err}</div>;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <div style={{ fontSize: 12, color: T.textSm }}>{total.toLocaleString("es-AR")} ventas</div>
-        <button onClick={() => load(offset)} disabled={loading} style={{ ...BtnSecondary(T), fontSize: 12, padding: "6px 12px" }}>{loading ? <Spinner size={12} color={T.text} /> : "↻"} Actualizar</button>
+        <div style={{ fontSize: 12, color: T.textSm }}>{total.toLocaleString("es-AR")} ventas{loading ? <span style={{ marginLeft: 8 }}><Spinner size={11} color={T.textSm} /></span> : null}</div>
       </div>
       {orders.map(o => { const st = STATUS[o.status] || { l: o.status, c: T.textSm }; return (
         <div key={o.id} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "13px 16px", display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -30841,11 +30886,12 @@ function MLVentas({ T, uid, onOpenMessages }) {
 }
 
 // ── PREGUNTAS pre-venta ─────────────────────────────────────────────────
-function MLPreguntas({ T, uid }) {
+function MLPreguntas({ T, uid, refreshKey }) {
   const [qs, setQs] = useState([]); const [loading, setLoading] = useState(true); const [err, setErr] = useState(null);
   const [status, setStatus] = useState("UNANSWERED"); const [answers, setAnswers] = useState({}); const [sending, setSending] = useState(null);
   const load = async (st) => { setLoading(true); setErr(null); try { const j = await ghMlApi(uid, "ml_questions", { status: st }); setQs(j.questions || []); } catch (e) { setErr(e.message); } finally { setLoading(false); } };
   useEffect(() => { load(status); /* eslint-disable-next-line */ }, [uid, status]);
+  useEffect(() => { if (refreshKey) load(status); /* eslint-disable-next-line */ }, [refreshKey]);
   const responder = async (q) => { const text = (answers[q.id] || "").trim(); if (!text) { toast("Escribí una respuesta", "warning"); return; } setSending(q.id); try { await ghMlApi(uid, "ml_answer", {}, { data: { question_id: q.id, text } }); toast("Respondida ✓", "success"); setQs(prev => prev.filter(x => x.id !== q.id)); setAnswers(a => { const n = { ...a }; delete n[q.id]; return n; }); } catch (e) { toast("Error: " + e.message, "error"); } finally { setSending(null); } };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -30855,7 +30901,7 @@ function MLPreguntas({ T, uid }) {
             <button key={s.id} onClick={() => setStatus(s.id)} style={{ padding: "6px 12px", fontSize: 11, fontWeight: 600, border: "none", borderRadius: 6, background: status === s.id ? T.card : "transparent", color: status === s.id ? T.text : T.textSm, cursor: "pointer", fontFamily: "'Inter',system-ui,sans-serif" }}>{s.l}</button>
           ))}
         </div>
-        <button onClick={() => load(status)} disabled={loading} style={{ ...BtnSecondary(T), fontSize: 12, padding: "6px 12px" }}>{loading ? <Spinner size={12} color={T.text} /> : "↻"} Actualizar</button>
+        {loading && <Spinner size={12} color={T.textSm} />}
       </div>
       {loading && !qs.length ? <div style={{ padding: 40, textAlign: "center" }}><Spinner size={20} color={T.accent} /></div> :
         err ? <div style={{ background: T.card, border: `1px solid ${T.red}44`, borderRadius: 12, padding: 20, color: T.red, fontSize: 13 }}>{err}</div> :
@@ -30882,7 +30928,7 @@ function MLPreguntas({ T, uid }) {
 
 // ── MENSAJES post-venta ─────────────────────────────────────────────────
 // Lista las ventas recientes y abre el hilo del pack elegido.
-function MLMensajes({ T, uid, initialOrder, onBackToInbox }) {
+function MLMensajes({ T, uid, initialOrder, onBackToInbox, refreshKey }) {
   const [sel, setSel] = useState(initialOrder || null);
   useEffect(() => { if (initialOrder) setSel(initialOrder); }, [initialOrder]);
   const [thread, setThread] = useState([]); const [loadingT, setLoadingT] = useState(false); const [text, setText] = useState(""); const [sending, setSending] = useState(false); const [sellerId, setSellerId] = useState(null);
@@ -30890,6 +30936,7 @@ function MLMensajes({ T, uid, initialOrder, onBackToInbox }) {
   const [inbox, setInbox] = useState([]); const [loadingI, setLoadingI] = useState(true); const [errI, setErrI] = useState(null);
   const loadInbox = async () => { setLoadingI(true); setErrI(null); try { const j = await ghMlApi(uid, "ml_inbox", { limit: 50 }); setInbox(j.conversations || []); } catch (e) { setErrI(e.message); } finally { setLoadingI(false); } };
   useEffect(() => { loadInbox(); /* eslint-disable-next-line */ }, [uid]);
+  useEffect(() => { if (refreshKey) loadInbox(); /* eslint-disable-next-line */ }, [refreshKey]);
   const loadThread = async (o) => { if (!o) return; setLoadingT(true); setThread([]); try { const j = await ghMlApi(uid, "ml_messages", { pack_id: o.pack_id, mark_read: 1 }); setThread(j.messages || []); setSellerId(j.seller_id); setInbox(prev => prev.map(c => c.pack_id === String(o.pack_id) ? { ...c, unread: 0 } : c)); } catch (e) { toast("No se pudo abrir el chat: " + e.message, "error"); } finally { setLoadingT(false); } };
   useEffect(() => { if (sel) loadThread(sel); /* eslint-disable-next-line */ }, [sel?.pack_id]);
   const enviar = async () => { const t = text.trim(); if (!t || !sel) return; setSending(true); try { await ghMlApi(uid, "ml_send_message", {}, { data: { pack_id: sel.pack_id, to_user_id: sel.buyer_id, text: t } }); setText(""); await loadThread(sel); setInbox(prev => prev.some(c => c.pack_id === String(sel.pack_id)) ? prev.map(c => c.pack_id === String(sel.pack_id) ? { ...c, last_text: t, last_mine: true, last_date: new Date().toISOString(), unread: 0 } : c) : prev); } catch (e) { toast("Error: " + e.message, "error"); } finally { setSending(false); } };
@@ -30900,7 +30947,7 @@ function MLMensajes({ T, uid, initialOrder, onBackToInbox }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
           <div style={{ fontSize: 12, color: T.textSm }}>{inbox.length} conversación{inbox.length !== 1 ? "es" : ""}{sinLeer ? <span style={{ color: T.accent, fontWeight: 700 }}> · {sinLeer} sin leer</span> : null} <span style={{ color: T.textSm }}>· últimas 50 ventas</span></div>
-          <button onClick={loadInbox} disabled={loadingI} style={{ ...BtnSecondary(T), fontSize: 12, padding: "6px 12px" }}>{loadingI ? <Spinner size={12} color={T.text} /> : "↻"} Actualizar</button>
+          {loadingI && inbox.length > 0 && <Spinner size={12} color={T.textSm} />}
         </div>
         {loadingI && !inbox.length ? <div style={{ padding: 50, textAlign: "center" }}><Spinner size={22} color={T.accent} /></div> :
           errI ? <div style={{ background: T.card, border: `1px solid ${T.red}44`, borderRadius: 12, padding: 20, color: T.red, fontSize: 13 }}>No se pudieron cargar los mensajes: {errI}</div> :
@@ -31240,6 +31287,7 @@ function MLPublicar({ T, uid }) {
 function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
   // Venta elegida desde "Ventas → Mensajes": abre directo ese chat en la pestaña Mensajes.
   const [msgOrder, setMsgOrder] = useState(null);
+  const [mlRefresh, setMlRefresh] = useState(0); // "Refrescar" del topbar para Ventas/Preguntas/Mensajes (un solo botón)
   const uid = user?.uid;
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -31410,7 +31458,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Gestión Mercado Libre" sectionId="ml" onHome={onHome}
         onHelp={()=>setShowGuiaMl(s=>!s)}>
-        <button onClick={loadItems} disabled={loading} style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px"}}>{loading?<Spinner size={12} color="#fff"/>:"↻"} Refrescar</button>
+        <button onClick={()=>{ if(tab==="gestion"||tab==="publicar"||tab==="reputacion") loadItems(); else setMlRefresh(k=>k+1); }} disabled={loading} style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px"}}>{loading?<Spinner size={12} color="#fff"/>:"↻"} Refrescar</button>
       </AppTopbar>
 
       <div style={{maxWidth:1280,margin:"0 auto",padding:"24px 24px 80px",width:"100%"}}>
@@ -31431,9 +31479,9 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
           </div>
         )}
         {tab==="reputacion" ? <MLReputacion T={T} uid={uid}/> :
-         tab==="ventas" ? <MLVentas T={T} uid={uid} onOpenMessages={o=>{ setMsgOrder(o); setTab && setTab("mensajes"); }}/> :
-         tab==="preguntas" ? <MLPreguntas T={T} uid={uid}/> :
-         tab==="mensajes" ? <MLMensajes T={T} uid={uid} initialOrder={msgOrder} onBackToInbox={()=>setMsgOrder(null)}/> :
+         tab==="ventas" ? <MLVentas T={T} uid={uid} refreshKey={mlRefresh} onOpenMessages={o=>{ setMsgOrder(o); setTab && setTab("mensajes"); }}/> :
+         tab==="preguntas" ? <MLPreguntas T={T} uid={uid} refreshKey={mlRefresh}/> :
+         tab==="mensajes" ? <MLMensajes T={T} uid={uid} refreshKey={mlRefresh} initialOrder={msgOrder} onBackToInbox={()=>setMsgOrder(null)}/> :
          tab==="publicar" ? <MLPublicar T={T} uid={uid}/> :
          tab==="analytics" ? (
           <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"60px 30px",textAlign:"center"}}>
@@ -37266,8 +37314,8 @@ export default function App() {
   // el switcher del sidebar.
   const user = React.useMemo(()=>(
     (authUser && miembroDe && miembroDe.ownerId)
-      ? {...authUser, uid:miembroDe.ownerId, authUid:authUser.uid, esMiembro:miembroDe.rol!=="owner", esTiendaAjena:true, tiendaRol:miembroDe.rol}
-      : (authUser ? {...authUser, authUid:authUser.uid, esMiembro:false, esTiendaAjena:false, tiendaRol:"owner"} : authUser)
+      ? {...authUser, uid:miembroDe.ownerId, authUid:authUser.uid, esMiembro:miembroDe.rol!=="owner", esTiendaAjena:true, tiendaRol:miembroDe.rol, photoURL:miembroDe.fotoPerfil||authUser.photoURL}
+      : (authUser ? {...authUser, authUid:authUser.uid, esMiembro:false, esTiendaAjena:false, tiendaRol:"owner", photoURL:miembroDe?.fotoPerfil||authUser.photoURL} : authUser)
   ),[authUser, miembroDe]);
   useEffect(()=>{
     if(!authUser){ setMiembroDe(authUser===null?null:undefined); return; }
@@ -37429,7 +37477,7 @@ export default function App() {
   // Multi-tienda: el switcher del sidebar se alimenta de las tiendas del perfil
   // (vienen del workspace). Mantengo los nombres orgs/activeOrgId para no tocar
   // la firma del Sidebar. id = uid de la tienda.
-  const orgs = React.useMemo(()=>(miembroDe?.tiendas||[]).map(t=>({id:t.uid,name:t.nombre,color:t.color||"#7c3aed",rol:t.rol,esSelf:!!t.esSelf})),[miembroDe]);
+  const orgs = React.useMemo(()=>(miembroDe?.tiendas||[]).map(t=>({id:t.uid,name:t.nombre,color:t.color||"#7c3aed",foto:t.foto||null,rol:t.rol,esSelf:!!t.esSelf})),[miembroDe]);
   const activeOrgId = miembroDe?.activeTiendaUid || authUser?.uid || null;
   const [onboardingDone,setOnboardingDone]=useState(()=>{try{return localStorage.getItem("growith_onb_done")==="1";}catch(e){return true;}});
   const [orders,setOrders]=useState([]);
@@ -37803,7 +37851,7 @@ export default function App() {
 
   const onSaveOrg = React.useCallback(async (orgPatch) => {
     if (!orgPatch?.id) return false;
-    try { await tiendaApi("tiendaRenombrar",{tiendaUid:orgPatch.id,nombre:orgPatch.name,color:orgPatch.color}); toast("Guardado ✓","success"); setTimeout(()=>window.location.reload(),400); return true; }
+    try { await tiendaApi("tiendaRenombrar",{tiendaUid:orgPatch.id,nombre:orgPatch.name,color:orgPatch.color,...(orgPatch.foto!==undefined?{foto:orgPatch.foto}:{})}); toast("Guardado ✓","success"); setTimeout(()=>window.location.reload(),400); return true; }
     catch (e) { appAlert("No se pudo guardar: " + e.message); return false; }
   },[tiendaApi]);
 
@@ -38003,7 +38051,7 @@ export default function App() {
         </button>
         {orgs.length>0&&(()=>{ const a=orgs.find(o=>o.id===activeOrgId)||orgs[0]; return (
           <button onClick={()=>setMobileTiendasOpen(true)} title="Cambiar de tienda" style={{display:"flex",alignItems:"center",gap:7,minWidth:0,maxWidth:"100%",padding:"4px 8px 4px 4px",background:T.card,border:`1px solid ${T.border}`,borderRadius:10,cursor:"pointer",color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <span style={{width:24,height:24,borderRadius:6,background:a.color||T.accent,color:"#fff",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,flexShrink:0}}>{(a.name||"?").trim().charAt(0).toUpperCase()}</span>
+            {a.foto ? <img src={a.foto} alt="" style={{width:24,height:24,borderRadius:6,objectFit:"cover",flexShrink:0}}/> : <span style={{width:24,height:24,borderRadius:6,background:a.color||T.accent,color:"#fff",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,flexShrink:0}}>{(a.name||"?").trim().charAt(0).toUpperCase()}</span>}
             <span style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{a.name}</span>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M6 9l6 6 6-6"/></svg>
           </button>
@@ -38035,7 +38083,7 @@ export default function App() {
           {orgs.map(o=>{ const act=o.id===activeOrgId; return (
             <button key={o.id} onClick={()=>{ if(act){ setMobileTiendasOpen(false); return; } setMobileTiendasOpen(false); onSwitchOrg(o.id); }}
               style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"11px 12px",background:act?T.accentSolid+"18":T.card,border:`1px solid ${act?T.accentSolid:T.border}`,borderRadius:12,cursor:"pointer",color:T.text,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif"}}>
-              <span style={{width:30,height:30,borderRadius:8,background:o.color||T.accent,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,flexShrink:0}}>{(o.name||"?").trim().charAt(0).toUpperCase()}</span>
+              {o.foto ? <img src={o.foto} alt="" style={{width:30,height:30,borderRadius:8,objectFit:"cover",flexShrink:0}}/> : <span style={{width:30,height:30,borderRadius:8,background:o.color||T.accent,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,flexShrink:0}}>{(o.name||"?").trim().charAt(0).toUpperCase()}</span>}
               <div style={{minWidth:0,flex:1}}>
                 <div style={{fontSize:14,fontWeight:700,whiteSpace:"normal",wordBreak:"break-word",lineHeight:1.25}}>{o.name}</div>
                 {(o.rol==="miembro"||act) && <div style={{fontSize:11,color:T.textSm}}>{o.rol==="miembro"?"Miembro del equipo":""}{o.rol==="miembro"&&act?" · ":""}{act?"activa":""}</div>}
@@ -38072,7 +38120,7 @@ export default function App() {
             <div style={{fontSize:12,color:T.textSm,whiteSpace:"normal",wordBreak:"break-all",lineHeight:1.3}}>{user?.email}</div>
             {orgs.length>0&&(()=>{ const a=orgs.find(o=>o.id===activeOrgId)||orgs[0]; return (
               <div style={{display:"flex",alignItems:"center",gap:6,marginTop:6,whiteSpace:"normal"}}>
-                <span style={{width:16,height:16,borderRadius:4,background:a.color||T.accent,color:"#fff",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800,flexShrink:0}}>{(a.name||"?").trim().charAt(0).toUpperCase()}</span>
+                {a.foto ? <img src={a.foto} alt="" style={{width:16,height:16,borderRadius:4,objectFit:"cover",flexShrink:0}}/> : <span style={{width:16,height:16,borderRadius:4,background:a.color||T.accent,color:"#fff",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800,flexShrink:0}}>{(a.name||"?").trim().charAt(0).toUpperCase()}</span>}
                 <span style={{fontSize:12,color:T.text,fontWeight:600,wordBreak:"break-word",lineHeight:1.3}}>Tienda: {a.name}</span>
               </div>
             ); })()}
