@@ -16276,7 +16276,7 @@ function AppAdmin({T, user, onBack}) {
   async function loadEnvCfg() { try { const c=await admAndreani("admin_config"); setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}}); } catch(_){} }
   async function saveEnvCfg(next) {
     const body = next || envCfg; if(!body) return false;
-    try { await admAndreani("admin_config",{markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}, ejecutivaWa:String(body.ejecutivaWa||"").replace(/D/g,""), ejecutivaNombre:String(body.ejecutivaNombre||"").trim(), anulacionDias:Math.min(Math.max(parseInt(body.anulacionDias)||14,3),90)}); }
+    try { await admAndreani("admin_config",{markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}, ejecutivaWa:String(body.ejecutivaWa||"").replace(/D/g,""), ejecutivaNombre:String(body.ejecutivaNombre||"").trim(), emailGestiones:String(body.emailGestiones||"").trim(), anulacionDias:Math.min(Math.max(parseInt(body.anulacionDias)||14,3),90)}); }
     catch(e){ toast("No se pudo guardar: "+e.message,"error"); return false; }
     setEnvCfg({...body}); return true;
   }
@@ -17167,7 +17167,8 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
                 </div>
                 <Field T={T} label="Sucursal de origen (código Andreani)"><AdmInput T={T} value={envCfg.sucursalOrigen??""} onChange={e=>upd({sucursalOrigen:e.target.value})} placeholder="Vacío = origen default"/></Field>
                 <AdmLbl T={T}>Ejecutiva de cuenta de Andreani</AdmLbl>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <Field T={T} label="Mail de operaciones (recibe las gestiones)"><AdmInput T={T} value={envCfg.emailGestiones??""} onChange={e=>upd({emailGestiones:e.target.value})} placeholder="contacto.growith@gmail.com"/></Field>
                   <Field T={T} label="Nombre"><AdmInput T={T} value={envCfg.ejecutivaNombre??""} onChange={e=>upd({ejecutivaNombre:e.target.value})} placeholder="Ej: Carla"/></Field>
                   <Field T={T} label="WhatsApp (con 549)"><AdmInput T={T} value={envCfg.ejecutivaWa??""} onChange={e=>upd({ejecutivaWa:e.target.value.replace(/\D/g,"")})} placeholder="5491155555555"/></Field>
                   <Field T={T} label="Anulación automática (días sin ingreso)"><AdmInput T={T} type="number" min="3" max="90" value={envCfg.anulacionDias??14} onChange={e=>upd({anulacionDias:e.target.value})}/></Field>

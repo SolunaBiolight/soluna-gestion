@@ -461,8 +461,7 @@ export default async function handler(req, res) {
       // Resumen al founder de las anulaciones automáticas abiertas en esta corrida.
       if (anulacionesAuto.length) {
         try {
-          const f = await db.collection("users").doc("WJH3ArqDPQcNLha9lOinvkVi9uJ2").get();
-          const to = f.exists ? String(f.data().email || "").trim() : "";
+          const to = String(cfgGlobal?.emailGestiones || "contacto.growith@gmail.com").trim();
           const total = anulacionesAuto.reduce((a, x) => a + x.precio, 0);
           if (to) await mailEnvios(to, `${anulacionesAuto.length} etiqueta${anulacionesAuto.length === 1 ? "" : "s"} sin usar para pedir reintegro a Andreani`,
             mailShell("Anulaciones automáticas", `$${total.toLocaleString("es-AR")} cobrados a clientes en etiquetas nunca despachadas`,

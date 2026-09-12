@@ -187,9 +187,11 @@ export async function getGlobalConfig(db) {
       // Etiquetas emitidas que nunca ingresaron a Andreani en N días: se abre
       // solo un caso de anulación para pedir el reintegro a Andreani.
       anulacionDias: Math.min(Math.max(Math.round(Number(d.anulacionDias) || 14), 3), 90),
+      // Mail de operaciones: recibe las gestiones nuevas y las anulaciones automáticas.
+      emailGestiones: String(d.emailGestiones || "contacto.growith@gmail.com").trim().slice(0, 160),
     };
   } catch (_) {
-    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, seguroPct: 1, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" }, ejecutivaWa: "", ejecutivaNombre: "", anulacionDias: 14 };
+    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, seguroPct: 1, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" }, ejecutivaWa: "", ejecutivaNombre: "", anulacionDias: 14, emailGestiones: "contacto.growith@gmail.com" };
   }
 }
 
@@ -1896,10 +1898,9 @@ export default async function handler(req, res) {
         historial: [{ at: ahoraIso, por: "cliente", texto: descripcion || "Solicitud de anulación de etiqueta" }],
         ts: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
       });
-      // Aviso al founder (best-effort).
+      // Aviso al mail de operaciones (best-effort).
       try {
-        const f = await db.collection("users").doc(FOUNDERS[0]).get();
-        const to = f.exists ? String(f.data().email || "").trim() : "";
+        const to = (await getGlobalConfig(db)).emailGestiones;
         if (to) await sendEmail({
           to, subject: `Gestión Andreani nueva: ${CASO_MOTIVOS[motivo]} · ${tienda || ud.email || uid}`,
           html: `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
@@ -2380,6 +2381,7 @@ export default async function handler(req, res) {
               if (out.length) console.warn(`[andreani] admin_config quitó habilitados: ${out.join(",")} (por ${adm.user.uid})`);
             } catch (_) {}
           }
+          if (body.emailGestiones !== undefined) upd.emailGestiones = String(body.emailGestiones || "").trim().slice(0, 160);
           if (body.ejecutivaWa !== undefined) upd.ejecutivaWa = String(body.ejecutivaWa || "").replace(/\D/g, "").slice(0, 20);
           if (body.ejecutivaNombre !== undefined) upd.ejecutivaNombre = String(body.ejecutivaNombre || "").trim().slice(0, 60);
           if (body.anulacionDias !== undefined) {
