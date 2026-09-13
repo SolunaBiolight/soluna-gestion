@@ -10,6 +10,7 @@ import { getFirestore, FieldPath, FieldValue } from "firebase-admin/firestore";
 import { XMLParser } from "fast-xml-parser";
 import { getValidMLToken } from "./integrations.js";
 import { guardUid, guardCron } from "./_auth.js";
+import { ensureShopifyToken } from "./integrations/_shared.js";
 
 // Con varios ML conectados, la facturación usa la cuenta elegida para VENTAS de
 // ML (margenesMlVentas). Vacío = primera cuenta (1 solo ML, como siempre).
@@ -2852,6 +2853,7 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
       const tnStore = stores.find(s => s.type === "tiendanube");
       const shStore = stores.find(s => s.type === "shopify");
       const mlStore = stores.find(s => s.type === "mercadolibre");
+      if (shStore) await ensureShopifyToken(db, uid, shStore);
       if (tnStore?.accessToken && tnStore?.storeId) connections.push({ platform: "tiendanube", name: tnStore.storeName || "Tienda Nube", connected: true });
       if (shStore?.accessToken && shStore?.shop) connections.push({ platform: "shopify", name: shStore.storeName || shStore.shop, connected: true });
       if (mlStore?.userId) connections.push({ platform: "mercadolibre", name: mlStore.nickname || `ML #${mlStore.userId}`, connected: true });
@@ -4922,6 +4924,7 @@ export default async function handler(req, res) {
       const stores0 = userSnap0.data()?.stores || [];
       const shStore = stores0.find(s => s.type === "shopify");
       const mlStore = stores0.find(s => s.type === "mercadolibre");
+      if (shStore) await ensureShopifyToken(db, uid, shStore);
       const connections = [];
       const canceladas = new Map(); // orderId -> motivo
       let truncated = false;

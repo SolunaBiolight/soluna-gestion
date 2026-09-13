@@ -2,6 +2,7 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getValidMLToken } from "./integrations.js";
 import { guardUid, guardCron, isCronRequest } from "./_auth.js";
+import { ensureShopifyToken } from "./integrations/_shared.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -279,6 +280,7 @@ export default async function handler(req, res) {
     const stores = uSnap.exists ? (uSnap.data().stores || []) : [];
     const tn = stores.find(s => s.type === "tiendanube" && s.accessToken && s.storeId);
     const shp = stores.find(s => s.type === "shopify" && s.accessToken && s.shop);
+    if (shp) await ensureShopifyToken(db, link.uid, shp);
     if (!tn && !shp) return res.status(503).json({ error: "La tienda no está conectada en este momento." });
     const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
     const mesAct = hoy.slice(0, 7);
@@ -1271,6 +1273,7 @@ export default async function handler(req, res) {
       };
       const mpRefCache = (userData.margenesMpRefs && typeof userData.margenesMpRefs==="object" && !Array.isArray(userData.margenesMpRefs)) ? { ...userData.margenesMpRefs } : {};
       const shStoreRef = (userData.stores||[]).find(s => s.type==="shopify");
+      if (shStoreRef) await ensureShopifyToken(db, uid, shStoreRef);
       if (shStoreRef?.shop && shStoreRef?.accessToken) {
         const tsPend = f => { const s=String(f||""); if(!s) return 0; const t=Date.parse(/(Z|[+-]\d{2}:?\d{2})$/.test(s)?s:s+"-03:00"); return isNaN(t)?0:t; };
         const pend = [...(curr.raw?.orders_detail||[]), ...(prev.raw?.orders_detail||[])]
@@ -1969,6 +1972,7 @@ export default async function handler(req, res) {
       const tnStore = stores.find(s => s.type === "tiendanube");
       const shStore = stores.find(s => s.type === "shopify");
       const mlStore = stores.find(s => s.type === "mercadolibre" || s.type === "meli");
+      if (shStore) await ensureShopifyToken(dbRef, uid, shStore);
       // Shopify tiene prioridad si está conectado
       if (shStore?.accessToken && shStore?.shop) {
         platform = 'shopify';

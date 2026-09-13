@@ -6,6 +6,7 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getValidMLToken } from "./integrations.js";
 import { guardUid, guardCron, isCronRequest } from "./_auth.js";
+import { ensureShopifyToken } from "./integrations/_shared.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -747,6 +748,7 @@ export default async function handler(req, res) {
       const tn=stores.find(s=>s.type==="tiendanube");
       const sh=stores.find(s=>s.type==="shopify");
       const ml=stores.find(s=>s.type==="mercadolibre"||s.type==="meli");
+      if(sh) await ensureShopifyToken(dbRef, uid, sh);
       if(sh?.accessToken&&sh?.shop){ platform="shopify"; shop=sh.shop; accessToken=sh.accessToken; }
       else if(tn?.accessToken&&tn?.storeId){ platform="tiendanube"; storeId=tn.storeId; accessToken=tn.accessToken; }
       // ML: el OAuth guarda userId (no sellerId). Usar getValidMLToken para refrescar

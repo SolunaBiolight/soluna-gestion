@@ -93,3 +93,87 @@ export function clasificarDoc(numStr) {
   if (s.length >= 7 && s.length <= 8) return { doc_tipo: "DNI", doc_nro: s };
   return { doc_tipo: "CF", doc_nro: "" };
 }
+
+
+// ── Shopify: tokens que VENCEN (apps públicas nuevas) ─────────────────────────
+// Shopify exige a las apps públicas creadas desde abril-2026 (y a todas desde
+// 2027) tokens offline que vencen en 1 h y se renuevan con refresh_token (90 días).
+// La tienda guarda { accessToken, refreshToken, expiresAt }. Antes de usar el
+// token, `ensureShopifyToken` lo renueva si está por vencer y lo persiste.
+// Las tiendas con token permanente (sin refreshToken) pasan sin cambios.
+export async function shopifyCentralCreds(db) {
+  if (process.env.SHOPIFY_APP_ID && process.env.SHOPIFY_APP_SECRET) return { client_id: process.env.SHOPIFY_APP_ID.trim(), client_secret: process.env.SHOPIFY_APP_SECRET.trim() };
+  try {
+    const d = await db.collection("shopify_apps").doc("_central").get();
+    if (d.exists && d.data().client_id && d.data().client_secret) return { client_id: d.data().client_id, client_secret: d.data().client_secret };
+  } catch (_) {}
+  return null;
+}
+
+export function shopifyTokenFields(tokenData) {
+  const now = Date.now();
+  const out = { accessToken: tokenData.access_token };
+  if (tokenData.refresh_token) {
+    out.refreshToken = tokenData.refresh_token;
+    out.expiresAt = new Date(now + (Number(tokenData.expires_in) || 3600) * 1000).toISOString();
+    if (tokenData.refresh_token_expires_in) out.refreshExpiresAt = new Date(now + Number(tokenData.refresh_token_expires_in) * 1000).toISOString();
+    out.refreshedAt = new Date(now).toISOString();
+  }
+  return out;
+}
+
+const _shRefreshing = new Map(); // shop → Promise (evita dos refresh en paralelo en la misma instancia)
+
+export async function ensureShopifyToken(db, uid, sh, opts = {}) {
+  if (!sh || !sh.refreshToken || !sh.shop) return sh?.accessToken || null;
+  const margin = opts.marginMs ?? 10 * 60 * 1000;
+  const exp = Date.parse(sh.expiresAt || "") || 0;
+  if (!opts.force && exp && Date.now() < exp - margin) return sh.accessToken;
+  const key = `${uid}:${sh.shop}`;
+  if (_shRefreshing.has(key)) { const r = await _shRefreshing.get(key); Object.assign(sh, r); return sh.accessToken; }
+  const job = (async () => {
+    // Otro proceso pudo haber renovado hace un momento: releer antes de gastar el refresh token.
+    const ref = db.collection("users").doc(uid);
+    const snap = await ref.get();
+    const stores = (snap.data()?.stores || []);
+    const cur = stores.find(s => s.type === "shopify" && s.shop === sh.shop);
+    const curExp = Date.parse(cur?.expiresAt || "") || 0;
+    if (cur && !opts.force && curExp && Date.now() < curExp - margin) return { accessToken: cur.accessToken, refreshToken: cur.refreshToken, expiresAt: cur.expiresAt, refreshExpiresAt: cur.refreshExpiresAt || null };
+    const creds = await shopifyCentralCreds(db);
+    if (!creds) return { accessToken: sh.accessToken };
+    const r = await fetch(`https://${sh.shop}/admin/oauth/access_token`, {
+      method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ grant_type: "refresh_token", refresh_token: (cur?.refreshToken || sh.refreshToken), client_id: creds.client_id, client_secret: creds.client_secret }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.access_token) {
+      console.error("[shopify-refresh]", sh.shop, r.status, JSON.stringify(j).slice(0, 200));
+      await ref.set({ stores: stores.map(s => (s.type === "shopify" && s.shop === sh.shop) ? { ...s, refreshError: `${r.status} ${JSON.stringify(j).slice(0, 120)}`, refreshErrorAt: new Date().toISOString() } : s) }, { merge: true }).catch(() => {});
+      return { accessToken: sh.accessToken };
+    }
+    const upd = { ...shopifyTokenFields(j), refreshError: null };
+    await ref.set({ stores: stores.map(s => (s.type === "shopify" && s.shop === sh.shop) ? { ...s, ...upd } : s) }, { merge: true });
+    return upd;
+  })().finally(() => { setTimeout(() => _shRefreshing.delete(key), 1000); });
+  _shRefreshing.set(key, job);
+  const upd = await job;
+  Object.assign(sh, upd);
+  return sh.accessToken;
+}
+
+// Renueva todos los tokens de Shopify que vencen dentro de `withinMs` (cron cada 30 min).
+export async function refreshAllShopifyTokens(db, withinMs = 50 * 60 * 1000) {
+  const snap = await db.collection("users").get();
+  let checked = 0, refreshed = 0, errors = 0;
+  for (const d of snap.docs) {
+    const stores = d.data().stores || [];
+    for (const sh of stores) {
+      if (sh.type !== "shopify" || !sh.refreshToken) continue;
+      checked++;
+      const exp = Date.parse(sh.expiresAt || "") || 0;
+      if (exp && Date.now() < exp - withinMs) continue;
+      try { const before = sh.accessToken; await ensureShopifyToken(db, d.id, sh, { marginMs: withinMs }); if (sh.accessToken !== before) refreshed++; else errors++; } catch (_) { errors++; }
+    }
+  }
+  return { checked, refreshed, errors };
+}

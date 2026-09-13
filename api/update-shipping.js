@@ -2,6 +2,7 @@ import { createCipheriv } from "crypto";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { guardUid, guardCron, verifyAuth } from "./_auth.js";
+import { ensureShopifyToken } from "./integrations/_shared.js";
 import { trazasOficialAndreani, trazasDebugAndreani, getGlobalConfig, envioSinIngreso, CASO_MOTIVOS, mailEjecutiva } from "./andreani.js";
 import { FieldValue } from "firebase-admin/firestore";
 
@@ -831,6 +832,7 @@ export default async function handler(req, res) {
       const stores = userSnap.data().stores || [];
       const tnStore = stores.find(s => s.type === "tiendanube");
       shStore = stores.find(s => s.type === "shopify" && s.accessToken && s.shop) || null;
+      if (shStore) await ensureShopifyToken(db, uid, shStore);
       if (tnStore?.accessToken && tnStore?.storeId) {
         storeId = tnStore.storeId;
         accessToken = tnStore.accessToken;

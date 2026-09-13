@@ -7,6 +7,7 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getValidMLToken } from "./integrations.js";
 import { guardUid } from "./_auth.js";
+import { ensureShopifyToken } from "./integrations/_shared.js";
 
 // Con varias cuentas de ML conectadas, las publicaciones/gestión de ML usan la
 // cuenta elegida para VENTAS de ML (margenesMlVentas). Vacío = primera (1 solo ML).
@@ -227,6 +228,7 @@ async function pushItemStock(db, uid, item, stores, settings) {
         results.push(await pushML(db, uid, link, item, stock, mode));
       } else if (link.platform === "shopify") {
         const sh = stores.find(s => s.type === "shopify");
+        if (sh) await ensureShopifyToken(db, uid, sh);
         if (sh?.accessToken && sh?.shop) results.push(await pushShopify(db, uid, sh, link, item, stock, mode));
       }
     } catch (e) {
@@ -352,6 +354,7 @@ export default async function handler(req, res) {
       // Shopify
       if (platform === "all" || platform === "shopify") {
         const sh = stores.find(s => s.type === "shopify");
+        if (sh) await ensureShopifyToken(db, uid, sh);
         if (sh?.accessToken && sh?.shop) {
           let pageInfoUrl = `https://${sh.shop}/admin/api/2024-10/products.json?limit=250`;
           let shFailed = false, shFirstError = null;
@@ -509,6 +512,7 @@ export default async function handler(req, res) {
 
       // Shopify
       const sh = stores.find(s => s.type === "shopify");
+      if (sh) await ensureShopifyToken(db, uid, sh);
       if (sh?.accessToken && sh?.shop) {
         let pageInfoUrl = `https://${sh.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&created_at_min=${sinceISO}`;
         for (let i = 0; i < 4 && pageInfoUrl; i++) {
@@ -676,6 +680,7 @@ export default async function handler(req, res) {
       }
       // Shopify
       const sh = stores.find(s => s.type === "shopify");
+      if (sh) await ensureShopifyToken(db, uid, sh);
       if (sh?.accessToken && sh?.shop) {
         let url = `https://${sh.shop}/admin/api/2024-10/products.json?limit=250`;
         for (let i = 0; i < 4 && url; i++) {

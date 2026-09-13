@@ -8,7 +8,8 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { computeRates as andreaniComputeRates } from "./shopify-rates.js";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { guardUid, verifyAuth } from "./_auth.js";
+import { guardUid, verifyAuth, guardCron } from "./_auth.js";
+import { ensureShopifyToken, shopifyTokenFields, refreshAllShopifyTokens } from "./integrations/_shared.js";
 import { isPlatformAdmin } from "./andreani.js";
 import { signState } from "./tn-callback.js";
 import { driveEnv, signDriveState, getValidDriveToken, DRIVE_REDIRECT_URI, DRIVE_SCOPES } from "./google-drive-callback.js";
@@ -100,7 +101,7 @@ async function shopifyClaim(req, res, db) {
   const currentStores = (uSnap.exists ? uSnap.data().stores : null) || [];
   if (currentStores.find(s => s.type === "tiendanube")) return res.status(409).json({ error: "Ya tenés Tienda Nube conectada. Desvinculala primero." });
   const stores = currentStores.filter(s => s.type !== "shopify");
-  stores.push({ type: "shopify", shop: p.shop, clientId: p.clientId, central: true, accessToken: p.accessToken, storeName: p.storeName || p.shop, storeEmail: p.storeEmail || "", connectedAt: new Date().toISOString(), installedFromShopify: true });
+  stores.push({ type: "shopify", shop: p.shop, clientId: p.clientId, central: true, accessToken: p.accessToken, ...(p.refreshToken ? { refreshToken: p.refreshToken, expiresAt: p.expiresAt || null, refreshExpiresAt: p.refreshExpiresAt || null } : {}), storeName: p.storeName || p.shop, storeEmail: p.storeEmail || "", connectedAt: new Date().toISOString(), installedFromShopify: true });
   const extra = uSnap.exists ? {} : { uid, email: p.storeEmail || "", nombre: p.storeName || "", createdAt: new Date(), plan: "free", trialEnd: new Date(Date.now() + 14 * 864e5) };
   await userRef.set({ ...extra, stores }, { merge: true });
   await db.collection("shopify_shops").doc(p.shop).set({ uid, updatedAt: new Date().toISOString() }, { merge: true });
@@ -250,7 +251,8 @@ async function shopifyOauthCallback(req, res, db) {
     const tokenRes = await fetch(`https://${shop}/admin/oauth/access_token`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code }),
+      // App pública (central): tokens que vencen + refresh_token (obligatorio para apps públicas nuevas).
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code, ...(pending.central ? { expiring: 1 } : {}) }),
     });
     if (!tokenRes.ok) {
       const txt = await tokenRes.text();
@@ -260,6 +262,7 @@ async function shopifyOauthCallback(req, res, db) {
     const tokenData = await tokenRes.json();
     accessToken = tokenData.access_token;
     if (!accessToken) return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=no_access_token`);
+    var __tokenFields = shopifyTokenFields(tokenData);
   } catch (e) {
     console.error("[shopify-callback] error:", e.message);
     return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=server_error`);
@@ -288,13 +291,13 @@ async function shopifyOauthCallback(req, res, db) {
       if (map.exists && map.data().uid) {
         const uRef = db.collection("users").doc(map.data().uid);
         const uSnap = await uRef.get();
-        const st = ((uSnap.exists ? uSnap.data().stores : null) || []).map(s => (s.type === "shopify" && s.shop === shop) ? { ...s, accessToken, clientId, central: true, reconnectedAt: new Date().toISOString() } : s);
-        if (!st.some(s => s.type === "shopify" && s.shop === shop)) st.push({ type: "shopify", shop, clientId, central: true, accessToken, storeName: shopName, storeEmail: shopEmail, connectedAt: new Date().toISOString() });
+        const st = ((uSnap.exists ? uSnap.data().stores : null) || []).map(s => (s.type === "shopify" && s.shop === shop) ? { ...s, ...__tokenFields, clientId, central: true, reconnectedAt: new Date().toISOString() } : s);
+        if (!st.some(s => s.type === "shopify" && s.shop === shop)) st.push({ type: "shopify", shop, clientId, central: true, ...__tokenFields, storeName: shopName, storeEmail: shopEmail, connectedAt: new Date().toISOString() });
         await uRef.set({ stores: st }, { merge: true });
         return res.redirect(`${SHOPIFY_APP_URL}/?shopify=ok&shop=${encodeURIComponent(shop)}`);
       }
       const claim = genState();
-      await db.collection("shopify_pending_installs").doc(claim).set({ shop, clientId, accessToken, storeName: shopName, storeEmail: shopEmail, createdAt: new Date().toISOString() });
+      await db.collection("shopify_pending_installs").doc(claim).set({ shop, clientId, ...__tokenFields, storeName: shopName, storeEmail: shopEmail, createdAt: new Date().toISOString() });
       return res.redirect(`${SHOPIFY_APP_URL}/?shopify_claim=${claim}`);
     } catch (e) {
       return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=server_error`);
@@ -318,7 +321,7 @@ async function shopifyOauthCallback(req, res, db) {
       shop,
       clientId,
       central: !!pending.central, // true = conectada con la app pública de Growith
-      accessToken,
+      ...__tokenFields,
       storeName: shopName,
       storeEmail: shopEmail,
       connectedAt: new Date().toISOString(),
@@ -344,6 +347,7 @@ const SH_API = "2024-10";
 async function shStoreDe(db, uid) {
   const d = (await db.collection("users").doc(uid).get()).data() || {};
   const sh = (d.stores || []).find(s => s.type === "shopify" && s.accessToken && s.shop);
+  if (sh) await ensureShopifyToken(db, uid, sh);
   return { sh, userData: d };
 }
 async function shApi(sh, path, opts = {}) {
@@ -757,6 +761,7 @@ async function mpProbe(req, res, db) {
   try {
     const userSnap = await db.collection("users").doc(uid).get();
     const sh = (userSnap.data()?.stores||[]).find(s => s.type === "shopify");
+    if (sh) await ensureShopifyToken(db, uid, sh);
     if (sh?.shop && sh?.accessToken) {
       const oRes = await fetch(`https://${sh.shop}/admin/api/2024-10/orders.json?limit=5&status=any&fields=id,name,order_number,checkout_token,cart_token,note_attributes,payment_gateway_names,total_price,created_at`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
       const oj = await oRes.json();
@@ -1261,6 +1266,12 @@ export default async function handler(req, res) {
     if (platform === "shopify") {
       if (action === "oauth_start" && req.method === "POST") return shopifyOauthStart(req, res, db);
       if (action === "install" && req.method === "GET") return shopifyInstallStart(req, res, db);
+      // Cron (cada 30 min): renueva los tokens de Shopify que vencen (apps públicas).
+      if (action === "cron_refresh_tokens") {
+        if (!guardCron(req, res)) return;
+        const out = await refreshAllShopifyTokens(db);
+        return res.json({ ok: true, ...out });
+      }
       if (action === "claim" && req.method === "POST") return shopifyClaim(req, res, db);
       // El callback llega SIN action (Shopify lo prohíbe) pero CON code. Lo
       // detectamos por el code así no depende del param reservado "action".
