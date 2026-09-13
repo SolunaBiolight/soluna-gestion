@@ -724,7 +724,7 @@ export async function geocodeDireccion({ dir, loc, prov, cp }) {
   dir = clean(dir); loc = clean(loc); prov = clean(prov);
   // Sufijos de unidad ("Local 9 y 10", "Piso 2 Dpto B") confunden al geocoder
   // y devuelven anclas en cualquier lado — solo calle y altura.
-  dir = dir.replace(/[,\s]+(local(?:es)?|piso|dpto\.?|depto\.?|departamento|oficina|of\.|uf|galeria|galería|timbre|casa|pb|entre|e\/|esq\.?|esquina)\b[\s\S]*$/i, "").trim();
+  dir = dir.replace(/[,\s]+entre\s+\S[\s\S]*?\s+y\s+[\s\S]*$/i, "").replace(/[,\s]+(local(?:es)?|piso|dpto\.?|depto\.?|departamento|oficina|of\.|uf|galeria|galería|timbre|casa|pb|e\/|esq\.?|esquina)\b[\s\S]*$/i, "").trim();
   cp = String(cp || "").replace(/\D/g, "");
   if (!dir) return null;
   // TN manda CABA como "C.A.B.A."/"Capital Federal" con provincia "Buenos Aires"
@@ -1337,7 +1337,7 @@ export default async function handler(req, res) {
     if (action === "validar_sucursales_tpl") {
       const nombres = Array.isArray(body.nombres) ? body.nombres.map(String).filter(Boolean).slice(0, 300) : [];
       if (!nombres.length) return res.json({ faltantes: [] });
-      const K = s => nrmTxt(s).replace(/s+/g, " ").trim();
+      const K = s => nrmTxt(s).replace(/\s+/g, " ").trim();
       let extra = [];
       try { const d = (await db.collection("andreani_config").doc("tpl_baja").get()).data(); extra = Array.isArray(d?.nombres) ? d.nombres : []; } catch (_) {}
       const baja = new Set([...TPL_BAJA_SEED, ...extra].map(K));
@@ -1351,7 +1351,7 @@ export default async function handler(req, res) {
       if (!(await isPlatformAdmin(db, uid))) return res.status(403).json({ error: "Solo admin" });
       const ref = db.collection("andreani_config").doc("tpl_baja");
       const cur = (await ref.get()).data()?.nombres || [];
-      const K = s => nrmTxt(s).replace(/s+/g, " ").trim();
+      const K = s => nrmTxt(s).replace(/\s+/g, " ").trim();
       const quitar = new Set((Array.isArray(body.quitar) ? body.quitar : []).map(K));
       const agregar = (Array.isArray(body.agregar) ? body.agregar : []).map(String).map(s => s.trim()).filter(Boolean);
       const out = [...new Map([...cur.filter(n => !quitar.has(K(n))), ...agregar].map(n => [K(n), n])).values()].slice(0, 500);
@@ -1406,17 +1406,17 @@ export default async function handler(req, res) {
       try { todas = await sucursalesTodas(db, env); }
       catch (e) { return res.status(502).json({ error: e.message }); }
       const tokens = q.split(/\s+/).filter(Boolean);
-      const out = [];
+      let out = [];
       for (const s of todas) {
         const hay = nrmTxt([s.descripcion, s.codigo, s.numero, s.direccion?.calle, s.direccion?.numero, s.direccion?.localidad, s.direccion?.codigoPostal].filter(Boolean).join(" "));
-        if (tokens.every(t => hay.includes(t))) {
-          out.push(s);
-          if (out.length >= 60) break;
-        }
+        if (tokens.every(t => hay.includes(t))) out.push(s);
       }
-      // Las que matchean por NOMBRE primero: el front cruza contra el texto del Excel.
+      // Las que matchean por NOMBRE primero (el front cruza contra el texto del
+      // Excel) y recién después se corta: antes se cortaba a 20 en orden de
+      // listado y el punto buscado podía quedar afuera.
       const enDesc = s => tokens.every(t => nrmTxt(s.descripcion || "").includes(t));
       out.sort((a, b) => (enDesc(b) ? 1 : 0) - (enDesc(a) ? 1 : 0));
+      out = out.slice(0, 80);
       return res.json({ sucursales: out });
     }
 

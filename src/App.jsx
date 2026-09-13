@@ -2752,35 +2752,173 @@ async function ghFetchOrderByNum(uid, num) {
   } catch(_) { return null; }
 }
 
-// Matchea el pedido contra la lista de sucursales del template (mismo criterio
-// que findAndreaniSucursal de AppEnvios): pickupDetails.name exacto → calle+nro
-// del pickup → dirección de entrega. null si no hay match ÚNICO.
-function ghMatchSucursal(locs, direccion, pickupDetails) {
-  if(!locs.sucursales) return null;
-  function n(s){ return (s||"").toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
-  if(pickupDetails){
-    const tnName=n(pickupDetails.name||"");
-    if(tnName){ const exact=locs.sucursales.find(s=>n(s)===tnName); if(exact) return exact; }
-    const addr=(pickupDetails.address?.address||"").trim();
-    const num=(pickupDetails.address?.number||"").replace(/\D.*/,"").trim();
-    const query=(addr+(num?" "+num:"")).trim().toUpperCase();
-    if(query.length>=3){ const r=locs.sucursales.filter(s=>s.toUpperCase().includes(query)); if(r.length===1) return r[0]; }
-  } else if(direccion){
-    const words=n(direccion).split(' ').filter(w=>w.length>=4);
-    if(words.length>=1){ const r=locs.sucursales.filter(s=>n(s).includes(words.join(' '))); if(r.length===1) return r[0]; }
+// GH_SUC_MATCH_BEGIN ─── Núcleo de matcheo de sucursales (puro, sin React,
+// testeable en Node: scripts/suc_match_test.cjs). Principio: una etiqueta
+// emitida a la sucursal equivocada es irreversible → el match SILENCIOSO solo
+// acepta evidencia positiva (misma calle y número, o nombre del punto) y se
+// VETA ante cualquier contradicción (otro número en la misma calle, otro CP
+// y otra localidad, distancia > 4 km al punto geocodificado). Ante la duda:
+// modal, con toda la información a la vista.
+const GH_SUC_GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","AV","CALLE","DIAGONAL","DIAG","PASAJE","PJE","BOULEVARD","BULEVAR","BV","BLVD","RUTA","GENERAL","GRAL","DOCTOR","DR","PRESIDENTE","PTE","TENIENTE","TTE","CORONEL","CNEL","INGENIERO","ING","SANTA","STA","SANTO","STO","SAN","DE","DEL","LA","EL","LOS","LAS","Y","E","NRO","NUM","ALTURA","KM"]);
+// Normalización única para TODO el matcheo: mayúsculas, sin acentos (NFD),
+// sin puntuación, espacios colapsados. "Libertador Gral. San Martín" →
+// "LIBERTADOR GRAL SAN MARTIN".
+function ghNrmSuc(s){
+  return String(s||"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
+}
+// Calle + número → {calle, num, words (palabras significativas), nums (números
+// que son parte del NOMBRE de la calle: "CALLE 13")}. El número de puerta
+// puede venir aparte, embebido al final de la calle, o en los dos lados.
+function ghDirParse(calle,numero){
+  let c=ghNrmSuc(ghStripUnidad(calle));
+  // "S/N" explícito = sin número (no se roba el "8" de "Ruta 8"); número
+  // vacío + calle terminada en dígitos = número embebido ("Cosme Beccar 274").
+  const numRaw=String(numero||"").trim();
+  let num=numRaw.replace(/\D.*/,"").trim();
+  const m=c.match(/\b(\d{1,5})\s*$/);
+  if(m&&((!numRaw&&!num)||m[1]===num)){ num=num||m[1]; c=c.replace(/\b\d{1,5}\s*$/,"").trim(); }
+  const toks=c.split(" ").filter(w=>w&&!GH_SUC_GEN.has(w)&&(w.length>=3||/^\d+$/.test(w)));
+  return {calle:c,num,toks,words:toks.filter(w=>!/^\d+$/.test(w)),nums:toks.filter(w=>/^\d+$/.test(w))};
+}
+// ¿Misma calle? Las palabras significativas del lado más corto tienen que
+// estar TODAS en el otro ("R. BALBIN" ⊂ "RICARDO BALBIN"; "JURAMENTO" =
+// "AVENIDA JURAMENTO"). Calles numeradas (La Plata) comparan sus números.
+// Tokens enteros, no substrings: "MARTIN" no es "MARTINEZ".
+function ghMismaCalle(a,b){
+  if(!a||!b) return false;
+  if(a.words.length&&b.words.length){
+    const [s,l]=a.words.length<=b.words.length?[a.words,b.words]:[b.words,a.words];
+    if(!s.every(w=>l.includes(w))) return false;
+    if(a.nums.length&&b.nums.length&&!a.nums.some(n=>b.nums.includes(n))) return false;
+    return true;
   }
-  // Último intento: tokens significativos (calle + número) presentes TODOS en la
-  // sucursal, sin exigir la frase exacta — TN dice "AVENIDA JURAMENTO 2385" y el
-  // template puede decir "JURAMENTO 2385" o al revés.
-  const STOP=new Set(["AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL","PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","S","N","SN"]);
-  const src=n([pickupDetails?.name,pickupDetails?.address?.address,pickupDetails?.address?.number,(!pickupDetails&&direccion)||""].filter(Boolean).join(" "));
-  const toks=[...new Set(src.split(" ").filter(w=>w&&!STOP.has(w)&&(w.length>=4||/^\d+$/.test(w))))];
-  if(toks.length){
-    const r=locs.sucursales.filter(s=>{const ns=n(s);return toks.every(t=>ns.includes(t));});
-    if(r.length===1) return r[0];
+  if(!a.words.length&&!b.words.length&&a.nums.length&&b.nums.length) return a.nums.every(n=>b.nums.includes(n))||b.nums.every(n=>a.nums.includes(n));
+  return false;
+}
+const ghEsCaba=(loc,cp)=>/\bC\s*A\s*B\s*A\b|CAPITAL FEDERAL|CIUDAD AUTONOMA|CIUDAD DE BUENOS AIRES/.test(ghNrmSuc(loc))||/^1[0-4]\d\d$/.test(String(cp||"").replace(/\D/g,""));
+function ghLocToks(loc){ return ghNrmSuc(loc).split(" ").filter(w=>w.length>=4&&!GH_SUC_GEN.has(w)); }
+// true / false / null (no comparable)
+function ghMismaLoc(locA,locB){
+  const a=ghLocToks(locA), b=ghLocToks(locB);
+  if(!a.length||!b.length) return null;
+  return a.some(t=>b.includes(t))||b.some(t=>a.includes(t));
+}
+// Punto de retiro comparable del pedido: pickupDetails (TN / Shopify
+// sintético) o, si la tienda registró la sucursal como dirección de envío
+// común, esa dirección. null si no hay nada comparable.
+function ghPuntoDeOrden(o){
+  const pd=o?.pickupDetails;
+  if(pd) return {nombre:pd.name||"",calle:pd.address?.address||"",num:pd.address?.number||"",loc:pd.address?.locality||pd.address?.city||"",cp:pd.address?.zipcode||pd.address?.zip_code||o?.cp||"",conPickup:true};
+  if(!o||(!o.direccion&&!o.localidad&&!o.ciudad)) return null;
+  return {nombre:"",calle:o.direccion||"",num:o.dirNumero||"",loc:o.localidad||o.ciudad||"",cp:o.cp||"",conPickup:false};
+}
+function ghCmpPunto(p,suc){
+  const d=suc?.direccion||{};
+  const a=ghDirParse(p?.calle,p?.num), b=ghDirParse(d.calle,d.numero);
+  const calle=ghMismaCalle(a,b);
+  return {a,b,calle,numIgual:!!(a.num&&b.num&&a.num===b.num),numDistinto:!!(a.num&&b.num&&a.num!==b.num)};
+}
+// ¿La sucursal oficial CONTRADICE al punto? {msg, grave, mismoDom} | null.
+// Solo evidencia positiva: misma calle con otro número, otra zona (CABA vs
+// GBA), otro CP con otra localidad. Misma calle+número con CP distinto pero
+// misma localidad NO es grave (Andreani registra puntos HOP con el CP
+// vecino); misma calle+número con CP Y localidad distintos sí lo es
+// ("Mitre 1200" existe en cada ciudad del país).
+function ghConflictoPunto(p,suc){
+  if(!p||!suc) return null;
+  const d=suc.direccion||{};
+  const c=ghCmpPunto(p,suc);
+  const mismoDom=!!(c.calle&&c.numIgual);
+  const razones=[]; let grave=false;
+  if(c.calle&&c.numDistinto){ razones.push(`es ${String(d.calle||"la misma calle").trim()} ${c.b.num}, no ${c.a.num}`); grave=true; }
+  const cpP=String(p.cp||"").replace(/\D/g,""), cpS=String(d.codigoPostal||"").replace(/\D/g,"");
+  const locP=String(p.loc||"").trim(), locS=String(d.localidad||"").trim();
+  const cabaP=ghEsCaba(locP,cpP), cabaS=ghEsCaba(locS,cpS);
+  const mismaLoc=ghMismaLoc(locP,locS);
+  if(cabaP!==cabaS&&(locP||cpP)&&(locS||cpS)){
+    razones.push(`está en ${locS||"otra localidad"}${cpS?` (CP ${cpS})`:""} y el cliente eligió ${locP||"CABA"}${cpP?` (CP ${cpP})`:""}`); grave=true;
+  } else if(cpP&&cpS&&cpP!==cpS&&!(cabaP&&cabaS)){
+    if(mismoDom&&mismaLoc===true){ razones.push(`Andreani lo registra con CP ${cpS} (el cliente eligió CP ${cpP})`); }
+    else { razones.push(`${mismoDom?"misma calle y número, pero ":""}CP ${cpS}${locS?` (${locS})`:""} y el cliente eligió CP ${cpP}${locP?` (${locP})`:""}`); grave=true; }
+  } else if(mismaLoc===false&&!(cabaP&&cabaS)){
+    razones.push(`figura en ${locS} y el cliente eligió ${locP}`);
+    // Sin coincidencia de domicilio ni de CP, otra localidad es contradicción
+    if(!mismoDom&&!(cpP&&cpS&&cpP===cpS)) grave=true;
   }
+  return razones.length?{msg:razones.join(" · "),grave,mismoDom}:null;
+}
+// Coincidencia POSITIVA: misma calle y mismo número, sin contradicción grave.
+function ghCoincidePunto(p,suc){
+  if(!p||!suc) return false;
+  const c=ghCmpPunto(p,suc);
+  if(!(c.calle&&c.numIgual)) return false;
+  return !ghConflictoPunto(p,suc)?.grave;
+}
+// Auto-match SILENCIOSO contra una lista oficial. Devuelve la sucursal solo
+// si es inequívocamente EL punto del cliente:
+//  - calle + número iguales, o nombre del punto (palabras no genéricas, ≥4
+//    letras, como tokens enteros) contenido en la descripción oficial;
+//  - sin contradicción grave (ghConflictoPunto);
+//  - si el pedido y la sucursal tienen calle+número y NO es la misma calle,
+//    el nombre no alcanza;
+//  - con ancla geocodificada exacta (geo.exacto), a más de 4 km se descarta;
+//  - una sola candidata después de deduplicar por domicilio físico.
+// Nunca "la única del CP", nunca "la más cercana": 0 o 2+ → null → modal.
+function ghMatchOficial(oficiales,p,geo){
+  if(!Array.isArray(oficiales)||!oficiales.length||!p) return null;
+  const tnTokens=ghNrmSuc(p.nombre).split(" ").filter(w=>w.length>=4&&!GH_SUC_GEN.has(w));
+  const cands=oficiales.filter(s=>{
+    if(!s) return false;
+    const c=ghCmpPunto(p,s);
+    const dirMatch=c.calle&&c.numIgual;
+    const descToks=ghNrmSuc(s.descripcion).split(" ");
+    const nameMatch=!!(tnTokens.length&&descToks.length&&tnTokens.every(t=>descToks.includes(t)));
+    if(!dirMatch&&!nameMatch) return false;
+    if(!dirMatch&&c.a.num&&c.b.num&&!c.calle) return false;
+    if(ghConflictoPunto(p,s)?.grave) return false;
+    if(geo?.exacto&&s.distM!=null&&s.distM>4000) return false;
+    return true;
+  });
+  // El listado repite la misma sucursal con variantes de nombre/espaciado:
+  // deduplicar por domicilio físico (calle+número+CP) o, sin dirección, por nombre.
+  const key=s=>{
+    const dd=s.direccion||{};
+    const kc=ghNrmSuc(dd.calle), kn=String(dd.numero||"").replace(/\D.*/,"").trim(), kcp=String(dd.codigoPostal||"").replace(/\D/g,"");
+    return kc&&(kn||kcp)?`${kc}|${kn}|${kcp}`:ghNrmSuc(s.descripcion)+"|"+kn;
+  };
+  const unicas=[...new Map(cands.map(s=>[key(s),s])).values()];
+  if(unicas.length===1) return unicas[0];
+  const nombres=new Set(unicas.map(s=>ghNrmSuc(s.descripcion)).filter(Boolean));
+  if(unicas.length>1&&nombres.size===1&&unicas.every(s=>ghNrmSuc(s.descripcion))) return unicas[0];
   return null;
 }
+// Match contra el DESPLEGABLE del template de Andreani (strings sin
+// estructura). Único criterio para Envíos, Canjes y Reclamos:
+//  1) nombre del punto (TN) idéntico a una entrada (normalizados);
+//  2) calle + número: exige NÚMERO; la entrada tiene que contener todas las
+//     palabras significativas de la calle y el número como token entero.
+// Sin número no se adivina (una calle sola matchea otro punto de la misma
+// calle). 0 o 2+ entradas distintas → null → modal.
+function ghMatchSucursal(locs, direccion, pickupDetails, dirNumero) {
+  const lista=locs?.sucursales||[];
+  if(!lista.length) return null;
+  const uniq=arr=>[...new Map(arr.map(s=>[ghNrmSuc(s),s])).values()];
+  if(pickupDetails?.name){
+    const tn=ghNrmSuc(pickupDetails.name);
+    if(tn.split(" ").some(w=>!GH_SUC_GEN.has(w))){
+      const ex=uniq(lista.filter(s=>ghNrmSuc(s)===tn));
+      if(ex.length===1) return ex[0];
+    }
+  }
+  const a=ghDirParse(pickupDetails?pickupDetails.address?.address:direccion, pickupDetails?pickupDetails.address?.number:dirNumero);
+  if(!a.num||(!a.words.length&&!a.nums.length)) return null;
+  const cands=uniq(lista.filter(s=>{
+    const toks=ghNrmSuc(s).split(" ");
+    return toks.includes(a.num)&&a.words.every(w=>toks.includes(w))&&a.nums.every(x=>toks.includes(x));
+  }));
+  return cands.length===1?cands[0]:null;
+}
+// GH_SUC_MATCH_END
 
 // Traduce una sucursal OFICIAL de la API ({descripcion,direccion}) al string
 // EXACTO del desplegable del template (o null si no existe ahí). El Excel de
@@ -2797,8 +2935,13 @@ function ghTplDeOficial(locs, oficial){
   const exacto=mapa.get(n(desc));
   if(exacto) return exacto;
   const txt=n([desc,dir?.calle,dir?.numero].filter(Boolean).join(" "));
-  const STOP=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","ESPACIO","AVENIDA","AVDA","CALLE"]);
+  const STOP=GH_SUC_GEN;
   const nums=[...new Set([...txt.matchAll(/\d{2,}/g)].map(x=>x[0]))];
+  // Palabras del punto oficial completo (nombre + calle + localidad): una
+  // entrada del desplegable no puede traer una palabra que el oficial no tenga
+  // ("HOP BELGRANO ROSARIO" no es el "HOP BELGRANO" de CABA).
+  const oficAll=new Set(n([desc,dir?.calle,dir?.numero,dir?.localidad].filter(Boolean).join(" ")).split(" ").filter(Boolean));
+  const tplOk=nt=>nt.split(" ").filter(w=>w.length>=4&&!STOP.has(w)&&!/^\d+$/.test(w)).every(w=>oficAll.has(w));
   const words=txt.split(" ").filter(w=>w.length>=4&&!STOP.has(w)&&!/^\d+$/.test(w));
   // Por NOMBRE oficial: las sucursales clásicas del desplegable no traen calle
   // ni número ("SALTA (CENTRO)"). Única candidata que contenga TODAS las
@@ -2809,6 +2952,7 @@ function ghTplDeOficial(locs, oficial){
     const oficNums=new Set([...txt.matchAll(/\d{2,}/g)].map(x=>x[0]));
     const candN=[...new Map(lista.filter(t=>{
       const nt=n(t);
+      if(!tplOk(nt)) return false;
       if(!descWords.every(w=>nt.includes(w))) return false;
       return [...nt.matchAll(/\d{2,}/g)].every(x=>oficNums.has(x[0]));
     }).map(t=>[n(t),t])).values()];
@@ -2817,7 +2961,9 @@ function ghTplDeOficial(locs, oficial){
   if(!nums.length||!words.length) return null;
   // Dedupe por texto normalizado: el desplegable repite el mismo punto (a
   // veces con distinto espaciado) — duplicados no deben anular el "resultado único"
-  const cand=[...new Map(lista.filter(t=>{const nt=n(t);return nums.some(x=>nt.includes(x))&&words.some(w=>nt.includes(w));}).map(t=>[n(t),t])).values()];
+  // Último recurso: el NÚMERO de puerta del oficial como token entero + alguna
+  // palabra de la calle, y ninguna palabra ajena al oficial.
+  const cand=[...new Map(lista.filter(t=>{const nt=n(t);const tk=nt.split(" ");return tplOk(nt)&&nums.some(x=>tk.includes(x))&&words.some(w=>tk.includes(w));}).map(t=>[n(t),t])).values()];
   return cand.length===1?cand[0]:null;
 }
 
@@ -2827,7 +2973,9 @@ function ghTplDeOficial(locs, oficial){
 function ghStripUnidad(s){
   // También "Entre X y Z" / "e/ X y Z" / "esq. X": referencias de esquina que
   // TN pega a la calle y que mandan al geocoder a cualquier lado (#6207).
-  return String(s||"").replace(/[,\s]+(LOCAL(?:ES)?|PISO|DPTO\.?|DEPTO\.?|DEPARTAMENTO|OFICINA|OF\.|UF|GALERIA|GALERÍA|TIMBRE|CASA|PB|ENTRE|E\/|ESQ\.?|ESQUINA)\b[\s\S]*$/i,"").trim();
+  // "Entre" solo como referencia ("entre X y Z"): "Av. Entre Ríos 1234" es una
+  // calle y antes quedaba en "Av." (sin match posible ni geocodificación).
+  return String(s||"").replace(/[,\s]+ENTRE\s+\S[\s\S]*?\s+Y\s+[\s\S]*$/i,"").replace(/[,\s]+(LOCAL(?:ES)?|PISO|DPTO\.?|DEPTO\.?|DEPARTAMENTO|OFICINA|OF\.|UF|GALERIA|GALERÍA|TIMBRE|CASA|PB|E\/|ESQ\.?|ESQUINA)\b[\s\S]*$/i,"").trim();
 }
 
 // Tokens significativos del punto de retiro ("JURAMENTO 2385") para buscar
@@ -2895,7 +3043,7 @@ async function ghEtiquetaAndreaniXlsxUno(o) {
     // N = sucursal EXACTA de la lista del template). Exportarlo a domicilio
     // mandaba el paquete a la dirección de facturación del cliente.
     // o.sucursal = elegida a mano por el usuario (selector de Canjes/Envíos).
-    const sucursal=o.sucursal||ghMatchSucursal(locs, o.direccion, o.pickupDetails);
+    const sucursal=o.sucursal||ghMatchSucursal(locs, o.direccion, o.pickupDetails, o.dirNumero);
     if(!sucursal) throw new Error("es un envío a sucursal y no pude identificar cuál en la lista de Andreani — generá esta etiqueta desde Envíos, que permite elegir la sucursal a mano");
     const cells=[...baseCells,sC('N'+rn,sucursal)].join('');
     const rowXml='<row r="3" spans="1:14" x14ac:dyDescent="0.25">'+cells+'</row>';
@@ -5443,7 +5591,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           delete ov[numero];
           try{localStorage.setItem(ghKey("growith_sucOverrides"),JSON.stringify(ov));}catch(_){}
         }
-        sucursal=ov[numero]||ghMatchSucursal(locs, d.direccion, d.pickupDetails);
+        sucursal=ov[numero]||ghMatchSucursal(locs, d.direccion, d.pickupDetails, d.dirNumero);
         if(!sucursal){
           const cpSuc=String(d.pickupDetails?.address?.zipcode||d.pickupDetails?.address?.zip_code||d.cp||"").replace(/\D/g,"");
           sucursal=await pedirSucursal(d.pickupDetails, q, cpSuc, d.pickupDetails?null:{dir:`${d.direccion||""} ${d.dirNumero||""}`.trim(),loc:d.localidad||"",prov:d.provincia||""});
@@ -8211,44 +8359,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     return fields.some(f=>f&&/\bESQ\.?(\b|$)|\bESQUINA\b/i.test(f));
   }
 
-  function findAndreaniSucursal(locs, direccion, pickupDetails) {
-    if(!locs.sucursales) return null;
-    function cl(s){ return (s||"").toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
-
-    if(pickupDetails) {
-      // Step 1: match exacto con pickupDetails.name normalizado
-      const tnName=cl(pickupDetails.name||"");
-      if(tnName){
-        const exact=locs.sucursales.find(s=>cl(s)===tnName);
-        if(exact) return exact;
-      }
-      // Step 2: calle + número → solo si resultado ÚNICO. Sin sufijos de
-      // unidad ("Local 9 y 10"): rompían el substring contra el template.
-      const addr=ghStripUnidad((pickupDetails.address?.address||"").trim());
-      const num=(pickupDetails.address?.number||"").replace(/\D.*/,"").trim();
-      // Espacios normalizados en AMBOS lados: el template trae entradas con
-      // doble espacio ("HOP BELGRANO  995") invisibles en pantalla que
-      // rompían el substring con un solo espacio.
-      const nrmSp=s=>String(s||"").toUpperCase().replace(/\s+/g," ").trim();
-      const query=nrmSp(addr+(num?" "+num:""));
-      if(query.length>=3){
-        // Dedupe por texto normalizado: el desplegable repite el mismo punto
-        // (a veces con espaciado distinto) y 2 entradas del mismo lugar no
-        // deben anular el "resultado único"
-        const results=[...new Map(locs.sucursales.filter(s=>nrmSp(s).includes(query)).map(s=>[nrmSp(s),s])).values()];
-        if(results.length===1) return results[0];
-      }
-    } else if(direccion) {
-      // Sucursal Andreani clásica: la dirección de entrega ES la dirección de la sucursal
-      const words=cl(direccion).split(' ').filter(w=>w.length>=4);
-      if(words.length>=1){
-        const q=words.join(' ');
-        const results=[...new Map(locs.sucursales.filter(s=>cl(s).includes(q)).map(s=>[cl(s),s])).values()];
-        if(results.length===1) return results[0];
-      }
-    }
-
-    return null; // 0 o 2+ resultados → modal obligatorio
+  // Match contra el desplegable del template — núcleo único ghMatchSucursal
+  // (mismo criterio que la etiqueta individual de Canjes/Reclamos).
+  function findAndreaniSucursal(locs, direccion, pickupDetails, dirNumero) {
+    return ghMatchSucursal(locs, direccion, pickupDetails, dirNumero);
   }
 
   function searchSucursales(locs, query) {
@@ -8411,7 +8525,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         // rechaza con "no es del campo desplegable") — se descarta y limpia.
         let ovr=sucursalOverridesRef.current[ovrKey(o)]||"";
         if(ovr&&!(locs.sucursales||[]).includes(ovr)){ delete sucursalOverridesRef.current[ovrKey(o)]; persistOverrides(); ovr=""; }
-        const sucursal=ovr||findAndreaniSucursal(locs,o.direccion,o.pickupDetails)||"";
+        const sucursal=ovr||findAndreaniSucursal(locs,o.direccion,o.pickupDetails,o.dirNumero)||"";
         sucEscritas.push({numero:o.numero,comprador:o.comprador,sucursal});
         if(!sucReemplazoRef.current.has(ovrKey(o))&&verifSucursalTplVsTienda(o,sucursal)==="warn")verifRows.push({numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:(o.pickupDetails?`${o.pickupDetails.name||""} — ${o.pickupDetails.address?.address||""} ${o.pickupDetails.address?.number||""}`:`${o.direccion||""} ${o.dirNumero||""}, ${o.localidad||o.ciudad||""}`).trim()});
         const cells=[
@@ -8677,9 +8791,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     return String(o?.pickupDetails?.address?.zipcode||o?.pickupDetails?.address?.zip_code||o?.cp||"").trim();
   }
   // Normalización para comparar direcciones/nombres contra la lista oficial
-  function nrmSucTxt(s){
-    return String(s||"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
-  }
+  function nrmSucTxt(s){ return ghNrmSuc(s); }
   // Auto-match SILENCIOSO contra la lista oficial de Andreani. Estricto a
   // propósito: SOLO devuelve una sucursal si es inequívocamente EL punto que
   // eligió el cliente (calle+número coinciden, o el nombre del punto TN — sin
@@ -8687,47 +8799,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // del CP": los puntos HOP de terceros suelen no estar en la lista por CP y
   // ese atajo mandaba el pedido a otra sucursal en silencio (#5287/#5079/#5099).
   // Con 0 o 2+ candidatas devuelve null → fallback global o modal.
-  function matchSucursalOficial(oficiales,o){
-    if(!Array.isArray(oficiales)||!oficiales.length) return null;
-    const pd=o?.pickupDetails;
-    const calleRaw=nrmSucTxt(ghStripUnidad(pd?pd.address?.address:o?.direccion));
-    const numCampo=String((pd?pd.address?.number:o?.dirNumero)||"").replace(/\D.*/,"").trim();
-    // TN a veces embebe el número en la dirección ("Cosme Beccar 274")
-    const numEmb=(calleRaw.match(/\b(\d{1,5})\s*$/)||[])[1]||"";
-    const num=numCampo||numEmb;
-    const calle=num?calleRaw.replace(new RegExp("\\b"+num+"\\s*$"),"").trim():calleRaw;
-    const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO"]);
-    const tnTokens=nrmSucTxt(pd?.name).split(" ").filter(w=>w&&!GEN.has(w)&&w.length>=3);
-    const cands=oficiales.filter(s=>{
-      const d=s.direccion||{};
-      let sCalle=nrmSucTxt(d.calle);
-      let sNum=String(d.numero||"").replace(/\D.*/,"").trim();
-      // El listado oficial a veces trae el número embebido en la calle
-      // ("Independencia 1946" con numero vacío) — extraerlo para comparar.
-      if(!sNum){ const m=sCalle.match(/\b(\d{1,5})\s*$/); if(m){ sNum=m[1]; sCalle=sCalle.replace(/\b\d{1,5}\s*$/,"").trim(); } }
-      const dirMatch=!!(calle&&num&&sCalle&&sNum&&sNum===num&&(sCalle.includes(calle)||calle.includes(sCalle)));
-      const desc=nrmSucTxt(s.descripcion);
-      const nameMatch=!!(tnTokens.length&&desc&&tnTokens.every(t=>desc.includes(t)));
-      return dirMatch||nameMatch;
-    });
-    // El listado oficial repite la misma sucursal con variantes — de espaciado
-    // Y de NOMBRE ("LUJAN" y "LUJAN (HUMBERTO PRIMO)" son el mismo punto, #6154).
-    // Deduplicar por DIRECCIÓN FÍSICA (calle+número+CP) cuando existe; solo si
-    // no hay dirección, por nombre+número como antes.
-    const key=s=>{
-      const dd=s.direccion||{};
-      const kc=nrmSucTxt(dd.calle), kn=String(dd.numero||"").replace(/\D.*/,"").trim(), kcp=String(dd.codigoPostal||"").replace(/\D/g,"");
-      return kc&&(kn||kcp)?`${kc}|${kn}|${kcp}`:nrmSucTxt(s.descripcion)+"|"+kn;
-    };
-    const unicas=[...new Map(cands.map(s=>[key(s),s])).values()];
-    if(unicas.length===1) return unicas[0];
-    // El listado repite el MISMO punto con la dirección escrita distinto (número
-    // con espacio, CP en una variante y no en otra): si todas las candidatas
-    // llevan el mismo nombre oficial, son una sola (#6383: "SAN MIGUEL (CENTRO)" x3).
-    const nombres=new Set(unicas.map(s=>nrmSucTxt(s.descripcion)).filter(Boolean));
-    if(unicas.length>1&&nombres.size===1&&unicas.every(s=>nrmSucTxt(s.descripcion))) return unicas[0];
-    return null;
-  }
+  function matchSucursalOficial(oficiales,o,geo){ return ghMatchOficial(oficiales,ghPuntoDeOrden(o),geo); }
   // Fallback: el punto exacto puede existir en el listado COMPLETO de Andreani
   // aunque no aparezca en la lista por CP (típico de puntos HOP nuevos, que
   // Andreani registra con otro CP). Busca por calle+número y por nombre en el
@@ -8764,51 +8836,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // otra localidad. Caso real: el cliente pidió "Balbín 3301, CABA" y se emitió
   // a "MyM logística — Balbín 5617, San Martín" porque compartían la calle.
   // grave = número distinto en la misma calle o CP distinto (no se reusa de memoria).
-  // Coincidencia POSITIVA (misma calle y mismo número) entre el punto que
-  // eligió el cliente y una sucursal oficial — lo contrario de conflictoSucursal,
-  // que solo detecta contradicciones. Sirve para marcar "Coincide" en el buscador.
-  function coincideSucursal(o,suc){
-    const pd=o?.pickupDetails; if(!pd||!suc) return false;
-    const d=suc.direccion||{};
-    const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL","DOCTOR","DR"]);
-    const calleRaw=nrmSucTxt(ghStripUnidad(pd.address?.address));
-    const numCampo=String(pd.address?.number||"").replace(/D.*/,"").trim();
-    const num=numCampo||(calleRaw.match(/(d{1,5})s*$/)||[])[1]||"";
-    const calleSola=num?calleRaw.replace(new RegExp("\b"+num+"\s*$"),"").trim():calleRaw;
-    let sCalle=nrmSucTxt(d.calle); let sNum=String(d.numero||"").replace(/D.*/,"").trim();
-    if(!sNum){ const m=sCalle.match(/(d{1,5})s*$/); if(m){ sNum=m[1]; sCalle=sCalle.replace(/d{1,5}s*$/,"").trim(); } }
-    const calleToks=calleSola.split(" ").filter(w=>w.length>=4&&!GEN.has(w));
-    const mismaCalle=!!(calleToks.length&&sCalle&&calleToks.some(t=>sCalle.includes(t)));
-    return mismaCalle&&!!num&&num===sNum&&!conflictoSucursal(o,suc);
-  }
-  function conflictoSucursal(o,suc){
-    const pd=o?.pickupDetails; if(!pd||!suc) return null;
-    const d=suc.direccion||{};
-    const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL","DOCTOR","DR"]);
-    const calleRaw=nrmSucTxt(ghStripUnidad(pd.address?.address));
-    const numCampo=String(pd.address?.number||"").replace(/D.*/,"").trim();
-    const num=numCampo||(calleRaw.match(/\b(\d{1,5})\s*$/)||[])[1]||"";
-    const calleSola=num?calleRaw.replace(new RegExp("\\b"+num+"\\s*$"),"").trim():calleRaw;
-    let sCalle=nrmSucTxt(d.calle); let sNum=String(d.numero||"").replace(/\D.*/,"").trim();
-    if(!sNum){ const m=sCalle.match(/\b(\d{1,5})\s*$/); if(m){ sNum=m[1]; sCalle=sCalle.replace(/\b\d{1,5}\s*$/,"").trim(); } }
-    const calleToks=calleSola.split(" ").filter(w=>w.length>=4&&!GEN.has(w));
-    const mismaCalle=!!(calleToks.length&&sCalle&&calleToks.some(t=>sCalle.includes(t)));
-    const razones=[]; let grave=false;
-    if(mismaCalle&&num&&sNum&&num!==sNum){ razones.push(`es ${(d.calle||"la misma calle").trim()} ${sNum}, no ${num}`); grave=true; }
-    const esCaba=s=>/\bC\s*A\s*B\s*A\b|CAPITAL FEDERAL|CIUDAD AUTONOMA|CIUDAD DE BUENOS AIRES/.test(s);
-    const locTnRaw=String(pd.address?.locality||pd.address?.city||"").trim();
-    const locTn=nrmSucTxt(locTnRaw); const cpTn=String(pd.address?.zipcode||pd.address?.zip_code||"").replace(/\D/g,"");
-    const locSuc=nrmSucTxt(d.localidad||""); const cpSuc=String(d.codigoPostal||"").replace(/\D/g,"");
-    const cabaTn=esCaba(locTn)||/^1[0-4]\d\d$/.test(cpTn); const cabaSuc=esCaba(locSuc)||/^1[0-4]\d\d$/.test(cpSuc);
-    if(cabaTn!==cabaSuc&&(locTn||cpTn)&&(locSuc||cpSuc)){
-      razones.push(`está en ${d.localidad||"otra localidad"}${cpSuc?` (CP ${cpSuc})`:""} y el cliente eligió ${locTnRaw||"CABA"}${cpTn?` (CP ${cpTn})`:""}`); grave=true;
-    } else if(cpTn&&cpSuc&&cpTn!==cpSuc&&!(cabaTn&&cabaSuc)){
-      razones.push(`CP ${cpSuc} (${d.localidad||""}) y el cliente eligió CP ${cpTn}${locTnRaw?` (${locTnRaw})`:""}`); grave=true;
-    } else if(locTn&&locSuc&&!(cabaTn&&cabaSuc)&&!locTn.includes(locSuc)&&!locSuc.includes(locTn)){
-      razones.push(`figura en ${d.localidad} y el cliente eligió ${locTnRaw}`);
-    }
-    return razones.length?{msg:razones.join(" · "),grave}:null;
-  }
+  // Coincidencia POSITIVA (misma calle y mismo número, sin contradicción):
+  // marca "Coincide" en el buscador y en la revisión. Núcleo: ghCoincidePunto.
+  function coincideSucursal(o,suc){ return ghCoincidePunto(ghPuntoDeOrden(o),suc); }
+  // ¿Esta sucursal oficial CONTRADICE el punto que eligió el cliente? Devuelve
+  // {msg, grave, mismoDom} o null. Núcleo: ghConflictoPunto. Caso real: el
+  // cliente pidió "Balbín 3301, CABA" y se emitió a "MyM logística — Balbín
+  // 5617, San Martín" porque compartían la calle.
+  function conflictoSucursal(o,suc){ return ghConflictoPunto(ghPuntoDeOrden(o),suc); }
   // Ídem contra el STRING del desplegable del Excel: solo acusa número distinto
   // en la misma calle (el texto del template rara vez trae localidad).
   function conflictoTpl(o,tplStr){
@@ -9199,7 +9234,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         // lista oficial de la API (match exacto, sin texto libre): todos los
         // pedidos a sucursal sin override pasan por el modal de confirmación.
         if(andreani.enabled) return true;
-        const _sf=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
+        const _sf=findAndreaniSucursal(locs,o.direccion,o.pickupDetails,o.dirNumero);
         return !_sf||_sf.trim()==="";
       });
 
@@ -9352,7 +9387,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // TEMPLATE tiene un match inequívoco (nombre exacto del punto, o su
       // calle+número con resultado único), es la misma sucursal que el modal
       // marcaría como "Sugerido" — usarla directo, sin molestar.
-      const autoDirecto=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
+      const autoDirecto=findAndreaniSucursal(locs,o.direccion,o.pickupDetails,o.dirNumero);
       if(!forzar&&autoDirecto&&(locs.sucursales||[]).includes(autoDirecto)){
         sucursalOverridesRef.current[ovrKey(o)]=autoDirecto;
         persistOverrides();
@@ -9375,7 +9410,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       let cercaTpl=null;
       try{
         const dCerca=forzar?{sucursales:[]}:await fetchCercanasRaw(o);
-        const cercaOficial=matchSucursalOficial(dCerca.sucursales,o);
+        const cercaOficial=matchSucursalOficial(dCerca.sucursales,o,{exacto:!dCerca.aproximado&&dCerca.stats?.geo?.origenSrc==="geocode"});
         cercaTpl=cercaOficial?ghTplDeOficial(locs,cercaOficial):null;
       }catch(_){}
       if(!forzar&&cercaTpl){
@@ -9390,12 +9425,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // Modal con reintento: no se acepta un valor fuera del desplegable.
       setExporting(false); // el overlay de progreso no puede tapar el modal
       let resuelto=false;
-      const autoMatch0=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
+      const autoMatch0=findAndreaniSucursal(locs,o.direccion,o.pickupDetails,o.dirNumero);
       while(!resuelto){
         setLocOficialSel("");
         const chosen=await new Promise(resolve=>{
           // Pre-fill: primero intentar auto-match para sugerir la sucursal como búsqueda
-          const autoMatch=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
+          const autoMatch=findAndreaniSucursal(locs,o.direccion,o.pickupDetails,o.dirNumero);
           let prefill='';
           if(autoMatch){
             prefill=autoMatch;
@@ -9527,7 +9562,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         if(chosenEsq==="EXCLUIR"){ rows.push(mkRow(o,{incluido:false,cotError:"Dirección en esquina — emitilo a mano en Andreani (carga individual)"})); continue; }
         const ofcEsq=chosenEsq&&chosenEsq.oficial?chosenEsq.oficial:null;
         if(!ofcEsq){ rows.push(mkRow(o,{incluido:false,cotError:"Dirección en esquina — sin sucursal elegida"})); continue; }
-        rows.push(mkRow(o,{tipo:"sucursal",oficial:ofcEsq}));
+        rows.push(mkRow(o,{tipo:"sucursal",oficial:ofcEsq,esquina:true,conflictoOk:true}));
         continue;
       }
       if(!isSucursalOrder(o)){ rows.push(mkRow(o)); continue; }
@@ -9535,7 +9570,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // oficial → se toma tal cual, sin memoria ni match por texto.
       if(o.andreaniSucursalId){
         const ofcCk=await fetchSucursalOficialPorId(o.andreaniSucursalId,cpDestinoDe(o));
-        if(ofcCk){ rows.push(mkRow(o,{oficial:ofcCk,verif:"ok",deCheckout:true})); continue; }
+        if(ofcCk){ rows.push(mkRow(o,{oficial:ofcCk,verif:"ok",deCheckout:true,conflictoOk:true})); continue; }
       }
       // Memoria por punto: elección confirmada a mano en un pedido anterior al
       // MISMO punto de retiro → se reusa directo (id oficial guardado).
@@ -9555,12 +9590,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       if(!ofc) ofc=await buscarPuntoExactoGlobal(o);
       // Capa final: motor de cercanías (listado GEO completo) con el mismo
       // match estricto por calle+número — la distancia NO decide (#5898).
-      if(!ofc){ try{ ofc=matchSucursalOficial((await fetchCercanasRaw(o)).sucursales,o); }catch(_){} }
+      if(!ofc){ try{ const dC=await fetchCercanasRaw(o); ofc=matchSucursalOficial(dC.sucursales,o,{exacto:!dC.aproximado&&dC.stats?.geo?.origenSrc==="geocode"}); }catch(_){} }
       if(!ofc&&!Array.isArray(oficiales)){
         // API de sucursales caída y el buscador global tampoco respondió
         rows.push(mkRow(o,{incluido:false,cotError:"Lista oficial de Andreani no disponible — probá de nuevo en unos minutos"}));
         continue;
       }
+      let confOk=false;
       if(!ofc){
         // No se pudo confirmar el punto EXACTO que eligió el cliente → modal
         // con advertencia explícita: lo que se elija acá es a donde va el
@@ -9572,10 +9608,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         if(chosen==="EXCLUIR"){ rows.push(mkRow(o,{incluido:false,cotError:"Excluido manualmente"})); continue; }
         ofc=chosen&&chosen.oficial?chosen.oficial:null;
         if(!ofc){ rows.push(mkRow(o,{incluido:false,cotError:"Sin sucursal elegida"})); continue; }
+        confOk=!!chosen.confirmado;
         // Memoria por punto: solo el mínimo necesario para reusar (id + datos visibles)
         recordarPunto(o,{oficial:{id:ofc.id,codigo:ofc.codigo??null,numero:ofc.numero??null,descripcion:ofc.descripcion||"",direccion:ofc.direccion||null}});
       }
-      rows.push(mkRow(o,{oficial:ofc,verif:verifSucursalVsTienda(o,ofc)}));
+      rows.push(mkRow(o,{oficial:ofc,verif:verifSucursalVsTienda(o,ofc),conflictoOk:confOk}));
     }
     await cotizarBulk();
   }
@@ -9626,7 +9663,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     if(chosen==="EXCLUIR"){ r.incluido=false; r.cotError="Excluido manualmente"; pushBulk("revision"); return; }
     const ofc=chosen&&chosen.oficial?chosen.oficial:null;
     if(!ofc) return;
-    r.oficial=ofc; r.verif=verifSucursalVsTienda(o,ofc); r.deMemoria=false;
+    r.oficial=ofc; r.verif=verifSucursalVsTienda(o,ofc); r.deMemoria=false; r.conflictoOk=!!chosen.confirmado;
     recordarPunto(o,{oficial:{id:ofc.id,codigo:ofc.codigo??null,numero:ofc.numero??null,descripcion:ofc.descripcion||"",direccion:ofc.direccion||null}});
     pushBulk("revision");
     toast("Sucursal corregida — la nueva elección quedó guardada para este punto ✓","success");
@@ -9642,6 +9679,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     // de un pedido no cortan el resto (el backend revierte el débito fallido).
     for(const r of inc){
       const o=r.order;
+      // Bloqueo duro: sucursal que contradice al punto del cliente (otro
+      // número en la misma calle, otra zona) y que nadie confirmó a mano.
+      // Una etiqueta a la sucursal equivocada no se puede deshacer.
+      if(r.tipo==="sucursal"&&r.oficial&&!r.conflictoOk&&!r.esquina){
+        const cf=conflictoSucursal(o,r.oficial);
+        if(cf?.grave){ r.emitError=`No se emitió: ${cf.msg}. Tocá "Cambiar sucursal" y elegí (o confirmá) la correcta.`; done++; pushBulk("emitiendo",{done,total:inc.length}); continue; }
+      }
       try{
         const resp=await authFetch("/api/andreani?action=emitir",{
           method:"POST",headers:{"Content-Type":"application/json"},
@@ -11222,6 +11266,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         {locationModal&&(()=>{
           const {order,locs,resolve,type,autoMatch,oficiales,wantOficial,esquina,noExacto,noOperativa}=locationModal;
           const isSuc=type==="sucursal";
+          // Esquina (redirección de un domicilio a sucursal): no hay punto de
+          // retiro con el que comparar — sin "Coincide" ni "No coincide".
+          const cfDe=s=>esquina?null:conflictoSucursal(order,s);
+          const okDe=s=>esquina?false:coincideSucursal(order,s);
           const cpOf=isSuc?cpDestinoDe(order):"";
           const hayOficiales=isSuc&&Array.isArray(oficiales)&&oficiales.length>0;
           const sinSucsCp=isSuc&&Array.isArray(oficiales)&&oficiales.length===0;
@@ -11286,7 +11334,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     {oficiales.map(s=>{
                       const d=s.direccion||{};
                       const dir=[`${d.calle||""} ${d.numero||""}`.trim(),d.localidad].filter(Boolean).join(", ");
-                      const cf=conflictoSucursal(order,s);
+                      const cf=cfDe(s);
                       return <option key={s.id} value={String(s.id)}>{cf?"(!) ":""}{s.descripcion}{dir?` — ${dir}`:""}{cf?" — NO coincide con el punto":""}</option>;
                     })}
                   </select>
@@ -11301,7 +11349,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       <div style={{background:T.bg,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"10px 12px",marginBottom:10}}>
                         <div style={{fontSize:13,fontWeight:700,color:T.text,wordBreak:"break-word"}}>{s.descripcion}</div>
                         <div style={{fontSize:12,color:T.textMd,marginTop:2,wordBreak:"break-word"}}>{[`${d.calle||""} ${d.numero||""}`.trim(),d.localidad,d.codigoPostal?`CP ${d.codigoPostal}`:""].filter(Boolean).join(" · ")}</div>
-                        {(()=>{ const cf=conflictoSucursal(order,s); return cf
+                        {(()=>{ const cf=cfDe(s); return cf
                           ? <div style={{fontSize:11,color:T.red,marginTop:4,fontWeight:600}}>No es el punto que eligió el cliente: {cf.msg}. El paquete va a ir a ESTA sucursal.</div>
                           : order.pickupDetails?<div style={{fontSize:11,color:T.textSm,marginTop:4}}>Compará calle y número contra el punto de arriba antes de confirmar.</div>:null; })()}
                       </div>
@@ -11310,9 +11358,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   <button disabled={!locOficialSel} onClick={async()=>{
                     const s=oficiales.find(x=>String(x.id)===locOficialSel);
                     if(!s) return;
-                    const cf=conflictoSucursal(order,s);
+                    const cf=cfDe(s);
                     if(cf&&!await appConfirm(`Esta sucursal NO coincide con el punto que eligió el cliente: ${cf.msg}. El paquete va a ir a ${s.descripcion}. ¿Usarla igual?`,{danger:true,okLabel:"Usar igual"})) return;
-                    resolve(wantOficial?{oficial:s}:(s.descripcion||s.codigo||""));setLocationModal(null);
+                    resolve(wantOficial?{oficial:s,confirmado:!!cf}:(s.descripcion||s.codigo||""));setLocationModal(null);
                   }} style={{...BtnPrimary(T),fontSize:13,width:"100%",justifyContent:"center",opacity:locOficialSel?1:0.45,cursor:locOficialSel?"pointer":"not-allowed"}}>
                     Usar esta sucursal
                   </button>
@@ -11368,7 +11416,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         const porTpl=cands.filter(s=>(s.tpl||(locs?ghTplDeOficial(locs,s):null))===item);
                         const matches=porTpl.length?porTpl:cands.filter(s=>{const dN=nrmE(s.descripcion);return dN===itemN||dN&&itemN.includes(dN)||dN.includes(itemN);});
                         // Dedupe por dirección real (el listado repite variantes)
-                        const dirsUnicas=[...new Map(matches.map(s=>{const d=s.direccion||{};const k=nrmE(`${d.calle||""} ${d.numero||""}`);return [k,{dir:`${d.calle||""} ${d.numero||""}`.trim(),loc:d.localidad||"",cp:d.codigoPostal||"",ok:coincideSucursal(order,s),cf:conflictoSucursal(order,s)}];})).values()].filter(x=>x.dir);
+                        const dirsUnicas=[...new Map(matches.map(s=>{const d=s.direccion||{};const k=nrmE(`${d.calle||""} ${d.numero||""}`);return [k,{dir:`${d.calle||""} ${d.numero||""}`.trim(),loc:d.localidad||"",cp:d.codigoPostal||"",ok:okDe(s),cf:cfDe(s)}];})).values()].filter(x=>x.dir);
                         const u1=dirsUnicas.length===1?dirsUnicas[0]:null;
                         return (
                           <div key={i} onClick={()=>{resolve(item);setLocationModal(null);}}
@@ -11379,12 +11427,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                               <div style={{fontSize:13,fontWeight:600,color:T.text,flex:1}}>{item}</div>
                               {isSugerido&&<span style={{fontSize:10,fontWeight:700,color:T.accent,background:`${T.accent}22`,borderRadius:4,padding:"2px 6px",whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:0.5}}>Sugerido</span>}
                               {u1?.ok&&<span style={{fontSize:10,fontWeight:700,color:T.green,background:T.greenBg,borderRadius:4,padding:"2px 6px",whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:0.5}}>Coincide</span>}
-                              {u1?.cf&&<span style={{fontSize:10,fontWeight:700,color:T.red,background:T.redBg,borderRadius:4,padding:"2px 6px",whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:0.5}}>No coincide</span>}
+                              {u1?.cf&&!u1.ok&&<span style={{fontSize:10,fontWeight:700,color:u1.cf.grave&&!u1.cf.mismoDom?T.red:T.yellow,background:u1.cf.grave&&!u1.cf.mismoDom?T.redBg:T.yellowBg,borderRadius:4,padding:"2px 6px",whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:0.5}}>{u1.cf.mismoDom?"Misma dirección · revisar":"No coincide"}</span>}
                             </div>
                             {u1&&(
                               <div style={{fontSize:11,color:u1.ok?T.green:T.textSm,marginTop:3}}>{[u1.dir,u1.loc,u1.cp?`CP ${u1.cp}`:""].filter(Boolean).join(" · ")}</div>
                             )}
-                            {u1?.cf&&<div style={{fontSize:11,color:T.red,marginTop:2}}>{u1.cf.msg}</div>}
+                            {u1?.cf&&!u1.ok&&<div style={{fontSize:11,color:u1.cf.grave&&!u1.cf.mismoDom?T.red:T.yellow,marginTop:2}}>{u1.cf.msg}</div>}
                             {!u1&&dirsUnicas.length===0&&order?.pickupDetails&&(
                               <div style={{fontSize:11,color:T.textSm,marginTop:3,opacity:0.8}}>Sin dirección en el listado oficial — compará el nombre con la calle del punto de arriba.</div>
                             )}
@@ -11442,11 +11490,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         // desplegable del Excel (tpl). Emisión API (esquina):
                         // lo que importa es el id oficial de la sucursal.
                         const clickable=wantOficial?s.id!=null:!!s.tpl;
-                        const cf=conflictoSucursal(order,s);
+                        const cf=cfDe(s);
                         return (
                           <div key={(s.id??s.descripcion)+"_"+i} onClick={clickable?async()=>{
                               if(cf&&!await appConfirm(`Esta sucursal NO coincide con el punto que eligió el cliente: ${cf.msg}. El paquete va a ir a ${s.descripcion}. ¿Usarla igual?`,{danger:true,okLabel:"Usar igual"})) return;
-                              resolve(wantOficial?{oficial:s}:s.tpl);setLocationModal(null);
+                              resolve(wantOficial?{oficial:s,confirmado:!!cf}:s.tpl);setLocationModal(null);
                             }:undefined}
                             style={{padding:"10px 14px",cursor:clickable?"pointer":"default",opacity:clickable?1:0.45,borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s",display:"flex",alignItems:"center",gap:10}}
                             onMouseEnter={e=>{if(clickable)e.currentTarget.style.background=T.card;}}
@@ -11653,8 +11701,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                               {r.tipo==="sucursal"&&r.verif==="ok"&&(
                                 <div style={{color:T.green,fontSize:11,marginTop:2,fontWeight:600}}>✓ Coincide con el punto elegido en tu tienda</div>
                               )}
-                              {(()=>{ const cf=r.tipo==="sucursal"&&r.oficial?conflictoSucursal(r.order,r.oficial):null; return cf&&(
-                                <div style={{color:T.red,fontSize:11,marginTop:2,fontWeight:700}}>No es el punto que eligió el cliente: {cf.msg}. Cambiá la sucursal antes de emitir.</div>
+                              {(()=>{ const cf=r.tipo==="sucursal"&&r.oficial&&!r.esquina?conflictoSucursal(r.order,r.oficial):null; return cf&&(
+                                <div style={{color:cf.grave&&!r.conflictoOk?T.red:T.yellow,fontSize:11,marginTop:2,fontWeight:700}}>{cf.grave&&!r.conflictoOk?`No es el punto que eligió el cliente: ${cf.msg}. No se va a emitir hasta que la cambies o la confirmes.`:cf.grave?`Confirmaste esta sucursal aunque ${cf.msg}.`:`Ojo: ${cf.msg}.`}</div>
                               ); })()}
                               {r.tipo==="sucursal"&&r.verif==="warn"&&!r.deMemoria&&(
                                 <div style={{color:T.yellow,fontSize:11,marginTop:2,fontWeight:600}}>Distinto del punto que eligió el cliente ({r.order.pickupDetails?.name||"punto de retiro"}) — revisá antes de emitir</div>
