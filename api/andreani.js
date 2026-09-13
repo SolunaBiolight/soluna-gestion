@@ -1411,9 +1411,12 @@ export default async function handler(req, res) {
         const hay = nrmTxt([s.descripcion, s.codigo, s.numero, s.direccion?.calle, s.direccion?.numero, s.direccion?.localidad, s.direccion?.codigoPostal].filter(Boolean).join(" "));
         if (tokens.every(t => hay.includes(t))) {
           out.push(s);
-          if (out.length >= 20) break;
+          if (out.length >= 60) break;
         }
       }
+      // Las que matchean por NOMBRE primero: el front cruza contra el texto del Excel.
+      const enDesc = s => tokens.every(t => nrmTxt(s.descripcion || "").includes(t));
+      out.sort((a, b) => (enDesc(b) ? 1 : 0) - (enDesc(a) ? 1 : 0));
       return res.json({ sucursales: out });
     }
 

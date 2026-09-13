@@ -8764,6 +8764,23 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // otra localidad. Caso real: el cliente pidió "Balbín 3301, CABA" y se emitió
   // a "MyM logística — Balbín 5617, San Martín" porque compartían la calle.
   // grave = número distinto en la misma calle o CP distinto (no se reusa de memoria).
+  // Coincidencia POSITIVA (misma calle y mismo número) entre el punto que
+  // eligió el cliente y una sucursal oficial — lo contrario de conflictoSucursal,
+  // que solo detecta contradicciones. Sirve para marcar "Coincide" en el buscador.
+  function coincideSucursal(o,suc){
+    const pd=o?.pickupDetails; if(!pd||!suc) return false;
+    const d=suc.direccion||{};
+    const GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","CALLE","DIAGONAL","GENERAL","GRAL","DOCTOR","DR"]);
+    const calleRaw=nrmSucTxt(ghStripUnidad(pd.address?.address));
+    const numCampo=String(pd.address?.number||"").replace(/D.*/,"").trim();
+    const num=numCampo||(calleRaw.match(/(d{1,5})s*$/)||[])[1]||"";
+    const calleSola=num?calleRaw.replace(new RegExp("\b"+num+"\s*$"),"").trim():calleRaw;
+    let sCalle=nrmSucTxt(d.calle); let sNum=String(d.numero||"").replace(/D.*/,"").trim();
+    if(!sNum){ const m=sCalle.match(/(d{1,5})s*$/); if(m){ sNum=m[1]; sCalle=sCalle.replace(/d{1,5}s*$/,"").trim(); } }
+    const calleToks=calleSola.split(" ").filter(w=>w.length>=4&&!GEN.has(w));
+    const mismaCalle=!!(calleToks.length&&sCalle&&calleToks.some(t=>sCalle.includes(t)));
+    return mismaCalle&&!!num&&num===sNum&&!conflictoSucursal(o,suc);
+  }
   function conflictoSucursal(o,suc){
     const pd=o?.pickupDetails; if(!pd||!suc) return null;
     const d=suc.direccion||{};
@@ -11344,9 +11361,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         // del mismo nombre. Match por descripción normalizada.
                         const nrmE=s=>String(s||"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
                         const itemN=nrmE(item);
-                        const matches=(sucEnrich?.lista||[]).filter(s=>{const dN=nrmE(s.descripcion);return dN===itemN||dN&&itemN.includes(dN)||dN.includes(itemN);});
+                        // Candidatas oficiales: buscador vivo + cercanas al pedido + lista por CP.
+                        // Primero por equivalencia EXACTA con el texto del Excel (tpl, la misma
+                        // regla que usa la lista de cercanas); si no, por descripción.
+                        const cands=[...new Map([...(sucEnrich?.lista||[]),...(locCerca?.lista||[]),...(oficiales||[])].map(s=>[String(s.id??s.descripcion),s])).values()];
+                        const porTpl=cands.filter(s=>(s.tpl||(locs?ghTplDeOficial(locs,s):null))===item);
+                        const matches=porTpl.length?porTpl:cands.filter(s=>{const dN=nrmE(s.descripcion);return dN===itemN||dN&&itemN.includes(dN)||dN.includes(itemN);});
                         // Dedupe por dirección real (el listado repite variantes)
-                        const dirsUnicas=[...new Map(matches.map(s=>{const d=s.direccion||{};const k=nrmE(`${d.calle||""} ${d.numero||""}`);return [k,{dir:`${d.calle||""} ${d.numero||""}`.trim(),loc:d.localidad||"",cp:d.codigoPostal||""}];})).values()].filter(x=>x.dir);
+                        const dirsUnicas=[...new Map(matches.map(s=>{const d=s.direccion||{};const k=nrmE(`${d.calle||""} ${d.numero||""}`);return [k,{dir:`${d.calle||""} ${d.numero||""}`.trim(),loc:d.localidad||"",cp:d.codigoPostal||"",ok:coincideSucursal(order,s),cf:conflictoSucursal(order,s)}];})).values()].filter(x=>x.dir);
+                        const u1=dirsUnicas.length===1?dirsUnicas[0]:null;
                         return (
                           <div key={i} onClick={()=>{resolve(item);setLocationModal(null);}}
                             style={{padding:"11px 14px",cursor:"pointer",borderBottom:i<results.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.1s",background:isSugerido?`${T.accent}18`:"transparent"}}
@@ -11355,9 +11378,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                             <div style={{display:"flex",alignItems:"center",gap:8}}>
                               <div style={{fontSize:13,fontWeight:600,color:T.text,flex:1}}>{item}</div>
                               {isSugerido&&<span style={{fontSize:10,fontWeight:700,color:T.accent,background:`${T.accent}22`,borderRadius:4,padding:"2px 6px",whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:0.5}}>Sugerido</span>}
+                              {u1?.ok&&<span style={{fontSize:10,fontWeight:700,color:T.green,background:T.greenBg,borderRadius:4,padding:"2px 6px",whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:0.5}}>Coincide</span>}
+                              {u1?.cf&&<span style={{fontSize:10,fontWeight:700,color:T.red,background:T.redBg,borderRadius:4,padding:"2px 6px",whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:0.5}}>No coincide</span>}
                             </div>
-                            {dirsUnicas.length===1&&(
-                              <div style={{fontSize:11,color:T.textSm,marginTop:3}}>{[dirsUnicas[0].dir,dirsUnicas[0].loc,dirsUnicas[0].cp?`CP ${dirsUnicas[0].cp}`:""].filter(Boolean).join(" · ")}</div>
+                            {u1&&(
+                              <div style={{fontSize:11,color:u1.ok?T.green:T.textSm,marginTop:3}}>{[u1.dir,u1.loc,u1.cp?`CP ${u1.cp}`:""].filter(Boolean).join(" · ")}</div>
+                            )}
+                            {u1?.cf&&<div style={{fontSize:11,color:T.red,marginTop:2}}>{u1.cf.msg}</div>}
+                            {!u1&&dirsUnicas.length===0&&order?.pickupDetails&&(
+                              <div style={{fontSize:11,color:T.textSm,marginTop:3,opacity:0.8}}>Sin dirección en el listado oficial — compará el nombre con la calle del punto de arriba.</div>
                             )}
                             {dirsUnicas.length>1&&(
                               <div style={{fontSize:11,color:T.yellow,marginTop:3,lineHeight:1.5}}>
