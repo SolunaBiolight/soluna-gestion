@@ -17747,6 +17747,8 @@ function AdmShopifyApps({T}){
           <button onClick={()=>setF({shop:"_central",client_id:c?.client_id||"",client_secret:"",nota:"app pública Growith"})} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",marginTop:8}}>{c?"Actualizar credenciales":"Cargar credenciales"}</button>
         </div>
       ); })()}
+      <details open={f.shop==="_central"||undefined} style={{marginTop:4}}>
+      <summary style={{cursor:"pointer",fontSize:11,color:T.textSm,marginBottom:8}}>Plan B: apps por tienda (solo si Shopify rechaza la app central en la tienda de un cliente)</summary>
       {apps===null?<AdmSkeleton T={T} filas={2}/>:apps.filter(a=>a.shop!=="_central").length===0?<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>Sin apps por tienda (solo hacen falta si Shopify no deja instalar la app central en la tienda de un cliente).</div>:apps.filter(a=>a.shop!=="_central").map((a,i)=>(
         <div key={a.shop} style={{display:"flex",gap:10,alignItems:"center",padding:"7px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:12}}>
           <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,color:T.text}}>{a.shop}</div><div style={{fontSize:10.5,color:T.textSm,fontFamily:"monospace"}}>{a.client_id.slice(0,10)}… · {a.has_secret?"secret ✓":"sin secret"}{a.nota?` · ${a.nota}`:""}</div></div>
@@ -17762,6 +17764,7 @@ function AdmShopifyApps({T}){
       </div>
       {err&&<div style={{fontSize:11,color:T.red,marginTop:6}}>{err}</div>}
       <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><AdmBtn T={T} size="sm" onClick={guardar} disabled={busy||!f.shop.trim()||!f.client_id.trim()}>Guardar app</AdmBtn></div>
+      </details>
     </div>
   );
 }
@@ -17806,7 +17809,7 @@ function AdmSistema({ctx, sectionsConfig, saveSectionsConfig}) {
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
         <Card T={T} padding="lg">
-          <AdmTitulo T={T} t="Apps de Shopify por tienda" sub="Distribución custom: creás la app en dev.shopify.com para la tienda del cliente y pegás acá sus credenciales. El cliente después conecta poniendo solo su dominio."/>
+          <AdmTitulo T={T} t="App de Shopify" sub="Credenciales de la app pública de Growith. Con esto los clientes conectan Shopify poniendo solo su dominio."/>
           <AdmShopifyApps T={T}/>
         </Card>
         <Card T={T} padding="lg">
