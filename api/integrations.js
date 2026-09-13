@@ -8,7 +8,8 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { computeRates as andreaniComputeRates } from "./shopify-rates.js";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { guardUid } from "./_auth.js";
+import { guardUid, verifyAuth } from "./_auth.js";
+import { isPlatformAdmin } from "./andreani.js";
 import { signState } from "./tn-callback.js";
 import { driveEnv, signDriveState, getValidDriveToken, DRIVE_REDIRECT_URI, DRIVE_SCOPES } from "./google-drive-callback.js";
 import { tiktokEnv, signTiktokState, tiktokAdvertisers, TIKTOK_REDIRECT_URI } from "./tiktok-ads-callback.js";
@@ -101,8 +102,19 @@ async function shopifyOauthStart(req, res, db) {
   // conexión de Shopify colgando de un uid ajeno.
   if (!(await guardUid(req, res, uid))) return;
 
-  // 1-click: si el cliente no trae SUS credenciales, usar la app pública de Growith.
-  const central = !(client_id && client_secret);
+  // 1-click: si el cliente no trae SUS credenciales, primero buscamos una app
+  // de distribución custom cargada por Growith para ESA tienda (Admin → Sistema →
+  // Apps de Shopify); si no hay, la app pública central (env).
+  let central = !(client_id && client_secret);
+  if (central) {
+    try {
+      const shopKey = normalizeShop(shopRaw);
+      const appSnap = await db.collection("shopify_apps").doc(shopKey).get();
+      if (appSnap.exists && appSnap.data().client_id && appSnap.data().client_secret) {
+        client_id = appSnap.data().client_id; client_secret = appSnap.data().client_secret; central = false;
+      }
+    } catch (_) {}
+  }
   if (central) {
     client_id = SHOPIFY_APP_ID;
     client_secret = SHOPIFY_APP_SECRET;
@@ -390,10 +402,13 @@ async function shopifyDisconnect(req, res, db) {
 // de la API, no se guardan), así que data_request/redact no tienen PII propia que
 // entregar o borrar; shop/redact sí desconecta la tienda y borra su token.
 async function shopifyCompliance(req, res, db) {
-  const secret = SHOPIFY_APP_SECRET;
   const raw = await readBody(req); // Buffer crudo — necesario para el HMAC
   const hmacHeader = req.headers["x-shopify-hmac-sha256"];
-  if (!secret || !verifyShopifyWebhookHmac(raw, hmacHeader, secret)) {
+  // El webhook puede venir de la app central o de una app por tienda (custom
+  // distribution): se prueba contra todos los secrets conocidos.
+  const secrets = [SHOPIFY_APP_SECRET].filter(Boolean);
+  try { const snap = await db.collection("shopify_apps").get(); snap.docs.forEach(d => { const sec = d.data().client_secret; if (sec) secrets.push(sec); }); } catch (_) {}
+  if (!secrets.some(sec => verifyShopifyWebhookHmac(raw, hmacHeader, sec))) {
     return res.status(401).json({ error: "HMAC inválido" });
   }
   const topic = String(req.headers["x-shopify-topic"] || "");
@@ -1172,6 +1187,35 @@ export default async function handler(req, res) {
       // Webhooks obligatorios de privacidad (customers/data_request, customers/redact,
       // shop/redact) — todos a esta URL, distinguidos por el header X-Shopify-Topic.
       if (action === "compliance" && req.method === "POST") return shopifyCompliance(req, res, db);
+      // ¿Hay app central configurada? (el modal de Config decide si pide solo el dominio)
+      if (action === "app_status" && req.method === "GET") {
+        const shop = req.query.shop ? normalizeShop(req.query.shop) : "";
+        let porTienda = false;
+        if (shop) { try { const d = await db.collection("shopify_apps").doc(shop).get(); porTienda = d.exists && !!d.data().client_id; } catch (_) {} }
+        return res.json({ central: !!(SHOPIFY_APP_ID && SHOPIFY_APP_SECRET), por_tienda: porTienda, redirect_uri: SHOPIFY_REDIRECT_URI, compliance_url: `${SHOPIFY_APP_URL}/api/integrations?platform=shopify&action=compliance`, scopes: SHOPIFY_SCOPES });
+      }
+      // Admin: apps de Shopify por tienda (distribución custom). Solo admins de plataforma.
+      if (["apps_list", "app_set", "app_delete"].includes(action)) {
+        const au = await verifyAuth(req);
+        if (!au?.uid || !(await isPlatformAdmin(db, au.uid))) return res.status(403).json({ error: "Solo admin" });
+        if (action === "apps_list" && req.method === "GET") {
+          const snap = await db.collection("shopify_apps").get();
+          return res.json({ apps: snap.docs.map(d => ({ shop: d.id, client_id: d.data().client_id || "", has_secret: !!d.data().client_secret, nota: d.data().nota || "", updatedAt: d.data().updatedAt || null })) });
+        }
+        const body = req.body || {};
+        const shop = normalizeShop(body.shop || "");
+        if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop)) return res.status(400).json({ error: "Dominio inválido (xxxx.myshopify.com)" });
+        if (action === "app_delete" && req.method === "POST") { await db.collection("shopify_apps").doc(shop).delete(); return res.json({ ok: true }); }
+        if (action === "app_set" && req.method === "POST") {
+          const client_id = String(body.client_id || "").trim(), client_secret = String(body.client_secret || "").trim();
+          if (!client_id) return res.status(400).json({ error: "Falta el Client ID" });
+          const prev = await db.collection("shopify_apps").doc(shop).get();
+          const data = { client_id, nota: String(body.nota || "").slice(0, 120), updatedAt: new Date().toISOString(), by: au.uid };
+          if (client_secret) data.client_secret = client_secret; else if (!prev.exists || !prev.data().client_secret) return res.status(400).json({ error: "Falta el Client Secret" });
+          await db.collection("shopify_apps").doc(shop).set(data, { merge: true });
+          return res.json({ ok: true, shop });
+        }
+      }
       // Tarifas Andreani en el checkout (CarrierService)
       if (action === "carrier_status" && req.method === "GET") return shopifyCarrierStatus(req, res, db);
       if (action === "carrier_enable" && req.method === "POST") return shopifyCarrierEnable(req, res, db);

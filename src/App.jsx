@@ -14060,8 +14060,13 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
   },[]);
   const iS=InputStyle(T);
 
+  // ¿Hay app central de Growith configurada? → el cliente solo pone el dominio.
+  const [shopifyCentral,setShopifyCentral]=useState(null); // null = consultando
+  useEffect(()=>{ if(!showShopifyModal) return; let ok=true; (async()=>{ try{ const r=await authFetch(`/api/integrations?platform=shopify&action=app_status&uid=${user.uid}`); const j=await r.json(); if(ok) setShopifyCentral(!!j.central); }catch(e){ if(ok) setShopifyCentral(false); } })(); return ()=>{ ok=false; }; },[showShopifyModal, user?.uid]);
+  const shopifyUnClic = shopifyCentral===true && !shopifyAdvanced;
   async function connectShopify() {
-    if(!shopifyShop.trim() || !shopifyClientId.trim() || !shopifySecret.trim()) {
+    if(!shopifyShop.trim()) { setMsg("Poné tu dominio .myshopify.com"); return; }
+    if(!shopifyUnClic && (!shopifyClientId.trim() || !shopifySecret.trim())) {
       setMsg("Completá los 3 campos: dominio, Client ID y Client Secret"); return;
     }
     setConnectingShopify(true);
@@ -14074,8 +14079,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
         body: JSON.stringify({
           uid: user.uid,
           shop: shopifyShop.trim(),
-          client_id: shopifyClientId.trim(),
-          client_secret: shopifySecret.trim(),
+          ...(shopifyUnClic ? {} : { client_id: shopifyClientId.trim(), client_secret: shopifySecret.trim() }),
         }),
       });
       const d = await r.json();
@@ -14788,11 +14792,17 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
                 <div>
                   <div style={{fontSize:16,fontWeight:700,color:T.text}}>Conectar Shopify</div>
-                  <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Mirá el video, creás tu app en Shopify (3 min) y pegás las 2 claves.</div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{shopifyUnClic?"Poné tu dominio .myshopify.com, tocá Autorizar y aceptá en Shopify. Listo.":"Mirá el video, creás tu app en Shopify (3 min) y pegás las 2 claves."}</div>
                 </div>
                 <ModalCloseBtn T={T} onClick={()=>!connectingShopify && setShowShopifyModal(false)} disabled={connectingShopify}/>
               </div>
 
+              {shopifyCentral===true&&(
+                <div style={{marginBottom:14,fontSize:11,color:T.textSm}}>
+                  <label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={shopifyAdvanced} onChange={e=>setShopifyAdvanced(e.target.checked)}/> Usar mi propia app de Shopify (avanzado)</label>
+                </div>
+              )}
+              {!shopifyUnClic&&(<>
               {/* Video tutorial — preload="none": solo se descarga al darle play */}
               <div style={{marginBottom:8,borderRadius:12,overflow:"hidden",border:`1px solid ${T.border}`,background:"#000"}}>
                 <video src="/shopify-tutorial.mp4" controls preload="none" playsInline style={{width:"100%",display:"block",maxHeight:320,background:"#000"}}>
@@ -14823,11 +14833,12 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                   <li>Ahora sí, en <strong style={{color:T.text}}>Configuración → Credenciales</strong> copiá el <strong style={{color:T.text}}>Client ID</strong> y el <strong style={{color:T.text}}>Client Secret</strong> (tocá el ojito para verlo) → pegalos en los campos 2 y 3 de acá abajo.</li>
                 </ol>
               </div>
+              </>)}
 
               {/* Los 3 campos */}
               <div style={{display:"flex",flexDirection:"column",gap:14}}>
                 <div>
-                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>1 · Tu dominio Shopify</div>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>{shopifyUnClic?"Tu dominio Shopify":"1 · Tu dominio Shopify"}</div>
                   <input value={shopifyShop} onChange={e=>setShopifyShop(e.target.value)} placeholder="ej: tu-tienda.myshopify.com" style={iS} disabled={connectingShopify}/>
                   {(()=>{ const raw=String(shopifyShop||"").trim().toLowerCase().replace(/^https?:\/\//,"").replace(/\/.*$/,""); if(!raw) return null; const base=raw.replace(/\.myshopify\.com$/,""); const ok=/^[a-z0-9][a-z0-9-]*$/.test(base); const esPropio=/\.(com|com\.ar|ar|net|shop|store|app)$/i.test(base); return (
                     <div style={{fontSize:11,marginTop:6,padding:"6px 10px",borderRadius:6,background:(ok&&!esPropio?T.green:T.red)+"14",border:`1px solid ${(ok&&!esPropio?T.green:T.red)}44`,color:T.text}}>
@@ -14840,6 +14851,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                     ¿Dónde lo encontrás? En tu admin de Shopify → <strong style={{color:T.text}}>Configuración → Dominios</strong> → el que tiene el sello <strong style={{color:T.text}}>"Predeterminado de Shopify"</strong> (ese termina en .myshopify.com).
                   </div>
                 </div>
+                {!shopifyUnClic&&(<>
                 <div>
                   <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>2 · Client ID</div>
                   <input value={shopifyClientId} onChange={e=>setShopifyClientId(e.target.value)} placeholder="8a3b6810ff78..." style={{...iS,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}} disabled={connectingShopify}/>
@@ -14849,12 +14861,13 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                   <input value={shopifySecret} onChange={e=>setShopifySecret(e.target.value)} placeholder="shpss_..." type="password" style={{...iS,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}} disabled={connectingShopify}/>
                   <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Se usa para autorizar y se guarda cifrado. Nunca se comparte.</div>
                 </div>
+                </>)}
               </div>
 
               <div style={{display:"flex",gap:10,marginTop:22}}>
                 <button onClick={()=>setShowShopifyModal(false)} disabled={connectingShopify} style={{...BtnSecondary(T),fontSize:13,padding:"10px 18px"}}>Cancelar</button>
                 <div style={{flex:1}}/>
-                <button onClick={connectShopify} disabled={connectingShopify||!shopifyShop.trim()||!shopifyClientId.trim()||!shopifySecret.trim()} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px",opacity:(!shopifyShop.trim()||!shopifyClientId.trim()||!shopifySecret.trim())?0.5:1}}>
+                <button onClick={connectShopify} disabled={connectingShopify||!shopifyShop.trim()||(!shopifyUnClic&&(!shopifyClientId.trim()||!shopifySecret.trim()))} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px",opacity:(!shopifyShop.trim()||!shopifyClientId.trim()||!shopifySecret.trim())?0.5:1}}>
                   {connectingShopify?"Abriendo...":"Autorizar en Shopify →"}
                 </button>
               </div>
@@ -17713,6 +17726,36 @@ function AdmProbe({T}){
   );
 }
 
+// ── Apps de Shopify por tienda (distribución custom) ──
+function AdmShopifyApps({T}){
+  const [apps,setApps]=useState(null); const [f,setF]=useState({shop:"",client_id:"",client_secret:"",nota:""}); const [busy,setBusy]=useState(false); const [err,setErr]=useState("");
+  const api=async(action,body)=>{ const r=await authFetch(`/api/integrations?platform=shopify&action=${action}`, body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:undefined); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`); return d; };
+  const load=async()=>{ try{ const d=await api("apps_list"); setApps(d.apps||[]); }catch(e){ setErr(e.message); setApps([]); } };
+  useEffect(()=>{ load(); },[]);
+  const guardar=async()=>{ setBusy(true); setErr(""); try{ await api("app_set",f); toast("App guardada ✓","success"); setF({shop:"",client_id:"",client_secret:"",nota:""}); await load(); }catch(e){ setErr(e.message); } setBusy(false); };
+  const borrar=async(shop)=>{ if(!(await appConfirm(`¿Borrar la app de ${shop}? La tienda va a tener que reconectar.`,{danger:true,okLabel:"Borrar"}))) return; try{ await api("app_delete",{shop}); await load(); }catch(e){ toast(e.message,"error"); } };
+  const iS={...InputStyle(T),fontSize:12,padding:"7px 10px"};
+  return (
+    <div>
+      {apps===null?<AdmSkeleton T={T} filas={2}/>:apps.length===0?<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>Todavía no hay apps por tienda. Si está la app central (env SHOPIFY_APP_ID), no hace falta cargar nada acá.</div>:apps.map((a,i)=>(
+        <div key={a.shop} style={{display:"flex",gap:10,alignItems:"center",padding:"7px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:12}}>
+          <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,color:T.text}}>{a.shop}</div><div style={{fontSize:10.5,color:T.textSm,fontFamily:"monospace"}}>{a.client_id.slice(0,10)}… · {a.has_secret?"secret ✓":"sin secret"}{a.nota?` · ${a.nota}`:""}</div></div>
+          <button onClick={()=>setF({shop:a.shop,client_id:a.client_id,client_secret:"",nota:a.nota||""})} style={{...BtnSecondary(T),fontSize:11,padding:"4px 9px"}}>Editar</button>
+          <button onClick={()=>borrar(a.shop)} style={{fontSize:11,padding:"4px 9px",borderRadius:7,border:`1px solid ${T.red}44`,background:"transparent",color:T.red,cursor:"pointer"}}>Borrar</button>
+        </div>
+      ))}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:12}}>
+        <input value={f.shop} onChange={e=>setF(p=>({...p,shop:e.target.value}))} placeholder="tienda.myshopify.com" style={iS}/>
+        <input value={f.nota} onChange={e=>setF(p=>({...p,nota:e.target.value}))} placeholder="Nota (cliente, fecha…)" style={iS}/>
+        <input value={f.client_id} onChange={e=>setF(p=>({...p,client_id:e.target.value}))} placeholder="Client ID" style={{...iS,fontFamily:"monospace"}}/>
+        <input value={f.client_secret} onChange={e=>setF(p=>({...p,client_secret:e.target.value}))} placeholder={f.shop&&apps?.some(a=>a.shop===f.shop)?"Client Secret (vacío = mantener)":"Client Secret"} type="password" style={{...iS,fontFamily:"monospace"}}/>
+      </div>
+      {err&&<div style={{fontSize:11,color:T.red,marginTop:6}}>{err}</div>}
+      <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}><AdmBtn T={T} size="sm" onClick={guardar} disabled={busy||!f.shop.trim()||!f.client_id.trim()}>Guardar app</AdmBtn></div>
+    </div>
+  );
+}
+
 // ── Sistema ──────────────────────────────────────────────────────────────────
 function AdmSistema({ctx, sectionsConfig, saveSectionsConfig}) {
   const {T, adminApi, usuariosPorUid, user, setCuenta} = ctx;
@@ -17752,6 +17795,10 @@ function AdmSistema({ctx, sectionsConfig, saveSectionsConfig}) {
         </Card>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+        <Card T={T} padding="lg">
+          <AdmTitulo T={T} t="Apps de Shopify por tienda" sub="Distribución custom: creás la app en dev.shopify.com para la tienda del cliente y pegás acá sus credenciales. El cliente después conecta poniendo solo su dominio."/>
+          <AdmShopifyApps T={T}/>
+        </Card>
         <Card T={T} padding="lg">
           <AdmTitulo T={T} t="Servicios" sub="Qué integración tiene sus credenciales cargadas. Nunca se muestran valores."/>
           {sys.loading?<AdmSkeleton T={T} filas={6}/>:(sys.servicios||[]).map((s,i)=><div key={s.id} style={{display:"flex",gap:8,alignItems:"center",padding:"7px 0",borderBottom:i<(sys.servicios||[]).length-1?`1px solid ${T.borderL}`:"none",fontSize:12}}><span style={{width:7,height:7,borderRadius:"50%",background:s.ok?T.green:T.red,flexShrink:0}}/><span style={{flex:1,color:T.text,fontWeight:600}}>{s.label}</span><span style={{color:T.textSm,fontSize:11,textAlign:"right"}}>{s.detalle||(s.ok?"Configurado":"Falta")}</span></div>)}
