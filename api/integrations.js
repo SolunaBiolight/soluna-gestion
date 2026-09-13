@@ -56,13 +56,13 @@ const SHOPIFY_REDIRECT_URI = `${SHOPIFY_APP_URL}/api/integrations?platform=shopi
 // App central de Growith: env SHOPIFY_APP_ID/SECRET o, si no están cargadas en
 // Vercel, el doc shopify_apps/_central (se carga desde Admin → Sistema).
 async function shopifyCentralApp(db) {
-  // Lo cargado desde Admin (Firestore) manda sobre las env: es lo que el equipo
-  // eligió a mano. Las env quedan como respaldo.
+  // La app pública (env de Vercel, la que está en revisión para el App Store) manda.
+  // Firestore (Admin → Sistema) solo es respaldo si las env no están.
+  if (SHOPIFY_APP_ID && SHOPIFY_APP_SECRET) return { client_id: SHOPIFY_APP_ID, client_secret: SHOPIFY_APP_SECRET, from: "env" };
   try {
     const d = await db.collection("shopify_apps").doc("_central").get();
     if (d.exists && d.data().client_id && d.data().client_secret) return { client_id: d.data().client_id, client_secret: d.data().client_secret, from: "firestore" };
   } catch (_) {}
-  if (SHOPIFY_APP_ID && SHOPIFY_APP_SECRET) return { client_id: SHOPIFY_APP_ID, client_secret: SHOPIFY_APP_SECRET, from: "env" };
   return null;
 }
 
