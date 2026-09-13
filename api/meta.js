@@ -2999,6 +2999,27 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
 
     // ── CREATIVOS ─────────────────────────────────────────
 
+    // URLs de destino de los ads ACTIVOS de la cuenta (para el selector "URL destino" del publicador).
+    if (action === "ad_links" && req.method === "GET") {
+      if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
+      const cfg = await loadMetaAccount(db, uid, acc_id);
+      if (!cfg?.access_token || !cfg?.ad_account_id) return res.json({ links: [] });
+      const links = new Map();
+      const grab = (obj) => { const out = []; const walk = (o, d) => { if (!o || d > 7) return; if (typeof o === "string") { if (/^https?:\/\//i.test(o) && !/facebook\.com|fbcdn\.net|instagram\.com|fb\.me/i.test(o)) out.push(o); return; } if (Array.isArray(o)) { o.forEach(x => walk(x, d + 1)); return; } if (typeof o === "object") { for (const k of Object.keys(o)) { if (/link|url|website/i.test(k) || typeof o[k] === "object") walk(o[k], d + 1); } } }; walk(obj, 0); return out; };
+      try {
+        let page = await metaGet(`${cfg.ad_account_id}/ads`, { limit: 200, effective_status: JSON.stringify(["ACTIVE"]), fields: "id,name,creative{link_url,object_story_spec,asset_feed_spec}" }, cfg.access_token);
+        let n = 0;
+        while (page && n < 5) {
+          for (const ad of (page.data || [])) {
+            for (const u of grab(ad.creative || {})) { const key = u.split("?")[0].replace(/\/$/, ""); if (!links.has(key)) links.set(key, { url: u, count: 0, ad: ad.name || "" }); links.get(key).count++; }
+          }
+          if (!page.paging?.next) break;
+          const r = await fetch(page.paging.next); page = await r.json(); n++;
+        }
+      } catch (e) { return res.json({ links: [...links.values()], error: e.message }); }
+      return res.json({ links: [...links.values()].sort((a, b) => b.count - a.count).slice(0, 40) });
+    }
+
     if (action === "creatives" && req.method === "GET") {
       if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
       const items = await listCreatives(db, uid, acc_id);

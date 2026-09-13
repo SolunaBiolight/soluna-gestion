@@ -2441,7 +2441,7 @@ function GhDatePicker({ T, value, onChange, time=false, timeValue="", onTimeChan
     :[{l:"Hoy",v:hoy},{l:"Ayer",v:addDays(-1)},{l:"Hace 1 semana",v:addDays(-7)},{l:"Hace 1 mes",v:addMonths(-1)}]);
   const monthOf=v=>{ const d=v?new Date(v+"T00:00:00"):new Date(); const dd=isNaN(d)?new Date():d; return new Date(dd.getFullYear(),dd.getMonth(),1); };
   const [viewMonth,setViewMonth]=React.useState(()=>monthOf(value));
-  const DD_H=time?400:340;
+  const DD_H=time?500:340;
   const toggle=()=>setOpen(o=>{
     const n=!o;
     if(n&&wrapRef.current){
@@ -2505,15 +2505,53 @@ function GhDatePicker({ T, value, onChange, time=false, timeValue="", onTimeChan
               );
             })}
           </div>
-          {time&&(
-            <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:11,color:T.textSm,fontWeight:600,flex:1}}>Hora (opcional)</span>
-              <input type="time" value={timeValue||""} onChange={e=>onTimeChange&&onTimeChange(e.target.value)} style={{background:T.input||T.bg,border:`1px solid ${T.inputBorder||T.border}`,color:T.text,borderRadius:7,padding:"5px 8px",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}/>
-              <button type="button" onClick={()=>setOpen(false)} style={{padding:"6px 12px",fontSize:11,fontWeight:700,border:"none",borderRadius:7,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Listo</button>
-            </div>
-          )}
+          {time&&(()=>{
+            const [hh,mm]=(timeValue||"").split(":");
+            const H=hh!==undefined&&hh!==""?parseInt(hh,10):null; const M=mm!==undefined&&mm!==""?parseInt(mm,10):null;
+            const setT=(h,m)=>onTimeChange&&onTimeChange(`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
+            const cell=sel=>({padding:"5px 0",fontSize:11,borderRadius:6,border:"1px solid transparent",background:sel?T.accent:"transparent",color:sel?"#fff":T.text,cursor:"pointer",fontWeight:sel?700:500,fontFamily:"'Inter',system-ui,sans-serif"});
+            return (
+              <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderL}`}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <span style={{fontSize:11,color:T.textSm,fontWeight:600,flex:1}}>Hora (opcional)</span>
+                  <span style={{fontSize:12,fontWeight:700,color:timeValue?T.accent:T.textSm}}>{timeValue?`${timeValue} hs`:"sin hora"}</span>
+                  {timeValue&&<button type="button" onClick={()=>onTimeChange&&onTimeChange("")} style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:11,padding:0}}>quitar</button>}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(8,1fr)",gap:2,marginBottom:6}}>
+                  {Array.from({length:24},(_,h)=><button key={h} type="button" onClick={()=>setT(h,M??0)} style={cell(H===h)}>{String(h).padStart(2,"0")}</button>)}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:2}}>
+                  {[0,5,10,15,20,25,30,35,40,45,50,55].map(m=><button key={m} type="button" onClick={()=>setT(H??9,m)} style={cell(H!==null&&M===m)}>:{String(m).padStart(2,"0")}</button>)}
+                </div>
+                <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}>
+                  <button type="button" onClick={()=>setOpen(false)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,border:"none",borderRadius:7,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Listo</button>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </>,document.body)}
+    </div>
+  );
+}
+
+// ── URL destino: elegís entre las que ya usaste / tienen ads activos, o "una URL nueva".
+function GhUrlPicker({T, value, onChange, urls=[], style, placeholder="https://..."}) {
+  const list=[...new Set((urls||[]).map(u=>typeof u==="string"?u:u?.url).filter(Boolean))];
+  const isKnown=!!value&&list.includes(value);
+  const [nueva,setNueva]=React.useState(false);
+  React.useEffect(()=>{ if(isKnown) setNueva(false); },[isKnown]);
+  const showInput=nueva||!list.length||(!!value&&!isKnown);
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:6,...(style||{})}}>
+      {list.length>0&&(
+        <select value={showInput?"__new__":(value||"")} onChange={e=>{ const v=e.target.value; if(v==="__new__"){ setNueva(true); onChange(""); } else { setNueva(false); onChange(v); } }} style={InputStyle(T)}>
+          <option value="">Elegí una URL que ya usaste…</option>
+          {list.map(u=><option key={u} value={u}>{u.length>95?u.slice(0,95)+"…":u}</option>)}
+          <option value="__new__">＋ Enviar a una URL nueva…</option>
+        </select>
+      )}
+      {showInput&&<input value={value||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={InputStyle(T)} autoFocus={nueva}/>}
     </div>
   );
 }
@@ -28327,6 +28365,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // ── Meta Ads Studio (rediseño Publicar tab) ───────────
   const [studioMode,setStudioMode]=useState("shared"); // "shared" | "perAd"
   const [sharedDest,setSharedDest]=useState({campaign_id:"",adset_id:"",link:"",cta:"LEARN_MORE"});
+  // URLs de destino conocidas: las que usaste desde Growith (localStorage) + las de ads activos de la cuenta.
+  const [knownUrls,setKnownUrls]=useState([]);
+  const rememberUrl=(u)=>{ u=(u||"").trim(); if(!/^https?:\/\//i.test(u)||!activeAccId) return; try{ const k=`growith_meta_urls_${activeAccId}`; const arr=JSON.parse(localStorage.getItem(k)||"[]"); const n=[u,...arr.filter(x=>x!==u)].slice(0,30); localStorage.setItem(k,JSON.stringify(n)); setKnownUrls(prev=>[u,...prev.filter(x=>x!==u)]); }catch(e){} };
   const [publishActiveByDefault,setPublishActiveByDefault]=useState(false);
   const [bulkPublishing,setBulkPublishing]=useState(false);
   // Auto-publish "al toque": cuando un upload termina (image directo, video
@@ -28443,6 +28484,23 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     }catch(e){ setStudioDriveBusy(false); toast("Drive: "+e.message,"error"); }
   }
   const activeAcc=accounts.find(a=>a.id===activeAccId)||null;
+  useEffect(()=>{
+    if(!activeAccId){ setKnownUrls([]); return; }
+    let alive=true; let local=[];
+    try{ local=JSON.parse(localStorage.getItem(`growith_meta_urls_${activeAccId}`)||"[]"); }catch(e){}
+    setKnownUrls(local);
+    (async()=>{ try{ const d=await metaApi("ad_links","GET",null,{acc_id:activeAccId}); if(!alive||!Array.isArray(d?.links)) return; setKnownUrls(prev=>[...new Set([...prev,...d.links.map(l=>l.url)])]); }catch(e){} })();
+    return ()=>{ alive=false; };
+    /* eslint-disable-next-line */
+  },[activeAccId]);
+  // Presupuesto diario sugerido: 30 USD o 30.000 ARS según la moneda de la cuenta.
+  const defBudget=(activeAcc?.currency||"ARS")==="USD"?"30":"30000";
+  useEffect(()=>{
+    const olds=["5000","3000","30","30000"];
+    setNewCampMulti(p=>({...p,daily_budget:olds.includes(String(p.daily_budget))?defBudget:p.daily_budget,adsets:p.adsets.map(a=>olds.includes(String(a.daily_budget))?{...a,daily_budget:defBudget}:a)}));
+    setNewAdsetForm(p=>olds.includes(String(p.daily_budget))?{...p,daily_budget:defBudget}:p);
+    /* eslint-disable-next-line */
+  },[defBudget]);
   // Símbolo de la moneda REAL de la cuenta publicitaria (US$ si es cuenta en dólares)
   const cur=currencySymbol(activeAcc?.currency||"ARS");
   const tokenDead = activeAcc && (activeAcc.token_invalid || !activeAcc.has_token);
@@ -29428,6 +29486,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     if (studioMode === "shared") {
       if (!sharedDest.adset_id) return toast("Elegí o creá un AdSet","warning");
       if (!sharedDest.link?.trim()) return toast("Falta URL destino","warning");
+      rememberUrl(sharedDest.link);
     }
     const withCopy = creatives.filter(c => c.copy?.trim() && (studioMode === "perAd" ? c.adset_id : true));
     if (withCopy.length === 0) return toast("No hay creativos con copy listos para publicar","warning");
@@ -30796,7 +30855,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     {/* URL destino */}
                     <div style={{display:"grid",gridTemplateColumns:"110px 1fr",gap:10,alignItems:"center",marginBottom:10}}>
                       <span style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.5,textTransform:"uppercase"}}>URL destino</span>
-                      <input value={sharedDest.link} onChange={e=>setSharedDest(p=>({...p,link:e.target.value}))} placeholder="https://..." style={iS}/>
+                      <GhUrlPicker T={T} value={sharedDest.link} onChange={v=>setSharedDest(p=>({...p,link:v}))} urls={knownUrls}/>
                     </div>
                     {/* CTA */}
                     <div style={{display:"grid",gridTemplateColumns:"110px 1fr",gap:10,alignItems:"center"}}>
@@ -31080,7 +31139,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",margin:"14px 0 10px"}}>
                       <strong style={{fontSize:13,color:T.text}}>AdSets</strong>
-                      <button onClick={()=>setNewCampMulti(p=>({...p,adsets:[...p.adsets,{name:`AdSet ${p.adsets.length+1} · ${new Date().toLocaleDateString("es-AR")}`,daily_budget:"3000",start_time:""}]}))} style={BtnSec}>+ Agregar AdSet</button>
+                      <button onClick={()=>setNewCampMulti(p=>({...p,adsets:[...p.adsets,{name:`AdSet ${p.adsets.length+1} · ${new Date().toLocaleDateString("es-AR")}`,daily_budget:defBudget,start_time:""}]}))} style={BtnSec}>+ Agregar AdSet</button>
                     </div>
 
                     {newCampMulti.adsets.map((a,idx)=>(
@@ -31098,7 +31157,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           </>
                         )}
                         <label style={Label}>Inicio (opcional, vacío = ahora)</label>
-                        <input type="datetime-local" value={a.start_time} onChange={e=>setNewCampMulti(p=>({...p,adsets:p.adsets.map((x,i)=>i===idx?{...x,start_time:e.target.value}:x)}))} style={iS}/>
+                        <GhDatePicker T={T} value={(a.start_time||"").slice(0,10)} time timeValue={(a.start_time||"").slice(11,16)} allowPast={false} placeholder="Ahora (al publicar)"
+                          onChange={d=>setNewCampMulti(p=>({...p,adsets:p.adsets.map((x,i)=>i===idx?{...x,start_time:d?`${d}T${(x.start_time||"").slice(11,16)||"09:00"}`:""}:x)}))}
+                          onTimeChange={t=>setNewCampMulti(p=>({...p,adsets:p.adsets.map((x,i)=>i===idx?{...x,start_time:`${(x.start_time||"").slice(0,10)||hoyAR()}T${t||"09:00"}`}:x)}))}
+                          style={{...iS,width:"100%"}}/>
                         <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Hora local — Meta lo programa para arrancar a esta fecha.</div>
                       </div>
                     ))}
@@ -31140,7 +31202,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <label style={Label}>Presupuesto diario ({curCode}) — ignorado si la campaña es CBO</label>
                     <input type="number" value={newAdsetForm.daily_budget} onChange={e=>setNewAdsetForm(p=>({...p,daily_budget:e.target.value}))} style={{...iS,marginBottom:10}}/>
                     <label style={Label}>Inicio (opcional)</label>
-                    <input type="datetime-local" value={newAdsetForm.start_time} onChange={e=>setNewAdsetForm(p=>({...p,start_time:e.target.value}))} style={iS}/>
+                    <GhDatePicker T={T} value={(newAdsetForm.start_time||"").slice(0,10)} time timeValue={(newAdsetForm.start_time||"").slice(11,16)} allowPast={false} placeholder="Ahora (al crear)"
+                      onChange={d=>setNewAdsetForm(p=>({...p,start_time:d?`${d}T${(p.start_time||"").slice(11,16)||"09:00"}`:""}))}
+                      onTimeChange={t=>setNewAdsetForm(p=>({...p,start_time:`${(p.start_time||"").slice(0,10)||hoyAR()}T${t||"09:00"}`}))}
+                      style={{...iS,width:"100%"}}/>
                     <label style={{display:"flex",alignItems:"center",gap:9,marginTop:12,padding:"11px 13px",borderRadius:10,border:`1px solid ${newAdsetForm.active?T.green+"66":T.border}`,background:newAdsetForm.active?T.green+"12":"transparent",cursor:"pointer"}}>
                       <input type="checkbox" checked={newAdsetForm.active} onChange={e=>setNewAdsetForm(p=>({...p,active:e.target.checked}))} style={{width:16,height:16,accentColor:T.green,cursor:"pointer"}}/>
                       <div>
