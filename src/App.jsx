@@ -2329,6 +2329,121 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset, labelTe
   );
 }
 
+// ── Selector de FECHA única (misma estética que DateRangePicker: atajos +
+//    calendario). Reemplaza a todos los inputs nativos de fecha de la app. Con
+//    `time` agrega un box de hora debajo del calendario. Valor: "YYYY-MM-DD".
+function GhDatePicker({ T, value, onChange, time=false, timeValue="", onTimeChange, allowFuture=true, allowPast=true, min, max, placeholder="Elegir fecha", presets, style, title }) {
+  const [open,setOpen]=React.useState(false);
+  const [pos,setPos]=React.useState({top:0,left:0});
+  const wrapRef=React.useRef(null); const ddRef=React.useRef(null);
+  const fmtAR=d=>new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(d);
+  const hoy=fmtAR(new Date());
+  const addDays=n=>fmtAR(new Date(Date.now()+n*86400000));
+  const addMonths=n=>{ const d=new Date(hoy+"T12:00:00"); d.setMonth(d.getMonth()+n); return fmtAR(d); };
+  const PRESETS=presets||(allowFuture
+    ?[{l:"Hoy",v:hoy},{l:"Mañana",v:addDays(1)},{l:"En 3 días",v:addDays(3)},{l:"En 1 semana",v:addDays(7)},{l:"En 15 días",v:addDays(15)},{l:"En 1 mes",v:addMonths(1)}]
+    :[{l:"Hoy",v:hoy},{l:"Ayer",v:addDays(-1)},{l:"Hace 1 semana",v:addDays(-7)},{l:"Hace 1 mes",v:addMonths(-1)}]);
+  const monthOf=v=>{ const d=v?new Date(v+"T00:00:00"):new Date(); const dd=isNaN(d)?new Date():d; return new Date(dd.getFullYear(),dd.getMonth(),1); };
+  const [viewMonth,setViewMonth]=React.useState(()=>monthOf(value));
+  const DD_H=time?400:340;
+  const toggle=()=>setOpen(o=>{
+    const n=!o;
+    if(n&&wrapRef.current){
+      const r=wrapRef.current.getBoundingClientRect();
+      const w=Math.min(300,window.innerWidth-20);
+      const left=Math.max(10,Math.min(r.left,window.innerWidth-w-10));
+      const below=r.bottom+6;
+      const top=(below+DD_H>window.innerHeight&&r.top>DD_H+10)?r.top-6-DD_H:Math.min(below,Math.max(10,window.innerHeight-DD_H-10));
+      setPos({top,left}); setViewMonth(monthOf(value));
+    }
+    return n;
+  });
+  React.useEffect(()=>{ if(!open) return; const onDoc=e=>{ if(wrapRef.current&&!wrapRef.current.contains(e.target)&&!(ddRef.current&&ddRef.current.contains(e.target))) setOpen(false); }; document.addEventListener("mousedown",onDoc); return ()=>document.removeEventListener("mousedown",onDoc); },[open]);
+  const year=viewMonth.getFullYear(), month=viewMonth.getMonth();
+  const firstDow=(new Date(year,month,1).getDay()+6)%7; const dim=new Date(year,month+1,0).getDate();
+  const cells=[]; for(let i=0;i<firstDow;i++) cells.push(null); for(let d=1;d<=dim;d++) cells.push(`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`); while(cells.length%7) cells.push(null);
+  const isDis=str=>(!allowFuture&&str>hoy)||(!allowPast&&str<hoy)||(!!min&&str<min)||(!!max&&str>max);
+  const pick=str=>{ if(isDis(str)) return; onChange(str); if(!time) setOpen(false); };
+  const fmtLbl=v=>{ try{ return new Date(v+"T00:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short",year:"numeric"}); }catch(e){ return v; } };
+  const label=value?fmtLbl(value)+(time&&timeValue?` · ${timeValue} hs`:""):placeholder;
+  const monthName=viewMonth.toLocaleDateString("es-AR",{month:"long",year:"numeric"});
+  const esMobile=typeof window!=="undefined"&&window.innerWidth<640;
+  const st=style||{};
+  const wrapS={position:"relative",display:st.width==="100%"||st.flex?"flex":"inline-flex",fontFamily:"'Inter',system-ui,sans-serif",maxWidth:"100%",verticalAlign:"middle"};
+  ["width","minWidth","maxWidth","flex","flexShrink","marginBottom","marginTop","marginLeft","marginRight"].forEach(k=>{ if(st[k]!==undefined) wrapS[k]=st[k]; });
+  const btnS={display:"inline-flex",alignItems:"center",gap:7,width:"100%",background:T.input||T.card,border:`1px solid ${st.borderColor||T.inputBorder||T.border}`,color:value?T.text:T.textSm,borderRadius:8,padding:st.padding||"7px 11px",fontSize:st.fontSize||12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap",boxSizing:"border-box",textAlign:"left",minHeight:32};
+  const navB={background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"3px 9px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"};
+  return (
+    <div ref={wrapRef} style={wrapS}>
+      <button type="button" onClick={toggle} title={title||(value?fmtLbl(value):placeholder)} style={btnS}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis"}}>{label}</span>
+        {value
+          ? <span role="button" title="Borrar fecha" onClick={e=>{e.stopPropagation();onChange("");if(onTimeChange)onTimeChange("");}} style={{color:T.textSm,fontSize:12,lineHeight:1,padding:"0 2px"}}>✕</span>
+          : <span style={{color:T.textSm,fontSize:10}}>▾</span>}
+      </button>
+      {open&&ReactDOM.createPortal(<>
+        {esMobile&&<div onClick={()=>setOpen(false)} className="gh-modal-backdrop" style={{position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,0.45)"}}/>}
+        <div ref={ddRef} className="gh-dropdown" style={esMobile
+          ?{position:"fixed",left:10,right:10,bottom:10,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:14,boxShadow:"0 -10px 44px rgba(0,0,0,0.55)",boxSizing:"border-box"}
+          :{position:"fixed",top:pos.top,left:pos.left,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:12,boxShadow:"0 14px 40px rgba(0,0,0,0.45)",width:300,boxSizing:"border-box"}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5,marginBottom:10}}>
+            {PRESETS.filter(pz=>!isDis(pz.v)).map(pz=>(
+              <button key={pz.l} type="button" onClick={()=>{onChange(pz.v); if(!time) setOpen(false); else setViewMonth(monthOf(pz.v));}} style={{padding:"6px 6px",fontSize:11,fontWeight:value===pz.v?700:500,border:`1px solid ${value===pz.v?T.accent:T.border}`,borderRadius:8,background:value===pz.v?T.accent+"18":T.surface,color:value===pz.v?T.accent:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{pz.l}</button>
+            ))}
+          </div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+            <button type="button" onClick={()=>setViewMonth(new Date(year,month-1,1))} style={navB}>‹</button>
+            <span style={{fontSize:13,fontWeight:700,color:T.text,textTransform:"capitalize"}}>{monthName}</span>
+            <button type="button" onClick={()=>setViewMonth(new Date(year,month+1,1))} style={navB}>›</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:2}}>
+            {["Lu","Ma","Mi","Ju","Vi","Sa","Do"].map(d=><div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:T.textSm,padding:3}}>{d}</div>)}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+            {cells.map((str,i)=>{
+              if(!str) return <div key={"e"+i}/>;
+              const dis=isDis(str), sel=str===value, isToday=str===hoy;
+              return (
+                <button key={str} type="button" disabled={dis} onClick={()=>pick(str)} style={{padding:esMobile?"9px 0":"6px 0",fontSize:12,borderRadius:6,border:isToday?`1px solid ${T.accent}55`:"1px solid transparent",background:sel?T.accent:"transparent",color:sel?"#fff":dis?T.textSm+"77":T.text,cursor:dis?"default":"pointer",fontWeight:sel?700:500,fontFamily:"'Inter',system-ui,sans-serif",opacity:dis?0.35:1}}>{parseInt(str.slice(8),10)}</button>
+              );
+            })}
+          </div>
+          {time&&(
+            <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:11,color:T.textSm,fontWeight:600,flex:1}}>Hora (opcional)</span>
+              <input type="time" value={timeValue||""} onChange={e=>onTimeChange&&onTimeChange(e.target.value)} style={{background:T.input||T.bg,border:`1px solid ${T.inputBorder||T.border}`,color:T.text,borderRadius:7,padding:"5px 8px",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+              <button type="button" onClick={()=>setOpen(false)} style={{padding:"6px 12px",fontSize:11,fontWeight:700,border:"none",borderRadius:7,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Listo</button>
+            </div>
+          )}
+        </div>
+      </>,document.body)}
+    </div>
+  );
+}
+
+// ── Auto-scroll mientras se arrastra (kanban): si el mouse se acerca al borde
+//    superior/inferior, la página (o el contenedor scrolleable) se desplaza sola.
+const ghDragAS={on:false,y:-1,raf:0,el:null,move:null};
+function ghDragScrollStart(fromEl){
+  if(ghDragAS.on) return;
+  let el=fromEl; let scroller=null;
+  while(el&&el!==document.body){ const cs=getComputedStyle(el); if(/(auto|scroll)/.test(cs.overflowY)&&el.scrollHeight>el.clientHeight+4){ scroller=el; break; } el=el.parentElement; }
+  ghDragAS.el=scroller; ghDragAS.on=true; ghDragAS.y=-1;
+  ghDragAS.move=e=>{ ghDragAS.y=e.clientY; };
+  document.addEventListener("dragover",ghDragAS.move);
+  const step=()=>{
+    if(!ghDragAS.on) return;
+    const y=ghDragAS.y, h=window.innerHeight, M=110;
+    let dy=0;
+    if(y>=0&&y<M) dy=-Math.ceil((M-y)/5); else if(y>h-M) dy=Math.ceil((y-(h-M))/5);
+    if(dy){ if(ghDragAS.el) ghDragAS.el.scrollTop+=dy; else window.scrollBy(0,dy); }
+    ghDragAS.raf=requestAnimationFrame(step);
+  };
+  ghDragAS.raf=requestAnimationFrame(step);
+}
+function ghDragScrollStop(){ ghDragAS.on=false; cancelAnimationFrame(ghDragAS.raf); if(ghDragAS.move) document.removeEventListener("dragover",ghDragAS.move); ghDragAS.move=null; ghDragAS.el=null; }
+
 // --- Helpers ---
 function fmtMoney(v) { const n=parseFloat(v); if(isNaN(n)) return '--'; return '$'+n.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0}); }
 function fmtDate(d) { if(!d) return '--'; const p=d.split(' ')[0].split('/'); if(p.length===3) return `${p[0]}/${p[1]}/${p[2]}`; return d; }
@@ -3111,7 +3226,7 @@ function TopbarMoreMenu({T, items}) {
 function AppTopbar({T, section, sectionId, onHelp, onHome, children, top=48}) {
   const iconPath = sectionId ? SECTION_ICONS[sectionId] : null;
   return (
-    <div style={{borderBottom:`1px solid ${T.border}`,background:T.card+"e0",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",padding:"0 24px",position:"sticky",top,zIndex:30}}>
+    <div style={{borderBottom:`1px solid ${T.border}`,background:T.card+"e0",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",padding:"0 24px 0 16px",position:"sticky",top,zIndex:30}}>
       {/* En celu (.gh-topbar-row) la fila se parte en dos: título arriba y los
           controles en una segunda línea completa, sin "⋯" ni scroll cortado. */}
       <div className="gh-topbar-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:64,gap:16,maxWidth:"100%",margin:"0 auto"}}>
@@ -4137,8 +4252,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 })}
               </div>
             ) : (
-            /* KANBAN desktop */
-            <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:16}}>
+            /* KANBAN desktop: una fila por estado, las tarjetas se acumulan hacia la derecha */
+            <div style={{display:"flex",flexDirection:"column",gap:12,paddingBottom:16}}>
                 {ESTADOS_R.map(estado=>{
                   const sc=getEstadoRC(T,estado);
                   const sq=search.toLowerCase();
@@ -4157,14 +4272,13 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                         await updateDoc(doc(db,"reclamos",docId),{estado,historial:[...(r.historial||[]),entry],updatedAt:serverTimestamp(),...(estado==="Resuelto"&&r.estado!=="Resuelto"?{resolvedAt:serverTimestamp()}:{})});
                         toast(`Movido a ${estado}`,"success");
                       }}
-                      style={{flex:"0 0 220px",minWidth:220,background:T.card,border:`1.5px solid ${isDragOver?sc.dot:sc.dot+"33"}`,borderRadius:DS.r.xl,overflow:"hidden",transition:"border-color 0.15s",boxShadow:isDragOver?`0 0 0 2px ${sc.dot}44`:"none"}}>
+                      style={{width:"100%",boxSizing:"border-box",background:T.card,border:`1.5px solid ${isDragOver?sc.dot:sc.dot+"33"}`,borderRadius:DS.r.xl,overflow:"hidden",transition:"border-color 0.15s",boxShadow:isDragOver?`0 0 0 2px ${sc.dot}44`:"none"}}>
                       <div style={{padding:"10px 14px",background:isDragOver?sc.dot+"30":sc.dot+"18",borderBottom:`1px solid ${sc.dot}22`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                         <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{width:8,height:8,borderRadius:"50%",background:sc.dot}}/><span style={{fontSize:12,fontWeight:700,color:sc.text}}>{estado}</span></div>
                         <span style={{fontSize:11,fontWeight:800,color:sc.dot,background:sc.dot+"22",borderRadius:DS.r.full,padding:"1px 8px"}}>{items.length}</span>
                       </div>
-                      <div style={{padding:8,display:"flex",flexDirection:"column",gap:6,maxHeight:440,overflowY:"auto"}}>
-                        {items.length===0&&<div style={{textAlign:"center",padding:"20px 8px",fontSize:12,color:T.textSm,opacity:0.5}}>Soltá aquí</div>}
-                        {items.length>4&&<div style={{textAlign:"center",fontSize:10,color:T.textSm,padding:"2px 0 4px",letterSpacing:0.3}}>↕ {items.length} items · scrolleá para ver todos</div>}
+                      <div style={{padding:10,display:"flex",flexWrap:"wrap",gap:8,minHeight:58,alignItems:"stretch"}}>
+                        {items.length===0&&<div style={{flex:1,textAlign:"center",padding:"14px 8px",fontSize:12,color:T.textSm,opacity:0.5}}>Soltá aquí</div>}
                         {items.map(r=>{
                           const o=orders.find(o=>o.numero===r.orderNum);
                           const nombre=r.clienteNombre||o?.comprador;
@@ -4177,9 +4291,10 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                           return(
                             <div key={r._docId}
                               draggable
-                              onDragStart={e=>{e.dataTransfer.setData("reclamoId",r._docId);e.dataTransfer.effectAllowed="move";}}
+                              onDragStart={e=>{e.dataTransfer.setData("reclamoId",r._docId);e.dataTransfer.effectAllowed="move";ghDragScrollStart(e.currentTarget);}}
+                              onDragEnd={()=>ghDragScrollStop()}
                               onClick={(e)=>{if(e.shiftKey||e.metaKey||e.ctrlKey){const ns=new Set(bulkSelected);ns.has(r._docId)?ns.delete(r._docId):ns.add(r._docId);setBulkSelected(ns);}else{setActiveReclamo(isActive?null:r._docId);}}}
-                              style={{background:isBulk?T.accentSolid+"28":isActive?T.accentSolid+"18":T.card,border:`1.5px solid ${isBulk?T.accentSolid:isActive?T.accentSolid:urgente?T.red:T.border}`,borderRadius:DS.r.xl,padding:"14px 16px 12px",cursor:"grab",transition:"box-shadow 0.15s, background 0.12s",userSelect:"none",display:"flex",flexDirection:"column",fontFamily:"'Inter',system-ui,sans-serif"}}
+                              style={{width:236,flex:"0 0 236px",boxSizing:"border-box",background:isBulk?T.accentSolid+"28":isActive?T.accentSolid+"18":T.card,border:`1.5px solid ${isBulk?T.accentSolid:isActive?T.accentSolid:urgente?T.red:T.border}`,borderRadius:DS.r.xl,padding:"14px 16px 12px",cursor:"grab",transition:"box-shadow 0.15s, background 0.12s",userSelect:"none",display:"flex",flexDirection:"column",fontFamily:"'Inter',system-ui,sans-serif"}}
                               onMouseEnter={e=>{e.currentTarget.style.boxShadow=DS.shadow.lg;if(!isActive&&!isBulk)e.currentTarget.style.background=T.surface;}}
                               onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";e.currentTarget.style.background=isBulk?T.accentSolid+"28":isActive?T.accentSolid+"18":T.card;}}>
                               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
@@ -6654,10 +6769,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 </div>
                 {editing
                   ? <div style={{display:"flex",gap:4}}>
-                      <input autoFocus type={type} value={val} onChange={e=>setVal(e.target.value)}
+                      {type==="date"
+                        ? <GhDatePicker T={T} value={val} onChange={v=>{setVal(v);onSave(v);setEditing(false);}} style={{flex:1,fontSize:12,padding:"6px 10px"}}/>
+                        : <input autoFocus type={type} value={val} onChange={e=>setVal(e.target.value)}
                         onKeyDown={e=>{if(e.key==="Enter"){onSave(val);setEditing(false);}if(e.key==="Escape")setEditing(false);}}
-                        style={{...iS,fontSize:12,padding:"6px 10px",flex:1}}/>
-                      <button onClick={()=>{onSave(val);setEditing(false);}} style={{...bS,background:T.accentSolid,border:"none",color:"#fff"}}>✓</button>
+                        style={{...iS,fontSize:12,padding:"6px 10px",flex:1}}/>}
+                      {type!=="date"&&<button onClick={()=>{onSave(val);setEditing(false);}} style={{...bS,background:T.accentSolid,border:"none",color:"#fff"}}>✓</button>}
                     </div>
                   : <div onClick={()=>setEditing(true)} style={{fontSize:13,color:value?T.text:T.textSm,padding:"7px 10px",borderRadius:8,border:"1px solid "+T.borderL,background:T.bg,cursor:"text",minHeight:34,display:"flex",alignItems:"center",gap:6,transition:"border-color 0.15s"}}
                       onMouseEnter={e=>e.currentTarget.style.borderColor=T.border}
@@ -6727,9 +6844,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       const progr=!c.fechaEnvio&&c.fechaEnvioProgr&&c.fechaEnvioProgr>hoyAR();
                       return (<>
                         <div style={{fontSize:10,fontWeight:700,color:progr?T.accent:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{progr?"Envío programado":"Fecha de envío"}</div>
-                        <input type="date" value={c.fechaEnvio||c.fechaEnvioProgr||""} style={{...iS,fontSize:12,padding:"6px 10px",borderColor:progr?T.accentSolid+"40":undefined}}
-                          onChange={async e=>{
-                            const val=e.target.value;
+                        <GhDatePicker T={T} value={c.fechaEnvio||c.fechaEnvioProgr||""} style={{...iS,fontSize:12,padding:"6px 10px",borderColor:progr?T.accentSolid+"40":undefined}}
+                          onChange={async _v=>{
+                            const val=_v;
                             if(!val){ await save({fechaEnvio:"",fechaEnvioProgr:""}); return; }
                             if(val>hoyAR()){
                               // Futura → programado + recordatorio
@@ -6864,7 +6981,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       </select>
                     )}
                     <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Fecha límite (opcional)</div>
-                    <input type="date" value={pgDeadline} onChange={e=>setPgDeadline(e.target.value)} style={{...iS,marginBottom:14,width:"100%"}}/>
+                    <GhDatePicker T={T} value={pgDeadline} onChange={_v=>setPgDeadline(_v)} style={{...iS,marginBottom:14,width:"100%"}}/>
                     <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Instrucciones (opcional)</div>
                     <textarea value={pgNotas} onChange={e=>setPgNotas(e.target.value)} rows={3} placeholder="Ej: enfocar el guion en el uso nocturno, tono descontracturado, mencionar el cupón..."
                       style={{...iS,resize:"vertical",minHeight:64,marginBottom:12,fontFamily:"'Inter',system-ui,sans-serif"}}/>
@@ -6932,8 +7049,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       <Field label={c.driveFolder||!infDe?.driveFolder?"Carpeta de Drive":"Carpeta de Drive (del perfil)"} value={c.driveFolder||infDe?.driveFolder||""} onSave={v=>save({driveFolder:(v||"").trim()})} href={carpeta?(/^https?:/i.test(carpeta)?carpeta:"https://"+carpeta):null} placeholder="Link de la carpeta donde sube el contenido"/>
                       <div>
                         <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Fecha límite general</div>
-                        <input type="date" value={c.contenidoVence||""} style={{...iS,fontSize:12,padding:"6px 10px"}}
-                          onChange={e=>{const v=e.target.value; savePiezas(piezas.map(x=>(x.estado||"pendiente")==="pendiente"&&(!x.fechaLimite||x.fechaLimite===(c.contenidoVence||""))?{...x,fechaLimite:v}:x),{contenidoVence:v});}}/>
+                        <GhDatePicker T={T} value={c.contenidoVence||""} style={{...iS,fontSize:12,padding:"6px 10px"}}
+                          onChange={_v=>{const v=_v; savePiezas(piezas.map(x=>(x.estado||"pendiente")==="pendiente"&&(!x.fechaLimite||x.fechaLimite===(c.contenidoVence||""))?{...x,fechaLimite:v}:x),{contenidoVence:v});}}/>
                         <div style={{fontSize:10,color:T.textSm,marginTop:3}}>Se aplica a las piezas pendientes sin fecha propia</div>
                       </div>
                     </div>
@@ -6960,7 +7077,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                               <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
                                 <span style={{fontSize:10,color:vencida?T.red:T.textSm,fontWeight:600}}>Vence</span>
-                                <input type="date" value={pz.fechaLimite||""} onChange={e=>updPieza(pz.id,{fechaLimite:e.target.value})} style={{...iS,fontSize:11,padding:"4px 6px",width:"auto",borderColor:vencida?T.red+"88":undefined}}/>
+                                <GhDatePicker T={T} value={pz.fechaLimite||""} onChange={_v=>updPieza(pz.id,{fechaLimite:_v})} style={{...iS,fontSize:11,padding:"4px 6px",width:"auto",borderColor:vencida?T.red+"88":undefined}}/>
                               </div>
                               <CanjePiezaLink T={T} iS={iS} value={pz.link} onSave={v=>updPieza(pz.id,{link:v})}/>
                             </div>
@@ -7362,7 +7479,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               {(form.contenido||[]).some(x=>(x.acordados||0)>0)&&(
                 <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8,flexWrap:"wrap"}}>
                   <span style={{fontSize:11,color:T.textSm,fontWeight:600}}>Fecha límite del contenido</span>
-                  <input type="date" value={form.contenidoVence||""} onChange={e=>setForm(f=>({...f,contenidoVence:e.target.value}))} style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}/>
+                  <GhDatePicker T={T} value={form.contenidoVence||""} onChange={_v=>setForm(f=>({...f,contenidoVence:_v}))} style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}/>
                   <span style={{fontSize:10,color:T.textSm}}>(opcional · cada pieza puede tener la suya después)</span>
                 </div>
               )}
@@ -7373,8 +7490,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <label style={{display:"block",fontSize:11,fontWeight:700,color:T.accent,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>
                 Programar fecha de envío <span style={{fontWeight:400,color:T.textSm,textTransform:"none",letterSpacing:0}}>(opcional)</span>
               </label>
-              <input type="date" value={form.fechaEnvioProgr||""} style={{...iS,fontSize:13,borderColor:form.fechaEnvioProgr?T.accentSolid+"60":undefined}}
-                onChange={e=>setForm(f=>({...f,fechaEnvioProgr:e.target.value}))}/>
+              <GhDatePicker T={T} value={form.fechaEnvioProgr||""} style={{...iS,fontSize:13,borderColor:form.fechaEnvioProgr?T.accentSolid+"60":undefined}}
+                onChange={_v=>setForm(f=>({...f,fechaEnvioProgr:_v}))}/>
               {form.fechaEnvioProgr&&(
                 <div style={{fontSize:11,color:T.accent,marginTop:5,display:"flex",alignItems:"center",gap:5}}>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 8.8 19.79 19.79 0 01.22 2.2 2 2 0 012.18 0h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.27 8a16 16 0 006.72 6.72l1.38-1.18a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg>
@@ -12651,10 +12768,10 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
       </div>
       {statsPeriod==="custom"&&(
         <div style={{display:"flex",gap:8,marginBottom:DS.sp.sm,alignItems:"center",flexWrap:"wrap"}}>
-          <input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)}
+          <GhDatePicker T={T} value={customFrom} onChange={_v=>setCustomFrom(_v)}
             style={{...InputStyle(T),fontSize:DS.font.sm,padding:"6px 10px",width:"auto"}}/>
           <span style={{color:T.textSm,fontSize:DS.font.sm}}>→</span>
-          <input type="date" value={customTo} onChange={e=>setCustomTo(e.target.value)}
+          <GhDatePicker T={T} value={customTo} onChange={_v=>setCustomTo(_v)}
             style={{...InputStyle(T),fontSize:DS.font.sm,padding:"6px 10px",width:"auto"}}/>
         </div>
       )}
@@ -13708,6 +13825,9 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   const [adminWaPhone,setAdminWaPhone]=useState("");
   const [waPhoneSaved,setWaPhoneSaved]=useState(false);
   const [editProfile,setEditProfile]=useState(false);
+  // Configuración estilo "settings": navegación a la izquierda, una sección por vez.
+  const CFG_SECS=["cuenta","tiendas","integraciones","notificaciones","ayuda"];
+  const [cfgSec,setCfgSec]=useState(()=>{ try{ const h=(window.location.hash||"").split("/")[2]||""; return CFG_SECS.includes(h)?h:"integraciones"; }catch(e){ return "integraciones"; } });
   const [pNombre,setPNombre]=useState("");
   const [pEmail,setPEmail]=useState("");
   const [pSaving,setPSaving]=useState(false);
@@ -14071,39 +14191,75 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
       <AppTopbar T={T} section="Configuración" sectionId="config" onHome={onBack}/>
 
-      <div style={{maxWidth:960,margin:"0 auto",padding:"20px 24px 80px"}}>
+      <div style={{maxWidth:1100,margin:"0 auto",padding:"20px 24px 80px"}}>
+       <div className="stack-mobile" style={{display:"grid",gridTemplateColumns:"210px minmax(0,1fr)",gap:28,alignItems:"start"}}>
+        {/* Navegación lateral */}
+        <nav style={{position:"sticky",top:126,display:"flex",flexDirection:"column",gap:2}}>
+          {[
+            {id:"cuenta",l:"Cuenta",d:"Nombre, email y foto",icon:"M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z"},
+            {id:"tiendas",l:"Tiendas",d:"Tus tiendas y el perfil",icon:"M3 9l1-5h16l1 5M3 9h18v11H3zM9 20v-6h6v6"},
+            {id:"integraciones",l:"Integraciones",d:"Tienda, ads, apps e IA",icon:"M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"},
+            {id:"notificaciones",l:"Notificaciones",d:"Mails y WhatsApp",icon:"M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"},
+            {id:"ayuda",l:"Ayuda y legal",d:"Soporte, plan y términos",icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01"},
+          ].map(n=>{
+            const act=cfgSec===n.id;
+            return (
+              <button key={n.id} onClick={()=>{ setCfgSec(n.id); try{ window.scrollTo({top:0,behavior:"smooth"}); }catch(e){} }}
+                style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,border:"none",textAlign:"left",cursor:"pointer",width:"100%",
+                  background:act?T.accentSolid+"18":"transparent",color:act?T.accent:T.textMd,fontFamily:"'Inter',system-ui,sans-serif",transition:"background .12s"}}
+                onMouseEnter={e=>{ if(!act) e.currentTarget.style.background=T.card; }}
+                onMouseLeave={e=>{ if(!act) e.currentTarget.style.background="transparent"; }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={act?2.2:1.8} strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:act?1:0.7}}><path d={n.icon}/></svg>
+                <span style={{minWidth:0}}>
+                  <span style={{display:"block",fontSize:13,fontWeight:act?700:600,lineHeight:1.2}}>{n.l}</span>
+                  <span style={{display:"block",fontSize:10.5,color:T.textSm,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{n.d}</span>
+                </span>
+              </button>
+            );
+          })}
+        </nav>
 
-        {/* Tiendas */}
-        {/* ── Perfil y tiendas (multi-tienda) ── */}
+        <div style={{minWidth:0}}>
+        {(()=>{ const H={cuenta:["Cuenta","Tu perfil de acceso: nombre, email de contacto y foto. Es a nivel cuenta, no de una tienda."],tiendas:["Tiendas","Las tiendas de esta cuenta. Cada una tiene sus propias integraciones y datos."],integraciones:["Integraciones","Conectá tu tienda, el marketplace, la publicidad y las apps externas. Cada tienda tiene sus propias conexiones."],notificaciones:["Notificaciones","Qué te avisamos y por dónde: mails de tareas y WhatsApp de colaboradores."],ayuda:["Ayuda y legal","Soporte, suscripción y documentos legales."]}[cfgSec]||["",""]; return (
+          <div style={{marginBottom:18,paddingBottom:14,borderBottom:`1px solid ${T.borderL}`}}>
+            <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.4}}>{H[0]}</div>
+            <div style={{fontSize:12.5,color:T.textSm,marginTop:4,lineHeight:1.5}}>{H[1]}</div>
+          </div>
+        ); })()}
+
+        {/* ── Tiendas ── */}
+        {cfgSec==="tiendas"&&(<>
         <PerfilTiendasCard T={T} user={user} userDoc={userDoc} setMsg={setMsg}/>
+        </>)}
+
+        {cfgSec==="integraciones"&&(<>
 
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
-          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Integraciones</div>
-          <div style={{fontSize:11,color:T.textSm,marginBottom:16,lineHeight:1.5}}>
-            Conectá <strong style={{color:T.text}}>una</strong> plataforma de e-commerce (TN <em>o</em> Shopify), <strong style={{color:T.text}}>Mercado Libre</strong> y <strong style={{color:T.text}}>Meta Ads</strong> para análisis y optimización de campañas.
+          <div style={{fontSize:11,color:T.textSm,marginBottom:6,lineHeight:1.5}}>
+            Una tienda por cuenta (Tienda Nube <em>o</em> Shopify): al conectar una, la otra desaparece de la lista. Mercado Libre, la publicidad y las apps externas se suman aparte.
           </div>
           {/* helper para cada fila */}
           {[
             {
-              key:"tn", label:"Tienda Nube", sub: tnStore ? (tnStore.storeName||tnStore.storeId) : shStore ? "Desvinculá Shopify primero" : "No conectado",
+              key:"tn", group:"Tienda", label:"Tienda Nube", sub: tnStore ? (tnStore.storeName||tnStore.storeId) : "Ventas, productos y envíos de tu Tienda Nube",
               connected:!!tnStore, disabled:!!shStore && !tnStore, brand:"#00a0e3", iconBg:"#fff",
               icon:<BrandIcon name="tiendanube" size={30}/>,
               onConnect: connectTiendaNube, onDisconnect:()=>disconnectStore("tiendanube"),
             },
             {
-              key:"sh", label:"Shopify", sub: shStore ? (shStore.storeName||shStore.shop) : tnStore ? "Desvinculá Tienda Nube primero" : "No conectado",
+              key:"sh", group:"Tienda", label:"Shopify", sub: shStore ? (shStore.storeName||shStore.shop) : "Ventas, productos y el checkout con Andreani",
               connected:!!shStore, disabled:!!tnStore && !shStore, brand:"#95BF47", iconBg:"#fff",
               icon:<BrandIcon name="shopify" size={30}/>,
               onConnect:()=>setShowShopifyModal(true), onDisconnect:()=>disconnectStore("shopify"),
             },
             {
-              key:"ml", label:"Mercado Libre / Mercado Pago", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "Incluye Mercado Pago — comisiones, cupones y envíos",
+              key:"ml", group:"Marketplace", label:"Mercado Libre / Mercado Pago", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "Ventas, preguntas, mensajes y reputación · incluye Mercado Pago (comisiones, cupones y envíos)",
               connected:!!mlStore, disabled:false, brand:"#FFE600", iconBg:"#fff",
               icon:<BrandIcon name="mercadolibre" size={34}/>,
               onConnect:()=>setShowMLModal(true), onDisconnect:()=>disconnectStore("mercadolibre"),
             },
             {
-              key:"meta", label:"Meta Ads", sub: metaConnected ? "Conectado" : "Facebook + Instagram · No conectado",
+              key:"meta", group:"Publicidad", label:"Meta Ads", sub: metaConnected ? "Facebook + Instagram" : "Facebook + Instagram: campañas, reglas y publicación desde Growith",
               connected:!!metaConnected, disabled:false, brand:"#1877F2", iconBg:"#fff",
               icon:<BrandIcon name="meta" size={30}/>,
               // Mientras META_OAUTH_OK sea false el modal abre directo en la
@@ -14111,7 +14267,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               onConnect:()=>{setMetaMode(META_OAUTH_OK?"oauth":"token");setShowMetaModal(true);}, onDisconnect:disconnectMeta,
             },
             {
-              key:"gads", label:"Google Ads",
+              key:"gads", group:"Publicidad", label:"Google Ads",
               sub: userDoc?.googleAds?.connected
                 ? `Conectado${(userDoc.googleAds.customers||[]).length ? ` · ${(userDoc.googleAds.customers||[]).length} cuenta(s)` : " · esperando developer token"}`
                 : (GADS_OAUTH_OK
@@ -14133,7 +14289,31 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               },
             },
             {
-              key:"gdrive", label:"Google Drive",
+              key:"tiktok", group:"Publicidad", label:"TikTok Ads",
+              // Conexión por REDIRECCIÓN (Marketing API). "PRONTO" automático hasta que el server tenga TIKTOK_APP_ID/SECRET.
+              sub: userDoc?.tiktokAds?.connected
+                ? `Conectado${(userDoc.tiktokAds.advertisers||[]).length ? ` · ${(userDoc.tiktokAds.advertisers||[]).length} cuenta(s)` : ""}`
+                : (tiktokConfigured===false
+                    ? "Próximamente — gasto y campañas de TikTok en el Dashboard"
+                    : "Conectá tu cuenta publicitaria de TikTok para traer gasto y campañas"),
+              connected: !!userDoc?.tiktokAds?.connected, disabled:false, soon: tiktokConfigured===false && !userDoc?.tiktokAds?.connected, brand:"#FE2C55", iconBg:"#fff",
+              icon:<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z" fill="#69C9D0"/><path d="M15.5 2c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V2h3.2z" fill="#EE1D52"/><path d="M16 2.5c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V2.5H16z" fill="#000"/></svg>,
+              onConnect: async ()=>{
+                try {
+                  const r = await authFetch(`/api/integrations?platform=tiktokads&action=oauth_start&uid=${user.uid}`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ uid: user.uid }) });
+                  const j = await r.json();
+                  if (j.url) { window.location.href = j.url; return; }
+                  if (j.setup) { appAlert("TikTok Ads todavía no está configurado en el servidor:\n\n" + (j.steps||[]).map((s,i)=>`${i+1}. ${s}`).join("\n\n")); return; }
+                  appAlert(j.error || "No se pudo iniciar la conexión con TikTok.");
+                } catch(e) { appAlert("Error: "+e.message); }
+              },
+              onDisconnect: async ()=>{
+                try { await authFetch(`/api/integrations?platform=tiktokads&action=disconnect&uid=${user.uid}`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ uid: user.uid }) }); setMsg("TikTok Ads desvinculado"); }
+                catch(e) { appAlert("Error: "+e.message); }
+              },
+            },
+            {
+              key:"gdrive", group:"Apps externas", label:"Google Drive",
               // Conexión por REDIRECCIÓN (sin popup): el token queda en users/{uid}.googleDrive.
               sub: userDoc?.googleDrive?.connected
                 ? <>{userDoc.googleDrive.email || "Conectado"} — elegís los videos desde el Publicador de Meta<GhTip T={T} text={DRIVE_TIP}/></>
@@ -14158,51 +14338,48 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               },
             },
             {
-              key:"tiktok", label:"TikTok Ads",
-              // Conexión por REDIRECCIÓN (Marketing API). "PRONTO" automático hasta que el server tenga TIKTOK_APP_ID/SECRET.
-              sub: userDoc?.tiktokAds?.connected
-                ? `Conectado${(userDoc.tiktokAds.advertisers||[]).length ? ` · ${(userDoc.tiktokAds.advertisers||[]).length} cuenta(s)` : ""}`
-                : (tiktokConfigured===false
-                    ? "Próximamente — gasto y campañas de TikTok en el Dashboard"
-                    : "Conectá tu cuenta publicitaria de TikTok para traer gasto y campañas"),
-              connected: !!userDoc?.tiktokAds?.connected, disabled:false, soon: tiktokConfigured===false && !userDoc?.tiktokAds?.connected, brand:"#FE2C55", iconBg:"#fff",
-              icon:<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z" fill="#69C9D0"/><path d="M15.5 2c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V2h3.2z" fill="#EE1D52"/><path d="M16 2.5c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V2.5H16z" fill="#000"/></svg>,
-              onConnect: async ()=>{
-                try {
-                  const r = await authFetch(`/api/integrations?platform=tiktokads&action=oauth_start&uid=${user.uid}`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ uid: user.uid }) });
-                  const j = await r.json();
-                  if (j.url) { window.location.href = j.url; return; }
-                  if (j.setup) { appAlert("TikTok Ads todavía no está configurado en el servidor:\n\n" + (j.steps||[]).map((s,i)=>`${i+1}. ${s}`).join("\n\n")); return; }
-                  appAlert(j.error || "No se pudo iniciar la conexión con TikTok.");
-                } catch(e) { appAlert("Error: "+e.message); }
-              },
-              onDisconnect: async ()=>{
-                try { await authFetch(`/api/integrations?platform=tiktokads&action=disconnect&uid=${user.uid}`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ uid: user.uid }) }); setMsg("TikTok Ads desvinculado"); }
-                catch(e) { appAlert("Error: "+e.message); }
-              },
+              key:"claude", group:"Inteligencia artificial", label:"Claude", sub:"Próximamente — copys, respuestas a clientes y análisis de campañas con Claude dentro de Growith",
+              connected:false, disabled:true, soon:true, brand:"#d97757", iconBg:"#fff",
+              icon:<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 3l2.4 5.6L20 11l-5.6 2.4L12 19l-2.4-5.6L4 11l5.6-2.4z" fill="#d97757"/></svg>,
+              onConnect:()=>{}, onDisconnect:()=>{},
             },
-          ].map(p=>{
+            {
+              key:"gemini", group:"Inteligencia artificial", label:"Gemini", sub:"Próximamente — generación de imágenes y videos para tus anuncios",
+              connected:false, disabled:true, soon:true, brand:"#4285F4", iconBg:"#fff",
+              icon:<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10 5.4-.6 9.4-4.6 10-10z" fill="#4285F4"/></svg>,
+              onConnect:()=>{}, onDisconnect:()=>{},
+            },
+            {
+              key:"chatgpt", group:"Inteligencia artificial", label:"ChatGPT", sub:"Próximamente — asistente para descripciones de productos y atención",
+              connected:false, disabled:true, soon:true, brand:"#10a37f", iconBg:"#fff",
+              icon:<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10a37f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v4M12 16v4M4 12h4M16 12h4M6.3 6.3l2.9 2.9M14.8 14.8l2.9 2.9M6.3 17.7l2.9-2.9M14.8 9.2l2.9-2.9"/></svg>,
+              onConnect:()=>{}, onDisconnect:()=>{},
+            },
+          ].filter(p=>!(p.key==="sh"&&tnStore)&&!(p.key==="tn"&&shStore)).map((p,idx,arr)=>{
+            const showGroup=idx===0||arr[idx-1].group!==p.group;
             return (
-              <div key={p.key} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",borderRadius:10,marginBottom:8,background:p.connected?`${p.brand}0d`:T.bg,border:`1.5px solid ${p.connected?p.brand+"55":T.borderL}`,boxShadow:p.connected?`0 0 0 1px ${p.brand}18, 0 4px 16px ${p.brand}14`:"none",opacity:p.disabled?0.4:1,transition:"all 0.18s ease"}}>
-                <div style={{width:48,height:48,borderRadius:12,background:p.iconBg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:p.connected?`0 4px 12px ${p.brand}55`:`0 2px 6px ${p.brand}33`}}>
-                  {p.icon}
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>{p.label}</div>
-                  {p.connected
-                    ? <div style={{fontSize:11,fontWeight:600,color:T.green,marginTop:2,display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:"50%",background:T.green,boxShadow:"0 0 6px "+T.green+"",display:"inline-block"}}/>✓ {p.sub}</div>
-                    : <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{p.sub}</div>}
-                </div>
-                {p.connected
-                  ? <button onClick={p.onDisconnect} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px",flexShrink:0}}>Desvincular</button>
-                  : p.soon
-                  ? <div style={{position:"relative",flexShrink:0}}>
-                      <button disabled style={{fontSize:12,padding:"7px 14px",borderRadius:8,border:`1.5px solid ${T.borderL}`,background:T.bg,color:T.textSm,fontWeight:600,cursor:"not-allowed",fontFamily:"'Inter',system-ui,sans-serif",opacity:0.6}}>Conectar</button>
-                      <span style={{position:"absolute",top:-9,right:-6,fontSize:8,fontWeight:800,letterSpacing:0.5,background:T.yellow,color:"#000",borderRadius:99,padding:"2px 7px"}}>PRONTO</span>
+              <React.Fragment key={p.key}>
+                {showGroup&&<div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:0.9,color:T.textSm,margin:idx===0?"12px 0 2px":"22px 0 2px"}}>{p.group}</div>}
+                <div style={{display:"flex",alignItems:"center",gap:14,padding:"13px 4px",borderBottom:`1px solid ${T.borderL}`,opacity:p.soon?0.75:1}}>
+                  <div style={{width:42,height:42,borderRadius:11,background:p.iconBg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,border:`1px solid ${T.borderL}`,boxShadow:p.connected?`0 0 0 2px ${p.brand}33`:"none"}}>
+                    {p.icon}
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13.5,fontWeight:700,color:T.text,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      {p.label}
+                      {p.connected&&<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,fontWeight:700,color:T.green,background:T.green+"14",borderRadius:99,padding:"2px 8px"}}><span style={{width:6,height:6,borderRadius:"50%",background:T.green,boxShadow:"0 0 6px "+T.green}}/>Conectado</span>}
+                      {p.soon&&<span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,background:T.yellow+"22",color:T.yellow,borderRadius:99,padding:"2px 7px"}}>PRÓXIMAMENTE</span>}
                     </div>
-                  : <button onClick={p.onConnect} disabled={p.disabled} style={{fontSize:12,padding:"7px 14px",borderRadius:8,border:`1.5px solid ${p.brand}88`,background:`${p.brand}18`,color:p.brand==="FFE600"?"#1a1a1a":p.brand,fontWeight:600,cursor:p.disabled?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s ease",boxShadow:`0 0 0 1px ${p.brand}18, 0 4px 14px ${p.brand}22`,flexShrink:0}}>Conectar</button>
-                }
-              </div>
+                    <div style={{fontSize:11.5,color:T.textSm,marginTop:3,lineHeight:1.45}}>{p.sub}</div>
+                  </div>
+                  {p.connected
+                    ? <button onClick={p.onDisconnect} disabled={saving} style={{fontSize:12,padding:"7px 14px",borderRadius:8,border:`1px solid ${T.red}44`,background:"transparent",color:T.red,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>Desvincular</button>
+                    : p.soon
+                    ? <button disabled style={{fontSize:12,padding:"7px 14px",borderRadius:8,border:`1px solid ${T.borderL}`,background:T.bg,color:T.textSm,fontWeight:600,cursor:"not-allowed",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>Conectar</button>
+                    : <button onClick={p.onConnect} disabled={p.disabled} style={{fontSize:12,padding:"7px 16px",borderRadius:8,border:"none",background:T.accentSolid,color:"#fff",fontWeight:700,cursor:p.disabled?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,opacity:p.disabled?0.5:1}}>Conectar</button>
+                  }
+                </div>
+              </React.Fragment>
             );
           })}
         </div>
@@ -14307,7 +14484,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
           </details>
         )}
 
+        </>)}
+
         {/* Perfil */}
+        {cfgSec==="cuenta"&&(<>
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Cuenta</div>
           <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:16,flexWrap:"wrap"}}>
@@ -14394,7 +14574,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
           ); })()}
         </div>
 
+        </>)}
+
         {/* Notificaciones de equipo */}
+        {cfgSec==="notificaciones"&&(<>
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14,display:"flex",alignItems:"center",gap:5}}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
@@ -14432,6 +14615,8 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
           </div>
           {adminWaPhone&&<div style={{fontSize:11,color:T.textSm,marginTop:6}}>✓ Los colaboradores van a escribirte a <strong>wa.me/{adminWaPhone.replace(/\D/g,"")}</strong></div>}
         </div>
+
+        </>)}
 
         {/* Modal conectar Shopify */}
         {showShopifyModal && (
@@ -14659,6 +14844,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
         {msg&&<div style={{background:T.greenBg,border:`1.5px solid ${T.green}55`,borderRadius:10,padding:"12px 16px",fontSize:13,color:T.green,marginBottom:16,boxShadow:`0 0 0 1px ${T.green}18, 0 4px 16px ${T.green}18`}}>{msg}</div>}
 
         {/* Ayuda y legal (el plan se administra en la sección Suscripción) */}
+        {cfgSec==="ayuda"&&(
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Ayuda y legal</div>
           <div style={{fontSize:12,color:T.textMd,textAlign:"center"}}>Tu plan, tus pagos y tus facturas se administran desde <button onClick={()=>onNavigate("planes")} style={{background:"none",border:"none",color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:0,fontSize:12}}>Suscripción</button> en el menú.</div>
@@ -14671,6 +14857,9 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             </a>
           </div>
         </div>
+        )}
+        </div>
+       </div>
       </div>
     </div>
   );
@@ -14814,7 +15003,7 @@ function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onC
               <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 70px 150px 120px 28px",gap:8,padding:"6px 10px",alignItems:"center",borderTop:`1px solid ${T.borderL}`,fontSize:12}}>
                 <input style={{...iS,padding:"5px 8px",fontSize:12}} value={p.label} onChange={e=>setParte(i,{label:e.target.value})}/>
                 <input style={{...iS,padding:"5px 8px",textAlign:"right",fontSize:12}} inputMode="decimal" value={p.pct} onChange={e=>setParte(i,{pct:e.target.value})}/>
-                <input type="date" style={{...iS,padding:"5px 8px",fontSize:12}} value={p.fecha} onChange={e=>setParte(i,{fecha:e.target.value})}/>
+                <GhDatePicker T={T} style={{...iS,padding:"5px 8px",fontSize:12}} value={p.fecha} onChange={_v=>setParte(i,{fecha:_v})}/>
                 <span style={{textAlign:"right",fontWeight:700,color:T.text,fontVariantNumeric:"tabular-nums"}}>{fmt(total*(Number(p.pct)||0)/100)}</span>
                 <button onClick={()=>{ setPlanId("custom"); setPartes(ps=>ps.filter((_,k)=>k!==i)); }} disabled={partes.length<=1} style={{background:"none",border:"none",color:partes.length<=1?T.border:T.textSm,cursor:partes.length<=1?"default":"pointer",fontSize:13}}>✕</button>
               </div>
@@ -15033,17 +15222,23 @@ function AppCalendarioPagos({T,user,onHome}){
   const porDia={}; for(const i of lista) (porDia[i.vence] ||= []).push(i);
   const delDia=diaSel?(porDia[diaSel]||[]).slice().sort((a,b)=>Number(a.pagado)-Number(b.pagado)):[];
 
-  const nuevo=(vence)=>{ setAplicarSerie(false); setParcial(null); setForm({titulo:"",categoria:"",monto:"",moneda:"ARS",vence:vence||hoy,tipo:"unico",cuotasTotal:"12",cuotaDesde:"1",yaPague:false,capital:"",tna:"",notas:""}); };
+  const nuevo=(vence)=>{ setAplicarSerie(false); setParcial(null); setForm({titulo:"",categoria:"",monto:"",moneda:"ARS",vence:vence||hoy,tipo:"unico",cuotasTotal:"12",cuotaDesde:"1",yaPague:false,capital:"",tna:"",banco:"",notas:""}); };
+  // Cargador de préstamos: abre el alta ya en "Préstamo · en cuotas".
+  const nuevoPrestamo=()=>{ setAplicarSerie(false); setParcial(null); setForm({titulo:"",categoria:"prestamo",monto:"",moneda:"ARS",vence:hoy,tipo:"cuotas",cuotasTotal:"12",cuotaDesde:"1",yaPague:false,capital:"",tna:"",banco:"",notas:""}); };
+  const BANCOS=["Galicia","Santander","BBVA","Macro","Nación","Provincia","ICBC","HSBC","Credicoop","Supervielle","Ciudad","Patagonia","Brubank","Ualá","Mercado Pago","Naranja X","Otro"];
   const editar=(i)=>{ setAplicarSerie(false); setParcial(null); setForm({adjunto:i.adjunto||null,parcialDe:i.parcialDe||null,editadoManual:!!i.editadoManual,id:i.id,titulo:i.titulo,categoria:i.categoria,monto:String(i.monto),moneda:i.moneda,vence:i.vence,tipo:i.tipo||"unico",notas:i.notas||"",grupo:i.grupo||null,cuotaN:i.cuotaN,cuotaTotal:i.cuotaTotal,pagado:!!i.pagado,capitalCuota:i.capitalCuota,interesCuota:i.interesCuota,saldoDespues:i.saldoDespues,parteN:i.parteN,partes:i.partes,pedido:i.pedido||null,parteMes:i.parteMes||0}); };
   const esPrestamoNuevo=form&&!form.id&&form.tipo==="cuotas"&&form.categoria==="prestamo";
   const cuotaEstimada=(()=>{ if(!esPrestamoNuevo) return null; const cap=ghNumAR(form.capital), n=parseInt(form.cuotasTotal)||0, tna=ghNumAR(form.tna); if(!(cap>0)||n<2) return null; if(ghNumAR(form.monto)>0) return ghNumAR(form.monto); const i=tna/100/12; return i>0?cap*i/(1-Math.pow(1+i,-n)):cap/n; })();
+  // Tasa que te cobra el banco, deducida de capital + cantidad de cuotas + valor de la cuota (sistema francés, bisección).
+  const tasaImplicita=(()=>{ if(!esPrestamoNuevo) return null; const cap=ghNumAR(form.capital), n=parseInt(form.cuotasTotal)||0, cuota=ghNumAR(form.monto); if(!(cap>0)||n<2||!(cuota>0)) return null; if(cuota*n<=cap) return {i:0,tna:0,tea:0,interes:0,sinInteres:true}; let lo=0,hi=3; for(let k=0;k<100;k++){ const mid=(lo+hi)/2; const pago=cap*mid/(1-Math.pow(1+mid,-n)); if(pago>cuota) hi=mid; else lo=mid; } const i=(lo+hi)/2; return {i,tna:i*12*100,tea:(Math.pow(1+i,12)-1)*100,interes:cuota*n-cap}; })();
+  const tnaEfectiva=esPrestamoNuevo?(ghNumAR(form.tna)||(tasaImplicita?Math.round(tasaImplicita.tna*100)/100:0)):0;
   const guardar=async()=>{
     if(!form.titulo.trim()){ toast("Poné a quién o qué se paga","warning"); return; }
     if(!form.categoria){ toast("Elegí una categoría","warning"); return; }
     if(!(ghNumAR(form.monto)>0)&&!(esPrestamoNuevo&&ghNumAR(form.capital)>0)){ toast("Poné un monto mayor a cero","warning"); return; }
     setSaving(true);
     try{
-      await api("save",{pago:{...form,cuotaDesde:form.yaPague?form.cuotaDesde:"1",monto:ghNumAR(form.monto),capital:esPrestamoNuevo?ghNumAR(form.capital):0,tna:esPrestamoNuevo?ghNumAR(form.tna):0,dividir:!form.id&&form.tipo==="mensual"&&form.dividir?{pct:Number(divPct)||50,dia:parseInt(divDia)||15}:null},aplicarSerie});
+      await api("save",{pago:{...form,cuotaDesde:form.yaPague?form.cuotaDesde:"1",monto:ghNumAR(form.monto),capital:esPrestamoNuevo?ghNumAR(form.capital):0,tna:tnaEfectiva,dividir:!form.id&&form.tipo==="mensual"&&form.dividir?{pct:Number(divPct)||50,dia:parseInt(divDia)||15}:null},aplicarSerie});
       toast(form.id?"Pago actualizado":form.tipo==="cuotas"?(esPrestamoNuevo?"Préstamo cargado con su cuadro de cuotas":"Cuotas cargadas"):form.tipo==="mensual"?(form.dividir?"Pago mensual cargado en dos partes (12 meses)":"Pago mensual cargado (12 meses)"):"Pago cargado","success");
       setForm(null); await load();
     }catch(e){ toast(e.message,"error"); }
@@ -15184,6 +15379,7 @@ function AppCalendarioPagos({T,user,onHome}){
               <span style={{fontSize:11,color:T.textSm}}>{pend.length} pendiente{pend.length===1?"":"s"}</span>
               <input value={busq} onChange={e=>setBusq(e.target.value)} placeholder="Buscar pago…" style={{...iS,marginLeft:"auto",width:200,padding:"6px 10px",fontSize:12}}/>
               {bq&&<button onClick={()=>setBusq("")} style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:13}}>✕</button>}
+              <Btn T={T} variant="secondary" size="sm" onClick={nuevoPrestamo} title="Cargá un préstamo: banco, capital, cuotas y valor de la cuota. La app calcula el interés y arma los vencimientos.">Cargar préstamo</Btn>
               <Btn T={T} variant="primary" size="sm" onClick={()=>nuevo()}>Nuevo pago</Btn>
             </div>
             {items===null?(
@@ -15333,7 +15529,7 @@ function AppCalendarioPagos({T,user,onHome}){
                 <span style={{fontSize:11,color:T.textSm}}>{prestamos.length?`${prestamos.length} activo${prestamos.length===1?"":"s"}`:"ninguno"}</span>
               </div>
               {prestamos.length===0?(
-                <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Cargá un pago en cuotas con categoría Préstamo, con el capital y la tasa, y acá ves cuánto falta, cuánto es interés y el cuadro de cuotas.</div>
+                <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Todavía no cargaste préstamos. Tocá <button onClick={nuevoPrestamo} style={{background:"none",border:"none",padding:0,color:T.accent,fontWeight:700,cursor:"pointer",fontSize:11}}>Cargar préstamo</button>: elegís el banco, ponés capital, cantidad de cuotas y el valor de la cuota, y la app calcula sola el interés que te cobran y agrega cada vencimiento al calendario.</div>
               ):prestamos.map(p=>{
                 const pct=p.n?Math.round(p.pagadas/p.n*100):0; const abierto=prestamoAbierto===p.grupo;
                 return (
@@ -15378,7 +15574,7 @@ function AppCalendarioPagos({T,user,onHome}){
             <div>{lbl("A quién o qué se paga")}<input style={iS} placeholder="Alquiler del local, Préstamo Galicia, Tarjeta Visa…" value={form.titulo} onChange={e=>setForm(f=>({...f,titulo:e.target.value}))} autoFocus/></div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
               <div>{lbl("Categoría")}<select style={{...iS,color:form.categoria?T.text:T.textSm}} value={form.categoria} onChange={e=>setForm(f=>({...f,categoria:e.target.value,...(e.target.value==="prestamo"&&!f.id?{tipo:"cuotas"}:{})}))}><option value="">Elegí una categoría</option>{CALPAGOS_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select></div>
-              <div>{lbl(form.tipo!=="unico"&&!form.id?"Primer vencimiento":"Vencimiento")}<input type="date" style={iS} value={form.vence} onChange={e=>setForm(f=>({...f,vence:e.target.value}))}/></div>
+              <div>{lbl(form.tipo!=="unico"&&!form.id?"Primer vencimiento":"Vencimiento")}<GhDatePicker T={T} style={iS} value={form.vence} onChange={_v=>setForm(f=>({...f,vence:_v}))}/></div>
               <div>{lbl(esPrestamoNuevo?"Cuota (si la conocés)":"Monto")}<input style={iS} inputMode="decimal" placeholder={esPrestamoNuevo&&cuotaEstimada?`calculada: ${Math.round(cuotaEstimada).toLocaleString("es-AR")}`:"0"} value={form.monto} onChange={e=>setForm(f=>({...f,monto:e.target.value}))}/></div>
               <div>{lbl("Moneda")}<select style={iS} value={form.moneda} onChange={e=>setForm(f=>({...f,moneda:e.target.value}))}><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (USD)</option></select></div>
             </div>
@@ -15402,8 +15598,16 @@ function AppCalendarioPagos({T,user,onHome}){
                       {form.yaPague&&<input style={{...iS,marginTop:4}} inputMode="numeric" placeholder="Próxima cuota a pagar (ej. 4)" value={form.cuotaDesde} onChange={e=>setForm(f=>({...f,cuotaDesde:e.target.value}))}/>}
                     </div>
                     {esPrestamoNuevo&&(<>
+                      <div>{lbl("Banco / entidad")}<select style={{...iS,color:form.banco?T.text:T.textSm}} value={form.banco||""} onChange={e=>{const b=e.target.value; setForm(f=>({...f,banco:b,titulo:(!f.titulo||/^Préstamo\b/.test(f.titulo))?(b&&b!=="Otro"?`Préstamo ${b}`:(b==="Otro"?"Préstamo":f.titulo)):f.titulo}));}}><option value="">Elegí el banco…</option>{BANCOS.map(b=><option key={b} value={b}>{b}</option>)}</select></div>
                       <div>{lbl("Capital prestado")}<input style={iS} inputMode="decimal" placeholder="Monto que te prestaron" value={form.capital} onChange={e=>setForm(f=>({...f,capital:e.target.value}))}/></div>
-                      <div>{lbl("Tasa anual (TNA %)")}<input style={iS} inputMode="decimal" placeholder="Ej: 85" value={form.tna} onChange={e=>setForm(f=>({...f,tna:e.target.value}))}/></div>
+                      <div>{lbl("Tasa anual (TNA %) — opcional")}<input style={iS} inputMode="decimal" placeholder={tasaImplicita&&!tasaImplicita.sinInteres?`calculada: ${tasaImplicita.tna.toFixed(1)}%`:"La calcula sola con la cuota"} value={form.tna} onChange={e=>setForm(f=>({...f,tna:e.target.value}))}/></div>
+                      {tasaImplicita&&!ghNumAR(form.tna)&&(
+                        <div style={{gridColumn:"1 / -1",background:T.accentSolid+"0d",border:`1px solid ${T.accentSolid}33`,borderRadius:10,padding:"10px 12px",fontSize:12,color:T.textMd,lineHeight:1.6}}>
+                          {tasaImplicita.sinInteres
+                            ? <>Con esas cuotas devolvés lo mismo (o menos) que el capital: <b style={{color:T.text}}>sin interés</b>.</>
+                            : <><b style={{color:T.text}}>Interés que te cobra {form.banco&&form.banco!=="Otro"?form.banco:"el banco"}:</b> TNA <b style={{color:T.text}}>{tasaImplicita.tna.toFixed(1)}%</b> · TEA <b style={{color:T.text}}>{tasaImplicita.tea.toFixed(1)}%</b> · intereses totales <b style={{color:T.text}}>{calpagosFmt(tasaImplicita.interes,form.moneda)}</b> sobre {calpagosFmt(ghNumAR(form.capital),form.moneda)} de capital. Con esa tasa se arma el cuadro de cuotas (capital + interés de cada una) y se agregan los {parseInt(form.cuotasTotal)||0} vencimientos al calendario.</>}
+                        </div>
+                      )}
                       <div style={{gridColumn:"1 / -1",fontSize:11,color:T.textSm,lineHeight:1.5}}>
                         {cuotaEstimada?<>Cuota estimada <b style={{color:T.text}}>{calpagosFmt(cuotaEstimada,form.moneda)}</b> · total a devolver <b style={{color:T.text}}>{calpagosFmt(cuotaEstimada*(parseInt(form.cuotasTotal)||0),form.moneda)}</b> · interés <b style={{color:T.text}}>{calpagosFmt(cuotaEstimada*(parseInt(form.cuotasTotal)||0)-ghNumAR(form.capital),form.moneda)}</b>. Sistema francés: cada cuota guarda su parte de capital e interés.</>
                         :"Con capital y tasa se calcula la cuota sola (sistema francés). Si ya sabés la cuota exacta del banco, cargala arriba y se usa esa."}
@@ -15494,7 +15698,7 @@ function AppCalendarioPagos({T,user,onHome}){
                 <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:6}}>Pago parcial</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                   <div>{lbl("Cuánto pagaste")}<input style={iS} inputMode="decimal" placeholder="0" value={parcial.monto} onChange={e=>setParcial(p=>({...p,monto:e.target.value}))} autoFocus/></div>
-                  <div>{lbl("El saldo vence el")}<input type="date" style={iS} value={parcial.fechaSaldo} onChange={e=>setParcial(p=>({...p,fechaSaldo:e.target.value}))}/></div>
+                  <div>{lbl("El saldo vence el")}<GhDatePicker T={T} style={iS} value={parcial.fechaSaldo} onChange={_v=>setParcial(p=>({...p,fechaSaldo:_v}))}/></div>
                 </div>
                 <div style={{fontSize:11,color:T.textSm,marginTop:6}}>{ghNumAR(parcial.monto)>0&&ghNumAR(parcial.monto)<ghNumAR(form.monto)?`Queda un saldo de ${calpagosFmt(ghNumAR(form.monto)-ghNumAR(parcial.monto),form.moneda)} como pago pendiente.`:"Este pago queda como pagado por el monto que ingreses y el resto pasa a un pago nuevo."}</div>
                 <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}}><Btn T={T} variant="ghost" size="sm" onClick={()=>setParcial(null)}>Cancelar</Btn><Btn T={T} variant="success" size="sm" onClick={confirmarParcial}>Registrar pago parcial</Btn></div>
@@ -17637,6 +17841,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [assigneeSelectKey, setAssigneeSelectKey] = useState(0); // fuerza reset del select al agregar
   function setNtAsignado(email){ setNtAsignados(email?[email]:[]); }
   const [ntDeadline, setNtDeadline] = useState("");
+  const [ntDeadlineHora, setNtDeadlineHora] = useState("");
+  const [ntRecordarMail, setNtRecordarMail] = useState(false);
   const [ntTipoContenido, setNtTipoContenido] = useState(""); // "" | "pauta" | "organico"
   // Material pedido de Canjes — adjunta al brief la lista de contenidos que cada
   // influencer tiene pendiente de entregar, para no escribirla a mano
@@ -17662,6 +17868,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [etLinks, setEtLinks] = useState([]);
   const [etChecklist, setEtChecklist] = useState([]);
   const [etDeadline, setEtDeadline] = useState("");
+  const [etDeadlineHora, setEtDeadlineHora] = useState("");
+  const [etRecordarMail, setEtRecordarMail] = useState(false);
   const [etAsignado, setEtAsignado] = useState("");
   const [calendarView, setCalendarView] = useState(false);
   const [calMonth, setCalMonth] = useState({y:new Date().getFullYear(),m:new Date().getMonth()});
@@ -17980,7 +18188,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       const bloque = "Material pedido (Canjes):\n" + selCanjes.map(c=>"- "+canjeLinea(c)).join("\n");
       briefFinal = briefFinal ? briefFinal + "\n\n" + bloque : bloque;
     }
-    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:briefFinal,links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,tipoContenido:ntTipoContenido||null,creadoPor,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
+    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:briefFinal,links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline?(ntDeadlineHora?`${ntDeadline}T${ntDeadlineHora}:00-03:00`:ntDeadline):null,deadlineHora:ntDeadline?(ntDeadlineHora||""):"",recordarMail:!!(ntDeadline&&ntRecordarMail),tipoContenido:ntTipoContenido||null,creadoPor,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
     setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:"",asignadoEmail:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtTipoContenido(""); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]); setNtCanjesSel({}); setShowCanjesSec(false); setNtCanjesBusq("");
     // Mostrar resultado de emails
@@ -18000,6 +18208,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     setEtLinks(normalizeLinksArr(t.links));
     setEtChecklist((t.checklist||[]).map(i=>({...i})));
     setEtDeadline(t.deadline?._seconds?new Date(t.deadline._seconds*1000).toISOString().slice(0,10):"");
+    setEtDeadlineHora(t.deadlineHora||"");
+    setEtRecordarMail(!!t.recordarMail);
     setEtAsignado(t.asignadoEmail||"");
     setEtLabels(t.labels||[]);
   }
@@ -18008,7 +18218,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const linksArr = etLinks.filter(l=>l.url.trim());
     const checkArr = etChecklist.filter(i=>i.text.trim());
     const tareaId = editTarea._id;
-    await tareasApi({action:"updateTarea",tareaId,titulo:etTitulo.trim(),descripcion:etDesc.trim(),brief:etBrief.trim(),links:linksArr,checklist:checkArr,deadline:etDeadline||null,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""});
+    await tareasApi({action:"updateTarea",tareaId,titulo:etTitulo.trim(),descripcion:etDesc.trim(),brief:etBrief.trim(),links:linksArr,checklist:checkArr,deadline:etDeadline?(etDeadlineHora?`${etDeadline}T${etDeadlineHora}:00-03:00`:etDeadline):null,deadlineHora:etDeadline?(etDeadlineHora||""):"",recordarMail:!!(etDeadline&&etRecordarMail),asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""});
     const upd={titulo:etTitulo,descripcion:etDesc,brief:etBrief,links:linksArr,checklist:checkArr,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""};
     setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,...upd}:t)}));
     if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,...upd}));
@@ -18692,7 +18902,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             </div>
             <div style={{flex:1,minWidth:130}}>
               <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Fecha límite</div>
-              <input type="date" value={etDeadline} onChange={e=>setEtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+              <GhDatePicker T={T} value={etDeadline} onChange={_v=>setEtDeadline(_v)} time timeValue={etDeadlineHora} onTimeChange={setEtDeadlineHora} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+              <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:etDeadline?T.textMd:T.textSm,marginTop:6,cursor:etDeadline?"pointer":"default"}}>
+                <input type="checkbox" checked={etRecordarMail} disabled={!etDeadline} onChange={e=>setEtRecordarMail(e.target.checked)} style={{cursor:"pointer"}}/> Recordármelo por mail
+              </label>
             </div>
           </div>
         )}
@@ -20598,7 +20811,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               {/* Deadline */}
               <div style={{width:"50%",minWidth:180}}>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite</div>
-                <input type="date" value={ntDeadline} onChange={e=>setNtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
+                <GhDatePicker T={T} value={ntDeadline} onChange={_v=>setNtDeadline(_v)} time timeValue={ntDeadlineHora} onTimeChange={setNtDeadlineHora} style={{...iS,fontSize:13,width:"100%"}}/>
+                <label style={{display:"flex",alignItems:"center",gap:7,fontSize:11,color:ntDeadline?T.textMd:T.textSm,marginTop:8,cursor:ntDeadline?"pointer":"default"}} title={ntDeadline?"Te llega un mail a tu cuenta el día del vencimiento (y el día anterior)":"Elegí una fecha límite para activar el recordatorio"}>
+                  <input type="checkbox" checked={ntRecordarMail} disabled={!ntDeadline} onChange={e=>setNtRecordarMail(e.target.checked)} style={{cursor:"pointer"}}/>
+                  Recordármelo por mail{ntDeadlineHora?` (vence ${ntDeadlineHora} hs)`:""}
+                </label>
               </div>
               {/* Brief — campo principal */}
               <div>
@@ -20730,7 +20947,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 </div>
                 <div style={{flex:1}}>
                   <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Fecha límite</div>
-                  <input type="date" value={etDeadline} onChange={e=>setEtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                  <GhDatePicker T={T} value={etDeadline} onChange={_v=>setEtDeadline(_v)} time timeValue={etDeadlineHora} onTimeChange={setEtDeadlineHora} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+              <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:etDeadline?T.textMd:T.textSm,marginTop:6,cursor:etDeadline?"pointer":"default"}}>
+                <input type="checkbox" checked={etRecordarMail} disabled={!etDeadline} onChange={e=>setEtRecordarMail(e.target.checked)} style={{cursor:"pointer"}}/> Recordármelo por mail
+              </label>
                 </div>
               </div>
               {/* Descripción */}
@@ -20849,7 +21069,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               </div>
               <div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha *</div>
-                <input type="date" value={nEventoData.fecha} onChange={e=>setNEventoData(p=>({...p,fecha:e.target.value}))} style={{...iS,fontSize:13,width:"100%"}}/>
+                <GhDatePicker T={T} value={nEventoData.fecha} onChange={_v=>setNEventoData(p=>({...p,fecha:_v}))} style={{...iS,fontSize:13,width:"100%"}}/>
               </div>
               <div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Tipo</div>
@@ -20890,7 +21110,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               <div style={{display:"flex",gap:12}}>
                 <div style={{flex:1}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha del brief</div>
-                  <input type="date" value={tFecha} onChange={e=>setTFecha(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
+                  <GhDatePicker T={T} value={tFecha} onChange={_v=>setTFecha(_v)} style={{...iS,fontSize:13,width:"100%"}}/>
                 </div>
                 <div style={{minWidth:140}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Estado</div>
@@ -25695,7 +25915,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <div style={{padding:"12px 16px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
                           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                             <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,flexShrink:0}}>Fecha de las facturas</span>
-                            <input type="date" value={fechaFactura} min={minIso} max={hoyIso} onChange={e=>setFechaFactura(e.target.value)}
+                            <GhDatePicker T={T} value={fechaFactura} min={minIso} max={hoyIso} onChange={_v=>setFechaFactura(_v)}
                               style={{background:T.card,border:`1px solid ${T.borderL}`,color:T.text,borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                             {fechaLabel&&<span style={{fontSize:12,color:T.text,fontWeight:500,textTransform:"capitalize"}}>{fechaLabel}</span>}
                           </div>
@@ -25845,7 +26065,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       return (
                         <div style={{marginBottom:18}}>
                           <label style={labelS}>Fecha de la factura</label>
-                          <input type="date" value={manualFecha||hoyIso} min={minIso} max={hoyIso} onChange={e=>setManualFecha(e.target.value===hoyIso?"":e.target.value)} style={{...iS,width:"auto"}}/>
+                          <GhDatePicker T={T} value={manualFecha||hoyIso} min={minIso} max={hoyIso} onChange={_v=>setManualFecha(_v===hoyIso?"":_v)} style={{...iS,width:"auto"}}/>
                           <div style={{fontSize:11,color:T.textSm,marginTop:5}}>Podés retrotraerla hasta 10 días corridos. La norma publicada indica 5 para productos (10 para servicios): si ARCA no acepta la fecha, te muestra el rechazo acá.</div>
                         </div>
                       );
@@ -32928,9 +33148,9 @@ function CostosPanel({ T, uid }) {
         {tramos.map((tr,i)=>(
           <div key={i} style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",padding:"0 12px"}}>
             <span style={{fontSize:11,color:T.textSm}}>desde</span>
-            <input type="date" value={tr.desde} onChange={e=>updTramo(key,i,{desde:e.target.value})} style={{...InputStyle(T),fontSize:12,padding:"6px 8px",width:146,flexShrink:0}}/>
+            <GhDatePicker T={T} value={tr.desde} onChange={_v=>updTramo(key,i,{desde:_v})} style={{...InputStyle(T),fontSize:12,padding:"6px 8px",width:146,flexShrink:0}}/>
             <span style={{fontSize:11,color:T.textSm}}>hasta</span>
-            <input type="date" value={tr.hasta} onChange={e=>updTramo(key,i,{hasta:e.target.value})} title="Vacío = hasta hoy" style={{...InputStyle(T),fontSize:12,padding:"6px 8px",width:146,flexShrink:0,...(tr.hasta?{}:{color:T.textSm})}}/>
+            <GhDatePicker T={T} value={tr.hasta} onChange={_v=>updTramo(key,i,{hasta:_v})} title="Vacío = hasta hoy" style={{...InputStyle(T),fontSize:12,padding:"6px 8px",width:146,flexShrink:0,...(tr.hasta?{}:{color:T.textSm})}}/>
             {!tr.hasta&&<span style={{fontSize:10,color:T.textSm,marginLeft:-2}}>(hoy)</span>}
             <select value={tr.t} onChange={e=>updTramo(key,i,{t:e.target.value})} style={{...InputStyle(T),width:54,fontSize:12,padding:"6px 4px",flexShrink:0}}><option value="fijo">$</option><option value="pct">%</option></select>
             <input type="number" min="0" value={tr.v} onChange={e=>updTramo(key,i,{v:e.target.value})} placeholder="0" style={{...InputStyle(T),width:90,fontSize:12,textAlign:"right",flexShrink:0}}/>
@@ -33086,9 +33306,9 @@ function CostosPanel({ T, uid }) {
           </div>}
           {/* Form para agregar un período nuevo */}
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderTop:mlAdsList.length>0?`1px solid ${T.borderL}`:"none",paddingTop:mlAdsList.length>0?12:0}}>
-            <input type="date" min="2023-01-01" max={dr.hasta||maxFut} value={dr.desde} onChange={ev=>setD("desde",ev.target.value)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
+            <GhDatePicker T={T} min="2023-01-01" max={dr.hasta||maxFut} value={dr.desde} onChange={_v=>setD("desde",_v)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
             <span style={{fontSize:12,color:T.textSm}}>→</span>
-            <input type="date" min={dr.desde||"2023-01-01"} max={maxFut} value={dr.hasta} onChange={ev=>setD("hasta",ev.target.value)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
+            <GhDatePicker T={T} min={dr.desde||"2023-01-01"} max={maxFut} value={dr.hasta} onChange={_v=>setD("hasta",_v)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
             <span style={{fontSize:13,color:T.textSm}}>$</span>
             <input type="number" min="0" value={dr.monto} onChange={ev=>setD("monto",ev.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right",padding:"6px 8px"}}/>
             {dProm>0 && <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(dProm).toLocaleString("es-AR")}/día</span>}
@@ -33133,9 +33353,9 @@ function CostosPanel({ T, uid }) {
             );})}
           </div>}
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderTop:googleAdsList.length>0?`1px solid ${T.borderL}`:"none",paddingTop:googleAdsList.length>0?12:0}}>
-            <input type="date" min="2023-01-01" max={dr.hasta||maxFut} value={dr.desde} onChange={ev=>setD("desde",ev.target.value)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
+            <GhDatePicker T={T} min="2023-01-01" max={dr.hasta||maxFut} value={dr.desde} onChange={_v=>setD("desde",_v)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
             <span style={{fontSize:12,color:T.textSm}}>→</span>
-            <input type="date" min={dr.desde||"2023-01-01"} max={maxFut} value={dr.hasta} onChange={ev=>setD("hasta",ev.target.value)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
+            <GhDatePicker T={T} min={dr.desde||"2023-01-01"} max={maxFut} value={dr.hasta} onChange={_v=>setD("hasta",_v)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
             <span style={{fontSize:13,color:T.textSm}}>$</span>
             <input type="number" min="0" value={dr.monto} onChange={ev=>setD("monto",ev.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right",padding:"6px 8px"}}/>
             {dProm>0 && <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(dProm).toLocaleString("es-AR")}/día</span>}
@@ -33395,9 +33615,9 @@ function CostosAdicionalesPanel({ T, uid }) {
                 )}
                 <span style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:T.textMd}}>
                   Vigencia
-                  <input type="date" value={c.desde||""} onChange={e=>upd(c.id,{desde:e.target.value})} style={{...iS,fontSize:11,padding:"4px 6px"}}/>
+                  <GhDatePicker T={T} value={c.desde||""} onChange={_v=>upd(c.id,{desde:_v})} style={{...iS,fontSize:11,padding:"4px 6px"}}/>
                   →
-                  <input type="date" value={c.hasta||""} onChange={e=>upd(c.id,{hasta:e.target.value})} style={{...iS,fontSize:11,padding:"4px 6px"}}/>
+                  <GhDatePicker T={T} value={c.hasta||""} onChange={_v=>upd(c.id,{hasta:_v})} style={{...iS,fontSize:11,padding:"4px 6px"}}/>
                   <span style={{color:T.textSm}}>(vacío = siempre)</span>
                 </span>
                 <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:c.sumaAds?T.orange:T.textMd,cursor:"pointer"}}>

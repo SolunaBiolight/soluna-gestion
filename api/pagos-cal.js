@@ -155,6 +155,7 @@ function limpiar(p, base = {}) {
   if (p.vence !== undefined && esFecha(p.vence)) out.vence = p.vence;
   if (p.notas !== undefined) out.notas = String(p.notas || "").slice(0, 1000);
   if (p.tipo !== undefined) out.tipo = ["unico", "mensual", "cuotas", "pedido"].includes(p.tipo) ? p.tipo : "unico";
+  if (p.banco !== undefined) out.banco = String(p.banco || "").trim().slice(0, 60);
   return out;
 }
 

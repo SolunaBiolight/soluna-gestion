@@ -426,6 +426,30 @@ export default async function handler(req, res) {
           (vencidasPorUid[t.uid] = vencidasPorUid[t.uid] || []).push(t);
         }
       }
+      // Recordatorio al DUEÑO (tick "Recordármelo por mail" en la tarea): un mail
+      // cuando la tarea vence dentro de las próximas 36 h (hoy o mañana), con la hora si la tiene.
+      let own = 0;
+      for (const t of pendTareas) {
+        if (!t.recordarMail || t.remOwnerAt) continue;
+        const dl = dlOf(t);
+        if (!(dl > ahora - 6 * 3600000 && dl <= en36h)) continue;
+        const hora = t.deadlineHora ? ` a las ${t.deadlineHora} hs` : "";
+        const esHoy = fmtDL(dl) === fmtDL(ahora);
+        const html = `<div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#6366f1,#a78bfa);padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
+    <div style="font-size:18px;font-weight:700;color:#fff">${esHoy ? "Vence hoy" : "Vence mañana"}${hora}</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px">${t.titulo}</div>
+  </div>
+  <p style="font-size:14px;color:#374151">Pediste que te recordemos esta tarea: <strong>${t.titulo}</strong> vence el <strong>${fmtDL(dl)}${hora}</strong>${t.asignadoNombre || t.asignadoEmail ? ` · asignada a ${t.asignadoNombre || t.asignadoEmail}` : ""}.</p>
+  ${t.descripcion ? `<p style="font-size:13px;color:#6b7280">${String(t.descripcion).slice(0, 400)}</p>` : ""}
+  <div style="text-align:center;margin:18px 0"><a href="https://www.growithapp.com/#/tareas" style="background:#6366f1;color:#fff;padding:11px 26px;border-radius:9px;text-decoration:none;font-size:14px;font-weight:700">Abrir en Growith</a></div>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Tareas</p>
+</div>`;
+        try {
+          await notifyManagers(db, t.uid, t.managerEmail || "", `${esHoy ? "Vence hoy" : "Vence mañana"}: ${t.titulo}`, html);
+          await t._ref.set({ remOwnerAt: now }, { merge: true }); own++;
+        } catch (_) {}
+      }
       // Aviso a admins: solo las que ACABAN de vencer, agrupadas en un solo mail
       for (const [u, ts] of Object.entries(vencidasPorUid)) {
         const lista = ts.map(t => `<li style="margin-bottom:6px"><strong>${t.titulo}</strong> — ${t.asignadoNombre || t.asignadoEmail || ""} · venció el ${fmtDL(dlOf(t))}</li>`).join("");
@@ -1583,6 +1607,7 @@ export default async function handler(req, res) {
     }
 
     if (action === "createTarea") {
+      const { deadlineHora="", recordarMail=false } = body;
       const { titulo, descripcion="", asignadoEmail, asignadoNombre="", brief="", links=[], deadline, prioridad="normal", checklist=[], managerEmail="", asignadosEmails: asignadosEmailsRaw, esCampaña=false, slots=[] } = body;
       if (!titulo||!asignadoEmail) return res.status(400).json({ error:"Título y asignado requeridos" });
       // Normalizar lista de asignados: usar lo que manda el frontend, o al menos el primario
@@ -1608,6 +1633,8 @@ export default async function handler(req, res) {
         brief, links: linksArr, prioridad, checklist: checklistArr,
         tareaNum, tareaNumStr,
         deadline: deadline ? new Date(deadline) : null,
+        deadlineHora: String(deadlineHora || "").slice(0, 5),
+        recordarMail: !!recordarMail,
         estado:"pendiente", deliverables:[], correcciones:0, feedbackActual:null, comments:[],
         activity, leidoAt:null, estimacion:null, managerEmail,
         esCampaña: !!esCampaña,
@@ -1665,7 +1692,7 @@ export default async function handler(req, res) {
     }
 
     if (action === "updateTarea") {
-      const { tareaId, titulo, descripcion, brief, links, deadline, estado, asignadoEmail, asignadoNombre, prioridad, checklist, asignadosEmails } = body;
+      const { tareaId, titulo, descripcion, brief, links, deadline, estado, asignadoEmail, asignadoNombre, prioridad, checklist, asignadosEmails, deadlineHora, recordarMail } = body;
       const ref = db.collection("tareas").doc(tareaId);
       const prevSnap = await ref.get();
       // Cross-tenant guard: la tarea tiene que ser de ESTE tenant (tareas es una
@@ -1678,6 +1705,10 @@ export default async function handler(req, res) {
       if (brief!==undefined) clean.brief = brief;
       if (links!==undefined) clean.links = normalizeLinks(links);
       if (deadline!==undefined) clean.deadline = deadline ? new Date(deadline) : null;
+      if (deadlineHora!==undefined) clean.deadlineHora = String(deadlineHora || "").slice(0, 5);
+      if (recordarMail!==undefined) clean.recordarMail = !!recordarMail;
+      // Si cambió la fecha o se (re)activó el recordatorio, el aviso al dueño vuelve a correr.
+      if (deadline!==undefined || recordarMail) clean.remOwnerAt = null;
       if (estado!==undefined) clean.estado = estado;
       if (asignadoEmail!==undefined) clean.asignadoEmail = asignadoEmail;
       if (asignadoNombre!==undefined) clean.asignadoNombre = asignadoNombre;
