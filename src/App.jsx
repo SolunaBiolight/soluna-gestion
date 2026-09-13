@@ -1294,7 +1294,11 @@ const META_OAUTH_OK = false;
 // cargar el gasto manual en Dashboard → Configuraciones. Al aprobar, true.
 // Habilitado 1/sep/2026: app OAuth "En producción" + Basic Access del developer
 // token aprobado (el gasto real ya entraba por la API).
-const GADS_OAUTH_OK = true;
+// 2026-09-13: apagado a propósito. El permiso de Google Ads (adwords) es "sensible":
+// hasta que Google verifique la app (justificación + video demo) cualquier cliente
+// ve el cartel "Google hasn't verified this app". Como además falta el developer
+// token para leer campañas, la conexión queda en PRONTO. Volver a true al aprobarse.
+const GADS_OAUTH_OK = false;
 
 function CommandPalette({T, open, onClose, setPage, isAdmin}) {
   const [q, setQ] = React.useState("");
