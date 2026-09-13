@@ -59,6 +59,7 @@ const SETTINGS_DEFAULTS = {
   alert_global: 14,   // días de stock bajo el cual un producto está "crítico"
   alert_config: {},   // { [productId]: { threshold, enabled } } — overrides por producto
   lead_times: {},     // { [productId]: días } — demora del proveedor
+  hidden_products: {}, // { [productId]: {at:"YYYY-MM-DD", nombre} } — ocultos de Stock hasta que registren una venta nueva
   notif: { email: "", whatsapp: "", enabled: false },
   sync_mode: "off",       // "off" | "simulacion" | "on" — stock cruzado: escribir stock en TN/ML
   sync_ml_separado: false, // true = ML fuera del pool (ni descuenta ventas ML ni escribe en ML)
@@ -1052,6 +1053,7 @@ export default async function handler(req, res) {
       }
       if (body.alert_config && typeof body.alert_config === "object") settings.alert_config = body.alert_config;
       if (body.lead_times && typeof body.lead_times === "object") settings.lead_times = body.lead_times;
+      if (body.hidden_products && typeof body.hidden_products === "object") settings.hidden_products = body.hidden_products;
       if (body.notif && typeof body.notif === "object") settings.notif = {
         email: String(body.notif.email || "").slice(0, 120),
         whatsapp: String(body.notif.whatsapp || "").slice(0, 30),
@@ -1648,7 +1650,7 @@ export default async function handler(req, res) {
             for (const e of arr) if (e.code === 200 && e.body) titles[e.body.id] = { title: e.body.title, thumbnail: e.body.thumbnail, permalink: e.body.permalink, price: e.body.price };
           } catch(_) {}
         }
-        return res.json({ ok: true, total: qs.total || questions.length, questions: questions.map(q => ({ id: q.id, text: q.text, status: q.status, date: q.date_created, item_id: q.item_id, from: q.from?.id || null, item: titles[q.item_id] || null })) });
+        return res.json({ ok: true, total: qs.total || questions.length, questions: questions.map(q => ({ id: q.id, text: q.text, status: q.status, date: q.date_created, item_id: q.item_id, from: q.from?.id || null, answer: q.answer?.text || null, answer_date: q.answer?.date_created || null, item: titles[q.item_id] || null })) });
       } catch (e) { return mlErr(res, e); }
     }
 

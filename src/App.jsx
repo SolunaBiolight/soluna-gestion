@@ -943,7 +943,7 @@ const SIDEBAR_GROUPS_BASE = [
       subs:[{id:"analisis",label:"Análisis"},{id:"reglas",label:"Reglas"},/* {id:"publicador",label:"Publicador IA"} — oculto por ahora (Thiago, 2026-09-11) */{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", alertKey:"stock", badge:"red",
       },
-    {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
+    {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml", alertKey:"ml", badge:"orange",
       subs:[{id:"gestion",label:"Gestión"},{id:"publicar",label:"Publicar"},{id:"preguntas",label:"Preguntas"},{id:"mensajes",label:"Mensajes"},{id:"ventas",label:"Ventas"},{id:"reputacion",label:"Reputación"}]},
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
@@ -1107,6 +1107,9 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
                           transition:`width 0.18s ${DS.ease}, background 0.18s`,
                         }}/>
                         {sub.label}
+                        {item.id==="ml"&&sub.id==="preguntas"&&(alerts.ml||0)>0&&(
+                          <span title={`${alerts.ml} pregunta(s) sin responder`} style={{marginLeft:"auto",fontSize:9,fontWeight:DS.w.bold,background:T.orange+"1f",color:T.orange,border:`1px solid ${T.orange}44`,borderRadius:DS.r.full,padding:"0 5px",lineHeight:"14px",flexShrink:0}}>{alerts.ml>99?"99+":alerts.ml}</span>
+                        )}
                         {item.id==="margenes"&&sub.id==="costos"&&(alerts.costos||0)>0&&(
                           <span title={`${alerts.costos} producto(s) vendidos sin costo cargado`} style={{marginLeft:"auto",fontSize:9,fontWeight:DS.w.bold,background:T.yellow+"1f",color:T.yellow,border:`1px solid ${T.yellow}44`,borderRadius:DS.r.full,padding:"0 5px",lineHeight:"14px",flexShrink:0}}>{alerts.costos}</span>
                         )}
@@ -12438,7 +12441,7 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
 // ===========================================
 // HOME SCREEN
 // ===========================================
-function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas, user, userPlan="free", planExpiry, isAdmin=false, darkMode, onToggleDark, connectedStores={}, enviosProblemas=0}) {
+function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas, user, userPlan="free", planExpiry, isAdmin=false, darkMode, onToggleDark, connectedStores={}, enviosProblemas=0, mlPreguntas=0}) {
   // Cuenta recién creada: sin tienda conectada los KPIs muestran $0 y "todo en
   // orden", que se lee como "la app no hace nada". Mostramos qué falta hacer.
   // Solo con connectedStores.loaded: mientras carga (o si la carga falla) no se
@@ -12570,12 +12573,18 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
 
   // Feed por categoría
   const CAT_META = {
+    ml:       {label:"Preguntas ML", nav:"ml", color:T.orange, icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01"/></svg>},
     reclamos: {label:"Reclamos", icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>, color:T.red, nav:"reclamos"},
     stock:    {label:"Stock",    icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>, color:T.red, nav:"stock"},
     envios:   {label:"Envíos",  nav:"envios", color:T.orange, icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>},
     canjes:   {label:"Canjes",  icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/></svg>, color:T.orange, nav:"canjes"},
   };
   const grouped = {
+    ml: mlPreguntas>0?[{
+      icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.orange} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01"/></svg>,
+      titulo:`${mlPreguntas} pregunta${mlPreguntas!==1?"s":""} de Mercado Libre sin responder`,
+      sub:"Respondé rápido: ML premia el tiempo de respuesta",badge:String(mlPreguntas),badgeColor:T.orange,accion:()=>onNavigate("ml","preguntas"),
+    }]:[],
     reclamos: reclamosCount>0?[{
       icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>,
       titulo:`${reclamosCount} reclamo${reclamosCount!==1?"s":""} abierto${reclamosCount!==1?"s":""}`,
@@ -29483,72 +29492,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   </div>
                 )}
 
-                {/* Header con controles */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",marginBottom:16}}>
-                  <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                    {/* Sub-tabs nivel (solo cambia si NO hay drill activo, sino se desactivan) */}
-                    {aDrill.length === 0 ? (
-                      <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`}}>
-                        {[{id:"campaign",label:"Campañas"},{id:"adset",label:"Todos los adsets"},{id:"ad",label:"Todos los ads"}].map(l=>(
-                          <button key={l.id} onClick={()=>{setALevel(l.id);setADrill([]);}} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:aLevel===l.id?T.card:"transparent",color:aLevel===l.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l.label}</button>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={{padding:"6px 12px",background:T.bg,borderRadius:8,border:`1px solid ${T.borderL}`,fontSize:12,fontWeight:600,color:T.text}}>
-                        {aLevel === "adset" ? "Adsets" : "Ads"} de {aDrill[aDrill.length-1].name.slice(0,30)}{aDrill[aDrill.length-1].name.length>30?"…":""}
-                      </div>
-                    )}
-                    {/* Date range con calendario inline */}
-                    <DateRangePicker T={T} since={aSince} until={aUntil} onChange={(s,u)=>{setASince(s);setAUntil(u);}}/>
-                    {/* Columnas */}
-                    <div style={{position:"relative"}}>
-                      <button onClick={()=>setAColsOpen(o=>!o)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M17.66 17.66l-1.41-1.41M6.34 17.66l1.41-1.41"/></svg> Columnas</button>
-                      {aColsOpen && (
-                        <div className="gh-dropdown" style={{position:"absolute",top:"100%",right:0,marginTop:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px",zIndex:10,minWidth:200,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
-                          {[
-                            {k:"spend",l:"Gasto"},{k:"purchases",l:"Compras"},{k:"purchase_value",l:"Valor compras"},
-                            {k:"roas",l:"ROAS"},{k:"cpa",l:"CPA"},{k:"ctr",l:"CTR"},{k:"cpm",l:"CPM"},{k:"cpc",l:"CPC"},
-                            {k:"frequency",l:"Frecuencia"},{k:"impressions",l:"Impresiones"},{k:"reach",l:"Alcance"},{k:"clicks",l:"Clicks"},
-                          ].map(c=>(
-                            <label key={c.k} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 0",fontSize:11,color:T.text,cursor:"pointer"}}>
-                              <input type="checkbox" checked={aCols.includes(c.k)} onChange={e=>{
-                                setACols(prev=>e.target.checked?[...prev,c.k]:prev.filter(x=>x!==c.k));
-                              }}/>
-                              {c.l}
-                            </label>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {/* Filtro estado */}
-                    <select value={aFilterStatus} onChange={e=>setAFilterStatus(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      <option value="all">Todos los estados</option>
-                      <option value="active">Solo activos</option>
-                      <option value="paused">Solo pausados</option>
-                    </select>
-                    {/* Segmentar por breakdown — retirado del toolbar (2026-09-12) */}
-                    {false && <select value={aBreakdown} onChange={e=>setABreakdown(e.target.value)} title="Segmentar las métricas del rango por audiencia/ubicación/hora" style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:aBreakdown?T.accent:T.text,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:aBreakdown?600:400}}>
-                      <option value="">Sin segmentar</option>
-                      <option value="age">Por edad</option>
-                      <option value="gender">Por género</option>
-                      <option value="placement">Por ubicación (feed/reels/stories)</option>
-                      <option value="hour">Por hora del día</option>
-                    </select>}
-                    {/* BE de referencia global (cuando el producto no tiene BE propio) */}
-                    <div title="ROAS break-even de referencia: colorea el ROAS en verde/rojo cuando el anuncio no tiene un producto con BE propio" style={{display:"flex",alignItems:"center",gap:5,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"3px 8px"}}>
-                      <span style={{fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.3}}>BE</span>
-                      <GhTip T={T} text="BE = ROAS break-even (punto de equilibrio): el ROAS mínimo para no perder plata con un anuncio. Growith pinta el ROAS en verde cuando supera este valor y en rojo cuando no. Si un producto tiene su propio BE cargado en Dashboard → Costos, se usa ese; este es el de referencia para el resto."/>
-                      <input type="number" step="0.1" min="0" value={aRoasBe} onChange={e=>setARoasBe(parseFloat(e.target.value)||0)} style={{width:44,background:"transparent",border:"none",fontSize:12,color:T.text,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",outline:"none"}}/>
-                      <span style={{fontSize:11,color:T.textSm}}>x</span>
-                    </div>
-                    {/* Búsqueda */}
-                    <input type="text" placeholder="Buscar por nombre…" value={aQuery} onChange={e=>setAQuery(e.target.value)} style={{flex:1,minWidth:140,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                    <button onClick={loadInsights} disabled={aLoading} title="Refrescar con el rango actual" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      {aLoading?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>}
-                    </button>
-                  </div>
-                </div>
-
                 {/* Panel de segmentos (breakdown) — agrega TODO el rango por segmento */}
                 {aBreakdown && (
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:16}}>
@@ -29692,6 +29635,71 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <KPI T={T} label="ROAS" value={fmt(totalRoas)+"x"} sub={aRoasBe>0?`BE de referencia ${aRoasBe}x`:""} color={totalRoas>=aRoasBe?T.green:(totalRoas>0?T.red:T.textSm)}/>
                       <KPI T={T} label="CPA" value={totalCpa?cur+fmt(totalCpa):"—"} sub={totalCtr?`CTR ${fmt(totalCtr)}%`:""} color={T.text}/>
                     </div>
+                {/* Header con controles */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",marginBottom:16}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    {/* Sub-tabs nivel (solo cambia si NO hay drill activo, sino se desactivan) */}
+                    {aDrill.length === 0 ? (
+                      <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`}}>
+                        {[{id:"campaign",label:"Campañas"},{id:"adset",label:"Todos los adsets"},{id:"ad",label:"Todos los ads"}].map(l=>(
+                          <button key={l.id} onClick={()=>{setALevel(l.id);setADrill([]);}} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:aLevel===l.id?T.card:"transparent",color:aLevel===l.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l.label}</button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{padding:"6px 12px",background:T.bg,borderRadius:8,border:`1px solid ${T.borderL}`,fontSize:12,fontWeight:600,color:T.text}}>
+                        {aLevel === "adset" ? "Adsets" : "Ads"} de {aDrill[aDrill.length-1].name.slice(0,30)}{aDrill[aDrill.length-1].name.length>30?"…":""}
+                      </div>
+                    )}
+                    {/* Date range con calendario inline */}
+                    <DateRangePicker T={T} since={aSince} until={aUntil} onChange={(s,u)=>{setASince(s);setAUntil(u);}}/>
+                    {/* Columnas */}
+                    <div style={{position:"relative"}}>
+                      <button onClick={()=>setAColsOpen(o=>!o)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M17.66 17.66l-1.41-1.41M6.34 17.66l1.41-1.41"/></svg> Columnas</button>
+                      {aColsOpen && (
+                        <div className="gh-dropdown" style={{position:"absolute",top:"100%",right:0,marginTop:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px",zIndex:10,minWidth:200,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
+                          {[
+                            {k:"spend",l:"Gasto"},{k:"purchases",l:"Compras"},{k:"purchase_value",l:"Valor compras"},
+                            {k:"roas",l:"ROAS"},{k:"cpa",l:"CPA"},{k:"ctr",l:"CTR"},{k:"cpm",l:"CPM"},{k:"cpc",l:"CPC"},
+                            {k:"frequency",l:"Frecuencia"},{k:"impressions",l:"Impresiones"},{k:"reach",l:"Alcance"},{k:"clicks",l:"Clicks"},
+                          ].map(c=>(
+                            <label key={c.k} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 0",fontSize:11,color:T.text,cursor:"pointer"}}>
+                              <input type="checkbox" checked={aCols.includes(c.k)} onChange={e=>{
+                                setACols(prev=>e.target.checked?[...prev,c.k]:prev.filter(x=>x!==c.k));
+                              }}/>
+                              {c.l}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {/* Filtro estado */}
+                    <select value={aFilterStatus} onChange={e=>setAFilterStatus(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <option value="all">Todos los estados</option>
+                      <option value="active">Solo activos</option>
+                      <option value="paused">Solo pausados</option>
+                    </select>
+                    {/* Segmentar por breakdown — retirado del toolbar (2026-09-12) */}
+                    {false && <select value={aBreakdown} onChange={e=>setABreakdown(e.target.value)} title="Segmentar las métricas del rango por audiencia/ubicación/hora" style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:aBreakdown?T.accent:T.text,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:aBreakdown?600:400}}>
+                      <option value="">Sin segmentar</option>
+                      <option value="age">Por edad</option>
+                      <option value="gender">Por género</option>
+                      <option value="placement">Por ubicación (feed/reels/stories)</option>
+                      <option value="hour">Por hora del día</option>
+                    </select>}
+                    {/* BE de referencia global (cuando el producto no tiene BE propio) */}
+                    <div title="ROAS break-even de referencia: colorea el ROAS en verde/rojo cuando el anuncio no tiene un producto con BE propio" style={{display:"flex",alignItems:"center",gap:5,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"3px 8px"}}>
+                      <span style={{fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.3}}>BE</span>
+                      <GhTip T={T} text="BE = ROAS break-even (punto de equilibrio): el ROAS mínimo para no perder plata con un anuncio. Growith pinta el ROAS en verde cuando supera este valor y en rojo cuando no. Si un producto tiene su propio BE cargado en Dashboard → Costos, se usa ese; este es el de referencia para el resto."/>
+                      <input type="number" step="0.1" min="0" value={aRoasBe} onChange={e=>setARoasBe(parseFloat(e.target.value)||0)} style={{width:44,background:"transparent",border:"none",fontSize:12,color:T.text,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",outline:"none"}}/>
+                      <span style={{fontSize:11,color:T.textSm}}>x</span>
+                    </div>
+                    {/* Búsqueda */}
+                    <input type="text" placeholder="Buscar por nombre…" value={aQuery} onChange={e=>setAQuery(e.target.value)} style={{flex:1,minWidth:140,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <button onClick={loadInsights} disabled={aLoading} title="Refrescar con el rango actual" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      {aLoading?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>}
+                    </button>
+                  </div>
+                </div>
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
                       <div style={{overflowX:"auto"}}>
                         <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -29710,8 +29718,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                               return (
                                 <tr key={r.id} style={{borderBottom:`1px solid ${T.borderL}`,opacity:isActive?1:0.6}}>
                                   <td style={{padding:"10px 12px",display:"flex",gap:4}}>
-                                    <button onClick={()=>toggleStatus(r)} disabled={busy} title={isActive?"Pausar":"Activar"} style={{background:isActive?T.green+"22":T.red+"22",border:`1px solid ${isActive?T.green:T.red}55`,color:isActive?T.green:T.red,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:busy?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
-                                      {busy?<Spinner size={10} color={isActive?T.green:T.red}/>:isActive?"▐▐":"▸"}
+                                    <button onClick={()=>toggleStatus(r)} disabled={busy} title={isActive?"Pausar":"Activar"} role="switch" aria-checked={isActive} style={{width:34,height:18,borderRadius:9,border:"none",padding:0,cursor:busy?"wait":"pointer",background:isActive?"#1877f2":(T.textSm+"55"),position:"relative",transition:"background .15s",flexShrink:0,opacity:busy?0.6:1}}>
+                                      <span style={{position:"absolute",top:2,left:isActive?18:2,width:14,height:14,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 2px rgba(0,0,0,.3)",transition:"left .15s",display:"flex",alignItems:"center",justifyContent:"center"}}>{busy&&<Spinner size={8} color={isActive?"#1877f2":T.textSm}/>}</span>
                                     </button>
                                   </td>
                                   <td style={{padding:"10px 12px",fontSize:12,color:T.text,maxWidth:320,overflow:"hidden",whiteSpace:"nowrap"}}>
@@ -31585,44 +31593,98 @@ function MLReputacion({ T, uid }) {
   if (loading) return <div style={{ padding: 50, textAlign: "center" }}><Spinner size={22} color={T.accent} /></div>;
   if (err) return <div style={{ background: T.card, border: `1px solid ${T.red}44`, borderRadius: 12, padding: 20, color: T.red, fontSize: 13 }}>No se pudo cargar la reputación: {err}</div>;
   const rep = d?.reputation || {}; const level = String(rep.level_id || "");
-  const color = level.includes("green") ? "#00a650" : level.includes("yellow") ? "#f5c518" : level.includes("orange") ? "#ff7733" : level.includes("red") ? "#e63a3a" : T.textSm;
+  const colorOf = lv => lv.includes("light_green") ? "#7ed321" : lv.includes("green") ? "#00a650" : lv.includes("yellow") ? "#f5c518" : lv.includes("orange") ? "#ff7733" : lv.includes("red") ? "#e63a3a" : T.textSm;
+  const color = colorOf(level);
   const tx = rep.transactions || {}; const ratings = tx.ratings || {}; const met = rep.metrics || {};
   const pct = v => v != null ? (v * 100).toFixed(v * 100 < 1 ? 2 : 1) + "%" : "—";
-  const LEVELS = ["1_red", "2_orange", "3_yellow", "4_light_green", "5_green"];
-  const levelIdx = LEVELS.indexOf(level);
+  const LEVELS = [
+    { id: "1_red", n: "Rojo", d: "Reputación muy baja: tus publicaciones pierden exposición y podés recibir restricciones." },
+    { id: "2_orange", n: "Naranja", d: "Reputación baja: menos visibilidad en los listados." },
+    { id: "3_yellow", n: "Amarillo", d: "Reputación regular: todavía sin beneficios, con riesgo de bajar." },
+    { id: "4_light_green", n: "Verde claro", d: "Buena reputación: mejor posición en los listados." },
+    { id: "5_green", n: "Verde", d: "Excelente: máxima exposición y camino a MercadoLíder." },
+  ];
+  const levelIdx = LEVELS.findIndex(l => l.id === level);
+  const levelInfo = LEVELS[levelIdx] || null;
   const powerLabel = { platinum: "MercadoLíder Platinum", gold: "MercadoLíder Gold", silver: "MercadoLíder" }[rep.power_seller_status] || null;
+  const periodo = met.sales?.period || met.claims?.period || tx.period || "";
+  const perLabel = periodo ? String(periodo).replace(/(\d+)\s*days?/i, "últimos $1 días").replace("historic", "histórico") : "";
+  const ventasPer = met.sales?.completed;
+  // Métricas con explicación y umbral de referencia (los cortes exactos los define ML por sitio y pueden cambiar).
+  const METRICAS = [
+    { l: "Reclamos", v: pct(met.claims?.rate), n: met.claims?.value, unit: "reclamos", bad: (met.claims?.rate || 0) > 0.02, ref: "referencia: menos de 2%",
+      que: "Ventas en las que el comprador abrió un reclamo y ML tuvo que intervenir (no llegó, llegó distinto, no funciona).",
+      como: "Respondé rápido las preguntas y mensajes, describí bien el producto, despachá en fecha y resolvé el problema antes de que el comprador escale a ML." },
+    { l: "Demoras en despacho", v: pct(met.delayed_handling_time?.rate), n: met.delayed_handling_time?.value, unit: "envíos", bad: (met.delayed_handling_time?.rate || 0) > 0.15, ref: "referencia: menos de 15%",
+      que: "Envíos que despachaste después del plazo que ML le prometió al comprador.",
+      como: "Imprimí las etiquetas y despachá todos los días hábiles; si no llegás, ajustá el tiempo de preparación de tus publicaciones." },
+    { l: "Cancelaciones", v: pct(met.cancellations?.rate), n: met.cancellations?.value, unit: "ventas", bad: (met.cancellations?.rate || 0) > 0.03, ref: "referencia: menos de 3%",
+      que: "Ventas que cancelaste vos (sin stock, error de precio, no pudiste enviar). Las que cancela el comprador no cuentan.",
+      como: "Mantené el stock sincronizado (Stock → Configuración → Stock cruzado) y revisá precios antes de publicar." },
+  ];
+  const Card = ({ children, style }) => <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px", ...style }}>{children}</div>;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Cabecera: quién sos y en qué color estás */}
       <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 14, padding: "20px 22px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <div style={{ width: 52, height: 52, borderRadius: "50%", background: color + "22", border: `2px solid ${color}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <div style={{ width: 22, height: 22, borderRadius: "50%", background: color }} />
           </div>
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>{d?.nickname || "Tu reputación"}</div>
-            <div style={{ fontSize: 12, color: T.textSm }}>{powerLabel ? <span style={{ color, fontWeight: 700 }}>{powerLabel}</span> : "Vendedor"}{d?.permalink && <> · <a href={d.permalink} target="_blank" rel="noreferrer" style={{ color: T.accent }}>ver perfil</a></>}</div>
+            <div style={{ fontSize: 12, color: T.textSm }}>{powerLabel ? <span style={{ color, fontWeight: 700 }}>{powerLabel}</span> : "Vendedor"}{d?.permalink && <> · <a href={d.permalink} target="_blank" rel="noreferrer" style={{ color: T.accent }}>ver perfil en ML</a></>}</div>
+            <div style={{ fontSize: 12, color: T.textMd, marginTop: 6, lineHeight: 1.5 }}>
+              {levelInfo ? <><strong style={{ color }}>Estás en {levelInfo.n.toLowerCase()}.</strong> {levelInfo.d}</> : <>Todavía no tenés color asignado: Mercado Libre lo calcula cuando acumulás las ventas mínimas del período{perLabel ? ` (${perLabel})` : ""}.</>}
+            </div>
           </div>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "flex-end" }}>
-            {LEVELS.map((lv, i) => { const c = lv.includes("green") ? "#00a650" : lv.includes("yellow") ? "#f5c518" : lv.includes("orange") ? "#ff7733" : "#e63a3a"; return <div key={lv} title={lv} style={{ width: 16, height: 12 + i * 6, borderRadius: 3, background: i <= levelIdx && levelIdx >= 0 ? c : T.border, opacity: i === levelIdx ? 1 : 0.9 }} />; })}
+          <div style={{ display: "flex", gap: 4, alignItems: "flex-end" }} title="Escala de reputación de Mercado Libre">
+            {LEVELS.map((lv, i) => <div key={lv.id} title={lv.n} style={{ width: 16, height: 12 + i * 6, borderRadius: 3, background: colorOf(lv.id), opacity: i === levelIdx ? 1 : 0.25 }} />)}
           </div>
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12 }}>
-        {[
-          { l: "Ventas concretadas", v: tx.completed != null ? tx.completed : "—", s: tx.total != null ? `de ${tx.total} operaciones` : "" },
-          { l: "Reclamos", v: pct(met.claims?.rate), s: met.claims?.value != null ? `${met.claims.value} casos` : "", bad: (met.claims?.rate || 0) > 0.02 },
-          { l: "Demoras en despacho", v: pct(met.delayed_handling_time?.rate), s: met.delayed_handling_time?.value != null ? `${met.delayed_handling_time.value} envíos` : "", bad: (met.delayed_handling_time?.rate || 0) > 0.15 },
-          { l: "Cancelaciones", v: pct(met.cancellations?.rate), s: met.cancellations?.value != null ? `${met.cancellations.value} ventas` : "", bad: (met.cancellations?.rate || 0) > 0.03 },
-        ].map((k, i) => (
-          <div key={i} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 16px" }}>
+
+      {/* KPIs con contexto */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12 }}>
+        <Card>
+          <div style={{ fontSize: 11, color: T.textSm, fontWeight: 600, marginBottom: 6 }}>Ventas concretadas</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: T.text }}>{tx.completed != null ? tx.completed : "—"}</div>
+          <div style={{ fontSize: 11, color: T.textSm, marginTop: 2 }}>{tx.total != null ? `de ${tx.total} operaciones históricas` : ""}{ventasPer != null ? ` · ${ventasPer} en ${perLabel || "el período"}` : ""}</div>
+        </Card>
+        {METRICAS.map((k, i) => (
+          <Card key={i} style={{ borderColor: k.bad ? T.red + "66" : T.border }}>
             <div style={{ fontSize: 11, color: T.textSm, fontWeight: 600, marginBottom: 6 }}>{k.l}</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: k.bad ? T.red : T.text }}>{k.v}</div>
-            {k.s && <div style={{ fontSize: 11, color: T.textSm, marginTop: 2 }}>{k.s}</div>}
-          </div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: k.bad ? T.red : T.green }}>{k.v}</div>
+            <div style={{ fontSize: 11, color: T.textSm, marginTop: 2 }}>{k.n != null ? `${k.n} ${k.unit}` : ""}{k.n != null ? " · " : ""}{k.ref}</div>
+          </Card>
         ))}
       </div>
-      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 12 }}>Calificaciones de compradores</div>
+
+      {/* Qué mide cada cosa y cómo mejorarla */}
+      <Card>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 4 }}>¿Cómo calcula Mercado Libre tu color?</div>
+        <div style={{ fontSize: 12, color: T.textMd, lineHeight: 1.6, marginBottom: 12 }}>
+          Mira tus ventas de {perLabel || "los últimos 60 días"} (o las últimas 365 si vendés poco) y compara tres tasas: <strong>reclamos</strong>, <strong>demoras en el despacho</strong> y <strong>cancelaciones tuyas</strong>. Con las tres bajas estás en verde; si una sola se pasa del límite, bajás de color aunque las otras estén perfectas. Las calificaciones de los compradores no cambian el color, pero se ven en tu perfil.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 10 }}>
+          {METRICAS.map((k, i) => (
+            <div key={i} style={{ background: T.bg, border: `1px solid ${k.bad ? T.red + "55" : T.borderL}`, borderRadius: 10, padding: "12px 14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: k.bad ? T.red : T.green, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{k.l}</span>
+                <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: k.bad ? T.red : T.green }}>{k.v}</span>
+              </div>
+              <div style={{ fontSize: 11, color: T.textMd, lineHeight: 1.5, marginBottom: 6 }}>{k.que}</div>
+              <div style={{ fontSize: 11, color: T.textSm, lineHeight: 1.5 }}><strong style={{ color: T.textMd }}>Cómo mejorarla:</strong> {k.como}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Calificaciones */}
+      <Card>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 4 }}>Calificaciones de compradores</div>
+        <div style={{ fontSize: 11, color: T.textSm, marginBottom: 12 }}>Lo que opinan después de recibir el producto. No definen el color, pero sí la confianza de los próximos compradores.</div>
         <div style={{ display: "flex", gap: 4, height: 10, borderRadius: 6, overflow: "hidden", marginBottom: 10 }}>
           <div style={{ flex: ratings.positive || 0.001, background: "#00a650" }} />
           <div style={{ flex: ratings.neutral || 0.001, background: "#f5c518" }} />
@@ -31632,8 +31694,24 @@ function MLReputacion({ T, uid }) {
           <span><span style={{ color: "#00a650", fontWeight: 700 }}>{pct(ratings.positive)}</span> positivas</span>
           <span><span style={{ color: "#f5c518", fontWeight: 700 }}>{pct(ratings.neutral)}</span> neutrales</span>
           <span><span style={{ color: "#e63a3a", fontWeight: 700 }}>{pct(ratings.negative)}</span> negativas</span>
+          {tx.canceled != null && <span style={{ color: T.textSm }}>· {tx.canceled} operaciones canceladas en total</span>}
         </div>
-      </div>
+      </Card>
+
+      {/* Escala completa */}
+      <Card>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 10 }}>La escala, de peor a mejor</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {LEVELS.map((lv, i) => (
+            <div key={lv.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: i === levelIdx ? T.text : T.textMd, fontWeight: i === levelIdx ? 700 : 400 }}>
+              <span style={{ width: 12, height: 12, borderRadius: 3, background: colorOf(lv.id), flexShrink: 0 }} />
+              <span style={{ minWidth: 84 }}>{lv.n}{i === levelIdx ? " ← vos" : ""}</span>
+              <span style={{ color: T.textSm, fontWeight: 400 }}>{lv.d}</span>
+            </div>
+          ))}
+          <div style={{ fontSize: 11, color: T.textSm, marginTop: 6, lineHeight: 1.5 }}>MercadoLíder (y Gold / Platinum) se suma al verde cuando además superás un mínimo de ventas y facturación en el período: te da más exposición y beneficios en envíos.</div>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -31687,7 +31765,7 @@ function MLPreguntas({ T, uid, refreshKey }) {
   const load = async (st) => { setLoading(true); setErr(null); try { const j = await ghMlApi(uid, "ml_questions", { status: st }); setQs(j.questions || []); } catch (e) { setErr(e.message); } finally { setLoading(false); } };
   useEffect(() => { load(status); /* eslint-disable-next-line */ }, [uid, status]);
   useEffect(() => { if (refreshKey) load(status); /* eslint-disable-next-line */ }, [refreshKey]);
-  const responder = async (q) => { const text = (answers[q.id] || "").trim(); if (!text) { toast("Escribí una respuesta", "warning"); return; } setSending(q.id); try { await ghMlApi(uid, "ml_answer", {}, { data: { question_id: q.id, text } }); toast("Respondida ✓", "success"); setQs(prev => prev.filter(x => x.id !== q.id)); setAnswers(a => { const n = { ...a }; delete n[q.id]; return n; }); } catch (e) { toast("Error: " + e.message, "error"); } finally { setSending(null); } };
+  const responder = async (q) => { const text = (answers[q.id] || "").trim(); if (!text) { toast("Escribí una respuesta", "warning"); return; } setSending(q.id); try { await ghMlApi(uid, "ml_answer", {}, { data: { question_id: q.id, text } }); toast("Respondida ✓", "success"); try { window.dispatchEvent(new Event("gh-ml-preguntas-refresh")); } catch(_) {} setQs(prev => prev.filter(x => x.id !== q.id)); setAnswers(a => { const n = { ...a }; delete n[q.id]; return n; }); } catch (e) { toast("Error: " + e.message, "error"); } finally { setSending(null); } };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -31707,6 +31785,15 @@ function MLPreguntas({ T, uid, refreshKey }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {q.item?.title && <div style={{ fontSize: 11, color: T.textSm, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.item.title}{q.item.price ? ` · $${q.item.price.toLocaleString("es-AR")}` : ""}</div>}
                   <div style={{ fontSize: 13, color: T.text, fontWeight: 500, marginBottom: 8 }}>{q.text}</div>
+                  {q.answer && (
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: T.bg, border: `1px solid ${T.borderL}`, borderLeft: `3px solid ${T.accentSolid}`, borderRadius: 8, padding: "8px 10px", marginBottom: 8 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: T.accent, flexShrink: 0, marginTop: 1 }}>Tu respuesta</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, color: T.textMd, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{q.answer}</div>
+                        {q.answer_date && <div style={{ fontSize: 10, color: T.textSm, marginTop: 3 }}>{new Date(q.answer_date).toLocaleString("es-AR")}</div>}
+                      </div>
+                    </div>
+                  )}
                   {status === "UNANSWERED" && (
                     <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                       <textarea value={answers[q.id] || ""} onChange={e => setAnswers(a => ({ ...a, [q.id]: e.target.value }))} placeholder="Escribí tu respuesta..." rows={2} style={{ flex: 1, background: T.input, border: `1px solid ${T.inputBorder}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, color: T.text, fontFamily: "'Inter',system-ui,sans-serif", resize: "vertical" }} />
@@ -34356,6 +34443,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         setLeadTime(srvLT ? s.lead_times : (localLT||{}));
         if(s.notif&&(s.notif.email||s.notif.whatsapp)) setAlertNotif(s.notif);
         setSyncMode(s.sync_mode||"off"); setSyncMlSep(!!s.sync_ml_separado);
+        if(s.hidden_products&&typeof s.hidden_products==="object"){ setHiddenProds(s.hidden_products); try{ localStorage.setItem(`growith_hidden_prods_${uid}`, JSON.stringify(s.hidden_products)); }catch(e){} }
         // Migración: el server no tiene config pero este navegador sí → subirla
         if(!srvCfg&&!srvLT&&!s.alert_global&&(localCfg||localGlobal||localLT)){
           pushSettings({alert_config:localCfg||{}, alert_global:localGlobal||14, lead_times:localLT||{}});
@@ -34369,6 +34457,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     /* eslint-disable-next-line */
   },[uid]);
 
+  // Productos ocultos de Stock (vuelven solos si registran una venta posterior a la fecha en que se ocultaron).
+  const [hiddenProds,setHiddenProds]=useState(()=>{ try{ return JSON.parse(localStorage.getItem(`growith_hidden_prods_${uid}`)||"{}")||{}; }catch(e){ return {}; } });
+  function saveHiddenProds(h) {
+    setHiddenProds(h);
+    try{ localStorage.setItem(`growith_hidden_prods_${uid}`, JSON.stringify(h)); }catch(e){}
+    pushSettings({hidden_products:h});
+  }
   function saveAlertConfig(config) {
     setAlertConfig(config);
     try{ localStorage.setItem(`growith_alert_config_${uid}`, JSON.stringify(config)); }catch(e){}
@@ -34428,7 +34523,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   //   UN solo item y por eso Malla mostraba 162 en vez de la suma real). Variante
   //   sin item central → 0. Producto sin NINGÚN item central → 0 y flag _noInv.
   const sinCentral = invItems.length===0; // usuario sin inventario cargado → no forzar 0s
-  const allProducts = (data?.products||[]).map(p=>{
+  const allProductsAll = (data?.products||[]).map(p=>{
     if (modoStock==="tienda" || sinCentral) return p;
     const tienda = p.stock_total; // stock reportado por la tienda (para comparar)
     const vars = p.variants||[];
@@ -34443,6 +34538,16 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     }
     return {...p, stock_total: 0, variants: vars.map(v=>({...v, stock: 0})), _noInv:true, _tiendaStock:tienda};
   });
+  // Ocultos: se excluyen de tabla, alertas y proyecciones. Si el producto tiene una
+  // venta POSTERIOR a la fecha en que se ocultó, vuelve a aparecer solo.
+  const volvieron = allProductsAll.filter(p=>{ const h=hiddenProds[p.id]; return h&&p.last_sale&&p.last_sale>h.at; });
+  const allProducts = allProductsAll.filter(p=>{ const h=hiddenProds[p.id]; return !h || (p.last_sale&&p.last_sale>h.at); });
+  useEffect(()=>{
+    if(!volvieron.length) return;
+    const n={...hiddenProds}; volvieron.forEach(p=>delete n[p.id]); saveHiddenProds(n);
+    toast(`${volvieron.length} producto${volvieron.length!==1?"s":""} volvió a Stock porque registró ventas nuevas`,"info");
+    /* eslint-disable-next-line */
+  },[data, volvieron.length]);
 
   // Alertas activas
   const alertas = allProducts.filter(p=>enabledFor(p)&&!p._noInv).flatMap(p=>{
@@ -34722,6 +34827,9 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       </select>
                       de stock
                     </label>
+                    <button onClick={async(e)=>{e.stopPropagation(); const ok=await appConfirm(`Vas a ocultar "${p.nombre}" de Stock (tabla, alertas y proyecciones).\n\nOJO: si este producto registra una venta nueva (con una sola alcanza), vuelve a aparecer solo.`,{okLabel:"Ocultar"}); if(!ok) return; saveHiddenProds({...hiddenProds,[p.id]:{at:hoyAR(),nombre:p.nombre}}); setExpandedId(null); toast("Producto oculto de Stock","success");}}
+                      title="Sacarlo de la sección Stock. Vuelve solo si registra una venta nueva."
+                      style={{marginLeft:"auto",fontSize:10,fontWeight:600,color:T.textSm,background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 9px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ocultar de Stock</button>
                     {cfg.threshold&&<button onClick={()=>{const nc={...alertConfig};delete nc[p.id];saveAlertConfig(nc);}} style={{fontSize:10,color:T.red,background:"transparent",border:"none",cursor:"pointer",padding:0}}>Resetear</button>}
                   </div>
                   {/* Lead time configurable */}
@@ -34854,11 +34962,10 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           {showGuia&&(
             <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
-                {n:1,icon:"",title:"Resumen",desc:"KPIs de ventas y stock del período, proyección de demanda y las alertas activas (productos por agotarse). Es tu vista diaria."},
-                {n:2,icon:"",title:"Inventario",desc:"Tu catálogo con stock, velocidad de venta y días restantes por producto. Abajo, el inventario central de Growith: usá 'Vincular catálogo (SKU)' para unificar TN/Shopify/ML por SKU — las ventas lo descuentan solas."},
-                {n:3,icon:"",title:"Movimientos",desc:"Cada cambio de stock queda registrado: ventas por canal, ajustes manuales, transferencias entre depósitos."},
-                {n:4,icon:"",title:"Stock cruzado",desc:"En Config activás la sincronización de escritura: cuando ajustás stock en Growith, se empuja a tu tienda (Tienda Nube / Shopify) y Mercado Libre (con opción de manejar ML por separado y modo simulación para probar sin tocar nada)."},
-                {n:5,icon:"",title:"Configuración",desc:"Umbral de alertas (global y por producto), lead time del proveedor, notificaciones por email/WhatsApp y depósitos con transferencias entre ellos. La config se guarda en tu cuenta, no en el navegador."},
+                {n:1,icon:"",title:"Resumen",desc:"Tu vista diaria. Elegís el período arriba y ves KPIs de ventas y stock, el gráfico por día (ventas, productos o facturación), los desgloses por variante, provincia y medio de pago, y abajo las alertas de productos por agotarse con la calculadora de cuándo pedir."},
+                {n:2,icon:"",title:"Inventario",desc:"Arriba, tu inventario central: el stock físico real unificado por SKU entre Tienda Nube / Shopify / Mercado Libre (usá 'Vincular catálogo' para crearlo en un click; las ventas lo descuentan solas). Abajo, el catálogo con stock, velocidad de venta, días restantes y proyección por producto. Desplegando un producto podés ajustar su alerta, el tiempo del proveedor u ocultarlo de Stock (vuelve solo si registra una venta nueva)."},
+                {n:3,icon:"",title:"Movimientos",desc:"El historial de cada cambio de stock: ventas por canal, ajustes manuales y transferencias entre depósitos. Filtrá por producto, origen, evento o depósito y exportá a CSV."},
+                {n:4,icon:"",title:"Configuración",desc:"Stock cruzado entre canales (cuando ajustás stock en Growith se escribe en tu tienda y ML, con modo simulación), depósitos y transferencias, umbral global de alertas y notificaciones por email / WhatsApp. Todo se guarda en tu cuenta, no en el navegador."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -34869,8 +34976,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           )}
         </div>
 
-        {/* Período + date picker */}
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,flexWrap:"wrap"}}>
+        {/* Período + date picker — solo donde el período cambia algo (Resumen e Inventario) */}
+        {(tab==="resumen"||tab==="inventario")&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,flexWrap:"wrap"}}>
           <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>Período:</span>
           <DateRangePicker
             T={T}
@@ -34887,14 +34994,14 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           />
 
           {/* Fuente del stock: central (tu inventario) vs tienda (TN/Shopify) */}
-          {invItems.length>0&&<button onClick={async()=>{ if(modoStock==="central"){ const ok=await appConfirm("Vas a mostrar el stock que reporta TN/Shopify en lugar del que cargaste en Growith. NO borra tu inventario: es solo la vista de arriba, y podés volver cuando quieras. ¿Seguir?",{okLabel:"Sí, mostrar TN/Shopify"}); if(!ok) return; } setStockSrc(modoStock==="central"?"tienda":"central"); }}
+          {tab==="inventario"&&invItems.length>0&&<button onClick={async()=>{ if(modoStock==="central"){ const ok=await appConfirm("Vas a mostrar el stock que reporta TN/Shopify en lugar del que cargaste en Growith. NO borra tu inventario: es solo la vista de arriba, y podés volver cuando quieras. ¿Seguir?",{okLabel:"Sí, mostrar TN/Shopify"}); if(!ok) return; } setStockSrc(modoStock==="central"?"tienda":"central"); }}
             title={modoStock==="central"?"Arriba se muestra TU inventario (el de abajo). Tocá para ver el stock que reporta TN/Shopify.":"Arriba se muestra el stock de TN/Shopify. Tocá para volver a tu inventario cargado."}
             style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 11px",fontSize:11,fontWeight:600,border:`1px solid ${modoStock==="tienda"?T.yellow:T.border}`,borderRadius:6,background:modoStock==="tienda"?(T.yellowBg||T.yellow+"18"):"transparent",color:modoStock==="tienda"?T.yellow:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s"}}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
             {modoStock==="central"?"Poner stock de TN/Shopify":"Mostrando TN/Shopify — volver a mi stock"}
           </button>}
           {/* (comparativa "vs período anterior" retirada) */}
-        </div>
+        </div>}
 
         {loading&&!data?(
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"80px 20px",textAlign:"center"}}>
@@ -34998,9 +35105,9 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               return (
                 <div style={{display:"flex",flexDirection:"column",gap:16}}>
                   {/* Fila superior: Gráfico + Resumen */}
-                  <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(280px,300px)",gap:16,alignItems:"start"}} className="stack-mobile">
+                  <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(280px,300px)",gap:16,alignItems:"stretch"}} className="stack-mobile">
                     {/* Gráfico barras */}
-                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 20px 14px"}}>
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 20px 16px",display:"flex",flexDirection:"column"}}>
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
                         <div>
                           <div style={{fontSize:13,fontWeight:700,color:T.text}}>{tabTitle}</div>
@@ -35018,6 +35125,32 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         )}
                       </div>
                       <BarChart daily={tabDaily} height={130}/>
+                      {/* Lectura rápida del período: completa el espacio bajo el gráfico */}
+                      {(()=>{
+                        const ents=dailyEntries2; if(!ents.length) return null;
+                        const best=ents.reduce((a,b)=>b[1]>a[1]?b:a,ents[0]);
+                        const last7=ents.slice(-7).reduce((s,[,v])=>s+v,0), prev7=ents.slice(-14,-7).reduce((s,[,v])=>s+v,0);
+                        const isMoney=(showingRev||isFact); const f=v=>isMoney?fmtARS(v):fmt(Math.round(v*10)/10);
+                        const d7=prev7>0?Math.round((last7-prev7)/prev7*100):null;
+                        const conVentas=ents.filter(([,v])=>v>0).length;
+                        const fmtD=d=>{ try{ return new Date(d+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short"}); }catch(e){ return d; } };
+                        return (
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginTop:"auto",paddingTop:14,borderTop:`1px solid ${T.borderL}`}}>
+                            {[
+                              {l:"Mejor día",v:f(best[1]),s:fmtD(best[0])},
+                              {l:"Promedio por día",v:f(tabAvg),s:`${conVentas} de ${Math.max(days,ents.length)} días con ventas`},
+                              {l:"Últimos 7 días",v:f(last7),s:d7===null?"sin base de comparación":`${d7>=0?"▲":"▼"} ${Math.abs(d7)}% vs 7 días previos`},
+                              {l:"Ritmo mensual",v:f(tabAvg*30),s:"si se mantiene el promedio"},
+                            ].map((k,i)=>(
+                              <div key={i}>
+                                <div style={{fontSize:10,color:T.textSm,fontWeight:600}}>{k.l}</div>
+                                <div style={{fontSize:15,fontWeight:800,color:T.text,marginTop:2}}>{k.v}</div>
+                                <div style={{fontSize:10,color:T.textSm}}>{k.s}</div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                     {/* Resumen período */}
                     <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -35122,168 +35255,6 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               );
             })()}
 
-            {/* ── TAB INVENTARIO: catálogo con analytics + items de inventario ── */}
-            {tab==="inventario"&&(
-                    <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                        <input type="text" placeholder="Buscar producto o SKU..." value={search} onChange={e=>setSearch(e.target.value)}
-                          style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
-                        <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1}}>
-                            {[{v:"tabla",l:"Tabla"},{v:"kanban",l:"Kanban"}].map(o=>(
-                              <button key={o.v} onClick={()=>setViewMode(o.v)}
-                                style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:viewMode===o.v?T.card:"transparent",color:viewMode===o.v?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:viewMode===o.v?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>
-                                {o.l}
-                              </button>
-                            ))}
-                        </div>
-                        <span style={{fontSize:11,color:T.textSm}}>{allProducts.length} productos</span>
-                      </div>
-
-                      {viewMode==="kanban"&&(
-                        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:10}}>
-                          {allProducts.filter(p=>{const q=search.trim().toLowerCase();return !q||(p.nombre||"").toLowerCase().includes(q)||p.variants.some(v=>(v.sku||"").toLowerCase().includes(q));}).flatMap(p=>p.variants.map(v=>{
-                            const vr=v.units_sold/Math.max(1,days);
-                            const vd=vr>0?Math.round(v.stock/vr):null;
-                            const sc=v.stock===0?T.red:vd===null?T.textSm:vd<=7?T.red:vd<=globalThreshold?(T.yellow||T.yellow):T.green;
-                            const sl=v.stock===0?"Sin stock":vd===null?"Sin ventas":vd<=7?"Crítico":vd<=globalThreshold?"Reponer":"OK";
-                            const lt=leadTime[p.id];
-                            const daysToOrder=lt&&vd!==null?vd-lt:null;
-                            return (
-                              <div key={v.id} style={{background:T.card,border:`1.5px solid ${sc}44`,borderRadius:12,padding:"13px 13px",display:"flex",flexDirection:"column",gap:5}}>
-                                {p.imagen&&<img src={p.imagen} alt="" style={{width:"100%",height:72,objectFit:"cover",borderRadius:7,marginBottom:2}}/>}
-                                <div style={{fontSize:11,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
-                                <div style={{fontSize:10,color:T.textSm}}>{v.nombre}{v.sku?` · ${v.sku}`:""}</div>
-                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginTop:3}}>
-                                  <div><div style={{fontSize:22,fontWeight:800,color:sc,lineHeight:1}}>{v.stock}</div><div style={{fontSize:9,color:T.textSm}}>en stock</div></div>
-                                  <div style={{textAlign:"right"}}><div style={{fontSize:16,fontWeight:700,color:sc}}>{vd===null?"—":vd+"d"}</div><div style={{fontSize:9,color:T.textSm}}>restantes</div></div>
-                                </div>
-                                <div style={{height:4,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
-                                  <div style={{height:"100%",width:`${Math.min(100,((vd??0)/90)*100)}%`,background:sc,borderRadius:10}}/>
-                                </div>
-                                <div style={{fontSize:10,fontWeight:600,color:sc,textAlign:"center",background:sc+"18",borderRadius:5,padding:"2px 0"}}>{sl}</div>
-                                {vr>0&&<div style={{fontSize:9,color:T.textSm,textAlign:"center"}}>{vr.toFixed(1)} uds/día</div>}
-                                {daysToOrder!==null&&daysToOrder<=7&&<div style={{fontSize:9,color:T.accent,fontWeight:700,textAlign:"center",background:T.accentSolid+"18",borderRadius:4,padding:"2px 4px"}}>Pedir en {Math.max(0,daysToOrder)}d</div>}
-                              </div>
-                            );
-                          }))}
-                        </div>
-                      )}
-
-                      {viewMode==="tabla"&&<ProductTable products={allProducts}/>}
-                      {/* (tabla "Sin ventas en el período" retirada) */}
-                    </div>
-            )}
-
-            {/* ── CONFIG: Depósitos ── */}
-            {tab==="config"&&(
-              <div style={{display:"flex",flexDirection:"column",gap:16,marginTop:16}}>
-                {/* Header */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
-                  <div>
-                    <div style={{fontSize:15,fontWeight:700,color:T.text}}>Depósitos</div>
-                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Gestioná los depósitos donde tenés stock. El stock total de cada item es la suma de los depósitos.</div>
-                  </div>
-                  <button onClick={openNewWarehouse} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Nuevo depósito</button>
-                </div>
-
-                {/* Lista de depósitos */}
-                {warehousesLoading ? (
-                  <div style={{padding:"40px 0",textAlign:"center"}}><Spinner size={20} color={T.accent}/></div>
-                ) : warehouses.length === 0 ? (
-                  <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:12,padding:"40px 20px",textAlign:"center",color:T.textSm,fontSize:13}}>Sin depósitos. Creá uno para empezar.</div>
-                ) : (
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))",gap:12}}>
-                    {warehouses.map(w => {
-                      // Stock por depósito: sale de los items de inventario (stock_by_warehouse)
-                      const totalItems = invItems.reduce((s,it)=> s + (parseInt(it.stock_by_warehouse?.[w.id])||0), 0);
-                      return (
-                        <div key={w.id} style={{background:T.card,border:`1px solid ${w.is_default?T.accent+"55":T.border}`,borderRadius:12,padding:"14px 16px"}}>
-                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                            <span style={{fontSize:14,fontWeight:700,color:T.text}}>{w.name}</span>
-                            {w.is_default&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:4,fontWeight:700,background:T.accentSolid+"22",color:T.accentSolid,letterSpacing:0.5}}>PRINCIPAL</span>}
-                          </div>
-                          {w.address && <div style={{fontSize:11,color:T.textSm,marginBottom:8}}>{w.address}</div>}
-                          <div style={{fontSize:12,color:T.textMd,marginBottom:10}}>Stock total: <strong style={{color:T.text}}>{totalItems}</strong> unidades</div>
-                          <div style={{display:"flex",gap:6}}>
-                            <button onClick={()=>{setTransferFrom(w.id);setTransferTo("");setTransferQty(1);setTransferItemId("");setTransferModal({wh:w});}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⇄ Transferir</button>
-                            <button onClick={()=>openEditWarehouse(w)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
-                            <button onClick={()=>deleteWarehouse(w)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Borrar</button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Modal editar warehouse */}
-                {editingWarehouse && ReactDOM.createPortal(
-                  <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingWarehouse(null)}>
-                    <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:440,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      <h3 style={{margin:"0 0 14px",fontSize:17,fontWeight:800,color:T.text}}>{editingWarehouse==="new"?"Nuevo depósito":"Editar depósito"}</h3>
-                      <label style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Nombre</label>
-                      <input value={whName} onChange={e=>setWhName(e.target.value)} placeholder="Depósito CABA" style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,marginBottom:12,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                      <label style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Dirección (opcional)</label>
-                      <input value={whAddress} onChange={e=>setWhAddress(e.target.value)} placeholder="Av. Corrientes 1234, CABA" style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,marginBottom:18,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                      <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-                        <button onClick={()=>setEditingWarehouse(null)} style={{padding:"9px 16px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
-                        <button onClick={saveWarehouse} disabled={whSaving} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{whSaving?<Spinner size={13} color="#fff"/>:"Guardar"}</button>
-                      </div>
-                    </div>
-                  </div>,
-                  document.body
-                )}
-
-              </div>
-            )}
-
-            {/* Modal transferencia entre depósitos */}
-            {transferModal&&ReactDOM.createPortal(
-              <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setTransferModal(null)}>
-                <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:460,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  <h3 style={{margin:"0 0 4px",fontSize:17,fontWeight:800,color:T.text}}>⇄ Transferir stock</h3>
-                  <div style={{fontSize:11,color:T.textSm,marginBottom:18}}>Mover unidades de un producto entre depósitos. Queda registrado en Movimientos.</div>
-                  <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Producto (item de inventario)</label>
-                  <select value={transferItemId} onChange={e=>setTransferItemId(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:14}}>
-                    <option value="">Seleccionar...</option>
-                    {invItems.map(it=>{const enFrom=parseInt(it.stock_by_warehouse?.[transferFrom])||0;return <option key={it.id} value={it.id}>{it.nombre}{it.sku?` (${it.sku})`:""} — {enFrom} uds en origen</option>;})}
-                  </select>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:10,alignItems:"center",marginBottom:14}}>
-                    <div>
-                      <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Desde</label>
-                      <select value={transferFrom} onChange={e=>setTransferFrom(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                        <option value="">Seleccionar...</option>
-                        {warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}
-                      </select>
-                    </div>
-                    <div style={{fontSize:20,color:T.textSm,paddingTop:16}}>→</div>
-                    <div>
-                      <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Hacia</label>
-                      <select value={transferTo} onChange={e=>setTransferTo(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                        <option value="">Seleccionar...</option>
-                        {warehouses.filter(w=>w.id!==transferFrom).map(w=><option key={w.id} value={w.id}>{w.name}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Cantidad a transferir</label>
-                  <input type="number" min="1" value={transferQty} onChange={e=>setTransferQty(Math.max(1,parseInt(e.target.value)||1))} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:14,fontWeight:700,color:T.text,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:18}}/>
-                  <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-                    <button onClick={()=>setTransferModal(null)} style={{padding:"9px 16px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
-                    <button disabled={!transferFrom||!transferTo||!transferItemId||transferSaving} onClick={async()=>{
-                      if(!transferFrom||!transferTo||!transferItemId) return toast("Seleccioná producto, origen y destino","warning");
-                      setTransferSaving(true);
-                      const r=await fetch(`/api/inventory?action=transfer_stock&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({item_id:transferItemId,from_id:transferFrom,to_id:transferTo,qty:transferQty})});
-                      const j=await r.json();
-                      if(j.error){toast(j.error,"error");}else{toast(`${transferQty} unidades transferidas ✓`,"success");setTransferModal(null);loadInvItems();loadMovements();}
-                      setTransferSaving(false);
-                    }} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(!transferFrom||!transferTo||!transferItemId||transferSaving)?0.5:1}}>
-                      {transferSaving?<Spinner size={13} color="#fff"/>:"Transferir"}
-                    </button>
-                  </div>
-                </div>
-              </div>,
-              document.body
-            )}
-
             {/* ── INVENTARIO: items de inventario (entidades centrales con mapeo multi-canal) ── */}
             {tab==="inventario"&&(()=>{
               const filteredItems = invItems.filter(it => !invSearch.trim() || (it.nombre||"").toLowerCase().includes(invSearch.trim().toLowerCase()) || (it.sku||"").toLowerCase().includes(invSearch.trim().toLowerCase()));
@@ -35294,7 +35265,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 empty: invItems.filter(i => i.status==="empty").length,
               };
               return (
-              <div style={{display:"flex",flexDirection:"column",gap:14,marginTop:16}}>
+              <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:16}}>
                 {/* Header con KPIs y acciones */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:12}}>
@@ -35462,6 +35433,180 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               </div>
               );
             })()}
+
+            {/* ── TAB INVENTARIO: catálogo con analytics + items de inventario ── */}
+            {tab==="inventario"&&(
+                    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                        <input type="text" placeholder="Buscar producto o SKU..." value={search} onChange={e=>setSearch(e.target.value)}
+                          style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
+                        <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1}}>
+                            {[{v:"tabla",l:"Tabla"},{v:"kanban",l:"Kanban"}].map(o=>(
+                              <button key={o.v} onClick={()=>setViewMode(o.v)}
+                                style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:viewMode===o.v?T.card:"transparent",color:viewMode===o.v?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:viewMode===o.v?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>
+                                {o.l}
+                              </button>
+                            ))}
+                        </div>
+                        <span style={{fontSize:11,color:T.textSm}}>{allProducts.length} productos</span>
+                      </div>
+
+                      {viewMode==="kanban"&&(
+                        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:10}}>
+                          {allProducts.filter(p=>{const q=search.trim().toLowerCase();return !q||(p.nombre||"").toLowerCase().includes(q)||p.variants.some(v=>(v.sku||"").toLowerCase().includes(q));}).flatMap(p=>p.variants.map(v=>{
+                            const vr=v.units_sold/Math.max(1,days);
+                            const vd=vr>0?Math.round(v.stock/vr):null;
+                            const sc=v.stock===0?T.red:vd===null?T.textSm:vd<=7?T.red:vd<=globalThreshold?(T.yellow||T.yellow):T.green;
+                            const sl=v.stock===0?"Sin stock":vd===null?"Sin ventas":vd<=7?"Crítico":vd<=globalThreshold?"Reponer":"OK";
+                            const lt=leadTime[p.id];
+                            const daysToOrder=lt&&vd!==null?vd-lt:null;
+                            return (
+                              <div key={v.id} style={{background:T.card,border:`1.5px solid ${sc}44`,borderRadius:12,padding:"13px 13px",display:"flex",flexDirection:"column",gap:5}}>
+                                {p.imagen&&<img src={p.imagen} alt="" style={{width:"100%",height:72,objectFit:"cover",borderRadius:7,marginBottom:2}}/>}
+                                <div style={{fontSize:11,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
+                                <div style={{fontSize:10,color:T.textSm}}>{v.nombre}{v.sku?` · ${v.sku}`:""}</div>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginTop:3}}>
+                                  <div><div style={{fontSize:22,fontWeight:800,color:sc,lineHeight:1}}>{v.stock}</div><div style={{fontSize:9,color:T.textSm}}>en stock</div></div>
+                                  <div style={{textAlign:"right"}}><div style={{fontSize:16,fontWeight:700,color:sc}}>{vd===null?"—":vd+"d"}</div><div style={{fontSize:9,color:T.textSm}}>restantes</div></div>
+                                </div>
+                                <div style={{height:4,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
+                                  <div style={{height:"100%",width:`${Math.min(100,((vd??0)/90)*100)}%`,background:sc,borderRadius:10}}/>
+                                </div>
+                                <div style={{fontSize:10,fontWeight:600,color:sc,textAlign:"center",background:sc+"18",borderRadius:5,padding:"2px 0"}}>{sl}</div>
+                                {vr>0&&<div style={{fontSize:9,color:T.textSm,textAlign:"center"}}>{vr.toFixed(1)} uds/día</div>}
+                                {daysToOrder!==null&&daysToOrder<=7&&<div style={{fontSize:9,color:T.accent,fontWeight:700,textAlign:"center",background:T.accentSolid+"18",borderRadius:4,padding:"2px 4px"}}>Pedir en {Math.max(0,daysToOrder)}d</div>}
+                              </div>
+                            );
+                          }))}
+                        </div>
+                      )}
+
+                      {viewMode==="tabla"&&<ProductTable products={allProducts}/>}
+                      {Object.keys(hiddenProds).length>0&&(
+                        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:11,color:T.textSm,padding:"2px 4px"}}>
+                          <span>{Object.keys(hiddenProds).length} producto{Object.keys(hiddenProds).length!==1?"s":""} oculto{Object.keys(hiddenProds).length!==1?"s":""} de Stock:</span>
+                          {Object.entries(hiddenProds).map(([id,h])=>(
+                            <span key={id} style={{display:"inline-flex",alignItems:"center",gap:5,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:6,padding:"2px 7px",color:T.textMd}}>
+                              {(h?.nombre||id).slice(0,40)}
+                              <button onClick={()=>{const n={...hiddenProds};delete n[id];saveHiddenProds(n);}} title="Volver a mostrar" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",padding:0,fontSize:12,lineHeight:1}}>✕</button>
+                            </span>
+                          ))}
+                          <button onClick={()=>saveHiddenProds({})} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",padding:0,fontSize:11,fontWeight:600}}>Mostrar todos</button>
+                        </div>
+                      )}
+                      {/* (tabla "Sin ventas en el período" retirada) */}
+                    </div>
+            )}
+
+            {/* ── CONFIG: Depósitos ── */}
+            {tab==="config"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:16,marginTop:16}}>
+                {/* Header */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+                  <div>
+                    <div style={{fontSize:15,fontWeight:700,color:T.text}}>Depósitos</div>
+                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Gestioná los depósitos donde tenés stock. El stock total de cada item es la suma de los depósitos.</div>
+                  </div>
+                  <button onClick={openNewWarehouse} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Nuevo depósito</button>
+                </div>
+
+                {/* Lista de depósitos */}
+                {warehousesLoading ? (
+                  <div style={{padding:"40px 0",textAlign:"center"}}><Spinner size={20} color={T.accent}/></div>
+                ) : warehouses.length === 0 ? (
+                  <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:12,padding:"40px 20px",textAlign:"center",color:T.textSm,fontSize:13}}>Sin depósitos. Creá uno para empezar.</div>
+                ) : (
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))",gap:12}}>
+                    {warehouses.map(w => {
+                      // Stock por depósito: sale de los items de inventario (stock_by_warehouse)
+                      const totalItems = invItems.reduce((s,it)=> s + (parseInt(it.stock_by_warehouse?.[w.id])||0), 0);
+                      return (
+                        <div key={w.id} style={{background:T.card,border:`1px solid ${w.is_default?T.accent+"55":T.border}`,borderRadius:12,padding:"14px 16px"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                            <span style={{fontSize:14,fontWeight:700,color:T.text}}>{w.name}</span>
+                            {w.is_default&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:4,fontWeight:700,background:T.accentSolid+"22",color:T.accentSolid,letterSpacing:0.5}}>PRINCIPAL</span>}
+                          </div>
+                          {w.address && <div style={{fontSize:11,color:T.textSm,marginBottom:8}}>{w.address}</div>}
+                          <div style={{fontSize:12,color:T.textMd,marginBottom:10}}>Stock total: <strong style={{color:T.text}}>{totalItems}</strong> unidades</div>
+                          <div style={{display:"flex",gap:6}}>
+                            <button onClick={()=>{setTransferFrom(w.id);setTransferTo("");setTransferQty(1);setTransferItemId("");setTransferModal({wh:w});}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⇄ Transferir</button>
+                            <button onClick={()=>openEditWarehouse(w)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
+                            <button onClick={()=>deleteWarehouse(w)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Borrar</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Modal editar warehouse */}
+                {editingWarehouse && ReactDOM.createPortal(
+                  <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingWarehouse(null)}>
+                    <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:440,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <h3 style={{margin:"0 0 14px",fontSize:17,fontWeight:800,color:T.text}}>{editingWarehouse==="new"?"Nuevo depósito":"Editar depósito"}</h3>
+                      <label style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Nombre</label>
+                      <input value={whName} onChange={e=>setWhName(e.target.value)} placeholder="Depósito CABA" style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,marginBottom:12,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                      <label style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Dirección (opcional)</label>
+                      <input value={whAddress} onChange={e=>setWhAddress(e.target.value)} placeholder="Av. Corrientes 1234, CABA" style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,marginBottom:18,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                      <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                        <button onClick={()=>setEditingWarehouse(null)} style={{padding:"9px 16px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+                        <button onClick={saveWarehouse} disabled={whSaving} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{whSaving?<Spinner size={13} color="#fff"/>:"Guardar"}</button>
+                      </div>
+                    </div>
+                  </div>,
+                  document.body
+                )}
+
+              </div>
+            )}
+
+            {/* Modal transferencia entre depósitos */}
+            {transferModal&&ReactDOM.createPortal(
+              <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setTransferModal(null)}>
+                <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:460,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <h3 style={{margin:"0 0 4px",fontSize:17,fontWeight:800,color:T.text}}>⇄ Transferir stock</h3>
+                  <div style={{fontSize:11,color:T.textSm,marginBottom:18}}>Mover unidades de un producto entre depósitos. Queda registrado en Movimientos.</div>
+                  <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Producto (item de inventario)</label>
+                  <select value={transferItemId} onChange={e=>setTransferItemId(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:14}}>
+                    <option value="">Seleccionar...</option>
+                    {invItems.map(it=>{const enFrom=parseInt(it.stock_by_warehouse?.[transferFrom])||0;return <option key={it.id} value={it.id}>{it.nombre}{it.sku?` (${it.sku})`:""} — {enFrom} uds en origen</option>;})}
+                  </select>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:10,alignItems:"center",marginBottom:14}}>
+                    <div>
+                      <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Desde</label>
+                      <select value={transferFrom} onChange={e=>setTransferFrom(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        <option value="">Seleccionar...</option>
+                        {warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}
+                      </select>
+                    </div>
+                    <div style={{fontSize:20,color:T.textSm,paddingTop:16}}>→</div>
+                    <div>
+                      <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Hacia</label>
+                      <select value={transferTo} onChange={e=>setTransferTo(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        <option value="">Seleccionar...</option>
+                        {warehouses.filter(w=>w.id!==transferFrom).map(w=><option key={w.id} value={w.id}>{w.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Cantidad a transferir</label>
+                  <input type="number" min="1" value={transferQty} onChange={e=>setTransferQty(Math.max(1,parseInt(e.target.value)||1))} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:14,fontWeight:700,color:T.text,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:18}}/>
+                  <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                    <button onClick={()=>setTransferModal(null)} style={{padding:"9px 16px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+                    <button disabled={!transferFrom||!transferTo||!transferItemId||transferSaving} onClick={async()=>{
+                      if(!transferFrom||!transferTo||!transferItemId) return toast("Seleccioná producto, origen y destino","warning");
+                      setTransferSaving(true);
+                      const r=await fetch(`/api/inventory?action=transfer_stock&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({item_id:transferItemId,from_id:transferFrom,to_id:transferTo,qty:transferQty})});
+                      const j=await r.json();
+                      if(j.error){toast(j.error,"error");}else{toast(`${transferQty} unidades transferidas ✓`,"success");setTransferModal(null);loadInvItems();loadMovements();}
+                      setTransferSaving(false);
+                    }} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(!transferFrom||!transferTo||!transferItemId||transferSaving)?0.5:1}}>
+                      {transferSaving?<Spinner size={13} color="#fff"/>:"Transferir"}
+                    </button>
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )}
 
             {/* ── TAB MOVIMIENTOS ── */}
             {tab==="movimientos"&&(()=>{
@@ -38260,6 +38405,8 @@ export default function App() {
   const [canjesCount,setCanjesCount]=useState(0);
   const [canjesPedidos,setCanjesPedidos]=useState({}); // nº de pedido → canje (Envíos marca el pedido y devuelve el tracking)
   const [canjesAcciones,setCanjesAcciones]=useState(0); // badge sidebar: acciones vencidas, no total
+  // Preguntas de Mercado Libre sin responder: badge en el sidebar + pendiente en el Home.
+  const [mlPreguntasCount,setMlPreguntasCount]=useState(0);
   const [costosAlert,setCostosAlert]=useState(0); // badge "Configuraciones" del Dashboard: productos vendidos sin costo (lo publica AppRendimiento vía localStorage + evento)
   const [alertas,setAlertas]=useState([]);
   const [darkMode,setDarkMode]=useState(()=>{ try { return localStorage.getItem("growith_theme")!=="light"; } catch(e){ return true; } });
@@ -38575,6 +38722,7 @@ export default function App() {
       const arca=(d.cuits||[]).length>0;
       setConnectedStores({tn:!!tn,shopify:!!shopify,ml:!!ml,meta,arca,loaded:true});
       setEnviosProblemasN(Number(d.enviosProblemasN)||0);
+      if(!ml) setMlPreguntasCount(0);
       const newId=tn?.storeId||null;
       if(prevTnRef.current!==null && prevTnRef.current!==newId) {
         try{ localStorage.removeItem(`growith_orders_${user.uid}`); }catch(e){}
@@ -38633,6 +38781,19 @@ export default function App() {
     try { await tiendaApi("tiendaEliminar",{tiendaUid}); try { localStorage.removeItem(`growith_tienda_activa_${authUser?.uid}`); } catch(_) {} toast("Tienda eliminada (se puede recuperar 30 días)","success"); setTimeout(()=>window.location.reload(),500); return true; }
     catch (e) { appAlert("No se pudo eliminar: " + e.message); return false; }
   },[tiendaApi, authUser?.uid]);
+
+  // Poll de preguntas ML sin responder (cada 5 min y al volver a la pestaña).
+  useEffect(()=>{
+    if(!user?.uid||!connectedStores.ml) return;
+    let alive=true;
+    const load=async()=>{ try{ const j=await ghMlApi(user.uid,"ml_questions",{status:"UNANSWERED",limit:50}); if(alive) setMlPreguntasCount(Number(j?.total)||(j?.questions||[]).length||0); }catch(_){} };
+    load();
+    const iv=setInterval(load,5*60*1000);
+    const onVis=()=>{ if(document.visibilityState==="visible") load(); };
+    document.addEventListener("visibilitychange",onVis);
+    window.addEventListener("gh-ml-preguntas-refresh",load);
+    return ()=>{ alive=false; clearInterval(iv); document.removeEventListener("visibilitychange",onVis); window.removeEventListener("gh-ml-preguntas-refresh",load); };
+  },[user?.uid,connectedStores.ml]);
 
   useEffect(()=>{
     if(!user) return;
@@ -39044,8 +39205,9 @@ export default function App() {
   else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="calendario") pageContent = <PageView T={T} pageKey="calendario"><AppCalendarioPagos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="envios") pageContent = adminGate("envios") || planGate("plus") || requiereTN("Envíos") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} canjesPedidos={canjesPedidos} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
-  else pageContent = <HomeScreen T={T} enviosProblemas={enviosProblemasN} onNavigate={(p, docId)=>{
+  else pageContent = <HomeScreen T={T} enviosProblemas={enviosProblemasN} mlPreguntas={mlPreguntasCount} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
+    if(p==="ml"&&docId==="preguntas"){ setMlTab("preguntas"); }
     setPage(p);
   }} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user} userPlan={userPlan} planExpiry={planExpiry} isAdmin={isAdmin} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
 
@@ -39063,7 +39225,7 @@ export default function App() {
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       {impersonando&&<GhImpersonBanner T={T} info={impersonando}/>}
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, reclamosMp: reclamosMpCount, canjes: canjesAcciones, stock: 0, envios: enviosProblemasN, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert, calendario: calAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{ml: mlPreguntasCount, reclamos: reclamosCount, reclamosMp: reclamosMpCount, canjes: canjesAcciones, stock: 0, envios: enviosProblemasN, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert, calendario: calAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
       {/* Multi-org F2 modals */}
       {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
       {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}

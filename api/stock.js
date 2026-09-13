@@ -271,7 +271,7 @@ function processTN(orders) {
       const qty=parseInt(item.quantity)||0;
       const rev=parseFloat(item.price||0)*qty*discountRatio;
       if(!map[vid]) map[vid]={units:0,revenue:0};
-      map[vid].units+=qty;
+      map[vid].units+=qty; { const _d=String(o.created_at||o.date_created||"").slice(0,10); if(_d&&(!map[vid].last||_d>map[vid].last)) map[vid].last=_d; }
       map[vid].revenue+=rev;
       orderUnits+=qty;
       orderRevenue+=rev;
@@ -354,7 +354,7 @@ function processSH(orders) {
       const qty=parseInt(item.quantity)||0;
       const rev=parseFloat(item.price)*qty;
       if(!map[vid]) map[vid]={units:0,revenue:0};
-      map[vid].units+=qty;
+      map[vid].units+=qty; { const _d=String(o.created_at||o.date_created||"").slice(0,10); if(_d&&(!map[vid].last||_d>map[vid].last)) map[vid].last=_d; }
       map[vid].revenue+=rev; // mantenemos per-variant a precio de lista
       orderUnits+=qty;
       const vname=item.variant_title||item.title||"Default";
@@ -380,8 +380,20 @@ function processSH(orders) {
 // Descuentos de ML por orden = coupon_fee del pago de MP. Capta cupón Y
 // precio×cantidad (este último ML no lo expone en la orden). El token de ML
 // sirve contra la API de MP. Devuelve { order_id → coupon_fee }.
+function normProvML(raw) {
+  let v = String(raw || "").trim();
+  if (!v) return "";
+  v = v.replace(/^provincia de\s+/i, "");
+  if (/capital federal|ciudad aut[oó]noma|^caba$|c\.a\.b\.a/i.test(v)) return "Capital Federal";
+  if (/^bs\.?\s*as\.?$|buenos aires/i.test(v) && !/ciudad/i.test(v)) return "Buenos Aires";
+  return v;
+}
+
+// Devuelve { fees: {order_id → coupon_fee}, prov: {order_id → provincia del comprador} }.
+// La provincia sale de additional_info.shipments.receiver_address del pago de MP
+// (el search de órdenes de ML no la trae).
 async function mlCouponFees(token, beginISO, endISO) {
-  const map = {};
+  const map = {}; const prov = {};
   try {
     // Mismo formato EXACTO que la consulta de comisiones que funciona (con .000).
     const begin = String(beginISO).slice(0, 10) + "T00:00:00.000-03:00";
@@ -395,6 +407,11 @@ async function mlCouponFees(token, beginISO, endISO) {
       const results = j.results || [];
       for (const p of results) {
         const ref = String(p.external_reference || "");
+        if (/^\d+$/.test(ref) && !prov[ref]) {
+          const ra = p.additional_info?.shipments?.receiver_address || {};
+          const st = normProvML(ra.state_name || ra.state?.name || p.additional_info?.payer?.address?.state || "");
+          if (st) prov[ref] = st;
+        }
         // Pagos de ML: external_reference = id numérico de la orden ("2000...").
         if (p.status === "approved" && p.operation_type === "regular_payment" && /^\d+$/.test(ref)) {
           const cf = (p.fee_details || []).filter(f => f.type === "coupon_fee").reduce((s, f) => s + (parseFloat(f.amount) || 0), 0);
@@ -405,7 +422,7 @@ async function mlCouponFees(token, beginISO, endISO) {
       if (results.length < 100 || offset >= (j.paging?.total || 0)) break;
     }
   } catch (_) {}
-  return map;
+  return { fees: map, prov };
 }
 
 // Publicaciones REALES del vendedor de ML (id → título), aunque no se hayan
@@ -431,7 +448,7 @@ async function mlPublications(sellerId, token) {
   return out;
 }
 
-function processML(orders, couponMap = {}) {
+function processML(orders, couponMap = {}, provMap = {}) {
   const map={}, daily={}, dailyRevenue={}, dailyOrders={}, byProv={}, byHour={}, byPayment={}, byVariant={}, byVariantRev={}, comisionMLDaily={};
   let comisionML=0; const ordersDetail=[];
   for(const o of orders){
@@ -439,10 +456,12 @@ function processML(orders, couponMap = {}) {
     const dt=o.date_created||"";
     const day=dt.slice(0,10);
     const hour=dt.slice(11,13);
-    // El search de ML no trae la provincia del comprador — etiquetamos honesto
-    // en vez de imputar "Buenos Aires" (mentía en el donut geográfico).
-    const prov="Mercado Libre (sin ubicación)";
-    const pay=o.payments?.map(p=>p.payment_type).join(",")||"Mercado Pago";
+    // Provincia del comprador: viene del pago de MP (receiver_address). Si no
+    // está, se etiqueta honesto en vez de imputar "Buenos Aires".
+    const prov=provMap[String(o.id)]||"Mercado Libre (sin ubicación)";
+    // Todo lo que se cobra por ML pasa por Mercado Pago (tarjeta, débito, dinero
+    // en cuenta…): se agrupa como un solo medio, igual que en TN/Shopify.
+    const pay="Mercado Pago";
     let orderUnits=0;
 
     // Revenue de la orden = total_amount MENOS el descuento al comprador.
@@ -488,10 +507,12 @@ function processML(orders, couponMap = {}) {
       const vid=String(item.item?.id||"ml");
       const qty=parseInt(item.quantity)||0;
       const rev=parseFloat(item.unit_price)*qty; // per-variant a precio de lista
-      const vname=item.item?.variation_attributes?.[0]?.value_name||item.item?.title||"Default";
+      // Variante = "<título de la publicación> - <variante>" (sin la variante, el título).
+      const _va=(item.item?.variation_attributes||[]).map(a=>a?.value_name).filter(Boolean).join(" / ");
+      const vname=((item.item?.title||"").trim()||"Publicación ML")+(_va?` - ${_va}`:"");
       if(!refunded){
         if(!map[vid]) map[vid]={units:0,revenue:0,nombre:item.item?.title};
-        map[vid].units+=qty;
+        map[vid].units+=qty; { const _d=String(o.created_at||o.date_created||"").slice(0,10); if(_d&&(!map[vid].last||_d>map[vid].last)) map[vid].last=_d; }
         map[vid].revenue+=rev;
         byVariant[vname]=(byVariant[vname]||0)+qty;
         byVariantRev[vname]=(byVariantRev[vname]||0)+rev;
@@ -530,13 +551,13 @@ function normTN(p, salesMap, days) {
     const s=salesMap[vid]||{units:0,revenue:0};
     const stock=parseInt(v.stock)||0;
     const varNombre=(v.values||[]).map(val=>val.es||val.en||Object.values(val||{})[0]||"").filter(Boolean).join(" / ")||v.sku||"Default";
-    return {id:vid,sku:v.sku||"",nombre:varNombre,stock,units_sold:s.units,revenue:s.revenue,days_left:daysLeft(stock,s.units,days),price:parseFloat(v.price)||0};
+    return {id:vid,sku:v.sku||"",nombre:varNombre,stock,units_sold:s.units,revenue:s.revenue,last_sale:s.last||null,days_left:daysLeft(stock,s.units,days),price:parseFloat(v.price)||0};
   });
   const tS=variants.reduce((a,v)=>a+v.stock,0);
   const tU=variants.reduce((a,v)=>a+v.units_sold,0);
   const tR=variants.reduce((a,v)=>a+v.revenue,0);
   const mD=variants.map(v=>v.days_left).filter(d=>d!==null).reduce((a,b)=>Math.min(a,b),Infinity);
-  return {id:String(p.id),nombre:p.name?.es||Object.values(p.name||{})[0]||"Sin nombre",imagen:p.images?.[0]?.src||null,variants,stock_total:tS,units_sold:tU,revenue:tR,days_left:mD===Infinity?null:mD,platform:"tiendanube"};
+  return {id:String(p.id),last_sale:variants.map(v=>v.last_sale).filter(Boolean).sort().pop()||null,nombre:p.name?.es||Object.values(p.name||{})[0]||"Sin nombre",imagen:p.images?.[0]?.src||null,variants,stock_total:tS,units_sold:tU,revenue:tR,days_left:mD===Infinity?null:mD,platform:"tiendanube"};
 }
 
 function normSH(p, salesMap, days) {
@@ -544,13 +565,13 @@ function normSH(p, salesMap, days) {
     const vid=String(v.id);
     const s=salesMap[vid]||{units:0,revenue:0};
     const stock=v.inventory_quantity??0;
-    return {id:vid,sku:v.sku||"",nombre:[v.option1,v.option2,v.option3].filter(Boolean).join(" / ")||"Default",stock,units_sold:s.units,revenue:s.revenue,days_left:daysLeft(stock,s.units,days),price:parseFloat(v.price)||0};
+    return {id:vid,sku:v.sku||"",nombre:[v.option1,v.option2,v.option3].filter(Boolean).join(" / ")||"Default",stock,units_sold:s.units,revenue:s.revenue,last_sale:s.last||null,days_left:daysLeft(stock,s.units,days),price:parseFloat(v.price)||0};
   });
   const tS=variants.reduce((a,v)=>a+v.stock,0);
   const tU=variants.reduce((a,v)=>a+v.units_sold,0);
   const tR=variants.reduce((a,v)=>a+v.revenue,0);
   const mD=variants.map(v=>v.days_left).filter(d=>d!==null).reduce((a,b)=>Math.min(a,b),Infinity);
-  return {id:String(p.id),nombre:p.title||"Sin nombre",imagen:p.image?.src||null,variants,stock_total:tS,units_sold:tU,revenue:tR,days_left:mD===Infinity?null:mD,platform:"shopify"};
+  return {id:String(p.id),last_sale:variants.map(v=>v.last_sale).filter(Boolean).sort().pop()||null,nombre:p.title||"Sin nombre",imagen:p.image?.src||null,variants,stock_total:tS,units_sold:tU,revenue:tR,days_left:mD===Infinity?null:mD,platform:"shopify"};
 }
 
 function buildResponse(platform, products, analytics, days) {
@@ -809,10 +830,10 @@ export default async function handler(req, res) {
         // menor, no el total de ventas); mlOrders no.
         const [mlOrd, coupons, pubs] = await Promise.all([
           mlOrders(mlSellerId, mlToken, effectiveDays, sinceDate, untilDate),
-          mlCouponFees(mlToken, sinceDate, untilDate).catch(() => ({})),
+          mlCouponFees(mlToken, sinceDate, untilDate).catch(() => ({ fees: {}, prov: {} })),
           mlPublications(mlSellerId, mlToken).catch(() => ({})),
         ]);
-        const out = processML(mlOrd, coupons);
+        const out = processML(mlOrd, coupons.fees || {}, coupons.prov || {});
         out.truncated = !!mlOrd.truncated;
         // Sumar publicaciones que NO se vendieron (units 0) para poder costearlas.
         out.map = out.map || {};
