@@ -66,6 +66,48 @@ async function shopifyCentralApp(db) {
   return null;
 }
 
+// Instalación iniciada desde Shopify (App Store / link de instalación): Shopify
+// abre la URL de la app con ?shop=&hmac=&host=&timestamp=. Hay que redirigir al
+// OAuth de inmediato (el review lo testea). El estado queda sin uid: el callback
+// deja la tienda "pendiente de reclamar" y manda al usuario a Growith a loguearse.
+async function shopifyInstallStart(req, res, db) {
+  const shop = normalizeShop(req.query.shop || "");
+  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop)) return res.status(400).send("Falta el parámetro shop (xxxx.myshopify.com)");
+  const ca = await shopifyCentralApp(db);
+  if (!ca) return res.status(500).send("La app de Shopify de Growith no está configurada");
+  // HMAC de Shopify (si viene): valida que el pedido salga de Shopify y no de cualquiera.
+  if (req.query.hmac && !verifyShopifyOauthHmac(req.query, ca.client_secret)) return res.status(401).send("HMAC inválido");
+  // Ya vinculada a una cuenta de Growith → si no hay hmac (alguien tipeó la URL), a la app.
+  const state = genState();
+  try {
+    await db.collection("oauth_pending").doc(state).set({ uid: null, shop, client_id: ca.client_id, client_secret: null, central: true, install: true, created_at: new Date().toISOString() });
+  } catch (e) { return res.status(500).send("No se pudo iniciar la instalación: " + e.message); }
+  const url = `https://${shop}/admin/oauth/authorize?client_id=${encodeURIComponent(ca.client_id)}&scope=${encodeURIComponent(SHOPIFY_SCOPES)}&redirect_uri=${encodeURIComponent(SHOPIFY_REDIRECT_URI)}&state=${state}`;
+  return res.redirect(302, url);
+}
+
+// Reclamar una tienda instalada desde Shopify: la vincula a la cuenta logueada.
+async function shopifyClaim(req, res, db) {
+  const { uid, claim } = req.body || {};
+  if (!uid || !claim) return res.status(400).json({ error: "Faltan uid o claim" });
+  if (!(await guardUid(req, res, uid))) return;
+  const ref = db.collection("shopify_pending_installs").doc(String(claim));
+  const snap = await ref.get();
+  if (!snap.exists) return res.status(404).json({ error: "Esta instalación ya fue reclamada o venció. Volvé a abrir Growith desde tu admin de Shopify." });
+  const p = snap.data();
+  const userRef = db.collection("users").doc(uid);
+  const uSnap = await userRef.get();
+  const currentStores = (uSnap.exists ? uSnap.data().stores : null) || [];
+  if (currentStores.find(s => s.type === "tiendanube")) return res.status(409).json({ error: "Ya tenés Tienda Nube conectada. Desvinculala primero." });
+  const stores = currentStores.filter(s => s.type !== "shopify");
+  stores.push({ type: "shopify", shop: p.shop, clientId: p.clientId, central: true, accessToken: p.accessToken, storeName: p.storeName || p.shop, storeEmail: p.storeEmail || "", connectedAt: new Date().toISOString(), installedFromShopify: true });
+  const extra = uSnap.exists ? {} : { uid, email: p.storeEmail || "", nombre: p.storeName || "", createdAt: new Date(), plan: "free", trialEnd: new Date(Date.now() + 14 * 864e5) };
+  await userRef.set({ ...extra, stores }, { merge: true });
+  await db.collection("shopify_shops").doc(p.shop).set({ uid, updatedAt: new Date().toISOString() }, { merge: true });
+  await ref.delete().catch(() => {});
+  return res.json({ ok: true, shop: p.shop, storeName: p.storeName || p.shop });
+}
+
 function normalizeShop(shopRaw) {
   let shop = String(shopRaw || "").trim().toLowerCase()
     .replace(/^https?:\/\//, "")
@@ -225,6 +267,7 @@ async function shopifyOauthCallback(req, res, db) {
 
   // 3) Obtener nombre de la tienda
   let shopName = shop, shopEmail = "";
+  const __uidFromState = uid;
   try {
     const infoRes = await fetch(`https://${shop}/admin/api/2024-10/shop.json`, {
       headers: { "X-Shopify-Access-Token": accessToken },
@@ -235,6 +278,28 @@ async function shopifyOauthCallback(req, res, db) {
       shopEmail = data.shop?.email || "";
     }
   } catch (e) { /* ignorar */ }
+
+  // 3b) Instalación iniciada desde Shopify (sin usuario de Growith en el state):
+  // si la tienda ya está vinculada a una cuenta, se renueva su token y listo;
+  // si no, queda pendiente de reclamar y se manda al usuario a loguearse.
+  if (pending.install && !__uidFromState) {
+    try {
+      const map = await db.collection("shopify_shops").doc(shop).get();
+      if (map.exists && map.data().uid) {
+        const uRef = db.collection("users").doc(map.data().uid);
+        const uSnap = await uRef.get();
+        const st = ((uSnap.exists ? uSnap.data().stores : null) || []).map(s => (s.type === "shopify" && s.shop === shop) ? { ...s, accessToken, clientId, central: true, reconnectedAt: new Date().toISOString() } : s);
+        if (!st.some(s => s.type === "shopify" && s.shop === shop)) st.push({ type: "shopify", shop, clientId, central: true, accessToken, storeName: shopName, storeEmail: shopEmail, connectedAt: new Date().toISOString() });
+        await uRef.set({ stores: st }, { merge: true });
+        return res.redirect(`${SHOPIFY_APP_URL}/?shopify=ok&shop=${encodeURIComponent(shop)}`);
+      }
+      const claim = genState();
+      await db.collection("shopify_pending_installs").doc(claim).set({ shop, clientId, accessToken, storeName: shopName, storeEmail: shopEmail, createdAt: new Date().toISOString() });
+      return res.redirect(`${SHOPIFY_APP_URL}/?shopify_claim=${claim}`);
+    } catch (e) {
+      return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=server_error`);
+    }
+  }
 
   // 4) Guardar en Firestore con mutual exclusion
   try {
@@ -260,6 +325,7 @@ async function shopifyOauthCallback(req, res, db) {
     });
     const extra = snap.exists ? {} : { uid, email: shopEmail || "", nombre: shopName || "", createdAt: new Date(), plan: "free", trialEnd: new Date(Date.now() + 14 * 864e5) };
     await userRef.set({ ...extra, stores }, { merge: true });
+    await db.collection("shopify_shops").doc(shop).set({ uid, updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
   } catch (e) {
     console.error("[shopify-callback] save error:", e.message);
     return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=save_failed`);
@@ -1194,6 +1260,8 @@ export default async function handler(req, res) {
   try {
     if (platform === "shopify") {
       if (action === "oauth_start" && req.method === "POST") return shopifyOauthStart(req, res, db);
+      if (action === "install" && req.method === "GET") return shopifyInstallStart(req, res, db);
+      if (action === "claim" && req.method === "POST") return shopifyClaim(req, res, db);
       // El callback llega SIN action (Shopify lo prohíbe) pero CON code. Lo
       // detectamos por el code así no depende del param reservado "action".
       if (req.method === "GET" && (action === "callback" || req.query.code)) return shopifyOauthCallback(req, res, db);

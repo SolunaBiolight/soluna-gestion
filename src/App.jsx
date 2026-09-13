@@ -132,6 +132,18 @@ async function authFetch(url, opts = {}) {
 // uno de los ~90 fetch de la app — donde uno olvidado rompe una sección entera —
 // se adjunta acá, una sola vez. Sin sesión (portal de colaborador, que se
 // autentica por token propio) no agrega nada y el request sale igual.
+// Shopify (App Store / link de instalación) abre la app con ?shop=…&hmac=…: hay que
+// iniciar el OAuth de inmediato (requisito del review). Lo hace el servidor.
+if (typeof window !== "undefined") {
+  try {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("shop") && q.get("hmac") && /\.myshopify\.com$/i.test(q.get("shop"))) {
+      const dest = "/api/integrations?platform=shopify&action=install&" + q.toString();
+      if (window.top && window.top !== window.self) { try { window.top.location.href = dest; } catch (_) { window.location.replace(dest); } }
+      else window.location.replace(dest);
+    }
+  } catch (_) {}
+}
 if (typeof window !== "undefined" && !window.__ghFetchAuth) {
   window.__ghFetchAuth = true;
   const _rawFetch = window.fetch.bind(window);
@@ -39267,6 +39279,23 @@ export default function App() {
     window.addEventListener("gh-ml-preguntas-refresh",load);
     return ()=>{ alive=false; clearInterval(iv); document.removeEventListener("visibilitychange",onVis); window.removeEventListener("gh-ml-preguntas-refresh",load); };
   },[user?.uid,connectedStores.ml]);
+
+  // Tienda instalada desde Shopify (App Store): al loguearse, se vincula a esta cuenta.
+  useEffect(()=>{
+    if(!user?.uid) return;
+    let claim=null;
+    try{ const q=new URLSearchParams(window.location.search); claim=q.get("shopify_claim"); if(claim){ localStorage.setItem("growith_shopify_claim",claim); q.delete("shopify_claim"); window.history.replaceState({},"",window.location.pathname+(q.toString()?"?"+q.toString():"")+window.location.hash); } else claim=localStorage.getItem("growith_shopify_claim"); }catch(e){}
+    if(!claim) return;
+    (async()=>{
+      try{
+        const r=await authFetch("/api/integrations?platform=shopify&action=claim",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,claim})});
+        const j=await r.json();
+        try{ localStorage.removeItem("growith_shopify_claim"); }catch(e){}
+        if(j.ok){ toast(`Shopify conectado ✓ (${j.storeName||j.shop})`,"success"); setTimeout(()=>window.location.reload(),1200); }
+        else appAlert(j.error||"No se pudo vincular la tienda de Shopify.");
+      }catch(e){ appAlert("No se pudo vincular la tienda de Shopify: "+e.message); }
+    })();
+  },[user?.uid]);
 
   useEffect(()=>{
     if(!user) return;
