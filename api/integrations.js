@@ -53,6 +53,17 @@ const SHOPIFY_APP_URL = "https://www.growithapp.com";
 // Shopify appendea; lo detectamos por ahí (ver dispatch en el handler).
 const SHOPIFY_REDIRECT_URI = `${SHOPIFY_APP_URL}/api/integrations?platform=shopify`;
 
+// App central de Growith: env SHOPIFY_APP_ID/SECRET o, si no están cargadas en
+// Vercel, el doc shopify_apps/_central (se carga desde Admin → Sistema).
+async function shopifyCentralApp(db) {
+  if (SHOPIFY_APP_ID && SHOPIFY_APP_SECRET) return { client_id: SHOPIFY_APP_ID, client_secret: SHOPIFY_APP_SECRET, from: "env" };
+  try {
+    const d = await db.collection("shopify_apps").doc("_central").get();
+    if (d.exists && d.data().client_id && d.data().client_secret) return { client_id: d.data().client_id, client_secret: d.data().client_secret, from: "firestore" };
+  } catch (_) {}
+  return null;
+}
+
 function normalizeShop(shopRaw) {
   let shop = String(shopRaw || "").trim().toLowerCase()
     .replace(/^https?:\/\//, "")
@@ -116,8 +127,9 @@ async function shopifyOauthStart(req, res, db) {
     } catch (_) {}
   }
   if (central) {
-    client_id = SHOPIFY_APP_ID;
-    client_secret = SHOPIFY_APP_SECRET;
+    const ca = await shopifyCentralApp(db);
+    client_id = ca?.client_id || "";
+    client_secret = ca?.client_secret || "";
     if (!client_id || !client_secret) {
       return res.status(500).json({ error: "La app de Shopify de Growith todavía no está configurada en el servidor. Avisale al equipo." });
     }
@@ -179,7 +191,7 @@ async function shopifyOauthCallback(req, res, db) {
   const uid = pending.uid;
   const clientId = pending.client_id;
   // App central: el secret vive en el env (no se persistió). App propia: en el state.
-  const clientSecret = pending.central ? SHOPIFY_APP_SECRET : pending.client_secret;
+  const clientSecret = pending.central ? ((await shopifyCentralApp(db))?.client_secret || "") : pending.client_secret;
   if (!clientSecret) return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=no_secret`);
 
   // Verificar el HMAC del callback OAuth (Shopify lo firma con el secret de la app).
@@ -1192,7 +1204,8 @@ export default async function handler(req, res) {
         const shop = req.query.shop ? normalizeShop(req.query.shop) : "";
         let porTienda = false;
         if (shop) { try { const d = await db.collection("shopify_apps").doc(shop).get(); porTienda = d.exists && !!d.data().client_id; } catch (_) {} }
-        return res.json({ central: !!(SHOPIFY_APP_ID && SHOPIFY_APP_SECRET), por_tienda: porTienda, redirect_uri: SHOPIFY_REDIRECT_URI, compliance_url: `${SHOPIFY_APP_URL}/api/integrations?platform=shopify&action=compliance`, scopes: SHOPIFY_SCOPES });
+        const ca = await shopifyCentralApp(db);
+        return res.json({ central: !!ca, central_from: ca?.from || null, por_tienda: porTienda, redirect_uri: SHOPIFY_REDIRECT_URI, compliance_url: `${SHOPIFY_APP_URL}/api/integrations?platform=shopify&action=compliance`, scopes: SHOPIFY_SCOPES });
       }
       // Admin: apps de Shopify por tienda (distribución custom). Solo admins de plataforma.
       if (["apps_list", "app_set", "app_delete"].includes(action)) {
@@ -1203,8 +1216,10 @@ export default async function handler(req, res) {
           return res.json({ apps: snap.docs.map(d => ({ shop: d.id, client_id: d.data().client_id || "", has_secret: !!d.data().client_secret, nota: d.data().nota || "", updatedAt: d.data().updatedAt || null })) });
         }
         const body = req.body || {};
-        const shop = normalizeShop(body.shop || "");
-        if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop)) return res.status(400).json({ error: "Dominio inválido (xxxx.myshopify.com)" });
+        // "_central" = la app pública de Growith (equivale a las env SHOPIFY_APP_ID/SECRET).
+        const esCentral = String(body.shop || "").trim() === "_central";
+        const shop = esCentral ? "_central" : normalizeShop(body.shop || "");
+        if (!esCentral && !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop)) return res.status(400).json({ error: "Dominio inválido (xxxx.myshopify.com)" });
         if (action === "app_delete" && req.method === "POST") { await db.collection("shopify_apps").doc(shop).delete(); return res.json({ ok: true }); }
         if (action === "app_set" && req.method === "POST") {
           const client_id = String(body.client_id || "").trim(), client_secret = String(body.client_secret || "").trim();

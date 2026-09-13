@@ -17737,7 +17737,17 @@ function AdmShopifyApps({T}){
   const iS={...InputStyle(T),fontSize:12,padding:"7px 10px"};
   return (
     <div>
-      {apps===null?<AdmSkeleton T={T} filas={2}/>:apps.length===0?<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>Todavía no hay apps por tienda. Si está la app central (env SHOPIFY_APP_ID), no hace falta cargar nada acá.</div>:apps.map((a,i)=>(
+      {(()=>{ const c=(apps||[]).find(a=>a.shop==="_central"); return (
+        <div style={{background:T.bg,border:`1px solid ${c?T.green+"55":T.borderL}`,borderRadius:10,padding:"10px 12px",marginBottom:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+            <span style={{fontSize:12.5,fontWeight:700,color:T.text}}>App central de Growith (Dev Dashboard → Growith)</span>
+            {c?<DSBadge T={T} color={T.green} size="sm">cargada</DSBadge>:<DSBadge T={T} color={T.yellow} size="sm">falta</DSBadge>}
+          </div>
+          <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Con esto TODOS los clientes conectan poniendo solo su dominio. Pegá el <b>Client ID</b> y el <b>Secret</b> de dev.shopify.com → Growith → Configuración de la app. Si Vercel ya tiene SHOPIFY_APP_ID/SECRET, se usan esas.{c?` · Client ID ${c.client_id.slice(0,8)}…`:""}</div>
+          <button onClick={()=>setF({shop:"_central",client_id:c?.client_id||"",client_secret:"",nota:"app pública Growith"})} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",marginTop:8}}>{c?"Actualizar credenciales":"Cargar credenciales"}</button>
+        </div>
+      ); })()}
+      {apps===null?<AdmSkeleton T={T} filas={2}/>:apps.filter(a=>a.shop!=="_central").length===0?<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>Sin apps por tienda (solo hacen falta si Shopify no deja instalar la app central en la tienda de un cliente).</div>:apps.filter(a=>a.shop!=="_central").map((a,i)=>(
         <div key={a.shop} style={{display:"flex",gap:10,alignItems:"center",padding:"7px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:12}}>
           <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,color:T.text}}>{a.shop}</div><div style={{fontSize:10.5,color:T.textSm,fontFamily:"monospace"}}>{a.client_id.slice(0,10)}… · {a.has_secret?"secret ✓":"sin secret"}{a.nota?` · ${a.nota}`:""}</div></div>
           <button onClick={()=>setF({shop:a.shop,client_id:a.client_id,client_secret:"",nota:a.nota||""})} style={{...BtnSecondary(T),fontSize:11,padding:"4px 9px"}}>Editar</button>
@@ -17745,7 +17755,7 @@ function AdmShopifyApps({T}){
         </div>
       ))}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:12}}>
-        <input value={f.shop} onChange={e=>setF(p=>({...p,shop:e.target.value}))} placeholder="tienda.myshopify.com" style={iS}/>
+        <input value={f.shop} onChange={e=>setF(p=>({...p,shop:e.target.value}))} placeholder="tienda.myshopify.com" style={{...iS,...(f.shop==="_central"?{color:T.green,fontWeight:700}:{})}} readOnly={f.shop==="_central"}/>
         <input value={f.nota} onChange={e=>setF(p=>({...p,nota:e.target.value}))} placeholder="Nota (cliente, fecha…)" style={iS}/>
         <input value={f.client_id} onChange={e=>setF(p=>({...p,client_id:e.target.value}))} placeholder="Client ID" style={{...iS,fontFamily:"monospace"}}/>
         <input value={f.client_secret} onChange={e=>setF(p=>({...p,client_secret:e.target.value}))} placeholder={f.shop&&apps?.some(a=>a.shop===f.shop)?"Client Secret (vacío = mantener)":"Client Secret"} type="password" style={{...iS,fontFamily:"monospace"}}/>
