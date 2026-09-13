@@ -679,11 +679,6 @@ function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenC
           background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.md,
           color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",
         }}>
-        {/* avatar user (chiquito) */}
-        {user?.photoURL
-          ? <img src={user.photoURL} alt="" style={{width:18,height:18,borderRadius:DS.r.full,flexShrink:0,border:`1px solid ${T.border}`}}/>
-          : <span style={{width:18,height:18,borderRadius:DS.r.full,background:T.accentSolid+"33",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:DS.w.bold,fontSize:10,flexShrink:0}}>{userInitial}</span>
-        }
         <OrgAvatar org={active} size={20}/>
         {!collapsed && (
           <>
@@ -933,7 +928,7 @@ function GrowithLogo({size=28, variant="color", darkMode=false}) {
 // Menú lateral (estático). También alimenta Admin > Sistema > Accesos por sección.
 const SIDEBAR_GROUPS_BASE = [
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
-    {id:"copilot",  label:"Copilot",   icon:"M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z"},
+    // {id:"copilot", …} — Copilot oculto del menú temporalmente (2026-09-12)
     { group:"FINANZAS" },
     // Sin subs: la navegación interna vive en las pills de la sección (tenerla
     // dos veces —sidebar y pills— duplicaba y ocupaba espacio).
@@ -947,14 +942,14 @@ const SIDEBAR_GROUPS_BASE = [
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"analisis",label:"Análisis"},{id:"reglas",label:"Reglas"},/* {id:"publicador",label:"Publicador IA"} — oculto por ahora (Thiago, 2026-09-11) */{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", alertKey:"stock", badge:"red",
-      subs:[{id:"resumen",label:"Resumen"},{id:"inventario",label:"Inventario"},{id:"movimientos",label:"Movimientos"},{id:"config",label:"Configuración"}]},
+      },
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
       subs:[{id:"gestion",label:"Gestión"},{id:"publicar",label:"Publicar"},{id:"preguntas",label:"Preguntas"},{id:"mensajes",label:"Mensajes"},{id:"ventas",label:"Ventas"},{id:"reputacion",label:"Reputación"}]},
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"},{id:"checkout",label:"Checkout"}]},
     {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", alertKey:"reclamos", badge:"red",
-      subs:[{id:"reclamos",label:"Reclamos"},{id:"mp",label:"Reclamos MP"},{id:"historial",label:"Historial"}]},
+      subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", alertKey:"canjes", badge:"orange"},
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", alertKey:"tareas", badge:"orange"},
     {id:"calendario", label:"Calendario de Pagos", icon:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18", alertKey:"calendario", badge:"red"},
@@ -1644,7 +1639,7 @@ const SECCIONES_MIEMBRO=[
   {id:"tareas",label:"Tareas"},{id:"canjes",label:"Canjes"},{id:"envios",label:"Envíos"},
   {id:"reclamos",label:"Reclamos"},{id:"stock",label:"Stock"},{id:"meta",label:"Meta Ads"},
   {id:"ml",label:"Mercado Libre"},{id:"margenes",label:"Dashboard"},{id:"arca",label:"Facturador"},
-  {id:"copilot",label:"Copilot"},{id:"calendario",label:"Calendario de Pagos"},
+  {id:"calendario",label:"Calendario de Pagos"},
 ];
 function MiembrosCuentaCard({T,user}){
   const iS=InputStyle(T);
@@ -3116,7 +3111,7 @@ function AppTopbar({T, section, sectionId, onHelp, onHome, children, top=48}) {
     <div style={{borderBottom:`1px solid ${T.border}`,background:T.card+"e0",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",padding:"0 24px",position:"sticky",top,zIndex:30}}>
       {/* En celu (.gh-topbar-row) la fila se parte en dos: título arriba y los
           controles en una segunda línea completa, sin "⋯" ni scroll cortado. */}
-      <div className="gh-topbar-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:64,gap:16,maxWidth:1400,margin:"0 auto"}}>
+      <div className="gh-topbar-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:64,gap:16,maxWidth:"100%",margin:"0 auto"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0,minWidth:0}}>
           {/* Ícono de la sección (fallback: logo Growith si no se pasa sectionId) */}
           {iconPath
@@ -3917,13 +3912,13 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         ]}/>
         <button onClick={fetchOrders} disabled={ordersStatus==="loading"} title="Actualizar pedidos" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",opacity:ordersStatus==="loading"?0.5:1,minWidth:32,justifyContent:"center"}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}</button>
         <button onClick={refrescarTrackingReclamos} disabled={refrescandoTrk} title="Consultar Andreani ahora para todos los reclamos con tracking" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",display:"inline-flex",alignItems:"center",gap:6,opacity:refrescandoTrk?0.6:1}}>{refrescandoTrk?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>}Actualizar envíos</button>
-        <button onClick={()=>syncReclamosMP(true)} disabled={syncingMP} title="Traer contracargos y reclamos de Mercado Pago / Mercado Libre" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",display:"inline-flex",alignItems:"center",gap:6,opacity:syncingMP?0.6:1}}>{syncingMP?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}MP/ML</button>
+        {false && <button onClick={()=>syncReclamosMP(true)} disabled={syncingMP} title="Traer contracargos y reclamos de Mercado Pago / Mercado Libre" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",display:"inline-flex",alignItems:"center",gap:6,opacity:syncingMP?0.6:1}}>{syncingMP?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}MP/ML</button>}
         <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px"}}>+ Nuevo reclamo</button>
       </AppTopbar>
 
       {/* Tabs internos removidos — navegación va por el sidebar izquierdo */}
 
-      <div style={{padding:"20px 24px 64px",maxWidth:1400,margin:"0 auto",width:"100%",boxSizing:"border-box",paddingRight:activeReclamo?460:24,transition:`padding-right 0.25s ${DS.ease}`}}>
+      <div style={{padding:"20px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%",boxSizing:"border-box",paddingRight:activeReclamo?460:24,transition:`padding-right 0.25s ${DS.ease}`}}>
 
         {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
         <div>
@@ -4227,7 +4222,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
 
 
-        {view==="mp"&&(
+        {false&&view==="mp"&&(
           <div style={{padding:"4px 0 48px"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:16}}>
               <div>
@@ -5713,7 +5708,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         <button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:12,padding:"7px 14px"}}>+ Nuevo canje</button>
       </AppTopbar>
 
-      <div style={{padding:"24px 24px 64px",maxWidth:1280,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"24px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%"}}>
         {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
         <div>
           {showGuia&&(
@@ -9935,7 +9930,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       </AppTopbar>
       {/* Tabs internos removidos — navegación va por el sidebar izquierdo */}
 
-      <div style={{padding:"16px 24px 64px",maxWidth:1280,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"16px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%"}}>
 
         {/* -- PANEL DE ENVIOS -- */}
         {tab==="panel"&&(
@@ -10599,7 +10594,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           );
           const segBtn=(on)=>({padding:"5px 12px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:6,background:on?T.card:"transparent",color:on?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"});
           return (
-          <div key="seguimientos" className="gh-tab-content" style={{maxWidth:1100,margin:"0 auto",paddingBottom:48}}>
+          <div key="seguimientos" className="gh-tab-content" style={{maxWidth:"100%",margin:"0 auto",paddingBottom:48}}>
 
             {/* Barra: título + acciones chicas */}
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
@@ -12618,7 +12613,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   );
 
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",color:T.text,padding:"20px 24px 48px",maxWidth:1280,margin:"0 auto"}} className="home-wrap">
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",color:T.text,padding:"20px 24px 48px",maxWidth:"100%",margin:"0 auto"}} className="home-wrap">
 
       {/* Hero — estilo limpio */}
       <div style={{marginBottom:DS.sp["2xl"],display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16}}>
@@ -12871,7 +12866,7 @@ function LandingPage({T, onLogin}) {
       `}</style>
       {/* Topnav */}
       <div style={{position:"sticky",top:0,zIndex:50,background:T.bg+"f2",backdropFilter:"blur(10px)",borderBottom:`1px solid ${T.border}`}}>
-        <div style={{maxWidth:1080,margin:"0 auto",padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:16}}>
+        <div style={{maxWidth:"100%",margin:"0 auto",padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:16}}>
           <img src="/logo-color.png" alt="Growith" style={{width:28,height:28,borderRadius:7}}/>
           <span style={{fontSize:17,fontWeight:800,letterSpacing:-0.4}}>Growith</span>
           <button onClick={irFeatures} className="hide-mobile" style={{background:"transparent",border:"none",cursor:"pointer",fontSize:13,color:T.textMd,fontFamily:F,padding:"6px 10px"}}>Funciones</button>
@@ -12977,7 +12972,7 @@ function LandingPage({T, onLogin}) {
       </div>
 
       {/* Features */}
-      <div id="gh-landing-features" style={{maxWidth:1020,margin:"0 auto",padding:"64px 20px"}}>
+      <div id="gh-landing-features" style={{maxWidth:"100%",margin:"0 auto",padding:"64px 20px"}}>
         <h2 style={secTitle}>Una sección para cada parte de tu negocio</h2>
         <p style={secSub}>Dejá de saltar entre planillas, el admin de tu tienda y cinco pestañas. Growith lo junta todo y lo convierte en decisiones.</p>
         <div className="gh-land-bento" style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:14}}>
@@ -13100,7 +13095,7 @@ function LandingPage({T, onLogin}) {
       <div id="gh-landing-precios" style={{background:T.surface+"66",borderTop:`1px solid ${T.borderL}`,borderBottom:`1px solid ${T.borderL}`,padding:"64px 20px"}}>
         <h2 style={secTitle}>Planes simples, sin letra chica</h2>
         <p style={secSub}>Probás gratis 14 días con absolutamente todo. Después elegís lo que necesitás.</p>
-        <div style={{maxWidth:1120,margin:"0 auto",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:18,alignItems:"start"}}>
+        <div style={{maxWidth:"100%",margin:"0 auto",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:18,alignItems:"start"}}>
           {/* Facturador */}
           <div style={{background:T.card,border:`2px solid ${T.border}`,borderRadius:18,padding:"26px 24px",textAlign:"center",position:"relative"}}>
             <div style={{fontSize:15,fontWeight:800,color:"#10b981",marginBottom:2}}>Plan Facturador</div>
@@ -13157,7 +13152,7 @@ function LandingPage({T, onLogin}) {
       </div>
 
       {/* CTA final */}
-      <div style={{maxWidth:1020,margin:"0 auto",padding:"64px 20px 8px"}}>
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"64px 20px 8px"}}>
         <div style={{position:"relative",overflow:"hidden",background:"linear-gradient(135deg,#6366f1,#7c5cf1 55%,#8b5cf6)",borderRadius:22,padding:"48px 28px",textAlign:"center",boxShadow:"0 24px 80px #6366f135"}}>
           <div style={{position:"absolute",inset:0,backgroundImage:"radial-gradient(circle at 20% 20%, rgba(255,255,255,0.14), transparent 42%), radial-gradient(circle at 85% 75%, rgba(255,255,255,0.10), transparent 40%)",pointerEvents:"none"}}/>
           <div style={{position:"relative"}}>
@@ -13170,7 +13165,7 @@ function LandingPage({T, onLogin}) {
       </div>
 
       {/* Footer */}
-      <div style={{maxWidth:1020,margin:"0 auto",padding:"36px 20px 48px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"36px 20px 48px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:700}}>
           <img src="/logo-color.png" alt="" style={{width:20,height:20,borderRadius:5}}/> Growith
         </div>
@@ -13561,7 +13556,7 @@ function EnviosCheckoutTab({T, user}) {
   const shStore = userDoc?.stores?.find(s=>s.type==="shopify");
   const tnStore = userDoc?.stores?.find(s=>s.type==="tiendanube");
   return (
-    <div key="checkout" className="gh-tab-content" style={{maxWidth:1100,margin:"0 auto",paddingBottom:48}}>
+    <div key="checkout" className="gh-tab-content" style={{maxWidth:"100%",margin:"0 auto",paddingBottom:48}}>
       <div style={{marginBottom:14}}>
         <div style={{fontSize:DS.font["2xl"],fontWeight:DS.w.black,color:T.text,letterSpacing:-0.4}}>Andreani en el checkout <span style={{fontSize:DS.font.md,fontWeight:DS.w.medium,color:T.textSm}}>(solo Shopify)</span></div>
         <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:2}}>Que el comprador elija Andreani a domicilio o retiro en sucursal directo en el checkout de tu tienda, con el precio de tu etiqueta Growith.</div>
@@ -15094,7 +15089,7 @@ function AppCalendarioPagos({T,user,onHome}){
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
       <AppTopbar T={T} section="Calendario de Pagos" sectionId="calendario" onHome={onHome}/>
-      <div style={{padding:"20px 24px 64px",maxWidth:1140,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"20px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%"}}>
         {err&&<div style={{fontSize:12,color:T.red,background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:8,padding:"8px 12px",marginBottom:12}}>{err}</div>}
 
         {/* KPIs */}
@@ -16383,7 +16378,7 @@ function AppAdmin({T, user, onBack}) {
         {porAtender>0&&<DSBadge T={T} color={T.red} size="sm">{porAtender} por atender</DSBadge>}
         <Btn T={T} variant="secondary" size="sm" onClick={()=>{loadData(true);loadEnvCargas();loadStatsMes();}} disabled={refrescando}>{refrescando?"Actualizando":"Actualizar"}</Btn>
       </AppTopbar>
-      <div style={{padding:"20px 24px 64px",maxWidth:1180,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"20px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%"}}>
         {err&&<div style={{fontSize:12,color:T.red,background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:8,padding:"8px 12px",marginBottom:12}}>{err}</div>}
         {cuenta&&!loading&&!uFicha&&<Card T={T} padding="lg"><AdmVacio T={T} titulo="No encontré esa cuenta" sub="Puede que el link sea viejo o que la cuenta ya no exista."/><div style={{textAlign:"center"}}><Btn T={T} variant="secondary" size="sm" onClick={()=>setTab("clientes")}>Volver a Clientes</Btn></div></Card>}
         {uFicha?<AdmFicha ctx={ctx} u={uFicha} onClose={()=>setTab("clientes")}/>:(<>
@@ -21817,7 +21812,7 @@ function ColaboradorPublicView({T, token}) {
         )}
       </div>
 
-      <div style={{maxWidth:1120,margin:"0 auto",padding:"20px 24px"}}>
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"20px 24px"}}>
         {tareas.length===0&&(
           <div style={{textAlign:"center",padding:"48px 0",color:T.textSm}}>
             <div style={{marginBottom:12,color:T.green}}><GhI n="check" size={40}/></div>
@@ -24874,7 +24869,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   if(loading) return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Facturador" sectionId="arca" onHome={onHome}/>
-      <div style={{flex:1,maxWidth:1280,margin:"0 auto",padding:"28px 24px",width:"100%",animation:"growith-fadeInFast 0.3s ease"}}>
+      <div style={{flex:1,maxWidth:"100%",margin:"0 auto",padding:"28px 24px",width:"100%",animation:"growith-fadeInFast 0.3s ease"}}>
         {/* Skeleton dashboard */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
           {[1,2,3].map(i=>(
@@ -24984,7 +24979,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         );
       })()}
 
-      <div style={{maxWidth:1280,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"28px 24px",width:"100%"}}>
 
         {/* ══ ERROR AL CARGAR CUITs → NO mostrar el onboarding (sería falso) ══ */}
         {cuitsError ? (
@@ -27934,7 +27929,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [aColsOpen,setAColsOpen]=useState(false);
   const [aSort,setASort]=useState({key:"spend",dir:"desc"});
   const [aQuery,setAQuery]=useState("");
-  const [aFilterStatus,setAFilterStatus]=useState("all"); // all | active | paused
+  const [aFilterStatus,setAFilterStatus]=useState("active"); // all | active | paused — arranca en "Solo activos"
   const [aBusyIds,setABusyIds]=useState({}); // ids siendo pausadas/activadas
   // Breakdown (segmentación por edad/género/ubicación/hora)
   const [aBreakdown,setABreakdown]=useState(""); // "" | age | gender | placement | hour
@@ -29347,7 +29342,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         }}/>
       )}
 
-      <div style={{maxWidth:1280,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"28px 24px",width:"100%"}}>
 
         {/* Banner global: token de Meta vencido/inválido — visible en TODOS los tabs */}
         {tokenDead && (
@@ -29531,17 +29526,18 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <option value="active">Solo activos</option>
                       <option value="paused">Solo pausados</option>
                     </select>
-                    {/* Segmentar por breakdown */}
-                    <select value={aBreakdown} onChange={e=>setABreakdown(e.target.value)} title="Segmentar las métricas del rango por audiencia/ubicación/hora" style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:aBreakdown?T.accent:T.text,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:aBreakdown?600:400}}>
+                    {/* Segmentar por breakdown — retirado del toolbar (2026-09-12) */}
+                    {false && <select value={aBreakdown} onChange={e=>setABreakdown(e.target.value)} title="Segmentar las métricas del rango por audiencia/ubicación/hora" style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:aBreakdown?T.accent:T.text,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:aBreakdown?600:400}}>
                       <option value="">Sin segmentar</option>
                       <option value="age">Por edad</option>
                       <option value="gender">Por género</option>
                       <option value="placement">Por ubicación (feed/reels/stories)</option>
                       <option value="hour">Por hora del día</option>
-                    </select>
+                    </select>}
                     {/* BE de referencia global (cuando el producto no tiene BE propio) */}
                     <div title="ROAS break-even de referencia: colorea el ROAS en verde/rojo cuando el anuncio no tiene un producto con BE propio" style={{display:"flex",alignItems:"center",gap:5,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"3px 8px"}}>
                       <span style={{fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.3}}>BE</span>
+                      <GhTip T={T} text="BE = ROAS break-even (punto de equilibrio): el ROAS mínimo para no perder plata con un anuncio. Growith pinta el ROAS en verde cuando supera este valor y en rojo cuando no. Si un producto tiene su propio BE cargado en Dashboard → Costos, se usa ese; este es el de referencia para el resto."/>
                       <input type="number" step="0.1" min="0" value={aRoasBe} onChange={e=>setARoasBe(parseFloat(e.target.value)||0)} style={{width:44,background:"transparent",border:"none",fontSize:12,color:T.text,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",outline:"none"}}/>
                       <span style={{fontSize:11,color:T.textSm}}>x</span>
                     </div>
@@ -29724,7 +29720,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                         <button onClick={()=>drillInto(r)} title={`Click para ver sus ${drillLabel}`} style={{flex:1,minWidth:0,background:"transparent",border:"none",color:T.text,fontSize:13,fontWeight:600,cursor:"pointer",padding:0,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}
                                           onMouseEnter={e=>{e.currentTarget.style.color=T.accent;e.currentTarget.style.textDecoration="underline";}}
                                           onMouseLeave={e=>{e.currentTarget.style.color=T.text;e.currentTarget.style.textDecoration="none";}}>
-                                          {r.name||"(sin nombre)"} <span style={{fontSize:10,color:T.accent,fontWeight:700}}>↓ {drillLabel}</span>
+                                          {r.name||"(sin nombre)"} <span style={{fontSize:10,color:T.accent,fontWeight:700}}>{drillLabel} →</span>
                                         </button>
                                       ) : (
                                         <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>{r.name||"(sin nombre)"}</span>
@@ -32260,7 +32256,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
         <button onClick={()=>{ if(tab==="gestion"||tab==="publicar"||tab==="reputacion") loadItems(); else setMlRefresh(k=>k+1); }} disabled={loading} style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px"}}>{loading?<Spinner size={12} color="#fff"/>:"↻"} Refrescar</button>
       </AppTopbar>
 
-      <div style={{maxWidth:1280,margin:"0 auto",padding:"24px 24px 80px",width:"100%"}}>
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"24px 24px 80px",width:"100%"}}>
         {showGuiaMl&&(
           <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
             {[
@@ -33630,7 +33626,7 @@ function MargenesTabsBar({ T, tab, setTab }) {
   ];
   const activa = (t) => t.id==="costos" ? MARGENES_CFG_IDS.includes(tab) : tab===t.id;
   return (
-    <div className="mobile-only no-scrollbar" style={{display:"flex",gap:DS.sp.xs,overflowX:"auto",padding:"10px 24px 0",maxWidth:1440,margin:"0 auto",width:"100%",boxSizing:"border-box",WebkitOverflowScrolling:"touch"}}>
+    <div className="mobile-only no-scrollbar" style={{display:"flex",gap:DS.sp.xs,overflowX:"auto",padding:"10px 24px 0",maxWidth:"100%",margin:"0 auto",width:"100%",boxSizing:"border-box",WebkitOverflowScrolling:"touch"}}>
       {TABS.map(t=>{
         const act = activa(t);
         return (
@@ -33693,7 +33689,7 @@ function AppMargenes({ T, user, onHome, tab="dashboard", setTab }) {
           </div>
         </div>
       )}
-      <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
         {tab==="pnl" && <MargenesPnl T={T} uid={uid}/>}
         {tab==="comisiones" && <ComisionesPanel T={T} uid={uid}/>}
         {tab==="costos" && <CostosPanel T={T} uid={uid}/>}
@@ -34826,9 +34822,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       <AppTopbar T={T} section="Stock & Estadísticas" sectionId="stock" onHome={onHome}
         onHelp={()=>setShowGuia(s=>!s)}>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
-          {platform==="shopify" && <span style={{fontSize:11,background:"#96BF4822",border:"1px solid #96BF4866",borderRadius:6,padding:"3px 8px",fontWeight:600,color:"#96BF48"}}>Shopify</span>}
-          {platform==="tiendanube" && <span style={{fontSize:11,background:"#2D8DF222",border:"1px solid #2D8DF266",borderRadius:6,padding:"3px 8px",fontWeight:600,color:"#2D8DF2"}}>Tienda Nube</span>}
-          {data?.ml_data && <span style={{fontSize:11,background:"#FFE60022",border:"1px solid #FFE60088",borderRadius:6,padding:"3px 8px",fontWeight:600,color:"#FFE600"}}>Mercado Libre</span>}
+          {/* Canales conectados: logos, sin chips */}
+          <span title={[platform==="shopify"?"Shopify":platform==="tiendanube"?"Tienda Nube":"",data?.ml_data?"Mercado Libre":""].filter(Boolean).join(" + ")} style={{display:"inline-flex",alignItems:"center",gap:6,marginRight:4}}>
+            {platform==="shopify" && <BrandIcon name="shopify" size={22}/>}
+            {platform==="tiendanube" && <BrandIcon name="tiendanube" size={22}/>}
+            {(platform==="shopify"||platform==="tiendanube") && data?.ml_data && <span style={{fontSize:12,color:T.textSm,fontWeight:700}}>+</span>}
+            {data?.ml_data && <BrandIcon name="mercadolibre" size={24}/>}
+          </span>
           <TopbarMoreMenu T={T} items={[
             {label:"Exportar CSV",disabled:!data,onClick:exportCSV},
             {label:syncingSales?"Reprocesando…":"Reprocesar 30 días",disabled:syncingSales,onClick:syncSales},
@@ -34839,8 +34839,15 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           </button>
         </div>
       </AppTopbar>
+      {/* Pestañas de Stock arriba de todo (mismo componente que el Facturador) */}
+      <AppTabs T={T} active={tab} onChange={setTab} tabs={[
+        {id:"resumen",label:"Resumen",icon:"M3 3v18h18M7 14l4-4 4 4 5-6"},
+        {id:"inventario",label:"Inventario",icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"},
+        {id:"movimientos",label:"Movimientos",icon:"M17 1l4 4-4 4M3 11V9a4 4 0 014-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 01-4 4H3"},
+        {id:"config",label:"Configuración",icon:"M12 15a3 3 0 100-6 3 3 0 000 6z"},
+      ]}/>
 
-      <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
 
         {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
         <div>
@@ -34865,10 +34872,6 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         {/* Período + date picker */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,flexWrap:"wrap"}}>
           <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>Período:</span>
-          {[{d:1,l:"Hoy"},{d:7,l:"7d"},{d:30,l:"30d"}].map(p=>(
-            <button key={p.d} onClick={()=>{setUseCustomDate(false);setDays(p.d);loadStock(p.d);}}
-              style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:`1px solid ${!useCustomDate&&days===p.d?T.accentSolid:T.border}`,borderRadius:6,background:!useCustomDate&&days===p.d?T.accentSolid:"transparent",color:!useCustomDate&&days===p.d?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s"}}>{p.l}</button>
-          ))}
           <DateRangePicker
             T={T}
             since={useCustomDate ? dateFrom : fechaAR(new Date(Date.now()-days*86400000))}
@@ -34882,36 +34885,15 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               setDays(diff);
             }}
           />
-          <span style={{fontSize:11,color:T.textSm,marginLeft:2}}>
-            {useCustomDate&&dateFrom&&dateTo
-              ? `${Math.round((new Date(dateTo)-new Date(dateFrom))/86400000)+1} días`
-              : `últimos ${days} días`}
-          </span>
+
           {/* Fuente del stock: central (tu inventario) vs tienda (TN/Shopify) */}
-          {invItems.length>0&&<button onClick={()=>setStockSrc(modoStock==="central"?"tienda":"central")}
+          {invItems.length>0&&<button onClick={async()=>{ if(modoStock==="central"){ const ok=await appConfirm("Vas a mostrar el stock que reporta TN/Shopify en lugar del que cargaste en Growith. NO borra tu inventario: es solo la vista de arriba, y podés volver cuando quieras. ¿Seguir?",{okLabel:"Sí, mostrar TN/Shopify"}); if(!ok) return; } setStockSrc(modoStock==="central"?"tienda":"central"); }}
             title={modoStock==="central"?"Arriba se muestra TU inventario (el de abajo). Tocá para ver el stock que reporta TN/Shopify.":"Arriba se muestra el stock de TN/Shopify. Tocá para volver a tu inventario cargado."}
             style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 11px",fontSize:11,fontWeight:600,border:`1px solid ${modoStock==="tienda"?T.yellow:T.border}`,borderRadius:6,background:modoStock==="tienda"?(T.yellowBg||T.yellow+"18"):"transparent",color:modoStock==="tienda"?T.yellow:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s"}}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
             {modoStock==="central"?"Poner stock de TN/Shopify":"Mostrando TN/Shopify — volver a mi stock"}
           </button>}
-          {/* Comparativa */}
-          {dataPrev&&(()=>{
-            const prevU=dataPrev.total_units||0, currU=data?.total_units||0;
-            const prevR=dataPrev.total_revenue||0, currR=data?.total_revenue||0;
-            const diffU=prevU>0?((currU-prevU)/prevU*100).toFixed(1):null;
-            const diffR=prevR>0?((currR-prevR)/prevR*100).toFixed(1):null;
-            const up=diffU!==null&&parseFloat(diffU)>=0;
-            return (
-              <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,background:up?T.greenBg:T.redBg,border:`1px solid ${up?T.green+"44":T.red+"44"}`,borderRadius:8,padding:"5px 12px"}}>
-                <span style={{color:up?T.green:T.red,fontWeight:700,fontSize:12}}>{up?"↑":"↓"}</span>
-                <div style={{fontSize:11,fontWeight:600,color:up?T.green:T.red}}>
-                  {diffU!==null&&<span>{up?"+":""}{diffU}% uds</span>}
-                  {diffR!==null&&<span style={{marginLeft:8}}>{parseFloat(diffR)>=0?"+":""}{diffR}% rev.</span>}
-                  <span style={{fontSize:10,fontWeight:400,color:T.textSm,marginLeft:6}}>vs período anterior</span>
-                </div>
-              </div>
-            );
-          })()}
+          {/* (comparativa "vs período anterior" retirada) */}
         </div>
 
         {loading&&!data?(
@@ -35188,15 +35170,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       )}
 
                       {viewMode==="tabla"&&<ProductTable products={allProducts}/>}
-                      {viewMode==="tabla"&&kpiDead>0&&(
-                        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-                          <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
-                              <div style={{fontSize:13,fontWeight:700,color:T.text}}>Sin ventas en el período</div>
-                            <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{kpiDead} productos inactivos</span>
-                          </div>
-                          <ProductTable products={allProducts} showDead/>
-                        </div>
-                      )}
+                      {/* (tabla "Sin ventas en el período" retirada) */}
                     </div>
             )}
 
@@ -35926,13 +35900,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   </div>
                 )}
 
-                {alertas.length===0?(
-                  <div style={{background:T.card,border:`1px solid ${T.green}44`,borderRadius:12,padding:"50px 20px",textAlign:"center"}}>
-                    <div style={{marginBottom:14,display:"flex",justifyContent:"center"}}><StatusIcon type="success" size={56}/></div>
-                    <div style={{fontSize:15,fontWeight:700,color:T.green}}>Todo el stock está OK</div>
-                    <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Ningún producto supera el umbral de alerta configurado</div>
-                  </div>
-                ):(
+                {alertas.length===0?null:(
                   <>
                     <div style={{fontSize:12,color:T.textSm}}>
                       <strong style={{color:T.red}}>{alertas.filter(a=>a.status==="empty").length}</strong> sin stock ·{" "}
@@ -36735,7 +36703,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh"}}>
         <AppTopbar T={T} section="Dashboard" sectionId="margenes" onHome={onHome}/>
         <MargenesTabsBar T={T} tab={tab||"dashboard"} setTab={setTab}/>
-        <div style={{maxWidth:1440,margin:"0 auto",padding:"20px 24px",width:"100%"}}>
+        <div style={{maxWidth:"100%",margin:"0 auto",padding:"20px 24px",width:"100%"}}>
           {calcNuevo&&(
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"10px 14px",borderRadius:10,border:`1px solid ${T.border}`,background:T.card,fontSize:13,color:T.textMd,fontWeight:500}}>
               <Spinner size={14} color={T.accent}/>
@@ -36852,7 +36820,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
 
       {/* Guía "¿Cómo funciona?" del botón ? del topbar */}
       {showGuia&&(
-        <div style={{maxWidth:1440,margin:"0 auto",padding:"14px 24px 0",width:"100%"}}>
+        <div style={{maxWidth:"100%",margin:"0 auto",padding:"14px 24px 0",width:"100%"}}>
           <div style={{display:"flex",flexDirection:"column",gap:5,paddingLeft:2,marginBottom:4}}>
             {[
               {n:1,title:"Tu profit real",desc:"Cada venta entra sola desde tu tienda (Tienda Nube / Shopify) y Mercado Libre, y Growith le descuenta TODO: comisiones de la plataforma y del medio de pago, impuestos, costo de envío, costo del producto y la publicidad (Meta y Mercado Ads). Lo que ves es lo que realmente te queda."},
@@ -36891,7 +36859,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
         </div>
       )}
 
-      <div style={{maxWidth:1440,margin:"0 auto",padding:"20px 24px 64px",width:"100%"}}>
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"20px 24px 64px",width:"100%"}}>
         {/* Hover solo en lo clickeable — también sirve para descubrir que
             Revenue y Órdenes se pueden tocar. */}
         <style>{`.gh-card-click{transition:box-shadow .15s,transform .15s,opacity .12s;}.gh-card-click:hover{box-shadow:0 4px 16px rgba(0,0,0,0.22);transform:translateY(-1px);}
@@ -39102,59 +39070,7 @@ export default function App() {
         <div style={{flex:1,minWidth:0,paddingBottom:"68px"}} className="main-content">
           <MobileTopHeader/>
           {/* Mini topbar global con Cmd+K hint */}
-          <div className="hide-mobile" style={{position:"sticky",top:0,zIndex:40,background:T.bg+"f5",backdropFilter:"blur(8px)",borderBottom:`1px solid ${T.border}`,padding:"10px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:DS.sp.md,height:48}}>
-            <div/>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              {isInTrial&&!user?.esMiembro&&(
-                <button onClick={()=>setPage("planes")} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 12px",background:trialExpiring?T.red+"18":T.green+"18",border:`1.5px solid ${trialExpiring?T.red+"55":T.green+"55"}`,borderRadius:20,color:trialExpiring?T.red:T.green,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
-                  <GhI n={trialExpiring?"alert":"gift"} size={12}/> Prueba gratis · {trialDaysLeft === 1 ? "último día" : `${trialDaysLeft} días`}
-                </button>
-              )}
-              {tareasForReview>0&&(
-                <div style={{position:"relative"}}>
-                  <button onClick={()=>setBellPanelOpen(p=>!p)} title={`${tareasForReview} entrega${tareasForReview!==1?"s":""} esperando revisión`}
-                    style={{position:"relative",padding:"5px 8px",background:bellPanelOpen?T.surface:T.card,border:`1px solid ${bellPanelOpen?T.accent:T.border}`,borderRadius:DS.r.md,cursor:"pointer",display:"flex",alignItems:"center",color:T.text,animation:"bellShake 0.5s ease"}}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                    <span style={{position:"absolute",top:-4,right:-4,minWidth:16,height:16,borderRadius:8,background:T.red,color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 3px",fontFamily:"'Inter',system-ui,sans-serif"}}>{tareasForReview}</span>
-                  </button>
-                  {bellPanelOpen&&(
-                    <>
-                    <div onClick={()=>setBellPanelOpen(false)} style={{position:"fixed",inset:0,zIndex:199}}/>
-                    <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 8px)",right:0,zIndex:200,width:320,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,boxShadow:DS.shadow.lg,overflow:"hidden",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      <div style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                        <span style={{fontSize:12,fontWeight:700,color:T.text}}>{tareasParaRevisarList.length} entrega{tareasParaRevisarList.length!==1?"s":""} para revisar</span>
-                        <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                          <button onClick={()=>{setTareasForReview(0);setTareasParaRevisarList([]);setBellPanelOpen(false);}} style={{fontSize:11,padding:"3px 8px",borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar</button>
-                          <button onClick={()=>setBellPanelOpen(false)} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,lineHeight:1,padding:0}}>✕</button>
-                        </div>
-                      </div>
-                      <div style={{maxHeight:260,overflowY:"auto"}}>
-                        {tareasParaRevisarList.map(t=>(
-                          <div key={t.id} onClick={()=>{setBellPanelOpen(false);setPendingOpenTaskId(t.id);setPage("tareas");}} style={{padding:"10px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}
-                            onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                            <div style={{width:32,height:32,borderRadius:"50%",background:T.orange+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:T.orange,flexShrink:0}}>
-                              {(t.asignadoNombre?.[0]||"?").toUpperCase()}
-                            </div>
-                            <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</div>
-                              {t.asignadoNombre&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{t.asignadoNombre}</div>}
-                            </div>
-                            <span style={{fontSize:10,color:T.orange,fontWeight:600,flexShrink:0}}>Ver →</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    </>
-                  )}
-                </div>
-              )}
-              <button onClick={()=>setCmdOpen(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 12px 5px 10px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textSm,cursor:"pointer",fontSize:DS.font.sm,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                <span>Buscar...</span>
-                <span style={{padding:"0px 5px",border:`1px solid ${T.border}`,borderRadius:DS.r.sm,fontSize:DS.font.xs,marginLeft:8}}>⌘K</span>
-              </button>
-            </div>
-          </div>
+          {/* (barra superior con búsqueda/campanita retirada — ⌘K sigue abriendo la búsqueda) */}
           {_showExpiryBanner&&(
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"10px 24px",background:expiryDays<=1?T.red+"15":""+T.orange+" 15",backgroundImage:"none",backgroundColor:expiryDays<=1?T.red+"15":"#f9741615",borderBottom:`1px solid ${expiryDays<=1?T.red+"40":"#f9741640"}`,fontFamily:"'Inter',system-ui,sans-serif"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
