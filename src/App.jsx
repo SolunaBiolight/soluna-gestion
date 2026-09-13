@@ -13940,7 +13940,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
   const [shopifyShop,setShopifyShop]=useState("");
   const [shopifyClientId,setShopifyClientId]=useState("");
   const [shopifySecret,setShopifySecret]=useState("");
-  const [shopifyAdvanced,setShopifyAdvanced]=useState(false); // usar app propia (fallback)
+  // Hasta que la app de Growith esté aprobada en el App Store, el flujo por defecto
+  // es el de siempre (video + app propia del cliente). El "un clic" queda listo
+  // para activarlo cambiando este default a false.
+  const [shopifyAdvanced,setShopifyAdvanced]=useState(true);
   const [connectingShopify,setConnectingShopify]=useState(false);
   const [showMLModal,setShowMLModal]=useState(false);
   const [connectingML,setConnectingML]=useState(false);
@@ -14797,7 +14800,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                 <ModalCloseBtn T={T} onClick={()=>!connectingShopify && setShowShopifyModal(false)} disabled={connectingShopify}/>
               </div>
 
-              {shopifyCentral===true&&(
+              {false&&shopifyCentral===true&&(
                 <div style={{marginBottom:14,fontSize:11,color:T.textSm}}>
                   <label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={shopifyAdvanced} onChange={e=>setShopifyAdvanced(e.target.checked)}/> Usar mi propia app de Shopify (avanzado)</label>
                 </div>
