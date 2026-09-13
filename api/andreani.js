@@ -2250,6 +2250,7 @@ export default async function handler(req, res) {
           return res.json({ ok: true, quitadas: n });
         }
         const out = [];
+        const diag = { cgDocs: 0, cgPuntoMap: 0, cgIds: [], globalExists: false, globalN: 0, uids: [] };
         const evaluar = (uid, key, v, global) => {
           const punto = ghPuntoDeClave(key);
           const row = { uid, key, global, punto, ts: v?.ts || null, tpl: v?.tpl || null, oficial: v?.oficial || null, byEmail: v?.byEmail || null, conflicto: null, coincide: false };
@@ -2259,20 +2260,25 @@ export default async function handler(req, res) {
         };
         try {
           const cg = await db.collectionGroup("envios_cfg").get();
+          diag.cgDocs = cg.size;
           for (const d of cg.docs) {
+            if (diag.cgIds.length < 8 && !diag.cgIds.includes(d.id)) diag.cgIds.push(d.id);
             if (d.id !== "punto_map") continue;
+            diag.cgPuntoMap++;
             const uid = d.ref.parent.parent?.id || "";
+            if (diag.uids.length < 20) diag.uids.push(uid);
             for (const [k, v] of Object.entries(d.data()?.entries || {})) evaluar(uid, k, v, false);
           }
         } catch (e) { return res.status(502).json({ error: "No se pudo leer las memorias: " + e.message }); }
         const g = await gRef.get();
+        diag.globalExists = g.exists; diag.globalN = Object.keys(g.exists ? (g.data().entries || {}) : {}).length;
         for (const [k, v] of Object.entries(g.exists ? (g.data().entries || {}) : {})) evaluar(v?.by || "", k, v, true);
         const emails = {};
         for (const uid of new Set(out.map(r => r.uid).filter(Boolean))) { try { emails[uid] = (await db.collection("users").doc(uid).get()).data()?.email || ""; } catch (_) {} }
         for (const r of out) r.email = emails[r.uid] || r.byEmail || "";
         const rank = r => r.conflicto?.grave ? 0 : r.conflicto ? 1 : r.coincide ? 3 : 2;
         out.sort((a, b) => rank(a) - rank(b) || (b.ts || 0) - (a.ts || 0));
-        return res.json({ ok: true, entries: out, resumen: { total: out.length, graves: out.filter(r => r.conflicto?.grave).length, dudosas: out.filter(r => r.conflicto && !r.conflicto.grave).length, sinVerificar: out.filter(r => !r.conflicto && !r.coincide).length, verificadas: out.filter(r => r.coincide).length } });
+        return res.json({ ok: true, diag, entries: out, resumen: { total: out.length, graves: out.filter(r => r.conflicto?.grave).length, dudosas: out.filter(r => r.conflicto && !r.conflicto.grave).length, sinVerificar: out.filter(r => !r.conflicto && !r.coincide).length, verificadas: out.filter(r => r.coincide).length } });
       }
 
       if (action === "admin_acreditar") {

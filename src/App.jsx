@@ -17653,7 +17653,7 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
   const [nuevo,setNuevo]=useState(""); const [bajas,setBajas]=useState({loading:true,nombres:[],seed:[]}); const [bajaNueva,setBajaNueva]=useState("");
   const [pmap,setPmap]=useState({loading:true,entries:[]});
   const [audit,setAudit]=useState(null); // {loading,entries,resumen,error}
-  async function auditarPuntos(){ setAudit({loading:true}); try{ const d=await admAndreani("admin_punto_map_audit"); setAudit({loading:false,entries:d.entries||[],resumen:d.resumen||{}}); }catch(e){ setAudit({loading:false,entries:[],error:e.message}); } }
+  async function auditarPuntos(){ setAudit({loading:true}); try{ const d=await admAndreani("admin_punto_map_audit"); setAudit({loading:false,entries:d.entries||[],resumen:d.resumen||{},diag:d.diag||null}); }catch(e){ setAudit({loading:false,entries:[],error:e.message}); } }
   async function quitarAudit(rows){ const quitar=rows.filter(r=>!r.global).map(r=>({uid:r.uid,key:r.key})); const quitarGlobal=rows.filter(r=>r.global).map(r=>r.key); await admAndreani("admin_punto_map_audit",{quitar,quitarGlobal}); toast(`Quitadas ${rows.length} memoria(s)`,"success"); await auditarPuntos(); loadPuntoMap(); }
   const meses=useMemo(()=>{ const out=[]; const now=new Date(); for(let i=0;i<6;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); out.push({v:admMesKey(d.getTime()),label:admMesLabel(admMesKey(d.getTime()))}); } return out; },[]);
   const [mes,setMes]=useState(meses[0].v); const [stats,setStats]=useState({loading:!statsMes,data:statsMes||null,error:""});
@@ -17794,7 +17794,7 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
                   <DSBadge T={T} color={T.green} size="sm">{audit.resumen.verificadas||0} coinciden</DSBadge>
                   {(audit.resumen.graves||0)>0&&<AdmBtn T={T} variant="danger" size="sm" onClick={async()=>{ const rows=audit.entries.filter(r=>r.conflicto?.grave); if(!await appConfirm(`¿Quitar las ${rows.length} memorias que contradicen al punto? Esos pedidos volverán a pasar por el selector.`,{danger:true,okLabel:"Quitar"})) return; await quitarAudit(rows); }}>Quitar las que contradicen</AdmBtn>}
                 </div>
-                {audit.entries.length===0?<AdmVacio T={T} titulo="No hay memorias guardadas" sub="Se crean cuando una cuenta elige una sucursal a mano."/>:(
+                {audit.entries.length===0?<><AdmVacio T={T} titulo="No hay memorias guardadas" sub="Se crean cuando una cuenta elige una sucursal a mano."/>{audit.diag&&<div style={{fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas',monospace",marginTop:6,wordBreak:"break-all"}}>diag: {JSON.stringify(audit.diag)}</div>}</>:(
                 <div style={{maxHeight:420,overflowY:"auto"}}>{audit.entries.map((r,i)=>{
                   const col=r.conflicto?.grave?T.red:r.conflicto?T.yellow:r.coincide?T.green:T.textSm;
                   const tag=r.conflicto?.grave?"Contradice":r.conflicto?"Dudosa":r.coincide?"Coincide":"Sin verificar";
@@ -33280,7 +33280,7 @@ function ComisionesPanel({ T, uid }) {
       {/* Lo automático — una sola línea, no compite con lo configurable */}
       <div style={{display:"flex",alignItems:"center",gap:10,background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:10,padding:"11px 14px",flexWrap:"wrap"}}>
         <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:"50%",background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
-        <span style={{fontSize:12,color:T.text,lineHeight:1.4}}><strong>Mercado Libre ya está cubierto:</strong> su comisión se lee automática de cada venta. <strong>Mercado Pago:</strong> en Shopify (con MP conectado) se lee el cargo real de cada pago; en Tienda Nube MP no expone el cargo por venta, así que se usa el % de abajo.</span>
+        <span style={{fontSize:12,color:T.text,lineHeight:1.4}}><strong>Mercado Libre ya está cubierto:</strong> su comisión se lee automática de cada venta. <strong>Comisiones de pago:</strong> en Tienda Nube se lee el cargo real de cada venta desde la tienda (Mercado Pago, Pago Nube, costo por transacción, IVA); en Shopify, con MP conectado, el cargo real de cada pago. El % de abajo solo se usa en las ventas donde la tienda no informa el cargo.</span>
       </div>
 
       {/* Mercado Pago (Tienda Nube): TN no informa el cargo real por venta —
@@ -33292,12 +33292,12 @@ function ComisionesPanel({ T, uid }) {
         <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:240}}>
             <div style={{fontSize:12,fontWeight:600,color:T.text}}>% que te cobra Mercado Pago por cada venta de tu tienda</div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.5}}>Es el % de tu plan de cobro (según los días de liberación del dinero). Lo ves en Mercado Pago → Tu negocio → Costos. Cargalo con IVA incluido. Se aplica a las ventas de Tienda Nube cobradas con MP y, en Shopify, solo a las que no tengan el cargo real.</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.5}}>Respaldo: solo se usa en las ventas cobradas con MP donde la tienda no informa el cargo real. Es el % de tu plan de cobro (según los días de liberación), con IVA. Lo ves en Mercado Pago → Tu negocio → Costos.</div>
           </div>
           <input type="number" step="0.01" min="0" max="30" value={cfg.mpPct} onChange={e=>setCfg(c=>({...c,mpPct:e.target.value}))} placeholder="Ej: 7.61" style={{...InputStyle(T),width:100,fontSize:13,textAlign:"right"}}/>
           <span style={{fontSize:13,color:T.textSm}}>%</span>
         </div>
-        {!(parseFloat(cfg.mpPct)>0)&&<div style={{fontSize:11,color:T.yellow,marginTop:8,fontWeight:600}}>Sin este % las ventas cobradas con Mercado Pago cuentan comisión $0 y tu ganancia queda sobreestimada.</div>}
+        {!(parseFloat(cfg.mpPct)>0)&&<div style={{fontSize:11,color:T.textSm,marginTop:8}}>Sin este %, las ventas con MP que la tienda no informe cuentan comisión $0. El Dashboard te avisa si eso pasa.</div>}
       </div>
 
       {/* Impuestos */}
@@ -37328,7 +37328,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     if ((q.productosSinCogs||0)>0) qItems.push({k:"costos", msg:`${q.productosSinCogs} producto(s) vendidos sin costo cargado — su COGS cuenta $0 y el profit está sobreestimado (${(q.productosSinCogsNombres||[]).slice(0,3).join(", ")}${(q.productosSinCogs||0)>3?"…":""})`, cta:"Cargar costos"});
     if (q.impuestosSinConfig) qItems.push({k:"comisiones", msg:"Impuestos configurados en 0% — el profit no descuenta carga impositiva", cta:"Configurar"});
     if (q.envioSinConfig) qItems.push({k:"costos", msg:"Costo de envío en $0 (modo promedio sin valor cargado)", cta:"Configurar"});
-    if (q.mpSinConfig) qItems.push({k:"comisiones", msg:"Hay ventas cobradas con Mercado Pago sin % de comisión configurado — esas comisiones cuentan $0. Cargá el % de tu plan de MP en Comisiones e impuestos → Comisión de Mercado Pago", cta:"Configurar"});
+    if (q.tnFees?.diag) qItems.push({k:null, msg:q.tnFees.diag});
+    if (q.mpSinConfig) qItems.push({k:"comisiones", msg:`Hay ventas cobradas con Mercado Pago sin cargo real informado por la tienda${q.tnFees?.nuevas?" (se están leyendo de a 60 por cálculo — recargá en un rato)":""} y sin % de respaldo — cuentan $0. Cargalo en Comisiones e impuestos → Comisión de Mercado Pago`, cta:"Configurar"});
     if (rendData?.meta?.googleAdsConectado && rendData?.meta?.googleAdsFuente!=="auto") qItems.push({k:null, msg:`Google Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.googleAdsDiag?` — ${rendData.meta.googleAdsDiag}`:""}`});
     if (rendData?.meta?.stockDegradado) qItems.push({k:null, msg:`Tu tienda/ML respondieron lento y se muestra el último cálculo completo guardado${typeof rendData.meta.stockDegradado==="string"?` (${new Date(rendData.meta.stockDegradado).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})})`:""} — tocá Actualizar en unos minutos para el dato en vivo`});
     if (q.tnTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Tienda Nube — los totales están TRUNCADOS. Usá un rango más corto."});
