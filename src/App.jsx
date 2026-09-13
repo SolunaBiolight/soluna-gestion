@@ -98,7 +98,17 @@ async function ghUserPatch(uid, patch) {
 }
 // (?) de ayuda: círculo chiquito que muestra el texto al pasar el mouse.
 function GhTip({ T, text }) {
-  return <span title={text} aria-label={text} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 14, height: 14, borderRadius: "50%", border: `1px solid ${T.textSm}`, color: T.textSm, fontSize: 9, fontWeight: 800, marginLeft: 5, cursor: "help", flexShrink: 0, verticalAlign: "middle", lineHeight: 1 }}>?</span>;
+  // (?) que abre una nubecita al TOCAR (no al pasar el mouse) — Thiago 2026-09-13.
+  const [open,setOpen]=React.useState(false); const [pos,setPos]=React.useState({top:0,left:0,w:280});
+  const ref=React.useRef(null); const ddRef=React.useRef(null);
+  React.useEffect(()=>{ if(!open) return; const onDoc=e=>{ if(ref.current&&!ref.current.contains(e.target)&&!(ddRef.current&&ddRef.current.contains(e.target))) setOpen(false); }; const onKey=e=>{ if(e.key==="Escape") setOpen(false); }; document.addEventListener("mousedown",onDoc); document.addEventListener("keydown",onKey); return ()=>{ document.removeEventListener("mousedown",onDoc); document.removeEventListener("keydown",onKey); }; },[open]);
+  const toggle=e=>{ e.stopPropagation(); e.preventDefault(); if(!open&&ref.current){ const r=ref.current.getBoundingClientRect(); const w=Math.min(300,window.innerWidth-20); setPos({top:r.bottom+8,left:Math.max(10,Math.min(r.left-8,window.innerWidth-w-10)),w}); } setOpen(o=>!o); };
+  return (<>
+    <span ref={ref} role="button" tabIndex={0} aria-label={text} onClick={toggle} onKeyDown={e=>{ if(e.key==="Enter"||e.key===" ") toggle(e); }} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 14, height: 14, borderRadius: "50%", border: `1px solid ${open?T.accent:T.textSm}`, background: open?T.accent+"22":"transparent", color: open?T.accent:T.textSm, fontSize: 9, fontWeight: 800, marginLeft: 5, cursor: "pointer", flexShrink: 0, verticalAlign: "middle", userSelect: "none" }}>?</span>
+    {open&&ReactDOM.createPortal(
+      <div ref={ddRef} className="gh-dropdown" style={{position:"fixed",top:pos.top,left:pos.left,width:pos.w,zIndex:1200,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px",fontSize:12,fontWeight:400,color:T.textMd,lineHeight:1.55,boxShadow:"0 12px 32px rgba(0,0,0,.4)",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left",whiteSpace:"normal"}}>{text}</div>,
+      document.body)}
+  </>);
 }
 const DRIVE_TIP = "Solo accedemos a los videos que vos elegís. No vemos el resto de tu Drive. Google lo llama permiso \"drive.file\": la app únicamente puede abrir los archivos que seleccionás en el selector.";
 
@@ -940,11 +950,18 @@ const SIDEBAR_GROUPS_BASE = [
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
-      subs:[{id:"analisis",label:"Análisis"},{id:"reglas",label:"Reglas"},/* {id:"publicador",label:"Publicador IA"} — oculto por ahora (Thiago, 2026-09-11) */{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
+      subs:[{id:"analisis",label:"Análisis"},{id:"reglas",label:"Reglas"},/* {id:"publicador",label:"Publicador IA"} — oculto por ahora (Thiago, 2026-09-11) */{id:"cuenta",label:"Cuenta"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", alertKey:"stock", badge:"red",
       },
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml", alertKey:"ml", badge:"orange",
-      subs:[{id:"gestion",label:"Gestión"},{id:"publicar",label:"Publicar"},{id:"preguntas",label:"Preguntas"},{id:"mensajes",label:"Mensajes"},{id:"ventas",label:"Ventas"},{id:"reputacion",label:"Reputación"}]},
+      subs:[{id:"gestion",label:"Gestión"},{id:"preguntas",label:"Preguntas"},{id:"mensajes",label:"Mensajes"},{id:"ventas",label:"Ventas"},{id:"reputacion",label:"Reputación"}]},
+    {id:"gads",     label:"Google Ads", icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z"},
+    {id:"tiktokads", label:"TikTok Ads", icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z", soon:true},
+    { group:"PUBLISHER" },
+    {id:"pubmeta",  permKey:"meta", label:"Publicar en Meta", icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", go:{page:"meta",tab:"creativos"}},
+    {id:"pubml",    permKey:"ml",   label:"Publicar en ML", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", go:{page:"ml",tab:"publicar"}},
+    {id:"pubtiktok", label:"Publicar en TikTok", icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z", soon:true},
+    {id:"pubgads",  label:"Publicar en Google", icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z", soon:true},
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"},{id:"checkout",label:"Checkout"}]},
@@ -976,25 +993,34 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
   const W = collapsed ? 64 : 224;
 
   const NavBtn = ({item}) => {
-    const active = page === item.id;
+    // Los accesos del grupo PUBLISHER (item.go) apuntan a la pestaña Publicar de Meta/ML:
+    // se marcan activos solo en esa pestaña, y la sección madre deja de marcarse ahí.
+    const enPubMeta = page==="meta"&&metaTab==="creativos", enPubMl = page==="ml"&&mlTab==="publicar";
+    const active = item.go ? (page===item.go.page && (item.go.page==="meta"?enPubMeta:enPubMl)) : (page === item.id && !((item.id==="meta"&&enPubMeta)||(item.id==="ml"&&enPubMl)));
     const badgeColor = item.badge==="red" ? T.red : item.badge==="orange" ? T.orange : T.accent;
     const isConnected = item.integrationKey ? connectedStores[item.integrationKey] : undefined;
     return (
-      <button onClick={()=>{if(active&&item.subs?.length>0){setClosedSubs(p=>{const n=new Set(p);n.has(item.id)?n.delete(item.id):n.add(item.id);return n;});}else{setPage(item.id);setClosedSubs(p=>{const n=new Set(p);n.delete(item.id);return n;});}}} title={collapsed?item.label:undefined}
+      <button onClick={()=>{
+          if(item.soon) return;
+          if(item.go){ setPage(item.go.page); if(item.go.page==="meta") setMetaTab&&setMetaTab(item.go.tab); else setMlTab&&setMlTab(item.go.tab); return; }
+          if(item.id==="meta"&&metaTab==="creativos") setMetaTab&&setMetaTab("analisis");
+          if(item.id==="ml"&&mlTab==="publicar") setMlTab&&setMlTab("gestion");
+          if(active&&item.subs?.length>0){setClosedSubs(p=>{const n=new Set(p);n.has(item.id)?n.delete(item.id):n.add(item.id);return n;});}else{setPage(item.id);setClosedSubs(p=>{const n=new Set(p);n.delete(item.id);return n;});}}} title={collapsed?item.label:undefined} aria-disabled={!!item.soon}
         style={{display:"flex",alignItems:"center",gap:9,padding:collapsed?"10px 0":"8px 10px",
           background:active?T.accentSolid+"20":"transparent",border:"none",
-          borderRadius:DS.r.md,cursor:"pointer",textAlign:"left",
+          borderRadius:DS.r.md,cursor:item.soon?"default":"pointer",textAlign:"left",opacity:item.soon?0.5:1,
           color:active?T.accent:T.textMd,fontWeight:active?DS.w.semibold:DS.w.medium,
           fontSize:DS.font.sm,fontFamily:"'Inter',system-ui,sans-serif",
           transition:`all 0.12s ${DS.ease}`,justifyContent:collapsed?"center":"flex-start",
           position:"relative",width:"100%",letterSpacing:active?0:-0.1}}
-        onMouseEnter={e=>{if(!active)e.currentTarget.style.background=T.card;}}
+        onMouseEnter={e=>{if(!active&&!item.soon)e.currentTarget.style.background=T.card;}}
         onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>
         {item.id==="ml"
           ? <svg width="20" height="20" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" style={{flexShrink:0,opacity:active?1:0.65}}><ellipse cx="24" cy="24" rx="19.5" ry="12.978"/><path d="M9.7044,15.5305A20.8345,20.8345,0,0,0,16.09,17.3957a22.8207,22.8207,0,0,0,4.546-.7731"/><path d="M38.8824,15.6143a8.6157,8.6157,0,0,1-5.1653,1.4849c-3.3351,0-6.2255-2.1987-9.2148-2.1987-2.6681,0-7.189,4.3727-7.189,5.1633s1.3094,1.26,2.3717.7411c.6215-.3036,3.31-2.9151,5.4843-2.9151s9.2186,7.1361,9.8571,7.8066c.9882,1.0376-.9264,3.2733-2.1493,2.05s-3.4092-3.1621-3.4092-3.1621"/><path d="M43.4,22.6826a23.9981,23.9981,0,0,0-8.5467,2.6926"/><path d="M32.5807,27.4555c.9881,1.0376-.9265,3.2733-2.1493,2.05S27.85,26.9933,27.85,26.9933"/><path d="M30.1349,29.2147c.9882,1.0376-.9264,3.2733-2.1493,2.05S25.96,29.3032,25.96,29.3032"/><path d="M24.2015,31.3156A2.309,2.309,0,0,0,27.85,31.13"/><path d="M24.2015,31.3156c.5306-.6964.49-3.1817-2.2437-2.6876.6423-1.2188.0658-3.1457-2.3881-2.0093A1.69,1.69,0,0,0,16.424,25.96a1.4545,1.4545,0,0,0-2.8-.28c-.5435,1.1035.2964,3.0963,2.0916,1.9763-.1812,1.9435.84,2.5364,2.6845,1.7788.0989,1.91,1.367,1.7457,2.2728,1.3011A1.9376,1.9376,0,0,0,24.2015,31.3156Z"/><path d="M4.6706,22.2785a18.3081,18.3081,0,0,1,9.0635,3.2144"/></svg>
           : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?"2.2":"1.8"} strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.65}}><path d={item.icon}/></svg>
         }
         {!collapsed&&<span style={{flex:1}}>{item.label}</span>}
+        {!collapsed&&item.soon&&<span style={{fontSize:8,fontWeight:800,letterSpacing:0.5,background:T.yellow+"22",color:T.yellow,borderRadius:99,padding:"1px 6px"}}>PRONTO</span>}
         {!collapsed&&item.subs?.length>0&&<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:0.4,transition:`transform 0.18s ${DS.ease}`,transform:(active&&!closedSubs.has(item.id))?"rotate(90deg)":"rotate(0deg)"}}><path d="M9 18l6-6-6-6"/></svg>}
         {!collapsed&&item.count>0&&<span style={{fontSize:10,fontWeight:DS.w.bold,padding:"1px 6px",borderRadius:DS.r.full,background:badgeColor+(active?"33":"22"),color:badgeColor,lineHeight:1.5,minWidth:18,textAlign:"center"}}>{item.count>99?"99+":item.count}</span>}
         {collapsed&&item.count>0&&<span style={{position:"absolute",top:6,right:8,width:6,height:6,borderRadius:DS.r.full,background:badgeColor}}/>}
@@ -1035,7 +1061,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       <nav style={{flex:1,padding:DS.sp.sm,display:"flex",flexDirection:"column",gap:2,overflowY:"auto"}}>
         {GROUPS.filter(item=>!(adminOnlySections||[]).includes(item.id)||isAdmin)
           // Miembro de otro espacio: solo sus secciones habilitadas (los títulos de grupo quedan si tienen algo visible)
-          .filter(item=>{ if(!seccionesMiembro) return true; if(item.group) return true; return seccionesMiembro[item.id]===true; })
+          .filter(item=>{ if(!seccionesMiembro) return true; if(item.group) return true; return seccionesMiembro[item.permKey||item.id]===true; })
           // Gateo por plan (sin trial): Facturador ($19) = solo Inicio + Facturador.
           // Intermedio ($39) = TODO menos Dashboard (margenes) + Copilot. Pro = todo.
           .filter(item=>{
@@ -1760,6 +1786,76 @@ function MiembrosCuentaCard({T,user}){
 }
 
 // ─── Referidos: ganá el 15% de cada pago de plan de tus referidos ───
+// ── Google Ads: sección propia. Conexión OAuth ya existe; las métricas de campañas
+//    llegan cuando Google habilite el developer token de Growith (en trámite).
+function AppGoogleAds({T, user, onHome, onGoConfig}) {
+  const [st,setSt]=useState(null); const [err,setErr]=useState(null);
+  const load=async()=>{ try{ const r=await authFetch(`/api/google-ads?action=status&uid=${user.uid}`); const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status); setSt(j); }catch(e){ setErr(e.message); } };
+  useEffect(()=>{ load(); /* eslint-disable-next-line */ },[user?.uid]);
+  const conectar=async()=>{ try{ const j=await authFetch(`/api/google-ads?action=oauth_start&uid=${user.uid}`).then(r=>r.json()); if(j.url){ window.location.href=j.url; return; } appAlert(j.detail||j.error||"No se pudo iniciar la conexión con Google."); }catch(e){ appAlert("Error: "+e.message); } };
+  const conectado=!!st?.connected; const cuentas=st?.customers||[];
+  const Card=({children,style})=><div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",...style}}>{children}</div>;
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
+      <AppTopbar T={T} section="Google Ads" sectionId="gads" onHome={onHome}>
+        {conectado&&<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,color:T.green,fontWeight:600}}><span style={{width:7,height:7,borderRadius:"50%",background:T.green}}/>Conectado</span>}
+      </AppTopbar>
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"20px 24px 80px",display:"flex",flexDirection:"column",gap:16}}>
+        {err&&<div style={{background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",fontSize:12,color:T.red}}>{err}</div>}
+        <Card>
+          <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+            <div style={{width:46,height:46,borderRadius:12,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><BrandIcon name="google" size={28}/></div>
+            <div style={{flex:1,minWidth:220}}>
+              <div style={{fontSize:15,fontWeight:800,color:T.text}}>{st===null&&!err?"Consultando la conexión…":conectado?"Google Ads conectado":"Google Ads no está conectado"}</div>
+              <div style={{fontSize:12,color:T.textSm,marginTop:3,lineHeight:1.5}}>
+                {conectado
+                  ? (cuentas.length?`${cuentas.length} cuenta${cuentas.length!==1?"s":""} publicitaria${cuentas.length!==1?"s":""} vinculada${cuentas.length!==1?"s":""}.`:"Cuenta vinculada. Las cuentas publicitarias aparecen cuando Google habilite el acceso a datos.")
+                  : "Conectá tu cuenta de Google Ads para que el gasto y las campañas entren solos al Dashboard y a esta sección."}
+              </div>
+            </div>
+            {conectado
+              ? <button onClick={onGoConfig} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px"}}>Administrar en Configuración</button>
+              : <button onClick={conectar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>Conectar Google Ads</button>}
+          </div>
+          {cuentas.length>0&&(
+            <div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:14}}>
+              {cuentas.map((c,i)=><span key={i} style={{fontSize:11,padding:"4px 10px",borderRadius:99,background:T.surface,border:`1px solid ${T.borderL}`,color:T.textMd}}>{c.name||c.descriptive_name||c.id||String(c)}</span>)}
+            </div>
+          )}
+        </Card>
+        <Card style={{borderStyle:"dashed"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+            <span style={{fontSize:14,fontWeight:800,color:T.text}}>Análisis de campañas</span>
+            <span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,background:T.yellow+"22",color:T.yellow,borderRadius:99,padding:"2px 8px"}}>PRONTO</span>
+          </div>
+          <div style={{fontSize:12,color:T.textMd,lineHeight:1.6}}>
+            Acá vas a ver lo mismo que en Meta Ads: gasto, conversiones, ROAS y CPA por campaña, con el mismo selector de período y el mismo switch para pausar o activar. Google exige un <strong style={{color:T.text}}>developer token</strong> aprobado para leer campañas por API{st&&!st.hasDevToken?" y el de Growith está en trámite":""}. Mientras tanto el gasto de Google se carga manual en <button onClick={onGoConfig} style={{background:"none",border:"none",padding:0,color:T.accent,fontWeight:700,cursor:"pointer",fontSize:12}}>Dashboard → Configuraciones</button> y ya se descuenta de tus márgenes.
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ── Sección "pronto": topbar real + explicación (TikTok Ads, etc.) ──
+function AppSoonSection({T, sectionId, title, desc, onHome, onGoConfig}) {
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
+      <AppTopbar T={T} section={title} sectionId={sectionId} onHome={onHome}/>
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"20px 24px 80px"}}>
+        <div style={{background:T.card,border:`1px dashed ${T.border}`,borderRadius:14,padding:"36px 24px",textAlign:"center"}}>
+          <div style={{display:"inline-flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <span style={{fontSize:18,fontWeight:800,color:T.text}}>{title}</span>
+            <span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,background:T.yellow+"22",color:T.yellow,borderRadius:99,padding:"2px 8px"}}>PRONTO</span>
+          </div>
+          <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,maxWidth:560,margin:"0 auto"}}>{desc}</div>
+          {onGoConfig&&<button onClick={onGoConfig} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",marginTop:16}}>Ir a Configuración → Integraciones</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AppReferidos({T, user, onHome}){
   const [data,setData]=React.useState(null);
   const [err,setErr]=React.useState("");
@@ -3155,6 +3251,8 @@ const SECTION_ICONS = {
   margenes:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
   arca:    "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
   meta:    "M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z",
+  gads:    "M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z",
+  tiktokads: "M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z",
   stock:   "M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12",
   ml:      "M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01",
   envios:  "M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z",
@@ -17557,7 +17655,7 @@ function AdmSistema({ctx, sectionsConfig, saveSectionsConfig}) {
   async function loadSys(){ setSys({loading:true}); try{ setSys({loading:false,...(await adminApi({action:"adminGetSystem"}))}); }catch(e){ setSys({loading:false,error:e.message}); } }
   async function loadLog(){ try{ const d=await adminApi({action:"adminGetLog",limit:300}); setLog({loading:false,items:d.items||[]}); }catch(e){ setLog({loading:false,items:[],error:e.message}); } }
   useEffect(()=>{ loadSys(); loadLog(); },[]);
-  const secciones=SIDEBAR_GROUPS_BASE.filter(it=>it.id&&it.id!=="home");
+  const secciones=SIDEBAR_GROUPS_BASE.filter(it=>it.id&&it.id!=="home"&&!it.soon&&!it.go);
   const ahora=sys.ahora||Date.now();
   const estadoCron=c=>{ const d=sys.crons?.[c.key]; if(!d||!d.at) return {label:"Sin registro",color:T.textSm,desc:"Se registra en la próxima corrida"}; if(!d.ok) return {label:"Error",color:T.red,desc:d.resumen||`HTTP ${d.status}`}; if(ahora-d.at>c.maxH*3600000) return {label:"Atrasado",color:T.yellow,desc:`Última corrida ${admRel(d.at)}`}; return {label:"OK",color:T.green,desc:""}; };
   const tipos=[...new Set(log.items.map(i=>i.action))].sort(); const lq=logQ.trim().toLowerCase();
@@ -30287,7 +30385,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             ) : (
               <>
                 {/* Acceso rapido: Productos vive en su propio tab arriba */}
-                {products.length === 0 && (
+                {false && products.length === 0 && (
                   <div style={{background:T.yellow+"10",border:`1px solid ${T.yellow}33`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.textMd,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
                     <span> Las reglas pueden filtrar por producto. <button onClick={()=>setTab("productos")} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",textDecoration:"underline",fontFamily:"inherit",fontSize:12,padding:0}}>Andá a Productos</button> para crear el primero.</span>
                   </div>
@@ -35154,8 +35252,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           <span title={[platform==="shopify"?"Shopify":platform==="tiendanube"?"Tienda Nube":"",data?.ml_data?"Mercado Libre":""].filter(Boolean).join(" + ")} style={{display:"inline-flex",alignItems:"center",gap:6,marginRight:4}}>
             {platform==="shopify" && <BrandIcon name="shopify" size={22}/>}
             {platform==="tiendanube" && <BrandIcon name="tiendanube" size={22}/>}
-            {(platform==="shopify"||platform==="tiendanube") && data?.ml_data && <span style={{fontSize:12,color:T.textSm,fontWeight:700}}>+</span>}
-            {data?.ml_data && <BrandIcon name="mercadolibre" size={24}/>}
+            {(platform==="shopify"||platform==="tiendanube") && (data?.ml_data||data?.ml_connected) && <span style={{fontSize:12,color:T.textSm,fontWeight:700}}>+</span>}
+            {(data?.ml_data||data?.ml_connected) && <BrandIcon name="mercadolibre" size={24}/>}
           </span>
           <TopbarMoreMenu T={T} items={[
             {label:"Exportar CSV",disabled:!data,onClick:exportCSV},
@@ -39167,6 +39265,7 @@ export default function App() {
         {id:"margenes",label:"Dashboard",icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"},
         {id:"arca",label:"Facturador",icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M9 13h6M9 17h6M9 9h1"},
         {id:"meta",label:"Meta Ads",icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"},
+        {id:"gads",label:"Google Ads",icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z"},
         {id:"stock",label:"Stock",icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"},
         {id:"ml",label:"Mercado Libre",icon:"M3 12a9 9 0 1018 0 9 9 0 00-18 0zM7 12c1.5-2 3-3 5-3s3.5 1 5 3c-1.5 2-3 3-5 3s-3.5-1-5-3z"},
         {id:"envios",label:"Envíos",icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"},
@@ -39422,10 +39521,12 @@ export default function App() {
   else if(page==="tareas") pageContent = adminGate("tareas") || planGate("plus") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab} pendingOpenTaskId={pendingOpenTaskId} onPendingOpenTaskConsumed={()=>setPendingOpenTaskId(null)}/></PageView>;
   else if(page==="reclamos") pageContent = adminGate("reclamos") || planGate("plus") || requiereTN("Reclamos") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
   else if(page==="canjes") pageContent = adminGate("canjes") || planGate("plus") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
+  else if(page==="gads") pageContent = adminGate("gads") || planGate("plus") || <PageView T={T} pageKey="gads"><AppGoogleAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")}/></PageView>;
+  else if(page==="tiktokads") pageContent = <PageView T={T} pageKey="tiktokads"><AppSoonSection T={T} sectionId="tiktokads" title="TikTok Ads" onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} desc="Gasto, campañas y rendimiento de TikTok Ads dentro de Growith, junto a Meta y Google. Ya podés dejar la cuenta conectada desde Configuración → Integraciones para que aparezca apenas esté listo."/></PageView>;
   else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="calendario") pageContent = <PageView T={T} pageKey="calendario"><AppCalendarioPagos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="envios") pageContent = adminGate("envios") || planGate("plus") || requiereTN("Envíos") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} canjesPedidos={canjesPedidos} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
-  else pageContent = <HomeScreen T={T} enviosProblemas={enviosProblemasN} mlPreguntas={mlPreguntasCount} onNavigate={(p, docId)=>{
+  else pageContent = <HomeScreen T={T} connectedStores={connectedStores} enviosProblemas={enviosProblemasN} mlPreguntas={mlPreguntasCount} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
     if(p==="ml"&&docId==="preguntas"){ setMlTab("preguntas"); }
     setPage(p);

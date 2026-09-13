@@ -853,6 +853,7 @@ export default async function handler(req, res) {
         const normalized = products.map(p => normSH(p, analytics.map, days));
         const resp = buildResponse("shopify", normalized, analytics, effectiveDays);
         resp.quality = { tn_truncated:false, ml_truncated:!!(mlAnalytics&&mlAnalytics.truncated), cancelled_excluded:0, partial_refund_orders:0 };
+        resp.ml_connected = !!(mlSellerId && mlToken);
         if (mlAnalytics) resp.ml_data = {
           daily:         mlAnalytics.daily,         // unidades por día
           daily_revenue: mlAnalytics.dailyRevenue,  // facturación por día (NETO de la orden)
@@ -884,6 +885,7 @@ export default async function handler(req, res) {
         const normalized = products.map(p => normTN(p, analytics.map, effectiveDays));
         const resp = buildResponse("tiendanube", normalized, analytics, effectiveDays);
         resp.quality = { tn_truncated:!!orders.truncated, ml_truncated:!!(mlAnalytics&&mlAnalytics.truncated), cancelled_excluded:analytics.quality?.cancelledExcluded||0, partial_refund_orders:analytics.quality?.partialRefundOrders||0 };
+        resp.ml_connected = !!(mlSellerId && mlToken);
         if (mlAnalytics) resp.ml_data = {
           daily:         mlAnalytics.daily,         // unidades por día
           daily_revenue: mlAnalytics.dailyRevenue,  // facturación por día (NETO de la orden)
