@@ -98,5 +98,20 @@ eq("tplDeOficial: Juramento 2621 no pasa por 367",M.ghTplDeOficial(locs,suc(1,"H
 eq("tplDeOficial: palabra ajena (ROSARIO) rechaza",M.ghTplDeOficial({sucursales:["HOP BELGRANO ROSARIO"]},suc(1,"HOP BELGRANO","Belgrano","995","CABA","1428")),null);
 eq("tplDeOficial: SAN JUSTO CENTRO",M.ghTplDeOficial(locs,sj),"SAN JUSTO (CENTRO)");
 
-console.log(`${n-fails}/${n} ok${fails?` — ${fails} FALLAS`:""}`);
-process.exit(fails?1:0);
+// ── Paridad con la copia del servidor (api/_suc_match.js): mismos casos, mismos resultados
+(async()=>{
+  const S=await import("../api/_suc_match.js");
+  const casos=[[balbin,mym],[lib,libOk],[lib,libCpVecino],[lib,libOtraLoc],[lib,avLib],[mitre,mitreBB],[caba,ciud],[clas,sj]];
+  for(const [o,s] of casos){
+    const p1=M.ghPuntoDeOrden(o), p2=S.ghPuntoDeOrden(o);
+    eq("paridad conflicto "+s.descripcion,S.ghConflictoPunto(p2,s),M.ghConflictoPunto(p1,s));
+    eq("paridad coincide "+s.descripcion,S.ghCoincidePunto(p2,s),M.ghCoincidePunto(p1,s));
+  }
+  eq("paridad matchOficial",S.ghMatchOficial([libOk,avLib],S.ghPuntoDeOrden(lib))?.id,M.ghMatchOficial([libOk,avLib],M.ghPuntoDeOrden(lib))?.id);
+  eq("paridad strip",S.ghStripUnidad("Av. Entre Ríos 1234 Local 3"),M.ghStripUnidad("Av. Entre Ríos 1234 Local 3"));
+  eq("clave → punto",S.ghPuntoDeClave("PUNTO HOP|BALBIN|3301|1430"),{nombre:"PUNTO HOP",calle:"BALBIN",num:"3301",loc:"",cp:"1430",conPickup:true});
+  eq("conflictoTpl grave",S.ghConflictoTpl(S.ghPuntoDeClave("PUNTO HOP|BALBIN|3301|1430"),"PUNTO ANDREANI HOP BALBIN 5617")?.grave,true);
+  eq("conflictoTpl ok",S.ghConflictoTpl(S.ghPuntoDeClave("PUNTO HOP|BALBIN|3301|1430"),"PUNTO ANDREANI HOP BALBIN 3301"),null);
+  console.log(`${n-fails}/${n} ok${fails?` — ${fails} FALLAS`:""}`);
+  process.exit(fails?1:0);
+})();

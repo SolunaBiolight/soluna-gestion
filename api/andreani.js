@@ -25,6 +25,7 @@
 import { randomBytes, createHmac } from "crypto";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue, FieldPath } from "firebase-admin/firestore";
+import { ghPuntoDeClave, ghConflictoPunto, ghCoincidePunto, ghConflictoTpl } from "./_suc_match.js";
 import { verifyAuth, requireAdmin, guardUid } from "./_auth.js";
 
 function initAdmin() {
@@ -2119,7 +2120,7 @@ export default async function handler(req, res) {
     }
 
     // ── ACCIONES ADMIN ────────────────────────────────────────────────────
-    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_carga_comprobante", "admin_punto_map", "admin_envios", "admin_envios_problemas", "admin_casos", "admin_caso_fotos", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill", "admin_ejecutiva_token"];
+    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_carga_comprobante", "admin_punto_map", "admin_punto_map_audit", "admin_envios", "admin_envios_problemas", "admin_casos", "admin_caso_fotos", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill", "admin_ejecutiva_token"];
     if (adminActions.includes(action)) {
       const adm = await requireAdmin(req);
       if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
@@ -2226,6 +2227,52 @@ export default async function handler(req, res) {
         const entries = g.exists ? (g.data().entries || {}) : {};
         const lista = Object.entries(entries).map(([key, v]) => ({ key, ...v })).sort((a, b) => (b.ts || 0) - (a.ts || 0));
         return res.json({ ok: true, entries: lista });
+      }
+
+      // ── admin_punto_map_audit: revisa TODAS las memorias de puntos (propias de
+      // cada cuenta + global) con el mismo detector de contradicciones del
+      // matcheo. Una elección manual equivocada guardada se reusa en silencio en
+      // cada pedido futuro al mismo punto — esto las saca a la luz.
+      // GET → lista; POST {quitar:[{uid,key}], quitarGlobal:[key]} → borra.
+      if (action === "admin_punto_map_audit") {
+        const gRef = db.collection("andreani_config").doc("punto_map_global");
+        if (req.method === "POST") {
+          const quitar = Array.isArray(body.quitar) ? body.quitar.slice(0, 200) : [];
+          const quitarGlobal = Array.isArray(body.quitarGlobal) ? body.quitarGlobal.map(String).slice(0, 200) : [];
+          let n = 0;
+          for (const q of quitar) {
+            const u = String(q?.uid || "").trim(), k = String(q?.key || "").trim();
+            if (!u || !k) continue;
+            await db.collection("users").doc(u).collection("envios_cfg").doc("punto_map").update(new FieldPath("entries", k), FieldValue.delete()).then(() => n++).catch(() => {});
+          }
+          for (const k of quitarGlobal) { if (k) await gRef.update(new FieldPath("entries", k), FieldValue.delete()).then(() => n++).catch(() => {}); }
+          if (n) await logAdminAndreani(db, adm.user.uid, "punto_map_audit", null, `Quitó ${n} memoria(s) de puntos con contradicción`);
+          return res.json({ ok: true, quitadas: n });
+        }
+        const out = [];
+        const evaluar = (uid, key, v, global) => {
+          const punto = ghPuntoDeClave(key);
+          const row = { uid, key, global, punto, ts: v?.ts || null, tpl: v?.tpl || null, oficial: v?.oficial || null, byEmail: v?.byEmail || null, conflicto: null, coincide: false };
+          if (punto && v?.oficial) { row.conflicto = ghConflictoPunto(punto, v.oficial); row.coincide = ghCoincidePunto(punto, v.oficial); }
+          else if (punto && v?.tpl) { row.conflicto = ghConflictoTpl(punto, v.tpl); }
+          out.push(row);
+        };
+        try {
+          const cg = await db.collectionGroup("envios_cfg").get();
+          for (const d of cg.docs) {
+            if (d.id !== "punto_map") continue;
+            const uid = d.ref.parent.parent?.id || "";
+            for (const [k, v] of Object.entries(d.data()?.entries || {})) evaluar(uid, k, v, false);
+          }
+        } catch (e) { return res.status(502).json({ error: "No se pudo leer las memorias: " + e.message }); }
+        const g = await gRef.get();
+        for (const [k, v] of Object.entries(g.exists ? (g.data().entries || {}) : {})) evaluar(v?.by || "", k, v, true);
+        const emails = {};
+        for (const uid of new Set(out.map(r => r.uid).filter(Boolean))) { try { emails[uid] = (await db.collection("users").doc(uid).get()).data()?.email || ""; } catch (_) {} }
+        for (const r of out) r.email = emails[r.uid] || r.byEmail || "";
+        const rank = r => r.conflicto?.grave ? 0 : r.conflicto ? 1 : r.coincide ? 3 : 2;
+        out.sort((a, b) => rank(a) - rank(b) || (b.ts || 0) - (a.ts || 0));
+        return res.json({ ok: true, entries: out, resumen: { total: out.length, graves: out.filter(r => r.conflicto?.grave).length, dudosas: out.filter(r => r.conflicto && !r.conflicto.grave).length, sinVerificar: out.filter(r => !r.conflicto && !r.coincide).length, verificadas: out.filter(r => r.coincide).length } });
       }
 
       if (action === "admin_acreditar") {

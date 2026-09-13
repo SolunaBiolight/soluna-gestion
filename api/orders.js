@@ -1717,8 +1717,7 @@ export default async function handler(req, res) {
         };
         for (const o of (raw?.orders_detail||[])) {
           const rev = parseFloat(o.revenue)||0;
-          const ref = mpRefCache[o.id];
-          const realMp = (ref && feeByRef[ref]!=null) ? feeByRef[ref] : null;
+          const realMp = realMpDe(o, feeByRef, feeByPayId);
           const comis = (realMp!=null) ? (rev*pctPlat + realMp) : (rev*(pctPlat+pctPagoFor(o.pay)));
           const env = ((envioModoTienda==="orden") ? (parseFloat(o.envioCosto)||0) : envioProm) + fulfillFee;
           repartir(o, o.items, rev*impFor(o.pay), comis, env, "tienda");
@@ -1801,7 +1800,10 @@ export default async function handler(req, res) {
         productosSinCogsNombres: sinCogsNombres.slice(0,6),
         impuestosSinConfig: !(pctImp>0),
         envioSinConfig: envioModoTienda==="fijo" && !(envioProm>0),
-        mpSinConfig: !(mpPctCfg>0) && (curr.raw?.orders_detail||[]).some(o=>esMPPay(o.pay) && !mpRefCache[o.id]),
+        // Solo avisa si hay ventas MP sin cargo REAL matcheado (ni por receipt de
+        // Shopify ni por gateway_id de TN) y sin % configurado.
+        mpSinConfig: !(mpPctCfg>0) && (curr.raw?.orders_detail||[]).some(o=>esMPPay(o.pay) && !mpRefCache[o.id] && !(o.mpPayId && feeByPayId[o.mpPayId]!=null)),
+        mpConectado: mlMpAcc !== "__none__" && !!(mpCommCurr && (Object.keys(mpCommCurr.feeByPayId||{}).length || Object.keys(mpCommCurr.feeByRef||{}).length)),
         dolarAdsHistorico: dolarAdsHistDias>0,
         tnTruncated: !!rawQ.tn_truncated, mlTruncated: !!rawQ.ml_truncated,
         canceladasExcluidas: rawQ.cancelled_excluded||0,

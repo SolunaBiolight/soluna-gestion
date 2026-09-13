@@ -17652,6 +17652,9 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
   const [acred,setAcred]=useState(null); const [movs,setMovs]=useState(null); const [compVer,setCompVer]=useState(null);
   const [nuevo,setNuevo]=useState(""); const [bajas,setBajas]=useState({loading:true,nombres:[],seed:[]}); const [bajaNueva,setBajaNueva]=useState("");
   const [pmap,setPmap]=useState({loading:true,entries:[]});
+  const [audit,setAudit]=useState(null); // {loading,entries,resumen,error}
+  async function auditarPuntos(){ setAudit({loading:true}); try{ const d=await admAndreani("admin_punto_map_audit"); setAudit({loading:false,entries:d.entries||[],resumen:d.resumen||{}}); }catch(e){ setAudit({loading:false,entries:[],error:e.message}); } }
+  async function quitarAudit(rows){ const quitar=rows.filter(r=>!r.global).map(r=>({uid:r.uid,key:r.key})); const quitarGlobal=rows.filter(r=>r.global).map(r=>r.key); await admAndreani("admin_punto_map_audit",{quitar,quitarGlobal}); toast(`Quitadas ${rows.length} memoria(s)`,"success"); await auditarPuntos(); loadPuntoMap(); }
   const meses=useMemo(()=>{ const out=[]; const now=new Date(); for(let i=0;i<6;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); out.push({v:admMesKey(d.getTime()),label:admMesLabel(admMesKey(d.getTime()))}); } return out; },[]);
   const [mes,setMes]=useState(meses[0].v); const [stats,setStats]=useState({loading:!statsMes,data:statsMes||null,error:""});
   async function loadSaldos(){ try{ const s=await admAndreani("admin_saldos"); if(Array.isArray(s?.cuentas)) setSaldos(s.cuentas); }catch(_){} }
@@ -17780,6 +17783,37 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
                   </div>
                 ))}</div>
               )}
+            </Card>
+            <Card T={T} padding="lg">
+              <AdmTitulo T={T} t="Auditoría de memorias de puntos" sub="Revisa las elecciones manuales guardadas por TODAS las cuentas (y la global) con el detector de contradicciones del matcheo: si una sucursal guardada no es el punto del cliente, se reusa en silencio en cada pedido nuevo." right={<AdmBtn T={T} variant="secondary" size="sm" onClick={auditarPuntos}>{audit?.loading?"Revisando…":"Auditar todas"}</AdmBtn>}/>
+              {!audit?<div style={{fontSize:12,color:T.textSm}}>Tocá "Auditar todas" para revisar.</div>:audit.loading?<AdmSkeleton T={T}/>:audit.error?<div style={{fontSize:12,color:T.red}}>{audit.error}</div>:(<>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10,fontSize:11}}>
+                  <DSBadge T={T} color={T.red} size="sm">{audit.resumen.graves||0} contradicen</DSBadge>
+                  <DSBadge T={T} color={T.yellow} size="sm">{audit.resumen.dudosas||0} dudosas</DSBadge>
+                  <DSBadge T={T} color={T.textSm} size="sm">{audit.resumen.sinVerificar||0} sin verificar</DSBadge>
+                  <DSBadge T={T} color={T.green} size="sm">{audit.resumen.verificadas||0} coinciden</DSBadge>
+                  {(audit.resumen.graves||0)>0&&<AdmBtn T={T} variant="danger" size="sm" onClick={async()=>{ const rows=audit.entries.filter(r=>r.conflicto?.grave); if(!await appConfirm(`¿Quitar las ${rows.length} memorias que contradicen al punto? Esos pedidos volverán a pasar por el selector.`,{danger:true,okLabel:"Quitar"})) return; await quitarAudit(rows); }}>Quitar las que contradicen</AdmBtn>}
+                </div>
+                {audit.entries.length===0?<AdmVacio T={T} titulo="No hay memorias guardadas" sub="Se crean cuando una cuenta elige una sucursal a mano."/>:(
+                <div style={{maxHeight:420,overflowY:"auto"}}>{audit.entries.map((r,i)=>{
+                  const col=r.conflicto?.grave?T.red:r.conflicto?T.yellow:r.coincide?T.green:T.textSm;
+                  const tag=r.conflicto?.grave?"Contradice":r.conflicto?"Dudosa":r.coincide?"Coincide":"Sin verificar";
+                  const d=r.oficial?.direccion||{};
+                  const sucTxt=r.oficial?[r.oficial.descripcion,[d.calle,d.numero].filter(Boolean).join(" "),d.localidad,d.codigoPostal?`CP ${d.codigoPostal}`:""].filter(Boolean).join(" · "):(r.tpl?`Excel: ${r.tpl}`:"—");
+                  return (
+                    <div key={(r.global?"g":r.uid)+r.key} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 0",borderBottom:i<audit.entries.length-1?`1px solid ${T.borderL}`:"none",fontSize:12}}>
+                      <DSBadge T={T} color={col} size="sm">{tag}</DSBadge>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{color:T.text,fontWeight:600}}>{r.punto?[r.punto.nombre,[r.punto.calle,r.punto.num].filter(Boolean).join(" "),r.punto.cp?`CP ${r.punto.cp}`:""].filter(Boolean).join(" · "):r.key}</div>
+                        <div style={{color:T.textMd,marginTop:2}}>→ {sucTxt}</div>
+                        {r.conflicto&&<div style={{color:col,marginTop:2}}>{r.conflicto.msg}</div>}
+                        <div style={{color:T.textSm,fontSize:11,marginTop:2}}>{r.global?"Memoria global":"Memoria propia"}{r.email?` · ${r.email}`:""}{r.ts?` · ${new Date(r.ts).toLocaleDateString("es-AR")}`:""}</div>
+                      </div>
+                      <AdmBtn T={T} variant="ghost" size="sm" style={{color:T.red}} onClick={async()=>{ if(!await appConfirm("¿Quitar esta memoria? El próximo pedido a este punto pasa por el selector.",{danger:true,okLabel:"Quitar"})) return; await quitarAudit([r]); }}>Quitar</AdmBtn>
+                    </div>
+                  );
+                })}</div>)}
+              </>)}
             </Card>
             <Card T={T} padding="lg">
               <AdmTitulo T={T} t="Sucursales dadas de baja" sub="Sucursales de Andreani que ya no operan. Al exportar, los pedidos a estas van al selector."/>
@@ -33209,7 +33243,9 @@ function ComisionesPanel({ T, uid }) {
         // MP (credit_card, account_money, ticket, etc.) que no son medios propios.
         const r = await fetch(`/api/stock?action=products&uid=${uid}&days=90`);
         const j = await r.json();
-        const isMP = t => /mercado\s*pago|mercado\s*libre/i.test(t) || /^(account_money|credit_card|debit_card|prepaid_card|ticket|bank_transfer|digital_currency|atm|crypto_transfer|voucher_card|otro|pagado)$/i.test(t);
+        // Slugs de TN ("mercado-pago", "mercado_pago", "mercadopago") también son MP:
+        // antes quedaban listados como "otro método" con 0% y el % de MP no aplicaba.
+        const isMP = t => /mercado\s*[-_]?\s*(pago|libre)/i.test(t) || /^(account_money|credit_card|debit_card|prepaid_card|ticket|bank_transfer|digital_currency|atm|crypto_transfer|voucher_card|otro|pagado)$/i.test(t);
         const names = Object.keys(j.by_payment||{})
           .filter(n => { const t=String(n).trim(); return t && !t.includes(",") && !isMP(t); });
         setDetected([...new Set(names)]);
@@ -33244,7 +33280,24 @@ function ComisionesPanel({ T, uid }) {
       {/* Lo automático — una sola línea, no compite con lo configurable */}
       <div style={{display:"flex",alignItems:"center",gap:10,background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:10,padding:"11px 14px",flexWrap:"wrap"}}>
         <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:"50%",background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
-        <span style={{fontSize:12,color:T.text,lineHeight:1.4}}><strong>Mercado Pago y Mercado Libre ya están cubiertos:</strong> sus comisiones se leen automáticas de cada venta. No tenés que cargar nada de ellos acá.</span>
+        <span style={{fontSize:12,color:T.text,lineHeight:1.4}}><strong>Mercado Libre ya está cubierto:</strong> su comisión se lee automática de cada venta. <strong>Mercado Pago:</strong> en Shopify (con MP conectado) se lee el cargo real de cada pago; en Tienda Nube MP no expone el cargo por venta, así que se usa el % de abajo.</span>
+      </div>
+
+      {/* Mercado Pago (Tienda Nube): TN no informa el cargo real por venta —
+          sin este % las ventas cobradas con MP cuentan comisión $0 y el
+          Dashboard avisa "MP sin configurar". El campo se había sacado en
+          de8af09 creyendo que MP era 100% automático; solo lo es en Shopify. */}
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Comisión de Mercado Pago</div>
+        <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:240}}>
+            <div style={{fontSize:12,fontWeight:600,color:T.text}}>% que te cobra Mercado Pago por cada venta de tu tienda</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.5}}>Es el % de tu plan de cobro (según los días de liberación del dinero). Lo ves en Mercado Pago → Tu negocio → Costos. Cargalo con IVA incluido. Se aplica a las ventas de Tienda Nube cobradas con MP y, en Shopify, solo a las que no tengan el cargo real.</div>
+          </div>
+          <input type="number" step="0.01" min="0" max="30" value={cfg.mpPct} onChange={e=>setCfg(c=>({...c,mpPct:e.target.value}))} placeholder="Ej: 7.61" style={{...InputStyle(T),width:100,fontSize:13,textAlign:"right"}}/>
+          <span style={{fontSize:13,color:T.textSm}}>%</span>
+        </div>
+        {!(parseFloat(cfg.mpPct)>0)&&<div style={{fontSize:11,color:T.yellow,marginTop:8,fontWeight:600}}>Sin este % las ventas cobradas con Mercado Pago cuentan comisión $0 y tu ganancia queda sobreestimada.</div>}
       </div>
 
       {/* Impuestos */}
@@ -37275,7 +37328,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     if ((q.productosSinCogs||0)>0) qItems.push({k:"costos", msg:`${q.productosSinCogs} producto(s) vendidos sin costo cargado — su COGS cuenta $0 y el profit está sobreestimado (${(q.productosSinCogsNombres||[]).slice(0,3).join(", ")}${(q.productosSinCogs||0)>3?"…":""})`, cta:"Cargar costos"});
     if (q.impuestosSinConfig) qItems.push({k:"comisiones", msg:"Impuestos configurados en 0% — el profit no descuenta carga impositiva", cta:"Configurar"});
     if (q.envioSinConfig) qItems.push({k:"costos", msg:"Costo de envío en $0 (modo promedio sin valor cargado)", cta:"Configurar"});
-    if (q.mpSinConfig) qItems.push({k:"comisiones", msg:"Hay ventas cobradas con Mercado Pago sin % de comisión configurado — esas comisiones cuentan $0", cta:"Configurar"});
+    if (q.mpSinConfig) qItems.push({k:"comisiones", msg:"Hay ventas cobradas con Mercado Pago sin % de comisión configurado — esas comisiones cuentan $0. Cargá el % de tu plan de MP en Comisiones e impuestos → Comisión de Mercado Pago", cta:"Configurar"});
     if (rendData?.meta?.googleAdsConectado && rendData?.meta?.googleAdsFuente!=="auto") qItems.push({k:null, msg:`Google Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.googleAdsDiag?` — ${rendData.meta.googleAdsDiag}`:""}`});
     if (rendData?.meta?.stockDegradado) qItems.push({k:null, msg:`Tu tienda/ML respondieron lento y se muestra el último cálculo completo guardado${typeof rendData.meta.stockDegradado==="string"?` (${new Date(rendData.meta.stockDegradado).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})})`:""} — tocá Actualizar en unos minutos para el dato en vivo`});
     if (q.tnTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Tienda Nube — los totales están TRUNCADOS. Usá un rango más corto."});
