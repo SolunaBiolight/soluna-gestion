@@ -3223,7 +3223,7 @@ function TopbarMoreMenu({T, items}) {
 // dependen de este offset (AppTabs top:113, panel de Reclamos, fila sticky
 // del Facturador, tabs de Tareas).
 // Si cambiás el 64, actualizá TODOS los top:113 / top:65 dependientes.
-function AppTopbar({T, section, sectionId, onHelp, onHome, children, top=48}) {
+function AppTopbar({T, section, sectionId, onHelp, onHome, children, top=0}) {
   const iconPath = sectionId ? SECTION_ICONS[sectionId] : null;
   return (
     <div style={{borderBottom:`1px solid ${T.border}`,background:T.card+"e0",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",padding:"0 24px 0 16px",position:"sticky",top,zIndex:30}}>
@@ -3258,7 +3258,7 @@ function AppTopbar({T, section, sectionId, onHelp, onHome, children, top=48}) {
 function AppTabs({T, tabs, active, onChange, size="normal"}) {
   const isLarge = size==="large";
   return (
-    <div className="no-scrollbar gh-apptabs" style={{background:T.surface,borderBottom:"1px solid "+T.border,padding:isLarge?"12px 24px":"10px 24px",position:"sticky",top:113,zIndex:20}}>
+    <div className="no-scrollbar gh-apptabs" style={{background:T.surface,borderBottom:"1px solid "+T.border,padding:isLarge?"12px 24px":"10px 24px",position:"sticky",top:65,zIndex:20}}>
       <div style={{display:"inline-flex",background:T.bg,borderRadius:isLarge?12:10,padding:3,border:"1px solid "+T.border,gap:isLarge?3:2}}>
         {tabs.map(t=>{
           const isActive=active===t.id;
@@ -4410,7 +4410,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
       {/* === DRAWER PANEL LATERAL === */}
       {activeR&&(
-        <div style={{position:"fixed",right:0,top:113,bottom:0,width:"min(440px,100vw)",background:T.card,borderLeft:`1px solid ${T.border}`,zIndex:35,overflowY:"auto",boxShadow:`-8px 0 32px rgba(0,0,0,0.12)`,animation:"slideInRight 0.22s cubic-bezier(0.4,0,0.2,1)",fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <div style={{position:"fixed",right:0,top:65,bottom:0,width:"min(440px,100vw)",background:T.card,borderLeft:`1px solid ${T.border}`,zIndex:35,overflowY:"auto",boxShadow:`-8px 0 32px rgba(0,0,0,0.12)`,animation:"slideInRight 0.22s cubic-bezier(0.4,0,0.2,1)",fontFamily:"'Inter',system-ui,sans-serif"}}>
           {/* Header */}
           <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",position:"sticky",top:0,zIndex:1}}>
             <div style={{flex:1,minWidth:0}}>
@@ -14194,7 +14194,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
       <div style={{maxWidth:1100,margin:"0 auto",padding:"20px 24px 80px"}}>
        <div className="stack-mobile" style={{display:"grid",gridTemplateColumns:"210px minmax(0,1fr)",gap:28,alignItems:"start"}}>
         {/* Navegación lateral */}
-        <nav style={{position:"sticky",top:126,display:"flex",flexDirection:"column",gap:2}}>
+        <nav style={{position:"sticky",top:80,display:"flex",flexDirection:"column",gap:2}}>
           {[
             {id:"cuenta",l:"Cuenta",d:"Nombre, email y foto",icon:"M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z"},
             {id:"tiendas",l:"Tiendas",d:"Tus tiendas y el perfil",icon:"M3 9l1-5h16l1 5M3 9h18v11H3zM9 20v-6h6v6"},
@@ -33979,7 +33979,7 @@ function AppMargenes({ T, user, onHome, tab="dashboard", setTab }) {
       {/* Tabs internas del grupo de configuración — mismo estilo que las tabs
           del Facturador (AppTabs: activa en accent con inset border + iconos). */}
       {esCfg && setTab && (
-        <div className="no-scrollbar" style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:113,zIndex:19,padding:"10px 24px",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+        <div className="no-scrollbar" style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:65,zIndex:19,padding:"10px 24px",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
           <div style={{display:"inline-flex",background:T.bg,borderRadius:10,padding:3,border:`1px solid ${T.border}`,gap:2}}>
             {MARGENES_CFG_TABS.map(t=>{
               const isActive=tab===t.id;
@@ -36135,7 +36135,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
             {/* ── CONFIG: stock cruzado + alertas y notificaciones ── */}
             {tab==="config"&&(
-              <div style={{display:"flex",flexDirection:"column",gap:16}}>
+              <div style={{display:"flex",flexDirection:"column",gap:16,marginTop:16}}>
                 {/* Stock cruzado entre canales */}
                 <div style={{background:T.card,border:`1.5px solid ${syncMode==="on"?T.green+"66":syncMode==="simulacion"?(T.yellow||T.yellow)+"66":T.border}`,borderRadius:12,padding:"16px 20px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
