@@ -1317,11 +1317,10 @@ export default async function handler(req, res) {
       async function fetchGoogleAdsAuto(sinceR, untilR) {
         try {
           const g = userData.googleAds;
-          const cid = process.env.GOOGLE_ADS_CLIENT_ID, cs = process.env.GOOGLE_ADS_CLIENT_SECRET, dt = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
-          if (!g?.refresh_token || !cid || !cs || !dt) {
-            if (g?.refresh_token && !dt) gadsDiag = "falta el developer token en Vercel";
-            return null;
-          }
+          // 2026: Google ya no exige developer token (el nivel de acceso lo da el
+          // proyecto de Google Cloud). Si está en Vercel se manda igual; si no, no bloquea.
+          const cid = process.env.GOOGLE_ADS_CLIENT_ID, cs = process.env.GOOGLE_ADS_CLIENT_SECRET, dt = process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "";
+          if (!g?.refresh_token || !cid || !cs) return null;
           const tr = await fetch("https://oauth2.googleapis.com/token", {
             method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: new URLSearchParams({ client_id: cid, client_secret: cs, refresh_token: g.refresh_token, grant_type: "refresh_token" }),
@@ -1339,7 +1338,7 @@ export default async function handler(req, res) {
             // 404 en todo. Si esto vuelve a dar 404 en el futuro, subir la versión acá
             // y en google-ads-callback.js (developers.google.com/google-ads/api/docs/sunset-dates).
             const cr = await fetch("https://googleads.googleapis.com/v25/customers:listAccessibleCustomers", {
-              headers: { Authorization: `Bearer ${at}`, "developer-token": dt },
+              headers: { Authorization: `Bearer ${at}`, ...(dt ? { "developer-token": dt } : {}) },
             });
             if (cr.ok) {
               customers = ((await cr.json()).resourceNames || []).map(r => String(r).replace("customers/", ""));
@@ -1357,7 +1356,7 @@ export default async function handler(req, res) {
             const cn = String(c).replace(/^customers\//, "").replace(/-/g, "");
             const r = await fetch(`https://googleads.googleapis.com/v25/customers/${cn}/googleAds:search`, {
               method: "POST",
-              headers: { Authorization: `Bearer ${at}`, "developer-token": dt, "Content-Type": "application/json",
+              headers: { Authorization: `Bearer ${at}`, ...(dt ? { "developer-token": dt } : {}), "Content-Type": "application/json",
                 ...(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ? { "login-customer-id": String(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID).replace(/-/g, "") } : {}) },
               body: JSON.stringify({ query: `SELECT metrics.cost_micros, metrics.conversions, metrics.conversions_value, segments.date FROM customer WHERE segments.date BETWEEN '${sinceR}' AND '${untilR}'` }),
             });
