@@ -2358,7 +2358,7 @@ function GhDatePicker({ T, value, onChange, time=false, timeValue="", onTimeChan
     }
     return n;
   });
-  React.useEffect(()=>{ if(!open) return; const onDoc=e=>{ if(wrapRef.current&&!wrapRef.current.contains(e.target)&&!(ddRef.current&&ddRef.current.contains(e.target))) setOpen(false); }; document.addEventListener("mousedown",onDoc); return ()=>document.removeEventListener("mousedown",onDoc); },[open]);
+  React.useEffect(()=>{ if(!open) return; const onDoc=e=>{ if(wrapRef.current&&!wrapRef.current.contains(e.target)&&!(ddRef.current&&ddRef.current.contains(e.target))) setOpen(false); }; const onKey=e=>{ if(e.key==="Escape"){ e.stopPropagation(); setOpen(false); } }; document.addEventListener("mousedown",onDoc); document.addEventListener("keydown",onKey,true); return ()=>{ document.removeEventListener("mousedown",onDoc); document.removeEventListener("keydown",onKey,true); }; },[open]);
   const year=viewMonth.getFullYear(), month=viewMonth.getMonth();
   const firstDow=(new Date(year,month,1).getDay()+6)%7; const dim=new Date(year,month+1,0).getDate();
   const cells=[]; for(let i=0;i<firstDow;i++) cells.push(null); for(let d=1;d<=dim;d++) cells.push(`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`); while(cells.length%7) cells.push(null);
