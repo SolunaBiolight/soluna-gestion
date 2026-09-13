@@ -129,7 +129,7 @@ async function shProducts(shop, tok) {
     let url=`${SH_URL(shop)}/products.json?limit=250&fields=id,title,variants,image`;
     if(sinceId) url+=`&since_id=${sinceId}`;
     const r=await fetchTR(url,{headers:SH_H(tok)});
-    if(!r.ok) throw new Error(`Shopify products HTTP ${r.status}`);
+    if(!r.ok){ let det=""; try{ det=(await r.text()).slice(0,240); }catch(_){} throw new Error(`Shopify products HTTP ${r.status}${det?`: ${det}`:""}`); }
     const {products:batch}=await r.json();
     if(!batch||batch.length===0) break;
     all=all.concat(batch);
