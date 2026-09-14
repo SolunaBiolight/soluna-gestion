@@ -60,24 +60,24 @@ export default async function handler(req, res) {
       return res.redirect(`${APP_URL}/?gads=token_failed#/config`);
     }
 
-    // 2) Cuentas accesibles (requiere developer token). Si el token todavía no
-    // está aprobado por Google, se guarda igual la conexión y las cuentas se
-    // resuelven después — el gasto queda en manual hasta entonces.
-    let customers = [];
-    const devToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
-    if (devToken) {
-      try {
-        const cr = await fetch("https://googleads.googleapis.com/v25/customers:listAccessibleCustomers", {
-          headers: { Authorization: `Bearer ${tj.access_token}`, "developer-token": devToken },
-        });
-        if (cr.ok) {
-          const cj = await cr.json();
-          customers = (cj.resourceNames || []).map(r => String(r).replace("customers/", ""));
-        } else {
-          console.error("gads listAccessibleCustomers HTTP", cr.status, (await cr.text().catch(()=>"")).slice(0, 300));
-        }
-      } catch (e) { console.error("gads customers:", e.message); }
-    }
+    // 2) Cuentas accesibles. Desde 2026 Google ya no exige developer token (el
+    // acceso lo da el proyecto de Cloud); si está en Vercel se manda igual. Si
+    // Google rechaza, se guarda el motivo para mostrarlo en Config.
+    let customers = [], customersError = null;
+    const devToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "";
+    try {
+      const cr = await fetch("https://googleads.googleapis.com/v25/customers:listAccessibleCustomers", {
+        headers: { Authorization: `Bearer ${tj.access_token}`, ...(devToken ? { "developer-token": devToken } : {}) },
+      });
+      if (cr.ok) {
+        const cj = await cr.json();
+        customers = (cj.resourceNames || []).map(r => String(r).replace("customers/", ""));
+      } else {
+        const txt = (await cr.text().catch(() => "")).slice(0, 300);
+        customersError = `HTTP ${cr.status}: ${txt}`;
+        console.error("gads listAccessibleCustomers", customersError);
+      }
+    } catch (e) { customersError = e.message; console.error("gads customers:", e.message); }
 
     const db = initAdmin();
     await db.collection("users").doc(uid).set({
@@ -85,6 +85,7 @@ export default async function handler(req, res) {
         connected: true,
         refresh_token: tj.refresh_token,
         customers,
+        customersError,
         connectedAt: new Date().toISOString(),
       },
     }, { merge: true });
