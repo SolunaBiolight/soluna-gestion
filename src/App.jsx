@@ -1922,8 +1922,12 @@ function AppGoogleAds({T, user, onHome, onGoConfig}) {
       <div style={{maxWidth:"100%",margin:"0 auto",padding:"20px 24px 80px",display:"flex",flexDirection:"column",gap:16}}>
         {err&&<ErrBox>{err}</ErrBox>}
 
+        {/* Consultando: sin botón de conectar, para no mostrarlo a quien ya está conectado */}
+        {st===null&&!err&&(
+          <Card><div style={{display:"flex",alignItems:"center",gap:10,fontSize:12,color:T.textMd}}><Spinner size={14} color={T.textMd}/> Consultando la conexión con Google Ads…</div></Card>
+        )}
         {/* Sin conexión: card de conexión */}
-        {!conectado&&(
+        {(st!==null||err)&&!conectado&&(
           <Card>
             <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
               <div style={{width:46,height:46,borderRadius:12,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><BrandIcon name="google" size={28}/></div>
