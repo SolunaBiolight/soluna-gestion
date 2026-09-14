@@ -71,18 +71,45 @@ const esPuntoPublico = s => !NO_PUBLICO_RX.test(String(s.descripcion || ""));
 // propia definición de Andreani de "sucursal para este CP"), tipo y si hace
 // atención al cliente / entrega envíos. Cacheado 7 días.
 async function sucursalesB2CCheckout(db, env) {
-  const ref = db.collection("andreani_config").doc("suc_b2c_checkout");
+  const ref = db.collection("andreani_config").doc("suc_b2c_checkout2"); // v2: + puntos HOP
   try { const c = (await ref.get()).data(); if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return c.lista; } catch (_) {}
   const r = await andreaniFetch(db, env, "/v2/sucursales?canal=B2C");
   if (!r.ok) throw new Error(`sucursales B2C HTTP ${r.status}`);
   const raw = await r.json();
   const arr = Array.isArray(raw) ? raw : (raw?.sucursales || []);
-  const lista = arr.map(x => {
+  const toItem = (x, tipoDef) => {
     const sl = slimSucursal(x); const da = x.datosAdicionales || {};
     return { id: sl.id, descripcion: sl.descripcion, direccion: sl.direccion, horarioDeAtencion: sl.horarioDeAtencion, lat: sl.lat, lng: sl.lng,
       cps: Array.isArray(x.codigosPostalesAtendidos) ? x.codigosPostalesAtendidos.map(String) : [],
-      tipo: String(da.tipo || ""), atencion: da.seHaceAtencionAlCliente !== false, entrega: da.entregaEnvios !== false };
-  });
+      tipo: String(da.tipo || tipoDef || ""), atencion: da.seHaceAtencionAlCliente !== false, entrega: da.entregaEnvios !== false };
+  };
+  const lista = arr.map(x => toItem(x, ""));
+  // Puntos HOP: el canal B2C no trae muchos (probado el 3/9: 7 HOP válidos
+  // faltaban), pero sí aparecen en el listado completo y en canal=HOP — que
+  // son los que usa la emisión de etiquetas por API. Se suman SOLO los puntos
+  // de retiro (HOP / Punto Andreani) que el B2C no tenga; los depósitos y
+  // plantas siguen afuera por NO_PUBLICO_RX y el filtro de tipo.
+  const ids = new Set(lista.map(s => String(s.id)));
+  const esHop = x => /hop|punto andreani|pickit/i.test(String(x?.descripcion || "") + " " + String(x?.datosAdicionales?.tipo || x?.tipoDeSucursal || x?.tipo || ""));
+  let hopExtra = 0;
+  for (const path of ["/v2/sucursales?canal=HOP", "/v2/sucursales"]) {
+    try {
+      const r2 = await andreaniFetch(db, env, path);
+      if (!r2.ok) continue;
+      const raw2 = await r2.json();
+      for (const x of (Array.isArray(raw2) ? raw2 : (raw2?.sucursales || []))) {
+        if (x?.id == null || ids.has(String(x.id)) || !esHop(x)) continue;
+        ids.add(String(x.id)); lista.push(toItem(x, "HOP")); hopExtra++;
+      }
+    } catch (e) { console.error("[shopify-rates] " + path + ":", e.message); }
+  }
+  // Coordenadas que faltan (los HOP suelen venir sin lat/lng): se completan
+  // con la cache de geocodificación del motor de cercanías de Envíos.
+  try {
+    const gc = (await db.collection("andreani_config").doc("suc_geocode").get()).data()?.m || {};
+    for (const s of lista) { const g = gc[String(s.id)]; if (!enARll(s.lat, s.lng) && g && g.la != null) { s.lat = g.la; s.lng = g.lo; } }
+  } catch (_) {}
+  console.log(`[shopify-rates] listado checkout: ${lista.length} (HOP sumados fuera de B2C: ${hopExtra})`);
   try { await ref.set({ ts: Date.now(), lista }); } catch (_) { /* >1MB: sin cache */ }
   return lista;
 }
@@ -141,7 +168,7 @@ const RADIO_M = 10000;
 let _dbg = {}; // diagnóstico de la última selección (solo se devuelve con ?debug=1)
 async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
   _dbg = { cp, loc };
-  const cacheRef = db.collection("andreani_config").doc(`rates_suc7_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
+  const cacheRef = db.collection("andreani_config").doc(`rates_suc8_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
   try {
     const c = (await cacheRef.get()).data();
     if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return c.lista.slice(0, max);
@@ -164,7 +191,7 @@ async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
       const cpS = String(cp);
       lista = pub.filter(s => s.cps.includes(cpS)).sort((a, b) => (String(b.direccion?.codigoPostal || "") === cpS) - (String(a.direccion?.codigoPostal || "") === cpS));
     }
-    _dbg.ancla = ancla ? ancla.src : "ninguna"; _dbg.candidatas = lista.length;
+    _dbg.ancla = ancla ? ancla.src : "ninguna"; _dbg.candidatas = lista.length; _dbg.hop = lista.filter(s => /hop|punto andreani/i.test(s.descripcion || "")).length; _dbg.sinCoords = pub.filter(s => !enARll(s.lat, s.lng)).length;
   } catch (e) { _dbg.error = e.message; console.error("[shopify-rates] sucursales:", e.message); }
   if (!lista.length) lista = (await sucursalesCercanasCp(db, env, cp, 3)).slice(0, 1);
   lista = dedupeSucursales(lista.filter(esPuntoPublico)).slice(0, 12)
