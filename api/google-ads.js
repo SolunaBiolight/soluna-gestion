@@ -19,15 +19,27 @@ import { driveEnv } from "./google-drive-callback.js";
 // que tiene la marca verificada y el permiso adwords declarado. Las env
 // GOOGLE_ADS_CLIENT_ID/SECRET (proyecto viejo sin verificar) quedan solo para
 // renovar las conexiones hechas antes con ese cliente.
+//
+// 2026-09-14: desde el 10/09 Google asigna el nivel de acceso de la Google Ads API
+// al PROYECTO de Cloud del cliente OAuth. El acceso Básico (token aprobado el
+// 2026-08-21) quedó en el proyecto viejo `sylvan-flight-503101-q2` (cliente legacy
+// GOOGLE_ADS_CLIENT_ID); Growith-Gestion está en nivel "Prueba" y solo ve cuentas
+// de prueba ("only approved for use with test accounts"). Por eso las conexiones
+// NUEVAS usan el cliente legacy hasta que
+// console.cloud.google.com/google/ads-apis/overview?project=soluna-gestion diga
+// Básico — ahí pasar esto a true (y verificar el scope adwords en ese proyecto).
+const GADS_USE_VERIFIED_PROJECT = false;
 export function gadsCreds(clientIdGuardado) {
   const drive = driveEnv();
   const legacy = { clientId: String(process.env.GOOGLE_ADS_CLIENT_ID || "").trim(), clientSecret: String(process.env.GOOGLE_ADS_CLIENT_SECRET || "").trim() };
-  if (clientIdGuardado && legacy.clientId && clientIdGuardado === legacy.clientId) return legacy;
-  if (clientIdGuardado && drive.clientId && clientIdGuardado === drive.clientId) return drive;
-  if (!clientIdGuardado && legacy.clientId && !drive.clientId) return legacy;
-  // Conexiones viejas sin clientId guardado: se hicieron con el cliente legacy.
-  if (clientIdGuardado === undefined || clientIdGuardado === null) return drive.clientId ? drive : legacy;
-  return drive.clientId ? drive : legacy;
+  const hasLegacy = !!(legacy.clientId && legacy.clientSecret);
+  const hasDrive = !!(drive.clientId && drive.clientSecret);
+  // Conexión existente: se renueva con el mismo cliente con el que se hizo.
+  if (clientIdGuardado && hasLegacy && clientIdGuardado === legacy.clientId) return legacy;
+  if (clientIdGuardado && hasDrive && clientIdGuardado === drive.clientId) return drive;
+  // Conexión nueva (o sin clientId conocido).
+  if (GADS_USE_VERIFIED_PROJECT) return hasDrive ? drive : legacy;
+  return hasLegacy ? legacy : drive;
 }
 
 const APP_URL = "https://www.growithapp.com";
@@ -80,7 +92,7 @@ function gadsHttpError(status, txt) {
   let code = "", msg = "";
   try { const j = JSON.parse(t); const d = j.error?.details?.[0]?.errors?.[0]; code = JSON.stringify(d?.errorCode || ""); msg = d?.message || j.error?.message || ""; } catch { msg = t.slice(0, 300); }
   const friendly =
-    /only approved for use with test accounts|TEST_ACCOUNTS|apply for Explorer/i.test(code + t) ? "Google todavía no habilitó a Growith para leer cuentas reales de Google Ads (el proyecto está en nivel de prueba; el acceso Explorer/Basic ya fue solicitado). Cuando Google lo apruebe, esta sección se llena sola — no hace falta reconectar." :
+    /only approved for use with test accounts|TEST_ACCOUNTS|apply for Explorer/i.test(code + t) ? "Esta conexión se hizo con un acceso de Google que solo ve cuentas de prueba. Desvinculá Google Ads en Configuración → Integraciones y volvé a conectarlo: la conexión nueva ya lee tus cuentas reales." :
     /DEVELOPER_TOKEN_NOT_APPROVED/i.test(code + t) ? "El developer token de Growith todavía no está aprobado por Google para esta cuenta." :
     /DEVELOPER_TOKEN_PROHIBITED/i.test(code + t) ? "El developer token no puede usarse con este proyecto de Google Cloud." :
     /developer-token|DEVELOPER_TOKEN_INVALID|NOT_ADS_USER/i.test(code + t) && status === 401 ? "Falta el developer token de Google Ads en el servidor (GOOGLE_ADS_DEVELOPER_TOKEN)." :
