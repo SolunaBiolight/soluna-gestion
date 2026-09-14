@@ -8721,7 +8721,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         const propio=d.propio||{};
         const soloLocal=Object.fromEntries(Object.entries(puntoMapRef.current).filter(([k,v])=>!propio[k]&&v&&(v.tpl||v.oficial)));
         if(Object.keys(soloLocal).length){
-          authFetch("/api/andreani?action=punto_map_sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,entries:soloLocal})}).catch(()=>{});
+          authFetch("/api/andreani?action=punto_map_sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,entries:soloLocal})})
+            .then(async r=>{ const d=await r.json().catch(()=>({})); if(!r.ok) toast(`No se pudieron subir las sucursales recordadas de este navegador al servidor: ${d.error||("HTTP "+r.status)}`,"warning",8000); else if(d.subidas) toast(`${d.subidas} sucursal(es) recordadas en este navegador se guardaron en tu cuenta`,"success"); })
+            .catch(()=>{});
         }
         puntoMapRef.current={...puntoMapRef.current,...propio};
         persistPuntoMap();
@@ -8762,7 +8764,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       const verificado=!!(datos?.oficial&&matchSucursalOficial([datos.oficial],o));
       const pd=o?.pickupDetails||{};
       const punto={nombre:pd.name||"",dir:`${pd.address?.address||""} ${pd.address?.number||""}`.trim(),loc:pd.address?.locality||pd.address?.city||"",cp:String(pd.address?.zipcode||pd.address?.zip_code||o?.cp||"")};
-      authFetch("/api/andreani?action=punto_map_set",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,key:pk,datos,verificado,punto})}).catch(()=>{});
+      authFetch("/api/andreani?action=punto_map_set",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,key:pk,datos,verificado,punto})})
+        .then(async r=>{ if(!r.ok){ const d=await r.json().catch(()=>({})); toast(`La sucursal quedó guardada solo en este navegador — no se pudo guardar en el servidor: ${d.error||("HTTP "+r.status)}`,"warning",8000); } })
+        .catch(e=>toast(`La sucursal quedó guardada solo en este navegador — sin conexión con el servidor (${e.message})`,"warning",8000));
     }
   }
 
