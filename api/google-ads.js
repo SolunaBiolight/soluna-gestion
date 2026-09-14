@@ -89,7 +89,7 @@ function gadsHttpError(status, txt) {
     /CUSTOMER_NOT_FOUND|INVALID_CUSTOMER_ID/i.test(code + t) ? "Google no encuentra esa cuenta de Ads." :
     /PERMISSION_DENIED|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(code + t) && status === 403 ? "Google denegó el acceso — desvinculá y volvé a conectar Google Ads." :
     null;
-  const e = new Error(friendly || `Google Ads API HTTP ${status}${msg ? ": " + msg : ""}`);
+  const e = new Error(friendly ? `${friendly}${msg ? " (Google: " + msg.slice(0, 220) + ")" : ""}` : `Google Ads API HTTP ${status}${msg ? ": " + msg : ""}`);
   e.status = status; e.google = msg; e.code = code;
   return e;
 }
