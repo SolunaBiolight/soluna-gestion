@@ -218,9 +218,14 @@ export default async function handler(req, res) {
       if (!g?.refresh_token) return res.status(400).json({ error: "no_conectado", detail: "Google Ads no está conectado en esta tienda." });
       const at = await gadsAccessToken(g);
       // 1) Todas las campañas (estado y presupuesto, sin depender de que hayan tenido impresiones en el rango)
-      const base = await gaql(at, customer, login, "SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign.bidding_strategy_type, campaign_budget.amount_micros, campaign.start_date, campaign.end_date FROM campaign WHERE campaign.status != 'REMOVED' ORDER BY campaign.name");
+      // (v25 ya no tiene campaign.start_date / end_date — no pedir campos de fecha acá)
+      // Si esta consulta falla, la tabla igual se arma con las métricas del rango.
+      let base = [];
+      try {
+        base = await gaql(at, customer, login, "SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign.bidding_strategy_type, campaign_budget.amount_micros FROM campaign WHERE campaign.status != 'REMOVED' ORDER BY campaign.name");
+      } catch (e) { console.error("gads campaigns base:", e.message); }
       // 2) Métricas del rango
-      const met = await gaql(at, customer, login, `SELECT campaign.id, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value, metrics.all_conversions, metrics.ctr, metrics.average_cpc, metrics.average_cpm FROM campaign WHERE segments.date BETWEEN '${since}' AND '${until}' AND campaign.status != 'REMOVED'`);
+      const met = await gaql(at, customer, login, `SELECT campaign.id, campaign.name, campaign.status, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value, metrics.all_conversions, metrics.ctr, metrics.average_cpc, metrics.average_cpm FROM campaign WHERE segments.date BETWEEN '${since}' AND '${until}' AND campaign.status != 'REMOVED'`);
       const byId = {};
       for (const r of base) {
         const c = r.campaign || {}; const b = r.campaignBudget || {};
