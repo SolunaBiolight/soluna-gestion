@@ -101,7 +101,7 @@ async function gaql(at, customer, login, query) {
   do {
     const r = await fetch(`${GADS_API}/customers/${cn}/googleAds:search`, {
       method: "POST", headers: { ...gadsHeaders(at, login), "Content-Type": "application/json" },
-      body: JSON.stringify({ query, pageSize: 10000, ...(pageToken ? { pageToken } : {}) }),
+      body: JSON.stringify({ query, ...(pageToken ? { pageToken } : {}) }), // sin pageSize: la API lo rechaza (fijo en 10000)
     });
     if (!r.ok) throw gadsHttpError(r.status, await r.text().catch(() => ""));
     const j = await r.json();
