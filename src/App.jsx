@@ -3140,13 +3140,13 @@ function AutorizarIAView({T, user, rid, onSalir}) {
 // puede preguntar, qué ve y qué no, y las conexiones activas con "Desconectar".
 const IA_URL_MCP="https://www.growithapp.com/mcp";
 const IA_INFO={
-  Claude:{ donde:"Claude (claude.ai, la app de escritorio o la del celular)", pasos:[
-    "Abrí Claude → Personalizar → Conectores.",
+  Claude:{ donde:"Claude (claude.ai, la app de escritorio o la del celular)", abrir:"https://claude.ai/customize/connectors", pasos:[
+    "Tocá \"Abrir Claude y conectar\" acá abajo: copiamos la URL de Growith y se abre Claude en Conectores.",
     "Tocá \"Agregar conector personalizado\".",
-    "Nombre: Growith · URL: la de acá abajo.",
+    "Nombre: Growith · URL: pegala (ya está copiada).",
     "Tocá Conectar, iniciá sesión en Growith y tocá Autorizar.",
     "En cualquier chat activá Growith desde el botón \"+\" → Conectores y preguntale por tu negocio."]},
-  ChatGPT:{ donde:"ChatGPT en la web (planes pagos)", pasos:[
+  ChatGPT:{ donde:"ChatGPT en la web (planes pagos)", abrir:"https://chatgpt.com", pasos:[
     "ChatGPT → Configuración → Apps (o Conectores) → Configuración avanzada → activá el Modo desarrollador. En planes Business o Enterprise lo habilita el admin.",
     "Configuración → Apps → Crear.",
     "Nombre: Growith · URL del servidor MCP: la de acá abajo · Autenticación: OAuth.",
@@ -3223,8 +3223,14 @@ function AppConectorIA({T, user, app, onHome}) {
             </ol>
             {app!=="Gemini"?(
               <div style={{display:"flex",gap:DS.sp.sm,alignItems:"center",flexWrap:"wrap"}}>
+                {info.abrir&&<Btn T={T} variant="primary" size="sm" onClick={()=>{
+                  // Se copia ANTES de abrir la pestaña (después el documento pierde el foco y el portapapeles falla).
+                  try{ navigator.clipboard.writeText(IA_URL_MCP).catch(()=>{}); }catch(e){}
+                  window.open(info.abrir,"_blank","noopener");
+                  toast("URL copiada: pegala en \"Agregar conector personalizado\"");
+                }}>Abrir {app} y conectar</Btn>}
                 <div style={cajaCod}>{IA_URL_MCP}</div>
-                <Btn T={T} variant="primary" size="sm" onClick={()=>copiar(IA_URL_MCP,"URL copiada")}>Copiar URL</Btn>
+                <Btn T={T} variant="secondary" size="sm" onClick={()=>copiar(IA_URL_MCP,"URL copiada")}>Copiar URL</Btn>
               </div>
             ):(
               <div style={{display:"flex",flexDirection:"column",gap:DS.sp.md}}>
