@@ -1409,8 +1409,10 @@ export default async function handler(req, res) {
     if (action === "admin_probe") {
       if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
       if (!(await isPlatformAdmin(db, uid))) return res.status(403).json({ error: "Solo admin" });
-      const path = String(body.path || "").trim();
-      if (!/^\/v[12]\/(sucursales|tarifas|localidades|provincias)(\/|\?|$)/.test(path)) return res.status(400).json({ error: "Solo se permite /v1|v2/sucursales, tarifas, localidades o provincias" });
+      // {CONTRATO_SUC} / {CONTRATO_DOM} se reemplazan en el servidor: los
+      // números de contrato no viajan al navegador.
+      const path = String(body.path || "").trim().replace(/\{CONTRATO_SUC\}/g, encodeURIComponent(env.contratoSucursal)).replace(/\{CONTRATO_DOM\}/g, encodeURIComponent(env.contratoEstandar));
+      if (!/^\/v[12]\/(sucursales|puntos-de-tercero|tarifas|localidades|provincias)(\/|\?|$)/.test(path)) return res.status(400).json({ error: "Solo se permite /v1|v2/sucursales, puntos-de-tercero, tarifas, localidades o provincias" });
       const t0 = Date.now();
       const r = await andreaniFetch(db, env, path);
       const txt = await r.text();

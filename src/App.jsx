@@ -19100,7 +19100,7 @@ function AdmProbe({T}){
   const [path,setPath]=useState("/v2/sucursales?codigoPostal=1754&canal=B2C");
   const [out,setOut]=useState(null); const [busy,setBusy]=useState(false);
   const run=async(p)=>{ const pp=p||path; setBusy(true); setOut(null); try{ const d=await admAndreani("admin_probe",{path:pp}); setOut(d); }catch(e){ setOut({error:e.message}); } setBusy(false); };
-  const PRESETS=[["CP B2C","/v2/sucursales?codigoPostal=1754&canal=B2C"],["CP sin canal","/v2/sucursales?codigoPostal=1754"],["CP HOP","/v2/sucursales?codigoPostal=1754&canal=HOP"],["Todas","/v2/sucursales"],["Todas B2C","/v2/sucursales?canal=B2C"],["Todas HOP","/v2/sucursales?canal=HOP"],["tipo HOP","/v2/sucursales?codigoPostal=1754&tipoDeSucursal=HOP"]];
+  const PRESETS=[["CP B2C","/v2/sucursales?codigoPostal=1754&canal=B2C"],["CP sin canal","/v2/sucursales?codigoPostal=1754"],["CP HOP","/v2/sucursales?codigoPostal=1754&canal=HOP"],["Todas","/v2/sucursales"],["Todas B2C","/v2/sucursales?canal=B2C"],["Todas HOP","/v2/sucursales?canal=HOP"],["tipo HOP","/v2/sucursales?codigoPostal=1754&tipoDeSucursal=HOP"],["HOP terceros (contrato suc)","/v2/puntos-de-tercero?contrato={CONTRATO_SUC}"],["HOP terceros CP 1754","/v2/puntos-de-tercero?contrato={CONTRATO_SUC}&codigoPostal=1754&canal=B2C"],["HOP terceros (contrato dom)","/v2/puntos-de-tercero?contrato={CONTRATO_DOM}"]];
   return (
     <div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{PRESETS.map(([l,p])=><AdmBtn key={l} T={T} variant="ghost" size="sm" onClick={()=>{setPath(p);return run(p);}}>{l}</AdmBtn>)}</div>
