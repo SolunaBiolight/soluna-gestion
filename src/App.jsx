@@ -18117,13 +18117,15 @@ function AdmProbe({T}){
 // ── Sonda de la API de Tienda Nube con el token de una cuenta (solo admin) ──
 // Para ver de primera mano qué informa TN sobre comisiones de pago.
 function AdmTnProbe({T}){
-  const [email,setEmail]=useState(""); const [path,setPath]=useState("/payment_providers");
+  const [email,setEmail]=useState(""); const [path,setPath]=useState("/payment_providers"); const [plat,setPlat]=useState("tiendanube");
   const [out,setOut]=useState(null); const [busy,setBusy]=useState(false);
-  const run=async(p)=>{ const pp=p||path; if(!email.trim()){ toast("Poné el email de la cuenta","warning"); return; } setBusy(true); setOut(null); try{ const d=await admAndreani("admin_tn_probe",{email:email.trim(),path:pp}); setOut(d); }catch(e){ setOut({error:e.message}); } setBusy(false); };
-  const PRESETS=[["Proveedores de pago","/payment_providers"],["Últimas órdenes","/orders?per_page=3&payment_status=paid"],["Transacciones de una orden","/orders/ID/transactions"],["Una orden","/orders/ID"]];
+  const run=async(p)=>{ const pp=p||path; if(!email.trim()){ toast("Poné el email de la cuenta","warning"); return; } setBusy(true); setOut(null); try{ const d=await admAndreani("admin_tn_probe",{email:email.trim(),path:pp,plataforma:plat}); setOut(d); }catch(e){ setOut({error:e.message}); } setBusy(false); };
+  const PRESETS=plat==="shopify"
+    ?[["Últimas órdenes","/orders.json?limit=3&status=any&financial_status=paid&fields=id,name,gateway,payment_gateway_names,total_price,created_at"],["Transacciones de una orden","/orders/ID/transactions.json"]]
+    :[["Proveedores de pago","/payment_providers"],["Últimas órdenes","/orders?per_page=3&payment_status=paid"],["Transacciones de una orden","/orders/ID/transactions"],["Una orden","/orders/ID"]];
   return (
     <div>
-      <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>Diagnóstico API Tienda Nube</div>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:2}}><div style={{fontSize:13,fontWeight:700,color:T.text}}>Diagnóstico API {plat==="shopify"?"Shopify":"Tienda Nube"}</div><AdmSeg T={T} value={plat} onChange={v=>{setPlat(v);setPath(v==="shopify"?"/orders.json?limit=3&status=any&financial_status=paid&fields=id,name,gateway,payment_gateway_names,total_price,created_at":"/payment_providers");setOut(null);}} opciones={[["tiendanube","Tienda Nube"],["shopify","Shopify"]]}/></div>
       <div style={{fontSize:11,color:T.textSm,marginBottom:8}}>Consulta cruda con el token de la cuenta indicada. Para las transacciones, reemplazá ID por el id interno de una orden (lo ves en "Últimas órdenes").</div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{PRESETS.map(([l,p])=><AdmBtn key={l} T={T} variant="ghost" size="sm" onClick={()=>{setPath(p);return p.includes("ID")?Promise.resolve():run(p);}}>{l}</AdmBtn>)}</div>
       <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}><AdmInput T={T} value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email de la cuenta" list="gh-admin-emails" style={{width:240}}/><AdmInput T={T} value={path} onChange={e=>setPath(e.target.value)} style={{flex:1,minWidth:220,fontFamily:"monospace",fontSize:12}}/><AdmBtn T={T} size="sm" onClick={()=>run()}>{busy?"…":"Consultar"}</AdmBtn></div>
@@ -37642,6 +37644,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     if (q.impuestosSinConfig) qItems.push({k:"comisiones", msg:"Impuestos configurados en 0% — el profit no descuenta carga impositiva", cta:"Configurar"});
     if (q.envioSinConfig) qItems.push({k:"costos", msg:"Costo de envío en $0 (modo promedio sin valor cargado)", cta:"Configurar"});
     if (q.tnFees?.diag) qItems.push({k:null, msg:q.tnFees.diag});
+    if (q.shMp && !q.shMp.mpToken) qItems.push({k:"integraciones", msg:`${q.shMp.total} venta(s) de Shopify cobradas con Mercado Pago sin el cargo real: Shopify no lo informa. Conectá la cuenta de Mercado Pago (Integraciones → Mercado Libre, es la misma cuenta) y se lee el cargo exacto de cada pago`, cta:"Conectar",go:"config"});
+    if (q.shMp && q.shMp.mpToken && q.shMp.conFee===0 && q.shMp.conRef>0) qItems.push({k:null, msg:`Mercado Pago está conectado pero ninguna venta de Shopify cruzó con su pago (${q.shMp.conRef} con referencia). Puede ser otra cuenta de MP que la que cobra en Shopify: revisá en Dashboard → Configuraciones qué cuenta lee los pagos`});
+    if (q.shMp && q.shMp.mpToken && q.shMp.conRef===0 && q.shMp.muestra) qItems.push({k:null, msg:`Shopify no devuelve el id del pago de MP en sus transacciones (gateway ${q.shMp.muestra.gateway||"?"}, campos: ${(q.shMp.muestra.receiptKeys||[]).join(",")||"ninguno"}) — pasale este texto a soporte de Growith`});
     if (q.tnFees && q.tnFees.conCargo===0 && q.tnFees.sinCargo>0 && !q.tnFees.diag) qItems.push({k:null, msg:`Tienda Nube no informa el cargo de la pasarela en tus ventas (${q.tnFees.sinCargo} revisadas${q.tnFees.muestra?` · ej. ${q.tnFees.muestra.orden}: ${q.tnFees.muestra.transacciones} transacción(es), estados ${q.tnFees.muestra.estados.join("/")||"—"}, cargos ${q.tnFees.muestra.conCargos?"sí":"no"}, campos ${q.tnFees.muestra.claves.join(",")||"—"}`:""})`});
     if (q.mpSinConfig) qItems.push({k:"comisiones", msg:`Ventas con Mercado Pago sin cargo real informado${q.tnFees?.pendientes?" (se están leyendo de a 60 por cálculo — recargá en un rato)":""}: se estima 7,61% (dinero al instante + IVA). Cargá tu % real en Comisiones e impuestos → Comisión de Mercado Pago`, cta:"Configurar"});
     if (rendData?.meta?.googleAdsConectado && rendData?.meta?.googleAdsFuente!=="auto") qItems.push({k:null, msg:`Google Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.googleAdsDiag?` — ${rendData.meta.googleAdsDiag}`:""}`});
@@ -37663,7 +37668,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     const prodPerdida = byProduct.filter(p=>(p.profit||0)<0 && !p.sinCogs && (p.revenue||0)>0);
     if (prodPerdida.length>0) alerts.push({sev:"amber", msg:`${prodPerdida.length} producto(s) vendiendo a pérdida: ${prodPerdida.slice(0,3).map(p=>p.nombre).join(", ")}${prodPerdida.length>3?"…":""}`});
   }
-  const goTab = k => { if (setTab && k) setTab(k); };
+  const goTab = (k,go) => { if (go==="config") { window.location.hash = "#/config"; return; } if (setTab && k) setTab(k); };
 
   // Sparkline estilo Escalafy: ocupa TODO el ancho de la card (viewBox
   // estirado), con área degradada debajo de la línea.
@@ -38054,7 +38059,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                   <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textMd,lineHeight:1.5}}>
                     <span style={{width:5,height:5,borderRadius:"50%",background:T.yellow,flexShrink:0}}/>
                     <span style={{flex:1}}>{it.msg}</span>
-                    {setTab && it.k && it.cta && <button onClick={()=>goTab(it.k)} style={{background:"transparent",border:"none",color:T.accent,fontSize:DS.font.sm,fontWeight:DS.w.bold,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{it.cta} →</button>}
+                    {setTab && it.k && it.cta && <button onClick={()=>goTab(it.k,it.go)} style={{background:"transparent",border:"none",color:T.accent,fontSize:DS.font.sm,fontWeight:DS.w.bold,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{it.cta} →</button>}
                   </div>
                 ))}
               </div>

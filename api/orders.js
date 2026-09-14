@@ -597,11 +597,13 @@ export default async function handler(req, res) {
       // fee_details de los pagos de tienda (external_reference alfanumérico tipo
       // rXXX = receipt_id de la transacción Shopify). Se excluyen: ML (ref
       // numérica, ya contada en sale_fee), cashback, INSTORE, y no aprobados.
+      let mpTokenOk = false;
       async function fetchMPCommission(sinceYmd, untilYmd) {
         try {
           if (mlMpAcc === "__none__") return { fee:0, rev:0, feeByRef:{} }; // ninguna cuenta lee MP
           const tok = await getValidMLToken(db, uid, mlMpAcc); // cuenta de MP (Shopify)
           if (!tok?.accessToken) return { fee:0, rev:0 };
+          mpTokenOk = true;
           const begin = `${sinceYmd}T00:00:00.000-03:00`, end = `${untilYmd}T23:59:59.999-03:00`;
           let fee = 0, rev = 0, offset = 0; const feeByRef = {}; const feeByPayId = {};
           // Cashflow real de MP: profit ≠ caja. money_release_date dice cuándo MP
@@ -1285,12 +1287,13 @@ export default async function handler(req, res) {
         return null;
       };
       const mpRefCache = (userData.margenesMpRefs && typeof userData.margenesMpRefs==="object" && !Array.isArray(userData.margenesMpRefs)) ? { ...userData.margenesMpRefs } : {};
+      let shFeesMuestra = null;
       const shStoreRef = (userData.stores||[]).find(s => s.type==="shopify");
       if (shStoreRef) await ensureShopifyToken(db, uid, shStoreRef);
       if (shStoreRef?.shop && shStoreRef?.accessToken) {
         const tsPend = f => { const s=String(f||""); if(!s) return 0; const t=Date.parse(/(Z|[+-]\d{2}:?\d{2})$/.test(s)?s:s+"-03:00"); return isNaN(t)?0:t; };
         const pend = [...(curr.raw?.orders_detail||[]), ...(prev.raw?.orders_detail||[])]
-          .filter(o => /mercado\s*pago/i.test(o.pay||"") && !mpRefCache[o.id])
+          .filter(o => o.platform==="shopify" && /mercado[\s_-]*pago/i.test(o.pay||"") && !mpRefCache[o.id])
           .sort((a,b)=>tsPend(b.fecha)-tsPend(a.fecha))
           .slice(0, 40);
         let changed = false;
@@ -1302,7 +1305,11 @@ export default async function handler(req, res) {
               const j = await r.json();
               const ok = (j.transactions||[]).filter(t => t.kind==="sale" && t.status==="success");
               const t = ok[ok.length-1];
-              const ref = t?.receipt?.id || t?.receipt?.payment_id || null;
+              // El id del pago de MP puede venir en distintos campos del receipt
+              // según la versión de la app de MP para Shopify.
+              const rc = t?.receipt || {};
+              const ref = rc.id || rc.payment_id || rc.mp_payment_id || rc.transaction_id || rc.paymentId || (t?.authorization && /^\d{6,}$/.test(String(t.authorization)) ? t.authorization : null) || null;
+              if (!ref && t && !shFeesMuestra) shFeesMuestra = { orden: o.nombre, gateway: t.gateway || "", kind: t.kind, status: t.status, authorization: t.authorization || null, receiptKeys: Object.keys(rc).slice(0, 15) };
               return [o.id, ref ? String(ref) : null];
             } catch(_) { return [o.id, null]; }
           }));
@@ -1917,6 +1924,12 @@ export default async function handler(req, res) {
         tnFees: { conTarifa: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f==null && tnRateFee(o)!=null).length, conCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f!=null).length, sinCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f==null).length, pendientes: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && !tnFeeCache[o.id]).length, nuevas: tnFeesNuevas, diag: tnFeesDiag, muestra: tnFeesMuestra },
         mpPctEstimado,
         mpConectado: mlMpAcc !== "__none__" && !!(mpCommCurr && (Object.keys(mpCommCurr.feeByPayId||{}).length || Object.keys(mpCommCurr.feeByRef||{}).length)),
+        // Shopify: el cargo real de MP SOLO sale de la API de MP (Shopify no lo
+        // expone). Sin cuenta de MP conectada → aviso con CTA; con cuenta pero
+        // sin match → diagnóstico de qué trae el receipt.
+        shMp: (()=>{ const ords=(curr.raw?.orders_detail||[]).filter(o=>o.platform==="shopify" && /mercado[\s_-]*pago/i.test(o.pay||"")); if(!ords.length) return null;
+          const conRef=ords.filter(o=>mpRefCache[o.id]).length, conFee=ords.filter(o=>realMpDe(o, feeByRef, feeByPayId)!=null).length;
+          return { total: ords.length, conRef, conFee, mpToken: mlMpAcc !== "__none__" && !!mpTokenOk, muestra: shFeesMuestra }; })(),
         dolarAdsHistorico: dolarAdsHistDias>0,
         tnTruncated: !!rawQ.tn_truncated, mlTruncated: !!rawQ.ml_truncated,
         canceladasExcluidas: rawQ.cancelled_excluded||0,

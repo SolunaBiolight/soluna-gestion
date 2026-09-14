@@ -26,6 +26,7 @@ import { randomBytes, createHmac } from "crypto";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue, FieldPath } from "firebase-admin/firestore";
 import { ghPuntoDeClave, ghConflictoPunto, ghCoincidePunto, ghConflictoTpl } from "./_suc_match.js";
+import { ensureShopifyToken } from "./integrations/_shared.js";
 import { verifyAuth, requireAdmin, guardUid } from "./_auth.js";
 
 function initAdmin() {
@@ -2268,16 +2269,27 @@ export default async function handler(req, res) {
       if (action === "admin_tn_probe") {
         if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
         const path = String(body.path || "").trim();
-        if (!/^\/(orders(\/\d+(\/transactions)?)?|payment_providers|payment\/providers(\/[\w-]+)?)(\?[^\s]*)?$/.test(path)) return res.status(400).json({ error: "Solo /orders, /orders/{id}, /orders/{id}/transactions, /payment_providers" });
+        const plataforma = body.plataforma === "shopify" ? "shopify" : "tiendanube";
+        if (plataforma === "shopify" ? !/^\/orders(\/\d+\/transactions)?\.json(\?[^\s]*)?$/.test(path) : !/^\/(orders(\/\d+(\/transactions)?)?|payment_providers|payment\/providers(\/[\w-]+)?)(\?[^\s]*)?$/.test(path)) return res.status(400).json({ error: plataforma === "shopify" ? "Solo /orders.json y /orders/{id}/transactions.json" : "Solo /orders, /orders/{id}, /orders/{id}/transactions, /payment_providers" });
         let target = String(body.uid || "").trim();
         const email = String(body.email || "").trim().toLowerCase();
         if (!target && email) { const q = await db.collection("users").where("email", "==", email).limit(1).get(); target = q.empty ? "" : q.docs[0].id; }
         if (!target) return res.status(400).json({ error: "uid o email requerido" });
         const ud = (await db.collection("users").doc(target).get()).data() || {};
-        const tn = (ud.stores || []).find(s => s.type === "tiendanube" && s.accessToken && s.storeId);
-        if (!tn) return res.status(400).json({ error: "Esa cuenta no tiene Tienda Nube conectada" });
         const t0 = Date.now();
-        const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}${path}`, { headers: { Authentication: `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp (contacto.growith@gmail.com)" }, signal: AbortSignal.timeout(12000) });
+        let r, tn;
+        if (plataforma === "shopify") {
+          const sh = (ud.stores || []).find(s => s.type === "shopify" && s.shop);
+          if (!sh) return res.status(400).json({ error: "Esa cuenta no tiene Shopify conectada" });
+          await ensureShopifyToken(db, target, sh);
+          if (!sh.accessToken) return res.status(400).json({ error: "Shopify sin token válido — reconectar" });
+          tn = { storeId: sh.shop };
+          r = await fetch(`https://${sh.shop}/admin/api/2024-10${path}`, { headers: { "X-Shopify-Access-Token": sh.accessToken }, signal: AbortSignal.timeout(12000) });
+        } else {
+          tn = (ud.stores || []).find(s => s.type === "tiendanube" && s.accessToken && s.storeId);
+          if (!tn) return res.status(400).json({ error: "Esa cuenta no tiene Tienda Nube conectada" });
+          r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}${path}`, { headers: { Authentication: `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp (contacto.growith@gmail.com)" }, signal: AbortSignal.timeout(12000) });
+        }
         const txt = await r.text();
         let j = null; try { j = JSON.parse(txt); } catch (_) {}
         await logAdminAndreani(db, adm.user.uid, "tn_probe", target, path);
