@@ -982,6 +982,10 @@ const SIDEBAR_GROUPS_BASE = [
     {id:"pubml",    permKey:"ml",   label:"Publicar en ML", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", go:{page:"ml",tab:"publicar"}},
     {id:"pubtiktok", permKey:"tiktokads", label:"Publicar en TikTok", icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z", go:{page:"tiktokads",tab:"publicar"}},
     {id:"pubgads",  permKey:"gads", label:"Publicar en Google", icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z", go:{page:"gads",tab:"publicar"}},
+    { group:"INTELIGENCIA ARTIFICIAL" },
+    {id:"claude",  label:"Claude",  icon:"M12 3l2.4 5.6L20 11l-5.6 2.4L12 19l-2.4-5.6L4 11l5.6-2.4z"},
+    {id:"chatgpt", label:"ChatGPT", icon:"M12 4a8 8 0 100 16 8 8 0 000-16zM12 8v8M8 12h8"},
+    {id:"gemini",  label:"Gemini",  icon:"M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10 5.4-.6 9.4-4.6 10-10z"},
     { group:"RECOMPENSAS" },
     {id:"referidos",label:"Referidos", icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
     {id:"planes",   label:"Suscripción", icon:"M2 5h20v14H2zM2 10h20M6 15h4"},
@@ -3055,6 +3059,232 @@ function TtPublicador({T, user, accounts, account, setAcc, sym, onVerAnalisis}) 
           {busy&&<div style={{fontSize:DS.font.sm,color:T.textSm,textAlign:"center"}}>No cierres esta pestaña mientras se suben los videos.</div>}
         </div>
       </GadsPaso>
+    </div>
+  );
+}
+
+// ── Conector de IA (Claude / ChatGPT / Gemini): pantalla de permiso (api/mcp.js) ──
+// Llega desde /oauth/authorize (?ia_auth=<id>). Muestra qué va a poder leer la app de
+// IA de la tienda activa y, al autorizar, vuelve a esa app con el código (OAuth).
+const IA_ICONS={
+  Claude:<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 3l2.4 5.6L20 11l-5.6 2.4L12 19l-2.4-5.6L4 11l5.6-2.4z" fill="#d97757"/></svg>,
+  Gemini:<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10 5.4-.6 9.4-4.6 10-10z" fill="#4285F4"/></svg>,
+  ChatGPT:<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#10a37f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v4M12 16v4M4 12h4M16 12h4"/></svg>,
+};
+function AutorizarIAView({T, user, rid, onSalir}) {
+  const [info,setInfo]=useState(null); const [err,setErr]=useState(null); const [busy,setBusy]=useState(false);
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      try{
+        const r=await authFetch(`/api/mcp?action=auth_info&req=${encodeURIComponent(rid)}&uid=${user.uid}`); const j=await r.json();
+        if(!alive) return;
+        if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
+        if(!j.ok||j.vencido) throw new Error(`Este pedido de conexión venció. Volvé a ${j.app||"la app de IA"} y conectá Growith de nuevo.`);
+        setInfo(j);
+      }catch(e){ if(alive) setErr(e.message); }
+    })();
+    return ()=>{ alive=false; };
+  },[rid,user?.uid]);
+  const responder=async(aprobar)=>{
+    setBusy(true); setErr(null);
+    try{
+      const r=await authFetch(`/api/mcp?action=${aprobar?"approve":"deny"}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({req:rid,uid:user.uid})});
+      const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
+      try{ sessionStorage.removeItem("growith_mcp_rid"); }catch(e){}
+      if(j.redirect) window.location.href=j.redirect; else onSalir();
+    }catch(e){ setErr(e.message); setBusy(false); }
+  };
+  const app=info?.app||"La app de IA";
+  const PUEDE=["Ventas, facturación y rentabilidad (Dashboard y P&L)","Campañas de Meta, Google y TikTok con sus métricas","Stock y alertas de productos","Envíos y su estado","Qué integraciones tenés conectadas"];
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:DS.sp.xl}}>
+      <Card T={T} padding="xl" style={{maxWidth:480,width:"100%"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:DS.sp.md,marginBottom:DS.sp.xl}}>
+          <GrowithLogo size={44} variant="color"/>
+          <span style={{fontSize:DS.font.xl,color:T.textSm}}>↔</span>
+          <div style={{width:44,height:44,borderRadius:DS.r.lg,background:"#fff",border:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",justifyContent:"center"}}>{IA_ICONS[info?.app]||IA_ICONS.Claude}</div>
+        </div>
+        {info===null&&!err&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:DS.sp.sm,fontSize:DS.font.base,color:T.textMd}}><Spinner size={14} color={T.textMd}/> Preparando la conexión…</div>}
+        {err&&(
+          <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg,textAlign:"center"}}>
+            <div style={{fontSize:DS.font.xl,fontWeight:DS.w.bold,color:T.text}}>No se pudo conectar</div>
+            <div style={{fontSize:DS.font.base,color:T.red,lineHeight:1.5}}>{err}</div>
+            <div><Btn T={T} variant="secondary" onClick={onSalir}>Volver a Growith</Btn></div>
+          </div>
+        )}
+        {info&&!err&&(
+          <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
+            <div style={{fontSize:DS.font.xl,fontWeight:DS.w.black,color:T.text,textAlign:"center",lineHeight:1.35}}>{app} quiere leer los datos de <span style={{color:T.accent}}>{info.tienda||"tu tienda"}</span></div>
+            <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.55}}>Vas a poder preguntarle a {app} por tu negocio. Va a poder <strong style={{color:T.text}}>ver</strong>:</div>
+            <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
+              {PUEDE.map(t=><div key={t} style={{display:"flex",gap:DS.sp.sm,fontSize:DS.font.base,color:T.text}}><span style={{color:T.green,fontWeight:DS.w.bold}}>✓</span>{t}</div>)}
+            </div>
+            <div style={{fontSize:DS.font.md,color:T.textSm,lineHeight:1.55,padding:"10px 12px",borderRadius:DS.r.lg,background:T.surface,border:`1px solid ${T.borderL}`}}>
+              Es <strong style={{color:T.text}}>solo lectura</strong>: no puede cambiar nada, publicar, pausar campañas ni ver contraseñas. Se conecta la tienda en la que estás parado; lo desconectás cuando quieras desde Configuración → Integraciones.
+            </div>
+            <div style={{display:"flex",gap:DS.sp.sm,justifyContent:"flex-end",flexWrap:"wrap"}}>
+              <Btn T={T} variant="secondary" onClick={()=>responder(false)} disabled={busy}>Cancelar</Btn>
+              <Btn T={T} variant="primary" onClick={()=>responder(true)} disabled={busy}>{busy?<><Spinner size={12} color={T.accent}/> Conectando…</>:"Autorizar"}</Btn>
+            </div>
+            <div style={{fontSize:DS.font.xs,color:T.textSm,textAlign:"center"}}>Al autorizar volvés a {info.host}.</div>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ─── Secciones Claude / ChatGPT / Gemini: conector MCP de Growith (api/mcp.js) ───
+// Cada IA tiene su sección: estado de la conexión, pasos para conectarla, qué se le
+// puede preguntar, qué ve y qué no, y las conexiones activas con "Desconectar".
+const IA_URL_MCP="https://www.growithapp.com/mcp";
+const IA_INFO={
+  Claude:{ donde:"Claude (claude.ai, la app de escritorio o la del celular)", pasos:[
+    "Abrí Claude → Personalizar → Conectores.",
+    "Tocá \"Agregar conector personalizado\".",
+    "Nombre: Growith · URL: la de acá abajo.",
+    "Tocá Conectar, iniciá sesión en Growith y tocá Autorizar.",
+    "En cualquier chat activá Growith desde el botón \"+\" → Conectores y preguntale por tu negocio."]},
+  ChatGPT:{ donde:"ChatGPT en la web (planes pagos)", pasos:[
+    "ChatGPT → Configuración → Apps (o Conectores) → Configuración avanzada → activá el Modo desarrollador. En planes Business o Enterprise lo habilita el admin.",
+    "Configuración → Apps → Crear.",
+    "Nombre: Growith · URL del servidor MCP: la de acá abajo · Autenticación: OAuth.",
+    "Tocá Crear, iniciá sesión en Growith y tocá Autorizar.",
+    "En un chat nuevo elegí Growith desde el botón \"+\" y preguntale por tu negocio."]},
+  Gemini:{ donde:"Gemini Enterprise (edición Business)", pasos:[
+    "Tocá \"Generar credenciales\" acá abajo (lo hace el dueño de la tienda).",
+    "En Gemini Enterprise, el admin del equipo va a Administrar equipo → Apps conectadas → Agregar servidor MCP.",
+    "Pegá ahí la URL del servidor MCP, la Authorization URL, la Token URL, el Client ID, el Client Secret y el Scope.",
+    "Cada persona del equipo toca Conectar en Gemini, inicia sesión en Growith y autoriza.",
+    "Después le pregunta a Gemini por el negocio desde el chat."]},
+};
+const IA_EJEMPLOS=["¿Cuánto gané este mes y cómo vengo contra el mes pasado?","¿Qué campaña de Meta, Google o TikTok tiene peor ROAS esta semana?","¿Qué productos me dejan menos margen?","¿Qué productos se me están por agotar?","¿Hay envíos demorados o sin retirar?","Armame un resumen de cómo cerró ayer."];
+const IA_VE=["Ventas, facturación y rentabilidad de cualquier período","Campañas de Meta, Google y TikTok con sus métricas","Stock y alertas de quiebre","Envíos y su estado","Qué integraciones tenés conectadas"];
+const IA_NO=["Cambiar precios, stock o campañas","Publicar, pausar o activar anuncios","Ver contraseñas ni tokens de tus cuentas","Ver datos de otras tiendas"];
+
+function AppConectorIA({T, user, app, onHome}) {
+  const info=IA_INFO[app]||IA_INFO.Claude;
+  const [conex,setConex]=useState(null); const [err,setErr]=useState(null);
+  const [cred,setCred]=useState(null); const [busy,setBusy]=useState(false);
+  const cargar=async()=>{
+    try{
+      const r=await authFetch(`/api/mcp?action=conexiones&uid=${user.uid}`); const j=await r.json();
+      if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
+      setConex((j.conexiones||[]).filter(c=>c.app===app)); setErr(null);
+    }catch(e){ setErr(e.message); setConex([]); }
+  };
+  useEffect(()=>{ setConex(null); setCred(null); cargar(); /* eslint-disable-next-line */ },[user?.uid,app]);
+  const copiar=async(t,msg="Copiado")=>{ try{ await navigator.clipboard.writeText(t); toast(msg); }catch(e){ appAlert(t,{title:"Copialo a mano"}); } };
+  const desconectar=async()=>{
+    if(!await appConfirm(`${app} va a dejar de poder leer los datos de esta tienda. ¿Desconectamos?`,{title:`Desconectar ${app}`,okLabel:"Desconectar",danger:true})) return;
+    setBusy(true);
+    try{
+      const r=await authFetch(`/api/mcp?action=revocar`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,app})});
+      const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
+      toast(`${app} desconectado`); cargar();
+    }catch(e){ appAlert("Error: "+e.message); } finally{ setBusy(false); }
+  };
+  const generar=async()=>{
+    setBusy(true);
+    try{
+      const r=await authFetch(`/api/mcp?action=gemini_credenciales`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid})});
+      const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
+      setCred(j);
+    }catch(e){ appAlert("No se pudieron generar las credenciales: "+e.message); } finally{ setBusy(false); }
+  };
+  const conectado=(conex||[]).length>0;
+  const ultimo=(conex||[]).map(c=>c.ultimoUso).filter(Boolean).sort().pop();
+  const fecha=v=>v?new Date(v).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"—";
+  const credFilas=cred?[["MCP Server URL",cred.mcp_url],["Authorization URL",cred.authorization_url],["Token URL",cred.token_url],["Client ID",cred.client_id],["Client Secret",cred.client_secret],["Scopes",cred.scopes]]:[];
+  const cajaCod={flex:1,minWidth:0,padding:"8px 12px",borderRadius:DS.r.md,background:T.surface,border:`1px solid ${T.borderL}`,fontSize:DS.font.md,color:T.text,fontFamily:"'Cascadia Code','SF Mono',Menlo,monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"};
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
+      <AppTopbar T={T} section={app} sectionId={app.toLowerCase()} onHome={onHome}>
+        {conectado&&<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,color:T.green,fontWeight:600}}><span style={{width:7,height:7,borderRadius:"50%",background:T.green}}/>Conectado</span>}
+      </AppTopbar>
+      <div style={{maxWidth:880,margin:"0 auto",padding:"20px 24px 80px",display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
+        <Card T={T} padding="xl">
+          <div style={{display:"flex",alignItems:"center",gap:DS.sp.lg,flexWrap:"wrap"}}>
+            <div style={{width:56,height:56,borderRadius:DS.r.xl,background:"#fff",border:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{IA_ICONS[app]}</div>
+            <div style={{flex:1,minWidth:240}}>
+              <div style={{fontSize:DS.font["2xl"],fontWeight:DS.w.black,color:T.text,letterSpacing:-0.4}}>Hablá con {app} sobre tu negocio</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:4,lineHeight:1.55}}>Conectá Growith a {info.donde} y preguntale por tus ventas, ganancia, campañas de Meta, Google y TikTok, stock y envíos, con los números reales de Growith.</div>
+            </div>
+            {conex!==null&&<DSBadge T={T} color={conectado?T.green:T.textSm} size="md">{conectado?`Conectado${ultimo?` · último uso ${fecha(ultimo)}`:""}`:"Sin conectar"}</DSBadge>}
+          </div>
+        </Card>
+        {err&&<div style={{background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:DS.r.lg,padding:"10px 14px",fontSize:DS.font.md,color:T.red}}>{err}</div>}
+
+        <GadsPaso T={T} n="1" title="Cómo conectarlo" sub={`En ${info.donde}.`}>
+          <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
+            <ol style={{margin:0,paddingLeft:20,display:"flex",flexDirection:"column",gap:DS.sp.sm,fontSize:DS.font.base,color:T.text,lineHeight:1.55}}>
+              {info.pasos.map((p,i)=><li key={i}>{p}</li>)}
+            </ol>
+            {app!=="Gemini"?(
+              <div style={{display:"flex",gap:DS.sp.sm,alignItems:"center",flexWrap:"wrap"}}>
+                <div style={cajaCod}>{IA_URL_MCP}</div>
+                <Btn T={T} variant="primary" size="sm" onClick={()=>copiar(IA_URL_MCP,"URL copiada")}>Copiar URL</Btn>
+              </div>
+            ):(
+              <div style={{display:"flex",flexDirection:"column",gap:DS.sp.md}}>
+                {!cred&&<div><Btn T={T} variant="primary" onClick={generar} disabled={busy}>{busy?<><Spinner size={12} color={T.accent}/> Generando…</>:"Generar credenciales"}</Btn></div>}
+                {cred&&(
+                  <>
+                    {credFilas.map(([l,v])=>(
+                      <div key={l} style={{display:"flex",gap:DS.sp.sm,alignItems:"center",flexWrap:"wrap"}}>
+                        <span style={{width:140,fontSize:DS.font.sm,fontWeight:DS.w.semibold,color:T.textMd}}>{l}</span>
+                        <div style={cajaCod}>{v}</div>
+                        <Btn T={T} variant="secondary" size="sm" onClick={()=>copiar(v,`${l} copiado`)}>Copiar</Btn>
+                      </div>
+                    ))}
+                    <div style={{fontSize:DS.font.md,color:T.orange,lineHeight:1.5}}>Guardá el Client Secret: no se vuelve a mostrar. Si lo perdés, generá credenciales nuevas.</div>
+                    <div><Btn T={T} variant="secondary" size="sm" onClick={()=>copiar(credFilas.map(([l,v])=>`${l}: ${v}`).join("\n"),"Credenciales copiadas")}>Copiar todo</Btn></div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </GadsPaso>
+
+        <GadsPaso T={T} n="2" title="Qué le podés preguntar" sub="Tocá una pregunta para copiarla.">
+          <div style={{display:"flex",flexWrap:"wrap",gap:DS.sp.sm}}>
+            {IA_EJEMPLOS.map(q=>(
+              <button key={q} onClick={()=>copiar(q,"Pregunta copiada")} style={{padding:"8px 12px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:DS.font.md,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left"}}>{q}</button>
+            ))}
+          </div>
+        </GadsPaso>
+
+        <GadsPaso T={T} n="3" title="Qué puede ver y qué no" sub={`Es solo lectura: los números salen de Growith y, si algo no está calculado, ${app} te lo dice en vez de inventarlo.`}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:DS.sp.lg}}>
+            <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
+              <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>Puede ver</div>
+              {IA_VE.map(t=><div key={t} style={{display:"flex",gap:DS.sp.sm,fontSize:DS.font.base,color:T.text}}><span style={{color:T.green,fontWeight:DS.w.bold}}>✓</span>{t}</div>)}
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
+              <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>No puede</div>
+              {IA_NO.map(t=><div key={t} style={{display:"flex",gap:DS.sp.sm,fontSize:DS.font.base,color:T.text}}><span style={{color:T.red,fontWeight:DS.w.bold}}>✕</span>{t}</div>)}
+            </div>
+          </div>
+        </GadsPaso>
+
+        <GadsPaso T={T} n="4" title="Conexiones" sub={`Cada vez que alguien autoriza Growith desde ${app} para esta tienda, aparece acá.`}
+          right={conectado?<Btn T={T} variant="danger" size="sm" onClick={desconectar} disabled={busy}>Desconectar {app}</Btn>:null}>
+          {conex===null
+            ? <div style={{display:"flex",alignItems:"center",gap:DS.sp.sm,fontSize:DS.font.md,color:T.textMd}}><Spinner size={12} color={T.textMd}/> Buscando conexiones…</div>
+            : !conectado
+              ? <div style={{fontSize:DS.font.base,color:T.textSm}}>Todavía no conectaste {app} a esta tienda.</div>
+              : <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
+                  {conex.map(c=>(
+                    <div key={c.id} style={{display:"flex",gap:DS.sp.md,alignItems:"center",flexWrap:"wrap",padding:"10px 12px",borderRadius:DS.r.lg,border:`1px solid ${T.borderL}`,background:T.surface,fontSize:DS.font.md,color:T.textMd}}>
+                      <span style={{fontWeight:DS.w.semibold,color:T.text}}>{c.host||app}</span>
+                      <span>Conectado el {fecha(c.creada)}</span>
+                      <span>· Último uso {fecha(c.ultimoUso)}</span>
+                    </div>
+                  ))}
+                </div>}
+        </GadsPaso>
+      </div>
     </div>
   );
 }
@@ -14417,7 +14647,8 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
 function PublicSite({T, darkMode, onToggleDark}) {
   const [view, setView] = useState(() => {
     const h = (typeof window !== "undefined" ? window.location.hash : "").toLowerCase();
-    return (h.includes("login") || h.includes("registro")) ? "login" : "landing";
+    let pend = false; try { pend = !!sessionStorage.getItem("growith_mcp_rid"); } catch(_) {}
+    return (pend || h.includes("login") || h.includes("registro")) ? "login" : "landing";
   });
   const irLogin = () => { setView("login"); try { window.location.hash = "#/login"; } catch(_){} window.scrollTo(0,0); };
   const irLanding = () => { setView("landing"); try { window.location.hash = ""; } catch(_){} window.scrollTo(0,0); };
@@ -15300,6 +15531,19 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
   // TikTok Ads: mismo patrón — "PRONTO" hasta que existan TIKTOK_APP_ID/SECRET en el server.
   const [tiktokConfigured,setTiktokConfigured]=useState(null);
   useEffect(()=>{ if(!user?.uid) return; authFetch(`/api/integrations?platform=tiktokads&action=status&uid=${user.uid}`).then(r=>r.json()).then(d=>setTiktokConfigured(!!d.configured)).catch(()=>setTiktokConfigured(false)); },[user?.uid]);
+  // Apps de IA conectadas por el conector MCP (api/mcp.js): Claude, ChatGPT y Gemini
+  const [iaConex,setIaConex]=useState(null);
+  const cargarIaConex=()=>authFetch(`/api/mcp?action=conexiones&uid=${user.uid}`).then(r=>r.json()).then(d=>setIaConex(d&&d.ok?(d.conexiones||[]):null)).catch(()=>setIaConex(null));
+  useEffect(()=>{ if(!user?.uid) return; cargarIaConex(); /* eslint-disable-next-line */ },[user?.uid]);
+  const iaDe=(app)=>(iaConex||[]).filter(c=>c.app===app);
+  const iaSub=(app,desc)=>{ const cs=iaDe(app); if(!cs.length) return desc; const u=cs.map(c=>c.ultimoUso).filter(Boolean).sort().pop(); return `Conectado${u?` · último uso ${new Date(u).toLocaleDateString("es-AR")}`:""} — preguntale por tus ventas, campañas, stock y envíos`; };
+  const iaDesconectar=async(app)=>{
+    try{
+      const r=await authFetch(`/api/mcp?action=revocar`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,app})});
+      const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
+      cargarIaConex(); setMsg(`${app} desconectado: ya no puede leer los datos de esta tienda`);
+    }catch(e){ appAlert("Error: "+e.message); }
+  };
   const [metaToken,setMetaToken]=useState("");
   const [adminWaPhone,setAdminWaPhone]=useState("");
   const [waPhoneSaved,setWaPhoneSaved]=useState(false);
@@ -15854,22 +16098,31 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               },
             },
             {
-              key:"claude", group:"Inteligencia artificial", label:"Claude", sub:"Próximamente — copys, respuestas a clientes y análisis de campañas con Claude dentro de Growith",
-              connected:false, disabled:true, soon:true, brand:"#d97757", iconBg:"#fff",
+              key:"claude", group:"Inteligencia artificial", label:"Claude",
+              // Conector MCP: el comercio agrega Growith en Claude y le pregunta por su negocio (solo lectura).
+              sub: iaSub("Claude","Conectá Growith a Claude y preguntale por tus ventas, ganancia, campañas de Meta/Google/TikTok, stock y envíos"),
+              connected: iaDe("Claude").length>0, disabled:false, soon:false, brand:"#d97757", iconBg:"#fff",
               icon:<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 3l2.4 5.6L20 11l-5.6 2.4L12 19l-2.4-5.6L4 11l5.6-2.4z" fill="#d97757"/></svg>,
-              onConnect:()=>{}, onDisconnect:()=>{},
+              onConnect: ()=>onNavigate&&onNavigate("claude"),
+              onDisconnect: ()=>iaDesconectar("Claude"),
             },
             {
-              key:"gemini", group:"Inteligencia artificial", label:"Gemini", sub:"Próximamente — generación de imágenes y videos para tus anuncios",
-              connected:false, disabled:true, soon:true, brand:"#4285F4", iconBg:"#fff",
+              key:"gemini", group:"Inteligencia artificial", label:"Gemini",
+              // Gemini Enterprise (edición Business): el admin del equipo agrega Growith como servidor MCP con credenciales fijas.
+              sub: iaSub("Gemini","Conectá Growith a Gemini Enterprise y preguntale por tus ventas, campañas, stock y envíos"),
+              connected: iaDe("Gemini").length>0, disabled:false, soon:false, brand:"#4285F4", iconBg:"#fff",
               icon:<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10 5.4-.6 9.4-4.6 10-10z" fill="#4285F4"/></svg>,
-              onConnect:()=>{}, onDisconnect:()=>{},
+              onConnect: ()=>onNavigate&&onNavigate("gemini"),
+              onDisconnect: ()=>iaDesconectar("Gemini"),
             },
             {
-              key:"chatgpt", group:"Inteligencia artificial", label:"ChatGPT", sub:"Próximamente — asistente para descripciones de productos y atención",
-              connected:false, disabled:true, soon:true, brand:"#10a37f", iconBg:"#fff",
+              key:"chatgpt", group:"Inteligencia artificial", label:"ChatGPT",
+              // Conector MCP en ChatGPT (modo desarrollador): el comercio agrega Growith y le pregunta por su negocio.
+              sub: iaSub("ChatGPT","Conectá Growith a ChatGPT y preguntale por tus ventas, ganancia, campañas de Meta/Google/TikTok, stock y envíos"),
+              connected: iaDe("ChatGPT").length>0, disabled:false, soon:false, brand:"#10a37f", iconBg:"#fff",
               icon:<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10a37f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v4M12 16v4M4 12h4M16 12h4M6.3 6.3l2.9 2.9M14.8 14.8l2.9 2.9M6.3 17.7l2.9-2.9M14.8 9.2l2.9-2.9"/></svg>,
-              onConnect:()=>{}, onDisconnect:()=>{},
+              onConnect: ()=>onNavigate&&onNavigate("chatgpt"),
+              onDisconnect: ()=>iaDesconectar("ChatGPT"),
             },
           ].filter(p=>!(p.key==="sh"&&tnStore)&&!(p.key==="tn"&&shStore)).map((p,idx,arr)=>{
             const showGroup=idx===0||arr[idx-1].group!==p.group;
@@ -40227,7 +40480,7 @@ export default function App() {
   },[user&&user.uid]);
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","copilot","margenes","arca","meta","gads","tiktokads","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario"];
+  const VALID_PAGES = ["home","copilot","margenes","arca","meta","gads","tiktokads","claude","chatgpt","gemini","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario"];
   // Alias legacy: #/rendimiento era el nombre viejo del Dashboard (hoy #/margenes)
   const _aliasPage = (p) => p === "rendimiento" ? "margenes" : p;
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
@@ -40249,6 +40502,23 @@ export default function App() {
   // Portal de la ejecutiva de Andreani: #/andreani/TOKEN (resuelve las gestiones de todos los clientes)
   const _ejeMatch = _initialHash.match(/^andreani\/([a-f0-9]{20,64})/i);
   const [ejecutivaToken] = useState(_ejeMatch ? _ejeMatch[1] : null);
+  // Conector de IA (Claude / ChatGPT / Gemini, api/mcp.js): /oauth/authorize manda a
+  // /?ia_auth=<id>. Se guarda en sessionStorage para sobrevivir al login, se saca de la
+  // URL y la pantalla de permiso se muestra apenas hay sesión.
+  const [mcpRid,setMcpRid] = useState(()=>{
+    let r = null;
+    try {
+      const q = new URLSearchParams(window.location.search);
+      r = q.get("ia_auth");
+      if (r && /^[A-Za-z0-9_-]{20,64}$/.test(r)) {
+        sessionStorage.setItem("growith_mcp_rid", r);
+        q.delete("ia_auth");
+        window.history.replaceState(null, "", window.location.pathname + (q.toString() ? "?" + q.toString() : "") + window.location.hash);
+        return r;
+      }
+      return sessionStorage.getItem("growith_mcp_rid") || null;
+    } catch(e) { return r; }
+  });
   const [page,_setPage]=useState(()=>{const p=_aliasPage(_initialHash.split("/")[0]);return VALID_PAGES.includes(p)?p:"home";});
   const setPage = (p) => {
     _setPage(p);
@@ -40893,6 +41163,9 @@ export default function App() {
     </div>
   );
 
+  // Conector de IA: pantalla de permiso (OAuth del servidor MCP)
+  if(mcpRid) return <><AutorizarIAView T={T} user={user} rid={mcpRid} onSalir={()=>{ try{ sessionStorage.removeItem("growith_mcp_rid"); }catch(e){} setMcpRid(null); try{ window.history.replaceState(null,"",window.location.pathname); }catch(e){} }}/><AppPromptHost T={T}/></>;
+
   // Onboarding (primera vez) — los miembros de otro espacio no lo ven
   const showOnboarding = !onboardingDone && !user.esMiembro;
 
@@ -41170,6 +41443,7 @@ export default function App() {
   else if(page==="canjes") pageContent = adminGate("canjes") || planGate("plus") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
   else if(page==="gads") pageContent = adminGate("gads") || planGate("plus") || <PageView T={T} pageKey="gads"><AppGoogleAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={gadsTab} setTab={setGadsTab}/></PageView>;
   else if(page==="tiktokads") pageContent = adminGate("tiktokads") || planGate("plus") || <PageView T={T} pageKey="tiktokads"><AppTiktokAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={tiktokTab} setTab={setTiktokTab}/></PageView>;
+  else if(page==="claude"||page==="chatgpt"||page==="gemini") pageContent = adminGate(page) || planGate("plus") || <PageView T={T} pageKey={page}><AppConectorIA T={T} user={user} app={{claude:"Claude",chatgpt:"ChatGPT",gemini:"Gemini"}[page]} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="calendario") pageContent = <PageView T={T} pageKey="calendario"><AppCalendarioPagos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="envios") pageContent = adminGate("envios") || planGate("plus") || requiereTN("Envíos") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} canjesPedidos={canjesPedidos} tab={enviosTab} setTab={setEnviosTab}/></PageView>;

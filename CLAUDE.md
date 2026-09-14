@@ -26,6 +26,7 @@ Actualmente en uso real por Soluna Biolight (anteojos blue light blocker).
 │   ├── check-payments.js← Cron 10 min: acredita pagos USDT TRC20 (TronGrid) — medio alternativo
 │   ├── copilot.js       ← Copilot IA (Gemini + snapshot determinista de Firestore)
 │   ├── _auth.js         ← verifyAuth (Firebase ID token) — no expuesto por Vercel
+│   ├── mcp.js           ← Conector de Growith para apps de IA (Claude, ChatGPT, Gemini Enterprise): servidor MCP remoto (URL pública https://www.growithapp.com/mcp) + OAuth 2.1 propio. Rewrites en vercel.json → /api/mcp?route=mcp|prm|asm|register|authorize|token|revoke. Clientes: ChatGPT por CIMD, Claude por DCR, Gemini con Client ID/Secret fijo que genera el dueño (action=gemini_credenciales, cliente gs_). Solo redirects de hosts conocidos (REDIRECT_HOSTS) y el nombre visible sale del host. /oauth/authorize manda a /?ia_auth=<id> (AutorizarIAView en App.jsx; acciones auth_info/approve/deny/conexiones/revocar). Herramientas SOLO LECTURA: resumen_negocio, rentabilidad_productos, stock, envios, publicidad_y_cuentas, rentabilidad (cualquier período, caché de Márgenes o cálculo vía warmer con CRON_SECRET), campanas_publicidad (Meta/Google/TikTok en vivo). Datos del snapshot compartido api/_snapshot.js. Colecciones server-only: mcp_clients, mcp_auth_req, mcp_codes, mcp_tokens, mcp_refresh, mcp_grants. Solo dueño/perfil/equipo total pueden autorizar
 │   ├── integrations.js  ← OAuth TN + Shopify
 │   ├── tn-callback.js   ← Callback OAuth TN
 │   ├── meta-callback.js ← Callback OAuth Meta
@@ -82,6 +83,7 @@ ANDREANI_CONTRATO_ESTANDAR / ANDREANI_CONTRATO_SUCURSAL  ← contratos de envío
 | `ConfigScreen` | Config | Integraciones, tokens, configuración |
 | `AppPlanes` | Suscripción | Plan, pago con tarjeta (Stripe), portal, cancelar |
 | `AppCalendarioPagos` | Calendario de Pagos | Obligaciones del negocio (alquiler, préstamos, cuotas, tarjetas…) — `api/pagos-cal.js`, Firestore `users/{uid}/pagos_cal` |
+| `AppConectorIA` | Claude · ChatGPT · Gemini | Una sección por IA (grupo INTELIGENCIA ARTIFICIAL del sidebar, rutas `#/claude`, `#/chatgpt`, `#/gemini`): estado de la conexión, pasos para conectar el conector MCP (`api/mcp.js`, URL `https://www.growithapp.com/mcp`; Gemini con credenciales fijas), preguntas de ejemplo, qué ve y qué no, conexiones activas y Desconectar. La pantalla de permiso OAuth es `AutorizarIAView` (`/?ia_auth=<id>`) |
 | `AppAdmin` | Admin | Panel de administración (solo admins): Resumen · Clientes · Ingresos · Logística (Operación/Rentabilidad/Configuración) · Sistema. Rutas internas `#/admin/<tab>` y `#/admin/cliente/<uid>`; ficha de cliente como pantalla propia (acciones, envíos por API/Excel con trazas, actividad, historial de acciones). Acciones `admin*` en `api/tareas.js` (precios MRR en `PLAN_PRECIOS`), `admin_*` en `api/andreani.js`. Registro de acciones en colección `admin_log`; heartbeat de crons en `system/crons` (hook en `guardCron`, lista esperada `ADM_CRONS`); accesos por sección desde `SIDEBAR_GROUPS_BASE`; "Ver como cliente" = custom token con claim `impersonatedBy` en modo solo lectura (`readOnlyBlock` en `_auth.js` + wrappers de setDoc/updateDoc/addDoc/deleteDoc). Dar/quitar admin: solo fundadores (`isFounder`) |
 
 ## Navegación
@@ -138,6 +140,7 @@ Ambas producen el mismo resultado visual. Usá la que más te convenga en cada c
 | Meta Ads | ⚠️ Token vencido | Firestore `users/{uid}.metaAccounts[]` |
 | ARCA (AFIP) | ✅ Activo | Firestore `users/{uid}.cuits[]` |
 | Andreani en checkout Shopify | ✅ CarrierService | `users/{uid}.andreaniCheckout` {activo, carrierId, gratisDesde, sucursalesMax, recargoPct/Fijo, domicilio, sucursal, bulto} |
+| Claude / ChatGPT / Gemini (conector MCP) | ✅ Listo para probar | `api/mcp.js`; conexiones en `mcp_grants` (por tienda). Claude y ChatGPT: agregar `https://www.growithapp.com/mcp` como conector y autorizar en Growith. Gemini Enterprise: credenciales fijas desde Config → Integraciones → Gemini |
 
 **Andreani en el checkout de Shopify** (`api/shopify-rates.js`, público — lo llama Shopify, sin auth): Growith se registra como transportista "Growith · Andreani" (`integrations?platform=shopify&action=carrier_enable`, requiere scope `write_shipping` → tiendas viejas deben reconectar Shopify). En cada checkout responde `Andreani a domicilio` (`ANDREANI_DOM`) + `Andreani Sucursal · X` (`ANDREANI_SUC_<id oficial>`) con el precio de la etiqueta Growith (+ recargo/gratis de la tienda). Regla dura: SIEMPRE 200 `{rates:[]}` y < 10 s (caché `andreani_config/rates_*` 6 h). El pedido trae `andreani_sucursal_id` (orders.js) → Envíos emite directo a esa sucursal. Paso manual del vendedor: agregar la tarifa de la app a la zona Argentina en Shopify → Envíos y entrega.
 
@@ -207,6 +210,7 @@ growith_reclamossync_{uid} → timestamp del último sync de contracargos/reclam
 growith_stock_src_{uid}    → "central" | "tienda": fuente del stock que muestra la tabla de arriba de Stock (inventario central por default; botón "Poner stock de TN/Shopify")
 (sessionStorage) growith_impersonate → JSON {uid,email,adminEmail,adminUid,at} sesión "Ver como cliente" (solo lectura); levanta window.__ghReadOnly antes de cualquier escritura
 (sessionStorage) growith_copilot_conv → JSON {id,msgs} conversación activa del Copilot (cache; la verdad vive en users/{uid}/copilot_convs)
+(sessionStorage) growith_mcp_rid → id del pedido de permiso del conector de IA (?ia_auth=<id>, Claude/ChatGPT/Gemini) mientras el usuario inicia sesión; se borra al autorizar/cancelar
 (sessionStorage) growith_copilot_pending → prompt pendiente al abrir Copilot desde otra sección (ej. configuración guiada del Home)
 (sessionStorage) growith_colab_token / growith_board_id_{token} → sesión de portal colaborador / identidad de tablero compartido
 growith_orders_{uid} / growith_orders_v3 → LEGACY, solo se borran (purga de cache viejo de órdenes)

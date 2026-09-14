@@ -198,6 +198,59 @@ export function ttCuerpos(adv, spec, startUtc) {
   };
 }
 
+// Campañas con métricas del rango (+ serie diaria ≤ 30 días). La usan la sección
+// TikTok Ads y el conector de Claude (api/mcp.js).
+export async function ttReporteCampanas(t, adv, since, until) {
+  const tok = t.access_token;
+  // 1) Todas las campañas (aunque no hayan gastado en el rango)
+  const base = [];
+  try {
+    for (let page = 1; page <= 5; page++) {
+      const d = await tt("GET", "/campaign/get/", tok, { query: { advertiser_id: adv, page, page_size: 1000 } });
+      base.push(...(d.list || []));
+      if (!d.page_info || page >= (d.page_info.total_page || 1)) break;
+    }
+  } catch (e) { if (e.tiktokCode === 40001 || e.tiktokCode === 40105) throw e; console.error("tiktok campaign/get:", e.message); }
+  // 2) Métricas del rango. Las de compras van aparte: si la cuenta no las reporta, la tabla sale igual.
+  const met = await ttReport(tok, adv, { dataLevel: "AUCTION_CAMPAIGN", dimensions: ["campaign_id"], metrics: ["spend", "impressions", "clicks", "conversion"], since, until });
+  let compras = [], hayCompras = true;
+  try { compras = await ttReport(tok, adv, { dataLevel: "AUCTION_CAMPAIGN", dimensions: ["campaign_id"], metrics: ["complete_payment", "total_complete_payment_rate"], since, until }); } catch (e) { hayCompras = false; console.warn("tiktok compras:", e.message); }
+  const byId = {};
+  const fila = (id, name = id) => byId[id] || (byId[id] = { id, name, status: "", objective: "", budget: null, spend: 0, impressions: 0, clicks: 0, conversions: 0, purchases: 0, value: 0 });
+  for (const c of base) {
+    if (c.operation_status === "DELETE" || /DELETE/.test(String(c.secondary_status || ""))) continue;
+    const r = fila(String(c.campaign_id), c.campaign_name || String(c.campaign_id));
+    r.status = c.operation_status === "ENABLE" ? "ENABLED" : "PAUSED";
+    r.objective = c.objective_type || "";
+    r.budget = c.budget_mode && c.budget_mode !== "BUDGET_MODE_INFINITE" && c.budget ? num(c.budget) : null;
+  }
+  for (const m of met) {
+    const r = fila(String(m.dimensions?.campaign_id || ""));
+    r.spend += num(m.metrics?.spend); r.impressions += parseInt(m.metrics?.impressions) || 0; r.clicks += parseInt(m.metrics?.clicks) || 0; r.conversions += num(m.metrics?.conversion);
+  }
+  for (const m of compras) {
+    const r = fila(String(m.dimensions?.campaign_id || ""));
+    r.purchases += num(m.metrics?.complete_payment); r.value += num(m.metrics?.total_complete_payment_rate);
+  }
+  const campaigns = Object.values(byId).filter(r => r.status || r.spend > 0).map(r => ({
+    ...r, spend: +r.spend.toFixed(2), value: +r.value.toFixed(2), conversions: +r.conversions.toFixed(2), purchases: +r.purchases.toFixed(2),
+    ctr: r.impressions ? +((r.clicks / r.impressions) * 100).toFixed(2) : 0,
+    cpc: r.clicks ? +(r.spend / r.clicks).toFixed(2) : 0,
+    cpm: r.impressions ? +((r.spend / r.impressions) * 1000).toFixed(2) : 0,
+    cpa: r.conversions ? +(r.spend / r.conversions).toFixed(2) : 0,
+    roas: r.spend && r.value ? +(r.value / r.spend).toFixed(2) : 0,
+  })).sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
+  // 3) Serie diaria: TikTok limita stat_time_day a 30 días por consulta.
+  let daily = [];
+  if ((Date.parse(until) - Date.parse(since)) / 86400000 <= 29) {
+    try {
+      const d = await ttReport(tok, adv, { dataLevel: "AUCTION_ADVERTISER", dimensions: ["stat_time_day"], metrics: ["spend", "conversion", "clicks"], since, until });
+      daily = d.map(r => ({ date: String(r.dimensions?.stat_time_day || "").slice(0, 10), spend: +num(r.metrics?.spend).toFixed(2), conversions: num(r.metrics?.conversion), clicks: parseInt(r.metrics?.clicks) || 0 })).sort((a, b) => a.date.localeCompare(b.date));
+    } catch (e) { console.warn("tiktok daily:", e.message); }
+  }
+  return { campaigns, daily, hayCompras };
+}
+
 export default async function handler(req, res) {
   { const _o = String(req.headers.origin || ""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com", "https://growithapp.com", "https://soluna-gestion.vercel.app"].includes(_o) || _o.endsWith("-soluna1.vercel.app") || _o.startsWith("http://localhost")) ? _o : "https://www.growithapp.com"); } // allowlist CORS
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -232,54 +285,8 @@ export default async function handler(req, res) {
       const adv = ttAdv(t, req.query.advertiser);
       const since = String(req.query.since || "").slice(0, 10), until = String(req.query.until || "").slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(since) || !/^\d{4}-\d{2}-\d{2}$/.test(until)) return res.status(400).json({ error: "Faltan since / until" });
-      const tok = t.access_token;
-      // 1) Todas las campañas (aunque no hayan gastado en el rango)
-      const base = [];
-      try {
-        for (let page = 1; page <= 5; page++) {
-          const d = await tt("GET", "/campaign/get/", tok, { query: { advertiser_id: adv, page, page_size: 1000 } });
-          base.push(...(d.list || []));
-          if (!d.page_info || page >= (d.page_info.total_page || 1)) break;
-        }
-      } catch (e) { if (e.tiktokCode === 40001 || e.tiktokCode === 40105) throw e; console.error("tiktok campaign/get:", e.message); }
-      // 2) Métricas del rango. Las de compras van aparte: si la cuenta no las reporta, la tabla sale igual.
-      const met = await ttReport(tok, adv, { dataLevel: "AUCTION_CAMPAIGN", dimensions: ["campaign_id"], metrics: ["spend", "impressions", "clicks", "conversion"], since, until });
-      let compras = [], hayCompras = true;
-      try { compras = await ttReport(tok, adv, { dataLevel: "AUCTION_CAMPAIGN", dimensions: ["campaign_id"], metrics: ["complete_payment", "total_complete_payment_rate"], since, until }); } catch (e) { hayCompras = false; console.warn("tiktok compras:", e.message); }
-      const byId = {};
-      const fila = (id, name = id) => byId[id] || (byId[id] = { id, name, status: "", objective: "", budget: null, spend: 0, impressions: 0, clicks: 0, conversions: 0, purchases: 0, value: 0 });
-      for (const c of base) {
-        if (c.operation_status === "DELETE" || /DELETE/.test(String(c.secondary_status || ""))) continue;
-        const r = fila(String(c.campaign_id), c.campaign_name || String(c.campaign_id));
-        r.status = c.operation_status === "ENABLE" ? "ENABLED" : "PAUSED";
-        r.objective = c.objective_type || "";
-        r.budget = c.budget_mode && c.budget_mode !== "BUDGET_MODE_INFINITE" && c.budget ? num(c.budget) : null;
-      }
-      for (const m of met) {
-        const r = fila(String(m.dimensions?.campaign_id || ""));
-        r.spend += num(m.metrics?.spend); r.impressions += parseInt(m.metrics?.impressions) || 0; r.clicks += parseInt(m.metrics?.clicks) || 0; r.conversions += num(m.metrics?.conversion);
-      }
-      for (const m of compras) {
-        const r = fila(String(m.dimensions?.campaign_id || ""));
-        r.purchases += num(m.metrics?.complete_payment); r.value += num(m.metrics?.total_complete_payment_rate);
-      }
-      const campaigns = Object.values(byId).filter(r => r.status || r.spend > 0).map(r => ({
-        ...r, spend: +r.spend.toFixed(2), value: +r.value.toFixed(2), conversions: +r.conversions.toFixed(2), purchases: +r.purchases.toFixed(2),
-        ctr: r.impressions ? +((r.clicks / r.impressions) * 100).toFixed(2) : 0,
-        cpc: r.clicks ? +(r.spend / r.clicks).toFixed(2) : 0,
-        cpm: r.impressions ? +((r.spend / r.impressions) * 1000).toFixed(2) : 0,
-        cpa: r.conversions ? +(r.spend / r.conversions).toFixed(2) : 0,
-        roas: r.spend && r.value ? +(r.value / r.spend).toFixed(2) : 0,
-      })).sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
-      // 3) Serie diaria: TikTok limita stat_time_day a 30 días por consulta.
-      let daily = [];
-      if ((Date.parse(until) - Date.parse(since)) / 86400000 <= 29) {
-        try {
-          const d = await ttReport(tok, adv, { dataLevel: "AUCTION_ADVERTISER", dimensions: ["stat_time_day"], metrics: ["spend", "conversion", "clicks"], since, until });
-          daily = d.map(r => ({ date: String(r.dimensions?.stat_time_day || "").slice(0, 10), spend: +num(r.metrics?.spend).toFixed(2), conversions: num(r.metrics?.conversion), clicks: parseInt(r.metrics?.clicks) || 0 })).sort((a, b) => a.date.localeCompare(b.date));
-        } catch (e) { console.warn("tiktok daily:", e.message); }
-      }
-      return res.json({ campaigns, daily, since, until, advertiser: adv, hayCompras });
+      const r = await ttReporteCampanas(t, adv, since, until);
+      return res.json({ ...r, since, until, advertiser: adv });
     }
 
     if (action === "campaign_status" && req.method === "POST") {
