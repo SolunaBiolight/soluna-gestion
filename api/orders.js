@@ -1266,7 +1266,10 @@ export default async function handler(req, res) {
         // Tienda Nube: cargo real de la pasarela leído de las transacciones de
         // la orden (merchant_charges) — sin conectar MP. Vale para MP, Pago
         // Nube, etc. Se cachea por orden en users/{uid}.margenesTnFees.
-        if (o.platform === "tiendanube") { const c = tnFeeCache[o.id]; if (c && c.f != null) return parseFloat(c.f) || 0; }
+        if (o.platform === "tiendanube") {
+          const c = tnFeeCache[o.id]; if (c && c.f != null) return parseFloat(c.f) || 0;
+          const rf = tnRateFee(o); if (rf != null) return rf;
+        }
         if (parseFloat(o.saleFee) > 0) return parseFloat(o.saleFee);
         // Suscripciones Recurrentes: payment_id explícito en la orden.
         if (o.mpPayId && fbPay && fbPay[o.mpPayId] != null) return parseFloat(fbPay[o.mpPayId]) || 0;
@@ -1317,7 +1320,32 @@ export default async function handler(req, res) {
       // o {f:null,ts} si TN no informó cargos, que se reintenta a los 7 días).
       // Como máximo 60 órdenes por cálculo, de a 3, para respetar el rate de TN.
       const tnFeeCache = (userData.margenesTnFees && typeof userData.margenesTnFees==="object" && !Array.isArray(userData.margenesTnFees)) ? { ...userData.margenesTnFees } : {};
+      let tnRates = null;
+      // Cargo de una venta de TN según la tarifa declarada por su app de pago.
+      // Método de la orden (payment_details.method) → payment_method_type; con
+      // varias definiciones (por días de liberación) se usa la que eligió el
+      // vendedor (comCfg.tnDiasLiberacion) o, si no la cargó, la más cara
+      // (dinero al instante) para no sobreestimar el profit. Base: total cobrado
+      // (productos + envío que pagó el cliente). plus_tax → IVA 21 %.
+      function tnRateFee(o) {
+        if (!tnRates || !Array.isArray(tnRates.providers) || !tnRates.providers.length || o.platform !== "tiendanube") return null;
+        const g = normPay(o.pay);
+        const prov = tnRates.providers.find(p => { const n = normPay(p.name); return n && g && (g.includes(n) || n.includes(g)); }) || (/mercadopago/.test(g) ? tnRates.providers.find(p => /mercadopago/.test(normPay(p.name))) : null);
+        if (!prov || !prov.rates.length) return null;
+        const m = String(o.payMethod || "").toLowerCase();
+        const tipo = /credit/.test(m) ? "credit_card" : /debit/.test(m) ? "debit_card" : /wallet|account_money|balance/.test(m) ? "wallet" : /ticket|boleto|rapipago|pagofacil/.test(m) ? "ticket" : /transfer|bank/.test(m) ? "wire_transfer" : /pix/.test(m) ? "pix" : /cash|efectivo/.test(m) ? "cash" : "";
+        const rt = (tipo && prov.rates.find(r => r.payment_method_type === tipo)) || prov.rates.find(r => r.payment_method_type === "credit_card") || prov.rates[0];
+        const defs = rt && rt.rates_definition ? rt.rates_definition.filter(d => isFinite(parseFloat(d.percent_fee))) : [];
+        if (!defs.length) return null;
+        const dias = parseInt(comCfg.tnDiasLiberacion);
+        const d = (isFinite(dias) ? defs.find(x => Number(x.days_to_withdraw_money) === dias) : null) || defs.slice().sort((a,b)=>parseFloat(b.percent_fee)-parseFloat(a.percent_fee))[0];
+        const base = (parseFloat(o.revenue)||0) + (parseFloat(o.envioCliente)||0);
+        let fee = base * (parseFloat(d.percent_fee)||0) / 100 + (parseFloat(d.flat_fee)||0);
+        if (d.plus_tax) fee *= 1.21;
+        return +fee.toFixed(2);
+      }
       let tnFeesDiag = null, tnFeesNuevas = 0, tnFeesMuestra = null;
+      const TN_SIN_PERMISO_PAGOS = "Tienda Nube no otorgó el permiso de pagos (read_payments) a Growith: reconectá la tienda desde Configuración → Integraciones y las comisiones de pago se leen solas";
       const tnStoreRef = (userData.stores||[]).find(s => s.type==="tiendanube" && s.accessToken && s.storeId);
       if (tnStoreRef) {
         const tnH = { 'Authentication': `bearer ${tnStoreRef.accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)' };
@@ -1335,7 +1363,7 @@ export default async function handler(req, res) {
           const rs = await Promise.all(pendT.slice(i,i+3).map(async o => {
             try {
               const r = await fetch(`https://api.tiendanube.com/v1/${tnStoreRef.storeId}/orders/${o.id}/transactions`, { headers: tnH, signal: AbortSignal.timeout(8000) });
-              if (r.status===401 || r.status===403) { bloqueado = true; tnFeesDiag = `Tienda Nube no permite leer los cargos de pago (HTTP ${r.status}) — reconectá la tienda para otorgar el permiso`; return [o.id, undefined]; }
+              if (r.status===401 || r.status===403) { bloqueado = true; tnFeesDiag = TN_SIN_PERMISO_PAGOS; return [o.id, undefined]; }
               if (r.status===429) { bloqueado = true; return [o.id, undefined]; }
               if (!r.ok) { tnFeesDiag = tnFeesDiag || `Tienda Nube respondió HTTP ${r.status} al pedir las transacciones`; return [o.id, undefined]; }
               const txs = await r.json();
@@ -1356,6 +1384,24 @@ export default async function handler(req, res) {
           if (i+3 < pendT.length && !bloqueado) await new Promise(r => setTimeout(r, 400));
         }
         if (changedT) { try { await db.collection("users").doc(uid).set({ margenesTnFees: tnFeeCache }, { merge:true }); } catch(_) {} }
+        // Tarifas DECLARADAS por cada app de pago instalada (GET /payment_providers,
+        // exige scope read_payments): [{name, rates:[{payment_method_type,
+        // rates_definition:[{percent_fee, flat_fee:{value}, plus_tax,
+        // days_to_withdraw_money}]}]}]. Es la tabla que TN muestra al vendedor y
+        // la fuente de "Comisiones de pago · Automático" cuando la transacción
+        // no trae el cargo. Cache 24 h en users/{uid}.margenesTnProviders.
+        const cacheP = userData.margenesTnProviders;
+        if (cacheP && cacheP.ts && Date.now() - cacheP.ts < 86400000 && Array.isArray(cacheP.providers)) tnRates = cacheP;
+        else {
+          try {
+            const r = await fetch(`https://api.tiendanube.com/v1/${tnStoreRef.storeId}/payment_providers`, { headers: tnH, signal: AbortSignal.timeout(8000) });
+            if (r.ok) {
+              const j = await r.json();
+              tnRates = { ts: Date.now(), providers: (Array.isArray(j)?j:[]).map(p => ({ id: String(p.id||""), name: String(p.name||""), enabled: p.enabled !== false, rates: (Array.isArray(p.rates)?p.rates:[]).map(rt => ({ payment_method_type: String(rt.payment_method_type||""), rates_definition: (Array.isArray(rt.rates_definition)?rt.rates_definition:[]).map(d => ({ percent_fee: String(d.percent_fee ?? ""), flat_fee: d.flat_fee && typeof d.flat_fee==="object" ? String(d.flat_fee.value ?? "") : String(d.flat_fee ?? ""), plus_tax: !!d.plus_tax, days_to_withdraw_money: d.days_to_withdraw_money ?? null })) })) })) };
+              try { await db.collection("users").doc(uid).set({ margenesTnProviders: tnRates }, { merge:true }); } catch(_) {}
+            } else if (r.status===401 || r.status===403) { tnFeesDiag = tnFeesDiag || TN_SIN_PERMISO_PAGOS; }
+          } catch(_) {}
+        }
       }
       // Comisión de pago de Shopify: por orden, si matcheó su pago de MP real (por
       // receipt_id) usamos ESE fee; sino el % configurado del método. Suma SOLO las
@@ -1862,8 +1908,10 @@ export default async function handler(req, res) {
         envioSinConfig: envioModoTienda==="fijo" && !(envioProm>0),
         // Solo avisa si hay ventas MP sin cargo REAL matcheado (ni por receipt de
         // Shopify ni por gateway_id de TN) y sin % configurado.
-        mpSinConfig: !(mpPctCfg>0) && (curr.raw?.orders_detail||[]).some(o=>esMPPay(o.pay) && !mpRefCache[o.id] && !(o.mpPayId && feeByPayId[o.mpPayId]!=null) && !(o.platform==="tiendanube" && tnFeeCache[o.id]?.f!=null)),
-        tnFees: { conCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f!=null).length, sinCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f==null).length, pendientes: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && !tnFeeCache[o.id]).length, nuevas: tnFeesNuevas, diag: tnFeesDiag, muestra: tnFeesMuestra },
+        mpSinConfig: mpPctEstimado && (curr.raw?.orders_detail||[]).some(o=>esMPPay(o.pay) && !mpRefCache[o.id] && !(o.mpPayId && feeByPayId[o.mpPayId]!=null) && !(o.platform==="tiendanube" && (tnFeeCache[o.id]?.f!=null || tnRateFee(o)!=null))),
+        tnRatesOk: !!(tnRates && tnRates.providers && tnRates.providers.some(p => p.rates && p.rates.length)),
+        tnRatesDias: tnRates && tnRates.providers ? [...new Set(tnRates.providers.flatMap(p => (p.rates||[]).flatMap(r => (r.rates_definition||[]).map(d => d.days_to_withdraw_money))).filter(x => x != null))].sort((a,b)=>a-b) : [],
+        tnFees: { conTarifa: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f==null && tnRateFee(o)!=null).length, conCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f!=null).length, sinCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f==null).length, pendientes: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && !tnFeeCache[o.id]).length, nuevas: tnFeesNuevas, diag: tnFeesDiag, muestra: tnFeesMuestra },
         mpPctEstimado,
         mpConectado: mlMpAcc !== "__none__" && !!(mpCommCurr && (Object.keys(mpCommCurr.feeByPayId||{}).length || Object.keys(mpCommCurr.feeByRef||{}).length)),
         dolarAdsHistorico: dolarAdsHistDias>0,

@@ -33260,7 +33260,7 @@ function ComisionesPanel({ T, uid }) {
         const snap = await getDoc(doc(db, "users", uid));
         const data = snap.exists() ? snap.data() : {};
         const d = data.margenesComisionesCfg;
-        if (d) setCfg({ impuestos:d.impuestos??"", impuestosML:d.impuestosML??"", mpPct:d.mpPct??"", shopify:d.shopify??"", metodos:(d.metodos && typeof d.metodos==="object" && !Array.isArray(d.metodos)) ? d.metodos : {} });
+        if (d) setCfg({ impuestos:d.impuestos??"", impuestosML:d.impuestosML??"", mpPct:d.mpPct??"", tnDiasLiberacion:d.tnDiasLiberacion??"", shopify:d.shopify??"", metodos:(d.metodos && typeof d.metodos==="object" && !Array.isArray(d.metodos)) ? d.metodos : {} });
         // Solo mostramos campos de plataformas que la cuenta tiene conectadas
         // (o donde ya hay un valor cargado, para no esconder config existente).
         const stores = Array.isArray(data.stores) ? data.stores : [];
@@ -33328,6 +33328,22 @@ function ComisionesPanel({ T, uid }) {
           </div>
           <input type="number" step="0.01" min="0" max="30" value={cfg.mpPct} onChange={e=>setCfg(c=>({...c,mpPct:e.target.value}))} placeholder="Ej: 7.61" style={{...InputStyle(T),width:100,fontSize:13,textAlign:"right"}}/>
           <span style={{fontSize:13,color:T.textSm}}>%</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL||T.border}`}}>
+          <div style={{flex:1,minWidth:240}}>
+            <div style={{fontSize:12,fontWeight:600,color:T.text}}>Plan de liberación del dinero en Mercado Pago (Tienda Nube)</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.5}}>Cuando la tienda informa las tarifas de MP, la comisión de cada venta se calcula por método de pago según este plan. Lo ves en Mercado Pago → Tu negocio → Costos. Vacío = se toma la tarifa más alta (al instante).</div>
+          </div>
+          <select value={cfg.tnDiasLiberacion??""} onChange={e=>setCfg(c=>({...c,tnDiasLiberacion:e.target.value}))} style={{...InputStyle(T),width:180,fontSize:13}}>
+            <option value="">Al instante (más cara)</option>
+            <option value="0">Al instante (0 días)</option>
+            <option value="1">1 día</option>
+            <option value="7">7 días</option>
+            <option value="10">10 días</option>
+            <option value="14">14 días</option>
+            <option value="18">18 días</option>
+            <option value="30">30 días</option>
+          </select>
         </div>
         {!(parseFloat(cfg.mpPct)>0)&&<div style={{fontSize:11,color:T.textSm,marginTop:8}}>Vacío = se estima 7,61% (tarifa de MP para dinero al instante, con IVA) en las ventas donde la tienda no informe el cargo real.</div>}
       </div>
