@@ -65,7 +65,7 @@ export default async function handler(req, res) {
     // acceso lo da el proyecto de Cloud); si está en Vercel se manda igual. Si
     // Google rechaza, se guarda el motivo para mostrarlo en Config.
     let customers = [], customersError = null;
-    const devToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "";
+    const devToken = (process.env.GOOGLE_ADS_SEND_DEV_TOKEN === "1" ? (process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "") : ""); // opcional desde 09/2026; rechazado desde 2027
     try {
       const cr = await fetch("https://googleads.googleapis.com/v25/customers:listAccessibleCustomers", {
         headers: { Authorization: `Bearer ${tj.access_token}`, ...(devToken ? { "developer-token": devToken } : {}) },

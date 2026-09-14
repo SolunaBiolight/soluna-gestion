@@ -1428,7 +1428,7 @@ export default async function handler(req, res) {
           // proyecto de Google Cloud). Si está en Vercel se manda igual; si no, no bloquea.
           // Conexiones viejas (sin clientId guardado) → cliente legacy; nuevas → el del proyecto verificado.
           const _gc = gadsCreds(g?.clientId === undefined ? (process.env.GOOGLE_ADS_CLIENT_ID || "") : g.clientId);
-          const cid = _gc.clientId, cs = _gc.clientSecret, dt = process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "";
+          const cid = _gc.clientId, cs = _gc.clientSecret, dt = (process.env.GOOGLE_ADS_SEND_DEV_TOKEN === "1" ? (process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "") : ""); // developer token opcional desde 09/2026; rechazado desde 2027
           if (!g?.refresh_token || !cid || !cs) return null;
           const tr = await fetch("https://oauth2.googleapis.com/token", {
             method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },

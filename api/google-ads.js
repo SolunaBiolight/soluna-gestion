@@ -81,7 +81,7 @@ async function gadsAccessToken(g) {
 }
 
 function gadsHeaders(at, login) {
-  const dt = process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "";
+  const dt = (process.env.GOOGLE_ADS_SEND_DEV_TOKEN === "1" ? (process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "") : ""); // Google: el developer token es opcional desde 09/2026 y se rechaza desde 2027
   const lc = login || process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || "";
   return { Authorization: `Bearer ${at}`, ...(dt ? { "developer-token": dt } : {}), ...(lc ? { "login-customer-id": String(lc).replace(/-/g, "") } : {}) };
 }
