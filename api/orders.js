@@ -2,6 +2,7 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getValidMLToken } from "./integrations.js";
 import { gadsCreds } from "./google-ads.js";
+import { ttGastoPeriodo } from "./tiktok-ads.js";
 import { guardUid, guardCron, isCronRequest } from "./_auth.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
 
@@ -476,6 +477,7 @@ export default async function handler(req, res) {
         ...stores.map(s => `${s.type}:${s.storeId || s.shop || s.user_id || s.id || ""}`).sort(),
         `meta:${metaAccountsSnap.docs.filter(d => (d.data() || {}).access_token).length}`,
         `gads:${userData.googleAds?.refresh_token ? 1 : 0}`,
+        `tt:${userData.tiktokAds?.access_token ? (userData.tiktokAds.advertisers || []).length : 0}`,
       ].join("|");
       const hoyArg = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date());
       const rangoCerrado = !!req.query.date_from && until < hoyArg;
@@ -799,14 +801,16 @@ export default async function handler(req, res) {
       // que antes.
       const mlAdsDebug = {};
       let gadsDiag = null; // por qué Google Ads no devolvió gasto (se muestra como aviso en el Dashboard)
+      let ttDiag = null;   // ídem TikTok Ads
       const gadsAttr = {}; // conversiones/valor atribuidos por Google, por rango: {"since_until": {conv, convValue}}
-      const [curr, prev, metaCurr, metaPrev, mpCommCurr, mpCommPrev, mlAdsAutoCurr, mlAdsAutoPrev, gAdsAutoCurr, gAdsAutoPrev] = await Promise.race([
+      const [curr, prev, metaCurr, metaPrev, mpCommCurr, mpCommPrev, mlAdsAutoCurr, mlAdsAutoPrev, gAdsAutoCurr, gAdsAutoPrev, ttAutoCurr, ttAutoPrev] = await Promise.race([
         Promise.all([
           fetchStock(since, until), fetchStock(prevSince, prevUntil),
           fetchMetaAll(since, until, metaErr, adsBd), fetchMetaAll(prevSince, prevUntil),
           fetchMPCommission(since, until), fetchMPCommission(prevSince, prevUntil),
           fetchMlAdsSpend(since, until, mlAdsDebug), fetchMlAdsSpend(prevSince, prevUntil),
           fetchGoogleAdsAuto(since, until), fetchGoogleAdsAuto(prevSince, prevUntil),
+          fetchTiktokAdsAuto(since, until), fetchTiktokAdsAuto(prevSince, prevUntil),
         ]),
         new Promise((_, rej) => setTimeout(() => rej(new Error("Tiempo agotado trayendo métricas (55s) — la tienda, Meta o Mercado Libre están respondiendo muy lento. Reintentá en unos segundos.")), 55000)),
       ]);
@@ -1084,7 +1088,7 @@ export default async function handler(req, res) {
       }
       const feeAd     = 0; // el fee adicional ahora es POR CUENTA (horneado en fetchMetaAll)
 
-      function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio, mlAdsAuto, gAdsAuto) {
+      function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio, mlAdsAuto, gAdsAuto, ttAuto) {
         // COGS = costo por producto/variante, ORDEN por ORDEN (cada una toma el
         // costo vigente a su fecha; con costos sin historial = método viejo exacto).
         const _cg = cogsPorCanal(raw);
@@ -1133,14 +1137,16 @@ export default async function handler(req, res) {
         // Google Ads: gasto REAL de la API si la cuenta está conectada y hay
         // developer token; sino la carga manual por períodos (prorrateada por día).
         const adSpendGoogle = (gAdsAuto!=null) ? gAdsAuto : adsPeriodoDe(googleAdsList, sinceR, untilR);
-        const adSpendEf = adSpendMeta + adSpendMl + adSpendGoogle + adic.gastoAds;
+        // TikTok Ads: gasto REAL de la API (ya en ARS); sin conexión = 0.
+        const adSpendTiktok = (ttAuto!=null) ? ttAuto : 0;
+        const adSpendEf = adSpendMeta + adSpendMl + adSpendGoogle + adSpendTiktok + adic.gastoAds;
         const profit    = revenue - cogs - impuestos - comPlat - comPago - envio - costosAdic - adSpendEf;
         // Net Revenue = TODO descontado menos la pauta (contribución antes de ads).
         // Así la cascada es limpia: Revenue → Net Revenue → (− pauta) → Profit,
         // y True ROAS (netRevenue/adSpend) se lee directo: ≥1x = la pauta gana plata.
         const netRevenue= profit + adSpendEf;
         return { ...tot,
-          revenue, orders: ordersTot, adSpend: adSpendEf, adSpendMeta: +adSpendMeta.toFixed(2), adSpendMl: +adSpendMl.toFixed(2), adSpendGoogle: +adSpendGoogle.toFixed(2), adSpendExtra: +adic.gastoAds.toFixed(2), netRevenue: +netRevenue.toFixed(2), profit: +profit.toFixed(2),
+          revenue, orders: ordersTot, adSpend: adSpendEf, adSpendMeta: +adSpendMeta.toFixed(2), adSpendMl: +adSpendMl.toFixed(2), adSpendGoogle: +adSpendGoogle.toFixed(2), adSpendTiktok: +adSpendTiktok.toFixed(2), adSpendExtra: +adic.gastoAds.toFixed(2), netRevenue: +netRevenue.toFixed(2), profit: +profit.toFixed(2),
           costoProductos: +cogs.toFixed(2), impuestos: +impuestos.toFixed(2),
           comisionPlataforma: +comPlat.toFixed(2), comisionPago: +comPago.toFixed(2),
           costoEnvio: +envio.toFixed(2), fulfillment: +fulfill.toFixed(2), costosAdicionales: +costosAdic.toFixed(2),
@@ -1498,10 +1504,33 @@ export default async function handler(req, res) {
         } catch (e) { gadsDiag = gadsDiag || ("error de red: " + e.message); console.error("Google Ads spend error:", e.message); return null; }
       }
 
+      // ── TikTok Ads AUTOMÁTICO (Marketing API) ──
+      // Con users/{uid}.tiktokAds.access_token el gasto sale del reporte BASIC de
+      // cada cuenta (hasta 5). Cuentas en otra moneda (USD) → ARS con el MISMO dólar
+      // operativo que Meta (dolarCostosEf; si no hay, el de Ads). Sin conexión → null.
+      async function fetchTiktokAdsAuto(sinceR, untilR) {
+        try {
+          const t = userData.tiktokAds;
+          if (!t?.access_token || !(t.advertisers || []).length) return null;
+          const { cuentas, errs } = await ttGastoPeriodo(t, sinceR, untilR);
+          if (!cuentas.length) { ttDiag = errs[0] || "TikTok no devolvió gasto para el período"; return null; }
+          let total = 0;
+          for (const c of cuentas) {
+            const cur = String(c.currency || "ARS").toUpperCase();
+            if (cur === "ARS") { total += c.spend; continue; }
+            const rate = dolarCostosEf > 0 ? dolarCostosEf : (dolarAdsManual > 0 ? dolarAdsManual : dolarAdsFallback);
+            if (!(rate > 0)) { ttDiag = `la cuenta de TikTok está en ${cur} y no hay dólar configurado en Costos`; continue; }
+            total += c.spend * rate;
+          }
+          if (errs.length && !ttDiag) ttDiag = errs[0];
+          return +total.toFixed(2);
+        } catch (e) { ttDiag = ttDiag || ("error de red: " + e.message); console.error("TikTok Ads spend error:", e.message); return null; }
+      }
+
       // Gasto real de Mercado Ads y Google Ads (API): ya se trajo en el
       // Promise.all principal de arriba (mlAdsAutoCurr/Prev, gAdsAutoCurr/Prev).
-      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef, feeByPayId),     mlEnvioTot(curr.raw), mlAdsAutoCurr, gAdsAutoCurr);
-      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev, feeByPayIdPrev), mlEnvioTot(prev.raw), mlAdsAutoPrev, gAdsAutoPrev);
+      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef, feeByPayId),     mlEnvioTot(curr.raw), mlAdsAutoCurr, gAdsAutoCurr, ttAutoCurr);
+      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev, feeByPayIdPrev), mlEnvioTot(prev.raw), mlAdsAutoPrev, gAdsAutoPrev, ttAutoPrev);
 
       // ── Comparativa estilo Shopify: "Hoy" vs AYER HASTA LA MISMA HORA ──
       // Con rango = hoy, comparar el día parcial contra ayer COMPLETO infla los
@@ -1572,7 +1601,7 @@ export default async function handler(req, res) {
         const ratioDesc  = rev>0 ? ((tot.impuestos||0)+(tot.comisionPlataforma||0)+(tot.comisionPago||0))/rev : 0;
         const ratioCosto = rev>0 ? ((tot.costoProductos||0)+(tot.costoEnvio||0))/rev : 0;
         const fijoDia      = dias>0 ? (tot.costosAdicionales||0)/dias : 0;
-        const adRepartoDia = dias>0 ? ((tot.adSpendMl||0)+(tot.adSpendGoogle||0)+(tot.adSpendExtra||0))/dias : 0;
+        const adRepartoDia = dias>0 ? ((tot.adSpendMl||0)+(tot.adSpendGoogle||0)+(tot.adSpendTiktok||0)+(tot.adSpendExtra||0))/dias : 0;
         return rowsArr.map(r => {
           const revD = r.Revenue||0;
           const adD  = (r["Ad Spend"]||0)*(1+feeAd) + adRepartoDia;
@@ -1634,7 +1663,7 @@ export default async function handler(req, res) {
         const residRatio = rev>0 ? (totVar - sumDc)/rev : 0;
         const ratioDesc  = rev>0 ? ((tot.impuestos||0)+(tot.comisionPlataforma||0)+(tot.comisionPago||0))/rev : 0;
         const fijoDia      = dias>0 ? (tot.costosAdicionales||0)/dias : 0;
-        const adRepartoDia = dias>0 ? ((tot.adSpendMl||0)+(tot.adSpendGoogle||0)+(tot.adSpendExtra||0))/dias : 0;
+        const adRepartoDia = dias>0 ? ((tot.adSpendMl||0)+(tot.adSpendGoogle||0)+(tot.adSpendTiktok||0)+(tot.adSpendExtra||0))/dias : 0;
         return rowsArr.map(r => {
           const revD = r.Revenue||0;
           const adD  = (r["Ad Spend"]||0)*(1+feeAd) + adRepartoDia;
@@ -1717,9 +1746,9 @@ export default async function handler(req, res) {
               aov: conv>0 ? +(cval/conv).toFixed(2) : undefined,
             } : {}) };
         })(),
-        tienda: canal(curr.raw, false, shopifyPayComm(curr.raw, feeByRef, feeByPayId), totals.adSpendMeta + (totals.adSpendGoogle||0), 0, mpCommCurr.rev),
+        tienda: canal(curr.raw, false, shopifyPayComm(curr.raw, feeByRef, feeByPayId), totals.adSpendMeta + (totals.adSpendGoogle||0) + (totals.adSpendTiktok||0), 0, mpCommCurr.rev),
         ml:     canal(curr.raw, true,  0, totals.adSpendMl, mlEnvioTot(curr.raw), 0),
-        tiendaPrev: canal(prev.raw, false, shopifyPayComm(prev.raw, feeByRefPrev, feeByPayIdPrev), prevTotals.adSpendMeta + (prevTotals.adSpendGoogle||0), 0, mpCommPrev.rev),
+        tiendaPrev: canal(prev.raw, false, shopifyPayComm(prev.raw, feeByRefPrev, feeByPayIdPrev), prevTotals.adSpendMeta + (prevTotals.adSpendGoogle||0) + (prevTotals.adSpendTiktok||0), 0, mpCommPrev.rev),
         mlPrev:     canal(prev.raw, true,  0, prevTotals.adSpendMl, mlEnvioTot(prev.raw), 0),
         platform: curr.raw?.platform || (curr.raw?.products?.[0]?.platform) || "tiendanube",
         hasMl: !!(curr.raw?.ml_data),
@@ -1975,6 +2004,9 @@ export default async function handler(req, res) {
           googleAdsFuente: gAdsAutoCurr!=null ? "auto" : (googleAdsList.length ? "manual" : "sin_datos"),
           googleAdsConectado: !!userData.googleAds?.refresh_token,
           googleAdsDiag: (userData.googleAds?.refresh_token && gAdsAutoCurr==null) ? gadsDiag : null,
+          tiktokAdsConectado: !!userData.tiktokAds?.access_token,
+          tiktokAdsFuente: ttAutoCurr!=null ? "auto" : "sin_datos",
+          tiktokAdsDiag: (userData.tiktokAds?.access_token && ttAutoCurr==null) ? ttDiag : null,
           stockDegradado: curr.degradado || prev.degradado || null, // ts del snapshot servido cuando TN/ML no respondieron en vivo
           mlAdsDebug, mlEnvioDebug,
           metaTokenExpired: !!metaErr.expired,

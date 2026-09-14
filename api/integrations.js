@@ -1079,7 +1079,7 @@ function tiktokSetupError() {
     error: "Falta configurar TikTok Ads en el servidor.",
     setup: true,
     steps: [
-      "Crear una app en TikTok for Business Developers (business-api.tiktok.com) con scopes Ad Account Management + Reporting.",
+      "Crear una app en TikTok for Business Developers (business-api.tiktok.com) con los permisos Ad Account Management, Reporting, Ads Management, Creative Management y Pixel (los tres últimos son para Publicar en TikTok).",
       `En la app, 'Advertiser redirect URL' = ${TIKTOK_REDIRECT_URI}`,
       "Vercel → Environment Variables → TIKTOK_APP_ID y TIKTOK_APP_SECRET → Redeploy.",
     ],

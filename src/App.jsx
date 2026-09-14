@@ -968,7 +968,7 @@ const SIDEBAR_GROUPS_BASE = [
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml", alertKey:"ml", badge:"orange",
       subs:[{id:"gestion",label:"Gestión"},{id:"preguntas",label:"Preguntas"},{id:"mensajes",label:"Mensajes"},{id:"ventas",label:"Ventas"},{id:"reputacion",label:"Reputación"}]},
     {id:"gads",     label:"Google Ads", icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z"},
-    {id:"tiktokads", label:"TikTok Ads", icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z", soon:true},
+    {id:"tiktokads", label:"TikTok Ads", icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z"},
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"},{id:"checkout",label:"Checkout"}]},
@@ -980,14 +980,14 @@ const SIDEBAR_GROUPS_BASE = [
     { group:"PUBLISHER" },
     {id:"pubmeta",  permKey:"meta", label:"Publicar en Meta", icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", go:{page:"meta",tab:"creativos"}},
     {id:"pubml",    permKey:"ml",   label:"Publicar en ML", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", go:{page:"ml",tab:"publicar"}},
-    {id:"pubtiktok", label:"Publicar en TikTok", icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z", soon:true},
+    {id:"pubtiktok", permKey:"tiktokads", label:"Publicar en TikTok", icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z", go:{page:"tiktokads",tab:"publicar"}},
     {id:"pubgads",  permKey:"gads", label:"Publicar en Google", icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z", go:{page:"gads",tab:"publicar"}},
     { group:"RECOMPENSAS" },
     {id:"referidos",label:"Referidos", icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
     {id:"planes",   label:"Suscripción", icon:"M2 5h20v14H2zM2 10h20M6 15h4"},
   ];
 
-function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, margenesTab, setMargenesTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, gadsTab, setGadsTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false, seccionesMiembro=null}) {
+function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, margenesTab, setMargenesTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, gadsTab, setGadsTab, tiktokTab, setTiktokTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false, seccionesMiembro=null}) {
   const GROUPS = SIDEBAR_GROUPS_BASE.map(it=>it.alertKey?{...it,count:alerts[it.alertKey]}:it);
   const [closedSubs, setClosedSubs] = React.useState(new Set());
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
@@ -1007,17 +1007,18 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
   const NavBtn = ({item}) => {
     // Los accesos del grupo PUBLISHER (item.go) apuntan a la pestaña Publicar de Meta/ML:
     // se marcan activos solo en esa pestaña, y la sección madre deja de marcarse ahí.
-    const enPub = { meta: page==="meta"&&metaTab==="creativos", ml: page==="ml"&&mlTab==="publicar", gads: page==="gads"&&gadsTab==="publicar" };
+    const enPub = { meta: page==="meta"&&metaTab==="creativos", ml: page==="ml"&&mlTab==="publicar", gads: page==="gads"&&gadsTab==="publicar", tiktokads: page==="tiktokads"&&tiktokTab==="publicar" };
     const active = item.go ? (page===item.go.page && enPub[item.go.page]) : (page === item.id && !enPub[item.id]);
     const badgeColor = item.badge==="red" ? T.red : item.badge==="orange" ? T.orange : T.accent;
     const isConnected = item.integrationKey ? connectedStores[item.integrationKey] : undefined;
     return (
       <button onClick={()=>{
           if(item.soon) return;
-          if(item.go){ setPage(item.go.page); if(item.go.page==="meta") setMetaTab&&setMetaTab(item.go.tab); else if(item.go.page==="gads") setGadsTab&&setGadsTab(item.go.tab); else setMlTab&&setMlTab(item.go.tab); return; }
+          if(item.go){ setPage(item.go.page); if(item.go.page==="meta") setMetaTab&&setMetaTab(item.go.tab); else if(item.go.page==="gads") setGadsTab&&setGadsTab(item.go.tab); else if(item.go.page==="tiktokads") setTiktokTab&&setTiktokTab(item.go.tab); else setMlTab&&setMlTab(item.go.tab); return; }
           if(item.id==="meta"&&metaTab==="creativos") setMetaTab&&setMetaTab("analisis");
           if(item.id==="ml"&&mlTab==="publicar") setMlTab&&setMlTab("gestion");
           if(item.id==="gads"&&gadsTab==="publicar") setGadsTab&&setGadsTab("analisis");
+          if(item.id==="tiktokads"&&tiktokTab==="publicar") setTiktokTab&&setTiktokTab("analisis");
           if(active&&item.subs?.length>0){setClosedSubs(p=>{const n=new Set(p);n.has(item.id)?n.delete(item.id):n.add(item.id);return n;});}else{setPage(item.id);setClosedSubs(p=>{const n=new Set(p);n.delete(item.id);return n;});}}} title={collapsed?item.label:undefined} aria-disabled={!!item.soon}
         style={{display:"flex",alignItems:"center",gap:9,padding:collapsed?"10px 0":"8px 10px",
           background:active?T.accentSolid+"20":"transparent",border:"none",
@@ -2489,6 +2490,569 @@ function GadsPublicador({T, user, accounts, account, setAcc, sym, onVerAnalisis}
             {busy?<><Spinner size={14} color={T.accent}/> {busy}</>:(activar?"Crear campaña activa en Google Ads":"Crear campaña pausada en Google Ads")}
           </Btn>
           {!listo&&!busy&&<div style={{fontSize:DS.font.sm,color:T.textSm,textAlign:"center"}}>Completá lo que está en naranja para poder crear la campaña.</div>}
+        </div>
+      </GadsPaso>
+    </div>
+  );
+}
+
+// ── TikTok Ads: sección propia (Analytics) + "Publicar en TikTok". Misma lectura
+//    que Google Ads: KPIs del rango, gasto por día y campañas con switch para
+//    pausar/activar. Datos: /api/tiktok-ads (accounts | campaigns | campaign_status);
+//    conexión: /api/integrations?platform=tiktokads (status / oauth_start).
+function AppTiktokAds({T, user, onHome, onGoConfig, tab="analisis", setTab=()=>{}}) {
+  const [st,setSt]=useState(null); const [err,setErr]=useState(null);
+  const [accounts,setAccounts]=useState(null); const [accErr,setAccErr]=useState(null);
+  const [acc,setAcc]=useState(()=>{ try{ return localStorage.getItem(`growith_tt_acc_${user?.uid}`)||""; }catch{ return ""; } });
+  const [since,setSince]=useState(()=>fechaAR(new Date(Date.now()-7*86400000)));
+  const [until,setUntil]=useState(()=>fechaAR(new Date()));
+  const [rows,setRows]=useState(null); const [daily,setDaily]=useState([]); const [hayCompras,setHayCompras]=useState(true);
+  const [loading,setLoading]=useState(false); const [rowsErr,setRowsErr]=useState(null);
+  const [filterStatus,setFilterStatus]=useState("active");
+  const [query,setQuery]=useState(""); const [busyIds,setBusyIds]=useState({});
+  const [roasBe,setRoasBe]=useState(()=>{ try{ return parseFloat(localStorage.getItem(`growith_tt_be_${user?.uid}`))||2; }catch{ return 2; } });
+
+  useEffect(()=>{ (async()=>{ try{ const r=await authFetch(`/api/integrations?platform=tiktokads&action=status&uid=${user.uid}`); const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status); setSt(j); }catch(e){ setErr(e.message); } })(); },[user?.uid]);
+  const conectado=!!st?.connected;
+  useEffect(()=>{
+    if(!conectado) return;
+    let alive=true;
+    (async()=>{
+      try{
+        const r=await authFetch(`/api/tiktok-ads?action=accounts&uid=${user.uid}`); const j=await r.json();
+        if(!alive) return;
+        if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
+        const list=j.accounts||[]; setAccounts(list); setAccErr(list.length?null:"La conexión de TikTok no tiene cuentas publicitarias.");
+        if(list.length&&!list.find(a=>a.id===acc)) setAcc((list.find(a=>a.id===j.advertiser_id)||list[0]).id);
+      }catch(e){ if(alive){ setAccounts([]); setAccErr(e.message); } }
+    })();
+    return ()=>{ alive=false; };
+    /* eslint-disable-next-line */
+  },[conectado,user?.uid]);
+  useEffect(()=>{ try{ if(acc) localStorage.setItem(`growith_tt_acc_${user?.uid}`,acc); }catch{} },[acc,user?.uid]);
+  useEffect(()=>{ try{ localStorage.setItem(`growith_tt_be_${user?.uid}`,String(roasBe)); }catch{} },[roasBe,user?.uid]);
+
+  const account=(accounts||[]).find(a=>a.id===acc)||null;
+  const loadCampaigns=async()=>{
+    if(!account) return;
+    setLoading(true); setRowsErr(null);
+    try{
+      const q=new URLSearchParams({action:"campaigns",uid:user.uid,advertiser:account.id,since,until});
+      const r=await authFetch(`/api/tiktok-ads?${q}`); const j=await r.json();
+      if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
+      setRows(j.campaigns||[]); setDaily(j.daily||[]); setHayCompras(j.hayCompras!==false);
+    }catch(e){ setRowsErr(e.message); setRows([]); setDaily([]); }
+    finally{ setLoading(false); }
+  };
+  useEffect(()=>{ if(account&&tab!=="publicar") loadCampaigns(); /* eslint-disable-next-line */ },[account?.id,since,until,tab]);
+
+  const toggleStatus=async(r)=>{
+    const next=r.status==="ENABLED"?"DISABLE":"ENABLE";
+    setBusyIds(b=>({...b,[r.id]:true}));
+    try{
+      const res=await authFetch(`/api/tiktok-ads?action=campaign_status&uid=${user.uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({advertiser:account.id,id:r.id,status:next})});
+      const j=await res.json(); if(!res.ok||j.error) throw new Error(j.error||"HTTP "+res.status);
+      setRows(prev=>(prev||[]).map(x=>x.id===r.id?{...x,status:j.status}:x));
+      toast(j.status==="ENABLED"?"Campaña activada":"Campaña pausada");
+    }catch(e){ appAlert("No se pudo cambiar el estado: "+e.message); }
+    finally{ setBusyIds(b=>{ const c={...b}; delete c[r.id]; return c; }); }
+  };
+  const conectar=async()=>{
+    try{
+      const j=await authFetch(`/api/integrations?platform=tiktokads&action=oauth_start&uid=${user.uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid})}).then(r=>r.json());
+      if(j.url){ window.location.href=j.url; return; }
+      if(j.setup){ appAlert("TikTok Ads todavía no está configurado en el servidor:\n\n"+(j.steps||[]).map((s,i)=>`${i+1}. ${s}`).join("\n\n")); return; }
+      appAlert(j.error||"No se pudo iniciar la conexión con TikTok.");
+    }catch(e){ appAlert("Error: "+e.message); }
+  };
+
+  const sym=({ARS:"$",USD:"US$",BRL:"R$",MXN:"MX$",EUR:"€",CLP:"CLP$",PEN:"S/",UYU:"$U",COP:"COL$"})[account?.currency]||(account?.currency?account.currency+" ":"$");
+  const fmt=n=>(+n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fmtInt=n=>Math.round(+n||0).toLocaleString("es-AR");
+  const OBJ={WEB_CONVERSIONS:"Ventas en la web",TRAFFIC:"Tráfico",VIDEO_VIEWS:"Reproducciones",REACH:"Alcance",ENGAGEMENT:"Interacción",LEAD_GENERATION:"Clientes potenciales",APP_PROMOTION:"App",PRODUCT_SALES:"Ventas de productos"};
+  const filtered=(rows||[])
+    .filter(r=>filterStatus==="all"?true:filterStatus==="active"?r.status==="ENABLED":r.status==="PAUSED")
+    .filter(r=>!query.trim()||String(r.name||"").toLowerCase().includes(query.trim().toLowerCase()));
+  const sum=k=>filtered.reduce((s,r)=>s+(+r[k]||0),0);
+  const sSpend=sum("spend"), sConv=sum("conversions"), sVal=sum("value"), sClicks=sum("clicks"), sImp=sum("impressions");
+  const roasT=sSpend&&sVal?sVal/sSpend:0;
+  const COLS=[
+    {k:"spend",l:"Gasto",f:r=>sym+fmt(r.spend)},
+    {k:"conversions",l:"Conversiones",f:r=>fmt(r.conversions)},
+    ...(hayCompras?[
+      {k:"purchases",l:"Compras",f:r=>fmt(r.purchases)},
+      {k:"value",l:"Valor compras",f:r=>sym+fmt(r.value)},
+      {k:"roas",l:"ROAS",f:r=>r.spend&&r.value?fmt(r.roas)+"x":"—",color:r=>r.spend&&r.value?(r.roas>=roasBe?T.green:T.red):T.textSm},
+    ]:[]),
+    {k:"cpa",l:"CPA",f:r=>r.conversions?sym+fmt(r.cpa):"—"},
+    {k:"ctr",l:"CTR",f:r=>r.impressions?fmt(r.ctr)+"%":"—"},
+    {k:"cpc",l:"CPC",f:r=>r.clicks?sym+fmt(r.cpc):"—"},
+    {k:"impressions",l:"Impresiones",f:r=>fmtInt(r.impressions)},
+    {k:"clicks",l:"Clicks",f:r=>fmtInt(r.clicks)},
+  ];
+  const thS={padding:"10px 12px",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"};
+  const selS={background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"};
+  const ErrBox=({children})=><div style={{background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",fontSize:12,color:T.red,lineHeight:1.5}}>{children}</div>;
+  const maxSpend=Math.max(0,...daily.map(d=>+d.spend||0));
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
+      <AppTopbar T={T} section={tab==="publicar"?"Publicar en TikTok":"TikTok Ads"} sectionId="tiktokads" onHome={onHome}>
+        {conectado&&<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,color:T.green,fontWeight:600}}><span style={{width:7,height:7,borderRadius:"50%",background:T.green}}/>Conectado{account?` · ${account.name}`:""}</span>}
+      </AppTopbar>
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"20px 24px 80px",display:"flex",flexDirection:"column",gap:16}}>
+        {err&&<ErrBox>{err}</ErrBox>}
+        {/* Pestañas Análisis / Publicar: solo en mobile — en desktop se navega desde el sidebar */}
+        <div className="mobile-only no-scrollbar" style={{overflowX:"auto"}}>
+          <div style={{display:"flex",gap:6,minWidth:"max-content"}}>
+            {[{id:"analisis",l:"Análisis"},{id:"publicar",l:"Publicar"}].map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${tab===t.id?T.accentSolid+"88":T.border}`,borderRadius:20,background:tab===t.id?T.accentSolid+"18":T.card,color:tab===t.id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>{t.l}</button>
+            ))}
+          </div>
+        </div>
+
+        {st===null&&!err&&<Card T={T}><div style={{display:"flex",alignItems:"center",gap:10,fontSize:12,color:T.textMd}}><Spinner size={14} color={T.textMd}/> Consultando la conexión con TikTok Ads…</div></Card>}
+        {st!==null&&!conectado&&(
+          <Card T={T}>
+            <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+              <div style={{flex:1,minWidth:220}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:15,fontWeight:800,color:T.text}}>TikTok Ads no está conectado</span>
+                  {st.configured===false&&<span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,background:T.yellow+"22",color:T.yellow,borderRadius:99,padding:"2px 8px"}}>PRONTO</span>}
+                </div>
+                <div style={{fontSize:12,color:T.textSm,marginTop:3,lineHeight:1.5}}>
+                  {st.configured===false
+                    ? "Estamos terminando de habilitar la conexión con TikTok. Apenas esté lista vas a poder conectar tu cuenta publicitaria desde acá o desde Configuración → Integraciones."
+                    : "Conectá tu cuenta publicitaria de TikTok para ver gasto, conversiones y ROAS por campaña, pausar o activar campañas, publicar videos y que el gasto entre solo al Dashboard."}
+                </div>
+              </div>
+              {st.configured!==false&&<Btn T={T} variant="primary" onClick={conectar}>Conectar TikTok Ads</Btn>}
+            </div>
+          </Card>
+        )}
+        {conectado&&accounts===null&&!accErr&&<Card T={T}><div style={{display:"flex",alignItems:"center",gap:10,fontSize:12,color:T.textMd}}><Spinner size={14} color={T.textMd}/> Buscando tus cuentas de TikTok Ads…</div></Card>}
+        {conectado&&accErr&&(
+          <Card T={T}>
+            <div style={{fontSize:14,fontWeight:800,color:T.text,marginBottom:6}}>No pudimos leer tus cuentas de TikTok Ads</div>
+            <ErrBox>{accErr}</ErrBox>
+            <div style={{fontSize:12,color:T.textMd,marginTop:10,lineHeight:1.6}}>Si el problema sigue, desvinculá y volvé a conectar TikTok Ads desde <button onClick={onGoConfig} style={{background:"none",border:"none",padding:0,color:T.accent,fontWeight:700,cursor:"pointer",fontSize:12}}>Configuración → Integraciones</button>.</div>
+          </Card>
+        )}
+
+        {conectado&&account&&tab==="publicar"&&(
+          <TtPublicador T={T} user={user} accounts={accounts||[]} account={account} setAcc={setAcc} sym={sym}
+            onVerAnalisis={()=>{ setFilterStatus("all"); setQuery(""); setTab("analisis"); }}/>
+        )}
+
+        {conectado&&account&&tab!=="publicar"&&(
+          <>
+            <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+              <KPI T={T} label="Gasto" value={sym+fmt(sSpend)} sub={`${filtered.length} campaña${filtered.length!==1?"s":""}`} color={T.accent} loading={loading&&rows===null}/>
+              <KPI T={T} label="Conversiones" value={fmt(sConv)} sub={sClicks?`${fmtInt(sClicks)} clicks`:""} color={T.text} loading={loading&&rows===null}/>
+              {hayCompras&&<KPI T={T} label="Valor compras" value={sym+fmt(sVal)} sub="según el píxel de TikTok" color={T.text} loading={loading&&rows===null}/>}
+              {hayCompras&&<KPI T={T} label="ROAS" value={roasT?fmt(roasT)+"x":"—"} sub={roasBe>0?`BE de referencia ${roasBe}x`:""} color={roasT?(roasT>=roasBe?T.green:T.red):T.textSm} loading={loading&&rows===null}/>}
+              <KPI T={T} label="CPA" value={sConv?sym+fmt(sSpend/sConv):"—"} sub={sImp?`CTR ${fmt(sClicks/sImp*100)}%`:""} color={T.text} loading={loading&&rows===null}/>
+            </div>
+
+            <Card T={T} padding="md">
+              <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                {(accounts||[]).length>1
+                  ? <select value={acc} onChange={e=>setAcc(e.target.value)} style={{...selS,fontWeight:600,maxWidth:260}}>{(accounts||[]).map(a=><option key={a.id} value={a.id}>{a.name}{a.currency?` · ${a.currency}`:""}</option>)}</select>
+                  : <div style={{padding:"6px 12px",background:T.bg,borderRadius:8,border:`1px solid ${T.borderL}`,fontSize:12,fontWeight:600,color:T.text}}>{account.name}{account.currency?<span style={{color:T.textSm,fontWeight:500}}> · {account.currency}</span>:null}</div>}
+                <DateRangePicker T={T} since={since} until={until} onChange={(s,u)=>{setSince(s);setUntil(u);}}/>
+                <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={selS}>
+                  <option value="all">Todos los estados</option>
+                  <option value="active">Solo activas</option>
+                  <option value="paused">Solo pausadas</option>
+                </select>
+                {hayCompras&&(
+                  <div title="ROAS break-even de referencia" style={{display:"flex",alignItems:"center",gap:5,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"3px 8px"}}>
+                    <span style={{fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.3}}>BE</span>
+                    <GhTip T={T} text="BE = ROAS break-even: el ROAS mínimo para no perder plata. Growith pinta el ROAS en verde cuando lo supera y en rojo cuando no."/>
+                    <input type="number" step="0.1" min="0" value={roasBe} onChange={e=>setRoasBe(parseFloat(e.target.value)||0)} style={{width:44,background:"transparent",border:"none",fontSize:12,color:T.text,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",outline:"none"}}/>
+                    <span style={{fontSize:11,color:T.textSm}}>x</span>
+                  </div>
+                )}
+                <input type="text" placeholder="Buscar campaña…" value={query} onChange={e=>setQuery(e.target.value)} style={{...selS,flex:1,minWidth:140,padding:"6px 12px"}}/>
+                <Btn T={T} variant="secondary" size="sm" onClick={loadCampaigns} disabled={loading} title="Refrescar con el rango actual">{loading?<Spinner size={12} color={T.textMd}/>:"Refrescar"}</Btn>
+              </div>
+            </Card>
+
+            {rowsErr&&<ErrBox><strong>TikTok no devolvió las campañas.</strong> {rowsErr}</ErrBox>}
+
+            {daily.length>1&&maxSpend>0&&(
+              <Card T={T} padding="md">
+                <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:8}}>
+                  <span style={{fontSize:12,fontWeight:700,color:T.text}}>Gasto por día</span>
+                  <span style={{fontSize:11,color:T.textSm}}>{daily.length} días · promedio {sym+fmt(daily.reduce((s,d)=>s+(+d.spend||0),0)/daily.length)}/día</span>
+                </div>
+                <div style={{display:"flex",alignItems:"flex-end",gap:3,height:70}}>
+                  {daily.map(d=><div key={d.date} title={`${d.date}: ${sym}${fmt(d.spend)} · ${fmt(d.conversions)} conv.`} style={{flex:1,minWidth:2,height:Math.max(2,Math.round((+d.spend||0)/maxSpend*66)),background:(+d.conversions>0)?T.accent:(T.textSm+"66"),borderRadius:"3px 3px 0 0"}}/>)}
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:T.textSm,marginTop:4}}><span>{daily[0].date}</span><span>{daily[daily.length-1].date}</span></div>
+              </Card>
+            )}
+
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <thead style={{background:T.bg}}>
+                    <tr>
+                      <th style={{...thS,textAlign:"left",width:54}}>Acción</th>
+                      <th style={{...thS,textAlign:"left"}}>Campaña</th>
+                      <th style={{...thS,textAlign:"left"}}>Objetivo</th>
+                      {COLS.map(c=><th key={c.k} style={{...thS,textAlign:"right"}}>{c.l}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows===null&&<tr><td colSpan={COLS.length+3} style={{padding:"28px 12px",textAlign:"center",fontSize:12,color:T.textMd}}><Spinner size={14} color={T.textMd}/> Cargando campañas…</td></tr>}
+                    {rows!==null&&filtered.length===0&&<tr><td colSpan={COLS.length+3} style={{padding:"28px 12px",textAlign:"center",fontSize:12,color:T.textMd}}>{!rows.length?"Esta cuenta no tiene campañas."
+                      :(filterStatus==="active"&&!query.trim()&&!rows.some(r=>r.status==="ENABLED"))
+                        ?<span>No hay campañas activas ({rows.length} pausada{rows.length!==1?"s":""}). <button onClick={()=>setFilterStatus("all")} style={{background:"none",border:"none",padding:0,color:T.accent,fontWeight:700,cursor:"pointer",fontSize:12}}>Ver todas</button></span>
+                        :"Ninguna campaña coincide con el filtro."}</td></tr>}
+                    {filtered.map(r=>{
+                      const busy=!!busyIds[r.id], on=r.status==="ENABLED";
+                      return (
+                        <tr key={r.id} style={{borderBottom:`1px solid ${T.borderL}`,opacity:on?1:0.6}}>
+                          <td style={{padding:"10px 12px"}}>
+                            <button onClick={()=>toggleStatus(r)} disabled={busy} title={on?"Pausar":"Activar"} role="switch" aria-checked={on} style={{width:34,height:18,borderRadius:9,border:"none",padding:0,cursor:busy?"wait":"pointer",background:on?T.accentSolid:(T.textSm+"55"),position:"relative",transition:"background .15s",opacity:busy?0.6:1}}>
+                              <span style={{position:"absolute",top:2,left:on?18:2,width:14,height:14,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 2px rgba(0,0,0,.3)",transition:"left .15s"}}/>
+                            </button>
+                          </td>
+                          <td style={{padding:"10px 12px",fontSize:12,color:T.text,maxWidth:320,overflow:"hidden",whiteSpace:"nowrap"}}>
+                            <div style={{fontWeight:600,overflow:"hidden",textOverflow:"ellipsis"}} title={r.name}>{r.name||"(sin nombre)"}</div>
+                            <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{on?"Activa":"Pausada"}{r.budget?` · ${sym}${fmt(r.budget)}/día`:""}</div>
+                          </td>
+                          <td style={{padding:"10px 12px",fontSize:11,color:T.textMd,whiteSpace:"nowrap"}}>{OBJ[r.objective]||r.objective||"—"}</td>
+                          {COLS.map(c=><td key={c.k} style={{padding:"10px 12px",fontSize:12,textAlign:"right",whiteSpace:"nowrap",color:c.color?c.color(r):T.text,fontWeight:c.k==="spend"||c.k==="roas"?700:500}}>{c.f(r)}</td>)}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div style={{fontSize:11,color:T.textSm,lineHeight:1.6}}>
+              Datos de la Marketing API de TikTok (conversiones y compras según tu píxel). El gasto de TikTok ya se descuenta solo en el Dashboard{account.currency&&account.currency!=="ARS"?` — la cuenta está en ${account.currency} y se pasa a pesos con el dólar de Costos`:""}.
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Publicar en TikTok ───
+// Campaña (Ventas en la web con píxel, o Tráfico) + grupo de anuncios + un anuncio
+// por video, por la Marketing API (api/tiktok-ads.js). Los videos se suben en
+// trozos de 2,4 MB (video_chunk → video_finish) porque Vercel no acepta bodies de
+// más de 4,5 MB; la portada es un cuadro del video capturado en el navegador.
+// La campaña queda PAUSADA por default. Borrador en localStorage growith_tt_pub_{uid}.
+const TT_EVENTOS_UI=[["SHOPPING","Pago completado (compra)"],["ON_WEB_ORDER","Pedido realizado"],["INITIATE_ORDER","Inicio de pago"],["ON_WEB_CART","Agregar al carrito"]];
+const TT_CTAS_UI=[["SHOP_NOW","Comprar ahora"],["LEARN_MORE","Más información"],["ORDER_NOW","Pedir ahora"],["VIEW_NOW","Ver ahora"],["SIGN_UP","Registrarte"],["CONTACT_US","Contactanos"]];
+const TT_TROZO=2_400_000;   // bytes por request (base64 ≈ 3,2 MB, bajo el tope de Vercel)
+const TT_MAX_MB=120;
+// Lee duración y medidas del video y captura un cuadro (≈1 s) como portada JPEG.
+function ttLeerVideo(file){
+  return new Promise((resolve,reject)=>{
+    if(!file||!/^video\//.test(file.type)) return reject(new Error(`${file?.name||"El archivo"} no es un video (usá MP4 o MOV).`));
+    const url=URL.createObjectURL(file); const v=document.createElement("video");
+    v.preload="metadata"; v.muted=true; v.playsInline=true;
+    const fin=(e,r)=>{ URL.revokeObjectURL(url); e?reject(e):resolve(r); };
+    v.onloadedmetadata=()=>{ v.currentTime=Math.min(1,(v.duration||0)/2); };
+    v.onseeked=()=>{
+      try{
+        const w=v.videoWidth, h=v.videoHeight, s=Math.min(1,720/Math.max(w,h,1));
+        const c=document.createElement("canvas"); c.width=Math.round(w*s); c.height=Math.round(h*s);
+        c.getContext("2d").drawImage(v,0,0,c.width,c.height);
+        fin(null,{w,h,dur:v.duration||0,cover:c.toDataURL("image/jpeg",0.85)});
+      }catch(e){ fin(e); }
+    };
+    v.onerror=()=>fin(new Error(`No se pudo leer ${file.name} (usá MP4 o MOV).`));
+    v.src=url;
+  });
+}
+const ttBase64=blob=>new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(String(fr.result).split(",")[1]||""); fr.onerror=()=>rej(fr.error||new Error("No se pudo leer el video")); fr.readAsDataURL(blob); });
+
+function TtPublicador({T, user, accounts, account, setAcc, sym, onVerAnalisis}) {
+  const DRAFT=`growith_tt_pub_${user?.uid}`;
+  const VACIO={objetivo:"ventas",nombre:"",url:"",presupuesto:"",pais:"AR",cta:"SHOP_NOW",pixel:"",evento:"SHOPPING",identity:"",texto:""};
+  const [f,setF]=useState(()=>{ try{ const d=JSON.parse(localStorage.getItem(DRAFT)||"null"); return d&&typeof d==="object"?{...VACIO,...d}:VACIO; }catch{ return VACIO; } });
+  useEffect(()=>{ try{ localStorage.setItem(DRAFT,JSON.stringify(f)); }catch{} },[f,DRAFT]);
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const [cfg,setCfg]=useState(null); // {pixels, identities, errores}
+  const [nueva,setNueva]=useState({nombre:"",avatar:null,busy:false});
+  const [videos,setVideos]=useState([]); // [{id, file, name, size, w, h, dur, cover, texto}]
+  const [leyendo,setLeyendo]=useState(false); const [drag,setDrag]=useState(false);
+  const [activar,setActivar]=useState(false);
+  const [busy,setBusy]=useState(null); const [errores,setErrores]=useState([]); const [result,setResult]=useState(null);
+  const subidos=useRef({}); // `${cuenta}:${idVideo}` → {video_id, image_id}
+  const avatarRef=useRef(null);
+  const post=async(action,body)=>{ const r=await authFetch(`/api/tiktok-ads?action=${action}&uid=${user.uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({advertiser:account.id,...body})}); const j=await r.json().catch(()=>({})); if(!r.ok||j.error) throw Object.assign(new Error(j.error||"HTTP "+r.status),{lista:j.errores}); return j; };
+
+  // Píxeles e identidades de la cuenta elegida
+  useEffect(()=>{
+    let alive=true; setCfg(null);
+    (async()=>{
+      try{
+        const r=await authFetch(`/api/tiktok-ads?action=pub_config&uid=${user.uid}&advertiser=${account.id}`); const j=await r.json();
+        if(!alive) return; if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
+        setCfg(j);
+        setF(p=>({...p,
+          pixel:(j.pixels||[]).some(x=>x.id===p.pixel)?p.pixel:(j.pixels?.[0]?.id||""),
+          identity:(j.identities||[]).some(x=>x.id===p.identity)?p.identity:(j.identities?.[0]?.id||""),
+        }));
+      }catch(e){ if(alive) setCfg({pixels:[],identities:[],errores:[e.message]}); }
+    })();
+    return ()=>{ alive=false; };
+    /* eslint-disable-next-line */
+  },[account.id]);
+
+  const ventas=f.objetivo==="ventas";
+  const pixels=cfg?.pixels||[], identities=cfg?.identities||[];
+  const fmtN=n=>(+n||0).toLocaleString("es-AR",{maximumFractionDigits:2});
+  const checks=[
+    {ok:!!f.nombre.trim(),l:"Nombre"},
+    {ok:/^https?:\/\/[^\s/]+\.[^\s]+$/i.test(f.url.trim()),l:"URL de destino"},
+    {ok:+f.presupuesto>0,l:"Presupuesto"},
+    ...(ventas?[{ok:!!f.pixel,l:"Píxel"}]:[]),
+    {ok:!!f.identity,l:"Identidad"},
+    {ok:videos.length>0&&videos.length<=20,l:`Videos ${videos.length}`},
+    {ok:videos.length>0&&videos.every(v=>{ const n=gadsLen(v.texto.trim()); return n>0&&n<=100; }),l:"Textos"},
+  ];
+  const listo=checks.every(c=>c.ok);
+
+  const crearIdentidad=async()=>{
+    if(!nueva.nombre.trim()||!nueva.avatar) return;
+    setNueva(p=>({...p,busy:true}));
+    try{
+      const img=await post("upload_image",{data:nueva.avatar,name:`Avatar ${nueva.nombre}`});
+      const j=await post("identity_create",{display_name:nueva.nombre.trim(),image_id:img.image_id});
+      setCfg(c=>({...(c||{}),identities:[...(c?.identities||[]),{...j.identity,avatar:nueva.avatar}]}));
+      set("identity",j.identity.id); setNueva({nombre:"",avatar:null,busy:false});
+      toast("Identidad creada en TikTok");
+    }catch(e){ appAlert("No se pudo crear la identidad: "+e.message); setNueva(p=>({...p,busy:false})); }
+  };
+
+  const agregarVideos=async(files)=>{
+    const lista=[...(files||[])]; if(!lista.length) return;
+    setLeyendo(true);
+    const nuevos=[], malas=[];
+    for(const fl of lista){
+      if(videos.length+nuevos.length>=20){ malas.push("Máximo 20 videos por campaña."); break; }
+      if(fl.size>TT_MAX_MB*1024*1024){ malas.push(`${fl.name} pesa más de ${TT_MAX_MB} MB.`); continue; }
+      try{ const info=await ttLeerVideo(fl); nuevos.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),file:fl,name:fl.name,size:fl.size,...info,texto:f.texto}); }
+      catch(e){ malas.push(e.message); }
+    }
+    setVideos(p=>[...p,...nuevos]); setLeyendo(false);
+    if(malas.length) appAlert(malas.join("\n"));
+  };
+  const setTexto=(id,texto)=>setVideos(p=>p.map(v=>v.id===id?{...v,texto}:v));
+
+  const subirVideo=async(v,n,N)=>{
+    const total=Math.max(1,Math.ceil(v.size/TT_TROZO)); let uploadId="";
+    for(let i=0;i<total;i++){
+      setBusy(`Subiendo video ${n} de ${N} a TikTok… ${Math.round(i/total*100)}%`);
+      const data=await ttBase64(v.file.slice(i*TT_TROZO,(i+1)*TT_TROZO));
+      let j; try{ j=await post("video_chunk",{uploadId,index:i,total,data,name:v.name,mime:v.file.type}); }
+      catch(e){ j=await post("video_chunk",{uploadId,index:i,total,data,name:v.name,mime:v.file.type}); } // un reintento por parte
+      uploadId=j.uploadId;
+    }
+    setBusy(`TikTok está procesando el video ${n} de ${N}…`);
+    const j=await post("video_finish",{uploadId,cover:v.cover});
+    if(!j.image_id) throw new Error(`${v.name}: TikTok no aceptó la portada.`);
+    return {video_id:j.video_id,image_id:j.image_id};
+  };
+
+  const publicar=async()=>{
+    if(!listo||busy) return;
+    if(activar&&!(await appConfirm(`La campaña se crea ACTIVA y empieza a gastar hasta ${sym}${fmtN(f.presupuesto)} por día apenas TikTok apruebe los anuncios. ¿Seguimos?`,{title:"Crear campaña activa",okLabel:"Crear y activar",danger:true}))) return;
+    setErrores([]); setResult(null);
+    try{
+      const ads=[];
+      for(let n=0;n<videos.length;n++){
+        const v=videos[n], key=`${account.id}:${v.id}`;
+        if(!subidos.current[key]) subidos.current[key]=await subirVideo(v,n+1,videos.length);
+        ads.push({...subidos.current[key],texto:v.texto.trim(),nombre:`${f.nombre.trim()} · ${v.name.replace(/\.[a-z0-9]+$/i,"")}`.slice(0,100)});
+      }
+      setBusy("Creando la campaña en TikTok…");
+      const j=await post("publish",{objetivo:f.objetivo,nombre:f.nombre,url:f.url.trim(),presupuesto:+f.presupuesto,pais:f.pais,cta:f.cta,pixel_id:ventas?f.pixel:"",evento:f.evento,identity_id:f.identity,ads,activar});
+      setResult({...j,cuenta:account.name,n:ads.length});
+      toast(j.status==="ENABLED"?"Campaña creada y activa en TikTok":"Campaña creada en TikTok (pausada)");
+      setF(p=>({...VACIO,objetivo:p.objetivo,url:p.url,presupuesto:p.presupuesto,pais:p.pais,cta:p.cta,pixel:p.pixel,evento:p.evento,identity:p.identity,texto:p.texto}));
+      setVideos([]); setActivar(false);
+      try{ window.scrollTo({top:0,behavior:"smooth"}); }catch{}
+    }catch(e){ setErrores(e.lista?.length?e.lista:String(e.message||e).split(" · ")); }
+    finally{ setBusy(null); }
+  };
+
+  const selS={...InputStyle(T),cursor:"pointer"};
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
+      {result&&(
+        <Card T={T} padding="lg" style={{borderColor:T.green+"66",background:T.green+"0d"}}>
+          <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:240}}>
+              <div style={{fontSize:DS.font.xl,fontWeight:DS.w.black,color:T.text}}>Campaña creada en TikTok</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:4,lineHeight:1.6}}>
+                «{result.nombre}» · {result.objetivo==="trafico"?"Tráfico":"Ventas en la web"} · {result.n} anuncio{result.n!==1?"s":""} · {result.cuenta} · <strong style={{color:result.status==="ENABLED"?T.green:T.orange}}>{result.status==="ENABLED"?"Activa":"Pausada"}</strong>.
+                {" "}{result.status==="ENABLED"?"TikTok revisa los anuncios antes de mostrarlos (suele tardar hasta 24 h).":"Activala desde Análisis cuando quieras que empiece a gastar; TikTok revisa los anuncios antes de mostrarlos."}
+              </div>
+            </div>
+            <Btn T={T} variant="primary" onClick={onVerAnalisis}>Ver en Análisis</Btn>
+            <Btn T={T} variant="ghost" onClick={()=>setResult(null)}>Cerrar</Btn>
+          </div>
+        </Card>
+      )}
+
+      {/* 1 · Cuenta y objetivo */}
+      <GadsPaso T={T} n="1" title="Cuenta y objetivo" sub="La campaña se crea en esta cuenta publicitaria de TikTok.">
+        <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
+          {accounts.length>1
+            ? <select value={account.id} onChange={e=>setAcc(e.target.value)} disabled={!!busy} style={{...selS,maxWidth:380}}>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}{a.currency?` · ${a.currency}`:""}</option>)}</select>
+            : <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text}}>{account.name}{account.currency?<span style={{color:T.textSm,fontWeight:DS.w.medium}}> · {account.currency}</span>:null}</div>}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:DS.sp.md}}>
+            {[
+              {id:"ventas",t:"Ventas en la web",d:"TikTok muestra los videos a la gente con más chances de comprar, según tu píxel. Lo recomendado para una tienda."},
+              {id:"trafico",t:"Tráfico",d:"Optimiza clics a tu web. No necesita píxel; sirve para arrancar o si todavía no medís ventas."},
+            ].map(o=>(
+              <button key={o.id} onClick={()=>set("objetivo",o.id)} disabled={!!busy} style={{textAlign:"left",padding:"14px 16px",borderRadius:DS.r.lg,border:`2px solid ${f.objetivo===o.id?T.accentSolid:T.border}`,background:f.objetivo===o.id?T.accentSolid+"14":"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}>
+                <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold}}>{o.t}</div>
+                <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:4,lineHeight:1.5}}>{o.d}</div>
+              </button>
+            ))}
+          </div>
+          {ventas&&(cfg===null
+            ? <div style={{display:"flex",alignItems:"center",gap:DS.sp.sm,fontSize:DS.font.md,color:T.textMd}}><Spinner size={12} color={T.textMd}/> Buscando tus píxeles…</div>
+            : pixels.length
+              ? <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:DS.sp.lg}}>
+                  <GadsCampo T={T} label="Píxel de TikTok"><select value={f.pixel} onChange={e=>set("pixel",e.target.value)} style={selS}>{pixels.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></GadsCampo>
+                  <GadsCampo T={T} label="Optimizar por" hint="Si el píxel todavía registra pocas compras, empezá por Agregar al carrito o Inicio de pago."><select value={f.evento} onChange={e=>set("evento",e.target.value)} style={selS}>{TT_EVENTOS_UI.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></GadsCampo>
+                </div>
+              : <div style={{fontSize:DS.font.md,color:T.orange,lineHeight:1.6}}>Esta cuenta no tiene un píxel de TikTok{cfg.errores?.length?` (TikTok: ${cfg.errores[0]})`:""}. Instalalo en tu tienda desde TikTok Ads Manager → Herramientas → Eventos, o <button onClick={()=>set("objetivo","trafico")} style={{background:"none",border:"none",padding:0,color:T.accent,fontWeight:700,cursor:"pointer",fontSize:DS.font.md,fontFamily:"'Inter',system-ui,sans-serif"}}>usá Tráfico</button>.</div>
+          )}
+        </div>
+      </GadsPaso>
+
+      {/* 2 · Destino y presupuesto */}
+      <GadsPaso T={T} n="2" title="Destino y presupuesto">
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:DS.sp.lg}}>
+          <GadsCampo T={T} label="Nombre de la campaña" full>
+            <input value={f.nombre} onChange={e=>set("nombre",e.target.value)} placeholder="Ej: TikTok · Producto estrella · Septiembre" style={InputStyle(T)}/>
+          </GadsCampo>
+          <GadsCampo T={T} label="URL de destino" hint="La página a la que llega quien toca el anuncio." full>
+            <input value={f.url} onChange={e=>set("url",e.target.value)} placeholder="https://" style={InputStyle(T)}/>
+          </GadsCampo>
+          <GadsCampo T={T} label={`Presupuesto diario (${account.currency||"moneda de la cuenta"})`} hint="TikTok pide un mínimo diario por grupo de anuncios (el equivalente a unos USD 20); si es menos, lo rechaza y te avisamos.">
+            <input type="number" min="0" step="any" value={f.presupuesto} onChange={e=>set("presupuesto",e.target.value)} placeholder="0" style={InputStyle(T)}/>
+          </GadsCampo>
+          <GadsCampo T={T} label="País">
+            <select value={f.pais} onChange={e=>set("pais",e.target.value)} style={selS}>{GADS_PAISES.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>
+          </GadsCampo>
+          <GadsCampo T={T} label="Botón del anuncio">
+            <select value={f.cta} onChange={e=>set("cta",e.target.value)} style={selS}>{TT_CTAS_UI.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>
+          </GadsCampo>
+        </div>
+        <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:DS.sp.md}}>Público: personas de 18 años o más, todos los géneros, solo en TikTok. Después lo podés ajustar en TikTok Ads Manager.</div>
+      </GadsPaso>
+
+      {/* 3 · Identidad */}
+      <GadsPaso T={T} n="3" title="Identidad" sub="El nombre y la foto con los que aparece el anuncio en TikTok.">
+        {cfg===null
+          ? <div style={{display:"flex",alignItems:"center",gap:DS.sp.sm,fontSize:DS.font.md,color:T.textMd}}><Spinner size={12} color={T.textMd}/> Buscando tus identidades…</div>
+          : <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
+              {identities.length>0&&(
+                <div style={{display:"flex",flexWrap:"wrap",gap:DS.sp.sm}}>
+                  {identities.map(i=>(
+                    <button key={i.id} onClick={()=>set("identity",i.id)} style={{display:"flex",alignItems:"center",gap:DS.sp.sm,padding:"8px 12px",borderRadius:DS.r.full,border:`2px solid ${f.identity===i.id?T.accentSolid:T.border}`,background:f.identity===i.id?T.accentSolid+"14":"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",color:T.text,fontSize:DS.font.base,fontWeight:DS.w.semibold}}>
+                      {i.avatar?<img src={i.avatar} alt="" style={{width:24,height:24,borderRadius:"50%",objectFit:"cover"}}/>:<span style={{width:24,height:24,borderRadius:"50%",background:T.surface,display:"inline-block"}}/>}
+                      {i.name||i.id}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div style={{display:"flex",alignItems:"flex-end",gap:DS.sp.md,flexWrap:"wrap",padding:"12px 14px",borderRadius:DS.r.lg,border:`1px dashed ${T.borderL}`}}>
+                <div style={{width:48,height:48,borderRadius:"50%",overflow:"hidden",background:T.surface,border:`1px solid ${T.border}`,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  {nueva.avatar?<img src={nueva.avatar} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:DS.font.xs,color:T.textSm}}>Foto</span>}
+                </div>
+                <GadsCampo T={T} label={identities.length?"O creá una nueva":"Creá tu identidad"} hint={`${gadsLen(nueva.nombre)}/40 caracteres`}>
+                  <input value={nueva.nombre} onChange={e=>setNueva(p=>({...p,nombre:e.target.value}))} placeholder="Nombre de tu marca" style={{...InputStyle(T),width:240,borderColor:gadsLen(nueva.nombre)>40?T.red:T.inputBorder}}/>
+                </GadsCampo>
+                <input ref={avatarRef} type="file" accept="image/*" style={{display:"none"}} onChange={async e=>{ const fl=e.target.files?.[0]; e.target.value=""; if(!fl) return; try{ const r=await gadsImagen(fl,512,512); setNueva(p=>({...p,avatar:r.src})); }catch(err){ appAlert(err.message); } }}/>
+                <Btn T={T} variant="secondary" size="sm" onClick={()=>avatarRef.current?.click()}>{nueva.avatar?"Cambiar foto":"Subir foto"}</Btn>
+                <Btn T={T} variant="primary" size="sm" onClick={crearIdentidad} disabled={nueva.busy||!nueva.nombre.trim()||gadsLen(nueva.nombre)>40||!nueva.avatar}>{nueva.busy?<><Spinner size={12} color={T.accent}/> Creando…</>:"Crear identidad"}</Btn>
+              </div>
+            </div>}
+      </GadsPaso>
+
+      {/* 4 · Videos */}
+      <GadsPaso T={T} n="4" title="Videos" sub="Un anuncio por video. Ideal vertical 9:16, entre 9 y 60 segundos, con sonido. Cada anuncio lleva su texto (hasta 100 caracteres).">
+        <label onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);agregarVideos(e.dataTransfer.files);}}
+          style={{display:"block",border:`2px dashed ${drag?T.accentSolid:T.borderL}`,borderRadius:DS.r.xl,padding:"28px 20px",textAlign:"center",cursor:leyendo?"wait":"pointer",background:drag?T.accentSolid+"0d":"transparent",transition:`all 0.15s ${DS.ease}`}}>
+          <input type="file" accept="video/*" multiple disabled={leyendo||!!busy} style={{display:"none"}} onChange={e=>{ agregarVideos(e.target.files); e.target.value=""; }}/>
+          <div style={{display:"flex",justifyContent:"center",marginBottom:DS.sp.sm}}>
+            {leyendo?<Spinner size={24} color={T.textMd}/>:<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>}
+          </div>
+          <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text}}>{leyendo?"Leyendo videos…":"Arrastrá tus videos o tocá para elegir"}</div>
+          <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:4}}>MP4 · MOV — hasta 20 videos de {TT_MAX_MB} MB cada uno</div>
+        </label>
+        {videos.length>0&&(
+          <div style={{display:"flex",flexDirection:"column",gap:DS.sp.md,marginTop:DS.sp.lg}}>
+            <GadsCampo T={T} label="Texto base (se copia a cada video que agregues)">
+              <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap"}}>
+                <input value={f.texto} onChange={e=>set("texto",e.target.value)} placeholder="Ej: Lo que estabas buscando, con envío a todo el país" style={{...InputStyle(T),flex:1,minWidth:220}}/>
+                <Btn T={T} variant="secondary" size="sm" onClick={()=>setVideos(p=>p.map(v=>({...v,texto:f.texto})))} disabled={!f.texto.trim()}>Usar en todos</Btn>
+              </div>
+            </GadsCampo>
+            {videos.map((v,i)=>{
+              const n=gadsLen(v.texto.trim()), over=n>100;
+              const avisos=[v.w>v.h?"horizontal: TikTok rinde mejor vertical 9:16":null, v.dur&&v.dur<5?"muy corto (menos de 5 s)":null, v.dur>60?"más de 60 s":null].filter(Boolean);
+              return (
+                <div key={v.id} style={{display:"flex",gap:DS.sp.md,alignItems:"flex-start",padding:"12px",borderRadius:DS.r.lg,border:`1px solid ${T.border}`,background:T.surface}}>
+                  <img src={v.cover} alt="" style={{width:64,aspectRatio:`${v.w||9} / ${v.h||16}`,maxHeight:114,objectFit:"cover",borderRadius:DS.r.md,background:T.bg,flexShrink:0}}/>
+                  <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
+                    <div style={{display:"flex",alignItems:"center",gap:DS.sp.sm}}>
+                      <span style={{flex:1,minWidth:0,fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={v.name}>{i+1}. {v.name}</span>
+                      <span style={{fontSize:DS.font.xs,color:T.textSm,whiteSpace:"nowrap"}}>{(v.size/1048576).toFixed(1)} MB · {Math.round(v.dur)} s · {v.w}×{v.h}</span>
+                      <Btn T={T} variant="ghost" size="sm" onClick={()=>setVideos(p=>p.filter(x=>x.id!==v.id))} disabled={!!busy} title="Sacar" aria-label="Sacar">✕</Btn>
+                    </div>
+                    {avisos.length>0&&<div style={{fontSize:DS.font.xs,color:T.orange}}>{avisos.join(" · ")}</div>}
+                    <div style={{position:"relative"}}>
+                      <input value={v.texto} onChange={e=>setTexto(v.id,e.target.value)} placeholder="Texto del anuncio" style={{...InputStyle(T),paddingRight:62,borderColor:over||!n?(over?T.red:T.inputBorder):T.inputBorder}}/>
+                      <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:DS.font.xs,fontWeight:DS.w.semibold,color:over?T.red:T.textSm,pointerEvents:"none"}}>{n}/100</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </GadsPaso>
+
+      {/* 5 · Revisar y crear */}
+      <GadsPaso T={T} n="5" title="Revisar y crear">
+        <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
+          <div style={{display:"flex",flexWrap:"wrap",gap:DS.sp.sm}}>
+            {checks.map(c=><DSBadge key={c.l} T={T} color={c.ok?T.green:T.orange} size="md">{c.ok?"✓":"•"} {c.l}</DSBadge>)}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:"12px 14px",borderRadius:DS.r.lg,border:`1px solid ${activar?T.orange+"66":T.borderL}`,background:activar?T.orange+"0d":"transparent"}}>
+            <DSToggle T={T} active={activar} onToggle={()=>!busy&&setActivar(a=>!a)}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:activar?T.orange:T.text}}>{activar?"Se crea ACTIVA: empieza a gastar apenas TikTok apruebe los anuncios":"Se crea PAUSADA (recomendado)"}</div>
+              <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>{activar?`Hasta ${sym}${fmtN(f.presupuesto)} por día.`:"Revisala y activala desde Análisis cuando quieras que empiece a gastar."}</div>
+            </div>
+          </div>
+          {errores.length>0&&(
+            <div style={{background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:DS.r.lg,padding:"10px 14px",fontSize:DS.font.md,color:T.red,lineHeight:1.6}}>
+              <strong>No se creó la campaña.</strong> Corregí esto y volvé a intentar (los videos que ya subiste no se vuelven a subir):
+              <ul style={{margin:"6px 0 0",paddingLeft:18}}>{errores.map((e,i)=><li key={i}>{e}</li>)}</ul>
+            </div>
+          )}
+          <Btn T={T} variant="primary" size="lg" onClick={publicar} disabled={!listo||!!busy||leyendo||nueva.busy} style={{width:"100%",justifyContent:"center"}}>
+            {busy?<><Spinner size={14} color={T.accent}/> {busy}</>:(activar?"Crear campaña activa en TikTok":"Crear campaña pausada en TikTok")}
+          </Btn>
+          {!listo&&!busy&&<div style={{fontSize:DS.font.sm,color:T.textSm,textAlign:"center"}}>Completá lo que está en naranja para poder crear la campaña.</div>}
+          {busy&&<div style={{fontSize:DS.font.sm,color:T.textSm,textAlign:"center"}}>No cierres esta pestaña mientras se suben los videos.</div>}
         </div>
       </GadsPaso>
     </div>
@@ -14802,6 +15366,12 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
       const map={cancelled:"Cancelaste la conexión con Google.",bad_state:"El proceso OAuth expiró. Probá conectar de nuevo.",bad_request:"Faltan parámetros en el callback.",token_failed:"Google rechazó el intercambio. Revisá GOOGLE_ADS_CLIENT_ID/SECRET en Vercel.",server_error:"Error de conexión con Google."};
       setMsg(g==="ok" ? "Google Ads conectado ✓ — el gasto real entra solo al Dashboard" : "Error Google Ads: "+(map[g]||g));
       url.searchParams.delete("gads");
+      window.history.replaceState({},"",url.pathname+url.search);
+    } else if(url.searchParams.get("tiktok")){
+      const g=url.searchParams.get("tiktok");
+      const map={cancelled:"Cancelaste la conexión con TikTok.",bad_state:"El proceso de conexión expiró. Probá conectar de nuevo.",bad_request:"Faltan parámetros en el callback.",token_failed:"TikTok rechazó el intercambio. Revisá TIKTOK_APP_ID/SECRET en Vercel.",error:"Error inesperado conectando TikTok."};
+      setMsg(g==="ok" ? "TikTok Ads conectado ✓ — el gasto real entra solo al Dashboard" : "Error TikTok Ads: "+(map[g]||g));
+      url.searchParams.delete("tiktok");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(url.searchParams.get("tn_success")){
       setMsg("Tienda Nube conectada ✓");
@@ -38076,6 +38646,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     if (q.tnFees && q.tnFees.conCargo===0 && q.tnFees.sinCargo>0 && !q.tnFees.diag) qItems.push({k:null, msg:`Tienda Nube no informa el cargo de la pasarela en tus ventas (${q.tnFees.sinCargo} revisadas${q.tnFees.muestra?` · ej. ${q.tnFees.muestra.orden}: ${q.tnFees.muestra.transacciones} transacción(es), estados ${q.tnFees.muestra.estados.join("/")||"—"}, cargos ${q.tnFees.muestra.conCargos?"sí":"no"}, campos ${q.tnFees.muestra.claves.join(",")||"—"}`:""})`});
     if (q.mpSinConfig) qItems.push({k:"comisiones", msg:`Ventas con Mercado Pago sin cargo real informado${q.tnFees?.pendientes?" (se están leyendo de a 60 por cálculo — recargá en un rato)":""}: se estima 7,61% (dinero al instante + IVA). Cargá tu % real en Comisiones e impuestos → Comisión de Mercado Pago`, cta:"Configurar"});
     if (rendData?.meta?.googleAdsConectado && rendData?.meta?.googleAdsFuente!=="auto") qItems.push({k:null, msg:`Google Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.googleAdsDiag?` — ${rendData.meta.googleAdsDiag}`:""}`});
+    if (rendData?.meta?.tiktokAdsConectado && rendData?.meta?.tiktokAdsFuente!=="auto") qItems.push({k:null, msg:`TikTok Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.tiktokAdsDiag?` — ${rendData.meta.tiktokAdsDiag}`:""}`});
     if (rendData?.meta?.stockDegradado) qItems.push({k:null, msg:`Tu tienda/ML respondieron lento y se muestra el último cálculo completo guardado${typeof rendData.meta.stockDegradado==="string"?` (${new Date(rendData.meta.stockDegradado).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})})`:""} — tocá Actualizar en unos minutos para el dato en vivo`});
     if (q.tnTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Tienda Nube — los totales están TRUNCADOS. Usá un rango más corto."});
     if (q.mlTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Mercado Libre — los totales de ML están TRUNCADOS."});
@@ -38429,7 +39000,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             // Hay algo que desglosar si Meta tiene conversión/fee, O si el gasto
             // viene de más de una plataforma (Google Ads, Mercado Ads, otros).
             const abOk = (ab0 && ab0.total>0 && (Object.entries(ab0.porMoneda||{}).some(([k,v])=>k!=="ARS"&&v>0) || ab0.feePct>0))
-              || [(tot.adSpendMeta||0),(tot.adSpendGoogle||0),(tot.adSpendMl||0),(tot.adSpendExtra||0)].filter(v=>v>0).length>1;
+              || [(tot.adSpendMeta||0),(tot.adSpendGoogle||0),(tot.adSpendTiktok||0),(tot.adSpendMl||0),(tot.adSpendExtra||0)].filter(v=>v>0).length>1;
             // Solo las alertas y avisos son chips con color (son avisos reales).
             // Los desgloses son links de texto discretos: informativos, no urgentes.
             const chips = [
@@ -38534,6 +39105,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             const fuentes = [
               ["Meta Ads", tot.adSpendMeta, "(real, API)"],
               ["Google Ads", tot.adSpendGoogle, rendData?.meta?.googleAdsFuente==="auto"?"(real, API)":"(carga manual)"],
+              ["TikTok Ads", tot.adSpendTiktok, "(real, API)"],
               ["Mercado Ads", tot.adSpendMl, rendData?.meta?.mlAdsFuente==="auto"?"(real, API)":"(carga manual)"],
               ["Otros", tot.adSpendExtra, "(costos adicionales tipo pauta)"],
             ].filter(([,v])=>(v||0)>0);
@@ -38677,7 +39249,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {label:"Ad Spend",    val:fmtM(tot.adSpend),   c:tot.adSpend,    p:prevTot.adSpend,    hero:true,
                 // El sub de la card nombra las fuentes reales del gasto (Meta,
                 // Google, Mercado Ads) — así se ve de dónde sale el número.
-                hint:(()=>{const f=[];if((tot.adSpendMeta||0)>0)f.push("Meta");if((tot.adSpendGoogle||0)>0)f.push("Google");if((tot.adSpendMl||0)>0)f.push("Mercado Ads");if((tot.adSpendExtra||0)>0)f.push("Otros");return f.length>1?f.join(" + "):"Inversión publicitaria";})(),
+                hint:(()=>{const f=[];if((tot.adSpendMeta||0)>0)f.push("Meta");if((tot.adSpendGoogle||0)>0)f.push("Google");if((tot.adSpendTiktok||0)>0)f.push("TikTok");if((tot.adSpendMl||0)>0)f.push("Mercado Ads");if((tot.adSpendExtra||0)>0)f.push("Otros");return f.length>1?f.join(" + "):"Inversión publicitaria";})(),
                 spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
               {label:"Net Revenue", val:fmtM(tot.netRevenue),c:tot.netRevenue, p:prevTot.netRevenue, hero:true, hint:"Todo descontado, antes de pauta", spk:dailyRows.map(r=>r["Net Revenue"])},
               {label:"Órdenes",     val:fmtInt(tot.orders),  c:tot.orders,     p:prevTot.orders,
@@ -39655,7 +40227,7 @@ export default function App() {
   },[user&&user.uid]);
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","copilot","margenes","arca","meta","gads","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario"];
+  const VALID_PAGES = ["home","copilot","margenes","arca","meta","gads","tiktokads","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario"];
   // Alias legacy: #/rendimiento era el nombre viejo del Dashboard (hoy #/margenes)
   const _aliasPage = (p) => p === "rendimiento" ? "margenes" : p;
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
@@ -39746,6 +40318,11 @@ export default function App() {
   const [gadsTab,setGadsTab]=useState(()=>{
     const parts = (typeof window!=="undefined"?window.location.hash:"").replace('#/','').split('/');
     return parts[0]==="gads"&&parts[1]==="publicar" ? "publicar" : "analisis";
+  });
+  // TikTok Ads: ídem — "analisis" | "publicar" (Publicar en TikTok), #/tiktokads/publicar
+  const [tiktokTab,setTiktokTab]=useState(()=>{
+    const parts = (typeof window!=="undefined"?window.location.hash:"").replace('#/','').split('/');
+    return parts[0]==="tiktokads"&&parts[1]==="publicar" ? "publicar" : "analisis";
   });
   const [canjesTab,setCanjesTab]=useState("activos");
   const [cmdOpen,setCmdOpen]=useState(false);
@@ -39953,12 +40530,12 @@ export default function App() {
   useEffect(()=>{
     if(typeof window==="undefined") return;
     if(colabToken || editorProdToken || boardToken || cuponToken) return;
-    const sub = page==="stock"?`/${stockTab}`:page==="arca"?`/${arcaTab}`:(page==="gads"&&gadsTab==="publicar")?"/publicar":"";
+    const sub = page==="stock"?`/${stockTab}`:page==="arca"?`/${arcaTab}`:((page==="gads"&&gadsTab==="publicar")||(page==="tiktokads"&&tiktokTab==="publicar"))?"/publicar":"";
     const newHash = `#/${page}${sub}`;
     if(window.location.hash !== newHash) {
       window.history.replaceState(null,"",newHash);
     }
-  },[page, stockTab, margenesTab, arcaTab, gadsTab, colabToken, editorProdToken, boardToken]);
+  },[page, stockTab, margenesTab, arcaTab, gadsTab, tiktokTab, colabToken, editorProdToken, boardToken]);
 
   // Auth state listener
   useEffect(()=>{
@@ -40592,7 +41169,7 @@ export default function App() {
   else if(page==="reclamos") pageContent = adminGate("reclamos") || planGate("plus") || requiereTN("Reclamos") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
   else if(page==="canjes") pageContent = adminGate("canjes") || planGate("plus") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
   else if(page==="gads") pageContent = adminGate("gads") || planGate("plus") || <PageView T={T} pageKey="gads"><AppGoogleAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={gadsTab} setTab={setGadsTab}/></PageView>;
-  else if(page==="tiktokads") pageContent = <PageView T={T} pageKey="tiktokads"><AppSoonSection T={T} sectionId="tiktokads" title="TikTok Ads" onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} desc="Gasto, campañas y rendimiento de TikTok Ads dentro de Growith, junto a Meta y Google. Ya podés dejar la cuenta conectada desde Configuración → Integraciones para que aparezca apenas esté listo."/></PageView>;
+  else if(page==="tiktokads") pageContent = adminGate("tiktokads") || planGate("plus") || <PageView T={T} pageKey="tiktokads"><AppTiktokAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={tiktokTab} setTab={setTiktokTab}/></PageView>;
   else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="calendario") pageContent = <PageView T={T} pageKey="calendario"><AppCalendarioPagos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="envios") pageContent = adminGate("envios") || planGate("plus") || requiereTN("Envíos") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} canjesPedidos={canjesPedidos} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
@@ -40616,7 +41193,7 @@ export default function App() {
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       {impersonando&&<GhImpersonBanner T={T} info={impersonando}/>}
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{ml: mlPreguntasCount, reclamos: reclamosCount, reclamosMp: reclamosMpCount, canjes: canjesAcciones, stock: 0, envios: enviosProblemasN, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert, calendario: calAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} gadsTab={gadsTab} setGadsTab={setGadsTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{ml: mlPreguntasCount, reclamos: reclamosCount, reclamosMp: reclamosMpCount, canjes: canjesAcciones, stock: 0, envios: enviosProblemasN, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert, calendario: calAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} gadsTab={gadsTab} setGadsTab={setGadsTab} tiktokTab={tiktokTab} setTiktokTab={setTiktokTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
       {/* Multi-org F2 modals */}
       {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
       {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}

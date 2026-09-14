@@ -31,6 +31,7 @@ Actualmente en uso real por Soluna Biolight (anteojos blue light blocker).
 │   ├── meta-callback.js ← Callback OAuth Meta
 │   ├── google-ads.js    ← Google Ads (oauth_start/status/disconnect; análisis accounts/campaigns/campaign_status; Publicar en Google: upload_image/publish/ai_copy — Búsqueda y Performance Max, se crean PAUSADAS; gasto en orders.js)
 │   ├── google-ads-callback.js ← Callback OAuth Google Ads
+│   ├── tiktok-ads.js    ← TikTok Ads: análisis (accounts/campaigns/campaign_status) + Publicar en TikTok (pub_config/upload_image/identity_create/video_chunk/video_finish/publish; videos en trozos vía colección temporal tiktok_uploads). Gasto al Dashboard: ttGastoPeriodo en orders.js. OAuth en integrations.js + tiktok-ads-callback.js
 │   ├── andreani.js      ← API oficial Andreani: etiquetas prepagas (billetera, markup, sucursales exactas)
 │   ├── update-shipping.js
 │   ├── process-sku.js
@@ -52,7 +53,7 @@ CRON_SECRET               ← auth de los crons (Vercel lo manda como Bearer)
 STRIPE_SECRET_KEY         ← clave live de Stripe (LLC). El webhook secret NO es env: se crea solo y vive en Firestore system/stripe
 STRIPE_WEBHOOK_SECRET     ← opcional, pisa al de Firestore si se define
 GOOGLE_DRIVE_CLIENT_SECRET ← secreto del cliente OAuth web (proyecto Growith-Gestion, contacto.growith@gmail.com). El client_id es VITE_GOOGLE_CLIENT_ID. Redirect URI registrada: https://www.growithapp.com/api/google-drive-callback. Sin esta var, Drive se muestra "PRONTO" solo
-TIKTOK_APP_ID / TIKTOK_APP_SECRET ← app de TikTok for Business Developers (scopes Ad Account Management + Reporting). Redirect: https://www.growithapp.com/api/tiktok-ads-callback. Sin estas vars, TikTok Ads se muestra "PRONTO" solo
+TIKTOK_APP_ID / TIKTOK_APP_SECRET ← app de TikTok for Business Developers (permisos Ad Account Management + Reporting; para Publicar en TikTok además Ads Management, Creative Management y Pixel). Redirect: https://www.growithapp.com/api/tiktok-ads-callback. Sin estas vars, TikTok Ads se muestra "PRONTO" solo
 META_APP_ID=905872205806657
 META_APP_SECRET
 NEXT_PUBLIC_META_APP_ID=905872205806657
@@ -217,6 +218,9 @@ growith_meta_ins_{acc}_{nivel}_{rango}_{drill} → SWR insights de Meta (TTL 30 
 growith_gads_acc_{uid}     → id de la cuenta de Google Ads elegida (Análisis y Publicar)
 growith_gads_be_{uid}      → número, ROAS break-even de referencia de la sección Google Ads (2)
 growith_gads_pub_{uid}     → JSON borrador del publicador "Publicar en Google" (tipo, nombre, URL, presupuesto, textos, keywords; sin imágenes). Se limpia al publicar
+growith_tt_acc_{uid}       → id de la cuenta publicitaria de TikTok elegida (Análisis y Publicar)
+growith_tt_be_{uid}        → número, ROAS break-even de referencia de la sección TikTok Ads (2)
+growith_tt_pub_{uid}       → JSON borrador del publicador "Publicar en TikTok" (objetivo, nombre, URL, presupuesto, píxel, identidad, texto base; sin videos). Se limpia al publicar
 ```
 Patrón SWR: helpers globales `ghSwrGet(key,maxAge)` / `ghSwrSet(key,data)` — pintar cache al instante, refrescar de fondo, y si el refresco falla con cache pintada no romper la vista.
 

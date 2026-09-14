@@ -32,6 +32,9 @@
     },
     "api/shopify-rates.js": {
       "maxDuration": 15
+    },
+    "api/tiktok-ads.js": {
+      "maxDuration": 120
     }
   },
   "rewrites": [
