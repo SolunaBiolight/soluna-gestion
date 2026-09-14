@@ -19113,9 +19113,9 @@ function AdmProbe({T}){
 // ── Sonda de la API de Tienda Nube con el token de una cuenta (solo admin) ──
 // Para ver de primera mano qué informa TN sobre comisiones de pago.
 function AdmTnProbe({T}){
-  const [email,setEmail]=useState(""); const [path,setPath]=useState("/payment_providers"); const [plat,setPlat]=useState("tiendanube");
+  const [email,setEmail]=useState(""); const [path,setPath]=useState("/payment_providers"); const [plat,setPlat]=useState("tiendanube"); const [oid,setOid]=useState("");
   const [out,setOut]=useState(null); const [busy,setBusy]=useState(false);
-  const run=async(p)=>{ const pp=p||path; if(!email.trim()){ toast("Poné el email de la cuenta","warning"); return; } setBusy(true); setOut(null); try{ const d=await admAndreani("admin_tn_probe",{email:email.trim(),path:pp,plataforma:plat}); setOut(d); }catch(e){ setOut({error:e.message}); } setBusy(false); };
+  const run=async(p)=>{ let pp=p||path; if(!email.trim()){ toast("Poné el email de la cuenta","warning"); return; } if(/ID/.test(pp)){ if(!oid.trim()){ toast("Poné el ID de la orden (lo ves en \"Últimas órdenes\")","warning"); return; } pp=pp.replace(/ID/g,oid.trim()); } setBusy(true); setOut(null); try{ const d=await admAndreani("admin_tn_probe",{email:email.trim(),path:pp,plataforma:plat}); setOut(d); }catch(e){ setOut({error:e.message}); } setBusy(false); };
   const PRESETS=plat==="shopify"
     ?[["Últimas órdenes","/orders.json?limit=3&status=any&financial_status=paid&fields=id,name,gateway,payment_gateway_names,total_price,created_at"],["Transacciones de una orden","/orders/ID/transactions.json"]]
     :[["Proveedores de pago","/payment_providers"],["Últimas órdenes","/orders?per_page=3&payment_status=paid"],["Orden + transacciones (aggregates)","/orders/ID?aggregates=transactions"],["Transacciones de una orden","/orders/ID/transactions"],["Una orden","/orders/ID"]];
@@ -19123,8 +19123,8 @@ function AdmTnProbe({T}){
     <div>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:2}}><div style={{fontSize:13,fontWeight:700,color:T.text}}>Diagnóstico API {plat==="shopify"?"Shopify":"Tienda Nube"}</div><AdmSeg T={T} value={plat} onChange={v=>{setPlat(v);setPath(v==="shopify"?"/orders.json?limit=3&status=any&financial_status=paid&fields=id,name,gateway,payment_gateway_names,total_price,created_at":"/payment_providers");setOut(null);}} opciones={[["tiendanube","Tienda Nube"],["shopify","Shopify"]]}/></div>
       <div style={{fontSize:11,color:T.textSm,marginBottom:8}}>Consulta cruda con el token de la cuenta indicada. Para las transacciones, reemplazá ID por el id interno de una orden (lo ves en "Últimas órdenes").</div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{PRESETS.map(([l,p])=><AdmBtn key={l} T={T} variant="ghost" size="sm" onClick={()=>{setPath(p);return p.includes("ID")?Promise.resolve():run(p);}}>{l}</AdmBtn>)}</div>
-      <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}><AdmInput T={T} value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email de la cuenta" list="gh-admin-emails" style={{width:240}}/><AdmInput T={T} value={path} onChange={e=>setPath(e.target.value)} style={{flex:1,minWidth:220,fontFamily:"monospace",fontSize:12}}/><AdmBtn T={T} size="sm" onClick={()=>run()}>{busy?"…":"Consultar"}</AdmBtn></div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{PRESETS.map(([l,p])=><AdmBtn key={l} T={T} variant="ghost" size="sm" onClick={()=>{setPath(p);return run(p);}}>{l}</AdmBtn>)}</div>
+      <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}><AdmInput T={T} value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email de la cuenta" list="gh-admin-emails" style={{width:240}}/><AdmInput T={T} value={oid} onChange={e=>setOid(e.target.value)} placeholder="ID de orden (para presets con ID)" style={{width:210}}/><AdmInput T={T} value={path} onChange={e=>setPath(e.target.value)} style={{flex:1,minWidth:220,fontFamily:"monospace",fontSize:12}}/><AdmBtn T={T} size="sm" onClick={()=>run()}>{busy?"…":"Consultar"}</AdmBtn></div>
       {out&&<pre style={{fontSize:11,lineHeight:1.45,background:T.bg,border:`1px solid ${T.borderL||T.border}`,borderRadius:8,padding:10,maxHeight:420,overflow:"auto",whiteSpace:"pre-wrap",wordBreak:"break-all",color:out.error?T.red:T.text}}>{JSON.stringify(out,null,2)}</pre>}
     </div>
   );
