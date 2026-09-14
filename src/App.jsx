@@ -11437,9 +11437,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                               <div style={{fontSize:11,color:u1.ok?T.green:T.textSm,marginTop:3}}>{[u1.dir,u1.loc,u1.cp?`CP ${u1.cp}`:""].filter(Boolean).join(" · ")}</div>
                             )}
                             {u1?.cf&&!u1.ok&&<div style={{fontSize:11,color:u1.cf.grave&&!u1.cf.mismoDom?T.red:T.yellow,marginTop:2}}>{u1.cf.msg}</div>}
-                            {!u1&&dirsUnicas.length===0&&order?.pickupDetails&&(
-                              <div style={{fontSize:11,color:T.textSm,marginTop:3,opacity:0.8}}>Sin dirección en el listado oficial — compará el nombre con la calle del punto de arriba.</div>
-                            )}
+                            {!u1&&dirsUnicas.length===0&&order?.pickupDetails&&(()=>{
+                              // El punto no está en la API de Andreani (pasa con muchos HOP):
+                              // al menos comparar la calle y el número que trae el NOMBRE del
+                              // desplegable con los del punto del cliente.
+                              const pO=ghPuntoDeOrden(order); const a=ghDirParse(pO?.calle,pO?.num); const b=ghDirParse(item,"");
+                              const mismaCalle=ghMismaCalle(a,b);
+                              const numTpl=(ghNrmSuc(item).match(/\b\d{2,5}\b/g)||[]).filter(x=>!a.nums.includes(x));
+                              if(mismaCalle&&a.num&&numTpl.length&&!numTpl.includes(a.num)) return <div style={{fontSize:11,color:T.red,marginTop:3}}>Misma calle pero el desplegable dice {numTpl.join("/")} y el cliente eligió {a.num} — no es este punto.</div>;
+                              if(mismaCalle&&a.num&&numTpl.includes(a.num)) return <div style={{fontSize:11,color:T.green,marginTop:3}}>Misma calle y mismo número ({a.num}) según el nombre del desplegable.</div>;
+                              if(mismaCalle) return <div style={{fontSize:11,color:T.yellow,marginTop:3}}>Misma calle que el punto del cliente ({[pO.calle,pO.num].filter(Boolean).join(" ")}); el desplegable no trae número, así que no se puede confirmar el {a.num||"número"}. Si es el único HOP de esa calle, es este.</div>;
+                              return <div style={{fontSize:11,color:T.textSm,marginTop:3,opacity:0.8}}>No está en el listado oficial de Andreani y el nombre no coincide con la calle del punto ({[pO?.calle,pO?.num].filter(Boolean).join(" ")||"—"}).</div>;
+                            })()}
                             {dirsUnicas.length>1&&(
                               <div style={{fontSize:11,color:T.yellow,marginTop:3,lineHeight:1.5}}>
                                 <strong>{dirsUnicas.length} puntos distintos comparten este nombre</strong> ({dirsUnicas.map(x=>x.dir).join(" / ")}) — el Excel no puede distinguirlos: emitilo por Etiquetas listas o a mano en Andreani.
@@ -17833,6 +17842,7 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
             <Card T={T} padding="lg">
               <AdmTitulo T={T} t="Diagnóstico API Andreani" sub="Consultá la API oficial con la cuenta de la plataforma para ver qué devuelve (sucursales por canal/tipo, tarifas)."/>
               <AdmProbe T={T}/>
+              <div style={{marginTop:14}}><AdmTnProbe T={T}/></div>
             </Card>
           </div>
         </div>
@@ -17857,6 +17867,24 @@ function AdmProbe({T}){
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{PRESETS.map(([l,p])=><AdmBtn key={l} T={T} variant="ghost" size="sm" onClick={()=>{setPath(p);return run(p);}}>{l}</AdmBtn>)}</div>
       <div style={{display:"flex",gap:8,marginBottom:8}}><AdmInput T={T} value={path} onChange={e=>setPath(e.target.value)} style={{flex:1,fontFamily:"monospace",fontSize:12}}/><AdmBtn T={T} size="sm" onClick={()=>run()}>{busy?"…":"Consultar"}</AdmBtn></div>
       {out&&<pre style={{fontSize:11,lineHeight:1.45,background:T.bg,border:`1px solid ${T.borderL||T.border}`,borderRadius:8,padding:10,maxHeight:360,overflow:"auto",whiteSpace:"pre-wrap",wordBreak:"break-all",color:out.error?T.red:T.text}}>{JSON.stringify(out,null,2)}</pre>}
+    </div>
+  );
+}
+
+// ── Sonda de la API de Tienda Nube con el token de una cuenta (solo admin) ──
+// Para ver de primera mano qué informa TN sobre comisiones de pago.
+function AdmTnProbe({T}){
+  const [email,setEmail]=useState(""); const [path,setPath]=useState("/payment_providers");
+  const [out,setOut]=useState(null); const [busy,setBusy]=useState(false);
+  const run=async(p)=>{ const pp=p||path; if(!email.trim()){ toast("Poné el email de la cuenta","warning"); return; } setBusy(true); setOut(null); try{ const d=await admAndreani("admin_tn_probe",{email:email.trim(),path:pp}); setOut(d); }catch(e){ setOut({error:e.message}); } setBusy(false); };
+  const PRESETS=[["Proveedores de pago","/payment_providers"],["Últimas órdenes","/orders?per_page=3&payment_status=paid"],["Transacciones de una orden","/orders/ID/transactions"],["Una orden","/orders/ID"]];
+  return (
+    <div>
+      <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>Diagnóstico API Tienda Nube</div>
+      <div style={{fontSize:11,color:T.textSm,marginBottom:8}}>Consulta cruda con el token de la cuenta indicada. Para las transacciones, reemplazá ID por el id interno de una orden (lo ves en "Últimas órdenes").</div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{PRESETS.map(([l,p])=><AdmBtn key={l} T={T} variant="ghost" size="sm" onClick={()=>{setPath(p);return p.includes("ID")?Promise.resolve():run(p);}}>{l}</AdmBtn>)}</div>
+      <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}><AdmInput T={T} value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email de la cuenta" list="gh-admin-emails" style={{width:240}}/><AdmInput T={T} value={path} onChange={e=>setPath(e.target.value)} style={{flex:1,minWidth:220,fontFamily:"monospace",fontSize:12}}/><AdmBtn T={T} size="sm" onClick={()=>run()}>{busy?"…":"Consultar"}</AdmBtn></div>
+      {out&&<pre style={{fontSize:11,lineHeight:1.45,background:T.bg,border:`1px solid ${T.borderL||T.border}`,borderRadius:8,padding:10,maxHeight:420,overflow:"auto",whiteSpace:"pre-wrap",wordBreak:"break-all",color:out.error?T.red:T.text}}>{JSON.stringify(out,null,2)}</pre>}
     </div>
   );
 }

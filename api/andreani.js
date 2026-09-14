@@ -2147,7 +2147,7 @@ export default async function handler(req, res) {
     }
 
     // ── ACCIONES ADMIN ────────────────────────────────────────────────────
-    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_carga_comprobante", "admin_punto_map", "admin_punto_map_audit", "admin_envios", "admin_envios_problemas", "admin_casos", "admin_caso_fotos", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill", "admin_ejecutiva_token"];
+    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_carga_comprobante", "admin_punto_map", "admin_punto_map_audit", "admin_tn_probe", "admin_envios", "admin_envios_problemas", "admin_casos", "admin_caso_fotos", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill", "admin_ejecutiva_token"];
     if (adminActions.includes(action)) {
       const adm = await requireAdmin(req);
       if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
@@ -2261,6 +2261,29 @@ export default async function handler(req, res) {
       // matcheo. Una elección manual equivocada guardada se reusa en silencio en
       // cada pedido futuro al mismo punto — esto las saca a la luz.
       // GET → lista; POST {quitar:[{uid,key}], quitarGlobal:[key]} → borra.
+      // ── admin_tn_probe: GET crudo a la API de Tienda Nube con el token de una
+      // cuenta (por email o uid). Solo lectura y solo rutas de diagnóstico:
+      // órdenes, transacciones de una orden y proveedores de pago. Para saber
+      // qué informa TN de las comisiones de pago (merchant_charges / rates).
+      if (action === "admin_tn_probe") {
+        if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
+        const path = String(body.path || "").trim();
+        if (!/^\/(orders(\/\d+(\/transactions)?)?|payment_providers|payment\/providers(\/[\w-]+)?)(\?[^\s]*)?$/.test(path)) return res.status(400).json({ error: "Solo /orders, /orders/{id}, /orders/{id}/transactions, /payment_providers" });
+        let target = String(body.uid || "").trim();
+        const email = String(body.email || "").trim().toLowerCase();
+        if (!target && email) { const q = await db.collection("users").where("email", "==", email).limit(1).get(); target = q.empty ? "" : q.docs[0].id; }
+        if (!target) return res.status(400).json({ error: "uid o email requerido" });
+        const ud = (await db.collection("users").doc(target).get()).data() || {};
+        const tn = (ud.stores || []).find(s => s.type === "tiendanube" && s.accessToken && s.storeId);
+        if (!tn) return res.status(400).json({ error: "Esa cuenta no tiene Tienda Nube conectada" });
+        const t0 = Date.now();
+        const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}${path}`, { headers: { Authentication: `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp (contacto.growith@gmail.com)" }, signal: AbortSignal.timeout(12000) });
+        const txt = await r.text();
+        let j = null; try { j = JSON.parse(txt); } catch (_) {}
+        await logAdminAndreani(db, adm.user.uid, "tn_probe", target, path);
+        return res.json({ status: r.status, ms: Date.now() - t0, storeId: tn.storeId, scopes: tn.scope || tn.scopes || null, json: j != null ? (Array.isArray(j) ? j.slice(0, 5) : j) : null, raw: j == null ? txt.slice(0, 2000) : null, count: Array.isArray(j) ? j.length : null });
+      }
+
       if (action === "admin_punto_map_audit") {
         const gRef = db.collection("andreani_config").doc("punto_map_global");
         if (req.method === "POST") {

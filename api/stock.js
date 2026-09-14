@@ -304,7 +304,9 @@ function processTN(orders) {
       // en Shopify) en vez de depender del % manual. Requiere la cuenta de MP
       // conectada (OAuth de Mercado Libre = misma cuenta de MP).
       const mpPayIdTn = /mercado/i.test(pay) && o.gateway_id ? String(o.gateway_id) : null;
-      ordersDetail.push({ id:String(o.id), nombre:`#${o.number||o.id}`, fecha:dt, platform:"tiendanube", revenue:orderRevenue, envioCliente, items:detItems, pay, envioCosto:parseFloat(o.shipping_cost_owner)||0, cust:String(o.customer?.id||o.contact_email||""), ...(mpPayIdTn?{mpPayId:mpPayIdTn}:{}) });
+      const payMethod = String(o.payment_details?.method || "").toLowerCase() || null;
+      const cuotas = parseInt(o.payment_details?.installments) || null;
+      ordersDetail.push({ id:String(o.id), nombre:`#${o.number||o.id}`, fecha:dt, platform:"tiendanube", revenue:orderRevenue, envioCliente, items:detItems, pay, envioCosto:parseFloat(o.shipping_cost_owner)||0, cust:String(o.customer?.id||o.contact_email||""), ...(mpPayIdTn?{mpPayId:mpPayIdTn}:{}), ...(payMethod?{payMethod}:{}), ...(cuotas?{cuotas}:{}) });
     }
   }
   return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,ordersDetail,
