@@ -1924,8 +1924,6 @@ async function generarPDF(factData, config) {
       : (letra === "A" ? "01" : letra === "B" ? "06" : "11");
     draw("COD. " + cod, MX + halfW + LW / 2, HY + 72, 7, true, "center", COL_GREY);
 
-    // Teléfono del emisor (opcional, config.telefono_en_factura): va debajo del nombre.
-    const telEmisor = (config.telefono_en_factura && config.telefono) ? "Tel: " + String(config.telefono) : "";
     // Emisor (izquierda) — banner si existe, sino nombre de fantasía
     if (bannerImage) {
       // Banner ocupa la franja superior izquierda. Mantenemos aspect ratio.
@@ -1943,15 +1941,6 @@ async function generarPDF(factData, config) {
       draw("Domicilio Comercial: " + (domicilio || "-"), MX + 8, ey, 7); ey += 10;
       draw("Cond. IVA: " + (isMonotributo ? "Responsable Monotributo" : "IVA Responsable Inscripto"), MX + 8, ey, 7); ey += 10;
       if (ingresos_brutos) { draw("Ingresos Brutos: " + ingresos_brutos, MX + 8, ey, 7); ey += 10; }
-    } else if (telEmisor) {
-      // Con teléfono: el nombre sube un poco y las líneas se aprietan para entrar en el recuadro.
-      draw(nombre_fantasia || razon_social, MX + 8, HY + 15, 13, true, "left", COL_ACCENT);
-      draw(telEmisor, MX + 8, HY + 26, 7.5, false, "left", COL_GREY);
-      draw("Razón Social: " + razon_social, MX + 8, HY + 37, 7);
-      draw("Domicilio Comercial: " + (domicilio || "-"), MX + 8, HY + 48, 7);
-      draw("Condición frente al IVA: " + (isMonotributo ? "Responsable Monotributo" : "IVA Responsable Inscripto"), MX + 8, HY + 59, 7);
-      if (ingresos_brutos) draw("Ingresos Brutos: " + ingresos_brutos, MX + 8, HY + 70, 7);
-      draw("Fecha Inicio Actividades: " + (config.fecha_inicio || "-"), MX + 8, HY + 81, 7);
     } else {
       draw(nombre_fantasia || razon_social, MX + 8, HY + 16, 13, true, "left", COL_ACCENT);
       draw("Razón Social: " + razon_social, MX + 8, HY + 32, 7);
@@ -1970,12 +1959,9 @@ async function generarPDF(factData, config) {
     draw("Comp. Nro: " + String(factData.comprobante).padStart(8, "0"), RX, HY + 48, 8);
     draw("Fecha de Emisión: " + factData.fecha, RX, HY + 60, 8);
     draw("CUIT: " + cuit, RX, HY + 72, 8);
-    if (bannerImage && (nombre_fantasia || telEmisor)) {
-      // si hay banner, el nombre de fantasía (y el teléfono si se eligió) van acá abajo
-      const linea = [nombre_fantasia, telEmisor].filter(Boolean).join("  ·  ");
-      let fsz = 7;
-      while (fsz > 5 && fontB.widthOfTextAtSize(safe(linea), fsz) > halfW - 18) fsz -= 0.5;
-      draw(linea, RX, HY + 84, fsz, true, "left", COL_GREY);
+    if (nombre_fantasia && bannerImage) {
+      // si hay banner, mostrar nombre de fantasía aquí también, abajo
+      draw(nombre_fantasia, RX, HY + 84, 7, true, "left", COL_GREY);
     }
 
     // ─────── DATOS RECEPTOR ───────
@@ -3595,15 +3581,6 @@ export default async function handler(req, res) {
       // Banner opcional para PDF (data URL "data:image/png;base64,...")
       if (data.banner_b64 === "") updated.banner_b64 = ""; // permitir borrar
       else if (data.banner_b64) updated.banner_b64 = data.banner_b64;
-
-      // Teléfono del emisor (opcional) y si se imprime en la factura, debajo del nombre.
-      if (data.telefono !== undefined) {
-        updated.telefono = String(data.telefono || "").replace(/[^\d+\-() ]/g, "").replace(/\s+/g, " ").trim().slice(0, 30);
-      }
-      if (data.telefono_en_factura !== undefined) {
-        updated.telefono_en_factura = data.telefono_en_factura === true || data.telefono_en_factura === "true";
-      }
-      if (!updated.telefono) updated.telefono_en_factura = false;
 
       // Envío automático de la factura al cliente por email:
       // envio_mail = { enabled: boolean, reply_to: string|null }

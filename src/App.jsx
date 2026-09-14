@@ -25543,8 +25543,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [wizTipoPersona, setWizTipoPersona] = useState("FISICA");
   const [wizRazonSocial, setWizRazonSocial] = useState("");
   const [wizNombreFantasia, setWizNombreFantasia] = useState("");
-  const [wizTelefono, setWizTelefono] = useState("");
-  const [wizTelEnFactura, setWizTelEnFactura] = useState(false);
   const [wizDomicilio, setWizDomicilio] = useState("");
   const [wizFechaInicio, setWizFechaInicio] = useState("");
   const [wizCondicion, setWizCondicion] = useState("RESPONSABLE_INSCRIPTO");
@@ -25837,7 +25835,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   function resetWizard(){
     setShowWizard(false); setWizStep(0);
-    setWizCuit(""); setWizTipoPersona("FISICA"); setWizRazonSocial(""); setWizNombreFantasia(""); setWizTelefono(""); setWizTelEnFactura(false);
+    setWizCuit(""); setWizTipoPersona("FISICA"); setWizRazonSocial(""); setWizNombreFantasia("");
     setWizDomicilio(""); setWizFechaInicio(""); setWizCondicion("RESPONSABLE_INSCRIPTO");
     setWizPuntoVenta("1"); setWizArcaProd(false); setWizIngresosBrutos("");
     setCertText(""); setKeyText(""); setCertFileName(""); setKeyFileName("");
@@ -25957,7 +25955,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     fd.append("domicilio", wizDomicilio); fd.append("fecha_inicio", wizFechaInicio);
     fd.append("condicion_fiscal", wizCondicion); fd.append("punto_venta", wizPuntoVenta);
     fd.append("arca_prod", String(wizArcaProd)); fd.append("ingresos_brutos", wizIngresosBrutos);
-    fd.append("telefono", wizTelefono.trim()); fd.append("telefono_en_factura", String(!!(wizTelEnFactura && wizTelefono.trim())));
     if(certText.trim()) fd.append("cert_pem", certText.trim());
     if(keyText.trim()) fd.append("key_pem", keyText.trim());
     try {
@@ -26025,8 +26022,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     fd.append("puntos_venta", JSON.stringify(Array.isArray(editCuit.puntos_venta)?editCuit.puntos_venta:[]));
     fd.append("arca_prod", String(editCuit.arca_prod||false));
     fd.append("ingresos_brutos", editCuit.ingresos_brutos||"");
-    fd.append("telefono", String(editCuit.telefono||"").trim());
-    fd.append("telefono_en_factura", String(!!(editCuit.telefono_en_factura && String(editCuit.telefono||"").trim())));
     // Banner: si está vacío "" = quitar, si tiene contenido = guardar, si es undefined = no tocar
     if (editCuit.banner_b64 !== undefined) fd.append("banner_b64", editCuit.banner_b64);
     // Renovación de certificado: solo se mandan si el usuario pegó algo nuevo
@@ -28882,14 +28877,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <label style={labelS}>Nombre de fantasía (opcional)</label>
                   <input value={wizNombreFantasia} onChange={e=>setWizNombreFantasia(e.target.value)} placeholder="Mi Tienda Online" style={iS}/>
                 </div>
-                <div>
-                  <label style={labelS}>Teléfono (opcional)</label>
-                  <input value={wizTelefono} onChange={e=>setWizTelefono(e.target.value.replace(/[^\d+\-() ]/g,"").slice(0,30))} placeholder="11 5555-5555" inputMode="tel" style={iS}/>
-                  <label style={{display:"flex",alignItems:"center",gap:8,marginTop:8,fontSize:12,color:wizTelefono.trim()?T.text:T.textSm,cursor:wizTelefono.trim()?"pointer":"default"}}>
-                    <input type="checkbox" checked={!!(wizTelEnFactura&&wizTelefono.trim())} disabled={!wizTelefono.trim()} onChange={e=>setWizTelEnFactura(e.target.checked)}/>
-                    Mostrarlo en las facturas, debajo del nombre
-                  </label>
-                </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>
                   <div>
                     <label style={labelS}>Condición frente al IVA</label>
@@ -29067,7 +29054,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       ["CUIT",formatCuit(wizCuit)],
                       ["Razón social",wizRazonSocial||"—"],
                       ["Fantasía",wizNombreFantasia||"—"],
-                      ["Teléfono",wizTelefono.trim()?(wizTelefono.trim()+(wizTelEnFactura?" · en facturas":" · no va en facturas")):"—"],
                       ["Condición",wizCondicion==="MONOTRIBUTO"?"Monotributista (Factura C)":"Resp. Inscripto (Factura A/B)"],
                       ["Punto de venta",wizPuntoVenta],
                       ["Ambiente",wizArcaProd?"Producción (real)":"Homologación (pruebas)"],
@@ -29140,14 +29126,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div>
                 <label style={labelS}>Nombre de fantasía</label>
                 <input value={editCuit.nombre_fantasia||""} onChange={e=>setEditCuit({...editCuit,nombre_fantasia:e.target.value})} style={iS}/>
-              </div>
-              <div>
-                <label style={labelS}>Teléfono (opcional)</label>
-                <input value={editCuit.telefono||""} onChange={e=>setEditCuit({...editCuit,telefono:e.target.value.replace(/[^\d+\-() ]/g,"").slice(0,30)})} placeholder="11 5555-5555" inputMode="tel" style={iS}/>
-                <label style={{display:"flex",alignItems:"center",gap:8,marginTop:8,fontSize:12,color:String(editCuit.telefono||"").trim()?T.text:T.textSm,cursor:String(editCuit.telefono||"").trim()?"pointer":"default"}}>
-                  <input type="checkbox" checked={!!(editCuit.telefono_en_factura&&String(editCuit.telefono||"").trim())} disabled={!String(editCuit.telefono||"").trim()} onChange={e=>setEditCuit({...editCuit,telefono_en_factura:e.target.checked})}/>
-                  Mostrarlo en las facturas, debajo del nombre
-                </label>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
                 <div>
