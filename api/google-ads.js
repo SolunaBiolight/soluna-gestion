@@ -124,6 +124,235 @@ async function gaql(at, customer, login, query) {
   return out;
 }
 
+// ── Publicar en Google (Búsqueda / Performance Max) ──────────────────────────
+// País → geoTargetConstant (2000 + código ISO numérico) e idioma → languageConstant.
+const GADS_GEOS = { AR: 2032, UY: 2858, CL: 2152, PY: 2600, BO: 2068, PE: 2604, CO: 2170, EC: 2218, MX: 2484, ES: 2724, US: 2840 };
+const GADS_LANGS = { es: 1003, en: 1000, pt: 1014 };
+const GADS_GEMINI_MODEL = "gemini-2.5-flash";
+const gLen = (s) => [...String(s || "")].length;
+// Lista de textos: sin vacíos ni repetidos (Google rechaza textos duplicados en el mismo anuncio).
+const gTxts = (arr) => { const seen = new Set(); return (Array.isArray(arr) ? arr : []).map(s => String(s || "").replace(/\s+/g, " ").trim()).filter(t => { const k = t.toLowerCase(); if (!t || seen.has(k)) return false; seen.add(k); return true; }); };
+const gKwText = (s) => String(s || "").replace(/[^\p{L}\p{N}\s&'.\-+/]/gu, " ").replace(/\s+/g, " ").trim().toLowerCase();
+const parseBody = (req) => (typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {}));
+
+// Errores de un mutate → castellano, diciendo qué elemento falló (labels[i] = qué es la operación i).
+const GADS_ERR_ES = {
+  DUPLICATE_CAMPAIGN_NAME: "ya hay una campaña con ese nombre en la cuenta — cambiale el nombre",
+  POLICY_FINDING: "Google lo rechazó por sus políticas de anuncios",
+  ASPECT_RATIO_NOT_ALLOWED: "la imagen no tiene la proporción que pide Google",
+  TOO_LONG: "pasa el largo máximo que acepta Google",
+};
+function gadsMutateError(status, txt, labels) {
+  const base = gadsHttpError(status, txt);
+  if (!/^Google Ads API HTTP/.test(base.message)) return base; // error de acceso ya traducido
+  let errs = [];
+  try { errs = (JSON.parse(txt).error?.details || []).flatMap(d => d.errors || []); } catch { }
+  if (!errs.length) return base;
+  const partes = errs.slice(0, 4).map(e => {
+    const code = String(Object.values(e.errorCode || {})[0] || "");
+    const idx = (e.location?.fieldPathElements || []).find(f => f.fieldName === "mutate_operations" || f.fieldName === "operations")?.index;
+    const donde = idx != null && labels?.[idx] ? `${labels[idx]}: ` : "";
+    const trig = e.trigger?.stringValue ? ` («${e.trigger.stringValue}»)` : "";
+    const temas = (e.details?.policyFindingDetails?.policyTopicEntries || []).map(p => p.topic).filter(Boolean);
+    return `${donde}${GADS_ERR_ES[code] || e.message || code}${trig}${temas.length ? ` [${temas.join(", ")}]` : ""}`;
+  });
+  const err = new Error(partes.join(" · "));
+  err.status = status; err.google = errs[0]?.message || ""; err.code = JSON.stringify(errs[0]?.errorCode || "");
+  return err;
+}
+
+// googleAds:mutate atómico (si una operación falla, no se crea nada).
+async function gadsMutate(at, cn, login, ops, labels) {
+  const r = await fetch(`${GADS_API}/customers/${cn}/googleAds:mutate`, {
+    method: "POST", headers: { ...gadsHeaders(at, login), "Content-Type": "application/json" },
+    body: JSON.stringify({ mutateOperations: ops }),
+  });
+  const txt = await r.text().catch(() => "");
+  if (!r.ok) throw gadsMutateError(r.status, txt, labels);
+  try { return JSON.parse(txt).mutateOperationResponses || []; } catch { return []; }
+}
+
+// Valida lo que manda el publicador (mismos límites que muestra la UI). → { errs, spec }
+function gadsValidarPublicacion(b) {
+  const errs = [];
+  const tipo = b.tipo === "pmax" ? "pmax" : b.tipo === "search" ? "search" : null;
+  if (!tipo) errs.push("Elegí el tipo de campaña");
+  const nombre = String(b.nombre || "").replace(/\s+/g, " ").trim();
+  if (!nombre) errs.push("Poné un nombre a la campaña"); else if (gLen(nombre) > 250) errs.push("El nombre de la campaña es muy largo");
+  const url = String(b.url || "").trim();
+  let urlOk = false; try { const u = new URL(url); urlOk = /^https?:$/.test(u.protocol) && u.hostname.includes("."); } catch { }
+  if (!urlOk) errs.push("La URL de destino no es válida (tiene que empezar con https://)");
+  const presupuesto = Number(b.presupuesto);
+  if (!(presupuesto > 0)) errs.push("Poné un presupuesto diario mayor a 0");
+  const rango = (lista, min, max, largo, nom) => {
+    if (lista.length < min) errs.push(`${nom}: cargá al menos ${min}`);
+    if (lista.length > max) errs.push(`${nom}: máximo ${max}`);
+    lista.forEach(t => { if (gLen(t) > largo) errs.push(`${nom}: «${t}» pasa los ${largo} caracteres`); });
+  };
+  const hs = gTxts(b.headlines), ds = gTxts(b.descriptions);
+  rango(hs, 3, 15, 30, "Títulos");
+  const spec = {
+    tipo, nombre, url, hs, ds,
+    micros: String(Math.round(presupuesto * 100) * 10000), // múltiplo de la unidad mínima (0,01)
+    geo: GADS_GEOS[b.pais] || GADS_GEOS.AR, lang: GADS_LANGS[b.idioma] || GADS_LANGS.es,
+    status: b.activar === true ? "ENABLED" : "PAUSED",
+  };
+  if (tipo === "search") {
+    rango(ds, 2, 4, 90, "Descripciones");
+    const kws = []; const seen = new Set();
+    for (const k of (Array.isArray(b.keywords) ? b.keywords : [])) {
+      const text = gKwText(k?.text);
+      const match = ["BROAD", "PHRASE", "EXACT"].includes(k?.match) ? k.match : "BROAD";
+      if (!text || seen.has(text + match)) continue;
+      seen.add(text + match);
+      if (gLen(text) > 80 || text.split(" ").length > 10) { errs.push(`Palabra clave «${text}»: máximo 80 caracteres y 10 palabras`); continue; }
+      kws.push({ text, match });
+    }
+    if (!kws.length) errs.push("Cargá al menos una palabra clave");
+    if (kws.length > 300) errs.push("Máximo 300 palabras clave");
+    const path1 = String(b.path1 || "").replace(/\s+/g, ""), path2 = String(b.path2 || "").replace(/\s+/g, "");
+    if (gLen(path1) > 15 || gLen(path2) > 15) errs.push("Las rutas visibles tienen máximo 15 caracteres");
+    if (path2 && !path1) errs.push("Para usar la ruta 2 completá la ruta 1");
+    Object.assign(spec, { kws, path1, path2, puja: b.puja === "clics" ? "clics" : "conv" });
+  } else if (tipo === "pmax") {
+    rango(ds, 2, 5, 90, "Descripciones");
+    if (ds.length && !ds.some(t => gLen(t) <= 60)) errs.push("Descripciones: al menos una tiene que tener 60 caracteres o menos");
+    const lhs = gTxts(b.longHeadlines);
+    rango(lhs, 1, 5, 90, "Títulos largos");
+    const negocio = String(b.negocio || "").replace(/\s+/g, " ").trim();
+    if (!negocio) errs.push("Poné el nombre del negocio"); else if (gLen(negocio) > 25) errs.push("El nombre del negocio tiene máximo 25 caracteres");
+    const im = b.images || {};
+    Object.assign(spec, { lhs, negocio, puja: b.puja === "conv" ? "conv" : "valor", land: im.land, sq: im.sq, logo: im.logo });
+  }
+  return { errs, spec };
+}
+
+// Operaciones del mutate principal, en orden de dependencia, con IDs temporales
+// negativos. pre = {hs, ds}: títulos/descripciones de PMax ya creados (Google exige
+// que existan antes de la campaña). labels[i] describe la operación i para los errores.
+function gadsOperaciones(cn, spec, pre, stamp) {
+  let tmp = -1;
+  const rn = (col) => `customers/${cn}/${col}/${tmp--}`;
+  const ops = [], labels = [];
+  const push = (op, label) => { ops.push(op); labels.push(label); };
+  const budget = rn("campaignBudgets"), camp = rn("campaigns");
+  push({ campaignBudgetOperation: { create: { resourceName: budget, name: `${spec.nombre} · ${stamp}`, amountMicros: spec.micros, deliveryMethod: "STANDARD", explicitlyShared: false } } }, "Presupuesto");
+  const c = { resourceName: camp, name: spec.nombre, status: spec.status, campaignBudget: budget, containsEuPoliticalAdvertising: "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING" };
+  if (spec.tipo === "search") {
+    Object.assign(c, {
+      advertisingChannelType: "SEARCH",
+      networkSettings: { targetGoogleSearch: true, targetSearchNetwork: true, targetContentNetwork: false, targetPartnerSearchNetwork: false },
+      ...(spec.puja === "clics" ? { targetSpend: {} } : { maximizeConversions: {} }),
+    });
+  } else {
+    // Sin "brand guidelines": nombre del negocio y logo van dentro del grupo de recursos.
+    Object.assign(c, { advertisingChannelType: "PERFORMANCE_MAX", brandGuidelinesEnabled: false, ...(spec.puja === "conv" ? { maximizeConversions: {} } : { maximizeConversionValue: {} }) });
+  }
+  push({ campaignOperation: { create: c } }, "Campaña");
+  push({ campaignCriterionOperation: { create: { campaign: camp, location: { geoTargetConstant: `geoTargetConstants/${spec.geo}` } } } }, "Ubicación");
+  push({ campaignCriterionOperation: { create: { campaign: camp, language: { languageConstant: `languageConstants/${spec.lang}` } } } }, "Idioma");
+  if (spec.tipo === "search") {
+    const ag = rn("adGroups");
+    push({ adGroupOperation: { create: { resourceName: ag, name: `${spec.nombre} · Grupo 1`, campaign: camp, status: "ENABLED", type: "SEARCH_STANDARD" } } }, "Grupo de anuncios");
+    spec.kws.forEach(k => push({ adGroupCriterionOperation: { create: { adGroup: ag, status: "ENABLED", keyword: { text: k.text, matchType: k.match } } } }, `Palabra clave «${k.text}»`));
+    const rsa = { headlines: spec.hs.map(text => ({ text })), descriptions: spec.ds.map(text => ({ text })), ...(spec.path1 ? { path1: spec.path1 } : {}), ...(spec.path2 ? { path2: spec.path2 } : {}) };
+    push({ adGroupAdOperation: { create: { adGroup: ag, status: "ENABLED", ad: { finalUrls: [spec.url], responsiveSearchAd: rsa } } } }, "Anuncio");
+  } else {
+    const ag = rn("assetGroups");
+    push({ assetGroupOperation: { create: { resourceName: ag, name: `${spec.nombre} · Grupo 1`, campaign: camp, finalUrls: [spec.url], status: "ENABLED" } } }, "Grupo de recursos");
+    const link = (asset, fieldType, label) => push({ assetGroupAssetOperation: { create: { assetGroup: ag, asset, fieldType } } }, label);
+    const texto = (text, fieldType, label) => { const a = rn("assets"); push({ assetOperation: { create: { resourceName: a, textAsset: { text } } } }, label); link(a, fieldType, label); };
+    spec.lhs.forEach((t, i) => texto(t, "LONG_HEADLINE", `Título largo ${i + 1}`));
+    texto(spec.negocio, "BUSINESS_NAME", "Nombre del negocio");
+    pre.hs.forEach((a, i) => link(a, "HEADLINE", `Título ${i + 1}`));
+    pre.ds.forEach((a, i) => link(a, "DESCRIPTION", `Descripción ${i + 1}`));
+    spec.land.forEach((a, i) => link(a, "MARKETING_IMAGE", `Imagen horizontal ${i + 1}`));
+    spec.sq.forEach((a, i) => link(a, "SQUARE_MARKETING_IMAGE", `Imagen cuadrada ${i + 1}`));
+    spec.logo.forEach((a, i) => link(a, "LOGO", `Logo ${i + 1}`));
+  }
+  return { ops, labels };
+}
+
+// Lee la página de destino (título, descripción, precio, texto visible) para darle
+// contexto a la IA. Solo http(s) público: sin IPs literales ni hosts internos, y
+// cada redirección se vuelve a chequear.
+async function gadsLeerPagina(url) {
+  const hostOk = (u) => { const h = u.hostname.toLowerCase(); return /^https?:$/.test(u.protocol) && h.includes(".") && !/^[\d.]+$/.test(h) && !h.includes(":") && !/(^|\.)(localhost|local|internal)$/.test(h); };
+  let u; try { u = new URL(url); } catch { return ""; }
+  const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    let r = null;
+    for (let i = 0; i < 4; i++) {
+      if (!hostOk(u)) return "";
+      r = await fetch(u.toString(), { signal: ctrl.signal, redirect: "manual", headers: { "User-Agent": "Mozilla/5.0 (compatible; GrowithBot/1.0; +https://www.growithapp.com)", Accept: "text/html" } });
+      if (r.status >= 300 && r.status < 400 && r.headers.get("location")) { u = new URL(r.headers.get("location"), u); continue; }
+      break;
+    }
+    if (!r || !r.ok || !/text\/html/i.test(r.headers.get("content-type") || "")) return "";
+    const html = (await r.text()).slice(0, 600000);
+    const m = (re) => (html.match(re)?.[1] || "").trim();
+    const title = m(/<title[^>]*>([^<]{1,300})<\/title>/i);
+    const desc = m(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']{1,600})["']/i) || m(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']{1,600})["']/i);
+    const ogt = m(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']{1,300})["']/i);
+    const precio = m(/"price"\s*:\s*"?([\d.,]{1,20})/i);
+    const texto = html.replace(/<(script|style|noscript|svg)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim().slice(0, 3500);
+    return [title && `Título: ${title}`, ogt && ogt !== title && `Título OG: ${ogt}`, desc && `Descripción: ${desc}`, precio && `Precio: ${precio}`, texto && `Texto de la página: ${texto}`].filter(Boolean).join("\n");
+  } catch { return ""; } finally { clearTimeout(to); }
+}
+
+// Textos para Búsqueda / PMax con Gemini. Descarta (no recorta) lo que pasa los
+// límites de Google; si quedan menos de los mínimos, reintenta una vez.
+async function gadsGeminiCopy(apiKey, { tipo, url, notas, marca, pagina, idioma }) {
+  const lengua = idioma === "en" ? "inglés" : idioma === "pt" ? "portugués" : "español rioplatense (Argentina, con voseo) salvo que la marca indique otra variante";
+  const pide = tipo === "pmax"
+    ? `{"headlines": [15 títulos, máx. 30 caracteres cada uno], "longHeadlines": [5 títulos largos, máx. 90], "descriptions": [5 descripciones, máx. 90; al menos 2 de 60 o menos], "businessName": "nombre del negocio, máx. 25"}`
+    : `{"headlines": [15 títulos, máx. 30 caracteres cada uno], "descriptions": [4 descripciones, máx. 90], "keywords": [15 a 25 objetos {"text": "...", "match": "BROAD" | "PHRASE" | "EXACT"}], "path1": "ruta visible, máx. 15, sin espacios", "path2": "ruta visible, máx. 15, sin espacios"}`;
+  const system = `Sos especialista en Google Ads para e-commerce. Escribís en ${lengua}. Cumplís las políticas de anuncios de Google: sin signos de exclamación en los títulos, sin emojis, sin MAYÚSCULAS sostenidas, sin símbolos repetidos, sin superlativos que no se puedan comprobar ("el mejor", "número 1") y sin inventar nada que no esté en los datos (descuentos, envío gratis, cuotas, precios, garantías). Cada título tiene que funcionar solo y combinado con cualquier otro; variá los ángulos: producto, beneficio, problema que resuelve, prueba social, oferta (solo si figura en los datos), llamado a la acción y marca. Los límites de caracteres son ESTRICTOS (contá espacios incluidos). ${tipo === "search" ? "Palabras clave: búsquedas reales de gente con intención de compra; PHRASE o EXACT para las más específicas, BROAD para las genéricas; nunca marcas de terceros." : ""} Respondé SOLO con JSON válido.`;
+  const user = [
+    marca && `## Contexto de la marca\n${marca}`,
+    notas && `## Qué se vende / ángulo pedido\n${notas}`,
+    url && `## URL de destino\n${url}`,
+    pagina && `## Lo que dice la página de destino\n${pagina}`,
+    `Generá los textos de una campaña de ${tipo === "pmax" ? "Performance Max" : "Búsqueda (anuncio de búsqueda responsivo)"} con este formato exacto:\n${pide}`,
+  ].filter(Boolean).join("\n\n");
+  const sinEmoji = (t) => t.replace(/\p{Extended_Pictographic}/gu, "").replace(/\s+/g, " ").trim();
+  const dentro = (arr, max, largo) => gTxts((Array.isArray(arr) ? arr : []).map(t => sinEmoji(String(t || "")))).filter(t => gLen(t) <= largo).slice(0, max);
+  let last = null;
+  for (let intento = 0; intento < 2; intento++) {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GADS_GEMINI_MODEL}:generateContent?key=${apiKey}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text: user }] }],
+        generationConfig: { response_mime_type: "application/json", temperature: intento ? 0.6 : 0.85, max_output_tokens: 6000, thinking_config: { thinking_budget: 0 } },
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { last = new Error(`Gemini: ${j.error?.message || "HTTP " + r.status}`); continue; }
+    let txt = j.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+    const s = txt.indexOf("{"), e = txt.lastIndexOf("}");
+    if (s < 0 || e <= s) { last = new Error("La IA no devolvió textos — probá de nuevo."); continue; }
+    let o; try { o = JSON.parse(txt.slice(s, e + 1)); } catch { last = new Error("La IA devolvió un formato inválido — probá de nuevo."); continue; }
+    const out = {
+      headlines: dentro((o.headlines || []).map(t => String(t || "").replace(/[!¡]/g, "")), 15, 30),
+      descriptions: dentro(o.descriptions, tipo === "pmax" ? 5 : 4, 90),
+    };
+    if (tipo === "pmax") {
+      out.longHeadlines = dentro(o.longHeadlines, 5, 90);
+      out.businessName = gLen(sinEmoji(String(o.businessName || ""))) <= 25 ? sinEmoji(String(o.businessName || "")) : "";
+    } else {
+      const seen = new Set();
+      out.keywords = (Array.isArray(o.keywords) ? o.keywords : []).map(k => ({ text: gKwText(typeof k === "string" ? k : k?.text), match: ["BROAD", "PHRASE", "EXACT"].includes(k?.match) ? k.match : "BROAD" }))
+        .filter(k => k.text && gLen(k.text) <= 80 && k.text.split(" ").length <= 10 && !seen.has(k.text + k.match) && seen.add(k.text + k.match)).slice(0, 40);
+      const ruta = (p) => { const t = String(p || "").replace(/\s+/g, "-").replace(/[^\p{L}\p{N}\-]/gu, "").toLowerCase(); return gLen(t) <= 15 ? t : ""; };
+      out.path1 = ruta(o.path1); out.path2 = out.path1 ? ruta(o.path2) : "";
+    }
+    if (out.headlines.length >= 3 && out.descriptions.length >= 2) return out;
+    last = new Error("La IA devolvió textos que no entran en los límites de Google — probá de nuevo.");
+  }
+  throw last || new Error("No se pudieron generar los textos.");
+}
+
 export default async function handler(req, res) {
   { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||_o.endsWith("-soluna1.vercel.app")||_o.startsWith("http://localhost"))?_o:"https://www.growithapp.com"); } // allowlist CORS
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -277,6 +506,87 @@ export default async function handler(req, res) {
       });
       if (!r.ok) throw gadsHttpError(r.status, await r.text().catch(() => ""));
       return res.json({ ok: true, id, status });
+    }
+
+    // ── Publicar en Google ──
+    // 1) upload_image: una imagen por request (JPEG/PNG ya recortado por el navegador a
+    //    la medida de Google) → asset IMAGE; devuelve el resourceName para el publish.
+    if (action === "upload_image" && req.method === "POST") {
+      const b = parseBody(req);
+      const customer = String(b.customer || "").replace(/\D/g, "");
+      const login = b.login ? String(b.login).replace(/\D/g, "") : null;
+      const data = String(b.data || "").replace(/^data:image\/[a-z+.-]+;base64,/i, "");
+      if (!customer || !data) return res.status(400).json({ error: "Faltan customer / data" });
+      if (data.length > 6_900_000) return res.status(413).json({ error: "La imagen pesa más de 5 MB" });
+      const snap = await db.collection("users").doc(uid).get();
+      const g = snap.data()?.googleAds || null;
+      if (!g?.refresh_token) return res.status(400).json({ error: "no_conectado", detail: "Google Ads no está conectado en esta tienda." });
+      const at = await gadsAccessToken(g);
+      // Nombre único: si la misma imagen ya existe en la cuenta, Google devuelve la existente.
+      const name = `${String(b.name || "Imagen").replace(/\s+/g, " ").trim().slice(0, 80)} · Growith ${Date.now().toString(36)}`;
+      const r = await fetch(`${GADS_API}/customers/${customer}/assets:mutate`, {
+        method: "POST", headers: { ...gadsHeaders(at, login), "Content-Type": "application/json" },
+        body: JSON.stringify({ operations: [{ create: { name, type: "IMAGE", imageAsset: { data } } }] }),
+      });
+      const txt = await r.text().catch(() => "");
+      if (!r.ok) throw gadsMutateError(r.status, txt, [String(b.name || "Imagen")]);
+      let resourceName = null; try { resourceName = JSON.parse(txt).results?.[0]?.resourceName || null; } catch { }
+      if (!resourceName) throw new Error("Google no devolvió la imagen subida — probá de nuevo.");
+      return res.json({ ok: true, resourceName });
+    }
+
+    // 2) publish: crea la campaña completa (Búsqueda o Performance Max) en un solo
+    //    mutate atómico. Por default queda PAUSADA (activar:true la crea activa).
+    if (action === "publish" && req.method === "POST") {
+      const b = parseBody(req);
+      const customer = String(b.customer || "").replace(/\D/g, "");
+      const login = b.login ? String(b.login).replace(/\D/g, "") : null;
+      if (!customer) return res.status(400).json({ error: "Falta la cuenta de Google Ads" });
+      const { errs, spec } = gadsValidarPublicacion(b);
+      if (spec.tipo === "pmax") {
+        const rnRe = new RegExp(`^customers/${customer}/assets/\\d+$`);
+        const ok = (arr, max) => (Array.isArray(arr) ? arr : []).map(String).filter(x => rnRe.test(x)).slice(0, max);
+        spec.land = ok(spec.land, 20); spec.sq = ok(spec.sq, 20); spec.logo = ok(spec.logo, 5);
+        if (!spec.land.length) errs.push("Subí al menos una imagen horizontal");
+        if (!spec.sq.length) errs.push("Subí al menos una imagen cuadrada");
+        if (!spec.logo.length) errs.push("Subí el logo");
+      }
+      if (errs.length) return res.status(400).json({ error: errs.join(" · "), errores: errs });
+      const snap = await db.collection("users").doc(uid).get();
+      const g = snap.data()?.googleAds || null;
+      if (!g?.refresh_token) return res.status(400).json({ error: "no_conectado", detail: "Google Ads no está conectado en esta tienda." });
+      const at = await gadsAccessToken(g);
+      let pre = null;
+      if (spec.tipo === "pmax") {
+        // Google exige que títulos y descripciones de PMax existan antes de la campaña.
+        const textos = [...spec.hs, ...spec.ds];
+        const labels = [...spec.hs.map((_, i) => `Título ${i + 1}`), ...spec.ds.map((_, i) => `Descripción ${i + 1}`)];
+        const out = await gadsMutate(at, customer, login, textos.map(text => ({ assetOperation: { create: { textAsset: { text } } } })), labels);
+        const rns = out.map(o => o.assetResult?.resourceName).filter(Boolean);
+        if (rns.length !== textos.length) throw new Error("Google no devolvió los textos creados — probá de nuevo.");
+        pre = { hs: rns.slice(0, spec.hs.length), ds: rns.slice(spec.hs.length) };
+      }
+      const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+      const { ops, labels } = gadsOperaciones(customer, spec, pre, stamp);
+      const out = await gadsMutate(at, customer, login, ops, labels);
+      const campRN = out.map(o => o.campaignResult?.resourceName).find(Boolean) || "";
+      return res.json({ ok: true, campaignId: campRN.split("/").pop() || null, resourceName: campRN, status: spec.status, tipo: spec.tipo, nombre: spec.nombre });
+    }
+
+    // 3) ai_copy: títulos / descripciones / keywords con Gemini, leyendo la página de
+    //    destino + el contexto de marca (el mismo que usa el copy de Meta).
+    if (action === "ai_copy" && req.method === "POST") {
+      const b = parseBody(req);
+      const apiKey = process.env.GOOGLE_AI_KEY;
+      if (!apiKey) return res.status(500).json({ error: "Falta GOOGLE_AI_KEY en el servidor" });
+      const url = String(b.url || "").trim().slice(0, 600);
+      const notas = String(b.notas || "").trim().slice(0, 1500);
+      if (!url && !notas) return res.status(400).json({ error: "Poné la URL de destino o contá qué vendés" });
+      const snap = await db.collection("users").doc(uid).get();
+      const marca = String(snap.data()?.meta_brand || "").trim().slice(0, 2500);
+      const pagina = url ? await gadsLeerPagina(url) : "";
+      const out = await gadsGeminiCopy(apiKey, { tipo: b.tipo === "pmax" ? "pmax" : "search", url, notas, marca, pagina, idioma: b.idioma });
+      return res.json({ ok: true, ...out, leyoPagina: !!pagina });
     }
 
     return res.status(400).json({ error: "Acción inválida" });

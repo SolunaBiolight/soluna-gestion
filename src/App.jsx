@@ -981,13 +981,13 @@ const SIDEBAR_GROUPS_BASE = [
     {id:"pubmeta",  permKey:"meta", label:"Publicar en Meta", icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", go:{page:"meta",tab:"creativos"}},
     {id:"pubml",    permKey:"ml",   label:"Publicar en ML", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", go:{page:"ml",tab:"publicar"}},
     {id:"pubtiktok", label:"Publicar en TikTok", icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z", soon:true},
-    {id:"pubgads",  label:"Publicar en Google", icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z", soon:true},
+    {id:"pubgads",  permKey:"gads", label:"Publicar en Google", icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z", go:{page:"gads",tab:"publicar"}},
     { group:"RECOMPENSAS" },
     {id:"referidos",label:"Referidos", icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
     {id:"planes",   label:"Suscripción", icon:"M2 5h20v14H2zM2 10h20M6 15h4"},
   ];
 
-function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, margenesTab, setMargenesTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false, seccionesMiembro=null}) {
+function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, margenesTab, setMargenesTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, gadsTab, setGadsTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false, seccionesMiembro=null}) {
   const GROUPS = SIDEBAR_GROUPS_BASE.map(it=>it.alertKey?{...it,count:alerts[it.alertKey]}:it);
   const [closedSubs, setClosedSubs] = React.useState(new Set());
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
@@ -1007,16 +1007,17 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
   const NavBtn = ({item}) => {
     // Los accesos del grupo PUBLISHER (item.go) apuntan a la pestaña Publicar de Meta/ML:
     // se marcan activos solo en esa pestaña, y la sección madre deja de marcarse ahí.
-    const enPubMeta = page==="meta"&&metaTab==="creativos", enPubMl = page==="ml"&&mlTab==="publicar";
-    const active = item.go ? (page===item.go.page && (item.go.page==="meta"?enPubMeta:enPubMl)) : (page === item.id && !((item.id==="meta"&&enPubMeta)||(item.id==="ml"&&enPubMl)));
+    const enPub = { meta: page==="meta"&&metaTab==="creativos", ml: page==="ml"&&mlTab==="publicar", gads: page==="gads"&&gadsTab==="publicar" };
+    const active = item.go ? (page===item.go.page && enPub[item.go.page]) : (page === item.id && !enPub[item.id]);
     const badgeColor = item.badge==="red" ? T.red : item.badge==="orange" ? T.orange : T.accent;
     const isConnected = item.integrationKey ? connectedStores[item.integrationKey] : undefined;
     return (
       <button onClick={()=>{
           if(item.soon) return;
-          if(item.go){ setPage(item.go.page); if(item.go.page==="meta") setMetaTab&&setMetaTab(item.go.tab); else setMlTab&&setMlTab(item.go.tab); return; }
+          if(item.go){ setPage(item.go.page); if(item.go.page==="meta") setMetaTab&&setMetaTab(item.go.tab); else if(item.go.page==="gads") setGadsTab&&setGadsTab(item.go.tab); else setMlTab&&setMlTab(item.go.tab); return; }
           if(item.id==="meta"&&metaTab==="creativos") setMetaTab&&setMetaTab("analisis");
           if(item.id==="ml"&&mlTab==="publicar") setMlTab&&setMlTab("gestion");
+          if(item.id==="gads"&&gadsTab==="publicar") setGadsTab&&setGadsTab("analisis");
           if(active&&item.subs?.length>0){setClosedSubs(p=>{const n=new Set(p);n.has(item.id)?n.delete(item.id):n.add(item.id);return n;});}else{setPage(item.id);setClosedSubs(p=>{const n=new Set(p);n.delete(item.id);return n;});}}} title={collapsed?item.label:undefined} aria-disabled={!!item.soon}
         style={{display:"flex",alignItems:"center",gap:9,padding:collapsed?"10px 0":"8px 10px",
           background:active?T.accentSolid+"20":"transparent",border:"none",
@@ -1806,7 +1807,7 @@ function MiembrosCuentaCard({T,user}){
 // ── Google Ads: sección propia (Analytics). Misma lectura que Meta Ads: KPIs del
 //    rango, tabla de campañas con switch para pausar/activar, período, BE y buscador.
 //    Datos: /api/google-ads?action=accounts | campaigns | campaign_status (GAQL).
-function AppGoogleAds({T, user, onHome, onGoConfig}) {
+function AppGoogleAds({T, user, onHome, onGoConfig, tab="analisis", setTab=()=>{}}) {
   const [st,setSt]=useState(null); const [err,setErr]=useState(null);
   const [accounts,setAccounts]=useState(null); const [accErr,setAccErr]=useState(null);
   const [acc,setAcc]=useState(()=>{ try{ return localStorage.getItem(`growith_gads_acc_${user?.uid}`)||""; }catch{ return ""; } });
@@ -1916,11 +1917,17 @@ function AppGoogleAds({T, user, onHome, onGoConfig}) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
-      <AppTopbar T={T} section="Google Ads" sectionId="gads" onHome={onHome}>
+      <AppTopbar T={T} section={tab==="publicar"?"Publicar en Google":"Google Ads"} sectionId="gads" onHome={onHome}>
         {conectado&&<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,color:T.green,fontWeight:600}}><span style={{width:7,height:7,borderRadius:"50%",background:T.green}}/>Conectado{account?` · ${account.name}`:""}</span>}
       </AppTopbar>
       <div style={{maxWidth:"100%",margin:"0 auto",padding:"20px 24px 80px",display:"flex",flexDirection:"column",gap:16}}>
         {err&&<ErrBox>{err}</ErrBox>}
+        {/* Pestañas: Análisis / Publicar (en el sidebar: "Google Ads" y "Publicar en Google") */}
+        <div className="no-scrollbar" style={{display:"flex",gap:6,overflowX:"auto"}}>
+          {[{id:"analisis",l:"Análisis"},{id:"publicar",l:"Publicar"}].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${tab===t.id?T.accentSolid+"88":T.border}`,borderRadius:20,background:tab===t.id?T.accentSolid+"18":T.card,color:tab===t.id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>{t.l}</button>
+          ))}
+        </div>
 
         {/* Consultando: sin botón de conectar, para no mostrarlo a quien ya está conectado */}
         {st===null&&!err&&(
@@ -1951,7 +1958,12 @@ function AppGoogleAds({T, user, onHome, onGoConfig}) {
           </Card>
         )}
 
-        {conectado&&account&&(
+        {conectado&&account&&tab==="publicar"&&(
+          <GadsPublicador T={T} user={user} accounts={accounts||[]} account={account} setAcc={setAcc} sym={sym}
+            onVerAnalisis={()=>{ setFilterStatus("all"); setQuery(""); setTab("analisis"); loadCampaigns(); }}/>
+        )}
+
+        {conectado&&account&&tab!=="publicar"&&(
           <>
             {/* KPIs del rango (sobre lo filtrado) */}
             <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
@@ -2065,6 +2077,418 @@ function AppGoogleAds({T, user, onHome, onGoConfig}) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Publicar en Google: Búsqueda / Performance Max ───
+// Arma la campaña completa y la crea por la Google Ads API (api/google-ads.js:
+// ai_copy → upload_image → publish). Por default queda PAUSADA. Límites de Google:
+// títulos ≤30 (3–15) · descripciones ≤90 (Búsqueda 2–4; PMax 2–5 con una ≤60) ·
+// títulos largos ≤90 (1–5) · negocio ≤25 · rutas ≤15. Imágenes: el navegador
+// recorta al centro a 1200×628 (1.91:1) y 1200×1200 (1:1); el logo entra entero en
+// 512×512 con fondo transparente. Borrador en localStorage growith_gads_pub_{uid}.
+const GADS_PAISES=[["AR","Argentina"],["UY","Uruguay"],["CL","Chile"],["PY","Paraguay"],["BO","Bolivia"],["PE","Perú"],["CO","Colombia"],["EC","Ecuador"],["MX","México"],["ES","España"],["US","Estados Unidos"]];
+const GADS_IDIOMAS=[["es","Español"],["en","Inglés"],["pt","Portugués"]];
+const GADS_LIM={search:{hs:[3,15,30],ds:[2,4,90]},pmax:{hs:[3,15,30],ds:[2,5,90],lhs:[1,5,90]}};
+const gadsLen=s=>[...String(s||"")].length;
+const gadsLimpios=arr=>{ const s=new Set(); return (arr||[]).map(t=>String(t||"").replace(/\s+/g," ").trim()).filter(t=>{ const k=t.toLowerCase(); if(!t||s.has(k)) return false; s.add(k); return true; }); };
+// Palabras clave en la notación de Google Ads Editor: tal cual = amplia · "frase" · [exacta].
+function gadsParseKws(txt){
+  return String(txt||"").split("\n").map(l=>l.trim()).filter(Boolean).map(l=>
+    /^\[.*\]$/.test(l)?{text:l.slice(1,-1).trim(),match:"EXACT"}:/^".*"$/.test(l)?{text:l.slice(1,-1).trim(),match:"PHRASE"}:{text:l,match:"BROAD"}
+  ).filter(k=>k.text);
+}
+const gadsKwsToText=kws=>(kws||[]).map(k=>k.match==="EXACT"?`[${k.text}]`:k.match==="PHRASE"?`"${k.text}"`:k.text).join("\n");
+// Imagen → data URL a medida exacta. "cubrir" recorta al centro (JPEG); "contener"
+// la mete entera con margen y fondo transparente (PNG, para el logo). baja = se
+// estiró más del doble (Google la acepta pero se ve borrosa).
+function gadsImagen(file,w,h,modo="cubrir"){
+  return new Promise((resolve,reject)=>{
+    if(!file||!/^image\//.test(file.type)) return reject(new Error(`${file?.name||"El archivo"} no es una imagen (usá JPG, PNG o WebP).`));
+    const url=URL.createObjectURL(file); const img=new Image();
+    img.onload=()=>{
+      try{
+        const c=document.createElement("canvas"); c.width=w; c.height=h;
+        const x=c.getContext("2d"); x.imageSmoothingQuality="high";
+        const iw=img.naturalWidth, ih=img.naturalHeight; let baja;
+        if(modo==="contener"){
+          const r=Math.min(w*0.88/iw,h*0.88/ih);
+          x.drawImage(img,(w-iw*r)/2,(h-ih*r)/2,iw*r,ih*r); baja=Math.max(iw,ih)<128;
+        } else {
+          x.fillStyle="#fff"; x.fillRect(0,0,w,h);
+          const r=Math.max(w/iw,h/ih), sw=w/r, sh=h/r;
+          x.drawImage(img,(iw-sw)/2,(ih-sh)/2,sw,sh,0,0,w,h); baja=sw<w/2;
+        }
+        URL.revokeObjectURL(url);
+        resolve({src:c.toDataURL(modo==="contener"?"image/png":"image/jpeg",0.86),baja});
+      }catch(e){ URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error(`No se pudo leer ${file.name} (usá JPG, PNG o WebP).`)); };
+    img.src=url;
+  });
+}
+
+function GadsPaso({T, n, title, sub, right, children}) {
+  return (
+    <Card T={T} padding="lg">
+      <div style={{display:"flex",alignItems:"flex-start",gap:DS.sp.md,marginBottom:DS.sp.lg,flexWrap:"wrap"}}>
+        <div style={{width:28,height:28,borderRadius:DS.r.md,background:T.accentSolid,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:DS.w.black,fontSize:DS.font.base,flexShrink:0}}>{n}</div>
+        <div style={{flex:1,minWidth:200}}>
+          <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text}}>{title}</div>
+          {sub&&<div style={{fontSize:DS.font.md,color:T.textSm,marginTop:2,lineHeight:1.5}}>{sub}</div>}
+        </div>
+        {right}
+      </div>
+      {children}
+    </Card>
+  );
+}
+
+function GadsCampo({T, label, hint, children, full}) {
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:DS.sp.xs,minWidth:0,gridColumn:full?"1 / -1":undefined}}>
+      <span style={{fontSize:DS.font.sm,fontWeight:DS.w.semibold,color:T.textMd}}>{label}</span>
+      {children}
+      {hint&&<span style={{fontSize:DS.font.xs,color:T.textSm,lineHeight:1.5}}>{hint}</span>}
+    </div>
+  );
+}
+
+// Lista editable de textos con contador de caracteres (rojo si pasa el límite).
+function GadsTextList({T, label, hint, items, onChange, lim, placeholder}) {
+  const [min,max,largo]=lim;
+  const lista=items&&items.length?items:[""];
+  const llenos=lista.filter(t=>String(t||"").trim()).length;
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
+      <div style={{display:"flex",alignItems:"center",gap:DS.sp.sm,flexWrap:"wrap"}}>
+        <span style={{fontSize:DS.font.sm,fontWeight:DS.w.semibold,color:T.textMd}}>{label}</span>
+        <DSBadge T={T} color={llenos>=min&&llenos<=max?T.green:T.orange} size="sm">{llenos}/{max}{llenos<min?` · mínimo ${min}`:""}</DSBadge>
+        {hint&&<span style={{fontSize:DS.font.xs,color:T.textSm}}>{hint}</span>}
+      </div>
+      {lista.map((t,i)=>{
+        const n=gadsLen(t), over=n>largo;
+        return (
+          <div key={i} style={{display:"flex",alignItems:"center",gap:DS.sp.sm}}>
+            <div style={{position:"relative",flex:1,minWidth:0}}>
+              <input value={t} placeholder={placeholder} onChange={e=>{ const c=[...lista]; c[i]=e.target.value; onChange(c); }}
+                style={{...InputStyle(T),paddingRight:58,borderColor:over?T.red:T.inputBorder}}/>
+              <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:DS.font.xs,fontWeight:DS.w.semibold,color:over?T.red:T.textSm,fontVariantNumeric:"tabular-nums",pointerEvents:"none"}}>{n}/{largo}</span>
+            </div>
+            <Btn T={T} variant="ghost" size="sm" onClick={()=>onChange(lista.filter((_,j)=>j!==i))} disabled={lista.length<=1} title="Quitar" aria-label="Quitar">✕</Btn>
+          </div>
+        );
+      })}
+      {lista.length<max&&<div><Btn T={T} variant="secondary" size="sm" onClick={()=>onChange([...lista,""])}>+ Agregar</Btn></div>}
+    </div>
+  );
+}
+
+function GadsPublicador({T, user, accounts, account, setAcc, sym, onVerAnalisis}) {
+  const DRAFT=`growith_gads_pub_${user?.uid}`;
+  const VACIO={tipo:"search",nombre:"",url:"",presupuesto:"",puja:"",pais:"AR",idioma:"es",headlines:["","",""],longHeadlines:[""],descriptions:["",""],kws:"",negocio:"",path1:"",path2:"",notas:""};
+  const [f,setF]=useState(()=>{ try{ const d=JSON.parse(localStorage.getItem(DRAFT)||"null"); return d&&typeof d==="object"?{...VACIO,...d}:VACIO; }catch{ return VACIO; } });
+  useEffect(()=>{ try{ localStorage.setItem(DRAFT,JSON.stringify(f)); }catch{} },[f,DRAFT]);
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const [imgs,setImgs]=useState([]);   // [{id, kind:"land"|"sq", src, from, baja}]
+  const [logo,setLogo]=useState(null); // {id, src, from, baja}
+  const [imgBusy,setImgBusy]=useState(false); const [drag,setDrag]=useState(false);
+  const [activar,setActivar]=useState(false);
+  const [aiBusy,setAiBusy]=useState(false); const [aiMsg,setAiMsg]=useState(null);
+  const [busy,setBusy]=useState(null); // texto de progreso mientras publica
+  const [errores,setErrores]=useState([]); const [result,setResult]=useState(null);
+  const subidas=useRef({}); // `${cuenta}:${idImagen}` → resourceName (al reintentar no se vuelve a subir)
+  const logoRef=useRef(null);
+
+  const esPmax=f.tipo==="pmax"; const L=GADS_LIM[f.tipo]||GADS_LIM.search;
+  const puja=esPmax?(f.puja==="conv"?"conv":"valor"):(f.puja==="clics"?"clics":"conv");
+  const hs=gadsLimpios(f.headlines), ds=gadsLimpios(f.descriptions), lhs=gadsLimpios(f.longHeadlines), kws=gadsParseKws(f.kws);
+  const land=imgs.filter(i=>i.kind==="land"), sq=imgs.filter(i=>i.kind==="sq");
+  const fmtN=n=>(+n||0).toLocaleString("es-AR",{maximumFractionDigits:2});
+  const dominio=(()=>{ try{ return new URL(f.url.trim()).hostname.replace(/^www\./,""); }catch{ return "tutienda.com"; } })();
+  const enRango=(lista,[min,max,largo])=>lista.length>=min&&lista.length<=max&&lista.every(t=>gadsLen(t)<=largo);
+  const checks=[
+    {ok:!!f.nombre.trim(),l:"Nombre"},
+    {ok:/^https?:\/\/[^\s/]+\.[^\s]+$/i.test(f.url.trim()),l:"URL de destino"},
+    {ok:+f.presupuesto>0,l:"Presupuesto"},
+    {ok:enRango(hs,L.hs),l:`Títulos ${hs.length}/${L.hs[1]}`},
+    {ok:enRango(ds,L.ds)&&(!esPmax||ds.some(t=>gadsLen(t)<=60)),l:`Descripciones ${ds.length}/${L.ds[1]}`},
+    ...(esPmax?[
+      {ok:enRango(lhs,L.lhs),l:`Títulos largos ${lhs.length}/${L.lhs[1]}`},
+      {ok:!!f.negocio.trim()&&gadsLen(f.negocio.trim())<=25,l:"Nombre del negocio"},
+      {ok:land.length>0,l:`Horizontales ${land.length}`},
+      {ok:sq.length>0,l:`Cuadradas ${sq.length}`},
+      {ok:!!logo,l:"Logo"},
+    ]:[
+      {ok:kws.length>0&&kws.length<=300&&kws.every(k=>gadsLen(k.text)<=80&&k.text.split(/\s+/).length<=10),l:`Palabras clave ${kws.length}`},
+      {ok:gadsLen(f.path1)<=15&&gadsLen(f.path2)<=15&&(!f.path2.trim()||!!f.path1.trim()),l:"Rutas visibles"},
+    ]),
+  ];
+  const listo=checks.every(c=>c.ok);
+  const cuentaInactiva=account?.status&&account.status!=="ENABLED";
+
+  const generarIA=async()=>{
+    if(!f.url.trim()&&!f.notas.trim()){ appAlert("Poné la URL de destino o contá en una línea qué vendés, así la IA tiene de dónde sacar los textos."); return; }
+    const hayTexto=[...f.headlines,...f.descriptions,...(esPmax?f.longHeadlines:[])].some(t=>String(t||"").trim())||(!esPmax&&f.kws.trim());
+    if(hayTexto&&!(await appConfirm(`La IA reemplaza los títulos y descripciones${esPmax?" (y los títulos largos)":" y las palabras clave"} que ya cargaste. ¿Seguimos?`,{title:"Generar con IA",okLabel:"Generar"}))) return;
+    setAiBusy(true); setAiMsg(null);
+    try{
+      const r=await authFetch(`/api/google-ads?action=ai_copy&uid=${user.uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({tipo:f.tipo,url:f.url.trim(),notas:f.notas.trim(),idioma:f.idioma})});
+      const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
+      setF(p=>({...p,
+        headlines:j.headlines?.length?j.headlines:p.headlines,
+        descriptions:j.descriptions?.length?j.descriptions:p.descriptions,
+        ...(esPmax
+          ? {longHeadlines:j.longHeadlines?.length?j.longHeadlines:p.longHeadlines, negocio:p.negocio||j.businessName||""}
+          : {kws:j.keywords?.length?gadsKwsToText(j.keywords):p.kws, path1:p.path1||j.path1||"", path2:p.path2||(!p.path1?j.path2:"")||""}),
+      }));
+      setAiMsg(j.leyoPagina?"Listo: la IA leyó tu página y armó los textos. Revisalos antes de crear la campaña.":"Listo. No pudimos leer la página, así que la IA usó tu descripción y el contexto de marca: revisá bien los textos.");
+    }catch(e){ appAlert("No se pudieron generar los textos: "+e.message); }
+    finally{ setAiBusy(false); }
+  };
+
+  const agregarImagenes=async(files)=>{
+    const lista=[...(files||[])];
+    if(!lista.length) return;
+    setImgBusy(true);
+    const nuevas=[], malas=[];
+    for(const fl of lista.slice(0,10)){
+      try{
+        const id=Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+        const l=await gadsImagen(fl,1200,628), s=await gadsImagen(fl,1200,1200);
+        nuevas.push({id:id+"l",kind:"land",src:l.src,from:fl.name,baja:l.baja},{id:id+"s",kind:"sq",src:s.src,from:fl.name,baja:s.baja});
+      }catch(e){ malas.push(e.message); }
+    }
+    setImgs(p=>{ const all=[...p,...nuevas]; const cap=k=>all.filter(i=>i.kind===k).slice(0,20); return [...cap("land"),...cap("sq")]; });
+    setImgBusy(false);
+    if(lista.length>10) appAlert("Se tomaron las primeras 10 imágenes de esta tanda.");
+    if(malas.length) appAlert(malas.join("\n"));
+  };
+  const cargarLogo=async(fl)=>{
+    if(!fl) return;
+    try{ const r=await gadsImagen(fl,512,512,"contener"); setLogo({id:"logo"+Date.now().toString(36),src:r.src,from:fl.name,baja:r.baja}); }
+    catch(e){ appAlert(e.message); }
+  };
+
+  const publicar=async()=>{
+    if(!listo||busy) return;
+    if(activar&&!(await appConfirm(`La campaña se crea ACTIVA y empieza a gastar hasta ${sym}${fmtN(f.presupuesto)} por día apenas Google apruebe los anuncios. ¿Seguimos?`,{title:"Crear campaña activa",okLabel:"Crear y activar",danger:true}))) return;
+    setErrores([]); setResult(null);
+    try{
+      let images=null;
+      if(esPmax){
+        const cola=[...land.map((i,n)=>({...i,name:`Horizontal ${n+1} · ${i.from}`})),...sq.map((i,n)=>({...i,name:`Cuadrada ${n+1} · ${i.from}`})),{...logo,kind:"logo",name:`Logo · ${logo.from}`}];
+        images={land:[],sq:[],logo:[]};
+        for(let n=0;n<cola.length;n++){
+          const it=cola[n], key=`${account.id}:${it.id}`;
+          if(!subidas.current[key]){
+            setBusy(`Subiendo imágenes a Google… ${n+1} de ${cola.length}`);
+            const r=await authFetch(`/api/google-ads?action=upload_image&uid=${user.uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({customer:account.id,login:account.login||null,name:it.name,data:it.src})});
+            const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
+            subidas.current[key]=j.resourceName;
+          }
+          images[it.kind].push(subidas.current[key]);
+        }
+      }
+      setBusy("Creando la campaña en Google Ads…");
+      const r=await authFetch(`/api/google-ads?action=publish&uid=${user.uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        customer:account.id, login:account.login||null, tipo:f.tipo, nombre:f.nombre, url:f.url.trim(), presupuesto:+f.presupuesto, puja, pais:f.pais, idioma:f.idioma,
+        headlines:hs, descriptions:ds, longHeadlines:lhs, negocio:f.negocio, keywords:kws, path1:f.path1, path2:f.path2, activar, images,
+      })});
+      const j=await r.json(); if(!r.ok||j.error) throw Object.assign(new Error(j.error||"HTTP "+r.status),{lista:j.errores});
+      setResult({...j,cuenta:account.name});
+      toast(j.status==="ENABLED"?"Campaña creada y activa en Google Ads":"Campaña creada en Google Ads (pausada)");
+      setF(p=>({...VACIO,tipo:p.tipo,url:p.url,presupuesto:p.presupuesto,puja:p.puja,pais:p.pais,idioma:p.idioma,negocio:p.negocio}));
+      setImgs([]); setLogo(null); setActivar(false); setAiMsg(null);
+      try{ window.scrollTo({top:0,behavior:"smooth"}); }catch{}
+    }catch(e){ setErrores(e.lista?.length?e.lista:String(e.message||e).split(" · ")); }
+    finally{ setBusy(null); }
+  };
+
+  const selS={...InputStyle(T),cursor:"pointer"};
+  const tiposKw={BROAD:0,PHRASE:0,EXACT:0}; kws.forEach(k=>{ tiposKw[k.match]++; });
+  const Thumbs=({lista,ratio})=>(
+    <div style={{display:"grid",gridTemplateColumns:`repeat(auto-fill,minmax(${ratio>1?190:130}px,1fr))`,gap:DS.sp.md}}>
+      {lista.map(i=>(
+        <div key={i.id} style={{border:`1px solid ${i.baja?T.orange+"88":T.border}`,borderRadius:DS.r.lg,overflow:"hidden",background:T.surface}}>
+          <img src={i.src} alt="" style={{display:"block",width:"100%",aspectRatio:ratio>1?"1.91 / 1":"1 / 1",objectFit:"cover"}}/>
+          <div style={{display:"flex",alignItems:"center",gap:DS.sp.xs,padding:"4px 4px 4px 8px"}}>
+            <span title={i.from} style={{flex:1,minWidth:0,fontSize:DS.font.xs,color:i.baja?T.orange:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.baja?"Baja resolución · ":""}{i.from}</span>
+            <Btn T={T} variant="ghost" size="sm" onClick={()=>setImgs(p=>p.filter(x=>x.id!==i.id))} title="Sacar este recorte" aria-label="Sacar">✕</Btn>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
+      {result&&(
+        <Card T={T} padding="lg" style={{borderColor:T.green+"66",background:T.green+"0d"}}>
+          <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:240}}>
+              <div style={{fontSize:DS.font.xl,fontWeight:DS.w.black,color:T.text}}>Campaña creada en Google Ads</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:4,lineHeight:1.6}}>
+                «{result.nombre}» · {result.tipo==="pmax"?"Performance Max":"Búsqueda"} · {result.cuenta} · <strong style={{color:result.status==="ENABLED"?T.green:T.orange}}>{result.status==="ENABLED"?"Activa":"Pausada"}</strong>.
+                {" "}{result.status==="ENABLED"?"Google revisa los anuncios antes de mostrarlos (suele tardar hasta un día hábil).":"Activala desde Análisis cuando quieras que empiece a gastar; Google revisa los anuncios antes de mostrarlos."}
+              </div>
+            </div>
+            <Btn T={T} variant="primary" onClick={onVerAnalisis}>Ver en Análisis</Btn>
+            <Btn T={T} variant="ghost" onClick={()=>setResult(null)}>Cerrar</Btn>
+          </div>
+        </Card>
+      )}
+
+      {/* 1 · Cuenta y tipo */}
+      <GadsPaso T={T} n="1" title="Cuenta y tipo de campaña" sub="La campaña se crea en esta cuenta de Google Ads.">
+        <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
+          {accounts.length>1
+            ? <select value={account.id} onChange={e=>setAcc(e.target.value)} disabled={!!busy} style={{...selS,maxWidth:380}}>
+                {accounts.map(a=><option key={a.id} value={a.id}>{a.name}{a.currency?` · ${a.currency}`:""}{a.viaManager?` (vía ${a.viaManager})`:""}</option>)}
+              </select>
+            : <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text}}>{account.name}{account.currency?<span style={{color:T.textSm,fontWeight:DS.w.medium}}> · {account.currency}</span>:null}</div>}
+          {cuentaInactiva&&<div style={{fontSize:DS.font.md,color:T.orange,lineHeight:1.5}}>Google marca esta cuenta como «{account.status}»: probablemente no deje crear campañas hasta que la reactives en Google Ads.</div>}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:DS.sp.md}}>
+            {[
+              {id:"search",t:"Búsqueda",d:"Aparece cuando alguien busca en Google lo que vendés. Solo texto: títulos, descripciones y palabras clave."},
+              {id:"pmax",t:"Performance Max",d:"Google la muestra en Búsqueda, YouTube, Display, Gmail y Discover y optimiza solo. Pide imágenes, logo y textos."},
+            ].map(o=>(
+              <button key={o.id} onClick={()=>set("tipo",o.id)} disabled={!!busy} style={{textAlign:"left",padding:"14px 16px",borderRadius:DS.r.lg,border:`2px solid ${f.tipo===o.id?T.accentSolid:T.border}`,background:f.tipo===o.id?T.accentSolid+"14":"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}>
+                <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold}}>{o.t}</div>
+                <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:4,lineHeight:1.5}}>{o.d}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </GadsPaso>
+
+      {/* 2 · Destino y presupuesto */}
+      <GadsPaso T={T} n="2" title="Destino y presupuesto">
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:DS.sp.lg}}>
+          <GadsCampo T={T} label="Nombre de la campaña" full>
+            <input value={f.nombre} onChange={e=>set("nombre",e.target.value)} placeholder="Ej: Búsqueda · Producto estrella · Septiembre" style={InputStyle(T)}/>
+          </GadsCampo>
+          <GadsCampo T={T} label="URL de destino" hint="La página a la que llega quien toca el anuncio (producto, categoría o inicio)." full>
+            <input value={f.url} onChange={e=>set("url",e.target.value)} placeholder="https://" style={InputStyle(T)}/>
+          </GadsCampo>
+          <GadsCampo T={T} label={`Presupuesto diario (${account.currency||"moneda de la cuenta"})`} hint={+f.presupuesto>0?`Google puede gastar hasta el doble algunos días, pero en el mes no pasa de 30,4 × el diario (≈ ${sym}${fmtN(+f.presupuesto*30.4)}).`:"Lo máximo por día, en la moneda de la cuenta de Google Ads."}>
+            <input type="number" min="0" step="any" value={f.presupuesto} onChange={e=>set("presupuesto",e.target.value)} placeholder="0" style={InputStyle(T)}/>
+          </GadsCampo>
+          <GadsCampo T={T} label="Estrategia de puja" hint={esPmax?"Con valor de conversión Google busca ventas más grandes; necesita que tu tienda le mande el valor de cada compra.":"Si tu cuenta todavía no mide ventas, empezá con clics y pasá a conversiones cuando haya datos."}>
+            <select value={puja} onChange={e=>set("puja",e.target.value)} style={selS}>
+              {(esPmax?[["valor","Maximizar valor de conversión"],["conv","Maximizar conversiones"]]:[["conv","Maximizar conversiones"],["clics","Maximizar clics"]]).map(([v,l])=><option key={v} value={v}>{l}</option>)}
+            </select>
+          </GadsCampo>
+          <GadsCampo T={T} label="País">
+            <select value={f.pais} onChange={e=>set("pais",e.target.value)} style={selS}>{GADS_PAISES.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>
+          </GadsCampo>
+          <GadsCampo T={T} label="Idioma de la gente">
+            <select value={f.idioma} onChange={e=>set("idioma",e.target.value)} style={selS}>{GADS_IDIOMAS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>
+          </GadsCampo>
+        </div>
+      </GadsPaso>
+
+      {/* 3 · Textos */}
+      <GadsPaso T={T} n="3" title="Textos del anuncio" sub="Google combina los títulos y descripciones y muestra la mejor mezcla para cada búsqueda. Cuantos más y más variados, mejor."
+        right={<Btn T={T} variant="primary" size="sm" onClick={generarIA} disabled={aiBusy||!!busy}>{aiBusy?<><Spinner size={12} color={T.accent}/> Generando…</>:"Generar con IA"}</Btn>}>
+        <div style={{display:"flex",flexDirection:"column",gap:DS.sp.xl}}>
+          <GadsCampo T={T} label="Contale a la IA (opcional)" hint="Qué vendés, a quién y qué querés destacar. La IA también lee la URL de destino y tu contexto de marca, y no inventa descuentos ni envíos gratis.">
+            <textarea value={f.notas} onChange={e=>set("notas",e.target.value)} rows={2} placeholder="Ej: producto principal, público, diferencial, oferta vigente…" style={{...InputStyle(T),resize:"vertical",minHeight:56}}/>
+          </GadsCampo>
+          {aiMsg&&<div style={{fontSize:DS.font.md,color:T.green,lineHeight:1.5}}>{aiMsg}</div>}
+          <GadsTextList T={T} label="Títulos" hint="hasta 30 caracteres" items={f.headlines} onChange={v=>set("headlines",v)} lim={L.hs} placeholder="Título corto"/>
+          {esPmax&&<GadsTextList T={T} label="Títulos largos" hint="hasta 90 caracteres" items={f.longHeadlines} onChange={v=>set("longHeadlines",v)} lim={L.lhs} placeholder="Título largo"/>}
+          <GadsTextList T={T} label="Descripciones" hint={esPmax?"hasta 90 caracteres, al menos una de 60 o menos":"hasta 90 caracteres"} items={f.descriptions} onChange={v=>set("descriptions",v)} lim={L.ds} placeholder="Descripción"/>
+          {esPmax&&(
+            <GadsCampo T={T} label="Nombre del negocio" hint={`${gadsLen(f.negocio)}/25 caracteres`}>
+              <input value={f.negocio} onChange={e=>set("negocio",e.target.value)} placeholder="Como figura tu marca" style={{...InputStyle(T),maxWidth:360,borderColor:gadsLen(f.negocio)>25?T.red:T.inputBorder}}/>
+            </GadsCampo>
+          )}
+          {!esPmax&&hs.length>0&&(
+            <div style={{border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,padding:"12px 14px",background:T.surface}}>
+              <div style={{fontSize:DS.font.xs,color:T.textSm,fontWeight:DS.w.semibold,textTransform:"uppercase",letterSpacing:0.5,marginBottom:DS.sp.sm}}>Vista previa aproximada</div>
+              <div style={{fontSize:DS.font.sm,color:T.textMd}}><strong style={{color:T.text}}>Patrocinado</strong> · {dominio}{f.path1.trim()?` › ${f.path1.trim()}`:""}{f.path2.trim()?` › ${f.path2.trim()}`:""}</div>
+              <div style={{fontSize:DS.font.xl,color:T.blue,fontWeight:DS.w.medium,margin:"4px 0",lineHeight:1.3}}>{hs.slice(0,3).join(" | ")}</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.5}}>{ds[0]||""}</div>
+            </div>
+          )}
+        </div>
+      </GadsPaso>
+
+      {/* 4 · Palabras clave (Búsqueda) o imágenes y logo (PMax) */}
+      {!esPmax?(
+        <GadsPaso T={T} n="4" title="Palabras clave" sub={<>Una por línea. Tal cual = concordancia amplia · <strong>"entre comillas"</strong> = frase · <strong>[entre corchetes]</strong> = exacta.</>}>
+          <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
+            <textarea value={f.kws} onChange={e=>set("kws",e.target.value)} rows={8} placeholder={"comprar producto\n\"producto online\"\n[producto precio]"} style={{...InputStyle(T),resize:"vertical",lineHeight:1.6}}/>
+            <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap"}}>
+              <DSBadge T={T} color={kws.length?T.green:T.orange} size="sm">{kws.length} palabra{kws.length!==1?"s":""} clave</DSBadge>
+              {tiposKw.BROAD>0&&<DSBadge T={T} color={T.textSm} size="sm">{tiposKw.BROAD} amplia{tiposKw.BROAD!==1?"s":""}</DSBadge>}
+              {tiposKw.PHRASE>0&&<DSBadge T={T} color={T.textSm} size="sm">{tiposKw.PHRASE} de frase</DSBadge>}
+              {tiposKw.EXACT>0&&<DSBadge T={T} color={T.textSm} size="sm">{tiposKw.EXACT} exacta{tiposKw.EXACT!==1?"s":""}</DSBadge>}
+            </div>
+            <GadsCampo T={T} label="Rutas visibles (opcional)" hint="Se muestran después del dominio en el anuncio; no cambian a dónde lleva el link. Hasta 15 caracteres, sin espacios.">
+              <div style={{display:"flex",alignItems:"center",gap:DS.sp.sm,flexWrap:"wrap"}}>
+                <span style={{fontSize:DS.font.base,color:T.textSm}}>{dominio} /</span>
+                <input value={f.path1} onChange={e=>set("path1",e.target.value.replace(/\s+/g,""))} placeholder="ruta1" style={{...InputStyle(T),width:150,borderColor:gadsLen(f.path1)>15?T.red:T.inputBorder}}/>
+                <span style={{fontSize:DS.font.base,color:T.textSm}}>/</span>
+                <input value={f.path2} onChange={e=>set("path2",e.target.value.replace(/\s+/g,""))} placeholder="ruta2" style={{...InputStyle(T),width:150,borderColor:gadsLen(f.path2)>15?T.red:T.inputBorder}}/>
+              </div>
+            </GadsCampo>
+          </div>
+        </GadsPaso>
+      ):(
+        <GadsPaso T={T} n="4" title="Imágenes y logo" sub="De cada imagen Growith arma la versión horizontal (1200×628) y la cuadrada (1200×1200) recortando al centro; si un recorte no te gusta, sacalo. Mínimo una de cada una, más el logo.">
+          <label onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);agregarImagenes(e.dataTransfer.files);}}
+            style={{display:"block",border:`2px dashed ${drag?T.accentSolid:T.borderL}`,borderRadius:DS.r.xl,padding:"28px 20px",textAlign:"center",cursor:imgBusy?"wait":"pointer",background:drag?T.accentSolid+"0d":"transparent",transition:`all 0.15s ${DS.ease}`}}>
+            <input type="file" accept="image/*" multiple disabled={imgBusy} style={{display:"none"}} onChange={e=>{ agregarImagenes(e.target.files); e.target.value=""; }}/>
+            <div style={{display:"flex",justifyContent:"center",marginBottom:DS.sp.sm}}>
+              {imgBusy?<Spinner size={24} color={T.textMd}/>:<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>}
+            </div>
+            <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text}}>{imgBusy?"Preparando recortes…":"Arrastrá tus imágenes o tocá para elegir"}</div>
+            <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:4}}>JPG · PNG · WebP — hasta 20 horizontales y 20 cuadradas</div>
+          </label>
+          {land.length>0&&<div style={{marginTop:DS.sp.lg}}><div style={{fontSize:DS.font.sm,fontWeight:DS.w.semibold,color:T.textMd,marginBottom:DS.sp.sm}}>Horizontales ({land.length})</div><Thumbs lista={land} ratio={1.91}/></div>}
+          {sq.length>0&&<div style={{marginTop:DS.sp.lg}}><div style={{fontSize:DS.font.sm,fontWeight:DS.w.semibold,color:T.textMd,marginBottom:DS.sp.sm}}>Cuadradas ({sq.length})</div><Thumbs lista={sq} ratio={1}/></div>}
+          <div style={{display:"flex",alignItems:"center",gap:DS.sp.lg,marginTop:DS.sp.xl,paddingTop:DS.sp.lg,borderTop:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
+            <div style={{width:72,height:72,borderRadius:DS.r.lg,border:`1px solid ${T.border}`,background:`repeating-conic-gradient(${T.surface} 0% 25%, ${T.card} 0% 50%) 50% / 16px 16px`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
+              {logo?<img src={logo.src} alt="Logo" style={{width:"100%",height:"100%",objectFit:"contain"}}/>:<span style={{fontSize:DS.font.xs,color:T.textSm}}>Logo</span>}
+            </div>
+            <div style={{flex:1,minWidth:200}}>
+              <div style={{display:"flex",alignItems:"center",gap:DS.sp.sm,fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text}}>Logo {logo?<DSBadge T={T} color={logo.baja?T.orange:T.green} size="sm">{logo.baja?"muy chico":"listo"}</DSBadge>:<DSBadge T={T} color={T.orange} size="sm">obligatorio</DSBadge>}</div>
+              <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2,lineHeight:1.5}}>Idealmente cuadrado y en PNG con fondo transparente. Growith lo centra entero en 512×512.</div>
+            </div>
+            <input ref={logoRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>{ cargarLogo(e.target.files?.[0]); e.target.value=""; }}/>
+            <Btn T={T} variant="secondary" size="sm" onClick={()=>logoRef.current?.click()}>{logo?"Cambiar logo":"Subir logo"}</Btn>
+          </div>
+        </GadsPaso>
+      )}
+
+      {/* 5 · Revisar y crear */}
+      <GadsPaso T={T} n="5" title="Revisar y crear">
+        <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
+          <div style={{display:"flex",flexWrap:"wrap",gap:DS.sp.sm}}>
+            {checks.map(c=><DSBadge key={c.l} T={T} color={c.ok?T.green:T.orange} size="md">{c.ok?"✓":"•"} {c.l}</DSBadge>)}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:"12px 14px",borderRadius:DS.r.lg,border:`1px solid ${activar?T.orange+"66":T.borderL}`,background:activar?T.orange+"0d":"transparent"}}>
+            <DSToggle T={T} active={activar} onToggle={()=>!busy&&setActivar(a=>!a)}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:activar?T.orange:T.text}}>{activar?"Se crea ACTIVA: empieza a gastar apenas Google apruebe los anuncios":"Se crea PAUSADA (recomendado)"}</div>
+              <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>{activar?`Hasta ${sym}${fmtN(f.presupuesto)} por día.`:"Revisala en Google Ads y activala desde Análisis cuando quieras que empiece a gastar."}</div>
+            </div>
+          </div>
+          {errores.length>0&&(
+            <div style={{background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:DS.r.lg,padding:"10px 14px",fontSize:DS.font.md,color:T.red,lineHeight:1.6}}>
+              <strong>No se creó ninguna campaña.</strong> Corregí esto y volvé a intentar:
+              <ul style={{margin:"6px 0 0",paddingLeft:18}}>{errores.map((e,i)=><li key={i}>{e}</li>)}</ul>
+            </div>
+          )}
+          <Btn T={T} variant="primary" size="lg" onClick={publicar} disabled={!listo||!!busy||aiBusy||imgBusy} style={{width:"100%",justifyContent:"center"}}>
+            {busy?<><Spinner size={14} color={T.accent}/> {busy}</>:(activar?"Crear campaña activa en Google Ads":"Crear campaña pausada en Google Ads")}
+          </Btn>
+          {!listo&&!busy&&<div style={{fontSize:DS.font.sm,color:T.textSm,textAlign:"center"}}>Completá lo que está en naranja para poder crear la campaña.</div>}
+        </div>
+      </GadsPaso>
     </div>
   );
 }
@@ -39229,7 +39653,7 @@ export default function App() {
   },[user&&user.uid]);
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","copilot","margenes","arca","meta","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario"];
+  const VALID_PAGES = ["home","copilot","margenes","arca","meta","gads","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario"];
   // Alias legacy: #/rendimiento era el nombre viejo del Dashboard (hoy #/margenes)
   const _aliasPage = (p) => p === "rendimiento" ? "margenes" : p;
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
@@ -39316,6 +39740,11 @@ export default function App() {
   });
   const [tareasTab,setTareasTab]=useState("tareas");
   const [mlTab,setMlTab]=useState("gestion");
+  // Google Ads: "analisis" | "publicar" (Publicar en Google) — #/gads/publicar sobrevive a recargar
+  const [gadsTab,setGadsTab]=useState(()=>{
+    const parts = (typeof window!=="undefined"?window.location.hash:"").replace('#/','').split('/');
+    return parts[0]==="gads"&&parts[1]==="publicar" ? "publicar" : "analisis";
+  });
   const [canjesTab,setCanjesTab]=useState("activos");
   const [cmdOpen,setCmdOpen]=useState(false);
   const [andreaniAlertCount,setAndreaniAlertCount]=useState(0);
@@ -39522,12 +39951,12 @@ export default function App() {
   useEffect(()=>{
     if(typeof window==="undefined") return;
     if(colabToken || editorProdToken || boardToken || cuponToken) return;
-    const sub = page==="stock"?`/${stockTab}`:page==="arca"?`/${arcaTab}`:"";
+    const sub = page==="stock"?`/${stockTab}`:page==="arca"?`/${arcaTab}`:(page==="gads"&&gadsTab==="publicar")?"/publicar":"";
     const newHash = `#/${page}${sub}`;
     if(window.location.hash !== newHash) {
       window.history.replaceState(null,"",newHash);
     }
-  },[page, stockTab, margenesTab, arcaTab, colabToken, editorProdToken, boardToken]);
+  },[page, stockTab, margenesTab, arcaTab, gadsTab, colabToken, editorProdToken, boardToken]);
 
   // Auth state listener
   useEffect(()=>{
@@ -40160,7 +40589,7 @@ export default function App() {
   else if(page==="tareas") pageContent = adminGate("tareas") || planGate("plus") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab} pendingOpenTaskId={pendingOpenTaskId} onPendingOpenTaskConsumed={()=>setPendingOpenTaskId(null)}/></PageView>;
   else if(page==="reclamos") pageContent = adminGate("reclamos") || planGate("plus") || requiereTN("Reclamos") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
   else if(page==="canjes") pageContent = adminGate("canjes") || planGate("plus") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
-  else if(page==="gads") pageContent = adminGate("gads") || planGate("plus") || <PageView T={T} pageKey="gads"><AppGoogleAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")}/></PageView>;
+  else if(page==="gads") pageContent = adminGate("gads") || planGate("plus") || <PageView T={T} pageKey="gads"><AppGoogleAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={gadsTab} setTab={setGadsTab}/></PageView>;
   else if(page==="tiktokads") pageContent = <PageView T={T} pageKey="tiktokads"><AppSoonSection T={T} sectionId="tiktokads" title="TikTok Ads" onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} desc="Gasto, campañas y rendimiento de TikTok Ads dentro de Growith, junto a Meta y Google. Ya podés dejar la cuenta conectada desde Configuración → Integraciones para que aparezca apenas esté listo."/></PageView>;
   else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="calendario") pageContent = <PageView T={T} pageKey="calendario"><AppCalendarioPagos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
@@ -40185,7 +40614,7 @@ export default function App() {
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       {impersonando&&<GhImpersonBanner T={T} info={impersonando}/>}
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{ml: mlPreguntasCount, reclamos: reclamosCount, reclamosMp: reclamosMpCount, canjes: canjesAcciones, stock: 0, envios: enviosProblemasN, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert, calendario: calAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{ml: mlPreguntasCount, reclamos: reclamosCount, reclamosMp: reclamosMpCount, canjes: canjesAcciones, stock: 0, envios: enviosProblemasN, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert, calendario: calAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} gadsTab={gadsTab} setGadsTab={setGadsTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
       {/* Multi-org F2 modals */}
       {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
       {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}

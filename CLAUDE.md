@@ -29,7 +29,7 @@ Actualmente en uso real por Soluna Biolight (anteojos blue light blocker).
 │   ├── integrations.js  ← OAuth TN + Shopify
 │   ├── tn-callback.js   ← Callback OAuth TN
 │   ├── meta-callback.js ← Callback OAuth Meta
-│   ├── google-ads.js    ← Google Ads (oauth_start/status/disconnect; gasto en orders.js)
+│   ├── google-ads.js    ← Google Ads (oauth_start/status/disconnect; análisis accounts/campaigns/campaign_status; Publicar en Google: upload_image/publish/ai_copy — Búsqueda y Performance Max, se crean PAUSADAS; gasto en orders.js)
 │   ├── google-ads-callback.js ← Callback OAuth Google Ads
 │   ├── andreani.js      ← API oficial Andreani: etiquetas prepagas (billetera, markup, sucursales exactas)
 │   ├── update-shipping.js
@@ -214,6 +214,9 @@ growith_arca_pend_{uid}_{cuit}_{periodo} → SWR pendientes del facturador
 growith_rend_cache_{uid}_{periodo}   → SWR snapshot del Dashboard (daily_metrics)
 growith_ml_items_{uid}_{status}      → SWR publicaciones de la sección ML
 growith_meta_ins_{acc}_{nivel}_{rango}_{drill} → SWR insights de Meta (TTL 30 min)
+growith_gads_acc_{uid}     → id de la cuenta de Google Ads elegida (Análisis y Publicar)
+growith_gads_be_{uid}      → número, ROAS break-even de referencia de la sección Google Ads (2)
+growith_gads_pub_{uid}     → JSON borrador del publicador "Publicar en Google" (tipo, nombre, URL, presupuesto, textos, keywords; sin imágenes). Se limpia al publicar
 ```
 Patrón SWR: helpers globales `ghSwrGet(key,maxAge)` / `ghSwrSet(key,data)` — pintar cache al instante, refrescar de fondo, y si el refresco falla con cache pintada no romper la vista.
 
