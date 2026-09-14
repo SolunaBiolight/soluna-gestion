@@ -26948,21 +26948,41 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       // Convertir YYYY-MM-DD del date picker a YYYYMMDD que espera el backend.
       // SIEMPRE mandamos fecha_factura — el merchant la eligió explícitamente.
       const fechaYYYYMMDD = (fechaFactura || "").replace(/-/g, "");
-      const d = await api("emit","POST",{
-        cuit: cuitSel,
-        ordenes,
-        product_map: productMap,
-        fecha_factura: fechaYYYYMMDD,
-        punto_venta: pvElegido?.numero,
-        exento: !!pvElegido?.exento,
-        concepto: pvElegido?.concepto||1,
-      });
+      // El backend corta cada corrida a los 90 s (límite de Vercel) y devuelve
+      // las órdenes que no llegó a procesar en `pendientes`. Se sigue solo, en
+      // rondas, con las que faltan (la marca de emisión de esas órdenes queda
+      // liberada, así que reintentarlas no duplica nada) hasta terminar el lote.
+      let d = null, pendientesFinal = [], restantes = ordenes, ronda = 0;
+      const resAcum = [], pdfsAcum = [];
+      do {
+        ronda++;
+        d = await api("emit","POST",{
+          cuit: cuitSel,
+          ordenes: restantes,
+          product_map: productMap,
+          fecha_factura: fechaYYYYMMDD,
+          punto_venta: pvElegido?.numero,
+          exento: !!pvElegido?.exento,
+          concepto: pvElegido?.concepto||1,
+        });
+        if(d.error) break;
+        resAcum.push(...(d.resultados||[]));
+        pdfsAcum.push(...(d.pdfs||[]));
+        pendientesFinal = Array.isArray(d.pendientes) ? d.pendientes.filter(id=>restantes[id]) : [];
+        setEmitProgress(p=>({...p,current:Math.min(total,resAcum.length),ok:resAcum.filter(r=>r.ok).length,fail:resAcum.filter(r=>!r.ok).length}));
+        if(!pendientesFinal.length) break;
+        restantes = Object.fromEntries(pendientesFinal.map(id=>[id, restantes[id]]));
+      } while(ronda < 12);
       clearInterval(simInterval); simInterval = null;
-      if(d.error){
-        toast(d.error,"error");
-        setEmitProgress({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
-        return;
+      if(d?.error){
+        if(resAcum.length) toast(`Se facturaron ${resAcum.filter(r=>r.ok).length} y después falló: ${d.error}. Las que faltan siguen en pendientes.`,"error");
+        else toast(d.error,"error");
+        if(!resAcum.length){ setEmitProgress({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]}); return; }
       }
+      if(pendientesFinal.length){
+        toast(`Quedaron ${pendientesFinal.length} pedidos sin procesar por tiempo — volvé a facturar pendientes para terminarlos`,"warning");
+      }
+      d = { ...(d||{}), resultados: resAcum, pdfs: pdfsAcum };
       const res = d.resultados||[];
       const ok = res.filter(r=>r.ok).length;
       const fail = res.filter(r=>!r.ok).length;
