@@ -608,7 +608,7 @@ export default async function handler(req, res) {
           if (!tok?.accessToken) return { fee:0, rev:0 };
           mpTokenOk = true;
           const begin = `${sinceYmd}T00:00:00.000-03:00`, end = `${untilYmd}T23:59:59.999-03:00`;
-          let fee = 0, rev = 0, offset = 0; const feeByRef = {}; const feeByPayId = {};
+          let fee = 0, rev = 0, offset = 0; const feeByRef = {}; const feeByPayId = {}; const appByPayId = {};
           // Cashflow real de MP: profit ≠ caja. money_release_date dice cuándo MP
           // libera cada pago (0-18 días). Se acumula el NETO recibido (post fees)
           // liberado vs retenido, sobre TODOS los pagos aprobados de la cuenta en
@@ -633,6 +633,10 @@ export default async function handler(req, res) {
               if (p.status==="approved") {
                 const fId = (p.fee_details||[]).filter(fd=>fd.fee_payer!=="payer").reduce((s,fd)=>s+(parseFloat(fd.amount)||0),0);
                 if (fId>0) feeByPayId[String(p.id)] = fId;
+                // application_fee = comisión del MARKETPLACE (Tienda Nube) cobrada
+                // vía MP: es comisión de plataforma, no de pago.
+                const fApp = (p.fee_details||[]).filter(fd=>fd.type==="application_fee" && fd.fee_payer!=="payer").reduce((s,fd)=>s+(parseFloat(fd.amount)||0),0);
+                if (fApp>0) appByPayId[String(p.id)] = fApp;
               }
               if (esRegular && !/^cashback|^INSTORE/i.test(ref)) {
                 const neto = parseFloat(p.transaction_details?.net_received_amount);
@@ -657,7 +661,7 @@ export default async function handler(req, res) {
             offset += results.length;
             if (results.length < 100 || offset >= (j.paging?.total||0)) break;
           }
-          return { fee, rev, feeByRef, feeByPayId, cashflow:{ liberado:+liberado.toFixed(2), retenido:+retenido.toFixed(2) }, financingFee:+financingFee.toFixed(2), retenciones:+retenciones.toFixed(2) };
+          return { fee, rev, feeByRef, feeByPayId, appByPayId, cashflow:{ liberado:+liberado.toFixed(2), retenido:+retenido.toFixed(2) }, financingFee:+financingFee.toFixed(2), retenciones:+retenciones.toFixed(2) };
         } catch(_) { return { fee:0, rev:0, feeByRef:{}, feeByPayId:{} }; }
       }
       // Solo exige token: fetchMetaAll descubre las cuentas publicitarias vía
@@ -1116,7 +1120,7 @@ export default async function handler(req, res) {
         // Comisión de pago = comisión REAL de MP (sus ventas) + % configurado SOLO
         // sobre las ventas que NO pasaron por MP (transferencia, etc.). Antes el %
         // se aplicaba a TODO el revenue y encima se sumaba MP → doble-conteo.
-        const comPago   = Math.max(0, (parseFloat(mpComm)||0) - tnPlat); // shopifyPayComm (solo esta tienda) menos el costo por transacción de TN
+        const comPago   = parseFloat(mpComm)||0; // shopifyPayComm (solo esta tienda): ya sin la comisión del marketplace
         // Envío tienda: costo REAL por orden (si está el modo "orden" y hay detalle)
         // o promedio × órdenes. ML: Flex a su costo propio, Mercado Envíos al real.
         const storeOrders = Object.values(raw?.daily_orders||{}).reduce((a,b)=>a+b,0);
@@ -1270,6 +1274,7 @@ export default async function handler(req, res) {
       // Fee real de MP por payment_id — para cruzar las órdenes de Recurrentes
       // (suscripciones) que guardan su mp_payment_id y no matchean por ref.
       const feeByPayId = mpCommCurr.feeByPayId || {};
+      const appByPayId = mpCommCurr.appByPayId || {};
       const feeByPayIdPrev = mpCommPrev.feeByPayId || {};
       // Fee real de una orden: prioridad al fee exacto embebido (saleFee), después
       // el cruce por payment_id, después el cruce por ref. Null = usar el %.
@@ -1281,8 +1286,9 @@ export default async function handler(req, res) {
         // conectada: una sola pasada, sin límite por orden); 2) cargo informado
         // por TN en la orden; 3) tarifa declarada por la app de pago.
         if (o.platform === "tiendanube") {
-          if (o.mpPayId && fbPay && fbPay[o.mpPayId] != null) return parseFloat(fbPay[o.mpPayId]) || 0;
-          const c = tnFeeCache[o.id]; if (c && c.f != null) return parseFloat(c.f) || 0;
+          // Pago real de MP menos la comisión del marketplace (va a Plataforma).
+          if (o.mpPayId && fbPay && fbPay[o.mpPayId] != null) return Math.max(0, (parseFloat(fbPay[o.mpPayId]) || 0) - (parseFloat(appByPayId[o.mpPayId]) || 0));
+          const c = tnFeeCache[o.id]; if (c && c.f != null) return Math.max(0, (parseFloat(c.f) || 0) - (parseFloat(c.c) || 0));
           const rf = tnRateFee(o); if (rf != null) return rf;
         }
         if (parseFloat(o.saleFee) > 0) return parseFloat(o.saleFee);
@@ -1436,7 +1442,11 @@ export default async function handler(req, res) {
       // como lo muestra Escalafy ("Comisiones de Plataformas" vs "de Pago").
       function tnPlatComm(raw) {
         let s = 0;
-        for (const o of (raw?.orders_detail||[])) { if (o.platform==="tiendanube") { const c = tnFeeCache[o.id]; if (c && c.f != null) s += parseFloat(c.c)||0; } }
+        for (const o of (raw?.orders_detail||[])) {
+          if (o.platform!=="tiendanube") continue;
+          if (o.mpPayId && appByPayId[o.mpPayId] != null) { s += parseFloat(appByPayId[o.mpPayId])||0; continue; }
+          const c = tnFeeCache[o.id]; if (c && c.f != null) s += parseFloat(c.c)||0;
+        }
         return s;
       }
       function shopifyPayComm(raw, feeMap, feeMapPay) {
@@ -1726,7 +1736,7 @@ export default async function handler(req, res) {
         // Comisión separada como en el general: Plataforma vs Pago.
         const tnPlatC = isMl ? 0 : tnPlatComm(raw);
         const comPlat = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : rev*pctPlat + tnPlatC;
-        const comPago = isMl ? 0 : Math.max(0, (parseFloat(mpComm)||0) - tnPlatC); // mpComm ya = shopifyPayComm de esta tienda
+        const comPago = isMl ? 0 : (parseFloat(mpComm)||0); // mpComm ya = shopifyPayComm de esta tienda, sin la comisión del marketplace
         const comis = comPlat + comPago;
         const envio = (isMl
           ? (parseFloat(mlEnv)||0)
