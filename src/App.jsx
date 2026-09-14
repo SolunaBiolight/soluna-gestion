@@ -27778,7 +27778,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const nowArg = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
                     const pad = n=>String(n).padStart(2,"0");
                     const hoyIso = `${nowArg.getFullYear()}-${pad(nowArg.getMonth()+1)}-${pad(nowArg.getDate())}`;
-                    const minD = new Date(nowArg.getTime()-10*86400000);
+                    // Ventana retroactiva según el punto de venta: concepto Productos (1)
+                    // → 5 días corridos (límite real del WSFE); Servicios / Prod. y serv.
+                    // (2/3) → 10 días.
+                    const diasRetro = (pvElegido?.concepto===2||pvElegido?.concepto===3) ? 10 : 5;
+                    const minD = new Date(nowArg.getTime()-diasRetro*86400000);
                     const minIso = `${minD.getFullYear()}-${pad(minD.getMonth()+1)}-${pad(minD.getDate())}`;
                     const fechaLabel = fechaFactura ? new Date(fechaFactura+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}) : "";
                     const diasAtras = fechaFactura ? Math.round((new Date(hoyIso)-new Date(fechaFactura))/86400000) : 0;
@@ -27834,12 +27838,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <div style={{padding:"12px 16px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
                           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                             <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,flexShrink:0}}>Fecha de las facturas</span>
-                            <GhDatePicker T={T} value={fechaFactura} min={minIso} max={hoyIso} onChange={_v=>setFechaFactura(_v)}
+                            <input type="date" value={fechaFactura} min={minIso} max={hoyIso} onChange={e=>setFechaFactura(e.target.value)}
                               style={{background:T.card,border:`1px solid ${T.borderL}`,color:T.text,borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                             {fechaLabel&&<span style={{fontSize:12,color:T.text,fontWeight:500,textTransform:"capitalize"}}>{fechaLabel}</span>}
                           </div>
                           <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>
-                            Podés retrotraer hasta 10 días corridos. Ojo: la norma publicada indica 5 días para venta de productos (10 es para servicios) — si elegís más de 5 y ARCA no lo acepta, vas a ver el rechazo de ese comprobante acá mismo.{diasAtras>0?` Hace ${diasAtras} día${diasAtras>1?"s":""}.`:""}
+                            Podés retrotraer hasta {diasRetro} días corridos ({diasRetro===10?"punto de venta de servicios":"punto de venta de productos: es el límite del WSFE de ARCA"}). Si ARCA no acepta una fecha, vas a ver el rechazo de ese comprobante acá mismo.{diasAtras>0?` Hace ${diasAtras} día${diasAtras>1?"s":""}.`:""}
                           </div>
                         </div>
 
@@ -27979,13 +27983,14 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       const nowArg=new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
                       const pad=n=>String(n).padStart(2,"0");
                       const hoyIso=`${nowArg.getFullYear()}-${pad(nowArg.getMonth()+1)}-${pad(nowArg.getDate())}`;
-                      const minD=new Date(nowArg.getTime()-10*86400000);
+                      const diasRetroM=(pvManualElegido?.concepto===2||pvManualElegido?.concepto===3)?10:5;
+                      const minD=new Date(nowArg.getTime()-diasRetroM*86400000);
                       const minIso=`${minD.getFullYear()}-${pad(minD.getMonth()+1)}-${pad(minD.getDate())}`;
                       return (
                         <div style={{marginBottom:18}}>
                           <label style={labelS}>Fecha de la factura</label>
-                          <GhDatePicker T={T} value={manualFecha||hoyIso} min={minIso} max={hoyIso} onChange={_v=>setManualFecha(_v===hoyIso?"":_v)} style={{...iS,width:"auto"}}/>
-                          <div style={{fontSize:11,color:T.textSm,marginTop:5}}>Podés retrotraerla hasta 10 días corridos. La norma publicada indica 5 para productos (10 para servicios): si ARCA no acepta la fecha, te muestra el rechazo acá.</div>
+                          <input type="date" value={manualFecha||hoyIso} min={minIso} max={hoyIso} onChange={e=>setManualFecha(e.target.value===hoyIso?"":e.target.value)} style={{...iS,width:"auto"}}/>
+                          <div style={{fontSize:11,color:T.textSm,marginTop:5}}>Podés retrotraerla hasta {diasRetroM} días corridos ({diasRetroM===10?"punto de venta de servicios":"productos: límite del WSFE de ARCA"}). Si ARCA no acepta la fecha, te muestra el rechazo acá.</div>
                         </div>
                       );
                     })()}
