@@ -80,6 +80,7 @@ function gadsHttpError(status, txt) {
   let code = "", msg = "";
   try { const j = JSON.parse(t); const d = j.error?.details?.[0]?.errors?.[0]; code = JSON.stringify(d?.errorCode || ""); msg = d?.message || j.error?.message || ""; } catch { msg = t.slice(0, 300); }
   const friendly =
+    /only approved for use with test accounts|TEST_ACCOUNTS|apply for Explorer/i.test(code + t) ? "Google todavía no habilitó a Growith para leer cuentas reales de Google Ads (el proyecto está en nivel de prueba; el acceso Explorer/Basic ya fue solicitado). Cuando Google lo apruebe, esta sección se llena sola — no hace falta reconectar." :
     /DEVELOPER_TOKEN_NOT_APPROVED/i.test(code + t) ? "El developer token de Growith todavía no está aprobado por Google para esta cuenta." :
     /DEVELOPER_TOKEN_PROHIBITED/i.test(code + t) ? "El developer token no puede usarse con este proyecto de Google Cloud." :
     /developer-token|DEVELOPER_TOKEN_INVALID|NOT_ADS_USER/i.test(code + t) && status === 401 ? "Falta el developer token de Google Ads en el servidor (GOOGLE_ADS_DEVELOPER_TOKEN)." :
