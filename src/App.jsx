@@ -1803,52 +1803,260 @@ function MiembrosCuentaCard({T,user}){
 }
 
 // ─── Referidos: ganá el 15% de cada pago de plan de tus referidos ───
-// ── Google Ads: sección propia. Conexión OAuth ya existe; las métricas de campañas
-//    llegan cuando Google habilite el developer token de Growith (en trámite).
+// ── Google Ads: sección propia (Analytics). Misma lectura que Meta Ads: KPIs del
+//    rango, tabla de campañas con switch para pausar/activar, período, BE y buscador.
+//    Datos: /api/google-ads?action=accounts | campaigns | campaign_status (GAQL).
 function AppGoogleAds({T, user, onHome, onGoConfig}) {
   const [st,setSt]=useState(null); const [err,setErr]=useState(null);
+  const [accounts,setAccounts]=useState(null); const [accErr,setAccErr]=useState(null);
+  const [acc,setAcc]=useState(()=>{ try{ return localStorage.getItem(`growith_gads_acc_${user?.uid}`)||""; }catch{ return ""; } });
+  const [since,setSince]=useState(()=>fechaAR(new Date(Date.now()-7*86400000)));
+  const [until,setUntil]=useState(()=>fechaAR(new Date()));
+  const [rows,setRows]=useState(null); const [daily,setDaily]=useState([]);
+  const [loading,setLoading]=useState(false); const [rowsErr,setRowsErr]=useState(null);
+  const [filterStatus,setFilterStatus]=useState("active");
+  const [query,setQuery]=useState(""); const [busyIds,setBusyIds]=useState({});
+  const [roasBe,setRoasBe]=useState(()=>{ try{ return parseFloat(localStorage.getItem(`growith_gads_be_${user?.uid}`))||2; }catch{ return 2; } });
+  const [sortKey,setSortKey]=useState("spend"); const [sortDir,setSortDir]=useState("desc");
+
   const load=async()=>{ try{ const r=await authFetch(`/api/google-ads?action=status&uid=${user.uid}`); const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status); setSt(j); }catch(e){ setErr(e.message); } };
   useEffect(()=>{ load(); /* eslint-disable-next-line */ },[user?.uid]);
+  const conectado=!!st?.connected;
+
+  // Cuentas publicitarias (con nombre y moneda)
+  useEffect(()=>{
+    if(!conectado) return;
+    let alive=true;
+    (async()=>{
+      try{
+        const r=await authFetch(`/api/google-ads?action=accounts&uid=${user.uid}`); const j=await r.json();
+        if(!alive) return;
+        if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
+        const list=j.accounts||[]; setAccounts(list); setAccErr(list.length?null:(j.errors?.[0]?.error||"La cuenta de Google conectada no tiene cuentas de Google Ads accesibles."));
+        if(list.length&&!list.find(a=>a.id===acc)){ setAcc(list[0].id); }
+      }catch(e){ if(alive){ setAccounts([]); setAccErr(e.message); } }
+    })();
+    return ()=>{ alive=false; };
+    /* eslint-disable-next-line */
+  },[conectado,user?.uid]);
+  useEffect(()=>{ try{ if(acc) localStorage.setItem(`growith_gads_acc_${user?.uid}`,acc); }catch{} },[acc,user?.uid]);
+  useEffect(()=>{ try{ localStorage.setItem(`growith_gads_be_${user?.uid}`,String(roasBe)); }catch{} },[roasBe,user?.uid]);
+
+  const account=(accounts||[]).find(a=>a.id===acc)||null;
+  const loadCampaigns=async()=>{
+    if(!account) return;
+    setLoading(true); setRowsErr(null);
+    try{
+      const q=new URLSearchParams({action:"campaigns",uid:user.uid,customer:account.id,since,until,...(account.login?{login:account.login}:{})});
+      const r=await authFetch(`/api/google-ads?${q}`); const j=await r.json();
+      if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
+      setRows(j.campaigns||[]); setDaily(j.daily||[]);
+    }catch(e){ setRowsErr(e.message); setRows([]); setDaily([]); }
+    finally{ setLoading(false); }
+  };
+  useEffect(()=>{ if(account) loadCampaigns(); /* eslint-disable-next-line */ },[account?.id,since,until]);
+
+  const toggleStatus=async(r)=>{
+    const next=r.status==="ENABLED"?"PAUSED":"ENABLED";
+    setBusyIds(b=>({...b,[r.id]:true}));
+    try{
+      const res=await authFetch(`/api/google-ads?action=campaign_status&uid=${user.uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({customer:account.id,login:account.login||null,id:r.id,status:next})});
+      const j=await res.json(); if(!res.ok||j.error) throw new Error(j.error||"HTTP "+res.status);
+      setRows(prev=>(prev||[]).map(x=>x.id===r.id?{...x,status:next}:x));
+      toast&&toast(next==="ENABLED"?"Campaña activada":"Campaña pausada");
+    }catch(e){ appAlert("No se pudo cambiar el estado: "+e.message); }
+    finally{ setBusyIds(b=>{ const c={...b}; delete c[r.id]; return c; }); }
+  };
+
+  const cur=(code)=>({ARS:"$",USD:"US$",BRL:"R$",MXN:"MX$",EUR:"€",CLP:"CLP$",PEN:"S/",UYU:"$U",COP:"COL$",GBP:"£"})[code]||(code?code+" ":"$");
+  const sym=cur(account?.currency);
+  const fmt=(n)=>(+n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fmtInt=(n)=>Math.round(+n||0).toLocaleString("es-AR");
+  const CHANNEL={SEARCH:"Búsqueda",DISPLAY:"Display",SHOPPING:"Shopping",VIDEO:"Video",PERFORMANCE_MAX:"Performance Max",DEMAND_GEN:"Demand Gen",MULTI_CHANNEL:"Multicanal",LOCAL:"Local",SMART:"Smart",HOTEL:"Hotel"};
+
+  const filtered=(rows||[])
+    .filter(r=>filterStatus==="all"?true:filterStatus==="active"?r.status==="ENABLED":r.status==="PAUSED")
+    .filter(r=>!query.trim()||String(r.name||"").toLowerCase().includes(query.trim().toLowerCase()))
+    .sort((a,b)=>{ const va=sortKey==="name"?String(a.name||""):(+a[sortKey]||0); const vb=sortKey==="name"?String(b.name||""):(+b[sortKey]||0); const c=typeof va==="string"?va.localeCompare(vb):va-vb; return sortDir==="asc"?c:-c; });
+  const sumSpend=filtered.reduce((s,r)=>s+(+r.spend||0),0);
+  const sumConv=filtered.reduce((s,r)=>s+(+r.conversions||0),0);
+  const sumVal=filtered.reduce((s,r)=>s+(+r.conv_value||0),0);
+  const sumClicks=filtered.reduce((s,r)=>s+(+r.clicks||0),0);
+  const sumImp=filtered.reduce((s,r)=>s+(+r.impressions||0),0);
+  const totalRoas=sumSpend?sumVal/sumSpend:0; const totalCpa=sumConv?sumSpend/sumConv:0; const totalCtr=sumImp?(sumClicks/sumImp)*100:0;
+
+  const COLS=[
+    {k:"budget",l:"Presup./día",f:r=>r.budget!=null?sym+fmt(r.budget):"—"},
+    {k:"spend",l:"Gasto",f:r=>sym+fmt(r.spend)},
+    {k:"conversions",l:"Conversiones",f:r=>fmt(r.conversions)},
+    {k:"conv_value",l:"Valor conv.",f:r=>sym+fmt(r.conv_value)},
+    {k:"roas",l:"ROAS",f:r=>r.spend?fmt(r.roas)+"x":"—",color:r=>r.spend?(r.roas>=roasBe?T.green:(r.roas>0?T.red:T.textSm)):T.textSm},
+    {k:"cpa",l:"CPA",f:r=>r.conversions?sym+fmt(r.cpa):"—"},
+    {k:"ctr",l:"CTR",f:r=>r.impressions?fmt(r.ctr)+"%":"—"},
+    {k:"cpc",l:"CPC",f:r=>r.clicks?sym+fmt(r.cpc):"—"},
+    {k:"impressions",l:"Impresiones",f:r=>fmtInt(r.impressions)},
+    {k:"clicks",l:"Clicks",f:r=>fmtInt(r.clicks)},
+  ];
+  const headerCell=(key,label,align="right")=>{
+    const active=sortKey===key;
+    return (
+      <th key={key} onClick={()=>{ if(active) setSortDir(d=>d==="asc"?"desc":"asc"); else { setSortKey(key); setSortDir(key==="name"?"asc":"desc"); } }}
+        style={{padding:"10px 12px",textAlign:align,fontSize:10,fontWeight:700,color:active?T.text:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.border}`,cursor:"pointer",whiteSpace:"nowrap",userSelect:"none"}}>
+        {label}{active?(sortDir==="asc"?" ↑":" ↓"):""}
+      </th>
+    );
+  };
+
   const conectar=async()=>{ try{ const j=await authFetch(`/api/google-ads?action=oauth_start&uid=${user.uid}`).then(r=>r.json()); if(j.url){ window.location.href=j.url; return; } appAlert(j.detail||j.error||"No se pudo iniciar la conexión con Google."); }catch(e){ appAlert("Error: "+e.message); } };
-  const conectado=!!st?.connected; const cuentas=st?.customers||[];
   const Card=({children,style})=><div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",...style}}>{children}</div>;
+  const ErrBox=({children})=><div style={{background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",fontSize:12,color:T.red,lineHeight:1.5}}>{children}</div>;
+
+  // Mini gráfico diario (gasto) — barras simples, sin librerías
+  const maxSpend=Math.max(0,...daily.map(d=>+d.spend||0));
+
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
       <AppTopbar T={T} section="Google Ads" sectionId="gads" onHome={onHome}>
-        {conectado&&<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,color:T.green,fontWeight:600}}><span style={{width:7,height:7,borderRadius:"50%",background:T.green}}/>Conectado</span>}
+        {conectado&&<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,color:T.green,fontWeight:600}}><span style={{width:7,height:7,borderRadius:"50%",background:T.green}}/>Conectado{account?` · ${account.name}`:""}</span>}
       </AppTopbar>
       <div style={{maxWidth:"100%",margin:"0 auto",padding:"20px 24px 80px",display:"flex",flexDirection:"column",gap:16}}>
-        {err&&<div style={{background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",fontSize:12,color:T.red}}>{err}</div>}
-        <Card>
-          <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-            <div style={{width:46,height:46,borderRadius:12,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><BrandIcon name="google" size={28}/></div>
-            <div style={{flex:1,minWidth:220}}>
-              <div style={{fontSize:15,fontWeight:800,color:T.text}}>{st===null&&!err?"Consultando la conexión…":conectado?"Google Ads conectado":"Google Ads no está conectado"}</div>
-              <div style={{fontSize:12,color:T.textSm,marginTop:3,lineHeight:1.5}}>
-                {conectado
-                  ? (cuentas.length?`${cuentas.length} cuenta${cuentas.length!==1?"s":""} publicitaria${cuentas.length!==1?"s":""} vinculada${cuentas.length!==1?"s":""}.`:"Cuenta vinculada. Las cuentas publicitarias aparecen cuando Google habilite el acceso a datos.")
-                  : "Conectá tu cuenta de Google Ads para que el gasto y las campañas entren solos al Dashboard y a esta sección."}
+        {err&&<ErrBox>{err}</ErrBox>}
+
+        {/* Sin conexión: card de conexión */}
+        {!conectado&&(
+          <Card>
+            <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+              <div style={{width:46,height:46,borderRadius:12,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><BrandIcon name="google" size={28}/></div>
+              <div style={{flex:1,minWidth:220}}>
+                <div style={{fontSize:15,fontWeight:800,color:T.text}}>{st===null&&!err?"Consultando la conexión…":"Google Ads no está conectado"}</div>
+                <div style={{fontSize:12,color:T.textSm,marginTop:3,lineHeight:1.5}}>Conectá tu cuenta de Google Ads para ver acá gasto, conversiones, ROAS y CPA por campaña, pausar o activar campañas y que el gasto entre solo al Dashboard.</div>
+              </div>
+              <button onClick={conectar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>Conectar Google Ads</button>
+            </div>
+          </Card>
+        )}
+
+        {conectado&&accounts===null&&!accErr&&(
+          <Card><div style={{display:"flex",alignItems:"center",gap:10,fontSize:12,color:T.textMd}}><Spinner size={14} color={T.textMd}/> Buscando tus cuentas de Google Ads…</div></Card>
+        )}
+        {conectado&&accErr&&(
+          <Card>
+            <div style={{fontSize:14,fontWeight:800,color:T.text,marginBottom:6}}>No pudimos leer tus cuentas de Google Ads</div>
+            <ErrBox>{accErr}</ErrBox>
+            <div style={{fontSize:12,color:T.textMd,marginTop:10,lineHeight:1.6}}>Si conectaste una cuenta de Google que no administra ninguna cuenta publicitaria, desvinculá y volvé a conectar con la cuenta correcta desde <button onClick={onGoConfig} style={{background:"none",border:"none",padding:0,color:T.accent,fontWeight:700,cursor:"pointer",fontSize:12}}>Configuración → Integraciones</button>. Mientras tanto el gasto de Google se puede cargar manual en Dashboard → Costos.</div>
+          </Card>
+        )}
+
+        {conectado&&account&&(
+          <>
+            {/* KPIs del rango (sobre lo filtrado) */}
+            <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+              <KPI T={T} label="Gasto" value={sym+fmt(sumSpend)} sub={`${filtered.length} campaña${filtered.length!==1?"s":""}`} color={T.accent} loading={loading&&rows===null}/>
+              <KPI T={T} label="Conversiones" value={fmt(sumConv)} sub={sumClicks?`${fmtInt(sumClicks)} clicks`:""} color={T.text} loading={loading&&rows===null}/>
+              <KPI T={T} label="Valor conversiones" value={sym+fmt(sumVal)} sub="según conversiones de Google" color={T.text} loading={loading&&rows===null}/>
+              <KPI T={T} label="ROAS" value={sumSpend?fmt(totalRoas)+"x":"—"} sub={roasBe>0?`BE de referencia ${roasBe}x`:""} color={sumSpend?(totalRoas>=roasBe?T.green:(totalRoas>0?T.red:T.textSm)):T.textSm} loading={loading&&rows===null}/>
+              <KPI T={T} label="CPA" value={totalCpa?sym+fmt(totalCpa):"—"} sub={totalCtr?`CTR ${fmt(totalCtr)}%`:""} color={T.text} loading={loading&&rows===null}/>
+            </div>
+
+            {/* Controles */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 20px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                {(accounts||[]).length>1
+                  ? <select value={acc} onChange={e=>setAcc(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",maxWidth:260}}>
+                      {(accounts||[]).map(a=><option key={a.id} value={a.id}>{a.name}{a.currency?` · ${a.currency}`:""}{a.viaManager?` (vía ${a.viaManager})`:""}</option>)}
+                    </select>
+                  : <div style={{padding:"6px 12px",background:T.bg,borderRadius:8,border:`1px solid ${T.borderL}`,fontSize:12,fontWeight:600,color:T.text}}>{account.name}{account.currency?<span style={{color:T.textSm,fontWeight:500}}> · {account.currency}</span>:null}</div>}
+                <DateRangePicker T={T} since={since} until={until} onChange={(s,u)=>{setSince(s);setUntil(u);}}/>
+                <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <option value="all">Todos los estados</option>
+                  <option value="active">Solo activas</option>
+                  <option value="paused">Solo pausadas</option>
+                </select>
+                <div title="ROAS break-even de referencia" style={{display:"flex",alignItems:"center",gap:5,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"3px 8px"}}>
+                  <span style={{fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.3}}>BE</span>
+                  <GhTip T={T} text="BE = ROAS break-even (punto de equilibrio): el ROAS mínimo para no perder plata con una campaña. Growith pinta el ROAS en verde cuando supera este valor y en rojo cuando no."/>
+                  <input type="number" step="0.1" min="0" value={roasBe} onChange={e=>setRoasBe(parseFloat(e.target.value)||0)} style={{width:44,background:"transparent",border:"none",fontSize:12,color:T.text,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",outline:"none"}}/>
+                  <span style={{fontSize:11,color:T.textSm}}>x</span>
+                </div>
+                <input type="text" placeholder="Buscar campaña…" value={query} onChange={e=>setQuery(e.target.value)} style={{flex:1,minWidth:140,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                <button onClick={loadCampaigns} disabled={loading} title="Refrescar con el rango actual" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:loading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  {loading?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>}
+                </button>
               </div>
             </div>
-            {conectado
-              ? <button onClick={onGoConfig} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px"}}>Administrar en Configuración</button>
-              : <button onClick={conectar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>Conectar Google Ads</button>}
-          </div>
-          {cuentas.length>0&&(
-            <div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:14}}>
-              {cuentas.map((c,i)=><span key={i} style={{fontSize:11,padding:"4px 10px",borderRadius:99,background:T.surface,border:`1px solid ${T.borderL}`,color:T.textMd}}>{c.name||c.descriptive_name||c.id||String(c)}</span>)}
+
+            {rowsErr&&<ErrBox><strong>Google no devolvió las campañas.</strong> {rowsErr}</ErrBox>}
+
+            {/* Gasto por día */}
+            {daily.length>1&&maxSpend>0&&(
+              <Card style={{padding:"14px 20px"}}>
+                <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:8}}>
+                  <span style={{fontSize:12,fontWeight:700,color:T.text}}>Gasto por día</span>
+                  <span style={{fontSize:11,color:T.textSm}}>{daily.length} días · promedio {sym+fmt(daily.reduce((s,d)=>s+(+d.spend||0),0)/daily.length)}/día</span>
+                </div>
+                <div style={{display:"flex",alignItems:"flex-end",gap:3,height:70}}>
+                  {daily.map(d=>{
+                    const h=Math.max(2,Math.round((+d.spend||0)/maxSpend*66));
+                    return <div key={d.date} title={`${d.date}: ${sym}${fmt(d.spend)} · ${fmt(d.conversions)} conv.`} style={{flex:1,minWidth:2,height:h,background:(+d.conversions>0)?T.accent:(T.textSm+"66"),borderRadius:"3px 3px 0 0"}}/>;
+                  })}
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:T.textSm,marginTop:4}}><span>{daily[0].date}</span><span>{daily[daily.length-1].date}</span></div>
+              </Card>
+            )}
+
+            {/* Tabla de campañas */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <thead style={{background:T.bg,position:"sticky",top:0,zIndex:1}}>
+                    <tr>
+                      <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.border}`,width:54}}>Acción</th>
+                      {headerCell("name","Campaña","left")}
+                      <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.border}`}}>Tipo</th>
+                      {COLS.map(c=>headerCell(c.k,c.l))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows===null&&<tr><td colSpan={COLS.length+3} style={{padding:"28px 12px",textAlign:"center",fontSize:12,color:T.textMd}}><Spinner size={14} color={T.textMd}/> Cargando campañas…</td></tr>}
+                    {rows!==null&&filtered.length===0&&<tr><td colSpan={COLS.length+3} style={{padding:"28px 12px",textAlign:"center",fontSize:12,color:T.textMd}}>{rows.length?"Ninguna campaña coincide con el filtro.":"Esta cuenta no tiene campañas."}</td></tr>}
+                    {filtered.map(r=>{
+                      const busy=!!busyIds[r.id]; const isActive=r.status==="ENABLED";
+                      return (
+                        <tr key={r.id} style={{borderBottom:`1px solid ${T.borderL}`,opacity:isActive?1:0.6}}>
+                          <td style={{padding:"10px 12px"}}>
+                            <button onClick={()=>toggleStatus(r)} disabled={busy} title={isActive?"Pausar":"Activar"} role="switch" aria-checked={isActive} style={{width:34,height:18,borderRadius:9,border:"none",padding:0,cursor:busy?"wait":"pointer",background:isActive?"#4285F4":(T.textSm+"55"),position:"relative",transition:"background .15s",flexShrink:0,opacity:busy?0.6:1}}>
+                              <span style={{position:"absolute",top:2,left:isActive?18:2,width:14,height:14,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 2px rgba(0,0,0,.3)",transition:"left .15s",display:"flex",alignItems:"center",justifyContent:"center"}}>{busy&&<Spinner size={8} color={isActive?"#4285F4":T.textSm}/>}</span>
+                            </button>
+                          </td>
+                          <td style={{padding:"10px 12px",fontSize:12,color:T.text,maxWidth:320,overflow:"hidden",whiteSpace:"nowrap"}}>
+                            <div style={{fontWeight:600,overflow:"hidden",textOverflow:"ellipsis"}} title={r.name}>{r.name||"(sin nombre)"}</div>
+                            <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{r.status==="ENABLED"?"Activa":r.status==="PAUSED"?"Pausada":r.status||""}{r.end&&r.end!=="2037-12-30"?` · hasta ${r.end}`:""}</div>
+                          </td>
+                          <td style={{padding:"10px 12px",fontSize:11,color:T.textMd,whiteSpace:"nowrap"}}>{CHANNEL[r.channel]||r.channel||"—"}</td>
+                          {COLS.map(c=><td key={c.k} style={{padding:"10px 12px",fontSize:12,textAlign:"right",whiteSpace:"nowrap",color:c.color?c.color(r):T.text,fontWeight:c.k==="spend"||c.k==="roas"?700:500}}>{c.f(r)}</td>)}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {filtered.length>1&&(
+                    <tfoot>
+                      <tr style={{background:T.bg}}>
+                        <td colSpan={3} style={{padding:"10px 12px",fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Total ({filtered.length})</td>
+                        {COLS.map(c=>{
+                          const v=c.k==="budget"?"":c.k==="spend"?sym+fmt(sumSpend):c.k==="conversions"?fmt(sumConv):c.k==="conv_value"?sym+fmt(sumVal):c.k==="roas"?(sumSpend?fmt(totalRoas)+"x":"—"):c.k==="cpa"?(totalCpa?sym+fmt(totalCpa):"—"):c.k==="ctr"?(sumImp?fmt(totalCtr)+"%":"—"):c.k==="cpc"?(sumClicks?sym+fmt(sumSpend/sumClicks):"—"):c.k==="impressions"?fmtInt(sumImp):c.k==="clicks"?fmtInt(sumClicks):"";
+                          return <td key={c.k} style={{padding:"10px 12px",fontSize:12,textAlign:"right",fontWeight:700,color:c.k==="roas"?(sumSpend?(totalRoas>=roasBe?T.green:(totalRoas>0?T.red:T.textSm)):T.textSm):T.text,whiteSpace:"nowrap"}}>{v}</td>;
+                        })}
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
             </div>
-          )}
-        </Card>
-        <Card style={{borderStyle:"dashed"}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-            <span style={{fontSize:14,fontWeight:800,color:T.text}}>Análisis de campañas</span>
-            <span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,background:T.yellow+"22",color:T.yellow,borderRadius:99,padding:"2px 8px"}}>PRONTO</span>
-          </div>
-          <div style={{fontSize:12,color:T.textMd,lineHeight:1.6}}>
-            Acá vas a ver lo mismo que en Meta Ads: gasto, conversiones, ROAS y CPA por campaña, con el mismo selector de período y el mismo switch para pausar o activar. Google exige un <strong style={{color:T.text}}>developer token</strong> aprobado para leer campañas por API{st&&!st.hasDevToken?" y el de Growith está en trámite":""}. Mientras tanto el gasto de Google se carga manual en <button onClick={onGoConfig} style={{background:"none",border:"none",padding:0,color:T.accent,fontWeight:700,cursor:"pointer",fontSize:12}}>Dashboard → Configuraciones</button> y ya se descuenta de tus márgenes.
-          </div>
-        </Card>
+            <div style={{fontSize:11,color:T.textSm,lineHeight:1.6}}>
+              Datos de la Google Ads API (conversiones y valor según las acciones de conversión configuradas en tu cuenta de Google). El gasto de este período ya se descuenta solo en el Dashboard. Para cambiar la cuenta de Google conectada andá a <button onClick={onGoConfig} style={{background:"none",border:"none",padding:0,color:T.accent,fontWeight:700,cursor:"pointer",fontSize:11}}>Configuración → Integraciones</button>.
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
