@@ -1110,11 +1110,12 @@ export default async function handler(req, res) {
         // Comisión de plataforma = % configurado del store (Shopify/TN) + comisión
         // REAL de Mercado Libre (sale_fee de cada orden, ya incluye el pago de MP).
         const comML     = parseFloat(raw?.ml_data?.ml_commission)||0;
-        const comPlat   = storeRev * pctPlat + comML;
+        const tnPlat    = tnPlatComm(raw);
+        const comPlat   = storeRev * pctPlat + comML + tnPlat;
         // Comisión de pago = comisión REAL de MP (sus ventas) + % configurado SOLO
         // sobre las ventas que NO pasaron por MP (transferencia, etc.). Antes el %
         // se aplicaba a TODO el revenue y encima se sumaba MP → doble-conteo.
-        const comPago   = parseFloat(mpComm)||0; // ya viene como shopifyPayComm (solo esta tienda)
+        const comPago   = Math.max(0, (parseFloat(mpComm)||0) - tnPlat); // shopifyPayComm (solo esta tienda) menos el costo por transacción de TN
         // Envío tienda: costo REAL por orden (si está el modo "orden" y hay detalle)
         // o promedio × órdenes. ML: Flex a su costo propio, Mercado Envíos al real.
         const storeOrders = Object.values(raw?.daily_orders||{}).reduce((a,b)=>a+b,0);
@@ -1424,6 +1425,15 @@ export default async function handler(req, res) {
       // Comisión de pago de Shopify: por orden, si matcheó su pago de MP real (por
       // receipt_id) usamos ESE fee; sino el % configurado del método. Suma SOLO las
       // órdenes de esta tienda → nunca arrastra otras tiendas/ML del MP compartido.
+      // Costo por transacción de Tienda Nube (cargo "cost_per_transaction" de la
+      // transacción): es comisión de PLATAFORMA, no de pago. Viene incluido en el
+      // cargo total (tnFeeCache.f) → se resta de Pago y se suma a Plataforma,
+      // como lo muestra Escalafy ("Comisiones de Plataformas" vs "de Pago").
+      function tnPlatComm(raw) {
+        let s = 0;
+        for (const o of (raw?.orders_detail||[])) { if (o.platform==="tiendanube") { const c = tnFeeCache[o.id]; if (c && c.f != null) s += parseFloat(c.c)||0; } }
+        return s;
+      }
       function shopifyPayComm(raw, feeMap, feeMapPay) {
         let s = 0;
         for (const o of (raw?.orders_detail||[])) {
@@ -1709,8 +1719,9 @@ export default async function handler(req, res) {
           }
         }
         // Comisión separada como en el general: Plataforma vs Pago.
-        const comPlat = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : rev*pctPlat;
-        const comPago = isMl ? 0 : (parseFloat(mpComm)||0); // mpComm ya = shopifyPayComm de esta tienda
+        const tnPlatC = isMl ? 0 : tnPlatComm(raw);
+        const comPlat = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : rev*pctPlat + tnPlatC;
+        const comPago = isMl ? 0 : Math.max(0, (parseFloat(mpComm)||0) - tnPlatC); // mpComm ya = shopifyPayComm de esta tienda
         const comis = comPlat + comPago;
         const envio = (isMl
           ? (parseFloat(mlEnv)||0)
