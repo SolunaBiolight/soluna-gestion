@@ -13255,47 +13255,98 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             const rows=bulk.rows;
             const ok=rows.filter(r=>r.emitido?.numeroDeEnvio);
             const fails=rows.filter(r=>r.emitError);
+            const costo=ok.reduce((a,r)=>a+(Number(r.emitido?.precio)||Number(r.cot?.precio)||0),0);
+            const tipoIcon=fails.length?(ok.length?"warning":"error"):"success";
+            const titulo=ok.length===0?"No se emitió ninguna etiqueta":`${ok.length} etiqueta${ok.length!==1?"s":""} emitida${ok.length!==1?"s":""}`;
+            const fEntrega=v=>{ if(!v) return ""; const m=String(v).match(/^(\d{4})-(\d{2})-(\d{2})/); return m?`${m[3]}/${m[2]}`:String(v).slice(0,10); };
+            const copiar=async(txt)=>{ try{ await navigator.clipboard.writeText(String(txt)); toast("Número de envío copiado","success"); }catch(_){ toast("No se pudo copiar","error"); } };
+            const destinoDe=r=>{ const o=r.order; if(r.tipo==="sucursal"){ const sd=r.sucReal||r.oficial; const dir=sd?.direccion?[[sd.direccion.calle,sd.direccion.numero].filter(Boolean).join(" "),sd.direccion.localidad].filter(Boolean).join(", "):""; return {t:"Sucursal",d:sd?.descripcion||"",dir}; } return {t:"Domicilio",d:[String(o.direccion||"").trim(),String(o.dirNumero||"").trim()].filter(Boolean).join(" "),dir:[o.localidad||o.ciudad||"",o.cp?`CP ${o.cp}`:""].filter(Boolean).join(" · ")}; };
+            const chipS={fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:DS.r.full,whiteSpace:"nowrap"};
             return (
               <div>
-                <div style={{textAlign:"center",margin:"4px 0 16px"}}>
-                  <StatusIcon type={fails.length?(ok.length?"warning":"error"):"success"} size={46}/>
-                  <div style={{fontSize:15,fontWeight:800,color:fails.length?(ok.length?T.yellow:T.red):T.green,marginTop:10}}>
-                    {ok.length} etiqueta{ok.length!==1?"s":""} emitida{ok.length!==1?"s":""}{fails.length?` · ${fails.length} con error`:""}
+                {/* Resumen */}
+                <div style={{display:"flex",alignItems:"center",gap:16,padding:"6px 2px 16px",flexWrap:"wrap"}}>
+                  <StatusIcon type={tipoIcon} size={44}/>
+                  <div style={{flex:1,minWidth:180}}>
+                    <div style={{fontSize:17,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{titulo}</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:3}}>
+                      {ok.length>0?"Ya están registradas en Seguimientos y el tracking arranca solo.":"No se debitó nada del saldo."}
+                      {fails.length>0&&ok.length>0&&<span style={{color:T.yellow,fontWeight:600}}> {fails.length} pedido{fails.length!==1?"s":""} no salió{fails.length!==1?"eron":""}.</span>}
+                    </div>
                   </div>
-                  <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Saldo restante: <strong style={{color:T.text}}>{fmtMoney(andreani.saldo)}</strong></div>
+                  <div style={{display:"flex",gap:8}}>
+                    <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 14px",minWidth:110}}>
+                      <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Debitado</div>
+                      <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{fmtMoney(costo)}</div>
+                    </div>
+                    <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 14px",minWidth:110}}>
+                      <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Saldo restante</div>
+                      <div style={{fontSize:16,fontWeight:800,color:andreani.saldoBajo?T.yellow:T.green,letterSpacing:-0.3}}>{fmtMoney(andreani.saldo)}</div>
+                    </div>
+                  </div>
                 </div>
-                <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:300,overflow:"auto",marginBottom:16}}>
-                  {ok.map(r=>(
-                    <div key={r.numero} style={{background:T.bg,border:`1px solid ${r.verifFinal==="warn"?T.yellow+"66":T.border}`,borderRadius:8,padding:"9px 12px"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10}}>
-                        <span style={{fontWeight:700,color:T.text,fontSize:13,whiteSpace:"nowrap"}}>#{r.numero}</span>
-                        <span style={{fontSize:12,color:T.textSm,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.order.comprador}</span>
-                        <span style={{fontSize:12,color:T.text,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{r.emitido.numeroDeEnvio}</span>
-                        <AsyncButton onClick={()=>descargarEtiquetaBulk(String(r.emitido.numeroDeEnvio))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Descargar etiqueta</AsyncButton>
+
+                {/* Descarga: acción principal */}
+                {ok.length>0&&(
+                  <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+                    <div style={{flex:1,minWidth:200}}>
+                      <div style={{fontSize:13,fontWeight:700,color:T.text}}>Etiqueta{ok.length!==1?"s":""} para imprimir</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Elegí el formato de tu impresora y descargá{ok.length>1?" todas en un solo PDF":""}.</div>
+                    </div>
+                    <AndreaniFmtToggle T={T} fmt={dlFmt} onChange={setDlFmt}/>
+                    {ok.length>1
+                      ?<AsyncButton onClick={descargarTodasBulk} disabled={!!bulkDl} style={{...BtnPrimary(T),fontSize:13,minWidth:180,justifyContent:"center"}}>{bulkDl?`Descargando ${bulkDl.done}/${bulkDl.total}…`:`Descargar las ${ok.length} (1 PDF)`}</AsyncButton>
+                      :<AsyncButton onClick={()=>descargarEtiquetaBulk(String(ok[0].emitido.numeroDeEnvio))} style={{...BtnPrimary(T),fontSize:13,minWidth:160,justifyContent:"center"}}>Descargar etiqueta</AsyncButton>}
+                  </div>
+                )}
+
+                {/* Detalle por envío */}
+                <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:330,overflow:"auto",marginBottom:16}}>
+                  {ok.map(r=>{ const o=r.order; const de=destinoDe(r); const ent=fEntrega(r.emitido?.fechaEstimadaDeEntrega); const precio=Number(r.emitido?.precio)||Number(r.cot?.precio)||0; return (
+                    <div key={r.numero} style={{background:T.bg,border:`1px solid ${r.verifFinal==="warn"?T.yellow+"66":T.border}`,borderRadius:10,padding:"11px 14px"}}>
+                      <div style={{display:"flex",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+                        <div style={{flex:1,minWidth:200}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                            <span style={{fontWeight:800,color:T.text,fontSize:13}}>#{r.numero}</span>
+                            <span style={{fontSize:13,color:T.text,fontWeight:500}}>{o.comprador}</span>
+                            <span style={{...chipS,background:de.t==="Sucursal"?T.accent+"18":T.surface,color:de.t==="Sucursal"?T.accent:T.textMd,border:`1px solid ${de.t==="Sucursal"?T.accent+"33":T.border}`}}>{de.t}</span>
+                            {r.verifFinal==="ok"&&<span style={{...chipS,background:T.green+"18",color:T.green,border:`1px solid ${T.green}33`}}>✓ Punto verificado</span>}
+                            {r.verifFinal==="warn"&&<span style={{...chipS,background:T.yellow+"18",color:T.yellow,border:`1px solid ${T.yellow}44`}}>Revisar destino</span>}
+                          </div>
+                          <div style={{fontSize:12,color:T.textMd,marginTop:4}}>{de.d}{de.dir?<span style={{color:T.textSm}}> · {de.dir}</span>:null}</div>
+                          {r.verifFinal==="warn"&&r.sucReal&&(
+                            <div style={{fontSize:11,color:T.yellow,fontWeight:600,marginTop:4}}>La etiqueta salió a {r.sucReal.descripcion}, distinto del punto elegido en tu tienda ({r.order.pickupDetails?.name||""}) — avisale al cliente.</div>
+                          )}
+                        </div>
+                        <div style={{textAlign:"right",minWidth:150}}>
+                          <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>N° de envío</div>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6,marginTop:2}}>
+                            <span style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:"'Cascadia Code','Consolas',monospace",letterSpacing:0.3}}>{r.emitido.numeroDeEnvio}</span>
+                            <button onClick={()=>copiar(r.emitido.numeroDeEnvio)} title="Copiar número de envío" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 7px",fontSize:10,fontWeight:600,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Copiar</button>
+                          </div>
+                          <div style={{fontSize:11,color:T.textSm,marginTop:4}}>{precio>0?fmtMoney(precio):""}{precio>0&&ent?" · ":""}{ent?`Llega aprox. ${ent}`:""}</div>
+                        </div>
+                        {ok.length>1&&<AsyncButton onClick={()=>descargarEtiquetaBulk(String(r.emitido.numeroDeEnvio))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",alignSelf:"center"}}>PDF</AsyncButton>}
                       </div>
-                      {r.verifFinal==="ok"&&r.sucReal&&(
-                        <div style={{fontSize:11,color:T.green,fontWeight:600,marginTop:4}}>✓ Etiqueta verificada: va a {r.sucReal.descripcion} — el punto que eligió el cliente</div>
-                      )}
-                      {r.verifFinal==="warn"&&r.sucReal&&(
-                        <div style={{fontSize:11,color:T.yellow,fontWeight:600,marginTop:4}}>La etiqueta salió a {r.sucReal.descripcion}, distinto del punto elegido en tu tienda ({r.order.pickupDetails?.name||""}) — avisale al cliente</div>
-                      )}
                     </div>
-                  ))}
+                  ); })}
+                  {fails.length>0&&(
+                    <div style={{fontSize:11,fontWeight:700,color:T.red,textTransform:"uppercase",letterSpacing:0.5,marginTop:ok.length?6:0}}>No se emitieron ({fails.length}) — sin débito</div>
+                  )}
                   {fails.map(r=>(
-                    <div key={r.numero} style={{display:"flex",alignItems:"flex-start",gap:10,background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:8,padding:"9px 12px"}}>
-                      <span style={{fontWeight:700,color:T.text,fontSize:13,whiteSpace:"nowrap"}}>#{r.numero}</span>
-                      <span style={{fontSize:12,color:T.red,flex:1}}>{r.emitError}</span>
+                    <div key={r.numero} style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontWeight:800,color:T.text,fontSize:13}}>#{r.numero}</span>
+                        <span style={{fontSize:13,color:T.text,fontWeight:500}}>{r.order.comprador}</span>
+                      </div>
+                      <div style={{fontSize:12,color:T.red,marginTop:4}}>{r.emitError}</div>
                     </div>
                   ))}
                 </div>
+
                 <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",alignItems:"center"}}>
-                  {ok.length>0&&<AndreaniFmtToggle T={T} fmt={dlFmt} onChange={setDlFmt}/>}
-                  <button onClick={()=>{setBulk(null);bulkRowsRef.current=[];}} style={{...BtnSecondary(T),fontSize:13}}>Cerrar</button>
-                  {ok.length>1&&(
-                    <AsyncButton onClick={descargarTodasBulk} disabled={!!bulkDl} style={{...BtnPrimary(T),fontSize:13,minWidth:190,justifyContent:"center"}}>
-                      {bulkDl?`Descargando ${bulkDl.done}/${bulkDl.total}…`:"Descargar todas (1 PDF)"}
-                    </AsyncButton>
-                  )}
+                  {ok.length>0&&<button onClick={()=>{setBulk(null);bulkRowsRef.current=[];setTab("seguimientos");}} style={{...BtnSecondary(T),fontSize:13}}>Ver en Seguimientos</button>}
+                  <button onClick={()=>{setBulk(null);bulkRowsRef.current=[];}} style={{...(ok.length?BtnPrimary(T):BtnSecondary(T)),fontSize:13,minWidth:110,justifyContent:"center"}}>Listo</button>
                 </div>
               </div>
             );
