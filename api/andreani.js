@@ -1272,7 +1272,7 @@ export default async function handler(req, res) {
     //  · global: andreani_config/punto_map_global {entries} — SOLO elecciones
     //    verificadas (misma calle y número que el punto), así una elección
     //    equivocada nunca se propaga a todas las cuentas. El admin la puede podar.
-    if (action === "punto_map_get" || action === "punto_map_set" || action === "punto_map_del") {
+    if (action === "punto_map_get" || action === "punto_map_set" || action === "punto_map_del" || action === "punto_map_sync") {
       const owner = String(body.uid || req.query?.uid || uid).trim();
       if (!(await guardUid(req, res, owner, "envios"))) return;
       const propioRef = db.collection("users").doc(owner).collection("envios_cfg").doc("punto_map");
@@ -1284,6 +1284,33 @@ export default async function handler(req, res) {
       if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
       const key = String(body.key || "").trim().slice(0, 400);
       if (!key) return res.status(400).json({ error: "key requerida" });
+      // punto_map_sync: sube de una vez las memorias que el navegador tenía en
+      // localStorage de antes de la sincronización (10/sep) y el servidor no
+      // tiene. Solo propias (nunca global: no están verificadas). body.entries
+      // = {key: {tpl?|oficial?}} — máx. 300, mismo saneo que punto_map_set.
+      if (action === "punto_map_sync") {
+        const src = body.entries && typeof body.entries === "object" && !Array.isArray(body.entries) ? body.entries : {};
+        const cur = (await propioRef.get().catch(() => null))?.data()?.entries || {};
+        const nuevas = {};
+        for (const [k0, datos] of Object.entries(src).slice(0, 300)) {
+          const key = String(k0 || "").trim().slice(0, 400);
+          if (!key || cur[key] || !datos || typeof datos !== "object") continue;
+          const e = { ts: Number(datos.ts) || Date.now(), migrada: true,
+            ...(datos.tpl ? { tpl: String(datos.tpl).slice(0, 200) } : {}),
+            ...(datos.oficial && typeof datos.oficial === "object" ? { oficial: {
+              id: datos.oficial.id ?? null, codigo: datos.oficial.codigo ?? null, numero: datos.oficial.numero ?? null,
+              descripcion: String(datos.oficial.descripcion || "").slice(0, 200),
+              direccion: datos.oficial.direccion && typeof datos.oficial.direccion === "object" ? {
+                calle: String(datos.oficial.direccion.calle || "").slice(0, 120), numero: String(datos.oficial.direccion.numero || "").slice(0, 20),
+                localidad: String(datos.oficial.direccion.localidad || "").slice(0, 80), codigoPostal: String(datos.oficial.direccion.codigoPostal || "").slice(0, 12),
+              } : null,
+            } } : {}) };
+          if (e.tpl || e.oficial) nuevas[key] = e;
+        }
+        const n = Object.keys(nuevas).length;
+        if (n) await propioRef.set({ entries: nuevas }, { merge: true });
+        return res.json({ ok: true, subidas: n });
+      }
       if (action === "punto_map_del") {
         await propioRef.set({ entries: {} }, { merge: true });
         await propioRef.update(new FieldPath("entries", key), FieldValue.delete()).catch(() => {});

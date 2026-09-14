@@ -8715,7 +8715,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         if(!vivo||!r.ok||!d?.ok) return;
         // Servidor manda sobre el cache local (una elección hecha en otra compu
         // o por un miembro tiene que aplicar acá también).
-        puntoMapRef.current={...puntoMapRef.current,...(d.propio||{})};
+        // Memorias que este navegador tiene de antes de la sincronización y el
+        // servidor no: se suben una vez (propias), así quedan compartidas y
+        // auditables desde Admin. Sin esto vivían solo en localStorage.
+        const propio=d.propio||{};
+        const soloLocal=Object.fromEntries(Object.entries(puntoMapRef.current).filter(([k,v])=>!propio[k]&&v&&(v.tpl||v.oficial)));
+        if(Object.keys(soloLocal).length){
+          authFetch("/api/andreani?action=punto_map_sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,entries:soloLocal})}).catch(()=>{});
+        }
+        puntoMapRef.current={...puntoMapRef.current,...propio};
         persistPuntoMap();
         globalMapRef.current=d.global||{};
       }catch(_){}
