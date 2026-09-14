@@ -2018,7 +2018,10 @@ function AppGoogleAds({T, user, onHome, onGoConfig}) {
                   </thead>
                   <tbody>
                     {rows===null&&<tr><td colSpan={COLS.length+3} style={{padding:"28px 12px",textAlign:"center",fontSize:12,color:T.textMd}}><Spinner size={14} color={T.textMd}/> Cargando campañas…</td></tr>}
-                    {rows!==null&&filtered.length===0&&<tr><td colSpan={COLS.length+3} style={{padding:"28px 12px",textAlign:"center",fontSize:12,color:T.textMd}}>{rows.length?"Ninguna campaña coincide con el filtro.":"Esta cuenta no tiene campañas."}</td></tr>}
+                    {rows!==null&&filtered.length===0&&<tr><td colSpan={COLS.length+3} style={{padding:"28px 12px",textAlign:"center",fontSize:12,color:T.textMd}}>{!rows.length?"Esta cuenta no tiene campañas."
+                      :(filterStatus==="active"&&!query.trim()&&!rows.some(r=>r.status==="ENABLED"))
+                        ?<span>No hay campañas activas. Esta cuenta tiene {rows.length} campaña{rows.length!==1?"s":""} pausada{rows.length!==1?"s":""}. <button onClick={()=>setFilterStatus("all")} style={{background:"none",border:"none",padding:0,color:T.accent,fontWeight:700,cursor:"pointer",fontSize:12}}>Ver todas</button></span>
+                        :"Ninguna campaña coincide con el filtro."}</td></tr>}
                     {filtered.map(r=>{
                       const busy=!!busyIds[r.id]; const isActive=r.status==="ENABLED";
                       return (
