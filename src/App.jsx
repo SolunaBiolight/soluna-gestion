@@ -1922,11 +1922,13 @@ function AppGoogleAds({T, user, onHome, onGoConfig, tab="analisis", setTab=()=>{
       </AppTopbar>
       <div style={{maxWidth:"100%",margin:"0 auto",padding:"20px 24px 80px",display:"flex",flexDirection:"column",gap:16}}>
         {err&&<ErrBox>{err}</ErrBox>}
-        {/* Pestañas: Análisis / Publicar (en el sidebar: "Google Ads" y "Publicar en Google") */}
-        <div className="no-scrollbar" style={{display:"flex",gap:6,overflowX:"auto"}}>
-          {[{id:"analisis",l:"Análisis"},{id:"publicar",l:"Publicar"}].map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${tab===t.id?T.accentSolid+"88":T.border}`,borderRadius:20,background:tab===t.id?T.accentSolid+"18":T.card,color:tab===t.id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>{t.l}</button>
-          ))}
+        {/* Pestañas Análisis / Publicar: solo en mobile — en desktop se navega desde el sidebar ("Google Ads" y "Publicar en Google") */}
+        <div className="mobile-only no-scrollbar" style={{overflowX:"auto"}}>
+          <div style={{display:"flex",gap:6,minWidth:"max-content"}}>
+            {[{id:"analisis",l:"Análisis"},{id:"publicar",l:"Publicar"}].map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${tab===t.id?T.accentSolid+"88":T.border}`,borderRadius:20,background:tab===t.id?T.accentSolid+"18":T.card,color:tab===t.id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>{t.l}</button>
+            ))}
+          </div>
         </div>
 
         {/* Consultando: sin botón de conectar, para no mostrarlo a quien ya está conectado */}
