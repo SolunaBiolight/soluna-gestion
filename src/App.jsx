@@ -10469,14 +10469,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   </>
                 )}
               </div>
-              <button onClick={()=>setCompactMode(c=>!c)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",gap:6,color:compactMode?T.accent:T.textMd,borderColor:compactMode?T.accent:T.border}} title={compactMode?"Volver a vista normal":"Vista compacta: filas más angostas"}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  {compactMode
-                    ?<><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></>
-                    :<><line x1="3" y1="5" x2="21" y2="5"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="3" y1="20" x2="21" y2="20"/></>}
-                </svg>
-                Compacto
-              </button>
               {/* CTAs de exportación en la fila de controles, junto al selector —
                   la barra flotante quedaba disimulada; acá se ven siempre */}
               {selected.size>0&&(
@@ -33309,7 +33301,7 @@ function ComisionesPanel({ T, uid }) {
           <input type="number" step="0.01" min="0" max="30" value={cfg.mpPct} onChange={e=>setCfg(c=>({...c,mpPct:e.target.value}))} placeholder="Ej: 7.61" style={{...InputStyle(T),width:100,fontSize:13,textAlign:"right"}}/>
           <span style={{fontSize:13,color:T.textSm}}>%</span>
         </div>
-        {!(parseFloat(cfg.mpPct)>0)&&<div style={{fontSize:11,color:T.textSm,marginTop:8}}>Sin este %, las ventas con MP que la tienda no informe cuentan comisión $0. El Dashboard te avisa si eso pasa.</div>}
+        {!(parseFloat(cfg.mpPct)>0)&&<div style={{fontSize:11,color:T.textSm,marginTop:8}}>Vacío = se estima 7,61% (tarifa de MP para dinero al instante, con IVA) en las ventas donde la tienda no informe el cargo real.</div>}
       </div>
 
       {/* Impuestos */}
@@ -37341,7 +37333,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     if (q.impuestosSinConfig) qItems.push({k:"comisiones", msg:"Impuestos configurados en 0% — el profit no descuenta carga impositiva", cta:"Configurar"});
     if (q.envioSinConfig) qItems.push({k:"costos", msg:"Costo de envío en $0 (modo promedio sin valor cargado)", cta:"Configurar"});
     if (q.tnFees?.diag) qItems.push({k:null, msg:q.tnFees.diag});
-    if (q.mpSinConfig) qItems.push({k:"comisiones", msg:`Hay ventas cobradas con Mercado Pago sin cargo real informado por la tienda${q.tnFees?.nuevas?" (se están leyendo de a 60 por cálculo — recargá en un rato)":""} y sin % de respaldo — cuentan $0. Cargalo en Comisiones e impuestos → Comisión de Mercado Pago`, cta:"Configurar"});
+    if (q.tnFees && q.tnFees.conCargo===0 && q.tnFees.sinCargo>0 && !q.tnFees.diag) qItems.push({k:null, msg:`Tienda Nube no informa el cargo de la pasarela en tus ventas (${q.tnFees.sinCargo} revisadas${q.tnFees.muestra?` · ej. ${q.tnFees.muestra.orden}: ${q.tnFees.muestra.transacciones} transacción(es), estados ${q.tnFees.muestra.estados.join("/")||"—"}, cargos ${q.tnFees.muestra.conCargos?"sí":"no"}, campos ${q.tnFees.muestra.claves.join(",")||"—"}`:""})`});
+    if (q.mpSinConfig) qItems.push({k:"comisiones", msg:`Ventas con Mercado Pago sin cargo real informado${q.tnFees?.pendientes?" (se están leyendo de a 60 por cálculo — recargá en un rato)":""}: se estima 7,61% (dinero al instante + IVA). Cargá tu % real en Comisiones e impuestos → Comisión de Mercado Pago`, cta:"Configurar"});
     if (rendData?.meta?.googleAdsConectado && rendData?.meta?.googleAdsFuente!=="auto") qItems.push({k:null, msg:`Google Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.googleAdsDiag?` — ${rendData.meta.googleAdsDiag}`:""}`});
     if (rendData?.meta?.stockDegradado) qItems.push({k:null, msg:`Tu tienda/ML respondieron lento y se muestra el último cálculo completo guardado${typeof rendData.meta.stockDegradado==="string"?` (${new Date(rendData.meta.stockDegradado).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})})`:""} — tocá Actualizar en unos minutos para el dato en vivo`});
     if (q.tnTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Tienda Nube — los totales están TRUNCADOS. Usá un rango más corto."});

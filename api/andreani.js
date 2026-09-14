@@ -1282,8 +1282,6 @@ export default async function handler(req, res) {
         return res.json({ ok: true, propio: p?.exists ? (p.data().entries || {}) : {}, global: g?.exists ? (g.data().entries || {}) : {} });
       }
       if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
-      const key = String(body.key || "").trim().slice(0, 400);
-      if (!key) return res.status(400).json({ error: "key requerida" });
       // punto_map_sync: sube de una vez las memorias que el navegador tenía en
       // localStorage de antes de la sincronización (10/sep) y el servidor no
       // tiene. Solo propias (nunca global: no están verificadas). body.entries
@@ -1311,6 +1309,8 @@ export default async function handler(req, res) {
         if (n) await propioRef.set({ entries: nuevas }, { merge: true });
         return res.json({ ok: true, subidas: n });
       }
+      const key = String(body.key || "").trim().slice(0, 400);
+      if (!key) return res.status(400).json({ error: "key requerida" });
       if (action === "punto_map_del") {
         await propioRef.set({ entries: {} }, { merge: true });
         await propioRef.update(new FieldPath("entries", key), FieldValue.delete()).catch(() => {});

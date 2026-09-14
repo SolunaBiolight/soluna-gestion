@@ -1053,7 +1053,12 @@ export default async function handler(req, res) {
       // Comisión de Mercado Pago explícita (para órdenes MP sin fee real matcheado,
       // ej: todas las de TN). Sin configurar = 0 — el promedio de otros métodos
       // (transferencia, etc.) no representa a MP.
-      const mpPctCfg = (parseFloat(comCfg.mpPct)||0)/100;
+      // Sin cargo real (TN no lo informó / MP no conectado) y sin % cargado, se
+      // ESTIMA con la tarifa publicada de MP para dinero al instante (6,29% +
+      // IVA = 7,61%) en vez de contar $0 — y el Dashboard lo marca como estimado.
+      const MP_PCT_ESTIMADO = 0.0761;
+      const mpPctEstimado = !(parseFloat(comCfg.mpPct)>0);
+      const mpPctCfg = mpPctEstimado ? MP_PCT_ESTIMADO : parseFloat(comCfg.mpPct)/100;
       const esMPPay = s => /mercadopago|mercadolibre/.test(normPay(s));
       function pctPagoFor(payStr) {
         const np = normPay(payStr);
@@ -1312,7 +1317,7 @@ export default async function handler(req, res) {
       // o {f:null,ts} si TN no informó cargos, que se reintenta a los 7 días).
       // Como máximo 60 órdenes por cálculo, de a 3, para respetar el rate de TN.
       const tnFeeCache = (userData.margenesTnFees && typeof userData.margenesTnFees==="object" && !Array.isArray(userData.margenesTnFees)) ? { ...userData.margenesTnFees } : {};
-      let tnFeesDiag = null, tnFeesNuevas = 0;
+      let tnFeesDiag = null, tnFeesNuevas = 0, tnFeesMuestra = null;
       const tnStoreRef = (userData.stores||[]).find(s => s.type==="tiendanube" && s.accessToken && s.storeId);
       if (tnStoreRef) {
         const tnH = { 'Authentication': `bearer ${tnStoreRef.accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)' };
@@ -1332,8 +1337,9 @@ export default async function handler(req, res) {
               const r = await fetch(`https://api.tiendanube.com/v1/${tnStoreRef.storeId}/orders/${o.id}/transactions`, { headers: tnH, signal: AbortSignal.timeout(8000) });
               if (r.status===401 || r.status===403) { bloqueado = true; tnFeesDiag = `Tienda Nube no permite leer los cargos de pago (HTTP ${r.status}) — reconectá la tienda para otorgar el permiso`; return [o.id, undefined]; }
               if (r.status===429) { bloqueado = true; return [o.id, undefined]; }
-              if (!r.ok) return [o.id, undefined];
+              if (!r.ok) { tnFeesDiag = tnFeesDiag || `Tienda Nube respondió HTTP ${r.status} al pedir las transacciones`; return [o.id, undefined]; }
               const txs = await r.json();
+              tnFeesMuestra = tnFeesMuestra || { orden: o.nombre, transacciones: Array.isArray(txs)?txs.length:-1, estados: (Array.isArray(txs)?txs:[]).map(t=>String(t.status||"")).slice(0,4), conCargos: (Array.isArray(txs)?txs:[]).some(t=>(t.info?.merchant_charges||[]).length>0), claves: Array.isArray(txs)&&txs[0]?Object.keys(txs[0].info||{}).slice(0,12):[] };
               const okTx = (Array.isArray(txs)?txs:[]).filter(t => /^(paid|authorized|partially_refunded)$/i.test(String(t.status||"")) || val(t.captured_amount) > 0);
               let p=0, c=0, fin=0, t=0, otr=0, hay=false;
               for (const tx of okTx) for (const ch of (tx.info?.merchant_charges||[])) {
@@ -1857,7 +1863,8 @@ export default async function handler(req, res) {
         // Solo avisa si hay ventas MP sin cargo REAL matcheado (ni por receipt de
         // Shopify ni por gateway_id de TN) y sin % configurado.
         mpSinConfig: !(mpPctCfg>0) && (curr.raw?.orders_detail||[]).some(o=>esMPPay(o.pay) && !mpRefCache[o.id] && !(o.mpPayId && feeByPayId[o.mpPayId]!=null) && !(o.platform==="tiendanube" && tnFeeCache[o.id]?.f!=null)),
-        tnFees: { conCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f!=null).length, sinCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f==null).length, nuevas: tnFeesNuevas, diag: tnFeesDiag },
+        tnFees: { conCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f!=null).length, sinCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f==null).length, pendientes: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && !tnFeeCache[o.id]).length, nuevas: tnFeesNuevas, diag: tnFeesDiag, muestra: tnFeesMuestra },
+        mpPctEstimado,
         mpConectado: mlMpAcc !== "__none__" && !!(mpCommCurr && (Object.keys(mpCommCurr.feeByPayId||{}).length || Object.keys(mpCommCurr.feeByRef||{}).length)),
         dolarAdsHistorico: dolarAdsHistDias>0,
         tnTruncated: !!rawQ.tn_truncated, mlTruncated: !!rawQ.ml_truncated,
