@@ -201,6 +201,7 @@ growith_calpagos_alert_{uid} → número de pagos vencidos/hoy/mañana (badge de
 growith_admin_cache_{uid}  → SWR {pagos,usuarios,stats} del panel Admin (fichas slim, sin tokens)
 growith_paqPerfiles        → JSON[] perfiles de paquete ({nombre,peso,alto,ancho,prof,valor}) para el lote de etiquetas Andreani por API (paquete por pedido en la tabla de revisión)
 growith_tienda_activa_{authUid} → uid de la TIENDA en la que este dispositivo está parado (multi-tienda). Al cargar se sincroniza al perfil (tiendaActivar) antes del workspace, así recargar te deja en la misma tienda aunque otra pestaña/dispositivo haya cambiado la activa. Se borra al crear/eliminar tienda
+growith_diag                → "1" muestra líneas de diagnóstico técnico (modal de verificación de destinos)
 growith_reclamossync_{uid} → timestamp del último sync de contracargos/reclamos MP+ML al tablero de Reclamos (throttle 10 min)
 growith_stock_src_{uid}    → "central" | "tienda": fuente del stock que muestra la tabla de arriba de Stock (inventario central por default; botón "Poner stock de TN/Shopify")
 (sessionStorage) growith_impersonate → JSON {uid,email,adminEmail,adminUid,at} sesión "Ver como cliente" (solo lectura); levanta window.__ghReadOnly antes de cualquier escritura

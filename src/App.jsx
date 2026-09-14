@@ -7967,7 +7967,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   },[locSearch,locationModal]);
   const [locOficialSel,setLocOficialSel]=useState(""); // id elegido en la lista oficial Andreani (modal sucursal del XLSX)
   const [verifModal,setVerifModal]=useState(null); // {items,resolve} — filas del XLSX que no coinciden con el destino de la tienda
-  const verifRowsRef=useRef([]); // resultado de la verificación del último armado de Excel (lo lee exportAndreani para el toast)
+  const verifRowsRef=useRef([]);
+  const verifRehacerRef=useRef(false); // el modal de verificación excluyó pedidos → rearmar el Excel sin ellos // resultado de la verificación del último armado de Excel (lo lee exportAndreani para el toast)
   const exclOperRef=useRef(new Set()); // pedidos sacados del último Excel porque su sucursal no está operativa en Andreani
   const [sucursalConfirmed,setSucursalConfirmed]=useState(null);
   const [esquinaModal,setEsquinaModal]=useState(null); // {orders:[...]} pedidos con esquina excluidos del export
@@ -8487,7 +8488,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         const ubicacion=locationOverridesRef.current[ovrKey(o)]||findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad)||locs.list.find(l=>l.startsWith('BUENOS AIRES'))||locs.list[0]||"";
         const dirNum=extractStreetNum(o.direccion, o.dirNumero);
         const direccion=extractStreetName(o.direccion, o.dirNumero);
-        if(verifUbicacionVsPedido(o,ubicacion)==="warn")verifRows.push({numero:o.numero,comprador:o.comprador,tipo:"domicilio",escrito:ubicacion,esperado:`${o.localidad||o.ciudad||""}${o.cp?` (CP ${o.cp})`:""}`});
+        if(verifUbicacionVsPedido(o,ubicacion)==="warn")verifRows.push({o,numero:o.numero,comprador:o.comprador,tipo:"domicilio",escrito:ubicacion,esperado:`${o.localidad||o.ciudad||""}${o.cp?` (CP ${o.cp})`:""}`});
         const cells=[
           sC('A'+rn,""),
           nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
@@ -8527,7 +8528,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         if(ovr&&!(locs.sucursales||[]).includes(ovr)){ delete sucursalOverridesRef.current[ovrKey(o)]; persistOverrides(); ovr=""; }
         const sucursal=ovr||findAndreaniSucursal(locs,o.direccion,o.pickupDetails,o.dirNumero)||"";
         sucEscritas.push({numero:o.numero,comprador:o.comprador,sucursal});
-        if(!sucReemplazoRef.current.has(ovrKey(o))&&verifSucursalTplVsTienda(o,sucursal)==="warn")verifRows.push({numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:(o.pickupDetails?`${o.pickupDetails.name||""} — ${o.pickupDetails.address?.address||""} ${o.pickupDetails.address?.number||""}`:`${o.direccion||""} ${o.dirNumero||""}, ${o.localidad||o.ciudad||""}`).trim()});
+        if(!sucReemplazoRef.current.has(ovrKey(o))&&verifSucursalTplVsTienda(o,sucursal)==="warn")verifRows.push({o,suave:verifSuave(o,sucursal),numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:(o.pickupDetails?`${o.pickupDetails.name||""} — ${o.pickupDetails.address?.address||""} ${o.pickupDetails.address?.number||""}`:`${o.direccion||""} ${o.dirNumero||""}, ${o.localidad||o.ciudad||""}`).trim()});
         const cells=[
           sC('A'+rn,""),
           nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
@@ -8617,6 +8618,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       setExporting(false);
       const seguir=await new Promise(resolve=>setVerifModal({items:verifRows,resolve}));
       setVerifModal(null);
+      if(seguir==="REHACER"){ verifRehacerRef.current=true; return null; } // se excluyeron pedidos: exportAndreani rearma sin ellos
       if(!seguir){
         // "Cancelar y corregir": borrar el override Y la memoria del punto de
         // los pedidos marcados — si no, el próximo export resolvía solo con la
@@ -8878,6 +8880,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // ausencias: coincide si comparte calle, nombre distintivo o localidad con
   // el punto de la tienda (y si ambos tienen número, deben coincidir). Solo
   // avisa cuando no comparte NADA — que es el patrón del envío mal mandado.
+  // ¿La fila del Excel es la MISMA calle que el punto del cliente pero el
+  // desplegable no trae número (ni CP) para confirmarlo? Es un aviso suave,
+  // no una contradicción: el texto del template solo tiene el nombre.
+  function verifSuave(o,tplStr){
+    if(!tplStr) return false;
+    const p=ghPuntoDeOrden(o); if(!p) return false;
+    const a=ghDirParse(p.calle,p.num), b=ghDirParse(tplStr,"");
+    return !!(a.num&&ghMismaCalle(a,b)&&!/\b\d{2,5}\b/.test(ghNrmSuc(tplStr)));
+  }
   function verifSucursalTplVsTienda(o,tplStr){
     // Sucursal vacía en la fila = SIEMPRE warn: un override invalidado a mitad
     // de la generación dejaba la columna vacía y el toast celebraba igual.
@@ -9275,7 +9286,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       }
 
       setExportProgress({step:`Generando ${finalOrders.length} etiquetas...`,pct:60,current:finalOrders.length,total:finalOrders.length});
-      const b0=await generateAndreaniXlsx(finalOrders,locs);
+      verifRehacerRef.current=false;
+      let b0=await generateAndreaniXlsx(finalOrders,locs);
+      // "Excluir del Excel" en el modal de verificación: se rearma sin esos pedidos
+      while(!b0&&verifRehacerRef.current){
+        verifRehacerRef.current=false;
+        finalOrders=finalOrders.filter(o=>sucursalOverridesRef.current[ovrKey(o)]!=="EXCLUIR"&&locationOverridesRef.current[ovrKey(o)]!=="EXCLUIR");
+        if(!finalOrders.length){ setExporting(false); toast("No quedaron pedidos para exportar","warning"); return; }
+        setExportProgress({step:`Rearmando el Excel con ${finalOrders.length} pedido(s)…`,pct:60,current:finalOrders.length,total:finalOrders.length});
+        b0=await generateAndreaniXlsx(finalOrders,locs);
+      }
       if(!b0){ setExporting(false); return; } // cancelado desde el modal de verificación
       const b=b0;
       // Pedidos con sucursal no operativa salieron del Excel: no cuentan como exportados
@@ -11241,9 +11261,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       <Modal T={T} open={!!verifModal} onClose={()=>{if(verifModal){verifModal.resolve(false);}}} title="Verificación de destinos" width={620} zIndex={2100}>
         {verifModal&&(
           <div>
+            {(()=>{ const graves=verifModal.items.filter(v=>!v.suave).length; const suaves=verifModal.items.length-graves; return graves>0?(
             <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.red}}>
-              <strong>{verifModal.items.length} destino{verifModal.items.length!==1?"s":""} del Excel no coincide{verifModal.items.length!==1?"n":""} con lo que dice tu tienda.</strong> Revisá antes de cargar el archivo en Andreani: estos paquetes saldrían a un lugar distinto del que eligió el cliente.
-            </div>
+              <strong>{graves} destino{graves!==1?"s":""} del Excel no coincide{graves!==1?"n":""} con lo que dice tu tienda.</strong> Revisá antes de cargar el archivo en Andreani: estos paquetes saldrían a un lugar distinto del que eligió el cliente.{suaves>0?` Además hay ${suaves} con la misma calle pero sin número en el desplegable para confirmar.`:""}
+            </div>):(
+            <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.yellow}}>
+              <strong>{suaves} destino{suaves!==1?"s":""} coincide{suaves!==1?"n":""} en la calle, pero el desplegable de Andreani no trae número ni CP para confirmarlo.</strong> Si es el único punto HOP de esa calle, está bien exportar.
+            </div>); })()}
             <div style={{maxHeight:300,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10,marginBottom:14}}>
               {verifModal.items.map((v,i)=>(
                 <div key={v.numero+"_"+i} style={{padding:"10px 14px",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
@@ -11251,12 +11275,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   <div style={{fontSize:11,color:T.textSm}}>Según tu tienda:</div>
                   <div style={{fontSize:12,color:T.green,fontWeight:600,marginBottom:3}}>{v.esperado||"(sin datos del punto)"}</div>
                   <div style={{fontSize:11,color:T.textSm}}>Quedaría en el Excel:</div>
-                  <div style={{fontSize:12,color:T.red,fontWeight:600}}>{v.escrito}</div>
-                  {v.diag&&<div style={{fontSize:9.5,color:T.textSm,marginTop:5,fontFamily:"'Cascadia Code','Consolas',monospace",opacity:0.65,wordBreak:"break-word",lineHeight:1.5}}>diag: {v.diag}</div>}
+                  <div style={{fontSize:12,color:v.suave?T.yellow:T.red,fontWeight:600}}>{v.escrito}</div>
+                  <div style={{fontSize:11,color:v.suave?T.yellow:T.red,marginTop:4}}>{v.suave?"Misma calle. El desplegable no trae número ni CP, así que no se puede confirmar que sea el mismo punto.":v.tipo==="sucursal"?"No coincide con la calle y el número del punto que eligió el cliente.":"No coincide con la localidad / CP del pedido."}</div>
+                  <div style={{display:"flex",gap:8,marginTop:6}}>
+                    <button onClick={()=>{ if(v.tipo==="sucursal") sucursalOverridesRef.current[ovrKey(v.o)]="EXCLUIR"; else locationOverridesRef.current[ovrKey(v.o)]="EXCLUIR"; persistOverrides(); verifModal.resolve("REHACER"); }} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>Excluir del Excel</button>
+                  </div>
+                  {v.diag&&(()=>{ try{ return localStorage.getItem("growith_diag")==="1"; }catch(_){ return false; } })()&&<div style={{fontSize:9.5,color:T.textSm,marginTop:5,fontFamily:"'Cascadia Code','Consolas',monospace",opacity:0.65,wordBreak:"break-word",lineHeight:1.5}}>diag: {v.diag}</div>}
                 </div>
               ))}
             </div>
-            <div style={{fontSize:12,color:T.textSm,marginBottom:14}}>Para corregirlos: cancelá, tocá el pedido y elegí la sucursal correcta desde el modal de elección (o excluilo y emitilo a mano en Andreani).</div>
+            <div style={{fontSize:12,color:T.textSm,marginBottom:14}}>"Excluir del Excel" saca ese pedido y rearma el archivo con el resto (lo emitís aparte, por Etiquetas listas o a mano). "Cancelar y corregir" vuelve al listado para elegir otra sucursal. "Exportar igual" lo manda tal cual.</div>
             <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
               <button onClick={()=>verifModal.resolve(false)} style={{...BtnPrimary(T),fontSize:13}}>Cancelar y corregir</button>
               <button onClick={()=>verifModal.resolve(true)} style={{...BtnDanger(T),fontSize:13}}>Exportar igual</button>
