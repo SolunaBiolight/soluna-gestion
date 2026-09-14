@@ -19118,7 +19118,7 @@ function AdmTnProbe({T}){
   const run=async(p)=>{ const pp=p||path; if(!email.trim()){ toast("Poné el email de la cuenta","warning"); return; } setBusy(true); setOut(null); try{ const d=await admAndreani("admin_tn_probe",{email:email.trim(),path:pp,plataforma:plat}); setOut(d); }catch(e){ setOut({error:e.message}); } setBusy(false); };
   const PRESETS=plat==="shopify"
     ?[["Últimas órdenes","/orders.json?limit=3&status=any&financial_status=paid&fields=id,name,gateway,payment_gateway_names,total_price,created_at"],["Transacciones de una orden","/orders/ID/transactions.json"]]
-    :[["Proveedores de pago","/payment_providers"],["Últimas órdenes","/orders?per_page=3&payment_status=paid"],["Transacciones de una orden","/orders/ID/transactions"],["Una orden","/orders/ID"]];
+    :[["Proveedores de pago","/payment_providers"],["Últimas órdenes","/orders?per_page=3&payment_status=paid"],["Orden + transacciones (aggregates)","/orders/ID?aggregates=transactions"],["Transacciones de una orden","/orders/ID/transactions"],["Una orden","/orders/ID"]];
   return (
     <div>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:2}}><div style={{fontSize:13,fontWeight:700,color:T.text}}>Diagnóstico API {plat==="shopify"?"Shopify":"Tienda Nube"}</div><AdmSeg T={T} value={plat} onChange={v=>{setPlat(v);setPath(v==="shopify"?"/orders.json?limit=3&status=any&financial_status=paid&fields=id,name,gateway,payment_gateway_names,total_price,created_at":"/payment_providers");setOut(null);}} opciones={[["tiendanube","Tienda Nube"],["shopify","Shopify"]]}/></div>

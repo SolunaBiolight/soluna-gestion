@@ -1376,11 +1376,15 @@ export default async function handler(req, res) {
         for (let i=0; i<pendT.length && !bloqueado; i+=3) {
           const rs = await Promise.all(pendT.slice(i,i+3).map(async o => {
             try {
-              const r = await fetch(`https://api.tiendanube.com/v1/${tnStoreRef.storeId}/orders/${o.id}/transactions`, { headers: tnH, signal: AbortSignal.timeout(8000) });
+              // Vía oficial indicada por Tienda Nube (Partners, 14/9): las
+              // transacciones (con merchant_charges) vienen embebidas en la orden
+              // con ?aggregates=transactions, sin necesidad del scope read_payments.
+              const r = await fetch(`https://api.tiendanube.com/v1/${tnStoreRef.storeId}/orders/${o.id}?aggregates=transactions`, { headers: tnH, signal: AbortSignal.timeout(8000) });
               if (r.status===401 || r.status===403) { bloqueado = true; tnFeesDiag = TN_SIN_PERMISO_PAGOS; return [o.id, undefined]; }
               if (r.status===429) { bloqueado = true; return [o.id, undefined]; }
               if (!r.ok) { tnFeesDiag = tnFeesDiag || `Tienda Nube respondió HTTP ${r.status} al pedir las transacciones`; return [o.id, undefined]; }
-              const txs = await r.json();
+              const ordJ = await r.json();
+              const txs = Array.isArray(ordJ) ? ordJ : (ordJ?.transactions || ordJ?.aggregates?.transactions || []);
               tnFeesMuestra = tnFeesMuestra || { orden: o.nombre, transacciones: Array.isArray(txs)?txs.length:-1, estados: (Array.isArray(txs)?txs:[]).map(t=>String(t.status||"")).slice(0,4), conCargos: (Array.isArray(txs)?txs:[]).some(t=>(t.info?.merchant_charges||[]).length>0), claves: Array.isArray(txs)&&txs[0]?Object.keys(txs[0].info||{}).slice(0,12):[] };
               const okTx = (Array.isArray(txs)?txs:[]).filter(t => /^(paid|authorized|partially_refunded)$/i.test(String(t.status||"")) || val(t.captured_amount) > 0);
               let p=0, c=0, fin=0, t=0, otr=0, hay=false;
