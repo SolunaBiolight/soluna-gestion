@@ -1277,7 +1277,11 @@ export default async function handler(req, res) {
         // Tienda Nube: cargo real de la pasarela leído de las transacciones de
         // la orden (merchant_charges) — sin conectar MP. Vale para MP, Pago
         // Nube, etc. Se cachea por orden en users/{uid}.margenesTnFees.
+        // Tienda Nube: 1) pago REAL de MP por gateway_id (cuenta de cobro
+        // conectada: una sola pasada, sin límite por orden); 2) cargo informado
+        // por TN en la orden; 3) tarifa declarada por la app de pago.
         if (o.platform === "tiendanube") {
+          if (o.mpPayId && fbPay && fbPay[o.mpPayId] != null) return parseFloat(fbPay[o.mpPayId]) || 0;
           const c = tnFeeCache[o.id]; if (c && c.f != null) return parseFloat(c.f) || 0;
           const rf = tnRateFee(o); if (rf != null) return rf;
         }
@@ -1968,6 +1972,9 @@ export default async function handler(req, res) {
         tnRatesDias: tnRates && tnRates.providers ? [...new Set(tnRates.providers.flatMap(p => (p.rates||[]).flatMap(r => (r.rates_definition||[]).map(d => d.days_to_withdraw_money))).filter(x => x != null))].sort((a,b)=>a-b) : [],
         tnFees: { conTarifa: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f==null && tnRateFee(o)!=null).length, conCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f!=null).length, sinCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f==null).length, pendientes: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && !tnFeeCache[o.id]).length, nuevas: tnFeesNuevas, diag: tnFeesDiag, muestra: tnFeesMuestra },
         mpPctEstimado,
+        tnMp: (()=>{ const ords=(curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && esMPPay(o.pay)); if(!ords.length) return null;
+          const conMp=ords.filter(o=>o.mpPayId && feeByPayId[o.mpPayId]!=null).length; const conTn=ords.filter(o=>tnFeeCache[o.id]?.f!=null).length;
+          return { total: ords.length, conMp, conTn, mpToken: mlMpAcc !== "__none__" && !!mpTokenOk }; })(),
         mpConectado: mlMpAcc !== "__none__" && !!(mpCommCurr && (Object.keys(mpCommCurr.feeByPayId||{}).length || Object.keys(mpCommCurr.feeByRef||{}).length)),
         // Shopify: el cargo real de MP SOLO sale de la API de MP (Shopify no lo
         // expone). Sin cuenta de MP conectada → aviso con CTA; con cuenta pero
