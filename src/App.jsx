@@ -3937,10 +3937,10 @@ function GhDatePicker({ T, value, onChange, time=false, timeValue="", onTimeChan
           : <span style={{color:T.textSm,fontSize:10}}>▾</span>}
       </button>
       {open&&ReactDOM.createPortal(<>
-        {esMobile&&<div onClick={()=>setOpen(false)} className="gh-modal-backdrop" style={{position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,0.45)"}}/>}
+        {esMobile&&<div onClick={()=>setOpen(false)} className="gh-modal-backdrop" style={{position:"fixed",inset:0,zIndex:20000,background:"rgba(0,0,0,0.45)"}}/>}
         <div ref={ddRef} className="gh-dropdown" style={esMobile
-          ?{position:"fixed",left:10,right:10,bottom:10,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:14,boxShadow:"0 -10px 44px rgba(0,0,0,0.55)",boxSizing:"border-box"}
-          :{position:"fixed",top:pos.top,left:pos.left,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:12,boxShadow:"0 14px 40px rgba(0,0,0,0.45)",width:300,boxSizing:"border-box"}}>
+          ?{position:"fixed",left:10,right:10,bottom:10,zIndex:20001,background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:14,boxShadow:"0 -10px 44px rgba(0,0,0,0.55)",boxSizing:"border-box"}
+          :{position:"fixed",top:pos.top,left:pos.left,zIndex:20001,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:12,boxShadow:"0 14px 40px rgba(0,0,0,0.45)",width:300,boxSizing:"border-box"}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5,marginBottom:10}}>
             {PRESETS.filter(pz=>!isDis(pz.v)).map(pz=>(
               <button key={pz.l} type="button" onClick={()=>{onChange(pz.v); if(!time) setOpen(false); else setViewMonth(monthOf(pz.v));}} style={{padding:"6px 6px",fontSize:11,fontWeight:value===pz.v?700:500,border:`1px solid ${value===pz.v?T.accent:T.border}`,borderRadius:8,background:value===pz.v?T.accent+"18":T.surface,color:value===pz.v?T.accent:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{pz.l}</button>
