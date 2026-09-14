@@ -1,6 +1,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getValidMLToken } from "./integrations.js";
+import { gadsCreds } from "./google-ads.js";
 import { guardUid, guardCron, isCronRequest } from "./_auth.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
 
@@ -1425,7 +1426,9 @@ export default async function handler(req, res) {
           const g = userData.googleAds;
           // 2026: Google ya no exige developer token (el nivel de acceso lo da el
           // proyecto de Google Cloud). Si está en Vercel se manda igual; si no, no bloquea.
-          const cid = process.env.GOOGLE_ADS_CLIENT_ID, cs = process.env.GOOGLE_ADS_CLIENT_SECRET, dt = process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "";
+          // Conexiones viejas (sin clientId guardado) → cliente legacy; nuevas → el del proyecto verificado.
+          const _gc = gadsCreds(g?.clientId === undefined ? (process.env.GOOGLE_ADS_CLIENT_ID || "") : g.clientId);
+          const cid = _gc.clientId, cs = _gc.clientSecret, dt = process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "";
           if (!g?.refresh_token || !cid || !cs) return null;
           const tr = await fetch("https://oauth2.googleapis.com/token", {
             method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },

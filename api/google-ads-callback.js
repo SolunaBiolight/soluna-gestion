@@ -6,6 +6,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { createHmac, timingSafeEqual } from "crypto";
+import { gadsCreds } from "./google-ads.js";
 
 const APP_URL = "https://www.growithapp.com";
 const REDIRECT_URI = `${APP_URL}/api/google-ads-callback`;
@@ -47,8 +48,8 @@ export default async function handler(req, res) {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        client_id: process.env.GOOGLE_ADS_CLIENT_ID || "",
-        client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET || "",
+        client_id: gadsCreds().clientId,
+        client_secret: gadsCreds().clientSecret,
         code: String(code),
         grant_type: "authorization_code",
         redirect_uri: REDIRECT_URI,
@@ -83,6 +84,7 @@ export default async function handler(req, res) {
     await db.collection("users").doc(uid).set({
       googleAds: {
         connected: true,
+        clientId: gadsCreds().clientId,
         refresh_token: tj.refresh_token,
         customers,
         customersError,

@@ -11,6 +11,23 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { createHmac } from "crypto";
 import { guardUid } from "./_auth.js";
+import { driveEnv } from "./google-drive-callback.js";
+
+// Credenciales OAuth para Google Ads. Desde 2026-09-13 se usa el cliente del
+// proyecto verificado de Growith (el mismo de Drive, proyecto Growith-Gestion),
+// que tiene la marca verificada y el permiso adwords declarado. Las env
+// GOOGLE_ADS_CLIENT_ID/SECRET (proyecto viejo sin verificar) quedan solo para
+// renovar las conexiones hechas antes con ese cliente.
+export function gadsCreds(clientIdGuardado) {
+  const drive = driveEnv();
+  const legacy = { clientId: String(process.env.GOOGLE_ADS_CLIENT_ID || "").trim(), clientSecret: String(process.env.GOOGLE_ADS_CLIENT_SECRET || "").trim() };
+  if (clientIdGuardado && legacy.clientId && clientIdGuardado === legacy.clientId) return legacy;
+  if (clientIdGuardado && drive.clientId && clientIdGuardado === drive.clientId) return drive;
+  if (!clientIdGuardado && legacy.clientId && !drive.clientId) return legacy;
+  // Conexiones viejas sin clientId guardado: se hicieron con el cliente legacy.
+  if (clientIdGuardado === undefined || clientIdGuardado === null) return drive.clientId ? drive : legacy;
+  return drive.clientId ? drive : legacy;
+}
 
 const APP_URL = "https://www.growithapp.com";
 export const GADS_REDIRECT = `${APP_URL}/api/google-ads-callback`;
@@ -51,8 +68,9 @@ export default async function handler(req, res) {
     const db = initAdmin();
 
     if (action === "oauth_start" && req.method === "GET") {
-      const cid = process.env.GOOGLE_ADS_CLIENT_ID;
-      if (!cid || !process.env.GOOGLE_ADS_CLIENT_SECRET) {
+      const creds = gadsCreds();
+      const cid = creds.clientId;
+      if (!cid || !creds.clientSecret) {
         return res.status(400).json({ error: "faltan_credenciales", detail: "Faltan GOOGLE_ADS_CLIENT_ID / GOOGLE_ADS_CLIENT_SECRET en Vercel. Creá las credenciales OAuth en Google Cloud (con la Google Ads API habilitada) y cargalas." });
       }
       const params = new URLSearchParams({
@@ -71,7 +89,7 @@ export default async function handler(req, res) {
       const snap = await db.collection("users").doc(uid).get();
       const g = snap.data()?.googleAds || null;
       return res.json({ connected: !!g?.refresh_token, customers: g?.customers || [], connectedAt: g?.connectedAt || null,
-        hasCreds: !!(process.env.GOOGLE_ADS_CLIENT_ID && process.env.GOOGLE_ADS_CLIENT_SECRET),
+        hasCreds: !!(gadsCreds().clientId && gadsCreds().clientSecret),
         hasDevToken: !!process.env.GOOGLE_ADS_DEVELOPER_TOKEN });
     }
 
