@@ -982,10 +982,6 @@ const SIDEBAR_GROUPS_BASE = [
     {id:"pubml",    permKey:"ml",   label:"Publicar en ML", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", go:{page:"ml",tab:"publicar"}},
     {id:"pubtiktok", permKey:"tiktokads", label:"Publicar en TikTok", icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z", go:{page:"tiktokads",tab:"publicar"}},
     {id:"pubgads",  permKey:"gads", label:"Publicar en Google", icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z", go:{page:"gads",tab:"publicar"}},
-    { group:"INTELIGENCIA ARTIFICIAL" },
-    {id:"claude",  label:"Claude",  icon:"M12 3l2.4 5.6L20 11l-5.6 2.4L12 19l-2.4-5.6L4 11l5.6-2.4z"},
-    {id:"chatgpt", label:"ChatGPT", icon:"M12 4a8 8 0 100 16 8 8 0 000-16zM12 8v8M8 12h8"},
-    {id:"gemini",  label:"Gemini",  icon:"M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10 5.4-.6 9.4-4.6 10-10z"},
     { group:"RECOMPENSAS" },
     {id:"referidos",label:"Referidos", icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
     {id:"planes",   label:"Suscripción", icon:"M2 5h20v14H2zM2 10h20M6 15h4"},
@@ -14712,21 +14708,29 @@ function PublicSite({T, darkMode, onToggleDark}) {
 
 function LandingPage({T, onLogin}) {
   const F = "'Inter',system-ui,sans-serif";
+  const [faqAbierta,setFaqAbierta] = useState(0);
   const FEATURES = [
     {gi:"chart", c:"#6366f1", t:"Dashboard de rentabilidad", d:"Facturación, costos, publicidad y ganancia neta en tiempo real, por canal. Sabés cuánto ganás de verdad, no cuánto facturás."},
     {gi:"box", c:"#22c55e", t:"Stock multicanal", d:"Inventario unificado por SKU entre Tienda Nube, Shopify y Mercado Libre, con sincronización de stock, alertas de quiebre y proyección de demanda."},
     {gi:"clip", c:"#3b82f6", t:"Envíos y logística", d:"Etiquetas Andreani, seguimiento automático de cada paquete y alertas de envíos demorados o sin retirar de sucursal."},
     {gi:"file", c:"#eab308", t:"Facturación ARCA/AFIP", d:"Emití comprobantes electrónicos desde las ventas de tus canales, con CAE, PDF y QR oficial, filtrando por método de pago."},
-    {gi:"play", c:"#ef4444", t:"Publicidad integrada", d:"El gasto real de Meta Ads, Google Ads y Mercado Ads entra directo a tu profit. ROAS verdadero, no estimado."},
+    {gi:"play", c:"#ef4444", t:"Publicidad integrada", d:"El gasto real de Meta Ads, Google Ads, TikTok Ads y Mercado Ads entra directo a tu profit. ROAS verdadero, no estimado."},
     {gi:"chat", c:"#a855f7", t:"Copilot con IA", d:"Preguntale a tu negocio en lenguaje natural: responde con tus números reales, te avisa lo importante y ejecuta acciones con tu confirmación."},
     {gi:"camera", c:"#E1306C", t:"Canjes e influencers", d:"Colaboraciones con seguimiento del envío, contenido acordado vs. entregado y comisiones por cupón calculadas solas contra las ventas reales."},
     {gi:"refresh", c:"#f97316", t:"Reclamos y cambios", d:"Pipeline visual de reclamos con tracking de ida y vuelta. Ningún cliente queda sin respuesta ni ningún cambio sin enviar."},
     {gi:"check", c:"#14b8a6", t:"Equipo y tareas", d:"Asigná tareas con briefs, entregas y correcciones. Cada colaborador trabaja desde su portal propio, sin crear cuenta."},
   ];
-  const INTEGS = [["tiendanube","Tienda Nube"],["shopify","Shopify"],["mercadolibre","Mercado Libre"],["meta","Meta Ads"],["googleads","Google Ads"],["mercadopago","Mercado Pago"]];
   const secTitle = {fontSize:28, fontWeight:800, color:T.text, letterSpacing:-0.7, textAlign:"center", marginBottom:10, fontFamily:F};
-  const secSub = {fontSize:14, color:T.textSm, textAlign:"center", maxWidth:560, margin:"0 auto 36px", lineHeight:1.6, fontFamily:F};
-  const irFeatures = () => { try{document.getElementById("gh-landing-features")?.scrollIntoView({behavior:"smooth"});}catch(_){} };
+  const secSub = {fontSize:14, color:T.textSm, textAlign:"center", maxWidth:620, margin:"0 auto 36px", lineHeight:1.6, fontFamily:F};
+  const secKicker = {fontSize:11, fontWeight:800, textTransform:"uppercase", letterSpacing:1, color:T.accent, textAlign:"center", marginBottom:10, fontFamily:F};
+  const irA = (id) => { try{document.getElementById(id)?.scrollIntoView({behavior:"smooth"});}catch(_){} };
+  const irFeatures = () => irA("gh-landing-features");
+  // Íconos de marca: BrandIcon + TikTok (mismo trazo del menú) + las IAs (IA_ICONS, pantalla de permiso)
+  const TIKTOK_PATH = "M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z";
+  const marca = (b, s=19) => b==="tiktok" ? <svg width={s} height={s} viewBox="0 0 24 24"><path d={TIKTOK_PATH} fill="#EE1D52"/></svg>
+    : IA_ICONS[b] ? React.cloneElement(IA_ICONS[b], {width:s, height:s})
+    : <BrandIcon name={b} size={b==="andreani"?s+5:s}/>;
+  const chip = (b, s=19, box=34) => <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:box,height:box,borderRadius:9,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.06)",flexShrink:0}}>{marca(b,s)}</span>;
   // Mini-dashboard ilustrativo del hero (números de demo, no reales)
   const HERO_KPIS = [
     {l:"Revenue", v:"$ 12,4M", d:"+18%", c:"#6366f1"},
@@ -14735,10 +14739,187 @@ function LandingPage({T, onLogin}) {
     {l:"Órdenes", v:"486", d:"+9%", c:"#eab308"},
   ];
   const HERO_BARS = [34,48,42,61,55,72,66,58,79,71,88,95];
+  const MARQUEE = [["mercadopago","Mercado Pago"],["mercadolibre","Mercado Libre"],["meta","Meta Ads"],["googleads","Google Ads"],["tiktok","TikTok Ads"],["tiendanube","Tienda Nube"],["shopify","Shopify"],["arca","ARCA · AFIP"],["andreani","Andreani"],["Claude","Claude"],["ChatGPT","ChatGPT"],["Gemini","Gemini"]];
+
+  // ── El problema ──
+  const PROBLEMAS = [
+    {gi:"chart", t:"Facturás, pero no sabés cuánto te queda", d:"Entre costo de producto, comisiones de la plataforma y de Mercado Pago, envíos, impuestos y publicidad, el número de ventas no dice nada."},
+    {gi:"play", t:"El ROAS de Meta no es tu ganancia", d:"Cada plataforma se atribuye las ventas a su manera. Sin cruzar el gasto real con tu margen, escalás campañas que pierden plata."},
+    {gi:"table", t:"Cinco pestañas y tres planillas", d:"El admin de la tienda, Mercado Libre, el portal de Andreani, ARCA y un Excel que nadie actualiza a tiempo."},
+    {gi:"box", t:"Te enterás tarde del quiebre de stock", d:"Cuando ves que un producto se agotó ya perdiste ventas y posicionamiento en Mercado Libre."},
+    {gi:"clock", t:"Envíos que nadie mira", d:"Paquetes demorados, en sucursal sin retirar o con visita fallida que terminan en reclamo y mala reputación."},
+    {gi:"file", t:"Facturar a mano, venta por venta", d:"Copiar los datos de cada orden en el facturador de ARCA te come horas todas las semanas."},
+  ];
+  const ANTES = [
+    ["Ver cuánto ganaste ayer","Armar el Excel a mano","Abrís el Dashboard y ya está calculado"],
+    ["Saber qué campaña rinde","Mirar el ROAS de cada plataforma por separado","ROAS real contra tu margen, en un solo lugar"],
+    ["Facturar","Copiar cada venta en ARCA","Un clic desde las ventas de tus canales"],
+    ["Despachar","Cargar pedidos en el portal de Andreani","Etiquetas desde tus pedidos, con seguimiento automático"],
+    ["Controlar el stock","Revisar cada canal por separado","Inventario unificado con alertas de quiebre"],
+    ["Preguntar algo del negocio","Buscar entre planillas","Preguntarle a Growith, Claude o ChatGPT"],
+  ];
+
+  // ── Módulos en detalle (texto + vista del producto, alternados) ──
+  const MODULOS = [
+    {k:"Rentabilidad", c:"#6366f1", gi:"chart", t:"Tu ganancia real, venta por venta",
+      d:"Growith cruza cada venta con su costo, las comisiones de la plataforma y de Mercado Pago, el envío, los impuestos, tus costos fijos y la publicidad de Meta, Google, TikTok y Mercado Ads.",
+      b:["Dashboard diario con facturación, ganancia neta, margen y ROAS real","P&L mensual listo para mirar con tu contador","Rentabilidad por producto y por canal","ROAS de equilibrio: sabés hasta dónde podés pautar sin perder plata","Costos en dólares convertidos con tu cotización"], mock:"cascada"},
+    {k:"Publicidad", c:"#3b82f6", gi:"play", t:"Meta, Google y TikTok, contra tu margen real",
+      d:"Analizá tus campañas con métricas reales, pausalas o activalas desde Growith y publicá campañas nuevas sin entrar a cada administrador de anuncios.",
+      b:["Análisis de campañas de Meta Ads, Google Ads y TikTok Ads","Reglas automáticas para pausar o ajustar presupuestos según resultados","Publicá en Meta, en Google (Búsqueda y Performance Max) y en TikTok desde un solo lugar","Textos de anuncios generados con IA","Las campañas nuevas se crean pausadas: nada gasta sin tu OK"], mock:"campanas"},
+    {k:"Stock", c:"#22c55e", gi:"box", t:"Un solo stock para todos tus canales",
+      d:"Un inventario central por SKU que se sincroniza con Tienda Nube, Shopify y Mercado Libre, para que no vendas lo que no tenés.",
+      b:["Stock unificado por producto y variante","Días de stock restantes según lo que venís vendiendo","Alertas de quiebre antes de que pase","Historial de agotados y tiempos de reposición"], mock:"stock"},
+    {k:"Envíos", c:"#f97316", gi:"clip", t:"Etiquetas Andreani sin salir de Growith",
+      d:"Emitís las etiquetas desde tus pedidos, con el SKU impreso en el rótulo, y Growith sigue cada paquete por vos hasta que llega.",
+      b:["Etiquetas prepagas por API o Excel para el portal de Andreani","Sucursal de retiro bien elegida, sin adivinar","Seguimiento automático y avisos al comprador","Alertas de envíos demorados, en sucursal o con visita fallida","Andreani en el checkout de tu Shopify, con el precio de la etiqueta"], mock:"envios"},
+    {k:"Facturación", c:"#eab308", gi:"file", t:"Facturación electrónica ARCA en un clic",
+      d:"Facturás las ventas de tu tienda y de Mercado Libre directo desde Growith, con CAE, PDF y QR oficial, sin copiar datos a mano.",
+      b:["Monotributo y Responsable Inscripto","Facturas y notas de crédito según tu condición fiscal","Varios puntos de venta y CUITs","La factura se adjunta sola a la venta y le llega al cliente","Proyección mensual de IVA"], mock:"factura"},
+    {k:"Mercado Libre", c:"#facc15", gi:"store", t:"Mercado Libre bajo control",
+      d:"Preguntas, mensajes, reclamos y reputación en el mismo lugar que el resto de tu negocio, para responder rápido y cuidar tu cuenta.",
+      b:["Respondé preguntas y mensajes sin entrar a Mercado Libre","Reclamos de Mercado Libre y contracargos de Mercado Pago en un tablero","Reputación y métricas de la cuenta","Mercado Ads cruzado con tu ganancia real"], mock:"ml"},
+  ];
+  const ventana = (titulo, hijos) => (
+    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,overflow:"hidden",boxShadow:"0 16px 50px rgba(0,0,0,0.25)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:6,padding:"10px 14px",borderBottom:`1px solid ${T.borderL}`}}>
+        {["#ef4444","#eab308","#22c55e"].map(c=><span key={c} style={{width:8,height:8,borderRadius:"50%",background:c+"cc"}}/>)}
+        <span style={{marginLeft:8,fontSize:11,color:T.textSm,fontWeight:600}}>{titulo}</span>
+        <span style={{marginLeft:"auto",fontSize:9,color:T.textSm,letterSpacing:0.4,textTransform:"uppercase"}}>Datos de ejemplo</span>
+      </div>
+      <div style={{padding:"14px 16px"}}>{hijos}</div>
+    </div>
+  );
+  const fila = (izq, der, color, extra={}) => (
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:`1px solid ${T.borderL}`,fontSize:12,...extra}}>
+      <span style={{flex:1,minWidth:0,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{izq}</span>
+      <span style={{fontWeight:700,color:color||T.text,whiteSpace:"nowrap"}}>{der}</span>
+    </div>
+  );
+  const mockDe = (m) => {
+    if (m==="cascada") {
+      const pasos=[["Facturación","$ 12,4M",100,"#6366f1"],["Costo de productos","− $ 4,3M",35,T.red],["Comisiones y envíos","− $ 1,6M",13,T.red],["Impuestos","− $ 0,9M",7,T.red],["Publicidad (Meta · Google · TikTok)","− $ 1,5M",12,T.red],["Ganancia neta","$ 4,1M",33,T.green]];
+      return ventana("Dashboard · Cascada del mes", <div style={{display:"flex",flexDirection:"column",gap:9}}>
+        {pasos.map(([l,v,w,c],i)=>(
+          <div key={l}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,marginBottom:4}}><span style={{color:i===5?T.text:T.textMd,fontWeight:i===5?800:500}}>{l}</span><span style={{fontWeight:800,color:c}}>{v}</span></div>
+            <div style={{height:8,borderRadius:5,background:T.bg}}><div style={{height:"100%",width:`${w}%`,borderRadius:5,background:i===0?"linear-gradient(90deg,#6366f1,#818cf8)":c+(i===5?"":"99")}}/></div>
+          </div>
+        ))}
+        <div style={{display:"flex",gap:8,marginTop:4}}>
+          {[["Margen neto","33%"],["ROAS real","3,2"],["ROAS de equilibrio","2,1"]].map(([l,v])=>(
+            <div key={l} style={{flex:1,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:9,padding:"7px 9px"}}><div style={{fontSize:9.5,color:T.textSm}}>{l}</div><div style={{fontSize:14,fontWeight:800}}>{v}</div></div>
+          ))}
+        </div>
+      </div>);
+    }
+    if (m==="campanas") return ventana("Publicidad · Últimos 7 días", <div>
+      <div style={{display:"flex",fontSize:9.5,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,paddingBottom:6}}><span style={{flex:1}}>Campaña</span><span style={{width:74,textAlign:"right"}}>Gasto</span><span style={{width:56,textAlign:"right"}}>ROAS</span></div>
+      {[["meta","Prospección · Video",  "$ 420.000","3,8",T.green],["googleads","Búsqueda · Marca","$ 180.000","5,1",T.green],["tiktok","UGC · Nuevos clientes","$ 260.000","2,4",T.green],["meta","Remarketing 30 días","$ 310.000","1,2",T.red]].map(([b,n,g,r,c],i)=>(
+        <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderTop:`1px solid ${T.borderL}`,fontSize:12}}>
+          {chip(b,13,24)}
+          <span style={{flex:1,minWidth:0,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n}</span>
+          <span style={{width:74,textAlign:"right",fontWeight:600}}>{g}</span>
+          <span style={{width:56,textAlign:"right",fontWeight:800,color:c}}>{r}</span>
+        </div>
+      ))}
+      <div style={{marginTop:10,fontSize:11,color:T.red,background:T.red+"12",border:`1px solid ${T.red}33`,borderRadius:8,padding:"7px 10px"}}>"Remarketing 30 días" está debajo del ROAS de equilibrio (2,1): pierde plata.</div>
+    </div>);
+    if (m==="stock") return ventana("Stock · Alertas de quiebre", <div>
+      {[["Producto A · Negro","12 u.","4 días",T.red,15],["Producto A · Blanco","48 u.","16 días",T.orange,45],["Producto B · Único","130 u.","41 días",T.green,85],["Producto C · Talle M","0 u.","Agotado",T.red,2]].map(([n,u,d,c,w])=>(
+        <div key={n} style={{padding:"8px 0",borderTop:`1px solid ${T.borderL}`}}>
+          <div style={{display:"flex",fontSize:12,marginBottom:5}}><span style={{flex:1,color:T.textMd}}>{n}</span><span style={{fontWeight:700,marginRight:10}}>{u}</span><span style={{fontWeight:800,color:c,width:62,textAlign:"right"}}>{d}</span></div>
+          <div style={{height:5,borderRadius:4,background:T.bg}}><div style={{height:"100%",width:`${w}%`,borderRadius:4,background:c}}/></div>
+        </div>
+      ))}
+      <div style={{fontSize:10.5,color:T.textSm,marginTop:8}}>Stock sumado de Tienda Nube, Shopify y Mercado Libre</div>
+    </div>);
+    if (m==="envios") return ventana("Envíos · Seguimiento", <div>
+      {[["#1482 · Córdoba","Entregado",T.green],["#1479 · CABA","En camino",T.blue],["#1475 · Rosario","En sucursal hace 4 días",T.orange],["#1471 · Mendoza","Visita fallida",T.red]].map(([p,e,c])=>(
+        <div key={p} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:`1px solid ${T.borderL}`,fontSize:12}}>
+          {chip("andreani",14,26)}
+          <span style={{flex:1,color:T.textMd}}>{p}</span>
+          <span style={{fontSize:10.5,fontWeight:700,color:c,background:c+"18",border:`1px solid ${c}44`,borderRadius:20,padding:"2px 9px",whiteSpace:"nowrap"}}>{e}</span>
+        </div>
+      ))}
+      <div style={{fontSize:10.5,color:T.textSm,marginTop:8}}>Al comprador le llega el aviso solo · vos ves las alertas en el Inicio</div>
+    </div>);
+    if (m==="factura") return ventana("Facturador · ARCA", <div>
+      {[["Factura B 0004-00001812","$ 58.900","CAE ✓"],["Factura B 0004-00001811","$ 23.400","CAE ✓"],["Factura A 0004-00000418","$ 112.000","CAE ✓"],["Nota de crédito 0004-00000094","− $ 23.400","CAE ✓"]].map(([f,m,s])=>(
+        <div key={f} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:`1px solid ${T.borderL}`,fontSize:12}}>
+          <span style={{flex:1,minWidth:0,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f}</span>
+          <span style={{fontWeight:700}}>{m}</span>
+          <span style={{fontWeight:800,color:T.green,width:48,textAlign:"right"}}>{s}</span>
+        </div>
+      ))}
+      <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10}}>{chip("arca",16,28)}<span style={{fontSize:10.5,color:T.textSm}}>PDF con QR oficial, adjunto a la venta</span></div>
+    </div>);
+    return ventana("Mercado Libre · Preguntas y reclamos", <div>
+      {[["¿Tienen en color negro?","Respondida en 6 min",T.green],["¿Llega antes del viernes?","Sin responder · 2 h",T.orange],["Reclamo: producto no recibido","Abierto · respondé hoy",T.red]].map(([p,e,c])=>(
+        <div key={p} style={{padding:"8px 0",borderTop:`1px solid ${T.borderL}`}}>
+          <div style={{fontSize:12,color:T.text,marginBottom:3}}>{p}</div>
+          <div style={{fontSize:10.5,fontWeight:700,color:c}}>{e}</div>
+        </div>
+      ))}
+      <div style={{display:"flex",gap:8,marginTop:10}}>
+        {[["Reputación","Verde"],["Respuesta prom.","14 min"],["Reclamos","0,8%"]].map(([l,v])=>(
+          <div key={l} style={{flex:1,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:9,padding:"6px 8px"}}><div style={{fontSize:9.5,color:T.textSm}}>{l}</div><div style={{fontSize:13,fontWeight:800}}>{v}</div></div>
+        ))}
+      </div>
+    </div>);
+  };
+
+  // ── Un día con Growith ──
+  const DIA = [
+    ["08:30","Revisás cómo cerró ayer","Ganancia, órdenes y alertas del día en el Inicio, sin abrir ninguna planilla.","chart"],
+    ["10:00","Despachás los pedidos","Etiquetas Andreani con el SKU impreso, listas para imprimir en tanda.","clip"],
+    ["12:00","Facturás las ventas","Seleccionás las órdenes y ARCA devuelve el CAE en segundos.","file"],
+    ["15:00","Ajustás la publicidad","Ves qué campaña gana y cuál pierde contra tu margen, y la pausás desde Growith.","play"],
+    ["18:00","Reponés stock a tiempo","La alerta te avisó que a un producto le quedan 6 días.","box"],
+    ["21:00","Le preguntás a la IA","\"¿Cómo vengo contra el mes pasado?\", y te contesta con tus números.","chat"],
+  ];
+  // ── Integraciones por categoría ──
+  const CATEGORIAS = [
+    {t:"Tiendas", d:"Ventas, productos, stock y clientes.", items:[["tiendanube","Tienda Nube"],["shopify","Shopify"],["mercadolibre","Mercado Libre"]]},
+    {t:"Publicidad", d:"Gasto real, análisis y publicación de campañas.", items:[["meta","Meta Ads"],["googleads","Google Ads"],["tiktok","TikTok Ads"],["mercadolibre","Mercado Ads"]]},
+    {t:"Pagos", d:"Comisiones reales, cashflow y contracargos.", items:[["mercadopago","Mercado Pago"]]},
+    {t:"Logística", d:"Etiquetas, sucursales y seguimiento.", items:[["andreani","Andreani"]]},
+    {t:"Facturación", d:"Factura electrónica con CAE y QR.", items:[["arca","ARCA · AFIP"]]},
+    {t:"Inteligencia artificial", d:"Hablá con tu negocio desde la IA que ya usás.", items:[["Claude","Claude"],["ChatGPT","ChatGPT"],["Gemini","Gemini"]]},
+  ];
+  const SEGURIDAD = [
+    {gi:"lock", t:"Conexiones oficiales", d:"Tus cuentas se conectan con los accesos oficiales de cada plataforma. Growith no te pide sus contraseñas."},
+    {gi:"users", t:"Permisos por persona", d:"Sumá a tu equipo y elegí qué secciones ve cada uno. Los colaboradores externos trabajan desde su propio portal."},
+    {gi:"eye", t:"IA de solo lectura", d:"Cuando conectás Claude, ChatGPT o Gemini, solo pueden leer. Nada se publica, pausa ni cambia sin vos."},
+    {gi:"ban", t:"Desconectás cuando quieras", d:"Cada integración se desvincula con un clic desde Configuración, y cada tienda ve solo sus propios datos."},
+  ];
+  const PARA_QUIEN = [
+    {gi:"store", t:"Marcas en Tienda Nube o Shopify", d:"Que quieren saber su ganancia real y dejar de operar con planillas."},
+    {gi:"star", t:"Vendedores de Mercado Libre", d:"Que necesitan cuidar la reputación, responder rápido y controlar el stock."},
+    {gi:"rocket", t:"Marcas que pautan", d:"Que invierten en Meta, Google o TikTok y quieren escalar solo lo que deja plata."},
+    {gi:"folder", t:"Varias tiendas", d:"Dueños y equipos que manejan más de una marca desde un solo login."},
+  ];
+  const FAQ = [
+    ["¿Necesito tarjeta para probar?","No. Tenés 14 días gratis con todas las funciones, sin cargar ninguna tarjeta. Si te sirve, elegís un plan; si no, no pasa nada."],
+    ["¿Con qué plataformas se conecta?","Tienda Nube, Shopify, Mercado Libre, Mercado Pago, Meta Ads, Google Ads, TikTok Ads, Andreani y ARCA. Y además podés conectar Growith a Claude, ChatGPT o Gemini."],
+    ["¿Cómo calcula Growith la ganancia real?","Toma cada venta y le resta el costo del producto que cargás, las comisiones de la plataforma y de Mercado Pago, el envío, los impuestos, tus costos fijos y la publicidad real de cada plataforma. Si un producto no tiene costo cargado, te avisa."],
+    ["¿Sirve si vendo solo en Mercado Libre?","Sí. Podés conectar solo Mercado Libre y usar ventas, rentabilidad, preguntas, reclamos, stock y facturación. Si después sumás una tienda, se integra sola."],
+    ["¿La facturación sirve para Monotributo y Responsable Inscripto?","Sí. Growith emite comprobantes electrónicos en ARCA con CAE, PDF y QR, para Monotributo y Responsable Inscripto, con varios CUITs y puntos de venta."],
+    ["¿Cómo funciona la conexión con Claude, ChatGPT o Gemini?","Agregás Growith como conector en la IA que ya usás, autorizás con tu cuenta de Growith y le preguntás por ventas, campañas, stock o envíos. Es de solo lectura y responde con tus números reales."],
+    ["¿Mis datos están seguros?","Tus cuentas se conectan con los accesos oficiales de cada plataforma, cada tienda ve solo sus datos y vos decidís qué ve cada persona de tu equipo. Podés desconectar cualquier integración cuando quieras."],
+    ["¿Puedo manejar varias tiendas?","Sí. Con un solo login manejás varias marcas y cambiás de una a otra desde el menú. Cada tienda adicional suma entre USD 5 y USD 15 por mes, según el plan."],
+    ["¿Mi equipo puede usarlo?","Sí. Sumás personas a tu cuenta y elegís qué secciones ve cada una. Para colaboradores externos, como diseñadores o influencers, hay un portal propio sin crear cuenta."],
+    ["¿Hay permanencia? ¿Cómo cancelo?","No hay permanencia. Cancelás cuando quieras desde la sección Suscripción."],
+    ["¿En cuánto tiempo está funcionando?","En minutos: conectás tu tienda y Growith empieza a traer tus ventas. Cargar el costo de tus productos es lo que más tiempo lleva, y lo hacés una sola vez."],
+    ["¿Tienen soporte?","Sí, en español y con gente que conoce el e-commerce argentino. Escribinos a contacto.growith@gmail.com."],
+  ];
+  const tarjetaIco = (gi, c=T.accent) => <div style={{width:36,height:36,borderRadius:10,background:c+"16",border:`1px solid ${c}33`,display:"flex",alignItems:"center",justifyContent:"center",color:c,marginBottom:12}}><GhI n={gi} size={17}/></div>;
+  const navBtn = (l, id) => <button key={id} onClick={()=>irA(id)} className="hide-mobile" style={{background:"transparent",border:"none",cursor:"pointer",fontSize:13,color:T.textMd,fontFamily:F,padding:"6px 10px"}}>{l}</button>;
   return (
     <div style={{fontFamily:F, background:T.bg, minHeight:"100vh", color:T.text}}>
       <style>{`
         @media(max-width:640px){ .gh-land-kpis{grid-template-columns:repeat(2,1fr)!important;} .gh-land-pasos{grid-template-columns:1fr!important;} .hide-mobile{display:none!important;} .gh-land-bento{grid-template-columns:1fr!important;} .gh-land-bento>div{grid-column:span 1!important;} }
+        @media(max-width:860px){ .gh-land-row{grid-template-columns:1fr!important;gap:22px!important;} .gh-land-row>.gh-land-mock{order:2!important;} .gh-land-cmp-head{display:none!important;} .gh-land-cmp{grid-template-columns:1fr!important;gap:4px!important;} .gh-land-cmp>div:first-child{font-weight:800!important;color:${T.text}!important;} .gh-land-ia{grid-template-columns:1fr!important;} .gh-land-foot{grid-template-columns:1fr 1fr!important;} }
         .gh-land-card{transition:transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;}
         .gh-land-card:hover{transform:translateY(-3px);box-shadow:0 14px 34px rgba(0,0,0,0.22);}
         @keyframes ghLandFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
@@ -14746,19 +14927,22 @@ function LandingPage({T, onLogin}) {
         @keyframes ghLandPulse{0%,100%{opacity:1}50%{opacity:0.35}}
         @keyframes ghLandUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
         .gh-land-up{animation:ghLandUp 0.7s cubic-bezier(0.22,1,0.36,1) both}
-        .gh-land-marquee{display:flex;gap:40px;width:max-content;animation:ghLandMarquee 28s linear infinite}
+        .gh-land-marquee{display:flex;gap:40px;width:max-content;animation:ghLandMarquee 34s linear infinite}
         .gh-land-marquee:hover{animation-play-state:paused}
         .gh-land-bento>div{position:relative;overflow:hidden;transition:transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease}
         .gh-land-bento>div:hover{transform:translateY(-4px)}
       `}</style>
       {/* Topnav */}
       <div style={{position:"sticky",top:0,zIndex:50,background:T.bg+"f2",backdropFilter:"blur(10px)",borderBottom:`1px solid ${T.border}`}}>
-        <div style={{maxWidth:"100%",margin:"0 auto",padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:16}}>
+        <div style={{maxWidth:"100%",margin:"0 auto",padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:10}}>
           <img src="/logo-color.png" alt="Growith" style={{width:28,height:28,borderRadius:7}}/>
-          <span style={{fontSize:17,fontWeight:800,letterSpacing:-0.4}}>Growith</span>
-          <button onClick={irFeatures} className="hide-mobile" style={{background:"transparent",border:"none",cursor:"pointer",fontSize:13,color:T.textMd,fontFamily:F,padding:"6px 10px"}}>Funciones</button>
-          <button onClick={()=>{try{document.getElementById("gh-landing-integs")?.scrollIntoView({behavior:"smooth"});}catch(_){}}} className="hide-mobile" style={{background:"transparent",border:"none",cursor:"pointer",fontSize:13,color:T.textMd,fontFamily:F,padding:"6px 10px"}}>Integraciones</button>
-          <button onClick={()=>{try{document.getElementById("gh-landing-precios")?.scrollIntoView({behavior:"smooth"});}catch(_){}}} className="hide-mobile" style={{background:"transparent",border:"none",cursor:"pointer",fontSize:13,color:T.textMd,fontFamily:F,padding:"6px 10px"}}>Precios</button>
+          <span style={{fontSize:17,fontWeight:800,letterSpacing:-0.4,marginRight:8}}>Growith</span>
+          {navBtn("Funciones","gh-landing-features")}
+          {navBtn("Módulos","gh-landing-modulos")}
+          {navBtn("IA","gh-landing-ia")}
+          {navBtn("Integraciones","gh-landing-integraciones")}
+          {navBtn("Precios","gh-landing-precios")}
+          {navBtn("Preguntas","gh-landing-faq")}
           <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
             <button onClick={onLogin} style={{...BtnSecondary(T),fontSize:13,padding:"7px 16px"}}>Iniciar sesión</button>
             <button onClick={onLogin} style={{...BtnPrimary(T),fontSize:13,padding:"7px 16px"}}>Probar gratis</button>
@@ -14781,8 +14965,8 @@ function LandingPage({T, onLogin}) {
             Todo tu e-commerce.<br/>
             <span style={{background:"linear-gradient(92deg,#818cf8 0%,#a78bfa 45%,#6366f1 100%)",WebkitBackgroundClip:"text",backgroundClip:"text",color:"transparent"}}>Una sola plataforma.</span>
           </h1>
-          <p className="gh-land-up" style={{fontSize:16,color:T.textMd,lineHeight:1.65,maxWidth:620,margin:"0 auto 30px",animationDelay:"0.12s"}}>
-            Ventas, envíos, stock, facturación ARCA y publicidad de Tienda Nube, Shopify y Mercado Libre,
+          <p className="gh-land-up" style={{fontSize:16,color:T.textMd,lineHeight:1.65,maxWidth:640,margin:"0 auto 30px",animationDelay:"0.12s"}}>
+            Ventas, envíos, stock, facturación ARCA y publicidad en Meta, Google y TikTok de tu Tienda Nube, Shopify y Mercado Libre,
             unificados en un tablero que responde lo único que importa: <strong style={{color:T.text}}>cuánto estás ganando de verdad</strong>.
           </p>
           <div className="gh-land-up" style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap",animationDelay:"0.18s"}}>
@@ -14846,9 +15030,9 @@ function LandingPage({T, onLogin}) {
           <div className="gh-land-marquee">
             {[0,1].map(rep=>(
               <div key={rep} style={{display:"flex",gap:40,alignItems:"center"}}>
-                {[["mercadopago","Mercado Pago"],["mercadolibre","Mercado Libre"],["meta","Meta Ads"],["googleads","Google Ads"],["tiendanube","Tienda Nube"],["shopify","Shopify"],["arca","ARCA · AFIP"],["andreani","Andreani"]].map(([b,n],i)=>(
+                {MARQUEE.map(([b,n],i)=>(
                   <span key={i} style={{display:"inline-flex",alignItems:"center",gap:10,fontSize:14,fontWeight:700,color:T.textMd,whiteSpace:"nowrap"}}>
-                    <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:34,height:34,borderRadius:9,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.06)"}}><BrandIcon name={b} size={b==="andreani"?24:19}/></span>
+                    {chip(b,19,34)}
                     {n}
                   </span>
                 ))}
@@ -14858,8 +15042,38 @@ function LandingPage({T, onLogin}) {
         </div>
       </div>
 
+      {/* El problema */}
+      <div id="gh-landing-problema" style={{maxWidth:"100%",margin:"0 auto",padding:"72px 20px 8px"}}>
+        <div style={secKicker}>El problema</div>
+        <h2 style={secTitle}>¿Sabés si tu negocio gana o pierde plata?</h2>
+        <p style={secSub}>Facturar mucho no es lo mismo que ganar. Estos son los problemas que vemos todos los días en los e-commerce argentinos.</p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
+          {PROBLEMAS.map(p=>(
+            <div key={p.t} className="gh-land-card" style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:"20px"}}>
+              {tarjetaIco(p.gi,T.red)}
+              <div style={{fontSize:15,fontWeight:700,marginBottom:6}}>{p.t}</div>
+              <div style={{fontSize:13,color:T.textSm,lineHeight:1.6}}>{p.d}</div>
+            </div>
+          ))}
+        </div>
+        {/* Antes / con Growith */}
+        <div style={{marginTop:36,background:T.card,border:`1px solid ${T.border}`,borderRadius:18,overflow:"hidden"}}>
+          <div className="gh-land-cmp-head" style={{display:"grid",gridTemplateColumns:"1fr 1.2fr 1.4fr",gap:16,padding:"14px 22px",background:T.surface,borderBottom:`1px solid ${T.borderL}`,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:0.6}}>
+            <div style={{color:T.textSm}}>Tarea</div><div style={{color:T.red}}>Sin Growith</div><div style={{color:T.green}}>Con Growith</div>
+          </div>
+          {ANTES.map(([t,a,g])=>(
+            <div key={t} className="gh-land-cmp" style={{display:"grid",gridTemplateColumns:"1fr 1.2fr 1.4fr",gap:16,padding:"13px 22px",borderTop:`1px solid ${T.borderL}`,fontSize:13,alignItems:"center"}}>
+              <div style={{fontWeight:700,color:T.text}}>{t}</div>
+              <div style={{color:T.textSm,display:"flex",gap:8}}><span style={{color:T.red,fontWeight:800}}>✕</span>{a}</div>
+              <div style={{color:T.textMd,display:"flex",gap:8}}><span style={{color:T.green,fontWeight:800}}>✓</span>{g}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Features */}
       <div id="gh-landing-features" style={{maxWidth:"100%",margin:"0 auto",padding:"64px 20px"}}>
+        <div style={secKicker}>La solución</div>
         <h2 style={secTitle}>Una sección para cada parte de tu negocio</h2>
         <p style={secSub}>Dejá de saltar entre planillas, el admin de tu tienda y cinco pestañas. Growith lo junta todo y lo convierte en decisiones.</p>
         <div className="gh-land-bento" style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:14}}>
@@ -14901,7 +15115,7 @@ function LandingPage({T, onLogin}) {
               <div style={{fontSize:12.5,color:T.textSm,lineHeight:1.6}}>{f.d}</div>
               {f.gi==="play"&&(
                 <div style={{display:"flex",gap:6,marginTop:10}}>
-                  {["meta","googleads","mercadolibre"].map(b=><span key={b} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:26,height:26,borderRadius:7,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)"}}><BrandIcon name={b} size={15}/></span>)}
+                  {["meta","googleads","tiktok","mercadolibre"].map(b=><span key={b}>{chip(b,15,26)}</span>)}
                 </div>
               )}
             </div>
@@ -14923,7 +15137,83 @@ function LandingPage({T, onLogin}) {
             </div>
           </div>
         </div>
+      </div>
 
+      {/* Módulos en detalle */}
+      <div id="gh-landing-modulos" style={{background:T.surface+"66",borderTop:`1px solid ${T.borderL}`,borderBottom:`1px solid ${T.borderL}`,padding:"72px 20px"}}>
+        <div style={secKicker}>Por dentro</div>
+        <h2 style={secTitle}>Así funciona cada módulo</h2>
+        <p style={secSub}>Cada parte de Growith resuelve un problema concreto de tu operación. Esto es lo que vas a ver cuando entres.</p>
+        <div style={{maxWidth:1080,margin:"0 auto",display:"flex",flexDirection:"column",gap:72}}>
+          {MODULOS.map((m,i)=>(
+            <div key={m.k} className="gh-land-row" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:48,alignItems:"center"}}>
+              <div style={{order:i%2?2:1}}>
+                <div style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8,color:m.c,background:m.c+"14",border:`1px solid ${m.c}33`,borderRadius:20,padding:"4px 12px",marginBottom:14}}><GhI n={m.gi} size={13}/>{m.k}</div>
+                <div style={{fontSize:"clamp(22px,3vw,28px)",fontWeight:900,letterSpacing:-0.7,lineHeight:1.2,marginBottom:12}}>{m.t}</div>
+                <div style={{fontSize:14,color:T.textMd,lineHeight:1.7,marginBottom:18}}>{m.d}</div>
+                <div style={{display:"flex",flexDirection:"column",gap:9}}>
+                  {m.b.map(x=><div key={x} style={{display:"flex",gap:10,fontSize:13.5,color:T.text,lineHeight:1.5}}><span style={{color:m.c,fontWeight:800,flexShrink:0}}>✓</span>{x}</div>)}
+                </div>
+              </div>
+              <div className="gh-land-mock" style={{order:i%2?1:2}}>{mockDe(m.mock)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* IA */}
+      <div id="gh-landing-ia" style={{maxWidth:"100%",margin:"0 auto",padding:"72px 20px"}}>
+        <div style={secKicker}>Inteligencia artificial</div>
+        <h2 style={secTitle}>Tu negocio, en una conversación</h2>
+        <p style={secSub}>Preguntale a Growith como le preguntarías a tu socio. Responde con tus números reales, nunca inventados, y te avisa lo que se te está escapando.</p>
+        <div className="gh-land-ia" style={{maxWidth:1080,margin:"0 auto",display:"grid",gridTemplateColumns:"1.1fr 1fr",gap:24,alignItems:"stretch"}}>
+          {ventana("Copilot de Growith", <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{alignSelf:"flex-end",maxWidth:"85%",background:T.accentSolid+"22",border:`1px solid ${T.accentSolid}44`,borderRadius:"14px 14px 4px 14px",padding:"10px 13px",fontSize:13,lineHeight:1.5}}>¿Cuánto gané este mes y qué campaña me conviene pausar?</div>
+            <div style={{alignSelf:"flex-start",maxWidth:"92%",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:"14px 14px 14px 4px",padding:"11px 13px",fontSize:13,lineHeight:1.6,color:T.textMd}}>
+              En lo que va del mes facturaste <strong style={{color:T.text}}>$ 12,4M</strong> y te quedaron <strong style={{color:T.green}}>$ 4,1M</strong> de ganancia neta (33%), 12% más que el mes pasado.<br/><br/>
+              La campaña <strong style={{color:T.text}}>"Remarketing 30 días"</strong> de Meta tiene ROAS 1,2 contra un equilibrio de 2,1: está perdiendo plata. Te conviene pausarla.
+            </div>
+            <div style={{alignSelf:"flex-end",maxWidth:"85%",background:T.accentSolid+"22",border:`1px solid ${T.accentSolid}44`,borderRadius:"14px 14px 4px 14px",padding:"10px 13px",fontSize:13,lineHeight:1.5}}>¿Qué productos se me están por agotar?</div>
+            <div style={{alignSelf:"flex-start",maxWidth:"92%",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:"14px 14px 14px 4px",padding:"11px 13px",fontSize:13,lineHeight:1.6,color:T.textMd}}>Al <strong style={{color:T.text}}>Producto A · Negro</strong> le quedan 4 días de stock al ritmo actual, y el <strong style={{color:T.text}}>Producto C · Talle M</strong> ya está agotado.</div>
+          </div>)}
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div className="gh-land-card" style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:"20px",flex:1}}>
+              {tarjetaIco("chat","#a855f7")}
+              <div style={{fontSize:16,fontWeight:800,marginBottom:6}}>Copilot dentro de Growith</div>
+              <div style={{fontSize:13,color:T.textSm,lineHeight:1.65}}>Un chat que conoce tus ventas, tu margen, tus campañas, tu stock y tus envíos. Te arma el resumen del día, te guía para configurar la cuenta y ejecuta acciones solo cuando vos confirmás.</div>
+            </div>
+            <div className="gh-land-card" style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:"20px",flex:1}}>
+              <div style={{display:"flex",gap:8,marginBottom:12}}>{["Claude","ChatGPT","Gemini"].map(k=><span key={k}>{chip(k,20,36)}</span>)}</div>
+              <div style={{fontSize:16,fontWeight:800,marginBottom:6}}>Conectalo a Claude, ChatGPT o Gemini</div>
+              <div style={{fontSize:13,color:T.textSm,lineHeight:1.65}}>Agregás Growith como conector en la IA que ya usás y le preguntás por ventas, rentabilidad de cualquier período, campañas de Meta, Google y TikTok, stock y envíos. Es de solo lectura: no puede cambiar nada.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Un día con Growith */}
+      <div id="gh-landing-dia" style={{background:T.surface+"66",borderTop:`1px solid ${T.borderL}`,borderBottom:`1px solid ${T.borderL}`,padding:"72px 20px"}}>
+        <div style={secKicker}>En la práctica</div>
+        <h2 style={secTitle}>Un día cualquiera con Growith</h2>
+        <p style={secSub}>Lo que hoy te lleva el día entero entre pestañas y planillas, con Growith se resuelve desde un solo lugar.</p>
+        <div style={{maxWidth:760,margin:"0 auto",position:"relative"}}>
+          <div style={{position:"absolute",left:27,top:10,bottom:10,width:2,background:`linear-gradient(180deg, ${T.accentSolid}66, ${T.accentSolid}11)`}}/>
+          {DIA.map(([h,t,d,gi])=>(
+            <div key={h} style={{display:"flex",gap:18,alignItems:"flex-start",position:"relative",padding:"10px 0"}}>
+              <div style={{width:56,height:56,borderRadius:16,background:T.card,border:`1px solid ${T.accentSolid}55`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1,color:T.accent,boxShadow:`0 0 0 5px ${T.bg}`}}>
+                <GhI n={gi} size={15}/>
+                <span style={{fontSize:10.5,fontWeight:800,color:T.text,marginTop:2}}>{h}</span>
+              </div>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"14px 18px",flex:1}}>
+                <div style={{fontSize:15,fontWeight:700,marginBottom:4}}>{t}</div>
+                <div style={{fontSize:13,color:T.textSm,lineHeight:1.6}}>{d}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"8px 20px 64px"}}>
         {/* Banda de valor: el argumento económico — apps sueltas vs Growith */}
         <div style={{marginTop:56,background:`linear-gradient(135deg, ${T.accentSolid}14, ${T.accentSolid}06)`,border:`1px solid ${T.accentSolid}33`,borderRadius:18,padding:"30px 26px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:26,textAlign:"center"}}>
           {[
@@ -14974,6 +15264,59 @@ function LandingPage({T, onLogin}) {
           <div style={{fontSize:12,color:T.textSm,lineHeight:1.65,marginTop:8,fontStyle:"italic"}}>
             Growith is a SaaS management platform for e-commerce merchants. Each merchant connects their own Google Ads account via OAuth so Growith can import
             their advertising cost (read-only reporting) into their private profitability dashboard. No campaign management, no ad serving, no cross-account data sharing.
+          </div>
+        </div>
+      </div>
+
+      {/* Integraciones por categoría */}
+      <div id="gh-landing-integraciones" style={{background:T.surface+"66",borderTop:`1px solid ${T.borderL}`,borderBottom:`1px solid ${T.borderL}`,padding:"72px 20px"}}>
+        <div style={secKicker}>Integraciones</div>
+        <h2 style={secTitle}>Todo tu stack, conectado en un solo lugar</h2>
+        <p style={secSub}>Growith se conecta con las plataformas que ya usás, con sus accesos oficiales. Sin exportar planillas ni copiar datos.</p>
+        <div style={{maxWidth:1080,margin:"0 auto",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:14}}>
+          {CATEGORIAS.map(c=>(
+            <div key={c.t} className="gh-land-card" style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:"20px"}}>
+              <div style={{fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:0.7,color:T.accent,marginBottom:6}}>{c.t}</div>
+              <div style={{fontSize:13,color:T.textSm,lineHeight:1.55,marginBottom:14}}>{c.d}</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+                {c.items.map(([b,n])=>(
+                  <span key={n} style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:13,fontWeight:700,color:T.textMd,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"5px 10px 5px 5px"}}>
+                    {chip(b,16,28)}{n}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Seguridad + Para quién */}
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"72px 20px 64px"}}>
+        <div style={secKicker}>Seguridad</div>
+        <h2 style={secTitle}>Tus datos, bajo tu control</h2>
+        <p style={secSub}>Growith trabaja con los datos de tu negocio, así que los cuidamos como si fueran nuestros.</p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14}}>
+          {SEGURIDAD.map(s=>(
+            <div key={s.t} className="gh-land-card" style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:"20px"}}>
+              {tarjetaIco(s.gi,T.green)}
+              <div style={{fontSize:15,fontWeight:700,marginBottom:6}}>{s.t}</div>
+              <div style={{fontSize:13,color:T.textSm,lineHeight:1.6}}>{s.d}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{marginTop:72}}>
+          <div style={secKicker}>Para quién es</div>
+          <h2 style={secTitle}>Hecho para e-commerce argentinos</h2>
+          <p style={secSub}>Pensado para las plataformas, los medios de pago, la logística y la facturación de Argentina.</p>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14}}>
+            {PARA_QUIEN.map(p=>(
+              <div key={p.t} className="gh-land-card" style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:"20px"}}>
+                {tarjetaIco(p.gi)}
+                <div style={{fontSize:15,fontWeight:700,marginBottom:6}}>{p.t}</div>
+                <div style={{fontSize:13,color:T.textSm,lineHeight:1.6}}>{p.d}</div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -15036,6 +15379,30 @@ function LandingPage({T, onLogin}) {
             <div style={{fontSize:11,color:T.textSm,marginTop:10}}>Sin tarjeta · Sin renovación automática · Cancelás cuando quieras</div>
           </div>
         </div>
+        <div style={{maxWidth:720,margin:"24px auto 0",textAlign:"center",fontSize:13,color:T.textSm,lineHeight:1.6}}>
+          ¿Manejás más de una marca? Sumá tiendas a tu mismo login: <strong style={{color:T.textMd}}>+USD 5, 10 o 15 por mes</strong> cada una, según el plan.
+        </div>
+      </div>
+
+      {/* Preguntas frecuentes */}
+      <div id="gh-landing-faq" style={{maxWidth:820,margin:"0 auto",padding:"72px 20px 16px"}}>
+        <div style={secKicker}>Preguntas frecuentes</div>
+        <h2 style={secTitle}>Lo que nos preguntan antes de empezar</h2>
+        <p style={secSub}>Si te queda alguna duda, escribinos y te respondemos nosotros.</p>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {FAQ.map(([q,a],i)=>{
+            const abierta=faqAbierta===i;
+            return (
+              <div key={q} style={{background:T.card,border:`1px solid ${abierta?T.accentSolid+"66":T.border}`,borderRadius:14,overflow:"hidden",transition:"border-color 0.15s ease"}}>
+                <button onClick={()=>setFaqAbierta(abierta?-1:i)} aria-expanded={abierta} style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"16px 18px",background:"transparent",border:"none",cursor:"pointer",textAlign:"left",fontFamily:F,color:T.text,fontSize:14.5,fontWeight:700}}>
+                  <span style={{flex:1}}>{q}</span>
+                  <span style={{color:T.accent,fontSize:18,fontWeight:700,transform:abierta?"rotate(45deg)":"none",transition:"transform 0.15s ease"}}>+</span>
+                </button>
+                {abierta&&<div style={{padding:"0 18px 16px",fontSize:13.5,color:T.textMd,lineHeight:1.7}}>{a}</div>}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* CTA final */}
@@ -15052,15 +15419,34 @@ function LandingPage({T, onLogin}) {
       </div>
 
       {/* Footer */}
-      <div style={{maxWidth:"100%",margin:"0 auto",padding:"36px 20px 48px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:700}}>
-          <img src="/logo-color.png" alt="" style={{width:20,height:20,borderRadius:5}}/> Growith
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"48px 20px 40px"}}>
+        <div className="gh-land-foot" style={{display:"grid",gridTemplateColumns:"1.6fr 1fr 1fr 1fr",gap:28}}>
+          <div>
+            <div style={{display:"flex",alignItems:"center",gap:8,fontSize:15,fontWeight:800,marginBottom:10}}>
+              <img src="/logo-color.png" alt="" style={{width:24,height:24,borderRadius:6}}/> Growith
+            </div>
+            <div style={{fontSize:12.5,color:T.textSm,lineHeight:1.6,maxWidth:300}}>La plataforma de gestión para e-commerce argentinos: ventas, rentabilidad, publicidad, stock, envíos y facturación en un solo lugar.</div>
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:0.7,color:T.textMd,marginBottom:10}}>Producto</div>
+            {[["Funciones","gh-landing-features"],["Módulos","gh-landing-modulos"],["Inteligencia artificial","gh-landing-ia"],["Precios","gh-landing-precios"],["Preguntas frecuentes","gh-landing-faq"]].map(([l,id])=>(
+              <button key={id} onClick={()=>irA(id)} style={{display:"block",background:"none",border:"none",padding:"3px 0",cursor:"pointer",fontFamily:F,fontSize:12.5,color:T.textSm,textAlign:"left"}}>{l}</button>
+            ))}
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:0.7,color:T.textMd,marginBottom:10}}>Integraciones</div>
+            {["Tienda Nube · Shopify","Mercado Libre · Mercado Pago","Meta · Google · TikTok Ads","Andreani · ARCA","Claude · ChatGPT · Gemini"].map(l=>(
+              <div key={l} style={{fontSize:12.5,color:T.textSm,padding:"3px 0"}}>{l}</div>
+            ))}
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:0.7,color:T.textMd,marginBottom:10}}>Contacto y legal</div>
+            <a href="mailto:contacto.growith@gmail.com" style={{display:"block",fontSize:12.5,color:T.textSm,padding:"3px 0"}}>contacto.growith@gmail.com</a>
+            <a href="/privacidad.html" style={{display:"block",fontSize:12.5,color:T.textSm,padding:"3px 0"}}>Privacidad</a>
+            <a href="/terminos.html" style={{display:"block",fontSize:12.5,color:T.textSm,padding:"3px 0"}}>Términos</a>
+          </div>
         </div>
-        <div style={{fontSize:12,color:T.textSm,display:"flex",gap:14,flexWrap:"wrap"}}>
-          <a href="/privacidad.html" style={{color:T.textSm}}>Privacidad</a>
-          <a href="/terminos.html" style={{color:T.textSm}}>Términos</a>
-          <a href="mailto:contacto.growith@gmail.com" style={{color:T.textSm}}>contacto.growith@gmail.com</a>
-        </div>
+        <div style={{borderTop:`1px solid ${T.borderL}`,marginTop:28,paddingTop:18,fontSize:11.5,color:T.textSm}}>© {new Date().getFullYear()} Growith · Hecho en Argentina</div>
       </div>
     </div>
   );
