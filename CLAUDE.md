@@ -137,6 +137,7 @@ Ambas producen el mismo resultado visual. Usá la que más te convenga en cada c
 | Tienda Nube | ✅ Activo | Firestore `users/{uid}.stores[]` type="tiendanube" |
 | Shopify | ✅ OAuth listo | Firestore `users/{uid}.stores[]` type="shopify" |
 | Mercado Libre | ✅ Activo | Firestore `users/{uid}.stores[]` type="mercadolibre" |
+| Mercado Pago (cobros) | ✅ Activo | Firestore `users/{uid}.stores[]` type="mercadopago" — mismo OAuth de ML con `proposito:"mp"`; solo para leer comisiones reales de MP (Shopify); NO cuenta como tienda ML. Al conectar setea `margenesMlMp`. Tienda Nube no la necesita: sus cargos salen de `GET /orders/{id}?aggregates=transactions` (cache `margenesTnFees`) |
 | Meta Ads | ⚠️ Token vencido | Firestore `users/{uid}.metaAccounts[]` |
 | ARCA (AFIP) | ✅ Activo | Firestore `users/{uid}.cuits[]` |
 | Andreani en checkout Shopify | ✅ CarrierService | `users/{uid}.andreaniCheckout` {activo, carrierId, gratisDesde, sucursalesMax, recargoPct/Fijo, domicilio, sucursal, bulto} |

@@ -15592,6 +15592,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
       url.searchParams.delete("shopify_error");
       url.searchParams.delete("status");
       window.history.replaceState({},"",url.pathname+url.search);
+    } else if(url.searchParams.get("mp_success")){
+      setMsg("Mercado Pago conectado ✓ — ya se leen las comisiones reales de cada cobro");
+      url.searchParams.delete("mp_success");
+      window.history.replaceState({},"",url.pathname+url.search);
     } else if(mlSuccess){
       setMsg("Mercado Libre conectado ✓");
       url.searchParams.delete("ml_success");
@@ -15885,6 +15889,28 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
     } finally { setSaving(false); }
   }
 
+  // Cuenta de COBRO de Mercado Pago (misma pantalla de autorización que ML,
+  // porque MP y ML comparten usuario): solo para leer las comisiones reales
+  // de los pagos. No cuenta como tienda de Mercado Libre.
+  async function connectMP() {
+    setConnectingML(true);
+    try {
+      const r = await fetch("/api/integrations?platform=mercadolibre&action=oauth_start", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ uid: user.uid, proposito:"mp" }),
+      });
+      const d = await r.json();
+      if(d.error) { setMsg("Error: "+d.error); setConnectingML(false); return; }
+      window.location.href = d.url;
+    } catch(e) { setMsg("Error de red: "+e.message); setConnectingML(false); }
+  }
+  async function disconnectMP() {
+    if(!await appConfirm("¿Desvincular la cuenta de cobro de Mercado Pago? Las comisiones de Shopify volverán a estimarse.",{danger:true,okLabel:"Desvincular"})) return;
+    setSaving(true);
+    try { await authFetch(`/api/integrations?platform=mercadolibre&action=disconnect&uid=${user.uid}`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ uid:user.uid, proposito:"mp" }) }); setMsg("Mercado Pago desvinculado."); }
+    catch(e){ setMsg("Error: "+e.message); }
+    setSaving(false);
+  }
   async function connectML() {
     setConnectingML(true);
     try {
@@ -15921,6 +15947,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
   const tnStore=userDoc?.stores?.find(s=>s.type==="tiendanube");
   const shStore=userDoc?.stores?.find(s=>s.type==="shopify");
   const mlStore=userDoc?.stores?.find(s=>s.type==="mercadolibre");
+  const mpStore=userDoc?.stores?.find(s=>s.type==="mercadopago");
   const metaConnected=!!userDoc?.meta_active_account;
   const alertasCfg=userDoc?.alertas||{recordatorio:true,sinrespuesta:true,contenido:true};
 
@@ -16019,10 +16046,16 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               onConnect:()=>setShowShopifyModal(true), onDisconnect:()=>disconnectStore("shopify"),
             },
             {
-              key:"ml", group:"Marketplace", label:"Mercado Libre / Mercado Pago", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "Ventas, preguntas, mensajes y reputación · incluye Mercado Pago (comisiones, cupones y envíos)",
+              key:"ml", group:"Marketplace", label:"Mercado Libre", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "Ventas, publicaciones, preguntas, mensajes y reputación",
               connected:!!mlStore, disabled:false, brand:"#FFE600", iconBg:"#fff",
               icon:<BrandIcon name="mercadolibre" size={34}/>,
               onConnect:()=>setShowMLModal(true), onDisconnect:()=>disconnectStore("mercadolibre"),
+            },
+            {
+              key:"mp", group:"Marketplace", label:"Mercado Pago (cobros)", sub: mpStore ? (mpStore.nickname||mpStore.email||mpStore.userId) : (shStore ? "La cuenta con la que cobrás en Shopify: lee la comisión real de cada pago" : "Solo hace falta si cobrás por MP fuera de Tienda Nube (Shopify). En Tienda Nube las comisiones se leen solas"),
+              connected:!!mpStore, disabled:false, brand:"#00B1EA", iconBg:"#fff",
+              icon:<BrandIcon name="mercadopago" size={30}/>,
+              onConnect:connectMP, onDisconnect:disconnectMP,
             },
             {
               key:"meta", group:"Publicidad", label:"Meta Ads", sub: metaConnected ? "Facebook + Instagram" : "Facebook + Instagram: campañas, reglas y publicación desde Growith",

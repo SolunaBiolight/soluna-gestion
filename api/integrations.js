@@ -544,6 +544,9 @@ async function mercadolibreOauthStart(req, res, db) {
     await db.collection("oauth_pending").doc(state).set({
       uid: String(uid),
       platform: "mercadolibre",
+      // "mp": la cuenta se conecta SOLO para leer los cobros de Mercado Pago
+      // (Shopify): se guarda como type "mercadopago" y no cuenta como tienda ML.
+      proposito: body.proposito === "mp" ? "mp" : "ml",
       client_id:     ML_CLIENT_ID,
       client_secret: ML_CLIENT_SECRET,
       created_at: new Date().toISOString(),
@@ -635,9 +638,13 @@ async function mercadolibreOauthCallback(req, res, db) {
     // Permitimos VARIAS cuentas de ML conectadas: solo reemplazamos si es la MISMA
     // (mismo userId de ML), sino conservamos las otras. Así podés tener el ML de una
     // tienda para ventas y el de otra para leer los pagos de MP.
-    const stores = currentStores.filter(s => !(s.type === "mercadolibre" && String(s.userId) === String(user_id)));
+    const esMp = pending.proposito === "mp";
+    // Cuenta de cobro (MP): una sola por cuenta de Growith → reemplaza la anterior.
+    const stores = esMp
+      ? currentStores.filter(s => s.type !== "mercadopago")
+      : currentStores.filter(s => !(s.type === "mercadolibre" && String(s.userId) === String(user_id)));
     stores.push({
-      type: "mercadolibre",
+      type: esMp ? "mercadopago" : "mercadolibre",
       userId: user_id,
       clientId,
       clientSecret,
@@ -649,7 +656,9 @@ async function mercadolibreOauthCallback(req, res, db) {
       connectedAt: new Date().toISOString(),
     });
     const extra = snap.exists ? {} : { uid, email: email || "", nombre: nickname || (email || "").split("@")[0] || "", createdAt: new Date(), plan: "free", trialEnd: new Date(Date.now() + 14 * 864e5) };
-    await userRef.set({ ...extra, stores }, { merge: true });
+    // La cuenta de cobro pasa a ser la que lee los pagos de MP en Márgenes.
+    await userRef.set({ ...extra, stores, ...(esMp ? { margenesMlMp: String(user_id) } : {}) }, { merge: true });
+    if (esMp) return res.redirect(`${SHOPIFY_APP_URL}?mp_success=1`);
   } catch (e) {
     console.error("[ml-callback] save error:", e.message);
     return res.redirect(`${SHOPIFY_APP_URL}?ml_error=save_failed`);
@@ -667,8 +676,14 @@ async function mercadolibreDisconnect(req, res, db) {
   const userRef = db.collection("users").doc(uid);
   const snap = await userRef.get();
   if (!snap.exists) return res.status(404).json({ error: "Usuario no encontrado" });
-  const stores = (snap.data().stores || []).filter(s => s.type !== "mercadolibre");
-  await userRef.update({ stores });
+  const esMp = body.proposito === "mp";
+  const stores = (snap.data().stores || []).filter(s => s.type !== (esMp ? "mercadopago" : "mercadolibre"));
+  const patchDoc = { stores };
+  if (esMp) {
+    const mpUid = String((snap.data().stores || []).find(s => s.type === "mercadopago")?.userId || "");
+    if (mpUid && String(snap.data().margenesMlMp || "") === mpUid) patchDoc.margenesMlMp = "";
+  }
+  await userRef.update(patchDoc);
 
   return res.json({ ok: true });
 }
@@ -683,7 +698,9 @@ export async function getValidMLToken(db, uid, targetUserId = null) {
   const snap = await userRef.get();
   if (!snap.exists) return null;
   const stores = snap.data().stores || [];
-  const mls = stores.filter(s => s.type === "mercadolibre");
+  // Cuentas de ML (ventas) primero; la cuenta de cobro (type "mercadopago",
+  // conectada solo para leer MP) se usa cuando se la pide por userId.
+  const mls = [...stores.filter(s => s.type === "mercadolibre"), ...stores.filter(s => s.type === "mercadopago")];
   const ml = targetUserId
     ? (mls.find(s => String(s.userId) === String(targetUserId)) || mls[0])
     : mls[0];
@@ -718,7 +735,7 @@ export async function getValidMLToken(db, uid, targetUserId = null) {
     // Preservar userId original si ML no devuelve uno nuevo en el refresh
     userId: t.user_id || ml.userId,
   };
-  const newStores = stores.map(s => (s.type === "mercadolibre" && String(s.userId) === String(ml.userId)) ? newStore : s);
+  const newStores = stores.map(s => (s.type === ml.type && String(s.userId) === String(ml.userId)) ? newStore : s);
   await userRef.update({ stores: newStores });
   return { accessToken: newStore.accessToken, userId: newStore.userId || ml.userId };
 }

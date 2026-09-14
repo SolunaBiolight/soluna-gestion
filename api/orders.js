@@ -516,7 +516,8 @@ export default async function handler(req, res) {
       // Con varios ML conectados: qué cuenta se usa para leer los pagos de MP
       // (comisiones de Shopify) y cuál para importar las ventas de ML. Vacío =
       // primera cuenta (comportamiento de siempre con 1 solo ML).
-      const mlMpAcc     = String(userData.margenesMlMp || "") || null;
+      const mpStoreAcc  = (userData.stores || []).find(s => s.type === "mercadopago");
+      const mlMpAcc     = String(userData.margenesMlMp || "") || (mpStoreAcc ? String(mpStoreAcc.userId) : null);
       const mlVentasAcc = String(userData.margenesMlVentas || "") || null;
       // El OAuth guarda type "mercadolibre" (integrations.js) — el chequeo viejo
       // por "meli" nunca matcheaba y Mercado Ads automático quedaba siempre en 0.
