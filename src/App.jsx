@@ -14983,7 +14983,7 @@ function LandingPage({T, onLogin}) {
             <span style={{background:"linear-gradient(92deg,#818cf8 0%,#a78bfa 45%,#6366f1 100%)",WebkitBackgroundClip:"text",backgroundClip:"text",color:"transparent"}}>A un clic.</span>
           </h1>
           <p className="gh-land-up" style={{fontSize:16,color:T.textMd,lineHeight:1.65,maxWidth:660,margin:"0 auto 30px",animationDelay:"0.12s"}}>
-            Márgenes, pedidos, envíos, stock, reclamos, facturación, publicidad y Mercado Libre de tu Tienda Nube, Shopify y Mercado Libre, en un solo lugar.
+            Márgenes, pedidos, envíos, stock, reclamos, facturación y publicidad de tu Tienda Nube, Shopify y Mercado Libre, en un solo lugar.
             Entrás y en un vistazo sabés <strong style={{color:T.text}}>qué pasó, qué falta y qué tenés que resolver hoy</strong>.
           </p>
           <div className="gh-land-up" style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap",animationDelay:"0.18s"}}>
