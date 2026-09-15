@@ -11689,7 +11689,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       {((seguimientoProgress.active&&!seguimientoProgress.min)||seguimientoProgress.done)&&ReactDOM.createPortal(
         <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}
           onClick={seguimientoProgress.done?()=>{_ghSegLastResult=null;setSeguimientoProgress(p=>({...p,done:false}));}:undefined}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.done?(seguimientoProgress.ok===0?T.red+"55":T.orange+"55"):T.green+"44"}`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
+          <div style={{background:T.card,borderRadius:16,padding:"32px 36px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.done?(seguimientoProgress.ok===0?T.red+"55":T.orange+"55"):T.green+"44"}`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
             onClick={e=>e.stopPropagation()}>
             {!seguimientoProgress.done ? (
               <>
@@ -11773,7 +11773,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           como toast (sin modal); si hubo esquinas se abre directo su modal. */}
       {exporting&&ReactDOM.createPortal(
         <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${T.blue}44`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
+          <div style={{background:T.card,borderRadius:16,padding:"32px 36px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${T.blue}44`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
             onClick={e=>e.stopPropagation()}>
               <>
                 <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
@@ -11798,7 +11798,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   {[{label:"Ubicaciones",done:exportProgress.pct>=30},{label:"Verificar",done:exportProgress.pct>=50},{label:"Generar",done:exportProgress.pct>=80},{label:"Descargar",done:exportProgress.pct>=90}].map((s,i)=>(
                     <div key={i} style={{flex:1,textAlign:"center"}}>
                       <div style={{width:8,height:8,borderRadius:"50%",background:s.done?T.green:T.borderL,margin:"0 auto 4px",transition:"background 0.3s"}}/>
-                      <div style={{fontSize:9,color:s.done?T.green:T.textSm,fontWeight:s.done?600:400,transition:"color 0.3s"}}>{s.label}</div>
+                      <div style={{fontSize:10,color:s.done?T.green:T.textSm,fontWeight:s.done?600:400,transition:"color 0.3s"}}>{s.label}</div>
                     </div>
                   ))}
                 </div>
@@ -12020,7 +12020,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         onMouseEnter={e=>{if(!allPageSelected)e.currentTarget.style.background=T.surface;}}
                         onMouseLeave={e=>{if(!allPageSelected)e.currentTarget.style.background="transparent";}}>
                         <div style={{width:15,height:15,borderRadius:3,border:`1.5px solid ${allPageSelected?T.accentSolid:T.border}`,background:allPageSelected?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                          {allPageSelected&&<span style={{color:"#fff",fontSize:9,lineHeight:1}}>✓</span>}
+                          {allPageSelected&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
                         </div>
                         <span style={{flex:1,fontWeight:allPageSelected?600:400}}>Esta página</span>
                         <span style={{fontSize:11,color:T.textSm}}>{pageOrders.length} pedidos</span>
@@ -12041,7 +12041,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                                 onMouseEnter={e=>{if(!full)e.currentTarget.style.background=T.surface;}}
                                 onMouseLeave={e=>{if(!full)e.currentTarget.style.background="transparent";}}>
                                 <div style={{width:15,height:15,borderRadius:3,border:`1.5px solid ${full?T.accentSolid:cnt>0?T.accent:T.border}`,background:full?T.accentSolid:cnt>0?T.accent+"25":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                                  {full&&<span style={{color:"#fff",fontSize:9,lineHeight:1}}>✓</span>}
+                                  {full&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
                                   {!full&&cnt>0&&<span style={{color:T.accent,fontSize:10,lineHeight:1}}>–</span>}
                                 </div>
                                 <span style={{flex:1,fontWeight:full?600:400}}>Página {pi+1}</span>
@@ -12152,10 +12152,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 )}
                 {/* Scroll horizontal en pantallas chicas — la grilla de 7 columnas
                     fijas antes se aplastaba/desbordaba en mobile */}
-                <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><div style={{minWidth:720}}>
+                <div style={{overflowX:esMobile?"visible":"auto",WebkitOverflowScrolling:"touch"}}><div style={{minWidth:esMobile?0:720}}>
                 {/* En Por empaquetar / Por enviar la columna Estado era redundante
-                    (todas las filas decían lo mismo): solo se muestra en Buscar. */}
-                <div style={{display:"grid",gridTemplateColumns:tabEnvio==="buscar"?"40px 80px 1fr 1fr 150px 160px 110px":"40px 80px 1.2fr 1fr 190px 110px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
+                    (todas las filas decían lo mismo): solo se muestra en Buscar.
+                    En mobile la tabla pasa a tarjetas (áreas de grilla) sin scroll horizontal. */}
+                <div style={{display:esMobile?"none":"grid",gridTemplateColumns:tabEnvio==="buscar"?"40px 80px 1fr 1fr 150px 160px 110px":"40px 80px 1.2fr 1fr 190px 110px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
                   <span/><span>Pedido</span><span>Cliente</span><span>Productos</span>
                   {tabEnvio==="buscar"&&<span>Estado</span>}
                   <span>Envío{andreani.enabled?" · etiqueta":""}</span>
@@ -12168,29 +12169,29 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   return (
                     <div key={o.numero} onClick={()=>setOrderDetail(o)}
                       role="row" tabIndex={0} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); setOrderDetail(o); } }}
-                      style={{display:"grid",gridTemplateColumns:tabEnvio==="buscar"?"40px 80px 1fr 1fr 150px 160px 110px":"40px 80px 1.2fr 1fr 190px 110px",gap:8,padding:compactMode?"8px 14px":"13px 14px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":"transparent",boxShadow:sel?`inset 2px 0 0 ${T.accentSolid}`:"none",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`,outline:"none"}}
+                      style={{display:"grid",gridTemplateColumns:esMobile?"32px 1fr auto":tabEnvio==="buscar"?"40px 80px 1fr 1fr 150px 160px 110px":"40px 80px 1.2fr 1fr 190px 110px",gridTemplateAreas:esMobile?(tabEnvio==="buscar"?`"chk ped tot" "chk cli cli" "chk pro pro" "chk est est" "chk env env"`:`"chk ped tot" "chk cli cli" "chk pro pro" "chk env env"`):"none",gap:esMobile?"4px 8px":8,padding:compactMode?"8px 14px":esMobile?"12px 14px":"13px 14px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":"transparent",boxShadow:sel?`inset 2px 0 0 ${T.accentSolid}`:"none",alignItems:esMobile?"start":"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`,outline:"none"}}
                       onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.surface;}}
                       onMouseLeave={e=>{if(!sel)e.currentTarget.style.background="transparent";}}>
                       {/* En mobile el target es más grande (dedo, no mouse): padding invisible alrededor del check */}
-                      <div role="checkbox" aria-checked={sel} aria-label={`Seleccionar pedido #${o.numero}`} onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e,o);}} style={{width:32,height:32,margin:-7,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1,cursor:"pointer"}}>
+                      <div role="checkbox" aria-checked={sel} aria-label={`Seleccionar pedido #${o.numero}`} onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e,o);}} style={{gridArea:esMobile?"chk":"auto",width:32,height:32,margin:esMobile?"-4px 0 0 -7px":-7,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1,cursor:"pointer"}}>
                         <div style={{width:esMobile?22:18,height:esMobile?22:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
                           {sel&&<span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
                         </div>
                       </div>
-                      <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                      <div style={{gridArea:esMobile?"ped":"auto",display:"flex",flexDirection:esMobile?"row":"column",alignItems:esMobile?"center":"flex-start",gap:esMobile?8:3}}>
                         <span style={{fontWeight:700,color:T.text,fontSize:13}}>#{o.numero}</span>
                         {exportedOn&&<span title="Exportado en Excel" style={{fontSize:10,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.border}`,borderRadius:4,padding:"1px 5px",width:"fit-content"}}>Excel {exportedOn}</span>}
                       </div>
-                      <div>
+                      <div style={{gridArea:esMobile?"cli":"auto",minWidth:0}}>
                         <div style={{fontSize:compactMode?12:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</div>
                         {!compactMode&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{o.localidad||o.ciudad}{o.provincia?`, ${o.provincia}`:""}</div>}
                       </div>
-                      <div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      <div style={{gridArea:esMobile?"pro":"auto",fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>
                         <LensDots productos={o.productos}/>
                         {!compactMode&&<span style={{marginLeft:6}}>{o.productos.map(p=>nombreCorto(p.nombre)).join(', ')}</span>}
                       </div>
-                      {tabEnvio==="buscar"&&<div><DSBadge T={T} color={ec.text||ec.dot} size="sm">{o.estadoEnvio}</DSBadge></div>}
-                      <div style={{display:"flex",flexDirection:"column",gap:4,minWidth:0}}>
+                      {tabEnvio==="buscar"&&<div style={{gridArea:esMobile?"est":"auto"}}><DSBadge T={T} color={ec.text||ec.dot} size="sm">{o.estadoEnvio}</DSBadge></div>}
+                      <div style={{gridArea:esMobile?"env":"auto",display:"flex",flexDirection:"column",gap:4,minWidth:0}}>
                         <div style={{fontSize:12,color:T.textMd,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}>
                           {/* Íconos distintos (antes eran el mismo path con otro color): tienda = sucursal, casa = domicilio */}
                           {o.esSucursal
@@ -12229,7 +12230,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       </div>
                       {/* El ✓ por fila se sacó: ensuciaba la tabla y empujaba a
                           marcar de a uno. Se marca en lote con los tildados. */}
-                      <span style={{fontSize:13,fontWeight:700,color:T.text,display:"flex",alignItems:"center",justifyContent:"flex-end"}}>
+                      <span style={{gridArea:esMobile?"tot":"auto",fontSize:13,fontWeight:700,color:T.text,display:"flex",alignItems:"center",justifyContent:"flex-end",fontVariantNumeric:"tabular-nums"}}>
                         {fmtMoney(o.total)}
                       </span>
                     </div>
@@ -12238,7 +12239,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 </div></div>
                 {/* Paginador */}
                 {totalPages>1&&(
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,padding:"14px 14px",borderTop:`0.5px solid ${T.borderL}`}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,padding:"14px 14px",borderTop:`1px solid ${T.borderL}`}}>
                     <button onClick={()=>setOrderPage(p=>p-1)} disabled={orderPage===0}
                       style={{...BtnSecondary(T),padding:"5px 10px",fontSize:12,opacity:orderPage===0?0.35:1,cursor:orderPage===0?"default":"pointer"}}>←</button>
                     {Array.from({length:totalPages},(_,i)=>{
@@ -12272,7 +12273,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           try{hist=JSON.parse(localStorage.getItem(ghKey("growith_exportHistory"))||"[]").slice(0,5);}catch(e){}
           if(!hist.length) return null;
           return (
-            <div style={{marginTop:24,borderTop:`0.5px solid ${T.borderL}`,paddingTop:20}}>
+            <div style={{marginTop:24,borderTop:`1px solid ${T.borderL}`,paddingTop:20}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em"}}>Últimas exportaciones</div>
                 <button onClick={()=>{localStorage.removeItem(ghKey("growith_exportHistory"));setTabCounts(c=>({...c}));/* fuerza re-render: antes el bloque quedaba visible */}} style={{fontSize:11,color:T.textSm,background:"none",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar</button>
@@ -12626,7 +12627,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   {casosAbiertos.slice(0,8).map(c=>{ const ev=enviosFs[c.numero]||Object.values(enviosFs).find(x=>String(x.numero)===String(c.numero)); const cc=ghEnvioCasoColor(T,c.estado); return (
                     <div key={c.id} onClick={()=>{ if(ev) setSegFicha(ev); }} style={{display:"flex",alignItems:"center",gap:10,background:T.surface,border:`1px solid ${T.borderL}`,borderLeft:`3px solid ${cc}`,borderRadius:8,padding:"8px 12px",fontSize:12,flexWrap:"wrap",cursor:ev?"pointer":"default"}}>
-                      <div style={{flex:1,minWidth:200}}><span style={{fontWeight:700,color:T.text}}>#{c.numero}</span>{c.cliente?<span style={{color:T.textMd}}> · {c.cliente}</span>:null}<div style={{color:T.textMd,fontSize:11.5}}>{c.motivoLabel}{c.historial?.length?<span style={{color:T.textSm}}> · {c.historial[c.historial.length-1].texto.slice(0,90)}</span>:null}</div></div>
+                      <div style={{flex:1,minWidth:200}}><span style={{fontWeight:700,color:T.text}}>#{c.numero}</span>{c.cliente?<span style={{color:T.textMd}}> · {c.cliente}</span>:null}<div style={{color:T.textMd,fontSize:12}}>{c.motivoLabel}{c.historial?.length?<span style={{color:T.textSm}}> · {c.historial[c.historial.length-1].texto.slice(0,90)}</span>:null}</div></div>
                       <DSBadge T={T} color={cc} size="sm">{c.estadoLabel}</DSBadge>
                     </div>
                   );})}
@@ -12681,18 +12682,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         <span style={{fontWeight:700,color:T.text,fontSize:13}}>#{e.numero}</span>
                         <div style={{minWidth:0}}>
                           <div style={{fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.cliente||"—"}{e.verificado&&<span title="Verificado por escaneo" style={{marginLeft:6,fontSize:10,color:T.green}}>✓</span>}</div>
-                          <div style={{fontSize:10.5,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[e.localidad,e.provincia].filter(Boolean).join(", ")||""}{e.esSucursal?" · sucursal":""}{esApi(e)?" · API":""}{e.creado?` · ${new Date(e.creado).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}`:""}</div>
+                          <div style={{fontSize:11,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[e.localidad,e.provincia].filter(Boolean).join(", ")||""}{e.esSucursal?" · sucursal":""}{esApi(e)?" · API":""}{e.creado?` · ${new Date(e.creado).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}`:""}</div>
                         </div>
                         <span><DSBadge T={T} color={col} size="sm">{lbl}</DSBadge></span>
                         <div style={{minWidth:0}}>
                           <div style={{fontSize:11,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={e.estadoAndreani||""}>{e.andreani?.anulada?"Etiqueta anulada":(e.estadoAndreani||(trk?"esperando el primer chequeo":"sin tracking aún"))}</div>
-                          {p&&<div style={{fontSize:10.5,color:p.sev==="red"?T.red:T.orange,fontWeight:600}}>{p.msg}</div>}
-                          {esApi(e)&&!p&&<div style={{fontSize:10.5,color:T.textSm}}>{fmtMoney(e.andreani?.precio||0)}{e.andreani?.fechaEstimadaDeEntrega&&!e.entregadoAt?` · llega ~${ghFechaCorta(e.andreani.fechaEstimadaDeEntrega)}`:""}</div>}
+                          {p&&<div style={{fontSize:11,color:p.sev==="red"?T.red:T.orange,fontWeight:600}}>{p.msg}</div>}
+                          {esApi(e)&&!p&&<div style={{fontSize:11,color:T.textSm}}>{fmtMoney(e.andreani?.precio||0)}{e.andreani?.fechaEstimadaDeEntrega&&!e.entregadoAt?` · llega ~${ghFechaCorta(e.andreani.fechaEstimadaDeEntrega)}`:""}</div>}
                         </div>
                         <span style={{textAlign:"right",color:T.textSm,fontVariantNumeric:"tabular-nums"}} title={e.entregadoAt?"despacho a entrega":"desde el despacho"}>{tiempo}</span>
                         <div style={{display:"flex",gap:4,justifyContent:"flex-end",alignItems:"center"}}>
                           {trk?<>
-                            <button onClick={ev=>{ev.stopPropagation();setSegFicha(e);}} title="Abrir la ficha del envío" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 7px",fontSize:10.5,color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Cascadia Code','Consolas',monospace"}}>{trk}</button>
+                            <button onClick={ev=>{ev.stopPropagation();setSegFicha(e);}} title="Abrir la ficha del envío" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 7px",fontSize:11,color:T.accent,fontWeight:700,cursor:"pointer",fontFamily:"'Cascadia Code','Consolas',monospace"}}>{trk}</button>
                             <button onClick={ev=>{ev.stopPropagation();copiar(`https://www.andreani.com/envio/${trk}`,"Link de seguimiento copiado");}} title="Copiar link" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 6px",fontSize:10,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Link</button>
                           </>:<span style={{fontSize:10,color:T.textSm}}>—</span>}
                         </div>
@@ -12742,7 +12743,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     {pdfResults.map((r,i)=>{ const st=trackingSent[r.pedidoNum]; const sending=sendingTracking[r.pedidoNum]; return (
                       <div key={i} style={{display:"grid",gridTemplateColumns:"70px 1fr 90px",gap:8,padding:"8px 12px",borderBottom:i<pdfResults.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",fontSize:12}}>
                         <span style={{fontWeight:700,color:T.accent}}>#{r.pedidoNum||"--"}</span>
-                        <div style={{minWidth:0}}>{r.destinatario&&<div style={{color:T.text,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.destinatario}</div>}<div style={{fontSize:10.5,color:T.textSm,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{r.tracking||"Sin tracking"}</div></div>
+                        <div style={{minWidth:0}}>{r.destinatario&&<div style={{color:T.text,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.destinatario}</div>}<div style={{fontSize:11,color:T.textSm,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{r.tracking||"Sin tracking"}</div></div>
                         <div style={{display:"flex",justifyContent:"flex-end"}}>
                           {st==="ok"?<DSBadge T={T} color={T.green} size="sm">Enviado</DSBadge>:st==="warn"?<span title="El tracking se guardó pero la tienda no marcó la orden como enviada"><DSBadge T={T} color={T.orange} size="sm">Sin aviso</DSBadge></span>:st==="error"?<DSBadge T={T} color={T.red} size="sm">Error</DSBadge>:sending?<Spinner size={13} color={T.yellow}/>:sendBatchActive?<span style={{fontSize:11,color:T.textSm}}>En cola</span>:r.tracking&&r.pedidoNum?<AsyncButton onClick={()=>sendTracking(r)} style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px"}}>Enviar</AsyncButton>:<span style={{fontSize:11,color:T.red}}>Sin datos</span>}
                         </div>
@@ -12883,7 +12884,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   <div style={{display:"flex",gap:8,marginTop:6}}>
                     <button onClick={()=>{ if(v.tipo==="sucursal") sucursalOverridesRef.current[ovrKey(v.o)]="EXCLUIR"; else locationOverridesRef.current[ovrKey(v.o)]="EXCLUIR"; persistOverrides(); verifModal.resolve("REHACER"); }} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>Excluir del Excel</button>
                   </div>
-                  {v.diag&&(()=>{ try{ return localStorage.getItem("growith_diag")==="1"; }catch(_){ return false; } })()&&<div style={{fontSize:9.5,color:T.textSm,marginTop:5,fontFamily:"'Cascadia Code','Consolas',monospace",opacity:0.65,wordBreak:"break-word",lineHeight:1.5}}>diag: {v.diag}</div>}
+                  {v.diag&&(()=>{ try{ return localStorage.getItem("growith_diag")==="1"; }catch(_){ return false; } })()&&<div style={{fontSize:10,color:T.textSm,marginTop:5,fontFamily:"'Cascadia Code','Consolas',monospace",opacity:0.65,wordBreak:"break-word",lineHeight:1.5}}>diag: {v.diag}</div>}
                 </div>
               ))}
             </div>
@@ -13125,7 +13126,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 <div style={{marginBottom:14}}>
                   <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
                     {locCerca?.aproximado?`Sucursales de la zona del pedido${locCerca?.origen?` (${locCerca.origen})`:""}`:esquina?"Sucursales más cercanas a la dirección del pedido":"Sucursales más cercanas al punto del pedido"}
-                    {locCerca?.aproximado&&locCerca?.geoDiag&&<span style={{display:"block",fontSize:9.5,fontWeight:400,textTransform:"none",letterSpacing:0,opacity:0.65,marginTop:2}}>Completando ubicaciones… {locCerca.geoDiag} — reabrí en unos segundos</span>}
+                    {locCerca?.aproximado&&locCerca?.geoDiag&&<span style={{display:"block",fontSize:10,fontWeight:400,textTransform:"none",letterSpacing:0,opacity:0.65,marginTop:2}}>Completando ubicaciones… {locCerca.geoDiag} — reabrí en unos segundos</span>}
                   </div>
                   {locCerca?.loading?(
                     <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/> Buscando sucursales cercanas...</div>
@@ -13386,7 +13387,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                               )}
                             </td>
                             <td style={{padding:"7px 10px",color:T.textMd,fontSize:11,minWidth:150}}>
-                              {r.emitido?<span>{paqTxt(r.paq||exportCfg)}</span>:paqEdit===r.numero?(()=>{ const q=r.paq||{peso:exportCfg.peso,alto:exportCfg.alto,ancho:exportCfg.ancho,prof:exportCfg.prof,valor:exportCfg.valor}; const inp=(k,l,w)=><label style={{display:"inline-flex",flexDirection:"column",gap:2,fontSize:9,color:T.textSm}}>{l}<input type="number" min="0" defaultValue={q[k]} data-k={k} style={{...iS,marginBottom:0,width:w||52,fontSize:11,padding:"3px 6px"}}/></label>; return (
+                              {r.emitido?<span>{paqTxt(r.paq||exportCfg)}</span>:paqEdit===r.numero?(()=>{ const q=r.paq||{peso:exportCfg.peso,alto:exportCfg.alto,ancho:exportCfg.ancho,prof:exportCfg.prof,valor:exportCfg.valor}; const inp=(k,l,w)=><label style={{display:"inline-flex",flexDirection:"column",gap:2,fontSize:10,color:T.textSm}}>{l}<input type="number" min="0" defaultValue={q[k]} data-k={k} style={{...iS,marginBottom:0,width:w||52,fontSize:11,padding:"3px 6px"}}/></label>; return (
                                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                                   <div data-paq={r.numero} style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"flex-end"}}>{inp("peso","g")}{inp("alto","alto")}{inp("ancho","ancho")}{inp("prof","largo")}{inp("valor","$ decl.",70)}</div>
                                   <div style={{display:"flex",gap:6}}>
@@ -13824,7 +13825,7 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
   const filaCopy=(label,valor)=>(
     <div style={{display:"flex",alignItems:"center",gap:10,background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px"}}>
       <div style={{minWidth:0,flex:1}}>
-        <div style={{fontSize:9,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{label}</div>
+        <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{label}</div>
         <div style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:"'Cascadia Code','Consolas',monospace",overflow:"hidden",textOverflow:"ellipsis"}}>{valor}</div>
       </div>
       <button onClick={()=>copiar(valor)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",flexShrink:0}}>Copiar</button>
@@ -18623,9 +18624,9 @@ function EnvioTrazas({T, numero}){
         {evs.map((ev,i)=>(
           <div key={i} style={{position:"relative"}}>
             <span style={{position:"absolute",left:-20,top:5,width:9,height:9,borderRadius:"50%",background:i===0?T.accent:T.border}}/>
-            <div style={{fontSize:12.5,fontWeight:i===0?700:500,color:i===0?T.text:T.textMd}}>{ev.estado||"—"}</div>
+            <div style={{fontSize:12,fontWeight:i===0?700:500,color:i===0?T.text:T.textMd}}>{ev.estado||"—"}</div>
             {ev.desc&&<div style={{fontSize:11,color:T.textSm}}>{ev.desc}</div>}
-            <div style={{fontSize:10.5,color:T.textSm}}>{ev.t?new Date(ev.t).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):""}</div>
+            <div style={{fontSize:11,color:T.textSm}}>{ev.t?new Date(ev.t).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):""}</div>
           </div>
         ))}
       </div>
@@ -18701,10 +18702,10 @@ function EnvioFichaModal({T, envio:e, onClose, catInfo, problema, casos=[], onDe
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
                     <span style={{fontSize:13,fontWeight:700,color:T.text}}>{c.motivoLabel}</span>
                     <DSBadge T={T} color={cc} size="sm">{c.estadoLabel}</DSBadge>
-                    <span style={{fontSize:10.5,color:T.textSm,marginLeft:"auto"}}>{c.ts?new Date(c.ts).toLocaleDateString("es-AR",{day:"2-digit",month:"short"}):""}</span>
+                    <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{c.ts?new Date(c.ts).toLocaleDateString("es-AR",{day:"2-digit",month:"short"}):""}</span>
                   </div>
                   {(c.historial||[]).slice(-5).map((hh,i)=>(
-                    <div key={i} style={{fontSize:11.5,color:hh.por==="admin"?T.text:T.textMd,padding:"3px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
+                    <div key={i} style={{fontSize:12,color:hh.por==="admin"?T.text:T.textMd,padding:"3px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
                       <span style={{fontSize:10,fontWeight:700,color:hh.por==="andreani"?T.green:hh.por==="admin"?T.accent:T.textSm,marginRight:6}}>{hh.por==="andreani"?"Andreani":hh.por==="admin"?"Growith":hh.por==="sistema"?"Sistema":"Vos"}</span>{hh.texto}
                       <span style={{fontSize:10,color:T.textSm,marginLeft:6}}>{hh.at?new Date(hh.at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span>
                     </div>
@@ -18754,11 +18755,11 @@ function EnvioCasoModal({T, data, onClose, onCreated}){
           <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>¿Qué necesitás?</div>
           <div style={{display:"flex",flexDirection:"column",gap:5}}>
             {ENVIO_CASO_MOTIVOS.filter(([k])=>k!=="anulacion"||(data?.motivo==="anulacion")||ghEnvioSinIngreso(e)).map(([k,l])=>{ const on=motivo===k; return (
-              <button key={k} onClick={()=>setMotivo(k)} style={{textAlign:"left",padding:"8px 12px",borderRadius:9,border:`1.5px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid+"14":"transparent",color:on?T.accent:T.textMd,fontSize:12.5,fontWeight:on?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
+              <button key={k} onClick={()=>setMotivo(k)} style={{textAlign:"left",padding:"8px 12px",borderRadius:9,border:`1.5px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid+"14":"transparent",color:on?T.accent:T.textMd,fontSize:12,fontWeight:on?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
             );})}
           </div>
         </div>
-        <div style={{fontSize:11.5,color:T.textSm,lineHeight:1.5,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 12px"}}>{ayuda}</div>
+        <div style={{fontSize:12,color:T.textSm,lineHeight:1.5,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 12px"}}>{ayuda}</div>
         {motivo==="cambio"&&<div><div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Nueva dirección o fecha</div><input value={dir} onChange={ev=>setDir(ev.target.value)} placeholder="Calle 123, piso, localidad, CP — o 'viernes por la mañana'" style={{...iS,marginBottom:0}}/></div>}
         <div><div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{motivo==="anulacion"?"Comentario (opcional)":"Qué pasó"}</div><textarea value={desc} onChange={ev=>setDesc(ev.target.value)} rows={3} placeholder={motivo==="anulacion"?"Ej: el cliente canceló la compra":"Una o dos líneas alcanzan"} style={{...iS,marginBottom:0,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif"}}/></div>
         {motivo==="danado"&&(
