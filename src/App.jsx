@@ -11883,7 +11883,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de tu tienda se sincronizan solos, sin cargar nada a mano. En 'Por empaquetar' ves todo lo que falta despachar; cuando marcás un pedido como empaquetado pasa a 'Por enviar'. El botón 'Sincronizar' de arriba trae lo último al instante."},
                     {n:2,icon:"",title:"El paquete y el valor declarado",desc:"El botón 'Paquete' guarda las medidas, el peso y el valor declarado con los que se cotizan y emiten TODAS tus etiquetas. El valor declarado define el seguro que cobra Andreani (un % de ese valor) — no es el total de la venta: poné lo que realmente querés asegurar."},
                     {n:3,icon:"",title:"Etiquetas por Excel",desc:"En 'Por enviar', seleccioná pedidos y tocá 'Exportar XLSX': sale el Excel de carga masiva listo para subir al portal de Andreani (domicilio y sucursal/HOP en sus hojas correctas). Si el punto de retiro del cliente no existe en la lista de Andreani, se abre un selector con las sucursales más cercanas ordenadas por distancia para que elijas una."},
-                    {n:4,icon:"",title:"Emitir etiquetas (prepago)",desc:"Si tenés el prepago habilitado, el botón 'Emitir etiquetas' cotiza y emite directo por la API de Andreani: el PDF sale al instante y el costo se debita de tu saldo. También podés cotizar un pedido puntual con el chip 'Cotizar' de cada fila antes de decidir. Al descargar podés activar 'SKU en la etiqueta' para que los productos salgan impresos en Observaciones."},
+                    {n:4,icon:"",title:"Emitir etiquetas (prepago)",desc:"Si tenés el prepago habilitado, el botón 'Emitir etiquetas' cotiza y emite directo por la API de Andreani: el PDF sale al instante y el costo se debita de tu saldo. También podés cotizar un pedido puntual con el chip 'Cotizar' de cada fila antes de decidir. Al descargar podés activar 'SKU en la etiqueta' para que los productos salgan impresos en los recuadros de Orden de Ruteo del pie."},
                     {n:5,icon:"",title:"Saldo de envíos",desc:"El chip con la billetera (arriba a la derecha) muestra tu saldo. Tocalo, o el botón Cargar, para cargar: con Mercado Pago se acredita solo al instante, o por transferencia con referencia y lo acredita el equipo. Ahí mismo ves los movimientos (cada etiqueta descuenta) y tu sucursal de despacho."},
                     {n:6,icon:"",title:"Procesar rótulos",desc:"Subí el PDF de rótulos UNA sola vez en 'SKU en Rótulos': imprime el SKU de cada pedido en su etiqueta (para armar los paquetes sin errores) Y desde ahí mismo enviás los números de seguimiento a tu tienda, que le avisa al cliente por mail."},
                     {n:7,icon:"",title:"Seguimiento automático",desc:"Después del despacho, Growith consulta Andreani cada 30 minutos, sin que tengas la app abierta. En 'Seguimientos' ves cada envío por etapa: en camino, en sucursal (con días esperando), entregado o devolución, con alertas cuando algo se demora."},
@@ -13690,20 +13690,24 @@ async function ghEstamparSkuPdf(b64, lines){
   const {PDFDocument,StandardFonts,rgb}=await import("pdf-lib");
   const doc=await PDFDocument.load(ghB64ToBytes(b64));
   const font=await doc.embedFont(StandardFonts.HelveticaBold);
-  const txt=lines.join(" · ");
+  // Los tres recuadros "Orden de Ruteo" del pie de la etiqueta están vacíos y
+  // en el mismo lugar en todas: un producto por línea, hasta 3 líneas por
+  // recuadro (9 en total; si hay más, la última línea los junta).
   for(const page of doc.getPages()){
     const w=page.getWidth(), h=page.getHeight();
     const sx=w/284, sy=h/425;
-    const size=6.5*Math.min(sx,sy);
-    const rows=[{x:166*sx,y:h-84*sy,maxW:(278-166)*sx},{x:94*sx,y:h-93*sy,maxW:(278-94)*sx},{x:94*sx,y:h-102*sy,maxW:(278-94)*sx}];
-    const words=txt.split(" "); let li=0, cur="";
-    const flush=()=>{ if(cur&&rows[li]) page.drawText(cur,{x:rows[li].x,y:rows[li].y,size,font,color:rgb(0,0,0)}); };
-    for(const wd of words){
-      const test=cur?cur+" "+wd:wd;
-      if(rows[li]&&font.widthOfTextAtSize(test,size)<=rows[li].maxW) cur=test;
-      else { flush(); li++; cur=wd; if(li>=rows.length){ cur=""; break; } }
-    }
-    flush();
+    const size=7*Math.min(sx,sy);
+    const cols=[{x:8*sx,maxW:84*sx},{x:100*sx,maxW:86*sx},{x:195*sx,maxW:84*sx}];
+    const ys=[h-359*sy,h-367*sy,h-375*sy];
+    const slots=cols.length*ys.length;
+    let items=lines.slice();
+    if(items.length>slots) items=[...items.slice(0,slots-1),items.slice(slots-1).join(" · ")];
+    const ajustar=(t,maxW)=>{ let out=t; while(out.length>1&&font.widthOfTextAtSize(out,size)>maxW) out=out.slice(0,-2)+"…"; return out; };
+    items.forEach((t,i)=>{
+      const c=cols[Math.floor(i/ys.length)], y=ys[i%ys.length];
+      if(!c) return;
+      page.drawText(ajustar(String(t),c.maxW),{x:c.x,y,size,font,color:rgb(0,0,0)});
+    });
   }
   return ghBytesToB64(await doc.save());
 }
@@ -13711,7 +13715,7 @@ async function ghEstamparSkuPdf(b64, lines){
 function ghSkuPref(){ try{ return localStorage.getItem("growith_andreani_sku")==="1"; }catch(_){ return false; } }
 function AndreaniSkuToggle({T, on, onChange}){
   return (
-    <button onClick={()=>onChange(!on)} title="Imprime los SKU del pedido en el renglón Observaciones de la etiqueta" aria-pressed={on}
+    <button onClick={()=>onChange(!on)} title="Imprime los SKU del pedido en los recuadros de Orden de Ruteo del pie de la etiqueta" aria-pressed={on}
       style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",fontSize:11,fontWeight:on?600:400,border:`1px solid ${on?T.accent+"66":T.border}`,borderRadius:8,background:on?T.accent+"14":T.surface,color:on?T.accent:T.textMd,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>
       <span style={{width:8,height:8,borderRadius:"50%",background:on?T.accent:T.border,flexShrink:0}}/>SKU en la etiqueta
     </button>

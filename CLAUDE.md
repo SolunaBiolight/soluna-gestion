@@ -174,7 +174,7 @@ growith_stockouts_{uid}    → JSON[] historial de agotados
 growith_envios_cache_{uid} → JSON cache SWR de Envíos: {ts, tabs:{empaquetar,enviar}, counts}
 growith_exportCfg          → JSON config de paquete Andreani: {peso,alto,ancho,prof,valor}
 growith_andreani_fmt       → "a4" | "termica" (formato de descarga de etiquetas Andreani, sin uid: preferencia de impresora)
-growith_andreani_sku       → "1" | "0" "SKU en la etiqueta": al descargar una etiqueta emitida por API se estampan los productos del pedido (ghEstamparSkuPdf, pdf-lib en el navegador) en el renglón Observaciones. Nunca modifica el PDF que guarda Andreani. Para el flujo Excel el estampado sigue siendo el de "Subir PDF de rótulos" (api/process-sku.js)
+growith_andreani_sku       → "1" | "0" "SKU en la etiqueta": al descargar una etiqueta emitida por API se estampan los productos del pedido (ghEstamparSkuPdf, pdf-lib en el navegador) en los tres recuadros "Orden de Ruteo" del pie (un producto por línea, hasta 3 por recuadro; medida oficial 100x150 mm). Nunca modifica el PDF que guarda Andreani. Para el flujo Excel el estampado sigue siendo el de "Subir PDF de rótulos" (api/process-sku.js)
 (sessionStorage) growith_saldo_bajo_dismiss → "1" banner de saldo bajo de Envíos cerrado en esta sesión
 growith_exportHistory      → JSON[] historial local de exportaciones (fallback del historial en Firestore users/{uid}/envios)
 growith_locOverrides / growith_sucOverrides → JSON overrides de localidad/sucursal pendientes de export
