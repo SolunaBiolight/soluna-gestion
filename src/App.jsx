@@ -14775,9 +14775,9 @@ function LandingPage({T, onLogin}) {
     ]},
     {t:"Analytics", c:"#3b82f6", items:[
       {gi:"play", n:"Meta Ads", d:"Campañas, reglas automáticas y cuenta publicitaria."},
-      {gi:"search", n:"Google Ads", d:"Campañas de tus cuentas de Google, activas y pausadas."},
-      {gi:"store", n:"Mercado Libre", d:"Gestión, preguntas, mensajes, ventas y reputación."},
       {gi:"box", n:"Stock", d:"Inventario de todos tus canales y alertas de quiebre."},
+      {gi:"store", n:"Mercado Libre", d:"Gestión, preguntas, mensajes, ventas y reputación."},
+      {gi:"search", n:"Google Ads", d:"Campañas de tus cuentas de Google, activas y pausadas."},
       {gi:"video", n:"TikTok Ads", d:"Campañas de TikTok junto al resto.", soon:true},
     ]},
     {t:"Operaciones", c:"#f97316", items:[
@@ -14790,34 +14790,34 @@ function LandingPage({T, onLogin}) {
     {t:"Publicar", c:"#22c55e", items:[
       {gi:"upload", n:"Publicar en Meta", d:"Subí creativos y armá campañas sin salir de Growith."},
       {gi:"upload", n:"Publicar en Mercado Libre", d:"Publicaciones nuevas en tu cuenta de Mercado Libre."},
-      {gi:"upload", n:"Publicar en Google", d:"Campañas de Búsqueda y Performance Max."},
       {gi:"upload", n:"Publicar en TikTok", d:"Campañas con tus videos.", soon:true},
+      {gi:"upload", n:"Publicar en Google", d:"Campañas de Búsqueda y Performance Max."},
     ]},
   ];
 
   // ── Cada módulo en detalle (texto + vista de ejemplo, alternados) ──
   const MODULOS = [
-    {k:"Envíos", c:"#f97316", gi:"clip", t:"Todos tus envíos, sin entrar al portal de Andreani",
-      d:"Emitís las etiquetas desde tus pedidos y Growith sigue cada paquete hasta que llega. Los que se traban aparecen solos en tu Inicio.",
-      b:["Etiquetas Andreani por API o Excel, con el SKU impreso en el rótulo","Sucursal de retiro bien elegida, sin adivinar","Seguimiento automático y avisos al comprador por mail","Alertas de envíos demorados, en sucursal o con visita fallida","Gestiones con Andreani desde la ficha de cada envío","Andreani en el checkout de tu Shopify"], mock:"envios"},
-    {k:"Stock", c:"#22c55e", gi:"box", t:"Un solo stock para Tienda Nube, Shopify y Mercado Libre",
-      d:"Un inventario central por producto y variante, para saber qué tenés, qué se está por agotar y cuándo reponer.",
-      b:["Stock unificado por SKU entre todos tus canales","Alerta cuando a un producto le quedan pocos días","Días de reposición por producto","Historial de agotados"], mock:"stock"},
-    {k:"Reclamos", c:"#ef4444", gi:"alert", t:"Ningún reclamo ni cambio se pierde",
-      d:"Un tablero con cada reclamo, cambio o devolución y en qué etapa está. También los reclamos de Mercado Libre y los contracargos de Mercado Pago.",
-      b:["Tablero por etapas: nuevo, en gestión, enviado, resuelto","Seguimiento del envío de ida y de vuelta","Reclamos de Mercado Libre y contracargos de Mercado Pago aparte","Respondés al comprador desde Growith","Historial de todo lo resuelto"], mock:"reclamos"},
-    {k:"Mercado Libre", c:"#facc15", gi:"store", t:"Tu cuenta de Mercado Libre, sin abrir Mercado Libre",
-      d:"Preguntas, mensajes, ventas y reputación en el mismo lugar que el resto del negocio, con el contador de preguntas en el menú.",
-      b:["Respondé preguntas y mensajes desde Growith","Tus ventas de Mercado Libre junto a las de tu tienda","Reputación y métricas de la cuenta","Publicaciones nuevas desde Publicar en ML"], mock:"ml"},
-    {k:"Publicidad", c:"#3b82f6", gi:"play", t:"Tus campañas de Meta y Google en un solo lugar",
-      d:"Mirá cómo viene cada campaña, pausala o activala y publicá campañas nuevas sin entrar a cada administrador de anuncios.",
-      b:["Análisis de campañas de Meta Ads y Google Ads","Reglas automáticas en Meta","Publicá en Meta y en Google (Búsqueda y Performance Max)","El gasto publicitario entra solo a tus números","TikTok Ads, muy pronto"], mock:"campanas"},
-    {k:"Facturación", c:"#eab308", gi:"file", t:"Facturás sin copiar datos a mano",
-      d:"Growith toma las ventas de tu tienda y de Mercado Libre y emite las facturas en ARCA, con CAE, PDF y QR oficial.",
-      b:["Facturación automática de tus órdenes","Facturas y notas de crédito manuales","Monotributo y Responsable Inscripto","Varios CUITs y puntos de venta","La factura queda adjunta a la venta"], mock:"factura"},
     {k:"Finanzas", c:"#6366f1", gi:"calendar", t:"Tus números y tus pagos, ordenados",
       d:"El Dashboard te muestra facturación, costos y ganancia por canal, y el Calendario de pagos te recuerda lo que tenés que pagar antes de que venza.",
       b:["Dashboard por período y por canal","P&L mensual","Calendario de pagos: alquiler, proveedores, préstamos, cuotas y tarjetas","Aviso por mail el día anterior y el día del vencimiento","Comprobantes de pago guardados en cada obligación"], mock:"pagos"},
+    {k:"Facturación", c:"#eab308", gi:"file", t:"Facturás sin copiar datos a mano",
+      d:"Growith toma las ventas de tu tienda y de Mercado Libre y emite las facturas en ARCA, con CAE, PDF y QR oficial.",
+      b:["Facturación automática de tus órdenes","Facturas y notas de crédito manuales","Monotributo y Responsable Inscripto","Varios CUITs y puntos de venta","La factura queda adjunta a la venta"], mock:"factura"},
+    {k:"Publicidad", c:"#3b82f6", gi:"play", t:"Tus campañas de Meta y Google en un solo lugar",
+      d:"Mirá cómo viene cada campaña, pausala o activala y publicá campañas nuevas sin entrar a cada administrador de anuncios.",
+      b:["Análisis de campañas de Meta Ads y Google Ads","Reglas automáticas en Meta","Publicá en Meta y en Google (Búsqueda y Performance Max)","El gasto publicitario entra solo a tus números","TikTok Ads, muy pronto"], mock:"campanas"},
+    {k:"Stock", c:"#22c55e", gi:"box", t:"Un solo stock para Tienda Nube, Shopify y Mercado Libre",
+      d:"Un inventario central por producto y variante, para saber qué tenés, qué se está por agotar y cuándo reponer.",
+      b:["Stock unificado por SKU entre todos tus canales","Alerta cuando a un producto le quedan pocos días","Días de reposición por producto","Historial de agotados"], mock:"stock"},
+    {k:"Mercado Libre", c:"#facc15", gi:"store", t:"Tu cuenta de Mercado Libre, sin abrir Mercado Libre",
+      d:"Preguntas, mensajes, ventas y reputación en el mismo lugar que el resto del negocio, con el contador de preguntas en el menú.",
+      b:["Respondé preguntas y mensajes desde Growith","Tus ventas de Mercado Libre junto a las de tu tienda","Reputación y métricas de la cuenta","Publicaciones nuevas desde Publicar en ML"], mock:"ml"},
+    {k:"Envíos", c:"#f97316", gi:"clip", t:"Todos tus envíos, sin entrar al portal de Andreani",
+      d:"Emitís las etiquetas desde tus pedidos y Growith sigue cada paquete hasta que llega. Los que se traban aparecen solos en tu Inicio.",
+      b:["Etiquetas Andreani por API o Excel, con el SKU impreso en el rótulo","Sucursal de retiro bien elegida, sin adivinar","Seguimiento automático y avisos al comprador por mail","Alertas de envíos demorados, en sucursal o con visita fallida","Gestiones con Andreani desde la ficha de cada envío","Andreani en el checkout de tu Shopify"], mock:"envios"},
+    {k:"Reclamos", c:"#ef4444", gi:"alert", t:"Ningún reclamo ni cambio se pierde",
+      d:"Un tablero con cada reclamo, cambio o devolución y en qué etapa está. También los reclamos de Mercado Libre y los contracargos de Mercado Pago.",
+      b:["Tablero por etapas: nuevo, en gestión, enviado, resuelto","Seguimiento del envío de ida y de vuelta","Reclamos de Mercado Libre y contracargos de Mercado Pago aparte","Respondés al comprador desde Growith","Historial de todo lo resuelto"], mock:"reclamos"},
   ];
   const mockDe = (m) => {
     if (m==="envios") return ventana("Envíos · Seguimientos", <div>
@@ -14883,6 +14883,7 @@ function LandingPage({T, onLogin}) {
   ];
   const DIA = [
     ["08:30","Abrís el Inicio","Ves lo facturado, los pedidos y todo lo pendiente del día, ordenado por área.","eye"],
+    ["09:00","Abrís el Dashboard","Ves la ganancia de ayer y cómo viene arrancando hoy, por canal.","chart"],
     ["10:00","Despachás","Etiquetas Andreani con el SKU impreso, listas para imprimir en tanda.","clip"],
     ["11:30","Respondés","Preguntas de Mercado Libre y reclamos, sin abrir otra pestaña.","chat"],
     ["13:00","Facturás","Las ventas del día se facturan en ARCA sin copiar un solo dato.","file"],
