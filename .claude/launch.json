@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "growith-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 5173
+      "name": "sku-harness",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:\\Users\\lauta\\AppData\\Local\\Temp\\claude\\C--Users-lauta-growith-gestion\\3a97f13f-dfcc-44f6-9df2-9874f3a3a4fd\\scratchpad\\harness\\serve.cjs"],
+      "port": 5179
     }
   ]
 }

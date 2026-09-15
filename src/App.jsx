@@ -13683,39 +13683,76 @@ function ghSkuLinesDe(o){
   if(ps&&ps.length) return ps.map(p=>`${Number(p.cantidad)>1?`${p.cantidad}x `:""}${p.sku||p.nombre||""}`.trim()).filter(Boolean);
   return Array.isArray(o?.skus)?o.skus.filter(Boolean):[];
 }
-// Estampa los SKUs en la etiqueta de Andreani (la oficial es 100 x 150 mm):
-// en el renglón "Observaciones:", a la derecha del QR — el espacio que
-// Andreani deja para anotaciones del remitente — y hasta dos renglones más
-// debajo. Coordenadas proporcionales por si la página viene en otro tamaño.
+// pdf.js (CDN, el mismo loader que "Subir PDF de rótulos") para leer dónde
+// está cada texto de la etiqueta.
+async function ghPdfJs(){
+  if(typeof window==="undefined") throw new Error("sin navegador");
+  if(!window.pdfjsLib){
+    await new Promise((res,rej)=>{ const sc=document.createElement("script"); sc.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"; sc.onload=res; sc.onerror=()=>rej(new Error("No se pudo cargar pdf.js")); document.head.appendChild(sc); });
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+  return window.pdfjsLib;
+}
+// Ubica, en cada página de la etiqueta de Andreani, la cabecera de la tabla
+// "Orden de Ruteo" (baseline y centro de cada columna) y el pie "IMPORTANTE".
+// La tabla NO está siempre a la misma altura (el nombre de la sucursal o la
+// dirección pueden ocupar dos líneas y empujan todo), así que se lee del PDF
+// en vez de usar coordenadas fijas.
+async function ghSkuZonasRuteo(bytes){
+  const pdfjs=await ghPdfJs();
+  const pdf=await pdfjs.getDocument({data:bytes.slice()}).promise;
+  const zonas=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    const tc=await page.getTextContent();
+    const porY={};
+    for(const it of tc.items){ if(!it.str||!it.str.trim()) continue; const y=Math.round(it.transform[5]); (porY[y]=porY[y]||[]).push(it); }
+    let zona=null, yImp=null;
+    for(const y of Object.keys(porY)){
+      const items=porY[y].slice().sort((a,b)=>a.transform[4]-b.transform[4]);
+      const txt=items.map(i=>i.str).join(" ").replace(/\s+/g," ").trim();
+      if(/orden de ruteo/i.test(txt)){
+        // Tres grupos de texto (uno por columna): el centro del grupo es el centro de la columna.
+        const grupos=[]; let cur=null;
+        for(const it of items){ const x0=it.transform[4], x1=x0+(it.width||0); if(cur&&x0-cur.x1<12){ cur.x1=Math.max(cur.x1,x1); } else { cur={x0,x1}; grupos.push(cur); } }
+        if(grupos.length>=2) zona={y:Number(y),centros:grupos.map(g=>(g.x0+g.x1)/2)};
+      }
+      if(/^importante/i.test(txt)) yImp=Number(y);
+    }
+    zonas.push(zona?{...zona,yImp}:null);
+  }
+  return zonas;
+}
+// Estampa los SKUs en los recuadros "Orden de Ruteo" del pie de la etiqueta
+// (están vacíos y son los mismos en todas): un producto por línea, hasta 3
+// líneas por recuadro según el alto real de la tabla. Si en una página no se
+// encuentra la tabla, esa página queda intacta antes que pisar algo.
 async function ghEstamparSkuPdf(b64, lines){
   if(!lines||!lines.length) return b64;
+  const bytes=ghB64ToBytes(b64);
+  let zonas=[]; try{ zonas=await ghSkuZonasRuteo(bytes); }catch(e){ console.error("sku: no se pudo leer la etiqueta",e); return b64; }
   const {PDFDocument,StandardFonts,rgb}=await import("pdf-lib");
-  const doc=await PDFDocument.load(ghB64ToBytes(b64));
+  const doc=await PDFDocument.load(bytes);
   const font=await doc.embedFont(StandardFonts.HelveticaBold);
-  // Los tres recuadros "Orden de Ruteo" del pie de la etiqueta están vacíos y
-  // en el mismo lugar en todas: un producto por línea, hasta 3 líneas por
-  // recuadro (9 en total; si hay más, la última línea los junta).
-  for(const page of doc.getPages()){
-    const w=page.getWidth(), h=page.getHeight();
-    // Precisión: las coordenadas están medidas sobre la etiqueta oficial de
-    // 284 x 425 pt (100 x 150 mm). Con otro tamaño de página no se estampa
-    // nada antes que pisar un borde o el código de barras.
-    if(Math.abs(w-284)>6||Math.abs(h-425)>8) continue;
-    const sx=w/284, sy=h/425;
-    const size=7*Math.min(sx,sy);
-    const cols=[{x:8*sx,maxW:84*sx},{x:100*sx,maxW:86*sx},{x:195*sx,maxW:84*sx}];
-    const ys=[h-359*sy,h-367*sy,h-375*sy];
-    const slots=cols.length*ys.length;
+  let alguna=false;
+  doc.getPages().forEach((page,pi)=>{
+    const z=zonas[pi]; if(!z||z.centros.length<2) return;
+    const colW=z.centros[1]-z.centros[0];
+    const cols=z.centros.slice(0,3).map(c=>({x:c-colW/2+5,maxW:colW-10}));
+    const size=6.5, paso=8;
+    // Zona útil: debajo de la línea que cierra la cabecera (≈3 pt bajo su
+    // baseline) y arriba de la que cierra la tabla (≈7 pt sobre "IMPORTANTE").
+    const yTop=z.y-3.5;
+    const yBottom=z.yImp!=null?z.yImp+7:z.y-31;
+    const n=Math.max(0,Math.min(3,Math.floor((yTop-yBottom-size-1.5)/paso)+1));
+    if(!n) return;
+    const slots=cols.length*n;
     let items=lines.slice();
     if(items.length>slots) items=[...items.slice(0,slots-1),items.slice(slots-1).join(" · ")];
     const ajustar=(t,maxW)=>{ let out=t; while(out.length>1&&font.widthOfTextAtSize(out,size)>maxW) out=out.slice(0,-2)+"…"; return out; };
-    items.forEach((t,i)=>{
-      const c=cols[Math.floor(i/ys.length)], y=ys[i%ys.length];
-      if(!c) return;
-      page.drawText(ajustar(String(t),c.maxW),{x:c.x,y,size,font,color:rgb(0,0,0)});
-    });
-  }
-  return ghBytesToB64(await doc.save());
+    items.forEach((t,i)=>{ const c=cols[Math.floor(i/n)]; if(!c) return; const y=yTop-size-(i%n)*paso; page.drawText(ajustar(String(t),c.maxW),{x:c.x,y,size,font,color:rgb(0,0,0)}); alguna=true; });
+  });
+  return alguna?ghBytesToB64(await doc.save()):b64;
 }
 // Preferencia "SKU en la etiqueta" (sin uid: es del dispositivo/impresora, como el formato).
 function ghSkuPref(){ try{ return localStorage.getItem("growith_andreani_sku")==="1"; }catch(_){ return false; } }
