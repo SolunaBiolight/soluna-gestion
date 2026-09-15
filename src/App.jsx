@@ -955,6 +955,9 @@ function GrowithLogo({size=28, variant="color", darkMode=false}) {
   );
 }
 
+// TikTok Ads (análisis y Publicar en TikTok) en PRÓXIMAMENTE en el menú hasta
+// que TikTok apruebe la app y estén TIKTOK_APP_ID/SECRET en Vercel → poner false.
+const TIKTOK_PRONTO = true;
 // Menú lateral (estático). También alimenta Admin > Sistema > Accesos por sección.
 const SIDEBAR_GROUPS_BASE = [
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
@@ -976,14 +979,14 @@ const SIDEBAR_GROUPS_BASE = [
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml", alertKey:"ml", badge:"orange",
       subs:[{id:"gestion",label:"Gestión"},{id:"preguntas",label:"Preguntas"},{id:"mensajes",label:"Mensajes"},{id:"ventas",label:"Ventas"},{id:"reputacion",label:"Reputación"}]},
     {id:"gads",     label:"Google Ads", icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z"},
-    {id:"tiktokads", label:"TikTok Ads", icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z"},
+    {id:"tiktokads", label:"TikTok Ads", soon:TIKTOK_PRONTO, icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z"},
     // "Publicar": una sola entrada desplegable con las cuatro plataformas (con
     // sus logos) en vez de un grupo entero de cuatro filas. Cada hijo lleva a
     // la pestaña Publicar de su sección; el permiso es el de esa sección.
     {id:"publicar", label:"Publicar", icon:"M3 11l19-9-9 19-2-8-8-2z", hub:[
       {id:"pubmeta",   permKey:"meta",      label:"Meta",          icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", go:{page:"meta",tab:"creativos"}},
       {id:"pubml",     permKey:"ml",        label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", go:{page:"ml",tab:"publicar"}},
-      {id:"pubtiktok", permKey:"tiktokads", label:"TikTok",        icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z", go:{page:"tiktokads",tab:"publicar"}},
+      {id:"pubtiktok", permKey:"tiktokads", label:"TikTok", soon:TIKTOK_PRONTO, icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z", go:{page:"tiktokads",tab:"publicar"}},
       {id:"pubgads",   permKey:"gads",      label:"Google",        icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z", go:{page:"gads",tab:"publicar"}},
     ]},
     { group:"OPERACIONES" },
@@ -2638,12 +2641,14 @@ function AppTiktokAds({T, user, onHome, onGoConfig, tab="analisis", setTab=()=>{
             <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
               <div style={{flex:1,minWidth:220}}>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:15,fontWeight:800,color:T.text}}>TikTok Ads no está conectado</span>
-                  {st.configured===false&&<span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,background:T.yellow+"22",color:T.yellow,borderRadius:99,padding:"2px 8px"}}>PRONTO</span>}
+                  <span style={{fontSize:15,fontWeight:800,color:T.text}}>{st.configured===false?(tab==="publicar"?"Publicar en TikTok":"TikTok Ads"):"TikTok Ads no está conectado"}</span>
+                  {st.configured===false&&<span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,background:T.yellow+"22",color:T.yellow,borderRadius:99,padding:"2px 8px"}}>PRÓXIMAMENTE</span>}
                 </div>
                 <div style={{fontSize:12,color:T.textSm,marginTop:3,lineHeight:1.5}}>
                   {st.configured===false
-                    ? "Estamos terminando de habilitar la conexión con TikTok. Apenas esté lista vas a poder conectar tu cuenta publicitaria desde acá o desde Configuración → Integraciones."
+                    ? (tab==="publicar"
+                        ? "Muy pronto vas a poder publicar campañas de TikTok con tus videos desde Growith, igual que en Meta y Google."
+                        : "Muy pronto vas a ver el gasto, las conversiones y el ROAS de tus campañas de TikTok, y el gasto va a entrar solo al Dashboard.")
                     : "Conectá tu cuenta publicitaria de TikTok para ver gasto, conversiones y ROAS por campaña, pausar o activar campañas, publicar videos y que el gasto entre solo al Dashboard."}
                 </div>
               </div>
@@ -16458,6 +16463,12 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
       const map={cancelled:"Cancelaste la conexión con TikTok.",bad_state:"El proceso de conexión expiró. Probá conectar de nuevo.",bad_request:"Faltan parámetros en el callback.",token_failed:"TikTok rechazó el intercambio. Revisá TIKTOK_APP_ID/SECRET en Vercel.",error:"Error inesperado conectando TikTok."};
       setMsg(g==="ok" ? "TikTok Ads conectado ✓ — el gasto real entra solo al Dashboard" : "Error TikTok Ads: "+(map[g]||g));
       url.searchParams.delete("tiktok");
+      window.history.replaceState({},"",url.pathname+url.search);
+    } else if(url.searchParams.get("gdrive")){
+      const g=url.searchParams.get("gdrive");
+      const map={sin_permiso:"Falta el permiso de Google Drive: tocá Conectar otra vez y, en la pantalla de Google, tildá la casilla de Google Drive (\"ver, editar, crear y borrar solo los archivos de Drive que uses con esta app\").",cancelled:"Cancelaste la conexión con Google Drive.",bad_state:"El proceso de conexión expiró. Probá conectar de nuevo.",bad_request:"Faltan parámetros en el callback.",token_failed:"Google rechazó el intercambio. Probá conectar de nuevo.",no_refresh:"Google no devolvió acceso permanente. Desvinculá y volvé a conectar Google Drive."};
+      setMsg(g==="ok" ? "Google Drive conectado ✓ — ya podés elegir videos y docs desde Meta → Publicar" : "Google Drive: "+(map[g]||g));
+      url.searchParams.delete("gdrive");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(url.searchParams.get("tn_success")){
       setMsg("Tienda Nube conectada ✓");

@@ -71,7 +71,7 @@ export async function getValidDriveToken(db, uid) {
   const g = snap.data()?.googleDrive;
   if (!g?.refresh_token) return null;
   if (g.access_token && g.expires_at && Date.now() < Number(g.expires_at) - 60000) {
-    return { accessToken: g.access_token, email: g.email || null };
+    return { accessToken: g.access_token, email: g.email || null, scope: g.scope || null };
   }
   const { clientId, clientSecret } = driveEnv();
   const r = await fetch("https://oauth2.googleapis.com/token", {
@@ -85,8 +85,8 @@ export async function getValidDriveToken(db, uid) {
     throw new Error("Google no renovó el acceso a Drive — desvinculá y volvé a conectar Google Drive");
   }
   const expires_at = Date.now() + Number(j.expires_in || 3600) * 1000;
-  await ref.set({ googleDrive: { ...g, access_token: j.access_token, expires_at } }, { merge: true });
-  return { accessToken: j.access_token, email: g.email || null };
+  await ref.set({ googleDrive: { ...g, access_token: j.access_token, expires_at, ...(j.scope ? { scope: j.scope } : {}) } }, { merge: true });
+  return { accessToken: j.access_token, email: g.email || null, scope: j.scope || g.scope || null };
 }
 
 export default async function handler(req, res) {
@@ -109,6 +109,12 @@ export default async function handler(req, res) {
     if (!tr.ok || !tj.access_token) {
       console.error("gdrive token exchange:", tj);
       return res.redirect(`${APP_URL}/?gdrive=token_failed#/config`);
+    }
+    // Google muestra el permiso de Drive como una casilla aparte: si el usuario
+    // no la tilda, el token llega solo con email y el Picker responde 403
+    // ("no tenés acceso a esta página"). Esa conexión no sirve → no se guarda.
+    if (!String(tj.scope || "").includes("drive.file")) {
+      return res.redirect(`${APP_URL}/?gdrive=sin_permiso#/config`);
     }
 
     // 2) Email de la cuenta (para mostrar "Conectado · mail@…")

@@ -1075,6 +1075,11 @@ async function gdriveToken(req, res, db) {
   try {
     const t = await getValidDriveToken(db, uid);
     if (!t) return res.status(400).json({ error: "Google Drive no está conectado", not_connected: true });
+    // Conexión hecha sin tildar el permiso de Drive en la pantalla de Google: el
+    // Picker con ese token da 403. Mejor avisar qué hacer que abrir un error de Google.
+    if (t.scope && !String(t.scope).includes("drive.file")) {
+      return res.status(400).json({ error: "Tu conexión de Google Drive no tiene el permiso de Drive. Andá a Configuración → Integraciones → Google Drive, tocá Desvincular y Conectar, y en la pantalla de Google tildá la casilla de Google Drive.", sin_permiso: true });
+    }
     return res.json({ access_token: t.accessToken, email: t.email });
   } catch (e) { return res.status(502).json({ error: e.message }); }
 }
