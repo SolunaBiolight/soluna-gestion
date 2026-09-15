@@ -14965,7 +14965,7 @@ function LandingPage({T, onLogin}) {
             <span style={{background:"linear-gradient(92deg,#818cf8 0%,#a78bfa 45%,#6366f1 100%)",WebkitBackgroundClip:"text",backgroundClip:"text",color:"transparent"}}>A un clic.</span>
           </h1>
           <p className="gh-land-up" style={{fontSize:16,color:T.textMd,lineHeight:1.65,maxWidth:660,margin:"0 auto 30px",animationDelay:"0.12s"}}>
-            Pedidos, envíos, stock, reclamos, facturación, publicidad y Mercado Libre de tu Tienda Nube, Shopify y Mercado Libre, en un solo lugar.
+            Márgenes, pedidos, envíos, stock, reclamos, facturación, publicidad y Mercado Libre de tu Tienda Nube, Shopify y Mercado Libre, en un solo lugar.
             Entrás y en un vistazo sabés <strong style={{color:T.text}}>qué pasó, qué falta y qué tenés que resolver hoy</strong>.
           </p>
           <div className="gh-land-up" style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap",animationDelay:"0.18s"}}>
@@ -14992,6 +14992,12 @@ function LandingPage({T, onLogin}) {
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <span style={{display:"inline-flex"}}><BrandIcon name="mercadolibre" size={22}/></span>
                 <div><div style={{fontSize:11,fontWeight:700,color:T.text}}>Nueva pregunta en Mercado Libre</div><div style={{fontSize:10,color:T.textSm}}>La respondés desde Growith</div></div>
+              </div>
+            </div>
+            <div className="hide-mobile" style={{position:"absolute",right:-92,bottom:36,zIndex:2,animation:"ghLandFloat 6.5s ease-in-out 2.2s infinite",background:T.card+"f2",backdropFilter:"blur(8px)",border:`1px solid ${T.green}44`,borderRadius:12,padding:"10px 14px",boxShadow:"0 12px 36px rgba(0,0,0,0.35)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{width:24,height:24,borderRadius:7,background:T.green+"22",color:T.green,display:"inline-flex",alignItems:"center",justifyContent:"center"}}><GhI n="chart" size={13}/></span>
+                <div><div style={{fontSize:11,fontWeight:700,color:T.text}}>Profit del mes: <span style={{color:T.green}}>$ 4,1M</span></div><div style={{fontSize:10,color:T.textSm}}>33% de margen · después de costos y ads</div></div>
               </div>
             </div>
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderBottom:"none",borderRadius:"16px 16px 0 0",boxShadow:"0 -24px 80px rgba(99,102,241,0.10), 0 8px 60px rgba(0,0,0,0.30)",overflow:"hidden"}}>
