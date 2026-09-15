@@ -15433,6 +15433,12 @@ function LandingPage({T, onLogin}) {
     ["Stock","Producto A · Negro: quedan 4 días","Reponer",T.yellow],
     ["Canjes","Contenido de @creadora vence mañana","Ver canje","#E1306C"],
   ];
+  // Videos de la home (Loom públicos, en este orden). Solo se muestran los que
+  // tienen `loom`: el del problema se completa cuando esté grabado.
+  const VIDEOS = [
+    { id:"problema", paso:"1", titulo:"El caos de hoy", desc:"Cómo se maneja hoy un e-commerce: planillas, apps sueltas, un facturador tosco y el equipo en WhatsApp.", loom:null },
+    { id:"adentro", paso:"2", titulo:"Growith por dentro", desc:"Un recorrido completo por la app: Inicio, Dashboard, Envíos, Stock, Facturador, publicidad y más.", loom:"8528325183d843f9920af14251ec438c", dur:"14 min" },
+  ].filter(v => v.loom);
   const MARQUEE = [["tiendanube","Tienda Nube"],["shopify","Shopify"],["mercadolibre","Mercado Libre"],["mercadopago","Mercado Pago"],["pagonube","Pago Nube"],["pagospers","Pagos personalizados"],["recurrentes","Recurrentes",true],["meta","Meta Ads"],["googleads","Google Ads"],["andreani","Andreani"],["arca","ARCA"],["Claude","Claude"],["ChatGPT","ChatGPT"],["Gemini","Gemini"]];
 
   // ── Hoy: el negocio repartido en pestañas ──
@@ -15590,12 +15596,13 @@ function LandingPage({T, onLogin}) {
     ["¿En cuánto tiempo está funcionando?","En minutos: conectás tu tienda y Growith empieza a traer tus pedidos. Al principio, una configuración guiada te lleva paso a paso por lo que falta."],
     ["¿Tienen soporte?","Sí, en español y con gente que conoce el e-commerce argentino. Escribinos a contacto.growith@gmail.com."],
   ];
-  const navBtn = (l, id) => <button key={id} onClick={()=>irA(id)} className="hide-mobile" style={{background:"transparent",border:"none",cursor:"pointer",fontSize:13,color:T.textMd,fontFamily:F,padding:"6px 10px"}}>{l}</button>;
+  const navBtn = (l, id) => <button key={id} onClick={()=>irA(id)} className="gh-land-navlink" style={{background:"transparent",border:"none",cursor:"pointer",fontSize:13,color:T.textMd,fontFamily:F,padding:"6px 10px"}}>{l}</button>;
   return (
     <div style={{fontFamily:F, background:T.bg, minHeight:"100vh", color:T.text}}>
       <style>{`
         @media(max-width:640px){ .gh-land-kpis{grid-template-columns:repeat(2,1fr)!important;} .gh-land-pasos{grid-template-columns:1fr!important;} .hide-mobile{display:none!important;} }
         @media(max-width:860px){ .gh-land-row{grid-template-columns:1fr!important;gap:22px!important;} .gh-land-row>.gh-land-mock{order:2!important;} .gh-land-antes{grid-template-columns:1fr!important;} .gh-land-antes>.gh-land-flecha{transform:rotate(90deg);} .gh-land-foot{grid-template-columns:1fr 1fr!important;} }
+        @media(max-width:1040px){ .gh-land-navlink{display:none!important;} }
         .gh-land-card{transition:transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;}
         .gh-land-card:hover{transform:translateY(-3px);box-shadow:0 14px 34px rgba(0,0,0,0.22);}
         @keyframes ghLandFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
@@ -15611,6 +15618,7 @@ function LandingPage({T, onLogin}) {
         <div style={{maxWidth:"100%",margin:"0 auto",padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:10}}>
           <img src="/logo-color.png" alt="Growith" style={{width:28,height:28,borderRadius:7}}/>
           <span style={{fontSize:17,fontWeight:800,letterSpacing:-0.4,marginRight:8}}>Growith</span>
+          {VIDEOS.length>0&&navBtn("Video","gh-landing-video")}
           {navBtn("Secciones","gh-landing-features")}
           {navBtn("Cómo funciona","gh-landing-modulos")}
           {navBtn("Integraciones","gh-landing-integraciones")}
@@ -15643,7 +15651,7 @@ function LandingPage({T, onLogin}) {
           </p>
           <div className="gh-land-up" style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap",animationDelay:"0.18s"}}>
             <button onClick={onLogin} style={{background:"linear-gradient(135deg,#6366f1,#7c5cf1)",border:"none",color:"#fff",borderRadius:12,fontSize:15,fontWeight:700,padding:"14px 30px",cursor:"pointer",fontFamily:F,boxShadow:"0 8px 30px #6366f155, inset 0 1px 0 rgba(255,255,255,0.18)"}}>Empezar gratis →</button>
-            <button onClick={()=>irA("gh-landing-features")} style={{...BtnSecondary(T),fontSize:15,padding:"14px 28px"}}>Ver qué incluye</button>
+            <button onClick={()=>irA(VIDEOS.length>0?"gh-landing-video":"gh-landing-features")} style={{...BtnSecondary(T),fontSize:15,padding:"14px 28px"}}>{VIDEOS.length>0?"Ver el video":"Ver qué incluye"}</button>
           </div>
           <div className="gh-land-up" style={{fontSize:12,color:T.textSm,marginTop:16,animationDelay:"0.22s"}}>Sin renovación automática · Cancelás cuando quieras · Soporte en español</div>
 
@@ -15726,6 +15734,31 @@ function LandingPage({T, onLogin}) {
           </div>
         </div>
       </div>
+
+      {/* Videos (Loom públicos): primero el problema, después Growith por dentro.
+          Se muestran solo los que tienen link; el del problema se suma al grabarlo. */}
+      {VIDEOS.length>0&&(
+        <div id="gh-landing-video" style={{maxWidth:1180,margin:"0 auto",padding:"72px 20px 8px"}}>
+          <div style={secKicker}>Mirá Growith</div>
+          <h2 style={secTitle}>{VIDEOS.length>1?"Del caos de hoy a todo bajo control":"Growith por dentro"}</h2>
+          <p style={secSub}>{VIDEOS.length>1?"Primero el problema de todos los días, después cómo lo resuelve Growith.":"Un recorrido de punta a punta por la app, con datos de ejemplo."}</p>
+          <div style={{display:"grid",gridTemplateColumns:VIDEOS.length>1?"repeat(auto-fit,minmax(min(420px,100%),1fr))":"1fr",gap:24,maxWidth:VIDEOS.length>1?"100%":920,margin:"0 auto"}}>
+            {VIDEOS.map(v=>(
+              <div key={v.id}>
+                <div style={{position:"relative",width:"100%",aspectRatio:"4 / 3",borderRadius:16,overflow:"hidden",border:`1px solid ${T.border}`,background:T.card,boxShadow:"0 16px 50px rgba(0,0,0,0.25)"}}>
+                  <iframe src={`https://www.loom.com/embed/${v.loom}?hide_owner=true&hide_share=true&hide_title=true&hideEmbedTopBar=true`} title={v.titulo} allow="fullscreen; picture-in-picture" allowFullScreen loading="lazy" style={{position:"absolute",inset:0,width:"100%",height:"100%",border:0}}/>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginTop:14}}>
+                  {VIDEOS.length>1&&<span style={{width:28,height:28,borderRadius:8,background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}44`,color:T.accent,fontSize:13,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{v.paso}</span>}
+                  <div style={{fontSize:16,fontWeight:800}}>{v.titulo}</div>
+                  {v.dur&&<span style={{fontSize:12,color:T.textSm}}>{v.dur}</span>}
+                </div>
+                <div style={{fontSize:13,color:T.textSm,lineHeight:1.6,marginTop:6}}>{v.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* De diez pestañas a una */}
       <div style={{maxWidth:1080,margin:"0 auto",padding:"72px 20px 8px"}}>
