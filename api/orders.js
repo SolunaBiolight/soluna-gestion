@@ -1429,7 +1429,9 @@ export default async function handler(req, res) {
               const j = await r.json();
               tnRates = { ts: Date.now(), providers: (Array.isArray(j)?j:[]).map(p => ({ id: String(p.id||""), name: String(p.name||""), enabled: p.enabled !== false, rates: (Array.isArray(p.rates)?p.rates:[]).map(rt => ({ payment_method_type: String(rt.payment_method_type||""), rates_definition: (Array.isArray(rt.rates_definition)?rt.rates_definition:[]).map(d => ({ percent_fee: String(d.percent_fee ?? ""), flat_fee: d.flat_fee && typeof d.flat_fee==="object" ? String(d.flat_fee.value ?? "") : String(d.flat_fee ?? ""), plus_tax: !!d.plus_tax, days_to_withdraw_money: d.days_to_withdraw_money ?? null })) })) })) };
               try { await db.collection("users").doc(uid).set({ margenesTnProviders: tnRates }, { merge:true }); } catch(_) {}
-            } else if (r.status===401 || r.status===403) { tnFeesDiag = tnFeesDiag || TN_SIN_PERMISO_PAGOS; }
+            }
+            // 401/403 acá NO es diagnóstico: TN restringe payment_providers para
+            // todas las apps (Partners, 14/9); los cargos reales salen de la orden.
           } catch(_) {}
         }
       }
@@ -1980,7 +1982,7 @@ export default async function handler(req, res) {
         mpSinConfig: mpPctEstimado && (curr.raw?.orders_detail||[]).some(o=>esMPPay(o.pay) && !mpRefCache[o.id] && !(o.mpPayId && feeByPayId[o.mpPayId]!=null) && !(o.platform==="tiendanube" && (tnFeeCache[o.id]?.f!=null || tnRateFee(o)!=null))),
         tnRatesOk: !!(tnRates && tnRates.providers && tnRates.providers.some(p => p.rates && p.rates.length)),
         tnRatesDias: tnRates && tnRates.providers ? [...new Set(tnRates.providers.flatMap(p => (p.rates||[]).flatMap(r => (r.rates_definition||[]).map(d => d.days_to_withdraw_money))).filter(x => x != null))].sort((a,b)=>a-b) : [],
-        tnFees: { conTarifa: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f==null && tnRateFee(o)!=null).length, conCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f!=null).length, sinCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f==null).length, pendientes: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && !tnFeeCache[o.id]).length, nuevas: tnFeesNuevas, diag: tnFeesDiag, muestra: tnFeesMuestra },
+        tnFees: { conTarifa: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f==null && tnRateFee(o)!=null).length, conCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f!=null).length, sinCargo: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && tnFeeCache[o.id]?.f==null).length, pendientes: (curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && !tnFeeCache[o.id]).length, nuevas: tnFeesNuevas, diag: (mlMpAcc !== "__none__" && mpTokenOk) ? null : tnFeesDiag, muestra: tnFeesMuestra },
         mpPctEstimado,
         tnMp: (()=>{ const ords=(curr.raw?.orders_detail||[]).filter(o=>o.platform==="tiendanube" && esMPPay(o.pay)); if(!ords.length) return null;
           const conMp=ords.filter(o=>o.mpPayId && feeByPayId[o.mpPayId]!=null).length; const conTn=ords.filter(o=>tnFeeCache[o.id]?.f!=null).length;
