@@ -18332,133 +18332,166 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
     );
   }
 
-  const seg=(on)=>({padding:"7px 18px",fontSize:13,fontWeight:on?600:500,border:"none",borderRadius:DS.r.full,background:on?T.text:"transparent",color:on?T.bg:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:6,transition:"all 0.15s"});
+  const seg=(on)=>({padding:"8px 18px",fontSize:13,fontWeight:on?700:500,border:"none",borderRadius:DS.r.full,background:on?T.accentSolid:"transparent",color:on?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:6,transition:"all 0.15s",boxShadow:on?`0 4px 14px ${T.accentSolid}55`:"none"});
   const TRIAL_DIAS=14;
   const trialUsado=enTrial?Math.min(TRIAL_DIAS,Math.max(0,TRIAL_DIAS-diasTrial)):0;
   const ahorroAnual=pl=>(pl.precio-pl.precioAnual)*12;
   const fmtC=d=>d?d.toLocaleDateString("es-AR",{day:"numeric",month:"short",year:"numeric"}):"—";
-  const Tilde=({c})=>(<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={c||T.textMd} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:2}}><polyline points="20 6 9 17 4 12"/></svg>);
-  const Sep=()=><span style={{width:1,height:14,background:T.border,display:"inline-block"}}/>;
-  const Seccion=({titulo,children,extra})=>(
-    <section style={{borderTop:`1px solid ${T.borderL}`,paddingTop:28,marginTop:40}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18,flexWrap:"wrap"}}>
-        <h3 style={{margin:0,fontSize:DS.font.xl,fontWeight:700,color:T.text,letterSpacing:-0.3}}>{titulo}</h3>
-        {extra}
-      </div>
-      {children}
-    </section>
+  const TildeC=({c})=>(<span style={{width:20,height:20,borderRadius:"50%",background:c+"22",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>);
+  const Pill=({label,value,color})=>(
+    <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 14px",minWidth:140}}>
+      <div style={{fontSize:DS.font.xs,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>{label}</div>
+      <div style={{fontSize:DS.font.lg,fontWeight:700,color:color||T.text,whiteSpace:"nowrap"}}>{value}</div>
+    </div>
   );
+  const Titulo=({t,sub})=>(<div style={{marginBottom:16}}><div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{t}</div>{sub&&<div style={{fontSize:DS.font.md,color:T.textSm,marginTop:3}}>{sub}</div>}</div>);
+  const btnSolido={background:T.accentSolid,color:"#fff",border:"none",borderRadius:DS.r.lg,padding:"13px 18px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",boxShadow:`0 8px 24px ${T.accentSolid}55`,transition:"transform 0.12s, box-shadow 0.12s"};
+  const btnLinea=(c)=>({background:"transparent",color:T.text,border:`1.5px solid ${c||T.border}`,borderRadius:DS.r.lg,padding:"12px 18px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",transition:"all 0.12s"});
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
       <AppTopbar T={T} section="Suscripción" sectionId="planes" onHome={isTrialExpired?undefined:onBack}/>
-      <div style={{padding:"28px 24px 80px",maxWidth:960,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"24px 24px 80px",maxWidth:1080,margin:"0 auto",width:"100%"}}>
 
-        {/* ── Estado: una sola línea, sin cajas ── */}
+        {/* ── Estado de la cuenta ── */}
         {isTrialExpired?(
-          <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"12px 16px",borderRadius:DS.r.lg,background:T.redBg,marginBottom:36,fontSize:DS.font.base,color:T.text}}>
-            <span style={{fontWeight:700,color:T.red}}>Tu prueba gratis terminó.</span>
-            <span style={{color:T.textMd}}>Elegí un plan para seguir. Todo lo que configuraste sigue guardado.</span>
+          <div style={{background:`linear-gradient(135deg, ${T.red}1f, ${T.card})`,border:`1px solid ${T.red}55`,borderRadius:DS.r["2xl"],padding:"20px 24px",marginBottom:28,display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+            <div style={{width:44,height:44,borderRadius:DS.r.lg,background:T.red,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div style={{flex:1,minWidth:220}}>
+              <div style={{fontSize:DS.font["2xl"],fontWeight:800,color:T.text,letterSpacing:-0.4}}>Tu prueba gratis terminó</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:4}}>Elegí un plan para seguir. Facturas, integraciones y envíos siguen guardados tal cual.</div>
+            </div>
           </div>
         ):isPago&&planActual?(
-          <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",marginBottom:36,fontSize:DS.font.base,color:T.textMd}}>
-            <span style={{fontWeight:700,color:T.text}}>Plan {planActual.nombre}</span>
-            <DSBadge T={T} color={renuevaSolo?T.green:cancela?T.yellow:T.green} size="sm">{renuevaSolo?"Se renueva sola":cancela?"No se renueva":"Activo"}</DSBadge>
-            <Sep/><span>{renuevaSolo?"Próximo cobro":cancela?"Acceso hasta":"Vence"} <strong style={{color:T.text,fontWeight:600}}>{fmtC(planExpiry)}</strong></span>
-            <Sep/><span>USD {planActual.precio} / mes</span>
-            <Sep/><span>{stripe?"Tarjeta":"Pago manual"}</span>
-            {refCred>0&&<><Sep/><span style={{color:T.green}}>USD {refCred.toLocaleString("es-AR",{minimumFractionDigits:2})} de crédito por referidos</span></>}
-            <span style={{marginLeft:"auto",display:"flex",gap:8}}>
-              {stripe&&<Btn T={T} variant="ghost" size="sm" onClick={abrirPortal}>Tarjeta y recibos</Btn>}
-              {cancela&&<Btn T={T} variant="primary" size="sm" onClick={()=>cancelar(true)}>Reactivar</Btn>}
-            </span>
+          <div style={{background:`linear-gradient(135deg, ${planActual.color}22, ${T.card} 60%)`,border:`1px solid ${planActual.color}55`,borderRadius:DS.r["2xl"],padding:"22px 24px",marginBottom:28}}>
+            <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+              <div style={{width:48,height:48,borderRadius:DS.r.xl,background:planActual.color,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:20,fontWeight:900}}>{planActual.nombre[0]}</div>
+              <div style={{flex:1,minWidth:200}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <span style={{fontSize:DS.font["2xl"],fontWeight:800,color:T.text,letterSpacing:-0.4}}>Plan {planActual.nombre}</span>
+                  <DSBadge T={T} color={renuevaSolo?T.green:cancela?T.yellow:T.green} size="md">{renuevaSolo?"Se renueva sola":cancela?"No se renueva":"Activo"}</DSBadge>
+                </div>
+                <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:3}}>{planActual.tagline}</div>
+              </div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                <Pill label={renuevaSolo?"Próximo cobro":cancela?"Acceso hasta":"Vence"} value={fmtC(planExpiry)}/>
+                <Pill label="Importe" value={`USD ${planActual.precio} / mes`}/>
+                <Pill label="Pago" value={stripe?"Tarjeta":"Manual"}/>
+                {refCred>0&&<Pill label="Crédito referidos" value={`USD ${refCred.toLocaleString("es-AR",{minimumFractionDigits:2})}`} color={T.green}/>}
+              </div>
+            </div>
+            {(stripe||cancela||!stripe)&&(
+              <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginTop:16}}>
+                {stripe&&<Btn T={T} variant="secondary" size="sm" onClick={abrirPortal}>Tarjeta, recibos y cancelación</Btn>}
+                {cancela&&<Btn T={T} variant="primary" size="sm" onClick={()=>cancelar(true)}>Reactivar renovación</Btn>}
+                <span style={{fontSize:DS.font.md,color:T.textSm}}>{!stripe?"Este plan se pagó a mano: cuando venza, renovalo desde acá con tarjeta.":planActualId==="plus"?"Tenés el plan completo.":"Si subís de plan, el cambio es inmediato y se cobra solo la diferencia."}</span>
+              </div>
+            )}
           </div>
         ):enTrial?(
-          <div style={{marginBottom:36}}>
-            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",fontSize:DS.font.base,color:T.textMd,marginBottom:10}}>
-              <span style={{fontWeight:700,color:T.text}}>Prueba gratis con todo incluido</span>
-              <Sep/><span>{diasTrial===0?"Termina hoy":`${diasTrial} día${diasTrial!==1?"s":""} restante${diasTrial!==1?"s":""}`}</span>
-              <Sep/><span>Hasta el {fmtC(trialEnd)}</span>
+          <div style={{background:`linear-gradient(135deg, ${T.green}22, ${T.card} 60%)`,border:`1px solid ${T.green}55`,borderRadius:DS.r["2xl"],padding:"20px 24px",marginBottom:28}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+              <span style={{fontSize:DS.font["2xl"],fontWeight:800,color:T.text,letterSpacing:-0.4}}>Prueba gratis con todo incluido</span>
+              <DSBadge T={T} color={diasTrial<=3?T.yellow:T.green} size="md">{diasTrial===0?"Termina hoy":`${diasTrial} día${diasTrial!==1?"s":""} restante${diasTrial!==1?"s":""}`}</DSBadge>
+              <span style={{fontSize:DS.font.base,color:T.textMd,marginLeft:"auto"}}>Hasta el {fmtC(trialEnd)}</span>
             </div>
-            <div style={{height:3,background:T.borderL,borderRadius:DS.r.full,overflow:"hidden",maxWidth:420}}>
-              <div style={{height:"100%",width:`${Math.round(trialUsado/TRIAL_DIAS*100)}%`,background:diasTrial<=3?T.yellow:T.text,transition:"width 0.3s"}}/>
+            <div style={{height:8,background:T.bg,borderRadius:DS.r.full,overflow:"hidden",margin:"14px 0 10px"}}>
+              <div style={{height:"100%",width:`${Math.round(trialUsado/TRIAL_DIAS*100)}%`,background:`linear-gradient(90deg, ${T.green}, ${T.accentSolid})`,borderRadius:DS.r.full,transition:"width 0.3s"}}/>
             </div>
+            <div style={{fontSize:DS.font.base,color:T.textMd}}>Elegí un plan cuando quieras: se cobra recién al confirmar en Stripe y no perdés nada de lo que ya configuraste.</div>
           </div>
         ):null}
 
         {/* ── Título + período ── */}
-        <div style={{textAlign:"center",marginBottom:36}}>
-          <h1 style={{margin:0,fontSize:DS.font["4xl"],fontWeight:800,color:T.text,letterSpacing:-1,lineHeight:1.1}}>{isPago?"Cambiar de plan":"Elegí tu plan"}</h1>
-          <p style={{margin:"10px 0 0",fontSize:DS.font.lg,color:T.textMd}}>Precio de lanzamiento en dólares. Sin contrato, cancelás cuando quieras.</p>
-          <div style={{display:"inline-flex",background:T.surface,borderRadius:DS.r.full,padding:4,marginTop:22}}>
+        <div style={{textAlign:"center",marginBottom:44}}>
+          <h1 style={{margin:0,fontSize:DS.font["4xl"],fontWeight:900,color:T.text,letterSpacing:-1.2,lineHeight:1.1}}>{isPago?"Cambiá de plan cuando quieras":"Un plan para cada etapa"}</h1>
+          <p style={{margin:"10px 0 0",fontSize:DS.font.lg,color:T.textMd}}>Precio de lanzamiento en dólares. Sin contrato: cambiás o cancelás en un clic.</p>
+          <div style={{display:"inline-flex",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:4,marginTop:22}}>
             <button onClick={()=>setAnual(false)} style={seg(!anual)}>Mensual</button>
-            <button onClick={()=>setAnual(true)} style={seg(anual)}>Anual<span style={{fontSize:DS.font.xs,fontWeight:600,color:anual?T.bg:T.green,opacity:anual?0.85:1}}>· 2 meses gratis</span></button>
+            <button onClick={()=>setAnual(true)} style={seg(anual)}>Anual<span style={{fontSize:DS.font.xs,fontWeight:700,padding:"2px 7px",borderRadius:DS.r.full,background:anual?"rgba(255,255,255,0.22)":T.green+"22",color:anual?"#fff":T.green}}>2 meses gratis</span></button>
           </div>
         </div>
 
         {/* ── Planes ── */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14,alignItems:"stretch"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:18,alignItems:"stretch",paddingTop:14}}>
           {PLANES.map(pl=>{
             const pU=anual?pl.precioAnual:pl.precio;
             const esActual=isPago&&planActualId===pl.id;
             const cargando=loadingPlan===pl.id;
-            let label, variant="secondary", disabled=!!loadingPlan;
+            let label, primario=false, disabled=!!loadingPlan;
             if(cargando){ label="Abriendo Stripe…"; }
             else if(esActual){
               if(stripe&&!cancela){ label="Tu plan actual"; disabled=true; }
-              else if(stripe&&cancela){ label="Reactivar renovación"; variant="primary"; }
-              else { label="Renovar con tarjeta"; variant="primary"; }
+              else if(stripe&&cancela){ label="Reactivar renovación"; primario=true; }
+              else { label="Renovar con tarjeta"; primario=true; }
             }
-            else if(isPago&&planActual){ label=pl.nivel>planActual.nivel?`Pasar a ${pl.nombre}`:`Cambiar a ${pl.nombre}`; variant=pl.nivel>planActual.nivel?"primary":"secondary"; }
-            else { label=`Empezar con ${pl.nombre}`; variant=pl.destacado?"primary":"secondary"; }
+            else if(isPago&&planActual){ label=pl.nivel>planActual.nivel?`Pasar a ${pl.nombre}`:`Cambiar a ${pl.nombre}`; primario=pl.nivel>planActual.nivel; }
+            else { label=`Empezar con ${pl.nombre}`; primario=!!pl.destacado; }
             const onClick=()=>{ if(esActual&&stripe&&cancela) cancelar(true); else elegir(pl.id); };
             const dest=pl.destacado;
             return (
-              <div key={pl.id} style={{background:dest?T.card:"transparent",border:`1px solid ${esActual?T.text+"55":dest?T.accentSolid+"66":T.borderL}`,borderRadius:DS.r["2xl"],padding:"26px 24px 22px",display:"flex",flexDirection:"column",opacity:loadingPlan&&!cargando?0.6:1,transition:"opacity 0.15s"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:6}}>
-                  <span style={{fontSize:DS.font.lg,fontWeight:600,color:T.text}}>{pl.nombre}</span>
-                  {esActual?<span style={{fontSize:DS.font.xs,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Tu plan</span>
-                   :dest?<span style={{fontSize:DS.font.xs,fontWeight:600,color:T.accent,textTransform:"uppercase",letterSpacing:0.5}}>Más elegido</span>:null}
+              <div key={pl.id} style={{position:"relative",background:T.card,border:`1.5px solid ${esActual?pl.color:dest?T.accentSolid:T.border}`,borderRadius:22,padding:"30px 26px 24px",display:"flex",flexDirection:"column",boxShadow:dest?`0 0 0 5px ${T.accentSolid}18, 0 24px 60px ${T.accentSolid}30`:esActual?`0 0 0 5px ${pl.color}14`:DS.shadow.md,opacity:loadingPlan&&!cargando?0.6:1,transition:"opacity 0.15s, transform 0.15s"}}>
+                {(esActual||dest)&&(
+                  <div style={{position:"absolute",top:-14,left:"50%",transform:"translateX(-50%)",background:esActual?pl.color:T.accentSolid,color:"#fff",fontSize:DS.font.sm,fontWeight:700,letterSpacing:0.3,padding:"5px 14px",borderRadius:DS.r.full,boxShadow:`0 6px 18px ${(esActual?pl.color:T.accentSolid)}66`,whiteSpace:"nowrap"}}>{esActual?"Tu plan":"Más elegido"}</div>
+                )}
+                <div style={{fontSize:DS.font["2xl"],fontWeight:800,color:pl.color,letterSpacing:-0.3,marginBottom:6}}>{pl.nombre}</div>
+                <div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.5,minHeight:38,marginBottom:20}}>{pl.para}</div>
+                <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+                  <span style={{fontSize:DS.font.lg,fontWeight:700,color:T.textMd}}>USD</span>
+                  <span style={{fontSize:52,fontWeight:900,color:T.text,letterSpacing:-2.5,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{pU}</span>
+                  <span style={{fontSize:DS.font.base,color:T.textSm}}>/ mes</span>
                 </div>
-                <div style={{fontSize:DS.font.md,color:T.textSm,lineHeight:1.5,minHeight:36,marginBottom:18}}>{pl.para}</div>
-                <div style={{display:"flex",alignItems:"baseline",gap:4}}>
-                  <span style={{fontSize:DS.font.base,fontWeight:500,color:T.textMd,marginRight:2}}>USD</span>
-                  <span style={{fontSize:44,fontWeight:800,color:T.text,letterSpacing:-2,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{pU}</span>
-                  <span style={{fontSize:DS.font.md,color:T.textSm}}>/ mes</span>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10,marginBottom:20,flexWrap:"wrap"}}>
+                  <span style={{fontSize:DS.font.sm,fontWeight:600,color:T.textSm,textDecoration:"line-through"}}>USD {pl.precioNormal}</span>
+                  <span style={{fontSize:DS.font.sm,fontWeight:700,color:anual?T.green:pl.color,background:(anual?T.green:pl.color)+"1a",borderRadius:DS.r.full,padding:"3px 9px"}}>
+                    {anual?`Ahorrás USD ${ahorroAnual(pl)} al año`:`USD ${pl.precioAnual} / mes con pago anual`}
+                  </span>
                 </div>
-                <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8,marginBottom:18,minHeight:18}}>
-                  {anual?`USD ${pU*12} al año · ahorrás USD ${ahorroAnual(pl)}`:`USD ${pl.precioAnual} / mes con pago anual`}
-                  <span style={{marginLeft:6,textDecoration:"line-through",opacity:0.7}}>USD {pl.precioNormal}</span>
-                </div>
-                <Btn T={T} variant={variant} size="lg" onClick={onClick} disabled={disabled} style={{width:"100%",justifyContent:"center"}}>{label}</Btn>
-                <div style={{marginTop:22,display:"flex",flexDirection:"column",gap:10,flex:1}}>
-                  {pl.hereda&&<div style={{fontSize:DS.font.md,fontWeight:600,color:T.text}}>Todo lo de {pl.hereda}, más</div>}
+                <button onClick={onClick} disabled={disabled} style={{...(primario?btnSolido:btnLinea(esActual?pl.color:undefined)),opacity:disabled?0.55:1,cursor:disabled?"default":"pointer"}}
+                  onMouseEnter={e=>{ if(!disabled&&primario){ e.currentTarget.style.transform="translateY(-1px)"; e.currentTarget.style.boxShadow=`0 12px 30px ${T.accentSolid}70`; } else if(!disabled){ e.currentTarget.style.background=T.surface; } }}
+                  onMouseLeave={e=>{ e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow=primario?`0 8px 24px ${T.accentSolid}55`:"none"; if(!primario) e.currentTarget.style.background="transparent"; }}>
+                  {label}
+                </button>
+                <div style={{marginTop:24,paddingTop:20,borderTop:`1px solid ${T.borderL}`,display:"flex",flexDirection:"column",gap:11,flex:1}}>
+                  <div style={{fontSize:DS.font.sm,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:0.6}}>{pl.hereda?`Todo lo de ${pl.hereda}, más`:"Incluye"}</div>
                   {pl.features.map((f,i)=>(
-                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:9,fontSize:DS.font.md,lineHeight:1.5,color:T.textMd}}>
-                      <Tilde c={dest?T.accent:T.textMd}/>{f}
+                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,fontSize:DS.font.base,lineHeight:1.45,color:T.text}}>
+                      <TildeC c={pl.color}/>{f}
                     </div>
                   ))}
                 </div>
-                <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:18}}>Tienda adicional: +USD {pl.adicional} / mes</div>
+                <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:18,paddingTop:12,borderTop:`1px dashed ${T.borderL}`}}>Tienda adicional: +USD {pl.adicional} / mes</div>
               </div>
             );
           })}
         </div>
-        <p style={{textAlign:"center",fontSize:DS.font.md,color:T.textSm,margin:"18px 0 0"}}>Pago seguro con Stripe · Visa, Mastercard y Amex · Se activa al instante</p>
+
+        {/* ── Confianza ── */}
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center",margin:"28px 0 44px"}}>
+          {[["Pago seguro con Stripe",T.accent],["Visa · Mastercard · Amex",T.blue],["Sin contrato",T.green],["Cancelás cuando quieras",T.purple]].map(([t,c],i)=>(
+            <span key={i} style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:DS.font.md,fontWeight:600,color:T.text,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:"8px 14px"}}><span style={{width:8,height:8,borderRadius:"50%",background:c}}/>{t}</span>
+          ))}
+        </div>
 
         {/* ── Comparativa ── */}
-        <Seccion titulo="Qué incluye cada plan" extra={<button onClick={()=>setVerMatriz(v=>!v)} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.accent,fontSize:DS.font.md,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:0}}>{verMatriz?"Ocultar":"Ver comparativa"}</button>}>
+        <Card T={T} padding="lg" style={{marginBottom:18}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:200}}><Titulo t="Qué incluye cada plan" sub="Facturación en todos. Operación desde Intermedio. Márgenes, Google Ads y Copilot solo en Pro."/></div>
+            <Btn T={T} variant={verMatriz?"secondary":"primary"} size="sm" onClick={()=>setVerMatriz(v=>!v)}>{verMatriz?"Ocultar comparativa":"Ver comparativa completa"}</Btn>
+          </div>
           {verMatriz&&(
-            <div style={{overflowX:"auto"}}>
-              <div style={{minWidth:520}}>
-                <div style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 1fr 1fr",gap:8,padding:"6px 0 10px",fontSize:DS.font.sm,fontWeight:600,color:T.textSm,borderBottom:`1px solid ${T.borderL}`}}>
-                  <span/>{PLANES.map(pl=><span key={pl.id} style={{textAlign:"center",color:T.text}}>{pl.nombre}</span>)}
+            <div style={{overflowX:"auto",marginTop:6}}>
+              <div style={{minWidth:560}}>
+                <div style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 1fr 1fr",gap:8,padding:"10px 12px",background:T.surface,borderRadius:DS.r.md,fontSize:DS.font.sm,fontWeight:700}}>
+                  <span/>{PLANES.map(pl=><span key={pl.id} style={{textAlign:"center",color:pl.color}}>{pl.nombre}</span>)}
                 </div>
                 {MATRIZ.map((row,i)=>(
-                  <div key={i} style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 1fr 1fr",gap:8,padding:"11px 0",fontSize:DS.font.md,color:T.textMd,borderBottom:i<MATRIZ.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
+                  <div key={i} style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 1fr 1fr",gap:8,padding:"11px 12px",fontSize:DS.font.base,color:T.text,borderBottom:i<MATRIZ.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
                     <span>{row[0]}</span>
                     {row.slice(1).map((v,j)=>(
                       <span key={j} style={{display:"flex",justifyContent:"center"}}>
-                        {v===true?<Tilde c={PLANES[j].destacado?T.accent:T.text}/>:v===false?<span style={{color:T.borderL}}>—</span>:<span style={{fontSize:DS.font.sm,fontWeight:600,color:T.text}}>{v}</span>}
+                        {v===true?<TildeC c={PLANES[j].color}/>:v===false?<span style={{color:T.border,fontWeight:700}}>—</span>:<span style={{fontSize:DS.font.sm,fontWeight:700,color:T.text}}>{v}</span>}
                       </span>
                     ))}
                   </div>
@@ -18466,41 +18499,40 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
               </div>
             </div>
           )}
-          {!verMatriz&&<p style={{margin:0,fontSize:DS.font.md,color:T.textSm}}>Facturación en todos los planes. Operación (envíos, stock, publicidad, equipo) desde Intermedio. Márgenes, Google Ads y Copilot solo en Pro.</p>}
-        </Seccion>
+        </Card>
 
         {/* ── Cómo funciona ── */}
-        <Seccion titulo="Cómo funciona el pago">
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:28}}>
+        <Card T={T} padding="lg" style={{marginBottom:18}}>
+          <Titulo t="Cómo funciona el pago"/>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(230px,1fr))",gap:14}}>
             {[
-              {n:"01",t:"Elegís el plan",d:"Mensual o anual. Si ya tenés uno, el cambio se aplica en el momento y se cobra solo la diferencia."},
-              {n:"02",t:"Pagás en Stripe",d:"Tarjeta de crédito o débito, en dólares. Growith nunca ve los datos de tu tarjeta."},
-              {n:"03",t:"Se activa al instante",d:"Y se renueva sola. Recibos, tarjeta y cancelación, siempre desde esta pantalla."},
+              {n:"1",t:"Elegís el plan",d:"Mensual o anual. Si ya tenés uno, el cambio se aplica en el momento y se cobra solo la diferencia.",c:T.accentSolid},
+              {n:"2",t:"Pagás en Stripe",d:"Tarjeta de crédito o débito, en dólares. Growith nunca ve los datos de tu tarjeta.",c:T.blue},
+              {n:"3",t:"Se activa al instante",d:"Y se renueva sola. Recibos, tarjeta y cancelación, siempre desde esta pantalla.",c:T.green},
             ].map(p=>(
-              <div key={p.n}>
-                <div style={{fontSize:DS.font.sm,fontWeight:600,color:T.accent,letterSpacing:1,marginBottom:8}}>{p.n}</div>
-                <div style={{fontSize:DS.font.base,fontWeight:600,color:T.text,marginBottom:4}}>{p.t}</div>
-                <div style={{fontSize:DS.font.md,color:T.textSm,lineHeight:1.55}}>{p.d}</div>
+              <div key={p.n} style={{background:T.surface,borderRadius:DS.r.xl,padding:"16px 16px 18px"}}>
+                <div style={{width:32,height:32,borderRadius:DS.r.md,background:p.c,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:DS.font.lg,fontWeight:800,marginBottom:12}}>{p.n}</div>
+                <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:4}}>{p.t}</div>
+                <div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.55}}>{p.d}</div>
               </div>
             ))}
           </div>
-        </Seccion>
+        </Card>
 
         {/* ── FAQ ── */}
-        <Seccion titulo="Preguntas frecuentes">
-          <div style={{maxWidth:720}}>
-            {FAQS.map((f,i)=>{ const abierta=faqOpen===i; return (
-              <div key={i} style={{borderBottom:`1px solid ${T.borderL}`}}>
-                <button onClick={()=>setFaqOpen(abierta?-1:i)} aria-expanded={abierta} style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"14px 0",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left"}}>
-                  <span style={{fontSize:DS.font.base,fontWeight:500,color:T.text,flex:1}}>{f.q}</span>
-                  <span style={{fontSize:18,lineHeight:1,color:T.textSm,width:14,textAlign:"center"}}>{abierta?"−":"+"}</span>
-                </button>
-                {abierta&&<div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.65,padding:"0 26px 14px 0"}}>{f.a}</div>}
-              </div>
-            ); })}
-            <p style={{fontSize:DS.font.md,color:T.textSm,margin:"16px 0 0"}}>¿Otra duda? Escribinos a <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:T.accent,fontWeight:600,textDecoration:"none"}}>{SUPPORT_EMAIL}</a></p>
-          </div>
-        </Seccion>
+        <Card T={T} padding="lg">
+          <Titulo t="Preguntas frecuentes"/>
+          {FAQS.map((f,i)=>{ const abierta=faqOpen===i; return (
+            <div key={i} style={{background:abierta?T.surface:"transparent",borderRadius:DS.r.lg,padding:"2px 12px",marginBottom:4,transition:"background 0.15s"}}>
+              <button onClick={()=>setFaqOpen(abierta?-1:i)} aria-expanded={abierta} style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"12px 0",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left"}}>
+                <span style={{fontSize:DS.font.base,fontWeight:600,color:T.text,flex:1}}>{f.q}</span>
+                <span style={{width:24,height:24,borderRadius:"50%",background:abierta?T.accentSolid:T.surface,color:abierta?"#fff":T.textMd,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:16,lineHeight:1,flexShrink:0}}>{abierta?"−":"+"}</span>
+              </button>
+              {abierta&&<div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.65,padding:"0 36px 14px 0"}}>{f.a}</div>}
+            </div>
+          ); })}
+          <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>¿Otra duda? Escribinos a <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:T.accent,fontWeight:600,textDecoration:"none"}}>{SUPPORT_EMAIL}</a></div>
+        </Card>
       </div>
     </div>
   );
