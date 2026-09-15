@@ -751,6 +751,8 @@ export default async function handler(req, res) {
           for (const k of ["tnId","cliente","esSucursal","provincia","localidad","total","skus","estado","activo","tracking","fulfillOk","verificado","tnDone"]) {
             if (e[k] !== undefined) docData[k] = e[k];
           }
+          // Productos con cantidad (para "SKU en la etiqueta" al reimprimir desde Seguimientos).
+          if (Array.isArray(e.productos)) docData.productos = e.productos.slice(0, 40).map(p => ({ sku: String(p?.sku || "").slice(0, 60), nombre: String(p?.nombre || "").slice(0, 80), cantidad: Number(p?.cantidad) || 1 }));
           if (e.destinatario && typeof e.destinatario === "object") {
             docData.destinatario = { nombre: String(e.destinatario.nombre || "").slice(0, 120), email: String(e.destinatario.email || "").trim().slice(0, 160), telefono: String(e.destinatario.telefono || "").slice(0, 25) };
           }

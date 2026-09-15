@@ -5122,7 +5122,7 @@ function LensDots({productos}) {
   );
 }
 
-function Modal({T, open, onClose, title, width, children, zIndex=1000}) {
+function Modal({T, open, onClose, title, width, children, zIndex=1000, hideClose=false}) {
   const [visible, setVisible] = React.useState(false);
   // Cierre suave: al pasar open a false el modal queda montado ~200ms animando
   // la salida (los que se desmontan condicionalmente desde afuera no pasan por acá).
@@ -5139,11 +5139,11 @@ function Modal({T, open, onClose, title, width, children, zIndex=1000}) {
   },[open]);
   if(!mounted) return null;
   return ReactDOM.createPortal(
-    <div onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}} style={{position:"fixed",inset:0,background:`rgba(0,0,0,${visible?0.65:0})`,backdropFilter:"blur(4px)",display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",zIndex:zIndex,padding:"24px 16px",transition:"background 0.2s ease",fontFamily:"'Inter',system-ui,sans-serif"}}>
+    <div onMouseDown={e=>{if(e.target===e.currentTarget&&!hideClose)onClose();}} style={{position:"fixed",inset:0,background:`rgba(0,0,0,${visible?0.65:0})`,backdropFilter:"blur(4px)",display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",zIndex:zIndex,padding:"24px 16px",transition:"background 0.2s ease",fontFamily:"'Inter',system-ui,sans-serif"}}>
       <div onMouseDown={e=>e.stopPropagation()} style={{background:T.card,borderRadius:16,width:"100%",maxWidth:width||560,maxHeight:"90vh",overflow:"hidden",boxShadow:"0 32px 80px rgba(0,0,0,0.45)",border:`1px solid ${T.border}`,display:"flex",flexDirection:"column",transform:visible?"translateY(0) scale(1)":"translateY(16px) scale(0.97)",opacity:visible?1:0,transition:"transform 0.22s cubic-bezier(0.34,1.26,0.64,1), opacity 0.18s ease"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 24px 16px",borderBottom:`1px solid ${T.borderL}`,flexShrink:0}}>
           <div style={{margin:0,fontSize:17,fontWeight:700,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>{title}</div>
-          <button onClick={onClose} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,width:32,height:32,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:T.textMd}}>✕</button>
+          {!hideClose&&<button onClick={onClose} aria-label="Cerrar" style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,width:32,height:32,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:T.textMd}}>✕</button>}
         </div>
         <div style={{padding:"18px 24px 24px",overflowY:"auto",flex:1}}>{open?children:lastChildren.current}</div>
       </div>
@@ -9369,6 +9369,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const [locCerca,setLocCerca]=useState(null);
   // Retorno del checkout de Mercado Pago (carga de saldo): /?mp=ok#/envios
   useEffect(()=>{
+    let ivMp=null;
     try{
       const mp=new URLSearchParams(window.location.search).get("mp");
       if(!mp) return;
@@ -9397,8 +9398,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             prev=s;
           }catch(_){}
         },4000);
+        ivMp=iv;
       }
     }catch(_){}
+    return ()=>{ if(ivMp) clearInterval(ivMp); };
   },[]);
   const [locSearch,setLocSearch]=useState("");
   const [locSearchType,setLocSearchType]=useState("ciudad");
@@ -9503,6 +9506,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // El backend responde enabled solo para cuentas habilitadas por el admin.
   // Si enabled es false, NADA de esta UI se renderiza (cero ruido).
   const [andreani,setAndreani]=useState({enabled:false,saldo:0,origenConfigurado:false,sucOrigen:null,loaded:false,saldoBajo:false,etiquetasEstimadas:null});
+  // Valor actual para callbacks async (evita leer una closure vieja, ej. al
+  // retomar el lote después de guardar el remitente).
+  const andreaniRef=useRef(andreani); andreaniRef.current=andreani;
   // Banner "saldo bajo" cerrable: se recuerda en sessionStorage a propósito
   // (no localStorage) para que reaparezca en la próxima sesión.
   const [saldoBajoDismiss,setSaldoBajoDismiss]=useState(()=>{try{return sessionStorage.getItem("growith_saldo_bajo_dismiss")==="1";}catch(_){return false;}});
@@ -9510,6 +9516,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // Formato de descarga de etiquetas (A4 original | térmica 10x15) — persiste
   const [dlFmt,setDlFmtState]=useState(()=>{try{return localStorage.getItem("growith_andreani_fmt")==="termica"?"termica":"a4";}catch(_){return "a4";}});
   const setDlFmt=f=>{setDlFmtState(f);try{localStorage.setItem("growith_andreani_fmt",f);}catch(_){}};
+  // "SKU en la etiqueta": estampa los productos del pedido al descargar (opcional).
+  const [dlSku,setDlSkuState]=useState(ghSkuPref);
+  const setDlSku=v=>{setDlSkuState(!!v);try{localStorage.setItem("growith_andreani_sku",v?"1":"0");}catch(_){}};
+  const dlSkuRef=useRef(dlSku); dlSkuRef.current=dlSku;
   const [andreaniSaldoOpen,setAndreaniSaldoOpen]=useState(false);
   const [andreaniOrigenOpen,setAndreaniOrigenOpen]=useState(false);
   const [andreaniOrder,setAndreaniOrder]=useState(null); // pedido elegido para emitir etiqueta
@@ -9625,6 +9635,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           numero:String(o.numero), tnId:String(o.tnId||""), cliente:o.comprador||"",
           esSucursal:!!o.esSucursal, provincia:o.provincia||"", localidad:o.localidad||o.ciudad||"",
           total:parseFloat(o.total)||0, skus:(o.productos||[]).map(p=>p.sku).filter(Boolean),
+          productos:(o.productos||[]).filter(p=>p.sku||p.nombre).slice(0,40).map(p=>({sku:String(p.sku||"").slice(0,60),nombre:String(p.nombre||"").slice(0,80),cantidad:Number(p.cantidad)||1})),
           estado:"etiqueta_generada", activo:false,
           destinatario:{nombre:o.comprador||"",email:o.email||"",telefono:o.telefono||""},
         }))}),
@@ -11008,7 +11019,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // sucursal de despacho confirmada. Antes solo se pedía (2) y el backend
   // rechazaba con "origen_no_configurado" después de elegir la sucursal.
   const bulkPendienteRef=useRef(undefined);
-  function lanzarBulkAndreani(ordersOverride){
+  async function lanzarBulkAndreani(ordersOverride){
+    // Desde "Por empaquetar": la etiqueta marca el pedido como enviado en la
+    // tienda y el cliente recibe el aviso — que quede claro antes de emitir.
+    if(tabEnvio==="empaquetar"&&!exportSingleOrder){
+      const ok=await appConfirm("Estos pedidos están en Por empaquetar. Al emitir la etiqueta se marcan como enviados en tu tienda y el cliente recibe el aviso de envío. ¿Emitir igual?",{okLabel:"Emitir igual"});
+      if(!ok) return;
+    }
     if(!andreani.origenConfigurado){
       bulkPendienteRef.current=ordersOverride;
       toast("Antes de emitir, cargá tu dirección de origen y los datos del remitente (una sola vez)","info",5000);
@@ -11029,45 +11046,29 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     setBulk({fase:"resolviendo",rows:[],prog:{done:0,total:selOrders.length}});
     const rows=bulkRowsRef.current;
     const mkRow=(o,extra)=>({numero:o.numero,order:o,tipo:isSucursalOrder(o)?"sucursal":"domicilio",oficial:null,cot:null,cotError:"",incluido:true,emitido:null,emitError:"",...extra});
+    // Paso 1 (en paralelo, de a 4): todo lo que se resuelve SIN preguntar —
+    // ya emitido, checkout, memoria, match por CP / listado global / cercanías.
+    // Antes era en serie y con 15 puntos nuevos la espera pasaba el minuto,
+    // con los modales apareciendo espaciados. Paso 2 (en serie, en el orden
+    // original): solo los pedidos que necesitan que alguien elija.
+    const pre=new Array(selOrders.length);
     let _resDone=0;
-    for(const o of selOrders){
-      // Cancelable durante la resolución (todavía no se debitó nada) + progreso visible
-      if(bulkCancelRef.current){ setBulk(null); bulkRowsRef.current=[]; return; }
-      _resDone++;
-      setBulk(b=>b&&b.fase==="resolviendo"?{...b,prog:{done:_resDone-1,total:selOrders.length}}:b);
+    const resolverSilencioso=async(o)=>{
       const yaNum=andreaniNumeroDe(o);
-      if(yaNum){ rows.push(mkRow(o,{incluido:false,cotError:`Ya emitido — envío ${yaNum}`,emitido:{numeroDeEnvio:yaNum,yaEmitido:true}})); continue; }
-      if(hasEsquinaAddress(o)){
-        // Dirección en esquina (sin numeración real): Andreani la rechaza a
-        // domicilio. En vez de excluirla en seco, se ofrece redirigir el envío
-        // a una sucursal cercana (ordenadas por distancia al destino original)
-        // o excluirla para emitirla a mano en Andreani, como siempre.
-        const oficialesEsq=await fetchSucursalesOficiales(cpDestinoDe(o));
-        cargarLocCerca(o,null);
-        setLocOficialSel("");
-        const chosenEsq=await new Promise(resolve=>{ setLocationModal({order:o,locs:null,resolve,type:"sucursal",oficiales:oficialesEsq,wantOficial:true,esquina:true}); setLocSearch(""); });
-        if(chosenEsq===null){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); return; } // cancelar todo
-        if(chosenEsq==="EXCLUIR"){ rows.push(mkRow(o,{incluido:false,cotError:"Dirección en esquina — emitilo a mano en Andreani (carga individual)"})); continue; }
-        const ofcEsq=chosenEsq&&chosenEsq.oficial?chosenEsq.oficial:null;
-        if(!ofcEsq){ rows.push(mkRow(o,{incluido:false,cotError:"Dirección en esquina — sin sucursal elegida"})); continue; }
-        rows.push(mkRow(o,{tipo:"sucursal",oficial:ofcEsq,esquina:true,conflictoOk:true}));
-        continue;
-      }
-      if(!isSucursalOrder(o)){ rows.push(mkRow(o)); continue; }
+      if(yaNum) return {row:mkRow(o,{incluido:false,yaEstaba:true,cotError:`Ya tenía etiqueta: envío ${yaNum}`,emitido:{numeroDeEnvio:yaNum,yaEmitido:true}})};
+      if(hasEsquinaAddress(o)) return {modal:"esquina",oficiales:await fetchSucursalesOficiales(cpDestinoDe(o))};
+      if(!isSucursalOrder(o)) return {row:mkRow(o)};
       // Elegida en el checkout (método Growith·Andreani): el pedido trae el id
       // oficial → se toma tal cual, sin memoria ni match por texto.
       if(o.andreaniSucursalId){
         const ofcCk=await fetchSucursalOficialPorId(o.andreaniSucursalId,cpDestinoDe(o));
-        if(ofcCk){ rows.push(mkRow(o,{oficial:ofcCk,verif:"ok",deCheckout:true,conflictoOk:true})); continue; }
+        if(ofcCk) return {row:mkRow(o,{oficial:ofcCk,verif:"ok",deCheckout:true,conflictoOk:true})};
       }
       // Memoria por punto: elección confirmada a mano en un pedido anterior al
       // MISMO punto de retiro → se reusa directo (id oficial guardado).
       const memApi=memoriaPunto(o);
       const memConf=memApi?.oficial?conflictoSucursal(o,memApi.oficial):null;
-      if(memApi?.oficial?.id!=null&&!memConf?.grave){
-        rows.push(mkRow(o,{oficial:memApi.oficial,verif:verifSucursalVsTienda(o,memApi.oficial),deMemoria:true}));
-        continue;
-      }
+      if(memApi?.oficial?.id!=null&&!memConf?.grave) return {row:mkRow(o,{oficial:memApi.oficial,verif:verifSucursalVsTienda(o,memApi.oficial),deMemoria:true})};
       // La elección recordada contradice al punto (otro número/CP): se descarta
       // la memoria y el pedido pasa por el selector con el aviso a la vista.
       if(memConf?.grave) olvidarPunto(ghPuntoKey(o));
@@ -11079,56 +11080,92 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // Capa final: motor de cercanías (listado GEO completo) con el mismo
       // match estricto por calle+número — la distancia NO decide (#5898).
       if(!ofc){ try{ const dC=await fetchCercanasRaw(o); ofc=matchSucursalOficial(dC.sucursales,o,{exacto:!dC.aproximado&&dC.stats?.geo?.origenSrc==="geocode"}); }catch(_){} }
-      if(!ofc&&!Array.isArray(oficiales)){
-        // API de sucursales caída y el buscador global tampoco respondió
-        rows.push(mkRow(o,{incluido:false,cotError:"Lista oficial de Andreani no disponible — probá de nuevo en unos minutos"}));
-        continue;
-      }
-      let confOk=false;
-      if(!ofc){
-        // No se pudo confirmar el punto EXACTO que eligió el cliente → modal
-        // con advertencia explícita: lo que se elija acá es a donde va el
-        // paquete. Cercanas ordenadas por distancia al punto original.
+      if(!ofc&&!Array.isArray(oficiales)) return {row:mkRow(o,{incluido:false,cotError:"Lista oficial de Andreani no disponible — probá de nuevo en unos minutos"})};
+      if(!ofc) return {modal:"sucursal",oficiales};
+      return {row:mkRow(o,{oficial:ofc,verif:verifSucursalVsTienda(o,ofc),conflictoOk:false})};
+    };
+    for(let i=0;i<selOrders.length;i+=4){
+      if(bulkCancelRef.current){ setBulk(null); bulkRowsRef.current=[]; return; }
+      await Promise.all(selOrders.slice(i,i+4).map(async(o,j)=>{
+        try{ pre[i+j]=await resolverSilencioso(o); }
+        catch(e){ pre[i+j]={row:mkRow(o,{incluido:false,cotError:"No se pudo resolver el destino: "+(e?.message||"error")})}; }
+        _resDone++;
+        setBulk(b=>b&&b.fase==="resolviendo"?{...b,prog:{done:_resDone,total:selOrders.length}}:b);
+      }));
+    }
+    for(let i=0;i<selOrders.length;i++){
+      if(bulkCancelRef.current){ setBulk(null); bulkRowsRef.current=[]; return; }
+      const o=selOrders[i], p=pre[i]||{row:mkRow(o,{incluido:false,cotError:"No se pudo resolver el destino"})};
+      if(p.row){ rows.push(p.row); continue; }
+      if(p.modal==="esquina"){
+        // Dirección en esquina (sin numeración real): Andreani la rechaza a
+        // domicilio. En vez de excluirla en seco, se ofrece redirigir el envío
+        // a una sucursal cercana (ordenadas por distancia al destino original)
+        // o excluirla para emitirla a mano en Andreani, como siempre.
         cargarLocCerca(o,null);
         setLocOficialSel("");
-        const chosen=await new Promise(resolve=>{ setLocationModal({order:o,locs:null,resolve,type:"sucursal",oficiales,wantOficial:true,noExacto:true}); setLocSearch(""); });
-        if(chosen===null){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); return; } // cancelar todo
-        if(chosen==="EXCLUIR"){ rows.push(mkRow(o,{incluido:false,cotError:"Excluido manualmente"})); continue; }
-        ofc=chosen&&chosen.oficial?chosen.oficial:null;
-        if(!ofc){ rows.push(mkRow(o,{incluido:false,cotError:"Sin sucursal elegida"})); continue; }
-        confOk=!!chosen.confirmado;
-        // Memoria por punto: solo el mínimo necesario para reusar (id + datos visibles)
-        recordarPunto(o,{oficial:{id:ofc.id,codigo:ofc.codigo??null,numero:ofc.numero??null,descripcion:ofc.descripcion||"",direccion:ofc.direccion||null}});
+        const chosenEsq=await new Promise(resolve=>{ setLocationModal({order:o,locs:null,resolve,type:"sucursal",oficiales:p.oficiales,wantOficial:true,esquina:true}); setLocSearch(""); });
+        if(chosenEsq===null){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); return; } // cancelar todo
+        if(chosenEsq==="EXCLUIR"){ rows.push(mkRow(o,{incluido:false,cotError:"Dirección en esquina — emitilo a mano en Andreani (carga individual)"})); continue; }
+        const ofcEsq=chosenEsq&&chosenEsq.oficial?chosenEsq.oficial:null;
+        if(!ofcEsq){ rows.push(mkRow(o,{incluido:false,cotError:"Dirección en esquina — sin sucursal elegida"})); continue; }
+        rows.push(mkRow(o,{tipo:"sucursal",oficial:ofcEsq,esquina:true,conflictoOk:true}));
+        continue;
       }
-      rows.push(mkRow(o,{oficial:ofc,verif:verifSucursalVsTienda(o,ofc),conflictoOk:confOk}));
+      // No se pudo confirmar el punto EXACTO que eligió el cliente → modal
+      // con advertencia explícita: lo que se elija acá es a donde va el
+      // paquete. Cercanas ordenadas por distancia al punto original.
+      cargarLocCerca(o,null);
+      setLocOficialSel("");
+      const chosen=await new Promise(resolve=>{ setLocationModal({order:o,locs:null,resolve,type:"sucursal",oficiales:p.oficiales,wantOficial:true,noExacto:true}); setLocSearch(""); });
+      if(chosen===null){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); return; } // cancelar todo
+      if(chosen==="EXCLUIR"){ rows.push(mkRow(o,{incluido:false,cotError:"Excluido manualmente"})); continue; }
+      const ofc=chosen&&chosen.oficial?chosen.oficial:null;
+      if(!ofc){ rows.push(mkRow(o,{incluido:false,cotError:"Sin sucursal elegida"})); continue; }
+      // Memoria por punto: solo el mínimo necesario para reusar (id + datos visibles)
+      recordarPunto(o,{oficial:{id:ofc.id,codigo:ofc.codigo??null,numero:ofc.numero??null,descripcion:ofc.descripcion||"",direccion:ofc.direccion||null}});
+      rows.push(mkRow(o,{oficial:ofc,verif:verifSucursalVsTienda(o,ofc),conflictoOk:!!chosen.confirmado}));
     }
+    if(bulkCancelRef.current){ setBulk(null); bulkRowsRef.current=[]; return; }
     await cotizarBulk();
+  }
+  // CP que define la tarifa: para sucursal es el CP de la SUCURSAL (así lo
+  // tarifa el backend al emitir), no el del pedido.
+  function cpCotDe(r){ return r.tipo==="sucursal"?(String(r.oficial?.direccion?.codigoPostal||"").replace(/\D/g,"")||cpDestinoDe(r.order)):String(r.order.cp||"").trim(); }
+  async function cotizarBulk(opts={}){    await cotizarBulk();
   }
   async function cotizarBulk(){
     const rows=bulkRowsRef.current;
     const aCotizar=rows.filter(r=>r.incluido&&!r.cot&&!r.emitido);
+    const fase=opts.silencioso?"revision":"cotizando";
     let done=0;
-    pushBulk("cotizando",{done:0,total:aCotizar.length});
+    pushBulk(fase,{done:0,total:aCotizar.length});
     let saldoNow=null;
+    // Una sola cotización por combinación (tipo, CP de tarifa, paquete): 30
+    // pedidos al mismo CP con el paquete por defecto son 1 request, no 30.
+    const grupos=new Map();
+    for(const r of aCotizar){ const k=`${r.tipo}|${cpCotDe(r)}|${JSON.stringify(bultosDe(r))}`; if(!grupos.has(k)) grupos.set(k,[]); grupos.get(k).push(r); }
+    const lotes=[...grupos.values()];
     // De a 3 en paralelo: rápido sin saturar la API de Andreani
-    for(let i=0;i<aCotizar.length;i+=3){
-      await Promise.all(aCotizar.slice(i,i+3).map(async r=>{
+    for(let i=0;i<lotes.length;i+=3){
+      if(bulkCancelRef.current){ setBulk(null); bulkRowsRef.current=[]; return; }
+      await Promise.all(lotes.slice(i,i+3).map(async grupo=>{
+        const r0=grupo[0];
         try{
           const resp=await authFetch("/api/andreani?action=cotizar",{
             method:"POST",headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({tipo:r.tipo,cpDestino:r.tipo==="sucursal"?cpDestinoDe(r.order):String(r.order.cp||"").trim(),bultos:bultosDe(r)}),
+            body:JSON.stringify({tipo:r0.tipo,cpDestino:cpCotDe(r0),bultos:bultosDe(r0)}),
           });
           const d=await resp.json().catch(()=>({}));
           if(!resp.ok||d.error||typeof d.precio!=="number"){
-            r.cot=null; r.incluido=false;
-            r.cotError=typeof d.error==="string"?d.error:`No se pudo cotizar (HTTP ${resp.status})`;
+            for(const r of grupo){ r.cot=null; r.incluido=false; r.cotError=typeof d.error==="string"?d.error:`No se pudo cotizar (HTTP ${resp.status})`; }
           } else {
-            r.cot={precio:d.precio,pesoAforado:d.pesoAforado}; r.cotError="";
+            for(const r of grupo){ r.cot={precio:d.precio,pesoAforado:d.pesoAforado}; r.cotError=""; }
             if(typeof d.saldo==="number") saldoNow=d.saldo;
           }
-        }catch(e){ r.cot=null; r.incluido=false; r.cotError=e.message||"Error de red al cotizar"; }
-        done++;
-        pushBulk("cotizando",{done,total:aCotizar.length});
+        }catch(e){ for(const r of grupo){ r.cot=null; r.incluido=false; r.cotError=e.message||"Error de red al cotizar"; } }
+        done+=grupo.length;
+        pushBulk(fase,{done,total:aCotizar.length});
       }));
     }
     if(typeof saldoNow==="number") setAndreani(a=>({...a,saldo:saldoNow}));
@@ -11136,7 +11173,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   }
   function reintentarCotBulk(r){
     r.incluido=true; r.cotError="";
-    cotizarBulk(); // solo recotiza filas sin cotización
+    cotizarBulk({silencioso:true}); // solo recotiza filas sin cotización
   }
   // Cambiar la sucursal de una fila del bulk ANTES de emitir: reabre el modal
   // de elección y, si se elige otra, pisa también la memoria del punto — es el
@@ -11152,9 +11189,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     const ofc=chosen&&chosen.oficial?chosen.oficial:null;
     if(!ofc) return;
     r.oficial=ofc; r.verif=verifSucursalVsTienda(o,ofc); r.deMemoria=false; r.conflictoOk=!!chosen.confirmado;
+    // La tarifa depende del CP de la sucursal: la cotización anterior ya no vale.
+    r.cot=null; r.cotError=""; r.incluido=true;
     recordarPunto(o,{oficial:{id:ofc.id,codigo:ofc.codigo??null,numero:ofc.numero??null,descripcion:ofc.descripcion||"",direccion:ofc.direccion||null}});
     pushBulk("revision");
     toast("Sucursal corregida — la nueva elección quedó guardada para este punto ✓","success");
+    cotizarBulk({silencioso:true});
   }
   async function emitirBulk(){
     const rows=bulkRowsRef.current;
@@ -11165,6 +11205,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     pushBulk("emitiendo",{done:0,total:inc.length});
     // En serie: el débito de saldo es transaccional en el backend y los errores
     // de un pedido no cortan el resto (el backend revierte el débito fallido).
+    let sinSaldo=false;
+    // Aviso del navegador si cierran la pestaña a mitad de la emisión (las
+    // etiquetas siguen saliendo en el servidor, pero se perdería el resultado).
+    const alertaCierre=e=>{ e.preventDefault(); e.returnValue=""; };
+    window.addEventListener("beforeunload",alertaCierre);
+    try{
     for(const r of inc){
       const o=r.order;
       // Bloqueo duro: sucursal que contradice al punto del cliente (otro
@@ -11172,14 +11218,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // Una etiqueta a la sucursal equivocada no se puede deshacer.
       if(r.tipo==="sucursal"&&r.oficial&&!r.conflictoOk&&!r.esquina){
         const cf=conflictoSucursal(o,r.oficial);
-        if(cf?.grave){ r.emitError=`No se emitió: ${cf.msg}. Tocá "Cambiar sucursal" y elegí (o confirmá) la correcta.`; done++; pushBulk("emitiendo",{done,total:inc.length}); continue; }
+        if(cf?.grave){ r.emitError=`No se emitió: ${cf.msg}. Tocá "Cambiar sucursal" y elegí (o confirmá) la correcta.`; r.emitTipo="rechazo"; done++; pushBulk("emitiendo",{done,total:inc.length}); continue; }
       }
-      try{
-        const resp=await authFetch("/api/andreani?action=emitir",{
-          method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
+      // Se acabó el saldo en una fila anterior: no tiene sentido seguir
+      // pegándole al backend fila por fila.
+      if(sinSaldo){ r.emitError="No se intentó: el saldo se agotó en un pedido anterior. Cargá saldo y reintentá."; r.emitTipo="saldo"; done++; pushBulk("emitiendo",{done,total:inc.length}); continue; }
+      const cuerpo=JSON.stringify({
             envioId:String(o.numero),
             tipo:r.tipo,
+            precioAceptado:r.cot?.precio||0,
             cpDestino:r.tipo==="sucursal"?cpDestinoDe(o):String(o.cp||"").trim(),
             destino:r.tipo==="sucursal"
               ?{sucursalId:String(r.oficial.id)}
@@ -11193,18 +11240,34 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             bultos:bultosDe(r),
             productoAEntregar:(o.productos||[]).map(p=>`${p.cantidad||1}x ${p.sku||p.nombre}`).join(", ").slice(0,140)||"Paquete",
             piso:o.piso||"", departamento:"",
-          }),
-        });
-        const d=await resp.json().catch(()=>({}));
-        if(!resp.ok||d.error){
-          r.emitError=d.error==="saldo_insuficiente"
+          });
+      // Ante error de RED (sin respuesta) se reintenta UNA vez: el backend es
+      // idempotente por pedido — si la primera llamada sí llegó, la segunda
+      // devuelve "ya emitida" con el número, sin cobrar de nuevo.
+      let resp=null, d=null, errRed=null;
+      for(let intento=0;intento<2&&!resp;intento++){
+        try{
+          resp=await authFetch("/api/andreani?action=emitir",{method:"POST",headers:{"Content-Type":"application/json"},body:cuerpo});
+          d=await resp.json().catch(()=>({}));
+        }catch(e){ errRed=e; resp=null; if(intento===0) await new Promise(res=>setTimeout(res,2500)); }
+      }
+      if(!resp){
+        r.emitError="Sin respuesta del servidor. No sabemos si la etiqueta salió: NO la vuelvas a emitir — revisá Seguimientos en un minuto (si salió, aparece ahí con su número).";
+        r.emitTipo="dudoso";
+      } else if(!resp.ok||d.error){
+          const code=d.code||d.error;
+          r.emitTipo=code==="saldo_insuficiente"?"saldo":code==="precio_cambio"?"precio":(code==="dudoso"||resp.status===502&&/no pudimos confirmar/i.test(String(d.error)))?"dudoso":code==="en_curso"?"dudoso":"rechazo";
+          if(code==="saldo_insuficiente") sinSaldo=true;
+          if(code==="precio_cambio"&&typeof d.precio==="number"){ r.cot={...(r.cot||{}),precio:d.precio}; }
+          r.emitError=code==="saldo_insuficiente"
             ?`Saldo insuficiente — faltan ${fmtMoney((d.precio||0)-(d.saldo||0))}`
-            :d.error==="sucursal_origen_no_confirmada"
-            ?"Confirmá tu sucursal de despacho (botón Saldo → Sucursal de despacho) y reintentá"
             :(typeof d.error==="string"?d.error:`Error al emitir (HTTP ${resp.status})`);
           if(typeof d.saldo==="number") setAndreani(a=>({...a,saldo:d.saldo}));
         } else {
-          r.emitido=d; r.emitError="";
+          r.emitido=d; r.emitError=""; r.emitTipo="";
+          // Ya estaba emitida (otra pestaña / compañera): no es una etiqueta
+          // nueva ni un débito nuevo — se muestra aparte y no suma al costo.
+          if(d.yaEmitido) r.yaEstaba=true;
           // Verificación post-emisión: el backend resuelve qué sucursal ES el
           // id emitido; se compara contra el punto elegido en la tienda.
           if(r.tipo==="sucursal"&&d.sucursalDestino){
@@ -11215,14 +11278,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           if(d.saldoBajo!==undefined) ultSaldoInfo={saldoBajo:!!d.saldoBajo,etiquetasEstimadas:typeof d.etiquetasEstimadas==="number"?d.etiquetasEstimadas:null};
           setAndreaniEmitidos(m=>({...m,[o.numero]:d}));
         }
-      }catch(e){ r.emitError=e.message||"Error de red al emitir"; }
       done++;
       pushBulk("emitiendo",{done,total:inc.length});
     }
+    }finally{ window.removeEventListener("beforeunload",alertaCierre); }
     // Registro post-emisión: mismo circuito que el XLSX (historial compartido
     // en Firestore + historial local + métrica), para que seguimiento e
     // historial sigan funcionando igual.
-    const emitidosAhora=inc.filter(r=>r.emitido);
+    const emitidosAhora=inc.filter(r=>r.emitido&&!r.yaEstaba);
     if(emitidosAhora.length){
       logUsage("etiquetas",emitidosAhora.length);
       (async()=>{
@@ -11235,8 +11298,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         hist.unshift({fecha:new Date().toISOString(),cantidad:emitidosAhora.length,pedidos:emitidosAhora.map(r=>r.numero),api:true});
         localStorage.setItem(ghKey("growith_exportHistory"),JSON.stringify(hist.slice(0,50)));
       }catch(_){}
-      setSelected(new Map());
+      // Quedan tildados SOLO los que no salieron (rechazo / sin saldo / precio):
+      // así "reintentar" es un click, sin volver a buscarlos en la tabla.
+      const reint=inc.filter(r=>r.emitError&&r.emitTipo!=="dudoso");
+      setSelected(new Map(reint.map(r=>[r.numero,r.order])));
       setExportSingleOrder(null);
+      // La tabla y los contadores: los emitidos ya están marcados como
+      // enviados en la tienda → refresco de fondo (antes quedaban hasta "Sincronizar").
+      tabCacheRef.current={};
+      try{ fetchTabOrders(tabEnvioRef.current||tabEnvio,{background:true,fresh:true}); fetchTabCounts(user.uid,true); }catch(_){}
     }
     if(ultSaldoInfo){
       setAndreani(a=>({...a,saldoBajo:ultSaldoInfo.saldoBajo,etiquetasEstimadas:ultSaldoInfo.etiquetasEstimadas}));
@@ -11274,15 +11344,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     if(/andreani/i.test(m)) return true;
     return !/retiro|local|acordar|moto|correo argentino|oca\b/i.test(m);
   }
-  async function fetchEtiquetaB64(numeroDeEnvio){
+  async function fetchEtiquetaB64(numeroDeEnvio, skuLines){
     const r=await authFetch(`/api/andreani?action=etiqueta&numero=${encodeURIComponent(numeroDeEnvio)}`);
     const d=await r.json().catch(()=>({}));
-    if(d&&d.pdf) return {pdf:d.pdf};
+    if(d&&d.pdf){
+      // Opcional "SKU en la etiqueta": se estampa al descargar, nunca en el PDF que guarda Andreani.
+      if(dlSkuRef.current&&skuLines?.length){ try{ return {pdf:await ghEstamparSkuPdf(d.pdf,skuLines)}; }catch(e){ console.error("sku en etiqueta:",e); } }
+      return {pdf:d.pdf};
+    }
     if(d&&d.pending) return {pending:true};
     return {error:d?.error||"No se pudo descargar la etiqueta"};
   }
-  async function descargarEtiquetaBulk(numeroDeEnvio){
-    const res=await fetchEtiquetaB64(numeroDeEnvio);
+  async function descargarEtiquetaBulk(numeroDeEnvio, skuLines){
+    const res=await fetchEtiquetaB64(numeroDeEnvio, skuLines);
     if(res.pdf){
       if(dlFmt==="termica"){
         try{ ghDescargarPdfBytes(await ghPdfTermica10x15([res.pdf]),`Andreani_${numeroDeEnvio}_10x15.pdf`); }
@@ -11297,17 +11371,28 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // proyecto — la usa el backend para rótulos/facturas; acá entra por dynamic
   // import, así que solo se carga cuando se usa).
   async function descargarTodasBulk(){
-    const nums=bulkRowsRef.current.filter(r=>r.emitido?.numeroDeEnvio).map(r=>({numero:r.numero,envio:String(r.emitido.numeroDeEnvio)}));
+    const nums=bulkRowsRef.current.filter(r=>r.emitido?.numeroDeEnvio).map(r=>({numero:r.numero,envio:String(r.emitido.numeroDeEnvio),skus:ghSkuLinesDe(r.order)}));
     if(!nums.length) return;
     setBulkDl({done:0,total:nums.length});
     const pendientes=[]; let pdfs=[];
     try{
-      for(let i=0;i<nums.length;i++){
-        const res=await fetchEtiquetaB64(nums[i].envio);
-        if(res.pdf) pdfs.push(res.pdf);
-        else pendientes.push(`#${nums[i].numero}`);
-        setBulkDl({done:i+1,total:nums.length});
+      // Andreani genera el PDF en segundos: las que todavía no están se
+      // reintentan solas (hasta 3 veces) antes de pedirle al usuario que vuelva.
+      let cola=nums.slice(), ronda=0, hechas=0;
+      const ordenPdf=new Map();
+      while(cola.length&&ronda<4){
+        if(ronda>0) await new Promise(r=>setTimeout(r,2500));
+        const faltan=[];
+        for(const n of cola){
+          const res=await fetchEtiquetaB64(n.envio, n.skus);
+          if(res.pdf){ ordenPdf.set(n.envio,res.pdf); hechas++; setBulkDl({done:hechas,total:nums.length}); }
+          else if(res.pending) faltan.push(n);
+          else { pendientes.push(`#${n.numero}`); hechas++; setBulkDl({done:hechas,total:nums.length}); }
+        }
+        cola=faltan; ronda++;
       }
+      for(const n of cola) pendientes.push(`#${n.numero}`);
+      pdfs=nums.map(n=>ordenPdf.get(n.envio)).filter(Boolean);
       if(pdfs.length){
         if(dlFmt==="termica"){
           ghDescargarPdfBytes(await ghPdfTermica10x15(pdfs),"Andreani_etiquetas_10x15.pdf");
@@ -11957,21 +12042,21 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
                     Paquete
                   </button>
-                  {/* Exportar = violeta (acción primaria clásica); Generar con
-                      saldo = verde (la vía recomendada, mismo verde del saldo). */}
+                  {/* Un solo primario: con prepago habilitado es "Emitir etiquetas"
+                      (verde, la vía recomendada) y el Excel pasa a secundario;
+                      sin prepago el Excel es el primario. */}
                   <button onClick={()=>{setExportSingleOrder(null);exportAndreani([...selected.values()]);}}
                     title="Genera el Excel para subir al portal de Andreani y pagar con tu propia cuenta"
-                    style={{...BtnPrimary(T),fontWeight:600,fontSize:12,padding:"7px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+                    style={{...(andreani.enabled?BtnSecondary(T):BtnPrimary(T)),fontWeight:600,fontSize:12,padding:"7px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
-                    Exportar XLSX Andreani ({selected.size})
+                    Exportar Excel ({selected.size})
                   </button>
                   {andreani.enabled&&(
                     <button onClick={()=>{setExportSingleOrder(null);lanzarBulkAndreani([...selected.values()]);}}
-                      title="Cotiza y emite las etiquetas al instante, debitando del saldo de envíos"
-                      style={{...BtnPrimary(T),border:`1.5px solid ${T.green}55`,background:T.green+"1a",color:T.green,boxShadow:`0 0 0 1px ${T.green}15, 0 4px 20px ${T.green}20`,fontSize:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",position:"relative"}}>
+                      title="Recomendado: cotiza y emite las etiquetas al instante, debitando del saldo de envíos"
+                      style={{...BtnPrimary(T),border:`1.5px solid ${T.green}55`,background:T.green+"1a",color:T.green,boxShadow:`0 0 0 1px ${T.green}15, 0 4px 20px ${T.green}20`,fontSize:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                      Generar etiquetas (Saldo) ({selected.size})
-                      <span style={{position:"absolute",top:-9,right:10,fontSize:9,fontWeight:800,letterSpacing:0.4,textTransform:"uppercase",background:T.green,color:"#fff",borderRadius:5,padding:"2px 7px",boxShadow:"0 2px 8px rgba(0,0,0,0.35)"}}>Recomendado</span>
+                      Emitir {selected.size} etiqueta{selected.size===1?"":"s"}
                     </button>
                   )}
                 </>
@@ -12562,7 +12647,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             <EnvioFichaModal T={T} envio={segFicha} onClose={()=>setSegFicha(null)}
               catInfo={segFicha?(CAT[catDe(segFicha)]||CAT.otro):null} problema={segFicha?problemaDe(segFicha):null}
               casos={segFicha?segCasos.filter(c=>String(c.numero)===String(segFicha.numero)):[]}
-              onDescargar={descargarEtiquetaBulk}
+              onDescargar={n=>descargarEtiquetaBulk(n,ghSkuLinesDe(segFicha))}
               onCaso={motivo=>setSegCaso({envio:segFicha,motivo})}
               onComentar={async(id,texto)=>{ const r=await authFetch("/api/andreani?action=caso_comentar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,texto})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:"No se pudo enviar"); await cargarCasos(); toast("Comentario enviado","success"); }}/>
             <EnvioCasoModal T={T} data={segCaso} onClose={()=>setSegCaso(null)} onCreated={()=>{ setSegCaso(null); cargarCasos(); }}/>
@@ -13138,11 +13223,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
       {/* ── Flujo bulk "Etiquetas listas" (emisión por API) ── */}
       {bulk&&(
-        <Modal T={T} open={true} onClose={()=>{ if(bulk.fase==="revision"||bulk.fase==="resultado"){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } else if(bulk.fase==="resolviendo"){ bulkCancelRef.current=true; setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } }} title="Etiquetas listas — Andreani" width={680} zIndex={1500}>
+        <Modal T={T} open={true} hideClose={bulk.fase==="cotizando"||bulk.fase==="emitiendo"} onClose={()=>{ if(bulk.fase==="revision"||bulk.fase==="resultado"){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } else if(bulk.fase==="resolviendo"){ bulkCancelRef.current=true; setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } }} title="Emitir etiquetas · Andreani" width={720} zIndex={1500}>
           {bulk.fase==="resolviendo"&&(
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"18px 4px",color:T.textMd,fontSize:13,flexWrap:"wrap"}}>
               <Spinner size={16} color={T.accent}/> Preparando pedidos y resolviendo sucursales… {bulk.prog?.total>1?`(${Math.min((bulk.prog.done||0)+1,bulk.prog.total)}/${bulk.prog.total})`:""}
-              <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>Podés cerrar con ✕ — todavía no se debitó nada</span>
+              <button onClick={()=>{ bulkCancelRef.current=true; setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); }} style={{...BtnSecondary(T),fontSize:12,marginLeft:"auto"}}>Cancelar</button>
+              <span style={{fontSize:11,color:T.textSm,width:"100%"}}>Todavía no se debitó nada.</span>
             </div>
           )}
           {(bulk.fase==="cotizando"||bulk.fase==="emitiendo")&&(
@@ -13153,7 +13239,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               <div style={{height:8,background:T.surface,borderRadius:999,overflow:"hidden"}}>
                 <div style={{height:"100%",width:`${bulk.prog.total?Math.round(bulk.prog.done/bulk.prog.total*100):0}%`,background:T.accentSolid||T.accent,transition:"width 0.25s"}}/>
               </div>
-              {bulk.fase==="emitiendo"&&<div style={{fontSize:11,color:T.textSm,marginTop:8}}>No cierres esta ventana. Si un pedido falla, el resto sigue igual y el débito del fallido se revierte solo.</div>}
+              {bulk.fase==="emitiendo"&&<div style={{fontSize:11,color:T.textSm,marginTop:8}}>No cierres esta ventana. Si Andreani rechaza un pedido, el resto sigue igual y ese débito se devuelve solo.</div>}
             </div>
           )}
           {bulk.fase==="revision"&&(()=>{
@@ -13271,11 +13357,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           })()}
           {bulk.fase==="resultado"&&(()=>{
             const rows=bulk.rows;
-            const ok=rows.filter(r=>r.emitido?.numeroDeEnvio);
+            const yaEstaban=rows.filter(r=>r.emitido?.numeroDeEnvio&&r.yaEstaba&&r.incluido!==false);
+            const ok=rows.filter(r=>r.emitido?.numeroDeEnvio&&!r.yaEstaba);
             const fails=rows.filter(r=>r.emitError);
+            const dudosos=fails.filter(r=>r.emitTipo==="dudoso");
+            const sinDebito=fails.filter(r=>r.emitTipo!=="dudoso");
+            const faltaSaldo=sinDebito.some(r=>r.emitTipo==="saldo");
             const costo=ok.reduce((a,r)=>a+(Number(r.emitido?.precio)||Number(r.cot?.precio)||0),0);
             const tipoIcon=fails.length?(ok.length?"warning":"error"):"success";
-            const titulo=ok.length===0?"No se emitió ninguna etiqueta":`${ok.length} etiqueta${ok.length!==1?"s":""} emitida${ok.length!==1?"s":""}`;
+            const titulo=ok.length===0?(yaEstaban.length?"Estas etiquetas ya estaban emitidas":"No se emitió ninguna etiqueta"):`${ok.length} etiqueta${ok.length!==1?"s":""} emitida${ok.length!==1?"s":""}`;
             const fEntrega=v=>{ if(!v) return ""; const m=String(v).match(/^(\d{4})-(\d{2})-(\d{2})/); return m?`${m[3]}/${m[2]}`:String(v).slice(0,10); };
             const copiar=async(txt)=>{ try{ await navigator.clipboard.writeText(String(txt)); toast("Número de envío copiado","success"); }catch(_){ toast("No se pudo copiar","error"); } };
             const destinoDe=r=>{ const o=r.order; if(r.tipo==="sucursal"){ const sd=r.sucReal||r.oficial; const dir=sd?.direccion?[[sd.direccion.calle,sd.direccion.numero].filter(Boolean).join(" "),sd.direccion.localidad].filter(Boolean).join(", "):""; return {t:"Sucursal",d:sd?.descripcion||"",dir}; } return {t:"Domicilio",d:[String(o.direccion||"").trim(),String(o.dirNumero||"").trim()].filter(Boolean).join(" "),dir:[o.localidad||o.ciudad||"",o.cp?`CP ${o.cp}`:""].filter(Boolean).join(" · ")}; };
@@ -13288,8 +13378,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   <div style={{flex:1,minWidth:180}}>
                     <div style={{fontSize:17,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{titulo}</div>
                     <div style={{fontSize:12,color:T.textSm,marginTop:3}}>
-                      {ok.length>0?"Ya están registradas en Seguimientos y el tracking arranca solo.":"No se debitó nada del saldo."}
-                      {fails.length>0&&ok.length>0&&<span style={{color:T.yellow,fontWeight:600}}> {fails.length} pedido{fails.length!==1?"s":""} no salió{fails.length!==1?"eron":""}.</span>}
+                      {ok.length>0?"Ya están registradas en Seguimientos y el tracking arranca solo.":(dudosos.length?"Hay emisiones sin confirmar (ver abajo).":"No se debitó nada del saldo.")}
+                      {sinDebito.length>0&&ok.length>0&&<span style={{color:T.yellow,fontWeight:600}}> {sinDebito.length} pedido{sinDebito.length!==1?"s":""} sin emitir.</span>}
+                      {yaEstaban.length>0&&<span> {yaEstaban.length} ya {yaEstaban.length!==1?"tenían":"tenía"} etiqueta.</span>}
                     </div>
                   </div>
                   <div style={{display:"flex",gap:8}}>
@@ -13311,10 +13402,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       <div style={{fontSize:13,fontWeight:700,color:T.text}}>Etiqueta{ok.length!==1?"s":""} para imprimir</div>
                       <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Elegí el formato de tu impresora y descargá{ok.length>1?" todas en un solo PDF":""}.</div>
                     </div>
+                    <AndreaniSkuToggle T={T} on={dlSku} onChange={setDlSku}/>
                     <AndreaniFmtToggle T={T} fmt={dlFmt} onChange={setDlFmt}/>
                     {ok.length>1
                       ?<AsyncButton onClick={descargarTodasBulk} disabled={!!bulkDl} style={{...BtnPrimary(T),fontSize:13,minWidth:180,justifyContent:"center"}}>{bulkDl?`Descargando ${bulkDl.done}/${bulkDl.total}…`:`Descargar las ${ok.length} (1 PDF)`}</AsyncButton>
-                      :<AsyncButton onClick={()=>descargarEtiquetaBulk(String(ok[0].emitido.numeroDeEnvio))} style={{...BtnPrimary(T),fontSize:13,minWidth:160,justifyContent:"center"}}>Descargar etiqueta</AsyncButton>}
+                      :<AsyncButton onClick={()=>descargarEtiquetaBulk(String(ok[0].emitido.numeroDeEnvio),ghSkuLinesDe(ok[0].order))} style={{...BtnPrimary(T),fontSize:13,minWidth:160,justifyContent:"center"}}>Descargar etiqueta</AsyncButton>}
                   </div>
                 )}
 
@@ -13344,14 +13436,36 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                           </div>
                           <div style={{fontSize:11,color:T.textSm,marginTop:4}}>{precio>0?fmtMoney(precio):""}{precio>0&&ent?" · ":""}{ent?`Llega aprox. ${ent}`:""}</div>
                         </div>
-                        {ok.length>1&&<AsyncButton onClick={()=>descargarEtiquetaBulk(String(r.emitido.numeroDeEnvio))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",alignSelf:"center"}}>PDF</AsyncButton>}
+                        {ok.length>1&&<AsyncButton onClick={()=>descargarEtiquetaBulk(String(r.emitido.numeroDeEnvio),ghSkuLinesDe(r.order))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",alignSelf:"center"}}>PDF</AsyncButton>}
                       </div>
                     </div>
                   ); })}
-                  {fails.length>0&&(
-                    <div style={{fontSize:11,fontWeight:700,color:T.red,textTransform:"uppercase",letterSpacing:0.5,marginTop:ok.length?6:0}}>No se emitieron ({fails.length}) — sin débito</div>
+                  {yaEstaban.map(r=>(
+                    <div key={r.numero} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 14px",opacity:0.8}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                        <span style={{fontWeight:800,color:T.text,fontSize:13}}>#{r.numero}</span>
+                        <span style={{fontSize:13,color:T.text,fontWeight:500}}>{r.order.comprador}</span>
+                        <span style={{...chipS,background:T.surface,color:T.textMd,border:`1px solid ${T.border}`}}>Ya tenía etiqueta · sin débito nuevo</span>
+                        <span style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:T.text,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{r.emitido.numeroDeEnvio}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {dudosos.length>0&&(
+                    <div style={{fontSize:11,fontWeight:700,color:T.yellow,textTransform:"uppercase",letterSpacing:0.5,marginTop:ok.length?6:0}}>Sin confirmar ({dudosos.length}) — no las vuelvas a emitir</div>
                   )}
-                  {fails.map(r=>(
+                  {dudosos.map(r=>(
+                    <div key={r.numero} style={{background:T.yellowBg||T.surface,border:`1px solid ${T.yellow}66`,borderRadius:10,padding:"10px 14px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontWeight:800,color:T.text,fontSize:13}}>#{r.numero}</span>
+                        <span style={{fontSize:13,color:T.text,fontWeight:500}}>{r.order.comprador}</span>
+                      </div>
+                      <div style={{fontSize:12,color:T.yellow,marginTop:4,fontWeight:600}}>{r.emitError}</div>
+                    </div>
+                  ))}
+                  {sinDebito.length>0&&(
+                    <div style={{fontSize:11,fontWeight:700,color:T.red,textTransform:"uppercase",letterSpacing:0.5,marginTop:ok.length||dudosos.length?6:0}}>No se emitieron ({sinDebito.length}) — sin débito</div>
+                  )}
+                  {sinDebito.map(r=>(
                     <div key={r.numero} style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px"}}>
                       <div style={{display:"flex",alignItems:"center",gap:8}}>
                         <span style={{fontWeight:800,color:T.text,fontSize:13}}>#{r.numero}</span>
@@ -13363,6 +13477,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 </div>
 
                 <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",alignItems:"center"}}>
+                  {faltaSaldo&&<button onClick={()=>setAndreaniSaldoOpen(true)} style={{...BtnSecondary(T),fontSize:13,color:T.red,borderColor:T.red+"66"}}>Cargar saldo</button>}
+                  {sinDebito.length>0&&<button onClick={()=>{ const ords=sinDebito.map(r=>r.order); setBulk(null); bulkRowsRef.current=[]; iniciarBulkAndreani(ords); }} style={{...BtnSecondary(T),fontSize:13}}>Reintentar {sinDebito.length===1?"el pedido":`los ${sinDebito.length}`}</button>}
                   {ok.length>0&&<button onClick={()=>{setBulk(null);bulkRowsRef.current=[];setTab("seguimientos");}} style={{...BtnSecondary(T),fontSize:13}}>Ver en Seguimientos</button>}
                   <button onClick={()=>{setBulk(null);bulkRowsRef.current=[];}} style={{...(ok.length?BtnPrimary(T):BtnSecondary(T)),fontSize:13,minWidth:110,justifyContent:"center"}}>Listo</button>
                 </div>
@@ -13406,7 +13522,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             onSaved={()=>{
               setAndreani(a=>({...a,origenConfigurado:true}));setAndreaniOrigenOpen(false);
               // Si venía de "Etiquetas listas", retomar el flujo (sigue con la sucursal de despacho)
-              if(bulkPendienteRef.current!==undefined){ const o=bulkPendienteRef.current; bulkPendienteRef.current=undefined; setTimeout(()=>{ if(!andreani.sucOrigen?.confirmada) setSucGate({orders:Array.isArray(o)?o:null}); else iniciarBulkAndreani(o); },150); }
+              if(bulkPendienteRef.current!==undefined){ const o=bulkPendienteRef.current; bulkPendienteRef.current=undefined; setTimeout(()=>{ if(!andreaniRef.current.sucOrigen?.confirmada) setSucGate({orders:Array.isArray(o)?o:null}); else iniciarBulkAndreani(o); },150); }
             }}
             onSucOrigen={suc=>setAndreani(a=>({...a,sucOrigen:suc}))}
             onCancel={()=>setAndreaniOrigenOpen(false)}/>
@@ -13464,6 +13580,54 @@ function ghDescargarPdfBytes(bytes, filename){
 }
 function ghDescargarPdfB64(b64, filename){
   ghDescargarPdfBytes(ghB64ToBytes(b64), filename);
+}
+function ghBytesToB64(bytes){
+  let bin=""; const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunk));
+  return btoa(bin);
+}
+// Renglones de SKU de un pedido/envío ("2x ROJ-NN", "CLIP-ON"): usa productos
+// (con cantidad) y cae a la lista plana `skus` de los envíos viejos.
+function ghSkuLinesDe(o){
+  const ps=Array.isArray(o?.productos)?o.productos:null;
+  if(ps&&ps.length) return ps.map(p=>`${Number(p.cantidad)>1?`${p.cantidad}x `:""}${p.sku||p.nombre||""}`.trim()).filter(Boolean);
+  return Array.isArray(o?.skus)?o.skus.filter(Boolean):[];
+}
+// Estampa los SKUs en la etiqueta de Andreani (la oficial es 100 x 150 mm):
+// en el renglón "Observaciones:", a la derecha del QR — el espacio que
+// Andreani deja para anotaciones del remitente — y hasta dos renglones más
+// debajo. Coordenadas proporcionales por si la página viene en otro tamaño.
+async function ghEstamparSkuPdf(b64, lines){
+  if(!lines||!lines.length) return b64;
+  const {PDFDocument,StandardFonts,rgb}=await import("pdf-lib");
+  const doc=await PDFDocument.load(ghB64ToBytes(b64));
+  const font=await doc.embedFont(StandardFonts.HelveticaBold);
+  const txt=lines.join(" · ");
+  for(const page of doc.getPages()){
+    const w=page.getWidth(), h=page.getHeight();
+    const sx=w/284, sy=h/425;
+    const size=6.5*Math.min(sx,sy);
+    const rows=[{x:166*sx,y:h-84*sy,maxW:(278-166)*sx},{x:94*sx,y:h-93*sy,maxW:(278-94)*sx},{x:94*sx,y:h-102*sy,maxW:(278-94)*sx}];
+    const words=txt.split(" "); let li=0, cur="";
+    const flush=()=>{ if(cur&&rows[li]) page.drawText(cur,{x:rows[li].x,y:rows[li].y,size,font,color:rgb(0,0,0)}); };
+    for(const wd of words){
+      const test=cur?cur+" "+wd:wd;
+      if(rows[li]&&font.widthOfTextAtSize(test,size)<=rows[li].maxW) cur=test;
+      else { flush(); li++; cur=wd; if(li>=rows.length){ cur=""; break; } }
+    }
+    flush();
+  }
+  return ghBytesToB64(await doc.save());
+}
+// Preferencia "SKU en la etiqueta" (sin uid: es del dispositivo/impresora, como el formato).
+function ghSkuPref(){ try{ return localStorage.getItem("growith_andreani_sku")==="1"; }catch(_){ return false; } }
+function AndreaniSkuToggle({T, on, onChange}){
+  return (
+    <button onClick={()=>onChange(!on)} title="Imprime los SKU del pedido en el renglón Observaciones de la etiqueta" aria-pressed={on}
+      style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",fontSize:11,fontWeight:on?600:400,border:`1px solid ${on?T.accent+"66":T.border}`,borderRadius:8,background:on?T.accent+"14":T.surface,color:on?T.accent:T.textMd,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <span style={{width:8,height:8,borderRadius:"50%",background:on?T.accent:T.border,flexShrink:0}}/>SKU en la etiqueta
+    </button>
+  );
 }
 // Convierte etiquetas A4 (base64) a un PDF de páginas 10x15 cm para impresoras
 // térmicas: cada página del original se embebe escalada al máximo del área
@@ -14023,6 +14187,8 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
   const [pdfPending,setPdfPending]=useState(false);
   const [dlFmt,setDlFmtState]=useState(()=>{try{return localStorage.getItem("growith_andreani_fmt")==="termica"?"termica":"a4";}catch(_){return "a4";}});
   const setDlFmt=f=>{setDlFmtState(f);try{localStorage.setItem("growith_andreani_fmt",f);}catch(_){}};
+  const [dlSku,setDlSkuState]=useState(ghSkuPref);
+  const setDlSku=v=>{setDlSkuState(!!v);try{localStorage.setItem("growith_andreani_sku",v?"1":"0");}catch(_){}};
   const [needSuc,setNeedSuc]=useState(false); // el backend rechazó emitir por sucursal de despacho sin confirmar
   const invalida=fn=>(...a)=>{fn(...a);setCot(null);setCotErr("");setEmitErr("");};
   const setPaqI=k=>invalida(e=>setPaq(s=>({...s,[k]:e.target.value})));
@@ -14132,10 +14298,12 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
     const r=await authFetch(`/api/andreani?action=etiqueta&numero=${encodeURIComponent(numero)}`);
     const d=await r.json().catch(()=>({}));
     if(d&&d.pdf){
+      let pdf=d.pdf;
+      if(dlSku){ try{ pdf=await ghEstamparSkuPdf(pdf,ghSkuLinesDe(order)); }catch(e){ console.error("sku en etiqueta:",e); } }
       if(dlFmt==="termica"){
-        try{ ghDescargarPdfBytes(await ghPdfTermica10x15([d.pdf]),`Andreani_${numero}_10x15.pdf`); }
+        try{ ghDescargarPdfBytes(await ghPdfTermica10x15([pdf]),`Andreani_${numero}_10x15.pdf`); }
         catch(e){ toast("No se pudo convertir a 10x15: "+e.message,"error"); return; }
-      } else ghDescargarPdfB64(d.pdf,`Andreani_${numero}.pdf`);
+      } else ghDescargarPdfB64(pdf,`Andreani_${numero}.pdf`);
       toast("Etiqueta descargada ✓","success");
     }
     else if(d&&d.pending){ setPdfPending(true); toast("Andreani todavía está generando el PDF — probá en unos segundos","warning"); }
@@ -14168,6 +14336,7 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
             </div>
           )}
           <div style={{display:"flex",gap:10,justifyContent:"center",alignItems:"center",flexWrap:"wrap"}}>
+            <AndreaniSkuToggle T={T} on={dlSku} onChange={setDlSku}/>
             <AndreaniFmtToggle T={T} fmt={dlFmt} onChange={setDlFmt}/>
             <button onClick={onClose} style={{...BtnSecondary(T),fontSize:13}}>Cerrar</button>
             <AsyncButton onClick={descargarEtiqueta} style={{...BtnPrimary(T),fontSize:13,minWidth:190,justifyContent:"center"}}>
