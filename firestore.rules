@@ -2,6 +2,8 @@ rules_version = '2';
 // Reglas de Firestore de Growith — copia canónica (las reglas VIVEN en la
 // consola de Firebase: Firestore Database → Reglas; este archivo es la fuente
 // de verdad para pegarlas ahí cuando cambien). Última sync: 11/ago/2026.
+// PENDIENTE DE PEGAR EN LA CONSOLA: versión del 14/sep/2026 (campos server-only
+// en users/{uid}, andreani_mov y envios solo escribibles por el servidor).
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -14,16 +16,48 @@ service cloud.firestore {
     // Perfil de cada cuenta: el dueño lee y escribe; sus miembros solo leen
     // (necesitan ver el plan y la config del dueño, pero NUNCA escribir acá:
     // si pudieran, podrían editarse sus propios permisos).
+    // Campos que SOLO escribe el servidor (Admin SDK). Si el navegador pudiera
+    // tocarlos, cualquier usuario se acreditaría saldo de envíos, se haría admin
+    // o se daría un plan pago desde la consola del navegador.
+    function camposServidor() {
+      return ["andreaniSaldo", "isAdmin", "teamMembers", "teamUids", "ownerUid",
+              "plan", "planExpiry", "trialEnd", "andreaniAvisoSaldoTs", "andreaniOrigen",
+              "andreaniSucOrigen", "andreaniRemitente", "enviosTrackActivo", "stripeCustomerId",
+              "stripeSubscriptionId", "deleted", "deletedAt"];
+    }
+    // Alta del perfil desde el navegador (primer login): plan free y trial de
+    // hasta 15 días; nada de saldo, admin ni equipo.
+    function altaValida(d) {
+      return !d.keys().hasAny(["andreaniSaldo", "isAdmin", "teamMembers", "teamUids", "ownerUid", "planExpiry", "andreaniAvisoSaldoTs", "stripeCustomerId", "stripeSubscriptionId", "deleted", "deletedAt"])
+        && (!("plan" in d) || d.plan == "free")
+        && (!("trialEnd" in d) || (d.trialEnd is timestamp && d.trialEnd < request.time + duration.value(15, "d")));
+    }
     match /users/{userId} {
       allow read: if request.auth != null && (request.auth.uid == userId || esMiembro(userId));
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId && altaValida(request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == userId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(camposServidor());
+      allow delete: if false;
 
-      // Subcolecciones (config, copilot, envios, etc.): los miembros también
-      // escriben — acá no viven permisos ni plan (eso está solo en el doc de
-      // arriba), y sin esto un miembro no puede, por ej., guardar sus
-      // conversaciones del Copilot en el espacio del dueño.
+      // Ledger de la billetera de envíos y los envíos emitidos: solo el
+      // servidor escribe (el backend prueba la pertenencia de una etiqueta
+      // por estas colecciones y por andreani_idx).
+      match /andreani_mov/{movId} {
+        allow read: if request.auth != null && (request.auth.uid == userId || esMiembro(userId));
+        allow write: if false;
+      }
+      match /envios/{envioId} {
+        allow read: if request.auth != null && (request.auth.uid == userId || esMiembro(userId));
+        allow write: if false;
+      }
+
+      // Resto de subcolecciones (config, copilot, envios_cfg, etc.): los
+      // miembros también escriben — acá no viven permisos ni plan (eso está
+      // solo en el doc de arriba), y sin esto un miembro no puede, por ej.,
+      // guardar sus conversaciones del Copilot en el espacio del dueño.
       match /{sub=**} {
-        allow read, write: if request.auth != null && (request.auth.uid == userId || esMiembro(userId));
+        allow read, write: if request.auth != null && (request.auth.uid == userId || esMiembro(userId))
+          && !(sub[0] in ["andreani_mov", "envios"]);
       }
     }
 

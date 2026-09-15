@@ -153,10 +153,12 @@ if (typeof window !== "undefined" && !window.__ghFetchAuth) {
       const esApi = url.startsWith("/api/") || url.includes(`${window.location.origin}/api/`);
       if (esApi && auth.currentUser) {
         const h = new Headers((init && init.headers) || (typeof input === "object" && input && input.headers) || undefined);
-        if (!h.has("Authorization")) {
-          h.set("Authorization", `Bearer ${await auth.currentUser.getIdToken()}`);
-          init = { ...(init || {}), headers: h };
-        }
+        if (!h.has("Authorization")) h.set("Authorization", `Bearer ${await auth.currentUser.getIdToken()}`);
+        // Tienda activa (multi-tienda / miembro de equipo): el backend de
+        // Envíos opera sobre ESTA cuenta (saldo, envíos, casos), no sobre la
+        // del login. window.__ghTiendaUid lo publica App al resolver el espacio.
+        if (window.__ghTiendaUid && !h.has("X-Growith-Tienda")) h.set("X-Growith-Tienda", String(window.__ghTiendaUid));
+        init = { ...(init || {}), headers: h };
       }
     } catch (_) {}
     return _rawFetch(input, init);
@@ -40841,6 +40843,8 @@ export default function App() {
       ? {...authUser, uid:miembroDe.ownerId, authUid:authUser.uid, esMiembro:miembroDe.rol!=="owner", esTiendaAjena:true, tiendaRol:miembroDe.rol, photoURL:miembroDe.fotoPerfil||authUser.photoURL}
       : (authUser ? {...authUser, authUid:authUser.uid, esMiembro:false, esTiendaAjena:false, tiendaRol:"owner", photoURL:miembroDe?.fotoPerfil||authUser.photoURL} : authUser)
   ),[authUser, miembroDe]);
+  // Publica la tienda activa para el wrapper global de fetch (header X-Growith-Tienda).
+  useEffect(()=>{ try{ window.__ghTiendaUid = user?.uid || ""; }catch(_){ } },[user?.uid]);
   useEffect(()=>{
     if(!authUser){ setMiembroDe(authUser===null?null:undefined); return; }
     let alive=true;

@@ -3,6 +3,9 @@
     "api/arca.js": {
       "maxDuration": 120
     },
+    "api/andreani.js": {
+      "maxDuration": 60
+    },
     "api/orders.js": {
       "maxDuration": 90
     },

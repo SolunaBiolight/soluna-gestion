@@ -27,7 +27,7 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue, FieldPath } from "firebase-admin/firestore";
 import { ghPuntoDeClave, ghConflictoPunto, ghCoincidePunto, ghConflictoTpl } from "./_suc_match.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
-import { verifyAuth, requireAdmin, guardUid } from "./_auth.js";
+import { verifyAuth, requireAdmin, guardUid, requireUid, readOnlyBlock } from "./_auth.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -476,6 +476,13 @@ async function mpWebhook(req, res, db, body) {
   // Sin id legible (formato desconocido) o aviso de merchant_order: en vez de
   // descartar, reconciliar TODAS las cargas MP pendientes contra la API.
   if (!dataId || /merchant_order/.test(type)) {
+    // El webhook es público: sin throttle, cualquier POST anónimo disparaba una
+    // reconciliación completa (50 lecturas + 50 requests a MP). Máximo una por minuto.
+    try {
+      const tRef = db.collection("system").doc("mp_webhook");
+      const puede = await db.runTransaction(async (tx) => { const s = await tx.get(tRef); const last = Number(s.data()?.reconciliadoTs || 0); if (Date.now() - last < 60000) return false; tx.set(tRef, { reconciliadoTs: Date.now() }, { merge: true }); return true; });
+      if (!puede) return res.status(200).json({ ok: true, skip: "throttle" });
+    } catch (_) {}
     try { const rr = await mpReconciliarCargas(db); console.log("[mp_webhook] sin data.id → reconciliadas:", JSON.stringify(rr)); return res.status(200).json({ ok: true, reconciliado: rr }); }
     catch (e) { console.error("[mp_webhook] reconciliar:", e.message); return res.status(500).json({ error: e.message }); }
   }
@@ -971,6 +978,12 @@ export function precioConMarkup(cot, cfg) {
 // índices compuestos).
 async function envioPerteneceAlUid(db, uid, numero) {
   const num = String(numero);
+  // Primero el índice raíz (solo lo escribe el servidor): es la prueba fuerte.
+  // Ledger y envíos quedan como respaldo para etiquetas anteriores al índice.
+  try {
+    const idx = await db.collection("andreani_idx").doc(num).get();
+    if (idx.exists) return String(idx.data()?.uid || "") === String(uid);
+  } catch (_) {}
   try {
     const mov = await db.collection("users").doc(uid).collection("andreani_mov")
       .where("numeroDeEnvio", "==", num).limit(1).get();
@@ -1183,7 +1196,25 @@ export default async function handler(req, res) {
     // Todas las acciones exigen sesión válida. La identidad sale del TOKEN.
     const user = await verifyAuth(req);
     if (!user) return res.status(401).json({ error: "Sesión inválida. Recargá la página e iniciá sesión de nuevo." });
-    const uid = user.uid;
+    // "Ver como cliente" (token de impersonación): nada que escriba.
+    const ro = readOnlyBlock(req, user);
+    if (ro) return res.status(ro.code).json({ error: ro.error, readOnly: true });
+    // Multi-tenant: la TIENDA sobre la que se opera (billetera, envíos,
+    // seguimientos, casos) es la activa en el navegador — una colaboradora o un
+    // perfil multi-tienda emite con el saldo de la tienda, no con el suyo. El
+    // front la manda en X-Growith-Tienda (o uid en body/query). requireUid
+    // verifica que el token tenga acceso a esa cuenta con la sección Envíos.
+    // Las acciones admin_* siguen atadas al uid del token.
+    let uid = user.uid;
+    const tiendaUid = String(body.uid || req.query?.uid || req.headers["x-growith-tienda"] || "").trim();
+    // Consultas de catálogo (sucursales, localidades): no tocan datos de la
+    // cuenta, las usan también Canjes y el checkout — sin exigir la sección.
+    const CATALOGO = new Set(["sucursales", "sucursales_buscar", "sucursales_cercanas", "sucursal_por_id", "validar_sucursales_tpl"]);
+    if (tiendaUid && tiendaUid !== user.uid && !String(action).startsWith("admin_") && !CATALOGO.has(String(action))) {
+      const g = await requireUid(req, tiendaUid, "envios");
+      if (!g.ok) return res.status(g.code).json({ error: g.error });
+      uid = tiendaUid;
+    }
 
     const env = andreaniEnv();
     if (!env) return res.status(500).json({ error: "andreani_no_configurado", detail: "Faltan variables de entorno de Andreani (ANDREANI_USER/PASS/CLIENTE/CONTRATO_*)." });
@@ -1531,6 +1562,11 @@ export default async function handler(req, res) {
       if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
       const { envioId = null, destino, destinatario, productoAEntregar, piso, departamento } = body;
       const tipo = body.tipo === "sucursal" ? "sucursal" : "domicilio";
+      // Precio que el usuario vio y aceptó en la cotización (si lo manda): si
+      // el precio real supera ese valor (markup cambiado, sucursal en otro CP),
+      // no se cobra sin que lo vuelva a confirmar.
+      const precioAceptado = Math.round(Number(body.precioAceptado) || 0);
+      if (!/^[\w.\-]{1,80}$/.test(String(envioId || ""))) return res.status(400).json({ error: "envioId inválido: la etiqueta tiene que corresponder a un pedido." });
       const cpDestino = String(body.cpDestino || "").replace(/\D/g, "");
       const bultos = normalizarBultos(body.bultos);
 
@@ -1555,12 +1591,12 @@ export default async function handler(req, res) {
       const origen = uData.andreaniOrigen;
       const remitente = uData.andreaniRemitente;
       if (!origen?.codigoPostal || !origen?.calle || !remitente?.nombreCompleto || !remitente?.documentoNumero) {
-        return res.status(400).json({ error: "origen_no_configurado", detail: "Configurá tu dirección de origen y datos de remitente antes de emitir (acción save_origen)." });
+        return res.status(400).json({ error: "Falta configurar la dirección de origen y los datos del remitente (chip Saldo de envíos → Datos del remitente).", code: "origen_no_configurado" });
       }
       // La sucursal desde la que se despacha tiene que estar CONFIRMADA por el
       // usuario antes de emitir (la tarifa depende del origen).
       if (!uData.andreaniSucOrigen?.confirmada) {
-        return res.status(400).json({ error: "sucursal_origen_no_confirmada", detail: "Confirmá desde qué sucursal Andreani despachás tus envíos antes de emitir etiquetas." });
+        return res.status(400).json({ error: "Confirmá desde qué sucursal Andreani despachás tus envíos (chip Saldo de envíos → Sucursal de despacho) y reintentá.", code: "sucursal_origen_no_confirmada" });
       }
 
       // Toda emisión va atada a un pedido: es lo que protege contra la doble
@@ -1598,7 +1634,8 @@ export default async function handler(req, res) {
         if (listaOk && !sucDestinoOficial) {
           try { sucDestinoOficial = (await sucursalesPorCp(db, env, cpDestino)).find(x => String(x.id) === String(destino.sucursalId)) || null; } catch (_) {}
         }
-        if (listaOk && !sucDestinoOficial) return res.status(400).json({ error: "La sucursal destino no existe en el listado oficial de Andreani — volvé a elegirla." });
+        if (!listaOk) return res.status(502).json({ error: "No pudimos validar la sucursal destino contra el listado de Andreani. Reintentá en un minuto.", code: "sucursal_no_validada" });
+        if (!sucDestinoOficial) return res.status(400).json({ error: "La sucursal destino no existe en el listado oficial de Andreani — volvé a elegirla." });
         const cpSuc = String(sucDestinoOficial?.direccion?.codigoPostal || "").replace(/\D/g, "");
         if (cpSuc) cpTarifa = cpSuc;
       } else {
@@ -1608,69 +1645,18 @@ export default async function handler(req, res) {
       // b. RE-COTIZAR server-side — nunca confiar en el precio del cliente.
       const cot = await cotizarAndreani(db, env, { tipo, cpDestino: cpTarifa, bultos, sucursalOrigen: sucOrigenDe(uData, cfg) });
       const precio = precioConMarkup(cot, cfg);
-
-      // c. Débito en transacción (saldo + movimiento) CON idempotencia adentro:
-      // dos requests concurrentes con el mismo envioId (dos pestañas, dos
-      // colaboradoras) serializan acá — el segundo ve el lock o el número ya
-      // emitido. El check rápido de arriba (fuera de tx) queda como fast-path.
-      const movRef = movCol.doc();
-      let saldoRestante;
-      try {
-        saldoRestante = await db.runTransaction(async (tx) => {
-          // Firestore exige TODAS las lecturas antes que las escrituras.
-          if (envioRef) {
-            const eSnap = await tx.get(envioRef);
-            const ea = eSnap.exists ? eSnap.data()?.andreani : null;
-            if (ea?.numeroDeEnvio) { const err = new Error("ya_emitido"); err.yaEmitido = ea; throw err; }
-            const lockTs = Number(ea?.emitiendoTs || 0);
-            if (lockTs && Date.now() - lockTs < 120000) { const err = new Error("emision_en_curso"); err.enCurso = true; throw err; }
-          }
-          const s = await tx.get(userRef);
-          const saldo = Math.round(Number(s.data()?.andreaniSaldo) || 0);
-          if (saldo < precio) {
-            const err = new Error("saldo_insuficiente");
-            err.saldoInsuficiente = { saldo, precio };
-            throw err;
-          }
-          const nuevo = saldo - precio;
-          if (envioRef) tx.set(envioRef, { andreani: { emitiendoTs: Date.now() } }, { merge: true });
-          tx.set(userRef, { andreaniSaldo: nuevo }, { merge: true });
-          tx.set(movRef, {
-            tipo: "debito",
-            monto: precio,
-            saldoDespues: nuevo,
-            nota: `Etiqueta Andreani ${tipo === "sucursal" ? "a sucursal" : "a domicilio"} · CP ${cpTarifa}`,
-            envioId: envioId || null,
-            ts: FieldValue.serverTimestamp(),
-          });
-          return nuevo;
-        });
-      } catch (e) {
-        if (e.saldoInsuficiente) {
-          return res.status(402).json({ error: "saldo_insuficiente", ...e.saldoInsuficiente });
-        }
-        if (e.yaEmitido) {
-          return res.json({ ok: true, yaEmitido: true, numeroDeEnvio: e.yaEmitido.numeroDeEnvio, precio: e.yaEmitido.precio ?? null, saldoRestante: null, fechaEstimadaDeEntrega: e.yaEmitido.fechaEstimadaDeEntrega ?? null });
-        }
-        if (e.enCurso) {
-          return res.status(409).json({ error: "Este envío se está emitiendo en este momento (otra pestaña o compañera). Esperá unos segundos y actualizá." });
-        }
-        throw e;
+      if (precioAceptado > 0 && precio > Math.round(precioAceptado * 1.02) + 1) {
+        return res.status(409).json({ error: `El precio de esta etiqueta cambió: cotizada en $${precioAceptado.toLocaleString("es-AR")}, ahora cuesta $${precio.toLocaleString("es-AR")}. Volvé a cotizar para confirmar.`, code: "precio_cambio", precio, precioAceptado });
       }
 
-      // d. Crear la orden en Andreani. Si falla → reverso.
-      // Andreani rechaza caracteres especiales en los campos de texto (&, !,
-      // paréntesis, tildes según el campo) — se sanitiza igual que el XLSX:
-      // solo letras, números, espacios y . , - para que ninguna etiqueta rebote.
-      const limpiarTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9\s.,-]/g, " ").replace(/\s{2,}/g, " ").trim();
+      // Todo lo LENTO que no depende del débito va ANTES de la transacción:
+      // así, si Vercel cortara la función, corta sin haber cobrado.
+      const limpiarTxt = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9\s.,-]/g, " ").replace(/\s{2,}/g, " ").trim();
       const contrato = contratoDe(env, tipo);
-      // Localidad/provincia del catálogo oficial (Andreani rechazaba etiquetas
-      // con la dirección entera en "localidad"). Si el catálogo no resuelve,
-      // queda lo que mandó la tienda.
       let locDestino = null, locOrigen = null;
       if (tipo !== "sucursal") locDestino = await resolverLocalidad(destino.postal.codigoPostal, [destino.postal.localidad, destino.postal.ciudad, destino.postal.partido], destino.postal.region);
       locOrigen = await resolverLocalidad(origen.codigoPostal, [origen.localidad], origen.region);
-      if (locDestino) console.log(`[andreani] localidad destino CP ${destino.postal.codigoPostal}: "${destino.postal.localidad}" → "${locDestino.localidad}" (${locDestino.provincia}, score ${locDestino.score.toFixed(2)} de ${locDestino.cands})`);
+      if (locDestino) console.log(`[andreani] localidad destino CP ${destino.postal.codigoPostal}: "${destino.postal.localidad}" → "${locDestino.localidad}" (${locDestino.provincia}, score ${locDestino.score.toFixed(2)} de ${locDestino.candidatos})`);
       const destinoBody = tipo === "sucursal"
         ? { sucursal: { id: Number(destino.sucursalId) } }
         : { postal: {
@@ -1708,8 +1694,6 @@ export default async function handler(req, res) {
           altoCm: b.altoCm,
           anchoCm: b.anchoCm,
           volumenCm: b.largoCm * b.altoCm * b.anchoCm,
-          // Pedido de Andreani: el valor declarado va en ConImpuestos; el sin
-          // impuestos se informa neto de IVA para que no quede en cero.
           valorDeclaradoSinImpuestos: Math.round(b.valorDeclarado / 1.21),
           valorDeclaradoConImpuestos: b.valorDeclarado,
           referencias: [
@@ -1719,6 +1703,62 @@ export default async function handler(req, res) {
         })),
       };
 
+      // c. Débito en transacción (saldo + movimiento) CON idempotencia adentro:
+      // dos requests concurrentes con el mismo envioId (dos pestañas, dos
+      // colaboradoras) serializan acá — el segundo ve el lock o el número ya
+      // emitido. El check rápido de arriba (fuera de tx) queda como fast-path.
+      const movRef = movCol.doc();
+      let saldoRestante;
+      try {
+        saldoRestante = await db.runTransaction(async (tx) => {
+          // Firestore exige TODAS las lecturas antes que las escrituras.
+          if (envioRef) {
+            const eSnap = await tx.get(envioRef);
+            const ea = eSnap.exists ? eSnap.data()?.andreani : null;
+            if (ea?.numeroDeEnvio) { const err = new Error("ya_emitido"); err.yaEmitido = ea; throw err; }
+            const lockTs = Number(ea?.emitiendoTs || 0);
+            if (lockTs && Date.now() - lockTs < 120000) { const err = new Error("emision_en_curso"); err.enCurso = true; throw err; }
+            // Emisión anterior DUDOSA (no sabemos si Andreani la creó): no se
+            // vuelve a emitir hasta que Growith concilie — duplicar es peor.
+            if (ea?.dudosoTs && !ea?.dudosoResuelto) { const err = new Error("emision_dudosa"); err.dudoso = true; throw err; }
+          }
+          const s = await tx.get(userRef);
+          const saldo = Math.round(Number(s.data()?.andreaniSaldo) || 0);
+          if (saldo < precio) {
+            const err = new Error("saldo_insuficiente");
+            err.saldoInsuficiente = { saldo, precio };
+            throw err;
+          }
+          const nuevo = saldo - precio;
+          if (envioRef) tx.set(envioRef, { andreani: { emitiendoTs: Date.now() } }, { merge: true });
+          tx.set(userRef, { andreaniSaldo: nuevo }, { merge: true });
+          tx.set(movRef, {
+            tipo: "debito",
+            monto: precio,
+            saldoDespues: nuevo,
+            nota: `Etiqueta Andreani ${tipo === "sucursal" ? "a sucursal" : "a domicilio"} · CP ${cpTarifa}`,
+            envioId: envioId || null,
+            ts: FieldValue.serverTimestamp(),
+          });
+          return nuevo;
+        });
+      } catch (e) {
+        if (e.saldoInsuficiente) {
+          return res.status(402).json({ error: "saldo_insuficiente", ...e.saldoInsuficiente });
+        }
+        if (e.yaEmitido) {
+          return res.json({ ok: true, yaEmitido: true, numeroDeEnvio: e.yaEmitido.numeroDeEnvio, precio: e.yaEmitido.precio ?? null, saldoRestante: null, fechaEstimadaDeEntrega: e.yaEmitido.fechaEstimadaDeEntrega ?? null });
+        }
+        if (e.enCurso) {
+          return res.status(409).json({ error: "Este envío se está emitiendo en este momento (otra pestaña o compañera). Esperá unos segundos y actualizá.", code: "en_curso" });
+        }
+        if (e.dudoso) {
+          return res.status(409).json({ error: "Este pedido tiene una emisión anterior sin confirmar: el equipo de Growith la está conciliando con Andreani para que no se cobre dos veces. Revisá Seguimientos más tarde.", code: "dudoso" });
+        }
+        throw e;
+      }
+
+      // d. Crear la orden en Andreani (la orden ya está armada arriba). Si falla → reverso.
       // `ambiguo` = no sabemos si Andreani creó la orden o no (timeout/red, o
       // respuesta 2xx sin número). En ese caso NO se reversa automático: si la
       // orden SÍ se creó, el reverso regalaba la etiqueta y la plataforma
@@ -1778,8 +1818,16 @@ export default async function handler(req, res) {
           });
         } catch (e2) {
           // El reverso falló: NO ocultar — el saldo quedó debitado sin envío.
+          // Rastro en el movimiento (Admin > Saldos lo lista) + mail al fundador.
           console.error(`[andreani] REVERSO FALLIDO uid=${uid} precio=${precio}:`, e2.message);
-          return res.status(502).json({ error: `${ordenErr} — ADEMÁS falló el reverso del saldo: contactá al soporte con este mensaje.` });
+          try { await movRef.set({ reversoPendiente: true, nota: `Etiqueta Andreani ${tipo} · CP ${cpTarifa} — RECHAZADA y el reverso falló: ${String(e2.message).slice(0, 160)}` }, { merge: true }); } catch (_) {}
+          try { await envioRef.set({ andreani: { emitiendoTs: FieldValue.delete() } }, { merge: true }); } catch (_) {}
+          try {
+            const f = await db.collection("users").doc(FOUNDERS[0]).get();
+            const to = f.exists ? String(f.data().email || "").trim() : "";
+            if (to) await sendEmail({ to, subject: `Reverso de saldo FALLIDO — acreditar a mano (uid ${uid})`, html: `<p>Andreani rechazó la etiqueta del pedido ${envioId} de ${uData.email || uid} y el reverso de $${precio.toLocaleString("es-AR")} falló (${String(e2.message).slice(0, 200)}). Acreditá el saldo a mano desde Admin › Logística › Saldos.</p>` });
+          } catch (_) {}
+          return res.status(502).json({ error: `${ordenErr} — además falló la devolución del saldo: ya avisamos al equipo de Growith, que lo acredita a mano.` });
         }
         return res.status(502).json({ error: ordenErr, reversado: true });
       }
@@ -1790,13 +1838,11 @@ export default async function handler(req, res) {
         numeroDeEnvio,
         estado: ordenData.estado || "Pendiente",
         precio,
-        contrato,
         tipo,
         fechaEstimadaDeEntrega: ordenData.fechaEstimadaDeEntrega || null,
         emitiendoTs: FieldValue.delete(), // liberar el lock de emisión
         ts: FieldValue.serverTimestamp(),
       };
-      const writes = [movRef.set({ numeroDeEnvio }, { merge: true })];
       // Contacto del destinatario: lo usa el cron para avisarle "está en
       // sucursal" / "visita fallida" por mail (si la cuenta lo tiene activo).
       const destinatarioSlim = {
@@ -1804,12 +1850,32 @@ export default async function handler(req, res) {
         email: String(destinatario.email || "").trim().slice(0, 160),
         telefono: String(destinatario.telefono || "").replace(/[^\d+]/g, "").slice(0, 25),
       };
-      if (envioRef) writes.push(envioRef.set({ andreani: andreaniInfo, destinatario: destinatarioSlim }, { merge: true }));
-      // Índice por número de envío (conciliación contra la factura de Andreani).
-      writes.push(db.collection("andreani_idx").doc(numeroDeEnvio).set({
-        uid, envioId: String(envioId), precio, costo: Math.round(costoConDescuento(cot, cfg)), tipo, mes: mesAR(), ts: FieldValue.serverTimestamp(),
-      }, { merge: true }).catch(e => console.error("[andreani] idx:", e.message)));
-      await Promise.all(writes);
+      // Movimiento + envío + índice en UN batch atómico (antes eran tres
+      // writes sueltos: si fallaba el del envío, la etiqueta quedaba huérfana y
+      // el reintento emitía otra). Con reintentos; si aun así falla, el número
+      // se guarda como sea y se avisa al fundador — nunca se pierde.
+      const idxRef = db.collection("andreani_idx").doc(numeroDeEnvio);
+      const idxData = { uid, envioId: String(envioId), precio, costo: Math.round(costoConDescuento(cot, cfg)), tipo, mes: mesAR(), ts: FieldValue.serverTimestamp() };
+      let guardado = false, errGuardado = null;
+      for (let intento = 0; intento < 3 && !guardado; intento++) {
+        try {
+          const b = db.batch();
+          b.set(movRef, { numeroDeEnvio }, { merge: true });
+          b.set(envioRef, { andreani: andreaniInfo, destinatario: destinatarioSlim }, { merge: true });
+          b.set(idxRef, idxData, { merge: true });
+          await b.commit();
+          guardado = true;
+        } catch (e) { errGuardado = e; await new Promise(r => setTimeout(r, 400 * (intento + 1))); }
+      }
+      if (!guardado) {
+        console.error(`[andreani] GUARDADO POST-EMISIÓN FALLIDO uid=${uid} envio=${numeroDeEnvio}:`, errGuardado?.message);
+        try { await envioRef.set({ andreani: { numeroDeEnvio, precio, tipo, dudosoTs: Date.now(), emitiendoTs: FieldValue.delete() } }, { merge: true }); } catch (_) {}
+        try {
+          const f = await db.collection("users").doc(FOUNDERS[0]).get();
+          const to = f.exists ? String(f.data().email || "").trim() : "";
+          if (to) await sendEmail({ to, subject: `Etiqueta emitida sin registro completo — ${numeroDeEnvio} (uid ${uid})`, html: `<p>Andreani emitió el envío <strong>${numeroDeEnvio}</strong> del pedido ${envioId} de ${uData.email || uid} por $${precio.toLocaleString("es-AR")}, pero el guardado en Firestore falló (${String(errGuardado?.message || "").slice(0, 200)}). Revisá users/${uid}/envios/${envioId}, andreani_mov e andreani_idx.</p>` });
+        } catch (_) {}
+      }
 
       // Stats mensuales de rentabilidad (best-effort, fuera de la transacción).
       try {
@@ -2434,13 +2500,20 @@ export default async function handler(req, res) {
           const eRef = tRef.collection("envios").doc(String(c.numero));
           const tMov = tRef.collection("andreani_mov").doc();
           reintegro = await db.runTransaction(async (tx) => {
-            const [uS, eS] = await Promise.all([tx.get(tRef), tx.get(eRef)]);
+            const [uS, eS, cS] = await Promise.all([tx.get(tRef), tx.get(eRef), tx.get(ref)]);
             const e = eS.exists ? eS.data() : {};
+            // Idempotencia adentro de la tx: dos admins clickeando a la vez no
+            // reintegran dos veces (antes el chequeo estaba afuera).
+            if (cS.exists && cS.data()?.reintegrado) throw new Error("Ese caso ya fue reintegrado.");
             const monto = Math.round(Number(c.precio) || Number(e.andreani?.precio) || 0);
             if (!(monto > 0)) throw new Error("El envío no tiene precio registrado: hacé el reintegro a mano desde Saldos.");
             if (e.andreani?.anulada) throw new Error("Esa etiqueta ya fue anulada y reintegrada.");
             const saldo = Math.round(Number(uS.data()?.andreaniSaldo) || 0);
             const nuevo = saldo + monto;
+            tx.set(ref, { reintegrado: true, reintegroMonto: monto }, { merge: true });
+            // Conciliación y stats: la etiqueta anulada deja de contar como cobrada.
+            if (c.numeroDeEnvio) tx.set(db.collection("andreani_idx").doc(String(c.numeroDeEnvio)), { anulada: true, reintegro: monto, anuladaAt: new Date().toISOString() }, { merge: true });
+            tx.set(db.collection("andreani_config").doc(`stats_${mesAR()}`), { reintegros: FieldValue.increment(monto), porUid: { [c.uid]: { reintegros: FieldValue.increment(monto) } } }, { merge: true });
             tx.set(tRef, { andreaniSaldo: nuevo }, { merge: true });
             tx.set(tMov, { tipo: "reverso", monto, saldoDespues: nuevo, nota: `Reintegro por anulación de etiqueta ${c.numeroDeEnvio || ""}`.trim(), numeroDeEnvio: c.numeroDeEnvio || null, envioId: String(c.numero), adminUid: adm.user.uid, casoId: id, ts: FieldValue.serverTimestamp() });
             if (eS.exists) tx.set(eRef, { activo: false, andreani: { anulada: true, anuladaAt: new Date().toISOString() } }, { merge: true });
@@ -2577,7 +2650,7 @@ export default async function handler(req, res) {
           const upd = {};
           if (body.markupPct !== undefined) {
             const v = Number(body.markupPct);
-            if (!isFinite(v) || v < 0) return res.status(400).json({ error: "markupPct inválido" });
+            if (!isFinite(v) || v < 0 || v > 200) return res.status(400).json({ error: "markupPct inválido (0-200)" });
             upd.markupPct = v;
           }
           if (body.markupFijo !== undefined) {
@@ -2757,6 +2830,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: `Acción desconocida: ${action}` });
   } catch (e) {
     console.error("[andreani]", e);
-    return res.status(500).json({ error: e.message || "Error interno" });
+    // Mensajes de Andreani / de negocio ya vienen en castellano y sirven al
+    // usuario; los internos (Firestore, login de Andreani, variables) no.
+    const m = String(e?.message || "");
+    const interno = !m || /firestore|grpc|deadline|unavailable|permission|ANDREANI_|ECONN|ETIMEDOUT|fetch failed|is not a function|undefined|null/i.test(m);
+    return res.status(500).json({ error: interno ? "Error interno de Growith. Reintentá en un minuto; si sigue, avisanos." : m });
   }
 }
