@@ -7,6 +7,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getValidMLToken } from "./integrations.js";
 import { guardUid, guardCron, isCronRequest } from "./_auth.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
+import { esDemo, leerDemo, tnOrderDemo, mlOrderDemo, tnProductoDemo, feeDemo } from "./_demo.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -746,11 +747,12 @@ export default async function handler(req, res) {
   if (!isCronRequest(req) && !(await guardUid(req, res, uid))) return;
 
   let platform="tiendanube", storeId, accessToken, shop, mlSellerId, mlToken;
-  let dbRef;
+  let dbRef, userDataStock=null;
   try{
     dbRef=initAdmin();
     const snap=await dbRef.collection("users").doc(uid).get();
     if(snap.exists){
+      userDataStock=snap.data();
       const stores=snap.data().stores||[];
       const tn=stores.find(s=>s.type==="tiendanube");
       const sh=stores.find(s=>s.type==="shopify");
@@ -773,6 +775,42 @@ export default async function handler(req, res) {
   }catch(e){
     console.error("[stock]",e.message);
     return res.status(500).json({ error: "Error al obtener credenciales" });
+  }
+  // Tienda DEMO (api/_demo.js): productos y ventas ficticias de Firestore con el
+  // MISMO formato que Tienda Nube / Mercado Libre → Dashboard, P&L y Stock los
+  // procesan con el motor real. Sin caché (se lee directo) y sin llamar a ninguna
+  // plataforma. saleFee = comisión del medio de pago elegido en cada venta.
+  if (esDemo(userDataStock) && action === "products") {
+    try {
+      const { productos, ventas } = await leerDemo(dbRef, uid, sinceDate, untilDate);
+      const vTienda = ventas.filter(o => o.canal !== "ml"), vMl = ventas.filter(o => o.canal === "ml");
+      const analytics = processTN(vTienda.map(tnOrderDemo));
+      const feePor = Object.fromEntries(vTienda.map(o => [String(o.id), Number(o.fee ?? feeDemo(o)) || 0]));
+      for (const od of analytics.ordersDetail) { od.saleFee = feePor[od.id] || 0; od._demo = true; }
+      const normalized = productos.filter(p => p.canal !== "ml").map(p => normTN(tnProductoDemo(p), analytics.map, effectiveDays));
+      const resp = buildResponse("tiendanube", normalized, analytics, effectiveDays);
+      resp.quality = { tn_truncated:false, ml_truncated:false, cancelled_excluded:0, partial_refund_orders:0 };
+      resp.demo = true;
+      resp.ml_connected = true;
+      const mlA = processML(vMl.map(mlOrderDemo));
+      for (const p of productos) { if (p.canal !== "tienda" && p.mlId && !mlA.map[p.mlId]) mlA.map[p.mlId] = { nombre: p.nombre, units: 0 }; }
+      for (const od of mlA.ordersDetail) od._demo = true;
+      resp.ml_data = {
+        daily: mlA.daily, daily_revenue: mlA.dailyRevenue, daily_orders: mlA.dailyOrders,
+        by_variant: mlA.byVariant, by_variant_rev: mlA.byVariantRev,
+        ml_products: Object.entries(mlA.map||{}).map(([id,v])=>({id, nombre:v.nombre||id, units:v.units})),
+        ml_commission: mlA.comisionML || 0, ml_commission_daily: mlA.comisionMLDaily || {},
+        ml_orders_detail: mlA.ordersDetail || [],
+        by_province: mlA.byProv, by_hour: mlA.byHour, by_payment: mlA.byPayment,
+        total_units: Object.values(mlA.map).reduce((a,v)=>a+(v.units||0), 0),
+        total_revenue: Object.values(mlA.dailyRevenue||{}).reduce((a,b)=>a+b,0),
+        total_orders: Object.values(mlA.dailyOrders||{}).reduce((a,b)=>a+b,0),
+      };
+      return res.status(200).json(resp);
+    } catch (e) {
+      console.error("[stock demo]", e.message);
+      return res.status(500).json({ error: "Tienda demo: " + e.message });
+    }
   }
   if(!accessToken) return res.status(403).json({ error: "Tienda no conectada" });
 

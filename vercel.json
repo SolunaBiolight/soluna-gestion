@@ -41,6 +41,9 @@
     },
     "api/mcp.js": {
       "maxDuration": 90
+    },
+    "api/demo.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [

@@ -5,6 +5,8 @@ import { guardUid, guardCron, verifyAuth } from "./_auth.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
 import { trazasOficialAndreani, trazasDebugAndreani, getGlobalConfig, envioSinIngreso, CASO_MOTIVOS, mailEjecutiva } from "./andreani.js";
 import { FieldValue } from "firebase-admin/firestore";
+import { esDemo } from "./_demo.js";
+import { esNumeroEnvioDemo } from "./_demo_ops.js";
 
 // Mail simple (Resend), best-effort: nunca rompe el cron.
 async function mailEnvios(to, subject, html) {
@@ -268,6 +270,17 @@ export default async function handler(req, res) {
       if (!(await verifyAuth(req))) return res.status(401).json({ error: 'Sesión requerida para el modo diagnóstico' });
       return res.status(200).json(await trazasDebugAndreani(initAdmin(), nro));
     }
+    // Tienda DEMO: número de envío ficticio → su traza guardada en demo_tracks
+    // (la escriben _demo_ops.js y andreani.js). Nunca se consulta a Andreani.
+    if (esNumeroEnvioDemo(nro)) {
+      try {
+        const dt = await initAdmin().collection("demo_tracks").doc(nro).get();
+        if (dt.exists) {
+          const x = dt.data() || {};
+          return res.status(200).json({ estado: x.estado || null, estadoActual: x.estado || null, ultimoEvento: x.estado ? { estado: x.estado } : null, eventos: Array.isArray(x.eventos) ? x.eventos : [], raw: null, source: "demo" });
+        }
+      } catch (_) {}
+    }
     // PRIMERO la API oficial autenticada (envíos de la cuenta de la plataforma:
     // datos al instante y confiables); si no lo ve (envío ajeno) → scraping.
     let out = null;
@@ -342,6 +355,9 @@ export default async function handler(req, res) {
       // inactivas se marcan igual para que no tapen la cabeza de la cola.
       const activos = [], marcarUsers = [];
       for (const d of candidatos) {
+        // Tiendas DEMO: envíos ficticios — ni Andreani, ni mails al comprador o
+        // al dueño, ni anulaciones automáticas. Solo se corre la rotación.
+        if (esDemo(d.data())) { marcarUsers.push(d.ref); continue; }
         const act = d.data().enviosTrackActivo || "";
         if (!(act > cutoff)) { marcarUsers.push(d.ref); continue; }
         if (activos.length >= MAX_CUENTAS) break;
@@ -546,8 +562,26 @@ export default async function handler(req, res) {
           if (vistosC.has(d.id)) continue;
           candC.push(d); vistosC.add(d.id);
         }
+        // Tiendas DEMO: sus canjes son ficticios — no se consulta Andreani ni se
+        // manda mail; se les corre el reloj para que no ocupen la cola.
+        const ownerDemo = new Map();
+        const cargarOwners = async (ids) => {
+          const faltan = [...new Set(ids.filter(x => x && !ownerDemo.has(String(x))).map(String))];
+          for (let i = 0; i < faltan.length; i += 100) {
+            const snaps = await db.getAll(...faltan.slice(i, i + 100).map(x => db.collection("users").doc(x)));
+            snaps.forEach(s => ownerDemo.set(s.id, esDemo(s.data())));
+          }
+        };
+        await cargarOwners(candC.map(d => d.data().ownerId));
+        const canjesDemo = candC.filter(d => ownerDemo.get(String(d.data().ownerId || "")) && d.data().tracking);
+        if (canjesDemo.length) {
+          const wb = db.batch();
+          canjesDemo.forEach(d => wb.set(d.ref, { trackingLastCheck: ahora }, { merge: true }));
+          try { await wb.commit(); } catch (_) {}
+        }
         const pendCanjes = candC.filter(d => {
           const c = d.data();
+          if (ownerDemo.get(String(c.ownerId || ""))) return false;
           // Multi-tenant: `ownerId` es la cuenta dueña del canje. El front lista
           // canjes con where("ownerId","==",uid), así que un canje sin ownerId
           // no le pertenece a nadie: no hay a quién avisarle y no debe tocarse
@@ -670,16 +704,25 @@ export default async function handler(req, res) {
         }
         // A quiénes hay que avisarles de verdad.
         const aRecordar = [];
+        await cargarOwners(remDocs.map(d => d.data().ownerId));
+        const remDemo = [];
         for (const d of remDocs) {
           const c = d.data();
           // Sin ownerId el canje no pertenece a ninguna cuenta: no hay destinatario.
           if (!c.ownerId) continue;
+          // Tienda DEMO: sin recordatorio; se marca para que no vuelva a la cola.
+          if (ownerDemo.get(String(c.ownerId))) { remDemo.push(d); continue; }
           if (!c.trackEntregadoAt || c.trackEntregadoAt > cutoffRem || c.contentReminderAt) continue;
           const cont = c.contenido || [];
           const acordados = cont.reduce((s, x) => s + (x.acordados || 0), 0);
           const entregados = cont.reduce((s, x) => s + (x.entregados || 0), 0);
           if (acordados > 0 && entregados >= acordados) continue;
           aRecordar.push({ d, c, acordados, entregados });
+        }
+        if (remDemo.length) {
+          const wb = db.batch();
+          remDemo.forEach(d => wb.set(d.ref, { contentReminderAt: ahora }, { merge: true }));
+          try { await wb.commit(); } catch (_) {}
         }
         // Envío en lotes concurrentes de 5 (no uno por uno): con muchas cuentas
         // un `for` secuencial se comía el presupuesto de la función, y disparar
@@ -737,8 +780,10 @@ export default async function handler(req, res) {
   if (req.query.action === 'envios_list') {
     try {
       const db = initAdmin();
-      // Marca de actividad para el cron de tracking
-      await db.collection("users").doc(uid).set({ enviosTrackActivo: new Date().toISOString() }, { merge: true });
+      // Marca de actividad para el cron de tracking. Las tiendas DEMO no entran
+      // al cron (sus envíos son ficticios): sin marca.
+      const uSnapL = await db.collection("users").doc(uid).get();
+      if (!esDemo(uSnapL.data())) await db.collection("users").doc(uid).set({ enviosTrackActivo: new Date().toISOString() }, { merge: true });
       const cutoff = new Date(Date.now() - 60 * 86400000).toISOString();
       const col = db.collection("users").doc(uid).collection("envios");
       const snap = await col.where("creado", ">", cutoff).get();
@@ -809,6 +854,8 @@ export default async function handler(req, res) {
       const ids = Array.isArray(body.ids) ? body.ids.slice(0, 15).map(String) : [];
       if (!ids.length) return res.json({ ok: true, actualizados: 0 });
       const db = initAdmin();
+      // Tienda DEMO: canjes ficticios, no se consulta Andreani.
+      if (esDemo((await db.collection("users").doc(uid).get()).data())) return res.json({ ok: true, actualizados: 0 });
       const ahora = new Date().toISOString();
       let actualizados = 0;
       for (let i = 0; i < ids.length; i += 3) {
@@ -854,11 +901,12 @@ export default async function handler(req, res) {
     } catch (e) { return res.status(500).json({ error: e.message }); }
   }
 
-  let storeId, accessToken, shStore = null;
+  let storeId, accessToken, shStore = null, tiendaDemo = false;
   try {
     const db = initAdmin();
     const userSnap = await db.collection("users").doc(uid).get();
-    if (userSnap.exists) {
+    tiendaDemo = esDemo(userSnap.data());
+    if (userSnap.exists && !tiendaDemo) {
       const stores = userSnap.data().stores || [];
       const tnStore = stores.find(s => s.type === "tiendanube");
       shStore = stores.find(s => s.type === "shopify" && s.accessToken && s.shop) || null;
@@ -871,6 +919,14 @@ export default async function handler(req, res) {
   } catch(e) {
     console.error("Firebase error:", e.message);
     return res.status(500).json({ error: "Error al obtener credenciales" });
+  }
+
+  // Tienda DEMO: nada sale a Tienda Nube ni a Shopify (ni tracking ni mail al
+  // comprador) — respuesta de éxito inocua con el mismo shape.
+  if (tiendaDemo) {
+    if (req.query.action === 'pack') return res.status(200).json({ ok: true, order: orderId || null, demo: true });
+    if (!orderId || !tracking) return res.status(400).json({ error: "Faltan orderId o tracking" });
+    return res.status(200).json({ ok: true, order: orderId, tracking, tnOrderId: String(orderId), fulfilled: true, fulfillError: null, demo: true });
   }
 
   // ── Rama Shopify: misma prioridad que orders.js (Shopify manda si está

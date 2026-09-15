@@ -5,6 +5,19 @@ import { gadsCreds } from "./google-ads.js";
 import { ttGastoPeriodo } from "./tiktok-ads.js";
 import { guardUid, guardCron, isCronRequest } from "./_auth.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
+import { esDemo, leerDemo, tnOrderDemo, mlOrderDemo, gastoAdsDemo } from "./_demo.js";
+
+// Tienda DEMO: código de cupón ficticio bajo el que se agrupan las ventas
+// demo con descuento (Canjes → cupones y portal público de cupón).
+const CUPON_DEMO = "BIENVENIDA10";
+function cuponDemoAgg(ventas) {
+  const conCupon = (ventas || []).filter(v => v.canal !== "ml" && (Number(v.descuento) || 0) > 0);
+  return {
+    usos: conCupon.length,
+    ventas: conCupon.reduce((s, v) => s + (Number(v.total) || 0), 0),
+    descuento: conCupon.reduce((s, v) => s + (Number(v.descuento) || 0), 0),
+  };
+}
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -282,8 +295,9 @@ export default async function handler(req, res) {
     const stores = uSnap.exists ? (uSnap.data().stores || []) : [];
     const tn = stores.find(s => s.type === "tiendanube" && s.accessToken && s.storeId);
     const shp = stores.find(s => s.type === "shopify" && s.accessToken && s.shop);
-    if (shp) await ensureShopifyToken(db, link.uid, shp);
-    if (!tn && !shp) return res.status(503).json({ error: "La tienda no está conectada en este momento." });
+    const demoCup = uSnap.exists && esDemo(uSnap.data()); // tienda DEMO: sin barrido de plataforma
+    if (shp && !demoCup) await ensureShopifyToken(db, link.uid, shp);
+    if (!tn && !shp && !demoCup) return res.status(503).json({ error: "La tienda no está conectada en este momento." });
     const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
     const mesAct = hoy.slice(0, 7);
     // Rango libre (desde/hasta YYYY-MM-DD) del selector de período; fallback:
@@ -302,6 +316,18 @@ export default async function handler(req, res) {
     if (desde > hasta) return res.status(400).json({ error: "rango inválido" });
     if ((new Date(hasta) - new Date(desde)) / 86400000 > 400) return res.status(400).json({ error: "El rango máximo es de un año." });
     const code = String(link.code || "").toUpperCase().trim();
+    if (demoCup) {
+      // Tienda DEMO: agregado desde las ventas ficticias (mismo formato, sin caché)
+      const agg = code === CUPON_DEMO ? cuponDemoAgg((await leerDemo(db, link.uid, desde, hasta)).ventas) : { usos: 0, ventas: 0, descuento: 0 };
+      const pctD = Number(link.comisionPct) || 0;
+      const netoD = (agg.ventas - agg.descuento) * (1 - (Number(link.mpComision) || 0) / 100);
+      return res.status(200).json({
+        ok: true, code, influencer: link.influencer || "",
+        periodo: { desde, hasta },
+        usos: agg.usos, ventas: Math.round(agg.ventas), descuento: Math.round(agg.descuento),
+        neto: Math.round(netoD), comisionPct: pctD, comision: Math.round(netoD * (pctD / 100)),
+      });
+    }
     // Cache en Firestore por rango: un período que ya terminó no cambia nunca
     // (TTL 24h por las dudas); uno que incluye hoy, 3 min. Abrir el link o
     // cambiar el período pega acá casi siempre en vez del barrido de TN.
@@ -468,6 +494,9 @@ export default async function handler(req, res) {
       const userSnap = await db.collection("users").doc(uid).get();
       const userData = userSnap.data() || {};
       const stores = userData.stores || [];
+      // Tienda DEMO: ventas ficticias (las arma /api/stock), comisión exacta de
+      // cada venta y pauta determinística — nada sale a TN/ML/MP/Meta/Google/TikTok.
+      const demoMode = esDemo(userData);
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
       // Huella de integraciones del momento del cálculo. Si después se conecta
       // (o cambia) una tienda / ML / Meta / Google, la caché de ese rango deja
@@ -478,6 +507,8 @@ export default async function handler(req, res) {
         `meta:${metaAccountsSnap.docs.filter(d => (d.data() || {}).access_token).length}`,
         `gads:${userData.googleAds?.refresh_token ? 1 : 0}`,
         `tt:${userData.tiktokAds?.access_token ? (userData.tiktokAds.advertisers || []).length : 0}`,
+        // Demo: cada cambio de las ventas ficticias sube demo.version → caché inválida
+        ...(demoMode ? [`demo:${userData.demo?.version || 0}`] : []),
       ].join("|");
       const hoyArg = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date());
       const rangoCerrado = !!req.query.date_from && until < hoyArg;
@@ -603,6 +634,7 @@ export default async function handler(req, res) {
       let mpTokenOk = false;
       async function fetchMPCommission(sinceYmd, untilYmd) {
         try {
+          if (demoMode) return { fee:0, rev:0, feeByRef:{}, feeByPayId:{}, appByPayId:{} }; // demo: la comisión viene en cada venta (saleFee)
           if (mlMpAcc === "__none__") return { fee:0, rev:0, feeByRef:{} }; // ninguna cuenta lee MP
           const tok = await getValidMLToken(db, uid, mlMpAcc); // cuenta de MP (Shopify)
           if (!tok?.accessToken) return { fee:0, rev:0 };
@@ -725,7 +757,21 @@ export default async function handler(req, res) {
       const metaFees = (userData.margenesMetaAdFees && typeof userData.margenesMetaAdFees==="object" && !Array.isArray(userData.margenesMetaAdFees)) ? userData.margenesMetaAdFees : {};
       const legacyMetaFeePct = parseFloat(userData.margenesDolar?.feeAdSpend)||0;
       const metaFeeFor = (accId) => { const bare=String(accId).replace(/^act_/,""); const v = (metaFees[bare]!=null)?metaFees[bare]:(metaFees["act_"+bare]!=null?metaFees["act_"+bare]:null); return ((v!=null?parseFloat(v):legacyMetaFeePct)||0)/100; };
+      // Tienda DEMO: gasto de Meta ficticio día por día (ARS), con la MISMA forma
+      // que fetchMetaAll — nunca se llama a Meta con las cuentas de mentira.
+      function metaDemo(s, u, bdCollect) {
+        const out = {};
+        for (let d = s; d <= u; d = addDays(d, 1)) {
+          const spend = gastoAdsDemo(d, "meta");
+          const impressions = Math.round(spend / 4.2); // CPM ≈ $4.200
+          const purchaseVal = Math.round(spend * 2.9);
+          out[d] = { spend, impressions, clicks: Math.round(impressions * 0.013), reach: Math.round(impressions * 0.68), purchases: Math.round(purchaseVal / 42000), purchaseVal };
+          if (bdCollect) { bdCollect.porMoneda.ARS = (bdCollect.porMoneda.ARS || 0) + spend; bdCollect.convertido += spend; }
+        }
+        return out;
+      }
       async function fetchMetaAll(s, u, eRef, bdCollect) {
+        if (demoMode) return metaDemo(s, u, bdCollect);
         if (!metaAccounts.length) return {};
         const token = metaAccounts[0].access_token;
         let accounts = []; // [{id, currency}]
@@ -959,6 +1005,7 @@ export default async function handler(req, res) {
       async function fetchMlAdsSpend(sinceR, untilR, dbg) {
         const D = (step, extra) => { if (dbg) { dbg.step = step; Object.assign(dbg, extra||{}); } };
         try {
+          if (demoMode) { D("demo"); return null; } // demo: sin Mercado Ads (rige la carga manual, si hay)
           if (!hasML) { D("sin_cuenta_ml"); return null; }
           const tokML = mlVentasAcc === "__none__" ? null : await getValidMLToken(db, uid, mlVentasAcc);
           if (!tokML?.accessToken) { D("sin_token"); return null; }
@@ -1184,8 +1231,22 @@ export default async function handler(req, res) {
       // Diagnóstico del costo de envío ML: cuántos shipments resolvieron por cada
       // fuente + una respuesta cruda de /costs de muestra (para auditar campos).
       const mlEnvioDebug = { costsOk:0, costsFallback:0, flex:0, sumCost:0, sumSave:0, sample:null, cacheHits:0 };
+      if (demoMode) {
+        // Tienda DEMO: el costo de envío ML de cada venta ficticia, por el mismo
+        // shippingId que arma mlOrderDemo (sin consultar /shipments de ML).
+        try {
+          const { ventas: ventasDemo } = await leerDemo(db, uid, prevSince, until);
+          for (const v of ventasDemo) {
+            if (v.canal !== "ml") continue;
+            const sid = mlOrderDemo(v).shipping?.id;
+            if (!sid) continue;
+            mlLogi[sid] = { lt: null, cost: parseFloat(v.envioCosto) || 0 };
+            mlEnvioDebug.costsOk++; mlEnvioDebug.sumCost += mlLogi[sid].cost;
+          }
+        } catch(_) {}
+      }
       try {
-        const tokML = mlVentasAcc === "__none__" ? null : await getValidMLToken(db, uid, mlVentasAcc); // cuenta de ventas ML
+        const tokML = (demoMode || mlVentasAcc === "__none__") ? null : await getValidMLToken(db, uid, mlVentasAcc); // cuenta de ventas ML
         if (tokML?.accessToken) {
           const allIds = [...new Set([
             ...(curr.raw?.ml_data?.ml_orders_detail||[]),
@@ -1279,6 +1340,9 @@ export default async function handler(req, res) {
       // Fee real de una orden: prioridad al fee exacto embebido (saleFee), después
       // el cruce por payment_id, después el cruce por ref. Null = usar el %.
       const realMpDe = (o, fbRef, fbPay) => {
+        // Tienda DEMO: la comisión del medio de pago elegido viene EXACTA en la
+        // venta (saleFee, puede ser 0 en transferencia) y cuenta como real.
+        if ((demoMode || o._demo) && o.saleFee != null && isFinite(parseFloat(o.saleFee))) return parseFloat(o.saleFee);
         // Tienda Nube: cargo real de la pasarela leído de las transacciones de
         // la orden (merchant_charges) — sin conectar MP. Vale para MP, Pago
         // Nube, etc. Se cachea por orden en users/{uid}.margenesTnFees.
@@ -1307,8 +1371,8 @@ export default async function handler(req, res) {
       const mpRefCache = (userData.margenesMpRefs && typeof userData.margenesMpRefs==="object" && !Array.isArray(userData.margenesMpRefs)) ? { ...userData.margenesMpRefs } : {};
       let shFeesMuestra = null;
       const shStoreRef = (userData.stores||[]).find(s => s.type==="shopify");
-      if (shStoreRef) await ensureShopifyToken(db, uid, shStoreRef);
-      if (shStoreRef?.shop && shStoreRef?.accessToken) {
+      if (shStoreRef && !demoMode) await ensureShopifyToken(db, uid, shStoreRef);
+      if (!demoMode && shStoreRef?.shop && shStoreRef?.accessToken) {
         const tsPend = f => { const s=String(f||""); if(!s) return 0; const t=Date.parse(/(Z|[+-]\d{2}:?\d{2})$/.test(s)?s:s+"-03:00"); return isNaN(t)?0:t; };
         const pend = [...(curr.raw?.orders_detail||[]), ...(prev.raw?.orders_detail||[])]
           .filter(o => o.platform==="shopify" && /mercado[\s_-]*pago/i.test(o.pay||"") && !mpRefCache[o.id])
@@ -1373,7 +1437,7 @@ export default async function handler(req, res) {
       let tnFeesDiag = null, tnFeesNuevas = 0, tnFeesMuestra = null;
       const TN_SIN_PERMISO_PAGOS = "Tienda Nube no otorgó el permiso de pagos (read_payments) a Growith: reconectá la tienda desde Configuración → Integraciones y las comisiones de pago se leen solas";
       const tnStoreRef = (userData.stores||[]).find(s => s.type==="tiendanube" && s.accessToken && s.storeId);
-      if (tnStoreRef) {
+      if (tnStoreRef && !demoMode) {
         const tnH = { 'Authentication': `bearer ${tnStoreRef.accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)' };
         const tsPendT = f => { const s=String(f||""); if(!s) return 0; const t=Date.parse(/(Z|[+-]\d{2}:?\d{2})$/.test(s)?s:s+"-03:00"); return isNaN(t)?0:t; };
         const ahoraMs = Date.now();
@@ -1467,6 +1531,14 @@ export default async function handler(req, res) {
       // Cualquier falta (token, credenciales, permisos) → null → rige el manual.
       async function fetchGoogleAdsAuto(sinceR, untilR) {
         try {
+          if (demoMode) {
+            // Tienda DEMO: gasto de Google ficticio día por día + conversiones
+            // atribuidas aproximadas (fila "Google" de la tabla de Canales).
+            let totalD = 0;
+            for (let d = sinceR; d <= untilR; d = addDays(d, 1)) totalD += gastoAdsDemo(d, "google");
+            gadsAttr[`${sinceR}_${untilR}`] = { conv: Math.round(totalD / 14000), convValue: Math.round(totalD * 3.4) };
+            return +totalD.toFixed(2);
+          }
           const g = userData.googleAds;
           // 2026: Google ya no exige developer token (el nivel de acceso lo da el
           // proyecto de Google Cloud). Si está en Vercel se manda igual; si no, no bloquea.
@@ -1541,6 +1613,7 @@ export default async function handler(req, res) {
       // operativo que Meta (dolarCostosEf; si no hay, el de Ads). Sin conexión → null.
       async function fetchTiktokAdsAuto(sinceR, untilR) {
         try {
+          if (demoMode) return null; // demo: sin TikTok Ads (gasto 0)
           const t = userData.tiktokAds;
           if (!t?.access_token || !(t.advertisers || []).length) return null;
           const { cuentas, errs } = await ttGastoPeriodo(t, sinceR, untilR);
@@ -2000,6 +2073,13 @@ export default async function handler(req, res) {
         reembolsosParciales: rawQ.partial_refund_orders||0,
         mlDevueltas: (curr.raw?.ml_data?.ml_orders_detail||[]).filter(o=>o.refunded).length,
       };
+      if (demoMode) {
+        // Tienda DEMO: cada venta trae su cargo real (saleFee) — sin avisos de
+        // "conectá Mercado Pago" ni cargos de Tienda Nube pendientes de leer.
+        const nTiendaDemo = (curr.raw?.orders_detail||[]).length;
+        Object.assign(quality, { mpSinConfig: false, tnMp: null, shMp: null,
+          tnFees: { conTarifa: 0, conCargo: nTiendaDemo, sinCargo: 0, pendientes: 0, nuevas: 0, diag: null, muestra: null } });
+      }
 
       // Desglose de facturación TN: revenue = neto (bruto − descuento) + envío
       // cobrado al cliente — igual que la facturación que reporta el admin de TN.
@@ -2037,7 +2117,7 @@ export default async function handler(req, res) {
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, metaAccountsCount: metaAccounts.length,
           mlAdsFuente: mlAdsAutoCurr!=null ? "auto" : (mlAdsList.length ? "manual" : "sin_datos"),
           googleAdsFuente: gAdsAutoCurr!=null ? "auto" : (googleAdsList.length ? "manual" : "sin_datos"),
-          googleAdsConectado: !!userData.googleAds?.refresh_token,
+          googleAdsConectado: demoMode || !!userData.googleAds?.refresh_token,
           googleAdsDiag: (userData.googleAds?.refresh_token && gAdsAutoCurr==null) ? gadsDiag : null,
           tiktokAdsConectado: !!userData.tiktokAds?.access_token,
           tiktokAdsFuente: ttAutoCurr!=null ? "auto" : "sin_datos",
@@ -2157,11 +2237,14 @@ export default async function handler(req, res) {
   if (!uid) return res.status(401).json({ error: "uid requerido" });
 
   let platform = 'tiendanube', storeId, accessToken, shop, mlUserId, mlToken;
-  let dbRef;
+  let dbRef, demoMain = false;
   try {
     dbRef = initAdmin();
     const userSnap = await dbRef.collection("users").doc(uid).get();
-    if (userSnap.exists) {
+    // Tienda DEMO: no hay credenciales reales — se responde desde demo_orders
+    // (bloque "Tienda DEMO" más abajo) sin tocar TN / Shopify / ML.
+    demoMain = userSnap.exists && esDemo(userSnap.data());
+    if (userSnap.exists && !demoMain) {
       const stores = userSnap.data().stores || [];
       const tnStore = stores.find(s => s.type === "tiendanube");
       const shStore = stores.find(s => s.type === "shopify");
@@ -2190,7 +2273,7 @@ export default async function handler(req, res) {
     console.error("Error fetching user store:", e.message);
     return res.status(500).json({ error: "Error al obtener credenciales" });
   }
-  if (!accessToken) return res.status(403).json({ error: "Tienda no conectada" });
+  if (!accessToken && !demoMain) return res.status(403).json({ error: "Tienda no conectada" });
 
   // ── Helpers Shopify ───────────────────────────────────────────────────
   const SH_HEADERS = { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' };
@@ -2254,6 +2337,96 @@ export default async function handler(req, res) {
   });
 
   try {
+    // ── Tienda DEMO ───────────────────────────────────────────────────────
+    // Pedidos ficticios (users/{uid}/demo_orders) en el formato crudo de Tienda
+    // Nube / Mercado Libre, con la misma forma de respuesta de cada tab/acción.
+    // cupon_link sigue por el camino normal (solo escribe en Firestore).
+    if (demoMain && action !== 'cupon_link') {
+      const lista = n => Array.from({ length: n }, (_, i) => ({ id: i }));
+      // STATS (Home KPIs): período actual vs anterior, tienda + ML
+      if (tab === 'stats') {
+        const { from, to, prevFrom } = req.query;
+        if (!from) return res.status(400).json({ error: 'from required' });
+        const toDate = to || new Date().toISOString();
+        const { ventas } = await leerDemo(dbRef, uid, prevFrom || from, toDate);
+        const tFrom = Date.parse(from), tTo = Date.parse(toDate), tPrev = prevFrom ? Date.parse(prevFrom) : null;
+        const enCur  = v => { const t = Date.parse(v.fecha); return t >= tFrom && t <= tTo; };
+        const enPrev = v => { const t = Date.parse(v.fecha); return tPrev != null && t >= tPrev && t < tFrom; };
+        const statsTn = f => calcStats(ventas.filter(v => v.canal !== "ml" && f(v)).map(tnOrderDemo), false);
+        const statsMl = f => calcMLStats(ventas.filter(v => v.canal === "ml" && f(v)).map(mlOrderDemo));
+        const primaryCurrent = statsTn(enCur), primaryPrev = statsTn(enPrev);
+        const mlCurrent = statsMl(enCur), mlPrev = statsMl(enPrev);
+        return res.status(200).json({
+          current: mergeStats(primaryCurrent, mlCurrent),
+          prev: mergeStats(primaryPrev, mlPrev),
+          breakdown: { primary: primaryCurrent, ml: mlCurrent },
+        });
+      }
+      // ML_ENVIOS: ventas ML de los últimos N días con el estado del envío
+      if (tab === 'ml_envios') {
+        const dias = Math.min(parseInt(req.query.days) || 14, 30);
+        const { ventas } = await leerDemo(dbRef, uid, new Date(Date.now() - dias * 86400000).toISOString(), new Date().toISOString());
+        const SHIP_ML = { empaquetar: ["ready_to_ship", "ready_to_print"], enviar: ["ready_to_ship", "printed"], enviado: ["shipped", null], entregado: ["delivered", null] };
+        const orders = ventas.filter(v => v.canal === "ml").map(v => {
+          const o = mlOrderDemo(v);
+          const [status, substatus] = SHIP_ML[v.estadoEnvio] || SHIP_ML.entregado;
+          return {
+            id: String(o.id), fecha: o.date_created || "",
+            comprador: o.buyer?.nickname || "—",
+            items: (o.order_items || []).map(it => ({ titulo: it.item?.title || "", qty: parseInt(it.quantity) || 0 })),
+            total: parseFloat(o.total_amount) || 0,
+            envio: { status, substatus, lt: "drop_off", tracking: null },
+          };
+        });
+        return res.status(200).json({ orders, mlConectado: true });
+      }
+      // Cupones (Canjes): las ventas demo con descuento, bajo un código ficticio
+      if (action === 'coupons') {
+        const { desde, hasta } = req.query;
+        const desdeISO = desde ? `${desde}T00:00:00-0300` : null;
+        const hastaISO = hasta ? `${hasta}T23:59:59-0300` : null;
+        const { ventas } = await leerDemo(dbRef, uid, desde || null, hasta || null);
+        const agg = cuponDemoAgg(ventas);
+        const coupons = agg.usos ? [{ code: CUPON_DEMO, type: "percentage", value: "10", usosPeriodo: agg.usos, ventasPeriodo: agg.ventas, descuentoPeriodo: agg.descuento }] : [];
+        return res.status(200).json({ coupons, totalPedidosAnalizados: ventas.filter(v => v.canal !== "ml").length, couponsListError: null, couponsListados: coupons.length, periodo: { desde: desdeISO, hasta: hastaISO } });
+      }
+      if (action === 'crear_cupon') {
+        const code = String(req.query.code || "").toUpperCase().trim();
+        const tipoCup = req.query.tipo === "absolute" ? "absolute" : "percentage";
+        const valorCup = parseFloat(req.query.valor);
+        if (!/^[A-Z0-9_-]{2,40}$/.test(code)) return res.status(400).json({ error: "Código inválido: solo letras, números y guiones (2 a 40 caracteres, sin espacios)." });
+        if (!isFinite(valorCup) || valorCup <= 0 || (tipoCup === "percentage" && valorCup > 100)) return res.status(400).json({ error: "Valor de descuento inválido." });
+        return res.json({ ok: true, creado: true, code, id: null, type: tipoCup, value: String(valorCup) }); // demo: no se crea en ninguna tienda
+      }
+      // Envíos: solo el canal tienda (ML despacha con su logística → ml_envios)
+      const { ventas } = await leerDemo(dbRef, uid);
+      const tienda = ventas.filter(v => v.canal !== "ml"); // ya vienen de la más nueva a la más vieja
+      if (tab === 'bulk_lookup') {
+        if ((parseInt(req.query.page) || 1) > 1) return res.status(200).json([]);
+        return res.status(200).json(tienda.slice(0, 200).map(v => { const o = tnOrderDemo(v); return { id: o.id, number: o.number, contact_name: o.contact_name, products: o.products }; }));
+      }
+      if (tab === 'total') return res.status(200).json(lista(tienda.length));
+      if (tab === 'cobrar') return res.status(200).json([]); // todas las ventas demo están pagas
+      if (tab === 'empaquetar' || tab === 'enviar') {
+        const sel = tienda.filter(v => v.estadoEnvio === tab).map(tnOrderDemo);
+        if (_countOnly) return res.status(200).json(lista(sel.length));
+        if (req.query.quick === '1') return res.status(200).json(sel.slice(0, 50));
+        return res.status(200).json(sel);
+      }
+      if (q) {
+        const sq = String(q).trim().toLowerCase().replace(/^#/, "");
+        const hits = tienda.filter(v => {
+          const c = v.cliente || {};
+          return String(v.numero || "").includes(sq)
+            || `${c.nombre || ""} ${c.apellido || ""}`.toLowerCase().includes(sq)
+            || String(c.email || "").toLowerCase().includes(sq);
+        });
+        return res.status(200).json(hits.slice(0, 30).map(tnOrderDemo));
+      }
+      // Fallback: últimos pedidos pagados
+      return res.status(200).json(tienda.slice(0, 200).map(tnOrderDemo));
+    }
+
     // BULK LOOKUP (TN): trae una página de órdenes recientes para matchear SKUs
     // localmente. TN no soporta búsqueda por número de orden — hay que paginar
     // y filtrar local. El caso Shopify vive más abajo (necesita los helpers

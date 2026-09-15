@@ -4,6 +4,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { guardCron } from "./_auth.js";
+import { esDemo } from "./_demo.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -111,6 +112,7 @@ export default async function handler(req, res) {
   // Decide si a un usuario hay que avisarle y arma el email. Devuelve null si no.
   const evaluar = (doc) => {
     const u = doc.data();
+    if (esDemo(u)) return null; // tiendas DEMO: sin mails de plan, prueba ni bienvenida
     const email = u.email;
     if (!email) return null;
 

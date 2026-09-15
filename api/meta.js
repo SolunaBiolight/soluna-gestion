@@ -12,6 +12,8 @@ import { getFirestore } from "firebase-admin/firestore";
 import { createHmac } from "crypto";
 import { guardUid, guardCron } from "./_auth.js";
 import { getValidDriveToken } from "./google-drive-callback.js";
+import { esDemo } from "./_demo.js";
+import { esTiendaDemo, metaDemo } from "./_demo_ads.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -1102,6 +1104,7 @@ export default async function handler(req, res) {
         const now = Date.now();
         const aRefrescar = accsSnap.docs.filter(d => {
           const a = d.data() || {};
+          if (a.demo) return false; // cuenta de la tienda demo: sin token real
           if (!a.access_token || a.token_invalid) return false;
           const isOauth = a.oauth === true || String(a.last_test?.msg || "").includes("OAuth");
           if (!isOauth) return false;
@@ -1148,6 +1151,16 @@ export default async function handler(req, res) {
         const ownerUid = d.ref.parent.parent.id;
         if (data.acc_id) tasks.set(`${ownerUid}|${data.acc_id}`, { uid: ownerUid, accId: data.acc_id });
       });
+      // Tiendas DEMO: sin Meta real → sus reglas no se evalúan.
+      try {
+        const owners = [...new Set([...tasks.values()].map(t => t.uid))];
+        const demoOwners = new Set();
+        for (let i = 0; i < owners.length; i += 100) {
+          const snaps = await db.getAll(...owners.slice(i, i + 100).map(u => db.collection("users").doc(u)));
+          snaps.forEach(s => { if (esDemo(s.data())) demoOwners.add(s.id); });
+        }
+        for (const [k, t] of [...tasks]) if (demoOwners.has(t.uid)) tasks.delete(k);
+      } catch (e) { console.warn("[cron-rules] filtro demo:", e.message); }
       const summary = [];
       const lista = [...tasks.values()];
       // Lotes de 4 en paralelo con deadline (antes: secuencial y sin corte)
@@ -1183,6 +1196,16 @@ export default async function handler(req, res) {
   // (o membresía de equipo / admin de plataforma).
   if (!(await guardUid(req, res, uid))) return;
 
+  // ── TIENDA DEMO: datos de ejemplo, sin llamar a Meta (api/_demo_ads.js) ──
+  // Las acciones que no tocan Meta (reglas, productos, creativos, IA, marca)
+  // siguen por el camino real (metaDemo devuelve null).
+  if (await esTiendaDemo(db, uid)) {
+    try {
+      const out = await metaDemo(db, uid, action, req, { objectives: CAMPAIGN_OBJECTIVES });
+      if (out) return res.status(out.status || 200).json(out.body);
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  }
+
   try {
 
     // ── PUBLICADOR CONVERSACIONAL (IA) ───────────────────
@@ -1191,7 +1214,8 @@ export default async function handler(req, res) {
       const apiKey = process.env.GOOGLE_AI_KEY;
       if (!apiKey) return res.status(500).json({ error: "Falta GOOGLE_AI_KEY en el servidor" });
       const cfg = await loadMetaAccount(db, uid, acc_id);
-      if (!cfg?.access_token || !cfg?.ad_account_id) return res.status(400).json({ error: "Conectá tu cuenta de Meta Ads primero" });
+      // (la cuenta de la tienda demo no tiene token: el plan solo usa Gemini)
+      if (!cfg?.demo && (!cfg?.access_token || !cfg?.ad_account_id)) return res.status(400).json({ error: "Conectá tu cuenta de Meta Ads primero" });
       const cur = cfg.currency || "USD";
       const { messages = [] } = req.body || {};
       const system = `Sos el asistente de un PUBLICADOR DE ANUNCIOS de Meta (Facebook/Instagram) dentro de Growith. Charlás con el usuario en español rioplatense (voseo), breve y claro, y armás el plan de un anuncio COMPLETO (campaña + conjunto de anuncios + anuncio).

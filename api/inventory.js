@@ -8,6 +8,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getValidMLToken } from "./integrations.js";
 import { guardUid } from "./_auth.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
+import { esTiendaDemo, inventarioDemo } from "./_demo_ads.js";
 
 // Con varias cuentas de ML conectadas, las publicaciones/gestión de ML usan la
 // cuenta elegida para VENTAS de ML (margenesMlVentas). Vacío = primera (1 solo ML).
@@ -216,6 +217,7 @@ async function pushItemStock(db, uid, item, stores, settings) {
   const results = [];
   const mode = settings.sync_mode || "off";
   if (mode === "off") return results;
+  if ((stores || []).some(s => s && s.demo)) return results; // tienda demo: no se empuja stock a TN/ML
   const stock = Math.max(0, parseInt(item.stock_total) || 0);
   for (const link of (item.product_links || [])) {
     if (link.sync === false) continue; // excluida por el usuario
@@ -259,6 +261,19 @@ export default async function handler(req, res) {
   const db = initAdmin();
 
   try {
+    // ── TIENDA DEMO: Mercado Libre y catálogo de ejemplo, sin llamar a ML ──
+    // (api/_demo_ads.js). Inventario central vacío → Stock muestra el stock de
+    // la tienda. El body se lee solo si la acción se atiende en la rama demo.
+    if (await esTiendaDemo(db, uid)) {
+      if (action === "list_items" && req.method === "GET") {
+        return res.json({ items: [], kpis: { total: 0, ok: 0, low: 0, empty: 0 }, settings: await getSettings(db, uid) });
+      }
+      const out = await inventarioDemo(db, uid, action, req, async () => {
+        try { return JSON.parse((await readBody(req)).toString() || "{}"); } catch (_) { return {}; }
+      });
+      if (out) return res.status(out.status || 200).json(out.body);
+    }
+
     // ── LIST ITEMS con KPIs, status y sales_30d calculados desde movements ──
     if (action === "list_items" && req.method === "GET") {
       const snap = await db.collection("users").doc(uid).collection("inventory_items").get();

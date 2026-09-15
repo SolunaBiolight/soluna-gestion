@@ -1262,6 +1262,9 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
           {isAdmin&&(
             <button onClick={()=>setPage("admin")} title="Admin" style={{background:"transparent",border:`1px solid ${T.yellow}44`,borderRadius:DS.r.md,color:T.yellow,cursor:"pointer",padding:"6px 9px",fontSize:DS.font.sm}}>Admin</button>
           )}
+          {String(user?.email||"").toLowerCase()===DEMO_EMAIL_UI&&(
+            <button onClick={()=>setPage("demo")} title="Tienda demo: datos ficticios para mostrar la app" style={{background:"transparent",border:`1px solid ${T.green}55`,borderRadius:DS.r.md,color:T.green,cursor:"pointer",padding:"6px 9px",fontSize:DS.font.sm,fontFamily:"'Inter',system-ui,sans-serif"}}>Demo</button>
+          )}
         </div>
       </div>
     </div>
@@ -3345,6 +3348,225 @@ function AppSoonSection({T, sectionId, title, desc, onHome, onGoConfig}) {
           <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,maxWidth:560,margin:"0 auto"}}>{desc}</div>
           {onGoConfig&&<button onClick={onGoConfig} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",marginTop:16}}>Ir a Configuración → Integraciones</button>}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tienda DEMO (solo la cuenta de prueba de Growith) ───────────────────────
+// Arma la tienda "Growith Demo" con datos ficticios (api/demo.js) para mostrar la
+// app por dentro: genera un entorno completo con un clic y deja sumar ventas
+// (eligiendo medio de pago y comisión) y productos a mano. Nada sale a
+// plataformas reales: ver api/_demo.js.
+const DEMO_EMAIL_UI = "contacto.growith@gmail.com";
+function demoApi(action, extra = {}) {
+  return authFetch("/api/demo", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ action, ...extra }) })
+    .then(async r => { const j = await r.json().catch(()=>({})); if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`); return j; });
+}
+// Borra los cachés SWR del front de esa tienda, así la venta nueva se ve al entrar a cada sección.
+function ghLimpiarCachesDemo(uid) {
+  try { for (const k of Object.keys(localStorage)) { if (uid && k.includes(uid) && /^growith_(rend_cache|stock_cache|pnl|envios_cache|arca_pend|ml_items)/.test(k)) localStorage.removeItem(k); } } catch(_) {}
+}
+const demoARS = n => "$ " + Math.round(Number(n)||0).toLocaleString("es-AR");
+const DEMO_ESTADOS = [["empaquetar","Por empaquetar"],["enviar","Por enviar"],["enviado","En camino"],["entregado","Entregado"]];
+
+function AppDemo({T, user, authUid, onSwitchOrg, onHome}) {
+  const [st,setSt]=useState(null);
+  const [err,setErr]=useState("");
+  const [busy,setBusy]=useState("");
+  const [data,setData]=useState(null);
+  const [v,setV]=useState({canal:"tienda",prodId:"",varId:"",qty:1,precio:"",medio:"mp_1",pct:"",fecha:"",estadoEnvio:"empaquetar"});
+  const [np,setNp]=useState({nombre:"",sku:"",precio:"",costo:"",canal:"ambos",variantes:"",stock:""});
+  const iS=InputStyle(T);
+  const lbl={display:"block",fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:5};
+  async function cargar(){
+    setErr("");
+    try{
+      const s=await demoApi("status"); setSt(s);
+      if(s.tiendaUid&&s.tiendaUid===user?.uid) setData(await demoApi("list",{tiendaUid:s.tiendaUid}));
+    }catch(e){ setErr(e.message); }
+  }
+  useEffect(()=>{ cargar(); },[user?.uid]);
+  const enDemo=!!(st?.tiendaUid&&st.tiendaUid===user?.uid);
+  const medios=data?.medios||st?.medios||{};
+  const prods=(data?.productos||[]).filter(p=>v.canal==="ml"?p.canal!=="tienda":p.canal!=="ml");
+  const pSel=prods.find(p=>p.id===v.prodId)||prods[0]||null;
+  const vSel=(pSel?.variantes||[]).find(x=>x.id===v.varId)||pSel?.variantes?.[0]||null;
+  const mediosCanal=Object.entries(medios).filter(([,m])=>m.canal===v.canal);
+  const medioKey=medios[v.medio]?.canal===v.canal?v.medio:(mediosCanal[0]?.[0]||"");
+  const mSel=medios[medioKey]||null;
+  const qty=Math.max(1,parseInt(v.qty)||1);
+  const precio=v.precio!==""?(parseFloat(v.precio)||0):(Number(vSel?.precio??pSel?.precio)||0);
+  const subtotal=precio*qty;
+  const envio=v.canal==="ml"?0:(subtotal>=60000?0:6900);
+  const total=subtotal+envio;
+  const pct=v.pct!==""?(parseFloat(v.pct)||0):(Number(mSel?.pct)||0);
+  const comision=total*pct/100;
+
+  async function generar(){
+    if(st?.tiendaUid&&!(await appConfirm("Se borran los datos ficticios de Growith Demo y se arma el entorno de nuevo: ventas, productos, reclamos, canjes, tareas, pagos, publicidad, facturas y envíos.",{title:"Regenerar entorno demo",okLabel:"Regenerar"}))) return;
+    setBusy("seed");
+    try{
+      const r=await demoApi("seed",{dias:120});
+      ghLimpiarCachesDemo(r.tiendaUid);
+      try{ localStorage.setItem(`growith_tienda_activa_${authUid}`, r.tiendaUid); }catch(_){}
+      toast(`Entorno demo listo ✓ — ${r.ventas} ventas y ${r.productos} productos. Entrando…`,"success",4000);
+      setTimeout(()=>window.location.reload(),900);
+    }catch(e){ appAlert("No se pudo generar el entorno demo: "+e.message); setBusy(""); }
+  }
+  async function agregarVenta(){
+    if(!pSel) return appAlert("Elegí un producto.");
+    setBusy("venta");
+    try{
+      const r=await demoApi("add_order",{tiendaUid:st.tiendaUid,canal:v.canal,prodId:pSel.id,varId:vSel?.id,qty,precio:v.precio,medio:medioKey,pct:v.pct,fecha:v.fecha,estadoEnvio:v.estadoEnvio});
+      ghLimpiarCachesDemo(user.uid);
+      toast(`Venta #${r.venta?.numero} agregada ✓ — ya cuenta en el Dashboard, Envíos y el Facturador`,"success",4000);
+      setV(p=>({...p,precio:"",pct:"",qty:1}));
+      setData(await demoApi("list",{tiendaUid:st.tiendaUid}));
+    }catch(e){ appAlert("No se pudo agregar la venta: "+e.message); }
+    setBusy("");
+  }
+  async function crearProducto(){
+    const variantes=String(np.variantes||"").split(",").map(s=>s.trim()).filter(Boolean).map(s=>{ const [n,sk]=s.split(":"); return {nombre:(n||"").trim(),stock:parseInt(sk)||0}; });
+    setBusy("prod");
+    try{
+      await demoApi("add_product",{tiendaUid:st.tiendaUid,nombre:np.nombre,sku:np.sku,precio:np.precio,costo:np.costo,canal:np.canal,variantes:variantes.length?variantes:undefined,stock:np.stock});
+      ghLimpiarCachesDemo(user.uid);
+      toast("Producto creado ✓ — ya aparece en Stock"+(np.canal!=="tienda"?" y en Mercado Libre":""),"success",4000);
+      setNp(p=>({nombre:"",sku:"",precio:"",costo:"",canal:p.canal,variantes:"",stock:""}));
+      setData(await demoApi("list",{tiendaUid:st.tiendaUid}));
+    }catch(e){ appAlert("No se pudo crear el producto: "+e.message); }
+    setBusy("");
+  }
+  async function borrarVenta(id){
+    if(!(await appConfirm("¿Borrar esta venta ficticia?",{okLabel:"Borrar",danger:true}))) return;
+    try{ await demoApi("delete_order",{tiendaUid:st.tiendaUid,id}); ghLimpiarCachesDemo(user.uid); setData(await demoApi("list",{tiendaUid:st.tiendaUid})); }catch(e){ appAlert(e.message); }
+  }
+  async function vaciar(){
+    if(!(await appConfirm("Se borran TODAS las ventas, productos y datos ficticios de Growith Demo. La tienda queda vacía hasta que la vuelvas a generar.",{title:"Vaciar tienda demo",okLabel:"Vaciar",danger:true}))) return;
+    setBusy("reset");
+    try{ await demoApi("reset",{tiendaUid:st.tiendaUid}); ghLimpiarCachesDemo(user.uid); toast("Tienda demo vaciada","success"); setData(null); await cargar(); }catch(e){ appAlert(e.message); }
+    setBusy("");
+  }
+  const seg=(val,cur,label,onClick)=><button key={val} onClick={onClick} style={{flex:1,padding:"8px 10px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${cur===val?T.accentSolid+"88":T.border}`,background:cur===val?T.accentSolid+"18":"transparent",color:cur===val?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{label}</button>;
+  const btnFull=(label,onClick,dis)=><button onClick={onClick} disabled={dis} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",padding:"11px",opacity:dis?0.6:1,cursor:dis?"default":"pointer"}}>{label}</button>;
+  const ventas=data?.ventas||[];
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
+      <AppTopbar T={T} section="Tienda demo" sectionId="demo" onHome={onHome}/>
+      <div style={{maxWidth:"100%",margin:"0 auto",padding:"20px 24px 80px",display:"flex",flexDirection:"column",gap:16}}>
+        {err&&<div style={{background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",fontSize:12,color:T.red}}>{err}</div>}
+        <Card T={T}>
+          <div style={{display:"flex",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:260}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <span style={{fontSize:16,fontWeight:800}}>Growith Demo</span>
+                {st?.tiendaUid&&<DSBadge T={T} color={enDemo?T.green:T.textSm} size="sm">{enDemo?"Estás adentro":"Creada"}</DSBadge>}
+              </div>
+              <div style={{fontSize:13,color:T.textMd,lineHeight:1.6}}>Una tienda aparte con datos ficticios para mostrar Growith por dentro: ventas de Tienda Nube y Mercado Libre con distintos medios de pago, stock, envíos, facturas, publicidad, reclamos, canjes, tareas y calendario de pagos. No se conecta a ninguna plataforma real, no factura en ARCA ni emite etiquetas.</div>
+              {st===null&&!err&&<div style={{fontSize:12,color:T.textSm,marginTop:10}}>Consultando…</div>}
+              {st?.tiendaUid&&<div style={{fontSize:12,color:T.textSm,marginTop:10}}>{st.productos} productos · {st.ventas} ventas ficticias</div>}
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {st?.tiendaUid&&!enDemo&&<Btn T={T} variant="secondary" onClick={()=>onSwitchOrg&&onSwitchOrg(st.tiendaUid)}>Entrar a Growith Demo</Btn>}
+              <button onClick={generar} disabled={busy==="seed"} style={{...BtnPrimary(T),opacity:busy==="seed"?0.6:1}}>{busy==="seed"?"Generando… (≈30 s)":st?.tiendaUid?"Regenerar entorno demo":"Generar entorno demo"}</button>
+            </div>
+          </div>
+        </Card>
+
+        {st?.tiendaUid&&!enDemo&&<Card T={T}><div style={{fontSize:13,color:T.textMd}}>Entrá a <b>Growith Demo</b> para cargar ventas y productos ficticios.</div></Card>}
+
+        {enDemo&&(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(340px,1fr))",gap:16,alignItems:"start"}}>
+            <Card T={T}>
+              <div style={{fontSize:15,fontWeight:800,marginBottom:4}}>Agregar venta ficticia</div>
+              <div style={{fontSize:12,color:T.textSm,marginBottom:14}}>Entra al Dashboard con la comisión del medio de pago que elijas, a Envíos y al Facturador, y descuenta stock.</div>
+              <div style={{display:"flex",gap:6,marginBottom:12}}>
+                {seg("tienda",v.canal,"Tienda",()=>setV(p=>({...p,canal:"tienda",prodId:"",varId:"",medio:"mp_1",pct:"",precio:""})))}
+                {seg("ml",v.canal,"Mercado Libre",()=>setV(p=>({...p,canal:"ml",prodId:"",varId:"",medio:"ml_clasica",pct:"",precio:""})))}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div style={{gridColumn:"1 / -1"}}><label style={lbl}>Producto</label>
+                  <select value={pSel?.id||""} onChange={e=>setV(p=>({...p,prodId:e.target.value,varId:"",precio:""}))} style={iS}>
+                    {prods.map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
+                  </select></div>
+                <div><label style={lbl}>Variante</label>
+                  <select value={vSel?.id||""} onChange={e=>setV(p=>({...p,varId:e.target.value}))} style={iS}>
+                    {(pSel?.variantes||[]).map(x=><option key={x.id} value={x.id}>{x.nombre} · stock {x.stock}</option>)}
+                  </select></div>
+                <div><label style={lbl}>Cantidad</label><input type="number" min="1" value={v.qty} onChange={e=>setV(p=>({...p,qty:e.target.value}))} style={iS}/></div>
+                <div><label style={lbl}>Precio unitario</label><input type="number" placeholder={String(vSel?.precio??pSel?.precio??"")} value={v.precio} onChange={e=>setV(p=>({...p,precio:e.target.value}))} style={iS}/></div>
+                <div><label style={lbl}>Fecha</label><GhDatePicker T={T} value={v.fecha} onChange={x=>setV(p=>({...p,fecha:x}))} allowFuture={false} placeholder="Hoy" style={iS}/></div>
+                <div style={{gridColumn:"1 / -1"}}><label style={lbl}>Medio de pago</label>
+                  <select value={medioKey} onChange={e=>setV(p=>({...p,medio:e.target.value,pct:""}))} style={iS}>
+                    {mediosCanal.map(([k,m])=><option key={k} value={k}>{m.label} · {String(m.pct).replace(".",",")}%</option>)}
+                  </select></div>
+                <div><label style={lbl}>Comisión %</label><input type="number" step="0.01" placeholder={String(mSel?.pct??"")} value={v.pct} onChange={e=>setV(p=>({...p,pct:e.target.value}))} style={iS}/></div>
+                <div><label style={lbl}>Estado del envío</label>
+                  <select value={v.estadoEnvio} onChange={e=>setV(p=>({...p,estadoEnvio:e.target.value}))} style={iS}>
+                    {DEMO_ESTADOS.map(([k,l])=><option key={k} value={k}>{l}</option>)}
+                  </select></div>
+              </div>
+              <div style={{display:"flex",gap:14,flexWrap:"wrap",margin:"14px 0",padding:"10px 12px",background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,fontSize:12}}>
+                <span>Total <b>{demoARS(total)}</b>{envio>0&&<span style={{color:T.textSm}}> (envío {demoARS(envio)})</span>}</span>
+                <span>Comisión <b style={{color:T.red}}>− {demoARS(comision)}</b> <span style={{color:T.textSm}}>({String(pct).replace(".",",")}%)</span></span>
+                <span>Te queda <b style={{color:T.green}}>{demoARS(total-comision)}</b> <span style={{color:T.textSm}}>antes de costos</span></span>
+              </div>
+              {btnFull(busy==="venta"?"Agregando…":"Agregar venta",agregarVenta,busy==="venta"||!pSel)}
+            </Card>
+
+            <Card T={T}>
+              <div style={{fontSize:15,fontWeight:800,marginBottom:4}}>Crear producto ficticio</div>
+              <div style={{fontSize:12,color:T.textSm,marginBottom:14}}>Aparece en Stock y, si lo publicás en Mercado Libre, en la sección de Mercado Libre. El costo se usa para calcular la ganancia.</div>
+              <div style={{display:"flex",gap:6,marginBottom:12}}>
+                {seg("tienda",np.canal,"Tienda",()=>setNp(p=>({...p,canal:"tienda"})))}
+                {seg("ml",np.canal,"Mercado Libre",()=>setNp(p=>({...p,canal:"ml"})))}
+                {seg("ambos",np.canal,"Ambos",()=>setNp(p=>({...p,canal:"ambos"})))}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div style={{gridColumn:"1 / -1"}}><label style={lbl}>Nombre</label><input value={np.nombre} onChange={e=>setNp(p=>({...p,nombre:e.target.value}))} placeholder="Ej: Campera de jean" style={iS}/></div>
+                <div><label style={lbl}>SKU (opcional)</label><input value={np.sku} onChange={e=>setNp(p=>({...p,sku:e.target.value}))} placeholder="CAM-JEAN" style={iS}/></div>
+                <div><label style={lbl}>Precio</label><input type="number" value={np.precio} onChange={e=>setNp(p=>({...p,precio:e.target.value}))} placeholder="59900" style={iS}/></div>
+                <div><label style={lbl}>Costo</label><input type="number" value={np.costo} onChange={e=>setNp(p=>({...p,costo:e.target.value}))} placeholder="23000" style={iS}/></div>
+                <div><label style={lbl}>Stock (sin variantes)</label><input type="number" value={np.stock} onChange={e=>setNp(p=>({...p,stock:e.target.value}))} placeholder="20" style={iS}/></div>
+                <div style={{gridColumn:"1 / -1"}}><label style={lbl}>Variantes (opcional)</label><input value={np.variantes} onChange={e=>setNp(p=>({...p,variantes:e.target.value}))} placeholder="Azul · M:10, Azul · L:6, Negro · M:3" style={iS}/></div>
+              </div>
+              <div style={{height:14}}/>
+              {btnFull(busy==="prod"?"Creando…":"Crear producto",crearProducto,busy==="prod")}
+              {data?.productos?.length>0&&<div style={{fontSize:11,color:T.textSm,marginTop:10}}>{data.productos.length} productos en la tienda demo</div>}
+            </Card>
+          </div>
+        )}
+
+        {enDemo&&(
+          <Card T={T}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+              <div style={{fontSize:15,fontWeight:800,flex:1}}>Últimas ventas ficticias</div>
+              <Btn T={T} variant="danger" size="sm" onClick={vaciar} disabled={busy==="reset"}>{busy==="reset"?"Vaciando…":"Vaciar tienda demo"}</Btn>
+            </div>
+            {ventas.length===0 ? <div style={{fontSize:12,color:T.textSm,padding:"8px 0"}}>Todavía no hay ventas. Generá el entorno o agregá una a mano.</div> : (
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr>{["Fecha","Canal","Venta","Producto","Medio de pago","Total","Comisión","Envío",""].map(h=><th key={h} style={{textAlign:"left",padding:"8px 10px",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                  <tbody>{ventas.map(o=>(
+                    <tr key={o.id} style={{borderBottom:`1px solid ${T.borderL}`}}>
+                      <td style={{padding:"8px 10px",whiteSpace:"nowrap",color:T.textMd}}>{new Date(o.fecha).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</td>
+                      <td style={{padding:"8px 10px"}}><DSBadge T={T} color={o.canal==="ml"?T.yellow:T.accent} size="sm">{o.canal==="ml"?"ML":"Tienda"}</DSBadge></td>
+                      <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>#{o.numero}</td>
+                      <td style={{padding:"8px 10px",color:T.textMd}}>{(o.items||[]).map(i=>`${i.nombre}${i.variante?` (${i.variante})`:""} ×${i.qty}`).join(", ")}</td>
+                      <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap"}}>{medios[o.medio]?.label||o.medio}</td>
+                      <td style={{padding:"8px 10px",fontWeight:700,whiteSpace:"nowrap"}}>{demoARS(o.total)}</td>
+                      <td style={{padding:"8px 10px",color:T.red,whiteSpace:"nowrap"}}>− {demoARS(o.fee)} <span style={{color:T.textSm}}>({String(o.pct).replace(".",",")}%)</span></td>
+                      <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap"}}>{(DEMO_ESTADOS.find(e=>e[0]===o.estadoEnvio)||[])[1]||o.estadoEnvio}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right"}}><button onClick={()=>borrarVenta(o.id)} title="Borrar venta" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:14}}>✕</button></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        )}
       </div>
     </div>
   );
@@ -31806,7 +32028,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       const isVideo = (file.type||"").startsWith("video/") || /\.(mp4|mov|m4v|avi|webm)$/i.test(file.name);
 
       let up;
-      if (isVideo) {
+      if (creds.demo) {
+        // Tienda demo: no se sube nada a Meta — el creativo queda con un id de
+        // ejemplo y la vista previa local, y sigue el flujo normal.
+        const fake = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        if (tempId) setCreatives(prev => prev.map(c => c.id === tempId ? { ...c, _uploadPct: 100 } : c));
+        up = isVideo ? { kind: "video", id: `demo_vid_${fake}`, url: localPreviewUrl || null } : { kind: "image", hash: `demo_${fake}`, url: localPreviewUrl || null };
+      } else if (isVideo) {
         // Fast-path: para videos chicos (<60MB) usamos POST único (multipart),
         // que es ~2-3x más rápido que el resumable chunked. Reels y ads típicos
         // pesan 5-30MB, así que entran. Si el POST único falla por timeout o
@@ -31897,8 +32125,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         cta: sharedCta || cr.creative.cta,
         meta_hash: up.hash || null,
         meta_video_id: up.id || null,
-        // Para video: marca "procesando en Meta" hasta que video_ready
-        ...(isVideo ? { _processing: true } : {}),
+        // Para video: marca "procesando en Meta" hasta que video_ready (en la demo no hay procesamiento)
+        ...(isVideo && !creds.demo ? { _processing: true } : {}),
         ...(isVideo && localPreviewUrl ? { _localPreview: localPreviewUrl } : {}),
       };
 
@@ -35954,7 +36182,7 @@ function CostosPanel({ T, uid }) {
       try {
         const snap = await getDoc(doc(db, "users", uid));
         const d = snap.exists() ? snap.data() : {};
-        setGadsConnected(!!(d.googleAds&&d.googleAds.refresh_token));
+        setGadsConnected(!!(d.googleAds&&(d.googleAds.refresh_token||d.googleAds.demo)));
         setMlConnected((d.stores||[]).some(s=>s.type==="mercadolibre"));
         setEnvio(d.margenesEnvioProm ?? "");
         const ec = d.margenesEnvioCfg || {};
@@ -41459,7 +41687,7 @@ export default function App() {
   },[user&&user.uid]);
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","copilot","margenes","arca","meta","gads","tiktokads","claude","chatgpt","gemini","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario"];
+  const VALID_PAGES = ["home","demo","copilot","margenes","arca","meta","gads","tiktokads","claude","chatgpt","gemini","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario"];
   // Alias legacy: #/rendimiento era el nombre viejo del Dashboard (hoy #/margenes)
   const _aliasPage = (p) => p === "rendimiento" ? "margenes" : p;
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
@@ -42425,6 +42653,7 @@ export default function App() {
   else if(page==="claude"||page==="chatgpt"||page==="gemini") pageContent = adminGate(page) || planGate("plus") || <PageView T={T} pageKey={page}><AppConectorIA T={T} user={user} app={{claude:"Claude",chatgpt:"ChatGPT",gemini:"Gemini"}[page]} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="calendario") pageContent = <PageView T={T} pageKey="calendario"><AppCalendarioPagos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="demo") pageContent = (String(user?.email||"").toLowerCase()===DEMO_EMAIL_UI||isAdmin) ? <PageView T={T} pageKey="demo"><AppDemo T={T} user={user} authUid={authUser?.uid} onSwitchOrg={onSwitchOrg} onHome={()=>setPage("home")}/></PageView> : null;
   else if(page==="envios") pageContent = adminGate("envios") || planGate("plus") || requiereTN("Envíos") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} canjesPedidos={canjesPedidos} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
   else pageContent = <HomeScreen T={T} connectedStores={connectedStores} enviosProblemas={enviosProblemasN} mlPreguntas={mlPreguntasCount} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }

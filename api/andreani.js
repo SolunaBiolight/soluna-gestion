@@ -28,6 +28,8 @@ import { getFirestore, FieldValue, FieldPath } from "firebase-admin/firestore";
 import { ghPuntoDeClave, ghConflictoPunto, ghCoincidePunto, ghConflictoTpl } from "./_suc_match.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
 import { verifyAuth, requireAdmin, guardUid, requireUid, readOnlyBlock } from "./_auth.js";
+import { esDemo } from "./_demo.js";
+import { numeroEnvioDemo, precioEtiquetaDemo, registrarTrackDemo, trazaDemo } from "./_demo_ops.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -278,13 +280,15 @@ async function portalEjecutiva(req, res, db, body, action) {
       col.where("estado", "in", ["resuelto", "rechazado"]).limit(200).get(),
     ]);
     const slim = d => { const c = casoSlim(d.id, d.data()); delete c.email; delete c.uid; return { ...c, esSucursal: !!d.data().esSucursal }; };
-    const abiertos = ab.docs.map(slim).sort((a, b) => (a.ts || 0) - (b.ts || 0));
-    const cerrados = ce.docs.map(slim).sort((a, b) => (b.updatedAt || b.ts || 0) - (a.updatedAt || a.ts || 0)).slice(0, 60);
+    // Las gestiones de tiendas DEMO nunca le llegan a la ejecutiva.
+    const real = d => d.data().demo !== true;
+    const abiertos = ab.docs.filter(real).map(slim).sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    const cerrados = ce.docs.filter(real).map(slim).sort((a, b) => (b.updatedAt || b.ts || 0) - (a.updatedAt || a.ts || 0)).slice(0, 60);
     return res.json({ ok: true, abiertos, cerrados, nombre: cfg.ejecutivaNombre || "" });
   }
   if (action === "portal_ejecutiva_fotos") {
     const snap = await col.doc(String(body.id || "")).get();
-    if (!snap.exists) return res.status(404).json({ error: "Gestión no encontrada" });
+    if (!snap.exists || snap.data().demo === true) return res.status(404).json({ error: "Gestión no encontrada" });
     return res.json({ ok: true, fotos: Array.isArray(snap.data().fotos) ? snap.data().fotos : [] });
   }
   if (action === "portal_ejecutiva_responder") {
@@ -297,6 +301,7 @@ async function portalEjecutiva(req, res, db, body, action) {
     const snap = await ref.get();
     if (!snap.exists) return res.status(404).json({ error: "Gestión no encontrada" });
     const c = snap.data();
+    if (c.demo === true) return res.status(404).json({ error: "Gestión no encontrada" });
     const evento = { at: new Date().toISOString(), por: "andreani", estado, texto };
     await ref.set({ estado, nuevoCliente: false, nuevoAndreani: true, historial: FieldValue.arrayUnion(evento), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     const lbl = CASO_ESTADO_LABEL[estado] || estado;
@@ -1154,6 +1159,174 @@ export async function sucursalesCercanasCore(db, env, body) {
 
 }
 
+// ─── Tienda DEMO ───────────────────────────────────────────────────────────
+// Una tienda con users/{uid}.demo.activo no toca la API de Andreani (salvo el
+// listado de sucursales, solo lectura), ni la billetera, ni manda mails:
+// estado, cotización, emisión, etiqueta, trazas y cargas se simulan con las
+// MISMAS respuestas que el flujo real. La etiqueta "emitida" queda en
+// users/{uid}/envios como una real (Seguimientos la muestra) y su traza en
+// demo_tracks (la lee update-shipping action=tracking). Sin débito: el saldo
+// ficticio no cambia. Devuelve true si respondió; false = seguir por el
+// camino normal (que para una demo solo lee/escribe Firestore).
+const DATOS_PAGO_DEMO = { alias: "growith.demo.envios", titular: "Growith Demo SRL", cbu: "0000003100012345678901" };
+
+// Rótulo 10×15 cm con la marca "demostración" (pdf-lib, sin API).
+async function etiquetaDemoPdf(numero, e, uData) {
+  const { PDFDocument, StandardFonts, rgb, degrees } = await import("pdf-lib");
+  const doc = await PDFDocument.create();
+  const W = 283.46, H = 425.2;
+  const page = doc.addPage([W, H]);
+  const fB = await doc.embedFont(StandardFonts.HelveticaBold);
+  const fR = await doc.embedFont(StandardFonts.Helvetica);
+  const limpio = (s) => String(s ?? "").replace(/[^\x20-\x7E\xA0-\xFF]/g, "").slice(0, 60);
+  const txt = (s, x, y, size, font = fR, color = rgb(0, 0, 0)) => page.drawText(limpio(s), { x, y, size, font, color });
+  page.drawText("DEMO", { x: 40, y: 120, size: 110, font: fB, color: rgb(0.9, 0.9, 0.9), rotate: degrees(35) });
+  page.drawRectangle({ x: 0, y: H - 44, width: W, height: 44, color: rgb(0.1, 0.1, 0.12) });
+  txt("ETIQUETA DE DEMOSTRACIÓN", 14, H - 24, 13, fB, rgb(1, 1, 1));
+  txt("No válida para despachar · Growith Demo", 14, H - 37, 8, fR, rgb(0.85, 0.85, 0.85));
+  txt("Envío N°", 14, H - 66, 9);
+  txt(numero, 14, H - 86, 18, fB);
+  // Código de barras decorativo a partir de los dígitos
+  let bx = 14;
+  for (const ch of String(numero).replace(/\D/g, "")) {
+    const d = Number(ch);
+    for (const w of [1 + (d % 3), 1 + ((d + 1) % 2), 2 + (d % 2)]) { page.drawRectangle({ x: bx, y: H - 150, width: w, height: 52, color: rgb(0, 0, 0) }); bx += w + 1.6; }
+    if (bx > W - 20) break;
+  }
+  const a = e?.andreani || {};
+  const esSuc = a.tipo === "sucursal" || !!e?.esSucursal;
+  let y = H - 176;
+  txt("DESTINATARIO", 14, y, 8, fB); y -= 15;
+  txt(e?.destinatario?.nombre || e?.cliente || "", 14, y, 12, fB); y -= 14;
+  txt(esSuc ? "Retiro en sucursal Andreani" : "Entrega a domicilio", 14, y, 9); y -= 12;
+  txt([e?.localidad, e?.provincia].filter(Boolean).join(", "), 14, y, 9); y -= 22;
+  const o = uData?.andreaniOrigen || {}, r = uData?.andreaniRemitente || {};
+  txt("REMITENTE", 14, y, 8, fB); y -= 14;
+  txt(r.nombreCompleto || "Growith Demo", 14, y, 10); y -= 12;
+  txt([[o.calle, o.numero].filter(Boolean).join(" "), o.localidad, o.codigoPostal ? "CP " + o.codigoPostal : ""].filter(Boolean).join(", "), 14, y, 9); y -= 22;
+  txt(`Pedido #${e?.numero || ""}  ·  ${esSuc ? "A sucursal" : "A domicilio"}${a.fechaEstimadaDeEntrega ? "  ·  Entrega estimada " + String(a.fechaEstimadaDeEntrega).slice(0, 10) : ""}`, 14, y, 8);
+  page.drawRectangle({ x: 8, y: 8, width: W - 16, height: H - 16, borderColor: rgb(0, 0, 0), borderWidth: 1 });
+  return Buffer.from(await doc.save()).toString("base64");
+}
+
+async function accionAndreaniDemo({ req, res, db, uid, action, body, uData }) {
+  const responder = (payload, status = 200) => { res.status(status).json(payload); return true; };
+  const userRef = db.collection("users").doc(uid);
+  const saldo = Math.round(Number(uData.andreaniSaldo) || 0);
+  const origen = uData.andreaniOrigen || null, remitente = uData.andreaniRemitente || null;
+  const estimadas = Math.floor(saldo / 8500);
+  const pesoDe = (bultos) => Math.round(bultos.reduce((s, b) => s + Math.max(b.kilos, (b.largoCm * b.altoCm * b.anchoCm) / 4000), 0) * 100) / 100;
+  const ERR_BULTOS = "bultos inválidos: cada bulto necesita kilos, largoCm, altoCm y anchoCm mayores a 0.";
+
+  if (action === "status") {
+    return responder({
+      ok: true, enabled: true, saldo, etiquetasEstimadas: estimadas, saldoBajo: estimadas < 5,
+      origenConfigurado: !!(origen?.codigoPostal && origen?.calle && origen?.localidad && remitente?.nombreCompleto && remitente?.documentoNumero),
+      origen, remitente, sucOrigen: uData.andreaniSucOrigen || null, esAdmin: false,
+    });
+  }
+
+  if (action === "cotizar") {
+    const tipo = body.tipo === "sucursal" ? "sucursal" : "domicilio";
+    const cpDestino = String(body.cpDestino || "").replace(/\D/g, "");
+    const bultos = normalizarBultos(body.bultos);
+    if (!cpDestino) return responder({ error: "cpDestino requerido" }, 400);
+    if (!bultos) return responder({ error: ERR_BULTOS }, 400);
+    const peso = pesoDe(bultos);
+    return responder({ precio: precioEtiquetaDemo(tipo, cpDestino, peso), pesoAforado: peso, saldo });
+  }
+
+  if (action === "emitir") {
+    if (req.method !== "POST") return responder({ error: "POST requerido" }, 405);
+    const { envioId = null, destino, destinatario } = body;
+    const tipo = body.tipo === "sucursal" ? "sucursal" : "domicilio";
+    if (!/^[\w.\-]{1,80}$/.test(String(envioId || ""))) return responder({ error: "envioId inválido: la etiqueta tiene que corresponder a un pedido." }, 400);
+    const cpDestino = String(body.cpDestino || "").replace(/\D/g, "");
+    const bultos = normalizarBultos(body.bultos);
+    if (!cpDestino) return responder({ error: "cpDestino requerido" }, 400);
+    if (!bultos) return responder({ error: ERR_BULTOS }, 400);
+    if (!destinatario?.nombreCompleto) return responder({ error: "destinatario.nombreCompleto requerido" }, 400);
+    if (tipo === "sucursal") {
+      if (!destino?.sucursalId) return responder({ error: "destino.sucursalId requerido para envío a sucursal" }, 400);
+    } else {
+      const p = destino?.postal;
+      if (!p?.codigoPostal || !p?.calle || !p?.numero || !p?.localidad) return responder({ error: "destino.postal necesita codigoPostal, calle, numero y localidad" }, 400);
+    }
+    if (!origen?.codigoPostal || !origen?.calle || !remitente?.nombreCompleto || !remitente?.documentoNumero) {
+      return responder({ error: "Falta configurar la dirección de origen y los datos del remitente (chip Saldo de envíos → Datos del remitente).", code: "origen_no_configurado" }, 400);
+    }
+    const envioRef = userRef.collection("envios").doc(String(envioId));
+    const ya = (await envioRef.get()).data()?.andreani;
+    if (ya?.numeroDeEnvio) {
+      return responder({ ok: true, yaEmitido: true, numeroDeEnvio: ya.numeroDeEnvio, precio: ya.precio ?? null, saldoRestante: saldo, fechaEstimadaDeEntrega: ya.fechaEstimadaDeEntrega ?? null });
+    }
+    // Sucursal destino contra el listado oficial (solo lectura), igual que la
+    // verificación del flujo real; si no se puede consultar, sigue sin ella.
+    let cpTarifa = cpDestino, sucursalDestino = null;
+    if (tipo === "sucursal") {
+      const envA = andreaniEnv();
+      if (envA) {
+        try {
+          const s = (await sucursalesTodas(db, envA)).find(x => String(x.id) === String(destino.sucursalId));
+          if (s) {
+            sucursalDestino = { id: s.id, descripcion: s.descripcion || "", direccion: s.direccion || null };
+            cpTarifa = String(s.direccion?.codigoPostal || "").replace(/\D/g, "") || cpDestino;
+          }
+        } catch (_) {}
+      }
+    } else {
+      cpTarifa = String(destino.postal.codigoPostal).replace(/\D/g, "") || cpDestino;
+    }
+    const precio = precioEtiquetaDemo(tipo, cpTarifa, pesoDe(bultos));
+    const numeroDeEnvio = numeroEnvioDemo();
+    const fechaEstimadaDeEntrega = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    await envioRef.set({
+      andreani: { numeroDeEnvio, estado: "Pendiente", precio, tipo, fechaEstimadaDeEntrega, ts: FieldValue.serverTimestamp(), demo: true },
+      destinatario: {
+        nombre: String(destinatario.nombreCompleto || "").trim().slice(0, 120),
+        email: String(destinatario.email || "").trim().slice(0, 160),
+        telefono: String(destinatario.telefono || "").replace(/[^\d+]/g, "").slice(0, 25),
+      },
+    }, { merge: true });
+    await registrarTrackDemo(db, uid, numeroDeEnvio, envioId, trazaDemo([["pendiente", Date.now()]]));
+    return responder({ ok: true, numeroDeEnvio, precio, saldoRestante: saldo, etiquetasEstimadas: estimadas, saldoBajo: false, fechaEstimadaDeEntrega, estado: "Pendiente", sucursalDestino });
+  }
+
+  if (action === "etiqueta") {
+    const numero = String(body.numero || "").trim();
+    if (!numero) return responder({ error: "numero requerido" }, 400);
+    let e = null;
+    for (const campo of ["andreani.numeroDeEnvio", "tracking"]) {
+      const q = await userRef.collection("envios").where(campo, "==", numero).limit(1).get();
+      if (!q.empty) { e = q.docs[0].data(); break; }
+    }
+    if (!e) return responder({ error: "Ese envío no pertenece a tu cuenta." }, 403);
+    return responder({ pdf: await etiquetaDemoPdf(numero, e, uData), demo: true });
+  }
+
+  if (action === "trazas") {
+    const numero = String(body.numero || "").trim();
+    if (!/^[\w.\-]{1,80}$/.test(numero)) return responder({ error: "numero requerido" }, 400);
+    const dt = await db.collection("demo_tracks").doc(numero).get();
+    if (!dt.exists || dt.data().uid !== uid) return responder({ error: "Ese envío no pertenece a tu cuenta." }, 403);
+    return responder({ trazas: { eventos: Array.isArray(dt.data().eventos) ? dt.data().eventos : [] } });
+  }
+
+  // Billetera: sin cargas reales (ni transferencias registradas ni Mercado Pago).
+  if (action === "carga_solicitar") {
+    const monto = Math.round(Number(body.monto));
+    if (!isFinite(monto) || monto < 1000) return responder({ error: "El monto mínimo de carga es $1.000." }, 400);
+    if (monto > 10000000) return responder({ error: "Monto demasiado alto." }, 400);
+    const ref = "GW-" + Array.from(randomBytes(4)).map(b => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 32]).join("");
+    return responder({ ok: true, carga: { id: "demo_" + Date.now().toString(36), ref, monto, estado: "pendiente" }, datosPago: DATOS_PAGO_DEMO });
+  }
+  if (action === "carga_mp") return responder({ error: "En la tienda demo no se cobran cargas con Mercado Pago (no se mueve plata real)." }, 400);
+  if (action === "cargas") return responder({ ok: true, cargas: [], datosPago: DATOS_PAGO_DEMO });
+  if (action === "carga_comprobante" || action === "carga_cancelar") return responder({ ok: true });
+
+  return false;
+}
+
 export default async function handler(req, res) {
   { const _o = String(req.headers.origin || ""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o) || /^https:\/\/[a-z0-9-]+-soluna1\.vercel\.app$/.test(_o) || /^http:\/\/localhost(:\d+)?$/.test(_o)) ? _o : "https://www.growithapp.com"); } // allowlist CORS (regex anclada: "evil-soluna1.vercel.app" y "localhost.evil.com" no pasan)
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -1215,6 +1388,14 @@ export default async function handler(req, res) {
       if (!g.ok) return res.status(g.code).json({ error: g.error });
       uid = tiendaUid;
     }
+
+    // ── Tienda DEMO: antes de todo lo que toca Andreani, la billetera o mails ──
+    let uDemo = null;
+    if (!String(action).startsWith("admin_") && !CATALOGO.has(String(action))) {
+      const sDemo = await db.collection("users").doc(uid).get();
+      if (esDemo(sDemo.data())) uDemo = sDemo.data();
+    }
+    if (uDemo && (await accionAndreaniDemo({ req, res, db, uid, action, body, uData: uDemo }))) return;
 
     const env = andreaniEnv();
     if (!env) return res.status(500).json({ error: "andreani_no_configurado", detail: "Faltan variables de entorno de Andreani (ANDREANI_USER/PASS/CLIENTE/CONTRATO_*)." });
@@ -1366,11 +1547,14 @@ export default async function handler(req, res) {
       // A la memoria global solo si el front verificó el match estricto y hay id oficial.
       let global = false;
       if (body.verificado === true && entry.oficial && entry.oficial.id != null) {
-        let email = "";
-        try { email = (await db.collection("users").doc(owner).get()).data()?.email || ""; } catch (_) {}
-        const punto = body.punto && typeof body.punto === "object" ? { nombre: String(body.punto.nombre || "").slice(0, 120), dir: String(body.punto.dir || "").slice(0, 160), loc: String(body.punto.loc || "").slice(0, 80), cp: String(body.punto.cp || "").slice(0, 12) } : null;
-        await globalRef.set({ entries: { [key]: { ...entry, by: owner, byEmail: email, punto } } }, { merge: true });
-        global = true;
+        let email = "", ownerDemo = false;
+        try { const od = (await db.collection("users").doc(owner).get()).data(); email = od?.email || ""; ownerDemo = esDemo(od); } catch (_) {}
+        // Tienda DEMO: sus puntos de retiro son ficticios — nunca a la memoria global.
+        if (!ownerDemo && !uDemo) {
+          const punto = body.punto && typeof body.punto === "object" ? { nombre: String(body.punto.nombre || "").slice(0, 120), dir: String(body.punto.dir || "").slice(0, 160), loc: String(body.punto.loc || "").slice(0, 80), cp: String(body.punto.cp || "").slice(0, 12) } : null;
+          await globalRef.set({ entries: { [key]: { ...entry, by: owner, byEmail: email, punto } } }, { merge: true });
+          global = true;
+        }
       }
       return res.json({ ok: true, global });
     }
@@ -2076,22 +2260,30 @@ export default async function handler(req, res) {
         const [uS, eS] = await Promise.all([tx.get(userRef), tx.get(eRef)]);
         if (eS.data()?.andreani?.anulada) throw Object.assign(new Error("Esa etiqueta ya está anulada."), { userFacing: true });
         const saldo = Math.round(Number(uS.data()?.andreaniSaldo) || 0);
-        const nuevo = saldo + monto;
-        tx.set(userRef, { andreaniSaldo: nuevo }, { merge: true });
-        tx.set(movRef2, { tipo: "reverso", monto, saldoDespues: nuevo, nota: `Anulación inmediata de la etiqueta ${numeroDeEnvio}`, numeroDeEnvio, envioId: numero, ts: FieldValue.serverTimestamp() });
+        // Tienda DEMO: la etiqueta era simulada (no se debitó) — no hay saldo que
+        // devolver ni índice/stats de la plataforma que tocar.
+        const nuevo = uDemo ? saldo : saldo + monto;
+        if (!uDemo) {
+          tx.set(userRef, { andreaniSaldo: nuevo }, { merge: true });
+          tx.set(movRef2, { tipo: "reverso", monto, saldoDespues: nuevo, nota: `Anulación inmediata de la etiqueta ${numeroDeEnvio}`, numeroDeEnvio, envioId: numero, ts: FieldValue.serverTimestamp() });
+        }
         tx.set(eRef, { activo: false, andreani: { anulada: true, anuladaAt: ahoraIso, anulacionInmediata: true } }, { merge: true });
-        tx.set(db.collection("andreani_idx").doc(numeroDeEnvio), { anulada: true, reintegro: monto, anuladaAt: ahoraIso, inmediata: true }, { merge: true });
-        tx.set(db.collection("andreani_config").doc(`stats_${mesAR()}`), { reintegros: FieldValue.increment(monto), porUid: { [uid]: { reintegros: FieldValue.increment(monto) } } }, { merge: true });
+        if (!uDemo) {
+          tx.set(db.collection("andreani_idx").doc(numeroDeEnvio), { anulada: true, reintegro: monto, anuladaAt: ahoraIso, inmediata: true }, { merge: true });
+          tx.set(db.collection("andreani_config").doc(`stats_${mesAR()}`), { reintegros: FieldValue.increment(monto), porUid: { [uid]: { reintegros: FieldValue.increment(monto) } } }, { merge: true });
+        }
         tx.set(casoRef, {
-          uid, email: String(udA.email || user.email || "").trim(), tienda: tiendaA,
+          uid, email: uDemo ? "" : String(udA.email || user.email || "").trim(), tienda: tiendaA,
           numero, numeroDeEnvio, tracking: numeroDeEnvio, cliente: e.cliente || "", localidad: [e.localidad, e.provincia].filter(Boolean).join(", "),
           esSucursal: !!e.esSucursal, motivo: "anulacion", descripcion: "Anulación inmediata (dentro de los 30 minutos, sin ingreso)", nuevaDireccion: "", fotos: [],
           estado: "resuelto", origen: "cliente", precio: monto, reintegrado: true, reintegroMonto: monto, nuevoCliente: false, nuevoAndreani: false, inmediata: true,
           historial: [{ at: ahoraIso, por: "cliente", texto: "Anulación inmediata de la etiqueta" }, { at: ahoraIso, por: "sistema", estado: "resuelto", texto: `${monto.toLocaleString("es-AR")} reintegrados al saldo automáticamente` }],
           ts: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+          ...(uDemo ? { demo: true } : {}),
         });
         return nuevo;
       });
+      if (uDemo) { try { await registrarTrackDemo(db, uid, numeroDeEnvio, numero, trazaDemo([["pendiente", tsEm], ["anulada", Date.now()]])); } catch (_) {} }
       return res.json({ ok: true, saldoRestante: nuevoSaldo, monto });
     }
 
@@ -2137,13 +2329,17 @@ export default async function handler(req, res) {
       const tienda = String(ud.storeName || ud.nombreTienda || ud.nombre || "").trim();
       const ahoraIso = new Date().toISOString();
       const docRef = await db.collection("envios_casos").add({
-        uid, email: String(ud.email || user.email || "").trim(), tienda,
+        uid, email: uDemo ? "" : String(ud.email || user.email || "").trim(), tienda,
         numero, numeroDeEnvio, tracking, cliente: e.cliente || "", localidad: [e.localidad, e.provincia].filter(Boolean).join(", "),
         esSucursal: !!e.esSucursal, motivo, descripcion, nuevaDireccion, fotos,
         estado: "abierto", origen: "cliente", precio: Number(e.andreani?.precio) || 0, reintegrado: false, nuevoCliente: true,
         historial: [{ at: ahoraIso, por: "cliente", texto: descripcion || "Solicitud de anulación de etiqueta" }],
         ts: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+        ...(uDemo ? { demo: true } : {}),
       });
+      // Tienda DEMO: la gestión queda registrada (se ve en Seguimientos) pero no
+      // le llega a la ejecutiva de Andreani ni a operaciones.
+      if (uDemo) return res.json({ ok: true, id: docRef.id });
       // A la ejecutiva de Andreani: mail con el link al portal (best-effort).
       try {
         const cfgE = await getGlobalConfig(db);
@@ -2344,6 +2540,7 @@ export default async function handler(req, res) {
         const out = []; let cuentas = 0, revisados = 0, truncado = false;
         for (const u of uSnap.docs) {
           if (Date.now() - t0 > 20000) { truncado = true; break; }
+          if (esDemo(u.data())) continue; // tiendas DEMO: envíos ficticios
           cuentas++;
           const ud = u.data();
           let eSnap;
@@ -2514,7 +2711,8 @@ export default async function handler(req, res) {
         const snap = todos
           ? await db.collection("envios_casos").orderBy("ts", "desc").limit(200).get().catch(() => db.collection("envios_casos").limit(200).get())
           : await db.collection("envios_casos").where("estado", "in", ["abierto", "enviado", "respondido"]).limit(200).get();
-        const casos = snap.docs.map(d => casoSlim(d.id, d.data())).sort((a, b) => (b.updatedAt || b.ts || 0) - (a.updatedAt || a.ts || 0));
+        // Las gestiones de tiendas DEMO no son operación real: fuera del panel.
+        const casos = snap.docs.filter(d => d.data().demo !== true).map(d => casoSlim(d.id, d.data())).sort((a, b) => (b.updatedAt || b.ts || 0) - (a.updatedAt || a.ts || 0));
         const cfg = await getGlobalConfig(db);
         const tokE = await ejecutivaTokenAsegurar(db);
         return res.json({ ok: true, casos, ejecutivaWa: cfg.ejecutivaWa, ejecutivaNombre: cfg.ejecutivaNombre, ejecutivaEmail: cfg.ejecutivaEmail, portalLink: portalEjecutivaLink(tokE) });
@@ -2840,6 +3038,7 @@ export default async function handler(req, res) {
         const porUid = new Map();
         conSaldo.docs.forEach(d => {
           const dd = d.data();
+          if (esDemo(dd)) return; // tienda DEMO: saldo ficticio, no es plata de la plataforma
           porUid.set(d.id, { uid: d.id, email: dd.email || "", saldo: Math.round(Number(dd.andreaniSaldo) || 0) });
         });
         const faltantes = [...new Set([...cfg.habilitados, uid])].filter(u => !porUid.has(u));

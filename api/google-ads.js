@@ -13,6 +13,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { createHmac } from "crypto";
 import { guardUid } from "./_auth.js";
 import { driveEnv } from "./google-drive-callback.js";
+import { esTiendaDemo, gadsDemo, gadsDemoCuentas, gadsDemoReporte } from "./_demo_ads.js";
 
 // Credenciales OAuth para Google Ads. Desde 2026-09-13 se usa el cliente del
 // proyecto verificado de Growith (el mismo de Drive, proyecto Growith-Gestion),
@@ -69,6 +70,7 @@ const GADS_API = "https://googleads.googleapis.com/v25";
 
 // refresh_token → access_token con el cliente OAuth con el que se hizo la conexión.
 async function gadsAccessToken(g) {
+  if (g?.demo) throw new Error("Tienda demo: Google Ads no tiene una conexión real."); // nunca pedir tokens para la demo
   const creds = gadsCreds(g?.clientId === undefined ? (process.env.GOOGLE_ADS_CLIENT_ID || "") : g.clientId);
   if (!creds.clientId || !creds.clientSecret) throw new Error("Faltan las credenciales OAuth de Google Ads en Vercel.");
   const tr = await fetch("https://oauth2.googleapis.com/token", {
@@ -356,6 +358,7 @@ async function gadsGeminiCopy(apiKey, { tipo, url, notas, marca, pagina, idioma 
 // Cuentas de Google Ads accesibles (un MCC se expande a sus cuentas hijas). La
 // usan la sección Google Ads y el conector de Claude (api/mcp.js).
 export async function gadsCuentas(db, uid, g) {
+  if (g?.demo) return gadsDemoCuentas(); // tienda demo (también la usa api/mcp.js)
   const at = await gadsAccessToken(g);
   let ids = Array.isArray(g.customers) ? g.customers.map(c => String(c.id || c).replace(/^customers\//, "").replace(/-/g, "")) : [];
   if (!ids.length) {
@@ -389,6 +392,7 @@ export async function gadsCuentas(db, uid, g) {
 
 // Campañas con métricas del rango + serie diaria (sección Google Ads y conector de Claude).
 export async function gadsReporteCampanas(g, customer, login, since, until) {
+  if (g?.demo) return gadsDemoReporte(initAdmin(), g.demoUid, since, until, g); // tienda demo
   const at = await gadsAccessToken(g);
   // 1) Todas las campañas (estado y presupuesto, sin depender de que hayan tenido impresiones en el rango)
   // (v25 ya no tiene campaign.start_date / end_date — no pedir campos de fecha acá)
@@ -449,6 +453,13 @@ export default async function handler(req, res) {
 
   try {
     const db = initAdmin();
+
+    // ── TIENDA DEMO: cuenta de Google Ads de ejemplo, sin llamar a Google ──
+    // (api/_demo_ads.js; oauth_start / disconnect / ai_copy siguen el camino real)
+    if (await esTiendaDemo(db, uid)) {
+      const out = await gadsDemo(db, uid, action, req, { validar: gadsValidarPublicacion });
+      if (out) return res.status(out.status || 200).json(out.body);
+    }
 
     if (action === "oauth_start" && req.method === "GET") {
       const creds = gadsCreds();

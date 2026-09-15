@@ -11,6 +11,8 @@ import { XMLParser } from "fast-xml-parser";
 import { getValidMLToken } from "./integrations.js";
 import { guardUid, guardCron } from "./_auth.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
+import { esDemo, leerDemo, MEDIOS_DEMO } from "./_demo.js";
+import { caeDemo, caeVtoDemo } from "./_demo_ops.js";
 
 // Con varios ML conectados, la facturación usa la cuenta elegida para VENTAS de
 // ML (margenesMlVentas). Vacío = primera cuenta (1 solo ML, como siempre).
@@ -399,6 +401,9 @@ async function invalidarTA(db, uid, cuitNum) {
 }
 
 async function obtenerTA(db, uid, cfg) {
+  // Tope duro: el CUIT de una tienda DEMO nunca se loguea en WSAA (todo lo
+  // que emite se simula en emitirDemo / accionArcaDemo).
+  if (cfg?._demo) throw new Error("Tienda demo: ARCA está simulado, no se conecta con ARCA.");
   const cuitNum = String(cfg.cuit).replace(/\D/g, "");
   const prod = !!cfg.arca_prod;
   const memKey = `${uid}|${cuitNum}|${prod ? "prod" : "homo"}`;
@@ -2198,6 +2203,8 @@ async function listCuits(db, uid) {
 // EXACTAMENTE el mismo camino (mismas garantías anti-duplicado).
 // deadline: timestamp absoluto opcional (el cron corre con menos presupuesto).
 async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, fechaImputacion, pvSel, exentoReq, conceptoReq, deadline }) {
+      // Tope duro: un CUIT demo jamás llega a AFIP (el handler ya lo desvía antes).
+      if (cfg?._demo) return emitirDemo(db, uid, cfg, { cuitEmit, ordenes, product_map, fechaImputacion, pvSel, exentoReq });
       let exento = exentoReq === true;
       // Concepto AFIP del lote (1 Productos default · 2 Servicios · 3 Prod y Serv)
       let conceptoEmit = [2, 3].includes(parseInt(conceptoReq)) ? parseInt(conceptoReq) : 1;
@@ -2857,6 +2864,10 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
       if (tnStore?.accessToken && tnStore?.storeId) connections.push({ platform: "tiendanube", name: tnStore.storeName || "Tienda Nube", connected: true });
       if (shStore?.accessToken && shStore?.shop) connections.push({ platform: "shopify", name: shStore.storeName || shStore.shop, connected: true });
       if (mlStore?.userId) connections.push({ platform: "mercadolibre", name: mlStore.nickname || `ML #${mlStore.userId}`, connected: true });
+      // Tienda DEMO: las ventas salen de users/{uid}/demo_orders (sin llamar a
+      // TN ni a ML) con el MISMO shape que arman los fetchers de abajo.
+      const tiendaDemo = esDemo(userSnap.data());
+      if (tiendaDemo && !connections.some(c => c.platform === "tiendanube")) connections.unshift({ platform: "tiendanube", name: tnStore?.storeName || "Growith Demo", connected: true });
 
       // ─── CACHE POR RANGO (Firestore) ──────────────────────────────────────
       // Guardamos SOLO la parte cara: las órdenes crudas ya normalizadas de
@@ -2873,7 +2884,11 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
       const cacheId = `pend3_${cuitParam}_${sinceDate}_${untilDate}`;
       const CACHE_TTL_MS = 5 * 60 * 1000;
       let rawOrdenes = null; // órdenes normalizadas SIN _billed/_anulada (del cache o del fetch vivo)
-      if (!force) {
+      if (tiendaDemo) {
+        const { ventas } = await leerDemo(db, uid, sinceDate, untilDate);
+        rawOrdenes = pendientesDemoArca(ventas, billedMap);
+      }
+      if (!force && !rawOrdenes) {
         try {
           const cSnap = await cacheCol.doc(cacheId).get();
           if (cSnap.exists) {
@@ -3366,6 +3381,9 @@ async function cronAutopilot(req, res) {
     const nowIso = new Date().toISOString();
     // Un error en una cuenta NUNCA corta la corrida de las demás.
     try {
+      // Tiendas DEMO: el piloto nunca factura nada (ni simulado).
+      const apUser = await db.collection("users").doc(apUid).get();
+      if (esDemo(apUser.data())) { resumen.push({ uid: apUid, cuit: apCuit, demo: true }); continue; }
       const cfg = await loadCuitConfig(db, apUid, apCuit);
       if (!cfg?.cert_pem || !cfg?.key_pem) throw new Error("CUIT sin certificado configurado");
 
@@ -3423,6 +3441,443 @@ async function cronAutopilot(req, res) {
   }
 
   return res.json({ ok: true, cuentas, emitidas: emitidasTot, resumen });
+}
+
+// ─── Tienda DEMO: ARCA simulado ─────────────────────────────────────────────
+// Una tienda con users/{uid}.demo.activo NUNCA llega a WSAA/WSFE ni a Mercado
+// Libre. Emisiones, notas de crédito/débito y pruebas de conexión se simulan:
+// se guardan comprobantes con el MISMO shape que procesarAprobada (CAE
+// ficticio de 14 dígitos, numeración correlativa por punto de venta), la
+// venta demo queda facturada y se devuelve lo mismo que espera el front. El
+// PDF es local (pdf-lib), así que también sale. El CUIT demo (arca_cuits con
+// _demo:true) no tiene certificado: obtenerTA y ejecutarEmision lo frenan
+// igual si algún camino se escapara.
+
+async function esTiendaDemo(db, uid) {
+  const s = await db.collection("users").doc(uid).get();
+  return esDemo(s.data());
+}
+
+// Ventas demo → órdenes del Facturador con el shape de obtenerPendientes.
+// Entran las sin facturar y las facturadas desde este Facturador (con
+// comprobante vivo en billedMap: se ven en verde, como en una cuenta real).
+function pendientesDemoArca(ventas, billedMap) {
+  const out = {};
+  for (const v of ventas || []) {
+    const esMl = v.canal === "ml";
+    const num = String(v.numero || v.id);
+    const orderId = (esMl ? "ML-" : "TN-") + num;
+    if (v.facturada && !billedMap.has(orderId)) continue;
+    const c = v.cliente || {};
+    const m = MEDIOS_DEMO[v.medio] || {};
+    const dni = String(c.dni || "").replace(/\D/g, "");
+    out[orderId] = {
+      _platform: esMl ? "mercadolibre" : "tiendanube",
+      _platform_label: esMl ? "ML" : "TN",
+      _order_number: num,
+      nombre: `${c.nombre || ""} ${c.apellido || ""}`.trim() || "Consumidor Final",
+      email: c.email || "",
+      dni, ...clasificarDoc(dni),
+      total: Number(v.total) || 0,
+      subtotal: esMl ? (Number(v.total) || 0) : (Number(v.subtotal) || 0),
+      descuento: Number(v.descuento) || 0,
+      envio: Number(v.envioCliente) || 0,
+      estado_pago: "paid",
+      fecha: v.fecha || "",
+      ciudad: c.ciudad || "",
+      provincia: c.provincia || "",
+      direccion: [c.direccion, c.numero].filter(Boolean).join(" ").trim(),
+      metodo_pago: esMl ? "Mercado Pago" : (m.method || "Pagado"),
+      plataforma_pago: esMl ? "Mercado Pago" : normPlataformaPago(m.gateway, m.method),
+      items: (v.items || []).map(i => ({
+        nombre: i.nombre || "Producto",
+        nombre_original: i.nombre || "Producto",
+        cantidad: parseInt(i.qty) || 1,
+        precio: Number(i.precio) || 0,
+        descuento_item: 0,
+      })),
+    };
+  }
+  return out;
+}
+
+// Último número usado de un tipo de comprobante en un punto de venta.
+async function ultimoNroDemo(db, uid, cuitDig, pv, tipo) {
+  const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+    .where("cuit_emisor", "==", cuitDig).select("tipo_cbte", "punto_venta", "nro").get();
+  let max = 0;
+  snap.docs.forEach(d => { const x = d.data(); if (parseInt(x.tipo_cbte) === tipo && (parseInt(x.punto_venta) || 0) === pv) max = Math.max(max, parseInt(x.nro) || 0); });
+  return max;
+}
+
+// Refleja la emisión/anulación en la venta demo (TN-<número> / ML-<id>).
+async function marcarVentaDemo(db, uid, orderId, patch) {
+  const oid = String(orderId || "");
+  const esMl = oid.startsWith("ML-"), esTn = oid.startsWith("TN-");
+  if (!esMl && !esTn) return; // factura manual: no hay venta demo
+  try {
+    const q = await db.collection("users").doc(uid).collection("demo_orders").where("numero", "==", oid.slice(3)).limit(5).get();
+    const d = q.docs.find(x => (x.data().canal === "ml") === esMl);
+    if (d) await d.ref.set(patch, { merge: true });
+  } catch (e) { console.error("[arca demo] venta:", e.message); }
+}
+
+// Emisión simulada: devuelve { resultados, pdfs, pendientesIds } igual que ejecutarEmision.
+async function emitirDemo(db, uid, cfg, { cuitEmit, ordenes, product_map, fechaImputacion, pvSel, exentoReq }) {
+  const cuitDig = String(cuitEmit || cfg.cuit || "").replace(/\D/g, "");
+  const isMonotributo = cfg.condicion_fiscal === "MONOTRIBUTO";
+  const pv = parseInt(pvSel) || parseInt(cfg.punto_venta) || 1;
+  let exento = exentoReq === true;
+  if (Array.isArray(cfg.puntos_venta) && cfg.puntos_venta.length) {
+    const pvCfg = cfg.puntos_venta.find(p => String(p.numero) === String(pv));
+    exento = pvCfg?.exento === true;
+  }
+  const compCol = db.collection("users").doc(uid).collection("arca_comprobantes");
+  // Lo ya facturado (no se re-emite, igual que el flujo real) + numeradores del PV.
+  const snap = await compCol.where("cuit_emisor", "==", cuitDig)
+    .select("orden_id", "anulada", "letra", "nro", "cae", "tipo_cbte", "punto_venta").get();
+  const yaFacturadas = new Map(), ultimo = {};
+  snap.docs.forEach(d => {
+    const x = d.data();
+    if (x.orden_id && !x.anulada) yaFacturadas.set(String(x.orden_id), x);
+    if ((parseInt(x.punto_venta) || 0) === pv) { const t = parseInt(x.tipo_cbte); ultimo[t] = Math.max(ultimo[t] || 0, parseInt(x.nro) || 0); }
+  });
+  const fechaIso = fechaImputacion
+    ? `${fechaImputacion.slice(0, 4)}-${fechaImputacion.slice(4, 6)}-${fechaImputacion.slice(6, 8)}`
+    : hoyARISO();
+  const fechaDisplay = `${fechaIso.slice(8, 10)}/${fechaIso.slice(5, 7)}/${fechaIso.slice(0, 4)}`;
+  const entries = Object.entries(ordenes || {});
+  const conPdf = entries.length <= 15; // con más, el front los pide con get_batch_pdfs
+  const resultados = [], pdfs = [];
+  for (const [orderId, orden] of entries) {
+    if (!orden || !Number.isFinite(Number(orden.total)) || Number(orden.total) <= 0) {
+      resultados.push({ orden_id: orderId, ok: false, total: orden?.total, obs: `Total de la orden inválido (${orden?.total}) — no se envió a AFIP.` });
+      continue;
+    }
+    const previa = yaFacturadas.get(String(orderId));
+    if (previa) {
+      resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, total: orden.total,
+        obs: `Ya tiene factura ${previa.letra || ""} N° ${previa.nro || "?"} (CAE ${previa.cae || "?"}) — no se re-emite para no duplicarla en ARCA.` });
+      continue;
+    }
+    if (product_map) {
+      for (const item of orden.items || []) { if (product_map[item.nombre_original]) item.nombre = product_map[item.nombre_original]; }
+    }
+    const letra = isMonotributo ? "C" : (receptorQuiereA(orden) ? "A" : "B");
+    const tipoCbte = letra === "A" ? 1 : letra === "C" ? 11 : 6;
+    const cbteNro = (ultimo[tipoCbte] || 0) + 1;
+    ultimo[tipoCbte] = cbteNro;
+    const cae = caeDemo(), cae_vto = caeVtoDemo(fechaIso);
+    const total = Math.round(Number(orden.total) * 100) / 100;
+    const neto = (isMonotributo || exento) ? (exento ? 0 : total) : Math.round((total / 1.21) * 100) / 100;
+    const iva = (isMonotributo || exento) ? 0 : Math.round((total - neto) * 100) / 100;
+    const docId = `${cuitDig}_${pv}_${tipoCbte}_${String(cbteNro).padStart(8, "0")}`;
+    const esMl = String(orderId).startsWith("ML-");
+    const emitidoAt = new Date().toISOString();
+    const domicilio = cleanAddr([orden.direccion, orden.ciudad, orden.provincia]);
+    const compData = {
+      cuit_emisor: cuitDig, tipo_cbte: tipoCbte, letra, nro: cbteNro, punto_venta: pv, exento,
+      fecha_str: fechaDisplay, fecha_cbte: fechaIso, emitido_at: emitidoAt,
+      cae, cae_vto,
+      cliente: orden.nombre || "Consumidor Final",
+      doc_tipo: orden.doc_tipo || "", doc_nro: orden.doc_nro || orden.dni || "",
+      ...(ivaReceptorDe(orden) ? { iva_receptor: ivaReceptorDe(orden) } : {}),
+      total, neto, iva,
+      orden_id: orderId,
+      items: (orden.items || []).map(it => ({
+        nombre: it.nombre || it.nombre_original || "Producto",
+        cantidad: parseInt(it.cantidad) || 1,
+        precio: parseFloat(it.precio) || 0,
+        descuento_item: parseFloat(it.descuento_item) || 0,
+      })),
+      domicilio,
+      ml_uploaded: esMl, ml_uploaded_at: esMl ? emitidoAt : null, // "adjuntada" a ML (simulado)
+      obs_codigo: null, obs_msg: "",
+      _demo: true,
+    };
+    await compCol.doc(docId).set(compData);
+    if (conPdf) {
+      try {
+        const pdfBytes = await generarPDF({
+          comprobante: cbteNro, cae, cae_vto, fecha: fechaDisplay, fecha_iso: fechaIso,
+          cliente: compData.cliente, doc_tipo: compData.doc_tipo, doc_nro: compData.doc_nro,
+          letra, tipo_cbte: tipoCbte, domicilio, total, items: orden.items || [], exento, punto_venta: pv,
+        }, cfg);
+        const nombreCliente = (orden.nombre || "Consumidor_Final").replace(/[^a-zA-Z0-9 \-_]/g, "").trim();
+        pdfs.push({ nombre: `F${letra} - ${nombreCliente} - ${String(cbteNro).padStart(8, "0")}.pdf`, bytes: Buffer.from(pdfBytes).toString("base64") });
+      } catch (e) { console.error(`[arca demo] ${orderId} PDF:`, e.message); }
+    }
+    await marcarVentaDemo(db, uid, orderId, { facturada: true, comprobante: { docId, letra, nro: cbteNro, punto_venta: pv, cae } });
+    resultados.push({ orden_id: orderId, ok: true, letra, tipo_cbte: tipoCbte, comprobante: cbteNro, cae, cae_vto, total, ml_uploaded: esMl, ml_upload_error: null });
+  }
+  // Metadata del lote, igual que el flujo real
+  try {
+    const exitosos = resultados.filter(r => r.ok);
+    if (exitosos.length) {
+      const batchId = "B_" + Date.now();
+      await db.collection("users").doc(uid).collection("arca_batches").doc(batchId).set({
+        batch_id: batchId, cuit_emisor: cuitDig, emitido_at: new Date().toISOString(),
+        cantidad: exitosos.length, total: exitosos.reduce((s, r) => s + (r.total || 0), 0),
+        comprobante_ids: exitosos.map(r => `${cuitDig}_${pv}_${r.tipo_cbte}_${String(r.comprobante).padStart(8, "0")}`),
+        resumen: exitosos.map(r => ({ orden_id: r.orden_id, letra: r.letra, comprobante: r.comprobante, cae: r.cae, total: r.total })),
+        _demo: true,
+      });
+    }
+  } catch (e) { console.error("[arca demo] batch:", e.message); }
+  return { resultados, pdfs, pendientesIds: [] };
+}
+
+// Nota de crédito simulada (anula la factura igual que emit_nc).
+async function ncDemo(db, uid, cfg, cuitEmit, factura) {
+  const cuitDig = String(cuitEmit || "").replace(/\D/g, "");
+  const userRef = db.collection("users").doc(uid);
+  const tipoFactura = parseInt(factura.tipo) || 6;
+  const tipoNC = tipoNCparaFactura(tipoFactura);
+  const pvNC = parseInt(factura.punto_venta) || parseInt(cfg.punto_venta) || 1;
+  const nro8 = String(factura.comprobante).padStart(8, "0");
+  const docIds = [`${cuitDig}_${pvNC}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`];
+  let compNC = null;
+  for (const docId of docIds) {
+    const s = await userRef.collection("arca_comprobantes").doc(docId).get();
+    if (s.exists) { compNC = s.data(); break; }
+  }
+  if (compNC?.anulada) return { ok: false, yaAnulada: true, ncPrevia: compNC.nc_nro || "?" };
+  const exento = compNC ? !!compNC.exento : !!factura.exento;
+  if (compNC) { factura.doc_tipo = factura.doc_tipo || compNC.doc_tipo; factura.doc_nro = factura.doc_nro || compNC.doc_nro; }
+  const ncSnap = await userRef.collection("arca_notas_credito").get();
+  let ult = 0;
+  ncSnap.docs.forEach(d => { const c = d.data(); if (String(c.cuit || "").replace(/\D/g, "") === cuitDig && parseInt(c.tipo) === tipoNC && (parseInt(c.punto_venta) || 0) === pvNC) ult = Math.max(ult, parseInt(c.comprobante) || 0); });
+  const ncNro = ult + 1;
+  const cae = caeDemo(), cae_vto = caeVtoDemo(hoyARISO());
+  const letra = tipoNC === 3 ? "A" : tipoNC === 8 ? "B" : "C";
+  const total = parseFloat(factura.total) || 0;
+  let pdfB64 = null;
+  try {
+    const pdfBytes = await generarPDF({
+      comprobante: ncNro, cae, cae_vto,
+      fecha: new Date().toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }),
+      cliente: factura.cliente || "Consumidor Final", doc_tipo: factura.doc_tipo, doc_nro: factura.doc_nro || "",
+      letra, tipo_cbte: tipoNC, punto_venta: pvNC, domicilio: factura.domicilio || "", total, exento,
+      items: factura.items || [{ nombre: `Anulación Factura ${letra} ${nro8}`, cantidad: 1, precio: total }],
+      _is_nc: true, _cbte_asoc: factura.comprobante, _pv_asoc: factura.punto_venta || pvNC,
+    }, cfg);
+    pdfB64 = Buffer.from(pdfBytes).toString("base64");
+  } catch (e) { console.error("[arca demo] PDF NC:", e.message); }
+  const ahoraIso = new Date().toISOString();
+  await userRef.collection("arca_notas_credito").doc(`${cuitDig}_nc_${pvNC}_${tipoNC}_${String(ncNro).padStart(8, "0")}`).set({
+    cuit: cuitDig, tipo: tipoNC, letra, punto_venta: pvNC, comprobante: ncNro, cae, cae_vto, total,
+    cliente: factura.cliente || "", doc_tipo: factura.doc_tipo || "", doc_nro: factura.doc_nro || "",
+    factura_origen: { tipo: tipoFactura, comprobante: factura.comprobante, punto_venta: factura.punto_venta || pvNC },
+    fecha: ahoraIso, pdf_b64: pdfB64 && pdfB64.length < 900000 ? pdfB64 : null, _demo: true,
+  });
+  // La factura queda ANULADA en Registros y la venta vuelve a Facturar.
+  if (factura.order_id) {
+    await userRef.collection("arca_facturadas").doc(String(factura.order_id)).set({ anulada: true, anulada_at: ahoraIso, nc_comprobante: ncNro }, { merge: true });
+    const cs = await userRef.collection("arca_comprobantes").where("cuit_emisor", "==", cuitDig).where("orden_id", "==", factura.order_id).get();
+    if (!cs.empty) { const b = db.batch(); cs.docs.forEach(d => b.set(d.ref, { anulada: true, anulada_at: ahoraIso, nc_nro: ncNro }, { merge: true })); await b.commit(); }
+    await marcarVentaDemo(db, uid, factura.order_id, { facturada: false, comprobante: FieldValue.delete() });
+  } else {
+    for (const docId of docIds) {
+      try { await userRef.collection("arca_comprobantes").doc(docId).update({ anulada: true, anulada_at: ahoraIso, nc_nro: ncNro }); break; } catch (_) {}
+    }
+  }
+  return { ok: true, nc: { tipo: tipoNC, letra, punto_venta: pvNC, comprobante: ncNro, cae, cae_vto, total, pdf_b64: pdfB64, nombre_pdf: `NC ${letra} - ${String(ncNro).padStart(8, "0")}.pdf` } };
+}
+
+// Acciones del handler que en una tienda demo se simulan. true = ya respondió;
+// false = seguir por el camino normal (que para estas acciones es solo Firestore).
+async function accionArcaDemo(req, res, db, uid, action, cuit) {
+  const M = req.method;
+  const responder = (payload, status = 200) => { res.status(status).json(payload); return true; };
+  const leerBody = async () => JSON.parse((await readBody(req)).toString() || "{}");
+  const cfgDe = async (c) => (c ? loadCuitConfig(db, uid, String(c).replace(/\D/g, "")) : null);
+
+  // CUIT "con certificado": el demo no tiene, pero se ve configurado.
+  if (action === "list_cuits" && M === "GET") {
+    const cuits = await listCuits(db, uid);
+    const vence = new Date(Date.now() + 300 * 86400000).toISOString();
+    return responder({ cuits: cuits.map(c => ({ ...c, cert_pem: undefined, key_pem: undefined, has_cert: true, has_key: true, cert_expiry: vence })) });
+  }
+
+  if (action === "test_cuit" && M === "POST") {
+    if (!cuit) return responder({ error: "Falta cuit" }, 400);
+    const cfg = await cfgDe(cuit);
+    if (!cfg) return responder({ error: "CUIT no encontrado" }, 404);
+    const cuitDig = String(cfg.cuit || cuit).replace(/\D/g, "");
+    const ultimoB = await ultimoNroDemo(db, uid, cuitDig, parseInt(cfg.punto_venta) || 1, 6);
+    await saveCuitConfig(db, uid, cuitDig, { last_test: { ok: true, ts: new Date().toISOString(), ultimo_b: ultimoB } });
+    return responder({ ok: true, msg: "Conexión OK", ultimo_b: ultimoB });
+  }
+
+  if (action === "emit" && M === "POST") {
+    const { cuit: cuitRaw, ordenes, product_map, fecha_factura, punto_venta: pvSel, exento: exentoReq } = await leerBody();
+    const cuitEmit = String(cuitRaw || "").replace(/\D/g, "");
+    if (!cuitEmit || !ordenes) return responder({ error: "Faltan cuit u ordenes" }, 400);
+    let fechaImputacion = null;
+    if (fecha_factura) {
+      if (!/^\d{8}$/.test(String(fecha_factura))) return responder({ error: "fecha_factura debe ser YYYYMMDD" }, 400);
+      fechaImputacion = String(fecha_factura);
+      const fv = fechaValida(fechaImputacion);
+      if (!fv.ok) return responder({ error: fv.msg }, 400);
+    }
+    const cfg = await cfgDe(cuitEmit);
+    if (!cfg) return responder({ error: "Ese CUIT no está configurado en esta cuenta" }, 400);
+    const percErr = validarPercepciones(ordenes, cfg);
+    if (percErr) return responder({ error: percErr }, 400);
+    const { resultados, pdfs } = await emitirDemo(db, uid, cfg, {
+      cuitEmit, ordenes, product_map, fechaImputacion, pvSel, exentoReq: exentoReq === true || exentoReq === "true",
+    });
+    if (resultados.length > 15) return responder({ ok: true, resultados, pdfs: [], pdfs_via_batch: true });
+    return responder({ ok: true, resultados, pdfs });
+  }
+
+  if (action === "emit_nc" && M === "POST") {
+    const { cuit: cuitEmit, factura } = await leerBody();
+    if (!cuitEmit || !factura) return responder({ error: "Faltan cuit o factura" }, 400);
+    const cfg = await cfgDe(cuitEmit);
+    if (!cfg) return responder({ error: "Ese CUIT no está configurado en esta cuenta" }, 400);
+    const r = await ncDemo(db, uid, cfg, cuitEmit, factura);
+    if (!r.ok) return responder({ error: `La factura N° ${factura.comprobante} ya está anulada (NC ${r.ncPrevia}) — no se emite otra NC.` }, 409);
+    return responder({ ok: true, nc: { ...r.nc, ml_detached: factura.order_id && String(factura.order_id).startsWith("ML-") ? true : null } });
+  }
+
+  if (action === "emit_nc_batch" && M === "POST") {
+    const { cuit: cuitEmit, facturas } = await leerBody();
+    if (!cuitEmit || !Array.isArray(facturas) || facturas.length === 0) return responder({ error: "Faltan cuit o lista de facturas" }, 400);
+    const cfg = await cfgDe(cuitEmit);
+    if (!cfg) return responder({ error: "Ese CUIT no está configurado en esta cuenta" }, 400);
+    const vistos = new Set();
+    const unicas = facturas.filter(f => { const k = `${f.punto_venta || ""}_${f.comprobante}`; if (vistos.has(k)) return false; vistos.add(k); return true; });
+    const results = [];
+    for (const factura of unicas) {
+      try {
+        const r = await ncDemo(db, uid, cfg, cuitEmit, factura);
+        if (!r.ok) { results.push({ ok: false, factura_comprobante: factura.comprobante, error: `ya anulada (NC ${r.ncPrevia})` }); continue; }
+        results.push({ ok: true, factura_comprobante: factura.comprobante, nc: r.nc, ml_detached: String(factura.order_id || "").startsWith("ML-") });
+      } catch (e) {
+        results.push({ ok: false, factura_comprobante: factura.comprobante, error: e.message });
+      }
+    }
+    return responder({ ok: true, total: unicas.length, ok_count: results.filter(r => r.ok).length, errors: results.filter(r => !r.ok), results });
+  }
+
+  if (action === "emit_nd" && M === "POST") {
+    const { cuit: cuitEmit, factura, monto: montoRaw, concepto } = await leerBody();
+    if (!cuitEmit || !factura) return responder({ error: "Faltan cuit o factura" }, 400);
+    const monto = Math.round(Number(montoRaw) * 100) / 100;
+    if (!Number.isFinite(monto) || monto <= 0) return responder({ error: "Monto de la ND inválido" }, 400);
+    const conceptoStr = String(concepto || "").replace(/[<>&"']/g, "").trim().slice(0, 120) || "Ajuste";
+    const cfg = await cfgDe(cuitEmit);
+    if (!cfg) return responder({ error: "Ese CUIT no está configurado en esta cuenta" }, 400);
+    const cuitDig = String(cuitEmit).replace(/\D/g, "");
+    const isMonotributo = cfg.condicion_fiscal === "MONOTRIBUTO";
+    const letraFact = String(factura.letra || "").toUpperCase();
+    const tipoFactura = isMonotributo ? 11 : letraFact === "A" ? 1 : letraFact === "C" ? 11 : 6;
+    const tipoND = tipoNDparaFactura(tipoFactura);
+    const pv = parseInt(factura.punto_venta) || parseInt(cfg.punto_venta) || 1;
+    let exento = false;
+    try {
+      const nro8 = String(factura.comprobante).padStart(8, "0");
+      for (const docId of [`${cuitDig}_${pv}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
+        const s = await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId).get();
+        if (s.exists) { exento = !!s.data().exento; break; }
+      }
+    } catch (_) {}
+    const ndNro = (await ultimoNroDemo(db, uid, cuitDig, pv, tipoND)) + 1;
+    const letra = tipoND === 2 ? "A" : tipoND === 7 ? "B" : "C";
+    const sinIva = isMonotributo || tipoND === 12;
+    const neto = sinIva ? monto : exento ? 0 : Math.round((monto / 1.21) * 100) / 100;
+    const iva = (sinIva || exento) ? 0 : Math.round((monto - neto) * 100) / 100;
+    const fechaIso = hoyARISO();
+    const fechaDisplay = `${fechaIso.slice(8, 10)}/${fechaIso.slice(5, 7)}/${fechaIso.slice(0, 4)}`;
+    const cae = caeDemo(), cae_vto = caeVtoDemo(fechaIso);
+    const items = [{ nombre: conceptoStr, cantidad: 1, precio: monto, descuento_item: 0 }];
+    let pdfB64 = null;
+    try {
+      const pdfBytes = await generarPDF({
+        comprobante: ndNro, cae, cae_vto, fecha: fechaDisplay, fecha_iso: fechaIso,
+        cliente: factura.cliente || "Consumidor Final", doc_tipo: factura.doc_tipo, doc_nro: factura.doc_nro || "",
+        letra, tipo_cbte: tipoND, punto_venta: pv, domicilio: "", total: monto, neto, iva, exento, items,
+        _is_nd: true, _cbte_asoc: factura.comprobante, _pv_asoc: factura.punto_venta || pv,
+      }, cfg);
+      pdfB64 = Buffer.from(pdfBytes).toString("base64");
+    } catch (e) { console.error("[arca demo] PDF ND:", e.message); }
+    await db.collection("users").doc(uid).collection("arca_comprobantes")
+      .doc(`${cuitDig}_${pv}_${tipoND}_${String(ndNro).padStart(8, "0")}`)
+      .set({
+        cuit_emisor: cuitDig, tipo_cbte: tipoND, letra, nro: ndNro, punto_venta: pv, exento,
+        fecha_str: fechaDisplay, fecha_cbte: fechaIso, emitido_at: new Date().toISOString(), cae, cae_vto,
+        cliente: factura.cliente || "", doc_tipo: factura.doc_tipo || "", doc_nro: factura.doc_nro || "",
+        total: monto, neto, iva, orden_id: null, items, domicilio: "", ml_uploaded: false, nd: true,
+        factura_origen: { letra: letraFact || letra, punto_venta: parseInt(factura.punto_venta) || pv, comprobante: parseInt(factura.comprobante) || null },
+        _demo: true,
+      });
+    return responder({ ok: true, nd: { letra, nro: ndNro, punto_venta: pv, cae, cae_vto }, pdf_b64: pdfB64 });
+  }
+
+  // "Adjuntar a ML": se marcan como adjuntadas sin llamar a Mercado Libre.
+  if (action === "attach_ml_pending" && M === "POST") {
+    const body = await leerBody();
+    const cuitParam = String(body.cuit || "").replace(/\D/g, "");
+    if (!cuitParam) return responder({ error: "Falta cuit" }, 400);
+    const snap = await db.collection("users").doc(uid).collection("arca_comprobantes").where("cuit_emisor", "==", cuitParam).get();
+    const pend = snap.docs.filter(d => { const c = d.data(); return String(c.orden_id || "").startsWith("ML-") && !c.ml_uploaded && !c.anulada; });
+    if (!pend.length) return responder({ ok: true, total: 0, uploaded: 0, errors: [], message: "No hay facturas pendientes de adjuntar a ML" });
+    const ahoraIso = new Date().toISOString();
+    for (let i = 0; i < pend.length; i += 400) {
+      const b = db.batch();
+      pend.slice(i, i + 400).forEach(d => b.set(d.ref, { ml_uploaded: true, ml_uploaded_at: ahoraIso }, { merge: true }));
+      await b.commit();
+    }
+    return responder({ ok: true, total: pend.length, uploaded: pend.length, errors: [] });
+  }
+
+  if (action === "cleanup_ml_anuladas" && M === "POST") {
+    return responder({ ok: true, total: 0, detached: 0, failed: 0, message: "No hay ventas anuladas de ML para limpiar" });
+  }
+
+  if (action === "cancelled_with_invoice" && M === "GET") {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+    return responder({ rows: [], count: 0, connections: ["mercadolibre"], truncated: false });
+  }
+
+  if (action === "resync_afip" && M === "POST") {
+    const body = await leerBody();
+    const cfg = await cfgDe(body.cuit);
+    if (!cfg) return responder({ error: "Falta cuit" }, 400);
+    return responder({ ok: true, pvs: [parseInt(cfg.punto_venta) || 1], tipos: [1, 6, 11, 3, 8, 13], consultados: 6, recuperados: 0, migrados: 0, pendientes: false, cursor: null, porPv: {}, detalle: [] });
+  }
+
+  // Legacy (solo TN): mismo cálculo que pending_orders, sin prefijo en el id.
+  if (action === "tn_pending_orders" && M === "GET") {
+    const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
+    if (!cuitParam) return responder({ error: "Falta cuit" }, 400);
+    const argYmd = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
+    let sinceDate, untilDate;
+    if (req.query.since) {
+      sinceDate = String(req.query.since).slice(0, 10);
+      untilDate = req.query.until ? String(req.query.until).slice(0, 10) : argYmd(new Date());
+    } else {
+      const days = Math.min(parseInt(req.query.days) || 7, 365);
+      sinceDate = argYmd(new Date(Date.now() - (days - 1) * 86400000));
+      untilDate = argYmd(new Date());
+    }
+    const [{ ventas }, billedSnap] = await Promise.all([
+      leerDemo(db, uid, sinceDate, untilDate),
+      db.collection("users").doc(uid).collection("arca_comprobantes").where("cuit_emisor", "==", cuitParam).select("orden_id", "anulada").get(),
+    ]);
+    const billed = new Set(billedSnap.docs.map(d => { const x = d.data(); return x.anulada ? null : x.orden_id; }).filter(Boolean));
+    const todas = pendientesDemoArca(ventas.filter(v => v.canal !== "ml"), new Map());
+    const ordenes = {};
+    for (const [oid, o] of Object.entries(todas)) {
+      if (billed.has(oid)) continue;
+      const { _platform, _platform_label, _order_number, ...resto } = o;
+      ordenes[oid.slice(3)] = resto;
+    }
+    return responder({ connected: true, store_name: "Growith Demo", total_found: Object.keys(todas).length, total_pending: Object.keys(ordenes).length, ordenes });
+  }
+
+  return false;
 }
 
 // ─── Handler principal ─────────────────────────────────
@@ -3511,6 +3966,15 @@ export default async function handler(req, res) {
   const db = initAdmin();
 
   try {
+    // ── Tienda DEMO: ARCA simulado ─────────────────────
+    // Una tienda demo NUNCA llega a WSAA/WSFE ni a Mercado Libre: emisiones,
+    // notas y pruebas de conexión se resuelven en accionArcaDemo. Lo que solo
+    // lee/escribe Firestore (Registros, IVA, config, pendientes) sigue por el
+    // camino normal de abajo.
+    if (await esTiendaDemo(db, uid)) {
+      if (await accionArcaDemo(req, res, db, uid, action, cuit)) return;
+    }
+
     // ── CUITS: listar ──────────────────────────────────
 
     if (action === "list_cuits" && req.method === "GET") {

@@ -16,6 +16,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { guardUid, guardCron } from "./_auth.js";
+import { esDemo } from "./_demo.js";
 
 async function sendEmail({ to, subject, html }) {
   const key = process.env.RESEND_API_KEY;
@@ -190,6 +191,7 @@ export default async function handler(req, res) {
       const us = await db.collection("users").where("pagosCalDias", "array-contains-any", [hoy, manana]).limit(500).get();
       for (const u of us.docs) {
         const ud = u.data() || {};
+        if (esDemo(ud)) continue; // tiendas DEMO: sin avisos por mail
         const col = db.collection("users").doc(u.id).collection("pagos_cal");
         const snap = await col.where("vence", "in", [hoy, manana]).where("pagado", "==", false).get();
         const todos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -214,6 +216,7 @@ export default async function handler(req, res) {
         const us2 = await db.collection("users").where("pagosCalDias", "array-contains-any", semana).limit(500).get();
         for (const u of us2.docs) {
           const ud = u.data() || {};
+          if (esDemo(ud)) continue; // tiendas DEMO: sin resumen por mail
           if (ud.pagosCalResumenAt === hoy) continue;
           const col = db.collection("users").doc(u.id).collection("pagos_cal");
           const snap = await col.where("vence", "in", semana).where("pagado", "==", false).get();

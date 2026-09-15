@@ -10,6 +10,8 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
 import { guardUid, requireAdmin, guardCron, verifyAuth, clearTeamCache, isFounder } from "./_auth.js";
 import { acreditarComisionReferido, descontarCreditoAplicado } from "./referidos.js";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { esDemo } from "./_demo.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -68,8 +70,27 @@ function colabPortalLink(origin, token) {
   return `${base}/#/colaborador/${token}`;
 }
 
+// ── Tiendas DEMO: ningún mail sale de una tienda demo (tareas, colaboradores,
+// canjes, miembros, pagos). Cada request corre con su propio contexto (el uid
+// de la tienda, ver el export default) y sendEmail lo consulta una sola vez
+// por request. notifyManagers y cron_deadlines chequean el doc directo.
+// Si el doc no se puede leer, el mail SÍ sale: una cuenta real no puede perder
+// un aviso por una falla momentánea de Firestore, y en la demo los destinatarios
+// son direcciones @ejemplo.com (no llegan a nadie).
+const _mailCtx = new AsyncLocalStorage();
+async function mailBloqueadoDemo() {
+  const ctx = _mailCtx.getStore();
+  if (!ctx?.uid) return false;
+  if (ctx.demo === undefined) {
+    try { ctx.demo = esDemo((await initAdmin().collection("users").doc(ctx.uid).get()).data()); }
+    catch (e) { console.warn("[email] no se pudo verificar si la tienda es demo:", e.message); ctx.demo = false; }
+  }
+  return ctx.demo;
+}
+
 // delayMs opcional → usa Resend scheduled_at (permite cancelar antes de enviar)
 async function sendEmail({ to, subject, html, delayMs, attachments }) {
+  if (await mailBloqueadoDemo()) { console.log(`[email] tienda demo: no se envía "${subject}"`); return { ok: true, demo: true, id: null }; }
   const key = process.env.RESEND_API_KEY;
   if (!key) { console.error("[email] RESEND_API_KEY no configurada"); return { error: "RESEND_API_KEY_FALTANTE" }; }
   if (!to)  { console.error("[email] destinatario vacío"); return { error: "Sin destinatario" }; }
@@ -131,7 +152,7 @@ async function notifyManagers(db, uid, managerEmail, subject, html) {
   let ownerEmail = managerEmail, extras = [];
   try {
     const s = await db.collection("users").doc(uid).get();
-    if (s.exists) { const d = s.data(); extras = d.notifEmails || []; if (d.email) ownerEmail = d.email; }
+    if (s.exists) { const d = s.data(); if (esDemo(d)) return; /* tienda DEMO: sin mails */ extras = d.notifEmails || []; if (d.email) ownerEmail = d.email; }
   } catch(_) {}
   const recipients = [...new Set([ownerEmail, ...extras])].filter(Boolean);
   await Promise.all(recipients.map(to => sendEmail({ to, subject, html })));
@@ -341,7 +362,12 @@ function normalizeLinks(links) {
   return arr.map(l => typeof l === "string" ? { name: "", url: l } : l).filter(l=>l.url);
 }
 
-export default async function handler(req, res) {
+// Cada request con su contexto de mail (uid de la tienda → bloqueo de mails demo).
+export default function handler(req, res) {
+  return _mailCtx.run({ uid: null, demo: undefined }, () => handlerTareas(req, res));
+}
+
+async function handlerTareas(req, res) {
   { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||_o.endsWith("-soluna1.vercel.app")||_o.startsWith("http://localhost"))?_o:"https://www.growithapp.com"); } // allowlist CORS
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
@@ -366,6 +392,7 @@ export default async function handler(req, res) {
     }
 
     const { action, uid, token } = body;
+    { const ctx = _mailCtx.getStore(); if (ctx && uid) ctx.uid = String(uid); }
     const origin = req.headers.origin || req.headers.referer || "";
     const now = new Date();
 
@@ -383,8 +410,17 @@ export default async function handler(req, res) {
       const hasta = new Date(ahora.getTime() + 8 * 86400000);
       const snapT = await db.collection("tareas").where("deadline", ">=", desde).where("deadline", "<=", hasta).get();
       const dlOf = t => t.deadline?.toDate ? t.deadline.toDate() : new Date(t.deadline?._seconds ? t.deadline._seconds * 1000 : t.deadline);
-      const pendTareas = snapT.docs.map(d => ({ _id: d.id, _ref: d.ref, ...d.data() })).filter(t => t.estado !== "aprobado" && t.deadline);
-      const uids = [...new Set(pendTareas.map(t => t.uid).filter(Boolean))];
+      const pendTareasTodas = snapT.docs.map(d => ({ _id: d.id, _ref: d.ref, ...d.data() })).filter(t => t.estado !== "aprobado" && t.deadline);
+      // Tiendas DEMO: sus tareas son ficticias — ni recordatorios, ni avisos de
+      // vencidas, ni resumen semanal.
+      const uidsTodos = [...new Set(pendTareasTodas.map(t => t.uid).filter(Boolean))];
+      const demoUids = new Set();
+      for (let i = 0; i < uidsTodos.length; i += 100) {
+        const snapsU = await db.getAll(...uidsTodos.slice(i, i + 100).map(u => db.collection("users").doc(String(u))));
+        snapsU.forEach(s => { if (esDemo(s.data())) demoUids.add(s.id); });
+      }
+      const pendTareas = pendTareasTodas.filter(t => !demoUids.has(String(t.uid)));
+      const uids = uidsTodos.filter(u => !demoUids.has(String(u)));
       const colabsByUid = {};
       for (const u of uids) {
         const cs = await db.collection("colaboradores").where("uid", "==", u).get();
@@ -2756,7 +2792,8 @@ export default async function handler(req, res) {
       if (!asignados.includes(colabEmail)) return res.status(403).json({ error:"Solo podés entregar en tus propias tareas" });
       const entrega = { link:link.trim(), label:(label.trim()||`v${(tData.deliverables||[]).length+1}`), nota:nota.trim(), fecha:now, entregadoPor:colabEmail };
       await tareaRef.update({ deliverables:[...(tData.deliverables||[]),entrega], estado:"entregado", updatedAt:now });
-      const boardNotifRecipients = [...new Set([userData.email, ...(userData.notifEmails||[])])].filter(Boolean);
+      // Tienda DEMO: la entrega queda registrada pero sin mails.
+      const boardNotifRecipients = esDemo(userData) ? [] : [...new Set([userData.email, ...(userData.notifEmails||[])])].filter(Boolean);
       boardNotifRecipients.forEach(to => sendEmail({ to, subject:`Nueva entrega en "${tData.titulo}"`, html:emailEntregaRecibida({ colab:colabData, tarea:tData, entrega, link:origin }) }));
       return res.json({ ok:true, entrega });
     }
