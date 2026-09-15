@@ -10567,7 +10567,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       if(orderDetail||exportModal||locationModal||verifModal||bulk||exporting||andreaniSaldoOpen) return;
       if((e.ctrlKey||e.metaKey)&&e.key==="a"&&tab==="panel") { e.preventDefault(); toggleAll(); }
       if(e.key==="Escape") { setSelected(new Map()); setExportSingleOrder(null); setSearchEnvios(""); setBuscarQuery(""); }
-      if(e.key==="Enter"&&selected.size>0&&!exportModal&&!bulk) { if(andreani.enabled){ setExportSingleOrder(null); lanzarBulkAndreani([...selected.values()]); } else abrirGeneracion(); }
+      if(e.key==="Enter"&&selected.size>0&&!exportModal) { abrirGeneracion(); }
     }
     window.addEventListener("keydown", handleKey);
     return ()=>window.removeEventListener("keydown", handleKey);
@@ -11851,31 +11851,28 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         {andreani.enabled&&(()=>{
           // Saldo bajo: el chip pasa a ámbar (o rojo si ya no alcanza para ninguna etiqueta)
           const chipColor=andreani.saldoBajo?(andreani.etiquetasEstimadas===0?T.red:T.yellow):T.green;
-          const chipTitle=andreani.saldoBajo?"Saldo bajo — hacé clic para cargar":"Saldo de envíos Andreani";
-          // Chip neutro (tarjeta): el color va SOLO en el monto y solo cuando el
-          // saldo está bajo. Sin gradientes ni fondos teñidos en el topbar.
-          const bajo=!!andreani.saldoBajo;
+          const chipTitle=andreani.saldoBajo?"Saldo bajo — hacé clic para cargar saldo":"Saldo de envíos Andreani";
           return (
-          <span style={{display:"inline-flex",alignItems:"stretch",height:36,borderRadius:DS.r.md,border:`1px solid ${bajo?chipColor+"66":T.border}`,background:T.card,overflow:"hidden",flexShrink:0,alignSelf:"center",fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <button onClick={()=>setAndreaniSaldoOpen(true)} title={chipTitle} aria-label={`Saldo de envíos ${fmtMoney(andreani.saldo)}`}
-              style={{display:"inline-flex",alignItems:"center",gap:9,padding:"0 12px",border:"none",background:"transparent",cursor:"pointer",fontFamily:"inherit",color:T.text}}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={bajo?chipColor:T.textMd} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
-              <span style={{display:"flex",flexDirection:"column",alignItems:"flex-start",lineHeight:1.2}}>
-                <span style={{fontSize:DS.font.xs,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Saldo de envíos</span>
-                <span style={{fontSize:DS.font.lg,fontWeight:700,color:bajo?chipColor:T.text,letterSpacing:-0.2,fontVariantNumeric:"tabular-nums",lineHeight:1.1}}>{fmtMoney(andreani.saldo)}</span>
+          <button onClick={()=>setAndreaniSaldoOpen(true)} title={chipTitle}
+            style={{display:"inline-flex",alignItems:"center",gap:10,height:42,margin:"2px 0",padding:"0 14px",borderRadius:12,boxSizing:"border-box",border:`1px solid ${chipColor}44`,background:`linear-gradient(135deg, ${chipColor}16, ${chipColor}05)`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,alignSelf:"center"}}>
+            <span style={{width:28,height:28,borderRadius:8,background:chipColor+"22",border:`1px solid ${chipColor}44`,display:"inline-flex",alignItems:"center",justifyContent:"center",color:chipColor,flexShrink:0}}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
+            </span>
+            <span style={{display:"flex",flexDirection:"column",alignItems:"flex-start",lineHeight:1.25}}>
+              <span style={{fontSize:8.5,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.7}}>Saldo de envíos</span>
+              <span style={{display:"flex",alignItems:"baseline",gap:6}}>
+                <span style={{fontSize:16,fontWeight:800,color:chipColor,letterSpacing:-0.4,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(andreani.saldo)}</span>
               </span>
-            </button>
-            <button onClick={()=>setAndreaniSaldoOpen(true)} title="Cargar saldo" style={{display:"inline-flex",alignItems:"center",padding:"0 12px",border:"none",borderLeft:`1px solid ${T.border}`,background:bajo?chipColor+"14":T.surface,color:bajo?chipColor:T.textMd,fontSize:DS.font.md,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cargar</button>
-          </span>
+            </span>
+          </button>
           );
         })()}
         <AsyncButton onClick={async()=>{
           tabCacheRef.current={};
           // No vaciar la lista: se mantiene visible con el chip "Actualizando" (SWR)
           await Promise.all([fetchTabOrders(tabEnvio,{background:true,fresh:true}), fetchTabCounts(user?.uid,true)]);
-        }} title="Volver a leer los pedidos de tu tienda" style={{...BtnSecondary(T),fontSize:12,height:36,padding:"0 12px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",gap:6}}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          Sincronizar
+        }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px"}}>
+          ⟳ Sincronizar
         </AsyncButton>
       </AppTopbar>
       {/* Tabs internos removidos — navegación va por el sidebar izquierdo */}
@@ -11893,8 +11890,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de tu tienda se sincronizan solos, sin cargar nada a mano. En 'Por empaquetar' ves todo lo que falta despachar; cuando marcás un pedido como empaquetado pasa a 'Por enviar'. El botón 'Sincronizar' de arriba trae lo último al instante."},
                     {n:2,icon:"",title:"El paquete y el valor declarado",desc:"El botón 'Paquete' guarda las medidas, el peso y el valor declarado con los que se cotizan y emiten TODAS tus etiquetas. El valor declarado define el seguro que cobra Andreani (un % de ese valor) — no es el total de la venta: poné lo que realmente querés asegurar."},
                     {n:3,icon:"",title:"Etiquetas por Excel",desc:"En 'Por enviar', seleccioná pedidos y tocá 'Exportar XLSX': sale el Excel de carga masiva listo para subir al portal de Andreani (domicilio y sucursal/HOP en sus hojas correctas). Si el punto de retiro del cliente no existe en la lista de Andreani, se abre un selector con las sucursales más cercanas ordenadas por distancia para que elijas una."},
-                    {n:4,icon:"",title:"Emitir etiquetas (prepago)",desc:"Si tenés el prepago habilitado, el botón 'Emitir etiquetas' cotiza y emite directo por la API de Andreani: el PDF sale al instante y el costo se debita de tu saldo. También podés cotizar un pedido puntual con el chip 'Cotizar' de cada fila antes de decidir. Al descargar podés activar 'SKU en la etiqueta' para que los productos salgan impresos en los recuadros de Orden de Ruteo del pie."},
-                    {n:5,icon:"",title:"Saldo de envíos",desc:"El chip con la billetera (arriba a la derecha) muestra tu saldo. Tocalo, o el botón Cargar, para cargar: con Mercado Pago se acredita solo al instante, o por transferencia con referencia y lo acredita el equipo. Ahí mismo ves los movimientos (cada etiqueta descuenta) y tu sucursal de despacho."},
+                    {n:4,icon:"",title:"Etiquetas listas (prepago)",desc:"Si tenés el prepago habilitado, el botón 'Generar etiquetas (Saldo)' cotiza y emite directo por la API de Andreani: el PDF sale al instante y el costo se debita de tu saldo. También podés cotizar un pedido puntual con el chip 'Cotizar' de cada fila antes de decidir. Al descargar podés activar 'SKU en la etiqueta' para que los productos salgan impresos en los recuadros de Orden de Ruteo del pie."},
+                    {n:5,icon:"",title:"Saldo de envíos",desc:"El chip verde con la billetera (arriba) muestra tu saldo. Tocalo para cargar: con Mercado Pago se acredita solo al instante, o por transferencia con referencia y lo acredita el equipo. Ahí mismo ves los movimientos (cada etiqueta descuenta) y tu sucursal de despacho."},
                     {n:6,icon:"",title:"Procesar rótulos",desc:"Subí el PDF de rótulos UNA sola vez en 'SKU en Rótulos': imprime el SKU de cada pedido en su etiqueta (para armar los paquetes sin errores) Y desde ahí mismo enviás los números de seguimiento a tu tienda, que le avisa al cliente por mail."},
                     {n:7,icon:"",title:"Seguimiento automático",desc:"Después del despacho, Growith consulta Andreani cada 30 minutos, sin que tengas la app abierta. En 'Seguimientos' ves cada envío por etapa: en camino, en sucursal (con días esperando), entregado o devolución, con alertas cuando algo se demora."},
                     {n:8,icon:"",title:"Si algo no cuadra",desc:"¿Una dirección o sucursal quedó mal en el Excel? Al exportar, Growith te pide confirmar las que no puede resolver solo y recuerda tu elección para la próxima. También podés excluir un pedido puntual del export."},
@@ -12074,26 +12071,26 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
                     Paquete
                   </button>
-                  {/* Un solo primario: con prepago habilitado es "Emitir etiquetas"
-                      (verde, la vía recomendada) y el Excel pasa a secundario;
-                      sin prepago el Excel es el primario. */}
+                  {/* Exportar = violeta (acción primaria clásica); Generar con
+                      saldo = verde (la vía recomendada, mismo verde del saldo). */}
                   <button onClick={()=>{setExportSingleOrder(null);exportAndreani([...selected.values()]);}}
                     title="Genera el Excel para subir al portal de Andreani y pagar con tu propia cuenta"
-                    style={{...(andreani.enabled?BtnSecondary(T):BtnPrimary(T)),fontWeight:600,fontSize:12,padding:"7px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+                    style={{...BtnPrimary(T),fontWeight:600,fontSize:12,padding:"7px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
-                    Exportar Excel ({selected.size})
+                    Exportar XLSX Andreani ({selected.size})
                   </button>
                   {andreani.enabled&&(
                     <button onClick={()=>{setExportSingleOrder(null);lanzarBulkAndreani([...selected.values()]);}}
-                      title="Recomendado: cotiza y emite las etiquetas al instante, debitando del saldo de envíos"
-                      style={{...BtnPrimary(T),border:`1.5px solid ${T.green}55`,background:T.green+"1a",color:T.green,boxShadow:`0 0 0 1px ${T.green}15, 0 4px 20px ${T.green}20`,fontSize:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
+                      title="Cotiza y emite las etiquetas al instante, debitando del saldo de envíos"
+                      style={{...BtnPrimary(T),border:`1.5px solid ${T.green}55`,background:T.green+"1a",color:T.green,boxShadow:`0 0 0 1px ${T.green}15, 0 4px 20px ${T.green}20`,fontSize:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",position:"relative"}}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                      Emitir {selected.size} etiqueta{selected.size===1?"":"s"}
+                      Generar etiquetas (Saldo) ({selected.size})
+                      <span style={{position:"absolute",top:-9,right:10,fontSize:9,fontWeight:800,letterSpacing:0.4,textTransform:"uppercase",background:T.green,color:"#fff",borderRadius:5,padding:"2px 7px",boxShadow:"0 2px 8px rgba(0,0,0,0.35)"}}>Recomendado</span>
                     </button>
                   )}
                 </>
               )}
-              <span title={`Atajos: Ctrl+A selecciona todos · Shift+click selecciona un rango · Esc limpia la selección · Enter ${andreani.enabled?"emite las etiquetas":"exporta el Excel"}`}
+              <span title="Atajos: Ctrl+A selecciona todos · Shift+click selecciona un rango · Esc limpia la selección · Enter exporta"
                 style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"flex",gap:10,alignItems:"center",cursor:"help"}}>
                 <span>{exportables.length} {exportables.length===1?"pedido":"pedidos"}{totalPages>1?` · pág. ${orderPage+1}/${totalPages}`:""}</span>
               </span>
@@ -12103,8 +12100,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             {tabLoading||buscarLoading?(
               <div>
                 {[...Array(6)].map((_,i)=>(
-                  <div key={i} style={{display:"grid",gridTemplateColumns:tabEnvio==="buscar"?"40px 80px 1fr 1fr 150px 160px 110px":"40px 80px 1.2fr 1fr 190px 110px",gap:8,padding:"15px 14px",borderBottom:`1px solid ${T.borderL}`,alignItems:"center",opacity:1-i*0.12}}>
-                    {(tabEnvio==="buscar"?[40,70,120,100,120,110,70]:[40,70,140,100,120,70]).map((w,j)=>(
+                  <div key={i} style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 90px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,alignItems:"center",opacity:1-i*0.12}}>
+                    {[40,70,120,100,140,100,70].map((w,j)=>(
                       <div key={j} style={{height:12,borderRadius:6,background:T.surface,animation:"growith-skeleton 1.4s ease infinite",animationDelay:`${i*80+j*40}ms`,width:w,maxWidth:"100%"}}/>
                     ))}
                   </div>
@@ -12151,14 +12148,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 )}
                 {/* Scroll horizontal en pantallas chicas — la grilla de 7 columnas
                     fijas antes se aplastaba/desbordaba en mobile */}
-                <div style={{overflowX:esMobile?"visible":"auto",WebkitOverflowScrolling:"touch"}}><div style={{minWidth:esMobile?0:720}}>
-                {/* En Por empaquetar / Por enviar la columna Estado era redundante
-                    (todas las filas decían lo mismo): solo se muestra en Buscar.
-                    En mobile la tabla pasa a tarjetas (áreas de grilla) sin scroll horizontal. */}
-                <div style={{display:esMobile?"none":"grid",gridTemplateColumns:tabEnvio==="buscar"?"40px 80px 1fr 1fr 150px 160px 110px":"40px 80px 1.2fr 1fr 190px 110px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
+                <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><div style={{minWidth:720}}>
+                <div style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
                   <span/><span>Pedido</span><span>Cliente</span><span>Productos</span>
-                  {tabEnvio==="buscar"&&<span>Estado</span>}
-                  <span>Envío{andreani.enabled?" · etiqueta":""}</span>
+                  <span>Estado</span>
+                  <span>Envío</span>
                   <span style={{textAlign:"right"}}>Total</span>
                 </div>
                 {pageOrders.map((o,idx)=>{
@@ -12167,35 +12161,33 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   const exportedOn=exportadoMap[o.numero]?new Date(exportadoMap[o.numero]).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
                   return (
                     <div key={o.numero} onClick={()=>setOrderDetail(o)}
-                      role="row" tabIndex={0} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); setOrderDetail(o); } }}
-                      style={{display:"grid",gridTemplateColumns:esMobile?"32px 1fr auto":tabEnvio==="buscar"?"40px 80px 1fr 1fr 150px 160px 110px":"40px 80px 1.2fr 1fr 190px 110px",gridTemplateAreas:esMobile?(tabEnvio==="buscar"?`"chk ped tot" "chk cli cli" "chk pro pro" "chk est est" "chk env env"`:`"chk ped tot" "chk cli cli" "chk pro pro" "chk env env"`):"none",gap:esMobile?"4px 8px":8,padding:compactMode?"8px 14px":esMobile?"12px 14px":"13px 14px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":"transparent",boxShadow:sel?`inset 2px 0 0 ${T.accentSolid}`:"none",alignItems:esMobile?"start":"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`,outline:"none"}}
-                      onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.surface;}}
-                      onMouseLeave={e=>{if(!sel)e.currentTarget.style.background="transparent";}}>
+                      style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:compactMode?"8px 14px":"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
+                      onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
+                      onMouseLeave={e=>{if(!sel)e.currentTarget.style.background=sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent";}}>
                       {/* En mobile el target es más grande (dedo, no mouse): padding invisible alrededor del check */}
-                      <div role="checkbox" aria-checked={sel} aria-label={`Seleccionar pedido #${o.numero}`} onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e,o);}} style={{gridArea:esMobile?"chk":"auto",width:32,height:32,margin:esMobile?"-4px 0 0 -7px":-7,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1,cursor:"pointer"}}>
-                        <div style={{width:esMobile?22:18,height:esMobile?22:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      <div onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e,o);}} style={{width:32,height:32,margin:-7,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1,cursor:"pointer"}}>
+                        <div style={{width:typeof window!=="undefined"&&window.innerWidth<=760?22:18,height:typeof window!=="undefined"&&window.innerWidth<=760?22:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
                           {sel&&<span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
                         </div>
                       </div>
-                      <div style={{gridArea:esMobile?"ped":"auto",display:"flex",flexDirection:esMobile?"row":"column",alignItems:esMobile?"center":"flex-start",gap:esMobile?8:3}}>
-                        <span style={{fontWeight:700,color:T.text,fontSize:13}}>#{o.numero}</span>
-                        {exportedOn&&<span title="Exportado en Excel" style={{fontSize:10,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.border}`,borderRadius:4,padding:"1px 5px",width:"fit-content"}}>Excel {exportedOn}</span>}
+                      <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                        <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{o.numero}</span>
+                        {exportedOn&&<span style={{fontSize:9,fontWeight:600,color:T.green,background:T.green+"18",borderRadius:3,padding:"1px 4px"}}>✓ {exportedOn}</span>}
                       </div>
-                      <div style={{gridArea:esMobile?"cli":"auto",minWidth:0}}>
+                      <div>
                         <div style={{fontSize:compactMode?12:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</div>
                         {!compactMode&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{o.localidad||o.ciudad}{o.provincia?`, ${o.provincia}`:""}</div>}
                       </div>
-                      <div style={{gridArea:esMobile?"pro":"auto",fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>
+                      <div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                         <LensDots productos={o.productos}/>
                         {!compactMode&&<span style={{marginLeft:6}}>{o.productos.map(p=>nombreCorto(p.nombre)).join(', ')}</span>}
                       </div>
-                      {tabEnvio==="buscar"&&<div style={{gridArea:esMobile?"est":"auto"}}><DSBadge T={T} color={ec.text||ec.dot} size="sm">{o.estadoEnvio}</DSBadge></div>}
-                      <div style={{gridArea:esMobile?"env":"auto",display:"flex",flexDirection:"column",gap:4,minWidth:0}}>
-                        <div style={{fontSize:12,color:T.textMd,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}>
-                          {/* Íconos distintos (antes eran el mismo path con otro color): tienda = sucursal, casa = domicilio */}
+                      <Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>
+                      <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:0}}>
+                        <div style={{fontSize:11,color:o.esSucursal?T.purple:T.blue,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
                           {o.esSucursal
-                            ?<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.purple} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M3 9l1-5h16l1 5"/><path d="M3 9a3 3 0 006 0 3 3 0 006 0 3 3 0 006 0"/><path d="M5 12v9h14v-9"/><path d="M10 21v-6h4v6"/></svg>
-                            :<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.blue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>}
+                            ?<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                            :<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>}
                           <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{o.medioEnvio||"--"}</span>
                           {o.esSucursal&&o.pickupDetails&&<svg title="Puede requerir confirmar sucursal al exportar" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
                         </div>
@@ -12212,24 +12204,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         {andreani.enabled&&filaEsAndreani(o)&&(()=>{
                           const c=cotRow[o.numero];
                           const yaNum=andreaniNumeroDe(o);
-                          // El estado de la etiqueta es el dato más importante de la fila:
-                          // chip de 11 px (antes 10) y, si ya está emitida, PDF a un click.
-                          const chip={fontSize:11,fontWeight:700,borderRadius:DS.r.sm,padding:"3px 9px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5,width:"fit-content",fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1.4};
-                          if(yaNum) return (
-                            <span style={{display:"inline-flex",alignItems:"center",gap:4}}>
-                              <span title={`Etiqueta emitida — envío ${yaNum}. Click: ver la etiqueta`} onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...chip,color:T.green,border:`1px solid ${T.green}55`,background:T.green+"12"}}>✓ Emitida</span>
-                              <button title="Descargar el PDF de la etiqueta" aria-label="Descargar etiqueta" onClick={e=>{e.stopPropagation();descargarEtiquetaBulk(String(yaNum),ghSkuLinesDe(o));}} style={{...chip,color:T.textMd,border:`1px solid ${T.border}`,background:"transparent",padding:"3px 7px"}}>PDF</button>
-                            </span>
-                          );
+                          const chip={fontSize:10,fontWeight:700,borderRadius:5,padding:"2px 7px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,width:"fit-content",fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1.4};
+                          if(yaNum) return <span style={{display:"inline-flex",alignItems:"center",gap:4}}><span title={`Etiqueta emitida — envío ${yaNum}`} onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...chip,color:T.green,border:`1px solid ${T.green}55`,background:T.green+"12"}}>✓ Emitida</span><button title="Descargar el PDF de la etiqueta" onClick={e=>{e.stopPropagation();descargarEtiquetaBulk(String(yaNum),ghSkuLinesDe(o));}} style={{...chip,color:T.textMd,border:`1px solid ${T.border}`,background:"transparent",padding:"2px 6px"}}>PDF</button></span>;
                           if(c?.loading) return <span style={{...chip,cursor:"default",color:T.textSm,border:`1px solid ${T.border}`}}><Spinner size={9} color={T.textSm}/> Cotizando…</span>;
-                          if(c?.error) return <span title={`${c.error} — click para reintentar`} onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...chip,color:T.red,border:`1px solid ${T.red}55`,background:T.red+"12"}}>Reintentar cotización</span>;
-                          if(typeof c?.precio==="number") return <span title="Emitir la etiqueta de este pedido" onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...chip,color:T.green,border:`1px solid ${T.green}55`,background:T.green+"12"}}>{fmtMoney(c.precio)} · Emitir</span>;
-                          return <span title="Cotizar el envío por Andreani" onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...chip,color:T.textMd,border:`1px dashed ${T.border}`,fontWeight:600}}>Cotizar</span>;
+                          if(c?.error) return <span title={`${c.error} — click para reintentar`} onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...chip,color:T.red,border:`1px solid ${T.red}55`,background:T.red+"12"}}>Error al cotizar</span>;
+                          if(typeof c?.precio==="number") return <span title="Emitir etiqueta Andreani con este pedido" onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...chip,color:T.green,border:`1px solid ${T.green}55`,background:T.green+"12"}}>{fmtMoney(c.precio)}</span>;
+                          return <span title="Cotizar envío por Andreani" onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...chip,color:T.textMd,border:`1px dashed ${T.border}`}}>Cotizar</span>;
                         })()}
                       </div>
                       {/* El ✓ por fila se sacó: ensuciaba la tabla y empujaba a
                           marcar de a uno. Se marca en lote con los tildados. */}
-                      <span style={{gridArea:esMobile?"tot":"auto",fontSize:13,fontWeight:700,color:T.text,display:"flex",alignItems:"center",justifyContent:"flex-end",fontVariantNumeric:"tabular-nums"}}>
+                      <span style={{fontSize:13,fontWeight:700,color:T.text,display:"flex",alignItems:"center",justifyContent:"flex-end"}}>
                         {fmtMoney(o.total)}
                       </span>
                     </div>
@@ -12545,10 +12530,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 <div style={{fontSize:15,fontWeight:700,color:T.text}}>Seguimientos</div>
                 <div style={{fontSize:11,color:T.textSm}}>{envios.length} envío{envios.length===1?"":"s"} de los últimos 60 días · el estado se actualiza solo cada 30 minutos.</div>
               </div>
-              {pdfResults.length>0&&!showPdfUp&&<DSBadge T={T} color={pdfPend.length?T.orange:T.green} size="sm">{pdfPend.length?`${pdfPend.length} tracking sin enviar`:"Trackings enviados"}</DSBadge>}
-              <Btn T={T} variant="primary" size="sm" onClick={()=>setShowPdfUp(true)} icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}>Subir PDF de rótulos</Btn>
+              {pdfResults.length>0&&!showPdfUp&&<button onClick={()=>setShowPdfUp(true)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",color:pdfPend.length?T.orange:T.green,borderColor:(pdfPend.length?T.orange:T.green)+"66"}}>{pdfPend.length?`PDF: ${pdfPend.length} sin enviar`:"PDF: todo enviado"}</button>}
+              <Btn T={T} variant="primary" size="md" onClick={()=>setShowPdfUp(true)} icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}>Subir PDF de rótulos</Btn>
               <Btn T={T} variant="secondary" size="sm" onClick={()=>setSegScanOpen(v=>!v)}>{segScanOpen?"Cerrar despacho":"Modo despacho"}</Btn>
-              <Btn T={T} variant="secondary" size="sm" onClick={()=>refrescarEnviosFs()}>Actualizar</Btn>
+              <AsyncButton onClick={refrescarEnviosFs} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Actualizar</AsyncButton>
               <div style={{position:"relative"}}>
                 <button onClick={()=>setSegCfgOpen(v=>!v)} title="Avisos y umbrales" aria-label="Avisos y umbrales" style={{width:32,height:32,borderRadius:DS.r.md,background:"transparent",border:`1px solid ${segCfgOpen?T.accent:T.border}`,color:segCfgOpen?T.accent:T.textMd,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -13305,7 +13290,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
       {/* ── Flujo bulk "Etiquetas listas" (emisión por API) ── */}
       {bulk&&(
-        <Modal T={T} open={true} hideClose={bulk.fase==="cotizando"||bulk.fase==="emitiendo"} onClose={()=>{ if(bulk.fase==="revision"||bulk.fase==="resultado"){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } else if(bulk.fase==="resolviendo"){ bulkCancelRef.current=true; setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } }} title="Emitir etiquetas · Andreani" width={720} zIndex={1500}>
+        <Modal T={T} open={true} hideClose={bulk.fase==="cotizando"||bulk.fase==="emitiendo"} onClose={()=>{ if(bulk.fase==="revision"||bulk.fase==="resultado"){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } else if(bulk.fase==="resolviendo"){ bulkCancelRef.current=true; setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } }} title="Etiquetas listas — Andreani" width={680} zIndex={1500}>
           {/* Pasos del flujo: siempre visibles para saber dónde estás */}
           {(()=>{ const pasos=[["Preparar",["resolviendo"]],["Revisar",["cotizando","revision"]],["Emitir",["emitiendo"]],["Listo",["resultado"]]]; const idx=pasos.findIndex(p=>p[1].includes(bulk.fase)); return (
             <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:16}}>
@@ -13818,26 +13803,21 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
       if(d&&!d.error){ setCargas(Array.isArray(d.cargas)?d.cargas:[]); if(d.datosPago) setDatosPago(d.datosPago); }
     }).catch(()=>{});
   }
-  const aliveRef=useRef(true);
-  function cargarSaldo(){
-    setLoading(true);
+  useEffect(()=>{
+    if(!open) return;
+    let alive=true;
+    setLoading(true); setNueva(null); setCargaErr(""); setMontoCarga("");
     authFetch("/api/andreani?action=saldo")
       .then(r=>r.ok?r.json():null)
       .then(d=>{
-        if(!aliveRef.current) return;
+        if(!alive) return;
         if(d&&!d.error){ setData(d); setSaldoErr(false); if(typeof d.saldo==="number") onSaldo&&onSaldo(d.saldo); }
         else setSaldoErr(true);
       })
-      .catch(()=>{ if(aliveRef.current) setSaldoErr(true); })
-      .finally(()=>{ if(aliveRef.current) setLoading(false); });
+      .catch(()=>{ if(alive) setSaldoErr(true); })
+      .finally(()=>{ if(alive) setLoading(false); });
     refrescarCargas();
-  }
-  useEffect(()=>{
-    if(!open) return;
-    aliveRef.current=true;
-    setNueva(null); setCargaErr(""); setMontoCarga("");
-    cargarSaldo();
-    return ()=>{aliveRef.current=false;};
+    return ()=>{alive=false;};
   },[open]);
   async function solicitarCarga(){
     setCargaErr("");
@@ -13867,7 +13847,7 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
   const filaCopy=(label,valor)=>(
     <div style={{display:"flex",alignItems:"center",gap:10,background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px"}}>
       <div style={{minWidth:0,flex:1}}>
-        <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{label}</div>
+        <div style={{fontSize:9,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{label}</div>
         <div style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:"'Cascadia Code','Consolas',monospace",overflow:"hidden",textOverflow:"ellipsis"}}>{valor}</div>
       </div>
       <button onClick={()=>copiar(valor)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",flexShrink:0}}>Copiar</button>
@@ -13903,66 +13883,58 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
     <Modal T={T} open={open} onClose={onClose} title="Saldo de envíos" width={560} zIndex={2100}>
       {(()=>{
         const col=saldoBajo?(etiquetasEstimadas===0?T.red:T.yellow):T.green;
-        // Hero neutro: tarjeta con borde, el color solo en la línea de estado.
         return (
-          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"16px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:14}}>
-            <div style={{width:44,height:44,borderRadius:DS.r.lg,background:T.card,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
+          <div style={{background:`linear-gradient(135deg, ${col}14, transparent 65%)`,border:`1px solid ${col}33`,borderRadius:14,padding:"16px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:14}}>
+            <div style={{width:46,height:46,borderRadius:12,background:col+"1a",border:`1px solid ${col}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
             </div>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:DS.font.xs,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6,marginBottom:2}}>Saldo disponible</div>
-              <div style={{fontSize:DS.font["3xl"],fontWeight:800,color:T.text,letterSpacing:-0.8,lineHeight:1.15,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(saldoActual)}</div>
-              <div style={{fontSize:DS.font.sm,color:saldoBajo?col:T.textSm,fontWeight:saldoBajo?600:400,marginTop:3}}>
-                {saldoBajo?"Saldo bajo: cargá para seguir emitiendo etiquetas.":"Cada etiqueta que emitís se descuenta de este saldo."}
+              <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6,marginBottom:2}}>Saldo disponible</div>
+              <div style={{fontSize:30,fontWeight:800,color:T.text,letterSpacing:-1,lineHeight:1.15}}>{fmtMoney(saldoActual)}</div>
+              <div style={{fontSize:11,color:saldoBajo?col:T.textSm,fontWeight:saldoBajo?600:400,marginTop:3}}>
+                {saldoBajo?"Saldo bajo: cargá para seguir emitiendo etiquetas":"Cada etiqueta que emitís se descuenta de este saldo"}
               </div>
             </div>
           </div>
         );
       })()}
       {saldoErr&&(
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderLeft:`3px solid ${T.yellow}`,borderRadius:DS.r.md,padding:"8px 12px",marginBottom:12,fontSize:12,color:T.text}}>
-          <span style={{flex:1,minWidth:200}}>No se pudieron traer los movimientos: el saldo que ves puede estar desactualizado.</span>
-          <button onClick={cargarSaldo} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>Reintentar</button>
+        <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12,color:T.yellow}}>
+          No se pudieron traer los movimientos — el saldo mostrado puede estar desactualizado. Cerrá y volvé a abrir para reintentar.
         </div>
       )}
       {/* ── Cargar saldo: monto → referencia única → transferencia → acreditación ── */}
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:16}}>
-        <div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Cargar saldo</div>
-        {(()=>{
-          const montos=[10000,20000,50000,100000];
-          const esPreset=montos.some(m=>String(m)===String(montoCarga));
-          const otro=montoCarga!==""&&!esPreset;
-          const montoNum=Math.round(Number(montoCarga))||0;
-          const valido=isFinite(montoNum)&&montoNum>=1000&&montoNum<=10000000;
-          return (
-            <div>
-              <div style={{display:"inline-flex",background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.md,padding:3,gap:2,flexWrap:"wrap",marginBottom:10,maxWidth:"100%"}}>
-                {montos.map(m=>{ const on=String(m)===String(montoCarga); return (
-                  <button key={m} onClick={()=>{setMontoCarga(String(m));setCargaErr("");}}
-                    style={{padding:"7px 12px",fontSize:13,fontWeight:on?700:500,borderRadius:DS.r.sm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",border:"none",background:on?T.card:"transparent",color:on?T.text:T.textMd,boxShadow:on?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>
-                    ${m.toLocaleString("es-AR")}
-                  </button>
-                ); })}
-                <button onClick={()=>{setMontoCarga(otro?montoCarga:""); setCargaErr(""); setTimeout(()=>{ try{ document.getElementById("gh-saldo-otro")?.focus(); }catch(_){} },0); }}
-                  style={{padding:"7px 12px",fontSize:13,fontWeight:otro?700:500,borderRadius:DS.r.sm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",border:"none",background:otro?T.card:"transparent",color:otro?T.text:T.textMd,boxShadow:otro?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>Otro</button>
-              </div>
-              {(otro||montoCarga==="")&&(
-                <input id="gh-saldo-otro" style={{...iS,marginBottom:10,width:180,fontSize:13}} type="number" min="1000" step="500" placeholder="Monto (mínimo $1.000)" value={esPreset?"":montoCarga}
-                  onChange={e=>{setMontoCarga(e.target.value);setCargaErr("");}}
-                  onKeyDown={e=>{if(e.key==="Enter"&&valido)pagarMP();}}/>
-              )}
-              <AsyncButton onClick={pagarMP} disabled={!valido}
-                style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:10,
-                  background:valido?MP_BLUE+"12":T.surface,color:valido?T.text:T.textSm,border:`1.5px solid ${valido?MP_BLUE:T.border}`,borderRadius:DS.r.lg,
-                  height:46,padding:"0 20px",boxSizing:"border-box",opacity:valido?1:0.7,
-                  fontSize:14,fontWeight:700,cursor:valido?"pointer":"not-allowed",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                <MpLogo size={22} color={valido?MP_BLUE:T.textSm}/> {valido?`Pagar ${fmtMoney(montoNum)} con Mercado Pago`:"Elegí un monto para pagar con Mercado Pago"}
-              </AsyncButton>
-              <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8}}>Se acredita solo, al instante. Cada etiqueta que emitís se descuenta de este saldo.</div>
-              {cargaErr&&<div style={{fontSize:12,color:T.red,marginTop:8}}>{cargaErr}</div>}
-            </div>
-          );
-        })()}
+        <div style={{fontSize:11,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Cargar saldo</div>
+        <div>
+          <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:12}}>
+            Elegí el monto y pagá con Mercado Pago. El saldo se acredita <strong style={{color:T.text}}>solo, al instante</strong>.
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+            {[10000,20000,50000,100000].map(m=>(
+              <button key={m} onClick={()=>{setMontoCarga(String(m));setCargaErr("");}}
+                style={{padding:"8px 14px",fontSize:13,fontWeight:700,borderRadius:8,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",
+                  border:`1px solid ${String(m)===String(montoCarga)?T.accentSolid:T.border}`,
+                  background:String(m)===String(montoCarga)?T.accentSolid+"22":T.bg,
+                  color:String(m)===String(montoCarga)?T.accent:T.textMd}}>
+                ${m.toLocaleString("es-AR")}
+              </button>
+            ))}
+            <input style={{...iS,marginBottom:0,width:130,fontSize:13}} type="number" min="1000" step="500" placeholder="Otro monto" value={montoCarga}
+              onChange={e=>{setMontoCarga(e.target.value);setCargaErr("");}}
+              onKeyDown={e=>{if(e.key==="Enter")pagarMP();}}/>
+          </div>
+          {/* Premium y sobrio: fondo oscuro con borde celeste MP y el logo a color,
+              en vez de la placa celeste maciza que se comía el modal */}
+          <AsyncButton onClick={pagarMP}
+            style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:10,
+              background:"#009EE310",color:T.text,border:"1.5px solid #009EE3",borderRadius:10,
+              height:46,padding:"0 20px",boxSizing:"border-box",
+              fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <MpLogo size={22}/> Pagar con Mercado Pago
+          </AsyncButton>
+          {cargaErr&&<div style={{fontSize:12,color:T.red,marginTop:8}}>{cargaErr}</div>}
+        </div>
         {cargasVisibles.length>0&&(
           <div style={{marginTop:12,borderTop:`1px solid ${T.borderL}`,paddingTop:10,display:"flex",flexDirection:"column",gap:6}}>
             {cargasVisibles.map(c=>(
@@ -13987,36 +13959,29 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
           </div>
         )}
       </div>
-      {/* Configuración de una sola vez, como dos filas: sucursal de despacho y remitente */}
-      <div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,margin:"0 0 8px"}}>Configuración</div>
-      <div style={{border:`1px solid ${T.border}`,borderRadius:DS.r.lg,overflow:"hidden",marginBottom:16}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:T.surface}}>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:DS.font.md,fontWeight:600,color:T.text}}>Sucursal de despacho</div>
-            <div style={{fontSize:DS.font.sm,color:sucOrigen?.confirmada?T.textSm:T.yellow,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sucOrigen?(sucOrigen.descripcion||sucOrigen.codigo||`Sucursal ${sucOrigen.id}`)+(sucOrigen.confirmada?"":" · sin confirmar"):"Sin definir: hace falta para emitir por API"}</div>
-          </div>
-          <button onClick={()=>setShowSucCfg(s=>!s)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>{showSucCfg?"Cerrar":sucOrigen?"Cambiar":"Elegir"}</button>
+      {/* Config de una sola vez: colapsada para que el modal quede enfocado en la plata */}
+      <button onClick={()=>setShowSucCfg(s=>!s)}
+        style={{display:"flex",alignItems:"center",gap:8,width:"100%",background:"transparent",border:"none",padding:"0 0 8px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <span style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Sucursal de despacho</span>
+        {!showSucCfg&&sucOrigen&&<span style={{fontSize:11,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,textAlign:"left"}}>· {sucOrigen.descripcion||sucOrigen.codigo||`Sucursal ${sucOrigen.id}`}</span>}
+        <span style={{marginLeft:showSucCfg||!sucOrigen?"auto":0,fontSize:10,color:T.textSm,transform:showSucCfg?"rotate(180deg)":"none",transition:"transform 0.15s"}}>▾</span>
+      </button>
+      {showSucCfg&&(
+        <div style={{marginBottom:16}}>
+          <AndreaniSucOrigenCard T={T} sucOrigen={sucOrigen} onChange={onSucOrigen}/>
         </div>
-        {showSucCfg&&<div style={{padding:"10px 12px",borderTop:`1px solid ${T.borderL}`}}><AndreaniSucOrigenCard T={T} sucOrigen={sucOrigen} onChange={onSucOrigen}/></div>}
-        <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderTop:`1px solid ${T.borderL}`,background:T.surface}}>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:DS.font.md,fontWeight:600,color:T.text}}>Datos del remitente</div>
-            <div style={{fontSize:DS.font.sm,color:T.textSm}}>Dirección de origen, nombre y DNI que salen en la etiqueta</div>
-          </div>
-          <button onClick={onEditOrigen} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Editar</button>
-        </div>
-      </div>
+      )}
       <div style={{display:"flex",alignItems:"center",gap:8,margin:"8px 0",flexWrap:"wrap"}}>
-        <span style={{fontSize:DS.font.sm,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Movimientos</span>
+        <span style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Movimientos</span>
         {mesesMov.length>1&&<select value={mesMov} onChange={e=>setMesMov(e.target.value)} style={{...iS,marginBottom:0,width:"auto",fontSize:11,padding:"4px 8px"}}><option value="">Todos</option>{mesesMov.map(m=><option key={m} value={m}>{new Date(m+"-15T12:00:00").toLocaleDateString("es-AR",{month:"long",year:"numeric"})}</option>)}</select>}
-        {movs.length>0&&<button onClick={exportarMovs} style={{...BtnSecondary(T),fontSize:11,padding:"4px 9px",marginLeft:"auto"}}>Exportar CSV</button>}
+        {movs.length>0&&<button onClick={exportarMovs} style={{...BtnSecondary(T),fontSize:10.5,padding:"4px 9px",marginLeft:"auto"}}>Exportar CSV</button>}
       </div>
       {loading?(
         <div style={{display:"flex",alignItems:"center",gap:8,padding:"18px 4px",color:T.textSm,fontSize:12}}>
           <Spinner size={13} color={T.accent}/> Cargando movimientos…
         </div>
       ):movs.length===0?(
-        <div style={{padding:"18px 4px",color:T.textSm,fontSize:12}}>Todavía no hay movimientos: la primera carga o etiqueta aparece acá.</div>
+        <div style={{padding:"18px 4px",color:T.textSm,fontSize:12}}>Todavía no hay movimientos.</div>
       ):(
         <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:4}}>
           <div style={{display:"grid",gridTemplateColumns:"90px 1fr 90px 90px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
@@ -14039,6 +14004,10 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
           </div>
         </div>
       )}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:16,flexWrap:"wrap",gap:8}}>
+        <button onClick={onEditOrigen} style={{...BtnSecondary(T),fontSize:12}}>Datos del remitente</button>
+        <button onClick={onClose} style={{...BtnPrimary(T),fontSize:13}}>Cerrar</button>
+      </div>
     </Modal>
   );
 }
