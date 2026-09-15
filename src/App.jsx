@@ -9516,6 +9516,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // Formato de descarga de etiquetas (A4 original | térmica 10x15) — persiste
   const [dlFmt,setDlFmtState]=useState(()=>{try{return localStorage.getItem("growith_andreani_fmt")==="termica"?"termica":"a4";}catch(_){return "a4";}});
   const setDlFmt=f=>{setDlFmtState(f);try{localStorage.setItem("growith_andreani_fmt",f);}catch(_){}};
+  // Ancho de pantalla reactivo (antes se leía window.innerWidth en cada render de fila).
+  const [esMobile,setEsMobile]=useState(()=>typeof window!=="undefined"&&window.innerWidth<=760);
+  useEffect(()=>{ const h=()=>setEsMobile(window.innerWidth<=760); window.addEventListener("resize",h); return ()=>window.removeEventListener("resize",h); },[]);
   // "SKU en la etiqueta": estampa los productos del pedido al descargar (opcional).
   const [dlSku,setDlSkuState]=useState(ghSkuPref);
   const setDlSku=v=>{setDlSkuState(!!v);try{localStorage.setItem("growith_andreani_sku",v?"1":"0");}catch(_){}};
@@ -10541,11 +10544,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       if(orderDetail||exportModal||locationModal||verifModal||bulk||exporting||andreaniSaldoOpen) return;
       if((e.ctrlKey||e.metaKey)&&e.key==="a"&&tab==="panel") { e.preventDefault(); toggleAll(); }
       if(e.key==="Escape") { setSelected(new Map()); setExportSingleOrder(null); setSearchEnvios(""); setBuscarQuery(""); }
-      if(e.key==="Enter"&&selected.size>0&&!exportModal) { abrirGeneracion(); }
+      if(e.key==="Enter"&&selected.size>0&&!exportModal&&!bulk) { if(andreani.enabled){ setExportSingleOrder(null); lanzarBulkAndreani([...selected.values()]); } else abrirGeneracion(); }
     }
     window.addEventListener("keydown", handleKey);
     return ()=>window.removeEventListener("keydown", handleKey);
-  },[selected, tab, exportModal, tabOrders, orderDetail, locationModal, verifModal, bulk, exporting, andreaniSaldoOpen]);
+  },[selected, tab, exportModal, tabOrders, orderDetail, locationModal, verifModal, bulk, exporting, andreaniSaldoOpen, andreani.enabled, tabEnvio]);
 
   // Fetch local tab orders - independiente del estado global de orders
   // Persiste la última lista conocida para que el próximo ingreso sea instantáneo (SWR)
@@ -11475,7 +11478,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                    ||orders.find(o=>o.numero===p.pedidoNum)
                    ||fetchedMap[p.pedidoNum]||null;
           const skuLines=order?order.productos.map(pr=>`${pr.sku} (x${pr.cantidad})`):[];
-          return {...p,skus:order?skuLines.join(', '):"No encontrado en TN",found:!!order,skuLines};
+          return {...p,skus:order?skuLines.join(', '):"No encontrado en tu tienda",found:!!order,skuLines};
         });
         resultSetter(results);
         // Un solo upload para todo: el mismo PDF alimenta el estampado de SKUs
@@ -11850,7 +11853,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de tu tienda se sincronizan solos, sin cargar nada a mano. En 'Por empaquetar' ves todo lo que falta despachar; cuando marcás un pedido como empaquetado pasa a 'Por enviar'. El botón 'Sincronizar' de arriba trae lo último al instante."},
                     {n:2,icon:"",title:"El paquete y el valor declarado",desc:"El botón 'Paquete' guarda las medidas, el peso y el valor declarado con los que se cotizan y emiten TODAS tus etiquetas. El valor declarado define el seguro que cobra Andreani (un % de ese valor) — no es el total de la venta: poné lo que realmente querés asegurar."},
                     {n:3,icon:"",title:"Etiquetas por Excel",desc:"En 'Por enviar', seleccioná pedidos y tocá 'Exportar XLSX': sale el Excel de carga masiva listo para subir al portal de Andreani (domicilio y sucursal/HOP en sus hojas correctas). Si el punto de retiro del cliente no existe en la lista de Andreani, se abre un selector con las sucursales más cercanas ordenadas por distancia para que elijas una."},
-                    {n:4,icon:"",title:"Etiquetas listas (prepago)",desc:"Si tenés el prepago habilitado, el botón 'Emitir etiquetas' cotiza y emite directo por la API de Andreani: el PDF sale al instante y el costo se debita de tu saldo. También podés cotizar un pedido puntual con el chip 'Cotizar' de cada fila antes de decidir."},
+                    {n:4,icon:"",title:"Emitir etiquetas (prepago)",desc:"Si tenés el prepago habilitado, el botón 'Emitir etiquetas' cotiza y emite directo por la API de Andreani: el PDF sale al instante y el costo se debita de tu saldo. También podés cotizar un pedido puntual con el chip 'Cotizar' de cada fila antes de decidir. Al descargar podés activar 'SKU en la etiqueta' para que los productos salgan impresos en Observaciones."},
                     {n:5,icon:"",title:"Saldo de envíos",desc:"El chip verde con la billetera (arriba) muestra tu saldo. Tocalo para cargar: con Mercado Pago se acredita solo al instante, o por transferencia con referencia y lo acredita el equipo. Ahí mismo ves los movimientos (cada etiqueta descuenta) y tu sucursal de despacho."},
                     {n:6,icon:"",title:"Procesar rótulos",desc:"Subí el PDF de rótulos UNA sola vez en 'SKU en Rótulos': imprime el SKU de cada pedido en su etiqueta (para armar los paquetes sin errores) Y desde ahí mismo enviás los números de seguimiento a tu tienda, que le avisa al cliente por mail."},
                     {n:7,icon:"",title:"Seguimiento automático",desc:"Después del despacho, Growith consulta Andreani cada 30 minutos, sin que tengas la app abierta. En 'Seguimientos' ves cada envío por etapa: en camino, en sucursal (con días esperando), entregado o devolución, con alertas cuando algo se demora."},
@@ -12061,7 +12064,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   )}
                 </>
               )}
-              <span title="Atajos: Ctrl+A selecciona todos · Shift+click selecciona un rango · Esc limpia la selección · Enter exporta"
+              <span title={`Atajos: Ctrl+A selecciona todos · Shift+click selecciona un rango · Esc limpia la selección · Enter ${andreani.enabled?"emite las etiquetas":"exporta el Excel"}`}
                 style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"flex",gap:10,alignItems:"center",cursor:"help"}}>
                 <span>{exportables.length} {exportables.length===1?"pedido":"pedidos"}{totalPages>1?` · pág. ${orderPage+1}/${totalPages}`:""}</span>
               </span>
@@ -12071,8 +12074,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             {tabLoading||buscarLoading?(
               <div>
                 {[...Array(6)].map((_,i)=>(
-                  <div key={i} style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 90px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,alignItems:"center",opacity:1-i*0.12}}>
-                    {[40,70,120,100,140,100,70].map((w,j)=>(
+                  <div key={i} style={{display:"grid",gridTemplateColumns:tabEnvio==="buscar"?"40px 80px 1fr 1fr 150px 160px 110px":"40px 80px 1.2fr 1fr 190px 110px",gap:8,padding:"15px 14px",borderBottom:`1px solid ${T.borderL}`,alignItems:"center",opacity:1-i*0.12}}>
+                    {(tabEnvio==="buscar"?[40,70,120,100,120,110,70]:[40,70,140,100,120,70]).map((w,j)=>(
                       <div key={j} style={{height:12,borderRadius:6,background:T.surface,animation:"growith-skeleton 1.4s ease infinite",animationDelay:`${i*80+j*40}ms`,width:w,maxWidth:"100%"}}/>
                     ))}
                   </div>
@@ -12120,10 +12123,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 {/* Scroll horizontal en pantallas chicas — la grilla de 7 columnas
                     fijas antes se aplastaba/desbordaba en mobile */}
                 <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><div style={{minWidth:720}}>
-                <div style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
+                {/* En Por empaquetar / Por enviar la columna Estado era redundante
+                    (todas las filas decían lo mismo): solo se muestra en Buscar. */}
+                <div style={{display:"grid",gridTemplateColumns:tabEnvio==="buscar"?"40px 80px 1fr 1fr 150px 160px 110px":"40px 80px 1.2fr 1fr 190px 110px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
                   <span/><span>Pedido</span><span>Cliente</span><span>Productos</span>
-                  <span>Estado</span>
-                  <span>Envío</span>
+                  {tabEnvio==="buscar"&&<span>Estado</span>}
+                  <span>Envío{andreani.enabled?" · etiqueta":""}</span>
                   <span style={{textAlign:"right"}}>Total</span>
                 </div>
                 {pageOrders.map((o,idx)=>{
@@ -12132,18 +12137,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   const exportedOn=exportadoMap[o.numero]?new Date(exportadoMap[o.numero]).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
                   return (
                     <div key={o.numero} onClick={()=>setOrderDetail(o)}
-                      style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:compactMode?"8px 14px":"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
-                      onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
-                      onMouseLeave={e=>{if(!sel)e.currentTarget.style.background=sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent";}}>
+                      role="row" tabIndex={0} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); setOrderDetail(o); } }}
+                      style={{display:"grid",gridTemplateColumns:tabEnvio==="buscar"?"40px 80px 1fr 1fr 150px 160px 110px":"40px 80px 1.2fr 1fr 190px 110px",gap:8,padding:compactMode?"8px 14px":"13px 14px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":"transparent",boxShadow:sel?`inset 2px 0 0 ${T.accentSolid}`:"none",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`,outline:"none"}}
+                      onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.surface;}}
+                      onMouseLeave={e=>{if(!sel)e.currentTarget.style.background="transparent";}}>
                       {/* En mobile el target es más grande (dedo, no mouse): padding invisible alrededor del check */}
-                      <div onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e,o);}} style={{width:32,height:32,margin:-7,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1,cursor:"pointer"}}>
-                        <div style={{width:typeof window!=="undefined"&&window.innerWidth<=760?22:18,height:typeof window!=="undefined"&&window.innerWidth<=760?22:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      <div role="checkbox" aria-checked={sel} aria-label={`Seleccionar pedido #${o.numero}`} onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e,o);}} style={{width:32,height:32,margin:-7,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1,cursor:"pointer"}}>
+                        <div style={{width:esMobile?22:18,height:esMobile?22:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
                           {sel&&<span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
                         </div>
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                        <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{o.numero}</span>
-                        {exportedOn&&<span style={{fontSize:9,fontWeight:600,color:T.green,background:T.green+"18",borderRadius:3,padding:"1px 4px"}}>✓ {exportedOn}</span>}
+                        <span style={{fontWeight:700,color:T.text,fontSize:13}}>#{o.numero}</span>
+                        {exportedOn&&<span title="Exportado en Excel" style={{fontSize:10,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.border}`,borderRadius:4,padding:"1px 5px",width:"fit-content"}}>Excel {exportedOn}</span>}
                       </div>
                       <div>
                         <div style={{fontSize:compactMode?12:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</div>
@@ -12153,12 +12159,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         <LensDots productos={o.productos}/>
                         {!compactMode&&<span style={{marginLeft:6}}>{o.productos.map(p=>nombreCorto(p.nombre)).join(', ')}</span>}
                       </div>
-                      <Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>
-                      <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:0}}>
-                        <div style={{fontSize:11,color:o.esSucursal?T.purple:T.blue,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
+                      {tabEnvio==="buscar"&&<div><DSBadge T={T} color={ec.text||ec.dot} size="sm">{o.estadoEnvio}</DSBadge></div>}
+                      <div style={{display:"flex",flexDirection:"column",gap:4,minWidth:0}}>
+                        <div style={{fontSize:12,color:T.textMd,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}>
+                          {/* Íconos distintos (antes eran el mismo path con otro color): tienda = sucursal, casa = domicilio */}
                           {o.esSucursal
-                            ?<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                            :<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>}
+                            ?<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.purple} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M3 9l1-5h16l1 5"/><path d="M3 9a3 3 0 006 0 3 3 0 006 0 3 3 0 006 0"/><path d="M5 12v9h14v-9"/><path d="M10 21v-6h4v6"/></svg>
+                            :<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.blue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>}
                           <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{o.medioEnvio||"--"}</span>
                           {o.esSucursal&&o.pickupDetails&&<svg title="Puede requerir confirmar sucursal al exportar" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
                         </div>
@@ -12175,12 +12182,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         {andreani.enabled&&filaEsAndreani(o)&&(()=>{
                           const c=cotRow[o.numero];
                           const yaNum=andreaniNumeroDe(o);
-                          const chip={fontSize:10,fontWeight:700,borderRadius:5,padding:"2px 7px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,width:"fit-content",fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1.4};
-                          if(yaNum) return <span title={`Etiqueta emitida — envío ${yaNum}`} onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...chip,color:T.green,border:`1px solid ${T.green}55`,background:T.green+"12"}}>✓ Emitida</span>;
+                          // El estado de la etiqueta es el dato más importante de la fila:
+                          // chip de 11 px (antes 10) y, si ya está emitida, PDF a un click.
+                          const chip={fontSize:11,fontWeight:700,borderRadius:DS.r.sm,padding:"3px 9px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5,width:"fit-content",fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1.4};
+                          if(yaNum) return (
+                            <span style={{display:"inline-flex",alignItems:"center",gap:4}}>
+                              <span title={`Etiqueta emitida — envío ${yaNum}. Click: ver la etiqueta`} onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...chip,color:T.green,border:`1px solid ${T.green}55`,background:T.green+"12"}}>✓ Emitida</span>
+                              <button title="Descargar el PDF de la etiqueta" aria-label="Descargar etiqueta" onClick={e=>{e.stopPropagation();descargarEtiquetaBulk(String(yaNum),ghSkuLinesDe(o));}} style={{...chip,color:T.textMd,border:`1px solid ${T.border}`,background:"transparent",padding:"3px 7px"}}>PDF</button>
+                            </span>
+                          );
                           if(c?.loading) return <span style={{...chip,cursor:"default",color:T.textSm,border:`1px solid ${T.border}`}}><Spinner size={9} color={T.textSm}/> Cotizando…</span>;
-                          if(c?.error) return <span title={`${c.error} — click para reintentar`} onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...chip,color:T.red,border:`1px solid ${T.red}55`,background:T.red+"12"}}>Error al cotizar</span>;
-                          if(typeof c?.precio==="number") return <span title="Emitir etiqueta Andreani con este pedido" onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...chip,color:T.green,border:`1px solid ${T.green}55`,background:T.green+"12"}}>{fmtMoney(c.precio)}</span>;
-                          return <span title="Cotizar envío por Andreani" onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...chip,color:T.textMd,border:`1px dashed ${T.border}`}}>Cotizar</span>;
+                          if(c?.error) return <span title={`${c.error} — click para reintentar`} onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...chip,color:T.red,border:`1px solid ${T.red}55`,background:T.red+"12"}}>Reintentar cotización</span>;
+                          if(typeof c?.precio==="number") return <span title="Emitir la etiqueta de este pedido" onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...chip,color:T.green,border:`1px solid ${T.green}55`,background:T.green+"12"}}>{fmtMoney(c.precio)} · Emitir</span>;
+                          return <span title="Cotizar el envío por Andreani" onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...chip,color:T.textMd,border:`1px dashed ${T.border}`,fontWeight:600}}>Cotizar</span>;
                         })()}
                       </div>
                       {/* El ✓ por fila se sacó: ensuciaba la tabla y empujaba a
