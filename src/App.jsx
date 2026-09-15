@@ -210,6 +210,12 @@ const googleProvider = new GoogleAuthProvider();
 // muestra "app no verificada" y bloquea el ingreso a usuarios nuevos. El
 // permiso de Drive lo pide _requestDriveToken() a demanda, solo cuando alguien
 // usa el botón de Drive (Canjes), no en el login.
+// Navegadores dentro de apps (Instagram, Facebook, TikTok, etc.): Google bloquea
+// el login ahí con "Este navegador o app puede no ser seguro" (disallowed_useragent).
+// El login con Google se reemplaza por un aviso para abrir Growith en el navegador.
+function ghNavegadorEmbebido(){
+  try{ const ua=navigator.userAgent||""; return /FBAN|FBAV|FB_IAB|FBIOS|Instagram|musical_ly|BytedanceWebview|TikTok|Line\/|LinkedInApp|Snapchat|Pinterest|; wv\)/i.test(ua); }catch(_){ return false; }
+}
 
 
 // --- Theme ---
@@ -15460,7 +15466,11 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
   const [error,setError]=useState("");
   const [loading,setLoading]=useState(false);
   const [switchingTo,setSwitchingTo]=useState(null);
+  const [linkCopiado,setLinkCopiado]=useState(false);
+  const embebido=ghNavegadorEmbebido();
+  const esAndroid=/Android/i.test((typeof navigator!=="undefined"&&navigator.userAgent)||"");
   const iS=InputStyle(T);
+  const copiarLink=async()=>{ try{ await navigator.clipboard.writeText("https://growithapp.com"); setLinkCopiado(true); setTimeout(()=>setLinkCopiado(false),2500); }catch(_){ setError("Copiá growithapp.com y abrilo en Chrome o Safari."); } };
 
   // Cambio rápido de cuenta: si venimos de "switch", pre-cargamos el email.
   useEffect(()=>{
@@ -15476,6 +15486,10 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
       "auth/invalid-email":"El email no es válido.",
       "auth/invalid-credential":"Email o contraseña incorrectos.",
       "auth/popup-closed-by-user":"Cerraste el popup antes de completar el login.",
+      "auth/popup-blocked":"Tu navegador bloqueó la ventana de Google. Permití las ventanas emergentes para growithapp.com e intentá de nuevo.",
+      "auth/network-request-failed":"No hay conexión. Revisá tu internet e intentá de nuevo.",
+      "auth/operation-not-supported-in-this-environment":"Este navegador no permite entrar con Google. Abrí growithapp.com en Chrome o Safari.",
+      "auth/web-storage-unsupported":"Este navegador no permite entrar con Google. Abrí growithapp.com en Chrome o Safari.",
     };
     return map[code]||"Ocurrió un error. Intentá de nuevo.";
   };
@@ -15563,11 +15577,24 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
         </div>
 
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:28}}>
-          {/* Google */}
+          {/* Google — dentro de Instagram/Facebook/TikTok Google lo bloquea: se avisa en vez de mostrar su error */}
+          {embebido ? (
+            <div style={{background:T.yellow+"12",border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"14px 16px",marginBottom:20}}>
+              <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:6}}>Para entrar con Google, abrí Growith en tu navegador</div>
+              <div style={{fontSize:12.5,color:T.textMd,lineHeight:1.6,marginBottom:12}}>
+                Google no deja iniciar sesión desde el navegador de Instagram, Facebook o TikTok. {esAndroid?"Tocá el botón de abajo para seguir en Chrome":"Tocá ··· arriba a la derecha y elegí \"Abrir en el navegador\""}, o registrate acá mismo con tu email.
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {esAndroid&&<a href="intent://growithapp.com/#Intent;scheme=https;package=com.android.chrome;end" style={{...BtnPrimary(T),textDecoration:"none",fontSize:13,padding:"9px 14px"}}>Abrir en Chrome</a>}
+                <button onClick={copiarLink} style={{...BtnSecondary(T),fontSize:13,padding:"9px 14px"}}>{linkCopiado?"Link copiado ✓":"Copiar link"}</button>
+              </div>
+            </div>
+          ) : (
           <button onClick={handleGoogle} disabled={loading} style={{...BtnSecondary(T),width:"100%",justifyContent:"center",padding:"13px",fontSize:15,marginBottom:20,opacity:loading?0.6:1}}>
             <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
             Continuar con Google
           </button>
+          )}
 
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
             <div style={{flex:1,height:1,background:T.border}}/>
