@@ -15436,7 +15436,7 @@ function LandingPage({T, onLogin}) {
   // Videos de la home (Loom públicos, en este orden). Solo se muestran los que
   // tienen `loom`: el del problema se completa cuando esté grabado.
   const VIDEOS = [
-    { id:"problema", paso:"1", titulo:"El caos de hoy", desc:"Cómo se maneja hoy un e-commerce: planillas, apps sueltas, un facturador tosco y el equipo en WhatsApp.", loom:null },
+    { id:"problema", paso:"1", titulo:"El caos de hoy", desc:"Cómo se maneja hoy un e-commerce: planillas, apps sueltas, un facturador tosco y el equipo en WhatsApp.", loom:"343de915a2ae4d87aef42c898adf6da6", dur:"10 min" },
     { id:"adentro", paso:"2", titulo:"Growith por dentro", desc:"Un recorrido completo por la app: Inicio, Dashboard, Envíos, Stock, Facturador, publicidad y más.", loom:"8528325183d843f9920af14251ec438c", dur:"14 min" },
   ].filter(v => v.loom);
   const MARQUEE = [["tiendanube","Tienda Nube"],["shopify","Shopify"],["mercadolibre","Mercado Libre"],["mercadopago","Mercado Pago"],["pagonube","Pago Nube"],["pagospers","Pagos personalizados"],["recurrentes","Recurrentes",true],["meta","Meta Ads"],["googleads","Google Ads"],["andreani","Andreani"],["arca","ARCA"],["Claude","Claude"],["ChatGPT","ChatGPT"],["Gemini","Gemini"]];
@@ -15742,7 +15742,7 @@ function LandingPage({T, onLogin}) {
           <div style={secKicker}>Mirá Growith</div>
           <h2 style={secTitle}>{VIDEOS.length>1?"Del caos de hoy a todo bajo control":"Growith por dentro"}</h2>
           <p style={secSub}>{VIDEOS.length>1?"Primero el problema de todos los días, después cómo lo resuelve Growith.":"Un recorrido de punta a punta por la app, con datos de ejemplo."}</p>
-          <div style={{display:"grid",gridTemplateColumns:VIDEOS.length>1?"repeat(auto-fit,minmax(min(420px,100%),1fr))":"1fr",gap:24,maxWidth:VIDEOS.length>1?"100%":920,margin:"0 auto"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:48,maxWidth:920,margin:"0 auto"}}>
             {VIDEOS.map(v=>(
               <div key={v.id}>
                 <div style={{position:"relative",width:"100%",aspectRatio:"4 / 3",borderRadius:16,overflow:"hidden",border:`1px solid ${T.border}`,background:T.card,boxShadow:"0 16px 50px rgba(0,0,0,0.25)"}}>
