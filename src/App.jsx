@@ -9534,6 +9534,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   }
   const [tabCounts,setTabCounts]=useState({empaquetar:null,enviar:null});
   const [filterTipoEnvio,setFilterTipoEnvio]=useState("todos");
+  const [filterMedio,setFilterMedio]=useState(""); // medio de envío exacto ("" = todos)
   const [tabOrders,setTabOrders]=useState([]);
   const [tabLoading,setTabLoading]=useState(false);
   const [tabError,setTabError]=useState(false); // el último fetch del tab falló (con o sin cache pintada)
@@ -9761,12 +9762,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     let base=tabOrders;
     if(filterTipoEnvio==="domicilio") base=base.filter(o=>!isSucursalOrder(o));
     if(filterTipoEnvio==="sucursal") base=base.filter(o=>isSucursalOrder(o));
+    if(filterMedio) base=base.filter(o=>String(o.medioEnvio||"--")===filterMedio);
     if(searchEnvios){
       const s=searchEnvios.toLowerCase();
       return base.filter(o=>o.numero.includes(s)||o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s));
     }
     return base;
-  },[tabOrders,searchEnvios,filterTipoEnvio]);
+  },[tabOrders,searchEnvios,filterTipoEnvio,filterMedio]);
+  // Medios de envío presentes en la pestaña (con cantidad), para el filtro
+  const mediosEnvio=useMemo(()=>{
+    const m=new Map();
+    for(const o of tabOrders){ const k=String(o.medioEnvio||"--"); m.set(k,(m.get(k)||0)+1); }
+    return [...m.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+  },[tabOrders]);
 
   // "Ya exportado": Firestore (compartido entre dispositivos/equipo) + historial
   // local como fallback. Antes se hacía JSON.parse(localStorage) DENTRO del
@@ -12071,6 +12079,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Map());}} style={{padding:"5px 10px",fontSize:12,border:"none",borderRadius:6,background:filterTipoEnvio===v?T.card:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?500:400,transition:"all 0.1s",boxShadow:filterTipoEnvio===v?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"}}>{l}</button>
                 ))}
               </div>}
+              {tabEnvio!=="buscar"&&mediosEnvio.length>1&&(
+                <select value={mediosEnvio.some(([k])=>k===filterMedio)?filterMedio:""} onChange={e=>{setFilterMedio(e.target.value);setSelected(new Map());}} title="Filtrar por medio de envío"
+                  style={{...iS,marginBottom:0,width:"auto",maxWidth:260,fontSize:12,padding:"6px 10px",color:filterMedio?T.accent:T.textMd,borderColor:filterMedio?T.accent:T.border}}>
+                  <option value="">Medio de envío: todos</option>
+                  {mediosEnvio.map(([k,n])=><option key={k} value={k}>{k} ({n})</option>)}
+                </select>
+              )}
               {/* Selector unificado de pedidos */}
               <div style={{position:"relative"}}>
                 <button onClick={e=>{e.stopPropagation();setShowPagePicker(v=>!v);}}
