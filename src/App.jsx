@@ -14764,7 +14764,7 @@ function LandingPage({T, onLogin}) {
   const MARQUEE = [["tiendanube","Tienda Nube"],["shopify","Shopify"],["mercadolibre","Mercado Libre"],["mercadopago","Mercado Pago"],["meta","Meta Ads"],["googleads","Google Ads"],["andreani","Andreani"],["arca","ARCA"],["Claude","Claude"],["ChatGPT","ChatGPT"],["Gemini","Gemini"]];
 
   // ── Hoy: el negocio repartido en pestañas ──
-  const PESTANAS = ["Admin de la tienda","Mercado Libre","Portal de Andreani","ARCA","Administrador de anuncios","Planilla de stock","WhatsApp con influencers","Notas con los pagos del mes","Mails de reclamos","Excel de costos"];
+  const PESTANAS = ["Admin de la tienda","Mercado Libre","Portal de Andreani","ARCA","Administrador de anuncios","Planilla de stock","WhatsApp con influencers","Notas con los pagos del mes","Mails de reclamos","Excel de costos","App de ganancias"];
 
   // ── El menú real de Growith, por área ──
   const AREAS = [
@@ -15063,7 +15063,7 @@ function LandingPage({T, onLogin}) {
           <div style={{background:T.card,border:`1px dashed ${T.border}`,borderRadius:18,padding:"22px",display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center"}}>
             <div style={{width:"100%",textAlign:"center",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:0.6,color:T.textSm,marginBottom:6}}>Sin Growith</div>
             {PESTANAS.map((p,i)=>(
-              <span key={p} style={{fontSize:12,color:T.textMd,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"6px 10px",transform:`rotate(${[-2,1.5,-1,2,-1.5,1,-2,1.5,-1,2][i]}deg)`}}>{p}</span>
+              <span key={p} style={{fontSize:12,color:T.textMd,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"6px 10px",transform:`rotate(${[-2,1.5,-1,2,-1.5,1,-2,1.5,-1,2,-1.5][i%11]}deg)`}}>{p}</span>
             ))}
           </div>
           <div className="gh-land-flecha" style={{fontSize:28,color:T.accent,fontWeight:800,textAlign:"center"}}>→</div>
@@ -15088,13 +15088,13 @@ function LandingPage({T, onLogin}) {
             <div style={{fontSize:"clamp(22px,3vw,30px)",fontWeight:900,letterSpacing:-0.7,lineHeight:1.2,marginBottom:12}}>Entrás y ya sabés qué hay que hacer</div>
             <div style={{fontSize:14,color:T.textMd,lineHeight:1.7,marginBottom:18}}>El Inicio junta lo que pasa en todas tus áreas y te lo muestra en orden. Nada de salir a buscar problemas: los problemas te encuentran a vos.</div>
             <div style={{display:"flex",flexDirection:"column",gap:9}}>
-              {["Facturado y pedidos de hoy, los últimos 7 días o el mes","Reclamos abiertos y stock crítico, a la vista","Pendientes agrupados: reclamos, envíos, stock y canjes","Contadores en el menú de lo que te espera en cada sección","Un clic y estás resolviendo, sin buscar nada","Configuración guiada para arrancar sin perderte"].map(x=>(
+              {["Facturado y pedidos de hoy, los últimos 7 días o el mes","Reclamos abiertos y stock crítico, a la vista","Pendientes agrupados: dashboard, reclamos, envíos, stock y canjes","Contadores en el menú de lo que te espera en cada sección","Un clic y estás resolviendo, sin buscar nada","Configuración guiada para arrancar sin perderte"].map(x=>(
                 <div key={x} style={{display:"flex",gap:10,fontSize:13.5,color:T.text,lineHeight:1.5}}><span style={{color:T.accent,fontWeight:800,flexShrink:0}}>✓</span>{x}</div>
               ))}
             </div>
           </div>
           <div className="gh-land-mock">{ventana("Inicio · Pendientes", <div>
-            {[["Reclamos",T.red,["Cambio de talle · #1463","Llegó dañado · #1458"]],["Envíos",T.orange,["#1475 en sucursal hace 4 días","#1471 visita fallida","#1466 sin movimiento hace 3 días"]],["Stock",T.yellow,["Producto A · Negro: quedan 4 días","Producto C · Talle M: agotado"]],["Canjes","#E1306C",["Despachar canje de @creadora"]]].map(([cat,c,items])=>(
+            {[["Dashboard","#6366f1",["Profit de hoy: $ 142.000 · 31% de margen","3 productos vendidos sin costo cargado"]],["Reclamos",T.red,["Cambio de talle · #1463","Llegó dañado · #1458"]],["Envíos",T.orange,["#1475 en sucursal hace 4 días","#1471 visita fallida","#1466 sin movimiento hace 3 días"]],["Stock",T.yellow,["Producto A · Negro: quedan 4 días","Producto C · Talle M: agotado"]],["Canjes","#E1306C",["Despachar canje de @creadora"]]].map(([cat,c,items])=>(
               <div key={cat} style={{marginBottom:10}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                   <span style={{fontSize:10,fontWeight:800,color:c,textTransform:"uppercase",letterSpacing:0.6,flex:1}}>{cat}</span>
