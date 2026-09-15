@@ -15383,6 +15383,31 @@ function PublicSite({T, darkMode, onToggleDark}) {
   return <LandingPage T={T} onLogin={irLogin}/>;
 }
 
+// Video de la home: primero la miniatura con un botón de play y recién al tocar
+// carga el reproductor (el MP4 propio si está `mp4`, si no el de Loom). La home
+// abre rápido y el reproductor pesado no aparece hasta que alguien quiere verlo.
+function GhLandingVideo({T, v}) {
+  const [play,setPlay]=useState(false);
+  const caja={position:"relative",display:"block",width:"100%",aspectRatio:"4 / 3",borderRadius:16,overflow:"hidden",border:`1px solid ${T.border}`,background:"#0b0d12",boxShadow:"0 16px 50px rgba(0,0,0,0.25)",padding:0};
+  if(play) return (
+    <div style={caja}>
+      {v.mp4
+        ? <video src={v.mp4} poster={v.poster||undefined} controls autoPlay playsInline preload="auto" style={{position:"absolute",inset:0,width:"100%",height:"100%",background:"#000"}}/>
+        : <iframe src={`https://www.loom.com/embed/${v.loom}?autoplay=1&hide_owner=true&hide_share=true&hide_title=true&hideEmbedTopBar=true`} title={v.titulo} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen style={{position:"absolute",inset:0,width:"100%",height:"100%",border:0}}/>}
+    </div>
+  );
+  return (
+    <button onClick={()=>setPlay(true)} aria-label={`Reproducir: ${v.titulo}`} style={{...caja,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+      {v.poster&&<img src={v.poster} alt="" loading="lazy" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>}
+      <span style={{position:"absolute",inset:0,background:"linear-gradient(180deg,rgba(0,0,0,0) 45%,rgba(0,0,0,0.55))"}}/>
+      <span style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%,-50%)",width:84,height:84,borderRadius:"50%",background:"#6366f1",boxShadow:"0 10px 40px rgba(99,102,241,0.55)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
+      </span>
+      {v.dur&&<span style={{position:"absolute",right:14,bottom:14,background:"rgba(0,0,0,0.65)",color:"#fff",fontSize:12,fontWeight:700,borderRadius:8,padding:"4px 9px"}}>{v.dur}</span>}
+    </button>
+  );
+}
+
 function LandingPage({T, onLogin}) {
   const F = "'Inter',system-ui,sans-serif";
   const [faqAbierta,setFaqAbierta] = useState(0);
@@ -15436,9 +15461,9 @@ function LandingPage({T, onLogin}) {
   // Videos de la home (Loom públicos, en este orden). Solo se muestran los que
   // tienen `loom`: el del problema se completa cuando esté grabado.
   const VIDEOS = [
-    { id:"problema", paso:"1", titulo:"El caos de hoy", desc:"Cómo se maneja hoy un e-commerce: planillas, apps sueltas, un facturador tosco y el equipo en WhatsApp.", loom:"343de915a2ae4d87aef42c898adf6da6", dur:"10 min" },
-    { id:"adentro", paso:"2", titulo:"Growith por dentro", desc:"Un recorrido completo por la app: Inicio, Dashboard, Envíos, Stock, Facturador, publicidad y más.", loom:"8528325183d843f9920af14251ec438c", dur:"14 min" },
-  ].filter(v => v.loom);
+    { id:"problema", paso:"1", titulo:"El caos de hoy", desc:"Cómo se maneja hoy un e-commerce: planillas, apps sueltas, un facturador tosco y el equipo en WhatsApp.", loom:"343de915a2ae4d87aef42c898adf6da6", mp4:null, poster:"https://cdn.loom.com/sessions/thumbnails/343de915a2ae4d87aef42c898adf6da6-352df69f1c0a091c.gif", dur:"10 min" },
+    { id:"adentro", paso:"2", titulo:"Growith por dentro", desc:"Un recorrido completo por la app: Inicio, Dashboard, Envíos, Stock, Facturador, publicidad y más.", loom:"8528325183d843f9920af14251ec438c", mp4:null, poster:"https://cdn.loom.com/sessions/thumbnails/8528325183d843f9920af14251ec438c-84f5c0867289906d.gif", dur:"14 min" },
+  ].filter(v => v.loom || v.mp4);
   const MARQUEE = [["tiendanube","Tienda Nube"],["shopify","Shopify"],["mercadolibre","Mercado Libre"],["mercadopago","Mercado Pago"],["pagonube","Pago Nube"],["pagospers","Pagos personalizados"],["recurrentes","Recurrentes",true],["meta","Meta Ads"],["googleads","Google Ads"],["andreani","Andreani"],["arca","ARCA"],["Claude","Claude"],["ChatGPT","ChatGPT"],["Gemini","Gemini"]];
 
   // ── Hoy: el negocio repartido en pestañas ──
@@ -15745,9 +15770,7 @@ function LandingPage({T, onLogin}) {
           <div style={{display:"grid",gridTemplateColumns:"1fr",gap:48,maxWidth:920,margin:"0 auto"}}>
             {VIDEOS.map(v=>(
               <div key={v.id}>
-                <div style={{position:"relative",width:"100%",aspectRatio:"4 / 3",borderRadius:16,overflow:"hidden",border:`1px solid ${T.border}`,background:T.card,boxShadow:"0 16px 50px rgba(0,0,0,0.25)"}}>
-                  <iframe src={`https://www.loom.com/embed/${v.loom}?hide_owner=true&hide_share=true&hide_title=true&hideEmbedTopBar=true`} title={v.titulo} allow="fullscreen; picture-in-picture" allowFullScreen loading="lazy" style={{position:"absolute",inset:0,width:"100%",height:"100%",border:0}}/>
-                </div>
+                <GhLandingVideo T={T} v={v}/>
                 <div style={{display:"flex",alignItems:"center",gap:10,marginTop:14}}>
                   {VIDEOS.length>1&&<span style={{width:28,height:28,borderRadius:8,background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}44`,color:T.accent,fontSize:13,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{v.paso}</span>}
                   <div style={{fontSize:16,fontWeight:800}}>{v.titulo}</div>
