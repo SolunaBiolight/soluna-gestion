@@ -15392,11 +15392,12 @@ function PublicSite({T, darkMode, onToggleDark}) {
 // abre rápido y el reproductor pesado no aparece hasta que alguien quiere verlo.
 function GhLandingVideo({T, v}) {
   const [play,setPlay]=useState(false);
+  const [falloMp4,setFalloMp4]=useState(false); // si el MP4 no carga, respaldo en Loom
   const caja={position:"relative",display:"block",width:"100%",aspectRatio:"4 / 3",borderRadius:16,overflow:"hidden",border:`1px solid ${T.border}`,background:"#0b0d12",boxShadow:"0 16px 50px rgba(0,0,0,0.25)",padding:0};
   if(play) return (
     <div style={caja}>
-      {v.mp4
-        ? <video src={v.mp4} poster={v.poster||undefined} controls autoPlay playsInline preload="auto" style={{position:"absolute",inset:0,width:"100%",height:"100%",background:"#000"}}/>
+      {v.mp4&&!(falloMp4&&v.loom)
+        ? <video src={v.mp4} poster={v.poster||undefined} controls autoPlay playsInline preload="auto" onError={()=>setFalloMp4(true)} style={{position:"absolute",inset:0,width:"100%",height:"100%",background:"#000"}}/>
         : <iframe src={`https://www.loom.com/embed/${v.loom}?autoplay=1&hide_owner=true&hide_share=true&hide_title=true&hideEmbedTopBar=true`} title={v.titulo} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen style={{position:"absolute",inset:0,width:"100%",height:"100%",border:0}}/>}
     </div>
   );
@@ -15465,8 +15466,8 @@ function LandingPage({T, onLogin}) {
   // Videos de la home (Loom públicos, en este orden). Solo se muestran los que
   // tienen `loom`: el del problema se completa cuando esté grabado.
   const VIDEOS = [
-    { id:"problema", paso:"1", titulo:"El caos de hoy", desc:"Cómo se maneja hoy un e-commerce: planillas, apps sueltas, un facturador tosco y el equipo en WhatsApp.", loom:"343de915a2ae4d87aef42c898adf6da6", mp4:null, poster:"https://cdn.loom.com/sessions/thumbnails/343de915a2ae4d87aef42c898adf6da6-352df69f1c0a091c.gif", dur:"10 min" },
-    { id:"adentro", paso:"2", titulo:"Growith por dentro", desc:"Un recorrido completo por la app: Inicio, Dashboard, Envíos, Stock, Facturador, publicidad y más.", loom:"8528325183d843f9920af14251ec438c", mp4:null, poster:"https://cdn.loom.com/sessions/thumbnails/8528325183d843f9920af14251ec438c-84f5c0867289906d.gif", dur:"14 min" },
+    { id:"problema", paso:"1", titulo:"El caos de hoy", desc:"Cómo se maneja hoy un e-commerce: planillas, apps sueltas, un facturador tosco y el equipo en WhatsApp.", loom:"343de915a2ae4d87aef42c898adf6da6", mp4:"https://firebasestorage.googleapis.com/v0/b/soluna-gestion.firebasestorage.app/o/el-caos-de-hoy.mp4?alt=media&token=dbdfa563-4768-41a7-b892-c86eb0877b1c", poster:"https://cdn.loom.com/sessions/thumbnails/343de915a2ae4d87aef42c898adf6da6-352df69f1c0a091c.gif", dur:"10 min" },
+    { id:"adentro", paso:"2", titulo:"Growith por dentro", desc:"Un recorrido completo por la app: Inicio, Dashboard, Envíos, Stock, Facturador, publicidad y más.", loom:"8528325183d843f9920af14251ec438c", mp4:"https://firebasestorage.googleapis.com/v0/b/soluna-gestion.firebasestorage.app/o/growith-por-dentro.mp4?alt=media&token=8d31034c-95ab-4f1f-884e-ae50e3f4cb2d", poster:"https://cdn.loom.com/sessions/thumbnails/8528325183d843f9920af14251ec438c-84f5c0867289906d.gif", dur:"14 min" },
   ].filter(v => v.loom || v.mp4);
   const MARQUEE = [["tiendanube","Tienda Nube"],["shopify","Shopify"],["mercadolibre","Mercado Libre"],["mercadopago","Mercado Pago"],["pagonube","Pago Nube"],["pagospers","Pagos personalizados"],["recurrentes","Recurrentes",true],["meta","Meta Ads"],["googleads","Google Ads"],["andreani","Andreani"],["arca","ARCA"],["Claude","Claude"],["ChatGPT","ChatGPT"],["Gemini","Gemini"]];
 
