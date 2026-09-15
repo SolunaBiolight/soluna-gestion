@@ -18210,6 +18210,8 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   const [step,setStep]=useState("planes");
   const [anual,setAnual]=useState(false);
   const [loadingPlan,setLoadingPlan]=useState(null);
+  const [faqOpen,setFaqOpen]=useState(0);
+  const [verMatriz,setVerMatriz]=useState(false);
   const [uDoc,setUDoc]=useState(null);
   useEffect(()=>{
     if(!user?.uid) return;
@@ -18221,17 +18223,35 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   // Ids Firestore: "facturador", "medio", "plus" (NO cambiar).
   const PLANES=[
     { id:"facturador", nombre:"Facturador", color:T.green, nivel:1,
-      precio:19, precioAnual:16, precioNormal:29,
-      tagline:"Solo el facturador ARCA, sin límites.",
-      features:["Facturación ARCA / AFIP ilimitada","Facturás tus ventas de la tienda y Mercado Libre en un clic","La factura se adjunta sola a la venta y le llega al cliente","Facturas y notas de crédito manuales","Monotributo y Responsable Inscripto","Múltiples puntos de venta y CUITs","Proyección mensual de IVA","Varias tiendas en un solo login: +USD 5/mes por tienda adicional"] },
-    { id:"medio", nombre:"Intermedio", color:T.purple, nivel:2,
-      precio:39, precioAnual:32, precioNormal:59,
-      tagline:"La operación completa, sin Dashboard de márgenes ni Copilot.",
-      features:["Todo lo del plan Facturador","Meta Ads y Mercado Ads","Stock de TN, Mercado Libre y Shopify en una sola vista","Mercado Libre integrado","Envíos y etiquetas Andreani con SKU","Reclamos, canjes e influencers ilimitados","Equipo y tareas ilimitadas","Varias tiendas en un solo login: +USD 10/mes por tienda adicional"] },
-    { id:"plus", nombre:"Pro", color:T.accent, nivel:3, destacado:true,
-      precio:69, precioAnual:57, precioNormal:99,
-      tagline:"Todo Growith para gestionar tu e-commerce.",
-      features:["Todo lo del plan Intermedio","Márgenes, profit y costos por venta en tiempo real","Rentabilidad por producto, día a día","Meta Ads y Google Ads cruzados con tu ganancia real","Copilot IA sobre tus datos reales","Auto-tracking Andreani","Varias tiendas en un solo login: +USD 15/mes por tienda adicional"] },
+      precio:19, precioAnual:16, precioNormal:29, adicional:5,
+      tagline:"Para facturar todo lo que vendés, sin límites.",
+      para:"Ideal si solo necesitás emitir facturas de tus ventas.",
+      features:["Facturación ARCA / AFIP ilimitada","Facturás tus ventas de la tienda y Mercado Libre en un clic","La factura se adjunta sola a la venta y le llega al cliente","Facturas y notas de crédito manuales","Monotributo y Responsable Inscripto","Múltiples puntos de venta y CUITs","Proyección mensual de IVA"] },
+    { id:"medio", nombre:"Intermedio", color:T.purple, nivel:2, hereda:"Facturador",
+      precio:39, precioAnual:32, precioNormal:59, adicional:10,
+      tagline:"La operación completa de tu tienda en un solo lugar.",
+      para:"Para operar el día a día: envíos, stock, publicidad y equipo.",
+      features:["Meta Ads y Mercado Ads","Stock de Tienda Nube, Mercado Libre y Shopify en una sola vista","Mercado Libre integrado","Envíos y etiquetas Andreani con SKU","Reclamos, canjes e influencers ilimitados","Equipo y tareas ilimitadas"] },
+    { id:"plus", nombre:"Pro", color:T.accent, nivel:3, destacado:true, hereda:"Intermedio",
+      precio:69, precioAnual:57, precioNormal:99, adicional:15,
+      tagline:"Todo Growith, con tu ganancia real en tiempo real.",
+      para:"Para decidir con números: márgenes, publicidad cruzada con profit y Copilot.",
+      features:["Márgenes, profit y costos por venta en tiempo real","Rentabilidad por producto, día a día","Meta Ads y Google Ads cruzados con tu ganancia real","Copilot IA sobre tus datos reales","Auto-tracking Andreani"] },
+  ];
+  // Matriz comparativa ("¿Qué incluye cada plan?"): true = incluido.
+  const MATRIZ=[
+    ["Facturación ARCA ilimitada",true,true,true],
+    ["Proyección mensual de IVA",true,true,true],
+    ["Envíos y etiquetas Andreani",false,true,true],
+    ["Stock de todas tus tiendas",false,true,true],
+    ["Meta Ads y Mercado Ads",false,true,true],
+    ["Reclamos, canjes e influencers",false,true,true],
+    ["Equipo y tareas",false,true,true],
+    ["Márgenes y rentabilidad en tiempo real",false,false,true],
+    ["Google Ads cruzado con tu ganancia",false,false,true],
+    ["Copilot IA",false,false,true],
+    ["Auto-tracking Andreani",false,false,true],
+    ["Tienda adicional (por mes)","USD 5","USD 10","USD 15"],
   ];
   const planActualId=userPlan==="full"?"plus":userPlan;
   const planActual=PLANES.find(p=>p.id===planActualId)||null;
@@ -18312,134 +18332,207 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
     );
   }
 
-  const seg=(on)=>({padding:"5px 14px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:6,background:on?T.card:"transparent",color:on?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?"0 1px 3px rgba(0,0,0,0.12)":"none",display:"inline-flex",alignItems:"center",gap:6});
+  const seg=(on)=>({padding:"7px 16px",fontSize:13,fontWeight:on?700:500,border:"none",borderRadius:DS.r.md,background:on?T.card:"transparent",color:on?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?"0 1px 3px rgba(0,0,0,0.14)":"none",display:"inline-flex",alignItems:"center",gap:6,transition:"all 0.12s"});
+  const TRIAL_DIAS=14;
+  const trialUsado=enTrial?Math.min(TRIAL_DIAS,Math.max(0,TRIAL_DIAS-diasTrial)):0;
+  const ahorroAnual=pl=>(pl.precio-pl.precioAnual)*12;
+  const Confianza=()=>(
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center",alignItems:"center",margin:"14px 0 22px"}}>
+      {[
+        [<svg key="a" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,"Pago seguro con Stripe"],
+        [<svg key="b" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>,"Visa · Mastercard · Amex"],
+        [<svg key="c" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,"Sin contrato"],
+        [<svg key="d" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,"Cancelás cuando quieras"],
+      ].map(([ic,t],i)=>(
+        <span key={i} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:DS.font.sm,color:T.textMd,background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:"5px 11px"}}>{ic}{t}</span>
+      ))}
+    </div>
+  );
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
       <AppTopbar T={T} section="Suscripción" sectionId="planes" onHome={isTrialExpired?undefined:onBack}/>
-      <div style={{padding:"20px 24px 64px",maxWidth:980,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"20px 24px 72px",maxWidth:1040,margin:"0 auto",width:"100%"}}>
 
-        {/* Estado */}
+        {/* ── Estado de la cuenta ── */}
         {isTrialExpired?(
-          <Card T={T} padding="lg" style={{borderLeft:`3px solid ${T.red}`,marginBottom:16}}>
-            <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:4}}>Tu prueba gratuita terminó</div>
-            <div style={{fontSize:13,color:T.textMd,lineHeight:1.6}}>Elegí un plan para seguir usando Growith. Tus datos, facturas y configuraciones siguen guardados intactos.</div>
+          <Card T={T} padding="lg" style={{marginBottom:20,borderTop:`3px solid ${T.red}`}}>
+            <div style={{display:"flex",gap:14,alignItems:"flex-start",flexWrap:"wrap"}}>
+              <div style={{width:40,height:40,borderRadius:DS.r.lg,background:T.redBg,display:"flex",alignItems:"center",justifyContent:"center",color:T.red,flexShrink:0}}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <div style={{flex:1,minWidth:220}}>
+                <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:4}}>Tu prueba gratis terminó</div>
+                <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.6}}>Elegí un plan para seguir usando Growith. Todo lo que configuraste (facturas, integraciones, envíos) sigue guardado tal cual lo dejaste.</div>
+              </div>
+            </div>
           </Card>
         ):isPago&&planActual?(
-          <Card T={T} padding="lg" style={{marginBottom:16}}>
-            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
-              <span style={{width:10,height:10,borderRadius:"50%",background:planActual.color,flexShrink:0}}/>
-              <span style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Plan {planActual.nombre}</span>
-              <DSBadge T={T} color={renuevaSolo?T.green:cancela?T.yellow:T.green} size="sm">{renuevaSolo?"Se renueva sola":cancela?"No se renueva":"Activo"}</DSBadge>
-              <span style={{fontSize:12,color:T.textSm,marginLeft:"auto"}}>{planActual.tagline}</span>
+          <Card T={T} padding="lg" style={{marginBottom:20,borderTop:`3px solid ${planActual.color}`}}>
+            <div style={{display:"flex",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+              <div style={{flex:1,minWidth:240}}>
+                <div style={{fontSize:DS.font.xs,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6,marginBottom:4}}>Tu plan</div>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <span style={{fontSize:DS.font["2xl"],fontWeight:800,color:T.text,letterSpacing:-0.4}}>{planActual.nombre}</span>
+                  <DSBadge T={T} color={renuevaSolo?T.green:cancela?T.yellow:T.green} size="sm">{renuevaSolo?"Se renueva sola":cancela?"No se renueva":"Activo"}</DSBadge>
+                </div>
+                <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:4}}>{planActual.tagline}</div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,flex:2,minWidth:260}}>
+                <Stat label={renuevaSolo?"Próximo cobro":cancela?"Acceso hasta":"Vence"} value={fmtF(planExpiry)}/>
+                <Stat label="Importe" value={`USD ${planActual.precio} / mes`}/>
+                <Stat label="Medio de pago" value={stripe?"Tarjeta · Stripe":"Pago manual"}/>
+                {refCred>0&&<Stat label="Crédito por referidos" value={`USD ${refCred.toLocaleString("es-AR",{minimumFractionDigits:2})}`} color={T.green}/>}
+              </div>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10,marginBottom:14}}>
-              <Stat label={renuevaSolo?"Próximo cobro":cancela?"Acceso hasta":"Vence"} value={fmtF(planExpiry)}/>
-              <Stat label="Importe" value={`USD ${planActual.precio} por mes`}/>
-              <Stat label="Medio de pago" value={stripe?"Tarjeta · Stripe":"Pago manual"}/>
-              {refCred>0&&<Stat label="Crédito por referidos" value={`USD ${refCred.toLocaleString("es-AR",{minimumFractionDigits:2})}`} color={T.green}/>}
-            </div>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-              {stripe&&<Btn T={T} variant="secondary" size="sm" onClick={abrirPortal}>Tarjeta y facturas</Btn>}
-              {/* Cancelar la renovación se hace desde el portal de Stripe (Tarjeta y facturas), no desde acá. Reactivar sí, un clic. */}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginTop:14,paddingTop:14,borderTop:`1px solid ${T.borderL}`}}>
+              {stripe&&<Btn T={T} variant="secondary" size="sm" onClick={abrirPortal}>Tarjeta, recibos y cancelación</Btn>}
               {cancela&&<Btn T={T} variant="primary" size="sm" onClick={()=>cancelar(true)}>Reactivar renovación</Btn>}
-              <span style={{marginLeft:"auto",fontSize:12,color:T.textSm}}>
-                {!stripe?"Este plan se pagó a mano: cuando venza, renovalo desde acá con tarjeta.":planActualId==="plus"?"Tenés el plan completo. La renovación se administra desde Tarjeta y facturas.":"Si subís de plan, el cambio es inmediato. La renovación se administra desde Tarjeta y facturas."}
+              <span style={{marginLeft:"auto",fontSize:DS.font.md,color:T.textSm}}>
+                {!stripe?"Este plan se pagó a mano: cuando venza, renovalo desde acá con tarjeta.":planActualId==="plus"?"Tenés el plan completo.":"Si subís de plan, el cambio es inmediato y se cobra solo la diferencia."}
               </span>
             </div>
           </Card>
         ):enTrial?(
-          <Card T={T} padding="lg" style={{borderLeft:`3px solid ${T.green}`,marginBottom:16}}>
+          <Card T={T} padding="lg" style={{marginBottom:20,borderTop:`3px solid ${T.green}`}}>
             <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-              <span style={{fontSize:16,fontWeight:800,color:T.text}}>Prueba gratis con todo incluido</span>
-              <DSBadge T={T} color={T.green} size="sm">{diasTrial} día{diasTrial!==1?"s":""} restante{diasTrial!==1?"s":""}</DSBadge>
-              <span style={{fontSize:12,color:T.textSm,marginLeft:"auto"}}>Termina el {fmtF(trialEnd)}</span>
+              <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Estás probando Growith con todo incluido</span>
+              <DSBadge T={T} color={diasTrial<=3?T.yellow:T.green} size="sm">{diasTrial} día{diasTrial!==1?"s":""} restante{diasTrial!==1?"s":""}</DSBadge>
+              <span style={{fontSize:DS.font.md,color:T.textSm,marginLeft:"auto"}}>Termina el {fmtF(trialEnd)}</span>
             </div>
-            <div style={{fontSize:13,color:T.textMd,marginTop:6,lineHeight:1.6}}>Elegí un plan cuando quieras. Se cobra recién al confirmar en Stripe y no cortás nada de lo que ya configuraste.</div>
+            <div style={{height:6,background:T.surface,borderRadius:DS.r.full,overflow:"hidden",margin:"12px 0 8px"}}>
+              <div style={{height:"100%",width:`${Math.round(trialUsado/TRIAL_DIAS*100)}%`,background:diasTrial<=3?T.yellow:T.green,transition:"width 0.3s"}}/>
+            </div>
+            <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.6}}>Elegí un plan cuando quieras: se cobra recién al confirmar en Stripe y no perdés nada de lo que ya configuraste.</div>
           </Card>
         ):null}
 
-        {/* Planes */}
-        <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",margin:"8px 0 14px"}}>
-          <span style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{isPago?"Cambiar de plan":"Elegí tu plan"}</span>
-          <span style={{fontSize:12,color:T.textSm}}>Precio de lanzamiento · en dólares · cancelás cuando quieras</span>
-          <div style={{marginLeft:"auto",display:"inline-flex",background:T.surface,borderRadius:8,padding:2}}>
+        {/* ── Título + selector de período ── */}
+        <div style={{textAlign:"center",margin:"8px 0 16px"}}>
+          <div style={{fontSize:DS.font["3xl"],fontWeight:800,color:T.text,letterSpacing:-0.6,lineHeight:1.15}}>{isPago?"Cambiar de plan":"Elegí tu plan"}</div>
+          <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:6}}>Precio de lanzamiento, en dólares. Cambiás o cancelás cuando quieras.</div>
+          <div style={{display:"inline-flex",background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:3,marginTop:16}}>
             <button onClick={()=>setAnual(false)} style={seg(!anual)}>Mensual</button>
-            <button onClick={()=>setAnual(true)} style={seg(anual)}>Anual <DSBadge T={T} color={T.green} size="sm">-17%</DSBadge></button>
+            <button onClick={()=>setAnual(true)} style={seg(anual)}>Anual <span style={{fontSize:DS.font.xs,fontWeight:700,color:T.green,background:T.green+"18",borderRadius:DS.r.sm,padding:"1px 6px"}}>2 meses gratis</span></button>
           </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14,marginBottom:16,alignItems:"start"}}>
+
+        {/* ── Planes ── */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16,marginBottom:8,alignItems:"stretch"}}>
           {PLANES.map(pl=>{
             const pU=anual?pl.precioAnual:pl.precio;
             const esActual=isPago&&planActualId===pl.id;
             const cargando=loadingPlan===pl.id;
             let label, variant="secondary", disabled=!!loadingPlan;
-            if(cargando){ label="Abriendo Stripe"; }
+            if(cargando){ label="Abriendo Stripe…"; }
             else if(esActual){
-              if(stripe&&!cancela){ label="Plan actual"; disabled=true; }
+              if(stripe&&!cancela){ label="Es tu plan actual"; disabled=true; }
               else if(stripe&&cancela){ label="Reactivar renovación"; variant="primary"; }
               else { label="Renovar con tarjeta"; variant="primary"; }
             }
             else if(isPago&&planActual){ label=pl.nivel>planActual.nivel?`Pasar a ${pl.nombre}`:`Cambiar a ${pl.nombre}`; variant=pl.nivel>planActual.nivel?"primary":"secondary"; }
-            else { label=`Elegir ${pl.nombre}`; variant=pl.destacado?"primary":"secondary"; }
+            else { label=`Empezar con ${pl.nombre}`; variant=pl.destacado?"primary":"secondary"; }
             const onClick=()=>{ if(esActual&&stripe&&cancela) cancelar(true); else elegir(pl.id); };
+            const borde=esActual?pl.color+"88":pl.destacado?T.accentSolid+"77":T.border;
             return (
-              <Card key={pl.id} T={T} padding="lg" style={{border:`1px solid ${esActual?pl.color+"88":pl.destacado?T.accentSolid+"66":T.border}`,position:"relative",opacity:loadingPlan&&!cargando?0.6:1}}>
+              <div key={pl.id} style={{background:T.card,border:`1px solid ${borde}`,borderRadius:DS.r["2xl"],padding:"22px 22px 20px",display:"flex",flexDirection:"column",position:"relative",boxShadow:pl.destacado?DS.shadow.lg:DS.shadow.sm,opacity:loadingPlan&&!cargando?0.6:1,transition:"opacity 0.15s"}}>
                 {(esActual||pl.destacado)&&(
-                  <span style={{position:"absolute",top:14,right:14}}><DSBadge T={T} color={esActual?pl.color:T.accent} size="sm">{esActual?"Tu plan":"Recomendado"}</DSBadge></span>
+                  <div style={{position:"absolute",top:-11,left:22}}><DSBadge T={T} color={esActual?pl.color:T.accent} size="md">{esActual?"Tu plan":"Más elegido"}</DSBadge></div>
                 )}
-                <div style={{fontSize:15,fontWeight:800,color:pl.color,marginBottom:2}}>{pl.nombre}</div>
-                <div style={{fontSize:12,color:T.textSm,minHeight:34,lineHeight:1.5,marginBottom:12}}>{pl.tagline}</div>
-                <div style={{display:"flex",alignItems:"baseline",gap:6}}>
-                  <span style={{fontSize:32,fontWeight:900,color:T.text,letterSpacing:-1,lineHeight:1}}>USD {pU}</span>
-                  <span style={{fontSize:12,color:T.textSm}}>por mes</span>
-                  <span style={{fontSize:12,color:T.textSm,textDecoration:"line-through",marginLeft:4}}>USD {pl.precioNormal}</span>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                  <span style={{width:10,height:10,borderRadius:"50%",background:pl.color,flexShrink:0}}/>
+                  <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{pl.nombre}</span>
                 </div>
-                <div style={{fontSize:11,color:anual?T.green:T.textSm,fontWeight:anual?600:400,marginTop:6,marginBottom:14,minHeight:16}}>
-                  {anual?`USD ${pU*12} por año en un solo pago · ahorrás USD ${(pl.precio-pl.precioAnual)*12}`:`USD ${pl.precioAnual} por mes si pagás el año`}
+                <div style={{fontSize:DS.font.md,color:T.textSm,minHeight:36,lineHeight:1.5,marginBottom:14}}>{pl.para}</div>
+                <div style={{display:"flex",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
+                  <span style={{fontSize:DS.font.lg,fontWeight:700,color:T.textMd}}>USD</span>
+                  <span style={{fontSize:40,fontWeight:900,color:T.text,letterSpacing:-1.5,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{pU}</span>
+                  <span style={{fontSize:DS.font.md,color:T.textSm}}>/ mes</span>
+                  <span title="Precio de lista" style={{fontSize:DS.font.md,color:T.textSm,textDecoration:"line-through",marginLeft:2}}>USD {pl.precioNormal}</span>
                 </div>
-                <Btn T={T} variant={variant} size="md" onClick={onClick} disabled={disabled} style={{width:"100%",justifyContent:"center"}}>{label}</Btn>
-                <div style={{borderTop:`1px solid ${T.borderL}`,marginTop:16,paddingTop:14,display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{fontSize:DS.font.sm,color:anual?T.green:T.textSm,fontWeight:anual?600:400,marginTop:8,marginBottom:16,minHeight:18}}>
+                  {anual?`USD ${pU*12} por año en un solo pago · ahorrás USD ${ahorroAnual(pl)}`:`USD ${pl.precioAnual} / mes si pagás el año (ahorrás USD ${ahorroAnual(pl)})`}
+                </div>
+                <Btn T={T} variant={variant} size="lg" onClick={onClick} disabled={disabled} style={{width:"100%",justifyContent:"center"}}>{label}</Btn>
+                <div style={{borderTop:`1px solid ${T.borderL}`,marginTop:18,paddingTop:14,display:"flex",flexDirection:"column",gap:9,flex:1}}>
+                  {pl.hereda
+                    ?<div style={{fontSize:DS.font.md,fontWeight:700,color:T.text}}>Todo lo del plan {pl.hereda}, más:</div>
+                    :<div style={{fontSize:DS.font.xs,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Incluye</div>}
                   {pl.features.map((f,i)=>(
-                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:12,lineHeight:1.45,color:i===0&&pl.nivel>1?T.text:T.textMd,fontWeight:i===0&&pl.nivel>1?700:400}}>
-                      <Check c={pl.color}/>{f}
+                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:9,fontSize:DS.font.md,lineHeight:1.45,color:T.textMd}}>
+                      <span style={{width:18,height:18,borderRadius:"50%",background:pl.color+"1a",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}><Check c={pl.color}/></span>{f}
                     </div>
                   ))}
                 </div>
-              </Card>
+                <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:14,paddingTop:12,borderTop:`1px dashed ${T.borderL}`}}>Varias tiendas en un solo login: +USD {pl.adicional}/mes por tienda adicional.</div>
+              </div>
             );
           })}
         </div>
+        <Confianza/>
 
-        {/* Cómo funciona */}
+        {/* ── Comparativa ── */}
         <Card T={T} padding="lg" style={{marginBottom:16}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>Cómo funciona el pago</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>
+          <button onClick={()=>setVerMatriz(v=>!v)} aria-expanded={verMatriz} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:"transparent",border:"none",padding:0,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left"}}>
+            <span style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,flex:1}}>¿Qué incluye cada plan?</span>
+            <span style={{fontSize:DS.font.md,color:T.textSm}}>{verMatriz?"Ocultar":"Ver comparativa"}</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{transform:verMatriz?"rotate(180deg)":"none",transition:"transform 0.15s"}}><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          {verMatriz&&(
+            <div style={{overflowX:"auto",marginTop:14}}>
+              <div style={{minWidth:520}}>
+                <div style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 1fr 1fr",gap:8,padding:"8px 10px",fontSize:DS.font.xs,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`}}>
+                  <span/>{PLANES.map(pl=><span key={pl.id} style={{textAlign:"center",color:pl.color}}>{pl.nombre}</span>)}
+                </div>
+                {MATRIZ.map((row,i)=>(
+                  <div key={i} style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 1fr 1fr",gap:8,padding:"9px 10px",fontSize:DS.font.md,color:T.textMd,borderBottom:i<MATRIZ.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:i%2?T.surface+"66":"transparent"}}>
+                    <span style={{color:T.text}}>{row[0]}</span>
+                    {row.slice(1).map((v,j)=>(
+                      <span key={j} style={{textAlign:"center",display:"flex",justifyContent:"center"}}>
+                        {v===true?<span style={{width:20,height:20,borderRadius:"50%",background:PLANES[j].color+"1a",display:"inline-flex",alignItems:"center",justifyContent:"center"}}><Check c={PLANES[j].color}/></span>
+                          :v===false?<span style={{color:T.borderL,fontWeight:700}}>—</span>
+                          :<span style={{fontSize:DS.font.sm,fontWeight:600,color:T.text}}>{v}</span>}
+                      </span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* ── Cómo funciona ── */}
+        <Card T={T} padding="lg" style={{marginBottom:16}}>
+          <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:14}}>Cómo funciona el pago</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:14}}>
             {[
-              {n:1,t:"Elegís el plan",d:"Mensual o anual. Si ya tenés uno, el cambio se aplica en el momento."},
-              {n:2,t:"Pagás en Stripe",d:"Tarjeta de crédito o débito, en dólares. Growith no ve los datos de tu tarjeta."},
-              {n:3,t:"Se activa al instante",d:"Y se renueva sola. Facturas, tarjeta y cancelación, siempre desde esta pantalla."},
+              {n:1,t:"Elegís el plan",d:"Mensual o anual. Si ya tenés uno, el cambio se aplica en el momento y se cobra solo la diferencia."},
+              {n:2,t:"Pagás en Stripe",d:"Tarjeta de crédito o débito, en dólares. Growith nunca ve los datos de tu tarjeta."},
+              {n:3,t:"Se activa al instante",d:"Y se renueva sola. Recibos, tarjeta y cancelación, siempre desde esta pantalla."},
             ].map(p=>(
-              <div key={p.n} style={{display:"flex",gap:10}}>
-                <div style={{width:26,height:26,borderRadius:"50%",background:T.accentSolid+"22",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,flexShrink:0}}>{p.n}</div>
+              <div key={p.n} style={{display:"flex",gap:12,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,padding:"12px 14px"}}>
+                <div style={{width:28,height:28,borderRadius:"50%",background:T.accentSolid+"22",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:DS.font.base,fontWeight:800,flexShrink:0}}>{p.n}</div>
                 <div>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>{p.t}</div>
-                  <div style={{fontSize:12,color:T.textSm,lineHeight:1.5}}>{p.d}</div>
+                  <div style={{fontSize:DS.font.base,fontWeight:700,color:T.text,marginBottom:3}}>{p.t}</div>
+                  <div style={{fontSize:DS.font.md,color:T.textSm,lineHeight:1.5}}>{p.d}</div>
                 </div>
               </div>
             ))}
           </div>
         </Card>
 
-        {/* FAQ */}
+        {/* ── FAQ (acordeón) ── */}
         <Card T={T} padding="lg">
-          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:6}}>Preguntas frecuentes</div>
-          {FAQS.map((f,i)=>(
-            <div key={i} style={{padding:"10px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
-              <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:3}}>{f.q}</div>
-              <div style={{fontSize:12,color:T.textSm,lineHeight:1.55}}>{f.a}</div>
+          <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:4}}>Preguntas frecuentes</div>
+          {FAQS.map((f,i)=>{ const abierta=faqOpen===i; return (
+            <div key={i} style={{borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
+              <button onClick={()=>setFaqOpen(abierta?-1:i)} aria-expanded={abierta} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"12px 0",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left"}}>
+                <span style={{fontSize:DS.font.base,fontWeight:600,color:T.text,flex:1}}>{f.q}</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,transform:abierta?"rotate(180deg)":"none",transition:"transform 0.15s"}}><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              {abierta&&<div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.6,paddingBottom:12}}>{f.a}</div>}
             </div>
-          ))}
-          <div style={{fontSize:12,color:T.textSm,marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderL}`}}>¿Otra duda? Escribinos a <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:T.accent,fontWeight:600,textDecoration:"none"}}>{SUPPORT_EMAIL}</a></div>
+          ); })}
+          <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:6,paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>¿Otra duda? Escribinos a <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:T.accent,fontWeight:600,textDecoration:"none"}}>{SUPPORT_EMAIL}</a></div>
         </Card>
       </div>
     </div>
