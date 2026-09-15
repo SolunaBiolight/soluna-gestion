@@ -977,6 +977,15 @@ const SIDEBAR_GROUPS_BASE = [
       subs:[{id:"gestion",label:"Gestión"},{id:"preguntas",label:"Preguntas"},{id:"mensajes",label:"Mensajes"},{id:"ventas",label:"Ventas"},{id:"reputacion",label:"Reputación"}]},
     {id:"gads",     label:"Google Ads", icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z"},
     {id:"tiktokads", label:"TikTok Ads", icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z"},
+    // "Publicar": una sola entrada desplegable con las cuatro plataformas (con
+    // sus logos) en vez de un grupo entero de cuatro filas. Cada hijo lleva a
+    // la pestaña Publicar de su sección; el permiso es el de esa sección.
+    {id:"publicar", label:"Publicar", icon:"M3 11l19-9-9 19-2-8-8-2z", hub:[
+      {id:"pubmeta",   permKey:"meta",      label:"Meta",          icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", go:{page:"meta",tab:"creativos"}},
+      {id:"pubml",     permKey:"ml",        label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", go:{page:"ml",tab:"publicar"}},
+      {id:"pubtiktok", permKey:"tiktokads", label:"TikTok",        icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z", go:{page:"tiktokads",tab:"publicar"}},
+      {id:"pubgads",   permKey:"gads",      label:"Google",        icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z", go:{page:"gads",tab:"publicar"}},
+    ]},
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"},{id:"checkout",label:"Checkout"}]},
@@ -985,11 +994,6 @@ const SIDEBAR_GROUPS_BASE = [
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", alertKey:"canjes", badge:"orange"},
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", alertKey:"tareas", badge:"orange"},
     {id:"calendario", label:"Calendario de Pagos", icon:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18", alertKey:"calendario", badge:"red"},
-    { group:"PUBLISHER" },
-    {id:"pubmeta",  permKey:"meta", label:"Publicar en Meta", icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", go:{page:"meta",tab:"creativos"}},
-    {id:"pubml",    permKey:"ml",   label:"Publicar en ML", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", go:{page:"ml",tab:"publicar"}},
-    {id:"pubtiktok", permKey:"tiktokads", label:"Publicar en TikTok", icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z", go:{page:"tiktokads",tab:"publicar"}},
-    {id:"pubgads",  permKey:"gads", label:"Publicar en Google", icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z", go:{page:"gads",tab:"publicar"}},
     { group:"RECOMPENSAS" },
     {id:"referidos",label:"Referidos", icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
     {id:"planes",   label:"Suscripción", icon:"M2 5h20v14H2zM2 10h20M6 15h4"},
@@ -998,6 +1002,9 @@ const SIDEBAR_GROUPS_BASE = [
 function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, margenesTab, setMargenesTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, gadsTab, setGadsTab, tiktokTab, setTiktokTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false, seccionesMiembro=null}) {
   const GROUPS = SIDEBAR_GROUPS_BASE.map(it=>it.alertKey?{...it,count:alerts[it.alertKey]}:it);
   const [closedSubs, setClosedSubs] = React.useState(new Set());
+  // "Publicar" desplegado/plegado (recordado por dispositivo).
+  const [pubOpen, setPubOpen] = React.useState(()=>{ try{ return localStorage.getItem("growith_sidebar_pub")==="1"; }catch(_){ return false; } });
+  const togglePub = ()=>setPubOpen(v=>{ try{ localStorage.setItem("growith_sidebar_pub",v?"0":"1"); }catch(_){} return !v; });
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
   const [acctOpen, setAcctOpen] = React.useState(false);
   const otherAccounts = ghReadAccounts().filter(a=>a.email!==user?.email);
@@ -1012,23 +1019,24 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
   ].filter(x=>!x.ok);
   const W = collapsed ? 64 : 224;
 
-  const NavBtn = ({item}) => {
-    // Los accesos del grupo PUBLISHER (item.go) apuntan a la pestaña Publicar de Meta/ML:
+  const NavBtn = ({item, hijo=false}) => {
+    // Los accesos de "Publicar" (item.go) apuntan a la pestaña Publicar de Meta/ML/TikTok/Google:
     // se marcan activos solo en esa pestaña, y la sección madre deja de marcarse ahí.
     const enPub = { meta: page==="meta"&&metaTab==="creativos", ml: page==="ml"&&mlTab==="publicar", gads: page==="gads"&&gadsTab==="publicar", tiktokads: page==="tiktokads"&&tiktokTab==="publicar" };
-    const active = item.go ? (page===item.go.page && enPub[item.go.page]) : (page === item.id && !enPub[item.id]);
+    const active = item.hub ? Object.values(enPub).some(Boolean) : item.go ? (page===item.go.page && enPub[item.go.page]) : (page === item.id && !enPub[item.id]);
     const badgeColor = item.badge==="red" ? T.red : item.badge==="orange" ? T.orange : T.accent;
     const isConnected = item.integrationKey ? connectedStores[item.integrationKey] : undefined;
     return (
       <button onClick={()=>{
           if(item.soon) return;
+          if(item.hub){ if(collapsed){ const c=item.hub[0]; setPage(c.go.page); setMetaTab&&setMetaTab(c.go.tab); } else togglePub(); return; }
           if(item.go){ setPage(item.go.page); if(item.go.page==="meta") setMetaTab&&setMetaTab(item.go.tab); else if(item.go.page==="gads") setGadsTab&&setGadsTab(item.go.tab); else if(item.go.page==="tiktokads") setTiktokTab&&setTiktokTab(item.go.tab); else setMlTab&&setMlTab(item.go.tab); return; }
           if(item.id==="meta"&&metaTab==="creativos") setMetaTab&&setMetaTab("analisis");
           if(item.id==="ml"&&mlTab==="publicar") setMlTab&&setMlTab("gestion");
           if(item.id==="gads"&&gadsTab==="publicar") setGadsTab&&setGadsTab("analisis");
           if(item.id==="tiktokads"&&tiktokTab==="publicar") setTiktokTab&&setTiktokTab("analisis");
           if(active&&item.subs?.length>0){setClosedSubs(p=>{const n=new Set(p);n.has(item.id)?n.delete(item.id):n.add(item.id);return n;});}else{setPage(item.id);setClosedSubs(p=>{const n=new Set(p);n.delete(item.id);return n;});}}} title={collapsed?item.label:undefined} aria-disabled={!!item.soon}
-        style={{display:"flex",alignItems:"center",gap:9,padding:collapsed?"10px 0":"8px 10px",
+        style={{display:"flex",alignItems:"center",gap:9,padding:collapsed?"10px 0":hijo?"6px 10px 6px 12px":"8px 10px",
           background:active?T.accentSolid+"20":"transparent",border:"none",
           borderRadius:DS.r.md,cursor:item.soon?"default":"pointer",textAlign:"left",opacity:item.soon?0.5:1,
           color:active?T.accent:T.textMd,fontWeight:active?DS.w.semibold:DS.w.medium,
@@ -1044,6 +1052,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
         {!collapsed&&<span style={{flex:1}}>{item.label}</span>}
         {!collapsed&&item.soon&&<span style={{fontSize:8,fontWeight:800,letterSpacing:0.5,background:T.yellow+"22",color:T.yellow,borderRadius:99,padding:"1px 6px"}}>PRONTO</span>}
         {!collapsed&&item.subs?.length>0&&<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:0.4,transition:`transform 0.18s ${DS.ease}`,transform:(active&&!closedSubs.has(item.id))?"rotate(90deg)":"rotate(0deg)"}}><path d="M9 18l6-6-6-6"/></svg>}
+        {!collapsed&&item.hub&&<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:0.4,transition:`transform 0.18s ${DS.ease}`,transform:(pubOpen||active)?"rotate(90deg)":"rotate(0deg)"}}><path d="M9 18l6-6-6-6"/></svg>}
         {!collapsed&&item.count>0&&<span style={{fontSize:10,fontWeight:DS.w.bold,padding:"1px 6px",borderRadius:DS.r.full,background:badgeColor+(active?"33":"22"),color:badgeColor,lineHeight:1.5,minWidth:18,textAlign:"center"}}>{item.count>99?"99+":item.count}</span>}
         {collapsed&&item.count>0&&<span style={{position:"absolute",top:6,right:8,width:6,height:6,borderRadius:DS.r.full,background:badgeColor}}/>}
       </button>
@@ -1083,7 +1092,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       <nav style={{flex:1,padding:DS.sp.sm,display:"flex",flexDirection:"column",gap:2,overflowY:"auto"}}>
         {GROUPS.filter(item=>!(adminOnlySections||[]).includes(item.id)||isAdmin)
           // Miembro de otro espacio: solo sus secciones habilitadas (los títulos de grupo quedan si tienen algo visible)
-          .filter(item=>{ if(!seccionesMiembro) return true; if(item.group) return true; return seccionesMiembro[item.permKey||item.id]===true; })
+          .filter(item=>{ if(!seccionesMiembro) return true; if(item.group) return true; if(item.hub) return item.hub.some(c=>seccionesMiembro[c.permKey]===true); return seccionesMiembro[item.permKey||item.id]===true; })
           // Gateo por plan (sin trial): Facturador ($19) = solo Inicio + Facturador.
           // Intermedio ($39) = TODO menos Dashboard (margenes) + Copilot. Pro = todo.
           .filter(item=>{
@@ -1106,9 +1115,16 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
           // siempre-desplegado de Escalafy — el usuario prefiere la fluidez
           // del despliegue al click). Se ocultan otra vez al cambiar de módulo.
           const showSubs = active && item.subs && !collapsed && !closedSubs.has(item.id);
+          const hubActivo = item.hub && ((page==="meta"&&metaTab==="creativos")||(page==="ml"&&mlTab==="publicar")||(page==="gads"&&gadsTab==="publicar")||(page==="tiktokads"&&tiktokTab==="publicar"));
+          const showHub = item.hub && !collapsed && (pubOpen||hubActivo);
           return (
             <React.Fragment key={item.id}>
               <NavBtn item={item}/>
+              {showHub && (
+                <div style={{marginLeft:22,paddingLeft:6,borderLeft:`1.5px solid ${T.border}`,marginTop:2,marginBottom:4,display:"flex",flexDirection:"column",gap:1}}>
+                  {item.hub.filter(c=>!seccionesMiembro||seccionesMiembro[c.permKey]===true).map(c=><NavBtn key={c.id} item={c} hijo/>)}
+                </div>
+              )}
               {showSubs && (
                 <div style={{
                   marginLeft:22,
@@ -20262,7 +20278,7 @@ function AdmSistema({ctx, sectionsConfig, saveSectionsConfig}) {
   async function loadSys(){ setSys({loading:true}); try{ setSys({loading:false,...(await adminApi({action:"adminGetSystem"}))}); }catch(e){ setSys({loading:false,error:e.message}); } }
   async function loadLog(){ try{ const d=await adminApi({action:"adminGetLog",limit:300}); setLog({loading:false,items:d.items||[]}); }catch(e){ setLog({loading:false,items:[],error:e.message}); } }
   useEffect(()=>{ loadSys(); loadLog(); },[]);
-  const secciones=SIDEBAR_GROUPS_BASE.filter(it=>it.id&&it.id!=="home"&&!it.soon&&!it.go);
+  const secciones=SIDEBAR_GROUPS_BASE.filter(it=>it.id&&it.id!=="home"&&!it.soon&&!it.go&&!it.hub);
   const ahora=sys.ahora||Date.now();
   const estadoCron=c=>{ const d=sys.crons?.[c.key]; if(!d||!d.at) return {label:"Sin registro",color:T.textSm,desc:"Se registra en la próxima corrida"}; if(!d.ok) return {label:"Error",color:T.red,desc:d.resumen||`HTTP ${d.status}`}; if(ahora-d.at>c.maxH*3600000) return {label:"Atrasado",color:T.yellow,desc:`Última corrida ${admRel(d.at)}`}; return {label:"OK",color:T.green,desc:""}; };
   const tipos=[...new Set(log.items.map(i=>i.action))].sort(); const lq=logQ.trim().toLowerCase();

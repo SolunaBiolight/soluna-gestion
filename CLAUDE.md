@@ -165,6 +165,7 @@ Ambas producen el mismo resultado visual. Usá la que más te convenga en cada c
 ```
 growith_theme              → "dark" | "light"
 growith_sidebar            → "0" | "1" (colapsado)
+growith_sidebar_pub        → "0" | "1" entrada "Publicar" del sidebar desplegada (agrupa Meta / Mercado Libre / TikTok / Google, cada hijo lleva a la pestaña Publicar de su sección)
 growith_onb_done           → "1" (onboarding completado)
 growith_onb_done_{uid}     → "1" (por usuario)
 growith_alert_config_{uid} → JSON config alertas por producto
