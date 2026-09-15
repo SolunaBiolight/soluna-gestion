@@ -14724,6 +14724,9 @@ function LandingPage({T, onLogin}) {
   // Íconos de marca: BrandIcon + TikTok (mismo trazo del menú) + las IAs (IA_ICONS, pantalla de permiso)
   const TIKTOK_PATH = "M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z";
   const marca = (b, s=19) => b==="tiktok" ? <svg width={s} height={s} viewBox="0 0 24 24"><path d={TIKTOK_PATH} fill="#EE1D52"/></svg>
+    : b==="pagonube" ? <svg width={s} height={s} viewBox="0 0 24 24"><path d="M7 18.5h10.5a4.2 4.2 0 00.7-8.35A6.2 6.2 0 006.3 9.2 4.7 4.7 0 007 18.5z" fill="#3b82f6"/><path d="M12 10.2v5.6M13.8 11.3c-.4-.5-1-.8-1.8-.8-1 0-1.7.5-1.7 1.2 0 1.6 3.6.8 3.6 2.5 0 .7-.8 1.2-1.9 1.2-.8 0-1.5-.3-1.9-.8" stroke="#fff" strokeWidth="1.1" fill="none" strokeLinecap="round"/></svg>
+    : b==="pagospers" ? <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6.5 15h4"/></svg>
+    : b==="recurrentes" ? <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12a8 8 0 01-13.7 5.6M4 12a8 8 0 0113.7-5.6"/><path d="M17.7 2.8v3.8h-3.8M6.3 21.2v-3.8h3.8"/></svg>
     : IA_ICONS[b] ? React.cloneElement(IA_ICONS[b], {width:s, height:s})
     : <BrandIcon name={b} size={b==="andreani"?s+5:s}/>;
   const chip = (b, s=19, box=34) => <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:box,height:box,borderRadius:9,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.06)",flexShrink:0}}>{marca(b,s)}</span>;
@@ -14761,7 +14764,7 @@ function LandingPage({T, onLogin}) {
     ["Stock","Producto A · Negro: quedan 4 días","Reponer",T.yellow],
     ["Canjes","Contenido de @creadora vence mañana","Ver canje","#E1306C"],
   ];
-  const MARQUEE = [["tiendanube","Tienda Nube"],["shopify","Shopify"],["mercadolibre","Mercado Libre"],["mercadopago","Mercado Pago"],["meta","Meta Ads"],["googleads","Google Ads"],["andreani","Andreani"],["arca","ARCA"],["Claude","Claude"],["ChatGPT","ChatGPT"],["Gemini","Gemini"]];
+  const MARQUEE = [["tiendanube","Tienda Nube"],["shopify","Shopify"],["mercadolibre","Mercado Libre"],["mercadopago","Mercado Pago"],["pagonube","Pago Nube"],["pagospers","Pagos personalizados"],["meta","Meta Ads"],["googleads","Google Ads"],["andreani","Andreani"],["arca","ARCA"],["Claude","Claude"],["ChatGPT","ChatGPT"],["Gemini","Gemini"]];
 
   // ── Hoy: el negocio repartido en pestañas ──
   const PESTANAS = ["Admin de la tienda","Mercado Libre","Portal de Andreani","ARCA","Administrador de anuncios","Planilla de stock","WhatsApp con influencers","Notas con los pagos del mes","Mails de reclamos","Excel de costos","App de ganancias"];
@@ -14894,7 +14897,7 @@ function LandingPage({T, onLogin}) {
   const CATEGORIAS = [
     {t:"Tiendas", d:"Pedidos, productos, stock y clientes.", items:[["tiendanube","Tienda Nube"],["shopify","Shopify"],["mercadolibre","Mercado Libre"]]},
     {t:"Publicidad", d:"Campañas, gasto y publicación.", items:[["meta","Meta Ads"],["googleads","Google Ads"],["mercadolibre","Mercado Ads"],["tiktok","TikTok Ads",true]]},
-    {t:"Pagos", d:"Comisiones, cobros y contracargos.", items:[["mercadopago","Mercado Pago"]]},
+    {t:"Pagos", d:"Comisiones reales de cada medio de cobro, cobros y contracargos.", items:[["mercadopago","Mercado Pago"],["pagonube","Pago Nube"],["pagospers","Pagos personalizados"],["recurrentes","Recurrentes",true]]},
     {t:"Logística", d:"Etiquetas, sucursales y seguimiento.", items:[["andreani","Andreani"]]},
     {t:"Facturación", d:"Factura electrónica con CAE y QR.", items:[["arca","ARCA"]]},
     {t:"Inteligencia artificial", d:"Consultá tu negocio desde la IA que ya usás.", items:[["Claude","Claude"],["ChatGPT","ChatGPT"],["Gemini","Gemini"]]},
@@ -14908,7 +14911,7 @@ function LandingPage({T, onLogin}) {
   const FAQ = [
     ["¿Necesito tarjeta para probar?","No. Tenés 14 días gratis con todas las funciones, sin cargar ninguna tarjeta. Si te sirve, elegís un plan."],
     ["¿Qué veo apenas entro?","El Inicio: lo facturado y los pedidos del período, los reclamos abiertos, el stock crítico y todos los pendientes ordenados por área. Cada cosa te lleva con un clic a donde se resuelve."],
-    ["¿Con qué plataformas se conecta?","Tienda Nube, Shopify, Mercado Libre, Mercado Pago, Meta Ads, Google Ads, Andreani y ARCA. TikTok Ads llega muy pronto. Además podés consultar tu negocio desde Claude, ChatGPT o Gemini."],
+    ["¿Con qué plataformas se conecta?","Tienda Nube, Shopify, Mercado Libre, Mercado Pago, Pago Nube, pagos personalizados, Meta Ads, Google Ads, Andreani y ARCA. Recurrentes y TikTok Ads llegan muy pronto. Además podés consultar tu negocio desde Claude, ChatGPT o Gemini."],
     ["¿Sirve si vendo solo en Mercado Libre?","Sí. Podés conectar solo Mercado Libre y usar preguntas, mensajes, ventas, reputación, stock, reclamos y facturación. Si después sumás una tienda, se integra al resto."],
     ["¿La facturación sirve para Monotributo y Responsable Inscripto?","Sí. Growith emite comprobantes electrónicos en ARCA con CAE, PDF y QR, para Monotributo y Responsable Inscripto, con varios CUITs y puntos de venta."],
     ["¿Mi equipo puede usarlo?","Sí. Sumás personas y elegís qué secciones ve cada una. Para colaboradores externos hay un portal propio de tareas, sin crear cuenta."],
@@ -15406,7 +15409,7 @@ function LandingPage({T, onLogin}) {
           </div>
           <div>
             <div style={{fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:0.7,color:T.textMd,marginBottom:10}}>Integraciones</div>
-            {["Tienda Nube · Shopify","Mercado Libre · Mercado Pago","Meta Ads · Google Ads","Andreani · ARCA","Claude · ChatGPT · Gemini"].map(l=>(
+            {["Tienda Nube · Shopify","Mercado Libre · Mercado Pago","Pago Nube · Pagos personalizados","Meta Ads · Google Ads","Andreani · ARCA","Claude · ChatGPT · Gemini"].map(l=>(
               <div key={l} style={{fontSize:12.5,color:T.textSm,padding:"3px 0"}}>{l}</div>
             ))}
           </div>
