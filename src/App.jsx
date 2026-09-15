@@ -11950,6 +11950,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           return;
         }
         lastErr=new Error(data.error||`Error ${res.status} al actualizar tracking en TN`);
+        if(data.code) lastErr.code=data.code;
         if(res.status===403||res.status===401) break;
         if(intento<retries-1) await new Promise(r=>setTimeout(r,1500*(intento+1)));
       } catch(e){
@@ -11980,6 +11981,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         fail++;
         errors.push({pedido:r.pedidoNum,msg:e.message});
         setSeguimientoProgress(p=>({...p,fail}));
+        // Sin permiso de fulfillment en Shopify: todos van a fallar igual —
+        // se corta acá con el aviso de reconectar en vez de 100 errores iguales.
+        if(e.code==="shopify_scope"){ errors.push({pedido:"—",msg:`Se cortó el envío: los ${pending.length-i-1} restantes quedan pendientes hasta reconectar Shopify.`}); break; }
       }
       // La pastilla global vive de estos eventos: sigue mostrando el progreso
       // aunque el modal esté minimizado o la usuaria se vaya a otra sección.
@@ -16446,6 +16450,12 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
       {scopeFalta && (
         <div style={{background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:8,padding:"10px 12px",fontSize:12,color:T.text,marginBottom:10,lineHeight:1.5,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{flex:1,minWidth:220}}>Shopify todavía no le dio a Growith el permiso de <strong>envíos</strong> (se agregó ahora). Reconectá Shopify una vez — no se pierde nada — y volvé acá.</span>
+          <button onClick={onReconectar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 14px"}}>Reconectar Shopify</button>
+        </div>
+      )}
+      {!scopeFalta && st?.fulfillOk===false && (
+        <div style={{background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:8,padding:"10px 12px",fontSize:12,color:T.text,marginBottom:10,lineHeight:1.5,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{flex:1,minWidth:220}}>Shopify todavía no le dio a Growith el permiso para <strong>marcar pedidos como enviados</strong> (fulfillment): sin eso, "Enviar seguimientos" no puede subir los trackings. Reconectá Shopify una vez — no se pierde nada.</span>
           <button onClick={onReconectar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 14px"}}>Reconectar Shopify</button>
         </div>
       )}

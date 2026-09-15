@@ -47,7 +47,12 @@ async function readBody(req) {
 const SHOPIFY_APP_ID     = process.env.SHOPIFY_APP_ID     || "";
 const SHOPIFY_APP_SECRET = process.env.SHOPIFY_APP_SECRET || "";
 // read_shipping/write_shipping: CarrierService (tarifas Andreani en el checkout).
-const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping";
+// *_fulfillment_orders + write_fulfillments: marcar el pedido como enviado con
+// el tracking (Seguimientos). Sin estos, Shopify responde 403 en
+// /fulfillment_orders.json y /fulfillments.json y ningún seguimiento sube.
+// Las tiendas conectadas antes de agregarlos tienen que RECONECTAR Shopify.
+const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders,read_fulfillments,write_fulfillments";
+const SHOPIFY_SCOPE_FULFILL = "write_merchant_managed_fulfillment_orders";
 const SHOPIFY_APP_URL = "https://www.growithapp.com";
 // Shopify NO permite el query param reservado "action" en la redirect URL, así
 // que la dejamos sin él. El callback llega con "platform=shopify" + el "code" que
@@ -390,6 +395,7 @@ async function shopifyCarrierStatus(req, res, db) {
     test,
     shop: sh.shop,
     scopeOk: scopes ? scopes.includes("write_shipping") : (f.err?.error === "scope" ? false : null),
+    fulfillOk: scopes ? scopes.includes(SHOPIFY_SCOPE_FULFILL) : null,
     registered: !!f.carrier, carrier: f.carrier ? { id: f.carrier.id, name: f.carrier.name, active: f.carrier.active, callback_url: f.carrier.callback_url } : null,
     otros: (f.list || []).filter(c => !String(c.callback_url || "").startsWith(SHOPIFY_RATES_URL)).map(c => ({ id: c.id, name: c.name, active: c.active })),
     config: userData.andreaniCheckout || null,

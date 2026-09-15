@@ -939,25 +939,63 @@ export default async function handler(req, res) {
     if (!orderId || !tracking) return res.status(400).json({ error: "Faltan orderId o tracking" });
     const shHeaders = { 'X-Shopify-Access-Token': shStore.accessToken, 'Content-Type': 'application/json' };
     const shBase = `https://${shStore.shop}/admin/api/2024-10`;
+    // Shopify limita a ~2 req/s por tienda: ante 429 se espera lo que pide
+    // (Retry-After) y se reintenta una vez, en vez de fallar el seguimiento.
+    const shFetch = async (url, opts) => {
+      let r = await fetch(url, opts);
+      if (r.status === 429) { const wait = Math.min(5000, Math.max(1000, Number(r.headers.get("retry-after") || 2) * 1000)); await new Promise(x => setTimeout(x, wait)); r = await fetch(url, opts); }
+      return r;
+    };
+    // Sin permiso de fulfillment (tiendas conectadas antes de que Growith lo
+    // pidiera): Shopify responde 403 en fulfillment_orders / fulfillments. El
+    // mensaje tiene que decir QUÉ hacer, y el front corta el lote (code).
+    const sinPermiso = () => res.status(403).json({ code: "shopify_scope", error: "Shopify no le dio a Growith permiso para marcar envíos (fulfillment). Reconectá Shopify desde Config → Integraciones (vuelve a pedir el permiso) y volvé a enviar los seguimientos: solo se reintentan los que faltan." });
     try {
-      // 1. Buscar la orden por número visible (name = "#1001")
-      const sr = await fetch(`${shBase}/orders.json?name=${encodeURIComponent('#' + orderId)}&status=any&fields=id,order_number,name,fulfillment_status`, { headers: shHeaders });
-      if (!sr.ok) throw new Error(`Shopify search error ${sr.status}`);
-      const sd = await sr.json();
-      const order = (sd.orders || []).find(o => String(o.order_number) === String(orderId) || String(o.name || "").replace("#", "") === String(orderId));
+      // 1. Buscar la orden por número visible (name = "#1001"; algunas tiendas
+      //    usan prefijo/sufijo en el nombre → segundo intento sin "#" y, si
+      //    tampoco, por order_number en las órdenes recientes)
+      const buscar = async (name) => {
+        const sr = await shFetch(`${shBase}/orders.json?name=${encodeURIComponent(name)}&status=any&fields=id,order_number,name,fulfillment_status`, { headers: shHeaders });
+        if (sr.status === 401 || sr.status === 403) throw Object.assign(new Error("scope"), { scope: true });
+        if (!sr.ok) throw new Error(`Shopify search error ${sr.status}`);
+        const sd = await sr.json();
+        return (sd.orders || []).find(o => String(o.order_number) === String(orderId) || String(o.name || "").replace(/\D/g, "") === String(orderId)) || null;
+      };
+      let order = await buscar('#' + orderId);
+      if (!order) order = await buscar(String(orderId));
+      if (!order) {
+        // Paginación por cursor (Link: page_info), de la más nueva a la más vieja,
+        // hasta 6 páginas de 250 o hasta pasar el número buscado.
+        let url = `${shBase}/orders.json?status=any&limit=250&fields=id,order_number,name,fulfillment_status`;
+        for (let pag = 0; pag < 6 && url && !order; pag++) {
+          const sr = await shFetch(url, { headers: shHeaders });
+          if (!sr.ok) break;
+          const lst = (await sr.json()).orders || [];
+          if (!lst.length) break;
+          order = lst.find(o => String(o.order_number) === String(orderId)) || null;
+          const minNum = Math.min(...lst.map(o => Number(o.order_number) || Infinity));
+          if (minNum < Number(orderId)) break;
+          const m = /<([^>]+)>;\s*rel="next"/.exec(sr.headers.get("link") || "");
+          url = m ? m[1] : null;
+        }
+      }
       if (!order) return res.status(404).json({ error: `Pedido #${orderId} no encontrado en Shopify` });
+      // Ya marcado como enviado en Shopify (a mano o por otra app): no es un
+      // error — el tracking igual queda registrado en Growith para el
+      // seguimiento automático, y se avisa que el cliente no recibió mail nuevo.
       if ((order.fulfillment_status || "").toLowerCase() === 'fulfilled') {
-        return res.status(400).json({ error: `El pedido #${orderId} ya fue enviado.` });
+        return res.status(200).json({ ok: true, order: orderId, tracking, tnOrderId: String(order.id), fulfilled: false, fulfillError: "ya estaba marcado como enviado en Shopify" });
       }
       // 2. Fulfillment orders abiertos de la orden
-      const fr = await fetch(`${shBase}/orders/${order.id}/fulfillment_orders.json`, { headers: shHeaders });
+      const fr = await shFetch(`${shBase}/orders/${order.id}/fulfillment_orders.json`, { headers: shHeaders });
+      if (fr.status === 401 || fr.status === 403) return sinPermiso();
       if (!fr.ok) throw new Error(`Shopify fulfillment_orders error ${fr.status}`);
       const fd = await fr.json();
-      const abiertos = (fd.fulfillment_orders || []).filter(fo => ["open", "in_progress", "scheduled"].includes((fo.status || "").toLowerCase()));
+      const abiertos = (fd.fulfillment_orders || []).filter(fo => ["open", "in_progress", "scheduled", "on_hold"].includes((fo.status || "").toLowerCase()));
       if (!abiertos.length) return res.status(400).json({ error: `El pedido #${orderId} no tiene items pendientes de despacho en Shopify.` });
       // 3. Crear el fulfillment con tracking + aviso al cliente
       let fulfilled = false, fulfillError = null;
-      const pr = await fetch(`${shBase}/fulfillments.json`, {
+      const pr = await shFetch(`${shBase}/fulfillments.json`, {
         method: 'POST', headers: shHeaders,
         body: JSON.stringify({ fulfillment: {
           line_items_by_fulfillment_order: abiertos.map(fo => ({ fulfillment_order_id: fo.id })),
@@ -965,11 +1003,13 @@ export default async function handler(req, res) {
           notify_customer: true,
         } }),
       });
+      if (pr.status === 401 || pr.status === 403) return sinPermiso();
       if (pr.ok) fulfilled = true;
       else { const pd = await pr.json().catch(() => ({})); fulfillError = pd.errors ? JSON.stringify(pd.errors).slice(0, 200) : `Shopify ${pr.status}`; }
       if (!fulfilled) return res.status(502).json({ error: `No se pudo crear el fulfillment: ${fulfillError}` });
       return res.status(200).json({ ok: true, order: orderId, tracking, tnOrderId: String(order.id), fulfilled: true, fulfillError: null });
     } catch (e) {
+      if (e && e.scope) return sinPermiso();
       return res.status(500).json({ error: e.message });
     }
   }

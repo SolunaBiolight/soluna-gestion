@@ -137,7 +137,7 @@ Ambas producen el mismo resultado visual. Usá la que más te convenga en cada c
 | Plataforma | Estado | Cómo se guarda |
 |---|---|---|
 | Tienda Nube | ✅ Activo | Firestore `users/{uid}.stores[]` type="tiendanube" |
-| Shopify | ✅ OAuth listo | Firestore `users/{uid}.stores[]` type="shopify" |
+| Shopify | ✅ OAuth listo | Firestore `users/{uid}.stores[]` type="shopify". Scopes en `SHOPIFY_SCOPES` (integrations.js): pedidos, productos, `write_shipping` (CarrierService) y desde 15/sep/2026 `*_fulfillment_orders` + `write_fulfillments` (Seguimientos: crear el fulfillment con tracking). Una tienda conectada ANTES de un scope nuevo tiene que reconectar Shopify; sin permiso, update-shipping responde 403 `code:"shopify_scope"` y el front corta el lote con el aviso. Si la app pública de Shopify (Dev Dashboard de Thiago) declara scopes, hay que agregarlos también ahí |
 | Mercado Libre | ✅ Activo | Firestore `users/{uid}.stores[]` type="mercadolibre" |
 | Mercado Pago (cobros) | ✅ Activo | Firestore `users/{uid}.stores[]` type="mercadopago" — mismo OAuth de ML con `proposito:"mp"`; solo para leer comisiones reales de MP (Shopify); NO cuenta como tienda ML. Al conectar setea `margenesMlMp`. Tienda Nube no la necesita: sus cargos salen de `GET /orders/{id}?aggregates=transactions` (cache `margenesTnFees`) |
 | Meta Ads | ⚠️ Token vencido | Firestore `users/{uid}.metaAccounts[]` |
