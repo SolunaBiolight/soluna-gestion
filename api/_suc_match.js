@@ -5,7 +5,15 @@
 // que devuelvan lo mismo. Cambiá una → cambiá la otra → corré el test.
 // No lo expone Vercel (empieza con "_", como _auth.js).
 
-export const GH_SUC_GEN = new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","AV","CALLE","DIAGONAL","DIAG","PASAJE","PJE","BOULEVARD","BULEVAR","BV","BLVD","RUTA","GENERAL","GRAL","DOCTOR","DR","PRESIDENTE","PTE","TENIENTE","TTE","CORONEL","CNEL","INGENIERO","ING","SANTA","STA","SANTO","STO","SAN","DE","DEL","LA","EL","LOS","LAS","Y","E","NRO","NUM","ALTURA","KM"]);
+// Tipos de vía y prefijos de punto: NUNCA identifican una calle.
+export const GH_SUC_VIA=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","AV","CALLE","DIAGONAL","DIAG","PASAJE","PJE","BOULEVARD","BULEVAR","BV","BLVD","RUTA","RN","RP","NRO","NUM","ALTURA","KM"]);
+// Títulos, artículos y conectores: se descartan SALVO que la calle no tenga
+// otra cosa ("Santa Fe", "San Juan", "La Rioja" — sin esto no matcheaban nunca).
+export const GH_SUC_TITULO=new Set(["GENERAL","GRAL","DOCTOR","DOCTORA","DR","DRA","PRESIDENTE","PTE","PRES","TENIENTE","TTE","CORONEL","CNEL","INGENIERO","ING","BRIGADIER","BRIG","BDIER","ALMIRANTE","ALTE","GOBERNADOR","GDOR","SARGENTO","SGTO","CAPITAN","CAP","COMANDANTE","CMTE","MAESTRO","MTRO","PRESBITERO","PBRO","MONSENOR","MONS","SANTA","STA","SANTO","STO","SAN","DE","DEL","LA","EL","LOS","LAS","Y","E"]);
+// Abreviaturas del desplegable de Andreani → forma larga que manda la tienda
+// ("AV B MITRE" es "Bartolomé Mitre"; "AV PTE H YRIGOYEN" es "Hipólito Yrigoyen").
+export const GH_SUC_ABREV={AV:"AVENIDA",AVDA:"AVENIDA",GRAL:"GENERAL",DR:"DOCTOR",DRA:"DOCTORA",PTE:"PRESIDENTE",PRES:"PRESIDENTE",TTE:"TENIENTE",CNEL:"CORONEL",ING:"INGENIERO",BRIG:"BRIGADIER",BDIER:"BRIGADIER",ALTE:"ALMIRANTE",GDOR:"GOBERNADOR",SGTO:"SARGENTO",CMTE:"COMANDANTE",MTRO:"MAESTRO",PBRO:"PRESBITERO",MONS:"MONSENOR",STA:"SANTA",STO:"SANTO",BME:"BARTOLOME",FCO:"FRANCISCO",VTE:"VICENTE",HIP:"HIPOLITO",PJE:"PASAJE",DIAG:"DIAGONAL",BV:"BOULEVARD",BLVD:"BOULEVARD"};
+export const GH_SUC_GEN=new Set([...GH_SUC_VIA,...GH_SUC_TITULO]);
 
 export function ghStripUnidad(s) {
   return String(s || "").replace(/[,\s]+ENTRE\s+\S[\s\S]*?\s+Y\s+[\s\S]*$/i, "").replace(/[,\s]+(LOCAL(?:ES)?|PISO|DPTO\.?|DEPTO\.?|DEPARTAMENTO|OFICINA|OF\.|UF|GALERIA|GALERÍA|TIMBRE|CASA|PB|E\/|ESQ\.?|ESQUINA)\b[\s\S]*$/i, "").trim();
@@ -13,14 +21,30 @@ export function ghStripUnidad(s) {
 export function ghNrmSuc(s) {
   return String(s || "").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 }
-export function ghDirParse(calle, numero) {
-  let c = ghNrmSuc(ghStripUnidad(calle));
-  const numRaw = String(numero || "").trim();
-  let num = numRaw.replace(/\D.*/, "").trim();
-  const m = c.match(/\b(\d{1,5})\s*$/);
-  if (m && ((!numRaw && !num) || m[1] === num)) { num = num || m[1]; c = c.replace(/\b\d{1,5}\s*$/, "").trim(); }
-  const toks = c.split(" ").filter(w => w && !GH_SUC_GEN.has(w) && (w.length >= 3 || /^\d+$/.test(w)));
-  return { calle: c, num, toks, words: toks.filter(w => !/^\d+$/.test(w)), nums: toks.filter(w => /^\d+$/.test(w)) };
+// ¿El pedido es a un punto HOP (comercio adherido)? Andreani los publica en el
+// desplegable del Excel pero NO en la API de sucursales hasta habilitar el
+// canal en el contrato — el flujo por API tiene que saberlo antes de buscar.
+export function ghEsHop(o){
+  const pd=o?.pickupDetails;
+  return /\bHOP\b|PUNTO ANDREANI|PICKIT/i.test(String(pd?.name||""))||/\bHOP\b/i.test(String(o?.medioEnvio||""));
+}
+// Calle + número → {calle, num, words (palabras significativas), nums (números
+// que son parte del NOMBRE de la calle: "CALLE 13")}. El número de puerta
+// puede venir aparte, embebido al final de la calle, o en los dos lados.
+export function ghDirParse(calle,numero){
+  let c=ghNrmSuc(ghStripUnidad(calle));
+  // "S/N" explícito = sin número (no se roba el "8" de "Ruta 8"); número
+  // vacío + calle terminada en dígitos = número embebido ("Cosme Beccar 274").
+  const numRaw=String(numero||"").trim();
+  let num=numRaw.replace(/\D.*/,"").trim();
+  const m=c.match(/\b(\d{1,5})\s*$/);
+  if(m&&((!numRaw&&!num)||m[1]===num)){ num=num||m[1]; c=c.replace(/\b\d{1,5}\s*$/,"").trim(); }
+  // Abreviaturas a forma larga y fuera los tipos de vía; títulos y palabras
+  // cortas se descartan solo si queda algo con qué comparar.
+  const all=c.split(" ").filter(Boolean).map(w=>GH_SUC_ABREV[w]||w).filter(w=>!GH_SUC_VIA.has(w));
+  let toks=all.filter(w=>!GH_SUC_TITULO.has(w)&&(w.length>=3||/^\d+$/.test(w)));
+  if(!toks.some(w=>!/^\d+$/.test(w))&&all.some(w=>!/^\d+$/.test(w))) toks=all.filter(w=>w.length>=2||/^\d+$/.test(w));
+  return {calle:c,num,toks,words:toks.filter(w=>!/^\d+$/.test(w)),nums:toks.filter(w=>/^\d+$/.test(w))};
 }
 export function ghMismaCalle(a, b) {
   if (!a || !b) return false;

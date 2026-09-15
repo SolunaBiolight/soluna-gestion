@@ -3,7 +3,7 @@ const fs=require("fs");
 const src=fs.readFileSync("src/App.jsx","utf8").replace(/\r\n/g,"\n");
 function fn(name){ const i=src.indexOf(`\nfunction ${name}(`); if(i<0) throw new Error("no "+name); const j=src.indexOf("\n}\n",i); return src.slice(i,j+3); }
 const core=src.slice(src.indexOf("// GH_SUC_MATCH_BEGIN"),src.indexOf("// GH_SUC_MATCH_END"));
-const code=core+fn("ghStripUnidad")+fn("ghTplDeOficial")+"\nreturn {ghNrmSuc,ghDirParse,ghMismaCalle,ghPuntoDeOrden,ghConflictoPunto,ghCoincidePunto,ghMatchOficial,ghMatchSucursal,ghStripUnidad,ghTplDeOficial};";
+const code=core+fn("ghStripUnidad")+fn("ghTplDeOficial")+"\nreturn {ghNrmSuc,ghDirParse,ghMismaCalle,ghPuntoDeOrden,ghConflictoPunto,ghCoincidePunto,ghMatchOficial,ghMatchSucursal,ghStripUnidad,ghTplDeOficial,ghEsHop};";
 const M=new Function(code)();
 let fails=0, n=0;
 function eq(desc,got,exp){ n++; const ok=JSON.stringify(got)===JSON.stringify(exp); if(!ok){ fails++; console.log("FAIL",desc,"\n   got:",JSON.stringify(got),"\n   exp:",JSON.stringify(exp)); } }
@@ -83,10 +83,47 @@ eq("dobles espacios / acentos",M.ghMatchOficial([suc(14,"HOP  BELGRANO","Belgran
 // ── ghMatchSucursal (template)
 const locs={sucursales:["SAN JUSTO (CENTRO)","PUNTO ANDREANI HOP LIBERTADOR GENERAL SAN MARTÍN","PUNTO ANDREANI HOP AVENIDA DEL LIBERTADOR GENERAL","HOP JURAMENTO 2621","HOP JURAMENTO 367","HOP BELGRANO  995","HOP BELGRANO 995","PUNTO ANDREANI HOP BALBIN 3301","CALLE 13 621 LA PLATA"]};
 eq("tpl: nombre exacto",M.ghMatchSucursal(locs,"",{name:"Punto Andreani HOP Libertador General San Martín",address:{address:"x",number:""}}),"PUNTO ANDREANI HOP LIBERTADOR GENERAL SAN MARTÍN");
-eq("tpl: nombre genérico no matchea nada",M.ghMatchSucursal(locs,"",{name:"Punto Andreani HOP",address:{address:"Libertador General San Martín",number:"3916"}}),null);
+// #6510 (Gabriela Schiavo): TN manda nombre genérico "PUNTO ANDREANI HOP" +
+// "Libertador General San Martín 3916"; el desplegable recorta el nombre a 50
+// caracteres y pierde el número → la entrada recortada es el comienzo literal.
+eq("tpl: nombre genérico + entrada recortada (#6510)",M.ghMatchSucursal(locs,"",{name:"Punto Andreani HOP",address:{address:"Libertador General San Martín",number:"3916"}}),"PUNTO ANDREANI HOP LIBERTADOR GENERAL SAN MARTÍN");
+eq("tpl: recortada no matchea otra calle parecida",M.ghMatchSucursal({sucursales:["PUNTO ANDREANI HOP AVENIDA DEL LIBERTADOR GENERAL"]},"",{name:"Punto Andreani HOP",address:{address:"Libertador General San Martín",number:"3916"}}),null);
+eq("tpl: recortada exige número en el pedido",M.ghMatchSucursal(locs,"",{name:"Punto Andreani HOP",address:{address:"Libertador General San Martín",number:""}}),null);
+eq("tpl: nombre corto sin número NO es recortado",M.ghMatchSucursal({sucursales:["PUNTO ANDREANI HOP BALBIN"]},"",{name:"Punto Andreani HOP",address:{address:"Balbín",number:"3301"}}),null);
+// #6453 (Agustina Villemur): "Avenida Doctor Ricardo Balbín 3301" — 9 entradas
+// idénticas recortadas + otras de la misma calle CON número distinto.
+const locsBal={sucursales:["PUNTO ANDREANI HOP AV DR R BALBIN 3133","PUNTO ANDREANI HOP AVENIDA DOCTOR RICARDO BALBÍN","PUNTO ANDREANI HOP AVENIDA DOCTOR RICARDO BALBÍN","PUNTO ANDREANI HOP AVENIDA DOCTOR RICARDO BALBÍN ","PUNTO ANDREANI HOP AV DR RICARDO BALBÍN 1327","PUNTO ANDREANI HOP JULIÁN BALBÍN 450"]};
+eq("tpl: Balbín 3301 → entrada recortada (#6453)",M.ghMatchSucursal(locsBal,"",{name:"Punto Andreani HOP",address:{address:"Avenida Doctor Ricardo Balbín",number:"3301"}}),"PUNTO ANDREANI HOP AVENIDA DOCTOR RICARDO BALBÍN");
+eq("tpl: Balbín 3133 → la que tiene número (abreviada)",M.ghMatchSucursal(locsBal,"",{name:"Punto Andreani HOP",address:{address:"Avenida Doctor Ricardo Balbín",number:"3133"}}),"PUNTO ANDREANI HOP AV DR R BALBIN 3133");
+eq("tpl: Julián Balbín 450 no se confunde con Ricardo",M.ghMatchSucursal(locsBal,"",{name:"Punto Andreani HOP",address:{address:"Julián Balbín",number:"450"}}),"PUNTO ANDREANI HOP JULIÁN BALBÍN 450");
+// Calles de puras palabras cortas / títulos y abreviaturas del desplegable
+eq("tpl: Av. Santa Fe 2081",M.ghMatchSucursal({sucursales:["PUNTO ANDREANI HOP AV SANTA FE 2081","PUNTO ANDREANI HOP SANTA ROSA 2081"]},"",{name:"Punto Andreani HOP",address:{address:"Av. Santa Fe",number:"2081"}}),"PUNTO ANDREANI HOP AV SANTA FE 2081");
+eq("tpl: Bartolomé Mitre 1570 = AV B MITRE 1570",M.ghMatchSucursal({sucursales:["PUNTO ANDREANI HOP AV B MITRE 1570","PUNTO ANDREANI HOP AV MITRE 899"]},"",{name:"Punto Andreani HOP",address:{address:"Bartolomé Mitre",number:"1570"}}),"PUNTO ANDREANI HOP AV B MITRE 1570");
+eq("tpl: Hipólito Yrigoyen 2550 = AV PTE H YRIGOYEN 2550",M.ghMatchSucursal({sucursales:["PUNTO ANDREANI HOP AV PTE H YRIGOYEN 2550"]},"",{name:"Punto Andreani HOP",address:{address:"Hipólito Yrigoyen",number:"2550"}}),"PUNTO ANDREANI HOP AV PTE H YRIGOYEN 2550");
+eq("tpl: Brig. Gral. Juan Manuel de Rosas 160",M.ghMatchSucursal({sucursales:["PUNTO ANDREANI HOP AV. B. GRAL. J. M. DE ROSAS 160"]},"",{name:"Punto Andreani HOP",address:{address:"Av. Brig. Gral. Juan Manuel de Rosas",number:"160"}}),"PUNTO ANDREANI HOP AV. B. GRAL. J. M. DE ROSAS 160");
+eq("tpl: Almirante Brown 1465 = ALTE G BROWN 1465",M.ghMatchSucursal({sucursales:["PUNTO ANDREANI HOP ALTE G BROWN 1465"]},"",{name:"Punto Andreani HOP",address:{address:"Almirante Brown",number:"1465"}}),"PUNTO ANDREANI HOP ALTE G BROWN 1465");
+eq("tpl: mismo número en dos calles distintas → null",M.ghMatchSucursal({sucursales:["PUNTO ANDREANI HOP MITRE 1200","PUNTO ANDREANI HOP SARMIENTO 1200"]},"",{name:"Punto Andreani HOP",address:{address:"Belgrano",number:"1200"}}),null);
+eq("tpl: misma calle, dos puntos con número distinto, pedido con otro → null",M.ghMatchSucursal({sucursales:["PUNTO ANDREANI HOP MITRE 1200","PUNTO ANDREANI HOP MITRE 1570"]},"",{name:"Punto Andreani HOP",address:{address:"Mitre",number:"899"}}),null);
+eq("tpl: nombre con prefijo HOP vs sin prefijo",M.ghMatchSucursal({sucursales:["PUNTO ANDREANI HOP KIOSCO LA ESQUINA"]},"",{name:"Kiosco La Esquina",address:{address:"x",number:""}}),"PUNTO ANDREANI HOP KIOSCO LA ESQUINA");
+eq("parse: Santa Fe conserva palabras",M.ghDirParse("Av. Santa Fe","2081").words,["SANTA","FE"]);
+eq("parse: San Martín sigue siendo MARTIN",M.ghDirParse("Av. San Martín","100").words,["MARTIN"]);
+eq("parse: Ruta 8 sin palabras",M.ghDirParse("Ruta 8","S/N"),{calle:"RUTA 8",num:"",toks:["8"],words:[],nums:["8"]});
+eq("esHop: nombre genérico",M.ghEsHop({pickupDetails:{name:"PUNTO ANDREANI HOP"}}),true);
+eq("esHop: sucursal clásica",M.ghEsHop({pickupDetails:{name:"Andreani Sucursal San Justo (Centro)"},medioEnvio:"Andreani Sucursal"}),false);
+// Desplegable REAL (scripts/fixtures/tpl_sucursales.txt, generado con
+// node scripts/tpl_fixture.cjs): los dos pedidos reales y calles difíciles.
+try{
+  const real={sucursales:fs.readFileSync(__dirname+"/fixtures/tpl_sucursales.txt","utf8").split("\n").filter(Boolean)};
+  eq("real #6510 Libertador Gral San Martín 3916",M.ghMatchSucursal(real,"",{name:"PUNTO ANDREANI HOP",address:{address:"Libertador General San Martín",number:"3916",locality:"Gba Oeste",zipcode:"1754"}}),"PUNTO ANDREANI HOP LIBERTADOR GENERAL SAN MARTÍN");
+  eq("real #6453 Balbín 3301",M.ghMatchSucursal(real,"",{name:"PUNTO ANDREANI HOP",address:{address:"Avenida Doctor Ricardo Balbín",number:"3301",locality:"Sin Region",zipcode:"1430"}}),"PUNTO ANDREANI HOP AVENIDA DOCTOR RICARDO BALBÍN");
+  eq("real Santa Fe 2081",M.ghMatchSucursal(real,"",{name:"PUNTO ANDREANI HOP",address:{address:"Av. Santa Fe",number:"2081"}}),"PUNTO ANDREANI HOP AV SANTA FE 2081");
+  eq("real Bartolomé Mitre 1570",M.ghMatchSucursal(real,"",{name:"PUNTO ANDREANI HOP",address:{address:"Bartolomé Mitre",number:"1570"}}),"PUNTO ANDREANI HOP AV B MITRE 1570");
+  eq("real Balbín 5617 (MyM, no es HOP) → null",M.ghMatchSucursal(real,"",{name:"PUNTO ANDREANI HOP",address:{address:"Ricardo Balbín",number:"5617"}}),null);
+  eq("real sin número → null",M.ghMatchSucursal(real,"",{name:"PUNTO ANDREANI HOP",address:{address:"Avenida Doctor Ricardo Balbín",number:""}}),null);
+}catch(e){ console.log("(sin fixture real: "+e.message.split("\n")[0]+")"); }
 eq("tpl: calle+num único",M.ghMatchSucursal(locs,"",{name:"HOP",address:{address:"Juramento",number:"2621"}}),"HOP JURAMENTO 2621");
 eq("tpl: calle sin número → null",M.ghMatchSucursal(locs,"",{name:"HOP",address:{address:"Juramento",number:""}}),null);
-eq("tpl: dobles espacios dedupe",M.ghMatchSucursal(locs,"",{name:"HOP",address:{address:"Av. Belgrano",number:"995"}})?.replace(/s+/g," "),"HOP BELGRANO 995");
+eq("tpl: dobles espacios dedupe",M.ghMatchSucursal(locs,"",{name:"HOP",address:{address:"Av. Belgrano",number:"995"}})?.replace(/\s+/g," "),"HOP BELGRANO 995");
 eq("tpl: Balbín 5617 no matchea 3301",M.ghMatchSucursal(locs,"",{name:"HOP",address:{address:"Balbín",number:"5617"}}),null);
 eq("tpl: calle numerada",M.ghMatchSucursal(locs,"",{name:"HOP",address:{address:"Calle 13",number:"621"}}),"CALLE 13 621 LA PLATA");
 eq("tpl: dirección sin pickup con dirNumero",M.ghMatchSucursal(locs,"Juramento",null,"367"),"HOP JURAMENTO 367");
@@ -109,6 +146,8 @@ eq("tplDeOficial: SAN JUSTO CENTRO",M.ghTplDeOficial(locs,sj),"SAN JUSTO (CENTRO
   }
   eq("paridad matchOficial",S.ghMatchOficial([libOk,avLib],S.ghPuntoDeOrden(lib))?.id,M.ghMatchOficial([libOk,avLib],M.ghPuntoDeOrden(lib))?.id);
   eq("paridad strip",S.ghStripUnidad("Av. Entre Ríos 1234 Local 3"),M.ghStripUnidad("Av. Entre Ríos 1234 Local 3"));
+  for(const [c,n] of [["Av. Santa Fe","2081"],["AV B MITRE 1570",""],["Av. Brig. Gral. Juan Manuel de Rosas","160"],["Calle 13","621"],["Ruta 8","S/N"]]) eq("paridad parse "+c,S.ghDirParse(c,n),M.ghDirParse(c,n));
+  eq("paridad esHop",S.ghEsHop({pickupDetails:{name:"PUNTO ANDREANI HOP"}}),M.ghEsHop({pickupDetails:{name:"PUNTO ANDREANI HOP"}}));
   eq("clave → punto",S.ghPuntoDeClave("PUNTO HOP|BALBIN|3301|1430"),{nombre:"PUNTO HOP",calle:"BALBIN",num:"3301",loc:"",cp:"1430",conPickup:true});
   eq("conflictoTpl grave",S.ghConflictoTpl(S.ghPuntoDeClave("PUNTO HOP|BALBIN|3301|1430"),"PUNTO ANDREANI HOP BALBIN 5617")?.grave,true);
   eq("conflictoTpl ok",S.ghConflictoTpl(S.ghPuntoDeClave("PUNTO HOP|BALBIN|3301|1430"),"PUNTO ANDREANI HOP BALBIN 3301"),null);

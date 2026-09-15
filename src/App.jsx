@@ -4233,12 +4233,27 @@ async function ghFetchOrderByNum(uid, num) {
 // VETA ante cualquier contradicción (otro número en la misma calle, otro CP
 // y otra localidad, distancia > 4 km al punto geocodificado). Ante la duda:
 // modal, con toda la información a la vista.
-const GH_SUC_GEN=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","AV","CALLE","DIAGONAL","DIAG","PASAJE","PJE","BOULEVARD","BULEVAR","BV","BLVD","RUTA","GENERAL","GRAL","DOCTOR","DR","PRESIDENTE","PTE","TENIENTE","TTE","CORONEL","CNEL","INGENIERO","ING","SANTA","STA","SANTO","STO","SAN","DE","DEL","LA","EL","LOS","LAS","Y","E","NRO","NUM","ALTURA","KM"]);
+// Tipos de vía y prefijos de punto: NUNCA identifican una calle.
+const GH_SUC_VIA=new Set(["PUNTO","ANDREANI","HOP","PICKIT","SUCURSAL","RETIRO","ESPACIO","EXPRESO","AVENIDA","AVDA","AV","CALLE","DIAGONAL","DIAG","PASAJE","PJE","BOULEVARD","BULEVAR","BV","BLVD","RUTA","RN","RP","NRO","NUM","ALTURA","KM"]);
+// Títulos, artículos y conectores: se descartan SALVO que la calle no tenga
+// otra cosa ("Santa Fe", "San Juan", "La Rioja" — sin esto no matcheaban nunca).
+const GH_SUC_TITULO=new Set(["GENERAL","GRAL","DOCTOR","DOCTORA","DR","DRA","PRESIDENTE","PTE","PRES","TENIENTE","TTE","CORONEL","CNEL","INGENIERO","ING","BRIGADIER","BRIG","BDIER","ALMIRANTE","ALTE","GOBERNADOR","GDOR","SARGENTO","SGTO","CAPITAN","CAP","COMANDANTE","CMTE","MAESTRO","MTRO","PRESBITERO","PBRO","MONSENOR","MONS","SANTA","STA","SANTO","STO","SAN","DE","DEL","LA","EL","LOS","LAS","Y","E"]);
+// Abreviaturas del desplegable de Andreani → forma larga que manda la tienda
+// ("AV B MITRE" es "Bartolomé Mitre"; "AV PTE H YRIGOYEN" es "Hipólito Yrigoyen").
+const GH_SUC_ABREV={AV:"AVENIDA",AVDA:"AVENIDA",GRAL:"GENERAL",DR:"DOCTOR",DRA:"DOCTORA",PTE:"PRESIDENTE",PRES:"PRESIDENTE",TTE:"TENIENTE",CNEL:"CORONEL",ING:"INGENIERO",BRIG:"BRIGADIER",BDIER:"BRIGADIER",ALTE:"ALMIRANTE",GDOR:"GOBERNADOR",SGTO:"SARGENTO",CMTE:"COMANDANTE",MTRO:"MAESTRO",PBRO:"PRESBITERO",MONS:"MONSENOR",STA:"SANTA",STO:"SANTO",BME:"BARTOLOME",FCO:"FRANCISCO",VTE:"VICENTE",HIP:"HIPOLITO",PJE:"PASAJE",DIAG:"DIAGONAL",BV:"BOULEVARD",BLVD:"BOULEVARD"};
+const GH_SUC_GEN=new Set([...GH_SUC_VIA,...GH_SUC_TITULO]);
 // Normalización única para TODO el matcheo: mayúsculas, sin acentos (NFD),
 // sin puntuación, espacios colapsados. "Libertador Gral. San Martín" →
 // "LIBERTADOR GRAL SAN MARTIN".
 function ghNrmSuc(s){
-  return String(s||"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
+  return String(s||"").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
+}
+// ¿El pedido es a un punto HOP (comercio adherido)? Andreani los publica en el
+// desplegable del Excel pero NO en la API de sucursales hasta habilitar el
+// canal en el contrato — el flujo por API tiene que saberlo antes de buscar.
+function ghEsHop(o){
+  const pd=o?.pickupDetails;
+  return /\bHOP\b|PUNTO ANDREANI|PICKIT/i.test(String(pd?.name||""))||/\bHOP\b/i.test(String(o?.medioEnvio||""));
 }
 // Calle + número → {calle, num, words (palabras significativas), nums (números
 // que son parte del NOMBRE de la calle: "CALLE 13")}. El número de puerta
@@ -4251,7 +4266,11 @@ function ghDirParse(calle,numero){
   let num=numRaw.replace(/\D.*/,"").trim();
   const m=c.match(/\b(\d{1,5})\s*$/);
   if(m&&((!numRaw&&!num)||m[1]===num)){ num=num||m[1]; c=c.replace(/\b\d{1,5}\s*$/,"").trim(); }
-  const toks=c.split(" ").filter(w=>w&&!GH_SUC_GEN.has(w)&&(w.length>=3||/^\d+$/.test(w)));
+  // Abreviaturas a forma larga y fuera los tipos de vía; títulos y palabras
+  // cortas se descartan solo si queda algo con qué comparar.
+  const all=c.split(" ").filter(Boolean).map(w=>GH_SUC_ABREV[w]||w).filter(w=>!GH_SUC_VIA.has(w));
+  let toks=all.filter(w=>!GH_SUC_TITULO.has(w)&&(w.length>=3||/^\d+$/.test(w)));
+  if(!toks.some(w=>!/^\d+$/.test(w))&&all.some(w=>!/^\d+$/.test(w))) toks=all.filter(w=>w.length>=2||/^\d+$/.test(w));
   return {calle:c,num,toks,words:toks.filter(w=>!/^\d+$/.test(w)),nums:toks.filter(w=>/^\d+$/.test(w))};
 }
 // ¿Misma calle? Las palabras significativas del lado más corto tienen que
@@ -4366,31 +4385,80 @@ function ghMatchOficial(oficiales,p,geo){
   if(unicas.length>1&&nombres.size===1&&unicas.every(s=>ghNrmSuc(s.descripcion))) return unicas[0];
   return null;
 }
+// ¿Entrada del desplegable con el nombre RECORTADO por Andreani? El template
+// corta los nombres a 50 caracteres: "PUNTO ANDREANI HOP AVENIDA DOCTOR
+// RICARDO BALBÍN" perdió el número (y aparece 9 veces igual). Sin esto, todo
+// punto de una calle larga caía al modal aunque el string a escribir fuera uno solo.
+function ghTplRecortado(s){
+  const t=String(s||"").replace(/\s+$/,"");
+  return t.length>=47&&!/\b\d{1,5}$/.test(ghNrmSuc(t));
+}
 // Match contra el DESPLEGABLE del template de Andreani (strings sin
 // estructura). Único criterio para Envíos, Canjes y Reclamos:
-//  1) nombre del punto (TN) idéntico a una entrada (normalizados);
-//  2) calle + número: exige NÚMERO; la entrada tiene que contener todas las
-//     palabras significativas de la calle y el número como token entero.
+//  1) nombre del punto (TN) idéntico a una entrada (normalizados, con o sin
+//     el prefijo "PUNTO ANDREANI HOP");
+//  2) calle + número: exige NÚMERO como token entero y la misma calle
+//     (palabras del lado corto dentro del largo, abreviaturas expandidas);
+//     las entradas se deduplican por calle+número físicos;
+//  3) sin entradas con número: entrada RECORTADA cuyo texto es el comienzo
+//     exacto de "PUNTO ANDREANI HOP <calle> <número>" del pedido.
 // Sin número no se adivina (una calle sola matchea otro punto de la misma
 // calle). 0 o 2+ entradas distintas → null → modal.
 function ghMatchSucursal(locs, direccion, pickupDetails, dirNumero) {
   const lista=locs?.sucursales||[];
   if(!lista.length) return null;
-  const uniq=arr=>[...new Map(arr.map(s=>[ghNrmSuc(s),s])).values()];
+  // Dedupe conservando la PRIMERA variante (el desplegable repite el mismo
+  // string con espacio al final o doble espacio: cualquiera lo acepta el Excel).
+  const uniqPor=(arr,k)=>{ const m=new Map(); for(const s of arr){ const key=k(s); if(!m.has(key)) m.set(key,s); } return [...m.values()]; };
+  const uniq=arr=>uniqPor(arr,ghNrmSuc);
+  const sinPrefijo=t=>t.replace(/^(PUNTO\s+)?(ANDREANI\s+)?(HOP|PICKIT)\s+/,"").trim();
   if(pickupDetails?.name){
     const tn=ghNrmSuc(pickupDetails.name);
     if(tn.split(" ").some(w=>!GH_SUC_GEN.has(w))){
-      const ex=uniq(lista.filter(s=>ghNrmSuc(s)===tn));
+      const ex=uniq(lista.filter(s=>{ const e=ghNrmSuc(s); return e===tn||(sinPrefijo(e)&&sinPrefijo(e)===sinPrefijo(tn)); }));
       if(ex.length===1) return ex[0];
     }
   }
-  const a=ghDirParse(pickupDetails?pickupDetails.address?.address:direccion, pickupDetails?pickupDetails.address?.number:dirNumero);
+  const calleSrc=pickupDetails?pickupDetails.address?.address:direccion;
+  const a=ghDirParse(calleSrc, pickupDetails?pickupDetails.address?.number:dirNumero);
   if(!a.num||(!a.words.length&&!a.nums.length)) return null;
-  const cands=uniq(lista.filter(s=>{
-    const toks=ghNrmSuc(s).split(" ");
-    return toks.includes(a.num)&&a.words.every(w=>toks.includes(w))&&a.nums.every(x=>toks.includes(x));
+  const numRx=new RegExp("\\b"+a.num+"\\b");
+  const mismaCalleTpl=b=>{
+    if(a.words.length){
+      const sub=a.words.every(w=>b.words.includes(w))||(b.words.length>0&&b.words.every(w=>a.words.includes(w)));
+      if(!sub) return false;
+      if(a.nums.length&&b.nums.length&&!a.nums.some(n=>b.nums.includes(n))) return false;
+      // Al menos una palabra "de verdad" compartida (no solo "FE" o "SAN")
+      return a.words.some(w=>w.length>=4&&b.words.includes(w))||a.words.every(w=>b.words.includes(w));
+    }
+    return a.nums.every(n=>b.nums.includes(n));
+  };
+  const claveDe=s=>{ const b=ghDirParse(ghNrmSuc(s).replace(numRx," "),""); return [...b.words,...b.nums].join(" "); };
+  const cands=lista.filter(s=>{
+    const e=ghNrmSuc(s);
+    if(!numRx.test(e)) return false;
+    return mismaCalleTpl(ghDirParse(e.replace(numRx," "),""));
+  });
+  const unicas=uniqPor(cands,claveDe);
+  if(unicas.length===1) return unicas[0];
+  if(unicas.length>1) return null;
+  // 3) Nombre recortado: la entrada tiene que ser el comienzo literal de
+  //    "PUNTO ANDREANI HOP <calle> <número>" (vías y abreviaturas equiparadas,
+  //    último token puede estar cortado a la mitad: "…ARTURO UMBER").
+  const eqTok=(x,y)=>x===y||(GH_SUC_ABREV[x]||x)===(GH_SUC_ABREV[y]||y)||(x.length===1&&y.startsWith(x));
+  const quitarVia=arr=>{ while(arr.length&&GH_SUC_VIA.has(arr[0])) arr.shift(); return arr; };
+  const full=[...quitarVia(ghNrmSuc(ghStripUnidad(calleSrc)).replace(numRx,"").split(" ").filter(Boolean)),a.num];
+  const recortadas=uniq(lista.filter(s=>{
+    if(!ghTplRecortado(s)) return false;
+    const e=quitarVia(ghNrmSuc(s).split(" ").filter(Boolean));
+    if(!e.length||e.length>full.length) return false;
+    for(let i=0;i<e.length;i++){
+      const last=i===e.length-1;
+      if(!(eqTok(e[i],full[i])||(last&&full[i].startsWith(e[i])))) return false;
+    }
+    return true;
   }));
-  return cands.length===1?cands[0]:null;
+  return recortadas.length===1?recortadas[0]:null;
 }
 // GH_SUC_MATCH_END
 
@@ -10099,6 +10167,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         if(vr.tipo!=="sucursal"){ quedan.push(vr); continue; }
         const o=sucursalOrdersOk.find(x=>x.numero===vr.numero);
         let ok=false;
+        if(/\bHOP\b/i.test(vr.escrito)){ vr.diag="punto HOP: la API de Andreani no lo lista"; quedan.push(vr); continue; }
         try{
           const rV=o?await verifTplContraOficial(o,vr.escrito,locs):{ok:false,diag:"pedido no encontrado"};
           ok=rV.ok; vr.diag=rV.diag||"";
@@ -10896,6 +10965,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // Lista oficial de la API por CP del destinatario (cacheada). null = API
       // no disponible → el modal cae a la búsqueda clásica del template.
       const oficiales=await fetchSucursalesOficiales(cpDestinoDe(o));
+      // Punto HOP y la API no expone HOP (canal no habilitado en el contrato):
+      // el listado global y el de cercanías tampoco lo tienen — no se consultan.
+      const hopSinApi=ghEsHop(o)&&!(Array.isArray(oficiales)&&oficiales.some(x=>/\bHOP\b/i.test(x.descripcion||"")));
       // Auto-match silencioso: si el CP tiene una sola sucursal, o hay UNA
       // candidata clara (dirección o nombre del punto TN), se usa directo sin
       // modal — pero SIEMPRE traducida al string del desplegable del Excel: el
@@ -10921,7 +10993,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // Último intento silencioso: el punto exacto en el listado COMPLETO de
       // Andreani (los HOP nuevos suelen faltar en la lista por CP), traducido
       // al desplegable del Excel. Match estricto: si no es EL punto, modal.
-      const globalOficial=forzar?null:await buscarPuntoExactoGlobal(o);
+      const globalOficial=(forzar||hopSinApi)?null:await buscarPuntoExactoGlobal(o);
       const globalTpl=globalOficial?ghTplDeOficial(locs,globalOficial):null;
       if(!forzar&&globalTpl){
         sucursalOverridesRef.current[ovrKey(o)]=globalTpl;
@@ -10934,7 +11006,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // (calle+número exactos) — la distancia NO decide nada.
       let cercaTpl=null;
       try{
-        const dCerca=forzar?{sucursales:[]}:await fetchCercanasRaw(o);
+        const dCerca=(forzar||hopSinApi)?{sucursales:[]}:await fetchCercanasRaw(o);
         const cercaOficial=matchSucursalOficial(dCerca.sucursales,o,{exacto:!dCerca.aproximado&&dCerca.stats?.geo?.origenSrc==="geocode"});
         cercaTpl=cercaOficial?ghTplDeOficial(locs,cercaOficial):null;
       }catch(_){}
@@ -11100,6 +11172,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       if(memConf?.grave) olvidarPunto(ghPuntoKey(o));
       const oficiales=await fetchSucursalesOficiales(cpDestinoDe(o));
       let ofc=Array.isArray(oficiales)&&oficiales.length?matchSucursalOficial(oficiales,o):null;
+      // Punto HOP que la API no expone (canal HOP no habilitado en el contrato):
+      // ni el listado global ni el de cercanías lo tienen, y pedir que se elija
+      // "una parecida" manda el paquete a OTRO lugar. Se excluye con la razón a
+      // la vista; Exportar XLSX sí lo tiene. Cuando Andreani habilite el canal,
+      // aparece en la lista por CP y este bloque deja de actuar solo.
+      if(!ofc&&ghEsHop(o)&&!(Array.isArray(oficiales)&&oficiales.some(x=>/\bHOP\b/i.test(x.descripcion||"")))){
+        return {row:mkRow(o,{incluido:false,hop:true,cotError:"Punto HOP: Andreani no lo expone en la API para tu cuenta, así que por acá no se puede emitir al punto que eligió el cliente. Exportalo con XLSX Andreani (ese listado sí lo tiene) o tocá Cambiar sucursal para mandarlo a una sucursal Andreani y avisarle al cliente."})};
+      }
       // El punto exacto puede no estar en la lista por CP (HOP nuevos): antes
       // de molestar, buscarlo en el listado COMPLETO con el mismo match estricto.
       if(!ofc) ofc=await buscarPuntoExactoGlobal(o);
@@ -12191,6 +12271,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                           <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{o.medioEnvio||"--"}</span>
                           {o.esSucursal&&o.pickupDetails&&<svg title="Puede requerir confirmar sucursal al exportar" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
                         </div>
+                        {o.esSucursal&&o.pickupDetails&&(()=>{
+                          const pd=o.pickupDetails, ad=pd.address||{};
+                          const dir=[ghStripUnidad(ad.address||""),String(ad.number||"").replace(/\D.*/,"")].filter(Boolean).join(" ").trim();
+                          const cp=ad.zipcode||ad.zip_code||"";
+                          const nom=ghNrmSuc(pd.name).split(" ").some(w=>w&&!GH_SUC_GEN.has(w))?pd.name:"";
+                          const txt=[nom,dir,cp?`CP ${cp}`:""].filter(Boolean).join(" · ");
+                          if(!txt) return null;
+                          return <div title={[pd.name,dir,ad.locality||ad.city,cp?`CP ${cp}`:""].filter(Boolean).join(" · ")} style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txt}</div>;
+                        })()}
                         {(()=>{
                           const cj=canjesPedidos[String(o.numero)];
                           if(!cj) return null;
@@ -12922,6 +13011,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           const estadoApi=noOperativa!=null?{c:T.red,t:"No operativa",m:`Andreani no tiene operativa la sucursal de este pedido${noOperativa?` (${noOperativa})`:""}. Elegí otra y avisale al cliente.`}
             :esquina?{c:T.yellow,t:"Esquina",m:"La dirección es en esquina (sin numeración) y Andreani la rechaza a domicilio: elegí una sucursal cercana o excluí el pedido."}
             :apiCaida?{c:T.yellow,t:"Lista no disponible",m:"El listado oficial de Andreani no responde. Podés buscar por nombre igual, o reintentar en unos minutos."}
+            :(ghEsHop(order)&&!(Array.isArray(oficiales)&&oficiales.some(x=>/\bHOP\b/i.test(x.descripcion||""))))?{c:T.red,t:"Punto HOP",m:"Andreani no expone los puntos HOP en la API para tu cuenta: acá no está el punto que eligió el cliente. Lo que elijas es OTRA sucursal (avisale). Para mandarlo al punto exacto, excluilo y usá Exportar XLSX Andreani."}
             :{c:T.red,t:"Sin match",m:"No encontré en Andreani el punto exacto que eligió el cliente. El paquete va a ir a la sucursal que elijas acá."};
           const filaApi=x=>{ const d=x.direccion||{}; const sel=String(x.id)===locOficialSel; const cf=cfDe(x); const ok=okDe(x);
             const chip=ok?{c:T.green,t:"Coincide"}:cf?(cf.mismoDom?{c:T.yellow,t:"Misma dirección · revisar"}:cf.grave?{c:T.red,t:"No coincide"}:{c:T.yellow,t:"Otra localidad"}):null;
@@ -12947,7 +13037,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>Punto de retiro según tu tienda</div>
                     <div style={{fontWeight:600,color:T.accent,marginBottom:2}}>{order.pickupDetails.name}</div>
                     <div>{order.pickupDetails.address?.address} {order.pickupDetails.address?.number}</div>
-                    <div style={{color:T.textSm}}>{order.pickupDetails.address?.locality}, {order.pickupDetails.address?.province}</div>
+                    <div style={{color:T.textSm}}>{[order.pickupDetails.address?.locality,order.pickupDetails.address?.province].filter(Boolean).join(", ")}{(order.pickupDetails.address?.zipcode||order.pickupDetails.address?.zip_code)?<> · <strong style={{color:T.text}}>CP {order.pickupDetails.address?.zipcode||order.pickupDetails.address?.zip_code}</strong></>:null}</div>
                   </div>
                 )}
                 {isSuc&&!order.pickupDetails&&(
@@ -12978,7 +13068,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               )}
               {noExacto&&!esquina&&noOperativa==null&&!apiUI&&(
                 <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.red}}>
-                  <strong>No pude confirmar el punto EXACTO que eligió el cliente.</strong> El envío va a ir a la sucursal que elijas acá — no al punto de arriba. Elegí solo si estás segura de que es el mismo lugar (misma calle y número); si no aparece (los puntos HOP nuevos suelen faltar en el Excel de Andreani), excluí el pedido y emitilo por Etiquetas listas — que elige por ID oficial y sí lo tiene — o a mano en Andreani.
+                  <strong>No pude confirmar el punto EXACTO que eligió el cliente.</strong> El envío va a ir a la sucursal que elijas acá — no al punto de arriba. Elegí solo si estás segura de que es el mismo lugar (misma calle y número); si no aparece en el desplegable, excluí el pedido y cargalo a mano en Andreani (los puntos HOP tampoco están disponibles por API).
                 </div>
               )}
               {apiUI&&(
@@ -13337,6 +13427,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             return (
               <div>
                 <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>Revisá los envíos antes de emitir. Cada etiqueta se debita del saldo al confirmar.</div>
+                {(()=>{ const hops=rows.filter(r=>r.hop&&!r.incluido&&!r.emitido); if(!hops.length) return null; return (
+                  <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:T.text,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                    <span style={{flex:1,minWidth:200}}><strong>{hops.length} pedido{hops.length!==1?"s":""} a punto HOP</strong> no se puede{hops.length!==1?"n":""} emitir por API: Andreani todavía no habilitó ese canal para tu cuenta. Por Excel salen al punto exacto.</span>
+                    <button onClick={()=>{ const os=hops.map(r=>r.order); setBulk(null); bulkRowsRef.current=[]; exportAndreani(os); }} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>Exportar XLSX con {hops.length===1?"ese pedido":`esos ${hops.length}`}</button>
+                  </div>
+                ); })()}
                 <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:11,color:T.textSm,marginBottom:12}}>
                   <span>Paquete por defecto: <strong style={{color:T.textMd}}>{paqResumen()}</strong></span>
                   {paqPerfiles.length>0&&<select defaultValue="" onChange={e=>{ const pf=paqPerfiles.find(x=>x.nombre===e.target.value); e.target.value=""; if(!pf) return; rows.filter(r=>!r.emitido).forEach(r=>{ r.paq={...pf}; r.cot=null; r.cotError=""; r.incluido=true; }); pushBulk("revision"); cotizarBulk(); }} style={{...iS,marginBottom:0,width:"auto",fontSize:11,padding:"3px 8px"}}><option value="">Aplicar un perfil a todos…</option>{paqPerfiles.map(pf=><option key={pf.nombre} value={pf.nombre}>{pf.nombre} — {paqTxt(pf)}</option>)}</select>}
