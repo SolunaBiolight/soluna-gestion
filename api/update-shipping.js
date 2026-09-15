@@ -457,6 +457,34 @@ export default async function handler(req, res) {
           }
           await uDoc.ref.set(updU, { merge: true });
         } catch (err) { console.error("[track_all cuenta]", err.message); }
+        // ── Anulaciones inmediatas: el saldo se devolvió al instante confiando
+        //    en que la etiqueta no se usa. Si igual ingresó a Andreani, aviso al
+        //    fundador para debitar a mano (Admin > Saldos). Se chequea a partir
+        //    de las 2 h y hasta 3 días después de anulada. ──
+        try {
+          const anSnap = await uDoc.ref.collection("envios").where("andreani.anulacionInmediata", "==", true).limit(20).get();
+          const ahoraMs2 = Date.now();
+          for (const d of anSnap.docs) {
+            if (!quedaTiempoEnvios()) break;
+            const e = d.data();
+            if (e.andreani?.anuladaChequeadaTs || e.andreani?.anuladaIngresoTs || !e.andreani?.numeroDeEnvio) continue;
+            const tsA = Date.parse(e.andreani?.anuladaAt || "") || 0;
+            if (!tsA || ahoraMs2 - tsA < 2 * 3600000) continue;
+            const of = estadoOficial(await trazasOficialAndreani(db, e.andreani.numeroDeEnvio));
+            const cat = of ? clasificarEstado(of.estado) : null;
+            if (cat && ["en_camino", "en_sucursal", "entregado", "devolucion", "visita_fallida"].includes(cat)) {
+              await d.ref.set({ andreani: { anuladaIngresoTs: ahora, anuladaIngresoEstado: of.estado } }, { merge: true });
+              try {
+                const fSnap = await db.collection("users").doc("WJH3ArqDPQcNLha9lOinvkVi9uJ2").get();
+                const to = process.env.ALERT_EMAIL || fSnap.data()?.email;
+                if (to) await mailEnvios(to, `Etiqueta anulada que igual ingresó — ${e.andreani.numeroDeEnvio}`,
+                  mailShell("Anulación inmediata usada", `${ud.email || uDoc.id}`, `<p style="font-size:14px">La cuenta <strong>${esc(ud.email || uDoc.id)}</strong> anuló la etiqueta <strong>${esc(e.andreani.numeroDeEnvio)}</strong> (pedido #${esc(e.numero || d.id)}) con reintegro automático de $${(Number(e.andreani.precio) || 0).toLocaleString("es-AR")}, pero Andreani registra: <strong>${esc(of.estado)}</strong>. Debitá el importe desde Admin › Logística › Saldos.</p>`));
+              } catch (_) {}
+            } else if (ahoraMs2 - tsA > 3 * 86400000) {
+              await d.ref.set({ andreani: { anuladaChequeadaTs: ahora } }, { merge: true });
+            }
+          }
+        } catch (err) { console.error("[track_all anuladas]", err.message); }
         marcarUsers.push(uDoc.ref);
       }
       // Resumen al founder de las anulaciones automáticas abiertas en esta corrida.

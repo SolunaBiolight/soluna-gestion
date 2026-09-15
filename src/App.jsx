@@ -9480,6 +9480,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const [segFuente,setSegFuente]=useState("todas");
   const [segQ,setSegQ]=useState("");
   const [segLimite,setSegLimite]=useState(60);
+  const [segSel,setSegSel]=useState(()=>new Set()); // reimpresión por lote: envíos por API tildados
   const [segScanOpen,setSegScanOpen]=useState(false);
   const [segMasAlertas,setSegMasAlertas]=useState(false);
   const [segTrazas,setSegTrazas]=useState(null);
@@ -11380,7 +11381,25 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // proyecto — la usa el backend para rótulos/facturas; acá entra por dynamic
   // import, así que solo se carga cuando se usa).
   async function descargarTodasBulk(){
-    const nums=bulkRowsRef.current.filter(r=>r.emitido?.numeroDeEnvio).map(r=>({numero:r.numero,envio:String(r.emitido.numeroDeEnvio),skus:ghSkuLinesDe(r.order)}));
+    const nums=bulkRowsRef.current.filter(r=>r.emitido?.numeroDeEnvio&&!r.anulada).map(r=>({numero:r.numero,envio:String(r.emitido.numeroDeEnvio),skus:ghSkuLinesDe(r.order)}));
+    return descargarVarias(nums);
+  }
+  // Anulación inmediata (hasta 30 min después de emitir, sin ingreso): el
+  // saldo vuelve al instante. Devuelve true si se anuló.
+  async function anularInmediata(numero){
+    const ok=await appConfirm("¿Anular esta etiqueta ahora? El saldo vuelve a tu cuenta al instante. La etiqueta deja de ser válida: no la pegues en ningún paquete.",{danger:true,okLabel:"Anular y reintegrar"});
+    if(!ok) return false;
+    const r=await authFetch("/api/andreani?action=anular_inmediata",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({numero:String(numero)})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error){ toast(typeof d.error==="string"?d.error:"No se pudo anular la etiqueta","error"); return false; }
+    if(typeof d.saldoRestante==="number") setAndreani(a=>({...a,saldo:d.saldoRestante}));
+    toast(`Etiqueta anulada: ${fmtMoney(d.monto)} volvieron a tu saldo`,"success");
+    setAndreaniEmitidos(m=>{ const n={...m}; delete n[numero]; return n; });
+    refrescarEnviosFs(); cargarCasos(); setSegFicha(null);
+    return true;
+  }
+  // Varias etiquetas en un solo PDF (resultado del lote y reimpresión desde Seguimientos).
+  async function descargarVarias(nums){
     if(!nums.length) return;
     setBulkDl({done:0,total:nums.length});
     const pendientes=[]; let pdfs=[];
@@ -12630,19 +12649,36 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 <div style={{padding:"32px 12px",textAlign:"center"}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>Todavía no hay envíos registrados</div><div style={{fontSize:12,color:T.textSm,marginTop:4,lineHeight:1.5}}>Generá etiquetas desde el Panel de Envíos o subí los rótulos en "SKU en Rótulos": desde ahí cada envío entra al seguimiento automático.</div></div>
               ):lista.length===0?(
                 <div style={{padding:"24px 12px",textAlign:"center",fontSize:12,color:T.textSm}}>Nada con ese filtro.</div>
-              ):(
+              ):(<>
+                {/* Reimpresión por lote: tildar envíos por API y bajar un solo PDF */}
+                {(()=>{ const selArr=[...segSel].map(n=>lista.find(x=>String(x.numero)===String(n))||Object.values(enviosFs).find(x=>String(x.numero)===String(n))).filter(x=>x&&x.andreani?.numeroDeEnvio&&!x.andreani?.anulada); if(!selArr.length) return null; return (
+                  <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",marginBottom:8,background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.md,fontSize:12,color:T.text}}>
+                    <span><strong>{selArr.length}</strong> etiqueta{selArr.length!==1?"s":""} tildada{selArr.length!==1?"s":""}</span>
+                    <AndreaniSkuToggle T={T} on={dlSku} onChange={setDlSku}/>
+                    <AndreaniFmtToggle T={T} fmt={dlFmt} onChange={setDlFmt}/>
+                    <span style={{marginLeft:"auto",display:"flex",gap:8}}>
+                      <button onClick={()=>setSegSel(new Set())} style={{...BtnSecondary(T),fontSize:12,padding:"5px 10px"}}>Destildar</button>
+                      <AsyncButton onClick={()=>descargarVarias(selArr.map(x=>({numero:x.numero,envio:String(x.andreani.numeroDeEnvio),skus:ghSkuLinesDe(x)})))} disabled={!!bulkDl} style={{...BtnPrimary(T),fontSize:12,padding:"5px 12px"}}>{bulkDl?`Descargando ${bulkDl.done}/${bulkDl.total}…`:`Reimprimir ${selArr.length} (1 PDF)`}</AsyncButton>
+                    </span>
+                  </div>
+                ); })()}
                 <div style={{border:`1px solid ${T.borderL}`,borderRadius:10,overflowX:"auto"}}><div style={{minWidth:760}}>
-                  <div style={{display:"grid",gridTemplateColumns:"80px minmax(180px,1.6fr) 120px minmax(160px,1.4fr) 90px 150px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
-                    <span>Pedido</span><span>Destinatario</span><span>Estado</span><span>Último movimiento</span><span style={{textAlign:"right"}}>Tiempo</span><span style={{textAlign:"right"}}>Seguimiento</span>
+                  <div style={{display:"grid",gridTemplateColumns:"28px 80px minmax(180px,1.6fr) 120px minmax(160px,1.4fr) 90px 150px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
+                    <span/><span>Pedido</span><span>Destinatario</span><span>Estado</span><span>Último movimiento</span><span style={{textAlign:"right"}}>Tiempo</span><span style={{textAlign:"right"}}>Seguimiento</span>
                   </div>
                   {lista.slice(0,segLimite).map((e,i)=>{
                     const k=catDe(e); const [lbl,col]=CAT[k]||CAT.otro; const p=problemaDe(e); const trk=e.tracking||e.andreani?.numeroDeEnvio||"";
                     const tiempo=e.entregadoAt&&e.despachadoAt?`${Math.max(0,Math.round((Date.parse(e.entregadoAt)-Date.parse(e.despachadoAt))/86400000))} d`:e.despachadoAt?`${dias(e.despachadoAt)} d`:e.creado?`${dias(e.creado)} d`:"";
                     const final=!e.activo&&(e.entregadoAt||e.devolucionAt);
+                    const tildable=!!e.andreani?.numeroDeEnvio&&!e.andreani?.anulada;
+                    const tild=tildable&&segSel.has(String(e.numero));
                     return (
-                      <div key={e.numero||i} onClick={()=>setSegFicha(e)} title="Abrir la ficha del envío" style={{display:"grid",gridTemplateColumns:"80px minmax(180px,1.6fr) 120px minmax(160px,1.4fr) 90px 150px",gap:8,padding:"9px 12px",borderBottom:i<Math.min(lista.length,segLimite)-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:final?0.7:1,fontSize:12,cursor:"pointer"}}
-                        onMouseEnter={ev=>ev.currentTarget.style.background=T.surface} onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
-                        <span style={{fontWeight:700,color:T.accent,fontSize:13}}>#{e.numero}</span>
+                      <div key={e.numero||i} onClick={()=>setSegFicha(e)} title="Abrir la ficha del envío" style={{display:"grid",gridTemplateColumns:"28px 80px minmax(180px,1.6fr) 120px minmax(160px,1.4fr) 90px 150px",gap:8,padding:"9px 12px",borderBottom:i<Math.min(lista.length,segLimite)-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:final?0.7:1,fontSize:12,cursor:"pointer",background:tild?T.accentSolid+"0a":"transparent"}}
+                        onMouseEnter={ev=>{if(!tild)ev.currentTarget.style.background=T.surface;}} onMouseLeave={ev=>{if(!tild)ev.currentTarget.style.background="transparent";}}>
+                        <span onClick={ev=>{ev.stopPropagation(); if(!tildable) return; setSegSel(s=>{ const n=new Set(s); const key=String(e.numero); if(n.has(key)) n.delete(key); else n.add(key); return n; });}} title={tildable?"Tildar para reimprimir":"Solo etiquetas emitidas por API"} style={{display:"flex",alignItems:"center",justifyContent:"center",width:24,height:24,cursor:tildable?"pointer":"default"}}>
+                          <span style={{width:16,height:16,borderRadius:4,border:`1.5px solid ${tild?T.accentSolid:tildable?T.border:T.borderL}`,background:tild?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",opacity:tildable?1:0.4}}>{tild&&<span style={{color:"#fff",fontSize:11,lineHeight:1}}>✓</span>}</span>
+                        </span>
+                        <span style={{fontWeight:700,color:T.text,fontSize:13}}>#{e.numero}</span>
                         <div style={{minWidth:0}}>
                           <div style={{fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.cliente||"—"}{e.verificado&&<span title="Verificado por escaneo" style={{marginLeft:6,fontSize:10,color:T.green}}>✓</span>}</div>
                           <div style={{fontSize:10.5,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[e.localidad,e.provincia].filter(Boolean).join(", ")||""}{e.esSucursal?" · sucursal":""}{esApi(e)?" · API":""}{e.creado?` · ${new Date(e.creado).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}`:""}</div>
@@ -12665,7 +12701,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   })}
                   {lista.length>segLimite&&<div style={{textAlign:"center",padding:8,borderTop:`1px solid ${T.borderL}`}}><Btn T={T} variant="secondary" size="sm" onClick={()=>setSegLimite(n=>n+60)}>Ver más ({lista.length-segLimite})</Btn></div>}
                 </div></div>
-              )}
+              </>)}
             </Card>
 
             <AdmTrazasModal T={T} envio={segTrazas} onClose={()=>setSegTrazas(null)}/>
@@ -12673,6 +12709,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               catInfo={segFicha?(CAT[catDe(segFicha)]||CAT.otro):null} problema={segFicha?problemaDe(segFicha):null}
               casos={segFicha?segCasos.filter(c=>String(c.numero)===String(segFicha.numero)):[]}
               onDescargar={n=>descargarEtiquetaBulk(n,ghSkuLinesDe(segFicha))}
+              onAnularInmediata={ev=>anularInmediata(ev.numero)}
               onCaso={motivo=>setSegCaso({envio:segFicha,motivo})}
               onComentar={async(id,texto)=>{ const r=await authFetch("/api/andreani?action=caso_comentar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,texto})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:"No se pudo enviar"); await cargarCasos(); toast("Comentario enviado","success"); }}/>
             <EnvioCasoModal T={T} data={segCaso} onClose={()=>setSegCaso(null)} onCreated={()=>{ setSegCaso(null); cargarCasos(); }}/>
@@ -13481,7 +13518,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                           </div>
                           <div style={{fontSize:11,color:T.textSm,marginTop:4}}>{precio>0?fmtMoney(precio):""}{precio>0&&ent?" · ":""}{ent?`Llega aprox. ${ent}`:""}</div>
                         </div>
-                        {ok.length>1&&<AsyncButton onClick={()=>descargarEtiquetaBulk(String(r.emitido.numeroDeEnvio),ghSkuLinesDe(r.order))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",alignSelf:"center"}}>PDF</AsyncButton>}
+                        <span style={{display:"flex",gap:6,alignSelf:"center"}}>
+                          {ok.length>1&&!r.anulada&&<AsyncButton onClick={()=>descargarEtiquetaBulk(String(r.emitido.numeroDeEnvio),ghSkuLinesDe(r.order))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>PDF</AsyncButton>}
+                          {r.anulada
+                            ?<span style={{...chipS,background:T.surface,color:T.textMd,border:`1px solid ${T.border}`,alignSelf:"center"}}>Anulada · saldo devuelto</span>
+                            :<AsyncButton title="Me equivoqué: anular esta etiqueta ahora y recuperar el saldo (hasta 30 minutos)" onClick={async()=>{ if(await anularInmediata(r.numero)){ r.anulada=true; pushBulk("resultado"); } }} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",color:T.red,borderColor:T.red+"55"}}>Anular</AsyncButton>}
+                        </span>
                       </div>
                     </div>
                   ); })}
@@ -18591,7 +18633,7 @@ function EnvioTrazas({T, numero}){
   </>);
 }
 // Ficha de UNA etiqueta (cliente): todo lo del envío en un lugar + acciones.
-function EnvioFichaModal({T, envio:e, onClose, catInfo, problema, casos=[], onDescargar, onCaso, onComentar, onRefrescar}){
+function EnvioFichaModal({T, envio:e, onClose, catInfo, problema, casos=[], onDescargar, onCaso, onComentar, onRefrescar, onAnularInmediata}){
   const [coment,setComent]=useState("");
   useEffect(()=>{ setComent(""); },[e?.numero]);
   if(!e) return null;
@@ -18601,6 +18643,10 @@ function EnvioFichaModal({T, envio:e, onClose, catInfo, problema, casos=[], onDe
   const filaD=(k,v,extra)=>v?<div style={{minWidth:0}}><div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:2}}>{k}</div><div style={{fontSize:13,color:T.text,fontWeight:500,overflowWrap:"anywhere"}}>{v}{extra}</div></div>:null;
   const puedeAnular=esApi&&ghEnvioSinIngreso(e)&&!casos.some(c=>c.motivo==="anulacion"&&["abierto","enviado","respondido"].includes(c.estado));
   const anulada=!!e.andreani?.anulada;
+  // Anulación inmediata: dentro de los 30 minutos de emitida y sin ingreso, el
+  // saldo vuelve al instante sin pasar por una gestión.
+  const msEmit=ghTsMs(e.andreani?.ts)||0;
+  const inmediataOk=!!onAnularInmediata&&puedeAnular&&!anulada&&msEmit>0&&(Date.now()-msEmit)<30*60000;
   const dest=e.destinatario||{};
   const fEmit=ghFechaCorta(e.andreani?.ts)||ghFechaCorta(e.creado);
   const fEst=e.andreani?.fechaEstimadaDeEntrega?ghFechaCorta(e.andreani.fechaEstimadaDeEntrega):"";
@@ -18638,9 +18684,12 @@ function EnvioFichaModal({T, envio:e, onClose, catInfo, problema, casos=[], onDe
             {esApi&&!anulada&&<Btn T={T} variant="primary" size="sm" onClick={()=>onDescargar&&onDescargar(num)}>Descargar etiqueta</Btn>}
             {trk&&<Btn T={T} variant="secondary" size="sm" onClick={()=>copiar(`https://www.andreani.com/envio/${trk}`,"Link de seguimiento copiado")}>Copiar link</Btn>}
             {trk&&!anulada&&<Btn T={T} variant="secondary" size="sm" onClick={()=>onCaso&&onCaso(null)}>Pedir una gestión a Andreani</Btn>}
-            {puedeAnular&&<Btn T={T} variant="secondary" size="sm" onClick={()=>onCaso&&onCaso("anulacion")} style={{color:T.red,borderColor:T.red+"66"}}>Anular etiqueta</Btn>}
+            {inmediataOk
+              ?<AsyncButton onClick={()=>onAnularInmediata(e)} style={{...BtnDanger(T),fontSize:12,padding:"5px 12px"}}>Anular ahora · reintegro inmediato</AsyncButton>
+              :puedeAnular&&<Btn T={T} variant="secondary" size="sm" onClick={()=>onCaso&&onCaso("anulacion")} style={{color:T.red,borderColor:T.red+"66"}}>Anular etiqueta</Btn>}
           </div>
-          {esApi&&!anulada&&!puedeAnular&&!e.entregadoAt&&<div style={{fontSize:10.5,color:T.textSm,marginTop:8}}>Una etiqueta solo se puede anular mientras Andreani no haya registrado el ingreso del paquete.</div>}
+          {inmediataOk&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8}}>Recién emitida: si te equivocaste, podés anularla vos y el saldo vuelve al instante (hasta 30 minutos después de emitir y mientras no ingrese a Andreani). No uses una etiqueta anulada.</div>}
+          {esApi&&!anulada&&!puedeAnular&&!e.entregadoAt&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8}}>Una etiqueta solo se puede anular mientras Andreani no haya registrado el ingreso del paquete.</div>}
         </div>
         {/* Gestiones */}
         {casos.length>0&&(

@@ -1184,7 +1184,7 @@ export default async function handler(req, res) {
 
     // Toda acción que ESCRIBE exige POST (un GET con token en un prefetch o un
     // log no debe poder mutar estado). emitir y sucursal_origen ya lo chequean adentro.
-    const ACCIONES_POST = new Set(["save_origen", "carga_solicitar", "carga_mp", "carga_cancelar", "carga_comprobante", "caso_crear", "caso_comentar", "admin_acreditar", "admin_carga_acreditar", "admin_carga_rechazar", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill"]);
+    const ACCIONES_POST = new Set(["save_origen", "carga_solicitar", "carga_mp", "carga_cancelar", "carga_comprobante", "caso_crear", "caso_comentar", "anular_inmediata", "admin_acreditar", "admin_carga_acreditar", "admin_carga_rechazar", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill"]);
     if (ACCIONES_POST.has(action) && req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
 
     // Webhook de Mercado Pago: lo llama MP, no un usuario — sin sesión
@@ -2043,6 +2043,56 @@ export default async function handler(req, res) {
       if (!["pendiente", "revision"].includes(snap.data().estado)) return res.status(400).json({ error: "Esa carga ya fue resuelta." });
       await ref.set({ comprobante, comprobanteTs: FieldValue.serverTimestamp() }, { merge: true });
       return res.json({ ok: true });
+    }
+
+    // ── Anulación inmediata ("me equivoqué recién"): dentro de los 30 minutos
+    //    de emitida y sin ingreso a Andreani, el usuario anula solo y el saldo
+    //    vuelve al instante (Andreani no factura etiquetas que nunca ingresan).
+    //    Queda registrada como caso resuelto para que Admin la vea; si después
+    //    el paquete igual ingresa, track_all lo marca como contracargo pendiente.
+    if (action === "anular_inmediata") {
+      if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
+      const numero = String(body.numero || "").trim();
+      if (!/^[\w.\-]{1,80}$/.test(numero)) return res.status(400).json({ error: "numero requerido" });
+      const eRef = userRef.collection("envios").doc(numero);
+      const eSnap = await eRef.get();
+      if (!eSnap.exists) return res.status(404).json({ error: "No encontramos ese envío." });
+      const e = eSnap.data();
+      const numeroDeEnvio = String(e.andreani?.numeroDeEnvio || "");
+      if (!numeroDeEnvio) return res.status(400).json({ error: "Ese pedido no tiene una etiqueta emitida desde Growith." });
+      if (e.andreani?.anulada) return res.status(400).json({ error: "Esa etiqueta ya está anulada." });
+      const tsEm = e.andreani?.ts?.toMillis ? e.andreani.ts.toMillis() : (e.andreani?.ts?._seconds ? e.andreani.ts._seconds * 1000 : Date.parse(e.andreani?.ts || "") || 0);
+      const VENTANA_MS = 30 * 60000;
+      if (!tsEm || Date.now() - tsEm > VENTANA_MS) return res.status(400).json({ error: "La anulación inmediata vale solo dentro de los 30 minutos de emitida. Después, abrí una gestión de anulación desde la ficha del envío.", code: "fuera_de_ventana" });
+      if (!envioSinIngreso(e)) return res.status(400).json({ error: "El paquete ya ingresó a la red de Andreani: la etiqueta no se puede anular." });
+      const monto = Math.round(Number(e.andreani?.precio) || 0);
+      if (!(monto > 0)) return res.status(400).json({ error: "El envío no tiene precio registrado: abrí una gestión de anulación." });
+      const movRef2 = movCol.doc();
+      const casoRef = db.collection("envios_casos").doc();
+      const ahoraIso = new Date().toISOString();
+      const uSnapA = await userRef.get(); const udA = uSnapA.data() || {};
+      const tiendaA = String(udA.storeName || udA.nombreTienda || udA.nombre || "").trim();
+      const nuevoSaldo = await db.runTransaction(async (tx) => {
+        const [uS, eS] = await Promise.all([tx.get(userRef), tx.get(eRef)]);
+        if (eS.data()?.andreani?.anulada) throw Object.assign(new Error("Esa etiqueta ya está anulada."), { userFacing: true });
+        const saldo = Math.round(Number(uS.data()?.andreaniSaldo) || 0);
+        const nuevo = saldo + monto;
+        tx.set(userRef, { andreaniSaldo: nuevo }, { merge: true });
+        tx.set(movRef2, { tipo: "reverso", monto, saldoDespues: nuevo, nota: `Anulación inmediata de la etiqueta ${numeroDeEnvio}`, numeroDeEnvio, envioId: numero, ts: FieldValue.serverTimestamp() });
+        tx.set(eRef, { activo: false, andreani: { anulada: true, anuladaAt: ahoraIso, anulacionInmediata: true } }, { merge: true });
+        tx.set(db.collection("andreani_idx").doc(numeroDeEnvio), { anulada: true, reintegro: monto, anuladaAt: ahoraIso, inmediata: true }, { merge: true });
+        tx.set(db.collection("andreani_config").doc(`stats_${mesAR()}`), { reintegros: FieldValue.increment(monto), porUid: { [uid]: { reintegros: FieldValue.increment(monto) } } }, { merge: true });
+        tx.set(casoRef, {
+          uid, email: String(udA.email || user.email || "").trim(), tienda: tiendaA,
+          numero, numeroDeEnvio, tracking: numeroDeEnvio, cliente: e.cliente || "", localidad: [e.localidad, e.provincia].filter(Boolean).join(", "),
+          esSucursal: !!e.esSucursal, motivo: "anulacion", descripcion: "Anulación inmediata (dentro de los 30 minutos, sin ingreso)", nuevaDireccion: "", fotos: [],
+          estado: "resuelto", origen: "cliente", precio: monto, reintegrado: true, reintegroMonto: monto, nuevoCliente: false, nuevoAndreani: false, inmediata: true,
+          historial: [{ at: ahoraIso, por: "cliente", texto: "Anulación inmediata de la etiqueta" }, { at: ahoraIso, por: "sistema", estado: "resuelto", texto: `${monto.toLocaleString("es-AR")} reintegrados al saldo automáticamente` }],
+          ts: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+        });
+        return nuevo;
+      });
+      return res.json({ ok: true, saldoRestante: nuevoSaldo, monto });
     }
 
     // ── Casos: gestiones ante Andreani (reclamos, cambios, anulaciones) ──
