@@ -18211,7 +18211,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   const [anual,setAnual]=useState(false);
   const [loadingPlan,setLoadingPlan]=useState(null);
   const [faqOpen,setFaqOpen]=useState(0);
-  const [verMatriz,setVerMatriz]=useState(false);
+  const [verMatriz,setVerMatriz]=useState(true);
   const [uDoc,setUDoc]=useState(null);
   useEffect(()=>{
     if(!user?.uid) return;
@@ -18238,20 +18238,34 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       para:"Para decidir con números: márgenes, publicidad cruzada con profit y Copilot.",
       features:["Márgenes, profit y costos por venta en tiempo real","Rentabilidad por producto, día a día","Meta Ads y Google Ads cruzados con tu ganancia real","Copilot IA sobre tus datos reales","Auto-tracking Andreani"] },
   ];
-  // Matriz comparativa ("¿Qué incluye cada plan?"): true = incluido.
+  // Comparativa por área: [función, qué hace, Facturador, Intermedio, Pro].
   const MATRIZ=[
-    ["Facturación ARCA ilimitada",true,true,true],
-    ["Proyección mensual de IVA",true,true,true],
-    ["Envíos y etiquetas Andreani",false,true,true],
-    ["Stock de todas tus tiendas",false,true,true],
-    ["Meta Ads y Mercado Ads",false,true,true],
-    ["Reclamos, canjes e influencers",false,true,true],
-    ["Equipo y tareas",false,true,true],
-    ["Márgenes y rentabilidad en tiempo real",false,false,true],
-    ["Google Ads cruzado con tu ganancia",false,false,true],
-    ["Copilot IA",false,false,true],
-    ["Auto-tracking Andreani",false,false,true],
-    ["Tienda adicional (por mes)","USD 5","USD 10","USD 15"],
+    {grupo:"Facturación",filas:[
+      ["Facturación ARCA / AFIP ilimitada","Facturás cada venta de tu tienda y Mercado Libre en un clic, en lote o con piloto automático.",true,true,true],
+      ["Factura adjunta y enviada al cliente","La factura se pega sola a la venta y le llega por mail al comprador.",true,true,true],
+      ["Facturas y notas de crédito manuales","Para ventas fuera de la tienda, anulaciones y correcciones.",true,true,true],
+      ["Monotributo y Responsable Inscripto","Facturas A, B y C, varios puntos de venta y varios CUITs.",true,true,true],
+      ["Proyección mensual de IVA","Ventas y compras del mes con lo que vas a pagar antes de que llegue.",true,true,true],
+    ]},
+    {grupo:"Operación",filas:[
+      ["Envíos y etiquetas Andreani","Etiquetas por Excel o al instante con saldo prepago, con los SKU impresos y seguimiento.",false,true,true],
+      ["Stock de todas tus tiendas","Tienda Nube, Shopify y Mercado Libre en una sola vista, con alertas de quiebre.",false,true,true],
+      ["Reclamos, canjes e influencers","Tablero de reclamos y cambios, canjes con influencers y piezas de contenido.",false,true,true],
+      ["Equipo y tareas","Miembros con permisos por sección, tareas y portal para colaboradoras.",false,true,true],
+      ["Auto-tracking Andreani","Growith consulta Andreani cada 30 minutos y te avisa de demoras y devoluciones.",false,false,true],
+    ]},
+    {grupo:"Publicidad",filas:[
+      ["Meta Ads y Mercado Ads","Campañas, resultados y reglas automáticas de Facebook, Instagram y Mercado Libre.",false,true,true],
+      ["Google Ads cruzado con tu ganancia","Cada campaña con su ganancia real, no solo el ROAS.",false,false,true],
+    ]},
+    {grupo:"Rentabilidad e inteligencia",filas:[
+      ["Márgenes y costos por venta en tiempo real","Comisiones reales de Mercado Pago, envíos, impuestos y costos: tu profit al día.",false,false,true],
+      ["Rentabilidad por producto","Qué producto te deja plata y cuál no, día a día.",false,false,true],
+      ["Copilot IA","Preguntale a tus datos reales en lenguaje natural.",false,false,true],
+    ]},
+    {grupo:"Tiendas",filas:[
+      ["Tienda adicional","Varias tiendas en un solo login, cada una con sus datos.","USD 5 / mes","USD 10 / mes","USD 15 / mes"],
+    ]},
   ];
   const planActualId=userPlan==="full"?"plus":userPlan;
   const planActual=PLANES.find(p=>p.id===planActualId)||null;
@@ -18474,28 +18488,51 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
           ))}
         </div>
 
-        {/* ── Comparativa ── */}
+        {/* ── Comparativa por área: visible de entrada, con qué hace cada función ── */}
         <Card T={T} padding="lg" style={{marginBottom:18}}>
           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-            <div style={{flex:1,minWidth:200}}><Titulo t="Qué incluye cada plan" sub="Facturación en todos. Operación desde Intermedio. Márgenes, Google Ads y Copilot solo en Pro."/></div>
-            <Btn T={T} variant={verMatriz?"secondary":"primary"} size="sm" onClick={()=>setVerMatriz(v=>!v)}>{verMatriz?"Ocultar comparativa":"Ver comparativa completa"}</Btn>
+            <div style={{flex:1,minWidth:200}}><Titulo t="Qué hace cada plan, función por función" sub="Facturación en todos los planes. La operación (envíos, stock, publicidad, equipo) desde Intermedio. Márgenes, Google Ads y Copilot solo en Pro."/></div>
+            <Btn T={T} variant="secondary" size="sm" onClick={()=>setVerMatriz(v=>!v)}>{verMatriz?"Ocultar detalle":"Ver detalle"}</Btn>
           </div>
           {verMatriz&&(
             <div style={{overflowX:"auto",marginTop:6}}>
-              <div style={{minWidth:560}}>
-                <div style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 1fr 1fr",gap:8,padding:"10px 12px",background:T.surface,borderRadius:DS.r.md,fontSize:DS.font.sm,fontWeight:700}}>
-                  <span/>{PLANES.map(pl=><span key={pl.id} style={{textAlign:"center",color:pl.color}}>{pl.nombre}</span>)}
+              <div style={{minWidth:640}}>
+                <div style={{display:"grid",gridTemplateColumns:"2.4fr 1fr 1fr 1fr",gap:8,padding:"10px 12px",background:T.surface,borderRadius:DS.r.md,fontSize:DS.font.base,fontWeight:700,position:"sticky",top:0}}>
+                  <span style={{color:T.textSm,fontSize:DS.font.sm,fontWeight:600,alignSelf:"center"}}>Función</span>
+                  {PLANES.map(pl=>(
+                    <span key={pl.id} style={{textAlign:"center",color:pl.color,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                      <span>{pl.nombre}</span>
+                      <span style={{fontSize:DS.font.sm,fontWeight:600,color:T.textSm}}>USD {anual?pl.precioAnual:pl.precio} / mes</span>
+                    </span>
+                  ))}
                 </div>
-                {MATRIZ.map((row,i)=>(
-                  <div key={i} style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 1fr 1fr",gap:8,padding:"11px 12px",fontSize:DS.font.base,color:T.text,borderBottom:i<MATRIZ.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
-                    <span>{row[0]}</span>
-                    {row.slice(1).map((v,j)=>(
-                      <span key={j} style={{display:"flex",justifyContent:"center"}}>
-                        {v===true?<TildeC c={PLANES[j].color}/>:v===false?<span style={{color:T.border,fontWeight:700}}>—</span>:<span style={{fontSize:DS.font.sm,fontWeight:700,color:T.text}}>{v}</span>}
-                      </span>
+                {MATRIZ.map(g=>(
+                  <div key={g.grupo}>
+                    <div style={{fontSize:DS.font.xs,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.8,padding:"18px 12px 6px"}}>{g.grupo}</div>
+                    {g.filas.map((row,i)=>(
+                      <div key={i} style={{display:"grid",gridTemplateColumns:"2.4fr 1fr 1fr 1fr",gap:8,padding:"10px 12px",borderBottom:i<g.filas.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
+                        <div>
+                          <div style={{fontSize:DS.font.base,fontWeight:600,color:T.text}}>{row[0]}</div>
+                          <div style={{fontSize:DS.font.md,color:T.textSm,lineHeight:1.45,marginTop:2}}>{row[1]}</div>
+                        </div>
+                        {row.slice(2).map((v,j)=>(
+                          <span key={j} style={{display:"flex",justifyContent:"center",alignItems:"center",alignSelf:"stretch",borderRadius:DS.r.md,background:PLANES[j].destacado?T.accentSolid+"0e":"transparent"}}>
+                            {v===true?<TildeC c={PLANES[j].color}/>:v===false?<span style={{color:T.border,fontWeight:700,fontSize:16}}>—</span>:<span style={{fontSize:DS.font.sm,fontWeight:700,color:T.text,textAlign:"center"}}>{v}</span>}
+                          </span>
+                        ))}
+                      </div>
                     ))}
                   </div>
                 ))}
+                <div style={{display:"grid",gridTemplateColumns:"2.4fr 1fr 1fr 1fr",gap:8,padding:"16px 12px 4px",alignItems:"center"}}>
+                  <span/>
+                  {PLANES.map(pl=>{ const esActual=isPago&&planActualId===pl.id; const dis=!!loadingPlan||(esActual&&stripe&&!cancela); return (
+                    <button key={pl.id} onClick={()=>{ if(esActual&&stripe&&cancela) cancelar(true); else elegir(pl.id); }} disabled={dis}
+                      style={{...(pl.destacado?btnSolido:btnLinea(pl.color+"88")),padding:"9px 10px",fontSize:DS.font.md,opacity:dis?0.5:1,cursor:dis?"default":"pointer"}}>
+                      {esActual?(stripe&&!cancela?"Tu plan":"Renovar"):isPago&&planActual?(pl.nivel>planActual.nivel?"Pasar":"Cambiar"):"Elegir"}
+                    </button>
+                  ); })}
+                </div>
               </div>
             </div>
           )}
