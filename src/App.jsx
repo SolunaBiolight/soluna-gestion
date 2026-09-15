@@ -3067,6 +3067,20 @@ function TtPublicador({T, user, accounts, account, setAcc, sym, onVerAnalisis}) 
 // ── Conector de IA (Claude / ChatGPT / Gemini): pantalla de permiso (api/mcp.js) ──
 // Llega desde /oauth/authorize (?ia_auth=<id>). Muestra qué va a poder leer la app de
 // IA de la tienda activa y, al autorizar, vuelve a esa app con el código (OAuth).
+// Logo de Recurrentes (app de suscripciones, integración en camino): el mismo
+// RecLogo de su app — círculo verde con la flecha ↻. El círculo sólido de abajo
+// queda de respaldo si el degradé no se dibuja.
+function RecurrentesLogo({size=24}){
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-label="Recurrentes" style={{display:"block",flexShrink:0}}>
+      <defs><linearGradient id="ghRecLogoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#34d399"/><stop offset="100%" stopColor="#059669"/></linearGradient></defs>
+      <circle cx="16" cy="16" r="16" fill="#10b981"/>
+      <circle cx="16" cy="16" r="16" fill="url(#ghRecLogoGrad)"/>
+      <path d="M22.5 13.2A7.2 7.2 0 1 0 23.2 18" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"/>
+      <path d="M22.9 8.6v5.1h-5.1" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
 const IA_ICONS={
   Claude:<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 3l2.4 5.6L20 11l-5.6 2.4L12 19l-2.4-5.6L4 11l5.6-2.4z" fill="#d97757"/></svg>,
   Gemini:<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10 5.4-.6 9.4-4.6 10-10z" fill="#4285F4"/></svg>,
@@ -14726,7 +14740,7 @@ function LandingPage({T, onLogin}) {
   const marca = (b, s=19) => b==="tiktok" ? <svg width={s} height={s} viewBox="0 0 24 24"><path d={TIKTOK_PATH} fill="#EE1D52"/></svg>
     : b==="pagonube" ? <svg width={s} height={s} viewBox="0 0 24 24"><path d="M7 18.5h10.5a4.2 4.2 0 00.7-8.35A6.2 6.2 0 006.3 9.2 4.7 4.7 0 007 18.5z" fill="#3b82f6"/><path d="M12 10.2v5.6M13.8 11.3c-.4-.5-1-.8-1.8-.8-1 0-1.7.5-1.7 1.2 0 1.6 3.6.8 3.6 2.5 0 .7-.8 1.2-1.9 1.2-.8 0-1.5-.3-1.9-.8" stroke="#fff" strokeWidth="1.1" fill="none" strokeLinecap="round"/></svg>
     : b==="pagospers" ? <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6.5 15h4"/></svg>
-    : b==="recurrentes" ? <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12a8 8 0 01-13.7 5.6M4 12a8 8 0 0113.7-5.6"/><path d="M17.7 2.8v3.8h-3.8M6.3 21.2v-3.8h3.8"/></svg>
+    : b==="recurrentes" ? <RecurrentesLogo size={s}/>
     : IA_ICONS[b] ? React.cloneElement(IA_ICONS[b], {width:s, height:s})
     : <BrandIcon name={b} size={b==="andreani"?s+5:s}/>;
   const chip = (b, s=19, box=34) => <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:box,height:box,borderRadius:9,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.06)",flexShrink:0}}>{marca(b,s)}</span>;
@@ -14764,7 +14778,7 @@ function LandingPage({T, onLogin}) {
     ["Stock","Producto A · Negro: quedan 4 días","Reponer",T.yellow],
     ["Canjes","Contenido de @creadora vence mañana","Ver canje","#E1306C"],
   ];
-  const MARQUEE = [["tiendanube","Tienda Nube"],["shopify","Shopify"],["mercadolibre","Mercado Libre"],["mercadopago","Mercado Pago"],["pagonube","Pago Nube"],["pagospers","Pagos personalizados"],["meta","Meta Ads"],["googleads","Google Ads"],["andreani","Andreani"],["arca","ARCA"],["Claude","Claude"],["ChatGPT","ChatGPT"],["Gemini","Gemini"]];
+  const MARQUEE = [["tiendanube","Tienda Nube"],["shopify","Shopify"],["mercadolibre","Mercado Libre"],["mercadopago","Mercado Pago"],["pagonube","Pago Nube"],["pagospers","Pagos personalizados"],["recurrentes","Recurrentes",true],["meta","Meta Ads"],["googleads","Google Ads"],["andreani","Andreani"],["arca","ARCA"],["Claude","Claude"],["ChatGPT","ChatGPT"],["Gemini","Gemini"]];
 
   // ── Hoy: el negocio repartido en pestañas ──
   const PESTANAS = ["Admin de la tienda","Mercado Libre","Portal de Andreani","ARCA","Administrador de anuncios","Planilla de stock","WhatsApp con influencers","Notas con los pagos del mes","Mails de reclamos","Excel de costos","App de ganancias"];
@@ -15046,10 +15060,10 @@ function LandingPage({T, onLogin}) {
           <div className="gh-land-marquee">
             {[0,1].map(rep=>(
               <div key={rep} style={{display:"flex",gap:40,alignItems:"center"}}>
-                {MARQUEE.map(([b,n],i)=>(
+                {MARQUEE.map(([b,n,soon],i)=>(
                   <span key={i} style={{display:"inline-flex",alignItems:"center",gap:10,fontSize:14,fontWeight:700,color:T.textMd,whiteSpace:"nowrap"}}>
                     {chip(b,19,34)}
-                    {n}
+                    {n}{soon&&pronto}
                   </span>
                 ))}
               </div>
@@ -16530,8 +16544,8 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               key:"recurrentes", group:"Apps externas", label:"Recurrentes",
               // App de suscripciones y cobros recurrentes — integración en camino (PRÓXIMAMENTE).
               sub: "Próximamente — tus suscripciones y cobros recurrentes, integrados a tus ventas y márgenes",
-              connected:false, disabled:true, soon:true, brand:"#7c3aed", iconBg:"#fff",
-              icon:<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12a8 8 0 01-13.7 5.6M4 12a8 8 0 0113.7-5.6"/><path d="M17.7 2.8v3.8h-3.8M6.3 21.2v-3.8h3.8"/></svg>,
+              connected:false, disabled:true, soon:true, brand:"#10b981", iconBg:"#fff",
+              icon:<RecurrentesLogo size={28}/>,
               onConnect:()=>{}, onDisconnect:()=>{},
             },
             {

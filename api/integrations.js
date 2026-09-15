@@ -657,7 +657,11 @@ async function mercadolibreOauthCallback(req, res, db) {
     });
     const extra = snap.exists ? {} : { uid, email: email || "", nombre: nickname || (email || "").split("@")[0] || "", createdAt: new Date(), plan: "free", trialEnd: new Date(Date.now() + 14 * 864e5) };
     // La cuenta de cobro pasa a ser la que lee los pagos de MP en Márgenes.
-    await userRef.set({ ...extra, stores, ...(esMp ? { margenesMlMp: String(user_id) } : {}) }, { merge: true });
+    // Conectar una cuenta de ML (ventas) saca el viejo rol "solo Shopify/TN"
+    // (margenesMlVentas="__none__", de la tarjeta de roles que ya no existe):
+    // vuelve a importar las ventas de ML en Dashboard, Stock y Facturador.
+    const limpiarSinVentasMl = !esMp && snap.exists && String(snap.data().margenesMlVentas || "") === "__none__";
+    await userRef.set({ ...extra, stores, ...(esMp ? { margenesMlMp: String(user_id) } : {}), ...(limpiarSinVentasMl ? { margenesMlVentas: "" } : {}) }, { merge: true });
     if (esMp) return res.redirect(`${SHOPIFY_APP_URL}?mp_success=1`);
   } catch (e) {
     console.error("[ml-callback] save error:", e.message);
