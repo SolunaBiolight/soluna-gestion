@@ -27,8 +27,9 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue, FieldPath } from "firebase-admin/firestore";
 import { ghPuntoDeClave, ghConflictoPunto, ghCoincidePunto, ghConflictoTpl } from "./_suc_match.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
-import { verifyAuth, requireAdmin, guardUid, requireUid, readOnlyBlock } from "./_auth.js";
+import { verifyAuth, requireAdmin, guardUid, requireUid, readOnlyBlock, guardCron } from "./_auth.js";
 import { esDemo } from "./_demo.js";
+import { hopIndexTodas, hopIndexPorCp, hopIndexSweep, hopIndexOrigen, conHop } from "./_hop.js";
 import { numeroEnvioDemo, precioEtiquetaDemo, registrarTrackDemo, trazaDemo } from "./_demo_ops.js";
 
 function initAdmin() {
@@ -404,7 +405,7 @@ export async function sucursalesPorCp(db, env, cp) {
     const hit = await cacheRef.get();
     if (hit.exists) {
       const d = hit.data();
-      if (Array.isArray(d.sucursales) && Date.now() - (d.ts || 0) < SUC_TTL_MS) return d.sucursales;
+      if (Array.isArray(d.sucursales) && Date.now() - (d.ts || 0) < SUC_TTL_MS) return conHop(d.sucursales, await hopIndexPorCp(db, cp));
     }
   } catch (_) {}
   const r = await andreaniFetch(db, env, `/v2/sucursales?codigoPostal=${encodeURIComponent(cp)}&canal=B2C`);
@@ -413,17 +414,19 @@ export async function sucursalesPorCp(db, env, cp) {
   const lista = Array.isArray(raw) ? raw : (raw?.sucursales || []);
   const sucursales = lista.map(slimSucursal);
   try { await cacheRef.set({ ts: Date.now(), sucursales }); } catch (_) {}
-  return sucursales;
+  // Puntos HOP: Andreani no los lista para nuestra cuenta pero sí los resuelve
+  // por id — se suman desde el índice propio (api/_hop.js), después de la caché.
+  return conHop(sucursales, await hopIndexPorCp(db, cp));
 }
 
 // Listado COMPLETO (para el buscador de sucursal de origen). Cacheado 7 días.
-export async function sucursalesTodas(db, env, force = false) {
+export async function sucursalesTodas(db, env, force = false, { sinHop = false } = {}) {
   const cacheRef = db.collection("andreani_config").doc("suc_all2"); // v2: con lat/lng
   if (!force) try {
     const hit = await cacheRef.get();
     if (hit.exists) {
       const d = hit.data();
-      if (Array.isArray(d.sucursales) && d.sucursales.length && Date.now() - (d.ts || 0) < SUC_TTL_MS) return d.sucursales;
+      if (Array.isArray(d.sucursales) && d.sucursales.length && Date.now() - (d.ts || 0) < SUC_TTL_MS) return sinHop ? d.sucursales : conHop(d.sucursales, await hopIndexTodas(db));
     }
   } catch (_) {}
   const r = await andreaniFetch(db, env, `/v2/sucursales`);
@@ -432,7 +435,7 @@ export async function sucursalesTodas(db, env, force = false) {
   const lista = Array.isArray(raw) ? raw : (raw?.sucursales || []);
   const sucursales = lista.map(slimSucursal);
   try { await cacheRef.set({ ts: Date.now(), sucursales }); } catch (_) { /* si supera 1MB queda sin cache */ }
-  return sucursales;
+  return sinHop ? sucursales : conHop(sucursales, await hopIndexTodas(db));
 }
 
 const nrmTxt = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -713,7 +716,7 @@ async function geocodeSucursalesFaltantes(db, entries, statsOut) {
 // Listado geo minificado (solo lo que hace falta para rankear por distancia):
 // el listado completo slim supera el límite de 1MB de Firestore, este entra.
 async function sucursalesGeo(db, env, force = false) {
-  const cacheRef = db.collection("andreani_config").doc("suc_geo");
+  const cacheRef = db.collection("andreani_config").doc("suc_geo2"); // v2: con puntos HOP
   if (!force) try {
     const hit = await cacheRef.get();
     if (hit.exists) {
@@ -1365,6 +1368,14 @@ export default async function handler(req, res) {
     if (action === "mp_webhook") return await mpWebhook(req, res, db, body);
     // Portal de la ejecutiva de Andreani: sin sesión Firebase, autenticado por token.
     if (action === "portal_ejecutiva" || action === "portal_ejecutiva_fotos" || action === "portal_ejecutiva_responder") return await portalEjecutiva(req, res, db, body, action);
+    // Índice de puntos HOP: barrido por tandas de /v2/sucursales/{id} (cron de
+    // Vercel, CRON_SECRET). Ver api/_hop.js.
+    if (action === "hop_index_cron") {
+      if (!guardCron(req, res)) return;
+      const envC = andreaniEnv();
+      if (!envC) return res.status(500).json({ error: "andreani_no_configurado" });
+      return res.json(await hopIndexSweep(db, (id) => andreaniFetch(db, envC, `/v2/sucursales/${id}`)));
+    }
 
     // Todas las acciones exigen sesión válida. La identidad sale del TOKEN.
     const user = await verifyAuth(req);
@@ -1466,7 +1477,7 @@ export default async function handler(req, res) {
         if (prev?.confirmada) {
           sucOrigen = prev;
         } else {
-          const lista = await sucursalesPorCp(db, env, o.codigoPostal);
+          const lista = (await sucursalesPorCp(db, env, o.codigoPostal)).filter(s => !s.hop);
           if (lista.length) {
             sucOrigen = { ...lista[0], confirmada: false, ts: Date.now() };
             await userRef.set({ andreaniSucOrigen: sucOrigen }, { merge: true });
@@ -1618,6 +1629,16 @@ export default async function handler(req, res) {
       return res.json({ sucursal: s });
     }
 
+    // ── admin_hop_index: estado del índice de puntos HOP (y correr una tanda a mano).
+    if (action === "admin_hop_index") {
+      if (!(await isPlatformAdmin(db, uid))) return res.status(403).json({ error: "Solo admin" });
+      const meta = (await db.collection("andreani_config").doc("hop_idx_meta").get()).data() || null;
+      let corrida = null;
+      if (req.method === "POST" && body.correr) corrida = await hopIndexSweep(db, (id) => andreaniFetch(db, env, `/v2/sucursales/${id}`));
+      const lista = await hopIndexTodas(db);
+      return res.json({ meta, n: lista.length, origen: hopIndexOrigen(), corrida });
+    }
+
     // ── admin_probe: diagnóstico de la API de Andreani (solo admin). Permite
     // probar variantes de /v2/sucursales (canal, tipo, CP) para ver qué
     // devuelve la cuenta real — p.ej. dónde están los puntos HOP.
@@ -1653,7 +1674,9 @@ export default async function handler(req, res) {
       catch (e) { return res.status(502).json({ error: e.message }); }
       const tokens = q.split(/\s+/).filter(Boolean);
       let out = [];
+      const sinHop = body.sinHop === "1" || body.sinHop === true; // buscador de sucursal de ORIGEN
       for (const s of todas) {
+        if (sinHop && s.hop) continue;
         const hay = nrmTxt([s.descripcion, s.codigo, s.numero, s.direccion?.calle, s.direccion?.numero, s.direccion?.localidad, s.direccion?.codigoPostal].filter(Boolean).join(" "));
         if (tokens.every(t => hay.includes(t))) out.push(s);
       }
@@ -1687,6 +1710,7 @@ export default async function handler(req, res) {
           catch (e) { return res.status(502).json({ error: e.message }); }
           const s = todas.find(x => String(x.id) === String(body.sucursalId));
           if (!s) return res.status(400).json({ error: "sucursalId no encontrado en el listado oficial" });
+          if (s.hop) return res.status(400).json({ error: "Un punto HOP no puede ser la sucursal de origen: elegí una sucursal Andreani." });
           // Marca de auditoría: la tarifa depende de esta sucursal; si su CP no
           // coincide con el del origen declarado, dejar registro visible.
           const cpOri = String((await userRef.get()).data()?.andreaniOrigen?.codigoPostal || "").replace(/\D/g, "");
@@ -1820,6 +1844,18 @@ export default async function handler(req, res) {
         }
         if (!listaOk) return res.status(502).json({ error: "No pudimos validar la sucursal destino contra el listado de Andreani. Reintentá en un minuto.", code: "sucursal_no_validada" });
         if (!sucDestinoOficial) return res.status(400).json({ error: "La sucursal destino no existe en el listado oficial de Andreani — volvé a elegirla." });
+        // Punto HOP (sale del índice propio, no del listado de Andreani): se
+        // confirma EN VIVO contra /v2/sucursales/{id} antes de debitar —
+        // fail-closed: si Andreani no responde, no se emite.
+        if (sucDestinoOficial.hop) {
+          let rv = null;
+          try { rv = await andreaniFetch(db, env, `/v2/sucursales/${encodeURIComponent(String(destino.sucursalId))}`); } catch (_) {}
+          if (!rv) return res.status(502).json({ error: "No pudimos confirmar el punto HOP contra Andreani. Reintentá en un minuto.", code: "sucursal_no_validada" });
+          if (rv.status === 404) return res.status(400).json({ error: "Andreani ya no tiene activo ese punto HOP: elegí otro punto o sucursal y avisale al cliente.", code: "hop_inactivo" });
+          if (!rv.ok) return res.status(502).json({ error: `Andreani respondió ${rv.status} al confirmar el punto HOP. Reintentá en un minuto.`, code: "sucursal_no_validada" });
+          const vivo = await rv.json().catch(() => null);
+          if (vivo?.direccion) sucDestinoOficial = { ...sucDestinoOficial, ...slimSucursal(vivo), hop: true };
+        }
         const cpSuc = String(sucDestinoOficial?.direccion?.codigoPostal || "").replace(/\D/g, "");
         if (cpSuc) cpTarifa = cpSuc;
       } else {

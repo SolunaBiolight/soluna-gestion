@@ -10402,7 +10402,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         if(vr.tipo!=="sucursal"){ quedan.push(vr); continue; }
         const o=sucursalOrdersOk.find(x=>x.numero===vr.numero);
         let ok=false;
-        if(/\bHOP\b/i.test(vr.escrito)){ vr.diag="punto HOP: la API de Andreani no lo lista"; quedan.push(vr); continue; }
         try{
           const rV=o?await verifTplContraOficial(o,vr.escrito,locs):{ok:false,diag:"pedido no encontrado"};
           ok=rV.ok; vr.diag=rV.diag||"";
@@ -11200,9 +11199,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // Lista oficial de la API por CP del destinatario (cacheada). null = API
       // no disponible → el modal cae a la búsqueda clásica del template.
       const oficiales=await fetchSucursalesOficiales(cpDestinoDe(o));
-      // Punto HOP y la API no expone HOP (canal no habilitado en el contrato):
-      // el listado global y el de cercanías tampoco lo tienen — no se consultan.
-      const hopSinApi=ghEsHop(o)&&!(Array.isArray(oficiales)&&oficiales.some(x=>/\bHOP\b/i.test(x.descripcion||"")));
       // Auto-match silencioso: si el CP tiene una sola sucursal, o hay UNA
       // candidata clara (dirección o nombre del punto TN), se usa directo sin
       // modal — pero SIEMPRE traducida al string del desplegable del Excel: el
@@ -11228,7 +11224,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // Último intento silencioso: el punto exacto en el listado COMPLETO de
       // Andreani (los HOP nuevos suelen faltar en la lista por CP), traducido
       // al desplegable del Excel. Match estricto: si no es EL punto, modal.
-      const globalOficial=(forzar||hopSinApi)?null:await buscarPuntoExactoGlobal(o);
+      const globalOficial=forzar?null:await buscarPuntoExactoGlobal(o);
       const globalTpl=globalOficial?ghTplDeOficial(locs,globalOficial):null;
       if(!forzar&&globalTpl){
         sucursalOverridesRef.current[ovrKey(o)]=globalTpl;
@@ -11241,7 +11237,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // (calle+número exactos) — la distancia NO decide nada.
       let cercaTpl=null;
       try{
-        const dCerca=(forzar||hopSinApi)?{sucursales:[]}:await fetchCercanasRaw(o);
+        const dCerca=forzar?{sucursales:[]}:await fetchCercanasRaw(o);
         const cercaOficial=matchSucursalOficial(dCerca.sucursales,o,{exacto:!dCerca.aproximado&&dCerca.stats?.geo?.origenSrc==="geocode"});
         cercaTpl=cercaOficial?ghTplDeOficial(locs,cercaOficial):null;
       }catch(_){}
@@ -11407,14 +11403,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       if(memConf?.grave) olvidarPunto(ghPuntoKey(o));
       const oficiales=await fetchSucursalesOficiales(cpDestinoDe(o));
       let ofc=Array.isArray(oficiales)&&oficiales.length?matchSucursalOficial(oficiales,o):null;
-      // Punto HOP que la API no expone (canal HOP no habilitado en el contrato):
-      // ni el listado global ni el de cercanías lo tienen, y pedir que se elija
-      // "una parecida" manda el paquete a OTRO lugar. Se excluye con la razón a
-      // la vista; Exportar XLSX sí lo tiene. Cuando Andreani habilite el canal,
-      // aparece en la lista por CP y este bloque deja de actuar solo.
-      if(!ofc&&ghEsHop(o)&&!(Array.isArray(oficiales)&&oficiales.some(x=>/\bHOP\b/i.test(x.descripcion||"")))){
-        return {row:mkRow(o,{incluido:false,hop:true,cotError:"Punto HOP: Andreani no lo expone en la API para tu cuenta, así que por acá no se puede emitir al punto que eligió el cliente. Exportalo con XLSX Andreani (ese listado sí lo tiene) o tocá Cambiar sucursal para mandarlo a una sucursal Andreani y avisarle al cliente."})};
-      }
       // El punto exacto puede no estar en la lista por CP (HOP nuevos): antes
       // de molestar, buscarlo en el listado COMPLETO con el mismo match estricto.
       if(!ofc) ofc=await buscarPuntoExactoGlobal(o);
@@ -13257,7 +13245,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           const estadoApi=noOperativa!=null?{c:T.red,t:"No operativa",m:`Andreani no tiene operativa la sucursal de este pedido${noOperativa?` (${noOperativa})`:""}. Elegí otra y avisale al cliente.`}
             :esquina?{c:T.yellow,t:"Esquina",m:"La dirección es en esquina (sin numeración) y Andreani la rechaza a domicilio: elegí una sucursal cercana o excluí el pedido."}
             :apiCaida?{c:T.yellow,t:"Lista no disponible",m:"El listado oficial de Andreani no responde. Podés buscar por nombre igual, o reintentar en unos minutos."}
-            :(ghEsHop(order)&&!(Array.isArray(oficiales)&&oficiales.some(x=>/\bHOP\b/i.test(x.descripcion||""))))?{c:T.red,t:"Punto HOP",m:"Andreani no expone los puntos HOP en la API para tu cuenta: acá no está el punto que eligió el cliente. Lo que elijas es OTRA sucursal (avisale). Para mandarlo al punto exacto, excluilo y usá Exportar XLSX Andreani."}
             :{c:T.red,t:"Sin match",m:"No encontré en Andreani el punto exacto que eligió el cliente. El paquete va a ir a la sucursal que elijas acá."};
           const filaApi=x=>{ const d=x.direccion||{}; const sel=String(x.id)===locOficialSel; const cf=cfDe(x); const ok=okDe(x);
             const chip=ok?{c:T.green,t:"Coincide"}:cf?(cf.mismoDom?{c:T.yellow,t:"Misma dirección · revisar"}:cf.grave?{c:T.red,t:"No coincide"}:{c:T.yellow,t:"Otra localidad"}):null;
@@ -14415,7 +14402,7 @@ function AndreaniSucOrigenCard({T, sucOrigen, onChange}){
     const seq=++seqRef.current;
     const h=setTimeout(async()=>{
       try{
-        const r=await authFetch(`/api/andreani?action=sucursales_buscar&q=${encodeURIComponent(t)}`);
+        const r=await authFetch(`/api/andreani?action=sucursales_buscar&sinHop=1&q=${encodeURIComponent(t)}`);
         const d=await r.json().catch(()=>({}));
         if(seq!==seqRef.current) return; // llegó tarde: ya hay una búsqueda más nueva
         if(!r.ok||d.error){ setErr(typeof d.error==="string"?d.error:`No se pudo buscar (HTTP ${r.status})`); setRes([]); }
@@ -18967,6 +18954,7 @@ const ADM_CRONS = [
   { key:"orders_warm_margenes",       label:"Precalentado del Dashboard",      cada:"Cada 5 minutos",           maxH:1 },
   { key:"stock_warm_all",             label:"Precalentado de Stock",           cada:"Cada 15 minutos",          maxH:1 },
   { key:"update-shipping_track_all",  label:"Seguimiento de envíos",           cada:"Cada 30 minutos",          maxH:2 },
+  { key:"andreani_hop_index_cron",    label:"Índice de puntos HOP Andreani",  cada:"Cada hora (por tandas)",   maxH:2 },
   { key:"tareas_cron_deadlines",      label:"Vencimientos de tareas",          cada:"Todos los días 12:30 UTC", maxH:26 },
   { key:"arca_cron_autopilot",        label:"Piloto automático de facturación", cada:"Cada hora",               maxH:2 },
   { key:"pagos-cal_cron_avisos",      label:"Avisos del Calendario de Pagos",  cada:"Todos los días 12:00 UTC", maxH:26 },
@@ -20531,11 +20519,11 @@ function AdmProbe({T}){
   const [path,setPath]=useState("/v2/sucursales?codigoPostal=1754&canal=B2C");
   const [out,setOut]=useState(null); const [busy,setBusy]=useState(false);
   const run=async(p)=>{ const pp=p||path; setBusy(true); setOut(null); try{ const d=await admAndreani("admin_probe",{path:pp}); setOut(d); }catch(e){ setOut({error:e.message}); } setBusy(false); };
-  const PRESETS=[["CP B2C","/v2/sucursales?codigoPostal=1754&canal=B2C"],["CP sin canal","/v2/sucursales?codigoPostal=1754"],["CP HOP","/v2/sucursales?codigoPostal=1754&canal=HOP"],["Todas","/v2/sucursales"],["Todas B2C","/v2/sucursales?canal=B2C"],["Todas HOP","/v2/sucursales?canal=HOP"],["tipo HOP","/v2/sucursales?codigoPostal=1754&tipoDeSucursal=HOP"],["HOP terceros (contrato suc)","/v2/puntos-de-tercero?contrato={CONTRATO_SUC}"],["HOP terceros CP 1754","/v2/puntos-de-tercero?contrato={CONTRATO_SUC}&codigoPostal=1754&canal=B2C"],["HOP terceros (contrato dom)","/v2/puntos-de-tercero?contrato={CONTRATO_DOM}"]];
+  const PRESETS=[["HOP por id","/v2/sucursales/14685"],["CP B2C","/v2/sucursales?codigoPostal=1754&canal=B2C"],["CP sin canal","/v2/sucursales?codigoPostal=1754"],["CP HOP","/v2/sucursales?codigoPostal=1754&canal=HOP"],["Todas","/v2/sucursales"],["Todas B2C","/v2/sucursales?canal=B2C"],["Todas HOP","/v2/sucursales?canal=HOP"],["tipo HOP","/v2/sucursales?codigoPostal=1754&tipoDeSucursal=HOP"],["HOP terceros (contrato suc)","/v2/puntos-de-tercero?contrato={CONTRATO_SUC}"],["HOP terceros CP 1754","/v2/puntos-de-tercero?contrato={CONTRATO_SUC}&codigoPostal=1754&canal=B2C"],["HOP terceros (contrato dom)","/v2/puntos-de-tercero?contrato={CONTRATO_DOM}"]];
   return (
     <div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{PRESETS.map(([l,p])=><AdmBtn key={l} T={T} variant="ghost" size="sm" onClick={()=>{setPath(p);return run(p);}}>{l}</AdmBtn>)}</div>
-      <div style={{display:"flex",gap:8,marginBottom:8}}><AdmInput T={T} value={path} onChange={e=>setPath(e.target.value)} style={{flex:1,fontFamily:"monospace",fontSize:12}}/><AdmBtn T={T} size="sm" onClick={()=>run()}>{busy?"…":"Consultar"}</AdmBtn></div>
+      <div style={{display:"flex",gap:8,marginBottom:8}}><AdmInput T={T} value={path} onChange={e=>setPath(e.target.value)} style={{flex:1,fontFamily:"monospace",fontSize:12}}/><AdmBtn T={T} size="sm" onClick={()=>run()}>{busy?"…":"Consultar"}</AdmBtn><AdmBtn T={T} variant="ghost" size="sm" onClick={async()=>{ setBusy(true); setOut(null); try{ setOut(await admAndreani("admin_hop_index",{})); }catch(e){ setOut({error:e.message}); } setBusy(false); }}>Índice HOP</AdmBtn></div>
       {out&&<pre style={{fontSize:11,lineHeight:1.45,background:T.bg,border:`1px solid ${T.borderL||T.border}`,borderRadius:8,padding:10,maxHeight:360,overflow:"auto",whiteSpace:"pre-wrap",wordBreak:"break-all",color:out.error?T.red:T.text}}>{JSON.stringify(out,null,2)}</pre>}
     </div>
   );

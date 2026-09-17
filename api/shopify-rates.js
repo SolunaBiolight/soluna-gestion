@@ -17,6 +17,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { andreaniEnv, andreaniFetch, slimSucursal, distanciaM, getGlobalConfig, sucursalesPorCp, sucursalesTodas, sucursalesCercanasCore, cotizarAndreani, precioConMarkup, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
+import { hopIndexTodas } from "./_hop.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -47,8 +48,15 @@ function cpDe(dest) {
 const pesos = n => Math.max(0, Math.ceil(Number(n) / 10) * 10); // redondeo a $10
 const cents = n => String(Math.round(Number(n) * 100));
 const clip = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+const esHopItem = s => !!s.hop || /\bHOP\b|punto andreani/i.test(String(s.descripcion || ""));
 function tituloSucursal(s) {
   const d = s.direccion || {};
+  // Punto HOP: el nombre oficial viene recortado a 50 caracteres y repite
+  // "PUNTO ANDREANI HOP" — al comprador se le muestra la dirección del punto.
+  if (esHopItem(s)) {
+    const dir = [d.calle, d.numero].filter(Boolean).join(" ");
+    return `Andreani Punto HOP · ${clip(dir || String(s.descripcion || "").replace(/^punto andreani hop\s*/i, "") || s.id, 44)}`;
+  }
   const desc = clip(s.descripcion || s.codigo || `Sucursal ${s.id}`, 48);
   return `Andreani Sucursal · ${desc}`;
 }
@@ -71,47 +79,36 @@ const esPuntoPublico = s => !NO_PUBLICO_RX.test(String(s.descripcion || ""));
 // propia definición de Andreani de "sucursal para este CP"), tipo y si hace
 // atención al cliente / entrega envíos. Cacheado 7 días.
 async function sucursalesB2CCheckout(db, env) {
-  const ref = db.collection("andreani_config").doc("suc_b2c_checkout2"); // v2: + puntos HOP
-  try { const c = (await ref.get()).data(); if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return c.lista; } catch (_) {}
-  const r = await andreaniFetch(db, env, "/v2/sucursales?canal=B2C");
-  if (!r.ok) throw new Error(`sucursales B2C HTTP ${r.status}`);
-  const raw = await r.json();
-  const arr = Array.isArray(raw) ? raw : (raw?.sucursales || []);
-  const toItem = (x, tipoDef) => {
-    const sl = slimSucursal(x); const da = x.datosAdicionales || {};
-    return { id: sl.id, descripcion: sl.descripcion, direccion: sl.direccion, horarioDeAtencion: sl.horarioDeAtencion, lat: sl.lat, lng: sl.lng,
-      cps: Array.isArray(x.codigosPostalesAtendidos) ? x.codigosPostalesAtendidos.map(String) : [],
-      tipo: String(da.tipo || tipoDef || ""), atencion: da.seHaceAtencionAlCliente !== false, entrega: da.entregaEnvios !== false };
-  };
-  const lista = arr.map(x => toItem(x, ""));
-  // Puntos HOP: el canal B2C no trae muchos (probado el 3/9: 7 HOP válidos
-  // faltaban), pero sí aparecen en el listado completo y en canal=HOP — que
-  // son los que usa la emisión de etiquetas por API. Se suman SOLO los puntos
-  // de retiro (HOP / Punto Andreani) que el B2C no tenga; los depósitos y
-  // plantas siguen afuera por NO_PUBLICO_RX y el filtro de tipo.
-  const ids = new Set(lista.map(s => String(s.id)));
-  const esHop = x => /hop|punto andreani|pickit/i.test(String(x?.descripcion || "") + " " + String(x?.datosAdicionales?.tipo || x?.tipoDeSucursal || x?.tipo || ""));
-  let hopExtra = 0;
-  for (const path of ["/v2/sucursales?canal=HOP", "/v2/sucursales"]) {
+  const ref = db.collection("andreani_config").doc("suc_b2c_checkout3"); // v3: los HOP salen del índice propio (_hop.js)
+  let lista = null;
+  try { const c = (await ref.get()).data(); if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) lista = c.lista; } catch (_) {}
+  if (!lista) {
+    const r = await andreaniFetch(db, env, "/v2/sucursales?canal=B2C");
+    if (!r.ok) throw new Error(`sucursales B2C HTTP ${r.status}`);
+    const raw = await r.json();
+    const arr = Array.isArray(raw) ? raw : (raw?.sucursales || []);
+    lista = arr.map(x => {
+      const sl = slimSucursal(x); const da = x.datosAdicionales || {};
+      return { id: sl.id, descripcion: sl.descripcion, direccion: sl.direccion, horarioDeAtencion: sl.horarioDeAtencion, lat: sl.lat, lng: sl.lng,
+        cps: Array.isArray(x.codigosPostalesAtendidos) ? x.codigosPostalesAtendidos.map(String) : [],
+        tipo: String(da.tipo || ""), atencion: da.seHaceAtencionAlCliente !== false, entrega: da.entregaEnvios !== false };
+    });
+    // Coordenadas que faltan: se completan con la cache de geocodificación
+    // del motor de cercanías de Envíos.
     try {
-      const r2 = await andreaniFetch(db, env, path);
-      if (!r2.ok) continue;
-      const raw2 = await r2.json();
-      for (const x of (Array.isArray(raw2) ? raw2 : (raw2?.sucursales || []))) {
-        if (x?.id == null || ids.has(String(x.id)) || !esHop(x)) continue;
-        ids.add(String(x.id)); lista.push(toItem(x, "HOP")); hopExtra++;
-      }
-    } catch (e) { console.error("[shopify-rates] " + path + ":", e.message); }
+      const gc = (await db.collection("andreani_config").doc("suc_geocode").get()).data()?.m || {};
+      for (const s of lista) { const g = gc[String(s.id)]; if (!enARll(s.lat, s.lng) && g && g.la != null) { s.lat = g.la; s.lng = g.lo; } }
+    } catch (_) {}
+    try { await ref.set({ ts: Date.now(), lista }); } catch (_) { /* >1MB: sin cache */ }
   }
-  // Coordenadas que faltan (los HOP suelen venir sin lat/lng): se completan
-  // con la cache de geocodificación del motor de cercanías de Envíos.
-  try {
-    const gc = (await db.collection("andreani_config").doc("suc_geocode").get()).data()?.m || {};
-    for (const s of lista) { const g = gc[String(s.id)]; if (!enARll(s.lat, s.lng) && g && g.la != null) { s.lat = g.la; s.lng = g.lo; } }
-  } catch (_) {}
-  console.log(`[shopify-rates] listado checkout: ${lista.length} (HOP sumados fuera de B2C: ${hopExtra})`);
-  try { await ref.set({ ts: Date.now(), lista }); } catch (_) { /* >1MB: sin cache */ }
-  return lista;
+  // Puntos HOP: la API no los lista para nuestra cuenta pero sí los resuelve
+  // por id — índice propio (api/_hop.js, con coordenadas, CP y horario). Se
+  // suman DESPUÉS de la caché, así una vuelta nueva del índice entra sola.
+  const ids = new Set(lista.map(s => String(s.id)));
+  const hops = (await hopIndexTodas(db)).filter(h => !ids.has(String(h.id)))
+    .map(h => ({ id: h.id, descripcion: h.descripcion, direccion: h.direccion, horarioDeAtencion: h.horarioDeAtencion, lat: h.lat, lng: h.lng, cps: [], tipo: "HOP", atencion: true, entrega: true, hop: true }));
+  console.log(`[shopify-rates] listado checkout: ${lista.length} sucursales + ${hops.length} puntos HOP`);
+  return lista.concat(hops);
 }
 const esRetiroPublico = s => s.entrega && s.atencion && !/planta/i.test(s.tipo || "") && esPuntoPublico(s);
 
@@ -162,13 +159,13 @@ async function anclaComprador(db, { cp, loc, prov }, pub) {
 }
 
 // Regla (Thiago, 11/9): SOLO sucursales a ≤ 10 km del comprador, ordenadas por
-// distancia; si no hay ninguna a 10 km, únicamente la más cercana. Hasta tener
-// los puntos HOP en la API, esto es lo que evita listas "raras".
+// distancia; si no hay ninguna a 10 km, únicamente la más cercana. Los puntos
+// HOP entran por el índice propio (api/_hop.js) con coordenadas reales.
 const RADIO_M = 10000;
 let _dbg = {}; // diagnóstico de la última selección (solo se devuelve con ?debug=1)
 async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
   _dbg = { cp, loc };
-  const cacheRef = db.collection("andreani_config").doc(`rates_suc8_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
+  const cacheRef = db.collection("andreani_config").doc(`rates_suc9_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
   try {
     const c = (await cacheRef.get()).data();
     if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return c.lista.slice(0, max);
@@ -195,7 +192,7 @@ async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
   } catch (e) { _dbg.error = e.message; console.error("[shopify-rates] sucursales:", e.message); }
   if (!lista.length) lista = (await sucursalesCercanasCp(db, env, cp, 3)).slice(0, 1);
   lista = dedupeSucursales(lista.filter(esPuntoPublico)).slice(0, 12)
-    .map(s => ({ id: s.id, descripcion: s.descripcion || "", direccion: s.direccion || null, horarioDeAtencion: s.horarioDeAtencion || "", distM: s.distM ?? null }));
+    .map(s => ({ id: s.id, descripcion: s.descripcion || "", direccion: s.direccion || null, horarioDeAtencion: s.horarioDeAtencion || "", distM: s.distM ?? null, hop: !!s.hop }));
   if (lista.length) cacheRef.set({ ratesUid: "_suc", cp, ts: Date.now(), lista }).catch(() => {});
   return lista.slice(0, max);
 }
@@ -226,7 +223,9 @@ function dedupeSucursales(lista) {
   for (const s of lista) {
     const d = s.direccion || {};
     const kDir = nrm(d.calle) && nrm(d.numero) ? `d:${nrm(d.calle)}|${nrm(d.numero)}` : "";
-    const kNom = `n:${nrm(String(s.descripcion || "").replace(/\(.*?\)/g, ""))}`;
+    // Los HOP comparten nombre recortado ("PUNTO ANDREANI HOP AVENIDA DOCTOR
+    // RICARDO BALBÍN" ×9): su clave de nombre lleva el número de puerta.
+    const kNom = `n:${nrm(String(s.descripcion || "").replace(/\(.*?\)/g, ""))}${esHopItem(s) ? "|" + nrm(d.numero) : ""}`;
     if ((kDir && seen.has(kDir)) || seen.has(kNom)) continue;
     if (kDir) seen.add(kDir); seen.add(kNom);
     out.push(s);

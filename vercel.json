@@ -91,6 +91,10 @@
       "schedule": "*/30 * * * *"
     },
     {
+      "path": "/api/andreani?action=hop_index_cron",
+      "schedule": "20 * * * *"
+    },
+    {
       "path": "/api/tareas?action=cron_deadlines",
       "schedule": "30 12 * * *"
     },
