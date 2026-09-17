@@ -53,6 +53,7 @@ const SHOPIFY_APP_SECRET = process.env.SHOPIFY_APP_SECRET || "";
 // Las tiendas conectadas antes de agregarlos tienen que RECONECTAR Shopify.
 const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders,read_fulfillments,write_fulfillments";
 const SHOPIFY_SCOPE_FULFILL = "write_merchant_managed_fulfillment_orders";
+const SHOPIFY_FULFILL_DESDE = Date.parse("2026-09-15T22:00:00Z"); // deploy de los scopes de fulfillment
 const SHOPIFY_APP_URL = "https://www.growithapp.com";
 // Shopify NO permite el query param reservado "action" en la redirect URL, así
 // que la dejamos sin él. El callback llega con "platform=shopify" + el "code" que
@@ -268,6 +269,15 @@ async function shopifyOauthCallback(req, res, db) {
     accessToken = tokenData.access_token;
     if (!accessToken) return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=no_access_token`);
     var __tokenFields = shopifyTokenFields(tokenData);
+    // Permisos que Shopify REALMENTE otorgó. Ojo: en las apps con instalación
+    // administrada por Shopify (Dev Dashboard) el parámetro scope de la URL de
+    // autorización se IGNORA — se otorgan solo los scopes publicados en la
+    // versión activa de la app. Por eso reconectar puede no sumar un permiso
+    // nuevo aunque Growith lo pida (caso zensleep, 17/9/2026).
+    __tokenFields.scopes = String(tokenData.scope || "").split(",").map(x => x.trim()).filter(Boolean);
+    __tokenFields.scopesAt = new Date().toISOString();
+    var __faltaFulfill = __tokenFields.scopes.length > 0 && !__tokenFields.scopes.includes(SHOPIFY_SCOPE_FULFILL);
+    if (__faltaFulfill) console.error(`[shopify-callback] ${shop}: Shopify NO otorgó ${SHOPIFY_SCOPE_FULFILL} (otorgados: ${__tokenFields.scopes.join(",")}) — falta publicarlo en la app`);
   } catch (e) {
     console.error("[shopify-callback] error:", e.message);
     return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=server_error`);
@@ -299,7 +309,7 @@ async function shopifyOauthCallback(req, res, db) {
         const st = ((uSnap.exists ? uSnap.data().stores : null) || []).map(s => (s.type === "shopify" && s.shop === shop) ? { ...s, ...__tokenFields, clientId, central: true, reconnectedAt: new Date().toISOString() } : s);
         if (!st.some(s => s.type === "shopify" && s.shop === shop)) st.push({ type: "shopify", shop, clientId, central: true, ...__tokenFields, storeName: shopName, storeEmail: shopEmail, connectedAt: new Date().toISOString() });
         await uRef.set({ stores: st }, { merge: true });
-        return res.redirect(`${SHOPIFY_APP_URL}/?shopify=ok&shop=${encodeURIComponent(shop)}`);
+        return res.redirect(`${SHOPIFY_APP_URL}/?shopify=ok&shop=${encodeURIComponent(shop)}${__faltaFulfill ? "&shopify_scopes_faltan=1" : ""}`);
       }
       const claim = genState();
       await db.collection("shopify_pending_installs").doc(claim).set({ shop, clientId, ...__tokenFields, storeName: shopName, storeEmail: shopEmail, createdAt: new Date().toISOString() });
@@ -339,7 +349,7 @@ async function shopifyOauthCallback(req, res, db) {
     return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=save_failed`);
   }
 
-  return res.redirect(`${SHOPIFY_APP_URL}?shopify_success=1`);
+  return res.redirect(`${SHOPIFY_APP_URL}?shopify_success=1${__faltaFulfill ? "&shopify_scopes_faltan=1" : ""}`);
 }
 
 // ─── CarrierService "Growith · Andreani" (tarifas en el checkout) ───────────
@@ -396,6 +406,11 @@ async function shopifyCarrierStatus(req, res, db) {
     shop: sh.shop,
     scopeOk: scopes ? scopes.includes("write_shipping") : (f.err?.error === "scope" ? false : null),
     fulfillOk: scopes ? scopes.includes(SHOPIFY_SCOPE_FULFILL) : null,
+    // Conectada/reconectada DESPUÉS de que Growith empezó a pedir el permiso
+    // (15/9/2026 18:51 AR) y Shopify igual no lo otorgó → no es cosa del
+    // vendedor: falta publicar el scope en la app de Growith en Shopify.
+    reconectadaSinPermiso: !!(scopes && !scopes.includes(SHOPIFY_SCOPE_FULFILL) && Date.parse(sh.scopesAt || sh.reconnectedAt || sh.connectedAt || "") > SHOPIFY_FULFILL_DESDE),
+    scopesFaltan: scopes ? SHOPIFY_SCOPES.split(",").filter(x => /^write_/.test(x) && !scopes.includes(x)) : null,
     registered: !!f.carrier, carrier: f.carrier ? { id: f.carrier.id, name: f.carrier.name, active: f.carrier.active, callback_url: f.carrier.callback_url } : null,
     otros: (f.list || []).filter(c => !String(c.callback_url || "").startsWith(SHOPIFY_RATES_URL)).map(c => ({ id: c.id, name: c.name, active: c.active })),
     config: userData.andreaniCheckout || null,
@@ -1319,6 +1334,21 @@ export default async function handler(req, res) {
         if (shop) { try { const d = await db.collection("shopify_apps").doc(shop).get(); porTienda = d.exists && !!d.data().client_id; } catch (_) {} }
         const ca = await shopifyCentralApp(db);
         return res.json({ central: !!ca, central_from: ca?.from || null, por_tienda: porTienda, redirect_uri: SHOPIFY_REDIRECT_URI, compliance_url: `${SHOPIFY_APP_URL}/api/integrations?platform=shopify&action=compliance`, scopes: SHOPIFY_SCOPES });
+      }
+      // Admin: permisos REALES (en vivo) de la tienda Shopify de un cliente.
+      if (action === "admin_scopes" && req.method === "GET") {
+        const au = await verifyAuth(req);
+        if (!au?.uid || !(await isPlatformAdmin(db, au.uid))) return res.status(403).json({ error: "Solo admin" });
+        const tUid = String(req.query.target || "").trim();
+        if (!tUid) return res.status(400).json({ error: "Falta target" });
+        const { sh } = await shStoreDe(db, tUid);
+        if (!sh) return res.json({ conectado: false });
+        let scopes = null, status = null;
+        try { const r = await shApi(sh, "../oauth/access_scopes.json"); status = r.status ?? null; if (r.ok) scopes = (r.j?.access_scopes || []).map(x => x.handle); } catch (_) {}
+        const pedidos = SHOPIFY_SCOPES.split(",");
+        return res.json({ conectado: true, shop: sh.shop, central: !!sh.central, connectedAt: sh.connectedAt || null, reconnectedAt: sh.reconnectedAt || null, scopesAt: sh.scopesAt || null,
+          status, otorgados: scopes, faltan: scopes ? pedidos.filter(x => /^write_/.test(x) && !scopes.includes(x)) : null,
+          fulfillOk: scopes ? scopes.includes(SHOPIFY_SCOPE_FULFILL) : null, refreshError: sh.refreshError || null });
       }
       // Admin: apps de Shopify por tienda (distribución custom). Solo admins de plataforma.
       if (["apps_list", "app_set", "app_delete"].includes(action)) {

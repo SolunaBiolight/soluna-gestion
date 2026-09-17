@@ -285,7 +285,23 @@ async function subirTrackingTienda(db, uid, uData, { orderId, tracking }) {
     // Sin permiso de fulfillment (tiendas conectadas antes de que Growith lo
     // pidiera): Shopify responde 403 en fulfillment_orders / fulfillments. El
     // mensaje tiene que decir QUÉ hacer, y el front corta el lote (code).
-    const sinPermiso = () => ({ ok: false, status: 403, code: "shopify_scope", error: "Shopify no le dio a Growith permiso para marcar envíos (fulfillment). Reconectá Shopify desde Config → Integraciones (vuelve a pedir el permiso) y volvé a enviar los seguimientos: solo se reintentan los que faltan." });
+    // Dos casos distintos con el mismo 403:
+    //  a) tienda conectada ANTES de que Growith pidiera el permiso → reconectar.
+    //  b) tienda YA reconectada y Shopify igual no lo otorgó → la app de Growith
+    //     en Shopify (instalación administrada, Dev Dashboard) todavía no tiene
+    //     ese scope publicado: reconectar no sirve, lo resuelve Growith.
+    const sinPermiso = async () => {
+      let yaReconecto = Date.parse(shStore.scopesAt || shStore.reconnectedAt || shStore.connectedAt || "") > Date.parse("2026-09-15T22:00:00Z");
+      if (yaReconecto) {
+        try {
+          const rs = await fetch(`https://${shStore.shop}/admin/oauth/access_scopes.json`, { headers: shHeaders, signal: AbortSignal.timeout(6000) });
+          if (rs.ok) { const hs = ((await rs.json()).access_scopes || []).map(x => x.handle); if (hs.includes("write_merchant_managed_fulfillment_orders")) yaReconecto = false; else console.error(`[update-shipping] ${shStore.shop}: reconectada y sin scope de fulfillment (otorgados: ${hs.join(",")})`); }
+        } catch (_) {}
+      }
+      return yaReconecto
+        ? { ok: false, status: 403, code: "shopify_scope", appSinScope: true, error: "Shopify no le otorgó a Growith el permiso de marcar envíos aunque la tienda ya se reconectó: ese permiso todavía no está publicado en la app de Growith dentro de Shopify. No hace falta reconectar de nuevo: el equipo de Growith lo está habilitando y los seguimientos quedan guardados para reenviar." }
+        : { ok: false, status: 403, code: "shopify_scope", error: "Shopify no le dio a Growith permiso para marcar envíos (fulfillment). Reconectá Shopify desde Config → Integraciones (vuelve a pedir el permiso) y volvé a enviar los seguimientos: solo se reintentan los que faltan." };
+    };
     try {
       // 1. Buscar la orden por número visible (name = "#1001"; algunas tiendas
       //    usan prefijo/sufijo en el nombre → segundo intento sin "#" y, si

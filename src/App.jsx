@@ -12050,7 +12050,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         setSeguimientoProgress(p=>({...p,fail}));
         // Sin permiso de fulfillment en Shopify: todos van a fallar igual —
         // se corta acá con el aviso de reconectar en vez de 100 errores iguales.
-        if(e.code==="shopify_scope"){ errors.push({pedido:"—",msg:`Se cortó el envío: los ${pending.length-i-1} restantes quedan pendientes hasta reconectar Shopify.`}); break; }
+        if(e.code==="shopify_scope"){ errors.push({pedido:"—",msg:`Se cortó el envío: los ${pending.length-i-1} restantes quedan pendientes hasta que Shopify tenga el permiso.`}); break; }
       }
       // La pastilla global vive de estos eventos: sigue mostrando el progreso
       // aunque el modal esté minimizado o la usuaria se vaya a otra sección.
@@ -16418,7 +16418,12 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
           <button onClick={onReconectar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 14px"}}>Reconectar Shopify</button>
         </div>
       )}
-      {!scopeFalta && st?.fulfillOk===false && (
+      {!scopeFalta && st?.fulfillOk===false && st?.reconectadaSinPermiso && (
+        <div style={{background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:8,padding:"10px 12px",fontSize:12,color:T.text,marginBottom:10,lineHeight:1.5}}>
+          Ya reconectaste Shopify, pero Shopify no le otorgó a Growith el permiso para <strong>marcar pedidos como enviados</strong>: todavía no está publicado en la app de Growith dentro de Shopify. No hace falta que reconectes de nuevo; el equipo de Growith lo está habilitando y cuando esté listo vas a poder enviar los seguimientos.
+        </div>
+      )}
+      {!scopeFalta && st?.fulfillOk===false && !st?.reconectadaSinPermiso && (
         <div style={{background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:8,padding:"10px 12px",fontSize:12,color:T.text,marginBottom:10,lineHeight:1.5,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{flex:1,minWidth:220}}>Shopify todavía no le dio a Growith el permiso para <strong>marcar pedidos como enviados</strong> (fulfillment): sin eso, "Enviar seguimientos" no puede subir los trackings. Reconectá Shopify una vez — no se pierde nada.</span>
           <button onClick={onReconectar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 14px"}}>Reconectar Shopify</button>
@@ -16664,8 +16669,9 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
     const mlSuccess=url.searchParams.get("ml_success");
     const mlError=url.searchParams.get("ml_error");
     if(shSuccess){
-      setMsg("Shopify conectado ✓");
-      url.searchParams.delete("shopify_success");
+      const faltan=url.searchParams.get("shopify_scopes_faltan");
+      setMsg(faltan?"Shopify conectado, pero Shopify no otorgó el permiso para marcar envíos: todavía no está publicado en la app de Growith en Shopify. No es algo que puedas resolver reconectando; el equipo de Growith lo está habilitando.":"Shopify conectado ✓");
+      url.searchParams.delete("shopify_success"); url.searchParams.delete("shopify_scopes_faltan");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(shError){
       const map={
@@ -19812,6 +19818,7 @@ function AdmFichaEnvios({ctx, u}) {
   const [q,setQ]=useState(""); const [filtro,setFiltro]=useState("todos"); const [fuente,setFuente]=useState("todas"); const [limite,setLimite]=useState(40);
   const [trazas,setTrazas]=useState(null);
   // Markup por cliente (pisa el global de la plataforma): users/{uid}.andreaniMarkup
+  const [shScopes,setShScopes]=useState(null);
   const [mk,setMk]=useState({pct:u.andreaniMarkup?.markupPct??"",fijo:u.andreaniMarkup?.markupFijo??""});
   useEffect(()=>{ setMk({pct:u.andreaniMarkup?.markupPct??"",fijo:u.andreaniMarkup?.markupFijo??""}); },[u._id]);
   async function guardarMarkup(borrar){
@@ -19843,6 +19850,15 @@ function AdmFichaEnvios({ctx, u}) {
         <AdmBtn T={T} variant="primary" size="sm" onClick={()=>guardarMarkup(false)}>Guardar</AdmBtn>
         {(mk.pct!==""||mk.fijo!=="")&&<AdmBtn T={T} variant="secondary" size="sm" onClick={()=>guardarMarkup(true)}>Usar el global</AdmBtn>}
         <span style={{fontSize:11,color:T.textSm}}>Vacío = usa el markup global de la plataforma. Aplica a cotizaciones, emisión y checkout.</span>
+      </div>
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+        <AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ const r=await authFetch(`/api/integrations?platform=shopify&action=admin_scopes&target=${encodeURIComponent(u._id)}`); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`); setShScopes(d); }}>Ver permisos de Shopify</AdmBtn>
+        {shScopes&&(shScopes.conectado===false?<span style={{fontSize:12,color:T.textSm}}>Esta cuenta no tiene Shopify conectado.</span>:(
+          <span style={{fontSize:12,color:shScopes.fulfillOk?T.green:T.red,fontWeight:600}}>
+            {shScopes.shop} · {shScopes.fulfillOk?"tiene el permiso de marcar envíos":shScopes.otorgados?"SIN permiso de marcar envíos":"no se pudo leer (token inválido)"}
+            <span style={{fontWeight:400,color:T.textSm}}> · conectada {admFecha(admIso(shScopes.scopesAt||shScopes.reconnectedAt||shScopes.connectedAt))}{shScopes.faltan?.length?` · faltan: ${shScopes.faltan.join(", ")}`:""}{shScopes.refreshError?` · error de token: ${shScopes.refreshError}`:""}</span>
+          </span>
+        ))}
       </div>
       <AdmTitulo T={T} t="Envíos · últimos 90 días" sub={st.data?`${envios.length} envío${envios.length===1?"":"s"} registrado${envios.length===1?"":"s"}${st.data.truncado?" (lista parcial: hay más de 4000)":""}.`:""} right={<><Btn T={T} variant="secondary" size="sm" onClick={exportar} disabled={!lista.length}>CSV</Btn><Btn T={T} variant="secondary" size="sm" onClick={load}>Actualizar</Btn></>}/>
       {st.loading?<AdmSkeleton T={T} filas={6}/>
