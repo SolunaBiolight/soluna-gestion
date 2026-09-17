@@ -151,11 +151,12 @@ export default async function handler(req, res) {
 
       const entry = Object.entries(skuMap).find(([, v]) => v.page === pageNum);
       if (!entry || !entry[1].found || !entry[1].skus || !entry[1].skus.length) {
-        pageResults.push({ pageIdx: i, pageNum, pedido: entry ? entry[0] : null, hasSkus: false });
+        pageResults.push({ pageIdx: i, pageNum, pedido: entry ? (entry[1].pedido || entry[0]) : null, hasSkus: false });
         continue;
       }
 
-      const [pedidoNum, info] = entry;
+      const [clave, info] = entry;
+      const pedidoNum = info.pedido || clave;
       const skuLines = info.skus;
 
       // Escalar coordenadas al tamaño real de la página

@@ -9675,7 +9675,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   useEffect(()=>{ try{localStorage.setItem(ghKey("growith_exportCfg"),JSON.stringify(exportCfg));}catch(e){} },[exportCfg]);
   const [tabEnvio,setTabEnvio]=useState("empaquetar");
   const [searchEnvios,setSearchEnvios]=useState("");
-  const [searchLibre,setSearchLibre]=useState(false);
   const [locationModal,setLocationModal]=useState(null);
   // Sucursales cercanas al punto del pedido para el modal de elección (flujo
   // XLSX): null | {loading} | {lista:[{...,distM,tpl}],origen,aproximado,diag}
@@ -9746,19 +9745,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const verifRowsRef=useRef([]);
   const verifRehacerRef=useRef(false); // el modal de verificación excluyó pedidos → rearmar el Excel sin ellos // resultado de la verificación del último armado de Excel (lo lee exportAndreani para el toast)
   const exclOperRef=useRef(new Set()); // pedidos sacados del último Excel porque su sucursal no está operativa en Andreani
-  const [sucursalConfirmed,setSucursalConfirmed]=useState(null);
   const [esquinaModal,setEsquinaModal]=useState(null); // {orders:[...]} pedidos con esquina excluidos del export
-  const [copiedToast,setCopiedToast]=useState(null);
   const [orderDetail,setOrderDetail]=useState(null);
   const [skuBlob,setSkuBlob]=useState(null);
   const [skuGenerating,setSkuGenerating]=useState(false);
   const [skuProgress,setSkuProgress]=useState(0);
-  function copyToClipboard(text, label) {
-    navigator.clipboard.writeText(text).then(()=>{
-      setCopiedToast(label||"Copiado");
-      setTimeout(()=>setCopiedToast(null), 1500);
-    }).catch(()=>{});
-  }
   const [tabCounts,setTabCounts]=useState({empaquetar:null,enviar:null});
   const [filterTipoEnvio,setFilterTipoEnvio]=useState("todos");
   const [filterMedio,setFilterMedio]=useState(""); // medio de envío exacto ("" = todos)
@@ -9773,7 +9764,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const enviarPrefetchRef=useRef(null); // promesa del prefetch de enviar en vuelo
   const [buscarQuery,setBuscarQuery]=useState("");
   const [buscarLoading,setBuscarLoading]=useState(false);
-  const [compactMode,setCompactMode]=useState(false);
   const [orderPage,setOrderPage]=useState(0);
   const [showPagePicker,setShowPagePicker]=useState(false);
   // SKU tab
@@ -9795,7 +9785,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const [segSel,setSegSel]=useState(()=>new Set()); // reimpresión por lote: envíos por API tildados
   const [segScanOpen,setSegScanOpen]=useState(false);
   const [segMasAlertas,setSegMasAlertas]=useState(false);
-  const [segTrazas,setSegTrazas]=useState(null);
   const [segFicha,setSegFicha]=useState(null);       // envío abierto en su ficha
   const [segCaso,setSegCaso]=useState(null);         // {envio, motivo} → modal de gestión
   const [segCasos,setSegCasos]=useState([]);         // gestiones abiertas/cerradas de la cuenta
@@ -10020,7 +10009,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
   // Paginación de pedidos — 50 por página
   const PAGE_SIZE=50;
-  useEffect(()=>setOrderPage(0),[tabEnvio,filterTipoEnvio,searchEnvios]);
+  useEffect(()=>setOrderPage(0),[tabEnvio,filterTipoEnvio,filterMedio,searchEnvios]);
   const totalPages=Math.max(1,Math.ceil(exportables.length/PAGE_SIZE));
   const pageOrders=exportables.slice(orderPage*PAGE_SIZE,(orderPage+1)*PAGE_SIZE);
   const pageNums=pageOrders.map(o=>o.numero);
@@ -10037,8 +10026,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   async function fetchTabCounts(uid, fresh) {
     const f=fresh?"&fresh=1":"";
     const [emp,env] = await Promise.all([
-      fetch(`/api/orders?uid=${uid}&tab=empaquetar&countOnly=true${f}`).then(r=>r.json()).then(d=>Array.isArray(d)?d.length:0).catch(()=>0),
-      fetch(`/api/orders?uid=${uid}&tab=enviar&countOnly=true${f}`).then(r=>r.json()).then(d=>Array.isArray(d)?d.length:0).catch(()=>0),
+      authFetch(`/api/orders?uid=${uid}&tab=empaquetar&countOnly=true${f}`).then(r=>r.json()).then(d=>Array.isArray(d)?d.length:0).catch(()=>0),
+      authFetch(`/api/orders?uid=${uid}&tab=enviar&countOnly=true${f}`).then(r=>r.json()).then(d=>Array.isArray(d)?d.length:0).catch(()=>0),
     ]);
     setTabCounts({empaquetar:emp,enviar:env});
   }
@@ -10064,7 +10053,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // Registro de uso (fire-and-forget, no bloquea la UI ni rompe si falla)
   function logUsage(metric, n=1) {
     if(!user?.uid) return;
-    fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},
+    authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({action:"logUsage",uid:user.uid,metric,n,section:"envios"})}).catch(()=>{});
   }
   // Andreani locations cache - lee del template xlsx directamente
@@ -10364,7 +10353,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         const rS=await authFetch("/api/andreani",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"validar_sucursales_tpl",nombres:nombresSuc})});
         const dS=await rS.json().catch(()=>null);
         if(rS.ok&&Array.isArray(dS?.faltantes)) faltantes=dS.faltantes;
-      }catch(_){}
+        else toast("No se pudo verificar con Andreani que las sucursales estén operativas: revisá el Excel antes de cargarlo","warning",7000);
+      }catch(_){ toast("No se pudo verificar con Andreani que las sucursales estén operativas: revisá el Excel antes de cargarlo","warning",7000); }
       if(faltantes.length){
         const setF=new Set(faltantes);
         const afectados=sucEscritas.filter(s=>setF.has(s.sucursal));
@@ -10415,6 +10405,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       const seguir=await new Promise(resolve=>setVerifModal({items:verifRows,resolve}));
       setVerifModal(null);
       if(seguir==="REHACER"){ verifRehacerRef.current=true; return null; } // se excluyeron pedidos: exportAndreani rearma sin ellos
+      // ✕ / Escape: cancela esta exportación sin tocar overrides ni memoria de
+      // puntos (antes equivalía a "Cancelar y corregir" y borraba elecciones
+      // confirmadas de todos los pedidos listados).
+      if(seguir==="CERRAR"){ setExportProgress({step:"",pct:0,current:0,total:0}); return null; }
       if(!seguir){
         // "Cancelar y corregir": borrar el override Y la memoria del punto de
         // los pedidos marcados — si no, el próximo export resolvía solo con la
@@ -11110,9 +11104,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       setExportProgress({step:"¡Listo!",pct:100,current:finalOrders.length,total:finalOrders.length});
       setSelected(new Map());
       setExportSingleOrder(null);
-      locationOverridesRef.current={}; sucursalOverridesRef.current={};
-      finalOrders.forEach(o=>sucReemplazoRef.current.delete(ovrKey(o))); persistSucReemplazo();
-      try{localStorage.removeItem(ghKey("growith_locOverrides"));localStorage.removeItem(ghKey("growith_sucOverrides"));}catch(_){}
+      // Solo los pedidos que entraron en este Excel: los overrides de otros
+      // (resueltos y luego deseleccionados) se conservan para el próximo.
+      finalOrders.forEach(o=>{ delete locationOverridesRef.current[ovrKey(o)]; delete sucursalOverridesRef.current[ovrKey(o)]; sucReemplazoRef.current.delete(ovrKey(o)); });
+      persistOverrides(); persistSucReemplazo();
       // Éxito → toast (sin modal que pida click); si quedaron pedidos en
       // esquina afuera del Excel, se abre directo su modal informativo.
       toast(verifRowsRef.current.length
@@ -11294,8 +11289,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         recordarPunto(o,{tpl});
         // Confirmación visual SIN bloquear el loop (con 10 pedidos eran 12
         // segundos de animación pura entre modal y modal).
-        setSucursalConfirmed({numero:o.numero,nombre:tpl});
-        setTimeout(()=>setSucursalConfirmed(c=>c&&c.numero===o.numero?null:c),1200);
+        toast(`Sucursal confirmada · #${o.numero}: ${tpl}`,"success",1800);
         resuelto=true;
       }
     }
@@ -11351,10 +11345,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   async function lanzarBulkAndreani(ordersOverride){
     // Desde "Por empaquetar": la etiqueta marca el pedido como enviado en la
     // tienda y el cliente recibe el aviso — que quede claro antes de emitir.
-    if(tabEnvio==="empaquetar"&&!exportSingleOrder){
-      const ok=await appConfirm("Estos pedidos están en Por empaquetar. Al emitir la etiqueta se marcan como enviados en tu tienda y el cliente recibe el aviso de envío. ¿Emitir igual?",{okLabel:"Emitir igual"});
-      if(!ok) return;
-    }
     if(!andreani.origenConfigurado){
       bulkPendienteRef.current=ordersOverride;
       toast("Antes de emitir, cargá tu dirección de origen y los datos del remitente (una sola vez)","info",5000);
@@ -11782,12 +11772,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           pedidoNum:internoMatch[1].trim(),
           destinatario:destMatch?destMatch[1].trim():"",
         };
-      }).filter(Boolean);
+      });
+      const descartadas=pageData.map((p,i)=>p?null:i+1).filter(Boolean);
+      const pageOk=pageData.filter(Boolean);
+      if(descartadas.length&&pageOk.length) toast(`${descartadas.length} página${descartadas.length!==1?"s":""} del PDF sin número de seguimiento o sin "N° Interno" (pág. ${descartadas.slice(0,8).join(", ")}${descartadas.length>8?"…":""}): quedan afuera`,"warning",8000);
 
       if(type==="sku") {
         // 2ª pasada: identificar pedidos que NO están en memoria
         const missingNums=[...new Set(
-          pageData
+          pageOk
             .filter(p=>!tabOrders.find(o=>o.numero===p.pedidoNum)&&!orders.find(o=>o.numero===p.pedidoNum))
             .map(p=>p.pedidoNum)
         )];
@@ -11814,7 +11807,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         }
 
         // 3ª pasada: construir resultados con los datos ya cargados
-        const results=pageData.map(p=>{
+        const results=pageOk.map(p=>{
           const order=tabOrders.find(o=>o.numero===p.pedidoNum)
                    ||orders.find(o=>o.numero===p.pedidoNum)
                    ||fetchedMap[p.pedidoNum]||null;
@@ -11824,14 +11817,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         resultSetter(results);
         // Un solo upload para todo: el mismo PDF alimenta el estampado de SKUs
         // Y la subida de trackings (antes había que subirlo dos veces, en dos tabs).
-        setPdfResults(pageData.map(p=>({...p,status:"pending"})));
+        setPdfResults(pageOk.map(p=>({...p,status:"pending"})));
       } else {
-        resultSetter(pageData.map(p=>({...p,status:"pending"})));
+        resultSetter(pageOk.map(p=>({...p,status:"pending"})));
       }
 
-      if(pageData.length===0) toast("No se encontraron rótulos válidos en el PDF","warning");
+      if(pageOk.length===0) toast("No se encontraron rótulos válidos en el PDF","warning");
       // No auto-generar — el usuario confirma con botón
-      if(type==="sku"&&pageData.length>0) { setter(false); return; }
+      if(type==="sku"&&pageOk.length>0) { setter(false); return; }
     } catch(e){ toast("Error al procesar el PDF: "+e.message,"error"); }
     setter(false);
   }
@@ -11840,9 +11833,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     setSkuGenerating(true); setSkuProgress(20);
     try {
       const skuMap={};
+      // Clave por PÁGINA: un pedido con dos rótulos (multi-bulto) tenía dos
+      // páginas bajo la misma clave y la primera quedaba sin SKU.
       results.forEach(r=>{
-        if(r.found&&r.skuLines?.length) skuMap[r.pedidoNum]={page:r.pagina,skus:r.skuLines,found:true};
-        else skuMap[r.pedidoNum||r.pagina]={page:r.pagina,skus:[],found:false};
+        if(r.found&&r.skuLines?.length) skuMap[String(r.pagina)]={page:r.pagina,pedido:r.pedidoNum,skus:r.skuLines,found:true};
+        else skuMap[String(r.pagina)]={page:r.pagina,pedido:r.pedidoNum||null,skus:[],found:false};
       });
       setSkuProgress(40);
       let cfg={x:10,y:10,fontSize:4,sortBy:"sin"};
@@ -12164,7 +12159,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
             </span>
             <span style={{display:"flex",flexDirection:"column",alignItems:"flex-start",lineHeight:1.25}}>
-              <span style={{fontSize:8.5,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.7}}>Saldo de envíos</span>
+              <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6}}>Saldo de envíos</span>
               <span style={{display:"flex",alignItems:"baseline",gap:6}}>
                 <span style={{fontSize:16,fontWeight:800,color:chipColor,letterSpacing:-0.4,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(andreani.saldo)}</span>
               </span>
@@ -12397,7 +12392,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       style={{...BtnPrimary(T),border:`1.5px solid ${T.green}55`,background:T.green+"1a",color:T.green,boxShadow:`0 0 0 1px ${T.green}15, 0 4px 20px ${T.green}20`,fontSize:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",position:"relative"}}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                       Generar etiquetas (Saldo) ({selected.size})
-                      <span style={{position:"absolute",top:-9,right:10,fontSize:9,fontWeight:800,letterSpacing:0.4,textTransform:"uppercase",background:T.green,color:"#fff",borderRadius:5,padding:"2px 7px",boxShadow:"0 2px 8px rgba(0,0,0,0.35)"}}>Recomendado</span>
+                      <span style={{fontSize:9,fontWeight:800,letterSpacing:0.4,textTransform:"uppercase",background:T.green,color:"#fff",borderRadius:5,padding:"2px 6px",marginLeft:2}}>Recomendado</span>
                     </button>
                   )}
                 </>
@@ -12473,7 +12468,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   const exportedOn=exportadoMap[o.numero]?new Date(exportadoMap[o.numero]).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
                   return (
                     <div key={o.numero} onClick={()=>setOrderDetail(o)}
-                      style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:compactMode?"8px 14px":"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
+                      style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
                       onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
                       onMouseLeave={e=>{if(!sel)e.currentTarget.style.background=sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent";}}>
                       {/* En mobile el target es más grande (dedo, no mouse): padding invisible alrededor del check */}
@@ -12487,21 +12482,21 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         {exportedOn&&<span style={{fontSize:9,fontWeight:600,color:T.green,background:T.green+"18",borderRadius:3,padding:"1px 4px"}}>✓ {exportedOn}</span>}
                       </div>
                       <div>
-                        <div style={{fontSize:compactMode?12:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</div>
-                        {!compactMode&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{o.localidad||o.ciudad}{o.provincia?`, ${o.provincia}`:""}</div>}
+                        <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</div>
+                        {<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{o.localidad||o.ciudad}{o.provincia?`, ${o.provincia}`:""}</div>}
                       </div>
                       <div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                         <LensDots productos={o.productos}/>
-                        {!compactMode&&<span style={{marginLeft:6}}>{o.productos.map(p=>nombreCorto(p.nombre)).join(', ')}</span>}
+                        {<span style={{marginLeft:6}}>{o.productos.map(p=>nombreCorto(p.nombre)).join(', ')}</span>}
                       </div>
                       <Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>
                       <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:0}}>
                         <div style={{fontSize:11,color:o.esSucursal?T.purple:T.blue,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
                           {o.esSucursal
-                            ?<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                            ?<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9h18l-1.5-5h-15L3 9z"/><path d="M4 9v11h16V9"/><path d="M9 20v-6h6v6"/></svg>
                             :<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>}
                           <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{o.medioEnvio||"--"}</span>
-                          {o.esSucursal&&o.pickupDetails&&<svg title="Puede requerir confirmar sucursal al exportar" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
+                          {o.esSucursal&&o.pickupDetails&&<svg aria-label="Puede requerir confirmar sucursal al exportar" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
                         </div>
                         {o.esSucursal&&o.pickupDetails&&(()=>{
                           const pd=o.pickupDetails, ad=pd.address||{};
@@ -12706,12 +12701,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                           const a=document.createElement("a");
                           a.href=url;a.download=`rotulos-con-sku-${hoyAR()}.pdf`;a.click();
                           URL.revokeObjectURL(url);
-                        }} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"12px 24px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8,flexShrink:0,boxShadow:`0 4px 16px ${T.green}44`}}>
+                        }} style={{...BtnPrimary(T),background:T.green,borderColor:T.green,fontSize:14,padding:"12px 24px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                           Descargar PDF
                         </button>
                       : <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}}
-                          style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"12px 24px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8,flexShrink:0,boxShadow:`0 4px 16px ${T.accentSolid}44`}}>
+                          style={{...BtnPrimary(T),fontSize:14,padding:"12px 24px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                           Generar PDF con SKUs
                         </AsyncButton>}
                   </div>
@@ -12731,7 +12726,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         <div style={{fontSize:12,color:T.textSm}}>{pend.length>0?`${pend.length} tracking(s) del mismo PDF, listos para subir (avisa al cliente y activa el seguimiento automático)`:done?`${okCount} enviados — ver estado en la pestaña Seguimientos`:"Sin trackings pendientes"}</div>
                       </div>
                       {pend.length>0&&(
-                        <AsyncButton onClick={sendAllTracking} style={{background:T.blue,border:"none",color:"#fff",borderRadius:10,padding:"12px 22px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,boxShadow:`0 4px 16px ${T.blue}44`}}>
+                        <AsyncButton onClick={sendAllTracking} style={{...BtnPrimary(T),background:T.blue,borderColor:T.blue,fontSize:14,padding:"12px 22px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                           Enviar {pend.length} seguimiento{pend.length!==1?"s":""}
                         </AsyncButton>
                       )}
@@ -12914,7 +12909,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     <div key={e.numero} style={{display:"flex",alignItems:"center",gap:10,background:T.surface,border:`1px solid ${T.borderL}`,borderLeft:`3px solid ${p.sev==="red"?T.red:T.orange}`,borderRadius:8,padding:"8px 12px",fontSize:12,flexWrap:"wrap"}}>
                       <div style={{flex:1,minWidth:200}}><span style={{fontWeight:700,color:T.text}}>#{e.numero}</span>{e.cliente?<span style={{color:T.textMd}}> · {e.cliente}</span>:null}{e.localidad?<span style={{color:T.textSm}}> · {e.localidad}</span>:null}<div style={{color:p.sev==="red"?T.red:T.orange,fontWeight:600,fontSize:11}}>{p.msg}</div></div>
                       {p.tipo!=="devolucion"&&<Btn T={T} variant="secondary" size="sm" onClick={()=>copiar(aviso(e,p),"Aviso copiado, pegalo en WhatsApp o mail")}>Copiar aviso</Btn>}
-                      {trk&&<Btn T={T} variant="secondary" size="sm" onClick={()=>setSegTrazas(e)}>Ver seguimiento</Btn>}
+                      {trk&&<Btn T={T} variant="secondary" size="sm" onClick={()=>setSegFicha(e)}>Ver seguimiento</Btn>}
                     </div>
                   );})}
                   {conProblema.length>6&&<button onClick={()=>setSegMasAlertas(v=>!v)} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,padding:"4px 0",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left"}}>{segMasAlertas?"Ver menos":`Ver los ${conProblema.length}`}</button>}
@@ -13009,7 +13004,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               </>)}
             </Card>
 
-            <AdmTrazasModal T={T} envio={segTrazas} onClose={()=>setSegTrazas(null)}/>
             <EnvioFichaModal T={T} envio={segFicha} onClose={()=>setSegFicha(null)}
               catInfo={segFicha?(CAT[catDe(segFicha)]||CAT.otro):null} problema={segFicha?problemaDe(segFicha):null}
               casos={segFicha?segCasos.filter(c=>String(c.numero)===String(segFicha.numero)):[]}
@@ -13064,21 +13058,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         })()}
       </div>
 
-      {/* Sucursal confirmed toast */}
-      {copiedToast&&(
-        <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 16px",display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 20px rgba(0,0,0,0.25)",animation:"growith-fadeIn 0.15s ease",fontSize:13,color:T.text}}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> {copiedToast}
-        </div>
-      )}
-      {sucursalConfirmed&&(
-        <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"11px 16px 11px 13px",display:"flex",alignItems:"flex-start",gap:10,boxShadow:"0 2px 6px rgba(0,0,0,0.12), 0 12px 40px rgba(0,0,0,0.24)",animation:"growith-toast-in 0.4s cubic-bezier(0.34,1.56,0.64,1) both",minWidth:280,fontFamily:"'Inter',system-ui,sans-serif"}}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:2}}><polyline points="20 6 9 17 4 12"/></svg>
-          <div>
-            <div style={{fontSize:13,fontWeight:600,color:T.text}}>Sucursal confirmada · #{sucursalConfirmed.numero}</div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{sucursalConfirmed.nombre}</div>
-          </div>
-        </div>
-      )}
 
       {/* Order Detail Modal */}
       <Modal T={T} open={!!orderDetail} onClose={()=>setOrderDetail(null)} title={orderDetail?`Pedido #${orderDetail.numero}`:""} width={580}>
@@ -13167,7 +13146,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       </Modal>
 
       {/* Verificación pre-descarga: filas del Excel que no coinciden con la tienda */}
-      <Modal T={T} open={!!verifModal} onClose={()=>{if(verifModal){verifModal.resolve(false);}}} title="Verificación de destinos" width={620} zIndex={2100}>
+      <Modal T={T} open={!!verifModal} onClose={()=>{if(verifModal){verifModal.resolve("CERRAR");}}} title="Verificación de destinos" width={620} zIndex={2100}>
         {verifModal&&(
           <div>
             {(()=>{ const graves=verifModal.items.filter(v=>!v.suave).length; const suaves=verifModal.items.length-graves; return graves>0?(
@@ -13203,7 +13182,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       </Modal>
 
       {/* Location / Sucursal Resolution Modal */}
-      <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);setExportSingleOrder(null);}}} title={locationModal?.type==="sucursal"?(locationModal.wantOficial?`Sucursal de retiro · #${locationModal.order?.numero||""}`:"Elegir sucursal Andreani"):"Confirmar localidad Andreani"} width={600} zIndex={2000}>
+      <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve("EXCLUIR");setLocationModal(null);}}} title={locationModal?.type==="sucursal"?(locationModal.wantOficial?`Sucursal de retiro · #${locationModal.order?.numero||""}`:"Elegir sucursal Andreani"):"Confirmar localidad Andreani"} width={600} zIndex={2000}>
         {locationModal&&(()=>{
           const {order,locs,resolve,type,autoMatch,oficiales,wantOficial,esquina,noExacto,noOperativa}=locationModal;
           const isSuc=type==="sucursal";
@@ -13299,7 +13278,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               )}
               {noExacto&&!esquina&&noOperativa==null&&!apiUI&&(
                 <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.red}}>
-                  <strong>No pude confirmar el punto EXACTO que eligió el cliente.</strong> El envío va a ir a la sucursal que elijas acá — no al punto de arriba. Elegí solo si estás segura de que es el mismo lugar (misma calle y número); si no aparece en el desplegable, excluí el pedido y cargalo a mano en Andreani (los puntos HOP tampoco están disponibles por API).
+                  <strong>No pude confirmar el punto EXACTO que eligió el cliente.</strong> El envío va a ir a la sucursal que elijas acá — no al punto de arriba. Elegí solo si estás segura de que es el mismo lugar (misma calle y número); si no aparece en el desplegable, excluí el pedido y cargalo a mano en Andreani.
                 </div>
               )}
               {apiUI&&(
@@ -13431,7 +13410,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 <div style={{marginBottom:14}}>
                   <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
                     {locCerca?.aproximado?`Sucursales de la zona del pedido${locCerca?.origen?` (${locCerca.origen})`:""}`:esquina?"Sucursales más cercanas a la dirección del pedido":"Sucursales más cercanas al punto del pedido"}
-                    {locCerca?.aproximado&&locCerca?.geoDiag&&<span style={{display:"block",fontSize:10,fontWeight:400,textTransform:"none",letterSpacing:0,opacity:0.65,marginTop:2}}>Completando ubicaciones… {locCerca.geoDiag} — reabrí en unos segundos</span>}
+                    {locCerca?.aproximado&&locCerca?.geoDiag&&(()=>{ try{ return localStorage.getItem("growith_diag")==="1"; }catch(_){ return false; } })()&&<span style={{display:"block",fontSize:10,fontWeight:400,textTransform:"none",letterSpacing:0,opacity:0.65,marginTop:2}}>Completando ubicaciones… {locCerca.geoDiag} — reabrí en unos segundos</span>}
                   </div>
                   {locCerca?.loading?(
                     <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/> Buscando sucursales cercanas...</div>
@@ -13501,8 +13480,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           const selOrders=exportSingleOrder?[exportSingleOrder]:[...selected.values()];
           const domCount=selOrders.filter(o=>!isSucursalOrder(o)).length;
           const sucCount=selOrders.filter(o=>isSucursalOrder(o)).length;
-          let hist=[];try{hist=JSON.parse(localStorage.getItem(ghKey("growith_exportHistory"))||"[]");}catch(_){}
-          const yaExportados=selOrders.filter(o=>hist.some(h=>h.pedidos?.includes(o.numero)));
+          const yaExportados=selOrders.filter(o=>!!exportadoMap[o.numero]);
           return (
         <div>
           <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",marginBottom:16}}>
@@ -13547,7 +13525,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             <div style={{background:T.yellowBg||T.surface,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"14px 16px",marginBottom:16}}>
               <div style={{fontSize:13,fontWeight:700,color:T.yellow,marginBottom:6,display:"flex",alignItems:"center",gap:6}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Dirección en esquina detectada</div>
               <div style={{fontSize:13,color:T.text,lineHeight:1.5}}>
-                Los siguientes pedidos tienen una dirección de Punto HOP en esquina (Esq.), lo que puede causar errores en la carga masiva de Andreani. <strong>No fueron incluidos en el Excel.</strong>
+                Los siguientes pedidos tienen una dirección de punto de retiro en esquina (Esq.), lo que puede causar errores en la carga masiva de Andreani. <strong>No fueron incluidos en el Excel.</strong>
               </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
@@ -13657,13 +13635,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             const falta=Math.max(0,total-(andreani.saldo||0));
             return (
               <div>
-                <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>Revisá los envíos antes de emitir. Cada etiqueta se debita del saldo al confirmar.</div>
-                {(()=>{ const hops=rows.filter(r=>r.hop&&!r.incluido&&!r.emitido); if(!hops.length) return null; return (
-                  <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:T.text,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                    <span style={{flex:1,minWidth:200}}><strong>{hops.length} pedido{hops.length!==1?"s":""} a punto HOP</strong> no se puede{hops.length!==1?"n":""} emitir por API: Andreani todavía no habilitó ese canal para tu cuenta. Por Excel salen al punto exacto.</span>
-                    <button onClick={()=>{ const os=hops.map(r=>r.order); setBulk(null); bulkRowsRef.current=[]; exportAndreani(os); }} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>Exportar XLSX con {hops.length===1?"ese pedido":`esos ${hops.length}`}</button>
-                  </div>
-                ); })()}
+                <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>Revisá los envíos antes de emitir. Cada etiqueta se debita del saldo al confirmar{tabEnvio==="empaquetar"?"; los pedidos de Por empaquetar se marcan como enviados en tu tienda y el cliente recibe el aviso":""}.</div>
                 <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:11,color:T.textSm,marginBottom:12}}>
                   <span>Paquete por defecto: <strong style={{color:T.textMd}}>{paqResumen()}</strong></span>
                   {paqPerfiles.length>0&&<select defaultValue="" onChange={e=>{ const pf=paqPerfiles.find(x=>x.nombre===e.target.value); e.target.value=""; if(!pf) return; rows.filter(r=>!r.emitido).forEach(r=>{ r.paq={...pf}; r.cot=null; r.cotError=""; r.incluido=true; }); pushBulk("revision"); cotizarBulk(); }} style={{...iS,marginBottom:0,width:"auto",fontSize:11,padding:"3px 8px"}}><option value="">Aplicar un perfil a todos…</option>{paqPerfiles.map(pf=><option key={pf.nombre} value={pf.nombre}>{pf.nombre} — {paqTxt(pf)}</option>)}</select>}
@@ -14100,14 +14072,6 @@ function AndreaniOpcionesImpresion({T, fmt, onFmt, sku, onSku, compacto=false}){
     </div>
   );
 }
-function AndreaniSkuToggle({T, on, onChange}){
-  return (
-    <button onClick={()=>onChange(!on)} title="Imprime los SKU del pedido en los recuadros de Orden de Ruteo del pie de la etiqueta" aria-pressed={on}
-      style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",fontSize:11,fontWeight:on?600:400,border:`1px solid ${on?T.accent+"66":T.border}`,borderRadius:8,background:on?T.accent+"14":T.surface,color:on?T.accent:T.textMd,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <span style={{width:8,height:8,borderRadius:"50%",background:on?T.accent:T.border,flexShrink:0}}/>SKU en la etiqueta
-    </button>
-  );
-}
 // Convierte etiquetas A4 (base64) a un PDF de páginas 10x15 cm para impresoras
 // térmicas: cada página del original se embebe escalada al máximo del área
 // manteniendo la proporción. pdf-lib entra por dynamic import (mismo patrón que
@@ -14183,18 +14147,6 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
     refrescarCargas();
     return ()=>{alive=false;};
   },[open]);
-  async function solicitarCarga(){
-    setCargaErr("");
-    const m=Math.round(Number(montoCarga));
-    if(!isFinite(m)||m<1000){ setCargaErr("El monto mínimo de carga es $1.000."); return; }
-    if(m>10000000){ setCargaErr(`El monto máximo por carga es $10.000.000 (escribiste ${fmtMoney(m)}).`); return; }
-    const r=await authFetch("/api/andreani?action=carga_solicitar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({monto:m})});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok||d.error){ setCargaErr(typeof d.error==="string"?d.error:`No se pudo registrar la carga (HTTP ${r.status})`); return; }
-    if(d.datosPago) setDatosPago(d.datosPago);
-    setNueva(d.carga); setMontoCarga("");
-    refrescarCargas();
-  }
   // Pago con Mercado Pago: el backend crea la carga + checkout y redirigimos.
   // El saldo se acredita solo cuando MP aprueba (webhook), sin equipo.
   async function pagarMP(){
