@@ -166,10 +166,11 @@ async function anclaComprador(db, { cp, loc, prov }, pub) {
 // distancia; si no hay ninguna a 10 km, únicamente la más cercana. Los puntos
 // HOP entran por el índice propio (api/_hop.js) con coordenadas reales.
 const RADIO_M = 10000;
+const HOP_RADIO_M = 3000;   // puntos HOP de CP vecinos: solo a ≤ 3 km del comprador
 let _dbg = {}; // diagnóstico de la última selección (solo se devuelve con ?debug=1)
 async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
   _dbg = { cp, loc };
-  const cacheRef = db.collection("andreani_config").doc(`rates_suc11_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
+  const cacheRef = db.collection("andreani_config").doc(`rates_suc12_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
   try {
     const c = (await cacheRef.get()).data();
     if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return elegirParaMostrar(c.lista, max);
@@ -186,8 +187,11 @@ async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
     // Reglas (Soluna, 16/9):
     //  • SIEMPRE al menos una sucursal Andreani, y las sucursales van primero
     //    (retirar en sucursal da muchos menos problemas que un punto HOP).
-    //  • Los puntos HOP SOLO del CP que escribió el comprador — nunca de otra
-    //    ciudad, aunque queden cerca.
+    //  • Puntos HOP: primero los del CP que escribió el comprador; después los
+    //    de CP vecinos SOLO si están a ≤ HOP_RADIO_M del comprador y el ancla
+    //    es confiable (sale de puntos ubicados en su propio CP). Así no se
+    //    pierde un punto a tres cuadras por estar del otro lado del límite
+    //    del CP, y tampoco entran puntos de otra ciudad.
     // Sucursales: a ≤ 10 km (las del CP arriba, después por distancia); si no
     // hay ninguna a 10 km, la más cercana igual; sin ancla, las que Andreani
     // dice que atienden el CP.
@@ -198,9 +202,11 @@ async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
     } else {
       sucs = sucs.filter(s => s.cps.includes(cpS) || cpDeS(s) === cpS).sort((a, b) => (cpDeS(b) === cpS) - (cpDeS(a) === cpS));
     }
-    const hops = porDist.filter(s => esHopItem(s) && cpDeS(s) === cpS);
+    const hopCp = porDist.filter(s => esHopItem(s) && cpDeS(s) === cpS);
+    const hopVecino = (ancla && ancla.src === "cp") ? porDist.filter(s => esHopItem(s) && cpDeS(s) !== cpS && s.distM <= HOP_RADIO_M) : [];
+    const hops = [...hopCp, ...hopVecino];
     lista = [...dedupeSucursales(sucs), ...dedupeSucursales(hops)];
-    _dbg.ancla = ancla ? ancla.src : "ninguna"; _dbg.sucursales = sucs.length; _dbg.hop = hops.length; _dbg.sinCoords = pub.filter(s => !enARll(s.lat, s.lng)).length;
+    _dbg.ancla = ancla ? ancla.src : "ninguna"; _dbg.sucursales = sucs.length; _dbg.hop = hops.length; _dbg.hopVecino = hopVecino.length; _dbg.sinCoords = pub.filter(s => !enARll(s.lat, s.lng)).length;
   } catch (e) { _dbg.error = e.message; console.error("[shopify-rates] sucursales:", e.message); }
   // Sin nada: la sucursal más cercana por CP (nunca un HOP de otro CP).
   if (!lista.filter(s => !esHopItem(s)).length) {
