@@ -9842,7 +9842,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const bulkRowsRef=useRef([]); // fuente de verdad de las filas del bulk (se mutan y se copian a state)
   const bulkCancelRef=useRef(false); // cancelar la fase "resolviendo" (antes de cualquier débito)
   const [bulkDl,setBulkDl]=useState(null); // progreso de "Descargar todas": {done,total} | null
-  const [cotRow,setCotRow]=useState({}); // cotización por fila: numero -> {loading}|{precio}|{error} (cache de sesión, no re-cotiza al re-render)
+  const [cotRow,setCotRow]=useState({});
+  // "Descargar al terminar": preferencia del dispositivo (como el formato).
+  const [autoDl,setAutoDl]=useState(()=>{ try{ return localStorage.getItem("growith_andreani_autodl")==="1"; }catch(_){ return false; } });
+  const autoDlRef=useRef(autoDl); autoDlRef.current=autoDl;
+  function setAutoDlPref(v){ setAutoDl(v); try{ localStorage.setItem("growith_andreani_autodl",v?"1":"0"); }catch(_){} } // cotización por fila: numero -> {loading}|{precio}|{error} (cache de sesión, no re-cotiza al re-render)
   useEffect(()=>{
     if(!user?.uid) return;
     let alive=true;
@@ -11629,6 +11633,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       setAndreani(a=>({...a,saldoBajo:ultSaldoInfo.saldoBajo,etiquetasEstimadas:ultSaldoInfo.etiquetasEstimadas}));
     }
     pushBulk("resultado");
+    // Descarga automática: Andreani genera el PDF en segundos; descargarVarias
+    // reintenta sola las que todavía no están.
+    if(autoDlRef.current&&bulkRowsRef.current.some(r=>r.emitido?.numeroDeEnvio&&!r.anulada)) setTimeout(()=>{ descargarTodasBulk().catch(()=>{}); },1500);
+  }
+  // Severidad de una fila de la revisión (0 = requiere acción): las que
+  // necesitan algo van arriba, las emitidas al final.
+  function sevFila(r){
+    if(r.emitido) return 4;
+    const cf=r.tipo==="sucursal"&&r.oficial&&!r.esquina?conflictoSucursal(r.order,r.oficial):null;
+    if(cf?.grave&&!r.conflictoOk) return 0;
+    if(r.cotError||!r.incluido) return 1;
+    if(r.tipo==="sucursal"&&r.verif==="warn") return 2;
+    return 3;
   }
   // Cotización rápida de UNA fila de la tabla (chip "Cotizar"). Usa el paquete
   // default de growith_exportCfg y cachea el resultado por número de pedido.
@@ -11652,6 +11669,41 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     }catch(e){ setCotRow(m=>({...m,[o.numero]:{error:e.message||"Error de red"}})); }
     finally{ delete cotRowBusyRef.current[o.numero]; }
   }
+  // Cotización en SEGUNDO PLANO de la página visible, agrupada por (tipo, CP)
+  // con el paquete por defecto: el precio aparece en la columna Envío sin
+  // tocar el chip pedido por pedido (con 100 pedidos era inútil). Cache 30 min
+  // por combinación; no pisa una cotización hecha a mano.
+  const cotBgRef=useRef({});
+  useEffect(()=>{
+    if(!andreani?.enabled||!pageOrders.length) return;
+    const t=setTimeout(async()=>{
+      const grupos=new Map();
+      for(const o of pageOrders){
+        if(!filaEsAndreani(o)||cotRow[o.numero]||cotRowBusyRef.current[o.numero]) continue;
+        const cp=cpDestinoDe(o); if(!cp) continue;
+        const k=`${isSucursalOrder(o)?"sucursal":"domicilio"}|${cp}`;
+        if(!grupos.has(k)) grupos.set(k,[]); grupos.get(k).push(o);
+      }
+      const lotes=[...grupos.entries()].slice(0,24);
+      for(let i=0;i<lotes.length;i+=3){
+        await Promise.all(lotes.slice(i,i+3).map(async([k,os])=>{
+          const c=cotBgRef.current[k];
+          let precio=c&&Date.now()-c.ts<1800000?c.precio:null;
+          if(precio==null){
+            try{
+              const [tipo,cp]=k.split("|");
+              const resp=await authFetch("/api/andreani?action=cotizar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({tipo,cpDestino:cp,bultos:bultosDeCfg()})});
+              const d=await resp.json().catch(()=>({}));
+              if(resp.ok&&!d.error&&typeof d.precio==="number"){ precio=d.precio; cotBgRef.current[k]={precio,ts:Date.now()}; }
+            }catch(_){}
+          }
+          if(precio!=null) setCotRow(m=>{ const n={...m}; for(const o of os) if(!n[o.numero]) n[o.numero]={precio,bg:true}; return n; });
+        }));
+      }
+    },700);
+    return ()=>clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[pageOrders,andreani?.enabled]);
   // El chip solo aparece en pedidos que van por Andreani: sucursal/HOP siempre,
   // y domicilio salvo medios claramente ajenos (retiro en local, a acordar).
   function filaEsAndreani(o){
@@ -11939,9 +11991,23 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         if(intento<retries-1) await new Promise(r=>setTimeout(r,1500*(intento+1)));
       }
     }
-    setTrackingSent(p=>({...p,[result.pedidoNum]:"error"}));
     setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
-    throw lastErr||new Error("Error desconocido");
+    const err=lastErr||new Error("Error desconocido");
+    // Falla transitoria (red, 5xx, rate limit, pedido que todavía no está en
+    // la tienda): queda en COLA y el cron lo reintenta solo. Sin permiso
+    // (scope) o sin sesión no tiene sentido reintentar.
+    const definitivo=err.code==="shopify_scope"||err.code==="shopify_hold"||/no encontrado/i.test(err.message||"");
+    if(!definitivo&&user?.uid){
+      setTrackingSent(p=>({...p,[result.pedidoNum]:"cola"}));
+      authFetch(`/api/update-shipping?action=envios_registrar&uid=${user.uid}`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({envios:[{numero:String(result.pedidoNum),tracking:String(result.tracking),estado:"despachado",activo:true,tiendaPendiente:{orderId:String(result.pedidoNum),tracking:String(result.tracking),error:String(err.message||"").slice(0,200)}}]}),
+      }).catch(()=>{});
+      err.enCola=true; err.message=`${err.message} — quedó en cola: Growith lo reintenta solo`;
+    } else {
+      setTrackingSent(p=>({...p,[result.pedidoNum]:"error"}));
+    }
+    throw err;
   }
 
   async function sendAllTracking() {
@@ -12397,6 +12463,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   )}
                 </>
               )}
+              {(()=>{
+                // Etiquetas emitidas por API HOY (hora AR): reimpresión masiva sin ir a Seguimientos.
+                const hoy=hoyAR();
+                const deHoy=Object.values(enviosFs).filter(e=>e?.andreani?.numeroDeEnvio&&!e.andreani?.anulada&&(()=>{ const ms=ghTsMs(e.andreani?.ts)||Date.parse(e.creado||"")||0; if(!ms) return false; try{ return new Date(ms).toLocaleDateString("en-CA",{timeZone:"America/Argentina/Buenos_Aires"})===hoy; }catch(_){ return false; } })());
+                if(!deHoy.length||!andreani?.enabled) return null;
+                return <AsyncButton title="Vuelve a descargar en un solo PDF todas las etiquetas emitidas hoy por API" disabled={!!bulkDl} onClick={()=>descargarVarias(deHoy.map(e=>{ const o=exportables.find(x=>String(x.numero)===String(e.numero)); return {numero:e.numero,envio:String(e.andreani.numeroDeEnvio),skus:o?ghSkuLinesDe(o):[]}; }))} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap"}}>{bulkDl?`Descargando ${bulkDl.done}/${bulkDl.total}…`:`Reimprimir las de hoy (${deHoy.length})`}</AsyncButton>;
+              })()}
               <span title="Atajos: Ctrl+A selecciona todos · Shift+click selecciona un rango · Esc limpia la selección · Enter exporta"
                 style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"flex",gap:10,alignItems:"center",cursor:"help"}}>
                 <span>{exportables.length} {exportables.length===1?"pedido":"pedidos"}{totalPages>1?` · pág. ${orderPage+1}/${totalPages}`:""}</span>
@@ -12870,6 +12943,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         <input type="number" min={1} value={enviosCfg[k]??def} onChange={ev=>{ const v=Number(ev.target.value); if(isFinite(v)&&v>=1) guardarEnviosCfg({[k]:v}); }} style={{width:56,padding:"4px 8px",borderRadius:7,border:`1px solid ${T.inputBorder}`,background:T.card,color:T.text,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",textAlign:"center"}}/>
                       </div>
                     ))}
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,margin:"10px 0 6px"}}>Saldo de envíos</div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:4}}>
+                      <span style={{fontSize:11,color:T.textMd,lineHeight:1.4}}>Avisarme por mail si el saldo baja de</span>
+                      <input type="number" min={0} step={1000} placeholder="0 = no" value={enviosCfg.saldoBajoUmbral??""} onChange={ev=>{ const v=Math.round(Number(ev.target.value)); if(isFinite(v)&&v>=0) guardarEnviosCfg({saldoBajoUmbral:v}); }} style={{width:96,padding:"4px 8px",border:`1px solid ${T.border}`,borderRadius:6,background:T.bg,color:T.text,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    </div>
+                    <div style={{fontSize:10,color:T.textSm}}>Se revisa una vez por día; con 0 no avisa.</div>
                   </div>
                 )}
               </div>
@@ -12987,6 +13066,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         <div style={{minWidth:0}}>
                           <div style={{fontSize:11,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={e.estadoAndreani||""}>{e.andreani?.anulada?"Etiqueta anulada":(e.estadoAndreani||(trk?"esperando el primer chequeo":"sin tracking aún"))}</div>
                           {p&&<div style={{fontSize:11,color:p.sev==="red"?T.red:T.orange,fontWeight:600}}>{p.msg}</div>}
+                          {e.tiendaPendiente&&!e.trackingTienda?.ok&&<div style={{fontSize:11,color:e.tiendaPendiente.abandonado?T.red:T.orange,fontWeight:600}}>{e.tiendaPendiente.abandonado?"No se pudo subir el seguimiento a la tienda":"Seguimiento pendiente de subir a la tienda (se reintenta solo)"}</div>}
                           {esApi(e)&&!p&&<div style={{fontSize:11,color:T.textSm}}>{fmtMoney(e.andreani?.precio||0)}{e.andreani?.fechaEstimadaDeEntrega&&!e.entregadoAt?` · llega ~${ghFechaCorta(e.andreani.fechaEstimadaDeEntrega)}`:""}</div>}
                         </div>
                         <span style={{textAlign:"right",color:T.textSm,fontVariantNumeric:"tabular-nums"}} title={e.entregadoAt?"despacho a entrega":"desde el despacho"}>{tiempo}</span>
@@ -13044,7 +13124,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         <span style={{fontWeight:700,color:T.accent}}>#{r.pedidoNum||"--"}</span>
                         <div style={{minWidth:0}}>{r.destinatario&&<div style={{color:T.text,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.destinatario}</div>}<div style={{fontSize:11,color:T.textSm,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{r.tracking||"Sin tracking"}</div></div>
                         <div style={{display:"flex",justifyContent:"flex-end"}}>
-                          {st==="ok"?<DSBadge T={T} color={T.green} size="sm">Enviado</DSBadge>:st==="warn"?<span title="El tracking se guardó pero la tienda no marcó la orden como enviada"><DSBadge T={T} color={T.orange} size="sm">Sin aviso</DSBadge></span>:st==="error"?<DSBadge T={T} color={T.red} size="sm">Error</DSBadge>:sending?<Spinner size={13} color={T.yellow}/>:sendBatchActive?<span style={{fontSize:11,color:T.textSm}}>En cola</span>:r.tracking&&r.pedidoNum?<AsyncButton onClick={()=>sendTracking(r)} style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px"}}>Enviar</AsyncButton>:<span style={{fontSize:11,color:T.red}}>Sin datos</span>}
+                          {st==="ok"?<DSBadge T={T} color={T.green} size="sm">Enviado</DSBadge>:st==="warn"?<span title="El tracking se guardó pero la tienda no marcó la orden como enviada"><DSBadge T={T} color={T.orange} size="sm">Sin aviso</DSBadge></span>:st==="cola"?<span title="No se pudo subir ahora: el cron de seguimiento lo reintenta solo cada 30 minutos"><DSBadge T={T} color={T.orange} size="sm">En cola</DSBadge></span>:st==="error"?<DSBadge T={T} color={T.red} size="sm">Error</DSBadge>:sending?<Spinner size={13} color={T.yellow}/>:sendBatchActive?<span style={{fontSize:11,color:T.textSm}}>En cola</span>:r.tracking&&r.pedidoNum?<AsyncButton onClick={()=>sendTracking(r)} style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px"}}>Enviar</AsyncButton>:<span style={{fontSize:11,color:T.red}}>Sin datos</span>}
                         </div>
                       </div>
                     );})}
@@ -13642,6 +13722,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   <button onClick={async()=>{ const nombre=await appPrompt("Nombre del perfil de paquete (se guarda con el peso, medidas y valor declarado del paquete por defecto):","Caja chica"); if(!nombre) return; const pf={nombre:String(nombre).trim().slice(0,30),peso:exportCfg.peso,alto:exportCfg.alto,ancho:exportCfg.ancho,prof:exportCfg.prof,valor:exportCfg.valor}; savePaqPerfiles([...paqPerfiles.filter(x=>x.nombre!==pf.nombre),pf]); toast("Perfil guardado","success"); }} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>Guardar el paquete por defecto como perfil</button>
                   {paqPerfiles.length>0&&<button onClick={async()=>{ const nombre=await appPrompt("¿Qué perfil querés borrar?\n"+paqPerfiles.map(x=>"• "+x.nombre).join("\n"),paqPerfiles[0].nombre); if(!nombre) return; savePaqPerfiles(paqPerfiles.filter(x=>x.nombre!==String(nombre).trim())); }} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:11,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>Borrar un perfil</button>}
                 </div>
+                {(()=>{ const n=rows.filter(r=>!r.emitido&&sevFila(r)<=1).length; return n>0?<div style={{fontSize:12,fontWeight:700,color:T.red,marginBottom:8}}>{n} pedido{n!==1?"s":""} require{n!==1?"n":""} acción antes de emitir: están arriba de la lista.</div>:null; })()}
                 <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"auto",maxHeight:320,marginBottom:14}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
                     <thead><tr>
@@ -13650,7 +13731,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       ))}
                     </tr></thead>
                     <tbody>
-                      {rows.map(r=>{
+                      {rows.map((r,i)=>({r,i,sev:sevFila(r)})).sort((a,b)=>(a.sev-b.sev)||(a.i-b.i)).map(({r})=>{
                         const o=r.order;
                         const destino=r.tipo==="sucursal"?(r.oficial?`Sucursal — ${r.oficial.descripcion}`:"Sucursal"):`Domicilio — ${o.localidad||o.ciudad||""}`;
                         // Dirección real de la sucursal destino — sin esto no
@@ -13685,6 +13766,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                               {r.cotError&&(
                                 <div style={{color:T.red,fontSize:11,marginTop:2,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                                   <span>{r.cotError}</span>
+                                  {!r.incluido&&!r.emitido&&/Excluido manualmente|Sin sucursal elegida/.test(r.cotError)&&(r.tipo==="domicilio"||r.oficial)&&<button onClick={()=>{ r.incluido=true; r.cotError=""; r.cot=null; pushBulk("revision"); cotizarBulk(); }} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:6,fontSize:10,fontWeight:600,padding:"2px 8px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Volver a incluir</button>}
                                   {retryable&&<button onClick={()=>reintentarCotBulk(r)} style={{background:"transparent",border:`1px solid ${T.red}66`,color:T.red,borderRadius:6,fontSize:10,fontWeight:600,padding:"2px 8px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Reintentar</button>}
                                 </div>
                               )}
@@ -13788,7 +13870,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       <div style={{fontSize:13,fontWeight:700,color:T.text}}>Etiqueta{ok.length!==1?"s":""} para imprimir</div>
                       <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Elegí el formato de tu impresora y si querés los SKU impresos; después descargá{ok.length>1?" todas en un solo PDF":""}.</div>
                     </div>
-                    <div style={{width:"100%"}}><AndreaniOpcionesImpresion T={T} fmt={dlFmt} onFmt={setDlFmt} sku={dlSku} onSku={setDlSku}/></div>
+                    <div style={{width:"100%",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                      <AndreaniOpcionesImpresion T={T} fmt={dlFmt} onFmt={setDlFmt} sku={dlSku} onSku={setDlSku}/>
+                      <label onClick={()=>setAutoDlPref(!autoDl)} title="La próxima vez, el PDF con todas las etiquetas se descarga solo al terminar de emitir" style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textMd,cursor:"pointer"}}>
+                        <DSToggle T={T} active={autoDl} onToggle={()=>{}}/>
+                        <span>Descargar al terminar el lote</span>
+                      </label>
+                    </div>
                     {ok.length>1
                       ?<AsyncButton onClick={descargarTodasBulk} disabled={!!bulkDl} style={{...BtnPrimary(T),fontSize:13,minWidth:180,justifyContent:"center"}}>{bulkDl?`Descargando ${bulkDl.done}/${bulkDl.total}…`:`Descargar las ${ok.length} (1 PDF)`}</AsyncButton>
                       :<AsyncButton onClick={()=>descargarEtiquetaBulk(String(ok[0].emitido.numeroDeEnvio),ghSkuLinesDe(ok[0].order))} style={{...BtnPrimary(T),fontSize:13,minWidth:160,justifyContent:"center"}}>Descargar etiqueta</AsyncButton>}
@@ -19100,6 +19188,7 @@ function EnvioFichaModal({T, envio:e, onClose, catInfo, problema, casos=[], onDe
           <span style={{fontSize:11,fontWeight:700,color:esApi?T.accent:T.textMd,background:(esApi?T.accent:T.textMd)+"14",border:`1px solid ${esApi?T.accent:T.textMd}33`,borderRadius:5,padding:"2px 8px"}}>{esApi?"Emitida por API":"Etiqueta por Excel"}</span>
           <span style={{fontSize:12,color:T.textMd}}>{e.esSucursal||e.andreani?.tipo==="sucursal"?"Retiro en sucursal":"A domicilio"}</span>
           {trk&&<a href={`https://www.andreani.com/envio/${trk}`} target="_blank" rel="noreferrer" style={{marginLeft:"auto",fontSize:12,color:T.accent,fontWeight:600,textDecoration:"none"}}>Abrir en Andreani ↗</a>}
+          {trk&&<a href={`${window.location.origin}/#/seguir/${trk}`} target="_blank" rel="noreferrer" title="Página de seguimiento de Growith (alternativa a la de Andreani)" style={{marginLeft:12,fontSize:12,color:T.accent,fontWeight:600,textDecoration:"none"}}>Ver en Growith ↗</a>}
         </div>
         {problema&&<div style={{background:(problema.sev==="red"?T.red:T.orange)+"14",border:`1px solid ${problema.sev==="red"?T.red:T.orange}44`,borderRadius:10,padding:"9px 12px",fontSize:12,color:problema.sev==="red"?T.red:T.orange,fontWeight:600}}>Atención: {problema.msg}</div>}
         {/* Datos */}
@@ -19123,6 +19212,8 @@ function EnvioFichaModal({T, envio:e, onClose, catInfo, problema, casos=[], onDe
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
             {esApi&&!anulada&&<Btn T={T} variant="primary" size="sm" onClick={()=>onDescargar&&onDescargar(num)}>Descargar etiqueta</Btn>}
             {trk&&<Btn T={T} variant="secondary" size="sm" onClick={()=>copiar(`https://www.andreani.com/envio/${trk}`,"Link de seguimiento copiado")}>Copiar link</Btn>}
+            {trk&&<Btn T={T} variant="secondary" size="sm" onClick={()=>copiar(`${window.location.origin}/#/seguir/${trk}`,"Link de Growith copiado")}>Copiar link Growith</Btn>}
+            {dest.telefono&&(()=>{ const dig=String(dest.telefono).replace(/\D/g,""); if(dig.length<8) return null; const n=dig.startsWith("54")?dig:"54"+dig.replace(/^0/,""); const txt=encodeURIComponent(`Hola${dest.nombre?" "+String(dest.nombre).split(" ")[0]:""}, te escribimos por tu pedido #${e.numero}.${trk?` Podés seguirlo acá: https://www.andreani.com/envio/${trk}`:""}`); return <a href={`https://wa.me/${n}?text=${txt}`} target="_blank" rel="noreferrer" title="Abre WhatsApp con un mensaje prearmado (no se manda solo)" style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>WhatsApp</a>; })()}
             {trk&&!anulada&&<Btn T={T} variant="secondary" size="sm" onClick={()=>onCaso&&onCaso(null)}>Pedir una gestión a Andreani</Btn>}
             {inmediataOk
               ?<AsyncButton onClick={()=>onAnularInmediata(e)} style={{...BtnDanger(T),fontSize:12,padding:"5px 12px"}}>Anular ahora · reintegro inmediato</AsyncButton>
@@ -20025,6 +20116,67 @@ function AdmIngresos({ctx, stats}) {
 // ── Logística (etiquetas prepagas): Operación · Rentabilidad · Configuración ─
 // ─── Portal de la ejecutiva de Andreani (#/andreani/TOKEN) ───
 // Sin login: ve todas las gestiones de los clientes de Growith y responde desde acá.
+// ─── Página pública de seguimiento (#/seguir/NUMERO) ───
+// Alternativa a andreani.com/envio/N con la marca de la tienda. Solo lectura,
+// sin sesión y sin datos del destinatario; no manda ninguna notificación.
+function SeguirEnvioView({numero}){
+  const T=DARK;
+  const [st,setSt]=useState({loading:true,data:null,error:""});
+  const cargar=async()=>{
+    setSt(s=>({...s,loading:true,error:""}));
+    try{
+      const r=await fetch(`/api/update-shipping?action=seguir&numero=${encodeURIComponent(numero)}`);
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||d.error) setSt({loading:false,data:null,error:typeof d.error==="string"?d.error:"No pudimos consultar este envío ahora."});
+      else setSt({loading:false,data:d,error:""});
+    }catch(_){ setSt({loading:false,data:null,error:"No pudimos consultar este envío ahora."}); }
+  };
+  useEffect(()=>{ cargar(); },[numero]);
+  const d=st.data;
+  const CAT={en_camino:["En camino",T.blue],en_sucursal:["En sucursal, listo para retirar",T.orange],entregado:["Entregado",T.green],devolucion:["En devolución",T.red],visita_fallida:["Visita fallida",T.orange],pendiente:["Pendiente de ingreso",T.textSm],otro:["En proceso",T.textSm]};
+  const [lbl,col]=CAT[d?.categoria]||CAT.otro;
+  const fecha=v=>{ const ms=Date.parse(v||""); return isFinite(ms)?new Date(ms).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):String(v||""); };
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",padding:"32px 16px"}}>
+      <div style={{maxWidth:560,margin:"0 auto"}}>
+        <div style={{fontSize:DS.font.sm,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>{d?.tienda||"Seguimiento de tu envío"}</div>
+        <div style={{fontSize:DS.font["2xl"],fontWeight:800,letterSpacing:-0.3,marginBottom:4}}>Envío {numero}</div>
+        <div style={{fontSize:DS.font.md,color:T.textSm,marginBottom:20}}>Transporta Andreani. Esta página se actualiza con cada movimiento del paquete.</div>
+        {st.loading?<div style={{display:"flex",alignItems:"center",gap:10,color:T.textSm,fontSize:DS.font.base}}><Spinner size={14} color={T.textSm}/> Consultando…</div>
+        :st.error?<div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"14px 16px",fontSize:DS.font.base,color:T.textMd}}>{st.error}</div>
+        :(
+          <>
+            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"18px 18px",marginBottom:16}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <span style={{width:10,height:10,borderRadius:"50%",background:col,flexShrink:0}}/>
+                <span style={{fontSize:DS.font.xl,fontWeight:700,color:T.text}}>{lbl}</span>
+              </div>
+              {d?.estado&&<div style={{fontSize:DS.font.base,color:T.textMd,marginTop:6}}>{d.estado}</div>}
+            </div>
+            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"6px 18px 10px"}}>
+              {(d?.eventos||[]).length===0?<div style={{padding:"12px 0",fontSize:DS.font.base,color:T.textSm}}>Todavía no hay movimientos registrados.</div>
+              :(d.eventos||[]).map((ev,i)=>(
+                <div key={i} style={{display:"grid",gridTemplateColumns:"110px 1fr",gap:12,padding:"10px 0",borderTop:i>0?`1px solid ${T.borderL||T.border}`:"none"}}>
+                  <div style={{fontSize:DS.font.sm,color:T.textSm,fontVariantNumeric:"tabular-nums"}}>{fecha(ev.fecha)}</div>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:DS.font.base,fontWeight:600,color:T.text}}>{ev.estado||ev.descripcion||""}</div>
+                    {ev.descripcion&&ev.estado&&ev.descripcion!==ev.estado&&<div style={{fontSize:DS.font.sm,color:T.textMd,marginTop:2}}>{ev.descripcion}</div>}
+                    {ev.sucursal&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>{ev.sucursal}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:16}}>
+              <button onClick={cargar} style={{...BtnSecondary(T),fontSize:DS.font.base,padding:"8px 14px"}}>Actualizar</button>
+              <a href={d?.andreaniUrl||`https://www.andreani.com/envio/${numero}`} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:DS.font.base,padding:"8px 14px",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Ver en Andreani ↗</a>
+            </div>
+          </>
+        )}
+        <div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:28}}>Growith · Envíos</div>
+      </div>
+    </div>
+  );
+}
 function AndreaniPortalView({token}){
   const T=DARK;
   const [st,setSt]=useState({loading:true,abiertos:[],cerrados:[],nombre:"",error:""});
@@ -41630,6 +41782,9 @@ export default function App() {
   // Portal de la ejecutiva de Andreani: #/andreani/TOKEN (resuelve las gestiones de todos los clientes)
   const _ejeMatch = _initialHash.match(/^andreani\/([a-f0-9]{20,64})/i);
   const [ejecutivaToken] = useState(_ejeMatch ? _ejeMatch[1] : null);
+  // Página pública de seguimiento de un envío: #/seguir/<número> (sin sesión, sin datos del destinatario)
+  const _segMatch = _initialHash.match(/^seguir\/(\d{10,20})/);
+  const [seguirNumero] = useState(_segMatch ? _segMatch[1] : null);
   // Conector de IA (Claude / ChatGPT / Gemini, api/mcp.js): /oauth/authorize manda a
   // /?ia_auth=<id>. Se guarda en sessionStorage para sobrevivir al login, se saca de la
   // URL y la pantalla de permiso se muestra apenas hay sesión.
@@ -42240,6 +42395,7 @@ export default function App() {
   if(boardToken) return <ColaboradorBoardView T={T} boardToken={boardToken}/>;
   if(cuponToken) return <CuponPublicoView token={cuponToken}/>;
   if(ejecutivaToken) return <AndreaniPortalView token={ejecutivaToken}/>;
+  if(seguirNumero) return <SeguirEnvioView numero={seguirNumero}/>;
 
   // Loading
   if(user===undefined) return (
