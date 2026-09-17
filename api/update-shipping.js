@@ -30,7 +30,9 @@ const mailShell = (titulo, sub, cuerpo) => `<div style="font-family:Inter,system
   ${cuerpo}
   <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px">Growith — Envíos</p>
 </div>`;
-// Problemas por envío (misma lógica que Seguimientos y Admin) con umbrales por cuenta.
+// Problemas por envío (misma lógica que Seguimientos y Admin) con umbrales por
+// cuenta. Lo usa el cron track_all para el badge `enviosProblemasN` y el resumen
+// diario al dueño (que además cuenta los seguimientos abandonados a la tienda).
 function problemaEnvio(e, ahora, cfg) {
   const dias = iso => { const t = iso ? Date.parse(iso) : NaN; return isFinite(t) ? Math.floor((ahora - t) / 86400000) : null; };
   const sucD = Math.max(1, Number(cfg?.sucursalDias) || 3), quietoD = Math.max(2, Number(cfg?.quietoDias) || 7);
@@ -56,9 +58,11 @@ function initAdmin() {
   return getFirestore();
 }
 
-// ── Consulta de tracking Andreani (endpoints públicos, sin API contratada) ──
-// Factoreada para que la usen tanto el proxy (action=tracking) como el cron
-// de seguimiento masivo (action=track_all).
+// ── Consulta de tracking Andreani (tracking público v3, sin API contratada) ──
+// Factoreada para que la usen el proxy (action=tracking), la página pública
+// de seguimiento (action=seguir) y el cron de seguimiento masivo (track_all).
+// Los endpoints viejos (tracking.andreani.com v1, clientes.andreani.com,
+// api.andreani.com) ya no existen: solo queda v3 y si falla se devuelve null.
 const BROWSER_HEADERS = {
   'Accept': 'application/json, text/plain, */*',
   'Accept-Language': 'es-AR,es;q=0.9',
@@ -145,12 +149,15 @@ function parseTrackingV3(d) {
   const est = d.estado || d.Estado || d.fechaEstimadaDeEntrega || null;
   return est ? { estado: String(est).replace(/<[^>]+>/g, "").trim(), eventos: [] } : null;
 }
-async function trackAndreaniPublico(nroRaw) {
+// `signal` opcional: el cron pasa el AbortController de la corrida para que un
+// fetch colgado no sobreviva al deadline. Se combina con el timeout duro de 8 s.
+async function trackAndreaniPublico(nroRaw, signal) {
   const nro = String(nroRaw || "").trim().replace(/\s+/g, "");
   if (!nro) return null;
   try {
     const url = `https://tracking-api.andreani.com/api/v3/Tracking?payload=${encodeURIComponent(andreaniPublicPayload(nro))}`;
-    const r = await fetch(url, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(8000) });
+    const sig = signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000);
+    const r = await fetch(url, { headers: BROWSER_HEADERS, signal: sig });
     if (!r.ok) return null;
     const text = await r.text();
     if (text.startsWith("<") || text.startsWith("<!")) return null;
@@ -160,35 +167,13 @@ async function trackAndreaniPublico(nroRaw) {
   } catch (_) { return null; }
 }
 
-async function trackAndreani(nroRaw) {
+// Única vía de scraping: tracking público v3 (la que usa andreani.com hoy).
+// Timeout duro de 8 s: los servidores de Andreani a veces dejan la conexión
+// colgada y sin esto un solo tracking se comía el budget de la función.
+async function trackAndreani(nroRaw, signal) {
   const nro = String(nroRaw || "").trim().replace(/\s+/g, '');
   if (!nro) return null;
-  // Vía nueva primero (la que usa andreani.com hoy); los endpoints viejos
-  // quedan como respaldo por si Andreani revive alguno.
-  const pub = await trackAndreaniPublico(nro);
-  if (pub) return pub;
-  const endpoints = [
-    `https://tracking.andreani.com/api/v1/seguimiento?codigoAndreani=${encodeURIComponent(nro)}`,
-    `https://tracking.andreani.com/api/v1/seguimiento?numero=${encodeURIComponent(nro)}`,
-    `https://clientes.andreani.com/api/v2/ordenes/${encodeURIComponent(nro)}`,
-    `https://api.andreani.com/v2/envios/${encodeURIComponent(nro)}/eventos`,
-    `https://api.andreani.com/v2/ordenes/${encodeURIComponent(nro)}/eventos`,
-  ];
-  for (const url of endpoints) {
-    try {
-      // Timeout duro por endpoint: los servidores de Andreani a veces dejan la
-      // conexión colgada y sin esto un solo tracking podía comerse el budget
-      // completo de la función (FUNCTION_INVOCATION_TIMEOUT en el cron).
-      const r = await fetch(url, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(6000) });
-      const text = await r.text();
-      if (text.startsWith('<') || text.startsWith('<!')) continue;
-      let d;
-      try { d = JSON.parse(text); } catch { continue; }
-      const estado = extractEstado(d);
-      if (estado) return { estado, eventos: extractEventos(d), raw: d, source: url };
-    } catch (_) {}
-  }
-  return null;
+  return await trackAndreaniPublico(nro, signal);
 }
 
 // Estado más reciente de las trazas OFICIALES (/v1/envios/{n}/trazas).
@@ -222,6 +207,35 @@ function estadoOficial(trazas) {
 
 // Clasificación heurística del estado de Andreani → categoría interna.
 // (Misma lógica conceptual que mapAndreaniEstado del frontend.)
+// Reglas ORDENADAS [fuente de regex, categoría] — la primera que matchea gana.
+// El front (mapAndreaniEstado) copia esta misma lista; se exporta al final del
+// archivo como GH_ESTADO_REGLAS. Orden y por qué:
+//  1. "no ingresado / pendiente de ingreso": antes de en_camino, si no /ingresad/
+//     pintaba "En camino" falso.
+//  2-3. NEGACIONES primero ("no se pudo entregar", "no entregado", "sin
+//     entregar", "rechazado"): contienen "entregad" y antes caían en entregado.
+//     Si el texto además habla de devolución/remitente → devolucion; si no →
+//     visita_fallida.
+//  4. "retirado del cliente / colecta / retiro en origen" = Andreani lo retiró
+//     del vendedor: en_camino, NO entregado (antes /retirad/ lo daba por entregado).
+//  5. entregado: solo "retirado por el destinatario" o "entregado".
+//  6. en_sucursal: "en camino a la sucursal X" / "procesando en la sucursal X"
+//     contienen "sucursal" pero TODAVÍA no llegó → lookahead negativo.
+//  7-9. devolucion, visita_fallida, en_camino como siempre.
+const ESTADO_REGLAS = [
+  ["no ingresad|pendiente de ingreso|sin movimientos", "otro"],
+  ["(no (se )?(pudo )?entreg|no entregad|sin entregar).*(devoluci|devuelto|regres|remitente|retorn)|rechaz", "devolucion"],
+  ["no (se )?(pudo )?entreg|no entregad|sin entregar", "visita_fallida"],
+  ["retirado del cliente|colecta|retiro en origen", "en_camino"],
+  ["retirado por el destinatario|entregado", "entregado"],
+  ["^(?!.*(camino a la sucursal|procesando (tu|el) env|hacia la sucursal)).*(sucursal|disponible.*retiro|retiro.*disponible|para retirar)", "en_sucursal"],
+  ["devoluci|devuelto|regres|rehusad", "devolucion"],
+  ["visita|no se pudo|ausente|no.*entrega|reprogram", "visita_fallida"],
+  ["camino|reparto|distribuc|transito|tránsito|viaje|planta|procesamiento|procesando|admitid|ingresad|recibimos|despachad", "en_camino"],
+];
+const ESTADO_REGLAS_RX = ESTADO_REGLAS.map(([src, cat]) => [new RegExp(src), cat]);
+// Negaciones (reglas 2 y 3): se prueban ANTES de la vía rápida por etapa.
+const ESTADO_NEGACIONES_RX = ESTADO_REGLAS_RX.slice(1, 3);
 function clasificarEstado(estadoStr) {
   const s = String(estadoStr || "").toLowerCase();
   if (!s) return "desconocido";
@@ -230,21 +244,206 @@ function clasificarEstado(estadoStr) {
   // heurística (ej: "Ingresado — Pronto lo enviaremos a la sucursal encargada...").
   const ETAPAS = { "pendiente de ingreso": "otro", "ingresado": "en_camino", "en camino": "en_camino", "en sucursal": "en_sucursal", "entregado": "entregado" };
   const etapa = ETAPAS[s.split(" — ")[0].trim()];
+  // "En sucursal" es físico (ya está ahí) aunque el detalle explique que no se
+  // pudo entregar; en las demás etapas las negaciones mandan ("Entregado — no
+  // se pudo entregar" / "En camino — rechazado, vuelve al remitente").
+  if (etapa === "en_sucursal") return etapa;
+  for (const [rx, cat] of ESTADO_NEGACIONES_RX) if (rx.test(s)) return cat;
   if (etapa) return etapa;
-  // Antes de "en_camino": los estados que dicen explícitamente que TODAVÍA NO
-  // entró a la red ("Envío no ingresado", "Pendiente de ingreso") matchearían
-  // /ingresad/ y pintarían "En camino" falso.
-  if (/no ingresad|pendiente de ingreso|sin movimientos/.test(s)) return "otro";
-  if (/entregad|retirad/.test(s)) return "entregado";
-  // Ojo: "en camino a la sucursal X" / "procesando en la sucursal X" contienen
-  // la palabra "sucursal" pero el envío TODAVÍA no llegó — solo es "en_sucursal"
-  // si el propio texto dice que ya está ahí o listo para retirar.
-  if (!/camino a la sucursal|procesando (tu|el) env|hacia la sucursal/.test(s) &&
-      /sucursal|disponible.*retiro|retiro.*disponible|para retirar/.test(s)) return "en_sucursal";
-  if (/devoluci|devuelto|regres|rehusad|rechazad/.test(s)) return "devolucion";
-  if (/visita|no se pudo|ausente|no.*entrega|reprogram/.test(s)) return "visita_fallida";
-  if (/camino|reparto|distribuc|transito|tránsito|viaje|planta|procesamiento|admitid|ingresad|recibimos|despachad|retirado del cliente|colecta/.test(s)) return "en_camino";
+  for (const [rx, cat] of ESTADO_REGLAS_RX) if (rx.test(s)) return cat;
   return "otro";
+}
+
+// ── Subir el tracking a la tienda (Tienda Nube o Shopify) ─────────────────
+// Lo comparten el handler HTTP (fulfill desde Envíos) y el cron track_all (cola
+// de reintento `tiendaPendiente`). No toca `res`: devuelve
+//   { ok, fulfilled, fulfillError, tnOrderId }            si se pudo
+//   { ok:false, status, code, error }                     si no
+// Shopify manda si está conectado (misma prioridad que orders.js). "Ya estaba
+// marcado como enviado" en la tienda NO es error: ok:true + fulfilled:false y
+// el tracking queda registrado en Growith para el seguimiento.
+async function subirTrackingTienda(db, uid, uData, { orderId, tracking }) {
+  const stores = (uData && uData.stores) || [];
+  const tnStore = stores.find(s => s.type === "tiendanube");
+  const shStore = stores.find(s => s.type === "shopify" && s.accessToken && s.shop) || null;
+  if (!orderId || !tracking) return { ok: false, status: 400, code: "params", error: "Faltan orderId o tracking" };
+  const trackingUrl = `https://www.andreani.com/envio/${tracking}`;
+
+  // ── Rama Shopify: crea un fulfillment con la API de FulfillmentOrders
+  // (equivalente al PUT+fulfill de TN).
+  if (shStore) {
+    await ensureShopifyToken(db, uid, shStore);
+    const shHeaders = { 'X-Shopify-Access-Token': shStore.accessToken, 'Content-Type': 'application/json' };
+    const shBase = `https://${shStore.shop}/admin/api/2024-10`;
+    // Shopify limita a ~2 req/s por tienda: ante 429 se espera lo que pide
+    // (Retry-After) y se reintenta una vez, en vez de fallar el seguimiento.
+    const shFetch = async (url, opts) => {
+      let r = await fetch(url, opts);
+      if (r.status === 429) { const wait = Math.min(5000, Math.max(1000, Number(r.headers.get("retry-after") || 2) * 1000)); await new Promise(x => setTimeout(x, wait)); r = await fetch(url, opts); }
+      return r;
+    };
+    // Sin permiso de fulfillment (tiendas conectadas antes de que Growith lo
+    // pidiera): Shopify responde 403 en fulfillment_orders / fulfillments. El
+    // mensaje tiene que decir QUÉ hacer, y el front corta el lote (code).
+    const sinPermiso = () => ({ ok: false, status: 403, code: "shopify_scope", error: "Shopify no le dio a Growith permiso para marcar envíos (fulfillment). Reconectá Shopify desde Config → Integraciones (vuelve a pedir el permiso) y volvé a enviar los seguimientos: solo se reintentan los que faltan." });
+    try {
+      // 1. Buscar la orden por número visible (name = "#1001"; algunas tiendas
+      //    usan prefijo/sufijo en el nombre → segundo intento sin "#" y, si
+      //    tampoco, por order_number en las órdenes recientes)
+      const buscar = async (name) => {
+        const sr = await shFetch(`${shBase}/orders.json?name=${encodeURIComponent(name)}&status=any&fields=id,order_number,name,fulfillment_status`, { headers: shHeaders });
+        if (sr.status === 401 || sr.status === 403) throw Object.assign(new Error("scope"), { scope: true });
+        if (!sr.ok) throw new Error(`Shopify search error ${sr.status}`);
+        const sd = await sr.json();
+        return (sd.orders || []).find(o => String(o.order_number) === String(orderId) || String(o.name || "").replace(/\D/g, "") === String(orderId)) || null;
+      };
+      let order = await buscar('#' + orderId);
+      if (!order) order = await buscar(String(orderId));
+      if (!order) {
+        // Paginación por cursor (Link: page_info), de la más nueva a la más vieja,
+        // hasta 6 páginas de 250 o hasta pasar el número buscado.
+        let url = `${shBase}/orders.json?status=any&limit=250&fields=id,order_number,name,fulfillment_status`;
+        for (let pag = 0; pag < 6 && url && !order; pag++) {
+          const sr = await shFetch(url, { headers: shHeaders });
+          if (!sr.ok) break;
+          const lst = (await sr.json()).orders || [];
+          if (!lst.length) break;
+          order = lst.find(o => String(o.order_number) === String(orderId)) || null;
+          const minNum = Math.min(...lst.map(o => Number(o.order_number) || Infinity));
+          if (minNum < Number(orderId)) break;
+          const m = /<([^>]+)>;\s*rel="next"/.exec(sr.headers.get("link") || "");
+          url = m ? m[1] : null;
+        }
+      }
+      if (!order) return { ok: false, status: 404, code: "not_found", error: `Pedido #${orderId} no encontrado en Shopify` };
+      // Ya marcado como enviado en Shopify (a mano o por otra app): no es un
+      // error — el tracking igual queda registrado en Growith para el
+      // seguimiento automático, y se avisa que el cliente no recibió mail nuevo.
+      if ((order.fulfillment_status || "").toLowerCase() === 'fulfilled') {
+        return { ok: true, tnOrderId: String(order.id), fulfilled: false, fulfillError: "ya estaba marcado como enviado en Shopify" };
+      }
+      // 2. Fulfillment orders abiertos de la orden
+      const fr = await shFetch(`${shBase}/orders/${order.id}/fulfillment_orders.json`, { headers: shHeaders });
+      if (fr.status === 401 || fr.status === 403) return sinPermiso();
+      if (!fr.ok) throw new Error(`Shopify fulfillment_orders error ${fr.status}`);
+      const fd = await fr.json();
+      // Shopify solo deja crear el fulfillment sobre FO open / in_progress: un
+      // FO en espera (on_hold: fraude, pago pendiente) o programado (scheduled)
+      // hace fallar el POST entero con 422, así que no se incluye y se avisa.
+      const fos = fd.fulfillment_orders || [];
+      const abiertos = fos.filter(fo => ["open", "in_progress"].includes((fo.status || "").toLowerCase()));
+      if (!abiertos.length) {
+        const enEspera = fos.some(fo => ["on_hold", "scheduled"].includes((fo.status || "").toLowerCase()));
+        if (enEspera) return { ok: false, status: 400, code: "shopify_hold", error: `El pedido #${orderId} está en espera en Shopify (retenido o programado): liberalo en Shopify y volvé a enviar el seguimiento.` };
+        return { ok: false, status: 400, code: "shopify_sin_items", error: `El pedido #${orderId} no tiene items pendientes de despacho en Shopify.` };
+      }
+      // 3. Crear el fulfillment con tracking + aviso al cliente
+      const pr = await shFetch(`${shBase}/fulfillments.json`, {
+        method: 'POST', headers: shHeaders,
+        body: JSON.stringify({ fulfillment: {
+          line_items_by_fulfillment_order: abiertos.map(fo => ({ fulfillment_order_id: fo.id })),
+          tracking_info: { number: tracking, url: trackingUrl, company: "Andreani" },
+          notify_customer: true,
+        } }),
+      });
+      if (pr.status === 401 || pr.status === 403) return sinPermiso();
+      if (!pr.ok) {
+        const pd = await pr.json().catch(() => ({}));
+        const fulfillError = pd.errors ? JSON.stringify(pd.errors).slice(0, 200) : `Shopify ${pr.status}`;
+        return { ok: false, status: 502, code: "shopify_fulfillment", error: `No se pudo crear el fulfillment: ${fulfillError}` };
+      }
+      return { ok: true, tnOrderId: String(order.id), fulfilled: true, fulfillError: null };
+    } catch (e) {
+      if (e && e.scope) return sinPermiso();
+      return { ok: false, status: 500, code: "shopify_error", error: e.message };
+    }
+  }
+
+  // ── Rama Tienda Nube ──
+  if (!tnStore?.accessToken || !tnStore?.storeId) return { ok: false, status: 403, code: "sin_tienda", error: "Tienda no conectada" };
+  const storeId = tnStore.storeId;
+  const headers = {
+    'Authentication': `bearer ${tnStore.accessToken}`,
+    'User-Agent': 'GrowithApp (contacto.growith@gmail.com)',
+    'Content-Type': 'application/json',
+  };
+  // TN limita las llamadas por tienda: un 429 en cualquier paso se informa
+  // como tal (con el Retry-After) para que el llamador reintente, no como 500.
+  const rateLimit = (r) => ({ ok: false, status: 429, code: "tn_rate_limit", retryAfter: Math.max(1, Number(r.headers.get("retry-after")) || 3), error: "Tienda Nube limitó las llamadas, reintentá en unos segundos" });
+  try {
+    // 1. Buscar el pedido por número. per_page=30 (antes 5): el q= de TN matchea
+    // por substring y con 5 resultados la orden exacta podía quedar afuera
+    // (ej: "123" matchea #1123, #1234...) → 404 falso en plena tanda.
+    const searchRes = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=${orderId}&per_page=30`, { headers });
+    if (searchRes.status === 429) return rateLimit(searchRes);
+    if (!searchRes.ok) throw new Error(`TN search error ${searchRes.status}`);
+    const orders = await searchRes.json();
+    const order = Array.isArray(orders) ? orders.find(o => String(o.number) === String(orderId)) : null;
+    if (!order) return { ok: false, status: 404, code: "not_found", error: `Pedido #${orderId} no encontrado` };
+
+    const tnOrderId = order.id;
+    const shippingStatus = order.shipping_status;
+    // Ya enviado en TN (a mano o por otra app): mismo contrato que Shopify —
+    // no es error, el tracking queda en Growith y no sale mail nuevo al cliente.
+    if (shippingStatus === 'fulfilled' || shippingStatus === 'shipped') {
+      return { ok: true, tnOrderId: String(tnOrderId), fulfilled: false, fulfillError: "ya estaba marcado como enviado en Tienda Nube" };
+    }
+
+    // 2. PUT para guardar el tracking (siempre funciona con write_orders)
+    const putRes = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}`, {
+      method: 'PUT', headers,
+      body: JSON.stringify({ shipping_tracking_number: tracking, shipping_tracking_url: trackingUrl }),
+    });
+    if (putRes.status === 429) return rateLimit(putRes);
+    const putData = await putRes.json().catch(() => ({}));
+    if (!putRes.ok) return { ok: false, status: putRes.status, code: "tn_put", error: putData.message || putData.description || `Error TN ${putRes.status}` };
+
+    // 3. POST /fulfill para marcar como enviado y notificar al cliente.
+    // Antes esto era un catch vacío: si TN lo rechazaba, la UI decía "✓ Ok"
+    // pero el cliente NO recibía el mail y la orden no quedaba enviada.
+    // Ahora el resultado se informa de verdad (fulfilled: true/false).
+    let fulfilled = false, fulfillError = null;
+    try {
+      const fr = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}/fulfill`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ shipping_tracking_number: tracking, notify_customer: true }),
+      });
+      if (fr.status === 429) return rateLimit(fr);
+      fulfilled = fr.ok;
+      if (!fr.ok) { const fd = await fr.json().catch(() => ({})); fulfillError = fd.message || fd.description || `TN ${fr.status}`; }
+    } catch (e) { fulfillError = e.message; }
+    return { ok: true, tnOrderId: String(tnOrderId), fulfilled, fulfillError };
+  } catch (e) {
+    return { ok: false, status: 500, code: "tn_error", error: e.message };
+  }
+}
+
+// ── Página pública de seguimiento (action=seguir): rate limit en memoria por
+// IP (20 por minuto). Vive lo que viva la instancia: alcanza para frenar un
+// barrido de números, que es lo único que se quiere evitar.
+const SEGUIR_RL = new Map();
+function seguirRateLimited(ip) {
+  const ahora = Date.now();
+  if (SEGUIR_RL.size > 5000) SEGUIR_RL.clear();
+  const e = SEGUIR_RL.get(ip) || { desde: ahora, n: 0 };
+  if (ahora - e.desde > 60000) { e.desde = ahora; e.n = 0; }
+  e.n++;
+  SEGUIR_RL.set(ip, e);
+  return e.n > 20;
+}
+// Normaliza un evento (v3 público o demo) a lo ÚNICO que se publica:
+// fecha / estado / descripcion / sucursal. Nunca datos del destinatario.
+function eventoPublico(ev) {
+  if (!ev || typeof ev !== "object") return null;
+  const t = fechaDeEvento(ev);
+  const out = {
+    fecha: t != null ? new Date(t).toISOString() : String(ev.fecha || ev.Fecha || ""),
+    estado: String(estadoDeEvento(ev) || "").slice(0, 120),
+    descripcion: String(ev.descripcion || ev.Descripcion || "").replace(/<[^>]+>/g, " ").replace(/\s{2,}/g, " ").trim().slice(0, 300),
+  };
+  const suc = ev.sucursal || ev.Sucursal || ev.sucursalNombre || ev.planta || ev.Planta || null;
+  if (suc && typeof suc === "string") out.sucursal = suc.slice(0, 120);
+  return out.estado || out.descripcion ? out : null;
 }
 
 export default async function handler(req, res) {
@@ -301,6 +500,60 @@ export default async function handler(req, res) {
     });
   }
 
+  // ── action=seguir: página PÚBLICA de seguimiento (sin sesión) ──
+  // GET ?numero=<tracking>. Devuelve SOLO lo que Andreani ya muestra a
+  // cualquiera con el número (tracking público v3) más el nombre de la tienda
+  // y la categoría/estado que el cron ya guardó. NUNCA datos del destinatario
+  // (nombre, dirección, mail, teléfono) ni el uid. No escribe en Firestore ni
+  // manda mails: las notificaciones siguen siendo cosa del cron.
+  if (req.query.action === 'seguir') {
+    if (req.method !== 'GET') return res.status(405).json({ error: 'Método no permitido' });
+    const numero = String(req.query.numero || "").trim().replace(/\s+/g, "");
+    if (!/^\d{10,20}$/.test(numero)) return res.status(400).json({ error: 'Número de seguimiento inválido' });
+    const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "?";
+    if (seguirRateLimited(ip)) return res.status(429).json({ error: 'Demasiadas consultas, esperá un minuto' });
+    res.setHeader("Cache-Control", "public, max-age=120");
+    try {
+      const db = initAdmin();
+      const andreaniUrl = `https://www.andreani.com/envio/${numero}`;
+      let tienda = null, guardado = null, eventos = [], estado = null;
+      // Tienda DEMO: traza ficticia guardada en demo_tracks.
+      if (esNumeroEnvioDemo(numero)) {
+        try {
+          const dt = await db.collection("demo_tracks").doc(numero).get();
+          if (dt.exists) { const x = dt.data() || {}; estado = x.estado || null; eventos = (Array.isArray(x.eventos) ? x.eventos : []).map(eventoPublico).filter(Boolean); tienda = "Growith Demo"; }
+        } catch (_) {}
+      } else {
+        // Índice server-only → cuenta dueña (solo para el nombre de la tienda)
+        // y el doc del envío (categoría/estado ya calculados por el cron).
+        try {
+          const idx = await db.collection("andreani_idx").doc(numero).get();
+          const ix = idx.exists ? (idx.data() || {}) : null;
+          if (ix?.uid) {
+            const [uSnap, eSnap] = await Promise.all([
+              db.collection("users").doc(String(ix.uid)).get(),
+              ix.envioId ? db.collection("users").doc(String(ix.uid)).collection("envios").doc(String(ix.envioId)).get() : Promise.resolve(null),
+            ]);
+            const u = uSnap.exists ? (uSnap.data() || {}) : {};
+            tienda = String(u.businessName || u.storeName || u.nombreTienda || (u.stores || [])[0]?.storeName || (u.stores || [])[0]?.name || "").trim() || null;
+            if (eSnap && eSnap.exists) { const e = eSnap.data() || {}; guardado = { categoria: e.categoria || null, estado: e.estadoAndreani || null, entregadoAt: e.entregadoAt || null }; }
+          }
+        } catch (err) { console.warn("[seguir] índice:", err.message); }
+        // En vivo: tracking público v3 (lo mismo que ve cualquiera en andreani.com).
+        const out = await trackAndreani(numero);
+        if (out) { estado = out.estado; eventos = (out.eventos || []).map(eventoPublico).filter(Boolean); }
+      }
+      eventos.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+      if (!estado && guardado?.estado) estado = guardado.estado;
+      const categoria = estado ? clasificarEstado(estado) : (guardado?.categoria || "desconocido");
+      const entregado = categoria === "entregado" || !!guardado?.entregadoAt;
+      return res.status(200).json({ numero, tienda, categoria, estado: estado || null, eventos, entregado, andreaniUrl });
+    } catch (e) {
+      console.error("[seguir]", e.message);
+      return res.status(500).json({ error: 'No se pudo consultar el seguimiento' });
+    }
+  }
+
   // ── action=track_all: cron de seguimiento de TODOS los envíos activos ──
   // Cada 30 min: para los usuarios con actividad reciente en Envíos, consulta
   // el estado Andreani de sus envíos no finalizados y lo persiste en
@@ -320,6 +573,13 @@ export default async function handler(req, res) {
       // envíos ahora cortan a los 30s para que los canjes tengan sus ~15s.
       const deadlineEnvios = Date.now() + 30000;
       const quedaTiempoEnvios = () => Date.now() < deadlineEnvios;
+      // AbortController global de la corrida: se pasa a los fetch de tracking
+      // para que al vencer el deadline se corten los que quedaron en vuelo, en
+      // vez de esperar sus 8 s de timeout. Uno por deadline (envíos / canjes).
+      const abortEnvios = new AbortController(), abortCanjes = new AbortController();
+      const tAbortE = setTimeout(() => abortEnvios.abort(), Math.max(0, deadlineEnvios - Date.now()));
+      const tAbortC = setTimeout(() => abortCanjes.abort(), Math.max(0, deadline - Date.now()));
+      res.on?.("finish", () => { clearTimeout(tAbortE); clearTimeout(tAbortC); });
       const cutoff = new Date(Date.now() - 7 * 86400000).toISOString();
       const ahora = new Date().toISOString();
       const staleCutoff = new Date(Date.now() - 25 * 60000).toISOString();
@@ -364,13 +624,39 @@ export default async function handler(req, res) {
         activos.push(d);
       }
 
-      let revisados = 0, actualizados = 0, avisosComprador = 0, digests = 0, anulacionesAuto = [];
+      let revisados = 0, actualizados = 0, avisosComprador = 0, digests = 0, anulacionesAuto = [], tiendaReintentos = 0, tiendaAbandonados = 0;
       let cfgGlobal = null; try { cfgGlobal = await getGlobalConfig(db); } catch (_) { cfgGlobal = { anulacionDias: 14 }; }
       for (const uDoc of activos) {
         if (!quedaTiempoEnvios()) break;
         const ud = uDoc.data() || {};
         const cfgU = ud.enviosCfg || {};
         const tiendaNombre = String(ud.storeName || ud.nombreTienda || ud.nombre || "").trim() || "la tienda";
+        // ── Cola de reintento de seguimientos a la tienda (`tiendaPendiente`):
+        //    el front registra acá los que TN/Shopify no tomaron al emitir y el
+        //    cron vuelve a intentar hasta 5 veces (hasta 5 envíos por corrida).
+        //    Sin permiso de Shopify (shopify_scope) no tiene sentido insistir:
+        //    se abandona y entra al resumen diario del dueño. ──
+        let abandonadosAhora = 0;
+        try {
+          const tpSnap = await uDoc.ref.collection("envios").where("tiendaPendiente.intentos", "<", 5).limit(10).get();
+          const cola = tpSnap.docs.filter(d => d.data().tiendaPendiente && !d.data().tiendaPendiente.abandonado).slice(0, 5);
+          for (const d of cola) {
+            if (!quedaTiempoEnvios()) break;
+            const tp = d.data().tiendaPendiente || {};
+            const intentos = (Number(tp.intentos) || 0) + 1;
+            tiendaReintentos++;
+            const r = await subirTrackingTienda(db, uDoc.id, ud, { orderId: String(tp.orderId || d.id), tracking: String(tp.tracking || d.data().tracking || "") });
+            if (r.ok) {
+              await d.ref.set({ tiendaPendiente: FieldValue.delete(), trackingTienda: { ok: true, ts: ahora, fulfilled: !!r.fulfilled, ...(r.fulfillError ? { fulfillError: String(r.fulfillError).slice(0, 200) } : {}) }, fulfillOk: true }, { merge: true });
+              continue;
+            }
+            const abandonar = r.code === "shopify_scope" || intentos >= 5;
+            await d.ref.set({ tiendaPendiente: { ...tp, intentos: abandonar ? 5 : intentos, error: String(r.error || "").slice(0, 300), code: r.code || null, ultimoTs: ahora, ...(abandonar ? { abandonado: true, abandonadoTs: ahora } : {}) } }, { merge: true });
+            if (abandonar) { abandonadosAhora++; tiendaAbandonados++; }
+            // Rate limit de TN: no seguir martillando en esta corrida.
+            if (r.code === "tn_rate_limit") break;
+          }
+        } catch (err) { console.error("[track_all tiendaPendiente]", err.message); }
         // Envíos activos con tracking, no finalizados, sin chequear hace 25+ min.
         // Sin orderBy (necesitaría índice compuesto): se traen hasta 300 activos y
         // la rotación por lastCheck se hace en memoria — con limit(60) los
@@ -388,6 +674,9 @@ export default async function handler(req, res) {
         for (let i = 0; i < pendientes.length; i += 5) {
           if (!quedaTiempoEnvios()) break;
           await Promise.all(pendientes.slice(i, i + 5).map(async d => {
+            // Deadline también dentro de la tanda: si ya venció no se arranca
+            // otro fetch (el que está en vuelo lo corta el AbortController).
+            if (!quedaTiempoEnvios()) return;
             const e = d.data();
             revisados++;
             // Emitidos por nuestra API: PRIMERO la API oficial de trazas
@@ -400,7 +689,7 @@ export default async function handler(req, res) {
               const of = estadoOficial(trazas);
               if (of) { out = of; via = "oficial"; }
             }
-            if (!out) out = await trackAndreani(e.tracking || numOficial);
+            if (!out && quedaTiempoEnvios()) out = await trackAndreani(e.tracking || numOficial, abortEnvios.signal);
             if (!out) { await d.ref.set({ lastCheck: ahora }, { merge: true }); return; }
             const cat = clasificarEstado(out.estado);
             const upd = { lastCheck: ahora, estadoAndreani: out.estado, categoria: cat, trackVia: via };
@@ -408,23 +697,40 @@ export default async function handler(req, res) {
             if (cat === "en_sucursal" && e.categoria !== "en_sucursal") upd.enSucursalDesde = ahora;
             if (cat === "entregado") { upd.activo = false; upd.entregadoAt = ahora; }
             if (cat === "devolucion") { upd.activo = false; upd.devolucionAt = ahora; }
-            // Aviso al COMPRADOR (mail) cuando el paquete llega a sucursal o
-            // falla una visita: lo importante, una sola vez por cambio de estado.
+            // Aviso al COMPRADOR (mail) cuando el paquete llega a sucursal, falla
+            // una visita o se entrega: una sola vez por categoría
+            // (`avisosComprador[cat]` = ts, que se marca SOLO si el mail salió).
+            // Si Resend falló, `avisosCompradorFallo[cat]` cuenta los intentos y
+            // se reintenta en las próximas corridas, hasta 3 veces.
             const emailComprador = String(e.destinatario?.email || "").trim();
-            if (cat !== e.categoria && (cat === "en_sucursal" || cat === "visita_fallida") && emailComprador && cfgU.avisosComprador !== false && !(e.avisosComprador || {})[cat]) {
+            const fallos = (e.avisosCompradorFallo || {})[cat];
+            if (["en_sucursal", "visita_fallida", "entregado"].includes(cat) && emailComprador && cfgU.avisosComprador !== false
+                && !(e.avisosComprador || {})[cat] && (Number(fallos?.intentos) || 0) < 3) {
               const trk = numOficial || e.tracking;
-              const link = `https://www.andreani.com/envio/${trk}`;
-              const esSuc = cat === "en_sucursal";
-              const ok = await mailEnvios(emailComprador,
-                esSuc ? `Tu pedido de ${tiendaNombre} te espera en la sucursal de Andreani` : `No pudimos entregar tu pedido de ${tiendaNombre}`,
-                mailShell(esSuc ? "Tu paquete está en sucursal" : "Visita fallida", `Pedido de ${tiendaNombre}`,
+              const link = `https://www.andreani.com/envio/${esc(trk)}`;
+              const nroPedido = String(e.numero || d.id);
+              const pie = `<div style="margin:14px 0;padding:10px 14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #22c55e;font-size:13px">Seguimiento: <strong>${esc(trk)}</strong><br/><a href="${link}" style="color:#6366f1">Ver el estado en Andreani</a></div>
+  <p style="font-size:12px;color:#6b7280">Este aviso lo envía Growith en nombre de ${esc(tiendaNombre)}.</p>`;
+              let asunto, html;
+              if (cat === "entregado") {
+                asunto = `Tu pedido #${nroPedido} fue entregado`;
+                html = mailShell(`Tu pedido #${nroPedido} fue entregado`, `Pedido de ${tiendaNombre}`,
+                  `<p style="font-size:14px">Andreani informa: <strong>${esc(out.estado)}</strong></p>
+  <p style="font-size:14px">Gracias por tu compra en ${esc(tiendaNombre)}. Si algo no llegó como esperabas, respondé este mail o escribile a la tienda.</p>
+  ${pie}`);
+              } else {
+                const esSuc = cat === "en_sucursal";
+                asunto = esSuc ? `Tu pedido de ${tiendaNombre} te espera en la sucursal de Andreani` : `No pudimos entregar tu pedido de ${tiendaNombre}`;
+                html = mailShell(esSuc ? "Tu paquete está en sucursal" : "Visita fallida", `Pedido de ${tiendaNombre}`,
                   `<p style="font-size:14px">Andreani informa: <strong>${esc(out.estado)}</strong></p>
   <p style="font-size:14px">${esSuc
     ? "Ya podés pasar a retirarlo con tu DNI. Los envíos a sucursal tienen unos días de plazo antes de volver al remitente, así que no lo dejes pasar."
     : "El repartidor no encontró a nadie en el domicilio. Andreani suele hacer una segunda visita en los próximos días; si tampoco pueden entregarlo, el paquete queda en la sucursal más cercana para que lo retires."}</p>
-  <div style="margin:14px 0;padding:10px 14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #22c55e;font-size:13px">Seguimiento: <strong>${esc(trk)}</strong><br/><a href="${link}" style="color:#6366f1">Ver el estado en Andreani</a></div>
-  <p style="font-size:12px;color:#6b7280">Este aviso lo envía Growith en nombre de ${esc(tiendaNombre)}.</p>`));
+  ${pie}`);
+              }
+              const ok = await mailEnvios(emailComprador, asunto, html);
               if (ok) { upd.avisosComprador = { ...(e.avisosComprador || {}), [cat]: ahora }; avisosComprador++; }
+              else upd.avisosCompradorFallo = { ...(e.avisosCompradorFallo || {}), [cat]: { ts: ahora, intentos: (Number(fallos?.intentos) || 0) + 1 } };
             }
             await d.ref.set(upd, { merge: true });
             actualizados++;
@@ -438,15 +744,22 @@ export default async function handler(req, res) {
           const problemas = docsAct.map(x => ({ ...x, p: problemaEnvio(x.e, ahoraMs, cfgU) })).filter(x => x.p);
           const updU = { enviosProblemasN: problemas.length, enviosProblemasAt: ahora };
           const ultimo = Date.parse(ud.enviosDigestAt || "") || 0;
-          if (problemas.length && cfgU.avisosDueno !== false && ud.email && ahoraMs - ultimo > 20 * 3600000) {
+          // Seguimientos que el cron dejó de reintentar contra la tienda (entre
+          // los activos cargados + los abandonados en esta corrida).
+          const abandonados = Math.max(docsAct.filter(x => x.e.tiendaPendiente?.abandonado).length, abandonadosAhora);
+          if ((problemas.length || abandonados) && cfgU.avisosDueno !== false && ud.email && ahoraMs - ultimo > 20 * 3600000) {
             const filas = problemas.sort((a, b) => (a.p.sev === "red" ? 0 : 1) - (b.p.sev === "red" ? 0 : 1)).slice(0, 15).map(x => {
               const trk = x.e.andreani?.numeroDeEnvio || x.e.tracking || "";
               return `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:13px"><strong>#${esc(x.e.numero || x.id)}</strong>${x.e.cliente ? " · " + esc(x.e.cliente) : ""}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:13px;color:${x.p.sev === "red" ? "#dc2626" : "#d97706"}">${esc(x.p.msg)}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:12px">${trk ? `<a href="https://www.andreani.com/envio/${esc(trk)}" style="color:#6366f1">${esc(trk)}</a>` : ""}</td></tr>`;
             }).join("");
-            const ok = await mailEnvios(String(ud.email).trim(), `${problemas.length} envío${problemas.length === 1 ? "" : "s"} con problema en ${tiendaNombre}`,
-              mailShell("Envíos que requieren atención", `${problemas.length} en total`,
-                `<table style="width:100%;border-collapse:collapse">${filas}</table>
+            const asuntoDig = problemas.length
+              ? `${problemas.length} envío${problemas.length === 1 ? "" : "s"} con problema en ${tiendaNombre}`
+              : `${abandonados} seguimiento${abandonados === 1 ? "" : "s"} sin subir a la tienda en ${tiendaNombre}`;
+            const ok = await mailEnvios(String(ud.email).trim(), asuntoDig,
+              mailShell("Envíos que requieren atención", `${problemas.length + abandonados} en total`,
+                `${filas ? `<table style="width:100%;border-collapse:collapse">${filas}</table>` : ""}
   ${problemas.length > 15 ? `<p style="font-size:12px;color:#6b7280">y ${problemas.length - 15} más.</p>` : ""}
+  ${abandonados ? `<p style="font-size:13px;margin-top:12px;color:#dc2626"><strong>${abandonados} seguimiento${abandonados === 1 ? "" : "s"} no se pudieron subir a la tienda</strong> (Tienda Nube / Shopify no tomó el tracking tras varios intentos). Abrí Envíos &rarr; Seguimientos y subilos a mano, o reconectá la tienda si Shopify pide permiso.</p>` : ""}
   <p style="font-size:13px;margin-top:14px">Abrí Envíos &rarr; Seguimientos: cada envío tiene su ficha con el historial completo y el botón para pedir una gestión a Andreani. Este resumen llega como máximo una vez por día; se desactiva desde el engranaje de Seguimientos.</p>`));
             if (ok) { updU.enviosDigestAt = ahora; digests++; }
           }
@@ -609,7 +922,7 @@ export default async function handler(req, res) {
             let out = null, via = "scraping";
             const ofC = estadoOficial(await trazasOficialAndreani(db, String(c.tracking).trim()));
             if (ofC) { out = ofC; via = "oficial"; }
-            if (!out) out = await trackAndreani(c.tracking);
+            if (!out && quedaTiempo()) out = await trackAndreani(c.tracking, abortCanjes.signal);
             if (!out) { await d.ref.set({ trackingLastCheck: ahora }, { merge: true }); return; }
             const cat = clasificarEstado(out.estado);
             const upd = { trackingLastCheck: ahora, trackingEstado: out.estado, trackingCat: cat, trackVia: via };
@@ -637,22 +950,12 @@ export default async function handler(req, res) {
                     const n = NOTABLES[cat];
                     const inf = c.influencer || "influencer";
                     const nro = String(c.tracking).trim();
-                    const html = `<div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff">
-  <div style="background:linear-gradient(135deg,#6366f1,#a78bfa);padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
-    <div style="font-size:18px;font-weight:700;color:#fff">${n.titulo}</div>
-    <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px">Canje de ${inf}</div>
-  </div>
-  <p style="font-size:14px;color:#374151">Andreani informa: <strong>${out.estado}</strong></p>
-  <div style="margin:12px 0;padding:10px 14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #22c55e;font-size:13px;color:#374151">Tracking: <strong>${nro}</strong><br/><a href="https://www.andreani.com/envio/${nro}" style="color:#6366f1;font-size:12px">Ver seguimiento →</a></div>
-  ${cat === "en_sucursal" ? '<p style="font-size:13px;color:#374151">Avisale que ya puede pasar a retirarlo — los envíos a sucursal tienen unos días de plazo antes de volver.</p>' : ""}
-  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Seguimiento de canjes</p>
-</div>`;
-                    await fetch("https://api.resend.com/emails", {
-                      method: "POST",
-                      headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-                      body: JSON.stringify({ from: process.env.RESEND_FROM || "Growith <onboarding@resend.dev>", to, subject: n.asunto(inf), html }),
-                      signal: AbortSignal.timeout(8000), // un Resend lento no puede comerse el presupuesto del cron
-                    });
+                    // mailEnvios/mailShell: mismo shell que Envíos, texto de
+                    // usuario (influencer, estado, tracking) escapado con esc().
+                    await mailEnvios(to, n.asunto(inf), mailShell(n.titulo, `Canje de ${inf}`,
+                      `<p style="font-size:14px">Andreani informa: <strong>${esc(out.estado)}</strong></p>
+  <div style="margin:12px 0;padding:10px 14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #22c55e;font-size:13px">Tracking: <strong>${esc(nro)}</strong><br/><a href="https://www.andreani.com/envio/${encodeURIComponent(nro)}" style="color:#6366f1;font-size:12px">Ver seguimiento</a></div>
+  ${cat === "en_sucursal" ? '<p style="font-size:13px">Avisale que ya puede pasar a retirarlo: los envíos a sucursal tienen unos días de plazo antes de volver.</p>' : ""}`));
                   }
                 }
               } catch (e) { console.error("[track_all canje] email:", e.message); }
@@ -716,9 +1019,13 @@ export default async function handler(req, res) {
           // Tienda DEMO: sin recordatorio; se marca para que no vuelva a la cola.
           if (ownerDemo.get(String(c.ownerId))) { remDemo.push(d); continue; }
           if (!c.trackEntregadoAt || c.trackEntregadoAt > cutoffRem || c.contentReminderAt) continue;
-          const cont = c.contenido || [];
-          const acordados = cont.reduce((s, x) => s + (x.acordados || 0), 0);
-          const entregados = cont.reduce((s, x) => s + (x.entregados || 0), 0);
+          // Canjes v2: la verdad son las `piezas` (una por pieza de contenido,
+          // estado pendiente|entregada|publicada). Los contadores `contenido[]`
+          // quedan como fallback para canjes viejos sin piezas.
+          const piezas = Array.isArray(c.piezas) && c.piezas.length ? c.piezas : null;
+          const cont = Array.isArray(c.contenido) ? c.contenido : [];
+          const acordados = piezas ? piezas.length : cont.reduce((s, x) => s + (Number(x?.acordados) || 0), 0);
+          const entregados = piezas ? piezas.filter(p => ["entregada", "publicada"].includes(String(p?.estado || ""))).length : cont.reduce((s, x) => s + (Number(x?.entregados) || 0), 0);
           if (acordados > 0 && entregados >= acordados) continue;
           aRecordar.push({ d, c, acordados, entregados });
         }
@@ -744,25 +1051,15 @@ export default async function handler(req, res) {
             if (!to) return;
             const inf = c.influencer || "influencer";
             const dias = Math.round((Date.now() - new Date(c.trackEntregadoAt).getTime()) / 86400000);
-            const html = `<div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff">
-  <div style="background:linear-gradient(135deg,#f59e0b,#f97316);padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
-    <div style="font-size:18px;font-weight:700;color:#fff">Contenido pendiente</div>
-    <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px">Canje de ${inf}</div>
-  </div>
-  <p style="font-size:14px;color:#374151">El paquete de <strong>${inf}</strong> se entregó hace <strong>${dias} días</strong> y todavía ${acordados > 0 ? `va ${entregados} de ${acordados} contenidos acordados` : "no marcaste contenido entregado"}.</p>
-  <p style="font-size:13px;color:#374151">Buen momento para escribirle y preguntarle cómo viene.</p>
-  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Seguimiento de canjes</p>
-</div>`;
-            await fetch("https://api.resend.com/emails", {
-              method: "POST",
-              headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-              body: JSON.stringify({ from: process.env.RESEND_FROM || "Growith <onboarding@resend.dev>", to, subject: `${inf} debe contenido — entregado hace ${dias} días`, html }),
-              signal: AbortSignal.timeout(8000),
-            });
+            // mailEnvios/mailShell (antes fetch inline a Resend sin escapar).
+            await mailEnvios(to, `${inf} debe contenido — entregado hace ${dias} días`, mailShell("Contenido pendiente", `Canje de ${inf}`,
+              `<p style="font-size:14px">El paquete de <strong>${esc(inf)}</strong> se entregó hace <strong>${dias} días</strong> y todavía ${acordados > 0 ? `va ${entregados} de ${acordados} piezas de contenido acordadas` : "no marcaste contenido entregado"}.</p>
+  <p style="font-size:13px">Buen momento para escribirle y preguntarle cómo viene.</p>`));
           })).then(rs => rs.forEach(r => { if (r.status === "rejected") console.error("[canje-reminder]:", r.reason?.message || r.reason); }));
         }
       } catch (e) { console.error("[track_all canjes]:", e.message); }
-      return res.json({ ok: true, usuarios: activos.length, revisados, actualizados, avisosComprador, digests, anulacionesAuto: anulacionesAuto.length, canjesRevisados, canjesActualizados });
+      clearTimeout(tAbortE); clearTimeout(tAbortC);
+      return res.json({ ok: true, usuarios: activos.length, revisados, actualizados, avisosComprador, digests, anulacionesAuto: anulacionesAuto.length, tiendaReintentos, tiendaAbandonados, canjesRevisados, canjesActualizados });
     } catch (e) {
       console.error("track_all error:", e.message);
       return res.status(500).json({ error: e.message });
@@ -786,7 +1083,12 @@ export default async function handler(req, res) {
       // Marca de actividad para el cron de tracking. Las tiendas DEMO no entran
       // al cron (sus envíos son ficticios): sin marca.
       const uSnapL = await db.collection("users").doc(uid).get();
-      if (!esDemo(uSnapL.data())) await db.collection("users").doc(uid).set({ enviosTrackActivo: new Date().toISOString() }, { merge: true });
+      const udL = uSnapL.data() || {};
+      const ahoraL = new Date().toISOString();
+      // El "heal" de abajo corre como máximo una vez por hora por cuenta
+      // (users/{uid}.enviosHealTs), no en cada refresco de la pestaña.
+      const healDue = !esDemo(udL) && (Date.now() - (Date.parse(udL.enviosHealTs || "") || 0) > 3600000);
+      if (!esDemo(udL)) await db.collection("users").doc(uid).set({ enviosTrackActivo: ahoraL, ...(healDue ? { enviosHealTs: ahoraL } : {}) }, { merge: true });
       const cutoff = new Date(Date.now() - 60 * 86400000).toISOString();
       const col = db.collection("users").doc(uid).collection("envios");
       const snap = await col.where("creado", ">", cutoff).get();
@@ -797,15 +1099,14 @@ export default async function handler(req, res) {
       // miraba. Se activan acá, del lado del servidor, para que aparezcan en
       // Seguimientos aunque el cliente no vuelva a emitir nada. El tracking a
       // la tienda (fulfill + mail) lo completa el front (activarSeguimientoApi).
-      try {
-        const ahora = new Date().toISOString();
+      if (healDue) try {
         const orf = await col.where("andreani.numeroDeEnvio", ">", "").get();
         const b = db.batch(); let n = 0;
         orf.forEach(d => {
           const e = d.data();
           if (e.activo === true || e.entregadoAt || e.devolucionAt || e.tracking) return;
           const numero = String(e.andreani.numeroDeEnvio);
-          const patch = { numero: d.id, tracking: numero, activo: true, estado: "despachado", despachadoAt: e.despachadoAt || ahora, creado: e.creado || ahora, apiHeal: true };
+          const patch = { numero: d.id, tracking: numero, activo: true, estado: "despachado", despachadoAt: e.despachadoAt || ahoraL, creado: e.creado || ahoraL, apiHeal: true };
           b.set(d.ref, patch, { merge: true }); envios[d.id] = { ...e, ...patch }; n++;
         });
         if (n) { await b.commit(); console.log(`[envios_list] ${n} envío(s) API activados para seguimiento (uid ${uid})`); }
@@ -819,10 +1120,20 @@ export default async function handler(req, res) {
       const items = Array.isArray(body.envios) ? body.envios.slice(0, 400) : [];
       const db = initAdmin();
       const ahora = new Date().toISOString();
+      const colR = db.collection("users").doc(uid).collection("envios");
       for (let i = 0; i < items.length; i += 20) {
-        await Promise.all(items.slice(i, i + 20).map(e => {
+        const lote = items.slice(i, i + 20).filter(e => String(e?.numero || "").trim());
+        if (!lote.length) continue;
+        // Una lectura por lote (getAll) para NO pisar `creado` en los docs que
+        // ya existen: antes cada re-registro lo movía a "ahora" y el historial
+        // de 60 días se estiraba solo.
+        const existentes = new Map();
+        try {
+          const snaps = await db.getAll(...lote.map(e => colR.doc(String(e.numero).trim())));
+          snaps.forEach(s => { if (s.exists) existentes.set(s.id, s.data() || {}); });
+        } catch (err) { console.warn("[envios_registrar] getAll:", err.message); }
+        await Promise.all(lote.map(e => {
           const numero = String(e.numero || "").trim();
-          if (!numero) return null;
           const docData = {};
           for (const k of ["tnId","cliente","esSucursal","provincia","localidad","total","skus","estado","activo","tracking","fulfillOk","verificado","tnDone"]) {
             if (e[k] !== undefined) docData[k] = e[k];
@@ -832,16 +1143,19 @@ export default async function handler(req, res) {
           if (e.destinatario && typeof e.destinatario === "object") {
             docData.destinatario = { nombre: String(e.destinatario.nombre || "").slice(0, 120), email: String(e.destinatario.email || "").trim().slice(0, 160), telefono: String(e.destinatario.telefono || "").slice(0, 25) };
           }
+          // Cola de reintento a la tienda (el cron track_all la procesa):
+          // {orderId, tracking, error} → se guarda con intentos:0. `null` la borra
+          // (ej: el usuario lo subió a mano).
+          if (e.tiendaPendiente === null) docData.tiendaPendiente = FieldValue.delete();
+          else if (e.tiendaPendiente && typeof e.tiendaPendiente === "object") {
+            docData.tiendaPendiente = { orderId: String(e.tiendaPendiente.orderId || numero).slice(0, 40), tracking: String(e.tiendaPendiente.tracking || e.tracking || "").trim().slice(0, 40), error: String(e.tiendaPendiente.error || "").slice(0, 300), intentos: 0, ts: ahora };
+          }
           docData.numero = numero;
           if (e.estado === "despachado") docData.despachadoAt = ahora;
           if (e.verificado) docData.verificadoAt = ahora;
-          return db.collection("users").doc(uid).collection("envios").doc(numero)
-            .set({ creado: ahora, ...docData }, { merge: true })
-            .then(async () => {
-              // no pisar "creado" si ya existía: merge lo sobreescribió — restaurar
-              // sería otra lectura por doc; aceptamos que "creado" refleje la
-              // última actividad (ventana de 60 días del historial).
-            });
+          const prev = existentes.get(numero);
+          docData.creado = prev?.creado || ahora;
+          return colR.doc(numero).set(docData, { merge: true });
         }));
       }
       return res.json({ ok: true, guardados: items.length });
@@ -904,25 +1218,21 @@ export default async function handler(req, res) {
     } catch (e) { return res.status(500).json({ error: e.message }); }
   }
 
-  let storeId, accessToken, shStore = null, tiendaDemo = false;
+  // ── Credenciales de la cuenta: solo para `pack` (TN) y para saber si la
+  // tienda es DEMO. La subida del tracking vive en subirTrackingTienda().
+  let uData = {}, tiendaDemo = false, db;
   try {
-    const db = initAdmin();
+    db = initAdmin();
     const userSnap = await db.collection("users").doc(uid).get();
-    tiendaDemo = esDemo(userSnap.data());
-    if (userSnap.exists && !tiendaDemo) {
-      const stores = userSnap.data().stores || [];
-      const tnStore = stores.find(s => s.type === "tiendanube");
-      shStore = stores.find(s => s.type === "shopify" && s.accessToken && s.shop) || null;
-      if (shStore) await ensureShopifyToken(db, uid, shStore);
-      if (tnStore?.accessToken && tnStore?.storeId) {
-        storeId = tnStore.storeId;
-        accessToken = tnStore.accessToken;
-      }
-    }
+    uData = userSnap.exists ? (userSnap.data() || {}) : {};
+    tiendaDemo = esDemo(uData);
   } catch(e) {
     console.error("Firebase error:", e.message);
     return res.status(500).json({ error: "Error al obtener credenciales" });
   }
+  const stores = tiendaDemo ? [] : (uData.stores || []);
+  const tnStore = stores.find(s => s.type === "tiendanube" && s.accessToken && s.storeId) || null;
+  const shStore = stores.find(s => s.type === "shopify" && s.accessToken && s.shop) || null;
 
   // Tienda DEMO: nada sale a Tienda Nube ni a Shopify (ni tracking ni mail al
   // comprador) — respuesta de éxito inocua con el mismo shape.
@@ -932,113 +1242,17 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, order: orderId, tracking, tnOrderId: String(orderId), fulfilled: true, fulfillError: null, demo: true });
   }
 
-  // ── Rama Shopify: misma prioridad que orders.js (Shopify manda si está
-  // conectado). Sube el tracking creando un fulfillment con la API de
-  // FulfillmentOrders — equivalente al PUT+fulfill de TN.
-  if (shStore) {
-    if (req.query.action === 'pack') {
-      return res.status(400).json({ error: "Marcar empaquetado no aplica a Shopify (se hace desde el fulfillment)." });
-    }
-    if (!orderId || !tracking) return res.status(400).json({ error: "Faltan orderId o tracking" });
-    const shHeaders = { 'X-Shopify-Access-Token': shStore.accessToken, 'Content-Type': 'application/json' };
-    const shBase = `https://${shStore.shop}/admin/api/2024-10`;
-    // Shopify limita a ~2 req/s por tienda: ante 429 se espera lo que pide
-    // (Retry-After) y se reintenta una vez, en vez de fallar el seguimiento.
-    const shFetch = async (url, opts) => {
-      let r = await fetch(url, opts);
-      if (r.status === 429) { const wait = Math.min(5000, Math.max(1000, Number(r.headers.get("retry-after") || 2) * 1000)); await new Promise(x => setTimeout(x, wait)); r = await fetch(url, opts); }
-      return r;
-    };
-    // Sin permiso de fulfillment (tiendas conectadas antes de que Growith lo
-    // pidiera): Shopify responde 403 en fulfillment_orders / fulfillments. El
-    // mensaje tiene que decir QUÉ hacer, y el front corta el lote (code).
-    const sinPermiso = () => res.status(403).json({ code: "shopify_scope", error: "Shopify no le dio a Growith permiso para marcar envíos (fulfillment). Reconectá Shopify desde Config → Integraciones (vuelve a pedir el permiso) y volvé a enviar los seguimientos: solo se reintentan los que faltan." });
-    try {
-      // 1. Buscar la orden por número visible (name = "#1001"; algunas tiendas
-      //    usan prefijo/sufijo en el nombre → segundo intento sin "#" y, si
-      //    tampoco, por order_number en las órdenes recientes)
-      const buscar = async (name) => {
-        const sr = await shFetch(`${shBase}/orders.json?name=${encodeURIComponent(name)}&status=any&fields=id,order_number,name,fulfillment_status`, { headers: shHeaders });
-        if (sr.status === 401 || sr.status === 403) throw Object.assign(new Error("scope"), { scope: true });
-        if (!sr.ok) throw new Error(`Shopify search error ${sr.status}`);
-        const sd = await sr.json();
-        return (sd.orders || []).find(o => String(o.order_number) === String(orderId) || String(o.name || "").replace(/\D/g, "") === String(orderId)) || null;
-      };
-      let order = await buscar('#' + orderId);
-      if (!order) order = await buscar(String(orderId));
-      if (!order) {
-        // Paginación por cursor (Link: page_info), de la más nueva a la más vieja,
-        // hasta 6 páginas de 250 o hasta pasar el número buscado.
-        let url = `${shBase}/orders.json?status=any&limit=250&fields=id,order_number,name,fulfillment_status`;
-        for (let pag = 0; pag < 6 && url && !order; pag++) {
-          const sr = await shFetch(url, { headers: shHeaders });
-          if (!sr.ok) break;
-          const lst = (await sr.json()).orders || [];
-          if (!lst.length) break;
-          order = lst.find(o => String(o.order_number) === String(orderId)) || null;
-          const minNum = Math.min(...lst.map(o => Number(o.order_number) || Infinity));
-          if (minNum < Number(orderId)) break;
-          const m = /<([^>]+)>;\s*rel="next"/.exec(sr.headers.get("link") || "");
-          url = m ? m[1] : null;
-        }
-      }
-      if (!order) return res.status(404).json({ error: `Pedido #${orderId} no encontrado en Shopify` });
-      // Ya marcado como enviado en Shopify (a mano o por otra app): no es un
-      // error — el tracking igual queda registrado en Growith para el
-      // seguimiento automático, y se avisa que el cliente no recibió mail nuevo.
-      if ((order.fulfillment_status || "").toLowerCase() === 'fulfilled') {
-        return res.status(200).json({ ok: true, order: orderId, tracking, tnOrderId: String(order.id), fulfilled: false, fulfillError: "ya estaba marcado como enviado en Shopify" });
-      }
-      // 2. Fulfillment orders abiertos de la orden
-      const fr = await shFetch(`${shBase}/orders/${order.id}/fulfillment_orders.json`, { headers: shHeaders });
-      if (fr.status === 401 || fr.status === 403) return sinPermiso();
-      if (!fr.ok) throw new Error(`Shopify fulfillment_orders error ${fr.status}`);
-      const fd = await fr.json();
-      // Shopify solo deja crear el fulfillment sobre FO open / in_progress: un
-      // FO en espera (on_hold: fraude, pago pendiente) o programado (scheduled)
-      // hace fallar el POST entero con 422, así que no se incluye y se avisa.
-      const fos = fd.fulfillment_orders || [];
-      const abiertos = fos.filter(fo => ["open", "in_progress"].includes((fo.status || "").toLowerCase()));
-      if (!abiertos.length) {
-        const enEspera = fos.some(fo => ["on_hold", "scheduled"].includes((fo.status || "").toLowerCase()));
-        if (enEspera) return res.status(400).json({ error: `El pedido #${orderId} está en espera en Shopify (retenido o programado): liberalo en Shopify y volvé a enviar el seguimiento.`, code: "shopify_hold" });
-        return res.status(400).json({ error: `El pedido #${orderId} no tiene items pendientes de despacho en Shopify.` });
-      }
-      // 3. Crear el fulfillment con tracking + aviso al cliente
-      let fulfilled = false, fulfillError = null;
-      const pr = await shFetch(`${shBase}/fulfillments.json`, {
-        method: 'POST', headers: shHeaders,
-        body: JSON.stringify({ fulfillment: {
-          line_items_by_fulfillment_order: abiertos.map(fo => ({ fulfillment_order_id: fo.id })),
-          tracking_info: { number: tracking, url: `https://www.andreani.com/envio/${tracking}`, company: "Andreani" },
-          notify_customer: true,
-        } }),
-      });
-      if (pr.status === 401 || pr.status === 403) return sinPermiso();
-      if (pr.ok) fulfilled = true;
-      else { const pd = await pr.json().catch(() => ({})); fulfillError = pd.errors ? JSON.stringify(pd.errors).slice(0, 200) : `Shopify ${pr.status}`; }
-      if (!fulfilled) return res.status(502).json({ error: `No se pudo crear el fulfillment: ${fulfillError}` });
-      return res.status(200).json({ ok: true, order: orderId, tracking, tnOrderId: String(order.id), fulfilled: true, fulfillError: null });
-    } catch (e) {
-      if (e && e.scope) return sinPermiso();
-      return res.status(500).json({ error: e.message });
-    }
-  }
-
-  if (!storeId || !accessToken) return res.status(403).json({ error: "Tienda no conectada" });
-
-  const headers = {
-    'Authentication': `bearer ${accessToken}`,
-    'User-Agent': 'GrowithApp (contacto.growith@gmail.com)',
-    'Content-Type': 'application/json',
-  };
-
   // ── action=pack: marcar pedido como empaquetado en TN (sin salir de Growith) ──
-  // Recibe el ID REAL de la orden de TN (no el número visible).
+  // Recibe el ID REAL de la orden de TN (no el número visible). Shopify manda
+  // si está conectado (misma prioridad que orders.js) y ahí no aplica.
   if (req.query.action === 'pack') {
+    if (shStore) return res.status(400).json({ error: "Marcar empaquetado no aplica a Shopify (se hace desde el fulfillment)." });
+    if (!tnStore) return res.status(403).json({ error: "Tienda no conectada" });
     if (!orderId) return res.status(400).json({ error: "Falta orderId" });
     try {
-      const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders/${orderId}/pack`, { method: 'POST', headers });
+      const headers = { 'Authentication': `bearer ${tnStore.accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)', 'Content-Type': 'application/json' };
+      const r = await fetch(`https://api.tiendanube.com/v1/${tnStore.storeId}/orders/${orderId}/pack`, { method: 'POST', headers });
+      if (r.status === 429) return res.status(429).json({ error: "Tienda Nube limitó las llamadas, reintentá en unos segundos", code: "tn_rate_limit", retryAfter: Math.max(1, Number(r.headers.get("retry-after")) || 3) });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
         return res.status(r.status).json({ error: d.message || d.description || `Error TN ${r.status}` });
@@ -1047,73 +1261,26 @@ export default async function handler(req, res) {
     } catch (e) { return res.status(500).json({ error: e.message }); }
   }
 
+  // ── Sin action: subir el tracking a la tienda (Shopify o Tienda Nube) ──
+  // La lógica está en subirTrackingTienda (compartida con la cola de reintento
+  // del cron); acá solo se traduce a HTTP con los mismos códigos de siempre:
+  // 403 shopify_scope / sin tienda, 400 shopify_hold, 404, 429 tn_rate_limit,
+  // 502 fulfillment, 500 error; "ya estaba enviado" = 200 con fulfilled:false.
   if (!orderId || !tracking) return res.status(400).json({ error: "Faltan orderId o tracking" });
-
-  try {
-    // 1. Buscar el pedido por número. per_page=30 (antes 5): el q= de TN matchea
-    // por substring y con 5 resultados la orden exacta podía quedar afuera
-    // (ej: "123" matchea #1123, #1234...) → 404 falso en plena tanda.
-    const searchRes = await fetch(
-      `https://api.tiendanube.com/v1/${storeId}/orders?q=${orderId}&per_page=30`,
-      { headers }
-    );
-    if (!searchRes.ok) throw new Error(`TN search error ${searchRes.status}`);
-    const orders = await searchRes.json();
-    if (!Array.isArray(orders) || orders.length === 0)
-      return res.status(404).json({ error: `Pedido #${orderId} no encontrado` });
-
-    const order = orders.find(o => String(o.number) === String(orderId));
-    if (!order) return res.status(404).json({ error: `Pedido #${orderId} no encontrado` });
-
-    const tnOrderId = order.id;
-    const shippingStatus = order.shipping_status;
-
-    // Solo bloquear si ya está enviado
-    if (shippingStatus === 'fulfilled' || shippingStatus === 'shipped') {
-      return res.status(400).json({ error: `El pedido #${orderId} ya fue enviado.` });
-    }
-
-    // 2. PUT para guardar el tracking (siempre funciona con write_orders)
-    const putRes = await fetch(
-      `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}`,
-      {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({
-          shipping_tracking_number: tracking,
-          shipping_tracking_url: `https://www.andreani.com/envio/${tracking}`,
-        })
-      }
-    );
-    const putData = await putRes.json();
-
-    if (!putRes.ok) {
-      return res.status(putRes.status).json({
-        error: putData.message || putData.description || `Error TN ${putRes.status}`,
-      });
-    }
-
-    // 3. POST /fulfill para marcar como enviado y notificar al cliente.
-    // Antes esto era un catch vacío: si TN lo rechazaba, la UI decía "✓ Ok"
-    // pero el cliente NO recibía el mail y la orden no quedaba enviada.
-    // Ahora el resultado se informa de verdad (fulfilled: true/false).
-    let fulfilled = false, fulfillError = null;
-    try {
-      const fr = await fetch(
-        `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}/fulfill`,
-        {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ shipping_tracking_number: tracking, notify_customer: true })
-        }
-      );
-      fulfilled = fr.ok;
-      if (!fr.ok) { const fd = await fr.json().catch(() => ({})); fulfillError = fd.message || fd.description || `TN ${fr.status}`; }
-    } catch(e) { fulfillError = e.message; }
-
-    res.status(200).json({ ok: true, order: orderId, tracking, tnOrderId: String(tnOrderId), fulfilled, fulfillError });
-
-  } catch(e) {
-    res.status(500).json({ error: e.message });
+  if (!shStore && !tnStore) return res.status(403).json({ error: "Tienda no conectada" });
+  const r = await subirTrackingTienda(db, uid, uData, { orderId: String(orderId), tracking: String(tracking) });
+  if (!r.ok) {
+    const body = { error: r.error || "No se pudo subir el tracking" };
+    if (r.code && ["shopify_scope", "shopify_hold", "tn_rate_limit"].includes(r.code)) body.code = r.code;
+    if (r.retryAfter) body.retryAfter = r.retryAfter;
+    return res.status(r.status || 500).json(body);
   }
+  return res.status(200).json({ ok: true, order: orderId, tracking, tnOrderId: r.tnOrderId, fulfilled: !!r.fulfilled, fulfillError: r.fulfillError || null });
 }
+
+// Lista ORDENADA de reglas [fuente de regex, categoría] que usa clasificarEstado
+// (más la vía rápida por etapa v3: pendiente de ingreso→otro, ingresado→en_camino,
+// en camino→en_camino, en sucursal→en_sucursal, entregado→entregado; las dos
+// reglas de negación se prueban antes de la etapa salvo "en sucursal"). El
+// front (mapAndreaniEstado) copia esta misma lista para clasificar igual.
+export const GH_ESTADO_REGLAS = ESTADO_REGLAS.map(([src, cat]) => [src, cat]);

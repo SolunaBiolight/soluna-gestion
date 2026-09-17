@@ -14362,7 +14362,10 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
                   {c.estado==="pendiente"&&(
                     <button title="Cancelar esta carga" onClick={async()=>{
                       const r=await authFetch("/api/andreani?action=carga_cancelar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:c.id})});
-                      if(r.ok){toast("Carga cancelada","success");refrescarCargas();}else toast("No se pudo cancelar","warning");
+                      const dc=await r.json().catch(()=>({}));
+                      if(r.ok&&dc.acreditada){ toast("Ese pago ya estaba aprobado en Mercado Pago: se acreditó al saldo en vez de cancelarse","success",7000); refrescarCargas(); onSaldo&&authFetch("/api/andreani?action=saldo").then(x=>x.json()).then(x=>{ if(typeof x?.saldo==="number") onSaldo(x.saldo); }).catch(()=>{}); }
+                      else if(r.ok&&dc.revision){ toast("Ese pago figura aprobado en Mercado Pago: la carga quedó en revisión y Growith la acredita a mano","warning",7000); refrescarCargas(); }
+                      else if(r.ok){toast("Carga cancelada","success");refrescarCargas();}else toast("No se pudo cancelar","warning");
                     }} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:13,padding:0,lineHeight:1}}>✕</button>
                   )}
                 </span>
@@ -19001,6 +19004,7 @@ const ADM_CRONS = [
   { key:"stock_warm_all",             label:"Precalentado de Stock",           cada:"Cada 15 minutos",          maxH:1 },
   { key:"update-shipping_track_all",  label:"Seguimiento de envíos",           cada:"Cada 30 minutos",          maxH:2 },
   { key:"andreani_hop_index_cron",    label:"Índice de puntos HOP Andreani",  cada:"Cada hora (por tandas)",   maxH:2 },
+  { key:"andreani_saldo_cron",        label:"Aviso de saldo bajo de envíos",   cada:"Todos los días 12:00 UTC", maxH:26 },
   { key:"tareas_cron_deadlines",      label:"Vencimientos de tareas",          cada:"Todos los días 12:30 UTC", maxH:26 },
   { key:"arca_cron_autopilot",        label:"Piloto automático de facturación", cada:"Cada hora",               maxH:2 },
   { key:"pagos-cal_cron_avisos",      label:"Avisos del Calendario de Pagos",  cada:"Todos los días 12:00 UTC", maxH:26 },

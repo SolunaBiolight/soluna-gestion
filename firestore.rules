@@ -23,6 +23,7 @@ service cloud.firestore {
       return ["andreaniSaldo", "isAdmin", "teamMembers", "teamUids", "ownerUid",
               "plan", "planExpiry", "trialEnd", "andreaniAvisoSaldoTs", "andreaniOrigen",
               "andreaniSucOrigen", "andreaniRemitente", "enviosTrackActivo", "stripeCustomerId",
+              "andreaniMarkup", "saldoBajoAvisoTs", "enviosHealTs",
               "stripeSubscriptionId", "deleted", "deletedAt"];
     }
     // Alta del perfil desde el navegador (primer login): plan free y trial de

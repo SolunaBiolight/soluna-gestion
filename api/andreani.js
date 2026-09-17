@@ -7,29 +7,54 @@
 // plataforma NUNCA se le muestra a un cliente (solo a admins).
 //
 // Seguridad:
-//  - Todas las acciones exigen ID token de Firebase (verifyAuth). La identidad
-//    sale SIEMPRE del token, nunca de un uid mandado por el cliente.
+//  - Casi todas las acciones exigen ID token de Firebase (verifyAuth). La
+//    identidad del que opera sale del token; la TIENDA sobre la que se opera
+//    sale de X-Growith-Tienda / uid validada con requireUid(…, "envios").
+//    Las acciones admin_* quedan atadas al uid del token (requireAdmin).
+//  - Sin sesión (autenticadas de otra forma): mp_webhook (consulta el pago
+//    real contra la API de MP), portal_ejecutiva* (token del portal),
+//    hop_index_cron y saldo_cron (CRON_SECRET vía guardCron).
 //  - `emitir` re-cotiza server-side (jamás se confía en el precio del front) y
-//    debita en transacción; si Andreani falla después del débito se hace un
-//    reverso automático (segunda transacción + movimiento tipo "reverso").
-//  - Etiquetas y trazas verifican pertenencia: solo podés bajar envíos tuyos.
+//    debita en transacción. Si Andreani RECHAZA claro se reversa; si la
+//    respuesta es AMBIGUA (timeout, 2xx sin número) el débito queda RETENIDO
+//    y el envío marcado `dudosoTs` hasta que un admin lo resuelva
+//    (admin_dudoso_resolver). Si un reverso falla: `reversoPendiente` en el
+//    movimiento + mail al fundador.
+//  - Etiquetas y trazas verifican pertenencia: primero andreani_idx (server-only).
 //
 // Firestore:
-//  - users/{uid}.andreaniSaldo (number, pesos enteros)
-//  - users/{uid}.andreaniOrigen / .andreaniRemitente (config del usuario)
-//  - users/{uid}/andreani_mov/{autoId} — ledger {tipo, monto, saldoDespues, ...}
-//  - andreani_config/global — {markupPct, markupFijo, habilitados:[uid]}
+//  - users/{uid}.andreaniSaldo (number, pesos enteros), .andreaniOrigen /
+//    .andreaniRemitente / .andreaniSucOrigen, .andreaniMarkup {markupPct,
+//    markupFijo} (override por cliente, admin_markup_cliente), .enviosCfg
+//  - users/{uid}/andreani_mov/{autoId} — ledger {tipo: debito|credito|reverso|
+//    contracargo, monto, saldoDespues, envioId?, numeroDeEnvio?, dudoso?,
+//    reversoPendiente?, ...}
+//  - users/{uid}/envios/{envioId}.andreani — {numeroDeEnvio, precio, tipo,
+//    emitiendoTs (lock), dudosoTs/dudosoResuelto, anulada, anuladaIngresoTs…}
+//  - andreani_idx/{numeroDeEnvio} — {uid, envioId, precio, costo, tipo, mes,
+//    ts, anulada?, reintegro?, facturado?} (pertenencia + conciliación)
+//  - andreani_cargas/{id} — cargas de saldo {uid, monto, ref, metodo, estado:
+//    pendiente|acreditada|revision|cancelada|rechazada|contracargo}
+//  - envios_casos/{id} — gestiones ante Andreani (ver CASO_MOTIVOS)
+//  - andreani_config/global — {markupPct, markupFijo, descuentoPct,
+//    seguroPct, habilitados:[uid], datosPago, ejecutiva*, anulacionDias…}
 //  - andreani_config/token — cache del token de login (TTL 12h)
-//  - andreani_config/suc_{cp} — cache de sucursales por CP (TTL 7 días)
+//  - andreani_config/stats_{YYYY-MM} — rentabilidad mensual (+ porUid)
+//  - andreani_config/conciliacion_{YYYY-MM} — resumen de admin_conciliar
+//  - andreani_config/hop_idx_meta, hop_idx_{n}, hop_idx_build_{n} — índice HOP (_hop.js)
+//  - cachés: suc2_{cp}, suc_all2, suc_geo2, suc_geocode, rates_suc12_* y
+//    rates_{uid}_{cp}_{kg}_{valor} (checkout Shopify). Versiones viejas
+//    (suc_{cp}, suc_all, suc_geo, geo_ck_*, rates_suc1..11_*,
+//    suc_b2c_checkout1/2) se purgan con admin_cache_purge.
 
 import { randomBytes, createHmac } from "crypto";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue, FieldPath } from "firebase-admin/firestore";
 import { ghPuntoDeClave, ghConflictoPunto, ghCoincidePunto, ghConflictoTpl } from "./_suc_match.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
-import { verifyAuth, requireAdmin, guardUid, requireUid, readOnlyBlock, guardCron } from "./_auth.js";
+import { verifyAuth, requireAdmin, requireUid, readOnlyBlock, guardCron, isFounder } from "./_auth.js";
 import { esDemo } from "./_demo.js";
-import { hopIndexTodas, hopIndexPorCp, hopIndexSweep, hopIndexOrigen, conHop } from "./_hop.js";
+import { hopIndexTodas, hopIndexPorCp, hopIndexSweep, hopIndexOrigen, hopIndexFotoTs, conHop } from "./_hop.js";
 import { numeroEnvioDemo, precioEtiquetaDemo, registrarTrackDemo, trazaDemo } from "./_demo_ops.js";
 
 function initAdmin() {
@@ -331,19 +356,36 @@ async function portalEjecutiva(req, res, db, body, action) {
   }
   return res.status(400).json({ error: "acción inválida" });
 }
-function validarDataUrl(v, maxBytes, tipos) {
+// Data URL base64 válida de alguno de los `tipos`, con tope sobre el LARGO DEL
+// STRING base64 (lo que ocupa en Firestore), no sobre los bytes decodificados.
+function validarDataUrl(v, maxChars, tipos) {
   const str = String(v || "");
   const m = str.match(/^data:([a-z0-9.+\/-]+);base64,([A-Za-z0-9+\/=]+)$/i);
   if (!m) return null;
   if (!tipos.some(t => m[1].toLowerCase().startsWith(t))) return null;
-  if (Math.floor(m[2].length * 3 / 4) > maxBytes) return null;
+  if (m[2].length > maxChars) return null;
   return str;
 }
+const FOTOS_MAX_CHARS = 700000;       // suma de todas las fotos de un caso
+const COMPROBANTE_MAX_CHARS = 650000; // comprobante de una carga
+const HISTORIAL_MAX = 200;            // entradas de envios_casos.historial
+const ERR_FOTOS_PESO = "Las fotos pesan demasiado (máx. 700 KB entre todas): sacá alguna o reducí la calidad.";
 
 // ¿Es admin de la plataforma? Mismo criterio que _auth.requireAdmin, pero sin
 // re-verificar el token (ya lo verificamos): users/{uid}.isAdmin, ADMIN_UIDS
-// (env) o fundadores.
+// (env) o fundadores. _auth.js exporta isFounder pero no la lista: el uid del
+// fundador hace falta acá para los mails operativos (mailFundador).
 const FOUNDERS = ["WJH3ArqDPQcNLha9lOinvkVi9uJ2"];
+// Mail operativo al fundador (users/{FOUNDERS[0]}.email). Best-effort, nunca tira.
+async function mailFundador(db, subject, html) {
+  try {
+    const f = await db.collection("users").doc(FOUNDERS[0]).get();
+    const to = f.exists ? String(f.data().email || "").trim() : "";
+    if (!to) return false;
+    const r = await sendEmail({ to, subject, html });
+    return !!r?.ok;
+  } catch (_) { return false; }
+}
 
 // Nombres del desplegable del Excel de Andreani que el importador RECHAZA
 // (punto dado de baja, confirmado con un rechazo real). Se suma a
@@ -360,7 +402,7 @@ async function logAdminAndreani(db, adminUid, action, targetUid, detalle, data) 
   } catch (e) { console.warn("[admin_log]", e.message); }
 }
 export async function isPlatformAdmin(db, uid) {
-  if (FOUNDERS.includes(uid)) return true;
+  if (isFounder(uid)) return true;
   const envAdmins = String(process.env.ADMIN_UIDS || "").split(",").map(s => s.trim()).filter(Boolean);
   if (envAdmins.includes(uid)) return true;
   try {
@@ -500,11 +542,13 @@ async function mpWebhook(req, res, db, body) {
   });
   if (!pr.ok) return res.status(pr.status === 404 ? 200 : 502).json({ error: `MP HTTP ${pr.status}` });
   const pago = await pr.json();
-  // Devolución/contracargo de un pago ya acreditado: débito compensatorio.
-  if (["refunded", "charged_back"].includes(pago.status)) {
+  // Devolución/contracargo (total o PARCIAL: el pago sigue "approved" con
+  // transaction_amount_refunded > 0) de un pago ya acreditado: débito compensatorio.
+  const reembolsado = Number(pago.transaction_amount_refunded) || 0;
+  if (["refunded", "charged_back"].includes(pago.status) || reembolsado > 0) {
     const r3 = await mpContracargo(db, String(pago.external_reference || ""), pago);
     if (r3.error) { console.error("[mp_webhook contracargo]", r3.error); return res.status(500).json({ error: r3.error }); }
-    return res.status(200).json({ ok: true, ...(r3.debitada ? { contracargo: true } : {}) });
+    if (pago.status !== "approved" || r3.debitada) return res.status(200).json({ ok: true, ...(r3.debitada ? { contracargo: true } : {}) });
   }
   if (pago.status !== "approved") return res.status(200).json({ ok: true, status: pago.status });
   const cargaId = String(pago.external_reference || "");
@@ -514,6 +558,17 @@ async function mpWebhook(req, res, db, body) {
   return res.status(200).json({ ok: true, ...(r2.acreditada ? { acreditada: true } : {}), ...(r2.revision ? { revision: true } : {}) });
 }
 
+// Consulta en MP si hay un pago APROBADO para una carga (por external_reference).
+// Devuelve el pago, null si no hay, o lanza si MP no responde.
+async function mpBuscarPagoAprobado(token, cargaId) {
+  const pr = await fetch(`${MP_BASE}/v1/payments/search?external_reference=${encodeURIComponent(cargaId)}&sort=date_created&criteria=desc`, {
+    headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000),
+  });
+  if (!pr.ok) throw new Error(`MP search HTTP ${pr.status}`);
+  const j = await pr.json();
+  return (j.results || []).find(p => p.status === "approved") || null;
+}
+
 // Acredita una carga MP pendiente contra un pago APROBADO ya verificado por
 // API. Transacción idempotente por estado (webhook y cron pueden llamarla a la
 // vez sin acreditar doble). Devuelve {acreditada}|{revision}|{skip}|{error}.
@@ -521,11 +576,20 @@ async function mpAcreditarCarga(db, cargaId, pago) {
   const cRef = db.collection("andreani_cargas").doc(cargaId);
   let out = null;
   let montoInfo = null; // para escribir el motivo FUERA de la transacción (un write dentro de una tx abortada se rollbackea)
+  let cancelada = null; // pago aprobado sobre una carga cancelada/rechazada → revisión + mail (fuera de la tx)
   try {
     out = await db.runTransaction(async (tx) => {
       const s = await tx.get(cRef);
       if (!s.exists) throw new Error("SKIP");
       const c = s.data();
+      // El cliente canceló (o el admin rechazó) la carga pero MP igual aprobó
+      // el pago: hay plata cobrada sin saldo. No se acredita solo: a revisión
+      // y aviso al fundador. Idempotente: la segunda vez ya está en "revision".
+      if (c.estado === "cancelada" || c.estado === "rechazada") {
+        tx.update(cRef, { estado: "revision", motivo: "pago aprobado en MP sobre una carga cancelada", estadoPrevio: c.estado, mpPaymentId: String(pago.id), mpMonto: Number(pago.transaction_amount) || 0, revisionTs: FieldValue.serverTimestamp() });
+        cancelada = { uid: c.uid, email: c.email || "", monto: Math.round(Number(c.monto) || 0), ref: c.ref, pagado: Number(pago.transaction_amount) || 0 };
+        return null;
+      }
       if (c.estado !== "pendiente") throw new Error("SKIP"); // MP reintenta: idempotente por estado
       const monto = Math.round(Number(c.monto) || 0);
       const pagado = Number(pago.transaction_amount) || 0;
@@ -560,14 +624,15 @@ async function mpAcreditarCarga(db, cargaId, pago) {
           mpPaymentId: String(pago.id),
         });
       } catch (_) {}
-      try {
-        const f = await db.collection("users").doc(FOUNDERS[0]).get();
-        const to = f.exists ? String(f.data().email || "").trim() : "";
-        if (to) await sendEmail({ to, subject: `Pago MP con monto distinto — revisar carga ${cargaId}`, html: `<p>El pago ${pago.id} de Mercado Pago no coincide con el monto de la carga ${cargaId}. Revisala en Admin → Envíos.</p>` });
-      } catch (_) {}
+      await mailFundador(db, `Pago MP con monto distinto — revisar carga ${cargaId}`, `<p>El pago ${pago.id} de Mercado Pago no coincide con el monto de la carga ${cargaId}. Revisala en Admin → Envíos.</p>`);
       return { revision: true };
     }
     return { error: e.message };
+  }
+  if (cancelada) {
+    await mailFundador(db, `Pago MP aprobado sobre una carga CANCELADA — $${cancelada.pagado.toLocaleString("es-AR")} (${cancelada.ref})`,
+      `<p>Mercado Pago aprobó el pago <strong>${pago.id}</strong> por $${cancelada.pagado.toLocaleString("es-AR")} de la carga <strong>${cargaId}</strong> (${cancelada.ref}, $${cancelada.monto.toLocaleString("es-AR")}) de ${cancelada.email || cancelada.uid} (uid ${cancelada.uid}), pero la carga estaba cancelada. Quedó en revisión: acreditala o devolvé el pago desde Admin → Logística → Cargas.</p>`);
+    return { revision: true, cancelada: true };
   }
   if (out?.email) {
     try {
@@ -585,9 +650,12 @@ async function mpAcreditarCarga(db, cargaId, pago) {
   return { acreditada: true };
 }
 
-// Devolución/contracargo de MP sobre una carga YA acreditada: se debita el
-// monto del saldo (puede quedar negativo — es deuda del usuario, visible en el
-// ledger) y se avisa al founder. Idempotente por flag `contracargo`.
+// Devolución/contracargo de MP sobre una carga YA acreditada: se debita del
+// saldo lo reembolsado (puede quedar negativo — es deuda del usuario, visible
+// en el ledger) y se avisa al founder. Reembolso PARCIAL (pago "approved" con
+// transaction_amount_refunded < monto): se debita solo lo reembolsado.
+// Idempotente por monto acumulado: la carga guarda `contracargoMonto` y se
+// debita únicamente la diferencia con lo que MP informa ahora.
 async function mpContracargo(db, cargaId, pago) {
   if (!cargaId) return { skip: true };
   const cRef = db.collection("andreani_cargas").doc(cargaId);
@@ -597,31 +665,40 @@ async function mpContracargo(db, cargaId, pago) {
       const s = await tx.get(cRef);
       if (!s.exists) throw new Error("SKIP");
       const c = s.data();
-      if (c.estado !== "acreditada" || c.contracargo) throw new Error("SKIP");
+      if (!["acreditada", "contracargo"].includes(c.estado)) throw new Error("SKIP");
       if (c.mpPaymentId && String(c.mpPaymentId) !== String(pago.id)) throw new Error("SKIP");
       const monto = Math.round(Number(c.monto) || 0);
+      const reembolsadoMp = Math.round(Number(pago.transaction_amount_refunded) || 0);
+      const total = ["refunded", "charged_back"].includes(pago.status) && reembolsadoMp <= 0;
+      // Objetivo acumulado: todo el monto (devolución total/contracargo) o lo reembolsado hasta ahora.
+      const objetivo = Math.min(monto, total ? monto : reembolsadoMp);
+      const previo = Math.round(Number(c.contracargoMonto) || (c.contracargo ? monto : 0));
+      const diff = objetivo - previo;
+      if (diff <= 0) throw new Error("SKIP");
+      const parcial = objetivo < monto;
       const tRef = db.collection("users").doc(c.uid);
       const uSnap = await tx.get(tRef);
       if (!uSnap.exists) throw new Error("SKIP");
       const saldo = Math.round(Number(uSnap.data()?.andreaniSaldo) || 0);
-      const nuevo = saldo - monto;
-      tx.update(cRef, { contracargo: true, estado: "contracargo", motivo: `MP informó ${pago.status} del pago ${pago.id}`, resueltaTs: FieldValue.serverTimestamp() });
+      const nuevo = saldo - diff;
+      tx.update(cRef, {
+        contracargoMonto: objetivo, contracargo: !parcial, estado: parcial ? "acreditada" : "contracargo",
+        motivo: parcial ? `MP reembolsó $${objetivo.toLocaleString("es-AR")} de $${monto.toLocaleString("es-AR")} (pago ${pago.id})` : `MP informó ${pago.status} del pago ${pago.id}`,
+        ...(parcial ? {} : { resueltaTs: FieldValue.serverTimestamp() }),
+      });
       tx.set(tRef, { andreaniSaldo: nuevo }, { merge: true });
       tx.set(tRef.collection("andreani_mov").doc(), {
-        tipo: "contracargo", monto, saldoDespues: nuevo,
-        nota: `Contracargo/devolución MP de la carga ${c.ref}`, mpPaymentId: String(pago.id), ts: FieldValue.serverTimestamp(),
+        tipo: "contracargo", monto: diff, saldoDespues: nuevo,
+        nota: parcial ? `reembolso parcial MP de la carga ${c.ref}` : `Contracargo/devolución MP de la carga ${c.ref}`, mpPaymentId: String(pago.id), ts: FieldValue.serverTimestamp(),
       });
-      return { uid: c.uid, email: c.email || "", monto, ref: c.ref, saldo: nuevo };
+      return { uid: c.uid, email: c.email || "", monto: diff, parcial, ref: c.ref, saldo: nuevo };
     });
   } catch (e) {
     if (e.message === "SKIP") return { skip: true };
     return { error: e.message };
   }
-  try {
-    const f = await db.collection("users").doc(FOUNDERS[0]).get();
-    const to = f.exists ? String(f.data().email || "").trim() : "";
-    if (to) await sendEmail({ to, subject: `Contracargo MP: $${out.monto.toLocaleString("es-AR")} (${out.ref})`, html: `<p>Mercado Pago informó ${pago.status} del pago ${pago.id} (carga ${out.ref} de ${out.email || out.uid}). Se debitó el saldo: quedó en $${out.saldo.toLocaleString("es-AR")}${out.saldo < 0 ? " (NEGATIVO — deuda del usuario)" : ""}.</p>` });
-  } catch (_) {}
+  await mailFundador(db, `${out.parcial ? "Reembolso parcial" : "Contracargo"} MP: $${out.monto.toLocaleString("es-AR")} (${out.ref})`,
+    `<p>Mercado Pago informó ${out.parcial ? "un reembolso parcial" : pago.status} del pago ${pago.id} (carga ${out.ref} de ${out.email || out.uid}). Se debitó $${out.monto.toLocaleString("es-AR")} del saldo: quedó en $${out.saldo.toLocaleString("es-AR")}${out.saldo < 0 ? " (NEGATIVO — deuda del usuario)" : ""}.</p>`);
   return { debitada: true };
 }
 
@@ -635,24 +712,28 @@ export async function mpReconciliarCargas(db, soloUid) {
   // Con soloUid (llamada inline desde la acción `cargas`): SOLO las cargas del
   // usuario — el barrido global de todos los tenants es del cron; hacerlo
   // dentro del request de un usuario podía exceder el timeout de la function.
-  const snap = soloUid
-    ? await db.collection("andreani_cargas").where("uid", "==", soloUid).limit(200).get()
-    : await db.collection("andreani_cargas").where("estado", "==", "pendiente").limit(50).get();
+  // También las CANCELADAS por MP de las últimas 48 h: el cliente cancela desde
+  // Growith pero el pago pudo aprobarse igual — mpAcreditarCarga las pasa a revisión.
+  const col = db.collection("andreani_cargas");
+  const docs = soloUid
+    ? (await col.where("uid", "==", soloUid).limit(200).get()).docs
+    : [...(await col.where("estado", "==", "pendiente").limit(50).get()).docs,
+       ...(await col.where("estado", "==", "cancelada").limit(50).get().catch(() => ({ docs: [] }))).docs];
   const ahora = Date.now();
-  const pendientesMp = snap.docs.filter(d => {
+  const pendientesMp = docs.filter(d => {
     const c = d.data();
+    if (c.metodo !== "mp") return false;
     const ts = c.ts?.toMillis?.() || 0;
-    return c.estado === "pendiente" && c.metodo === "mp" && (!ts || ahora - ts < 7 * 86400000);
+    if (c.estado === "pendiente") return !ts || ahora - ts < 7 * 86400000;
+    if (c.estado === "cancelada") return !!ts && ahora - ts < 48 * 3600000;
+    return false;
   });
   for (const d of pendientesMp) {
     res.revisadas++;
     try {
-      const pr = await fetch(`${MP_BASE}/v1/payments/search?external_reference=${encodeURIComponent(d.id)}&sort=date_created&criteria=desc`, {
-        headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000),
-      });
-      if (!pr.ok) { console.warn(`[mp_reconciliar] search HTTP ${pr.status} para ${d.id}`); continue; }
-      const j = await pr.json();
-      const aprobado = (j.results || []).find(p => p.status === "approved");
+      let aprobado;
+      try { aprobado = await mpBuscarPagoAprobado(token, d.id); }
+      catch (e) { console.warn(`[mp_reconciliar] ${e.message} para ${d.id}`); continue; }
       if (!aprobado) continue;
       const r = await mpAcreditarCarga(db, d.id, aprobado);
       if (r.acreditada) { res.acreditadas++; console.log(`[mp_reconciliar] ✓ carga ${d.id} acreditada (pago ${aprobado.id})`); }
@@ -793,7 +874,7 @@ export async function geocodeDireccion({ dir, loc, prov, cp }) {
 let _locCat = null; // { ts, byCp: Map<cp, [{localidad, provincia, partido}]> }
 async function catalogoLocalidades() {
   if (_locCat && Date.now() - _locCat.ts < 24 * 3600000) return _locCat.byCp;
-  const r = await fetchTimeout(`${ANDREANI_BASE}/v1/localidades`, { headers: { Accept: "application/json" } }, 20000);
+  const r = await fetchTimeout(`${ANDREANI_BASE}/v1/localidades`, { headers: { Accept: "application/json" } });
   if (!r.ok) throw new Error(`localidades HTTP ${r.status}`);
   const arr = await r.json();
   const byCp = new Map();
@@ -916,20 +997,9 @@ export async function trazasOficialAndreani(db, numeroDeEnvio) {
   }
 }
 
-// Diagnóstico del endpoint oficial de trazas: status + primeros bytes de la
-// respuesta, sin ocultar errores. Solo para el modo debug del proxy.
-export async function trazasDebugAndreani(db, numeroDeEnvio) {
-  try {
-    const env = andreaniEnv();
-    if (!env) return { error: "sin_env" };
-    const num = String(numeroDeEnvio || "").trim().replace(/\s+/g, "");
-    const r = await andreaniFetch(db, env, `/v1/envios/${encodeURIComponent(num)}/trazas`);
-    const text = await r.text();
-    return { status: r.status, body: text.slice(0, 400) };
-  } catch (e) {
-    return { error: e.message };
-  }
-}
+// Alias: el modo debug del proxy de trazas (update-shipping.js) lo importa;
+// devuelve las mismas trazas crudas que el endpoint oficial (o null).
+export const trazasDebugAndreani = trazasOficialAndreani;
 
 // ─── Email (mismo patrón Resend que check-expiring.js) ─────────────────────
 
@@ -977,6 +1047,18 @@ function costoConDescuento(cot, cfg) {
 export function precioConMarkup(cot, cfg) {
   // Piso de $1: un precio 0 o negativo jamás debe llegar al débito de saldo.
   return Math.max(1, Math.ceil(costoConDescuento(cot, cfg) * (1 + cfg.markupPct / 100) + cfg.markupFijo));
+}
+// Markup por cliente: users/{uid}.andreaniMarkup {markupPct?, markupFijo?}
+// pisa el global SOLO con números válidos (0..200 % y 0..100000 $). Se usa en
+// toda cotización/emisión (y en el checkout de Shopify) pasando el user doc.
+export function cfgParaCuenta(cfg, uData) {
+  const m = uData?.andreaniMarkup;
+  if (!m || typeof m !== "object") return cfg;
+  const out = { ...cfg };
+  const pct = Number(m.markupPct), fijo = Number(m.markupFijo);
+  if (m.markupPct != null && isFinite(pct) && pct >= 0 && pct <= 200) out.markupPct = pct;
+  if (m.markupFijo != null && isFinite(fijo) && fijo >= 0 && fijo <= 100000) out.markupFijo = Math.round(fijo);
+  return out;
 }
 
 // ─── Pertenencia de un envío (etiqueta/trazas) ─────────────────────────────
@@ -1360,7 +1442,7 @@ export default async function handler(req, res) {
 
     // Toda acción que ESCRIBE exige POST (un GET con token en un prefetch o un
     // log no debe poder mutar estado). emitir y sucursal_origen ya lo chequean adentro.
-    const ACCIONES_POST = new Set(["save_origen", "carga_solicitar", "carga_mp", "carga_cancelar", "carga_comprobante", "caso_crear", "caso_comentar", "anular_inmediata", "admin_acreditar", "admin_carga_acreditar", "admin_carga_rechazar", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill"]);
+    const ACCIONES_POST = new Set(["save_origen", "carga_solicitar", "carga_mp", "carga_cancelar", "carga_comprobante", "caso_crear", "caso_comentar", "anular_inmediata", "admin_acreditar", "admin_carga_acreditar", "admin_carga_rechazar", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill", "admin_dudoso_resolver", "admin_anulada_debitar", "admin_cache_purge", "admin_markup_cliente"]);
     if (ACCIONES_POST.has(action) && req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
 
     // Webhook de Mercado Pago: lo llama MP, no un usuario — sin sesión
@@ -1369,12 +1451,64 @@ export default async function handler(req, res) {
     // Portal de la ejecutiva de Andreani: sin sesión Firebase, autenticado por token.
     if (action === "portal_ejecutiva" || action === "portal_ejecutiva_fotos" || action === "portal_ejecutiva_responder") return await portalEjecutiva(req, res, db, body, action);
     // Índice de puntos HOP: barrido por tandas de /v2/sucursales/{id} (cron de
-    // Vercel, CRON_SECRET). Ver api/_hop.js.
+    // Vercel, CRON_SECRET). Ver api/_hop.js. Avisa al fundador (máx. una vez
+    // por día, hop_idx_meta.ultimoAvisoTs) si una vuelta se descarta / falla
+    // mucho, o si seguimos sirviendo la foto del repo y ya tiene más de 7 días.
     if (action === "hop_index_cron") {
       if (!guardCron(req, res)) return;
       const envC = andreaniEnv();
       if (!envC) return res.status(500).json({ error: "andreani_no_configurado" });
-      return res.json(await hopIndexSweep(db, (id) => andreaniFetch(db, envC, `/v2/sucursales/${id}`)));
+      const out = await hopIndexSweep(db, (id) => andreaniFetch(db, envC, `/v2/sucursales/${id}`));
+      try {
+        const avisos = [];
+        if (out.ok === false) avisos.push(`La corrida del índice HOP falló: ${out.error || "sin detalle"}.`);
+        await hopIndexTodas(db); // carga el origen real en esta instancia
+        const edadFoto = Date.now() - (hopIndexFotoTs() || 0);
+        if (hopIndexOrigen() === "foto" && edadFoto > 7 * 86400000) avisos.push(`El índice HOP sigue sirviendo la foto del repo (api/_hop_index.json) de hace ${Math.floor(edadFoto / 86400000)} días: ninguna vuelta completa del cron la reemplazó.`);
+        if (avisos.length) {
+          const metaRef = db.collection("andreani_config").doc("hop_idx_meta");
+          const ultimo = Number((await metaRef.get()).data()?.ultimoAvisoTs) || 0;
+          if (Date.now() - ultimo > 86400000) {
+            await metaRef.set({ ultimoAvisoTs: Date.now() }, { merge: true });
+            await mailFundador(db, "Índice de puntos HOP — atención", `<p>${avisos.join("</p><p>")}</p><p>Revisá Admin › Sistema › Índice HOP (cursor, última vuelta) y la sonda de Andreani.</p>`);
+          }
+        }
+      } catch (e) { console.warn("[hop_index_cron] aviso:", e.message); }
+      return res.json(out);
+    }
+    // Aviso proactivo de saldo bajo (cron diario): cada cuenta habilitada con
+    // users/{uid}.enviosCfg.saldoBajoUmbral > 0 recibe un mail cuando el saldo
+    // queda por debajo, como mucho cada 20 h (users/{uid}.saldoBajoAvisoTs).
+    if (action === "saldo_cron") {
+      if (!guardCron(req, res)) return;
+      const cfgS = await getGlobalConfig(db);
+      const out = { revisadas: 0, avisadas: 0, errores: 0 };
+      const t0 = Date.now();
+      for (const u of cfgS.habilitados) {
+        if (Date.now() - t0 > 40000) { out.truncado = true; break; }
+        try {
+          const uRef = db.collection("users").doc(String(u));
+          const ud = (await uRef.get()).data();
+          if (!ud || esDemo(ud)) continue;
+          out.revisadas++;
+          const saldo = Math.round(Number(ud.andreaniSaldo) || 0);
+          const umbral = Math.round(Number(ud.enviosCfg?.saldoBajoUmbral) || 0);
+          if (!(umbral > 0) || saldo >= umbral) continue;
+          if (Date.now() - (Number(ud.saldoBajoAvisoTs) || 0) <= 20 * 3600000) continue;
+          const destinos = [...new Set([String(ud.email || "").trim(), ...(Array.isArray(ud.notifEmails) ? ud.notifEmails.map(x => String(x || "").trim()) : [])].filter(Boolean))];
+          if (!destinos.length) continue;
+          await uRef.set({ saldoBajoAvisoTs: Date.now() }, { merge: true });
+          const html = `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
+  <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:16px">Saldo de envíos bajo</div>
+  <p style="font-size:14px">Tu saldo de envíos Andreani es <strong>$${saldo.toLocaleString("es-AR")}</strong>, por debajo del umbral de aviso que configuraste (<strong>$${umbral.toLocaleString("es-AR")}</strong>).</p>
+  <p style="font-size:13px">Para seguir emitiendo sin interrupciones, cargá saldo desde Envíos &rarr; Saldo de envíos en Growith.</p>
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px">Growith — Envíos</p>
+</div>`;
+          await Promise.allSettled(destinos.map(to => sendEmail({ to, subject: `Saldo de envíos bajo: $${saldo.toLocaleString("es-AR")}`, html })));
+          out.avisadas++;
+        } catch (e) { out.errores++; console.warn("[saldo_cron]", u, e.message); }
+      }
+      return res.json({ ok: true, ...out, ms: Date.now() - t0 });
     }
 
     // Todas las acciones exigen sesión válida. La identidad sale del TOKEN.
@@ -1497,8 +1631,9 @@ export default async function handler(req, res) {
     //    verificadas (misma calle y número que el punto), así una elección
     //    equivocada nunca se propaga a todas las cuentas. El admin la puede podar.
     if (action === "punto_map_get" || action === "punto_map_set" || action === "punto_map_del" || action === "punto_map_sync") {
-      const owner = String(body.uid || req.query?.uid || uid).trim();
-      if (!(await guardUid(req, res, owner, "envios"))) return;
+      // La tienda (body/query uid o X-Growith-Tienda) ya pasó por requireUid
+      // arriba: `uid` es el owner validado con la sección Envíos.
+      const owner = uid;
       const propioRef = db.collection("users").doc(owner).collection("envios_cfg").doc("punto_map");
       const globalRef = db.collection("andreani_config").doc("punto_map_global");
       if (action === "punto_map_get") {
@@ -1742,10 +1877,11 @@ export default async function handler(req, res) {
       if (!cpDestino) return res.status(400).json({ error: "cpDestino requerido" });
       if (!bultos) return res.status(400).json({ error: "bultos inválidos: cada bulto necesita kilos, largoCm, altoCm y anchoCm mayores a 0." });
 
-      const [cfg, snap, esAdmin] = await Promise.all([
+      const [cfgG, snap, esAdmin] = await Promise.all([
         getGlobalConfig(db), userRef.get(), isPlatformAdmin(db, uid),
       ]);
-      if (!esAdmin && !cfg.habilitados.includes(uid)) return res.status(403).json({ error: "Tu cuenta no tiene habilitado Envíos Andreani. Contactá al soporte." });
+      if (!esAdmin && !cfgG.habilitados.includes(uid)) return res.status(403).json({ error: "Tu cuenta no tiene habilitado Envíos Andreani. Contactá al soporte." });
+      const cfg = cfgParaCuenta(cfgG, snap.data());
 
       const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen: sucOrigenDe(snap.data(), cfg) });
       const precio = precioConMarkup(cot, cfg);
@@ -1768,6 +1904,14 @@ export default async function handler(req, res) {
     // ── emitir ────────────────────────────────────────────────────────────
     if (action === "emitir") {
       if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
+      // Presupuesto de tiempo + tiempos por etapa (se loguean al salir, con
+      // éxito o error): la function tiene 60 s y NUNCA hay que debitar si
+      // Andreani ya se comió la mayor parte.
+      const tEmitir0 = Date.now();
+      const etapas = {};
+      let tEtapa = tEmitir0;
+      const marcar = (k) => { const ahora = Date.now(); etapas[k] = (etapas[k] || 0) + (ahora - tEtapa); tEtapa = ahora; };
+      try {
       const { envioId = null, destino, destinatario, productoAEntregar, piso, departamento } = body;
       const tipo = body.tipo === "sucursal" ? "sucursal" : "domicilio";
       // Precio que el usuario vio y aceptó en la cotización (si lo manda): si
@@ -1791,11 +1935,12 @@ export default async function handler(req, res) {
       }
 
       // a. Habilitación + origen configurado
-      const [cfg, snap, esAdmin] = await Promise.all([
+      const [cfgG, snap, esAdmin] = await Promise.all([
         getGlobalConfig(db), userRef.get(), isPlatformAdmin(db, uid),
       ]);
-      if (!esAdmin && !cfg.habilitados.includes(uid)) return res.status(403).json({ error: "Tu cuenta no tiene habilitado Envíos Andreani. Contactá al soporte." });
+      if (!esAdmin && !cfgG.habilitados.includes(uid)) return res.status(403).json({ error: "Tu cuenta no tiene habilitado Envíos Andreani. Contactá al soporte." });
       const uData = snap.exists ? snap.data() : {};
+      const cfg = cfgParaCuenta(cfgG, uData); // markup por cliente, si lo tiene
       const origen = uData.andreaniOrigen;
       const remitente = uData.andreaniRemitente;
       if (!origen?.codigoPostal || !origen?.calle || !remitente?.nombreCompleto || !remitente?.documentoNumero) {
@@ -1833,15 +1978,16 @@ export default async function handler(req, res) {
       let cpTarifa = cpDestino;
       let sucDestinoOficial = null;
       if (tipo === "sucursal") {
+        // Primero el listado del CP (barato: un doc cacheado + índice HOP);
+        // el listado completo solo si ahí no está. Fail-closed: sin ningún
+        // listado no se emite.
         let listaOk = false;
-        try {
-          const todas = await sucursalesTodas(db, env);
-          listaOk = true;
-          sucDestinoOficial = todas.find(x => String(x.id) === String(destino.sucursalId)) || null;
-        } catch (_) {}
-        if (listaOk && !sucDestinoOficial) {
-          try { sucDestinoOficial = (await sucursalesPorCp(db, env, cpDestino)).find(x => String(x.id) === String(destino.sucursalId)) || null; } catch (_) {}
+        const buscar = (lista) => lista.find(x => String(x.id) === String(destino.sucursalId)) || null;
+        try { sucDestinoOficial = buscar(await sucursalesPorCp(db, env, cpDestino)); listaOk = true; } catch (_) {}
+        if (!sucDestinoOficial) {
+          try { sucDestinoOficial = buscar(await sucursalesTodas(db, env)); listaOk = true; } catch (_) {}
         }
+        marcar("listado");
         if (!listaOk) return res.status(502).json({ error: "No pudimos validar la sucursal destino contra el listado de Andreani. Reintentá en un minuto.", code: "sucursal_no_validada" });
         if (!sucDestinoOficial) return res.status(400).json({ error: "La sucursal destino no existe en el listado oficial de Andreani — volvé a elegirla." });
         // Punto HOP (sale del índice propio, no del listado de Andreani): se
@@ -1850,6 +1996,7 @@ export default async function handler(req, res) {
         if (sucDestinoOficial.hop) {
           let rv = null;
           try { rv = await andreaniFetch(db, env, `/v2/sucursales/${encodeURIComponent(String(destino.sucursalId))}`); } catch (_) {}
+          marcar("hop");
           if (!rv) return res.status(502).json({ error: "No pudimos confirmar el punto HOP contra Andreani. Reintentá en un minuto.", code: "sucursal_no_validada" });
           if (rv.status === 404) return res.status(400).json({ error: "Andreani ya no tiene activo ese punto HOP: elegí otro punto o sucursal y avisale al cliente.", code: "hop_inactivo" });
           if (!rv.ok) return res.status(502).json({ error: `Andreani respondió ${rv.status} al confirmar el punto HOP. Reintentá en un minuto.`, code: "sucursal_no_validada" });
@@ -1864,6 +2011,7 @@ export default async function handler(req, res) {
 
       // b. RE-COTIZAR server-side — nunca confiar en el precio del cliente.
       const cot = await cotizarAndreani(db, env, { tipo, cpDestino: cpTarifa, bultos, sucursalOrigen: sucOrigenDe(uData, cfg) });
+      marcar("cotizar");
       const precio = precioConMarkup(cot, cfg);
       if (precioAceptado > 0 && precio > Math.round(precioAceptado * 1.02) + 1) {
         return res.status(409).json({ error: `El precio de esta etiqueta cambió: cotizada en $${precioAceptado.toLocaleString("es-AR")}, ahora cuesta $${precio.toLocaleString("es-AR")}. Volvé a cotizar para confirmar.`, code: "precio_cambio", precio, precioAceptado });
@@ -1876,7 +2024,8 @@ export default async function handler(req, res) {
       let locDestino = null, locOrigen = null;
       if (tipo !== "sucursal") locDestino = await resolverLocalidad(destino.postal.codigoPostal, [destino.postal.localidad, destino.postal.ciudad, destino.postal.partido], destino.postal.region);
       locOrigen = await resolverLocalidad(origen.codigoPostal, [origen.localidad], origen.region);
-      if (locDestino) console.log(`[andreani] localidad destino CP ${destino.postal.codigoPostal}: "${destino.postal.localidad}" → "${locDestino.localidad}" (${locDestino.provincia}, score ${locDestino.score.toFixed(2)} de ${locDestino.candidatos})`);
+      marcar("localidades");
+      if (locDestino) console.log(`[andreani] localidad destino CP ${destino.postal.codigoPostal}: "${destino.postal.localidad}" → "${locDestino.localidad}" (${locDestino.provincia}, score ${locDestino.score.toFixed(2)} de ${locDestino.cands})`);
       const destinoBody = tipo === "sucursal"
         ? { sucursal: { id: Number(destino.sucursalId) } }
         : { postal: {
@@ -1927,6 +2076,11 @@ export default async function handler(req, res) {
       // dos requests concurrentes con el mismo envioId (dos pestañas, dos
       // colaboradoras) serializan acá — el segundo ve el lock o el número ya
       // emitido. El check rápido de arriba (fuera de tx) queda como fast-path.
+      // Presupuesto: si Andreani ya consumió más de 35 s (listado, HOP,
+      // cotización), no se debita — el POST de la orden no llegaría a tiempo.
+      if (Date.now() - tEmitir0 > 35000) {
+        return res.status(503).json({ error: "Andreani tardó demasiado en responder y no se emitió la etiqueta (no se debitó saldo). Reintentá en un minuto.", code: "andreani_lento" });
+      }
       const movRef = movCol.doc();
       let saldoRestante;
       try {
@@ -1963,6 +2117,7 @@ export default async function handler(req, res) {
           return nuevo;
         });
       } catch (e) {
+        marcar("debito");
         if (e.saldoInsuficiente) {
           return res.status(402).json({ error: "saldo_insuficiente", ...e.saldoInsuficiente });
         }
@@ -1977,6 +2132,7 @@ export default async function handler(req, res) {
         }
         throw e;
       }
+      marcar("debito");
 
       // d. Crear la orden en Andreani (la orden ya está armada arriba). Si falla → reverso.
       // `ambiguo` = no sabemos si Andreani creó la orden o no (timeout/red, o
@@ -2004,6 +2160,7 @@ export default async function handler(req, res) {
         ordenErr = e.message || "Error de red contra Andreani";
         ambiguo = true;
       }
+      marcar("post");
 
       if (!ordenData) {
         if (ambiguo) {
@@ -2011,11 +2168,7 @@ export default async function handler(req, res) {
           // un reintento inmediato que podría duplicar la orden real.
           try { await movRef.set({ dudoso: true, nota: `Etiqueta Andreani ${tipo} · CP ${cpTarifa} — EMISIÓN DUDOSA: ${String(ordenErr).slice(0, 180)}` }, { merge: true }); } catch (_) {}
           if (envioRef) { try { await envioRef.set({ andreani: { dudosoTs: Date.now(), emitiendoTs: FieldValue.delete() } }, { merge: true }); } catch (_) {} }
-          try {
-            const f = await db.collection("users").doc(FOUNDERS[0]).get();
-            const to = f.exists ? String(f.data().email || "").trim() : "";
-            if (to) await sendEmail({ to, subject: `Emisión Andreani DUDOSA — conciliar (uid ${uid})`, html: `<p>La emisión del envío ${envioId || "(sin id)"} de ${uData.email || uid} falló de forma ambigua (${String(ordenErr).slice(0, 200)}). El débito de $${precio.toLocaleString("es-AR")} quedó RETENIDO. Verificá en el panel de Andreani si la orden se creó: si NO existe, acreditale el monto desde Admin → Envíos; si existe, avisale el número al usuario.</p>` });
-          } catch (_) {}
+          await mailFundador(db, `Emisión Andreani DUDOSA — conciliar (uid ${uid})`, `<p>La emisión del envío ${envioId || "(sin id)"} de ${uData.email || uid} falló de forma ambigua (${String(ordenErr).slice(0, 200)}). El débito de $${precio.toLocaleString("es-AR")} quedó RETENIDO. Verificá en el panel de Andreani si la orden se creó y resolvela desde Admin → Logística → Limbo (admin_dudoso_resolver): "no existe" devuelve el saldo, "existe" registra el número.</p>`);
           return res.status(502).json({ error: `No pudimos confirmar si Andreani emitió la etiqueta (${String(ordenErr).slice(0, 160)}). Para que no se emita ni cobre dos veces, el débito quedó retenido y el equipo de Growith ya fue avisado para resolverlo — no reintentes por ahora.`, dudoso: true });
         }
         // Andreani respondió que NO (rechazo claro): reverso del débito.
@@ -2042,11 +2195,7 @@ export default async function handler(req, res) {
           console.error(`[andreani] REVERSO FALLIDO uid=${uid} precio=${precio}:`, e2.message);
           try { await movRef.set({ reversoPendiente: true, nota: `Etiqueta Andreani ${tipo} · CP ${cpTarifa} — RECHAZADA y el reverso falló: ${String(e2.message).slice(0, 160)}` }, { merge: true }); } catch (_) {}
           try { await envioRef.set({ andreani: { emitiendoTs: FieldValue.delete() } }, { merge: true }); } catch (_) {}
-          try {
-            const f = await db.collection("users").doc(FOUNDERS[0]).get();
-            const to = f.exists ? String(f.data().email || "").trim() : "";
-            if (to) await sendEmail({ to, subject: `Reverso de saldo FALLIDO — acreditar a mano (uid ${uid})`, html: `<p>Andreani rechazó la etiqueta del pedido ${envioId} de ${uData.email || uid} y el reverso de $${precio.toLocaleString("es-AR")} falló (${String(e2.message).slice(0, 200)}). Acreditá el saldo a mano desde Admin › Logística › Saldos.</p>` });
-          } catch (_) {}
+          await mailFundador(db, `Reverso de saldo FALLIDO — acreditar a mano (uid ${uid})`, `<p>Andreani rechazó la etiqueta del pedido ${envioId} de ${uData.email || uid} y el reverso de $${precio.toLocaleString("es-AR")} falló (${String(e2.message).slice(0, 200)}). Acreditá el saldo a mano desde Admin › Logística › Saldos.</p>`);
           return res.status(502).json({ error: `${ordenErr} — además falló la devolución del saldo: ya avisamos al equipo de Growith, que lo acredita a mano.` });
         }
         return res.status(502).json({ error: ordenErr, reversado: true });
@@ -2090,11 +2239,7 @@ export default async function handler(req, res) {
       if (!guardado) {
         console.error(`[andreani] GUARDADO POST-EMISIÓN FALLIDO uid=${uid} envio=${numeroDeEnvio}:`, errGuardado?.message);
         try { await envioRef.set({ andreani: { numeroDeEnvio, precio, tipo, dudosoTs: Date.now(), emitiendoTs: FieldValue.delete() } }, { merge: true }); } catch (_) {}
-        try {
-          const f = await db.collection("users").doc(FOUNDERS[0]).get();
-          const to = f.exists ? String(f.data().email || "").trim() : "";
-          if (to) await sendEmail({ to, subject: `Etiqueta emitida sin registro completo — ${numeroDeEnvio} (uid ${uid})`, html: `<p>Andreani emitió el envío <strong>${numeroDeEnvio}</strong> del pedido ${envioId} de ${uData.email || uid} por $${precio.toLocaleString("es-AR")}, pero el guardado en Firestore falló (${String(errGuardado?.message || "").slice(0, 200)}). Revisá users/${uid}/envios/${envioId}, andreani_mov e andreani_idx.</p>` });
-        } catch (_) {}
+        await mailFundador(db, `Etiqueta emitida sin registro completo — ${numeroDeEnvio} (uid ${uid})`, `<p>Andreani emitió el envío <strong>${numeroDeEnvio}</strong> del pedido ${envioId} de ${uData.email || uid} por $${precio.toLocaleString("es-AR")}, pero el guardado en Firestore falló (${String(errGuardado?.message || "").slice(0, 200)}). Revisá users/${uid}/envios/${envioId}, andreani_mov e andreani_idx.</p>`);
       }
 
       // Stats mensuales de rentabilidad (best-effort, fuera de la transacción).
@@ -2173,6 +2318,11 @@ export default async function handler(req, res) {
         estado: ordenData.estado || "Pendiente",
         sucursalDestino,
       });
+      } finally {
+        // Una línea por emisión (éxito o error) con el tiempo de cada etapa.
+        const ms = k => etapas[k] ?? "-";
+        console.log(`[emitir] uid=${uid} etapas ms: listado=${ms("listado")} hop=${ms("hop")} cotizar=${ms("cotizar")} localidades=${ms("localidades")} debito=${ms("debito")} post=${ms("post")} total=${Date.now() - tEmitir0}`);
+      }
     }
 
     // ── etiqueta ──────────────────────────────────────────────────────────
@@ -2228,7 +2378,8 @@ export default async function handler(req, res) {
       const ref = "GW-" + Array.from(randomBytes(4)).map(b => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 32]).join("");
       const uSnap = await userRef.get();
       const email = String(uSnap.data()?.email || user.email || "").trim();
-      const comprobante = validarDataUrl(body.comprobante, 700 * 1024, ["image/", "application/pdf"]);
+      if (body.comprobante && !validarDataUrl(body.comprobante, COMPROBANTE_MAX_CHARS, ["image/", "application/pdf"])) return res.status(400).json({ error: "El comprobante tiene que ser una imagen o PDF de hasta 650 KB: reducí la calidad o adjuntalo después desde la carga." });
+      const comprobante = validarDataUrl(body.comprobante, COMPROBANTE_MAX_CHARS, ["image/", "application/pdf"]);
       const docRef = await cargasCol.add({
         uid, email, monto, ref, estado: "pendiente", ts: FieldValue.serverTimestamp(),
         ...(comprobante ? { comprobante, comprobanteTs: FieldValue.serverTimestamp() } : {}),
@@ -2255,8 +2406,8 @@ export default async function handler(req, res) {
     // Adjuntar (o reemplazar) el comprobante de una carga por transferencia propia.
     if (action === "carga_comprobante") {
       const id = String(body.id || "").trim();
-      const comprobante = validarDataUrl(body.comprobante, 700 * 1024, ["image/", "application/pdf"]);
-      if (!id || !comprobante) return res.status(400).json({ error: "Adjuntá una imagen o PDF de hasta 700 KB." });
+      const comprobante = validarDataUrl(body.comprobante, COMPROBANTE_MAX_CHARS, ["image/", "application/pdf"]);
+      if (!id || !comprobante) return res.status(400).json({ error: "Adjuntá una imagen o PDF de hasta 650 KB." });
       const ref = db.collection("andreani_cargas").doc(id);
       const snap = await ref.get();
       if (!snap.exists || snap.data().uid !== uid) return res.status(404).json({ error: "Carga no encontrada" });
@@ -2352,7 +2503,11 @@ export default async function handler(req, res) {
         const desde = e.entregadoAt ? Date.parse(e.entregadoAt) : NaN;
         if (isFinite(desde) && Date.now() - desde > 3 * 86400000) return res.status(400).json({ error: "Andreani solo toma reclamos por daños dentro de las 48 horas de la entrega." });
       }
-      const fotos = (Array.isArray(body.fotos) ? body.fotos : []).slice(0, 4).map(f => validarDataUrl(f, 450 * 1024, ["image/"])).filter(Boolean);
+      // Tope sobre el largo base64 (lo que ocupa en el doc): cada foto y la suma de todas.
+      const fotosRaw = (Array.isArray(body.fotos) ? body.fotos : []).slice(0, 4);
+      const fotos = fotosRaw.map(f => validarDataUrl(f, FOTOS_MAX_CHARS, ["image/"])).filter(Boolean);
+      if (fotos.length < fotosRaw.filter(f => /^data:image\//i.test(String(f || ""))).length) return res.status(400).json({ error: ERR_FOTOS_PESO });
+      if (fotos.reduce((s, f) => s + f.length, 0) > FOTOS_MAX_CHARS) return res.status(400).json({ error: ERR_FOTOS_PESO });
       if (motivo === "danado" && fotos.length === 0) return res.status(400).json({ error: "Para un reclamo por daño Andreani exige fotos: del paquete con la etiqueta visible y del producto dañado." });
       // Un caso abierto por envío y motivo; máximo 20 casos abiertos por cuenta.
       const abiertos = await db.collection("envios_casos").where("uid", "==", uid).limit(200).get();
@@ -2376,14 +2531,14 @@ export default async function handler(req, res) {
       // Tienda DEMO: la gestión queda registrada (se ve en Seguimientos) pero no
       // le llega a la ejecutiva de Andreani ni a operaciones.
       if (uDemo) return res.json({ ok: true, id: docRef.id });
+      const cfgE = await getGlobalConfig(db);
       // A la ejecutiva de Andreani: mail con el link al portal (best-effort).
       try {
-        const cfgE = await getGlobalConfig(db);
         await mailEjecutiva(db, cfgE, [{ tienda, email: ud.email, numeroDeEnvio, tracking, motivo }], `Gestión nueva de ${tienda || "un cliente de Growith"}: ${CASO_MOTIVOS[motivo]}`);
       } catch (_) {}
       // Aviso al mail de operaciones (best-effort).
       try {
-        const to = (await getGlobalConfig(db)).emailGestiones;
+        const to = cfgE.emailGestiones;
         if (to) await sendEmail({
           to, subject: `Gestión Andreani nueva: ${CASO_MOTIVOS[motivo]} · ${tienda || ud.email || uid}`,
           html: `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
@@ -2406,6 +2561,7 @@ export default async function handler(req, res) {
       const ref = db.collection("envios_casos").doc(id);
       const snap = await ref.get();
       if (!snap.exists || snap.data().uid !== uid) return res.status(404).json({ error: "Gestión no encontrada" });
+      if ((Array.isArray(snap.data().historial) ? snap.data().historial.length : 0) >= HISTORIAL_MAX) return res.status(400).json({ error: "Esta gestión ya tiene demasiados comentarios: abrí una nueva si hace falta seguir." });
       await ref.set({ historial: FieldValue.arrayUnion({ at: new Date().toISOString(), por: "cliente", texto }), nuevoCliente: true, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
       return res.json({ ok: true });
     }
@@ -2474,11 +2630,31 @@ export default async function handler(req, res) {
       const id = String(body.id || "").trim();
       if (!id) return res.status(400).json({ error: "id requerido" });
       const ref = db.collection("andreani_cargas").doc(id);
+      const pre = await ref.get();
+      if (!pre.exists || pre.data().uid !== uid) return res.status(404).json({ error: "Carga no encontrada." });
+      if (pre.data().estado !== "pendiente") return res.status(400).json({ error: "Esa carga ya fue procesada." });
+      // Carga por Mercado Pago: antes de cancelar, preguntarle a MP si el pago
+      // ya está aprobado (el webhook puede llegar después del click). Si lo
+      // está, se acredita en vez de cancelar. Si MP no responde, se cancela
+      // igual pero queda marcada para que la reconciliación la rescate.
+      let cancelSinVerificar = false;
+      if (pre.data().metodo === "mp") {
+        const mpTok = process.env.MP_ACCESS_TOKEN || "";
+        if (mpTok) {
+          try {
+            const aprobado = await mpBuscarPagoAprobado(mpTok, id);
+            if (aprobado) {
+              const r = await mpAcreditarCarga(db, id, aprobado);
+              if (r.acreditada || r.revision) return res.json({ ok: true, acreditada: !!r.acreditada, ...(r.revision ? { revision: true } : {}) });
+            }
+          } catch (e) { console.warn("[carga_cancelar] MP no respondió:", e.message); cancelSinVerificar = true; }
+        }
+      }
       await db.runTransaction(async (tx) => {
         const s = await tx.get(ref);
         if (!s.exists || s.data().uid !== uid) throw new Error("Carga no encontrada.");
         if (s.data().estado !== "pendiente") throw new Error("Esa carga ya fue procesada.");
-        tx.update(ref, { estado: "cancelada", resueltaTs: FieldValue.serverTimestamp() });
+        tx.update(ref, { estado: "cancelada", resueltaTs: FieldValue.serverTimestamp(), ...(cancelSinVerificar ? { cancelSinVerificar: true } : {}) });
       });
       return res.json({ ok: true });
     }
@@ -2498,7 +2674,7 @@ export default async function handler(req, res) {
     }
 
     // ── ACCIONES ADMIN ────────────────────────────────────────────────────
-    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_carga_comprobante", "admin_punto_map", "admin_punto_map_audit", "admin_tn_probe", "admin_envios", "admin_envios_problemas", "admin_casos", "admin_caso_fotos", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill", "admin_ejecutiva_token"];
+    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_carga_comprobante", "admin_punto_map", "admin_punto_map_audit", "admin_tn_probe", "admin_envios", "admin_envios_problemas", "admin_casos", "admin_caso_fotos", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill", "admin_ejecutiva_token", "admin_dudoso_resolver", "admin_limbo", "admin_anulada_debitar", "admin_cache_purge", "admin_markup_cliente"];
     if (adminActions.includes(action)) {
       const adm = await requireAdmin(req);
       if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
@@ -2826,26 +3002,271 @@ export default async function handler(req, res) {
         return res.json({ ok: true, estado, reintegro });
       }
 
+      // ── Limbo: todo lo que quedó a medias y necesita una decisión humana ──
+      // dudosos (débito retenido sin saber si Andreani creó la orden),
+      // reversos pendientes (rechazo claro pero el reverso falló), cargas en
+      // revisión (MP con monto distinto o sobre una carga cancelada) y
+      // anuladas con ingreso (anulación inmediata con reintegro, pero el
+      // paquete igual entró a Andreani). Máx. 50 por lista.
+      if (action === "admin_limbo") {
+        const t0 = Date.now();
+        const cfgL = await getGlobalConfig(db);
+        const uids = new Set(cfgL.habilitados.map(String));
+        try { (await db.collection("users").where("andreaniSaldo", ">", 0).select("email").get()).docs.forEach(d => uids.add(d.id)); } catch (_) {}
+        const dudosos = [], reversosPendientes = [], anuladasConIngreso = [];
+        const emails = {};
+        let truncado = false;
+        const msDe = v => v?.toMillis?.() || (typeof v === "number" ? v : null);
+        for (const u of [...uids].slice(0, 80)) {
+          if (Date.now() - t0 > 40000) { truncado = true; break; }
+          const uRef = db.collection("users").doc(u);
+          const eCol = uRef.collection("envios");
+          try {
+            const [uS, dS, aS, rS] = await Promise.all([
+              uRef.get(),
+              eCol.where("andreani.dudosoTs", ">", 0).limit(50).get(),
+              eCol.where("andreani.anuladaIngresoTs", ">", 0).limit(50).get(),
+              uRef.collection("andreani_mov").where("reversoPendiente", "==", true).limit(50).get(),
+            ]);
+            const ud = uS.exists ? uS.data() : {};
+            if (esDemo(ud)) continue;
+            emails[u] = ud.email || "";
+            for (const d of dS.docs) {
+              const e = d.data(), a = e.andreani || {};
+              if (a.dudosoResuelto) continue;
+              if (dudosos.length < 50) dudosos.push({ uid: u, email: emails[u], envioId: d.id, pedido: e.numero || d.id, cliente: e.cliente || "", precio: Number(a.precio) || 0, tipo: a.tipo || null, numeroDeEnvio: a.numeroDeEnvio || null, dudosoTs: a.dudosoTs || null });
+            }
+            for (const d of aS.docs) {
+              const e = d.data(), a = e.andreani || {};
+              if (a.anuladaDebitada) continue;
+              if (anuladasConIngreso.length < 50) anuladasConIngreso.push({ uid: u, email: emails[u], envioId: d.id, pedido: e.numero || d.id, cliente: e.cliente || "", precio: Number(a.precio) || 0, numeroDeEnvio: a.numeroDeEnvio || null, anuladaAt: a.anuladaAt || null, anuladaIngresoTs: a.anuladaIngresoTs || null, anuladaIngresoEstado: a.anuladaIngresoEstado || null });
+            }
+            for (const d of rS.docs) {
+              const m = d.data();
+              if (reversosPendientes.length < 50) reversosPendientes.push({ uid: u, email: emails[u], movId: d.id, envioId: m.envioId || null, monto: Number(m.monto) || 0, nota: m.nota || "", ts: msDe(m.ts) });
+            }
+          } catch (e) { console.warn("[admin_limbo]", u, e.message); }
+        }
+        let cargasRevision = [];
+        try {
+          const cs = await db.collection("andreani_cargas").where("estado", "==", "revision").limit(50).get();
+          cargasRevision = cs.docs.map(d => { const c = d.data(); return { id: d.id, uid: c.uid, email: c.email || "", ref: c.ref, monto: Number(c.monto) || 0, metodo: c.metodo || "transferencia", motivo: c.motivo || "", estadoPrevio: c.estadoPrevio || null, mpPaymentId: c.mpPaymentId || null, mpMonto: c.mpMonto ?? null, ts: msDe(c.ts) }; });
+        } catch (_) {}
+        return res.json({ ok: true, dudosos, reversosPendientes, cargasRevision, anuladasConIngreso, cuentas: uids.size, truncado, ms: Date.now() - t0 });
+      }
+
+      // ── Resolver una emisión DUDOSA (débito retenido). body {uid, envioId,
+      // resultado:"existe"|"no_existe", numeroDeEnvio?}. "no_existe": reverso
+      // del débito original; "existe": se registra el número de Andreani
+      // (envío + índice + movimiento) y la etiqueta pasa a seguimiento.
+      if (action === "admin_dudoso_resolver") {
+        const targetUid = String(body.uid || "").trim();
+        const envioId = String(body.envioId || "").trim();
+        const resultado = body.resultado === "existe" ? "existe" : (body.resultado === "no_existe" ? "no_existe" : "");
+        const numeroBody = String(body.numeroDeEnvio || "").replace(/\D/g, "");
+        if (!targetUid || !/^[\w.\-]{1,80}$/.test(envioId) || !resultado) return res.status(400).json({ error: "uid, envioId y resultado (existe|no_existe) requeridos" });
+        const tRef = db.collection("users").doc(targetUid);
+        const eRef = tRef.collection("envios").doc(envioId);
+        const tMov = tRef.collection("andreani_mov").doc();
+        // Débito original (el más reciente con ese envioId); si no está, vale el precio del envío.
+        let debito = null;
+        try {
+          const q = await tRef.collection("andreani_mov").where("envioId", "==", envioId).limit(20).get();
+          debito = q.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.tipo === "debito").sort((a, b) => (b.ts?.toMillis?.() || 0) - (a.ts?.toMillis?.() || 0))[0] || null;
+        } catch (_) {}
+        const ahoraIso = new Date().toISOString();
+        const out = await db.runTransaction(async (tx) => {
+          const [uS, eS] = await Promise.all([tx.get(tRef), tx.get(eRef)]);
+          if (!eS.exists) throw new Error("El envío no existe.");
+          const e = eS.data(), a = e.andreani || {};
+          if (!a.dudosoTs) throw new Error("Ese envío no tiene una emisión dudosa.");
+          if (a.dudosoResuelto) throw new Error("Esa emisión dudosa ya fue resuelta.");
+          const movOrig = debito ? tRef.collection("andreani_mov").doc(debito.id) : null;
+          if (resultado === "no_existe") {
+            const monto = Math.round(Number(debito?.monto) || Number(a.precio) || 0);
+            if (!(monto > 0)) throw new Error("No se encontró el débito original ni el precio del envío: acreditá a mano desde Saldos.");
+            const saldo = Math.round(Number(uS.data()?.andreaniSaldo) || 0);
+            const nuevo = saldo + monto;
+            tx.set(tRef, { andreaniSaldo: nuevo }, { merge: true });
+            tx.set(tMov, { tipo: "reverso", monto, saldoDespues: nuevo, nota: `Reverso: la emisión dudosa del pedido ${envioId} no existe en Andreani`, envioId, adminUid: adm.user.uid, dudosoDe: debito?.id || null, ts: FieldValue.serverTimestamp() });
+            tx.set(eRef, { andreani: { dudosoResuelto: true, dudosoResultado: "no_existe", dudosoResueltoAt: ahoraIso, emitiendoTs: FieldValue.delete() } }, { merge: true });
+            if (movOrig) tx.set(movOrig, { dudosoResuelto: "no_existe" }, { merge: true });
+            return { monto, saldo: nuevo };
+          }
+          const numero = numeroBody || String(a.numeroDeEnvio || "").replace(/\D/g, "");
+          if (!numero) throw new Error("Indicá el número de envío que figura en Andreani.");
+          const precio = Math.round(Number(a.precio) || Number(debito?.monto) || 0);
+          // Mismo shape que escribe `emitir` en andreani_idx (costo real
+          // desconocido: la cotización no se guardó — null, la conciliación lo
+          // toma de la factura).
+          tx.set(db.collection("andreani_idx").doc(numero), { uid: targetUid, envioId, precio, costo: null, tipo: a.tipo || null, mes: mesAR(), ts: FieldValue.serverTimestamp(), dudosoResuelto: true }, { merge: true });
+          tx.set(eRef, {
+            ...(e.tracking ? {} : { numero: e.numero || envioId, tracking: numero, activo: true, estado: "despachado", despachadoAt: e.despachadoAt || ahoraIso, creado: e.creado || ahoraIso, apiHeal: true }),
+            andreani: { numeroDeEnvio: numero, precio, dudosoResuelto: true, dudosoResultado: "existe", dudosoResueltoAt: ahoraIso, emitiendoTs: FieldValue.delete(), ...(a.ts ? {} : { ts: FieldValue.serverTimestamp() }) },
+          }, { merge: true });
+          if (movOrig) tx.set(movOrig, { numeroDeEnvio: numero, dudosoResuelto: "existe" }, { merge: true });
+          tx.set(db.collection("andreani_config").doc(`stats_${mesAR()}`), { facturado: FieldValue.increment(precio), etiquetas: FieldValue.increment(1), porUid: { [targetUid]: { monto: FieldValue.increment(precio), etiquetas: FieldValue.increment(1) } } }, { merge: true });
+          return { numeroDeEnvio: numero, precio };
+        });
+        await logAdminAndreani(db, adm.user.uid, "dudoso_resolver", targetUid, `Pedido ${envioId} → ${resultado === "existe" ? `existe (${out.numeroDeEnvio})` : `no existe · reverso $${out.monto.toLocaleString("es-AR")}`}`, { envioId, resultado, ...out });
+        return res.json({ ok: true, resultado, ...out });
+      }
+
+      // ── Anulada con ingreso: la anulación inmediata devolvió el saldo pero
+      // el paquete igual entró a Andreani (track_all marcó anuladaIngresoTs).
+      // Se vuelve a debitar el precio. Idempotente (andreani.anuladaDebitada).
+      if (action === "admin_anulada_debitar") {
+        const targetUid = String(body.uid || "").trim();
+        const envioId = String(body.envioId || "").trim();
+        if (!targetUid || !/^[\w.\-]{1,80}$/.test(envioId)) return res.status(400).json({ error: "uid y envioId requeridos" });
+        const tRef = db.collection("users").doc(targetUid);
+        const eRef = tRef.collection("envios").doc(envioId);
+        const tMov = tRef.collection("andreani_mov").doc();
+        const ahoraIso = new Date().toISOString();
+        const out = await db.runTransaction(async (tx) => {
+          const [uS, eS] = await Promise.all([tx.get(tRef), tx.get(eRef)]);
+          if (!eS.exists) throw new Error("El envío no existe.");
+          const a = eS.data().andreani || {};
+          if (!a.anuladaIngresoTs) throw new Error("Andreani no registró ingreso para esa etiqueta anulada.");
+          if (a.anuladaDebitada) return { ya: true, monto: Math.round(Number(a.precio) || 0) };
+          const monto = Math.round(Number(a.precio) || 0);
+          if (!(monto > 0)) throw new Error("El envío no tiene precio registrado: debitá a mano desde Saldos.");
+          const saldo = Math.round(Number(uS.data()?.andreaniSaldo) || 0);
+          const nuevo = saldo - monto;
+          tx.set(tRef, { andreaniSaldo: nuevo }, { merge: true });
+          tx.set(tMov, { tipo: "debito", monto, saldoDespues: nuevo, nota: "etiqueta anulada con ingreso a Andreani", envioId, numeroDeEnvio: a.numeroDeEnvio || null, adminUid: adm.user.uid, ts: FieldValue.serverTimestamp() });
+          tx.set(eRef, { andreani: { anuladaDebitada: true, anuladaDebitadaAt: ahoraIso } }, { merge: true });
+          if (a.numeroDeEnvio) tx.set(db.collection("andreani_idx").doc(String(a.numeroDeEnvio)), { anulada: false, reintegro: 0, debitadaTrasAnulacion: true }, { merge: true });
+          tx.set(db.collection("andreani_config").doc(`stats_${mesAR()}`), { reintegros: FieldValue.increment(-monto), porUid: { [targetUid]: { reintegros: FieldValue.increment(-monto) } } }, { merge: true });
+          return { monto, saldo: nuevo };
+        });
+        if (!out.ya) await logAdminAndreani(db, adm.user.uid, "anulada_debitar", targetUid, `Pedido ${envioId}: etiqueta anulada con ingreso, debitados $${out.monto.toLocaleString("es-AR")} · saldo ${out.saldo.toLocaleString("es-AR")}`);
+        return res.json({ ok: true, ...out });
+      }
+
+      // ── Markup por cliente: users/{uid}.andreaniMarkup {markupPct, markupFijo}.
+      // body {uid, markupPct|null, markupFijo|null}; null borra ese override.
+      if (action === "admin_markup_cliente") {
+        const targetUid = String(body.uid || "").trim();
+        if (!targetUid) return res.status(400).json({ error: "uid requerido" });
+        const tRef = db.collection("users").doc(targetUid);
+        const cur = (await tRef.get()).data();
+        if (!cur) return res.status(404).json({ error: "El usuario no existe." });
+        const prev = (cur.andreaniMarkup && typeof cur.andreaniMarkup === "object") ? cur.andreaniMarkup : {};
+        const nuevo = { ...prev };
+        if (body.markupPct !== undefined) {
+          if (body.markupPct === null || body.markupPct === "") delete nuevo.markupPct;
+          else { const v = Number(body.markupPct); if (!isFinite(v) || v < 0 || v > 200) return res.status(400).json({ error: "markupPct inválido (0-200)" }); nuevo.markupPct = v; }
+        }
+        if (body.markupFijo !== undefined) {
+          if (body.markupFijo === null || body.markupFijo === "") delete nuevo.markupFijo;
+          else { const v = Math.round(Number(body.markupFijo)); if (!isFinite(v) || v < 0 || v > 100000) return res.status(400).json({ error: "markupFijo inválido (0-100000)" }); nuevo.markupFijo = v; }
+        }
+        const vacio = nuevo.markupPct === undefined && nuevo.markupFijo === undefined;
+        await tRef.set({ andreaniMarkup: vacio ? FieldValue.delete() : nuevo }, { merge: true });
+        await logAdminAndreani(db, adm.user.uid, "markup_cliente", targetUid, vacio ? "Quitó el markup propio (vuelve al global)" : `Markup propio: ${nuevo.markupPct !== undefined ? nuevo.markupPct + " %" : "global"} + $${nuevo.markupFijo !== undefined ? nuevo.markupFijo : "global"}`, vacio ? null : nuevo);
+        return res.json({ ok: true, uid: targetUid, andreaniMarkup: vacio ? null : nuevo });
+      }
+
+      // ── Purga de cachés viejas de andreani_config (versiones anteriores del
+      // slim de sucursales, geocodificación vieja, rates_suc1..11 y
+      // cotizaciones del checkout de más de 7 días). Solo ids (listDocuments),
+      // se lee contenido únicamente para el ts de las rates_. Tope 2.000/llamada.
+      if (action === "admin_cache_purge") {
+        const col = db.collection("andreani_config");
+        const PATRONES = [
+          ["suc_cp", /^suc_\d{4}$/], ["suc_all", /^suc_all$/], ["suc_geo", /^suc_geo$/], ["geo_ck", /^geo_ck_/],
+          ["rates_suc_viejas", /^rates_suc([1-9]|1[01])_/], ["suc_b2c_checkout", /^suc_b2c_checkout[12]$/],
+        ];
+        const TOPE = 2000, LOTE = 400;
+        const refs = await col.listDocuments();
+        const borrados = Object.fromEntries(PATRONES.map(([k]) => [k, 0]).concat([["rates_viejas", 0]]));
+        const aBorrar = [];
+        const ratesTs = [];
+        for (const r of refs) {
+          const p = PATRONES.find(([, rx]) => rx.test(r.id));
+          if (p) { if (aBorrar.length < TOPE) { aBorrar.push(r); borrados[p[0]]++; } continue; }
+          if (/^rates_/.test(r.id)) ratesTs.push(r);
+        }
+        // rates_*: hace falta el ts → se leen de a 100 (solo hasta llenar el tope).
+        const corte = Date.now() - 7 * 86400000;
+        let restantes = aBorrar.length >= TOPE;
+        for (let i = 0; i < ratesTs.length && aBorrar.length < TOPE; i += 100) {
+          const snaps = await db.getAll(...ratesTs.slice(i, i + 100), { fieldMask: ["ts"] });
+          for (const s of snaps) {
+            if (aBorrar.length >= TOPE) { restantes = true; break; }
+            const ts = Number(s.data()?.ts) || 0;
+            if (s.exists && ts < corte) { aBorrar.push(s.ref); borrados.rates_viejas++; }
+          }
+        }
+        for (let i = 0; i < aBorrar.length; i += LOTE) {
+          const b = db.batch();
+          aBorrar.slice(i, i + LOTE).forEach(r => b.delete(r));
+          await b.commit();
+        }
+        const total = aBorrar.length;
+        if (total) await logAdminAndreani(db, adm.user.uid, "cache_purge", null, `Borró ${total} caché(s) de andreani_config`, borrados);
+        return res.json({ ok: true, total, borrados, restantes });
+      }
+
       // ── Conciliación contra la factura de Andreani ──
       // Recibe filas {numero, costo} (del detalle de facturación que manda
-      // Andreani) y las cruza por número de envío con el índice de emisiones.
+      // Andreani; body.mes YYYY-MM opcional) y las cruza por número de envío
+      // con el índice de emisiones. Persistente: cada número encontrado queda
+      // con andreani_idx/{numero}.facturado {costoFactura, mes, ts, diff} y el
+      // resumen en andreani_config/conciliacion_{mes}. También lista lo emitido
+      // en el mes que la factura NO trae (sin anuladas con reintegro).
       if (action === "admin_conciliar") {
         const filas = (Array.isArray(body.filas) ? body.filas : []).slice(0, 600)
           .map(f => ({ numero: String(f.numero || "").replace(/\D/g, ""), costo: Math.round(Number(f.costo) || 0) }))
           .filter(f => f.numero.length >= 10);
         if (!filas.length) return res.status(400).json({ error: "No hay números de envío en el archivo." });
-        const out = []; let encontrados = 0, cobrado = 0, facturado = 0, costoModelo = 0;
+        const out = [], coinciden = [], diferencias = [], noEmitidos = [];
+        const facturadoSet = new Set();
+        const mesesIdx = new Map();
+        let encontrados = 0, cobrado = 0, facturado = 0, costoModelo = 0;
+        const escrituras = [];
         for (let i = 0; i < filas.length; i += 100) {
           const refs = filas.slice(i, i + 100).map(f => db.collection("andreani_idx").doc(f.numero));
           const snaps = await db.getAll(...refs);
           snaps.forEach((sn, j) => {
             const f = filas[i + j];
             const d = sn.exists ? sn.data() : null;
-            if (d) { encontrados++; cobrado += Number(d.precio) || 0; facturado += f.costo; costoModelo += Number(d.costo) || 0; }
-            out.push({ numero: f.numero, costoFactura: f.costo, uid: d?.uid || null, envioId: d?.envioId || null, precio: d ? Number(d.precio) || 0 : null, costoModelo: d ? Number(d.costo) || 0 : null, mes: d?.mes || null, diff: d ? (Number(d.costo) || 0) - f.costo : null });
+            if (!d) { noEmitidos.push(f.numero); out.push({ numero: f.numero, costoFactura: f.costo, uid: null, envioId: null, precio: null, costoModelo: null, mes: null, diff: null }); return; }
+            const costoIdx = Number(d.costo) || 0;
+            const diff = costoIdx - f.costo;
+            encontrados++; cobrado += Number(d.precio) || 0; facturado += f.costo; costoModelo += costoIdx;
+            facturadoSet.add(f.numero);
+            if (d.mes) mesesIdx.set(d.mes, (mesesIdx.get(d.mes) || 0) + 1);
+            (diff === 0 ? coinciden : diferencias).push({ numero: f.numero, uid: d.uid || null, envioId: d.envioId || null, costoIdx, costoFactura: f.costo, diff, anulada: !!d.anulada });
+            out.push({ numero: f.numero, costoFactura: f.costo, uid: d.uid || null, envioId: d.envioId || null, precio: Number(d.precio) || 0, costoModelo: costoIdx, mes: d.mes || null, diff });
+            escrituras.push({ ref: sn.ref, costoFactura: f.costo, diff });
           });
         }
-        return res.json({ ok: true, filas: out, resumen: { total: filas.length, encontrados, noEncontrados: filas.length - encontrados, cobrado, facturado, costoModelo, margenReal: cobrado - facturado } });
+        // Mes de la conciliación: el que manda el admin, si no el más frecuente del índice, si no el actual.
+        const mes = /^\d{4}-\d{2}$/.test(String(body.mes || "")) ? String(body.mes)
+          : ([...mesesIdx.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || mesAR());
+        const tsNow = Date.now();
+        for (let i = 0; i < escrituras.length; i += 400) {
+          const b = db.batch();
+          escrituras.slice(i, i + 400).forEach(w => b.set(w.ref, { facturado: { costoFactura: w.costoFactura, mes, ts: tsNow, diff: w.diff } }, { merge: true }));
+          await b.commit();
+        }
+        // Emitidas ese mes que la factura no trae (excluye anuladas con reintegro y lo ya facturado).
+        let emitidosNoFacturados = [];
+        try {
+          const q = await db.collection("andreani_idx").where("mes", "==", mes).limit(3000).get();
+          emitidosNoFacturados = q.docs.filter(d => {
+            const x = d.data();
+            if (facturadoSet.has(d.id) || x.facturado) return false;
+            if (x.anulada && Number(x.reintegro) > 0) return false;
+            return true;
+          }).map(d => { const x = d.data(); return { numero: d.id, uid: x.uid || null, envioId: x.envioId || null, precio: Number(x.precio) || 0, costoIdx: Number(x.costo) || 0, tipo: x.tipo || null, ts: x.ts?.toMillis?.() || null }; });
+        } catch (e) { console.warn("[admin_conciliar] emitidos del mes:", e.message); }
+        const resumen = { total: filas.length, encontrados, noEncontrados: filas.length - encontrados, coinciden: coinciden.length, diferencias: diferencias.length, emitidosNoFacturados: emitidosNoFacturados.length, cobrado, facturado, costoModelo, diffTotal: costoModelo - facturado, margenReal: cobrado - facturado };
+        try { await db.collection("andreani_config").doc(`conciliacion_${mes}`).set({ ts: tsNow, mes, adminUid: adm.user.uid, totales: resumen }, { merge: true }); } catch (e) { console.warn("[admin_conciliar] resumen:", e.message); }
+        await logAdminAndreani(db, adm.user.uid, "conciliar_factura", null, `Factura ${mes}: ${filas.length} filas · ${encontrados} en el índice · ${diferencias.length} con diferencia · ${emitidosNoFacturados.length} emitidas sin facturar`, resumen);
+        return res.json({ ok: true, mes, filas: out, resumen, coinciden, diferencias, noEmitidos, emitidosNoFacturados });
       }
       // Reconstruye el índice andreani_idx para etiquetas emitidas antes de
       // que existiera (lee los envíos por API de las cuentas habilitadas).

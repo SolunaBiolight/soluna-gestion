@@ -95,6 +95,10 @@
       "schedule": "20 * * * *"
     },
     {
+      "path": "/api/andreani?action=saldo_cron",
+      "schedule": "0 12 * * *"
+    },
+    {
       "path": "/api/tareas?action=cron_deadlines",
       "schedule": "30 12 * * *"
     },

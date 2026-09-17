@@ -17,7 +17,7 @@
 // a lo cacheado o a lista vacía (Shopify muestra los otros métodos).
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { andreaniEnv, andreaniFetch, slimSucursal, distanciaM, getGlobalConfig, sucursalesPorCp, sucursalesTodas, sucursalesCercanasCore, cotizarAndreani, precioConMarkup, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
+import { cfgParaCuenta, andreaniEnv, andreaniFetch, slimSucursal, distanciaM, getGlobalConfig, sucursalesPorCp, sucursalesTodas, sucursalesCercanasCore, cotizarAndreani, precioConMarkup, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
 import { hopIndexTodas } from "./_hop.js";
 
 function initAdmin() {
@@ -311,7 +311,7 @@ export async function computeRates(db, uid, rate, { shopHdr = "", t0 = Date.now(
   const cotiza = async tipo => {
     if (cached && typeof cached[tipo] === "number") return cached[tipo];
     const cot = await cotizarAndreani(db, env, { tipo, cpDestino: cp, bultos, sucursalOrigen: sucOrigen });
-    return precioConMarkup(cot, cfg);
+    return precioConMarkup(cot, cfgParaCuenta(cfg, u)); // markup propio del cliente si lo tiene
   };
   const work = (async () => {
     const [dom, suc, sucursales] = await Promise.all([

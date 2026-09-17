@@ -73,6 +73,8 @@ export async function hopIndexPorCp(db, cp) {
   return (await hopIndexTodas(db)).filter(h => h.direccion.codigoPostal === c);
 }
 export function hopIndexOrigen() { return _mem.origen || "foto"; }
+// Fecha (ms) de la foto del repo: si el cron nunca cerró una vuelta, es lo que se sirve.
+export function hopIndexFotoTs() { return Number(BASE.ts) || 0; }
 
 // Mezcla: lo oficial primero (así [0] sigue siendo una sucursal real para la
 // sugerencia de origen) y los HOP que falten después, sin repetir ids.
@@ -83,6 +85,25 @@ export function conHop(lista, hops) {
   return out;
 }
 
+// Acumulado de la vuelta en curso: shards hop_idx_build_{n} de SHARD registros
+// (un solo doc superaba 1 MB); meta.buildShards dice cuántos hay.
+async function buildLeer(db, col, meta) {
+  const n = Number(meta.buildShards) || 0;
+  if (!n) return [];
+  const refs = []; for (let i = 0; i < n; i++) refs.push(col.doc(`hop_idx_build_${i}`));
+  const snaps = await db.getAll(...refs);
+  const recs = []; for (const s of snaps) for (const r of (s.data()?.recs || [])) recs.push(r);
+  return recs;
+}
+// Escribe los shards nuevos y borra los sobrantes (y el doc viejo hop_idx_build).
+function buildEscribir(batch, col, recs, previos) {
+  const shards = Math.ceil(recs.length / SHARD);
+  for (let i = 0; i < shards; i++) batch.set(col.doc(`hop_idx_build_${i}`), { ts: Date.now(), recs: recs.slice(i * SHARD, (i + 1) * SHARD) });
+  for (let i = shards; i < previos; i++) batch.delete(col.doc(`hop_idx_build_${i}`));
+  batch.delete(col.doc("hop_idx_build"));
+  return shards;
+}
+
 // Barrido por tandas (cron). `fetchOficial(id)` devuelve la Response de
 // GET /v2/sucursales/{id}. Cursor y acumulado en Firestore; al cerrar la vuelta
 // se reemplazan los shards. Si una tanda falla mucho (Andreani caído) no se
@@ -90,11 +111,12 @@ export function conHop(lista, hops) {
 export async function hopIndexSweep(db, fetchOficial, { porCorrida = 1500, concurrencia = 20, presupuestoMs = 40000 } = {}) {
   const t0 = Date.now();
   const col = db.collection("andreani_config");
-  const metaRef = col.doc("hop_idx_meta"), buildRef = col.doc("hop_idx_build");
+  const metaRef = col.doc("hop_idx_meta");
   const meta = (await metaRef.get()).data() || {};
   let cursor = Number(meta.cursor) || HOP_ID_MIN;
   if (cursor < HOP_ID_MIN || cursor >= HOP_ID_MAX) cursor = HOP_ID_MIN;
-  const build = cursor === HOP_ID_MIN ? [] : ((await buildRef.get()).data()?.recs || []);
+  const buildPrevios = Number(meta.buildShards) || 0;
+  const build = cursor === HOP_ID_MIN ? [] : await buildLeer(db, col, meta);
   const fin = Math.min(HOP_ID_MAX, cursor + porCorrida);
   let ok = 0, hop = 0, fallas = 0, id = cursor;
   const nuevos = [];
@@ -122,21 +144,25 @@ export async function hopIndexSweep(db, fetchOficial, { porCorrida = 1500, concu
     // Vuelta completa: reemplazar shards (solo si no se desplomó el conteo).
     const previo = Number(meta.n) || BASE.n || 0;
     if (recs.length < previo * 0.6) {
-      await metaRef.set({ cursor: HOP_ID_MIN, ultimaVuelta: { at: Date.now(), n: recs.length, descartada: true, motivo: `solo ${recs.length} HOP vs ${previo} previos` } }, { merge: true });
-      await buildRef.set({ recs: [] });
+      const bd = db.batch();
+      buildEscribir(bd, col, [], buildPrevios); // limpia los shards de la vuelta
+      bd.set(metaRef, { cursor: HOP_ID_MIN, buildShards: 0, ultimaVuelta: { at: Date.now(), n: recs.length, descartada: true, motivo: `solo ${recs.length} HOP vs ${previo} previos` } }, { merge: true });
+      await bd.commit();
       return { ok: false, error: `vuelta descartada: ${recs.length} HOP vs ${previo} previos`, ms: Date.now() - t0 };
     }
     const shards = Math.ceil(recs.length / SHARD);
     const batch = db.batch();
     for (let i = 0; i < shards; i++) batch.set(col.doc(`hop_idx_${i}`), { ts: Date.now(), recs: recs.slice(i * SHARD, (i + 1) * SHARD) });
     for (let i = shards; i < (Number(meta.shards) || 0); i++) batch.delete(col.doc(`hop_idx_${i}`));
-    batch.set(metaRef, { ts: Date.now(), n: recs.length, shards, cursor: HOP_ID_MIN, ultimaVuelta: { at: Date.now(), n: recs.length } }, { merge: true });
-    batch.set(buildRef, { recs: [] });
+    buildEscribir(batch, col, [], buildPrevios); // la vuelta cerró: fuera los shards de build
+    batch.set(metaRef, { ts: Date.now(), n: recs.length, shards, cursor: HOP_ID_MIN, buildShards: 0, ultimaVuelta: { at: Date.now(), n: recs.length } }, { merge: true });
     await batch.commit();
     _mem = { ts: 0, list: null, origen: "" };
     return { ok: true, vueltaCompleta: true, hop: recs.length, shards, ms: Date.now() - t0 };
   }
-  await buildRef.set({ ts: Date.now(), recs });
-  await metaRef.set({ cursor: nuevoCursor, enCurso: { at: Date.now(), acumulados: recs.length } }, { merge: true });
+  const bb = db.batch();
+  const buildShards = buildEscribir(bb, col, recs, buildPrevios);
+  bb.set(metaRef, { cursor: nuevoCursor, buildShards, enCurso: { at: Date.now(), acumulados: recs.length } }, { merge: true });
+  await bb.commit();
   return { ok: true, cursor: nuevoCursor, tanda: { desde: cursor, hasta: nuevoCursor, ok, hop, fallas }, acumulados: recs.length, ms: Date.now() - t0 };
 }
