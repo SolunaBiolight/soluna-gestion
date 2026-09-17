@@ -19787,7 +19787,14 @@ function AdmFichaEnvios({ctx, u}) {
   const [st,setSt]=useState({loading:true,data:null,error:""});
   const [q,setQ]=useState(""); const [filtro,setFiltro]=useState("todos"); const [fuente,setFuente]=useState("todas"); const [limite,setLimite]=useState(40);
   const [trazas,setTrazas]=useState(null);
-  async function load(){ setSt(s=>({...s,loading:true,error:""})); try{ const d=await admAndreani("admin_envios",{uid:u._id,dias:90}); setSt({loading:false,data:d,error:""}); }catch(e){ setSt({loading:false,data:null,error:e.message}); } }
+  // Markup por cliente (pisa el global de la plataforma): users/{uid}.andreaniMarkup
+  const [mk,setMk]=useState({pct:u.andreaniMarkup?.markupPct??"",fijo:u.andreaniMarkup?.markupFijo??""});
+  useEffect(()=>{ setMk({pct:u.andreaniMarkup?.markupPct??"",fijo:u.andreaniMarkup?.markupFijo??""}); },[u._id]);
+  async function guardarMarkup(borrar){
+    const body=borrar?{uid:u._id,markupPct:null,markupFijo:null}:{uid:u._id,markupPct:mk.pct===""?null:Number(mk.pct),markupFijo:mk.fijo===""?null:Number(mk.fijo)};
+    await admAndreani("admin_markup_cliente",body); if(borrar) setMk({pct:"",fijo:""}); toast(borrar?"Markup propio quitado: usa el global":"Markup guardado","success");
+  }
+  async function load(){ setSt(s=>({...s,loading:true,error:""})); try{ const d=await admAndreani("admin_envios",{uid:u._id,dias:90}); setSt({loading:false,data:d,error:""}); if(d?.andreaniMarkup) setMk({pct:d.andreaniMarkup.markupPct??"",fijo:d.andreaniMarkup.markupFijo??""}); }catch(e){ setSt({loading:false,data:null,error:e.message}); } }
   useEffect(()=>{ load(); },[u._id]);
   const envios=st.data?.envios||[];
   const api=envios.filter(e=>e.andreani?.numeroDeEnvio); const excelN=envios.length-api.length;
@@ -19805,6 +19812,14 @@ function AdmFichaEnvios({ctx, u}) {
   }
   return (
     <Card T={T} padding="lg">
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12,padding:"10px 12px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
+        <span style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Markup propio</span>
+        <label style={{fontSize:11,color:T.textMd,display:"inline-flex",alignItems:"center",gap:4}}>% <AdmInput T={T} type="number" min={0} max={200} value={mk.pct} onChange={e=>setMk(m=>({...m,pct:e.target.value}))} placeholder="global" style={{width:70}}/></label>
+        <label style={{fontSize:11,color:T.textMd,display:"inline-flex",alignItems:"center",gap:4}}>+ $ fijo <AdmInput T={T} type="number" min={0} value={mk.fijo} onChange={e=>setMk(m=>({...m,fijo:e.target.value}))} placeholder="global" style={{width:90}}/></label>
+        <AdmBtn T={T} variant="primary" size="sm" onClick={()=>guardarMarkup(false)}>Guardar</AdmBtn>
+        {(mk.pct!==""||mk.fijo!=="")&&<AdmBtn T={T} variant="secondary" size="sm" onClick={()=>guardarMarkup(true)}>Usar el global</AdmBtn>}
+        <span style={{fontSize:11,color:T.textSm}}>Vacío = usa el markup global de la plataforma. Aplica a cotizaciones, emisión y checkout.</span>
+      </div>
       <AdmTitulo T={T} t="Envíos · últimos 90 días" sub={st.data?`${envios.length} envío${envios.length===1?"":"s"} registrado${envios.length===1?"":"s"}${st.data.truncado?" (lista parcial: hay más de 4000)":""}.`:""} right={<><Btn T={T} variant="secondary" size="sm" onClick={exportar} disabled={!lista.length}>CSV</Btn><Btn T={T} variant="secondary" size="sm" onClick={load}>Actualizar</Btn></>}/>
       {st.loading?<AdmSkeleton T={T} filas={6}/>
       :st.error?<div style={{fontSize:12,color:T.red}}>{st.error}</div>
@@ -20404,6 +20419,16 @@ function AdmConciliacion({T, usuariosPorUid}){
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:12}}>
           {[{label:"Filas",val:String(r.total)},{label:"Encontradas",val:String(r.encontrados),sub:r.noEncontrados?`${r.noEncontrados} sin match`:"todas"},{label:"Facturado Andreani",val:fmtMoney(r.facturado)},{label:"Cobrado a clientes",val:fmtMoney(r.cobrado)},{label:"Margen real",val:fmtMoney(r.margenReal),color:r.margenReal>=0?T.green:T.red},{label:"Costo modelo",val:fmtMoney(r.costoModelo),sub:`dif. ${fmtMoney(r.costoModelo-r.facturado)}`}].map(k=><AdmKpi key={k.label} T={T} label={k.label} val={k.val} sub={k.sub} color={k.color} n={1}/>)}
         </div>
+        {(res.noEmitidos?.length||res.emitidosNoFacturados?.length||res.diferencias?.length)?(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10,marginBottom:12}}>
+            {[["diferencias","Con diferencia de costo",res.diferencias||[],x=>`${x.numero} · modelo ${fmtMoney(x.costoIdx??x.costoModelo??0)} vs factura ${fmtMoney(x.costoFactura??0)}`],["noEmitidos","En la factura pero no emitidos por Growith",res.noEmitidos||[],x=>typeof x==="string"?x:(x.numero||"")],["emitidosNoFacturados","Emitidos ese mes sin facturar",res.emitidosNoFacturados||[],x=>typeof x==="string"?x:`${x.numero||""}${x.precio!=null?" · "+fmtMoney(x.precio):""}`]].filter(([,,l])=>l.length).map(([k,t,l,f])=>(
+              <div key={k} style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontSize:11,fontWeight:700,color:k==="noEmitidos"?T.red:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>{t} · {l.length}</div>
+                <div style={{maxHeight:140,overflow:"auto",fontSize:11,color:T.textMd,fontFamily:"'Cascadia Code','Consolas',monospace",lineHeight:1.6}}>{l.slice(0,200).map((x,i)=><div key={i}>{f(x)}</div>)}</div>
+              </div>
+            ))}
+          </div>
+        ):null}
         <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><Btn T={T} variant="secondary" size="sm" onClick={exportar}>Exportar CSV</Btn></div>
         <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto",maxHeight:380,overflowY:"auto"}}><div style={{minWidth:760}}>
           <div style={{display:"grid",gridTemplateColumns:"150px 1fr 90px 100px 100px 100px 100px",gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface,position:"sticky",top:0}}><span>Nº envío</span><span>Cuenta</span><span>Pedido</span><span style={{textAlign:"right"}}>Cobrado</span><span style={{textAlign:"right"}}>Costo modelo</span><span style={{textAlign:"right"}}>Factura</span><span style={{textAlign:"right"}}>Dif.</span></div>
@@ -20435,7 +20460,22 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
   async function loadBajas(){ try{ const d=await admAndreani("admin_tpl_baja",{}); setBajas({loading:false,nombres:d.nombres||[],seed:d.seed||[]}); }catch(e){ setBajas({loading:false,nombres:[],seed:[],error:e.message}); } }
   async function editarBajas(agregar,quitar){ const d=await admAndreani("admin_tpl_baja",{agregar,quitar}); setBajas({loading:false,nombres:d.nombres||[],seed:d.seed||[]}); }
   async function loadPuntoMap(quitar){ try{ const d=quitar?await admAndreani("admin_punto_map",{quitar}):await admAndreani("admin_punto_map"); setPmap({loading:false,entries:d.entries||[]}); if(quitar) toast("Quitado de la memoria global","success"); }catch(e){ setPmap({loading:false,entries:[],error:e.message}); } }
-  useEffect(()=>{ loadSaldos(); if(!statsMes) loadStats(meses[0].v); loadBajas(); loadPuntoMap(); },[]);
+  // Dinero en el limbo: emisiones dudosas, reversos pendientes, cargas en
+  // revisión y etiquetas anuladas con ingreso — antes se resolvían a mano en Firestore.
+  const [limbo,setLimbo]=useState({loading:true,data:null,error:""});
+  async function loadLimbo(){ setLimbo(l=>({...l,loading:true,error:""})); try{ setLimbo({loading:false,data:await admAndreani("admin_limbo"),error:""}); }catch(e){ setLimbo({loading:false,data:null,error:e.message}); } }
+  async function resolverDudoso(d,resultado){
+    let numeroDeEnvio=d.numeroDeEnvio||"";
+    if(resultado==="existe"&&!numeroDeEnvio){ numeroDeEnvio=await appPrompt(`Número de envío que Andreani creó para el pedido #${d.pedido||d.envioId}:`,""); if(!numeroDeEnvio) return; }
+    if(resultado==="no_existe"&&!(await appConfirm(`¿Confirmás que Andreani NO creó la etiqueta del pedido #${d.pedido||d.envioId}? Se devuelve ${fmtMoney(d.precio||0)} al saldo de la cuenta.`,{okLabel:"Devolver saldo"}))) return;
+    await admAndreani("admin_dudoso_resolver",{uid:d.uid,envioId:d.envioId,resultado,numeroDeEnvio:String(numeroDeEnvio||"").trim()||undefined});
+    toast(resultado==="existe"?"Emisión confirmada":"Saldo devuelto","success"); loadLimbo(); loadSaldos();
+  }
+  async function debitarAnulada(d){
+    if(!(await appConfirm(`La etiqueta del pedido #${d.pedido||d.envioId} se anuló con reintegro pero Andreani registró ingreso: ¿debitar ${fmtMoney(d.precio||0)} de nuevo?`,{danger:true,okLabel:"Debitar"}))) return;
+    await admAndreani("admin_anulada_debitar",{uid:d.uid,envioId:d.envioId}); toast("Debitado","success"); loadLimbo(); loadSaldos();
+  }
+  useEffect(()=>{ loadSaldos(); if(!statsMes) loadStats(meses[0].v); loadBajas(); loadPuntoMap(); loadLimbo(); },[]);
   async function buscar(){ const email=busca.trim(); if(!email){ setBuscaRes(null); return; } const d=await admAndreani(`admin_saldos&email=${encodeURIComponent(email)}`); if(d?.sinResultados||!Array.isArray(d?.cuentas)||!d.cuentas.length) setBuscaRes({sinResultados:true,email}); else setBuscaRes({cuentas:d.cuentas}); }
   const q=nuevo.trim().toLowerCase(); const match=q?usuarios.find(u=>(u.email||"").toLowerCase()===q||u._id===nuevo.trim()):null; const sugeridos=q&&!match?usuarios.filter(u=>(u.email||"").toLowerCase().includes(q)||(u.nombre||"").toLowerCase().includes(q)).slice(0,6):[];
   const listaSaldos=buscaRes?.cuentas||saldos||[];
@@ -20446,6 +20486,34 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
       <div style={{marginBottom:14}}><AdmSeg T={T} value={vista} onChange={setVista} opciones={[["operacion","Operación",envCargas.length],["rentabilidad","Rentabilidad"],["config","Configuración"]]}/></div>
       {vista==="operacion"&&(
         <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.4fr) minmax(300px,1fr)",gap:16,alignItems:"start"}}>
+          {(()=>{
+            const d=limbo.data||{}; const listas=[["dudosos","Emisiones dudosas",d.dudosos||[]],["reversosPendientes","Reversos pendientes",d.reversosPendientes||[]],["cargasRevision","Cargas en revisión",d.cargasRevision||[]],["anuladasConIngreso","Anuladas con ingreso",d.anuladasConIngreso||[]]];
+            const total=listas.reduce((s,[,,l])=>s+l.length,0);
+            const fila=(k,x,i)=>(
+              <div key={k+i} style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",padding:"8px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none",fontSize:12}}>
+                <span style={{minWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{clienteBtn(x.uid,usuariosPorUid[x.uid]?.email||x.email||x.uid)}</span>
+                <span style={{color:T.textMd}}>{x.pedido?`#${x.pedido}`:x.envioId||x.id||x.ref||""}</span>
+                <span style={{fontWeight:700,marginLeft:"auto"}}>{fmtMoney(x.precio??x.monto??0)}</span>
+                {x.numeroDeEnvio&&<span style={{fontFamily:"'Cascadia Code','Consolas',monospace",fontSize:11,color:T.textSm}}>{x.numeroDeEnvio}</span>}
+                {k==="dudosos"&&<><AdmBtn T={T} variant="secondary" size="sm" onClick={()=>resolverDudoso(x,"existe")}>Existe</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>resolverDudoso(x,"no_existe")}>No existe · devolver</AdmBtn></>}
+                {k==="anuladasConIngreso"&&<AdmBtn T={T} variant="danger" size="sm" onClick={()=>debitarAnulada(x)}>Debitar</AdmBtn>}
+                {k==="reversosPendientes"&&<span style={{fontSize:11,color:T.textSm}}>reverso no aplicado: acreditar a mano desde Saldos</span>}
+                {k==="cargasRevision"&&<span style={{fontSize:11,color:T.textSm}}>{x.nota||"pago aprobado sobre una carga cancelada"}</span>}
+              </div>
+            );
+            return (
+              <Card T={T} padding="lg" style={{gridColumn:"1 / -1"}}>
+                <AdmTitulo T={T} t={`Dinero en el limbo${total?` · ${total}`:""}`} sub="Débitos retenidos por emisiones sin respuesta clara, reversos que fallaron, cargas de MP aprobadas sobre una carga cancelada y etiquetas anuladas con reintegro que igual ingresaron a Andreani." right={<Btn T={T} variant="secondary" size="sm" onClick={loadLimbo}>Actualizar</Btn>}/>
+                {limbo.loading&&!limbo.data?<AdmSkeleton T={T} filas={2}/>:limbo.error?<div style={{fontSize:12,color:T.red}}>{limbo.error}</div>:total===0?<AdmVacio T={T} titulo="Nada retenido" sub="No hay dinero esperando una decisión."/>:(
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:16}}>
+                    {listas.filter(([,,l])=>l.length).map(([k,t,l])=>(
+                      <div key={k}><div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{t} · {l.length}</div>{l.map((x,i)=>fila(k,x,i))}</div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            );
+          })()}
           <Card T={T} padding="lg">
             <AdmTitulo T={T} t="Saldos por cuenta" sub="Acreditar a mano o ver los movimientos de cada billetera." right={<Btn T={T} variant="secondary" size="sm" onClick={loadSaldos}>Actualizar</Btn>}/>
             <div style={{display:"flex",gap:8,marginBottom:12}}><AdmInput T={T} value={busca} onChange={e=>setBusca(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")buscar().catch(err=>toast(err.message,"error"));}} placeholder="Buscar cuenta por email" style={{flex:1}}/><AdmBtn T={T} variant="secondary" size="sm" onClick={buscar}>Buscar</AdmBtn></div>
@@ -20601,6 +20669,10 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
             </Card>
             <Card T={T} padding="lg">
               <AdmTitulo T={T} t="Diagnóstico API Andreani" sub="Consultá la API oficial con la cuenta de la plataforma para ver qué devuelve (sucursales por canal/tipo, tarifas)."/>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
+                <AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ const d=await admAndreani("admin_cache_purge",{}); const n=Object.values(d.borrados||{}).reduce((s,v)=>s+(Number(v)||0),0); toast(`Cachés borradas: ${n}${d.restantes?" (quedan más: volvé a correrlo)":""}`,"success",6000); }}>Purgar cachés viejas</AdmBtn>
+                <span style={{fontSize:11,color:T.textSm}}>Borra listados y tarifas de versiones anteriores en andreani_config (suc_, suc_all, suc_geo, geo_ck_, rates_suc1…11, cotizaciones de más de 7 días).</span>
+              </div>
               <AdmProbe T={T}/>
               <div style={{marginTop:14}}><AdmTnProbe T={T}/></div>
             </Card>
