@@ -214,8 +214,8 @@ async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
 }
 // Qué ve el comprador dentro del tope `sucursalesMax`: sucursales Andreani
 // primero (hasta la mitad del tope, mínimo 1) y después los puntos HOP; si
-// sobran lugares, más sucursales. Con el tope por defecto (3): 2 sucursales +
-// 1 HOP. Así el HOP nunca desaparece en zonas con muchas sucursales, pero la
+// sobran lugares, más sucursales. Con el tope por defecto (5): 3 sucursales +
+// 2 HOP. Así el HOP nunca desaparece en zonas con muchas sucursales, pero la
 // sucursal es siempre la primera opción.
 function elegirParaMostrar(lista, max) {
   const suc = lista.filter(s => !esHopItem(s)), hop = lista.filter(s => esHopItem(s));
@@ -311,7 +311,7 @@ export async function computeRates(db, uid, rate, { shopHdr = "", t0 = Date.now(
     const [dom, suc, sucursales] = await Promise.all([
       quiereDom ? cotiza("domicilio").catch(e => { errs.push("domicilio: " + e.message); return null; }) : Promise.resolve(null),
       quiereSuc ? cotiza("sucursal").catch(e => { errs.push("sucursal: " + e.message); return null; }) : Promise.resolve(null),
-      quiereSuc ? sucursalesParaCheckout(db, env, { cp, loc: dest.city, prov: dest.province }, Math.max(1, Math.min(12, Number(ac.sucursalesMax) || 3))).catch(e => { errs.push("sucursales: " + e.message); return []; }) : Promise.resolve([]),
+      quiereSuc ? sucursalesParaCheckout(db, env, { cp, loc: dest.city, prov: dest.province }, Math.max(1, Math.min(12, Number(ac.sucursalesMax) || 5))).catch(e => { errs.push("sucursales: " + e.message); return []; }) : Promise.resolve([]),
     ]);
     if ((dom != null || suc != null) && !(cached && cached.dom === dom && cached.suc === suc)) {
       cacheRef.set({ ratesUid: uid, cp, ts: Date.now(), dom: dom ?? null, suc: suc ?? null }).catch(() => {});
