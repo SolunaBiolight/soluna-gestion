@@ -142,18 +142,21 @@ async function geocodeLocalidad({ loc, prov, cp }) {
 // y el geocoder cae en cualquier lado): centroide oficial de la localidad
 // (georef, cache 30 días) → mediana de las sucursales ubicadas en su CP.
 async function anclaComprador(db, { cp, loc, prov }, pub) {
+  const cpS = String(cp);
+  const med = arr => { const a = [...arr].sort((x, y) => x - y); return a[Math.floor(a.length / 2)]; };
+  // 1) Puntos ubicados EN el CP del comprador (sucursales + HOP del índice,
+  //    todos con coordenadas reales): su mediana es un ancla que no puede caer
+  //    en otra ciudad. Con los HOP casi todo CP tiene varios puntos.
+  const enCp = pub.filter(s => String(s.direccion?.codigoPostal || "").replace(/\D/g, "").slice(0, 4) === cpS && enARll(s.lat, s.lng));
+  if (enCp.length) return { lat: med(enCp.map(s => s.lat)), lng: med(enCp.map(s => s.lng)), src: "cp" };
+  // 2) Centroide oficial de la localidad (georef, cache 30 días).
   const key = (nrmK(`${loc}|${cp}`) || String(cp)).slice(0, 90);
   const ref = db.collection("andreani_config").doc(`geo_ck2_${key}`);
   try { const c = (await ref.get()).data(); if (c && enARll(c.lat, c.lng) && Date.now() - (c.ts || 0) < 30 * 86400000) return { lat: c.lat, lng: c.lng, src: c.src || "cache" }; } catch (_) {}
   let g = null, src = "";
   try { g = await Promise.race([geocodeLocalidad({ loc, prov, cp }), sleep(2500)]); if (g) src = "loc"; } catch (_) {}
   if (g && enARll(g.lat, g.lng)) { ref.set({ lat: g.lat, lng: g.lng, src, ts: Date.now(), ratesUid: "_geo" }).catch(() => {}); return { ...g, src }; }
-  const cpS = String(cp);
-  const enCp = pub.filter(s => String(s.direccion?.codigoPostal || "").replace(/\D/g, "").slice(0, 4) === cpS && enARll(s.lat, s.lng));
-  const med = arr => { const a = [...arr].sort((x, y) => x - y); return a[Math.floor(a.length / 2)]; };
-  if (enCp.length) return { lat: med(enCp.map(s => s.lat)), lng: med(enCp.map(s => s.lng)), src: "cp" };
-  // Último recurso (típico CABA: Palermo figura con CP 1414 y atiende 1425):
-  // el centro de las sucursales que ATIENDEN ese CP según Andreani.
+  // 3) Último recurso: el centro de las sucursales que ATIENDEN ese CP según Andreani.
   const sirve = pub.filter(s => s.cps.includes(cpS) && enARll(s.lat, s.lng));
   if (sirve.length) return { lat: med(sirve.map(s => s.lat)), lng: med(sirve.map(s => s.lng)), src: "sirve" };
   return null;
@@ -166,41 +169,45 @@ const RADIO_M = 10000;
 let _dbg = {}; // diagnóstico de la última selección (solo se devuelve con ?debug=1)
 async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
   _dbg = { cp, loc };
-  const cacheRef = db.collection("andreani_config").doc(`rates_suc10_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
+  const cacheRef = db.collection("andreani_config").doc(`rates_suc11_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
   try {
     const c = (await cacheRef.get()).data();
     if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return elegirParaMostrar(c.lista, max);
   } catch (_) {}
+  const cpS = String(cp);
+  const cpDeS = s => String(s.direccion?.codigoPostal || "").replace(/\D/g, "").slice(0, 4);
   let lista = [];
   try {
     const pub = (await sucursalesB2CCheckout(db, env)).filter(esRetiroPublico);
     const ancla = await anclaComprador(db, { cp, loc, prov }, pub);
+    const porDist = ancla
+      ? pub.filter(s => enARll(s.lat, s.lng)).map(s => ({ ...s, distM: distanciaM(ancla.lat, ancla.lng, s.lat, s.lng) })).sort((a, b) => a.distM - b.distM)
+      : pub.map(s => ({ ...s, distM: null }));
+    // Reglas (Soluna, 16/9):
+    //  • SIEMPRE al menos una sucursal Andreani, y las sucursales van primero
+    //    (retirar en sucursal da muchos menos problemas que un punto HOP).
+    //  • Los puntos HOP SOLO del CP que escribió el comprador — nunca de otra
+    //    ciudad, aunque queden cerca.
+    // Sucursales: a ≤ 10 km (las del CP arriba, después por distancia); si no
+    // hay ninguna a 10 km, la más cercana igual; sin ancla, las que Andreani
+    // dice que atienden el CP.
+    let sucs = porDist.filter(s => !esHopItem(s));
     if (ancla) {
-      const conDist = pub.filter(s => enARll(s.lat, s.lng))
-        .map(s => ({ ...s, distM: distanciaM(ancla.lat, ancla.lng, s.lat, s.lng) }))
-        .sort((a, b) => a.distM - b.distM);
-      // Las ubicadas EN el CP del comprador van arriba de todo; el resto por distancia.
-      const cpS = String(cp);
-      const enCp = s => String(s.direccion?.codigoPostal || "").replace(/\D/g, "").slice(0, 4) === cpS;
-      // Sucursales Andreani PRIMERO (retirar en sucursal da muchos menos
-      // problemas que un punto HOP: se empuja al comprador hacia ellas) y
-      // recién después los puntos HOP; dentro de cada grupo, las del CP del
-      // comprador arriba y el resto por distancia. Ojo: a igual precio Shopify
-      // ordena alfabético, por eso el título de los HOP empieza con "Punto".
-      const esHopS = s => esHopItem(s) ? 1 : 0;
-      const cerca = dedupeSucursales(conDist).filter(s => s.distM <= RADIO_M).sort((a, b) => (esHopS(a) - esHopS(b)) || (enCp(b) - enCp(a)) || (a.distM - b.distM));
-      lista = cerca.length ? cerca : (conDist.length ? [conDist[0]] : []);
+      const cerca = sucs.filter(s => s.distM <= RADIO_M).sort((a, b) => ((cpDeS(b) === cpS) - (cpDeS(a) === cpS)) || (a.distM - b.distM));
+      sucs = cerca.length ? cerca : sucs.slice(0, 1);
     } else {
-      // Sin ancla: las que Andreani define que atienden el CP (mismo CP primero).
-      const cpS = String(cp);
-      lista = pub.filter(s => s.cps.includes(cpS)).sort((a, b) => (String(b.direccion?.codigoPostal || "") === cpS) - (String(a.direccion?.codigoPostal || "") === cpS));
+      sucs = sucs.filter(s => s.cps.includes(cpS) || cpDeS(s) === cpS).sort((a, b) => (cpDeS(b) === cpS) - (cpDeS(a) === cpS));
     }
-    _dbg.ancla = ancla ? ancla.src : "ninguna"; _dbg.candidatas = lista.length; _dbg.hop = lista.filter(s => /hop|punto andreani/i.test(s.descripcion || "")).length; _dbg.sinCoords = pub.filter(s => !enARll(s.lat, s.lng)).length;
+    const hops = porDist.filter(s => esHopItem(s) && cpDeS(s) === cpS);
+    lista = [...dedupeSucursales(sucs), ...dedupeSucursales(hops)];
+    _dbg.ancla = ancla ? ancla.src : "ninguna"; _dbg.sucursales = sucs.length; _dbg.hop = hops.length; _dbg.sinCoords = pub.filter(s => !enARll(s.lat, s.lng)).length;
   } catch (e) { _dbg.error = e.message; console.error("[shopify-rates] sucursales:", e.message); }
-  if (!lista.length) lista = (await sucursalesCercanasCp(db, env, cp, 3)).slice(0, 1);
-  // La caché guarda hasta 12 candidatas, mitad sucursales y mitad HOP (si se
-  // cortara por orden, en CABA las sucursales llenarían los 12 lugares).
-  lista = elegirParaMostrar(dedupeSucursales(lista.filter(esPuntoPublico)), 12)
+  // Sin nada: la sucursal más cercana por CP (nunca un HOP de otro CP).
+  if (!lista.filter(s => !esHopItem(s)).length) {
+    try { const alt = (await sucursalesCercanasCp(db, env, cp, 6)).filter(s => !esHopItem(s)).slice(0, 1); lista = [...alt, ...lista]; } catch (_) {}
+  }
+  // La caché guarda hasta 12 candidatas, mitad sucursales y mitad HOP.
+  lista = elegirParaMostrar(lista.filter(esPuntoPublico), 12)
     .map(s => ({ id: s.id, descripcion: s.descripcion || "", direccion: s.direccion || null, horarioDeAtencion: s.horarioDeAtencion || "", distM: s.distM ?? null, hop: !!s.hop }));
   if (lista.length) cacheRef.set({ ratesUid: "_suc", cp, ts: Date.now(), lista }).catch(() => {});
   return elegirParaMostrar(lista, max);
