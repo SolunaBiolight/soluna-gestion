@@ -5766,9 +5766,17 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     // (ej: "Ingresado — Pronto lo enviaremos a la sucursal...").
     const ETAPAS={"pendiente de ingreso":"pendiente","ingresado":"en_camino","en camino":"en_camino","en sucursal":"en_sucursal","entregado":"entregado"};
     const etapa=ETAPAS[s.split(" — ")[0].trim()];
+    // Mismas reglas que clasificarEstado del backend (GH_ESTADO_REGLAS en
+    // api/update-shipping.js): las NEGACIONES se prueban antes que la etapa
+    // ("Entregado — No se pudo entregar" no es una entrega) y "retirado del
+    // cliente"/colecta es el origen, no el destino.
+    if(etapa==="en_sucursal") return etapa;
+    if(/(no (se )?(pudo )?entreg|no entregad|sin entregar).*(devoluci|devuelto|regres|remitente|retorn)|rechaz/.test(s)) return "devolucion";
+    if(/no (se )?(pudo )?entreg|no entregad|sin entregar/.test(s)) return "visita_fallida";
     if(etapa) return etapa;
     if(/no ingresad|pendiente de ingreso|sin movimientos/.test(s)) return "pendiente";
-    if(/entregad|entrega realizada|delivered|devolucion aceptada|devuelto al remitente|recibido en destino/.test(s)) return "entregado";
+    if(/retirado del cliente|colecta|retiro en origen/.test(s)) return "en_camino";
+    if(/retirado por el destinatario|entregad|entrega realizada|delivered|devolucion aceptada|devuelto al remitente|recibido en destino/.test(s)) return "entregado";
     if(!/camino a la sucursal|procesando (tu|el) env|hacia la sucursal/.test(s) &&
        /sucursal|disponible.*retiro|retiro.*disponible|para retirar|en agencia|punto de retiro|andreani point|en oficina/.test(s)) return "en_sucursal";
     if(/devoluci|regres|rehusad|rechazad/.test(s)) return "devolucion";
@@ -11975,7 +11983,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           // Persistir en Firestore (vía server): el envío entra al tracking automático (cron)
           if(user?.uid) authFetch(`/api/update-shipping?action=envios_registrar&uid=${user.uid}`,{
             method:"POST",headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({envios:[{numero:String(result.pedidoNum),tracking:String(result.tracking),tnId:String(data.tnOrderId||""),estado:"despachado",activo:true,fulfillOk:data.fulfilled!==false}]}),
+            body:JSON.stringify({envios:[{numero:String(result.pedidoNum),tracking:String(result.tracking),tnId:String(data.tnOrderId||""),estado:"despachado",activo:true,fulfillOk:data.fulfilled!==false,tiendaPendiente:null}]}),
           }).catch(()=>{});
           // Pedido de un canje: el tracking va también al canje (Excel+PDF o API)
           marcarCanjeEnvio(String(result.pedidoNum),String(result.tracking),segApiRef.current.has(String(result.pedidoNum))?"api":"excel");
@@ -12930,7 +12938,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 {segCfgOpen&&(
                   <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:60,width:300,background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",boxShadow:"0 12px 32px rgba(0,0,0,0.35)"}}>
                     <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:10}}>Avisos de envíos</div>
-                    {[["avisosDueno","Resumen diario por mail cuando hay envíos con problema"],["avisosComprador","Avisar al comprador por mail cuando el paquete está en sucursal o falló la visita"]].map(([k,l])=>(
+                    {[["avisosDueno","Resumen diario por mail cuando hay envíos con problema"],["avisosComprador","Avisar al comprador por mail cuando el paquete está en sucursal, falló la visita o fue entregado"]].map(([k,l])=>(
                       <div key={k} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:9}}>
                         <span style={{fontSize:11,color:T.textMd,lineHeight:1.4}}>{l}</span>
                         <DSToggle T={T} active={enviosCfg[k]!==false} onToggle={()=>guardarEnviosCfg({[k]:enviosCfg[k]===false})}/>
