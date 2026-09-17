@@ -1101,7 +1101,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
           .filter(item=>{
             if(isInTrial) return true;
             if(userPlan==="facturador") return item.group ? item.group==="FINANZAS" : ["home","arca"].includes(item.id);
-            if(userPlan==="medio")      return item.group ? true : !["copilot","margenes"].includes(item.id);
+            if(userPlan==="medio")      return item.group ? true : !["copilot","margenes","gads"].includes(item.id);
             return true;
           })
           .map((item,i)=>{
@@ -5130,7 +5130,19 @@ function PageView({children, pageKey, T}) {
 // ─── UpgradeWall — pantalla de upgrade cuando el plan no alcanza ──────────────
 function UpgradeWall({T, requiredPlan, onNavigate}) {
   // Se muestra cuando el plan no alcanza (hoy: usuarios Facturador entrando a secciones Pro)
-  const info = {
+  // Sección del plan Intermedio (envíos, stock, reclamos…): se ofrece ESE plan, no el Pro.
+  const info = requiredPlan==="medio" ? {
+    nombre:"Intermedio", icon:"", color:T.purple,
+    precio_usdt:39, precio_ars:0,
+    features:[
+      "Envíos y etiquetas Andreani con SKU",
+      "Stock de Tienda Nube, Mercado Libre y Shopify en una sola vista",
+      "Mercado Libre integrado",
+      "Meta Ads y Mercado Ads",
+      "Reclamos, canjes e influencers ilimitados",
+      "Equipo y tareas ilimitadas",
+    ],
+  } : {
     nombre:"Pro", icon:"", color:"#6366f1",
     precio_usdt:69, precio_ars:0,
     features:[
@@ -42758,8 +42770,12 @@ export default function App() {
   // ─── Render page content ───
   // Plan gate: devuelve <UpgradeWall> si el plan no alcanza, o null si puede pasar
   // Durante el trial (isInTrial), todos los gates se bypasean — acceso completo
-  // facturador = solo ARCA (nivel 1); plus/full = todo. El gate compara niveles.
-  const PLAN_LEVEL = {free:0, facturador:1, plus:2, full:3};
+  // facturador = solo ARCA (nivel 1); medio = operación completa (nivel 2:
+  // todo menos Dashboard de márgenes, Copilot, Google Ads y conector de IA);
+  // plus/full = todo. El gate compara niveles. OJO: "medio" faltaba en esta
+  // tabla y valía 0 → quien pagaba el Intermedio veía el cartel de upgrade en
+  // TODAS las secciones aunque el sidebar se las mostrara (caso zensleep, 17/9).
+  const PLAN_LEVEL = {free:0, facturador:1, medio:2, plus:3, full:4};
   const planGate = (req) => {
     if (!planReady) return null; // plan todavía no cargó — no flashear UpgradeWall
     if (isInTrial) return null; // trial = acceso completo a todo
@@ -42803,19 +42819,19 @@ export default function App() {
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)}/>;
   else if(page==="margenes") pageContent = adminGate("margenes") || planGate("plus") || <PageView T={T} pageKey="margenes"><AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={setMargenesTab}/></PageView>;
   else if(page==="arca") pageContent = adminGate("arca") || planGate("facturador") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
-  else if(page==="stock") pageContent = adminGate("stock") || planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
-  else if(page==="ml") pageContent = adminGate("ml") || planGate("plus") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={mlTab} setTab={setMlTab}/></PageView>;
-  else if(page==="meta") pageContent = adminGate("meta") || planGate("plus") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
-  else if(page==="tareas") pageContent = adminGate("tareas") || planGate("plus") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab} pendingOpenTaskId={pendingOpenTaskId} onPendingOpenTaskConsumed={()=>setPendingOpenTaskId(null)}/></PageView>;
-  else if(page==="reclamos") pageContent = adminGate("reclamos") || planGate("plus") || requiereTN("Reclamos") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
-  else if(page==="canjes") pageContent = adminGate("canjes") || planGate("plus") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
+  else if(page==="stock") pageContent = adminGate("stock") || planGate("medio") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
+  else if(page==="ml") pageContent = adminGate("ml") || planGate("medio") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={mlTab} setTab={setMlTab}/></PageView>;
+  else if(page==="meta") pageContent = adminGate("meta") || planGate("medio") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
+  else if(page==="tareas") pageContent = adminGate("tareas") || planGate("medio") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab} pendingOpenTaskId={pendingOpenTaskId} onPendingOpenTaskConsumed={()=>setPendingOpenTaskId(null)}/></PageView>;
+  else if(page==="reclamos") pageContent = adminGate("reclamos") || planGate("medio") || requiereTN("Reclamos") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
+  else if(page==="canjes") pageContent = adminGate("canjes") || planGate("medio") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
   else if(page==="gads") pageContent = adminGate("gads") || planGate("plus") || <PageView T={T} pageKey="gads"><AppGoogleAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={gadsTab} setTab={setGadsTab}/></PageView>;
-  else if(page==="tiktokads") pageContent = adminGate("tiktokads") || planGate("plus") || <PageView T={T} pageKey="tiktokads"><AppTiktokAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={tiktokTab} setTab={setTiktokTab}/></PageView>;
+  else if(page==="tiktokads") pageContent = adminGate("tiktokads") || planGate("medio") || <PageView T={T} pageKey="tiktokads"><AppTiktokAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={tiktokTab} setTab={setTiktokTab}/></PageView>;
   else if(page==="claude"||page==="chatgpt"||page==="gemini") pageContent = adminGate(page) || planGate("plus") || <PageView T={T} pageKey={page}><AppConectorIA T={T} user={user} app={{claude:"Claude",chatgpt:"ChatGPT",gemini:"Gemini"}[page]} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="calendario") pageContent = <PageView T={T} pageKey="calendario"><AppCalendarioPagos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="demo") pageContent = (String(user?.email||"").toLowerCase()===DEMO_EMAIL_UI||isAdmin) ? <PageView T={T} pageKey="demo"><AppDemo T={T} user={user} authUid={authUser?.uid} onSwitchOrg={onSwitchOrg} onHome={()=>setPage("home")}/></PageView> : null;
-  else if(page==="envios") pageContent = adminGate("envios") || planGate("plus") || requiereTN("Envíos") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} canjesPedidos={canjesPedidos} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
+  else if(page==="envios") pageContent = adminGate("envios") || planGate("medio") || requiereTN("Envíos") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} canjesPedidos={canjesPedidos} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
   else pageContent = <HomeScreen T={T} connectedStores={connectedStores} enviosProblemas={enviosProblemasN} mlPreguntas={mlPreguntasCount} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
     if(p==="ml"&&docId==="preguntas"){ setMlTab("preguntas"); }
