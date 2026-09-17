@@ -406,6 +406,9 @@ async function shopifyCarrierStatus(req, res, db) {
     shop: sh.shop,
     scopeOk: scopes ? scopes.includes("write_shipping") : (f.err?.error === "scope" ? false : null),
     fulfillOk: scopes ? scopes.includes(SHOPIFY_SCOPE_FULFILL) : null,
+    // central=false → app PROPIA del vendedor (tutorial del modal): los permisos
+    // salen de la versión publicada de SU app, no de la de Growith.
+    central: !!sh.central,
     // Conectada/reconectada DESPUÉS de que Growith empezó a pedir el permiso
     // (15/9/2026 18:51 AR) y Shopify igual no lo otorgó → no es cosa del
     // vendedor: falta publicar el scope en la app de Growith en Shopify.

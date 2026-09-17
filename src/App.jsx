@@ -16350,6 +16350,11 @@ function DSToggle({T, active, onToggle}) {
 // Registra el transportista en la tienda, muestra el estado (permiso, plan,
 // alta) y deja configurar precio/gratis/sucursales/bulto. El paso final lo
 // hace el vendedor en Shopify (agregar la tarifa de la app a la zona Argentina).
+// Permisos que tiene que tener la app de Shopify del vendedor (misma lista que
+// SHOPIFY_SCOPES en api/integrations.js). El tutorial del modal copiaba una
+// lista vieja SIN los de fulfillment → las apps creadas con él no podían
+// marcar envíos y reconectar no lo arreglaba (caso zensleep, 17/9/2026).
+const GH_SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders,read_fulfillments,write_fulfillments";
 function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
   const uid = user?.uid;
   const [st,setSt] = React.useState(null);      // respuesta de carrier_status
@@ -16418,12 +16423,27 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
           <button onClick={onReconectar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 14px"}}>Reconectar Shopify</button>
         </div>
       )}
-      {!scopeFalta && st?.fulfillOk===false && st?.reconectadaSinPermiso && (
+      {!scopeFalta && st?.fulfillOk===false && st?.central===false && (
+        <div style={{background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:8,padding:"10px 12px",fontSize:12,color:T.text,marginBottom:10,lineHeight:1.6}}>
+          <div style={{marginBottom:6}}>A tu app de Shopify le falta el permiso para <strong>marcar pedidos como enviados</strong>: por eso "Enviar seguimientos" no puede subir los trackings. Reconectar solo no alcanza, primero hay que sumarle los permisos a la app:</div>
+          <ol style={{margin:"0 0 8px",paddingLeft:18}}>
+            <li>Entrá a <a href="https://dev.shopify.com/dashboard" target="_blank" rel="noopener" style={{color:T.accent}}>dev.shopify.com/dashboard</a>, abrí tu app <strong>Growith</strong> y andá a <strong>Versiones → Crear versión</strong>.</li>
+            <li>En <strong>Alcances (scopes)</strong> borrá lo que haya y pegá la lista completa (botón de abajo).</li>
+            <li>Tocá <strong>Publicar / Lanzar</strong> la versión.</li>
+            <li>Volvé acá y tocá <strong>Reconectar Shopify</strong>: Shopify te va a pedir aprobar los permisos nuevos.</li>
+          </ol>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>{navigator.clipboard.writeText(GH_SHOPIFY_SCOPES);toast("Permisos copiados","success");}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>Copiar la lista de permisos</button>
+            <button onClick={onReconectar} style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px"}}>Reconectar Shopify</button>
+          </div>
+        </div>
+      )}
+      {!scopeFalta && st?.fulfillOk===false && st?.central!==false && st?.reconectadaSinPermiso && (
         <div style={{background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:8,padding:"10px 12px",fontSize:12,color:T.text,marginBottom:10,lineHeight:1.5}}>
           Ya reconectaste Shopify, pero Shopify no le otorgó a Growith el permiso para <strong>marcar pedidos como enviados</strong>: todavía no está publicado en la app de Growith dentro de Shopify. No hace falta que reconectes de nuevo; el equipo de Growith lo está habilitando y cuando esté listo vas a poder enviar los seguimientos.
         </div>
       )}
-      {!scopeFalta && st?.fulfillOk===false && !st?.reconectadaSinPermiso && (
+      {!scopeFalta && st?.fulfillOk===false && st?.central!==false && !st?.reconectadaSinPermiso && (
         <div style={{background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:8,padding:"10px 12px",fontSize:12,color:T.text,marginBottom:10,lineHeight:1.5,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{flex:1,minWidth:220}}>Shopify todavía no le dio a Growith el permiso para <strong>marcar pedidos como enviados</strong> (fulfillment): sin eso, "Enviar seguimientos" no puede subir los trackings. Reconectá Shopify una vez — no se pierde nada.</span>
           <button onClick={onReconectar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 14px"}}>Reconectar Shopify</button>
@@ -16670,7 +16690,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
     const mlError=url.searchParams.get("ml_error");
     if(shSuccess){
       const faltan=url.searchParams.get("shopify_scopes_faltan");
-      setMsg(faltan?"Shopify conectado, pero Shopify no otorgó el permiso para marcar envíos: todavía no está publicado en la app de Growith en Shopify. No es algo que puedas resolver reconectando; el equipo de Growith lo está habilitando.":"Shopify conectado ✓");
+      setMsg(faltan?"Shopify conectado, pero a tu app de Shopify le falta el permiso para marcar envíos. En Config → Andreani en el checkout tenés los pasos: sumar los permisos a la app, publicarla y reconectar.":"Shopify conectado ✓");
       url.searchParams.delete("shopify_success"); url.searchParams.delete("shopify_scopes_faltan");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(shError){
@@ -17516,8 +17536,8 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                   <li>Entrá a la app → <strong style={{color:T.text}}>Versiones → Crear versión</strong>. Ahí adentro está todo lo de los pasos 3 y 4.</li>
                   <li>En <strong style={{color:T.text}}>Alcances (scopes)</strong> pegá TODOS estos de una (van separados por comas):
                     <div style={{marginTop:5,display:"flex",alignItems:"center",gap:6}}>
-                      <code style={{flex:1,minWidth:0,background:T.bg,padding:"6px 8px",borderRadius:5,fontSize:9.5,color:T.accent,wordBreak:"break-all"}}>read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping</code>
-                      <button onClick={()=>{navigator.clipboard.writeText("read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping");toast("Scopes copiados ✓","success");}} style={{...BtnSecondary(T),fontSize:10,padding:"5px 9px",flexShrink:0}}>Copiar</button>
+                      <code style={{flex:1,minWidth:0,background:T.bg,padding:"6px 8px",borderRadius:5,fontSize:9.5,color:T.accent,wordBreak:"break-all"}}>{GH_SHOPIFY_SCOPES}</code>
+                      <button onClick={()=>{navigator.clipboard.writeText(GH_SHOPIFY_SCOPES);toast("Scopes copiados ✓","success");}} style={{...BtnSecondary(T),fontSize:10,padding:"5px 9px",flexShrink:0}}>Copiar</button>
                     </div>
                   </li>
                   <li>En <strong style={{color:T.text}}>URL de redireccionamiento</strong> pegá exactamente esta:
@@ -19855,7 +19875,7 @@ function AdmFichaEnvios({ctx, u}) {
         <AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ const r=await authFetch(`/api/integrations?platform=shopify&action=admin_scopes&target=${encodeURIComponent(u._id)}`); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`); setShScopes(d); }}>Ver permisos de Shopify</AdmBtn>
         {shScopes&&(shScopes.conectado===false?<span style={{fontSize:12,color:T.textSm}}>Esta cuenta no tiene Shopify conectado.</span>:(
           <span style={{fontSize:12,color:shScopes.fulfillOk?T.green:T.red,fontWeight:600}}>
-            {shScopes.shop} · {shScopes.fulfillOk?"tiene el permiso de marcar envíos":shScopes.otorgados?"SIN permiso de marcar envíos":"no se pudo leer (token inválido)"}
+            {shScopes.shop} · {shScopes.central?"app de Growith":"app propia del cliente"} · {shScopes.fulfillOk?"tiene el permiso de marcar envíos":shScopes.otorgados?"SIN permiso de marcar envíos":"no se pudo leer (token inválido)"}
             <span style={{fontWeight:400,color:T.textSm}}> · conectada {admFecha(admIso(shScopes.scopesAt||shScopes.reconnectedAt||shScopes.connectedAt))}{shScopes.faltan?.length?` · faltan: ${shScopes.faltan.join(", ")}`:""}{shScopes.refreshError?` · error de token: ${shScopes.refreshError}`:""}</span>
           </span>
         ))}

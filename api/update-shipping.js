@@ -298,6 +298,9 @@ async function subirTrackingTienda(db, uid, uData, { orderId, tracking }) {
           if (rs.ok) { const hs = ((await rs.json()).access_scopes || []).map(x => x.handle); if (hs.includes("write_merchant_managed_fulfillment_orders")) yaReconecto = false; else console.error(`[update-shipping] ${shStore.shop}: reconectada y sin scope de fulfillment (otorgados: ${hs.join(",")})`); }
         } catch (_) {}
       }
+      // App PROPIA del vendedor (creada con el tutorial de Growith): el permiso
+      // se agrega en SU app (dev.shopify.com → Versiones), no reconectando.
+      if (!shStore.central) return { ok: false, status: 403, code: "shopify_scope", appPropia: true, error: "A tu app de Shopify le falta el permiso para marcar envíos. Entrá a Config → Integraciones → Andreani en el checkout de Shopify: ahí están los pasos (sumar los permisos a tu app en dev.shopify.com, publicar la versión y reconectar). Después volvé a enviar los seguimientos: solo se reintentan los que faltan." };
       return yaReconecto
         ? { ok: false, status: 403, code: "shopify_scope", appSinScope: true, error: "Shopify no le otorgó a Growith el permiso de marcar envíos aunque la tienda ya se reconectó: ese permiso todavía no está publicado en la app de Growith dentro de Shopify. No hace falta reconectar de nuevo: el equipo de Growith lo está habilitando y los seguimientos quedan guardados para reenviar." }
         : { ok: false, status: 403, code: "shopify_scope", error: "Shopify no le dio a Growith permiso para marcar envíos (fulfillment). Reconectá Shopify desde Config → Integraciones (vuelve a pedir el permiso) y volvé a enviar los seguimientos: solo se reintentan los que faltan." };
