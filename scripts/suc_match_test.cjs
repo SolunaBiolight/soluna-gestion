@@ -151,6 +151,45 @@ eq("tplDeOficial: SAN JUSTO CENTRO",M.ghTplDeOficial(locs,sj),"SAN JUSTO (CENTRO
   eq("clave → punto",S.ghPuntoDeClave("PUNTO HOP|BALBIN|3301|1430"),{nombre:"PUNTO HOP",calle:"BALBIN",num:"3301",loc:"",cp:"1430",conPickup:true});
   eq("conflictoTpl grave",S.ghConflictoTpl(S.ghPuntoDeClave("PUNTO HOP|BALBIN|3301|1430"),"PUNTO ANDREANI HOP BALBIN 5617")?.grave,true);
   eq("conflictoTpl ok",S.ghConflictoTpl(S.ghPuntoDeClave("PUNTO HOP|BALBIN|3301|1430"),"PUNTO ANDREANI HOP BALBIN 3301"),null);
+  // ── Puntos HOP reales (api/_hop_index.json, 16/9/2026): lo que ve el lote
+  // por API una vez que sucursalesPorCp/sucursalesTodas mezclan el índice.
+  {
+    const IDX=JSON.parse(fs.readFileSync("api/_hop_index.json","utf8"));
+    const exp=r=>({id:r[0],codigo:r[1]||null,numero:r[1]?String(r[1]).replace(/\D/g,""):null,descripcion:r[2],direccion:{calle:r[3],numero:r[4],provincia:r[6],localidad:r[5],region:r[7],pais:"Argentina",codigoPostal:r[8]},horarioDeAtencion:r[11],lat:r[9],lng:r[10],hop:true});
+    const HOP=IDX.recs.map(exp);
+    const TPL={sucursales:fs.readFileSync("scripts/fixtures/tpl_sucursales.txt","utf8").split(/\r?\n/).filter(Boolean)};
+    eq("índice HOP: tamaño",HOP.length>2500,true);
+    eq("índice HOP: todos con CP y coordenadas",HOP.every(h=>/^\d{4}$/.test(h.direccion.codigoPostal)&&h.lat!=null&&h.lng!=null),true);
+    eq("índice HOP: ids únicos",new Set(HOP.map(h=>h.id)).size,HOP.length);
+    eq("índice HOP: ghEsHop los reconoce a todos",HOP.every(h=>M.ghEsHop({pickupDetails:{name:h.descripcion}})),true);
+    // Lista por CP como la arma el servidor: oficiales de Andreani + HOP del CP
+    const l1754=[suc(10020,"SAN JUSTO (CENTRO)","Mendoza","2552","San Justo","1754"),...HOP.filter(h=>h.direccion.codigoPostal==="1754")];
+    const o6510=pd("PUNTO ANDREANI HOP","Libertador General San Martín","3916","Gba Oeste","1754");
+    const p6510=M.ghPuntoDeOrden(o6510);
+    eq("#6510 lote API: match silencioso al HOP 14685",M.ghMatchOficial(l1754,p6510)?.id,14685);
+    eq("#6510 sin conflicto grave (la ciudad de TN es la región Gba Oeste)",M.ghConflictoPunto(p6510,HOP.find(h=>h.id===14685))?.grave||false,false);
+    eq("#6510 coincide",M.ghCoincidePunto(p6510,HOP.find(h=>h.id===14685)),true);
+    eq("#6510 Excel: traducción al desplegable",M.ghTplDeOficial(TPL,HOP.find(h=>h.id===14685)),"PUNTO ANDREANI HOP LIBERTADOR GENERAL SAN MARTÍN");
+    const l1430=[suc(10004,"VILLA URQUIZA (AV  ALVAREZ TOMAS)","Av. Alvarez Thomas","3500","C.a.b.a.","1427"),...HOP.filter(h=>h.direccion.codigoPostal==="1430")];
+    const o6453=pd("PUNTO ANDREANI HOP","Avenida Doctor Ricardo Balbín","3301","Sin Region","1430");
+    const p6453=M.ghPuntoDeOrden(o6453);
+    eq("#6453 lote API: match silencioso al HOP 16652",M.ghMatchOficial(l1430,p6453)?.id,16652);
+    // Buscador global (todo el índice + los 9 Balbín de nombre idéntico): sigue único
+    eq("#6453 buscador global: único entre todos los HOP",M.ghMatchOficial(HOP,p6453)?.id,16652);
+    eq("#6510 buscador global: único entre todos los HOP",M.ghMatchOficial(HOP,p6510)?.id,14685);
+    const tpl6453=M.ghTplDeOficial(TPL,HOP.find(h=>h.id===16652));
+    eq("#6453 Excel: traducción al desplegable (nombre recortado)",String(tpl6453||"").trim(),"PUNTO ANDREANI HOP AVENIDA DOCTOR RICARDO BALBÍN");
+    // Un pedido a OTRO Balbín (5617) no puede caer en el 3301
+    const pOtro=M.ghPuntoDeOrden(pd("PUNTO ANDREANI HOP","Avenida Doctor Ricardo Balbín","5617","C.a.b.a.","1431"));
+    const mOtro=M.ghMatchOficial(HOP,pOtro);
+    eq("Balbín 5617 no matchea al 3301",mOtro?.id===16652,false);
+    eq("Balbín 5617: si matchea, es el de número 5617",!mOtro||mOtro.direccion.numero==="5617",true);
+    // Muestra amplia: para cada HOP con número, un pedido con su calle+número+CP lo encuentra a él (o a nadie), nunca a otro
+    let malos=0, hallados=0, probados=0;
+    for(const h of HOP.filter((_,i)=>i%7===0)){ if(!/^\d+$/.test(h.direccion.numero)) continue; probados++; const p=M.ghPuntoDeOrden(pd("PUNTO ANDREANI HOP",h.direccion.calle,h.direccion.numero,h.direccion.localidad,h.direccion.codigoPostal)); const m=M.ghMatchOficial(HOP.filter(x=>x.direccion.codigoPostal===h.direccion.codigoPostal),p); if(m){ hallados++; if(m.id!==h.id&&!(m.direccion.calle===h.direccion.calle&&m.direccion.numero===h.direccion.numero)) malos++; } }
+    eq(`muestra ${probados} HOP por CP: ninguno cae en OTRO punto`,malos,0);
+    eq(`muestra ${probados} HOP por CP: la gran mayoría se encuentra (${hallados})`,hallados>=probados*0.9,true);
+  }
   console.log(`${n-fails}/${n} ok${fails?` — ${fails} FALLAS`:""}`);
   process.exit(fails?1:0);
 })();
