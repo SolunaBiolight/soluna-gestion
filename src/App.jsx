@@ -4391,8 +4391,8 @@ function buildOrdersFromAPI(data) {
       medioEnvio:o.shipping_option||'', medioPago:o.payment_details?.method||o.gateway_name||'',
       esSucursal:(()=>{
         const name=(o.shipping_option||'').toLowerCase();
-        const fulfillName=o.fulfillments?.some(f=>{const n=(f.shipping?.option?.name||'').toLowerCase();return n.includes('sucursal')||n.includes('hop')||n.includes('retiro')||n.includes('andreani punto');});
-        return fulfillName||name.includes('sucursal')||name.includes('hop')||name.includes('retiro')||name==='punto de retiro'||!!o.shipping_pickup_details||false;
+        const fulfillName=o.fulfillments?.some(f=>{const n=(f.shipping?.option?.name||'').toLowerCase();return n.includes('sucursal')||/\bhop\b/.test(n)||n.includes('retiro')||n.includes('andreani punto');});
+        return fulfillName||name.includes('sucursal')||/\bhop\b/.test(name)||name.includes('retiro')||name==='punto de retiro'||!!o.shipping_pickup_details||false;
       })(),
       pickupDetails:o.shipping_pickup_details||null,
       // Método "Growith · Andreani" elegido en el checkout de Shopify: trae el
@@ -11461,9 +11461,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // CP que define la tarifa: para sucursal es el CP de la SUCURSAL (así lo
   // tarifa el backend al emitir), no el del pedido.
   function cpCotDe(r){ return r.tipo==="sucursal"?(String(r.oficial?.direccion?.codigoPostal||"").replace(/\D/g,"")||cpDestinoDe(r.order)):String(r.order.cp||"").trim(); }
-  async function cotizarBulk(opts={}){    await cotizarBulk();
-  }
-  async function cotizarBulk(){
+  async function cotizarBulk(opts={}){
     const rows=bulkRowsRef.current;
     const aCotizar=rows.filter(r=>r.incluido&&!r.cot&&!r.emitido);
     const fase=opts.silencioso?"revision":"cotizando";
@@ -14777,7 +14775,7 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
     const d=await r.json().catch(()=>({}));
     if(d&&d.pdf){
       let pdf=d.pdf;
-      if(dlSku){ try{ pdf=await ghEstamparSkuPdf(pdf,ghSkuLinesDe(order)); }catch(e){ console.error("sku en etiqueta:",e); } }
+      if(dlSku){ try{ pdf=await ghEstamparSkuPdf(pdf,ghSkuLinesDe(o)); }catch(e){ console.error("sku en etiqueta:",e); } }
       if(dlFmt==="termica"){
         try{ ghDescargarPdfBytes(await ghPdfTermica10x15([pdf]),`Andreani_${numero}_10x15.pdf`); }
         catch(e){ toast("No se pudo convertir a 10x15: "+e.message,"error"); return; }

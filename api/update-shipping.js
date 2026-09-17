@@ -372,7 +372,10 @@ export default async function handler(req, res) {
         const cfgU = ud.enviosCfg || {};
         const tiendaNombre = String(ud.storeName || ud.nombreTienda || ud.nombre || "").trim() || "la tienda";
         // Envíos activos con tracking, no finalizados, sin chequear hace 25+ min.
-        const envSnap = await uDoc.ref.collection("envios").where("activo", "==", true).limit(60).get();
+        // Sin orderBy (necesitaría índice compuesto): se traen hasta 300 activos y
+        // la rotación por lastCheck se hace en memoria — con limit(60) los
+        // números de pedido más altos no entraban nunca.
+        const envSnap = await uDoc.ref.collection("envios").where("activo", "==", true).limit(300).get();
         const pendientes = envSnap.docs
           // Con tracking (scraping) o emitidos por nuestra API oficial
           // (andreani.numeroDeEnvio) — estos últimos se trackean por API.
@@ -991,8 +994,16 @@ export default async function handler(req, res) {
       if (fr.status === 401 || fr.status === 403) return sinPermiso();
       if (!fr.ok) throw new Error(`Shopify fulfillment_orders error ${fr.status}`);
       const fd = await fr.json();
-      const abiertos = (fd.fulfillment_orders || []).filter(fo => ["open", "in_progress", "scheduled", "on_hold"].includes((fo.status || "").toLowerCase()));
-      if (!abiertos.length) return res.status(400).json({ error: `El pedido #${orderId} no tiene items pendientes de despacho en Shopify.` });
+      // Shopify solo deja crear el fulfillment sobre FO open / in_progress: un
+      // FO en espera (on_hold: fraude, pago pendiente) o programado (scheduled)
+      // hace fallar el POST entero con 422, así que no se incluye y se avisa.
+      const fos = fd.fulfillment_orders || [];
+      const abiertos = fos.filter(fo => ["open", "in_progress"].includes((fo.status || "").toLowerCase()));
+      if (!abiertos.length) {
+        const enEspera = fos.some(fo => ["on_hold", "scheduled"].includes((fo.status || "").toLowerCase()));
+        if (enEspera) return res.status(400).json({ error: `El pedido #${orderId} está en espera en Shopify (retenido o programado): liberalo en Shopify y volvé a enviar el seguimiento.`, code: "shopify_hold" });
+        return res.status(400).json({ error: `El pedido #${orderId} no tiene items pendientes de despacho en Shopify.` });
+      }
       // 3. Crear el fulfillment con tracking + aviso al cliente
       let fulfilled = false, fulfillError = null;
       const pr = await shFetch(`${shBase}/fulfillments.json`, {

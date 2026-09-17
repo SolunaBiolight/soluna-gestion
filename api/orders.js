@@ -2578,7 +2578,7 @@ export default async function handler(req, res) {
         // shipping_address con la dirección del punto. Se arma un pickup
         // sintético para que el matcheo de sucursal Andreani y su verificación
         // contra la tienda trabajen igual que con Tienda Nube.
-        shipping_pickup_details: /sucursal|punto|hop|retiro|pickup/i.test(o.shipping_lines?.[0]?.title || "")
+        shipping_pickup_details: /sucursal|punto|\bhop\b|retiro|pickup/i.test(o.shipping_lines?.[0]?.title || "")
           ? { name: o.shipping_lines[0].title, address: { address: calle, number: numero === "0" ? "" : numero, locality: sh.city || "", city: sh.city || "", zipcode: sh.zip || "", province: sh.province || "" },
               // Tarifa Growith·Andreani elegida en el checkout: el código trae el
               // id OFICIAL de la sucursal → Envíos emite sin adivinar el punto.
