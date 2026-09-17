@@ -4,7 +4,8 @@
 // destino y los ítems, y respondemos las tarifas que ve el comprador:
 //   • "Andreani a domicilio"            (código ANDREANI_DOM)
 //   • "Andreani Sucursal · <sucursal>"   (código ANDREANI_SUC_<id oficial>), una
-//     por sucursal que atiende ese CP (hasta `sucursalesMax`).
+//     por sucursal que atiende ese CP (hasta `sucursalesMax`), y después
+//   • "Punto HOP Andreani · <calle número>" (mismo código; índice api/_hop.js).
 // El precio es el MISMO que Growith le cobra al vendedor por la etiqueta
 // (tarifa Andreani + markup de plataforma) más el recargo/gratis que configure
 // la tienda. El id oficial viaja en el código del método → al leer el pedido
@@ -55,7 +56,7 @@ function tituloSucursal(s) {
   // "PUNTO ANDREANI HOP" — al comprador se le muestra la dirección del punto.
   if (esHopItem(s)) {
     const dir = [d.calle, d.numero].filter(Boolean).join(" ");
-    return `Andreani Punto HOP · ${clip(dir || String(s.descripcion || "").replace(/^punto andreani hop\s*/i, "") || s.id, 44)}`;
+    return `Punto HOP Andreani · ${clip(dir || String(s.descripcion || "").replace(/^punto andreani hop\s*/i, "") || s.id, 44)}`;
   }
   const desc = clip(s.descripcion || s.codigo || `Sucursal ${s.id}`, 48);
   return `Andreani Sucursal · ${desc}`;
@@ -165,10 +166,10 @@ const RADIO_M = 10000;
 let _dbg = {}; // diagnóstico de la última selección (solo se devuelve con ?debug=1)
 async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
   _dbg = { cp, loc };
-  const cacheRef = db.collection("andreani_config").doc(`rates_suc9_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
+  const cacheRef = db.collection("andreani_config").doc(`rates_suc10_${cp}_${(nrmK(loc) || "x").slice(0, 60)}`);
   try {
     const c = (await cacheRef.get()).data();
-    if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return c.lista.slice(0, max);
+    if (c && Array.isArray(c.lista) && c.lista.length && Date.now() - (c.ts || 0) < SUC_LIST_TTL_MS) return elegirParaMostrar(c.lista, max);
   } catch (_) {}
   let lista = [];
   try {
@@ -181,7 +182,13 @@ async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
       // Las ubicadas EN el CP del comprador van arriba de todo; el resto por distancia.
       const cpS = String(cp);
       const enCp = s => String(s.direccion?.codigoPostal || "").replace(/\D/g, "").slice(0, 4) === cpS;
-      const cerca = dedupeSucursales(conDist).filter(s => s.distM <= RADIO_M).sort((a, b) => (enCp(b) - enCp(a)) || (a.distM - b.distM));
+      // Sucursales Andreani PRIMERO (retirar en sucursal da muchos menos
+      // problemas que un punto HOP: se empuja al comprador hacia ellas) y
+      // recién después los puntos HOP; dentro de cada grupo, las del CP del
+      // comprador arriba y el resto por distancia. Ojo: a igual precio Shopify
+      // ordena alfabético, por eso el título de los HOP empieza con "Punto".
+      const esHopS = s => esHopItem(s) ? 1 : 0;
+      const cerca = dedupeSucursales(conDist).filter(s => s.distM <= RADIO_M).sort((a, b) => (esHopS(a) - esHopS(b)) || (enCp(b) - enCp(a)) || (a.distM - b.distM));
       lista = cerca.length ? cerca : (conDist.length ? [conDist[0]] : []);
     } else {
       // Sin ancla: las que Andreani define que atienden el CP (mismo CP primero).
@@ -191,10 +198,23 @@ async function sucursalesParaCheckout(db, env, { cp, loc, prov }, max) {
     _dbg.ancla = ancla ? ancla.src : "ninguna"; _dbg.candidatas = lista.length; _dbg.hop = lista.filter(s => /hop|punto andreani/i.test(s.descripcion || "")).length; _dbg.sinCoords = pub.filter(s => !enARll(s.lat, s.lng)).length;
   } catch (e) { _dbg.error = e.message; console.error("[shopify-rates] sucursales:", e.message); }
   if (!lista.length) lista = (await sucursalesCercanasCp(db, env, cp, 3)).slice(0, 1);
-  lista = dedupeSucursales(lista.filter(esPuntoPublico)).slice(0, 12)
+  // La caché guarda hasta 12 candidatas, mitad sucursales y mitad HOP (si se
+  // cortara por orden, en CABA las sucursales llenarían los 12 lugares).
+  lista = elegirParaMostrar(dedupeSucursales(lista.filter(esPuntoPublico)), 12)
     .map(s => ({ id: s.id, descripcion: s.descripcion || "", direccion: s.direccion || null, horarioDeAtencion: s.horarioDeAtencion || "", distM: s.distM ?? null, hop: !!s.hop }));
   if (lista.length) cacheRef.set({ ratesUid: "_suc", cp, ts: Date.now(), lista }).catch(() => {});
-  return lista.slice(0, max);
+  return elegirParaMostrar(lista, max);
+}
+// Qué ve el comprador dentro del tope `sucursalesMax`: sucursales Andreani
+// primero (hasta la mitad del tope, mínimo 1) y después los puntos HOP; si
+// sobran lugares, más sucursales. Con el tope por defecto (3): 2 sucursales +
+// 1 HOP. Así el HOP nunca desaparece en zonas con muchas sucursales, pero la
+// sucursal es siempre la primera opción.
+function elegirParaMostrar(lista, max) {
+  const suc = lista.filter(s => !esHopItem(s)), hop = lista.filter(s => esHopItem(s));
+  const nSuc = Math.max(1, Math.ceil(max / 2));
+  const out = [...suc.slice(0, nSuc), ...hop.slice(0, Math.max(0, max - Math.min(suc.length, nSuc))), ...suc.slice(nSuc)];
+  return out.slice(0, max);
 }
 
 // Sucursales para ofrecer en el checkout: las del CP exacto primero y, si no
