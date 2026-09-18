@@ -971,6 +971,14 @@ const SIDEBAR_GROUPS_BASE = [
       // internas de esa página; sus ids siguen vivos como margenesTab (aliases).
       subs:[{id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"costos",label:"Configuraciones"}]},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
+    { group:"OPERACIONES" },
+    {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
+      subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"},{id:"checkout",label:"Checkout"}]},
+    {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", alertKey:"reclamos", badge:"red",
+      subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
+    {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", alertKey:"canjes", badge:"orange"},
+    {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", alertKey:"tareas", badge:"orange"},
+    {id:"calendario", label:"Calendario de Pagos", icon:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18", alertKey:"calendario", badge:"red"},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"analisis",label:"Análisis"},{id:"reglas",label:"Reglas"},/* {id:"publicador",label:"Publicador IA"} — oculto por ahora (Thiago, 2026-09-11) */{id:"cuenta",label:"Cuenta"}]},
@@ -989,14 +997,6 @@ const SIDEBAR_GROUPS_BASE = [
       {id:"pubtiktok", permKey:"tiktokads", label:"TikTok", soon:TIKTOK_PRONTO, icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z", go:{page:"tiktokads",tab:"publicar"}},
       {id:"pubgads",   permKey:"gads",      label:"Google",        icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z", go:{page:"gads",tab:"publicar"}},
     ]},
-    { group:"OPERACIONES" },
-    {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
-      subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"},{id:"checkout",label:"Checkout"}]},
-    {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", alertKey:"reclamos", badge:"red",
-      subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
-    {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", alertKey:"canjes", badge:"orange"},
-    {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", alertKey:"tareas", badge:"orange"},
-    {id:"calendario", label:"Calendario de Pagos", icon:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18", alertKey:"calendario", badge:"red"},
     { group:"RECOMPENSAS" },
     {id:"referidos",label:"Referidos", icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
     {id:"planes",   label:"Suscripción", icon:"M2 5h20v14H2zM2 10h20M6 15h4"},
@@ -12810,7 +12810,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                           const a=document.createElement("a");
                           a.href=url;a.download=`rotulos-con-sku-${hoyAR()}.pdf`;a.click();
                           URL.revokeObjectURL(url);
-                        }} style={{...BtnPrimary(T),background:T.green,borderColor:T.green,fontSize:14,padding:"12px 24px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                        }} style={{...BtnPrimary(T),background:`${T.green}1f`,borderColor:`${T.green}88`,color:T.green,boxShadow:`0 0 0 1px ${T.green}15, 0 4px 16px ${T.green}22`,fontSize:14,padding:"12px 24px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                           Descargar PDF
                         </button>
@@ -12835,7 +12835,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         <div style={{fontSize:12,color:T.textSm}}>{pend.length>0?`${pend.length} tracking(s) del mismo PDF, listos para subir (avisa al cliente y activa el seguimiento automático)`:done?`${okCount} enviados — ver estado en la pestaña Seguimientos`:"Sin trackings pendientes"}</div>
                       </div>
                       {pend.length>0&&(
-                        <AsyncButton onClick={sendAllTracking} style={{...BtnPrimary(T),background:T.blue,borderColor:T.blue,fontSize:14,padding:"12px 22px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                        <AsyncButton onClick={sendAllTracking} style={{...BtnPrimary(T),background:`${T.blue}1f`,borderColor:`${T.blue}88`,color:T.blue,boxShadow:`0 0 0 1px ${T.blue}15, 0 4px 16px ${T.blue}22`,fontSize:14,padding:"12px 22px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                           Enviar {pend.length} seguimiento{pend.length!==1?"s":""}
                         </AsyncButton>
                       )}
@@ -25850,7 +25850,7 @@ function ColaboradorPublicView({T, token}) {
                             placeholder="Escribí tu consulta detallada..."
                             style={{...iS,fontSize:13,width:"100%",minHeight:60,resize:"vertical",marginBottom:8}}/>
                           <div style={{display:"flex",gap:6}}>
-                            <AsyncButton onClick={()=>submitConsulta(t._id)} style={{...BtnPrimary(T),fontSize:12,background:T.blue}}>Enviar consulta</AsyncButton>
+                            <AsyncButton onClick={()=>submitConsulta(t._id)} style={{...BtnPrimary(T),fontSize:12,background:`${T.blue}1f`,borderColor:`${T.blue}88`,color:T.blue,boxShadow:`0 0 0 1px ${T.blue}15, 0 4px 16px ${T.blue}22`}}>Enviar consulta</AsyncButton>
                             <button onClick={()=>setShowConsulta(p=>({...p,[t._id]:false}))} style={{...BtnSecondary(T),fontSize:12}}>Cancelar</button>
                           </div>
                         </div>
