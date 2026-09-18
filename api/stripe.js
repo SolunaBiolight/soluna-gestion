@@ -44,6 +44,21 @@ const PRECIOS = {
 // Multi-tienda: el plan incluye 1 tienda; cada tienda ADICIONAL suma esto por
 // mes (USD). Mismo cuadro que api/tareas.js (PLAN_EXTRA_TIENDA) y AppPlanes.
 const PRECIO_EXTRA_TIENDA = { facturador: 5, medio: 10, plus: 15 };
+// Nivel de cada plan (para saber si un cambio es subir o bajar). "full" es el
+// plan viejo equivalente a Pro.
+const NIVEL = { facturador: 1, medio: 2, plus: 3, full: 3 };
+const toDate = v => v?.toDate?.() || (v?._seconds ? new Date(v._seconds * 1000) : (v?.seconds ? new Date(v.seconds * 1000) : (v ? new Date(v) : null)));
+// Plan pagado A MANO (transferencia / USDT / Admin) todavía vigente y sin
+// suscripción de Stripe: los días ya pagos no se pierden. La suscripción se
+// crea con trial_end = vencimiento actual → la tarjeta se guarda ahora y el
+// primer cobro es recién ese día (Stripe exige al menos 48 h de anticipación;
+// si falta menos, se cobra ahora y no vale la pena diferir).
+function manualVigente(u) {
+  if (u.stripeSubscriptionId || !u.plan || u.plan === "free" || u.isTrial) return null;
+  const vence = toDate(u.planExpiry);
+  if (!vence || isNaN(vence) || vence.getTime() < Date.now() + 48 * 3600000) return null;
+  return vence;
+}
 const tiendasExtraDe = (d) => (Array.isArray(d?.tiendas) ? d.tiendas : []).filter(t => t && t.uid && !t.deleted).length;
 // Ítem de suscripción "Tienda adicional" (precio inline, cantidad = tiendas extra).
 const extraPriceData = (plan, periodo) => {
@@ -167,6 +182,14 @@ async function procesarInvoicePaid(db, inv) {
   const periodEnd = line ? new Date(line.period.end * 1000) : (sub?.current_period_end ? new Date(sub.current_period_end * 1000) : null);
   const now = new Date();
   const esAlta = inv.billing_reason === "subscription_create";
+  // Alta diferida (plan manual vigente): la primera factura es de $0 y la
+  // suscripción queda "trialing" hasta el vencimiento del plan pago a mano.
+  // No hay cobro → no hay doc en pagos ni comisión de referidos todavía; solo
+  // se guarda la tarjeta/suscripción y se avisa la fecha del primer cobro.
+  const montoCero = !(Number(inv.amount_paid) > 0) && !(Number(inv.total) > 0);
+  if (esAlta && montoCero && (meta.arrancaAlVencer === "1" || sub?.status === "trialing")) {
+    return procesarAltaDiferida(db, inv, sub, meta, { uid, plan, periodo, subId, periodEnd });
+  }
   const refCreditAplicado = esAlta ? +(Number(meta.refCreditAplicado) || 0).toFixed(2) : 0;
   const pagoId = `stripe_${inv.id}`;
   const pagoRef = db.collection("pagos").doc(pagoId);
@@ -204,6 +227,41 @@ async function procesarInvoicePaid(db, inv) {
         <p>${esAlta ? `¡Listo! Tu pago con tarjeta se procesó y tu plan <strong>${nombre}</strong> ya está activo.` : `Se renovó tu plan <strong>${nombre}</strong> con la tarjeta guardada.`}</p>
         ${periodEnd ? `<p>Tenés acceso hasta el <strong>${fechaAR(periodEnd)}</strong>. Se renueva solo; podés cancelar cuando quieras desde Growith → Mi cuenta.</p>` : ""}
         ${inv.hosted_invoice_url ? `<p><a href="${inv.hosted_invoice_url}">Ver la factura</a></p>` : ""}
+        <p>Gracias por usar Growith.</p></div>` });
+  }
+}
+
+// Alta diferida: guarda la suscripción (sin tocar plan ni vencimiento, que
+// siguen siendo los del pago manual), aplica el crédito de referidos como
+// SALDO del cliente en Stripe (se descuenta solo de la primera factura real;
+// un cupón "once" se consumiría en la factura de $0) y avisa por mail.
+async function procesarAltaDiferida(db, inv, sub, meta, { uid, plan, periodo, subId, periodEnd }) {
+  const userRef = db.collection("users").doc(uid);
+  const customer = typeof inv.customer === "string" ? inv.customer : inv.customer?.id || null;
+  const arranca = periodEnd || (sub?.trial_end ? new Date(sub.trial_end * 1000) : null);
+  const uSnap = await userRef.get(); const u = uSnap.data() || {};
+  if (u.stripeSubscriptionId === subId && u.stripeStatus === "trialing") return; // webhook repetido
+  await userRef.set({
+    stripeCustomerId: customer, stripeSubscriptionId: subId || null, stripeStatus: "trialing", cancelAtPeriodEnd: false,
+    stripeArrancaAt: arranca || null, stripePlanPendiente: plan, stripePeriodoPendiente: periodo,
+  }, { merge: true });
+  const cred = +(Number(meta.refCreditPendiente) || 0).toFixed(2);
+  if (cred > 0 && customer) {
+    try {
+      // Idempotente por factura: si Stripe reintenta el webhook no se duplica el saldo.
+      await stripe("POST", `/customers/${customer}/balance_transactions`, { amount: -Math.round(cred * 100), currency: "usd", description: "Crédito de referidos Growith" }, `refbal_${inv.id}`);
+      await descontarCreditoAplicado(db, `stripe_${inv.id}`, { uid, plan, refCreditAplicado: cred });
+    } catch (e) { console.error("[stripe] crédito referidos como saldo:", e.message); }
+  }
+  console.log(`[stripe] ✓ ${uid} → ${plan} ${periodo} diferido hasta ${arranca ? arranca.toISOString().slice(0, 10) : "?"}`);
+  const email = String(inv.customer_email || meta.email || u.email || "").slice(0, 120);
+  if (email) {
+    const nombre = PRECIOS[plan].nombre;
+    await sendEmail({ to: email, subject: `Tarjeta guardada: tu plan ${nombre} se renueva solo`,
+      html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111">
+        <p>Listo: guardamos tu tarjeta y tu plan <strong>${nombre}</strong> queda con renovación automática.</p>
+        <p>Como tu plan actual ya está pago${arranca ? ` hasta el <strong>${fechaAR(arranca)}</strong>` : ""}, <strong>no te cobramos nada ahora</strong>: el primer cobro se hace recién ese día y de ahí en más se renueva solo.${cred > 0 ? ` Tu crédito de referidos (USD ${cred.toFixed(2)}) se descuenta de ese primer cobro.` : ""}</p>
+        <p>Podés cambiar la tarjeta o cancelar cuando quieras desde Growith → Suscripción.</p>
         <p>Gracias por usar Growith.</p></div>` });
   }
 }
@@ -331,8 +389,12 @@ export default async function handler(req, res) {
       // Crédito de referidos: cupón de una sola vez por el monto acumulado
       const p = precioDe(plan, periodo);
       const cred = +Math.min(Number(u.refCreditUsd) || 0, p.unit).toFixed(2);
+      // Plan manual vigente y el plan elegido no es una suba → arranca al vencer.
+      // Una SUBA se cobra ahora (el cliente quiere las funciones nuevas ya).
+      const venceManual = manualVigente(u);
+      const arrancaAlVencer = !!venceManual && (NIVEL[plan] || 0) <= (NIVEL[u.plan] || 0);
       let discounts;
-      if (cred > 0) {
+      if (cred > 0 && !arrancaAlVencer) {
         const coupon = await stripe("POST", "/coupons", { amount_off: Math.round(cred * 100), currency: "usd", duration: "once", name: "Crédito de referidos", max_redemptions: 1 });
         discounts = [{ coupon: coupon.id }];
       }
@@ -344,14 +406,16 @@ export default async function handler(req, res) {
           ...(tiendasExtraDe(u) > 0 ? [{ price_data: extraPriceData(plan, periodo), quantity: tiendasExtraDe(u) }] : []),
         ],
         ...(discounts ? { discounts } : { allow_promotion_codes: true }),
-        subscription_data: { metadata: { uid, plan, periodo, refCreditAplicado: cred, email: u.email || "" } },
+        subscription_data: arrancaAlVencer
+          ? { trial_end: Math.floor(venceManual.getTime() / 1000), metadata: { uid, plan, periodo, refCreditAplicado: 0, refCreditPendiente: cred, arrancaAlVencer: "1", email: u.email || "" } }
+          : { metadata: { uid, plan, periodo, refCreditAplicado: cred, email: u.email || "" } },
         metadata: { uid, plan, periodo },
         success_url: `${origin}/#/planes?stripe=ok`,
         cancel_url: `${origin}/#/planes?stripe=cancel`,
         billing_address_collection: "auto",
         customer_update: { address: "auto", name: "auto" },
       });
-      return res.json({ url: session.url });
+      return res.json({ url: session.url, arrancaAlVencer, vence: arrancaAlVencer ? venceManual.toISOString() : null });
     }
 
     if (action === "portal") {

@@ -18649,7 +18649,7 @@ function AppCalendarioPagos({T,user,onHome}){
     </div>
   );
 }
-function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT_EMAIL, isTrialExpired=false}) {
+function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT_EMAIL, isTrialExpired=false, planVencido=null}) {
   // Sección Suscripción: estado del plan, pago con tarjeta (Stripe) y cambio
   // de plan. Único medio de pago desde el 7/sep/2026.
   const [step,setStep]=useState("planes");
@@ -18714,6 +18714,10 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   ];
   const planActualId=userPlan==="full"?"plus":userPlan;
   const planActual=PLANES.find(p=>p.id===planActualId)||null;
+  // Plan pago vencido (no prueba): el cartel y la tarjeta del plan lo nombran.
+  const planVencidoPl=planVencido?PLANES.find(p=>p.id===(planVencido==="full"?"plus":planVencido))||null:null;
+  // Pasar de pago manual a tarjeta: Stripe no cobra hasta el vencimiento actual.
+  const diferido=uDoc?.stripeStatus==="trialing";
   const isPago=!!planActual&&!isTrialExpired;
   const stripe=!!uDoc?.stripeSubscriptionId;
   const cancela=!!uDoc?.cancelAtPeriodEnd;
@@ -18732,7 +18736,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       const r=await authFetch("/api/stripe?action=checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:(auth.currentUser?.uid||user.uid),plan:planId,periodo:anual?"anual":"mensual"})});
       const d=await r.json().catch(()=>({}));
       if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`);
-      if(d.url){ window.location.href=d.url; return; }
+      if(d.url){ try{ if(d.arrancaAlVencer) sessionStorage.setItem("growith_stripe_diferido","1"); else sessionStorage.removeItem("growith_stripe_diferido"); }catch(e){} window.location.href=d.url; return; }
       if(d.changed){ toast(`Plan cambiado a ${pl?.nombre}${anual?" anual":""}`,"success"); setLoadingPlan(null); return; }
       if(d.already){ toast("Ya tenés ese plan activo","info"); setLoadingPlan(null); return; }
       throw new Error("Respuesta inesperada");
@@ -18777,6 +18781,24 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   ];
 
   if(step==="stripe_ok"){
+    // Alta diferida (plan manual vigente): la tarjeta quedó guardada y el
+    // primer cobro es al vencer; se confirma cuando el webhook marca "trialing".
+    let esDiferido=false; try{ esDiferido=sessionStorage.getItem("growith_stripe_diferido")==="1"; }catch(e){}
+    if(esDiferido){
+      const ok=!!uDoc?.stripeSubscriptionId;
+      return (
+        <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <Card T={T} padding="xl" style={{maxWidth:440,width:"100%",textAlign:"center"}}>
+            <div style={{display:"flex",justifyContent:"center",marginBottom:18}}>{ok?<StatusIcon type="success" size={64}/>:<Spinner size={36} color={T.accent}/>}</div>
+            <div style={{fontSize:20,fontWeight:800,color:T.text,marginBottom:8,letterSpacing:-0.3}}>{ok?"Tarjeta guardada":"Guardando la tarjeta"}</div>
+            <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,marginBottom:22}}>
+              {ok?`Tu plan actual ya está pago hasta el ${fmtF(planExpiry)}, así que no se te cobró nada: el primer cobro se hace ese día y desde ahí se renueva solo. Podés cancelar cuando quieras desde Suscripción.`:"Stripe nos está avisando. Tarda unos segundos y esta pantalla se actualiza sola."}
+            </div>
+            <Btn T={T} variant="primary" size="lg" onClick={()=>{ try{ sessionStorage.removeItem("growith_stripe_diferido"); }catch(e){} onBack(); }} disabled={!ok} style={{width:"100%",justifyContent:"center"}}>{ok?"Ir a Growith":"Esperando confirmación"}</Btn>
+          </Card>
+        </div>
+      );
+    }
     return (
       <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
         <Card T={T} padding="xl" style={{maxWidth:440,width:"100%",textAlign:"center"}}>
@@ -18818,8 +18840,8 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             </div>
             <div style={{flex:1,minWidth:220}}>
-              <div style={{fontSize:DS.font["2xl"],fontWeight:800,color:T.text,letterSpacing:-0.4}}>Tu prueba gratis terminó</div>
-              <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:4}}>Elegí un plan para seguir. Facturas, integraciones y envíos siguen guardados tal cual.</div>
+              <div style={{fontSize:DS.font["2xl"],fontWeight:800,color:T.text,letterSpacing:-0.4}}>{planVencidoPl?`Tu plan ${planVencidoPl.nombre} venció`:"Tu prueba gratis terminó"}</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:4}}>{planVencidoPl?`Venció el ${fmtF(planExpiry)}. Renovalo con tarjeta para seguir: de ahí en más se renueva solo. Facturas, integraciones y envíos siguen guardados tal cual.`:"Elegí un plan para seguir. Facturas, integraciones y envíos siguen guardados tal cual."}</div>
             </div>
           </div>
         ):isPago&&planActual?(
@@ -18844,7 +18866,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
               <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginTop:16}}>
                 {stripe&&<Btn T={T} variant="secondary" size="sm" onClick={abrirPortal}>Tarjeta, recibos y cancelación</Btn>}
                 {cancela&&<Btn T={T} variant="primary" size="sm" onClick={()=>cancelar(true)}>Reactivar renovación</Btn>}
-                <span style={{fontSize:DS.font.md,color:T.textSm}}>{!stripe?"Este plan se pagó a mano: cuando venza, renovalo desde acá con tarjeta.":planActualId==="plus"?"Tenés el plan completo.":"Si subís de plan, el cambio es inmediato y se cobra solo la diferencia."}</span>
+                <span style={{fontSize:DS.font.md,color:T.textSm}}>{!stripe?`Este plan se pagó a mano. Podés cargar la tarjeta ahora: no se te cobra nada hasta el ${fmtF(planExpiry)} y desde ese día se renueva solo.`:diferido?`Tarjeta guardada: el primer cobro se hace el ${fmtF(planExpiry)} y desde ahí se renueva solo.`:planActualId==="plus"?"Tenés el plan completo.":"Si subís de plan, el cambio es inmediato y se cobra solo la diferencia."}</span>
               </div>
             )}
           </div>
@@ -18886,9 +18908,10 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
               else { label="Renovar con tarjeta"; primario=true; }
             }
             else if(isPago&&planActual){ label=pl.nivel>planActual.nivel?`Pasar a ${pl.nombre}`:`Cambiar a ${pl.nombre}`; primario=pl.nivel>planActual.nivel; }
+            else if(planVencidoPl){ label=planVencidoPl.id===pl.id?`Renovar ${pl.nombre}`:`Pasar a ${pl.nombre}`; primario=planVencidoPl.id===pl.id; }
             else { label=`Empezar con ${pl.nombre}`; primario=!!pl.destacado; }
             const onClick=()=>{ if(esActual&&stripe&&cancela) cancelar(true); else elegir(pl.id); };
-            const dest=pl.destacado;
+            const dest=planVencidoPl?planVencidoPl.id===pl.id:pl.destacado;
             return (
               <div key={pl.id} style={{position:"relative",background:T.card,border:`1.5px solid ${esActual?pl.color:dest?T.accentSolid:T.border}`,borderRadius:22,padding:"30px 26px 24px",display:"flex",flexDirection:"column",boxShadow:dest?`0 0 0 5px ${T.accentSolid}18, 0 24px 60px ${T.accentSolid}30`:esActual?`0 0 0 5px ${pl.color}14`:DS.shadow.md,opacity:loadingPlan&&!cargando?0.6:1,transition:"opacity 0.15s, transform 0.15s"}}>
                 {(esActual||dest)&&(
@@ -19083,6 +19106,7 @@ function admOrigen(u,ultPago){
   if((u.plan||"free")==="free") return {label:"—"};
   if(u.isTrial) return {label:"Prueba"};
   if(u.stripeStatus==="active"||u.stripeStatus==="past_due"||u.planActivadoBy==="stripe") return {label:"Stripe"};
+  if(u.stripeStatus==="trialing") return {label:"Manual → Stripe"};
   if(ultPago){ if(ultPago.method==="stripe") return {label:"Stripe"}; if(ultPago.method==="cripto") return {label:"USDT"}; if(ultPago.method==="credito") return {label:"Crédito referidos"}; return {label:"Transferencia"}; }
   return {label:"Manual"};
 }
@@ -19678,7 +19702,7 @@ function AdmResumen({ctx, stats}) {
         <AdmKpi T={T} label="MRR" val={admUsd(stats.mrr||0)} sub={`${stats.mrrStripe?admUsd(stats.mrrStripe)+" por Stripe":"Sin cobros por Stripe"}${stats.mrrManual?" · "+admUsd(stats.mrrManual)+" manual":""}`} color={T.green} n={stats.mrr}/>
         <AdmKpi T={T} label="Clientes pagos" val={String(stats.pagas||0)} sub={`${stats.pruebas||0} en prueba · ${stats.totalUsuarios||0} cuentas en total`} color={T.blue} n={stats.pagas}/>
         <AdmKpi T={T} label="Pagos fallidos" val={String(pastDue.length)} sub={pastDue.length?"Stripe no pudo cobrar la renovación":"Ninguna tarjeta rechazada"} color={T.red} n={pastDue.length}/>
-        <AdmKpi T={T} label="Vencen en 7 días" val={String(vencenProximos.length)} sub={vencenProximos.length?`${vencenProximos.filter(u=>u.stripeStatus==="active"&&!u.cancelAtPeriodEnd).length} se renuevan solas por Stripe`:"Sin vencimientos próximos"} color={T.yellow} n={vencenProximos.length}/>
+        <AdmKpi T={T} label="Vencen en 7 días" val={String(vencenProximos.length)} sub={vencenProximos.length?`${vencenProximos.filter(u=>(u.stripeStatus==="active"||u.stripeStatus==="trialing")&&!u.cancelAtPeriodEnd).length} se renuevan solas por Stripe`:"Sin vencimientos próximos"} color={T.yellow} n={vencenProximos.length}/>
         <AdmKpi T={T} label={`Ingresos de ${mesLabel.split(" ")[0].toLowerCase()}`} val={admUsd(ingUsd)} sub={`${ingresosMes.length} pago${ingresosMes.length===1?"":"s"} · ${nuevasMes} nueva${nuevasMes===1?"":"s"} · ${altasMes} alta${altasMes===1?"":"s"}`} color={T.accent} n={ingUsd}/>
       </div>
       <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(280px,1fr)",gap:16,alignItems:"start"}}>
@@ -19721,7 +19745,7 @@ function AdmResumen({ctx, stats}) {
           <Card T={T} padding="lg">
             <AdmTitulo T={T} t="Vencen esta semana" sub={vencenProximos.length?"Por Stripe se renuevan solas; las manuales hay que cobrarlas.":"Sin vencimientos en los próximos 7 días."}/>
             {vencenProximos.length>0&&<div style={{display:"flex",flexDirection:"column"}}>
-              {vencenProximos.sort((a,b)=>(a.planExpiry||0)-(b.planExpiry||0)).slice(0,12).map(u=>{ const d=admDias(u.planExpiry); const auto=u.stripeStatus==="active"&&!u.cancelAtPeriodEnd; return (
+              {vencenProximos.sort((a,b)=>(a.planExpiry||0)-(b.planExpiry||0)).slice(0,12).map(u=>{ const d=admDias(u.planExpiry); const auto=(u.stripeStatus==="active"||u.stripeStatus==="trialing")&&!u.cancelAtPeriodEnd; return (
                 <div key={u._id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 0",borderBottom:`1px solid ${T.borderL}`}}>
                   <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cuentaBtn(u)}</span>
                   <DSBadge T={T} color={admPlanColor(T,u.plan)} size="sm">{admPlanLabel(u.plan)}</DSBadge>
@@ -42845,7 +42869,7 @@ export default function App() {
   };
 
   // Paywall: trial vencido sin plan pago, o plan pago vencido sin renovar
-  if((trialExpired||planVencido)&&planReady&&!isAdmin) return(<><AppPlanes T={T} user={user} userPlan={planEfectivo} planExpiry={planExpiry} onBack={()=>{}} isTrialExpired={true} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/><AppPromptHost T={T}/></>);
+  if((trialExpired||planVencido)&&planReady&&!isAdmin) return(<><AppPlanes T={T} user={user} userPlan={planEfectivo} planExpiry={planExpiry} onBack={()=>{}} isTrialExpired={true} planVencido={planVencido?userPlan:null} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/><AppPromptHost T={T}/></>);
 
   let pageContent = null;
   if(secMiembro && !seccionPermitida(page)) pageContent = null; // el efecto de arriba redirige a su primera sección

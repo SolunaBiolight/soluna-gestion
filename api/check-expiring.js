@@ -1,4 +1,8 @@
-// api/check-expiring.js — Cron diario: avisa por email cuando quedan ≤5 días de plan o trial
+// api/check-expiring.js — Cron diario: avisa por email cuando vence el plan o el trial.
+// Trial: un mail por día durante los últimos 5 días. Plan pago sin renovación
+// automática (manual o Stripe cancelada): UN mail a los 7 días y UN mail el
+// último día (flags planWarn7For / planWarn1For con el vencimiento al que
+// corresponden, así una prórroga vuelve a avisar).
 // Llamado desde vercel.json crons (0 10 * * *) y protegido con CRON_SECRET
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
@@ -37,7 +41,7 @@ async function sendEmail({ to, subject, html }) {
   }
 }
 
-function emailHtml({ nombre, diasRestantes, isTrial, planesPlanesUrl }) {
+function emailHtml({ nombre, diasRestantes, isTrial, planesPlanesUrl, manual }) {
   const urgente = diasRestantes <= 1;
   const color   = urgente ? "#ef4444" : "#f97316";
   const titulo  = isTrial
@@ -61,6 +65,8 @@ function emailHtml({ nombre, diasRestantes, isTrial, planesPlanesUrl }) {
             Hola${nombre ? ` ${nombre.split(" ")[0]}` : ""},<br><br>
             ${isTrial
               ? `Tu período de prueba gratuita${urgente ? " vence hoy" : ` vence en ${diasRestantes} día${diasRestantes!==1?"s":""}`}. Para seguir usando todas las funciones de Growith sin interrupciones, activá un plan.`
+              : manual
+              ? `Tu plan de Growith${urgente ? " vence hoy" : ` vence en ${diasRestantes} día${diasRestantes!==1?"s":""}`}. Podés cargar la tarjeta ahora desde Growith → Suscripción: no se te cobra nada hasta el vencimiento y desde ese día se renueva solo, sin que tengas que volver a pagar a mano.`
               : `Tu suscripción a Growith${urgente ? " vence hoy" : ` vence en ${diasRestantes} día${diasRestantes!==1?"s":""}`}. Renovalo para mantener el acceso a todas tus herramientas.`}
           </p>
           <table cellpadding="0" cellspacing="0"><tr><td>
@@ -91,6 +97,7 @@ export default async function handler(req, res) {
   const db = initAdmin();
   const now = new Date();
   const in5days = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000);
+  const in7days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   const APP_URL = process.env.APP_URL || "https://www.growithapp.com";
   const planesUrl = `${APP_URL}/#/planes`;
 
@@ -128,13 +135,20 @@ export default async function handler(req, res) {
       }
     }
 
-    // Plan pago: planExpiry dentro de los próximos 5 días. Con tarjeta (Stripe)
-    // activa y sin cancelación pedida se renueva sola: no se avisa vencimiento.
+    // Plan pago: planExpiry dentro de los próximos 7 días. Con tarjeta (Stripe)
+    // activa o programada (trialing = plan manual que pasa a tarjeta al vencer)
+    // y sin cancelación pedida se renueva sola: no se avisa vencimiento.
+    // Se manda UNA vez a los 7 días y UNA vez el último día, no todos los días.
     const planExpiry = u.planExpiry?.toDate?.();
-    const renuevaSola = u.stripeStatus === "active" && !u.cancelAtPeriodEnd;
-    if (!isTrial && !renuevaSola && u.plan && u.plan !== "free" && planExpiry && planExpiry > now && planExpiry <= in5days) {
-      diasRestantes = Math.max(0, Math.ceil((planExpiry - now) / (1000*60*60*24)));
+    const renuevaSola = (u.stripeStatus === "active" || u.stripeStatus === "trialing") && !u.cancelAtPeriodEnd;
+    let planFlag = null, planFlagVal = null, manual = false;
+    if (!isTrial && !renuevaSola && u.plan && u.plan !== "free" && planExpiry && planExpiry > now && planExpiry <= in7days) {
+      const d = Math.max(0, Math.ceil((planExpiry - now) / (1000*60*60*24)));
+      const key = planExpiry.getTime();
+      if (d <= 1 && u.planWarn1For !== key) { diasRestantes = d; planFlag = "planWarn1For"; planFlagVal = key; }
+      else if (d > 1 && u.planWarn7For !== key) { diasRestantes = d; planFlag = "planWarn7For"; planFlagVal = key; }
       isTrial = false;
+      manual = !u.stripeSubscriptionId;
     }
 
     // ── Ciclo de vida (solo si no corresponde aviso de vencimiento) ──
@@ -176,16 +190,16 @@ export default async function handler(req, res) {
       return null;
     }
 
-    // No mandar más de una advertencia por día para el mismo vencimiento
+    // Trial: no mandar más de una advertencia por día para el mismo vencimiento
     const lastWarn = u.lastExpiryWarnAt?.toDate?.();
-    if (lastWarn && lastWarn.toDateString() === now.toDateString()) return null;
+    if (!planFlag && lastWarn && lastWarn.toDateString() === now.toDateString()) return null;
 
     const subject = isTrial
       ? (diasRestantes <= 1 ? "¡Hoy vence tu prueba gratuita de Growith!" : `Tu prueba gratuita vence en ${diasRestantes} días`)
       : (diasRestantes <= 1 ? "¡Hoy vence tu plan Growith!" : `Tu plan Growith vence en ${diasRestantes} días`);
 
-    const html = emailHtml({ nombre: u.nombre || u.displayName || "", diasRestantes, isTrial, planesPlanesUrl: planesUrl });
-    return { doc, email, subject, html, diasRestantes, isTrial };
+    const html = emailHtml({ nombre: u.nombre || u.displayName || "", diasRestantes, isTrial, planesPlanesUrl: planesUrl, manual });
+    return { doc, email, subject, html, diasRestantes, isTrial, ...(planFlag ? { flag: planFlag, flagVal: planFlagVal } : {}) };
   };
 
   // Manda un email y marca el aviso. Nunca lanza: un destinatario roto no puede
@@ -194,7 +208,7 @@ export default async function handler(req, res) {
     try {
       const result = await sendEmail({ to: t.email, subject: t.subject, html: t.html });
       if (result.ok) {
-        await t.doc.ref.update({ [t.flag || "lastExpiryWarnAt"]: FieldValue.serverTimestamp() });
+        await t.doc.ref.update({ [t.flag || "lastExpiryWarnAt"]: t.flagVal !== undefined ? t.flagVal : FieldValue.serverTimestamp() });
         results.sent++;
         console.log(`[check-expiring] ✓ email a ${t.email} (${t.diasRestantes}d, ${t.isTrial?"trial":"plan"})`);
       } else {
