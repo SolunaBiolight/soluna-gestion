@@ -34,6 +34,21 @@ eq("Calle 13 = Calle 13",M.ghMismaCalle(D("Calle 13","621"),D("Calle 13","621"))
 eq("Calle 13 ≠ Calle 14",M.ghMismaCalle(D("Calle 13","621"),D("Calle 14","621")),false);
 eq("Mendoza ≠ San Justo",M.ghMismaCalle(D("Mendoza","2552"),D("Arieta","3050")),false);
 
+// ── Ruta / intersección sin número (caso #6721 Merlo, San Luis)
+{
+  const merlo=M.ghPuntoDeOrden(pd("SUCURSAL ANDREANI","RUTA 5 Y AV.EL ROSEDAL S/N","","Merlo","5881"));
+  const m1=suc(501,"VILLA DE MERLO (RUTA 5)","RUTA 5 Y AV.EL ROSEDAL S/N","","Merlo","5881");
+  const m2=suc(502,"VILLA DE MERLO (RUTA 5)","Ruta 5 Y Av.El Rosedal","1276","Villa De Merlo","5881");
+  const m3=suc(503,"VILLA DE MERLO","","","Merlo","5881");
+  const chiv=suc(504,"CHIVILCOY (RUTA 5)","Ruta 5","S/N","Chivilcoy","6620");
+  eq("Merlo S/N: matchea directo",M.ghMatchOficial([chiv,m3,m1,m2],merlo)?.descripcion,"VILLA DE MERLO (RUTA 5)");
+  eq("Merlo S/N: coincide",M.ghCoincidePunto(merlo,m1),true);
+  eq("Merlo S/N: Chivilcoy no",M.ghMatchOficial([chiv],merlo),null);
+  eq("Merlo S/N: otro CP no",M.ghMatchOficial([suc(505,"X","RUTA 5 Y AV.EL ROSEDAL S/N","","Otra","5700")],merlo),null);
+  eq("Ruta 5 sola no es la intersección",M.ghMatchOficial([suc(506,"X","Ruta 5","","Merlo","5881")],merlo),null);
+  eq("calle común S/N no se adivina",M.ghMatchOficial([suc(507,"X","Mitre","1200","San Justo","1754")],M.ghPuntoDeOrden(pd("SUCURSAL ANDREANI","Mitre S/N","","San Justo","1754"))),null);
+}
+
 // ── Conflicto / coincide
 const balbin=pd("Punto Andreani HOP Balbín","Balbín","3301","CABA","1430");
 const mym=suc(9,"MYM LOGISTICA","Ricardo Balbín","5617","San Martín","1650");

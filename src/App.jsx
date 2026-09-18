@@ -4536,7 +4536,16 @@ function ghCmpPunto(p,suc){
   const d=suc?.direccion||{};
   const a=ghDirParse(p?.calle,p?.num), b=ghDirParse(d.calle,d.numero);
   const calle=ghMismaCalle(a,b);
-  return {a,b,calle,numIgual:!!(a.num&&b.num&&a.num===b.num),numDistinto:!!(a.num&&b.num&&a.num!==b.num)};
+  // Punto SIN número de puerta que es una ruta o una intersección ("RUTA 5 Y
+  // AV. EL ROSEDAL S/N", Merlo): ahí el "S/N" es el domicilio real, no un dato
+  // faltante. Vale como coincidencia de domicilio solo si la calle oficial
+  // tiene EXACTAMENTE las mismas palabras y números (no subconjunto), hay al
+  // menos dos tokens para comparar y el CP es el mismo. Una calle común sin
+  // número ("Mitre S/N") sigue sin adivinarse.
+  const cpP=String(p?.cp||"").replace(/D/g,""), cpS=String(d.codigoPostal||"").replace(/D/g,"");
+  const igual=(x,y)=>x.length===y.length&&x.every(w=>y.includes(w));
+  const sinNumIgual=!!(!a.num&&calle&&cpP&&cpP===cpS&&a.toks.length>=2&&(a.nums.length>0||/ Y /.test(" "+a.calle+" "))&&igual(a.words,b.words)&&igual(a.nums,b.nums));
+  return {a,b,calle,sinNumIgual,numIgual:!!(a.num&&b.num&&a.num===b.num),numDistinto:!!(a.num&&b.num&&a.num!==b.num)};
 }
 // ¿La sucursal oficial CONTRADICE al punto? {msg, grave, mismoDom} | null.
 // Solo evidencia positiva: misma calle con otro número, otra zona (CABA vs
@@ -4571,7 +4580,7 @@ function ghConflictoPunto(p,suc){
 function ghCoincidePunto(p,suc){
   if(!p||!suc) return false;
   const c=ghCmpPunto(p,suc);
-  if(!(c.calle&&c.numIgual)) return false;
+  if(!((c.calle&&c.numIgual)||c.sinNumIgual)) return false;
   return !ghConflictoPunto(p,suc)?.grave;
 }
 // Auto-match SILENCIOSO contra una lista oficial. Devuelve la sucursal solo
@@ -4590,7 +4599,7 @@ function ghMatchOficial(oficiales,p,geo){
   const cands=oficiales.filter(s=>{
     if(!s) return false;
     const c=ghCmpPunto(p,s);
-    const dirMatch=c.calle&&c.numIgual;
+    const dirMatch=(c.calle&&c.numIgual)||c.sinNumIgual;
     const descToks=ghNrmSuc(s.descripcion).split(" ");
     const nameMatch=!!(tnTokens.length&&descToks.length&&tnTokens.every(t=>descToks.includes(t)));
     if(!dirMatch&&!nameMatch) return false;
