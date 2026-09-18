@@ -12452,6 +12452,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   </>
                 )}
               </div>
+              {/* Seleccionar todo a un clic, sin entrar al desplegable (pedido 17/9) */}
+              {exportables.length>0&&(()=>{ const todo=selected.size===exportables.length; return (
+                <button onClick={()=>toggleAll()} title={todo?"Quitar la selección":`Seleccionar los ${exportables.length} pedidos de la lista`}
+                  style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:todo?T.accent:T.textMd,borderColor:todo?T.accent:T.border,background:todo?T.accent+"12":"transparent"}}>
+                  {todo?"Deseleccionar todo":`Seleccionar todo (${exportables.length})`}
+                </button>
+              ); })()}
               {/* CTAs de exportación en la fila de controles, junto al selector —
                   la barra flotante quedaba disimulada; acá se ven siempre */}
               {selected.size>0&&(
