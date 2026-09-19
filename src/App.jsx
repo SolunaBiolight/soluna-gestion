@@ -18086,6 +18086,12 @@ function AppCalendarioPagos({T,user,onHome}){
   const vencidos=pend.filter(i=>i.vence<hoy);
   const semana=pend.filter(i=>i.vence>=hoy&&i.vence<=sumarDiasAR(hoy,7));
   const mesActualPend=pend.filter(i=>i.vence.slice(0,7)===hoy.slice(0,7));
+  // "Falta pagar" = toda la plata que hay que poner de acá a fin de mes, así que
+  // incluye lo atrasado de meses anteriores. Filtrar solo por el mes en curso
+  // dejaba afuera un vencido de agosto y el número quedaba corto.
+  const finDeMesAR=`${hoy.slice(0,7)}-${String(new Date(Date.UTC(Number(hoy.slice(0,4)),Number(hoy.slice(5,7)),0)).getUTCDate()).padStart(2,"0")}`;
+  const faltaPagar=pend.filter(i=>i.vence<=finDeMesAR);
+  const atrasadoDeAntes=faltaPagar.filter(i=>i.vence.slice(0,7)<hoy.slice(0,7));
   const mesActualTodos=lista.filter(i=>i.vence.slice(0,7)===hoy.slice(0,7));
   const mesActualPag=mesActualTodos.filter(i=>i.pagado);
   // Desglose del mes por categoría (pagado + pendiente)
@@ -18240,7 +18246,7 @@ function AppCalendarioPagos({T,user,onHome}){
           {[
             {label:"Vencido",n:vencidos.length,val:fmtPar(vencidos),sub:vencidos.length?`${vencidos.length} pago${vencidos.length===1?"":"s"} sin pagar`:"Nada vencido",color:T.red},
             {label:`Total de ${mesesNombres[Number(hoy.slice(5,7))-1]}`,n:mesActualTodos.length,val:fmtPar(mesActualTodos),sub:`${mesActualPag.length} pagado${mesActualPag.length===1?"":"s"} · ${mesActualPend.length} pendiente${mesActualPend.length===1?"":"s"}`,color:T.yellow},
-            {label:`Falta pagar en ${mesesNombres[Number(hoy.slice(5,7))-1]}`,n:mesActualPend.length,val:fmtPar(mesActualPend),sub:`${mesActualPend.length} pendiente${mesActualPend.length===1?"":"s"}`,color:T.accent},
+            {label:`Falta pagar hasta fin de ${mesesNombres[Number(hoy.slice(5,7))-1]}`,n:faltaPagar.length,val:fmtPar(faltaPagar),sub:`${faltaPagar.length} pendiente${faltaPagar.length===1?"":"s"}${atrasadoDeAntes.length?` · incluye ${atrasadoDeAntes.length} atrasado${atrasadoDeAntes.length===1?"":"s"} de meses anteriores`:""}`,color:T.accent},
             {label:"Deuda en préstamos",n:prestamosPend.length,val:fmtPar(prestamosPend),sub:prestamos.length?`${prestamos.length} préstamo${prestamos.length===1?"":"s"} · ${prestamosPend.length} cuota${prestamosPend.length===1?"":"s"} por pagar`:"Sin préstamos",color:T.purple},
           ].map(k=>(
             <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:4}}>
@@ -18318,7 +18324,7 @@ function AppCalendarioPagos({T,user,onHome}){
               {/* Este contador es de TODO lo que viene (incluye meses futuros y las
                   cuotas ya generadas), no del mes: el KPI de arriba cuenta solo el
                   mes en curso. Decían los dos "N pendientes" y confundía. */}
-              <span style={{fontSize:11,color:T.textSm}} title={`${pend.length} pago${pend.length===1?"":"s"} sin pagar en total, contando los meses que vienen. Arriba, "Falta pagar" cuenta solo ${mesesNombres[Number(hoy.slice(5,7))-1]}.`}>{pend.length} pendiente{pend.length===1?"":"s"} en total{mesActualPend.length!==pend.length?` · ${mesActualPend.length} en ${mesesNombres[Number(hoy.slice(5,7))-1]}`:""}</span>
+              <span style={{fontSize:11,color:T.textSm}} title={`${pend.length} pago${pend.length===1?"":"s"} sin pagar en total, contando los meses que vienen. Arriba, "Falta pagar" cuenta solo hasta fin de ${mesesNombres[Number(hoy.slice(5,7))-1]}.`}>{pend.length} pendiente{pend.length===1?"":"s"} en total{mesActualPend.length!==pend.length?` · ${mesActualPend.length} en ${mesesNombres[Number(hoy.slice(5,7))-1]}`:""}</span>
               <input value={busq} onChange={e=>setBusq(e.target.value)} placeholder="Buscar pago…" style={{...iS,marginLeft:"auto",width:200,padding:"6px 10px",fontSize:12}}/>
               {bq&&<button onClick={()=>setBusq("")} style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:13}}>✕</button>}
               <Btn T={T} variant="secondary" size="sm" onClick={nuevoPrestamo} title="Cargá un préstamo: banco, capital, cuotas y valor de la cuota. La app calcula el interés y arma los vencimientos.">Cargar préstamo</Btn>
