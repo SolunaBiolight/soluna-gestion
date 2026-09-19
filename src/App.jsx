@@ -18002,6 +18002,34 @@ function AppCalendarioPagos({T,user,onHome}){
   const fijoDe=grupo=>fijos.find(x=>x.grupo===grupo||x.id===grupo)||null;
   const nuevoFijo=()=>setFijoForm({titulo:"",categoria:"",monto:"",moneda:"ARS",dia:"1",dividido:false,pct:"50",dia2:"15",notas:"",activo:true,hasta:""});
   const editarFijo=x=>setFijoForm({id:x.id,titulo:x.titulo,categoria:x.categoria,monto:String(x.monto),moneda:x.moneda,dia:String(x.dia),dividido:!!x.dividido,pct:String(x.pct??50),dia2:String(x.dia2??15),notas:x.notas||"",activo:x.activo!==false,hasta:x.hasta||""});
+  // Un gasto fijo del calendario es una obligación a pagar; un costo adicional
+  // del Dashboard es lo que se descuenta de la ganancia. Casi siempre son el
+  // mismo gasto visto de dos lados, pero NO se asume: al crear uno nuevo se
+  // pregunta, porque sumarlo sin avisar duplicaría un costo ya cargado a mano.
+  const CALPAGOS_A_COSTO={alquiler:"Oficina",servicios:"Oficina",sueldos:"Team",envio:"Logística"};
+  const ofrecerCostoDashboard=async(fx)=>{
+    const monto=ghNumAR(fx.monto);
+    if(!(monto>0)||fx.activo===false) return;
+    const nombre=fx.titulo.trim();
+    const ok=await appConfirm(
+      `¿Querés que "${nombre}" también se descuente de la ganancia del Dashboard? Se carga como costo fijo mensual de ${calpagosFmt(monto,fx.moneda)}, prorrateado por día. Si ya lo tenías en Configuraciones → Adicionales, decí que no para no contarlo dos veces.`,
+      {title:"¿También al Dashboard?",okLabel:"Sí, descontarlo",cancelLabel:"No, solo agendarlo"});
+    if(!ok) return;
+    try{
+      const ref=doc(db,"users",user.uid);
+      const lista=(await getDoc(ref)).data()?.margenesCostosAdic;
+      const prev=Array.isArray(lista)?lista:[];
+      if(prev.some(c=>String(c.nombre||"").trim().toLowerCase()===nombre.toLowerCase())){
+        toast("Ese costo ya estaba cargado en el Dashboard","info"); return;
+      }
+      // El gasto fijo guarda "hasta" como YYYY-MM; el costo lo quiere como día
+      // exacto, así que se toma el último día de ese mes.
+      const hastaDia=fx.hasta?`${fx.hasta}-${String(new Date(Date.UTC(Number(fx.hasta.slice(0,4)),Number(fx.hasta.slice(5,7)),0)).getUTCDate()).padStart(2,"0")}`:"";
+      const nuevo={ id:margId(), nombre, categoria:CALPAGOS_A_COSTO[fx.categoria]||"Otro", tipo:"fijo", moneda:fx.moneda==="USD"?"USD":"ARS", monto, pct:0, recurrente:true, desde:"", hasta:hastaDia, sumaAds:false };
+      await setDoc(ref,{margenesCostosAdic:[...prev,nuevo]},{merge:true});
+      toast("Listo: también se descuenta del Dashboard","success");
+    }catch(e){ toast("No se pudo cargar en el Dashboard: "+e.message,"error"); }
+  };
   const guardarFijo=async(patch)=>{
     const fx={...fijoForm,...(patch||{})};
     if(!fx.titulo.trim()){ toast("Poné el nombre del gasto","warning"); return; }
@@ -18011,7 +18039,9 @@ function AppCalendarioPagos({T,user,onHome}){
     try{
       const d=await api("fijo_save",{fijo:{...fx,monto:ghNumAR(fx.monto),pct:Number(fx.pct)||50,dia:parseInt(fx.dia)||1,dia2:parseInt(fx.dia2)||15,hasta:fx.hasta||null}});
       toast(fx.id?`Gasto fijo actualizado${d.creados?` · ${d.creados} vencimientos regenerados`:""}`:"Gasto fijo cargado","success");
+      const esAlta=!fx.id;
       setFijoForm(null); setForm(null); await load();
+      if(esAlta) await ofrecerCostoDashboard(fx);
     }catch(e){ toast(e.message,"error"); }
     finally{ setFijoSaving(false); }
   };
@@ -18285,7 +18315,10 @@ function AppCalendarioPagos({T,user,onHome}){
           <Card T={T} padding="lg">
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
               <span style={{fontSize:14,fontWeight:800,color:T.text,letterSpacing:-0.2}}>Agenda</span>
-              <span style={{fontSize:11,color:T.textSm}}>{pend.length} pendiente{pend.length===1?"":"s"}</span>
+              {/* Este contador es de TODO lo que viene (incluye meses futuros y las
+                  cuotas ya generadas), no del mes: el KPI de arriba cuenta solo el
+                  mes en curso. Decían los dos "N pendientes" y confundía. */}
+              <span style={{fontSize:11,color:T.textSm}} title={`${pend.length} pago${pend.length===1?"":"s"} sin pagar en total, contando los meses que vienen. Arriba, "Falta pagar" cuenta solo ${mesesNombres[Number(hoy.slice(5,7))-1]}.`}>{pend.length} pendiente{pend.length===1?"":"s"} en total{mesActualPend.length!==pend.length?` · ${mesActualPend.length} en ${mesesNombres[Number(hoy.slice(5,7))-1]}`:""}</span>
               <input value={busq} onChange={e=>setBusq(e.target.value)} placeholder="Buscar pago…" style={{...iS,marginLeft:"auto",width:200,padding:"6px 10px",fontSize:12}}/>
               {bq&&<button onClick={()=>setBusq("")} style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:13}}>✕</button>}
               <Btn T={T} variant="secondary" size="sm" onClick={nuevoPrestamo} title="Cargá un préstamo: banco, capital, cuotas y valor de la cuota. La app calcula el interés y arma los vencimientos.">Cargar préstamo</Btn>
@@ -18326,7 +18359,16 @@ function AppCalendarioPagos({T,user,onHome}){
                 )}
                 {pend.length===0&&<div style={{fontSize:12,color:T.textSm,padding:"18px 0"}}>No queda nada pendiente. Todo pagado.</div>}
                 {bloques.map(b=><Bloque key={b.id} label={b.label} color={b.color} arr={b.items}/>)}
-                {Object.keys(porMes).sort().map(k=>{ const [y,m]=k.split("-").map(Number); return <Bloque key={k} label={`${mesesNombres[m-1]} ${y}`} color={T.textSm} arr={porMes[k]}/>; })}
+                {Object.keys(porMes).length>0&&(
+                  // Los meses que vienen van en su propio cuadro: mezclados con
+                  // los bloques del mes en curso parecía que un pago de octubre
+                  // estaba pendiente de septiembre.
+                  <div style={{marginTop:14,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px",background:T.surface}}>
+                    <div style={{fontSize:11,fontWeight:800,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6}}>Meses que vienen</div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:6}}>No entran en los totales de {mesesNombres[Number(hoy.slice(5,7))-1]} de arriba.</div>
+                    {Object.keys(porMes).sort().map(k=>{ const [y,m]=k.split("-").map(Number); return <Bloque key={k} label={`${mesesNombres[m-1]} ${y}`} color={T.textSm} arr={porMes[k]}/>; })}
+                  </div>
+                )}
                 {pagadosMes.length>0&&(
                   <div style={{marginTop:8,borderTop:`1px solid ${T.borderL}`,paddingTop:8}}>
                     <button onClick={()=>setVerPagados(v=>!v)} style={{background:"none",border:"none",color:T.textSm,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:"4px 0",textTransform:"uppercase",letterSpacing:0.6}}>{verPagados?"Ocultar":"Ver"} pagados este mes ({pagadosMes.length} · {fmtPar(pagadosMes)})</button>
@@ -36382,16 +36424,6 @@ function CostosPanel({ T, uid }) {
   const [envioModo, setEnvioModo] = React.useState("fijo"); // "fijo" (promedio) | "orden" (costo real de cada orden)
   const [mlFlex, setMlFlex] = React.useState("");           // costo por envío Flex de ML (vacío = usa el promedio)
   const [fulfillment, setFulfillment] = React.useState(""); // costo de fulfillment por paquete despachado (opcional)
-  const [mlAdsList, setMlAdsList] = React.useState([]);
-  const [mlAdsDraft, setMlAdsDraft] = React.useState({desde:"",hasta:"",monto:""});
-  const [googleAdsList, setGoogleAdsList] = React.useState([]);
-  const [googleAdsDraft, setGoogleAdsDraft] = React.useState({desde:"",hasta:"",monto:""});
-  const [googleAdsSaving, setGoogleAdsSaving] = React.useState(false);
-  const [mlAdsSaving, setMlAdsSaving] = React.useState(false);
-  const [gadsConnected, setGadsConnected] = React.useState(false); // OAuth de Google Ads hecho → el gasto entra solo por API
-  const [verGadsManual, setVerGadsManual] = React.useState(false); // mostrar la carga manual aunque esté conectado
-  const [mlConnected, setMlConnected] = React.useState(false);     // ML conectado → Mercado Ads intenta leerse por API
-  const [verMlManual, setVerMlManual] = React.useState(false);     // mostrar la carga manual de Mercado Ads aunque haya API
   const [products, setProducts] = React.useState([]);
   const [mlItems, setMlItems] = React.useState([]);
   const [costos, setCostos] = React.useState({}); // { [key]: costo }
@@ -36427,15 +36459,11 @@ function CostosPanel({ T, uid }) {
       try {
         const snap = await getDoc(doc(db, "users", uid));
         const d = snap.exists() ? snap.data() : {};
-        setGadsConnected(!!(d.googleAds&&(d.googleAds.refresh_token||d.googleAds.demo)));
-        setMlConnected((d.stores||[]).some(s=>s.type==="mercadolibre"));
         setEnvio(d.margenesEnvioProm ?? "");
         const ec = d.margenesEnvioCfg || {};
         setEnvioModo(ec.modoTienda === "orden" ? "orden" : "fijo");
         setMlFlex(ec.mlFlex ?? "");
         setFulfillment(ec.fulfillment ?? "");
-        setMlAdsList(Array.isArray(d.margenesMlAds) ? d.margenesMlAds : []);
-        setGoogleAdsList(Array.isArray(d.margenesGoogleAds) ? d.margenesGoogleAds : []);
         setCostos(d.margenesCogs && typeof d.margenesCogs==="object" && !Array.isArray(d.margenesCogs) ? d.margenesCogs : {});
         setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
         setVarios(Array.isArray(d.margenesCostosVar) ? d.margenesCostosVar : []);
@@ -36576,43 +36604,6 @@ function CostosPanel({ T, uid }) {
     );
   };
 
-  async function persistMlAds(list) {
-    await setDoc(doc(db,"users",uid), { margenesMlAds: list }, { merge: true });
-  }
-  async function addMlAdsPeriod() {
-    const d = mlAdsDraft;
-    if (!d.desde || !d.hasta) { toast("Elegí las fechas del período", "error"); return; }
-    if (d.hasta < d.desde) { toast("La fecha final no puede ser anterior a la inicial", "error"); return; }
-    if (!((parseFloat(d.monto)||0) > 0)) { toast("Poné el monto gastado", "error"); return; }
-    setMlAdsSaving(true);
-    const nuevo = { desde:d.desde, hasta:d.hasta, monto:parseFloat(d.monto)||0 };
-    const list = [...mlAdsList, nuevo].sort((a,b)=>String(b.desde).localeCompare(String(a.desde)));
-    try { await persistMlAds(list); setMlAdsList(list); setMlAdsDraft({desde:"",hasta:"",monto:""}); toast("Período de ML Ads guardado ✓","success"); }
-    catch(e) { toast("Error: "+e.message,"error"); }
-    setMlAdsSaving(false);
-  }
-  async function delMlAdsPeriod(i) {
-    const list = mlAdsList.filter((_,j)=>j!==i);
-    try { await persistMlAds(list); setMlAdsList(list); toast("Período borrado","success"); }
-    catch(e) { toast("Error: "+e.message,"error"); }
-  }
-  async function addGoogleAdsPeriod() {
-    const d = googleAdsDraft;
-    if (!d.desde || !d.hasta) { toast("Elegí las fechas del período", "error"); return; }
-    if (d.hasta < d.desde) { toast("La fecha final no puede ser anterior a la inicial", "error"); return; }
-    if (!((parseFloat(d.monto)||0) > 0)) { toast("Poné el monto gastado", "error"); return; }
-    setGoogleAdsSaving(true);
-    const list = [...googleAdsList, { desde:d.desde, hasta:d.hasta, monto:parseFloat(d.monto)||0 }].sort((a,b)=>String(b.desde).localeCompare(String(a.desde)));
-    try { await setDoc(doc(db,"users",uid), { margenesGoogleAds: list }, { merge:true }); setGoogleAdsList(list); setGoogleAdsDraft({desde:"",hasta:"",monto:""}); toast("Período de Google Ads guardado ✓","success"); }
-    catch(e) { toast("Error: "+e.message,"error"); }
-    setGoogleAdsSaving(false);
-  }
-  async function delGoogleAdsPeriod(i) {
-    const list = googleAdsList.filter((_,j)=>j!==i);
-    try { await setDoc(doc(db,"users",uid), { margenesGoogleAds: list }, { merge:true }); setGoogleAdsList(list); toast("Período borrado","success"); }
-    catch(e) { toast("Error: "+e.message,"error"); }
-  }
-
   const totalFijos = fijos.reduce((s,f)=>s+(parseFloat(f.monto)||0),0);
 
   // Una fila por variante de cada producto TN/Shopify.
@@ -36683,99 +36674,6 @@ function CostosPanel({ T, uid }) {
           <span style={{fontSize:13,color:T.textSm}}>$</span>
           <input type="number" min="0" value={fulfillment} onChange={e=>setFulfillment(e.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
         </div>
-      </div>
-
-      {/* Gasto de Mercado Ads por períodos (carga manual hasta integrar la API) */}
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
-        <div style={{marginBottom:10}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text,display:"flex",alignItems:"center",gap:8}}>Gasto de Mercado Ads (por período)
-            {mlConnected&&<span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"2px 9px",fontSize:10,fontWeight:700,borderRadius:DS.r.full,background:T.green+"14",border:`1px solid ${T.green}44`,color:T.green}}><span style={{width:5,height:5,borderRadius:"50%",background:T.green}}/>API automática</span>}
-          </div>
-          <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{mlConnected
-            ?"Con Mercado Libre conectado, el gasto real de Mercado Ads se lee solo de la API — cuando la API devuelve el dato, esta carga manual se ignora. Usala únicamente como respaldo (por si la API no informa tu gasto)."
-            :"Cargá lo que gastaste (o vas a gastar) en publicidad de ML en cada rango — podés poner fechas a futuro. Se promedia por día y el dashboard descuenta el promedio diario según los días que se solapen, así el gasto fijo se va imputando solo día a día. Ej: del 01/06 al 30/06 $3.000.000 = $100.000/día."}</div>
-        </div>
-        {mlConnected&&mlAdsList.length===0&&!verMlManual ? (
-          <button onClick={()=>setVerMlManual(true)} style={{background:"transparent",border:"none",color:T.textSm,fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3,padding:0}}>
-            Cargar manualmente igual
-          </button>
-        ) : (()=>{ const today=hoyAR();
-        const maxFut=new Date(Date.now()+730*86400000).toISOString().slice(0,10); // permite cargar a futuro (hasta ~2 años)
-        const fmtF=f=>{ try { return new Date(f+"T00:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}); } catch(_) { return f; } };
-        const dias=(a,b)=>{ if(!a||!b||b<a) return 0; return Math.round((new Date(b)-new Date(a))/86400000)+1; };
-        const dr=mlAdsDraft, dD=dias(dr.desde,dr.hasta), dProm=dD>0?(parseFloat(dr.monto)||0)/dD:0;
-        const setD=(k,v)=>setMlAdsDraft(s=>({...s,[k]:v}));
-        return (<>
-          {/* Períodos ya guardados */}
-          {mlAdsList.length>0 && <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
-            {mlAdsList.map((e,i)=>{ const d=dias(e.desde,e.hasta), prom=d>0?(parseFloat(e.monto)||0)/d:0; return (
-              <div key={i} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px"}}>
-                <span style={{fontSize:12,color:T.text,fontWeight:600}}>{fmtF(e.desde)} → {fmtF(e.hasta)}</span>
-                <span style={{fontSize:12,color:T.textMd}}>${(parseFloat(e.monto)||0).toLocaleString("es-AR")}</span>
-                <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(prom).toLocaleString("es-AR")}/día · {d}d</span>
-                <button onClick={()=>delMlAdsPeriod(i)} title="Borrar período" style={{...BtnSecondary(T),fontSize:12,padding:"4px 10px",color:T.red,marginLeft:"auto"}}>×</button>
-              </div>
-            );})}
-          </div>}
-          {/* Form para agregar un período nuevo */}
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderTop:mlAdsList.length>0?`1px solid ${T.borderL}`:"none",paddingTop:mlAdsList.length>0?12:0}}>
-            <GhDatePicker T={T} min="2023-01-01" max={dr.hasta||maxFut} value={dr.desde} onChange={_v=>setD("desde",_v)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
-            <span style={{fontSize:12,color:T.textSm}}>→</span>
-            <GhDatePicker T={T} min={dr.desde||"2023-01-01"} max={maxFut} value={dr.hasta} onChange={_v=>setD("hasta",_v)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
-            <span style={{fontSize:13,color:T.textSm}}>$</span>
-            <input type="number" min="0" value={dr.monto} onChange={ev=>setD("monto",ev.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right",padding:"6px 8px"}}/>
-            {dProm>0 && <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(dProm).toLocaleString("es-AR")}/día</span>}
-            <button onClick={addMlAdsPeriod} disabled={mlAdsSaving} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>{mlAdsSaving?"Guardando…":"+ Guardar período"}</button>
-          </div>
-        </>); })()}
-      </div>
-
-      {/* Gasto de Google Ads por períodos (carga manual — la API oficial necesita
-          developer token aprobado por Google; cuando esté, pasa a automático). */}
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
-        <div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
-          <BrandIcon name="google" size={18}/>
-          <div>
-            <div style={{fontSize:13,fontWeight:700,color:T.text,display:"flex",alignItems:"center",gap:8}}>Gasto de Google Ads (por período)
-              {gadsConnected&&<span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"2px 9px",fontSize:10,fontWeight:700,borderRadius:DS.r.full,background:T.green+"14",border:`1px solid ${T.green}44`,color:T.green}}><span style={{width:5,height:5,borderRadius:"50%",background:T.green}}/>Conectado — automático</span>}
-            </div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{gadsConnected
-              ?"Google Ads está conectado: el gasto real entra solo desde la API al Ad Spend del Dashboard. Esta carga manual queda como respaldo y se ignora mientras la API responda."
-              :"Cargá lo que gastás en Google Ads por rango de fechas — se promedia por día y entra al Ad Spend del Dashboard (global y canal Tienda), al ROAS, CPA y profit, igual que Meta y Mercado Ads."}</div>
-          </div>
-        </div>
-        {gadsConnected&&googleAdsList.length===0&&!verGadsManual ? (
-          <button onClick={()=>setVerGadsManual(true)} style={{background:"transparent",border:"none",color:T.textSm,fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",textDecorationStyle:"dotted",textUnderlineOffset:3,padding:0}}>
-            Cargar manualmente igual
-          </button>
-        ) : (()=>{
-        const maxFut=new Date(Date.now()+730*86400000).toISOString().slice(0,10);
-        const fmtF=f=>{ try { return new Date(f+"T00:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}); } catch(_) { return f; } };
-        const dias=(a,b)=>{ if(!a||!b||b<a) return 0; return Math.round((new Date(b)-new Date(a))/86400000)+1; };
-        const dr=googleAdsDraft, dD=dias(dr.desde,dr.hasta), dProm=dD>0?(parseFloat(dr.monto)||0)/dD:0;
-        const setD=(k,v)=>setGoogleAdsDraft(s=>({...s,[k]:v}));
-        return (<>
-          {googleAdsList.length>0 && <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
-            {googleAdsList.map((e,i)=>{ const d=dias(e.desde,e.hasta), prom=d>0?(parseFloat(e.monto)||0)/d:0; return (
-              <div key={i} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px"}}>
-                <span style={{fontSize:12,color:T.text,fontWeight:600}}>{fmtF(e.desde)} → {fmtF(e.hasta)}</span>
-                <span style={{fontSize:12,color:T.textMd}}>${(parseFloat(e.monto)||0).toLocaleString("es-AR")}</span>
-                <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(prom).toLocaleString("es-AR")}/día · {d}d</span>
-                <button onClick={()=>delGoogleAdsPeriod(i)} title="Borrar período" style={{...BtnSecondary(T),fontSize:12,padding:"4px 10px",color:T.red,marginLeft:"auto"}}>×</button>
-              </div>
-            );})}
-          </div>}
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderTop:googleAdsList.length>0?`1px solid ${T.borderL}`:"none",paddingTop:googleAdsList.length>0?12:0}}>
-            <GhDatePicker T={T} min="2023-01-01" max={dr.hasta||maxFut} value={dr.desde} onChange={_v=>setD("desde",_v)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
-            <span style={{fontSize:12,color:T.textSm}}>→</span>
-            <GhDatePicker T={T} min={dr.desde||"2023-01-01"} max={maxFut} value={dr.hasta} onChange={_v=>setD("hasta",_v)} style={{...InputStyle(T),width:150,flexShrink:0,fontSize:12,padding:"6px 8px"}}/>
-            <span style={{fontSize:13,color:T.textSm}}>$</span>
-            <input type="number" min="0" value={dr.monto} onChange={ev=>setD("monto",ev.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right",padding:"6px 8px"}}/>
-            {dProm>0 && <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(dProm).toLocaleString("es-AR")}/día</span>}
-            <button onClick={addGoogleAdsPeriod} disabled={googleAdsSaving} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>{googleAdsSaving?"Guardando…":"+ Guardar período"}</button>
-          </div>
-          {!gadsConnected&&<div style={{fontSize:10,color:T.textSm,marginTop:8}}>Si conectás Google Ads en Config → Integraciones, el gasto real de la API pisa esta carga manual automáticamente — sin cargar nada a mano.</div>}
-        </>); })()}
       </div>
 
       {/* Cuenta de Meta Ads para el margen — clave si tenés VARIAS tiendas en la
@@ -40350,6 +40248,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     if (q.mpSinConfig) qItems.push({k:"comisiones", msg:`Ventas con Mercado Pago sin cargo real informado${q.tnFees?.pendientes?" (se están leyendo de a 60 por cálculo — recargá en un rato)":""}: se estima 7,61% (dinero al instante + IVA). Cargá tu % real en Comisiones e impuestos → Comisión de Mercado Pago`, cta:"Configurar"});
     if (rendData?.meta?.googleAdsConectado && rendData?.meta?.googleAdsFuente!=="auto") qItems.push({k:null, msg:`Google Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.googleAdsDiag?` — ${rendData.meta.googleAdsDiag}`:""}`});
     if (rendData?.meta?.tiktokAdsConectado && rendData?.meta?.tiktokAdsFuente!=="auto") qItems.push({k:null, msg:`TikTok Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.tiktokAdsDiag?` — ${rendData.meta.tiktokAdsDiag}`:""}`});
+    if (rendData?.meta?.mlAdsConectado && rendData?.meta?.mlAdsFuente!=="auto") qItems.push({k:null, msg:"Mercado Libre está conectado pero el gasto de Mercado Ads no está entrando: si estás pauteando, la ganancia de este período está inflada. Suele ser que la cuenta no tiene Product Ads habilitado"});
     if (rendData?.meta?.stockDegradado) qItems.push({k:null, msg:`Tu tienda/ML respondieron lento y se muestra el último cálculo completo guardado${typeof rendData.meta.stockDegradado==="string"?` (${new Date(rendData.meta.stockDegradado).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})})`:""} — tocá Actualizar en unos minutos para el dato en vivo`});
     if (q.tnTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Tienda Nube — los totales están TRUNCADOS. Usá un rango más corto."});
     if (q.mlTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Mercado Libre — los totales de ML están TRUNCADOS."});
@@ -40804,12 +40703,12 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             const hayConv = monedas.some(([k])=>k!=="ARS");
             const hayMetaDetalle = !!(ab && ab.total>0 && (hayConv || ab.feePct>0));
             // Inversión por plataforma: Meta + Google Ads + Mercado Ads + otros.
-            // La fuente (API real vs carga manual) viene del backend.
+            // Ya no existe carga manual: todas las fuentes son la API real.
             const fuentes = [
               ["Meta Ads", tot.adSpendMeta, "(real, API)"],
-              ["Google Ads", tot.adSpendGoogle, rendData?.meta?.googleAdsFuente==="auto"?"(real, API)":"(carga manual)"],
+              ["Google Ads", tot.adSpendGoogle, "(real, API)"],
               ["TikTok Ads", tot.adSpendTiktok, "(real, API)"],
-              ["Mercado Ads", tot.adSpendMl, rendData?.meta?.mlAdsFuente==="auto"?"(real, API)":"(carga manual)"],
+              ["Mercado Ads", tot.adSpendMl, "(real, API)"],
               ["Otros", tot.adSpendExtra, "(costos adicionales tipo pauta)"],
             ].filter(([,v])=>(v||0)>0);
             if (!hayMetaDetalle && fuentes.length<=1) return null;
@@ -41379,7 +41278,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                 const CANAL_CARDS = [
                 {label:"Profit",      val:fmtM(cSel.profit),    c:cSel.profit,     p:cPrev?.profit,     hero:true, accent:(cSel.profit||0)>=0?MC.green:MC.red, valColor:(cSel.profit||0)>=0?MC.green:MC.red, hint:(cSel.profit||0)>=0?"Ganancia neta del canal":"Pérdida neta del canal", spk:canalRows.map(r=>r.Profit), zero:true},
                 {label:"Revenue",     val:fmtM(cSel.revenue),   c:cSel.revenue,    p:cPrev?.revenue,    hero:true, hint:"Facturación del canal", spk:canalRows.map(r=>r.Revenue)},
-                {label:"Ad Spend",    val:fmtM(cSel.adSpend),   c:cSel.adSpend,    p:cPrev?.adSpend,    hero:true, hint:esMl?(rendData?.meta?.mlAdsFuente==="auto"?"Mercado Ads (real, API)":"Mercado Ads (manual)"):((rendData?.totals?.adSpendGoogle||0)>0?"Meta + Google Ads":"Meta Ads"), spk:canalRows.map(r=>r["Ad Spend"]), inv:true},
+                {label:"Ad Spend",    val:fmtM(cSel.adSpend),   c:cSel.adSpend,    p:cPrev?.adSpend,    hero:true, hint:esMl?"Mercado Ads (real, API)":((rendData?.totals?.adSpendGoogle||0)>0?"Meta + Google Ads":"Meta Ads"), spk:canalRows.map(r=>r["Ad Spend"]), inv:true},
                 {label:"Net Revenue", val:fmtM(cSel.netRevenue),c:cSel.netRevenue, p:cPrev?.netRevenue, hero:true, hint:"Todo descontado, antes de pauta", spk:canalRows.map(r=>r["Net Revenue"])},
                 {label:"Órdenes",     val:fmtInt(cSel.orders),  c:cSel.orders,     p:cPrev?.orders,     hint:"Con revenue", spk:canalRows.map(r=>r["Ordenes > $0"]), bad:!((cSel.orders||0)>0)},
                 {label:"ROAS",        val:fmtX(cSel.roas),      c:cSel.roas,       p:cPrev?.roas,       hint:`meta ≥ ${metas.roas}x`, bad:(cSel.adSpend>0)&&(cSel.roas||0)<metas.roas},

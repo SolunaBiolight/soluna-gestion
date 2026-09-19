@@ -987,14 +987,11 @@ export default async function handler(req, res) {
       // Fulfillment: costo fijo por paquete despachado (lo que cobra el fulfillment
       // por orden). Se suma a la logística de CADA orden (tienda y ML).
       const fulfillFee = parseFloat(envioCfg.fulfillment) || 0;
-      // Gasto de Mercado Ads cargado por períodos: [{desde, hasta, monto}].
-      // Cada período se promedia por día (monto / días) y se toma el solape con
-      // el rango del dashboard. Ej: 10/06–19/06 $1.000.000 = $100.000/día.
-      const mlAdsList = Array.isArray(userData.margenesMlAds) ? userData.margenesMlAds : [];
-      // Gasto de Google Ads por períodos (carga manual — la API oficial requiere
-      // developer token aprobado por Google; cuando esté, esto pasa a automático
-      // igual que Mercado Ads). Misma estructura: [{desde, hasta, monto}].
-      const googleAdsList = Array.isArray(userData.margenesGoogleAds) ? userData.margenesGoogleAds : [];
+      // La carga MANUAL de gasto de Mercado Ads y Google Ads se eliminó (19/09/2026):
+      // las dos plataformas informan el gasto real por API. Los campos viejos
+      // (margenesMlAds / margenesGoogleAds) siguen en Firestore pero YA NO SE LEEN,
+      // para que un monto cargado hace meses no reaparezca como gasto fantasma
+      // el día que la API no conteste.
       // ── Mercado Ads AUTOMÁTICO (Product Ads API) ──
       // Si la cuenta de ML tiene Product Ads, el gasto real del período se trae
       // solo: advertisers (Api-Version 1) → campaigns/search con metrics=cost
@@ -1029,23 +1026,6 @@ export default async function handler(req, res) {
           return isFinite(cost) && cost > 0 ? +cost.toFixed(2) : null;
         } catch (e) { D("exception", { error: String(e.message).slice(0,200) }); console.error("Mercado Ads spend error:", e.message); return null; }
       }
-      function adsPeriodoDe(list, sinceR, untilR) {
-        let total = 0;
-        for (const e of list) {
-          const d = e.desde, h = e.hasta, m = parseFloat(e.monto) || 0;
-          if (!d || !h || m <= 0 || h < d) continue;
-          const entryDays = Math.round((new Date(h) - new Date(d)) / 86400000) + 1;
-          if (entryDays <= 0) continue;
-          const lo = d > sinceR ? d : sinceR;
-          const hi = h < untilR ? h : untilR;
-          if (lo <= hi) {
-            const overlap = Math.round((new Date(hi) - new Date(lo)) / 86400000) + 1;
-            total += (m / entryDays) * overlap;
-          }
-        }
-        return total;
-      }
-      const mlAdsPeriodo = (s,u) => adsPeriodoDe(mlAdsList, s, u);
       const fijos     = Array.isArray(userData.margenesCostosFijos) ? userData.margenesCostosFijos : [];
       const dolarCfg  = userData.margenesDolar || {};
       const factExt   = Array.isArray(userData.margenesFactExterna) ? userData.margenesFactExterna : [];
@@ -1185,11 +1165,12 @@ export default async function handler(req, res) {
         // Ad Spend general = Meta (con fee del dólar) + Mercado Ads manual prorrateado
         // + costos adicionales marcados como inversión publicitaria (sumaAds).
         const adSpendMeta = (tot.adSpend||0) * (1+feeAd);
-        // Mercado Ads: gasto REAL de la API si está disponible; sino el manual.
-        const adSpendMl   = (mlAdsAuto!=null) ? mlAdsAuto : mlAdsPeriodo(sinceR, untilR);
-        // Google Ads: gasto REAL de la API si la cuenta está conectada y hay
-        // developer token; sino la carga manual por períodos (prorrateada por día).
-        const adSpendGoogle = (gAdsAuto!=null) ? gAdsAuto : adsPeriodoDe(googleAdsList, sinceR, untilR);
+        // Mercado Ads y Google Ads: SOLO el gasto real de la API. Si la API no
+        // contesta el gasto queda en 0 y el front lo avisa (mlAdsFuente /
+        // googleAdsFuente = "sin_datos"): preferimos un 0 visible a un número
+        // viejo cargado a mano que nadie puede corregir.
+        const adSpendMl     = (mlAdsAuto!=null) ? mlAdsAuto : 0;
+        const adSpendGoogle = (gAdsAuto!=null) ? gAdsAuto : 0;
         // TikTok Ads: gasto REAL de la API (ya en ARS); sin conexión = 0.
         const adSpendTiktok = (ttAuto!=null) ? ttAuto : 0;
         const adSpendEf = adSpendMeta + adSpendMl + adSpendGoogle + adSpendTiktok + adic.gastoAds;
@@ -2115,8 +2096,11 @@ export default async function handler(req, res) {
         dolarSerie, dolarActual, quality,
         since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, metaAccountsCount: metaAccounts.length,
-          mlAdsFuente: mlAdsAutoCurr!=null ? "auto" : (mlAdsList.length ? "manual" : "sin_datos"),
-          googleAdsFuente: gAdsAutoCurr!=null ? "auto" : (googleAdsList.length ? "manual" : "sin_datos"),
+          mlAdsFuente: mlAdsAutoCurr!=null ? "auto" : "sin_datos",
+          googleAdsFuente: gAdsAutoCurr!=null ? "auto" : "sin_datos",
+          // Sin carga manual de respaldo, un 0 silencioso en Mercado Ads sería
+          // ganancia inflada: el front avisa igual que con Google Ads.
+          mlAdsConectado: demoMode || (userData.stores||[]).some(s=>s.type==="mercadolibre"),
           googleAdsConectado: demoMode || !!userData.googleAds?.refresh_token,
           googleAdsDiag: (userData.googleAds?.refresh_token && gAdsAutoCurr==null) ? gadsDiag : null,
           tiktokAdsConectado: !!userData.tiktokAds?.access_token,
