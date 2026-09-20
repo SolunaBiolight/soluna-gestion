@@ -13641,7 +13641,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             <div style={{background:T.yellowBg||T.surface,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"14px 16px",marginBottom:16}}>
               <div style={{fontSize:13,fontWeight:700,color:T.yellow,marginBottom:6,display:"flex",alignItems:"center",gap:6}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Dirección en esquina detectada</div>
               <div style={{fontSize:13,color:T.text,lineHeight:1.5}}>
-                Los siguientes pedidos tienen una dirección de punto de retiro en esquina (Esq.), lo que puede causar errores en la carga masiva de Andreani. <strong>No fueron incluidos en el Excel.</strong>
+                {(()=>{ const nSuc=esquinaModal.orders.filter(o=>isSucursalOrder(o)).length, nDom=esquinaModal.orders.length-nSuc;
+                  return nSuc===0?"Estos pedidos a domicilio tienen la dirección en esquina, sin número de puerta. La carga masiva de Andreani exige calle y altura y los rechaza."
+                    :nDom===0?"El punto de retiro de estos pedidos figura con la dirección en esquina (Esq.), lo que puede causar errores en la carga masiva de Andreani."
+                    :"Estos pedidos tienen la dirección en esquina, sin número de puerta (a domicilio o en el punto de retiro). La carga masiva de Andreani exige calle y altura y los rechaza."; })()} <strong>No fueron incluidos en el Excel.</strong>
               </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
@@ -13660,7 +13663,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         <span style={{fontWeight:700,color:T.text,fontSize:13}}>#{o.numero}</span>
                         <span style={{color:T.textSm,fontSize:12,marginLeft:8}}>{o.comprador}</span>
                       </div>
-                      {pd?.name&&<span style={{fontSize:11,color:T.accent,fontWeight:600,textAlign:"right",maxWidth:180}}>{pd.name}</span>}
+                      <span style={{fontSize:11,color:pd?.name?T.accent:T.textSm,fontWeight:600,textAlign:"right",maxWidth:180}}>{pd?.name||(isSucursalOrder(o)?"Retiro en sucursal":"A domicilio")}</span>
                     </div>
                     {dirDisplay&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{dirDisplay}{locDisplay?` — ${locDisplay}`:""}</div>}
                   </div>
@@ -13669,8 +13672,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             </div>
             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 14px",marginBottom:16,fontSize:12,color:T.textMd,lineHeight:1.6}}>
               <strong style={{color:T.text}}>¿Qué hacer?</strong><br/>
-              Ingresá estos pedidos manualmente en{" "}
-              <strong>Andreani Empresas → Carga individual</strong> buscando la sucursal por la otra calle de la esquina.
+              {esquinaModal.orders.some(o=>!isSucursalOrder(o))&&<>A domicilio: pedile la altura al cliente y corregí la dirección en tu tienda, o cargalo a mano en <strong>Andreani Empresas → Carga individual</strong>. Con "Generar etiquetas (Saldo)" también podés mandarlo a una sucursal cercana.<br/></>}
+              {esquinaModal.orders.some(o=>isSucursalOrder(o))&&<>Retiro en sucursal: cargalo a mano en <strong>Andreani Empresas → Carga individual</strong> buscando la sucursal por la otra calle de la esquina.</>}
             </div>
             <div style={{display:"flex",justifyContent:"flex-end"}}>
               <button onClick={()=>setEsquinaModal(null)} style={{...BtnPrimary(T),fontSize:13}}>Entendido</button>
