@@ -972,6 +972,9 @@ const SIDEBAR_GROUPS_BASE = [
       subs:[{id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"costos",label:"Configuraciones"}]},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     { group:"OPERACIONES" },
+    // Equipo arriba de Reclamos y Tareas: es donde se da de alta a la gente que
+    // trabaja en esas dos secciones, así que se busca ahí y no en Config.
+    {id:"equipo", label:"Equipo", icon:"M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 7a4 4 0 108 0 4 4 0 00-8 0M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"},
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"},{id:"checkout",label:"Checkout"}]},
     // Depósito: solo lo ven el dueño del depósito, sus operarios y los clientes dados de alta (lo decide api/deposito.js → me).
@@ -1721,6 +1724,26 @@ const SECCIONES_MIEMBRO=[
 ];
 // "Depósito" solo se ofrece en la cuenta dueña del depósito (window.__ghDepositoOwner lo levanta App).
 function ghSeccionesMiembro(){ try{ return window.__ghDepositoOwner?[...SECCIONES_MIEMBRO,{id:"deposito",label:"Depósito"}]:SECCIONES_MIEMBRO; }catch(_){ return SECCIONES_MIEMBRO; } }
+
+// ─── Sección Equipo ───
+// La gente que trabaja con vos, en un solo lugar y arriba de Reclamos y
+// Tareas, que es donde se la usa. Antes esto vivía escondido en una pestaña
+// adentro de Tareas y nadie lo encontraba.
+function AppEquipo({T, user, onHome}) {
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <AppTopbar T={T} section="Equipo" sectionId="equipo" onHome={onHome}/>
+      <div style={{padding:"18px 22px",maxWidth:900}}>
+        <div style={{fontSize:13,color:T.textSm,lineHeight:1.6,marginBottom:14}}>
+          Invitá a tu equipo y elegí qué secciones ve cada uno. Entran con su propia cuenta:
+          si a alguien le tildás solo Reclamos, eso es lo único que ve de tu negocio.
+        </div>
+        <MiembrosCuentaCard T={T} user={user}/>
+      </div>
+    </div>
+  );
+}
+
 function MiembrosCuentaCard({T,user}){
   const iS=InputStyle(T);
   const [data,setData]=React.useState(null); // {miembros,invitaciones}
@@ -1730,6 +1753,15 @@ function MiembrosCuentaCard({T,user}){
   const [busy,setBusy]=React.useState(false);
   const [showForm,setShowForm]=React.useState(false);
   const [editando,setEditando]=React.useState(null); // uid del miembro en edición de secciones
+  // El mail puede no llegar (spam, o el remitente todavía en sandbox de Resend,
+  // que solo entrega al dueño). El link es la salida: se copia y se manda a mano.
+  const [ultimo,setUltimo]=React.useState(null);     // {email,link,mail,sandbox}
+  const [copiado,setCopiado]=React.useState("");
+  const linkInvit=(em)=>`https://www.growithapp.com/?invitado=${encodeURIComponent(String(em||"").toLowerCase())}`;
+  const copiarInvit=async(em)=>{
+    try{ await navigator.clipboard.writeText(linkInvit(em)); setCopiado(em); setTimeout(()=>setCopiado(""),2500); }
+    catch(_){ toast("No se pudo copiar. El link es: "+linkInvit(em),"warning",8000); }
+  };
   async function api(action,extra={}){
     const r=await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,uid:user?.uid,...extra})});
     const d=await r.json().catch(()=>({}));
@@ -1746,10 +1778,8 @@ function MiembrosCuentaCard({T,user}){
     setBusy(true);
     try{
       const r=await api("miembroInvitar",{email:em,nombre:nombre.trim(),secciones:secs});
-      toast(r&&r.mail==="enviado"
-        ?`Le mandamos un mail a ${em} con el botón para crear su cuenta. Cuando entre con ese mail, ve tu espacio con las secciones tildadas`
-        :`Invitación creada: cuando ${em} entre a Growith con ese mail, ve tu espacio con las secciones tildadas`,"success",7000);
-      setEmail(""); setNombre(""); cargar();
+      setUltimo({email:em,link:r?.link||linkInvit(em),mail:r?.mail,sandbox:!!r?.sandbox});
+      setEmail(""); setNombre(""); setShowForm(false); cargar();
     }catch(e){ toast("No se pudo invitar: "+e.message,"warning"); }
     setBusy(false);
   }
@@ -1796,6 +1826,21 @@ function MiembrosCuentaCard({T,user}){
           </div>
         </div>
       )}
+      {ultimo&&(
+        <div style={{marginTop:12,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"12px 14px"}}>
+          <div style={{fontSize:12.5,color:T.text,marginBottom:8,lineHeight:1.5}}>
+            {ultimo.mail==="enviado"&&!ultimo.sandbox
+              ? <>Le mandamos el mail a <strong>{ultimo.email}</strong>. Si no le llega, pasale este link:</>
+              : <>No pudimos confirmar que el mail llegue a <strong>{ultimo.email}</strong>. Mandale este link vos:</>}
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <input readOnly value={ultimo.link} onFocus={e=>e.target.select()} style={{...iS,marginBottom:0,flex:1,minWidth:240,fontSize:12,color:T.textMd}}/>
+            <button onClick={()=>copiarInvit(ultimo.email)} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px",flexShrink:0}}>{copiado===ultimo.email?"✓ Copiado":"Copiar link"}</button>
+            <button onClick={()=>setUltimo(null)} style={{background:"transparent",border:"none",color:T.textSm,fontSize:12,padding:"8px 10px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>Listo</button>
+          </div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>El link no da acceso por sí solo: le precarga el mail. Para entrar tiene que crear la cuenta con <strong>{ultimo.email}</strong>.</div>
+        </div>
+      )}
       {lista.length>0&&(
         <div style={{marginTop:12,display:"flex",flexDirection:"column"}}>
           {lista.map((m,i)=>{
@@ -1814,6 +1859,9 @@ function MiembrosCuentaCard({T,user}){
                     </div>
                     {!enEdicion&&<div style={{fontSize:11,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{secsTexto(m.secciones)}</div>}
                   </div>
+                  {m._estado==="pendiente"&&(
+                    <button onClick={()=>copiarInvit(m.email)} title="Copiar el link de invitación para mandárselo por WhatsApp" style={{background:"transparent",border:`1px solid ${copiado===m.email?T.green:T.border}`,color:copiado===m.email?T.green:T.accent,borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"}}>{copiado===m.email?"✓ Copiado":"Copiar link"}</button>
+                  )}
                   {m._estado==="activo"&&(
                     <button onClick={()=>setEditando(enEdicion?null:key)} style={{background:"transparent",border:`1px solid ${T.border}`,color:enEdicion?T.accent:T.textMd,borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>{enEdicion?"Listo":"Editar"}</button>
                   )}
@@ -5245,6 +5293,7 @@ function TabView({children, tabKey}) {
 // --- Íconos de sección (paths stroke 24x24, los mismos del Sidebar/CommandPalette) ---
 const SECTION_ICONS = {
   home:    "M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10",
+  equipo:  "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 7a4 4 0 108 0 4 4 0 00-8 0M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75",
   copilot: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z",
   margenes:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
   arca:    "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
@@ -5639,112 +5688,6 @@ function OrderSearchField({T, orders, onSelect, uid}) {
 // ===========================================
 // APP RECLAMOS
 // ===========================================
-// ─── Quién atiende los reclamos ───
-// Reclamos lo usa atención al cliente, así que el alta de gente vive acá
-// arriba y no adentro de cada reclamo: se invita por mail con la sección
-// Reclamos habilitada y la persona entra con SU cuenta. Solo el dueño
-// administra (el backend lo exige); el resto ve la lista y nada más.
-function EquipoReclamosBar({T,user}){
-  const [data,setData]=React.useState(null);      // {miembros,invitaciones}
-  const [puedeGestionar,setPuedeGestionar]=React.useState(true);
-  const [abierto,setAbierto]=React.useState(false);
-  const [nombre,setNombre]=React.useState("");
-  const [email,setEmail]=React.useState("");
-  const [ultimo,setUltimo]=React.useState(null);  // {email,link,mail,sandbox} del último alta
-  const [copiado,setCopiado]=React.useState("");
-  const linkDe=(em)=>`https://www.growithapp.com/?invitado=${encodeURIComponent(String(em||"").toLowerCase())}`;
-  const copiar=async(em)=>{
-    try{ await navigator.clipboard.writeText(linkDe(em)); setCopiado(em); setTimeout(()=>setCopiado(""),2500); }
-    catch(_){ toast("No se pudo copiar. El link es: "+linkDe(em),"warning",8000); }
-  };
-  const api=async(action,extra={})=>{
-    const r=await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,uid:user?.uid,...extra})});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`);
-    return d;
-  };
-  const cargar=()=>{ api("miembrosListar").then(d=>{setData(d);setPuedeGestionar(true);}).catch(()=>{setData({miembros:[],invitaciones:[]});setPuedeGestionar(false);}); };
-  React.useEffect(()=>{ if(user?.uid) cargar(); /* eslint-disable-line */ },[user?.uid]);
-  const conAcceso=[
-    ...(data?.miembros||[]).filter(m=>m.secciones?.reclamos===true).map(m=>({...m,_estado:"activo"})),
-    ...(data?.invitaciones||[]).filter(i=>i.secciones?.reclamos===true).map(i=>({...i,_estado:"pendiente"})),
-  ];
-  async function invitar(){
-    const em=email.trim().toLowerCase();
-    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ toast("Poné un email válido","warning"); return; }
-    // Si ya es miembro de la cuenta, no se reinvita: se le suma Reclamos a lo
-    // que ya tenía, para no pisarle los permisos de las otras secciones.
-    const ya=(data?.miembros||[]).find(m=>String(m.email||"").toLowerCase()===em);
-    try{
-      if(ya){
-        await api("miembroActualizar",{memberUid:ya.uid,secciones:{...(ya.secciones||{}),reclamos:true}});
-        toast(`${ya.nombre||em} ya era del equipo: le habilitamos Reclamos`,"success");
-        setUltimo(null);
-      }else{
-        const r=await api("miembroInvitar",{email:em,nombre:nombre.trim(),secciones:{reclamos:true}});
-        setUltimo({email:em,link:r?.link||linkDe(em),mail:r?.mail,sandbox:!!r?.sandbox});
-      }
-      setEmail(""); setNombre(""); setAbierto(false); cargar();
-    }catch(e){ toast("No se pudo agregar: "+e.message,"warning"); }
-  }
-  async function quitar(m){
-    const otras=SECCIONES_MIEMBRO.filter(s=>s.id!=="reclamos"&&m.secciones?.[s.id]===true);
-    const msg=otras.length
-      ? `¿Sacarle Reclamos a ${m.nombre||m.email}? Sigue entrando a ${otras.map(s=>s.label).join(", ")}.`
-      : `¿Quitarle el acceso a ${m.nombre||m.email}? Reclamos es su única sección, así que deja de ver tu espacio.`;
-    if(!await appConfirm(msg,{okLabel:"Quitar acceso",danger:true})) return;
-    try{
-      if(m._estado==="pendiente"||!m.uid||otras.length===0) await api("miembroQuitar",{memberUid:m.uid||"",email:m.email||""});
-      else await api("miembroActualizar",{memberUid:m.uid,secciones:{...(m.secciones||{}),reclamos:false}});
-      cargar();
-    }catch(e){ toast("No se pudo quitar: "+e.message,"warning"); }
-  }
-  const COLORS=["#6366f1","#0ea5e9","#f97316","#10b981","#a855f7","#ef4444"];
-  if(!data) return null;
-  return (
-    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 14px",marginBottom:12}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-        <span style={{fontSize:11,textTransform:"uppercase",letterSpacing:0.5,fontWeight:700,color:T.textSm,flexShrink:0}}>Atienden los reclamos</span>
-        {conAcceso.length===0&&<span style={{fontSize:12,color:T.textSm}}>Por ahora, solo vos.</span>}
-        {conAcceso.map((m,i)=>(
-          <span key={(m.uid||m.email)+"_"+i} title={m.email} style={{display:"inline-flex",alignItems:"center",gap:6,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:99,padding:"4px 6px 4px 4px"}}>
-            <span style={{width:22,height:22,borderRadius:"50%",background:COLORS[i%COLORS.length]+"22",color:COLORS[i%COLORS.length],display:"grid",placeItems:"center",fontSize:11,fontWeight:800,flexShrink:0}}>{(m.nombre||m.email||"?").trim().charAt(0).toUpperCase()}</span>
-            <span style={{fontSize:12,fontWeight:600,color:T.text}}>{m.nombre||m.email}</span>
-            {m._estado==="pendiente"&&<span style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:99,background:T.yellowBg,color:T.yellow}}>Pendiente</span>}
-            {puedeGestionar&&m._estado==="pendiente"&&<button onClick={()=>copiar(m.email)} title="Copiar el link de invitación para mandárselo" style={{background:"none",border:"none",color:copiado===m.email?T.green:T.accent,cursor:"pointer",fontSize:11,fontWeight:700,padding:"0 2px",fontFamily:"'Inter',system-ui,sans-serif"}}>{copiado===m.email?"✓ Copiado":"Copiar link"}</button>}
-            {puedeGestionar&&<button onClick={()=>quitar(m)} title="Quitarle el acceso" style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:14,lineHeight:1,padding:"0 2px"}}>×</button>}
-          </span>
-        ))}
-        {puedeGestionar&&!abierto&&<button onClick={()=>setAbierto(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginLeft:"auto",flexShrink:0}}>+ Agregar</button>}
-      </div>
-      {abierto&&(
-        <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderL}`,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-          <input style={{...InputStyle(T),marginBottom:0,width:150,fontSize:13}} placeholder="Nombre" value={nombre} onChange={e=>setNombre(e.target.value)}/>
-          <input style={{...InputStyle(T),marginBottom:0,flex:1,minWidth:200,fontSize:13}} type="email" placeholder="email@ejemplo.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")invitar();}}/>
-          <AsyncButton onClick={invitar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>Dar acceso</AsyncButton>
-          <button onClick={()=>{setAbierto(false);setEmail("");setNombre("");}} style={{background:"transparent",border:"none",color:T.textSm,fontSize:12,padding:"8px 10px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>Cancelar</button>
-          <div style={{fontSize:11,color:T.textSm,width:"100%"}}>Entra con su propia cuenta y ve solo Reclamos. Si ya es de tu equipo, le sumamos esta sección sin tocarle el resto.</div>
-        </div>
-      )}
-      {ultimo&&(
-        <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderL}`}}>
-          <div style={{fontSize:12,color:T.text,marginBottom:6,lineHeight:1.5}}>
-            {ultimo.mail==="enviado"&&!ultimo.sandbox
-              ? <>Le mandamos el mail a <strong>{ultimo.email}</strong>. Si no le llega, pasale este link:</>
-              : <>No pudimos confirmar que el mail llegue a <strong>{ultimo.email}</strong>. Mandale este link vos:</>}
-          </div>
-          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-            <input readOnly value={ultimo.link} onFocus={e=>e.target.select()} style={{...InputStyle(T),marginBottom:0,flex:1,minWidth:240,fontSize:12,color:T.textMd}}/>
-            <button onClick={()=>copiar(ultimo.email)} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px",flexShrink:0}}>{copiado===ultimo.email?"✓ Copiado":"Copiar link"}</button>
-            <button onClick={()=>setUltimo(null)} style={{background:"transparent",border:"none",color:T.textSm,fontSize:12,padding:"8px 10px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>Listo</button>
-          </div>
-          <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>El link no da acceso por sí solo: le precarga el mail. Para entrar tiene que crear la cuenta con <strong>{ultimo.email}</strong>.</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHome, totalOrdersCount, onGenerarCanje, view:viewProp, setView:setViewProp}) {
   // Sugerencias de producto tomadas de los pedidos reales de la cuenta.
   const catalogoProd=useMemo(()=>catalogoProductos(orders),[orders]);
@@ -5789,22 +5732,6 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     return d;
   };
   const cargarColabs=()=>{ if(!user?.uid) return; tareasApiR({action:"getData"}).then(d=>setColabsTareas(Array.isArray(d?.colaboradores)?d.colaboradores:[])).catch(()=>{}); };
-  // Mismo alta rápida que Tareas: nombre + email, queda como colaborador de la
-  // cuenta (sirve para Tareas y Reclamos). Devuelve el email para asignarlo al toque.
-  const agregarPersona=async()=>{
-    const nombre=await appPrompt("Nombre de la persona:","",{title:"Agregar al equipo",placeholder:"Ej: Sofía"});
-    if(!nombre?.trim()) return null;
-    const email=await appPrompt(`Email de ${nombre.trim()}:`,"",{title:"Agregar al equipo",placeholder:"nombre@mail.com"});
-    const em=String(email||"").trim().toLowerCase();
-    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ if(email!=null) toast("Poné un email válido","warning"); return null; }
-    try{
-      const d=await tareasApiR({action:"createColaborador",nombre:nombre.trim(),email:em,rol:"",telefono:""});
-      if(!d||!d._id) throw new Error("Error del servidor");
-      setColabsTareas(prev=>[...prev.filter(c=>c._id!==d._id),d]);
-      toast(`${d.nombre} agregado al equipo`,"success");
-      return em;
-    }catch(e){ toast(e.message||"No se pudo agregar","error"); return null; }
-  };
   const inicialesDe=(n)=>String(n||"?").trim().split(/\s+/).slice(0,2).map(s=>s[0]||"").join("").toUpperCase()||"?";
   // Lo que pasa cuando la clienta despacha la devolución: no siempre es Andreani.
   const DEVOL_EMPRESAS=["Andreani","Correo Argentino","OCA","Mercado Envíos","Otro"];
@@ -6428,8 +6355,6 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         {/* === RECLAMOS TAB === */}
         {view==="reclamos"&&(
           <div>
-            {/* Quién atiende los reclamos */}
-            <EquipoReclamosBar T={T} user={user}/>
             {/* Buscador siempre visible */}
             {(()=>{
               const sq2=search.toLowerCase();
@@ -6773,15 +6698,10 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
             {/* Responsable */}
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
               <div title="Responsable" style={{width:28,height:28,borderRadius:"50%",background:activeR.asignadoEmail?T.accentSolid:T.border,color:"#fff",display:"grid",placeItems:"center",fontSize:11,fontWeight:800,flexShrink:0}}>{activeR.asignadoEmail?inicialesDe(activeR.asignadoNombre||activeR.asignadoEmail):"?"}</div>
-              <select style={{...InputStyle(T),fontSize:12,flex:1}} value={activeR.asignadoEmail||""} onChange={async e=>{
-                let em=e.target.value;
-                if(em==="__nuevo__"){ em=await agregarPersona(); if(!em) return; }
-                asignarReclamo(activeR._docId,em);
-              }}>
+              <select style={{...InputStyle(T),fontSize:12,flex:1}} value={activeR.asignadoEmail||""} onChange={e=>asignarReclamo(activeR._docId,e.target.value)}>
                 <option value="">Sin responsable</option>
                 {equipo.map(m=><option key={m.email} value={m.email}>{m.nombre}{m.rol!=="Miembro"?` · ${m.rol}`:""}</option>)}
                 {activeR.asignadoEmail&&!equipo.some(m=>m.email===activeR.asignadoEmail)&&<option value={activeR.asignadoEmail}>{activeR.asignadoNombre||activeR.asignadoEmail}</option>}
-                <option value="__nuevo__">+ Agregar persona…</option>
               </select>
             </div>
             {/* Cliente */}
@@ -6990,14 +6910,9 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 <Field T={T} label="Tipo"><select style={iS} value={reclamoForm.tipo} onChange={e=>setReclamoForm(f=>({...f,tipo:e.target.value}))}>{TIPOS_R.map(t=><option key={t}>{t}</option>)}</select></Field>
                 <Field T={T} label="Motivo" required><select style={iS} value={reclamoForm.motivo} onChange={e=>setReclamoForm(f=>({...f,motivo:e.target.value}))}><option value="">-</option>{MOTIVOS_R.map(m=><option key={m}>{m}</option>)}</select></Field>
                 <Field T={T} label="Responsable">
-                  <select style={iS} value={reclamoForm.asignadoEmail||""} onChange={async e=>{
-                    let em=e.target.value;
-                    if(em==="__nuevo__"){ em=(await agregarPersona())||""; }
-                    setReclamoForm(f=>({...f,asignadoEmail:em,asignadoNombre:em?nombreEquipo(em):""}));
-                  }}>
+                  <select style={iS} value={reclamoForm.asignadoEmail||""} onChange={e=>{const em=e.target.value;setReclamoForm(f=>({...f,asignadoEmail:em,asignadoNombre:em?nombreEquipo(em):""}));}}>
                     <option value="">Sin asignar</option>
                     {equipo.map(m=><option key={m.email} value={m.email}>{m.nombre}{m.rol!=="Miembro"?` · ${m.rol}`:""}</option>)}
-                    <option value="__nuevo__">+ Agregar persona…</option>
                   </select>
                 </Field>
               </div>
@@ -24442,7 +24357,17 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         {/* ── TAB EQUIPO (admin): gestión de miembros y permisos ── */}
         {/* Miembros con cuenta propia y permisos por sección (aparte de los
             colaboradores por link, que siguen abajo igual que siempre) */}
-        {!loading&&tab==="equipo"&&!colabMode&&<div style={{marginBottom:10}}><MiembrosCuentaCard T={T} user={user}/></div>}
+        {/* Los miembros con cuenta se mudaron a la sección Equipo: acá quedan
+            solo los colaboradores por link, que son propios de Tareas. */}
+        {!loading&&tab==="equipo"&&!colabMode&&(
+          <div style={{marginBottom:10,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:200}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.text}}>Miembros con cuenta</div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Los que entran con su propia cuenta y ven las secciones que les habilitás ahora se manejan en Equipo.</div>
+            </div>
+            <button onClick={()=>{try{window.location.hash="#/equipo";}catch(_){}}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",flexShrink:0}}>Ir a Equipo →</button>
+          </div>
+        )}
         {!loading&&tab==="equipo"&&!colabMode&&(()=>{
           const editoresLegacy=(produccion?.editores||[]).filter(ed=>!colaboradores.some(c=>c.nombre===ed));
           const todos=[
@@ -42639,7 +42564,7 @@ export default function App() {
   },[user&&user.uid]);
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","demo","copilot","margenes","arca","meta","gads","tiktokads","claude","chatgpt","gemini","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario","deposito"];
+  const VALID_PAGES = ["home","demo","copilot","margenes","arca","meta","gads","tiktokads","claude","chatgpt","gemini","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","equipo","referidos","calendario","deposito"];
   // Alias legacy: #/rendimiento era el nombre viejo del Dashboard (hoy #/margenes)
   const _aliasPage = (p) => p === "rendimiento" ? "margenes" : p;
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
@@ -43615,6 +43540,17 @@ export default function App() {
   else if(page==="gads") pageContent = adminGate("gads") || planGate("plus") || <PageView T={T} pageKey="gads"><AppGoogleAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={gadsTab} setTab={setGadsTab}/></PageView>;
   else if(page==="tiktokads") pageContent = adminGate("tiktokads") || planGate("medio") || <PageView T={T} pageKey="tiktokads"><AppTiktokAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={tiktokTab} setTab={setTiktokTab}/></PageView>;
   else if(page==="claude"||page==="chatgpt"||page==="gemini") pageContent = adminGate(page) || planGate("plus") || <PageView T={T} pageKey={page}><AppConectorIA T={T} user={user} app={{claude:"Claude",chatgpt:"ChatGPT",gemini:"Gemini"}[page]} onHome={()=>setPage("home")}/></PageView>;
+  // Equipo lo administra solo el dueño (el backend también lo exige): un
+  // miembro que escriba #/equipo a mano vuelve al inicio en vez de ver la
+  // tarjeta vacía.
+  else if(page==="equipo") pageContent = secMiembro ? (
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"70vh",fontFamily:"'Inter',system-ui,sans-serif",gap:16,padding:24,background:T.bg}}>
+      <div style={{color:T.textSm}}><GhI n="lock" size={40}/></div>
+      <div style={{fontSize:20,fontWeight:800,color:T.text}}>Acceso restringido</div>
+      <div style={{fontSize:14,color:T.textMd,textAlign:"center",maxWidth:360}}>El equipo lo administra el dueño de la cuenta.</div>
+      <button onClick={()=>setPage("home")} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 24px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>← Volver al inicio</button>
+    </div>
+  ) : <PageView T={T} pageKey="equipo"><AppEquipo T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="deposito") pageContent = depositoNav
     ? <PageView T={T} pageKey="deposito"><AppDeposito T={T} user={user} info={depositoInfo} onHome={()=>setPage("home")}/></PageView>
