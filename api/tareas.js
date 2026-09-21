@@ -1024,8 +1024,30 @@ async function handlerTareas(req, res) {
         if (distinto) db.collection("users").doc(t.uid).set(espejo, { merge: true }).catch(() => {});
       }
 
+      // ── Cuenta SOLO-MIEMBRO ──────────────────────────────────────────────
+      // Alguien invitado a trabajar en la tienda de otro (atención al cliente,
+      // depósito, etc.). Su doc propio existe pero está vacío: nunca conectó
+      // una tienda ni pagó. No tiene que tener plan propio ni que se le cobre:
+      // trabaja adentro del espacio del dueño, que ya paga.
+      const ajenas = tiendas.filter(t => !t.esSelf && t.rol === "miembro");
+      const propias = tiendas.filter(t => t.esSelf || t.rol === "owner");
+      const soloMiembro = ajenas.length > 0
+        && propias.every(t => t.esSelf)                              // no es dueño de ninguna otra tienda
+        && !(Array.isArray(my.stores) && my.stores.length)           // su doc propio no tiene tiendas conectadas
+        && (my.plan || "free") === "free"                            // nunca pagó
+        && !my.stripeSubscriptionId;
+      // Marcamos el doc para que el cron de vencimientos no le mande mails de
+      // pago (ver api/check-expiring.js). Solo escribimos si cambió.
+      if (my.soloMiembro !== soloMiembro) {
+        db.collection("users").doc(myUid).set({ soloMiembro }, { merge: true }).catch(() => {});
+      }
+
       // 3) Tienda activa: la guardada en el perfil si sigue existiendo; si no, la propia; si no, la primera.
       let activeUid = my.active_tienda_uid && tiendas.some(t => t.uid === my.active_tienda_uid) ? my.active_tienda_uid : null;
+      // Una cuenta solo-miembro arranca en la tienda del dueño, no en su propio
+      // doc vacío: si no, ve una tienda sin nada y, al vencer su prueba, queda
+      // encerrada en la pantalla de planes sin poder llegar al switcher.
+      if (!activeUid && soloMiembro) activeUid = ajenas[0]?.uid || null;
       if (!activeUid) activeUid = (tiendas.find(t => t.esSelf) || tiendas.find(t => t.rol === "owner") || tiendas[0])?.uid || null;
       const active = tiendas.find(t => t.uid === activeUid) || null;
 
@@ -1045,7 +1067,10 @@ async function handlerTareas(req, res) {
       const esAjena = active && active.uid !== myUid;
       return res.json({
         ok: true,
-        tiendas,
+        // Una cuenta solo-miembro no muestra su propia tienda vacía en el
+        // switcher: no tiene nada adentro y solo confunde.
+        tiendas: soloMiembro ? tiendas.filter(t => !t.esSelf) : tiendas,
+        soloMiembro,
         fotoPerfil: my.fotoPerfil || null, // foto subida en Config → Cuenta (pisa la de Google)
         activeTiendaUid: activeUid,
         activeRol: active?.rol || null,
@@ -1247,7 +1272,7 @@ async function handlerTareas(req, res) {
       if (colabAuth) return res.status(403).json({ error: "No autorizado" });
       const myRef = db.collection("users").doc(uid);
       const my = (await myRef.get()).data() || {};
-      const BLOQUEADAS = ["plan", "planExpiry", "trialEnd", "isTrial", "isAdmin", "teamMembers", "teamUids", "teamInvites", "teamInviteEmails", "ownerUid", "ownerEmail", "tiendas", "active_tienda_uid", "email", "uid", "deleted", "deletedAt", "purgeAt", "esTienda", "refCreditUsd"];
+      const BLOQUEADAS = ["plan", "planExpiry", "trialEnd", "isTrial", "isAdmin", "teamMembers", "teamUids", "teamInvites", "teamInviteEmails", "ownerUid", "ownerEmail", "tiendas", "active_tienda_uid", "email", "uid", "deleted", "deletedAt", "purgeAt", "esTienda", "soloMiembro", "refCreditUsd"];
       const esOwnerDe = (tid, d) => tid === uid ? !(d.ownerUid && d.ownerUid !== uid) : d.ownerUid === uid;
       const syncStripe = async () => { try { const { syncTiendasExtra } = await import("./stripe.js"); await syncTiendasExtra(db, uid); } catch (e) { console.warn("[tiendas] stripe sync:", e.message); } };
 
@@ -1267,7 +1292,8 @@ async function handlerTareas(req, res) {
           plan: my.plan || "free", planExpiry: my.planExpiry || null, trialEnd: my.trialEnd || null, isTrial: my.isTrial === true,
           onbDone: true, createdAt: FieldValue.serverTimestamp(), createdAtIso: now,
         });
-        await myRef.set({ tiendas: FieldValue.arrayUnion({ uid: tid, nombre, color, rol: "owner", createdAt: now }), active_tienda_uid: tid }, { merge: true });
+        // Deja de ser "solo miembro": ahora tiene tienda propia y su plan cuenta.
+        await myRef.set({ tiendas: FieldValue.arrayUnion({ uid: tid, nombre, color, rol: "owner", createdAt: now }), active_tienda_uid: tid, soloMiembro: false }, { merge: true });
         clearTeamCache(tid);
         await syncStripe();
         return res.json({ ok: true, tienda: { uid: tid, nombre, color, rol: "owner" } });

@@ -42477,6 +42477,7 @@ export default function App() {
   // (invitado desde Equipo), toda la app opera sobre el uid del dueño y solo
   // se muestran las secciones permitidas. El backend exige lo mismo.
   const [miembroDe,setMiembroDe]=useState(undefined); // undefined=verificando, null=no es miembro, {ownerId,secciones}
+  const [soloMiembro,setSoloMiembro]=useState(false); // cuenta sin tienda propia: trabaja en el espacio de otro
   const miembroDeRef=React.useRef(null); // para que efectos async (login) no pisen el contexto del dueño
   // MEMOIZADO: sin useMemo este objeto se recreaba en CADA render y todos los
   // effects con dep [user] (onSnapshot de canjes/reclamos, etc.) se
@@ -42528,6 +42529,9 @@ export default function App() {
         const info=d?{ownerId:d.ownerId||null,rol:d.activeRol||"owner",secciones:d.secciones||{},ownerNombre:d.ownerNombre||"",tiendas,activeTiendaUid:d.activeTiendaUid||authUser.uid,selfMovida:!!d.selfMovida,selfMovidaA:d.selfMovidaA||null,extra:{tiendasExtra:d.ownerCtx?.tiendasExtra||0,extraUsdMensual:d.ownerCtx?.extraUsdMensual||0}}:null;
         miembroDeRef.current=info&&info.ownerId?info:null;
         setMiembroDe(info);
+        // Cuenta que solo trabaja en el espacio de otro: no tiene plan propio,
+        // así que ni paywall ni cartel de vencimiento (lo decide el backend).
+        setSoloMiembro(!!d?.soloMiembro);
         // Modo miembro: las puertas del front (plan/trial, "conectá Tienda
         // Nube") tienen que evaluar al DUEÑO, no al miembro — el doc del dueño
         // no es legible con el SDK cliente del miembro, así que el contexto
@@ -43016,7 +43020,9 @@ export default function App() {
       setUserPlan(d.plan||"free");
       setPlanExpiry(d.planExpiry?.toDate?.()||null);
       setPlanLoaded(true);
-      if(!d.trialEnd&&(d.plan==="free"||!d.plan)){
+      // A una cuenta solo-miembro no se le re-crea la prueba: no tiene tienda
+      // propia y el trial solo servía para terminar mostrándole el paywall.
+      if(!d.trialEnd&&(d.plan==="free"||!d.plan)&&!d.soloMiembro){
         const te=new Date(Date.now()+14*24*60*60*1000);
         updateDoc(doc(db,"users",user.uid),{trialEnd:te}).catch(()=>{});
         setTrialEnd(te);
@@ -43457,8 +43463,11 @@ export default function App() {
   // pantallazo de "pagá tu plan" en cada recarga mientras Firestore responde.
   const planReady = planLoaded && miembroDe !== undefined;
   const _now = new Date();
-  const isInTrial    = !!(trialEnd && _now < trialEnd && userPlan === "free");
-  const trialExpired = !!(trialEnd && _now >= trialEnd && userPlan === "free");
+  // Una cuenta solo-miembro no tiene plan propio: trabaja dentro del espacio
+  // del dueño, que es quien paga. No le corresponde paywall, ni cartel de
+  // "tu prueba vence", ni la cuenta regresiva del trial.
+  const isInTrial    = !soloMiembro && !!(trialEnd && _now < trialEnd && userPlan === "free");
+  const trialExpired = !soloMiembro && !!(trialEnd && _now >= trialEnd && userPlan === "free");
   const trialDaysLeft = isInTrial ? Math.max(1, Math.ceil((trialEnd - _now) / (1000*60*60*24))) : 0;
 
   // ─── Plan expiry warning (trial ≤5d OR paid plan ≤5d) ───

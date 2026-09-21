@@ -120,6 +120,11 @@ export default async function handler(req, res) {
   const evaluar = (doc) => {
     const u = doc.data();
     if (esDemo(u)) return null; // tiendas DEMO: sin mails de plan, prueba ni bienvenida
+    // Cuenta que SOLO es miembro del espacio de otro (atención al cliente,
+    // depósito…): no tiene tienda propia ni paga nada, así que no corresponde
+    // mandarle "tu cuenta está vacía" ni "tu prueba vence, activá un plan".
+    // El flag lo escribe api/tareas.js en la acción workspace.
+    if (u.soloMiembro === true && (u.plan || "free") === "free") return null;
     const email = u.email;
     if (!email) return null;
 
