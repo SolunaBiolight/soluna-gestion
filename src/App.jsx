@@ -974,6 +974,8 @@ const SIDEBAR_GROUPS_BASE = [
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"},{id:"checkout",label:"Checkout"}]},
+    // Depósito: solo lo ven el dueño del depósito, sus operarios y los clientes dados de alta (lo decide api/deposito.js → me).
+    {id:"deposito", label:"Depósito", soloDeposito:true, icon:"M3 9l9-6 9 6v11a1 1 0 01-1 1H4a1 1 0 01-1-1zM9 21v-8h6v8M3 9h18"},
     {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", alertKey:"reclamos", badge:"red",
       subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", alertKey:"canjes", badge:"orange"},
@@ -1002,7 +1004,7 @@ const SIDEBAR_GROUPS_BASE = [
     {id:"planes",   label:"Suscripción", icon:"M2 5h20v14H2zM2 10h20M6 15h4"},
   ];
 
-function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, margenesTab, setMargenesTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, gadsTab, setGadsTab, tiktokTab, setTiktokTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false, seccionesMiembro=null}) {
+function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, margenesTab, setMargenesTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, gadsTab, setGadsTab, tiktokTab, setTiktokTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false, seccionesMiembro=null}) {
   const GROUPS = SIDEBAR_GROUPS_BASE.map(it=>it.alertKey?{...it,count:alerts[it.alertKey]}:it);
   const [closedSubs, setClosedSubs] = React.useState(new Set());
   // "Publicar" desplegado/plegado (recordado por dispositivo).
@@ -1095,7 +1097,8 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       <nav style={{flex:1,padding:DS.sp.sm,display:"flex",flexDirection:"column",gap:2,overflowY:"auto"}}>
         {GROUPS.filter(item=>!(adminOnlySections||[]).includes(item.id)||isAdmin)
           // Miembro de otro espacio: solo sus secciones habilitadas (los títulos de grupo quedan si tienen algo visible)
-          .filter(item=>{ if(!seccionesMiembro) return true; if(item.group) return true; if(item.hub) return item.hub.some(c=>seccionesMiembro[c.permKey]===true); return seccionesMiembro[item.permKey||item.id]===true; })
+          .filter(item=>!item.soloDeposito||depositoNav)
+          .filter(item=>{ if(!seccionesMiembro) return true; if(item.group||item.soloDeposito) return true; if(item.hub) return item.hub.some(c=>seccionesMiembro[c.permKey]===true); return seccionesMiembro[item.permKey||item.id]===true; })
           // Gateo por plan (sin trial): Facturador ($19) = solo Inicio + Facturador.
           // Intermedio ($39) = TODO menos Dashboard (margenes) + Copilot. Pro = todo.
           .filter(item=>{
@@ -1716,6 +1719,8 @@ const SECCIONES_MIEMBRO=[
   {id:"ml",label:"Mercado Libre"},{id:"margenes",label:"Dashboard"},{id:"arca",label:"Facturador"},
   {id:"calendario",label:"Calendario de Pagos"},
 ];
+// "Depósito" solo se ofrece en la cuenta dueña del depósito (window.__ghDepositoOwner lo levanta App).
+function ghSeccionesMiembro(){ try{ return window.__ghDepositoOwner?[...SECCIONES_MIEMBRO,{id:"deposito",label:"Depósito"}]:SECCIONES_MIEMBRO; }catch(_){ return SECCIONES_MIEMBRO; } }
 function MiembrosCuentaCard({T,user}){
   const iS=InputStyle(T);
   const [data,setData]=React.useState(null); // {miembros,invitaciones}
@@ -1765,7 +1770,7 @@ function MiembrosCuentaCard({T,user}){
     </button>
   );
   const lista=[...(data?.miembros||[]).map(m=>({...m,_estado:"activo"})),...(data?.invitaciones||[]).map(i=>({...i,_estado:"pendiente"}))];
-  const secsTexto=(sec)=>{const on=SECCIONES_MIEMBRO.filter(s=>sec?.[s.id]===true).map(s=>s.label);return on.length?on.join(" · "):"Sin secciones";};
+  const secsTexto=(sec)=>{const on=ghSeccionesMiembro().filter(s=>sec?.[s.id]===true).map(s=>s.label);return on.length?on.join(" · "):"Sin secciones";};
   const AVATAR_COLORS=["#6366f1","#0ea5e9","#f97316","#10b981","#a855f7","#ef4444"];
   return (
     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
@@ -1783,7 +1788,7 @@ function MiembrosCuentaCard({T,user}){
             <input style={{...iS,marginBottom:0,flex:1,minWidth:180}} type="email" placeholder="email@ejemplo.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")invitar();}}/>
           </div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-            {SECCIONES_MIEMBRO.map(s=><Chip key={s.id} on={secs[s.id]===true} label={s.label} onClick={()=>setSecs(p=>({...p,[s.id]:!(p[s.id]===true)}))}/>)}
+            {ghSeccionesMiembro().map(s=><Chip key={s.id} on={secs[s.id]===true} label={s.label} onClick={()=>setSecs(p=>({...p,[s.id]:!(p[s.id]===true)}))}/>)}
           </div>
           <div style={{display:"flex",gap:8}}>
             <AsyncButton onClick={invitar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>Enviar invitación</AsyncButton>
@@ -1817,7 +1822,7 @@ function MiembrosCuentaCard({T,user}){
                 </div>
                 {enEdicion&&(
                   <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8,paddingLeft:40}}>
-                    {SECCIONES_MIEMBRO.map(s=>(
+                    {ghSeccionesMiembro().map(s=>(
                       <Chip key={s.id} on={m.secciones?.[s.id]===true} label={s.label} onClick={()=>toggleSecMiembro(m,s.id)}/>
                     ))}
                   </div>
@@ -9927,7 +9932,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 // ===========================================
 // APP ENVIOS
 // ===========================================
-function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPedidos={}, tab:tabProp, setTab:setTabProp}) {
+function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPedidos={}, depositoCliente=null, tab:tabProp, setTab:setTabProp}) {
   const [tab,setTabState]=useState(tabProp||"panel");
   React.useEffect(()=>{ if(tabProp!==undefined&&tabProp!==tab) setTabState(tabProp); },[tabProp]);
   const setTab=(v)=>{ setTabState(v); setTabProp&&setTabProp(v); };
@@ -12023,6 +12028,50 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     const nums=bulkRowsRef.current.filter(r=>r.emitido?.numeroDeEnvio&&!r.anulada).map(r=>({numero:r.numero,envio:String(r.emitido.numeroDeEnvio),skus:ghSkuLinesDe(r.order)}));
     return descargarVarias(nums);
   }
+  // ── Depósito: mandar las etiquetas recién generadas a la cola del depósito ──
+  // Solo si la tienda está dada de alta como cliente (depositoCliente). Las
+  // etiquetas van SIEMPRE con los SKU estampados y ordenadas por producto
+  // (pedidos iguales juntos) en 10x15 para la Zebra del depósito.
+  const [depEnvio,setDepEnvio]=useState(null); // prefill del modal
+  const [depArmando,setDepArmando]=useState(null); // {done,total}
+  const depApi=React.useMemo(()=>ghDepApiSesion(()=>({uid:user?.uid})),[user?.uid]);
+  const skuOrdenRef=useRef([]);
+  async function enviarDepositoBulk(){
+    const rows=ghDepOrdenar(bulkRowsRef.current.filter(r=>r.emitido?.numeroDeEnvio&&!r.anulada),r=>ghSkuLinesDe(r.order));
+    if(!rows.length) return;
+    setDepArmando({done:0,total:rows.length});
+    try{
+      const pdfDe=new Map(); let cola=rows.slice(), ronda=0;
+      while(cola.length&&ronda<4){
+        if(ronda>0) await new Promise(r=>setTimeout(r,2500));
+        const faltan=[];
+        for(const r of cola){
+          const resp=await authFetch(`/api/andreani?action=etiqueta&numero=${encodeURIComponent(String(r.emitido.numeroDeEnvio))}`);
+          const d=await resp.json().catch(()=>({}));
+          if(d&&d.pdf){ const skus=ghSkuLinesDe(r.order); let b64=d.pdf; if(skus.length){ try{ b64=await ghEstamparSkuPdf(d.pdf,skus); }catch(e){ console.error("sku depósito:",e); } } pdfDe.set(r.numero,b64); setDepArmando({done:pdfDe.size,total:rows.length}); }
+          else if(d&&d.pending) faltan.push(r);
+        }
+        cola=faltan; ronda++;
+      }
+      const listas=rows.filter(r=>pdfDe.has(r.numero));
+      if(!listas.length){ toast("Andreani todavía está generando las etiquetas. Probá de nuevo en unos segundos.","warning"); return; }
+      if(listas.length<rows.length) toast(`${rows.length-listas.length} etiqueta${rows.length-listas.length!==1?"s":""} todavía en proceso: no entran en esta tanda`,"warning");
+      const armado=await ghDepPdfDeEtiquetas(listas.map(r=>pdfDe.get(r.numero)));
+      setDepEnvio({pdfBytes:armado.bytes,pages:armado.pages,origen:"api",canal:"andreani",pedidos:listas.map((r,i)=>({numero:String(r.numero),comprador:r.order?.comprador||"",items:ghSkuLinesDe(r.order),pags:armado.pags[i]}))});
+    }catch(e){ toast("No se pudo preparar la tanda: "+e.message,"error"); }
+    finally{ setDepArmando(null); }
+  }
+  async function enviarDepositoSku(){
+    if(!skuBlob) return;
+    try{
+      const bytes=new Uint8Array(await skuBlob.arrayBuffer());
+      // Mismo orden que el PDF generado: con SKU primero (ordenadas por SKU), sin SKU al final.
+      const orden=skuOrdenRef.current||[]; const conSku=orden.filter(r=>r.found&&r.skuLines?.length), sinSku=orden.filter(r=>!(r.found&&r.skuLines?.length));
+      const porNum=new Map();
+      [...conSku,...sinSku].forEach((r,i)=>{ const k=String(r.pedidoNum||`pag${r.pagina}`); const p=porNum.get(k)||{numero:k,comprador:r.destinatario||"",items:r.skuLines||[],pags:[]}; p.pags.push(i+1); porNum.set(k,p); });
+      setDepEnvio({pdfBytes:bytes,pages:orden.length,origen:"excel",canal:"andreani",pedidos:[...porNum.values()]});
+    }catch(e){ toast("No se pudo preparar la tanda: "+e.message,"error"); }
+  }
   // Anulación inmediata (hasta 30 min después de emitir, sin ingreso): el
   // saldo vuelve al instante. Devuelve true si se anuló.
   async function anularInmediata(numero){
@@ -12182,6 +12231,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         return sA.localeCompare(sB);
       });
       cfg={...cfg, sortBy:"sku", pageOrder:sortedResults.map(r=>r.pagina-1)};
+      skuOrdenRef.current=sortedResults;
       const fd=new FormData();
       fd.append("pdf",file,file.name);
       fd.append("skuMap",JSON.stringify(skuMap));
@@ -13056,6 +13106,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       <div style={{fontSize:14,fontWeight:800,color:T.text,marginBottom:2}}>{skuBlob?"PDF listo para descargar":"Resultados listos"}</div>
                       <div style={{fontSize:12,color:T.textSm}}>{found.length} rótulos {skuBlob?"con SKUs escritos":"encontrados"}{notFound.length>0?` · ${notFound.length} sin match`:""}</div>
                     </div>
+                    {skuBlob&&depositoCliente&&<AsyncButton onClick={enviarDepositoSku} title="Manda este PDF con los SKU a la cola del depósito" style={{...BtnSecondary(T),fontSize:14,padding:"12px 20px",flexShrink:0}}>Enviar al depósito</AsyncButton>}
                     {skuBlob
                       ? <button onClick={()=>{
                           const url=URL.createObjectURL(skuBlob);
@@ -13886,6 +13937,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         })()}
       </Modal>
 
+      {depEnvio&&depositoCliente&&<DepositoEnvioModal T={T} api={depApi} cliente={depositoCliente} prefill={depEnvio} onClose={()=>setDepEnvio(null)}/>}
+
       {/* Modal: pedidos con esquina excluidos del export */}
       <Modal T={T} open={!!esquinaModal} onClose={()=>setEsquinaModal(null)} title="Pedidos no incluidos en el Excel" width={500}>
         {esquinaModal&&(
@@ -14171,6 +14224,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     {ok.length>1
                       ?<AsyncButton onClick={descargarTodasBulk} disabled={!!bulkDl} style={{...BtnPrimary(T),fontSize:13,minWidth:180,justifyContent:"center"}}>{bulkDl?`Descargando ${bulkDl.done}/${bulkDl.total}…`:`Descargar las ${ok.length} (1 PDF)`}</AsyncButton>
                       :<AsyncButton onClick={()=>descargarEtiquetaBulk(String(ok[0].emitido.numeroDeEnvio),ghSkuLinesDe(ok[0].order))} style={{...BtnPrimary(T),fontSize:13,minWidth:160,justifyContent:"center"}}>Descargar etiqueta</AsyncButton>}
+                    {depositoCliente&&<AsyncButton onClick={enviarDepositoBulk} disabled={!!depArmando} title="Manda estas etiquetas, con los SKU y ordenadas por producto, a la cola del depósito" style={{...BtnSecondary(T),fontSize:13,justifyContent:"center"}}>{depArmando?`Preparando ${depArmando.done}/${depArmando.total}…`:"Enviar al depósito"}</AsyncButton>}
                   </div>
                 )}
 
@@ -19408,6 +19462,7 @@ const ADM_CRONS = [
   { key:"tareas_cron_deadlines",      label:"Vencimientos de tareas",          cada:"Todos los días 12:30 UTC", maxH:26 },
   { key:"arca_cron_autopilot",        label:"Piloto automático de facturación", cada:"Cada hora",               maxH:2 },
   { key:"pagos-cal_cron_avisos",      label:"Avisos del Calendario de Pagos",  cada:"Todos los días 12:00 UTC", maxH:26 },
+  { key:"deposito_cron_diario",       label:"Resumen diario del depósito",     cada:"Todos los días 11:00 UTC", maxH:26 },
 ];
 const ADM_LOG_LABEL = {
   activar_plan:"Activó plan", dar_prueba:"Dio prueba", desactivar_plan:"Desactivó plan", extender_plan:"Extendió plan", ajustar_dias:"Ajustó vencimiento",
@@ -20552,6 +20607,468 @@ function AdmIngresos({ctx, stats}) {
 }
 
 // ── Logística (etiquetas prepagas): Operación · Rentabilidad · Configuración ─
+// ═══════════════════════════════════════════════════════════════════════════
+// DEPÓSITO / FULFILLMENT (api/deposito.js) — GH_DEPOSITO_BEGIN
+// Tanda = lote de etiquetas que un cliente manda para armar. Consola del
+// depósito (dueño + operarios con la sección "deposito"), vista del cliente
+// (Growith o portal público #/deposito/<token>) y formulario de envío único.
+// ═══════════════════════════════════════════════════════════════════════════
+const GH_DEP_CHUNK=700000;
+const GH_DEP_CANAL={andreani:"Andreani",ml:"Mercado Libre",retiro:"Retiro en persona",otro:"Otro"};
+const GH_DEP_ESTADO={pendiente:"Pendiente",impresa:"Impresa",armada:"Armada",entregada:"Entregada al correo",cancelada:"Cancelada"};
+const GH_DEP_PAGO={sin_informar:"Pago sin informar",a_verificar:"Pago a verificar",verificado:"Pago verificado",rechazado:"Pago rechazado"};
+// api(action, body): con sesión (Growith) o por token (portal público).
+function ghDepApiSesion(extra){ return async(action,body={})=>{ const r=await authFetch(`/api/deposito?action=${action}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...extra(),...body})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`); return d; }; }
+function ghDepApiToken(token){ return async(action,body={})=>{ const r=await fetch(`/api/deposito?action=${action}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,...body})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`); return d; }; }
+async function ghDepSubir(api,id,kind,bytes,onProg){
+  const b64=ghBytesToB64(bytes); const total=Math.max(1,Math.ceil(b64.length/GH_DEP_CHUNK));
+  for(let i=0;i<total;i++){ await api("c_file_put",{id,kind,i,data:b64.slice(i*GH_DEP_CHUNK,(i+1)*GH_DEP_CHUNK)}); if(onProg) onProg(i+1,total); }
+  return total;
+}
+async function ghDepBajar(api,action,id,kind,chunks){
+  let b64=""; for(let i=0;i<chunks;i++){ const d=await api(action,{id,kind,i}); b64+=d.data||""; }
+  return ghB64ToBytes(b64);
+}
+function ghDepAbrirBytes(bytes,mime,nombre){
+  const url=URL.createObjectURL(new Blob([bytes],{type:mime||"application/octet-stream"}));
+  if(/pdf|image\//.test(mime||"")) window.open(url,"_blank"); else { const a=document.createElement("a"); a.href=url; a.download=nombre||"archivo"; a.click(); }
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+// Picking consolidado: "2x ROJ-NN" → {ROJ-NN: 2}
+function ghDepPicking(pedidos){
+  const m=new Map();
+  for(const p of pedidos||[]){ if(p.apartado) continue; for(const it of p.items||[]){ const x=String(it).match(/^(\d+)\s*x\s+(.+)$/i); const sku=(x?x[2]:String(it)).trim(); const c=x?Number(x[1]):1; if(sku) m.set(sku,(m.get(sku)||0)+c); } }
+  return [...m.entries()].map(([sku,cant])=>({sku,cant})).sort((a,b)=>b.cant-a.cant||a.sku.localeCompare(b.sku));
+}
+// Los pedidos iguales salen juntos: primero los de un solo producto, por SKU.
+function ghDepFirma(items){ return [...(items||[])].map(String).sort().join(" + "); }
+function ghDepOrdenar(lista,itemsDe){ return [...lista].sort((a,b)=>{ const A=itemsDe(a)||[], B=itemsDe(b)||[]; if(!A.length!==!B.length) return A.length?-1:1; return (A.length-B.length)||ghDepFirma(A).localeCompare(ghDepFirma(B)); }); }
+const ghDepManana=()=>{ const d=new Date(Date.now()-3*3600000+86400000); return d.toISOString().slice(0,10); };
+const ghDepFechaLinda=f=>{ if(!f) return "—"; const [y,m,d]=f.split("-"); return `${d}/${m}`; };
+
+// ── Formulario único de envío al depósito (tanda o envío especial) ──
+// prefill: {pdfBytes, pedidos:[{numero,comprador,items,pags}], origen, canal}
+function DepositoEnvioModal({T,api,cliente,prefill,especial=false,onClose,onDone}){
+  const iS=InputStyle(T);
+  const [tipo]=useState(especial?"especial":"tanda");
+  const [canal,setCanal]=useState(prefill?.canal||"andreani");
+  const [fecha,setFecha]=useState(ghDepManana());
+  const [nota,setNota]=useState("");
+  const [pdf,setPdf]=useState(prefill?.pdfBytes?{bytes:prefill.pdfBytes,nombre:"etiquetas.pdf",pages:prefill.pages||0}:null);
+  const [n,setN]=useState(prefill?.pedidos?.length||0);
+  const [comp,setComp]=useState(null);
+  const [esp,setEsp]=useState({titulo:"",instrucciones:"",urgente:false,bultos:1});
+  const [adj,setAdj]=useState([]);
+  const [prog,setProg]=useState(null);
+  const pedidos=prefill?.pedidos||[];
+  const cant=tipo==="especial"?Math.max(1,Number(n)||1):(pedidos.length||Number(n)||0);
+  const total=cant*(Number(cliente?.precio)||0);
+  const leer=f=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(new Uint8Array(r.result)); r.onerror=()=>rej(new Error("No se pudo leer el archivo")); r.readAsArrayBuffer(f); });
+  async function elegirPdf(f){
+    if(!f) return; if(f.size>22*1024*1024){ toast("El PDF supera los 22 MB. Dividilo en dos tandas.","warning"); return; }
+    try{ const bytes=await leer(f); let pages=0; try{ const {PDFDocument}=await import("pdf-lib"); pages=(await PDFDocument.load(bytes,{ignoreEncryption:true})).getPageCount(); }catch(_){}
+      setPdf({bytes,nombre:f.name,pages}); if(!pedidos.length&&pages&&tipo==="tanda") setN(pages); }catch(e){ toast(e.message,"error"); }
+  }
+  async function elegirOtro(f,setter,max){ if(!f) return; if(f.size>max){ toast(`El archivo supera los ${Math.round(max/1024/1024)} MB`,"warning"); return; } try{ setter({bytes:await leer(f),nombre:f.name,mime:f.type||"application/octet-stream"}); }catch(e){ toast(e.message,"error"); } }
+  async function enviar(){
+    if(prog) return;
+    if(tipo==="tanda"&&!pdf){ toast("Subí el PDF con las etiquetas","warning"); return; }
+    if(tipo==="tanda"&&!cant){ toast("Indicá cuántos pedidos tiene la tanda","warning"); return; }
+    if(tipo==="especial"&&!esp.instrucciones.trim()&&!esp.titulo.trim()){ toast("Contale al depósito qué hay que armar","warning"); return; }
+    setProg("Creando…");
+    try{
+      const c=await api("c_tanda_crear",{tipo,canal,fechaDespacho:fecha,nota,pedidos,n:cant,pages:pdf?.pages||0,origen:prefill?.origen||"manual",especial:tipo==="especial"?esp:undefined});
+      const archivos=[];
+      if(pdf){ const ch=await ghDepSubir(api,c.id,"pdf",pdf.bytes,(a,b)=>setProg(`Subiendo etiquetas ${a}/${b}…`)); archivos.push({kind:"pdf",chunks:ch,pages:pdf.pages||0,nombre:pdf.nombre,mime:"application/pdf"}); }
+      for(let i=0;i<adj.length;i++){ setProg(`Subiendo adjunto ${i+1}/${adj.length}…`); const ch=await ghDepSubir(api,c.id,`adj${i}`,adj[i].bytes); archivos.push({kind:`adj${i}`,chunks:ch,nombre:adj[i].nombre,mime:adj[i].mime}); }
+      if(comp){ setProg("Subiendo comprobante…"); const ch=await ghDepSubir(api,c.id,"comp",comp.bytes); archivos.push({kind:"comp",chunks:ch,nombre:comp.nombre,mime:comp.mime}); }
+      setProg("Enviando…");
+      await api("c_tanda_cerrar",{id:c.id,archivos});
+      toast(tipo==="especial"?"Envío especial enviado al depósito":`Tanda de ${cant} pedidos enviada al depósito`,"success");
+      onDone&&onDone(); onClose();
+    }catch(e){ toast("No se pudo enviar: "+e.message,"error"); setProg(null); }
+  }
+  const lbl=t=><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:5}}>{t}</div>;
+  const filePick=(accept,onFile,texto)=>(<label style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",cursor:"pointer",display:"inline-flex"}}>{texto}<input type="file" accept={accept} style={{display:"none"}} onChange={e=>{ onFile(e.target.files?.[0]); e.target.value=""; }}/></label>);
+  return (
+    <Modal T={T} open onClose={prog?()=>{}:onClose} title={tipo==="especial"?"Envío especial al depósito":"Enviar al depósito"} width={520} zIndex={1700}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        {tipo==="especial"&&(<>
+          <div>{lbl("Qué es")}<input style={iS} placeholder="Ej.: Pedido mayorista Óptica Sur" value={esp.titulo} onChange={e=>setEsp(s=>({...s,titulo:e.target.value}))}/></div>
+          <div>{lbl("Instrucciones para el depósito")}<textarea style={{...iS,minHeight:90,resize:"vertical"}} placeholder="Qué productos y cantidades, cómo embalar, qué documentación va adentro…" value={esp.instrucciones} onChange={e=>setEsp(s=>({...s,instrucciones:e.target.value}))}/></div>
+          <div style={{display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap"}}>
+            <div style={{width:110}}>{lbl("Bultos")}<input style={iS} type="number" min="1" value={esp.bultos} onChange={e=>setEsp(s=>({...s,bultos:e.target.value}))}/></div>
+            <div style={{width:130}}>{lbl("Pedidos a cobrar")}<input style={iS} type="number" min="1" value={n||1} onChange={e=>setN(e.target.value)}/></div>
+            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.text,cursor:"pointer",paddingBottom:9}} onClick={()=>setEsp(s=>({...s,urgente:!s.urgente}))}><DSToggle T={T} active={esp.urgente} onToggle={()=>{}}/><span>Urgente</span></label>
+          </div>
+        </>)}
+        <div>
+          {lbl(tipo==="especial"?"Etiqueta (opcional)":"PDF con las etiquetas")}
+          <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+            {!prefill?.pdfBytes&&filePick("application/pdf",elegirPdf,pdf?"Cambiar PDF":"Elegir PDF")}
+            <span style={{fontSize:DS.font.md,color:pdf?T.text:T.textSm}}>{pdf?`${prefill?.pdfBytes?"Etiquetas generadas en Growith":pdf.nombre}${pdf.pages?` · ${pdf.pages} página${pdf.pages!==1?"s":""}`:""}`:"Todavía no elegiste ningún archivo"}</span>
+          </div>
+        </div>
+        {tipo==="tanda"&&!pedidos.length&&(<div style={{width:160}}>{lbl("Cantidad de pedidos")}<input style={iS} type="number" min="1" value={n||""} onChange={e=>setN(e.target.value)}/></div>)}
+        <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:150}}>{lbl("Lo retira")}<select style={iS} value={canal} onChange={e=>setCanal(e.target.value)}>{Object.entries(GH_DEP_CANAL).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>
+          <div style={{flex:1,minWidth:150}}>{lbl("Día de despacho")}<input style={iS} type="date" value={fecha} min={hoyAR()} onChange={e=>setFecha(e.target.value)}/></div>
+        </div>
+        {tipo==="especial"&&(<div>{lbl("Adjuntos (remito, factura, fotos)")}
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            {adj.length<5&&filePick("application/pdf,image/*",f=>elegirOtro(f,x=>setAdj(a=>[...a,x]),3*1024*1024),"Agregar adjunto")}
+            {adj.map((a,i)=>(<span key={i} style={{fontSize:DS.font.sm,color:T.textMd,background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.sm,padding:"4px 8px",display:"inline-flex",gap:6,alignItems:"center"}}>{a.nombre}<span onClick={()=>setAdj(x=>x.filter((_,j)=>j!==i))} style={{cursor:"pointer",color:T.textSm}}>✕</span></span>))}
+          </div></div>)}
+        <div>{lbl("Nota para el depósito (opcional)")}<textarea style={{...iS,minHeight:54,resize:"vertical"}} value={nota} onChange={e=>setNota(e.target.value)}/></div>
+        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 14px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:DS.font.md,color:T.textMd}}>{cant} pedido{cant!==1?"s":""} × {fmtMoney(cliente?.precio||0)}</span>
+            <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text}}>{fmtMoney(total)}</span>
+          </div>
+          <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginTop:10}}>
+            {filePick("application/pdf,image/*",f=>elegirOtro(f,setComp,3*1024*1024),comp?"Cambiar comprobante":"Adjuntar comprobante de pago")}
+            <span style={{fontSize:DS.font.sm,color:comp?T.green:T.textSm}}>{comp?comp.nombre:"Podés enviarlo ahora o después desde la lista de tandas."}</span>
+          </div>
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+          <Btn T={T} variant="secondary" onClick={onClose} disabled={!!prog}>Cancelar</Btn>
+          <Btn T={T} variant="primary" onClick={enviar} disabled={!!prog}>{prog||"Enviar al depósito"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Vista del CLIENTE: sus tandas, estado y pagos (Growith o portal) ──
+function DepositoClienteView({T,api,portal=false}){
+  const [st,setSt]=useState(null); const [err,setErr]=useState("");
+  const [nuevo,setNuevo]=useState(null); // "tanda" | "especial"
+  const [abierta,setAbierta]=useState(null);
+  const cargar=()=>api("c_tandas").then(d=>{ setSt(d); setErr(""); }).catch(e=>setErr(e.message));
+  useEffect(()=>{ cargar(); },[]);
+  async function subirComp(t,f){
+    if(!f) return; if(f.size>3*1024*1024){ toast("El comprobante supera los 3 MB","warning"); return; }
+    try{ const bytes=new Uint8Array(await f.arrayBuffer()); const ch=await ghDepSubir(api,t.id,"comp",bytes); await api("c_pago_informar",{id:t.id,chunks:ch,nombre:f.name,mime:f.type||""}); toast("Comprobante enviado","success"); cargar(); }catch(e){ toast(e.message,"error"); }
+  }
+  async function cancelar(t){ if(!(await appConfirm("¿Cancelar esta tanda? El depósito todavía no empezó a trabajarla.",{danger:true,okLabel:"Cancelar tanda"}))) return; try{ await api("c_tanda_cancelar",{id:t.id}); cargar(); }catch(e){ toast(e.message,"error"); } }
+  async function verPdf(t){ try{ ghDepAbrirBytes(await ghDepBajar(api,"c_file_get",t.id,"pdf",t.pdf.chunks),"application/pdf"); }catch(e){ toast(e.message,"error"); } }
+  if(err) return <DSEmpty T={T} title="No pudimos cargar el depósito" subtitle={err} action={<Btn T={T} variant="secondary" onClick={cargar}>Reintentar</Btn>}/>;
+  if(!st) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
+  const colE={pendiente:T.textMd,impresa:T.accent,armada:T.yellow,entregada:T.green,cancelada:T.red};
+  const colP={sin_informar:T.textSm,a_verificar:T.yellow,verificado:T.green,rechazado:T.red};
+  return (
+    <div>
+      <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",marginBottom:18}}>
+        <div style={{flex:1,minWidth:220}}>
+          <div style={{fontSize:DS.font["2xl"],fontWeight:800,color:T.text,letterSpacing:-0.4}}>{portal?st.cliente?.nombre:"Mis envíos al depósito"}</div>
+          <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:2}}>{fmtMoney(st.cliente?.precio||0)} por pedido armado{st.saldoPendiente>0?` · ${fmtMoney(st.saldoPendiente)} sin verificar`:""}</div>
+        </div>
+        <Btn T={T} variant="secondary" onClick={()=>setNuevo("especial")}>Envío especial</Btn>
+        <Btn T={T} variant="primary" onClick={()=>setNuevo("tanda")}>Enviar etiquetas</Btn>
+      </div>
+      {!portal&&<div style={{fontSize:DS.font.md,color:T.textSm,marginBottom:14}}>También podés mandar las etiquetas directo desde Envíos: al terminar de generarlas aparece "Enviar al depósito".</div>}
+      {st.tandas.length===0
+        ? <DSEmpty T={T} title="Todavía no mandaste nada" subtitle="Subí el PDF con las etiquetas y el depósito lo ve al instante en su cola."/>
+        : <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {st.tandas.map(t=>{ const ap=t.pedidos.filter(p=>p.apartado); const open=abierta===t.id; return (
+              <Card key={t.id} T={T} padding="md">
+                <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:200}}>
+                    <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>{t.tipo==="especial"?(t.especial?.titulo||"Envío especial"):`${t.n} pedido${t.n!==1?"s":""}`} <span style={{fontWeight:400,color:T.textSm,fontSize:DS.font.md}}>· despacho {ghDepFechaLinda(t.fechaDespacho)} · {GH_DEP_CANAL[t.canal]||t.canal}</span></div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
+                      <DSBadge T={T} color={colE[t.estado]||T.textMd} size="sm">{GH_DEP_ESTADO[t.estado]||t.estado}</DSBadge>
+                      {t.estado!=="cancelada"&&<DSBadge T={T} color={colP[t.pago.estado]} size="sm">{GH_DEP_PAGO[t.pago.estado]}</DSBadge>}
+                      {ap.length>0&&<DSBadge T={T} color={T.red} size="sm">{ap.length} apartado{ap.length!==1?"s":""}</DSBadge>}
+                    </div>
+                  </div>
+                  <div style={{fontSize:DS.font.lg,fontWeight:800,color:T.text}}>{fmtMoney(t.total)}</div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {t.estado!=="cancelada"&&t.pago.estado!=="verificado"&&<label style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",cursor:"pointer"}}>{t.pago.comp?"Cambiar comprobante":"Subir comprobante"}<input type="file" accept="application/pdf,image/*" style={{display:"none"}} onChange={e=>{ subirComp(t,e.target.files?.[0]); e.target.value=""; }}/></label>}
+                    {t.pdf&&!t.pdf.purgado&&<Btn T={T} variant="ghost" size="sm" onClick={()=>verPdf(t)}>Ver PDF</Btn>}
+                    {(ap.length>0||t.notaDeposito||t.pedidos.length>0)&&<Btn T={T} variant="ghost" size="sm" onClick={()=>setAbierta(open?null:t.id)}>{open?"Cerrar":"Detalle"}</Btn>}
+                    {t.estado==="pendiente"&&<Btn T={T} variant="ghost" size="sm" onClick={()=>cancelar(t)}>Cancelar</Btn>}
+                  </div>
+                </div>
+                {t.pago.estado==="rechazado"&&t.pago.nota&&<div style={{fontSize:DS.font.md,color:T.red,marginTop:8}}>Pago rechazado: {t.pago.nota}</div>}
+                {open&&(<div style={{marginTop:12,borderTop:`1px solid ${T.borderL}`,paddingTop:10,fontSize:DS.font.md,color:T.textMd}}>
+                  {t.notaDeposito&&<div style={{marginBottom:8}}><strong style={{color:T.text}}>Nota del depósito:</strong> {t.notaDeposito}</div>}
+                  {ap.map((p,i)=>(<div key={i} style={{color:T.red,marginBottom:4}}>#{p.numero} {p.comprador} — apartado: {p.apartado.nota}</div>))}
+                  {t.pedidos.length>0&&<div style={{color:T.textSm,lineHeight:1.7}}>{t.pedidos.map(p=>`#${p.numero}`).join(" · ")}</div>}
+                </div>)}
+              </Card>
+            ); })}
+          </div>}
+      {nuevo&&<DepositoEnvioModal T={T} api={api} cliente={st.cliente} especial={nuevo==="especial"} onClose={()=>setNuevo(null)} onDone={cargar}/>}
+    </div>
+  );
+}
+
+// ── Portal público del cliente sin Growith: #/deposito/<token> ──
+function DepositoPortalView({token}){
+  const T=DARK; const api=React.useMemo(()=>ghDepApiToken(token),[token]);
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}>
+      <div style={{maxWidth:860,margin:"0 auto",padding:"28px 16px 64px"}}>
+        <div style={{fontSize:DS.font.md,fontWeight:700,color:T.textSm,letterSpacing:0.6,textTransform:"uppercase",marginBottom:14}}>Depósito · Growith</div>
+        <DepositoClienteView T={T} api={api} portal/>
+      </div>
+      <AppPromptHost T={T}/>
+    </div>
+  );
+}
+
+// ── Consola del DEPÓSITO ──
+function AppDeposito({T,user,info,onHome}){
+  const tiendaUid=user?.uid;
+  const apiDep=React.useMemo(()=>ghDepApiSesion(()=>({})),[]);
+  const apiCli=React.useMemo(()=>ghDepApiSesion(()=>({uid:tiendaUid})),[tiendaUid]);
+  const esDep=!!info?.rol, owner=info?.rol==="owner";
+  const [tab,setTab]=useState("cola");
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <AppTopbar T={T} section="Depósito" sectionId="deposito" onHome={onHome}>
+        {esDep&&<div style={{display:"flex",gap:4,background:T.surface,borderRadius:DS.r.md,padding:2}}>
+          {[["cola","Cola"],["historial","Historial"],...(owner?[["clientes","Clientes"],["pagos","Pagos"]]:[]),...(info?.cliente?[["mio","Mis envíos"]]:[])].map(([k,l])=>(
+            <button key={k} onClick={()=>setTab(k)} style={{padding:"6px 12px",fontSize:DS.font.md,border:"none",borderRadius:DS.r.sm,background:tab===k?T.card:"transparent",color:tab===k?T.text:T.textMd,fontWeight:tab===k?600:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>))}
+        </div>}
+      </AppTopbar>
+      <div style={{padding:"20px 24px 64px"}}>
+        {!esDep? <DepositoClienteView T={T} api={apiCli}/>
+          : tab==="cola"? <DepositoCola T={T} api={apiDep} owner={owner}/>
+          : tab==="historial"? <DepositoHistorial T={T} api={apiDep}/>
+          : tab==="clientes"? <DepositoClientes T={T} api={apiDep}/>
+          : tab==="pagos"? <DepositoPagos T={T} api={apiDep}/>
+          : <DepositoClienteView T={T} api={apiCli}/>}
+      </div>
+    </div>
+  );
+}
+
+function DepositoCola({T,api,owner}){
+  const iS=InputStyle(T);
+  const [st,setSt]=useState(null); const [err,setErr]=useState("");
+  const [abierta,setAbierta]=useState(null); const [vista,setVista]=useState({}); // id → "picking"|"pedidos"
+  const [busy,setBusy]=useState(null);
+  const [q,setQ]=useState(""); const [res,setRes]=useState(null);
+  const [nuevoPara,setNuevoPara]=useState(null); // {cliente, especial}
+  const [verHechas,setVerHechas]=useState(false);
+  const cargar=()=>api("cola").then(d=>{ setSt(d); setErr(""); }).catch(e=>setErr(e.message));
+  useEffect(()=>{ cargar(); const iv=setInterval(()=>{ if(document.visibilityState==="visible") cargar(); },90000); return ()=>clearInterval(iv); },[]);
+  async function estado(t,e){ setBusy(t.id); try{ await api("tanda_estado",{id:t.id,estado:e}); await cargar(); }catch(x){ toast(x.message,"error"); } setBusy(null); }
+  async function imprimir(t){
+    setBusy(t.id);
+    try{ ghDepAbrirBytes(await ghDepBajar(api,"file_get",t.id,"pdf",t.pdf.chunks),"application/pdf"); if(t.estado==="pendiente"){ await api("tanda_estado",{id:t.id,estado:"impresa"}); await cargar(); } }
+    catch(x){ toast(x.message,"error"); } setBusy(null);
+  }
+  async function abrirArchivo(t,kind,meta){ try{ ghDepAbrirBytes(await ghDepBajar(api,"file_get",t.id,kind,meta.chunks),meta.mime,meta.nombre); }catch(x){ toast(x.message,"error"); } }
+  async function apartar(t,idx,p){
+    const nota=p.apartado?"":await appPrompt(`¿Por qué se aparta el pedido #${p.numero}? El cliente lo ve en su panel.`,"",{okLabel:"Apartar"});
+    if(!p.apartado&&!nota) return;
+    try{ await api("pedido_apartar",{id:t.id,idx,nota:p.apartado?"":nota}); cargar(); }catch(x){ toast(x.message,"error"); }
+  }
+  async function notaDep(t){ const n=await appPrompt("Nota del depósito para el cliente (la ve en su panel):",t.notaDeposito||"",{okLabel:"Guardar"}); if(n===null||n===undefined) return; try{ await api("tanda_nota",{id:t.id,nota:n}); cargar(); }catch(x){ toast(x.message,"error"); } }
+  async function reimprimir(r){
+    try{ const t=st.tandas.find(x=>x.id===r.tandaId); const chunks=t?.pdf?.chunks; if(!chunks||!r.pags?.length){ toast("Esa tanda no tiene las páginas identificadas: abrí el PDF completo","warning"); return; }
+      const {PDFDocument}=await import("pdf-lib"); const src=await PDFDocument.load(await ghDepBajar(api,"file_get",r.tandaId,"pdf",chunks)); const out=await PDFDocument.create();
+      const pg=await out.copyPages(src,r.pags.map(n=>n-1).filter(n=>n>=0&&n<src.getPageCount())); pg.forEach(p=>out.addPage(p)); ghDepAbrirBytes(await out.save(),"application/pdf");
+    }catch(x){ toast(x.message,"error"); }
+  }
+  useEffect(()=>{ const s=q.trim(); if(s.length<2){ setRes(null); return; } const id=setTimeout(()=>api("buscar",{q:s}).then(d=>setRes(d.resultados)).catch(()=>setRes([])),350); return ()=>clearTimeout(id); },[q]);
+  if(err) return <DSEmpty T={T} title="No pudimos cargar la cola" subtitle={err} action={<Btn T={T} variant="secondary" onClick={cargar}>Reintentar</Btn>}/>;
+  if(!st) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
+  const vivas=st.tandas.filter(t=>["pendiente","impresa","armada"].includes(t.estado));
+  const hechas=st.tandas.filter(t=>t.estado==="entregada");
+  const urg=t=>t.tipo==="especial"&&t.especial?.urgente;
+  const grupos=[["Urgentes",vivas.filter(urg)],["Atrasadas",vivas.filter(t=>!urg(t)&&t.fechaDespacho<st.hoy)],["Hoy",vivas.filter(t=>!urg(t)&&t.fechaDespacho===st.hoy)],["Próximos días",vivas.filter(t=>!urg(t)&&t.fechaDespacho>st.hoy)]].filter(g=>g[1].length);
+  const paraHoy=vivas.filter(t=>t.fechaDespacho<=st.hoy);
+  const colE={pendiente:T.textMd,impresa:T.accent,armada:T.yellow,entregada:T.green};
+  const colP={sin_informar:T.textSm,a_verificar:T.yellow,verificado:T.green,rechazado:T.red};
+  const Tanda=({t})=>{ const open=abierta===t.id; const v=vista[t.id]||"picking"; const pick=ghDepPicking(t.pedidos); const ap=t.pedidos.filter(p=>p.apartado).length; const conItems=t.pedidos.some(p=>p.items.length);
+    return (
+    <Card T={T} padding="md" style={urg(t)?{borderColor:T.red+"88"}:undefined}>
+      <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:220,cursor:"pointer"}} onClick={()=>setAbierta(open?null:t.id)}>
+          <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>{t.clienteNombre} <span style={{fontWeight:400,color:T.textMd}}>· {t.tipo==="especial"?(t.especial?.titulo||"Envío especial"):`${t.n} pedido${t.n!==1?"s":""}`}</span></div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6,alignItems:"center"}}>
+            <DSBadge T={T} color={colE[t.estado]} size="sm">{GH_DEP_ESTADO[t.estado]}</DSBadge>
+            <DSBadge T={T} color={t.canal==="ml"?T.yellow:T.accent} size="sm">{GH_DEP_CANAL[t.canal]||t.canal}</DSBadge>
+            {t.tipo==="especial"&&<DSBadge T={T} color={urg(t)?T.red:T.purple} size="sm">{urg(t)?"Especial urgente":"Especial"}</DSBadge>}
+            {ap>0&&<DSBadge T={T} color={T.red} size="sm">{ap} apartado{ap!==1?"s":""}</DSBadge>}
+            <DSBadge T={T} color={colP[t.pago.estado]} size="sm">{GH_DEP_PAGO[t.pago.estado]}</DSBadge>
+            <span style={{fontSize:DS.font.sm,color:T.textSm}}>despacho {ghDepFechaLinda(t.fechaDespacho)}</span>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+          {t.pdf&&!t.pdf.purgado&&<Btn T={T} variant={t.estado==="pendiente"?"primary":"secondary"} size="sm" disabled={busy===t.id} onClick={()=>imprimir(t)}>{t.estado==="pendiente"?"Imprimir etiquetas":"Reimprimir"}</Btn>}
+          {t.estado==="pendiente"&&!t.pdf&&<Btn T={T} variant="primary" size="sm" disabled={busy===t.id} onClick={()=>estado(t,"impresa")}>Tomar</Btn>}
+          {t.estado==="impresa"&&<Btn T={T} variant="primary" size="sm" disabled={busy===t.id} onClick={()=>estado(t,"armada")}>Marcar armada</Btn>}
+          {t.estado==="armada"&&<Btn T={T} variant="success" size="sm" disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Entregada al correo</Btn>}
+          <Btn T={T} variant="ghost" size="sm" onClick={()=>setAbierta(open?null:t.id)}>{open?"Cerrar":"Abrir"}</Btn>
+        </div>
+      </div>
+      {(t.nota||t.especial?.instrucciones)&&<div style={{marginTop:10,background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.md,padding:"8px 12px",fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.5}}>{t.especial?.instrucciones}{t.especial?.instrucciones&&t.nota?"\n":""}{t.nota}{t.especial?<span style={{color:T.textSm}}>{`\n${t.especial.bultos} bulto${t.especial.bultos!==1?"s":""}`}</span>:null}</div>}
+      {open&&(<div style={{marginTop:12,borderTop:`1px solid ${T.borderL}`,paddingTop:12}}>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
+          {conItems&&<Btn T={T} variant={v==="picking"?"secondary":"ghost"} size="sm" onClick={()=>setVista(x=>({...x,[t.id]:"picking"}))}>Picking</Btn>}
+          {t.pedidos.length>0&&<Btn T={T} variant={v==="pedidos"||!conItems?"secondary":"ghost"} size="sm" onClick={()=>setVista(x=>({...x,[t.id]:"pedidos"}))}>Pedidos ({t.pedidos.length})</Btn>}
+          {(t.especial?.adj||[]).map(a=><Btn key={a.kind} T={T} variant="ghost" size="sm" onClick={()=>abrirArchivo(t,a.kind,a)}>{a.nombre||"Adjunto"}</Btn>)}
+          {t.pago.comp&&owner&&<Btn T={T} variant="ghost" size="sm" onClick={()=>abrirArchivo(t,"comp",t.pago.comp)}>Comprobante</Btn>}
+          <Btn T={T} variant="ghost" size="sm" onClick={()=>notaDep(t)}>{t.notaDeposito?"Editar nota al cliente":"Nota al cliente"}</Btn>
+          {t.estado!=="pendiente"&&<Btn T={T} variant="ghost" size="sm" onClick={()=>estado(t,t.estado==="armada"?"impresa":"pendiente")}>Volver un paso</Btn>}
+        </div>
+        {t.notaDeposito&&<div style={{fontSize:DS.font.md,color:T.textMd,marginBottom:8}}>Nota al cliente: {t.notaDeposito}</div>}
+        {conItems&&v==="picking"&&(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:6}}>
+          {pick.map(x=>(<div key={x.sku} style={{display:"flex",justifyContent:"space-between",gap:10,background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.md,padding:"8px 12px"}}><span style={{fontSize:DS.font.base,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.sku}</span><strong style={{fontSize:DS.font.lg,color:T.accent}}>{x.cant}</strong></div>))}
+        </div>)}
+        {(v==="pedidos"||!conItems)&&t.pedidos.length>0&&(<div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:380,overflow:"auto"}}>
+          {t.pedidos.map((p,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"6px 10px",borderRadius:DS.r.sm,background:p.apartado?T.red+"12":"transparent",border:`1px solid ${p.apartado?T.red+"44":T.borderL}`}}>
+            <span style={{fontSize:DS.font.base,fontWeight:700,color:T.text,minWidth:64}}>#{p.numero}</span>
+            <span style={{fontSize:DS.font.md,color:T.textMd,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.comprador}{p.items.length?` — ${p.items.join(", ")}`:""}{p.apartado?` — APARTADO: ${p.apartado.nota}`:""}</span>
+            <Btn T={T} variant="ghost" size="sm" onClick={()=>apartar(t,i,p)}>{p.apartado?"Reincorporar":"Apartar"}</Btn>
+          </div>))}
+        </div>)}
+        {t.hist?.length>0&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:10,lineHeight:1.7}}>{t.hist.slice(-5).map((h,i)=>(<span key={i}>{i>0?" · ":""}{GH_DEP_ESTADO[h.a]||h.a} — {h.porNombre} {new Date(h.at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>))}</div>}
+      </div>)}
+    </Card>); };
+  return (
+    <div>
+      <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",marginBottom:18}}>
+        <div style={{flex:1,minWidth:220}}>
+          <div style={{fontSize:DS.font["2xl"],fontWeight:800,color:T.text,letterSpacing:-0.4}}>{paraHoy.reduce((a,t)=>a+t.n,0)} pedidos para armar hoy</div>
+          <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:2}}>{paraHoy.length} tanda{paraHoy.length!==1?"s":""} de {new Set(paraHoy.map(t=>t.clienteId)).size} cliente{new Set(paraHoy.map(t=>t.clienteId)).size!==1?"s":""} · {hechas.length} entregada{hechas.length!==1?"s":""} en los últimos días</div>
+        </div>
+        <input style={{...iS,marginBottom:0,width:240}} placeholder="Buscar pedido o comprador" value={q} onChange={e=>setQ(e.target.value)}/>
+        {st.clientes.length>0&&<select style={{...iS,marginBottom:0,width:"auto"}} value="" onChange={e=>{ const [id,k]=e.target.value.split("|"); const c=st.clientes.find(x=>x.id===id); if(c) setNuevoPara({cliente:c,especial:k==="e"}); }}>
+          <option value="">Cargar en nombre de…</option>
+          {st.clientes.map(c=>[<option key={c.id+"t"} value={c.id+"|t"}>{c.nombre} — tanda</option>,<option key={c.id+"e"} value={c.id+"|e"}>{c.nombre} — envío especial</option>])}
+        </select>}
+      </div>
+      {res&&(<Card T={T} padding="md" style={{marginBottom:16}}>
+        {res.length===0? <div style={{fontSize:DS.font.base,color:T.textSm}}>Sin resultados en las últimas tres semanas.</div>
+          : res.map((r,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"6px 0",borderBottom:i<res.length-1?`1px solid ${T.borderL}`:"none"}}>
+              <span style={{fontWeight:700,color:T.text,fontSize:DS.font.base,minWidth:64}}>#{r.numero}</span>
+              <span style={{flex:1,fontSize:DS.font.md,color:T.textMd}}>{r.comprador} · {r.clienteNombre} · {ghDepFechaLinda(r.fechaDespacho)} · {GH_DEP_ESTADO[r.estado]}{r.items.length?` — ${r.items.join(", ")}`:""}</span>
+              {r.pdfOk&&<Btn T={T} variant="secondary" size="sm" onClick={()=>reimprimir(r)}>Reimprimir etiqueta</Btn>}
+            </div>))}
+      </Card>)}
+      {grupos.length===0&&<DSEmpty T={T} title="No hay nada para armar" subtitle="Cuando un cliente mande etiquetas aparecen acá, agrupadas por día de despacho."/>}
+      {grupos.map(([titulo,lista])=>(<div key={titulo} style={{marginBottom:22}}>
+        <div style={{fontSize:DS.font.sm,fontWeight:700,color:titulo==="Urgentes"||titulo==="Atrasadas"?T.red:T.textSm,letterSpacing:0.6,textTransform:"uppercase",marginBottom:8}}>{titulo} · {lista.reduce((a,t)=>a+t.n,0)} pedidos</div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>{lista.map(t=><Tanda key={t.id} t={t}/>)}</div>
+      </div>))}
+      {hechas.length>0&&(<div>
+        <Btn T={T} variant="ghost" size="sm" onClick={()=>setVerHechas(v=>!v)}>{verHechas?"Ocultar entregadas":`Ver entregadas recientes (${hechas.length})`}</Btn>
+        {verHechas&&<div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>{hechas.map(t=><Tanda key={t.id} t={t}/>)}</div>}
+      </div>)}
+      {nuevoPara&&<DepositoEnvioModal T={T} api={(a,b)=>api(a,{...b,clienteId:nuevoPara.cliente.id})} cliente={nuevoPara.cliente} especial={nuevoPara.especial} onClose={()=>setNuevoPara(null)} onDone={cargar}/>}
+    </div>
+  );
+}
+
+function DepositoHistorial({T,api}){
+  const iS=InputStyle(T);
+  const [mes,setMes]=useState(hoyAR().slice(0,7)); const [d,setD]=useState(null);
+  useEffect(()=>{ setD(null); api("historial",{mes}).then(setD).catch(e=>{ toast(e.message,"error"); setD({tandas:[]}); }); },[mes]);
+  return (<div>
+    <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:16}}><input type="month" style={{...iS,marginBottom:0,width:180}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>{d&&<span style={{fontSize:DS.font.base,color:T.textMd}}>{d.tandas.filter(t=>t.estado!=="cancelada").reduce((a,t)=>a+t.n,0)} pedidos en {d.tandas.length} tandas</span>}</div>
+    {!d? <div style={{display:"flex",justifyContent:"center",padding:40}}><Spinner size={24} color={T.accent}/></div>
+      : d.tandas.length===0? <DSEmpty T={T} title="Sin movimientos ese mes"/>
+      : <Card T={T} padding="sm">{d.tandas.map((t,i)=>(<div key={t.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 10px",borderBottom:i<d.tandas.length-1?`1px solid ${T.borderL}`:"none",fontSize:DS.font.base}}>
+          <span style={{color:T.textSm,minWidth:48}}>{ghDepFechaLinda(t.fechaDespacho)}</span>
+          <span style={{flex:1,color:T.text,fontWeight:600}}>{t.clienteNombre} <span style={{fontWeight:400,color:T.textMd}}>· {t.tipo==="especial"?(t.especial?.titulo||"Especial"):`${t.n} pedidos`} · {GH_DEP_CANAL[t.canal]||t.canal}</span></span>
+          <span style={{color:T.textMd}}>{GH_DEP_ESTADO[t.estado]||t.estado}</span>
+        </div>))}</Card>}
+  </div>);
+}
+
+function DepositoClientes({T,api}){
+  const iS=InputStyle(T);
+  const [d,setD]=useState(null); const [form,setForm]=useState(null); const [busy,setBusy]=useState(false);
+  const cargar=()=>api("clientes").then(setD).catch(e=>{ toast(e.message,"error"); setD({clientes:[]}); });
+  useEffect(()=>{ cargar(); },[]);
+  async function guardar(){ if(busy) return; setBusy(true); try{ await api("cliente_guardar",form); toast("Cliente guardado","success"); setForm(null); cargar(); }catch(e){ toast(e.message,"error"); } setBusy(false); }
+  const link=c=>`${window.location.origin}/#/deposito/${c.token}`;
+  async function nuevoLink(c){ if(!(await appConfirm(`¿Generar un link nuevo para ${c.nombre}? El link actual deja de funcionar.`,{okLabel:"Generar link"}))) return; try{ await api("cliente_token",{id:c.id}); cargar(); toast("Link nuevo generado","success"); }catch(e){ toast(e.message,"error"); } }
+  const lbl=t=><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:5}}>{t}</div>;
+  if(!d) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
+  return (<div>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+      <div style={{flex:1,fontSize:DS.font.base,color:T.textMd,minWidth:240}}>Cada cliente tiene su precio por pedido armado. Si usa Growith, vinculalo con el mail de su cuenta y le aparece "Enviar al depósito" en Envíos. Si no, pasale su link privado.</div>
+      <Btn T={T} variant="primary" onClick={()=>setForm({nombre:"",precio:"",growithEmail:"",contacto:"",nota:"",activo:true})}>Nuevo cliente</Btn>
+    </div>
+    {d.clientes.length===0? <DSEmpty T={T} title="Todavía no hay clientes" subtitle="Cargá el primero con su precio por pedido."/>
+      : <div style={{display:"flex",flexDirection:"column",gap:8}}>{d.clientes.map(c=>(<Card key={c.id} T={T} padding="md">
+          <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:220}}>
+              <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>{c.nombre} {!c.activo&&<DSBadge T={T} color={T.textSm} size="sm">Inactivo</DSBadge>}</div>
+              <div style={{fontSize:DS.font.md,color:T.textMd,marginTop:3}}>{fmtMoney(c.precio)} por pedido · {c.growithUid?`Growith: ${c.growithEmail||"vinculado"}`:"Sin cuenta de Growith (usa el link)"}{c.contacto?` · ${c.contacto}`:""}</div>
+              <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:3}}>Este mes: {c.stats.mesPedidos} pedidos · {fmtMoney(c.stats.mesTotal)}{c.stats.aVerificar>0?` · ${fmtMoney(c.stats.aVerificar)} a verificar`:""}{c.stats.sinInformar>0?` · ${fmtMoney(c.stats.sinInformar)} sin informar`:""}</div>
+            </div>
+            <Btn T={T} variant="secondary" size="sm" onClick={()=>{ navigator.clipboard.writeText(link(c)); toast("Link del portal copiado","success"); }}>Copiar link del portal</Btn>
+            <Btn T={T} variant="ghost" size="sm" onClick={()=>nuevoLink(c)}>Link nuevo</Btn>
+            <Btn T={T} variant="ghost" size="sm" onClick={()=>setForm({id:c.id,nombre:c.nombre,precio:c.precio,growithEmail:c.growithEmail||"",contacto:c.contacto,nota:c.nota,activo:c.activo})}>Editar</Btn>
+          </div>
+        </Card>))}</div>}
+    {form&&(<Modal T={T} open onClose={()=>setForm(null)} title={form.id?"Editar cliente":"Nuevo cliente del depósito"} width={460}>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div>{lbl("Nombre")}<input style={iS} value={form.nombre} onChange={e=>setForm(f=>({...f,nombre:e.target.value}))}/></div>
+        <div style={{width:200}}>{lbl("Precio por pedido armado ($)")}<input style={iS} type="number" min="0" value={form.precio} onChange={e=>setForm(f=>({...f,precio:e.target.value}))}/></div>
+        <div>{lbl("Mail de su cuenta de Growith, o uid de la tienda (opcional)")}<input style={iS} placeholder="Dejalo vacío si no usa Growith" value={form.growithEmail} onChange={e=>setForm(f=>({...f,growithEmail:e.target.value}))}/></div>
+        <div>{lbl("Contacto")}<input style={iS} placeholder="Nombre y teléfono" value={form.contacto} onChange={e=>setForm(f=>({...f,contacto:e.target.value}))}/></div>
+        <div>{lbl("Nota interna")}<textarea style={{...iS,minHeight:54,resize:"vertical"}} value={form.nota} onChange={e=>setForm(f=>({...f,nota:e.target.value}))}/></div>
+        <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.text,cursor:"pointer"}} onClick={()=>setForm(f=>({...f,activo:!f.activo}))}><DSToggle T={T} active={form.activo} onToggle={()=>{}}/><span>Cliente activo</span></label>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={()=>setForm(null)}>Cancelar</Btn><Btn T={T} variant="primary" onClick={guardar} disabled={busy}>{busy?"Guardando…":"Guardar"}</Btn></div>
+      </div>
+    </Modal>)}
+  </div>);
+}
+
+function DepositoPagos({T,api}){
+  const iS=InputStyle(T);
+  const [mes,setMes]=useState(hoyAR().slice(0,7)); const [res,setRes]=useState(null); const [hist,setHist]=useState(null);
+  const cargar=()=>{ setRes(null); setHist(null); Promise.all([api("resumen",{mes}),api("historial",{mes})]).then(([a,b])=>{ setRes(a); setHist(b.tandas.filter(t=>t.estado!=="cancelada")); }).catch(e=>{ toast(e.message,"error"); setRes({clientes:[]}); setHist([]); }); };
+  useEffect(()=>{ cargar(); },[mes]);
+  async function verificar(t,ok){ let nota=""; if(!ok){ nota=await appPrompt("¿Por qué se rechaza el pago? El cliente lo ve en su panel.","",{okLabel:"Rechazar pago"}); if(!nota) return; } try{ await api("pago_verificar",{id:t.id,ok,nota}); cargar(); }catch(e){ toast(e.message,"error"); } }
+  async function ajuste(t){ const v=await appPrompt(`Ajuste en pesos para esta tanda (negativo descuenta). Total actual: ${fmtMoney(t.total)}`,String(t.ajuste||0),{okLabel:"Aplicar"}); if(v===null||v===undefined||v==="") return; const n=Number(String(v).replace(",",".")); if(!isFinite(n)){ toast("Poné un número","warning"); return; } try{ await api("tanda_ajuste",{id:t.id,ajuste:n,motivo:"Ajuste manual"}); cargar(); }catch(e){ toast(e.message,"error"); } }
+  async function comprobante(t){ try{ ghDepAbrirBytes(await ghDepBajar(api,"file_get",t.id,"comp",t.pago.comp.chunks),t.pago.comp.mime,t.pago.comp.nombre); }catch(e){ toast(e.message,"error"); } }
+  function exportar(){ const filas=[["Cliente","Tandas","Pedidos","Total","Verificado","A verificar","Sin informar"],...res.clientes.map(c=>[c.nombre,c.tandas,c.pedidos,c.total,c.verificado,c.aVerificar,c.sinInformar])]; const csv="\ufeff"+filas.map(f=>f.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(";")).join("\n"); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download=`deposito_${mes}.csv`; a.click(); }
+  const colP={sin_informar:T.textSm,a_verificar:T.yellow,verificado:T.green,rechazado:T.red};
+  return (<div>
+    <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}><input type="month" style={{...iS,marginBottom:0,width:180}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>{res&&res.clientes.length>0&&<Btn T={T} variant="secondary" size="sm" onClick={exportar}>Exportar resumen</Btn>}</div>
+    {!res||!hist? <div style={{display:"flex",justifyContent:"center",padding:40}}><Spinner size={24} color={T.accent}/></div> : (<>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(250px,1fr))",gap:10,marginBottom:22}}>
+        {res.clientes.map(c=>(<Card key={c.clienteId} T={T} padding="md">
+          <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>{c.nombre}</div>
+          <div style={{fontSize:DS.font["2xl"],fontWeight:800,color:T.text,margin:"4px 0"}}>{fmtMoney(c.total)}</div>
+          <div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.6}}>{c.pedidos} pedidos en {c.tandas} tandas<br/><span style={{color:T.green}}>{fmtMoney(c.verificado)} verificado</span>{c.aVerificar>0&&<> · <span style={{color:T.yellow}}>{fmtMoney(c.aVerificar)} a verificar</span></>}{c.sinInformar>0&&<> · <span style={{color:T.red}}>{fmtMoney(c.sinInformar)} sin informar</span></>}</div>
+        </Card>))}
+      </div>
+      {hist.length===0? <DSEmpty T={T} title="Sin tandas ese mes"/> : <Card T={T} padding="sm">{[...hist].sort((a,b)=>({a_verificar:0,sin_informar:1,rechazado:2,verificado:3}[a.pago.estado]-({a_verificar:0,sin_informar:1,rechazado:2,verificado:3}[b.pago.estado]))).map((t,i)=>(<div key={t.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 10px",borderBottom:i<hist.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
+        <span style={{color:T.textSm,fontSize:DS.font.base,minWidth:48}}>{ghDepFechaLinda(t.fechaDespacho)}</span>
+        <span style={{flex:1,minWidth:180,color:T.text,fontWeight:600,fontSize:DS.font.base}}>{t.clienteNombre} <span style={{fontWeight:400,color:T.textMd}}>· {t.n} pedido{t.n!==1?"s":""}{t.ajuste?` · ajuste ${fmtMoney(t.ajuste)}`:""}</span></span>
+        <strong style={{color:T.text,fontSize:DS.font.base}}>{fmtMoney(t.total)}</strong>
+        <DSBadge T={T} color={colP[t.pago.estado]} size="sm">{GH_DEP_PAGO[t.pago.estado]}</DSBadge>
+        {t.pago.comp&&<Btn T={T} variant="ghost" size="sm" onClick={()=>comprobante(t)}>Ver comprobante</Btn>}
+        {t.pago.estado!=="verificado"&&<Btn T={T} variant="success" size="sm" onClick={()=>verificar(t,true)}>Verificar</Btn>}
+        {t.pago.estado==="a_verificar"&&<Btn T={T} variant="ghost" size="sm" onClick={()=>verificar(t,false)}>Rechazar</Btn>}
+        <Btn T={T} variant="ghost" size="sm" onClick={()=>ajuste(t)}>Ajuste</Btn>
+      </div>))}</Card>}
+    </>)}
+  </div>);
+}
+// PDF 10x15 (Zebra) con todas las etiquetas en el orden dado + páginas de cada una.
+async function ghDepPdfDeEtiquetas(b64List){
+  const {PDFDocument}=await import("pdf-lib");
+  const W=283.46, H=425.20; const out=await PDFDocument.create(); const pags=[]; let n=0;
+  for(const b64 of b64List){
+    const src=await PDFDocument.load(ghB64ToBytes(b64)); const mias=[];
+    for(let i=0;i<src.getPageCount();i++){ const emb=await out.embedPage(src.getPage(i)); const sc=Math.min(W/emb.width,H/emb.height); const w=emb.width*sc,h=emb.height*sc; out.addPage([W,H]).drawPage(emb,{x:(W-w)/2,y:(H-h)/2,width:w,height:h}); n++; mias.push(n); }
+    pags.push(mias);
+  }
+  return {bytes:await out.save(),pags,pages:n};
+}
+// GH_DEPOSITO_END
+
 // ─── Portal de la ejecutiva de Andreani (#/andreani/TOKEN) ───
 // Sin login: ve todas las gestiones de los clientes de Growith y responde desde acá.
 // ─── Página pública de seguimiento (#/seguir/NUMERO) ───
@@ -21196,7 +21713,7 @@ function AdmSistema({ctx, sectionsConfig, saveSectionsConfig}) {
   async function loadSys(){ setSys({loading:true}); try{ setSys({loading:false,...(await adminApi({action:"adminGetSystem"}))}); }catch(e){ setSys({loading:false,error:e.message}); } }
   async function loadLog(){ try{ const d=await adminApi({action:"adminGetLog",limit:300}); setLog({loading:false,items:d.items||[]}); }catch(e){ setLog({loading:false,items:[],error:e.message}); } }
   useEffect(()=>{ loadSys(); loadLog(); },[]);
-  const secciones=SIDEBAR_GROUPS_BASE.filter(it=>it.id&&it.id!=="home"&&!it.soon&&!it.go&&!it.hub);
+  const secciones=SIDEBAR_GROUPS_BASE.filter(it=>it.id&&it.id!=="home"&&!it.soon&&!it.go&&!it.hub&&!it.soloDeposito);
   const ahora=sys.ahora||Date.now();
   const estadoCron=c=>{ const d=sys.crons?.[c.key]; if(!d||!d.at) return {label:"Sin registro",color:T.textSm,desc:"Se registra en la próxima corrida"}; if(!d.ok) return {label:"Error",color:T.red,desc:d.resumen||`HTTP ${d.status}`}; if(ahora-d.at>c.maxH*3600000) return {label:"Atrasado",color:T.yellow,desc:`Última corrida ${admRel(d.at)}`}; return {label:"OK",color:T.green,desc:""}; };
   const tipos=[...new Set(log.items.map(i=>i.action))].sort(); const lq=logQ.trim().toLowerCase();
@@ -42053,6 +42570,13 @@ export default function App() {
   // Publica la tienda activa para el wrapper global de fetch (header X-Growith-Tienda).
   useEffect(()=>{ try{ window.__ghTiendaUid = user?.uid || ""; }catch(_){ } },[user?.uid]);
   useEffect(()=>{
+    if(!user?.uid){ setDepositoInfo(null); return; }
+    let vivo=true;
+    ghDepApiSesion(()=>({}))("me",{uid:user.uid}).then(d=>{ if(vivo) setDepositoInfo(d); }).catch(()=>{ if(vivo) setDepositoInfo(null); });
+    return ()=>{ vivo=false; };
+  },[user?.uid]);
+  useEffect(()=>{ try{ window.__ghDepositoOwner = depositoInfo?.rol==="owner"; }catch(_){ } },[depositoInfo]);
+  useEffect(()=>{
     if(!authUser){ setMiembroDe(authUser===null?null:undefined); return; }
     let alive=true;
     (async()=>{
@@ -42094,7 +42618,10 @@ export default function App() {
     return ()=>{alive=false;};
   },[authUser&&authUser.uid]);
   const secMiembro = (user&&user.esMiembro) ? (miembroDe.secciones||{}) : null;
-  const seccionPermitida = (p)=> !secMiembro ? true : secMiembro[p]===true;
+  // Depósito (api/deposito.js → me): {rol:"owner"|"operador"|null, cliente:{…}|null}
+  const [depositoInfo,setDepositoInfo] = useState(null);
+  const depositoNav = !!(depositoInfo&&(depositoInfo.rol||depositoInfo.cliente));
+  const seccionPermitida = (p)=> !secMiembro ? true : p==="deposito" ? (depositoNav||secMiembro.deposito===true) : secMiembro[p]===true;
   // Claim del código de referido guardado en el registro (una sola vez; el
   // backend valida que la cuenta sea nueva y el código exista).
   useEffect(()=>{
@@ -42112,7 +42639,7 @@ export default function App() {
   },[user&&user.uid]);
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","demo","copilot","margenes","arca","meta","gads","tiktokads","claude","chatgpt","gemini","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario"];
+  const VALID_PAGES = ["home","demo","copilot","margenes","arca","meta","gads","tiktokads","claude","chatgpt","gemini","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario","deposito"];
   // Alias legacy: #/rendimiento era el nombre viejo del Dashboard (hoy #/margenes)
   const _aliasPage = (p) => p === "rendimiento" ? "margenes" : p;
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
@@ -42134,6 +42661,9 @@ export default function App() {
   // Portal de la ejecutiva de Andreani: #/andreani/TOKEN (resuelve las gestiones de todos los clientes)
   const _ejeMatch = _initialHash.match(/^andreani\/([a-f0-9]{20,64})/i);
   const [ejecutivaToken] = useState(_ejeMatch ? _ejeMatch[1] : null);
+  // Portal del depósito para clientes sin Growith: #/deposito/TOKEN (suben etiquetas y comprobante, ven el estado)
+  const _depMatch = _initialHash.match(/^deposito\/([a-f0-9]{32,64})/i);
+  const [depositoToken] = useState(_depMatch ? _depMatch[1] : null);
   // Página pública de seguimiento de un envío: #/seguir/<número> (sin sesión, sin datos del destinatario)
   const _segMatch = _initialHash.match(/^seguir\/(\d{10,20})/);
   const [seguirNumero] = useState(_segMatch ? _segMatch[1] : null);
@@ -42191,7 +42721,7 @@ export default function App() {
   useEffect(()=>{
     if(!secMiembro) return;
     if(!seccionPermitida(page)){
-      const primera=["tareas","canjes","envios","reclamos","stock","meta","ml","margenes","arca","copilot"].find(p=>secMiembro[p]===true);
+      const primera=["tareas","canjes","envios","reclamos","stock","meta","ml","margenes","arca","copilot","deposito"].find(p=>secMiembro[p]===true);
       _setPage(primera||"tareas");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -42747,6 +43277,7 @@ export default function App() {
   if(boardToken) return <ColaboradorBoardView T={T} boardToken={boardToken}/>;
   if(cuponToken) return <CuponPublicoView token={cuponToken}/>;
   if(ejecutivaToken) return <AndreaniPortalView token={ejecutivaToken}/>;
+  if(depositoToken) return <DepositoPortalView token={depositoToken}/>;
   if(seguirNumero) return <SeguirEnvioView numero={seguirNumero}/>;
 
   // Loading
@@ -43085,9 +43616,12 @@ export default function App() {
   else if(page==="tiktokads") pageContent = adminGate("tiktokads") || planGate("medio") || <PageView T={T} pageKey="tiktokads"><AppTiktokAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={tiktokTab} setTab={setTiktokTab}/></PageView>;
   else if(page==="claude"||page==="chatgpt"||page==="gemini") pageContent = adminGate(page) || planGate("plus") || <PageView T={T} pageKey={page}><AppConectorIA T={T} user={user} app={{claude:"Claude",chatgpt:"ChatGPT",gemini:"Gemini"}[page]} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="deposito") pageContent = depositoNav
+    ? <PageView T={T} pageKey="deposito"><AppDeposito T={T} user={user} info={depositoInfo} onHome={()=>setPage("home")}/></PageView>
+    : <div style={{padding:40}}><DSEmpty T={T} title={depositoInfo===null?"Cargando…":"Esta sección no está disponible para tu cuenta"} subtitle={depositoInfo===null?"":"El depósito se habilita por cliente. Si tu mercadería se despacha desde nuestro depósito, pedinos el alta."}/></div>;
   else if(page==="calendario") pageContent = <PageView T={T} pageKey="calendario"><AppCalendarioPagos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="demo") pageContent = (String(user?.email||"").toLowerCase()===DEMO_EMAIL_UI||isAdmin) ? <PageView T={T} pageKey="demo"><AppDemo T={T} user={user} authUid={authUser?.uid} onSwitchOrg={onSwitchOrg} onHome={()=>setPage("home")}/></PageView> : null;
-  else if(page==="envios") pageContent = adminGate("envios") || planGate("medio") || requiereTN("Envíos") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} canjesPedidos={canjesPedidos} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
+  else if(page==="envios") pageContent = adminGate("envios") || planGate("medio") || requiereTN("Envíos") || <PageView T={T} pageKey="envios"><AppEnvios depositoCliente={depositoInfo?.cliente||null} T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} canjesPedidos={canjesPedidos} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
   else pageContent = <HomeScreen T={T} connectedStores={connectedStores} enviosProblemas={enviosProblemasN} mlPreguntas={mlPreguntasCount} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
     if(p==="ml"&&docId==="preguntas"){ setMlTab("preguntas"); }
@@ -43108,7 +43642,7 @@ export default function App() {
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       {impersonando&&<GhImpersonBanner T={T} info={impersonando}/>}
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{ml: mlPreguntasCount, reclamos: reclamosCount, reclamosMp: reclamosMpCount, canjes: canjesAcciones, stock: 0, envios: enviosProblemasN, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert, calendario: calAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} gadsTab={gadsTab} setGadsTab={setGadsTab} tiktokTab={tiktokTab} setTiktokTab={setTiktokTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} depositoNav={depositoNav} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{ml: mlPreguntasCount, reclamos: reclamosCount, reclamosMp: reclamosMpCount, canjes: canjesAcciones, stock: 0, envios: enviosProblemasN, tareas: tareasForReview, andreani: andreaniAlertCount, costos: costosAlert, calendario: calAlert}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} gadsTab={gadsTab} setGadsTab={setGadsTab} tiktokTab={tiktokTab} setTiktokTab={setTiktokTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial} seccionesMiembro={secMiembro}/>
       {/* Multi-org F2 modals */}
       {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
       {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}

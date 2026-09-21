@@ -1,0 +1,479 @@
+// api/deposito.js — Depósito / fulfillment de Growith (21/sep/2026).
+//
+// El depósito es de la cuenta FUNDADORA (DEPOSITO_OWNER). Operarios = miembros
+// del equipo de esa cuenta con la sección "deposito" tildada (cada uno entra
+// con su propio usuario). Los admins de la plataforma NO entran por ser admins.
+//
+// Unidad de trabajo: la TANDA = lote de etiquetas que un cliente manda para
+// armar (o un ENVÍO ESPECIAL suelto con instrucciones). Llega por tres vías:
+//   • cliente Growith, etiquetas por API  (origen "api")    → botón en Envíos
+//   • cliente Growith, flujo Excel + PDF de rótulos con SKU (origen "excel")
+//   • cliente sin Growith: portal público por token #/deposito/<token> ("portal")
+//   • el propio depósito en nombre de un cliente ("deposito")
+// El pago NO frena el armado: la tanda entra a la cola igual y el pago queda
+// "sin_informar" / "a_verificar" hasta que el dueño lo verifica.
+//
+// Colecciones (server-only; las reglas de Firestore niegan todo lo no listado):
+//   deposito_clientes/{id}  {nombre, precio, growithUid|null, token, activo, contacto, nota}
+//   deposito_tandas/{id}    ver `nuevaTanda`
+//   deposito_files/{tandaId}__{kind}__{i}  {tandaId, kind, i, data(base64), purgeAt}
+// Los PDF viajan y se guardan en TROZOS de ≤ 700.000 caracteres base64 (límite
+// de 1 MiB por doc y 4,5 MB por request) y se purgan a los 30 días.
+//
+// Sin índices compuestos: toda consulta filtra por UN campo y ordena en memoria.
+
+import { initializeApp, cert, getApps } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { randomBytes } from "crypto";
+import { requireUid, verifyAuth, guardCron } from "./_auth.js";
+
+export const DEPOSITO_OWNER = "WJH3ArqDPQcNLha9lOinvkVi9uJ2";
+const CHUNK_MAX = 700000;          // caracteres base64 por trozo
+const MAX_CHUNKS_PDF = 45;         // ≈ 23 MB de PDF
+const MAX_CHUNKS_OTRO = 6;         // comprobantes y adjuntos ≈ 3 MB
+const MAX_PEDIDOS = 800;
+const RETENCION_DIAS = 30;
+const ESTADOS = ["pendiente", "impresa", "armada", "entregada"];
+const CANALES = ["andreani", "ml", "retiro", "otro"];
+const SITE = "https://www.growithapp.com";
+
+function initAdmin() {
+  if (getApps().length > 0) return getFirestore();
+  initializeApp({ credential: cert({
+    projectId:   process.env.FIREBASE_PROJECT_ID,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    privateKey:  process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n").replace(/"/g, ""),
+  })});
+  return getFirestore();
+}
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const txt = (v, max) => String(v ?? "").replace(/[\x00-\x1f]+/g, " ").trim().slice(0, max);
+const hoyAR = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+const esFecha = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
+const num = v => { const n = Number(v); return isFinite(n) ? n : 0; };
+const ms = v => v?.toMillis?.() ?? (v?._seconds ? v._seconds * 1000 : (typeof v === "number" ? v : null));
+
+async function sendEmail({ to, subject, html }) {
+  const key = process.env.RESEND_API_KEY;
+  const lista = (Array.isArray(to) ? to : [to]).filter(Boolean);
+  if (!key || !lista.length) return { error: "missing" };
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: process.env.RESEND_FROM || "Growith <onboarding@resend.dev>", to: lista, subject, html }),
+      signal: AbortSignal.timeout(10000),
+    });
+    return r.ok ? { ok: true } : { error: `HTTP ${r.status}` };
+  } catch (e) { return { error: e.message }; }
+}
+
+// Límite simple por IP para el portal público (por instancia; suficiente para frenar abuso casual).
+const _rl = new Map();
+function rateOk(req, max = 120) {
+  const ip = String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").split(",")[0].trim() || "x";
+  const now = Date.now(); const h = _rl.get(ip);
+  if (!h || now - h.t > 60000) { if (_rl.size > 2000) _rl.clear(); _rl.set(ip, { t: now, n: 1 }); return true; }
+  h.n++; return h.n <= max;
+}
+
+// ── Quién llama ──────────────────────────────────────────────────────────────
+// Depósito: dueño (uid del token = DEPOSITO_OWNER, o perfil dueño de esa
+// tienda) u operario (miembro con secciones.deposito). viaAdmin NO alcanza.
+// Se resuelve con el token + el doc del dueño (caché 60 s) en vez de requireUid:
+// `me` lo llama cada sesión de cada cliente y requireUid loguea un intento de
+// acceso ajeno por cada uno.
+let _ownCache = { at: 0, members: {} };
+async function ctxDeposito(req) {
+  const user = await verifyAuth(req);
+  if (!user || user.impersonatedBy) return null;
+  if (user.uid === DEPOSITO_OWNER) return { user, rol: "owner", nombre: user.name || user.email || "Dueño" };
+  if (Date.now() - _ownCache.at > 60000) {
+    const d = (await getFirestore().collection("users").doc(DEPOSITO_OWNER).get()).data() || {};
+    _ownCache = { at: Date.now(), members: (d.teamMembers && typeof d.teamMembers === "object") ? d.teamMembers : {} };
+  }
+  const m = _ownCache.members[user.uid];
+  if (m?.secciones?.deposito === true) return { user, rol: "operador", nombre: m.nombre || user.email || "Operario" };
+  return null;
+}
+// Cliente: por token del portal (sin sesión) o por sesión de Growith sobre la
+// tienda `uid` (sección Envíos) vinculada a un cliente activo del depósito.
+async function ctxCliente(req, db, { token, uid }) {
+  if (token) {
+    if (!/^[a-f0-9]{32,64}$/i.test(token)) return null;
+    const s = await db.collection("deposito_clientes").where("token", "==", token).limit(1).get();
+    if (s.empty || s.docs[0].data().activo === false) return null;
+    return { cliente: { id: s.docs[0].id, ...s.docs[0].data() }, via: "portal", por: "cliente", porNombre: s.docs[0].data().nombre };
+  }
+  if (!uid) return null;
+  const r = await requireUid(req, uid, "envios");
+  if (!r.ok) return null;
+  const s = await db.collection("deposito_clientes").where("growithUid", "==", String(uid)).limit(1).get();
+  if (s.empty || s.docs[0].data().activo === false) return null;
+  return { cliente: { id: s.docs[0].id, ...s.docs[0].data() }, via: "growith", por: r.user.uid, porNombre: r.user.name || r.user.email || s.docs[0].data().nombre };
+}
+
+// ── Formas públicas ──────────────────────────────────────────────────────────
+function tandaPublica(id, t, { paraCliente = false } = {}) {
+  return {
+    id, clienteId: t.clienteId, clienteNombre: t.clienteNombre, tipo: t.tipo, origen: t.origen, canal: t.canal,
+    fechaDespacho: t.fechaDespacho, n: t.n, precioUnit: t.precioUnit, ajuste: t.ajuste || 0, ajusteMotivo: t.ajusteMotivo || "", total: t.total,
+    estado: t.estado, nota: t.nota || "", notaDeposito: t.notaDeposito || "",
+    pago: { estado: t.pago?.estado || "sin_informar", comp: t.pago?.comp ? { nombre: t.pago.comp.nombre, mime: t.pago.comp.mime, chunks: t.pago.comp.chunks } : null, informadoAt: ms(t.pago?.informadoAt), verificadoAt: ms(t.pago?.verificadoAt), nota: t.pago?.nota || "" },
+    pdf: t.pdf ? { chunks: t.pdf.chunks, pages: t.pdf.pages || 0, purgado: !!t.pdf.purgado } : null,
+    especial: t.especial ? { titulo: t.especial.titulo, instrucciones: t.especial.instrucciones, urgente: !!t.especial.urgente, bultos: t.especial.bultos || 1, adj: (t.especial.adj || []).map(a => ({ kind: a.kind, nombre: a.nombre, mime: a.mime, chunks: a.chunks })) } : null,
+    pedidos: (t.pedidos || []).map(p => ({ numero: p.numero, comprador: p.comprador, items: p.items || [], pags: p.pags || [], apartado: p.apartado ? { nota: p.apartado.nota, porNombre: p.apartado.porNombre, at: p.apartado.at } : null })),
+    hist: paraCliente ? (t.hist || []).map(h => ({ at: h.at, a: h.a })) : (t.hist || []),
+    createdAt: ms(t.createdAt),
+  };
+}
+const clientePublico = (id, c, conToken) => ({ id, nombre: c.nombre, precio: num(c.precio), growithUid: c.growithUid || null, growithEmail: c.growithEmail || "", activo: c.activo !== false, contacto: c.contacto || "", nota: c.nota || "", ...(conToken ? { token: c.token } : {}) });
+
+const totalDe = t => Math.max(0, +(num(t.n) * num(t.precioUnit) + num(t.ajuste)).toFixed(2));
+
+function sanitPedidos(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.slice(0, MAX_PEDIDOS).map(p => ({
+    numero: txt(p?.numero, 40), comprador: txt(p?.comprador, 80),
+    items: (Array.isArray(p?.items) ? p.items : []).slice(0, 25).map(i => txt(i, 90)).filter(Boolean),
+    pags: (Array.isArray(p?.pags) ? p.pags : []).slice(0, 12).map(n => Math.max(1, Math.round(num(n)))).filter(Boolean),
+    apartado: null,
+  }));
+}
+
+async function borrarArchivos(db, tandaId) {
+  const s = await db.collection("deposito_files").where("tandaId", "==", tandaId).get();
+  for (let i = 0; i < s.docs.length; i += 400) { const b = db.batch(); s.docs.slice(i, i + 400).forEach(d => b.delete(d.ref)); await b.commit(); }
+  return s.size;
+}
+
+async function operadoresEmails(db) {
+  const d = (await db.collection("users").doc(DEPOSITO_OWNER).get()).data() || {};
+  const ops = Object.values(d.teamMembers || {}).filter(m => m?.secciones?.deposito === true && m.email).map(m => m.email);
+  return { owner: d.email || "", ops };
+}
+
+export default async function handler(req, res) {
+  const db = initAdmin();
+  const body = (req.body && typeof req.body === "object") ? req.body : {};
+  const action = String(req.query.action || body.action || "");
+
+  try {
+    // ── Cron diario (8:00 AR): resumen de lo que hay para armar + purga ──
+    if (action === "cron_diario") {
+      if (!guardCron(req, res)) return;
+      const hoy = hoyAR();
+      const s = await db.collection("deposito_tandas").where("estado", "in", ["pendiente", "impresa"]).get();
+      const vivas = s.docs.map(d => d.data()).filter(t => !t.fechaDespacho || t.fechaDespacho <= hoy);
+      let mail = "sin_pendientes";
+      if (vivas.length) {
+        const porCliente = {};
+        for (const t of vivas) { const k = t.clienteNombre || "?"; porCliente[k] = porCliente[k] || { n: 0, tandas: 0, esp: 0 }; porCliente[k].n += num(t.n); porCliente[k].tandas++; if (t.tipo === "especial") porCliente[k].esp++; }
+        const total = vivas.reduce((a, t) => a + num(t.n), 0);
+        const filas = Object.entries(porCliente).sort((a, b) => b[1].n - a[1].n).map(([k, v]) => `<tr><td style="padding:6px 12px 6px 0">${esc(k)}</td><td style="padding:6px 12px;text-align:right"><strong>${v.n}</strong> pedidos</td><td style="padding:6px 0;color:#666">${v.tandas} tanda${v.tandas !== 1 ? "s" : ""}${v.esp ? ` · ${v.esp} especial${v.esp !== 1 ? "es" : ""}` : ""}</td></tr>`).join("");
+        const { owner, ops } = await operadoresEmails(db);
+        const r = await sendEmail({ to: [owner, ...ops].filter(Boolean), subject: `Depósito hoy: ${total} pedidos de ${Object.keys(porCliente).length} cliente${Object.keys(porCliente).length !== 1 ? "s" : ""}`,
+          html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111"><p>Para armar hoy (${hoy.split("-").reverse().join("/")}):</p><table style="border-collapse:collapse;font-size:15px">${filas}</table><p><a href="${SITE}/#/deposito">Abrir la cola del depósito</a></p></div>` });
+        mail = r.ok ? "enviado" : (r.error || "error");
+      }
+      // Purga: archivos vencidos y borradores que nunca se cerraron.
+      const venc = await db.collection("deposito_files").where("purgeAt", "<", Date.now()).limit(450).get();
+      const tocadas = new Set();
+      if (!venc.empty) { const b = db.batch(); venc.docs.forEach(d => { b.delete(d.ref); tocadas.add(d.data().tandaId); }); await b.commit(); }
+      for (const id of [...tocadas].slice(0, 60)) await db.collection("deposito_tandas").doc(id).set({ pdf: { purgado: true } }, { merge: true }).catch(() => {});
+      const borr = await db.collection("deposito_tandas").where("estado", "==", "borrador").get();
+      let borrados = 0;
+      for (const d of borr.docs) if ((ms(d.data().createdAt) || 0) < Date.now() - 86400000) { await borrarArchivos(db, d.id); await d.ref.delete(); borrados++; }
+      return res.json({ ok: true, pendientes: vivas.length, mail, archivosPurgados: venc.size, borradores: borrados });
+    }
+
+    if (req.method !== "POST") return res.status(405).json({ error: "POST" });
+
+    // ── me: qué es esta sesión para el depósito ──
+    if (action === "me") {
+      const dep = await ctxDeposito(req);
+      const cli = body.uid ? await ctxCliente(req, db, { uid: String(body.uid) }) : null;
+      return res.json({ rol: dep ? dep.rol : null, cliente: cli ? clientePublico(cli.cliente.id, cli.cliente, false) : null });
+    }
+
+    // ══ Acciones del CLIENTE (portal por token o sesión Growith) y del depósito
+    //    en nombre de un cliente (clienteId) ══
+    const ACC_CLIENTE = ["c_info", "c_tandas", "c_tanda_crear", "c_file_put", "c_tanda_cerrar", "c_pago_informar", "c_tanda_cancelar", "c_file_get"];
+    if (ACC_CLIENTE.includes(action)) {
+      const token = body.token ? String(body.token) : "";
+      if (token && !rateOk(req)) return res.status(429).json({ error: "Demasiadas solicitudes. Esperá un minuto." });
+      let cx = await ctxCliente(req, db, { token, uid: body.uid ? String(body.uid) : "" });
+      if (!cx && body.clienteId) {
+        const dep = await ctxDeposito(req);
+        if (dep) { const c = await db.collection("deposito_clientes").doc(String(body.clienteId)).get(); if (c.exists) cx = { cliente: { id: c.id, ...c.data() }, via: "deposito", por: dep.user.uid, porNombre: dep.nombre }; }
+      }
+      if (!cx) return res.status(403).json({ error: token ? "Link inválido o cliente inactivo." : "Esta cuenta no está dada de alta como cliente del depósito." });
+      const cli = cx.cliente;
+      const tRef = id => db.collection("deposito_tandas").doc(String(id || ""));
+      const miTanda = async id => { if (!/^[A-Za-z0-9]{10,40}$/.test(String(id || ""))) return null; const s = await tRef(id).get(); return s.exists && s.data().clienteId === cli.id ? s : null; };
+
+      if (action === "c_info") return res.json({ cliente: clientePublico(cli.id, cli, false) });
+
+      if (action === "c_tandas") {
+        const s = await db.collection("deposito_tandas").where("clienteId", "==", cli.id).get();
+        const todas = s.docs.map(d => ({ id: d.id, t: d.data() })).filter(x => x.t.estado !== "borrador");
+        todas.sort((a, b) => (ms(b.t.createdAt) || 0) - (ms(a.t.createdAt) || 0));
+        const deuda = todas.filter(x => x.t.estado !== "cancelada" && x.t.pago?.estado !== "verificado").reduce((a, x) => a + num(x.t.total), 0);
+        return res.json({ cliente: clientePublico(cli.id, cli, false), tandas: todas.slice(0, 120).map(x => tandaPublica(x.id, x.t, { paraCliente: true })), saldoPendiente: +deuda.toFixed(2) });
+      }
+
+      if (action === "c_tanda_crear") {
+        const tipo = body.tipo === "especial" ? "especial" : "tanda";
+        const pedidos = sanitPedidos(body.pedidos);
+        const pages = Math.max(0, Math.min(5000, Math.round(num(body.pages))));
+        let n = pedidos.length || Math.max(0, Math.min(MAX_PEDIDOS, Math.round(num(body.n))));
+        if (tipo === "especial" && !n) n = 1;
+        if (!n) return res.status(400).json({ error: "La tanda no tiene pedidos." });
+        const fecha = esFecha(body.fechaDespacho) ? body.fechaDespacho : hoyAR();
+        const t = {
+          clienteId: cli.id, clienteNombre: cli.nombre, growithUid: cli.growithUid || null,
+          tipo, origen: cx.via === "deposito" ? "deposito" : (["api", "excel"].includes(body.origen) && cx.via === "growith" ? body.origen : cx.via === "portal" ? "portal" : "manual"),
+          canal: CANALES.includes(body.canal) ? body.canal : "andreani",
+          fechaDespacho: fecha, n, precioUnit: num(cli.precio), ajuste: 0, total: 0,
+          estado: "borrador", nota: txt(body.nota, 600), pedidos,
+          pdf: null, pago: { estado: "sin_informar" },
+          especial: tipo === "especial" ? { titulo: txt(body.especial?.titulo, 120) || "Envío especial", instrucciones: txt(body.especial?.instrucciones, 2000), urgente: body.especial?.urgente === true, bultos: Math.max(1, Math.min(99, Math.round(num(body.especial?.bultos)) || 1)), adj: [] } : null,
+          hist: [], createdAt: FieldValue.serverTimestamp(), createdBy: cx.por, createdByNombre: txt(cx.porNombre, 80), pagesDeclaradas: pages,
+        };
+        t.total = totalDe(t);
+        const ref = await db.collection("deposito_tandas").add(t);
+        return res.json({ id: ref.id, chunkMax: CHUNK_MAX, precioUnit: t.precioUnit, total: t.total });
+      }
+
+      if (action === "c_file_put") {
+        const s = await miTanda(body.id); if (!s) return res.status(404).json({ error: "Tanda inexistente." });
+        const t = s.data();
+        const kind = String(body.kind || "");
+        const esPdf = kind === "pdf", esComp = kind === "comp", esAdj = /^adj[0-4]$/.test(kind);
+        if (!esPdf && !esComp && !esAdj) return res.status(400).json({ error: "Tipo de archivo inválido." });
+        // El PDF de etiquetas y los adjuntos solo se suben mientras es borrador; el comprobante, siempre.
+        if (!esComp && t.estado !== "borrador") return res.status(409).json({ error: "La tanda ya fue enviada." });
+        const i = Math.round(num(body.i)); const data = String(body.data || "");
+        if (i < 0 || i >= (esPdf ? MAX_CHUNKS_PDF : MAX_CHUNKS_OTRO)) return res.status(413).json({ error: "El archivo es demasiado grande." });
+        if (!data || data.length > CHUNK_MAX || !/^[A-Za-z0-9+/=]+$/.test(data)) return res.status(400).json({ error: "Trozo inválido." });
+        await db.collection("deposito_files").doc(`${s.id}__${kind}__${i}`).set({ tandaId: s.id, kind, i, data, purgeAt: Date.now() + RETENCION_DIAS * 86400000 });
+        return res.json({ ok: true });
+      }
+
+      if (action === "c_tanda_cerrar") {
+        const s = await miTanda(body.id); if (!s) return res.status(404).json({ error: "Tanda inexistente." });
+        const t = s.data();
+        if (t.estado !== "borrador") return res.json({ ok: true, ya: true });
+        const archivos = Array.isArray(body.archivos) ? body.archivos.slice(0, 7) : [];
+        const upd = { estado: "pendiente", hist: [{ at: Date.now(), por: cx.por, porNombre: txt(cx.porNombre, 80), de: "borrador", a: "pendiente" }] };
+        const adj = [];
+        for (const a of archivos) {
+          const kind = String(a?.kind || ""); const chunks = Math.round(num(a?.chunks));
+          if (!chunks || chunks < 1) continue;
+          const okKind = kind === "pdf" || kind === "comp" || /^adj[0-4]$/.test(kind); if (!okKind) continue;
+          const ult = await db.collection("deposito_files").doc(`${s.id}__${kind}__${chunks - 1}`).get();
+          if (!ult.exists) return res.status(400).json({ error: "La subida quedó incompleta. Probá de nuevo." });
+          const meta = { chunks, nombre: txt(a.nombre, 120), mime: txt(a.mime, 60) };
+          if (kind === "pdf") upd.pdf = { chunks, pages: Math.max(0, Math.round(num(a.pages))) };
+          else if (kind === "comp") upd.pago = { estado: "a_verificar", comp: meta, informadoAt: FieldValue.serverTimestamp() };
+          else adj.push({ kind, ...meta });
+        }
+        if (t.tipo === "tanda" && !upd.pdf) return res.status(400).json({ error: "Falta el PDF de etiquetas." });
+        if (t.especial) upd.especial = { ...t.especial, adj };
+        await s.ref.set(upd, { merge: true });
+        // Envío especial URGENTE: aviso inmediato al depósito (lo demás va en el resumen de las 8).
+        if (t.especial?.urgente) {
+          const { owner, ops } = await operadoresEmails(db);
+          await sendEmail({ to: [owner, ...ops].filter(Boolean), subject: `URGENTE en el depósito: ${t.clienteNombre} — ${t.especial.titulo}`,
+            html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111"><p><strong>${esc(t.clienteNombre)}</strong> cargó un envío especial urgente: <strong>${esc(t.especial.titulo)}</strong>.</p><p style="white-space:pre-wrap">${esc(t.especial.instrucciones)}</p><p><a href="${SITE}/#/deposito">Abrir la cola</a></p></div>` });
+        }
+        return res.json({ ok: true, total: t.total });
+      }
+
+      if (action === "c_pago_informar") {
+        const s = await miTanda(body.id); if (!s) return res.status(404).json({ error: "Tanda inexistente." });
+        if (s.data().pago?.estado === "verificado") return res.status(409).json({ error: "El pago de esta tanda ya está verificado." });
+        const chunks = Math.round(num(body.chunks)); if (chunks < 1 || chunks > MAX_CHUNKS_OTRO) return res.status(400).json({ error: "Comprobante inválido." });
+        const ult = await db.collection("deposito_files").doc(`${s.id}__comp__${chunks - 1}`).get();
+        if (!ult.exists) return res.status(400).json({ error: "La subida quedó incompleta. Probá de nuevo." });
+        await s.ref.set({ pago: { estado: "a_verificar", comp: { chunks, nombre: txt(body.nombre, 120), mime: txt(body.mime, 60) }, informadoAt: FieldValue.serverTimestamp(), nota: "" } }, { merge: true });
+        return res.json({ ok: true });
+      }
+
+      if (action === "c_tanda_cancelar") {
+        const s = await miTanda(body.id); if (!s) return res.status(404).json({ error: "Tanda inexistente." });
+        const t = s.data();
+        if (!["borrador", "pendiente"].includes(t.estado)) return res.status(409).json({ error: "El depósito ya empezó a trabajar esta tanda. Avisales por WhatsApp." });
+        await s.ref.set({ estado: "cancelada", hist: FieldValue.arrayUnion({ at: Date.now(), por: cx.por, porNombre: txt(cx.porNombre, 80), de: t.estado, a: "cancelada" }) }, { merge: true });
+        return res.json({ ok: true });
+      }
+
+      if (action === "c_file_get") {
+        const s = await miTanda(body.id); if (!s) return res.status(404).json({ error: "Tanda inexistente." });
+        const f = await db.collection("deposito_files").doc(`${s.id}__${String(body.kind || "")}__${Math.round(num(body.i))}`).get();
+        if (!f.exists) return res.status(404).json({ error: "El archivo ya no está disponible (se guardan 30 días)." });
+        return res.json({ data: f.data().data });
+      }
+    }
+
+    // ══ Acciones del DEPÓSITO (dueño y operarios) ══
+    const dep = await ctxDeposito(req);
+    if (!dep) return res.status(403).json({ error: "No tenés acceso al depósito." });
+    const soloOwner = () => { if (dep.rol !== "owner") { res.status(403).json({ error: "Solo el dueño del depósito puede hacer esto." }); return false; } return true; };
+
+    if (action === "cola") {
+      // Todo lo no terminado + lo entregado/cancelado de los últimos 4 días.
+      const [vivas, rec] = await Promise.all([
+        db.collection("deposito_tandas").where("estado", "in", ["pendiente", "impresa", "armada"]).get(),
+        db.collection("deposito_tandas").where("createdAt", ">=", new Date(Date.now() - 4 * 86400000)).get(),
+      ]);
+      const m = new Map();
+      for (const d of [...vivas.docs, ...rec.docs]) if (d.data().estado !== "borrador") m.set(d.id, d.data());
+      const tandas = [...m.entries()].map(([id, t]) => tandaPublica(id, t)).sort((a, b) => (a.fechaDespacho || "").localeCompare(b.fechaDespacho || "") || (a.createdAt || 0) - (b.createdAt || 0));
+      const cs = await db.collection("deposito_clientes").get();
+      return res.json({ rol: dep.rol, hoy: hoyAR(), tandas, clientes: cs.docs.map(d => clientePublico(d.id, d.data(), false)).filter(c => c.activo) });
+    }
+
+    if (action === "tanda_estado") {
+      const estado = String(body.estado || "");
+      if (!ESTADOS.includes(estado)) return res.status(400).json({ error: "Estado inválido." });
+      const ref = db.collection("deposito_tandas").doc(String(body.id || ""));
+      const out = await db.runTransaction(async tx => {
+        const s = await tx.get(ref); if (!s.exists) return null;
+        const t = s.data(); if (["borrador", "cancelada"].includes(t.estado)) return { error: "La tanda está cancelada." };
+        if (t.estado === estado) return { ok: true };
+        tx.set(ref, { estado, hist: [...(t.hist || []).slice(-40), { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80), de: t.estado, a: estado }] }, { merge: true });
+        return { ok: true };
+      });
+      if (!out) return res.status(404).json({ error: "Tanda inexistente." });
+      if (out.error) return res.status(409).json(out);
+      return res.json(out);
+    }
+
+    if (action === "pedido_apartar") {
+      const ref = db.collection("deposito_tandas").doc(String(body.id || ""));
+      const idx = Math.round(num(body.idx)); const nota = txt(body.nota, 400);
+      const out = await db.runTransaction(async tx => {
+        const s = await tx.get(ref); if (!s.exists) return null;
+        const pedidos = [...(s.data().pedidos || [])]; if (!pedidos[idx]) return null;
+        pedidos[idx] = { ...pedidos[idx], apartado: nota ? { nota, por: dep.user.uid, porNombre: txt(dep.nombre, 80), at: Date.now() } : null };
+        tx.set(ref, { pedidos }, { merge: true }); return { ok: true };
+      });
+      return out ? res.json(out) : res.status(404).json({ error: "Pedido inexistente." });
+    }
+
+    if (action === "tanda_nota") {
+      await db.collection("deposito_tandas").doc(String(body.id || "")).set({ notaDeposito: txt(body.nota, 600) }, { merge: true });
+      return res.json({ ok: true });
+    }
+
+    if (action === "file_get") {
+      const f = await db.collection("deposito_files").doc(`${String(body.id || "")}__${String(body.kind || "")}__${Math.round(num(body.i))}`).get();
+      if (!f.exists) return res.status(404).json({ error: "El archivo ya no está disponible (se guardan 30 días)." });
+      return res.json({ data: f.data().data });
+    }
+
+    if (action === "buscar") {
+      const q = txt(body.q, 60).toLowerCase(); if (q.length < 2) return res.json({ resultados: [] });
+      const s = await db.collection("deposito_tandas").where("createdAt", ">=", new Date(Date.now() - 21 * 86400000)).get();
+      const out = [];
+      for (const d of s.docs) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado)) continue;
+        (t.pedidos || []).forEach((p, idx) => { if (String(p.numero).toLowerCase().includes(q) || String(p.comprador).toLowerCase().includes(q)) out.push({ tandaId: d.id, idx, clienteNombre: t.clienteNombre, fechaDespacho: t.fechaDespacho, estado: t.estado, numero: p.numero, comprador: p.comprador, items: p.items || [], pags: p.pags || [], pdfOk: !!t.pdf && !t.pdf.purgado }); });
+        if (out.length > 40) break; }
+      return res.json({ resultados: out.slice(0, 40) });
+    }
+
+    if (action === "historial") {
+      const mes = /^\d{4}-\d{2}$/.test(String(body.mes || "")) ? body.mes : hoyAR().slice(0, 7);
+      const s = await db.collection("deposito_tandas").where("fechaDespacho", ">=", `${mes}-01`).get();
+      const tandas = s.docs.map(d => ({ id: d.id, t: d.data() })).filter(x => x.t.estado !== "borrador" && String(x.t.fechaDespacho).startsWith(mes) && (!body.clienteId || x.t.clienteId === body.clienteId))
+        .sort((a, b) => (b.t.fechaDespacho || "").localeCompare(a.t.fechaDespacho || "") || (ms(b.t.createdAt) || 0) - (ms(a.t.createdAt) || 0));
+      return res.json({ mes, tandas: tandas.slice(0, 400).map(x => { const p = tandaPublica(x.id, x.t); p.pedidos = []; return p; }) });
+    }
+
+    // ── Solo el dueño: clientes, precios y plata ──
+    if (action === "clientes") {
+      if (!soloOwner()) return;
+      const [cs, ts] = await Promise.all([db.collection("deposito_clientes").get(), db.collection("deposito_tandas").where("createdAt", ">=", new Date(Date.now() - 400 * 86400000)).get()]);
+      const mes = hoyAR().slice(0, 7); const st = {};
+      for (const d of ts.docs) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado)) continue;
+        const k = t.clienteId; st[k] = st[k] || { mesPedidos: 0, mesTotal: 0, aVerificar: 0, sinInformar: 0 };
+        if (String(t.fechaDespacho).startsWith(mes)) { st[k].mesPedidos += num(t.n); st[k].mesTotal += num(t.total); }
+        if (t.pago?.estado === "a_verificar") st[k].aVerificar += num(t.total);
+        else if (t.pago?.estado !== "verificado") st[k].sinInformar += num(t.total); }
+      return res.json({ clientes: cs.docs.map(d => ({ ...clientePublico(d.id, d.data(), true), stats: st[d.id] || { mesPedidos: 0, mesTotal: 0, aVerificar: 0, sinInformar: 0 } })).sort((a, b) => a.nombre.localeCompare(b.nombre)) });
+    }
+
+    if (action === "cliente_guardar") {
+      if (!soloOwner()) return;
+      const nombre = txt(body.nombre, 80); if (!nombre) return res.status(400).json({ error: "Poné el nombre del cliente." });
+      const precio = Math.max(0, num(body.precio));
+      const data = { nombre, precio, contacto: txt(body.contacto, 160), nota: txt(body.nota, 400), activo: body.activo !== false };
+      // Vínculo con una cuenta de Growith: por email de la cuenta (o uid directo).
+      // Se acepta el mail de la cuenta o, para perfiles con varias tiendas, el
+      // uid de la TIENDA puntual (figura en Admin > ficha del cliente).
+      const crudo = txt(body.growithEmail, 120);
+      const em = crudo.includes("@") ? crudo.toLowerCase() : crudo;
+      if (em) {
+        let doc = null;
+        if (em.includes("@")) { const u = await db.collection("users").where("email", "==", em).limit(5).get(); doc = u.docs.find(d => !d.data().deleted) || null; }
+        else if (/^[A-Za-z0-9_-]{10,80}$/.test(em)) { const d1 = await db.collection("users").doc(em).get(); if (d1.exists && !d1.data().deleted) doc = d1; }
+        if (!doc) return res.status(404).json({ error: `No hay ninguna cuenta de Growith con ${em}.` });
+        // Por mail: la tienda ACTIVA del perfil (la que genera etiquetas). Por uid: esa tienda.
+        data.growithUid = em.includes("@") ? String(doc.data().active_tienda_uid || doc.id) : doc.id; data.growithEmail = em;
+        const dup = await db.collection("deposito_clientes").where("growithUid", "==", data.growithUid).limit(2).get();
+        if (dup.docs.some(d => d.id !== String(body.id || ""))) return res.status(409).json({ error: "Esa cuenta de Growith ya está vinculada a otro cliente del depósito." });
+      } else if (body.growithEmail === "") { data.growithUid = null; data.growithEmail = ""; }
+      if (body.id) { await db.collection("deposito_clientes").doc(String(body.id)).set(data, { merge: true }); return res.json({ ok: true, id: String(body.id) }); }
+      const ref = await db.collection("deposito_clientes").add({ ...data, growithUid: data.growithUid || null, growithEmail: data.growithEmail || "", token: randomBytes(20).toString("hex"), createdAt: FieldValue.serverTimestamp() });
+      return res.json({ ok: true, id: ref.id });
+    }
+
+    if (action === "cliente_token") {
+      if (!soloOwner()) return;
+      const token = randomBytes(20).toString("hex");
+      await db.collection("deposito_clientes").doc(String(body.id || "")).set({ token }, { merge: true });
+      return res.json({ ok: true, token });
+    }
+
+    if (action === "pago_verificar") {
+      if (!soloOwner()) return;
+      const estado = body.ok === false ? "rechazado" : "verificado";
+      await db.collection("deposito_tandas").doc(String(body.id || "")).set({ pago: { estado, verificadoPor: dep.user.uid, verificadoAt: FieldValue.serverTimestamp(), nota: txt(body.nota, 300) } }, { merge: true });
+      return res.json({ ok: true, estado });
+    }
+
+    if (action === "tanda_ajuste") {
+      if (!soloOwner()) return;
+      const ref = db.collection("deposito_tandas").doc(String(body.id || ""));
+      const s = await ref.get(); if (!s.exists) return res.status(404).json({ error: "Tanda inexistente." });
+      const t = { ...s.data(), ajuste: num(body.ajuste), ...(body.n != null ? { n: Math.max(0, Math.min(MAX_PEDIDOS, Math.round(num(body.n)))) } : {}) };
+      await ref.set({ ajuste: t.ajuste, ajusteMotivo: txt(body.motivo, 200), n: t.n, total: totalDe(t) }, { merge: true });
+      return res.json({ ok: true, total: totalDe(t) });
+    }
+
+    if (action === "tanda_eliminar") {
+      if (!soloOwner()) return;
+      const id = String(body.id || ""); if (!id) return res.status(400).json({ error: "Falta la tanda." });
+      await borrarArchivos(db, id); await db.collection("deposito_tandas").doc(id).delete();
+      return res.json({ ok: true });
+    }
+
+    if (action === "resumen") {
+      if (!soloOwner()) return;
+      const mes = /^\d{4}-\d{2}$/.test(String(body.mes || "")) ? body.mes : hoyAR().slice(0, 7);
+      const s = await db.collection("deposito_tandas").where("fechaDespacho", ">=", `${mes}-01`).get();
+      const por = {};
+      for (const d of s.docs) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado) || !String(t.fechaDespacho).startsWith(mes)) continue;
+        const k = t.clienteId; por[k] = por[k] || { clienteId: k, nombre: t.clienteNombre, tandas: 0, pedidos: 0, total: 0, verificado: 0, aVerificar: 0, sinInformar: 0 };
+        por[k].tandas++; por[k].pedidos += num(t.n); por[k].total += num(t.total);
+        if (t.pago?.estado === "verificado") por[k].verificado += num(t.total); else if (t.pago?.estado === "a_verificar") por[k].aVerificar += num(t.total); else por[k].sinInformar += num(t.total); }
+      return res.json({ mes, clientes: Object.values(por).sort((a, b) => b.total - a.total) });
+    }
+
+    return res.status(400).json({ error: "Acción desconocida" });
+  } catch (e) {
+    console.error("[deposito]", action, e);
+    return res.status(500).json({ error: "Error interno del depósito. Probá de nuevo." });
+  }
+}
