@@ -8,7 +8,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
-import { guardUid, requireAdmin, guardCron, verifyAuth, clearTeamCache, isFounder } from "./_auth.js";
+import { guardUid, requireUid, requireAdmin, guardCron, verifyAuth, clearTeamCache, isFounder } from "./_auth.js";
 import { acreditarComisionReferido, descontarCreditoAplicado } from "./referidos.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { esDemo } from "./_demo.js";
@@ -1138,10 +1138,23 @@ async function handlerTareas(req, res) {
         return res.status(403).json({ error: "Tu permiso no alcanza para esta acción." });
     } else {
       // Miembros con permisos por sección: casi todo tareas.js es la sección
-      // "tareas"; scheduleCanjeEmail nace de Canjes.
-      const _seccion = action === "scheduleCanjeEmail" ? "canjes" : "tareas";
-      const _g = await guardUid(req, res, uid, _seccion);
-      if (!_g) return;
+      // "tareas"; scheduleCanjeEmail nace de Canjes. La lista de gente del
+      // equipo (getData) y el alta rápida (createColaborador) también las usa
+      // RECLAMOS para elegir responsable, así que ahí alcanza con tener
+      // habilitada cualquiera de las dos secciones.
+      const _secciones = action === "scheduleCanjeEmail" ? ["canjes"]
+        : (action === "getData" || action === "createColaborador") ? ["tareas", "reclamos"]
+        : ["tareas"];
+      let _g = null, _ultErr = null, _secOk = "";
+      for (const _s of _secciones) {
+        const _r = await requireUid(req, uid, _s);
+        if (_r.ok) { _g = _r; _secOk = _s; break; }
+        _ultErr = _r;
+      }
+      if (!_g) { res.status(_ultErr.code).json({ error: _ultErr.error }); return; }
+      // Entró por Reclamos y NO tiene Tareas: solo puede ver/crear personas,
+      // nunca las tareas de la cuenta.
+      var soloReclamos = _secOk === "reclamos";
       var authViaTeam = !!_g.viaTeam;
       var authMember = _g.member || null;      // miembro con cuenta (nombre/email)
       var authEmail = (_g.user && _g.user.email) ? String(_g.user.email).toLowerCase() : "";
@@ -1519,6 +1532,16 @@ async function handlerTareas(req, res) {
     }
 
     if (action === "getData") {
+      // Miembro que entró por la sección Reclamos: solo la lista de gente para
+      // elegir responsable. Ni las tareas de la cuenta ni los tokens.
+      if (typeof soloReclamos !== "undefined" && soloReclamos) {
+        const cs = await db.collection("colaboradores").where("uid","==",uid).get();
+        return res.json({
+          colaboradores: cs.docs.map(d=>{ const { token:_t, ...rest } = d.data(); return { _id:d.id, ...rest }; })
+            .sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||"","es")),
+          tareas: [], boardToken: null, notifEmails: [],
+        });
+      }
       const [cs, ts, userSnap] = await Promise.all([
         db.collection("colaboradores").where("uid","==",uid).get(),
         db.collection("tareas").where("uid","==",uid).get(),

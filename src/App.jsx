@@ -5642,6 +5642,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   React.useEffect(()=>{ if(viewProp!==undefined&&viewProp!==view) setViewState(viewProp); },[viewProp]);
   const setView=(v)=>{ setViewState(v); setViewProp&&setViewProp(v); };
   const [kanbanTipo,setKanbanTipo]=useState("Todos");
+  const [kanbanResp,setKanbanResp]=useState(""); // "" = todos · "__sin__" = sin responsable · email
   const [search,setSearch]=useState("");
   const [activeReclamo,setActiveReclamo]=useState(null);
   const [notaInterna,setNotaInterna]=useState("");
@@ -5659,6 +5660,44 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const [dragOverEstado,setDragOverEstado]=useState(null);
   const [isMobile,setIsMobile]=useState(()=>typeof window!=="undefined"&&window.innerWidth<768);
   const [showGuia,setShowGuia]=useState(false);
+  // Equipo asignable a un reclamo: dueño + miembros con cuenta + invitados
+  // pendientes. Se lee del doc de la tienda (users/{uid}.teamMembers), que los
+  // miembros también pueden leer, así el select funciona para todos.
+  const [equipoCuenta,setEquipoCuenta]=useState([]);   // dueño + miembros + invitados (doc de la tienda)
+  const [colabsTareas,setColabsTareas]=useState([]);   // colaboradores de Tareas (portal externo), vía /api/tareas
+  const equipo=useMemo(()=>{
+    const lista=[...equipoCuenta];
+    colabsTareas.forEach(c=>{ const em=String(c.email||"").toLowerCase(); if(em&&!lista.some(x=>x.email===em)) lista.push({email:em,nombre:c.nombre||em,rol:c.rol||"Colaborador",colabId:c._id}); });
+    return lista;
+  },[equipoCuenta,colabsTareas]);
+  const nombreEquipo=(email)=>equipo.find(x=>x.email===email)?.nombre||email||"";
+  const tareasApiR=async(payload)=>{
+    const r=await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user?.uid,...payload})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`);
+    return d;
+  };
+  const cargarColabs=()=>{ if(!user?.uid) return; tareasApiR({action:"getData"}).then(d=>setColabsTareas(Array.isArray(d?.colaboradores)?d.colaboradores:[])).catch(()=>{}); };
+  // Mismo alta rápida que Tareas: nombre + email, queda como colaborador de la
+  // cuenta (sirve para Tareas y Reclamos). Devuelve el email para asignarlo al toque.
+  const agregarPersona=async()=>{
+    const nombre=await appPrompt("Nombre de la persona:","",{title:"Agregar al equipo",placeholder:"Ej: Sofía"});
+    if(!nombre?.trim()) return null;
+    const email=await appPrompt(`Email de ${nombre.trim()}:`,"",{title:"Agregar al equipo",placeholder:"nombre@mail.com"});
+    const em=String(email||"").trim().toLowerCase();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ if(email!=null) toast("Poné un email válido","warning"); return null; }
+    try{
+      const d=await tareasApiR({action:"createColaborador",nombre:nombre.trim(),email:em,rol:"",telefono:""});
+      if(!d||!d._id) throw new Error("Error del servidor");
+      setColabsTareas(prev=>[...prev.filter(c=>c._id!==d._id),d]);
+      toast(`${d.nombre} agregado al equipo`,"success");
+      return em;
+    }catch(e){ toast(e.message||"No se pudo agregar","error"); return null; }
+  };
+  const inicialesDe=(n)=>String(n||"?").trim().split(/\s+/).slice(0,2).map(s=>s[0]||"").join("").toUpperCase()||"?";
+  // Lo que pasa cuando la clienta despacha la devolución: no siempre es Andreani.
+  const DEVOL_EMPRESAS=["Andreani","Correo Argentino","OCA","Mercado Envíos","Otro"];
+  const hrefDe=(u)=>/^https?:\/\//i.test(u||"")?u:`https://${u}`;
 
   useEffect(()=>{
     const h=()=>setIsMobile(window.innerWidth<768);
@@ -5698,7 +5737,15 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     const unsub2=onSnapshot(doc(db,"users",user.uid,"config","plantillas"),snap=>{
       if(snap.exists()&&snap.data().sla) setSlaConfig(snap.data().sla);
     },()=>{});
-    return ()=>{unsub1();unsub2();};
+    const unsub3=onSnapshot(doc(db,"users",user.uid),snap=>{
+      const d=snap.data()||{};
+      const lista=[{email:String(d.email||user.email||"").toLowerCase(),nombre:d.nombre||d.displayName||user.displayName||"Dueño",rol:"Dueño"}];
+      Object.values(d.teamMembers||{}).forEach(m=>{ if(m?.email) lista.push({email:String(m.email).toLowerCase(),nombre:m.nombre||m.email,rol:"Miembro"}); });
+      (Array.isArray(d.teamInvites)?d.teamInvites:[]).forEach(i=>{ const em=String(i?.email||"").toLowerCase(); if(em&&!lista.some(x=>x.email===em)) lista.push({email:em,nombre:i.nombre||em,rol:"Invitado"}); });
+      setEquipoCuenta(lista.filter(x=>x.email));
+    },()=>{});
+    cargarColabs();
+    return ()=>{unsub1();unsub2();unsub3();};
   },[user?.uid]);
 
   const emptyForm=(orderNum="", clienteData={})=>({
@@ -5708,6 +5755,9 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     productosEnvia:[{producto:"",cantidad:1}],
     historial:[],
     estadoRecepcion:"", estadoReembolso:"",
+    asignadoEmail:"", asignadoNombre:"",
+    // Envío de la clienta (devolución): correo, fecha, link que ella pasa, comprobante e incidente
+    devolEmpresa:"", devolFecha:"", devolLink:"", devolComprobante:"", incidente:"",
     // Datos del cliente - se guardan para no depender del pedido en memoria
     clienteNombre: clienteData.nombre||"",
     clienteEmail:  clienteData.email||"",
@@ -5722,13 +5772,21 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     try {
       const prev=reclamos.find(r=>r._docId===reclamoForm._docId);
       const estadoCambio=prev&&prev.estado!==reclamoForm.estado;
-      const histEntry=estadoCambio?[...(reclamoForm.historial||[]),{accion:`Estado > ${reclamoForm.estado}`,fecha:new Date().toISOString()}]:reclamoForm.historial||[];
+      const histEntry=[...(reclamoForm.historial||[])];
+      const ahoraIso=new Date().toISOString();
+      if(estadoCambio) histEntry.push({accion:`Estado > ${reclamoForm.estado}`,fecha:ahoraIso});
+      const asigNuevo=reclamoForm.asignadoEmail||"";
+      if(asigNuevo&&asigNuevo!==(prev?.asignadoEmail||"")) histEntry.push({accion:`Asignado a ${nombreEquipo(asigNuevo)}`,fecha:ahoraIso});
       const p={
         orderNum:reclamoForm.orderNum, tipo:reclamoForm.tipo, motivo:reclamoForm.motivo,
         descripcion:reclamoForm.descripcion||"", estado:reclamoForm.estado,
         resolucion:reclamoForm.resolucion||"", notas:reclamoForm.notas||"",
         trackingCambio:reclamoForm.trackingCambio||"",
         trackingDevolucion:reclamoForm.trackingDevolucion||"",
+        asignadoEmail:asigNuevo, asignadoNombre:asigNuevo?nombreEquipo(asigNuevo):"",
+        devolEmpresa:reclamoForm.devolEmpresa||"", devolFecha:reclamoForm.devolFecha||"",
+        devolLink:(reclamoForm.devolLink||"").trim(), devolComprobante:(reclamoForm.devolComprobante||"").trim(),
+        incidente:reclamoForm.incidente||"",
         productosRecibe:reclamoForm.productosRecibe||[],
         productosEnvia:reclamoForm.productosEnvia||[],
         historial:histEntry,
@@ -5758,6 +5816,50 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     const entry={accion:`Nota: ${texto}`,fecha:new Date().toISOString()};
     await updateDoc(doc(db,"reclamos",docId),{historial:[...(r.historial||[]),entry],updatedAt:serverTimestamp()});
   }
+
+  async function asignarReclamo(docId,email) {
+    const r=reclamos.find(r=>r._docId===docId);
+    if(!r) return;
+    const em=String(email||"").toLowerCase();
+    const entry={accion:em?`Asignado a ${nombreEquipo(em)}`:"Sin responsable",fecha:new Date().toISOString()};
+    await updateDoc(doc(db,"reclamos",docId),{asignadoEmail:em,asignadoNombre:em?nombreEquipo(em):"",historial:[...(r.historial||[]),entry],updatedAt:serverTimestamp()});
+  }
+
+  // Bloque "Envío de la clienta": la misma info en el formulario (estado local)
+  // y en la ficha (guarda directo a Firestore al salir de cada campo).
+  const envioClienteForm=()=>(
+    <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>
+      <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:8,textTransform:"uppercase"}}>Envío de la clienta</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+        <Field T={T} label="Correo"><select style={iS} value={reclamoForm.devolEmpresa||""} onChange={e=>setReclamoForm(f=>({...f,devolEmpresa:e.target.value}))}><option value="">-</option>{DEVOL_EMPRESAS.map(x=><option key={x}>{x}</option>)}</select></Field>
+        <Field T={T} label="Fecha en que despachó"><GhDatePicker T={T} value={reclamoForm.devolFecha||""} onChange={v=>setReclamoForm(f=>({...f,devolFecha:v||""}))} style={iS}/></Field>
+      </div>
+      <Field T={T} label="Link de seguimiento que pasó"><input style={iS} value={reclamoForm.devolLink||""} onChange={e=>setReclamoForm(f=>({...f,devolLink:e.target.value}))} placeholder="https://… (el que te manda ella, de cualquier correo)"/></Field>
+      <Field T={T} label="Foto o comprobante (link)"><input style={iS} value={reclamoForm.devolComprobante||""} onChange={e=>setReclamoForm(f=>({...f,devolComprobante:e.target.value}))} placeholder="Link a la foto del ticket o del paquete"/></Field>
+      <Field T={T} label="Incidente"><textarea style={{...iS,minHeight:60,resize:"vertical"}} value={reclamoForm.incidente||""} onChange={e=>setReclamoForm(f=>({...f,incidente:e.target.value}))} placeholder="Qué pasó con el envío: llegó roto, faltaba algo, lo mandó a otra sucursal…"/></Field>
+    </div>
+  );
+  const envioClienteFicha=(r)=>{
+    const upd=(k)=>async e=>{const v=e.target.value;if(v!==(r[k]||""))await updateDoc(doc(db,"reclamos",r._docId),{[k]:v,updatedAt:serverTimestamp()});};
+    return(
+      <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>
+        <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:8}}>Envío de la clienta</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+          <select style={{...InputStyle(T),fontSize:12}} value={r.devolEmpresa||""} onChange={upd("devolEmpresa")}><option value="">Correo</option>{DEVOL_EMPRESAS.map(x=><option key={x}>{x}</option>)}</select>
+          <GhDatePicker T={T} value={r.devolFecha||""} placeholder="Fecha de despacho" onChange={async v=>{const nv=v||"";if(nv!==(r.devolFecha||""))await updateDoc(doc(db,"reclamos",r._docId),{devolFecha:nv,updatedAt:serverTimestamp()});}} style={{...InputStyle(T),fontSize:12}}/>
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:8}}>
+          <input key={r._docId+"_dl"} style={{...InputStyle(T),flex:1,fontSize:12}} defaultValue={r.devolLink||""} placeholder="Link de seguimiento que pasó la clienta" onBlur={upd("devolLink")}/>
+          {r.devolLink&&<a href={hrefDe(r.devolLink)} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px",textDecoration:"none",flexShrink:0,color:T.green}}>Ver</a>}
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:8}}>
+          <input key={r._docId+"_dc"} style={{...InputStyle(T),flex:1,fontSize:12}} defaultValue={r.devolComprobante||""} placeholder="Foto o comprobante (link)" onBlur={upd("devolComprobante")}/>
+          {r.devolComprobante&&<a href={hrefDe(r.devolComprobante)} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px",textDecoration:"none",flexShrink:0}}>Abrir</a>}
+        </div>
+        <textarea key={r._docId+"_in"} style={{...InputStyle(T),width:"100%",minHeight:56,resize:"vertical",fontSize:12,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}} defaultValue={r.incidente||""} placeholder="Incidente: qué pasó con el envío" onBlur={upd("incidente")}/>
+      </div>
+    );
+  };
 
   async function updateEstado(docId,nuevoEstado) {
     const r=reclamos.find(r=>r._docId===docId);
@@ -6119,8 +6221,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         onHelp={()=>setShowGuia(s=>!s)}>
         <TopbarMoreMenu T={T} items={[
           {label:"Exportar CSV",onClick:()=>{
-          const headers=["Pedido","Cliente","Email","Tipo","Estado","Días abierto","Tracking cambio","Tracking devolución","Motivo","Notas"];
-          const rows=reclamosManual.map(r=>{const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):"";;return[r.orderNum,r.clienteNombre||"",r.clienteEmail||"",r.tipo,r.estado,dias,r.trackingCambio||"",r.trackingDevolucion||"",(r.motivo||"").replace(/\n/g," "),(r.notasInternas||"").replace(/\n/g," ")];});
+          const headers=["Pedido","Cliente","Email","Tipo","Estado","Responsable","Días abierto","Tracking cambio","Tracking devolución","Correo devolución","Fecha despacho","Link seguimiento","Incidente","Motivo","Notas"];
+          const rows=reclamosManual.map(r=>{const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):"";return[r.orderNum,r.clienteNombre||"",r.clienteEmail||"",r.tipo,r.estado,r.asignadoNombre||r.asignadoEmail||"",dias,r.trackingCambio||"",r.trackingDevolucion||"",r.devolEmpresa||"",r.devolFecha||"",r.devolLink||"",(r.incidente||"").replace(/\n/g," "),(r.motivo||"").replace(/\n/g," "),(r.notasInternas||"").replace(/\n/g," ")];});
           const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
           const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}));a.download=`reclamos_${hoyAR()}.csv`;a.click();
           toast("CSV exportado ✓","success");
@@ -6229,6 +6331,16 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   {search&&<button onClick={()=>{setSearch("");setSearchApiResults([]);}} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:20,lineHeight:1,padding:4}}>×</button>}
                   {searchApiLoading&&<div style={{position:"absolute",right:search?36:14,top:"50%",transform:"translateY(-50%)"}}><Spinner size={13} color={T.textSm}/></div>}
                 </div>
+                {/* Ver solo los reclamos de una persona */}
+                <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                  <span style={{fontSize:12,color:T.textSm}}>Responsable:</span>
+                  <select value={kanbanResp} onChange={e=>{setKanbanResp(e.target.value);setBulkSelected(new Set());}} style={{...InputStyle(T),fontSize:12,padding:"6px 10px",width:"auto",minWidth:170}}>
+                    <option value="">Todos</option>
+                    <option value="__sin__">Sin responsable</option>
+                    {equipo.map(m=><option key={m.email} value={m.email}>{m.nombre}</option>)}
+                  </select>
+                  {kanbanResp&&<button onClick={()=>setKanbanResp("")} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Quitar filtro</button>}
+                </div>
                 {search.length>=2&&<div style={{fontSize:11,color:matchCount>0?T.accent:T.textSm,marginTop:5,paddingLeft:2,fontWeight:matchCount>0?600:400}}>
                   {matchCount>0?`${matchCount} reclamo${matchCount!==1?"s":""} encontrado${matchCount!==1?"s":""}`:searchApiLoading?"Buscando en tu tienda...":"Sin resultados en reclamos"}
                 </div>}
@@ -6300,7 +6412,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 {ESTADOS_R.map(estado=>{
                   const sc=getEstadoRC(T,estado);
                   const sq=search.toLowerCase();
-                  const items=reclamosManual.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo)&&(!search||r.orderNum?.toLowerCase().includes(sq)||r.clienteNombre?.toLowerCase().includes(sq)||r.clienteEmail?.toLowerCase().includes(sq)));
+                  const items=reclamosManual.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo)&&(!kanbanResp||(kanbanResp==="__sin__"?!r.asignadoEmail:r.asignadoEmail===kanbanResp))&&(!search||r.orderNum?.toLowerCase().includes(sq)||r.clienteNombre?.toLowerCase().includes(sq)||r.clienteEmail?.toLowerCase().includes(sq)));
                   if(!items.length) return null;
                   return (
                     <div key={estado}>
@@ -6356,7 +6468,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 {ESTADOS_R.map(estado=>{
                   const sc=getEstadoRC(T,estado);
                   const sq=search.toLowerCase();
-                  const items=reclamosManual.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo)&&(!search||r.orderNum?.toLowerCase().includes(sq)||r.clienteNombre?.toLowerCase().includes(sq)||r.clienteEmail?.toLowerCase().includes(sq)));
+                  const items=reclamosManual.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo)&&(!kanbanResp||(kanbanResp==="__sin__"?!r.asignadoEmail:r.asignadoEmail===kanbanResp))&&(!search||r.orderNum?.toLowerCase().includes(sq)||r.clienteNombre?.toLowerCase().includes(sq)||r.clienteEmail?.toLowerCase().includes(sq)));
                   const isDragOver=dragOverEstado===estado;
                   return(
                     <div key={estado}
@@ -6405,6 +6517,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                                   {urgente&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"12",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
                                   {hasTracking&&!r.trackCambioEstado&&!r.trackDevolEstado&&<span title="Tiene tracking — consultando estado con Andreani" style={{fontSize:9,fontWeight:700,color:T.blue,background:T.blue+"15",borderRadius:4,padding:"2px 7px"}}>TRK</span>}
                                   {r.notasInternas&&<span title="Tiene notas" style={{fontSize:9,fontWeight:700,color:T.yellow,background:T.yellow+"15",borderRadius:4,padding:"2px 7px"}}>NOTA</span>}
+                                  {r.asignadoEmail&&<span title={`Responsable: ${r.asignadoNombre||r.asignadoEmail}`} style={{width:18,height:18,borderRadius:"50%",background:T.accentSolid,color:"#fff",fontSize:8,fontWeight:800,display:"grid",placeItems:"center",flexShrink:0}}>{inicialesDe(r.asignadoNombre||r.asignadoEmail)}</span>}
                                   {r.origen==="mp"&&<span title="Importado de Mercado Pago" style={{fontSize:9,fontWeight:800,color:T.blue,background:T.blue+"15",borderRadius:4,padding:"2px 7px"}}>MP</span>}
                                   {r.origen==="ml"&&<span title="Importado de Mercado Libre" style={{fontSize:9,fontWeight:800,color:T.orange,background:T.orange+"15",borderRadius:4,padding:"2px 7px"}}>ML</span>}
                                 </div>
@@ -6544,6 +6657,20 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 </div>
               </div>
             );})()}
+            {/* Responsable */}
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+              <div title="Responsable" style={{width:28,height:28,borderRadius:"50%",background:activeR.asignadoEmail?T.accentSolid:T.border,color:"#fff",display:"grid",placeItems:"center",fontSize:11,fontWeight:800,flexShrink:0}}>{activeR.asignadoEmail?inicialesDe(activeR.asignadoNombre||activeR.asignadoEmail):"?"}</div>
+              <select style={{...InputStyle(T),fontSize:12,flex:1}} value={activeR.asignadoEmail||""} onChange={async e=>{
+                let em=e.target.value;
+                if(em==="__nuevo__"){ em=await agregarPersona(); if(!em) return; }
+                asignarReclamo(activeR._docId,em);
+              }}>
+                <option value="">Sin responsable</option>
+                {equipo.map(m=><option key={m.email} value={m.email}>{m.nombre}{m.rol!=="Miembro"?` · ${m.rol}`:""}</option>)}
+                {activeR.asignadoEmail&&!equipo.some(m=>m.email===activeR.asignadoEmail)&&<option value={activeR.asignadoEmail}>{activeR.asignadoNombre||activeR.asignadoEmail}</option>}
+                <option value="__nuevo__">+ Agregar persona…</option>
+              </select>
+            </div>
             {/* Cliente */}
             <div style={{marginBottom:14}}>
               <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Cliente</div>
@@ -6635,6 +6762,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   {activeR.trackingDevolucion&&<a href={`https://www.andreani.com/envio/${activeR.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,color:T.green,display:"inline-flex",alignItems:"center",gap:4}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Ver</a>}
                 </div>
                 {!activeR.trackingDevolucion&&<div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",alignItems:"center",gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Te avisamos cuando llegue a sucursal</div>}
+                {envioClienteFicha(activeR)}
               </div>
             )}
             {/* Devolución */}
@@ -6655,6 +6783,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   <input key={activeR._docId+"_td2"} style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px",borderColor:activeR.trackingDevolucion?T.green+"88":InputStyle(T).borderColor}} defaultValue={activeR.trackingDevolucion||""} placeholder="Código Andreani..." onBlur={async e=>{const v=e.target.value;if(v!==(activeR.trackingDevolucion||""))await updateDoc(doc(db,"reclamos",activeR._docId),{trackingDevolucion:v,updatedAt:serverTimestamp()});}}/>
                   {activeR.trackingDevolucion&&<a href={`https://www.andreani.com/envio/${activeR.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,color:T.green,display:"inline-flex",alignItems:"center",gap:4}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Ver</a>}
                 </div>
+                {envioClienteFicha(activeR)}
               </div>
             )}
             {/* Notas internas */}
@@ -6744,9 +6873,20 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
               );
             })()}
             {reclamoForm.orderNum&&(<>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 14px"}}>
                 <Field T={T} label="Tipo"><select style={iS} value={reclamoForm.tipo} onChange={e=>setReclamoForm(f=>({...f,tipo:e.target.value}))}>{TIPOS_R.map(t=><option key={t}>{t}</option>)}</select></Field>
                 <Field T={T} label="Motivo" required><select style={iS} value={reclamoForm.motivo} onChange={e=>setReclamoForm(f=>({...f,motivo:e.target.value}))}><option value="">-</option>{MOTIVOS_R.map(m=><option key={m}>{m}</option>)}</select></Field>
+                <Field T={T} label="Responsable">
+                  <select style={iS} value={reclamoForm.asignadoEmail||""} onChange={async e=>{
+                    let em=e.target.value;
+                    if(em==="__nuevo__"){ em=(await agregarPersona())||""; }
+                    setReclamoForm(f=>({...f,asignadoEmail:em,asignadoNombre:em?nombreEquipo(em):""}));
+                  }}>
+                    <option value="">Sin asignar</option>
+                    {equipo.map(m=><option key={m.email} value={m.email}>{m.nombre}{m.rol!=="Miembro"?` · ${m.rol}`:""}</option>)}
+                    <option value="__nuevo__">+ Agregar persona…</option>
+                  </select>
+                </Field>
               </div>
               {reclamoForm.tipo==="Cambio"&&(
                 <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:14,marginBottom:12}}>
@@ -6783,6 +6923,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                     <div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",alignItems:"center",gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Te notificamos cuando llegue a sucursal</div>
                   </Field>
                   </div>
+                  {envioClienteForm()}
                 </div>
               )}
               <Field T={T} label="Descripción"><textarea style={{...iS,minHeight:60,resize:"vertical"}} value={reclamoForm.descripcion} onChange={e=>setReclamoForm(f=>({...f,descripcion:e.target.value}))} placeholder="Detalle del reclamo..."/></Field>
@@ -6796,6 +6937,9 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   </div>
                   <div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",alignItems:"center",gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Te notificamos cuando llegue a sucursal</div>
                 </Field>
+              )}
+              {reclamoForm.tipo==="Devolución"&&(
+                <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"0 14px 14px",marginBottom:12}}>{envioClienteForm()}</div>
               )}
               {reclamoForm._docId&&(
                 <Field T={T} label="Estado">
