@@ -5634,6 +5634,90 @@ function OrderSearchField({T, orders, onSelect, uid}) {
 // ===========================================
 // APP RECLAMOS
 // ===========================================
+// ─── Quién atiende los reclamos ───
+// Reclamos lo usa atención al cliente, así que el alta de gente vive acá
+// arriba y no adentro de cada reclamo: se invita por mail con la sección
+// Reclamos habilitada y la persona entra con SU cuenta. Solo el dueño
+// administra (el backend lo exige); el resto ve la lista y nada más.
+function EquipoReclamosBar({T,user}){
+  const [data,setData]=React.useState(null);      // {miembros,invitaciones}
+  const [puedeGestionar,setPuedeGestionar]=React.useState(true);
+  const [abierto,setAbierto]=React.useState(false);
+  const [nombre,setNombre]=React.useState("");
+  const [email,setEmail]=React.useState("");
+  const api=async(action,extra={})=>{
+    const r=await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,uid:user?.uid,...extra})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`);
+    return d;
+  };
+  const cargar=()=>{ api("miembrosListar").then(d=>{setData(d);setPuedeGestionar(true);}).catch(()=>{setData({miembros:[],invitaciones:[]});setPuedeGestionar(false);}); };
+  React.useEffect(()=>{ if(user?.uid) cargar(); /* eslint-disable-line */ },[user?.uid]);
+  const conAcceso=[
+    ...(data?.miembros||[]).filter(m=>m.secciones?.reclamos===true).map(m=>({...m,_estado:"activo"})),
+    ...(data?.invitaciones||[]).filter(i=>i.secciones?.reclamos===true).map(i=>({...i,_estado:"pendiente"})),
+  ];
+  async function invitar(){
+    const em=email.trim().toLowerCase();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ toast("Poné un email válido","warning"); return; }
+    // Si ya es miembro de la cuenta, no se reinvita: se le suma Reclamos a lo
+    // que ya tenía, para no pisarle los permisos de las otras secciones.
+    const ya=(data?.miembros||[]).find(m=>String(m.email||"").toLowerCase()===em);
+    try{
+      if(ya){
+        await api("miembroActualizar",{memberUid:ya.uid,secciones:{...(ya.secciones||{}),reclamos:true}});
+        toast(`${ya.nombre||em} ya era del equipo: le habilitamos Reclamos`,"success");
+      }else{
+        const r=await api("miembroInvitar",{email:em,nombre:nombre.trim(),secciones:{reclamos:true}});
+        toast(r&&r.mail==="enviado"
+          ?`Le mandamos un mail a ${em} para que cree su cuenta y entre a Reclamos`
+          :`Listo: cuando ${em} entre a Growith con ese mail, ve tus Reclamos`,"success",7000);
+      }
+      setEmail(""); setNombre(""); setAbierto(false); cargar();
+    }catch(e){ toast("No se pudo agregar: "+e.message,"warning"); }
+  }
+  async function quitar(m){
+    const otras=SECCIONES_MIEMBRO.filter(s=>s.id!=="reclamos"&&m.secciones?.[s.id]===true);
+    const msg=otras.length
+      ? `¿Sacarle Reclamos a ${m.nombre||m.email}? Sigue entrando a ${otras.map(s=>s.label).join(", ")}.`
+      : `¿Quitarle el acceso a ${m.nombre||m.email}? Reclamos es su única sección, así que deja de ver tu espacio.`;
+    if(!await appConfirm(msg,{okLabel:"Quitar acceso",danger:true})) return;
+    try{
+      if(m._estado==="pendiente"||!m.uid||otras.length===0) await api("miembroQuitar",{memberUid:m.uid||"",email:m.email||""});
+      else await api("miembroActualizar",{memberUid:m.uid,secciones:{...(m.secciones||{}),reclamos:false}});
+      cargar();
+    }catch(e){ toast("No se pudo quitar: "+e.message,"warning"); }
+  }
+  const COLORS=["#6366f1","#0ea5e9","#f97316","#10b981","#a855f7","#ef4444"];
+  if(!data) return null;
+  return (
+    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 14px",marginBottom:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:11,textTransform:"uppercase",letterSpacing:0.5,fontWeight:700,color:T.textSm,flexShrink:0}}>Atienden los reclamos</span>
+        {conAcceso.length===0&&<span style={{fontSize:12,color:T.textSm}}>Por ahora, solo vos.</span>}
+        {conAcceso.map((m,i)=>(
+          <span key={(m.uid||m.email)+"_"+i} title={m.email} style={{display:"inline-flex",alignItems:"center",gap:6,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:99,padding:"4px 6px 4px 4px"}}>
+            <span style={{width:22,height:22,borderRadius:"50%",background:COLORS[i%COLORS.length]+"22",color:COLORS[i%COLORS.length],display:"grid",placeItems:"center",fontSize:11,fontWeight:800,flexShrink:0}}>{(m.nombre||m.email||"?").trim().charAt(0).toUpperCase()}</span>
+            <span style={{fontSize:12,fontWeight:600,color:T.text}}>{m.nombre||m.email}</span>
+            {m._estado==="pendiente"&&<span style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:99,background:T.yellowBg,color:T.yellow}}>Pendiente</span>}
+            {puedeGestionar&&<button onClick={()=>quitar(m)} title="Quitarle el acceso" style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:14,lineHeight:1,padding:"0 2px"}}>×</button>}
+          </span>
+        ))}
+        {puedeGestionar&&!abierto&&<button onClick={()=>setAbierto(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginLeft:"auto",flexShrink:0}}>+ Agregar</button>}
+      </div>
+      {abierto&&(
+        <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderL}`,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          <input style={{...InputStyle(T),marginBottom:0,width:150,fontSize:13}} placeholder="Nombre" value={nombre} onChange={e=>setNombre(e.target.value)}/>
+          <input style={{...InputStyle(T),marginBottom:0,flex:1,minWidth:200,fontSize:13}} type="email" placeholder="email@ejemplo.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")invitar();}}/>
+          <AsyncButton onClick={invitar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>Dar acceso</AsyncButton>
+          <button onClick={()=>{setAbierto(false);setEmail("");setNombre("");}} style={{background:"transparent",border:"none",color:T.textSm,fontSize:12,padding:"8px 10px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>Cancelar</button>
+          <div style={{fontSize:11,color:T.textSm,width:"100%"}}>Entra con su propia cuenta y ve solo Reclamos. Si ya es de tu equipo, le sumamos esta sección sin tocarle el resto.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHome, totalOrdersCount, onGenerarCanje, view:viewProp, setView:setViewProp}) {
   // Sugerencias de producto tomadas de los pedidos reales de la cuenta.
   const catalogoProd=useMemo(()=>catalogoProductos(orders),[orders]);
@@ -6317,6 +6401,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         {/* === RECLAMOS TAB === */}
         {view==="reclamos"&&(
           <div>
+            {/* Quién atiende los reclamos */}
+            <EquipoReclamosBar T={T} user={user}/>
             {/* Buscador siempre visible */}
             {(()=>{
               const sq2=search.toLowerCase();
