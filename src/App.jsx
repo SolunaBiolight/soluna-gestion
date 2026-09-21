@@ -42568,6 +42568,9 @@ export default function App() {
       : (authUser ? {...authUser, authUid:authUser.uid, esMiembro:false, esTiendaAjena:false, tiendaRol:"owner", photoURL:miembroDe?.fotoPerfil||authUser.photoURL} : authUser)
   ),[authUser, miembroDe]);
   // Publica la tienda activa para el wrapper global de fetch (header X-Growith-Tienda).
+  // Depósito (api/deposito.js → me): {rol:"owner"|"operador"|null, cliente:{…}|null}
+  const [depositoInfo,setDepositoInfo] = useState(null);
+  const depositoNav = !!(depositoInfo&&(depositoInfo.rol||depositoInfo.cliente));
   useEffect(()=>{ try{ window.__ghTiendaUid = user?.uid || ""; }catch(_){ } },[user?.uid]);
   useEffect(()=>{
     if(!user?.uid){ setDepositoInfo(null); return; }
@@ -42618,9 +42621,6 @@ export default function App() {
     return ()=>{alive=false;};
   },[authUser&&authUser.uid]);
   const secMiembro = (user&&user.esMiembro) ? (miembroDe.secciones||{}) : null;
-  // Depósito (api/deposito.js → me): {rol:"owner"|"operador"|null, cliente:{…}|null}
-  const [depositoInfo,setDepositoInfo] = useState(null);
-  const depositoNav = !!(depositoInfo&&(depositoInfo.rol||depositoInfo.cliente));
   const seccionPermitida = (p)=> !secMiembro ? true : p==="deposito" ? (depositoNav||secMiembro.deposito===true) : secMiembro[p]===true;
   // Claim del código de referido guardado en el registro (una sola vez; el
   // backend valida que la cuenta sea nueva y el código exista).
