@@ -5365,9 +5365,9 @@ function TopbarMoreMenu({T, items}) {
 
 // --- Shared AppTopbar ---
 // ALTO TOTAL FIJO (64px + 1px de borde = 65). Los sticky que van debajo
-// dependen de este offset (AppTabs top:113, panel de Reclamos, fila sticky
+// dependen de este offset (AppTabs top:65, panel de Reclamos, fila sticky
 // del Facturador, tabs de Tareas).
-// Si cambiás el 64, actualizá TODOS los top:113 / top:65 dependientes.
+// Si cambiás el 64, actualizá TODOS los top:65 dependientes.
 function AppTopbar({T, section, sectionId, onHelp, onHome, children, top=0}) {
   const iconPath = sectionId ? SECTION_ICONS[sectionId] : null;
   return (
@@ -23510,7 +23510,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       {/* Topbar */}
-      <AppTopbar T={T} section="Trabajo" sectionId="tareas" onHome={onHome} top={colabMode?0:48}
+      <AppTopbar T={T} section="Trabajo" sectionId="tareas" onHome={onHome} top={0}
         onHelp={view==="equipo"
           ? (colabMode?null:()=>setShowGuiaEquipo(s=>!s))
           : view==="referencias"
@@ -23541,9 +23541,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
 
       {/* Barra de tabs principales — mismo estilo que las tabs del Facturador
           (AppTabs: activa en accent con inset border + iconos). No usa el
-          componente AppTabs directo porque acá el sticky top depende de
-          colabMode (65 en portal, 113 con AppTopbar). */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:colabMode?65:113,zIndex:29,padding:"10px 24px"}}>
+          componente AppTabs directo por su estilo propio. top:65 = alto del
+          AppTopbar; la barra global de 48px que lo empujaba a 113 se retiró. */}
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:65,zIndex:29,padding:"10px 24px"}}>
         <div style={{display:"inline-flex",background:T.bg,borderRadius:10,padding:3,border:`1px solid ${T.border}`,gap:2}}>
           {[
             ["todo","Tareas","M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"],
