@@ -1192,12 +1192,18 @@ async function handlerTareas(req, res) {
         // Mail con botón para que la persona cree su cuenta con este mismo
         // email y no se equivoque de dirección. Si Resend falla, la invitación
         // igual queda activa (el claim es por email al primer login).
+        // Link para mandar a mano: el mail puede no llegar (spam, o el
+        // remitente todavía en el sandbox de Resend, que solo entrega al dueño
+        // de la cuenta). No es una credencial: solo precarga el email en el
+        // alta; la invitación se reclama al entrar con esa casilla.
+        const link = `https://www.growithapp.com/?invitado=${encodeURIComponent(email)}`;
         const mailRes = await sendEmail({
           to: email,
           subject: `${ownerNombre ? ownerNombre + " te invitó" : "Te invitaron"} a Growith`,
-          html: emailInvitacionMiembro({ nombre, ownerNombre, secciones, link: "https://www.growithapp.com" }),
+          html: emailInvitacionMiembro({ nombre, ownerNombre, secciones, link }),
         });
-        return res.json({ ok: true, email, mail: mailRes && mailRes.ok ? "enviado" : "no_enviado" });
+        const sandbox = String(process.env.RESEND_FROM || "").includes("onboarding@resend.dev") || !process.env.RESEND_FROM;
+        return res.json({ ok: true, email, link, sandbox, mail: mailRes && mailRes.ok ? "enviado" : "no_enviado", mailError: mailRes && mailRes.error ? String(mailRes.error) : null });
       }
       if (action === "miembroActualizar") {
         const memberUid = String(body.memberUid || "").trim();

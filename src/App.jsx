@@ -5645,6 +5645,13 @@ function EquipoReclamosBar({T,user}){
   const [abierto,setAbierto]=React.useState(false);
   const [nombre,setNombre]=React.useState("");
   const [email,setEmail]=React.useState("");
+  const [ultimo,setUltimo]=React.useState(null);  // {email,link,mail,sandbox} del último alta
+  const [copiado,setCopiado]=React.useState("");
+  const linkDe=(em)=>`https://www.growithapp.com/?invitado=${encodeURIComponent(String(em||"").toLowerCase())}`;
+  const copiar=async(em)=>{
+    try{ await navigator.clipboard.writeText(linkDe(em)); setCopiado(em); setTimeout(()=>setCopiado(""),2500); }
+    catch(_){ toast("No se pudo copiar. El link es: "+linkDe(em),"warning",8000); }
+  };
   const api=async(action,extra={})=>{
     const r=await authFetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,uid:user?.uid,...extra})});
     const d=await r.json().catch(()=>({}));
@@ -5667,11 +5674,10 @@ function EquipoReclamosBar({T,user}){
       if(ya){
         await api("miembroActualizar",{memberUid:ya.uid,secciones:{...(ya.secciones||{}),reclamos:true}});
         toast(`${ya.nombre||em} ya era del equipo: le habilitamos Reclamos`,"success");
+        setUltimo(null);
       }else{
         const r=await api("miembroInvitar",{email:em,nombre:nombre.trim(),secciones:{reclamos:true}});
-        toast(r&&r.mail==="enviado"
-          ?`Le mandamos un mail a ${em} para que cree su cuenta y entre a Reclamos`
-          :`Listo: cuando ${em} entre a Growith con ese mail, ve tus Reclamos`,"success",7000);
+        setUltimo({email:em,link:r?.link||linkDe(em),mail:r?.mail,sandbox:!!r?.sandbox});
       }
       setEmail(""); setNombre(""); setAbierto(false); cargar();
     }catch(e){ toast("No se pudo agregar: "+e.message,"warning"); }
@@ -5700,6 +5706,7 @@ function EquipoReclamosBar({T,user}){
             <span style={{width:22,height:22,borderRadius:"50%",background:COLORS[i%COLORS.length]+"22",color:COLORS[i%COLORS.length],display:"grid",placeItems:"center",fontSize:11,fontWeight:800,flexShrink:0}}>{(m.nombre||m.email||"?").trim().charAt(0).toUpperCase()}</span>
             <span style={{fontSize:12,fontWeight:600,color:T.text}}>{m.nombre||m.email}</span>
             {m._estado==="pendiente"&&<span style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:99,background:T.yellowBg,color:T.yellow}}>Pendiente</span>}
+            {puedeGestionar&&m._estado==="pendiente"&&<button onClick={()=>copiar(m.email)} title="Copiar el link de invitación para mandárselo" style={{background:"none",border:"none",color:copiado===m.email?T.green:T.accent,cursor:"pointer",fontSize:11,fontWeight:700,padding:"0 2px",fontFamily:"'Inter',system-ui,sans-serif"}}>{copiado===m.email?"✓ Copiado":"Copiar link"}</button>}
             {puedeGestionar&&<button onClick={()=>quitar(m)} title="Quitarle el acceso" style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:14,lineHeight:1,padding:"0 2px"}}>×</button>}
           </span>
         ))}
@@ -5712,6 +5719,21 @@ function EquipoReclamosBar({T,user}){
           <AsyncButton onClick={invitar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>Dar acceso</AsyncButton>
           <button onClick={()=>{setAbierto(false);setEmail("");setNombre("");}} style={{background:"transparent",border:"none",color:T.textSm,fontSize:12,padding:"8px 10px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>Cancelar</button>
           <div style={{fontSize:11,color:T.textSm,width:"100%"}}>Entra con su propia cuenta y ve solo Reclamos. Si ya es de tu equipo, le sumamos esta sección sin tocarle el resto.</div>
+        </div>
+      )}
+      {ultimo&&(
+        <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderL}`}}>
+          <div style={{fontSize:12,color:T.text,marginBottom:6,lineHeight:1.5}}>
+            {ultimo.mail==="enviado"&&!ultimo.sandbox
+              ? <>Le mandamos el mail a <strong>{ultimo.email}</strong>. Si no le llega, pasale este link:</>
+              : <>No pudimos confirmar que el mail llegue a <strong>{ultimo.email}</strong>. Mandale este link vos:</>}
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <input readOnly value={ultimo.link} onFocus={e=>e.target.select()} style={{...InputStyle(T),marginBottom:0,flex:1,minWidth:240,fontSize:12,color:T.textMd}}/>
+            <button onClick={()=>copiar(ultimo.email)} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px",flexShrink:0}}>{copiado===ultimo.email?"✓ Copiado":"Copiar link"}</button>
+            <button onClick={()=>setUltimo(null)} style={{background:"transparent",border:"none",color:T.textSm,fontSize:12,padding:"8px 10px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>Listo</button>
+          </div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>El link no da acceso por sí solo: le precarga el mail. Para entrar tiene que crear la cuenta con <strong>{ultimo.email}</strong>.</div>
         </div>
       )}
     </div>
@@ -15676,7 +15698,9 @@ function PublicSite({T, darkMode, onToggleDark}) {
   const [view, setView] = useState(() => {
     const h = (typeof window !== "undefined" ? window.location.hash : "").toLowerCase();
     let pend = false; try { pend = !!sessionStorage.getItem("growith_mcp_rid"); } catch(_) {}
-    return (pend || h.includes("login") || h.includes("registro")) ? "login" : "landing";
+    // Link de invitación (?invitado=mail): va derecho al alta, no a la landing.
+    let inv = false; try { inv = !!new URLSearchParams(window.location.search).get("invitado"); } catch(_) {}
+    return (pend || inv || h.includes("login") || h.includes("registro")) ? "login" : "landing";
   });
   const irLogin = () => { setView("login"); try { window.location.hash = "#/login"; } catch(_){} window.scrollTo(0,0); };
   const irLanding = () => { setView("landing"); try { window.location.hash = ""; } catch(_){} window.scrollTo(0,0); };
@@ -16388,6 +16412,19 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
     try { const raw=localStorage.getItem("growith_switch_to"); if(raw){ const s=JSON.parse(raw); if(s?.email){ setEmail(s.email); setSwitchingTo(s); } localStorage.removeItem("growith_switch_to"); } } catch(_){}
   },[]);
 
+  // Invitación por link (?invitado=mail): el mail puede no llegar nunca, así
+  // que el dueño copia el link y lo manda por donde quiera. El link NO da
+  // acceso: solo precarga el mail. La invitación se reclama igual al entrar,
+  // y para eso hay que controlar esa casilla de verdad.
+  const [invitado,setInvitado]=useState("");
+  useEffect(()=>{
+    try{
+      const p=new URLSearchParams(window.location.search).get("invitado");
+      const em=String(p||"").trim().toLowerCase();
+      if(/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ setInvitado(em); setEmail(em); setMode("register"); }
+    }catch(_){}
+  },[]);
+
   const errMsg=(code)=>{
     const map={
       "auth/user-not-found":"No existe una cuenta con ese email.",
@@ -16477,6 +16514,11 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
           {switchingTo?.email && (
             <div style={{marginTop:10,padding:"8px 12px",background:T.accent+"14",border:`1px solid ${T.accent}44`,borderRadius:8,fontSize:12,color:T.text}}>
               Cambiando a <strong>{switchingTo.email}</strong>{switchingTo.provider==="google.com"?" — entrá con Google":" — poné tu contraseña"}
+            </div>
+          )}
+          {invitado && (
+            <div style={{marginTop:10,padding:"10px 12px",background:T.green+"14",border:`1px solid ${T.green}55`,borderRadius:8,fontSize:12.5,color:T.text,lineHeight:1.5}}>
+              Te invitaron a un espacio de Growith. Creá tu cuenta con <strong>{invitado}</strong> (o entrá, si ya la tenés) y vas a ver las secciones que te habilitaron.
             </div>
           )}
           {mode==="register"&&(
