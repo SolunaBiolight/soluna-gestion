@@ -145,6 +145,19 @@ async function getNotifEmails(db, uid) {
     return snap.exists ? (snap.data().notifEmails || []) : [];
   } catch(e) { return []; }
 }
+// Resumen diario (22/9/2026, exceso de cuota de Resend): avances, consultas,
+// comentarios, entregas en slot/tablero y "retomó" ya NO mandan un mail cada
+// uno: se acumulan en users/{uid}/tareas_digest/{id} y cron_deadlines los
+// junta en un solo mail por cuenta. Inmediato queda solo lo que necesita
+// respuesta ya: bloqueo y entrega para revisar.
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+async function digestManagers(db, uid, titulo, detalle, tareaTitulo) {
+  try {
+    const s = await db.collection("users").doc(uid).get();
+    if (!s.exists || esDemo(s.data())) return;
+    await db.collection("users").doc(uid).collection("tareas_digest").add({ at: new Date(), titulo: String(titulo).slice(0, 160), detalle: String(detalle || "").slice(0, 400), tarea: String(tareaTitulo || "").slice(0, 120) });
+  } catch (e) { console.error("[tareas digest]", e.message); }
+}
 async function notifyManagers(db, uid, managerEmail, subject, html) {
   // Usamos el email ACTUAL del usuario (userDoc.email, editable en Config) — así
   // si lo cambiás, las notificaciones van al nuevo, no al que quedó guardado en la
@@ -428,6 +441,32 @@ async function handlerTareas(req, res) {
         cs.docs.forEach(d => { const c = d.data(); if (c.email) colabsByUid[u][c.email.toLowerCase()] = c; });
       }
       const fmtDL = d => d.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Argentina/Buenos_Aires" });
+      // Un mail por COLABORADOR con todas sus tareas (antes uno por tarea).
+      const porColab = {}; // email → {colab, pre:[], venc:[]}
+      const juntar = (t, esPre) => {
+        for (const em of (t.asignadosEmails || [t.asignadoEmail]).filter(Boolean)) {
+          const k = em.toLowerCase();
+          porColab[k] = porColab[k] || { em, colab: (colabsByUid[t.uid] || {})[k], pre: [], venc: [] };
+          porColab[k][esPre ? "pre" : "venc"].push(t);
+        }
+      };
+      const mailColabAgrupado = async () => {
+        for (const g of Object.values(porColab)) {
+          const link = g.colab?.token ? colabPortalLink("", g.colab.token) : "";
+          const lista = (arr, color) => arr.map(t => `<li style="margin:4px 0"><strong>${t.titulo}</strong> <span style="color:${color};font-size:12px">— ${fmtDL(dlOf(t))}</span></li>`).join("");
+          const html = `<div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,${g.venc.length ? "#ef4444,#f97316" : "#f59e0b,#f97316"});padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
+    <div style="font-size:18px;font-weight:700;color:#fff">${g.venc.length ? `${g.venc.length} tarea${g.venc.length !== 1 ? "s" : ""} vencida${g.venc.length !== 1 ? "s" : ""}` : "Tareas que vencen mañana"}</div>
+  </div>
+  ${g.venc.length ? `<p style="font-size:14px;color:#374151">Vencidas sin entregar:</p><ul style="font-size:14px;color:#374151;padding-left:18px">${lista(g.venc, "#dc2626")}</ul>` : ""}
+  ${g.pre.length ? `<p style="font-size:14px;color:#374151">Vencen mañana:</p><ul style="font-size:14px;color:#374151;padding-left:18px">${lista(g.pre, "#d97706")}</ul>` : ""}
+  ${link ? `<div style="text-align:center;margin:18px 0"><a href="${link}" style="background:#6366f1;color:#fff;padding:11px 26px;border-radius:9px;text-decoration:none;font-size:14px;font-weight:700">Ver mis tareas</a></div>` : ""}
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Tareas</p>
+</div>`;
+          const n = g.pre.length + g.venc.length;
+          await sendEmail({ to: g.em, subject: g.venc.length ? `${g.venc.length} tarea${g.venc.length !== 1 ? "s" : ""} vencida${g.venc.length !== 1 ? "s" : ""}${g.pre.length ? ` y ${g.pre.length} que vence${g.pre.length !== 1 ? "n" : ""} mañana` : ""}` : `${n} tarea${n !== 1 ? "s" : ""} vence${n !== 1 ? "n" : ""} mañana`, html });
+        }
+      };
       const mailColab = async (t, esPre) => {
         const dl = dlOf(t);
         for (const em of (t.asignadosEmails || [t.asignadoEmail]).filter(Boolean)) {
@@ -454,14 +493,41 @@ async function handlerTareas(req, res) {
         // notificadas" sin que el mail hubiera salido, y el recordatorio se
         // perdía para siempre. Peor un mail repetido que uno que nunca llega.
         if (dl > ahora && dl <= en36h && !t.remPreAt) {
-          await mailColab(t, true); pre++;
+          juntar(t, true); pre++;
           await t._ref.set({ remPreAt: now }, { merge: true });
         } else if (dl < ahora && !t.remVencidaAt) {
-          await mailColab(t, false); venc++;
+          juntar(t, false); venc++;
           await t._ref.set({ remVencidaAt: now }, { merge: true });
           (vencidasPorUid[t.uid] = vencidasPorUid[t.uid] || []).push(t);
         }
       }
+      await mailColabAgrupado();
+      void mailColab;
+      // ── Resumen diario de actividad al dueño (avances, consultas, entregas,
+      //    comentarios acumulados por digestManagers) ──
+      let digests = 0;
+      try {
+        const dg = await db.collectionGroup("tareas_digest").get();
+        const porUid = {};
+        dg.docs.forEach(d => { const u = d.ref.parent.parent.id; (porUid[u] = porUid[u] || []).push(d); });
+        for (const [u, docs] of Object.entries(porUid)) {
+          const items = docs.map(d => d.data()).sort((a, b) => (a.at?.toMillis?.() || 0) - (b.at?.toMillis?.() || 0));
+          const porTarea = {};
+          items.forEach(x => { (porTarea[x.tarea || "(sin tarea)"] = porTarea[x.tarea || "(sin tarea)"] || []).push(x); });
+          const html = `<div style="font-family:Inter,sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#6366f1,#a78bfa);padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
+    <div style="font-size:18px;font-weight:700;color:#fff">Lo que pasó en tus tareas</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px">${items.length} novedad${items.length !== 1 ? "es" : ""}</div>
+  </div>
+  ${Object.entries(porTarea).map(([tt, arr]) => `<div style="margin:14px 0"><div style="font-size:14px;font-weight:700;color:#111827">${esc(tt)}</div><ul style="font-size:13px;color:#374151;padding-left:18px;margin:6px 0">${arr.map(x => `<li style="margin:3px 0"><strong>${esc(x.titulo)}</strong>${x.detalle ? `: ${esc(x.detalle.slice(0, 200))}` : ""}</li>`).join("")}</ul></div>`).join("")}
+  <div style="text-align:center;margin:18px 0"><a href="https://www.growithapp.com/#/tareas" style="background:#6366f1;color:#fff;padding:11px 26px;border-radius:9px;text-decoration:none;font-size:14px;font-weight:700">Abrir Tareas</a></div>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Tareas · un solo resumen por día en vez de un mail por cada avance</p>
+</div>`;
+          await notifyManagers(db, u, "", `Tareas: ${items.length} novedad${items.length !== 1 ? "es" : ""} de tu equipo`, html);
+          for (let i = 0; i < docs.length; i += 400) { const b = db.batch(); docs.slice(i, i + 400).forEach(d => b.delete(d.ref)); await b.commit(); }
+          digests++;
+        }
+      } catch (e) { console.error("[cron_deadlines digest]", e.message); }
       // Recordatorio al DUEÑO (tick "Recordármelo por mail" en la tarea): un mail
       // cuando la tarea vence dentro de las próximas 36 h (hoy o mañana), con la hora si la tiene.
       let own = 0;
@@ -527,7 +593,7 @@ async function handlerTareas(req, res) {
           weekly++;
         }
       }
-      return res.json({ ok: true, enVentana: pendTareas.length, preAvisos: pre, vencidas: venc, resumenes: weekly });
+      return res.json({ ok: true, enVentana: pendTareas.length, preAvisos: pre, vencidas: venc, resumenes: weekly, digests });
     }
 
     // ── ACCIONES PÚBLICAS (solo token, sin uid) ───────────────────────────────
@@ -637,9 +703,7 @@ async function handlerTareas(req, res) {
 
       // Retoma el trabajo tras bloqueo → notificar al manager (inmediato, es urgente resolverlo)
       if (estado==="en_proceso" && prevEstado==="bloqueada") {
-        notifyManagers(db, t.data().uid, managerEmailPub,
-          `${colab.nombre} retomó el trabajo — ${t.data().titulo}`,
-          emailRetomaTrabajo({ colab, tarea:t.data(), link:tareaLink }));
+        digestManagers(db, t.data().uid, `${colab.nombre} retomó el trabajo`, "", t.data().titulo);
       }
 
       await ref.update(upd);
@@ -720,9 +784,7 @@ async function handlerTareas(req, res) {
         activity:[...(t.data().activity||[]), act],
       });
       // Notificar al manager por email
-      notifyManagers(db, t.data().uid, t.data().managerEmail,
-        `Actualización de ${colab.nombre} — ${t.data().titulo}`,
-        emailNuevoComentario({ colab, tarea:t.data(), comentario:texto.trim(), link:`${origin||"https://www.growithapp.com"}/#/tareas` }));
+      digestManagers(db, t.data().uid, `Avance de ${colab.nombre}`, texto.trim(), t.data().titulo);
       return res.json({ ok:true, comment });
     }
 
@@ -738,9 +800,7 @@ async function handlerTareas(req, res) {
       const comment = { texto: texto.trim(), autor: colab.nombre, fecha:now, tipo:"consulta" };
       await ref.update({ comments:[...(t.data().comments||[]), comment] });
       // Notificar al manager por email
-      notifyManagers(db, t.data().uid, t.data().managerEmail,
-        `Consulta de ${colab.nombre} — ${t.data().titulo}`,
-        emailConsultaRecibida({ colab, tarea:t.data(), texto:texto.trim(), link:`${origin||"https://www.growithapp.com"}/#/tareas` }));
+      digestManagers(db, t.data().uid, `Consulta de ${colab.nombre}`, texto.trim(), t.data().titulo);
       return res.json({ ok:true, comment });
     }
 
@@ -1776,9 +1836,7 @@ async function handlerTareas(req, res) {
       const allDone = slots.length>0 && slots.every(s => [...prevDels,entrega].some(d=>d.slotId===s.id&&!d.parcial));
       if (allDone) upd.estado = "entregado";
       await ref.update(upd);
-      notifyManagers(db, uid, snap.data().managerEmail,
-        `Nueva entrega en slot — ${snap.data().titulo}`,
-        emailEntregaRecibida({ colab:{nombre:"Colaborador"}, tarea:snap.data(), entrega, link:`${origin||"https://growithapp.com"}/#/tareas` }));
+      digestManagers(db, uid, "Nueva entrega en slot", entrega.label || entrega.link || "", snap.data().titulo);
       return res.json({ ok:true, entrega });
     }
 
@@ -1798,8 +1856,15 @@ async function handlerTareas(req, res) {
       if (deadline!==undefined) clean.deadline = deadline ? new Date(deadline) : null;
       if (deadlineHora!==undefined) clean.deadlineHora = String(deadlineHora || "").slice(0, 5);
       if (recordarMail!==undefined) clean.recordarMail = !!recordarMail;
+      // Fecha guardada (Timestamp de Firestore) → ms, para comparar de verdad.
+      // Antes `new Date(Timestamp)` daba Invalid Date y TODO guardado con fecha
+      // contaba como "cambió la fecha": mail al colaborador y recordatorio al
+      // dueño otra vez, en cada edición.
+      const dlMs = v => v?.toMillis ? v.toMillis() : (v?._seconds ? v._seconds * 1000 : (v ? new Date(v).getTime() : 0));
+      const dlDia = ms => ms ? new Date(ms).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }) : null;
+      const deadlineCambio = deadline!==undefined && dlDia(dlMs(prevData.deadline)) !== dlDia(deadline ? new Date(deadline).getTime() : 0);
       // Si cambió la fecha o se (re)activó el recordatorio, el aviso al dueño vuelve a correr.
-      if (deadline!==undefined || recordarMail) clean.remOwnerAt = null;
+      if (deadlineCambio || (recordarMail && !prevData.recordarMail)) clean.remOwnerAt = null;
       if (estado!==undefined) clean.estado = estado;
       if (asignadoEmail!==undefined) clean.asignadoEmail = asignadoEmail;
       if (asignadoNombre!==undefined) clean.asignadoNombre = asignadoNombre;
@@ -1810,12 +1875,9 @@ async function handlerTareas(req, res) {
       // Notificar al colab si cambió brief o deadline
       const cambios = [];
       if (brief!==undefined && brief !== prevData.brief) cambios.push("Se actualizó el brief de la tarea");
-      if (deadline!==undefined) {
-        const prevDL = prevData.deadline ? new Date(prevData.deadline).toLocaleDateString("es-AR") : null;
-        const newDL = deadline ? new Date(deadline).toLocaleDateString("es-AR") : null;
-        if (prevDL !== newDL) {
-          cambios.push(newDL ? `Nueva fecha límite: <strong>${newDL}</strong>` : "Se eliminó la fecha límite");
-        }
+      if (deadlineCambio) {
+        const newDL = dlDia(deadline ? new Date(deadline).getTime() : 0);
+        cambios.push(newDL ? `Nueva fecha límite: <strong>${newDL}</strong>` : "Se eliminó la fecha límite");
       }
       if (cambios.length > 0) {
         // Cancelar email de actualización anterior si todavía no se envió
@@ -1835,7 +1897,8 @@ async function handlerTareas(req, res) {
               html: emailTareaActualizada({ colab:c3, tarea:{...prevData,...clean}, cambios, link:colabPortalLink(origin, c3.token) }),
               delayMs: 3 * 60 * 1000,
             });
-            if (emailRes3.id) clean.pendingUpdateEmailId = emailRes3.id;
+            // Se guarda DESPUÉS del update: antes quedaba en `clean` ya escrito y nunca llegaba al doc.
+            if (emailRes3.id) await ref.set({ pendingUpdateEmailId: emailRes3.id }, { merge: true });
           }
         }
       }
@@ -2041,8 +2104,11 @@ async function handlerTareas(req, res) {
       const tdata = snap.data();
       const colabSnap2 = await db.collection("colaboradores")
         .where("uid","==",uid).where("email","==",tdata.asignadoEmail).limit(1).get();
-      if (!colabSnap2.empty) {
+      // Máximo un mail de comentario por tarea cada 6 h: los siguientes los ve en el portal.
+      const ultComentMail = tdata.comentMailAt?.toMillis ? tdata.comentMailAt.toMillis() : (tdata.comentMailAt?._seconds ? tdata.comentMailAt._seconds * 1000 : 0);
+      if (!colabSnap2.empty && Date.now() - ultComentMail > 6 * 3600000) {
         const colab2 = colabSnap2.docs[0].data();
+        snap.ref.set({ comentMailAt: new Date() }, { merge: true }).catch(() => {});
         sendEmail({
           to: tdata.asignadoEmail,
           subject: `Nuevo comentario en "${tdata.titulo}"`,
@@ -2874,8 +2940,7 @@ async function handlerTareas(req, res) {
       const entrega = { link:link.trim(), label:(label.trim()||`v${(tData.deliverables||[]).length+1}`), nota:nota.trim(), fecha:now, entregadoPor:colabEmail };
       await tareaRef.update({ deliverables:[...(tData.deliverables||[]),entrega], estado:"entregado", updatedAt:now });
       // Tienda DEMO: la entrega queda registrada pero sin mails.
-      const boardNotifRecipients = esDemo(userData) ? [] : [...new Set([userData.email, ...(userData.notifEmails||[])])].filter(Boolean);
-      boardNotifRecipients.forEach(to => sendEmail({ to, subject:`Nueva entrega en "${tData.titulo}"`, html:emailEntregaRecibida({ colab:colabData, tarea:tData, entrega, link:origin }) }));
+      digestManagers(db, uid, `Entrega de ${colabData?.nombre || colabEmail} por el tablero`, entrega.label || entrega.link || "", tData.titulo);
       return res.json({ ok:true, entrega });
     }
 

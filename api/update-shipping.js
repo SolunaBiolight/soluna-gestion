@@ -723,7 +723,9 @@ export default async function handler(req, res) {
             // se reintenta en las próximas corridas, hasta 3 veces.
             const emailComprador = String(e.destinatario?.email || "").trim();
             const fallos = (e.avisosCompradorFallo || {})[cat];
-            if (["en_sucursal", "visita_fallida", "entregado"].includes(cat) && emailComprador && cfgU.avisosComprador !== false
+            // "entregado" ya no se manda (22/9/2026): Andreani y la tienda lo avisan y era el
+            // grueso del volumen. Quedan los dos que evitan devoluciones.
+            if (["en_sucursal", "visita_fallida"].includes(cat) && emailComprador && cfgU.avisosComprador !== false
                 && !(e.avisosComprador || {})[cat] && (Number(fallos?.intentos) || 0) < 3) {
               const trk = numOficial || e.tracking;
               const link = `https://www.andreani.com/envio/${esc(trk)}`;
@@ -839,7 +841,9 @@ export default async function handler(req, res) {
         marcarUsers.push(uDoc.ref);
       }
       // Resumen al founder de las anulaciones automáticas abiertas en esta corrida.
-      if (anulacionesAuto.length) {
+      const anulMailOk = anulacionesAuto.length && (Date.now() - (Number(cfgGlobal?.anulMailTs) || 0) > 6 * 3600000);
+      if (anulMailOk) { try { await db.collection("andreani_config").doc("global").set({ anulMailTs: Date.now() }, { merge: true }); } catch (_) {} }
+      if (anulMailOk) {
         try { await mailEjecutiva(db, cfgGlobal, anulacionesAuto.map(x => ({ tienda: x.cuenta, numeroDeEnvio: x.numeroDeEnvio, motivo: "anulacion" })), `${anulacionesAuto.length} etiqueta${anulacionesAuto.length === 1 ? "" : "s"} sin usar: pedido de anulación y reintegro`); } catch (_) {}
         try {
           const to = String(cfgGlobal?.emailGestiones || "contacto.growith@gmail.com").trim();
@@ -925,11 +929,15 @@ export default async function handler(req, res) {
           return c.tracking && String(c.tracking).trim() && (!c.trackingLastCheck || c.trackingLastCheck < staleCutoff);
         }).slice(0, 30);
         const emailCache = {};
+        // Decisión de Soluna (22/9/2026): de canjes solo avisar por mail "en sucursal
+        // sin retirar" y "visita fallida" (lo que puede hacer volver el paquete).
+        // Entregado y devolución quedan como aviso in-app, sin mail; con el
+        // influencer todo es por WhatsApp.
         const NOTABLES = {
-          en_sucursal:    { titulo: "Listo para retirar en sucursal", asunto: inf => `El canje de ${inf} está en sucursal para retirar` },
-          entregado:      { titulo: "Paquete entregado",              asunto: inf => `El canje de ${inf} fue entregado` },
-          devolucion:     { titulo: "Devolución en camino",           asunto: inf => `El envío del canje de ${inf} está volviendo` },
-          visita_fallida: { titulo: "Visita fallida",                 asunto: inf => `Visita fallida en el canje de ${inf}` },
+          en_sucursal:    { titulo: "Listo para retirar en sucursal", asunto: inf => `El canje de ${inf} está en sucursal para retirar`, mail: true },
+          entregado:      { titulo: "Paquete entregado",              asunto: inf => `El canje de ${inf} fue entregado`, mail: false },
+          devolucion:     { titulo: "Devolución en camino",           asunto: inf => `El envío del canje de ${inf} está volviendo`, mail: false },
+          visita_fallida: { titulo: "Visita fallida",                 asunto: inf => `Visita fallida en el canje de ${inf}`, mail: true },
         };
         for (let i = 0; i < pendCanjes.length; i += 5) {
           if (!quedaTiempo()) break;
@@ -955,11 +963,15 @@ export default async function handler(req, res) {
               if (["Por enviar", "Pendiente envío", "Enviado"].includes(c.estado)) upd.estado = "Contenido pendiente";
             }
             if (cat === "devolucion") upd.trackDone = true;
-            if (cat !== c.trackingCat && NOTABLES[cat]) {
+            // Aviso solo si el estado se SOSTIENE dos corridas seguidas (30 min):
+            // el oficial y el scrapeado a veces alternan y se mandaba un mail
+            // cada media hora. trackingCatVisto = lo que se vio la corrida anterior.
+            upd.trackingCatVisto = cat;
+            if (cat !== c.trackingCat && NOTABLES[cat] && c.trackingCatVisto === cat) {
               upd.trackingAviso = { cat, estado: out.estado, at: ahora, visto: false };
               try {
                 const ownerId = c.ownerId;
-                if (ownerId && process.env.RESEND_API_KEY) {
+                if (ownerId && NOTABLES[cat]?.mail && process.env.RESEND_API_KEY) {
                   if (!(ownerId in emailCache)) {
                     const uSnap = await db.collection("users").doc(ownerId).get();
                     emailCache[ownerId] = uSnap.data()?.email || null;
@@ -1071,6 +1083,7 @@ export default async function handler(req, res) {
             const inf = c.influencer || "influencer";
             const dias = Math.round((Date.now() - new Date(c.trackEntregadoAt).getTime()) / 86400000);
             // mailEnvios/mailShell (antes fetch inline a Resend sin escapar).
+            if (true) return; // 22/9/2026: sin mail de "debe contenido" (se ve en Canjes y en el Home)
             await mailEnvios(to, `${inf} debe contenido — entregado hace ${dias} días`, mailShell("Contenido pendiente", `Canje de ${inf}`,
               `<p style="font-size:14px">El paquete de <strong>${esc(inf)}</strong> se entregó hace <strong>${dias} días</strong> y todavía ${acordados > 0 ? `va ${entregados} de ${acordados} piezas de contenido acordadas` : "no marcaste contenido entregado"}.</p>
   <p style="font-size:13px">Buen momento para escribirle y preguntarle cómo viene.</p>`));

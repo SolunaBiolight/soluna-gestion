@@ -377,12 +377,27 @@ const ERR_FOTOS_PESO = "Las fotos pesan demasiado (máx. 700 KB entre todas): sa
 // fundador hace falta acá para los mails operativos (mailFundador).
 const FOUNDERS = ["WJH3ArqDPQcNLha9lOinvkVi9uJ2"];
 // Mail operativo al fundador (users/{FOUNDERS[0]}.email). Best-effort, nunca tira.
-async function mailFundador(db, subject, html) {
+// `clave`: tope por tema. El primer mail sale al instante; los siguientes del
+// mismo tema en la hora siguiente se suprimen y se cuentan (system/mail_tope/{clave}),
+// y el próximo que salga dice cuántos hubo. Si Andreani se degrada, antes era
+// un mail por cada etiqueta intentada.
+async function mailFundador(db, subject, html, clave) {
   try {
     const f = await db.collection("users").doc(FOUNDERS[0]).get();
     const to = f.exists ? String(f.data().email || "").trim() : "";
     if (!to) return false;
-    const r = await sendEmail({ to, subject, html });
+    let extra = "";
+    if (clave) {
+      const ref = db.collection("system").doc("mail_tope").collection("temas").doc(clave);
+      const dec = await db.runTransaction(async tx => {
+        const s = await tx.get(ref); const d = s.data() || {};
+        if (Date.now() - (Number(d.lastAt) || 0) < 3600000) { tx.set(ref, { suprimidos: (Number(d.suprimidos) || 0) + 1 }, { merge: true }); return { skip: true }; }
+        tx.set(ref, { lastAt: Date.now(), suprimidos: 0 }, { merge: true }); return { skip: false, suprimidos: Number(d.suprimidos) || 0 };
+      });
+      if (dec.skip) return false;
+      if (dec.suprimidos > 0) extra = `<p style="color:#b45309"><strong>+${dec.suprimidos}</strong> aviso${dec.suprimidos !== 1 ? "s" : ""} del mismo tipo suprimido${dec.suprimidos !== 1 ? "s" : ""} en la última hora (se manda uno por hora como máximo).</p>`;
+    }
+    const r = await sendEmail({ to, subject, html: html + extra });
     return !!r?.ok;
   } catch (_) { return false; }
 }
@@ -2168,7 +2183,7 @@ export default async function handler(req, res) {
           // un reintento inmediato que podría duplicar la orden real.
           try { await movRef.set({ dudoso: true, nota: `Etiqueta Andreani ${tipo} · CP ${cpTarifa} — EMISIÓN DUDOSA: ${String(ordenErr).slice(0, 180)}` }, { merge: true }); } catch (_) {}
           if (envioRef) { try { await envioRef.set({ andreani: { dudosoTs: Date.now(), emitiendoTs: FieldValue.delete() } }, { merge: true }); } catch (_) {} }
-          await mailFundador(db, `Emisión Andreani DUDOSA — conciliar (uid ${uid})`, `<p>La emisión del envío ${envioId || "(sin id)"} de ${uData.email || uid} falló de forma ambigua (${String(ordenErr).slice(0, 200)}). El débito de $${precio.toLocaleString("es-AR")} quedó RETENIDO. Verificá en el panel de Andreani si la orden se creó y resolvela desde Admin → Logística → Limbo (admin_dudoso_resolver): "no existe" devuelve el saldo, "existe" registra el número.</p>`);
+          await mailFundador(db, `Emisión Andreani DUDOSA — conciliar (uid ${uid})`, `<p>La emisión del envío ${envioId || "(sin id)"} de ${uData.email || uid} falló de forma ambigua (${String(ordenErr).slice(0, 200)}). El débito de $${precio.toLocaleString("es-AR")} quedó RETENIDO. Verificá en el panel de Andreani si la orden se creó y resolvela desde Admin → Logística → Limbo (admin_dudoso_resolver): "no existe" devuelve el saldo, "existe" registra el número.</p>`, "dudosa");
           return res.status(502).json({ error: `No pudimos confirmar si Andreani emitió la etiqueta (${String(ordenErr).slice(0, 160)}). Para que no se emita ni cobre dos veces, el débito quedó retenido y el equipo de Growith ya fue avisado para resolverlo — no reintentes por ahora.`, dudoso: true });
         }
         // Andreani respondió que NO (rechazo claro): reverso del débito.
