@@ -441,6 +441,24 @@ export default async function handler(req, res) {
       _tokCache = { at: 0, d: null };
       return res.json({ ok: true, cual, token });
     }
+    // Buscar cuentas de Growith con plan activo para darlas de alta como cliente
+    // sin tipear el mail. Barrido en memoria (solo el dueño, uso esporádico).
+    if (action === "usuarios_buscar") {
+      if (!soloOwner()) return;
+      const q = txt(body.q, 60).toLowerCase(); if (q.length < 2) return res.json({ usuarios: [] });
+      const s = await db.collection("users").select("email", "nombre", "displayName", "plan", "planExpiry", "isTrial", "stripeStatus", "deleted", "soloMiembro", "esTienda", "active_tienda_uid", "storeName", "tiendaNombre").get();
+      const now = Date.now(); const out = [];
+      for (const d of s.docs) { const u = d.data();
+        if (u.deleted || u.soloMiembro) continue;
+        const plan = u.plan || "free"; if (plan === "free") continue;
+        const exp = ms(u.planExpiry); const vigente = !exp || exp > now || ["active", "trialing"].includes(u.stripeStatus);
+        if (!vigente) continue;
+        const email = String(u.email || "").toLowerCase(), nombre = String(u.nombre || u.displayName || u.storeName || u.tiendaNombre || "");
+        if (!email.includes(q) && !nombre.toLowerCase().includes(q)) continue;
+        out.push({ id: d.id, email, nombre, plan, prueba: !!u.isTrial, tienda: !!u.esTienda });
+        if (out.length >= 12) break; }
+      return res.json({ usuarios: out });
+    }
     if (action === "clientes") {
       if (!soloOwner()) return;
       const [cs, ts] = await Promise.all([db.collection("deposito_clientes").get(), db.collection("deposito_tandas").where("createdAt", ">=", new Date(Date.now() - 400 * 86400000)).get()]);

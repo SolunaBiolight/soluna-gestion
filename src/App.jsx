@@ -20869,7 +20869,7 @@ function DepositoPanelView({token}){
       <input autoFocus value={nom} onChange={e=>setNom(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") guardarNombre(); }} placeholder="Nombre" style={{...InputStyle(T),marginBottom:12}}/>
       <Btn T={T} variant="primary" onClick={guardarNombre} disabled={!nom.trim()}>Entrar</Btn>
     </Card></div>);
-  return wrap(<AppDeposito T={T} info={{rol:info.rol,cliente:null}} api={api} panel={{operario,cambiarOperario,dark,setDark}}/>);
+  return wrap(<div style={{maxWidth:1180,margin:"0 auto",minHeight:"100vh",borderLeft:`1px solid ${T.border}`,borderRight:`1px solid ${T.border}`}}><AppDeposito T={T} info={{rol:info.rol,cliente:null}} api={api} panel={{operario,cambiarOperario,dark,setDark}}/></div>);
 }
 
 // ── Consola del DEPÓSITO ──
@@ -20902,7 +20902,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
             <button key={k} onClick={()=>setTab(k)} style={{padding:"6px 12px",fontSize:DS.font.md,border:"none",borderRadius:DS.r.sm,background:tab===k?T.card:"transparent",color:tab===k?T.text:T.textMd,fontWeight:tab===k?600:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>))}
         </div>}
       </AppTopbar>
-      <div style={{padding:"20px 24px 64px"}}>
+      <div style={panel?{padding:"16px 20px 64px",maxWidth:1080,margin:"0 auto"}:{padding:"20px 24px 64px"}}>
         {guia&&(<Card T={T} padding="lg" style={{marginBottom:18}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
             <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text}}>Cómo funciona el Depósito</div>
@@ -21087,6 +21087,8 @@ function DepositoHistorial({T,api}){
 function DepositoClientes({T,api}){
   const iS=InputStyle(T);
   const [d,setD]=useState(null); const [form,setForm]=useState(null); const [busy,setBusy]=useState(false);
+  const [bq,setBq]=useState(""); const [bres,setBres]=useState(null);
+  useEffect(()=>{ const q=bq.trim(); if(q.length<2){ setBres(null); return; } setBres(null); let vivo=true; const t=setTimeout(()=>api("usuarios_buscar",{q}).then(r=>{ if(vivo) setBres(r.usuarios||[]); }).catch(()=>{ if(vivo) setBres([]); }),350); return ()=>{ vivo=false; clearTimeout(t); }; },[bq]);
   const cargar=()=>api("clientes").then(setD).catch(e=>{ toast(e.message,"error"); setD({clientes:[]}); });
   useEffect(()=>{ cargar(); },[]);
   async function guardar(){ if(busy) return; setBusy(true); try{ await api("cliente_guardar",form); toast("Cliente guardado","success"); setForm(null); cargar(); }catch(e){ toast(e.message,"error"); } setBusy(false); }
@@ -21116,6 +21118,15 @@ function DepositoClientes({T,api}){
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div>{lbl("Nombre")}<input style={iS} value={form.nombre} onChange={e=>setForm(f=>({...f,nombre:e.target.value}))}/></div>
         <div style={{width:200}}>{lbl("Precio por pedido armado ($)")}<input style={iS} type="number" min="0" value={form.precio} onChange={e=>setForm(f=>({...f,precio:e.target.value}))}/></div>
+        <div>{lbl("Buscar su cuenta de Growith (solo cuentas con plan activo)")}
+          <input style={iS} placeholder="Nombre o mail…" value={bq} onChange={e=>setBq(e.target.value)}/>
+          {bq.trim().length>=2&&(<div style={{marginTop:-6,marginBottom:10,border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.card,overflow:"hidden"}}>
+            {bres===null?<div style={{padding:"8px 10px",fontSize:DS.font.md,color:T.textSm}}>Buscando…</div>
+            :bres.length===0?<div style={{padding:"8px 10px",fontSize:DS.font.md,color:T.textSm}}>Ninguna cuenta activa coincide</div>
+            :bres.map(u=>(<div key={u.id} onClick={()=>{ setForm(f=>({...f,growithEmail:u.email||u.id,nombre:f.nombre||u.nombre||u.email,contacto:f.contacto||u.email})); setBq(""); setBres(null); }} style={{padding:"8px 10px",cursor:"pointer",borderBottom:`1px solid ${T.borderL}`,fontSize:DS.font.md,color:T.text,display:"flex",justifyContent:"space-between",gap:8}}>
+              <span><strong>{u.nombre||u.email}</strong>{u.nombre&&<span style={{color:T.textMd}}> · {u.email}</span>}</span><span style={{color:T.textSm}}>{u.plan}{u.prueba?" (prueba)":""}</span></div>))}
+          </div>)}
+        </div>
         <div>{lbl("Mail de su cuenta de Growith, o uid de la tienda (opcional)")}<input style={iS} placeholder="Dejalo vacío si no usa Growith" value={form.growithEmail} onChange={e=>setForm(f=>({...f,growithEmail:e.target.value}))}/></div>
         <div>{lbl("Contacto")}<input style={iS} placeholder="Nombre y teléfono" value={form.contacto} onChange={e=>setForm(f=>({...f,contacto:e.target.value}))}/></div>
         <div>{lbl("Nota interna")}<textarea style={{...iS,minHeight:54,resize:"vertical"}} value={form.nota} onChange={e=>setForm(f=>({...f,nota:e.target.value}))}/></div>
