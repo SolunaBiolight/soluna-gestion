@@ -8867,7 +8867,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 <div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                   <span>Carpeta madre de Drive: <strong style={{color:driveParent?.id?T.text:T.yellow}}>{driveParent===undefined?"…":driveParent?.name||"sin elegir"}</strong></span>
                   <button onClick={elegirCarpetaMadre} disabled={driveBusy} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>{driveParent?.id?"Cambiar":"Elegir carpeta madre"}</button>
-                  {!driveParent?.id&&driveParent!==undefined&&<button onClick={crearCarpetaMadre} disabled={driveBusy} title="Growith crea la carpeta \"Influencers (Growith)\" en tu Drive y la usa de carpeta madre. Después podés moverla adentro de tu carpeta de siempre." style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>Crear carpeta madre</button>}
+                  {!driveParent?.id&&driveParent!==undefined&&<button onClick={crearCarpetaMadre} disabled={driveBusy} title="Growith crea la carpeta Influencers (Growith) en tu Drive y la usa de carpeta madre. Después podés moverla adentro de tu carpeta de siempre." style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>Crear carpeta madre</button>}
                   {driveParentLink&&<a href={driveParentLink} target="_blank" rel="noopener" style={{color:T.accent}}>Abrir en Drive</a>}
                   {!driveParent?.id&&driveParent!==undefined&&<span>Con la carpeta madre lista, cada perfil y cada canje nuevo crean su carpeta solos. Para un influencer viejo, pegá el link de su carpeta en el perfil.</span>}
                 </div>
