@@ -1108,6 +1108,50 @@ async function gdriveToken(req, res, db) {
   } catch (e) { return res.status(502).json({ error: e.message }); }
 }
 
+// Canjes: crea la carpeta de un influencer DENTRO de la carpeta madre que el
+// dueño eligió con el Picker (con drive.file la app solo ve lo que el usuario
+// le abrió: por eso la carpeta madre se elige una vez con el Picker y desde ahí
+// las hijas son de la app). La comparte "cualquiera con el link puede subir" y,
+// si hay mail del influencer, también con él (sin mail de aviso de Google).
+async function gdriveFolderCreate(req, res, db) {
+  const uid = req.body?.uid || req.query.uid;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid, "canjes"))) return;
+  const nombre = String(req.body?.nombre || "").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+  const parentId = String(req.body?.parentId || "").trim();
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!nombre) return res.status(400).json({ error: "Falta el nombre de la carpeta." });
+  if (!/^[A-Za-z0-9_-]{10,120}$/.test(parentId)) return res.status(400).json({ error: "Elegí primero la carpeta madre de Drive (Canjes → Influencers)." });
+  try {
+    const t = await getValidDriveToken(db, uid);
+    if (!t) return res.status(400).json({ error: "Google Drive no está conectado: Configuración → Integraciones → Google Drive.", not_connected: true });
+    const H = { Authorization: `Bearer ${t.accessToken}`, "Content-Type": "application/json" };
+    // ¿Ya existe una carpeta con ese nombre adentro de la madre? Se reutiliza.
+    const q = encodeURIComponent(`'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and name='${nombre.replace(/'/g, "\\'")}' and trashed=false`);
+    const ex = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,webViewLink)&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: H, signal: AbortSignal.timeout(15000) });
+    const exJ = await ex.json().catch(() => ({}));
+    let folder = exJ.files?.[0] || null;
+    if (!folder) {
+      const r = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink&supportsAllDrives=true", { method: "POST", headers: H, body: JSON.stringify({ name: nombre, mimeType: "application/vnd.google-apps.folder", parents: [parentId] }), signal: AbortSignal.timeout(15000) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (r.status === 404 || r.status === 403) return res.status(400).json({ error: "Drive no deja crear adentro de esa carpeta madre. Volvé a elegirla con el botón \"Carpeta madre\" en Canjes → Influencers.", reelegir: true });
+        return res.status(502).json({ error: `Drive no creó la carpeta (HTTP ${r.status}): ${String(j.error?.message || "").slice(0, 200)}` });
+      }
+      folder = j;
+    }
+    const perms = [{ role: "writer", type: "anyone" }];
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) perms.push({ role: "writer", type: "user", emailAddress: email });
+    const avisos = [];
+    for (const p of perms) {
+      const pr = await fetch(`https://www.googleapis.com/drive/v3/files/${folder.id}/permissions?supportsAllDrives=true&sendNotificationEmail=false`, { method: "POST", headers: H, body: JSON.stringify(p), signal: AbortSignal.timeout(15000) });
+      if (!pr.ok) { const pj = await pr.json().catch(() => ({})); avisos.push(`${p.type === "anyone" ? "link" : email}: ${String(pj.error?.message || pr.status).slice(0, 120)}`); }
+    }
+    const link = folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`;
+    return res.json({ ok: true, id: folder.id, link, nombre: folder.name || nombre, avisos });
+  } catch (e) { return res.status(502).json({ error: "Drive no respondió: " + e.message }); }
+}
+
 async function gdriveDisconnect(req, res, db) {
   const uid = req.body?.uid || req.query.uid;
   if (!uid) return res.status(400).json({ error: "Falta uid" });
@@ -1407,6 +1451,7 @@ export default async function handler(req, res) {
       if (action === "oauth_start" && req.method === "POST") return gdriveOauthStart(req, res, db);
       if (action === "status" && req.method === "GET") return gdriveStatus(req, res, db);
       if (action === "token" && req.method === "GET") return gdriveToken(req, res, db);
+      if (action === "folder_create" && req.method === "POST") return gdriveFolderCreate(req, res, db);
       if (action === "disconnect" && req.method === "POST") return gdriveDisconnect(req, res, db);
     }
 

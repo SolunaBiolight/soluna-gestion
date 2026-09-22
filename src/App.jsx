@@ -463,7 +463,8 @@ function _showDrivePicker(token, onSelect, onCancel, opts = {}) {
   // Una sola vista en modo LISTA (más limpia que la grilla de carpetas de
   // Google), con carpetas navegables y unidades compartidas incluidas.
   // (setEnableDrives en esta vista la abría en "Unidades compartidas", vacía.)
-  const myDrive = new P.DocsView().setIncludeFolders(true).setSelectFolderEnabled(false).setMode(P.DocsViewMode.LIST);
+  const myDrive = new P.DocsView().setIncludeFolders(true).setSelectFolderEnabled(!!opts.folders).setMode(P.DocsViewMode.LIST);
+  if (opts.folders) myDrive.setMimeTypes("application/vnd.google-apps.folder");
   const VID = "video/mp4,video/quicktime,video/x-m4v,video/webm,video/x-matroska,video/x-msvideo,video/mpeg";
   const IMG = "image/jpeg,image/png,image/webp,image/gif";
   const DOCS = "application/vnd.google-apps.document,text/plain,text/markdown";
@@ -7428,6 +7429,44 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`No se pudo crear el cupón (HTTP ${r.status})`);
     return d;
   }
+  // ── Carpeta de Drive por influencer (automática) ──
+  // La carpeta madre se elige UNA vez con el Picker (con drive.file la app solo
+  // ve lo que el usuario le abrió) y queda en users/{uid}.canjesDriveParent.
+  // Después cada perfil/canje nuevo crea su carpeta adentro, la comparte por
+  // link con permiso de subir y guarda el link en el perfil y en el canje.
+  const [driveParent,setDriveParent]=useState(undefined); // undefined=cargando, null=sin elegir, {id,name}
+  useEffect(()=>{ if(!user?.uid) return; getDoc(doc(db,"users",user.uid)).then(s=>setDriveParent(s.data()?.canjesDriveParent||null)).catch(()=>setDriveParent(null)); },[user?.uid]);
+  const [driveBusy,setDriveBusy]=useState(false);
+  async function elegirCarpetaMadre(){
+    if(driveBusy) return; setDriveBusy(true);
+    try{
+      const r=await authFetch(`/api/integrations?platform=googledrive&action=token&uid=${user?.uid||""}`); const j=await r.json().catch(()=>({}));
+      if(!j.access_token){ setDriveBusy(false); if(j.not_connected) toast("Primero conectá Google Drive en Configuración → Integraciones","warning",6000); else toast(j.error||"No pude obtener acceso a Drive","error"); return; }
+      await _loadDriveScripts(); setDriveBusy(false);
+      _showDrivePicker(j.access_token, async f=>{
+        try{ await updateDoc(doc(db,"users",user.uid),{canjesDriveParent:{id:f.id,name:f.name}}); setDriveParent({id:f.id,name:f.name}); toast(`Carpeta madre: ${f.name}`,"success"); }
+        catch(e){ toast("No se pudo guardar la carpeta: "+e.message,"error"); }
+      },()=>{},{folders:true,title:"Elegí la carpeta madre de los influencers"});
+    }catch(e){ setDriveBusy(false); toast(e.message,"error"); }
+  }
+  // Devuelve el link o null (ya avisó con toast).
+  async function crearCarpetaDrive(nombre,usuario,email){
+    if(!driveParent?.id){ toast("Elegí primero la carpeta madre de Drive (Influencers → Carpeta madre)","warning",6000); return null; }
+    const nom=[String(nombre||"").trim(),usuario?"@"+String(usuario).replace("@","").trim():""].filter(Boolean).join(" ");
+    if(!nom){ toast("Poné el nombre o el usuario del influencer","warning"); return null; }
+    try{
+      const r=await authFetch(`/api/integrations?platform=googledrive&action=folder_create`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user?.uid,nombre:nom,parentId:driveParent.id,email:email||""})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||d.error){ if(d.reelegir) setDriveParent(null); toast(d.error||"No se pudo crear la carpeta","error",7000); return null; }
+      if(d.avisos?.length) toast("Carpeta creada, pero no se pudo compartir: "+d.avisos.join(" · "),"warning",8000);
+      return d.link;
+    }catch(e){ toast("No se pudo crear la carpeta: "+e.message,"error"); return null; }
+  }
+  const BtnCarpeta=({onCreada,nombre,usuario,email,disabled})=>(
+    <AsyncButton disabled={disabled||driveParent===undefined} onClick={async()=>{ const l=await crearCarpetaDrive(nombre,usuario,email); if(l) onCreada(l); }}
+      title={driveParent?.id?`Crea la carpeta adentro de "${driveParent.name}" y la comparte con permiso de subir`:"Elegí primero la carpeta madre en Influencers"}
+      style={{...BtnSecondary(T),fontSize:11,padding:"6px 10px",whiteSpace:"nowrap"}}>Crear en Drive</AsyncButton>
+  );
   const [search,setSearch]=useState("");
   const [filterEstado,setFilterEstado]=useState("");
   const [filterRed,setFilterRed]=useState("");
@@ -7867,6 +7906,17 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   async function saveCanje() {
     if(!form?.influencer) return;
     setSaving(true);
+    // Canje NUEVO sin carpeta: hereda la del perfil o, con carpeta madre elegida,
+    // la crea sola (y se la guarda al perfil si lo tenía vacío).
+    if(!form._docId&&!(form.driveFolder||"").trim()){
+      const u=(form.usuario||"").replace("@","").toLowerCase();
+      const infDe=influencers.find(i=>(u&&i.usuario&&i.usuario.replace("@","").toLowerCase()===u)||(i.nombre&&i.nombre===form.influencer));
+      if((infDe?.driveFolder||"").trim()) form.driveFolder=infDe.driveFolder.trim();
+      else if(driveParent?.id){
+        const l=await crearCarpetaDrive(form.influencer,form.usuario,form.email);
+        if(l){ form.driveFolder=l; if(infDe?._docId) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }
+      }
+    }
     try {
       const p={
         influencer:form.influencer, usuario:form.usuario||"", red:form.red, linkInstagram:form.linkInstagram||"", pedidoRef:form.pedidoRef||"",
@@ -8785,6 +8835,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
               <div>
                 <div style={{fontSize:15,fontWeight:700,color:T.text}}>Perfiles de Influencers</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <span>Carpeta madre de Drive: <strong style={{color:driveParent?.id?T.text:T.yellow}}>{driveParent===undefined?"…":driveParent?.name||"sin elegir"}</strong></span>
+                  <button onClick={elegirCarpetaMadre} disabled={driveBusy} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>{driveParent?.id?"Cambiar":"Elegir carpeta madre"}</button>
+                  {!driveParent?.id&&driveParent!==undefined&&<span>Con la carpeta madre elegida, cada perfil y cada canje nuevo crean su carpeta solos.</span>}
+                </div>
                 <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{influencers.length} perfil{influencers.length!==1?"es":""}{derivados.length>0?` · ${derivados.length} más desde canjes sin perfil`:""}</div>
               </div>
               <button onClick={()=>{setEditInfluencer(null);setInfForm({nombre:"",usuario:"",red:"Instagram",codigoDescuento:"",descuentoPct:"",comisionPct:"",email:"",telefono:"",notas:""});setShowInfluencerForm(true);}} style={{...BtnPrimary(T),fontSize:13}}>+ Nuevo perfil</button>
@@ -8955,7 +9010,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             </div>
             <div>
               <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Carpeta de Drive</div>
-              <input value={infForm.driveFolder||""} onChange={e=>setInfForm(p=>({...p,driveFolder:e.target.value}))} placeholder="Link de la carpeta donde sube su contenido" style={{...iS}}/>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <input value={infForm.driveFolder||""} onChange={e=>setInfForm(p=>({...p,driveFolder:e.target.value}))} placeholder="Link de la carpeta donde sube su contenido" style={{...iS,marginBottom:0}}/>
+                {!(infForm.driveFolder||"").trim()&&<BtnCarpeta nombre={infForm.nombre} usuario={infForm.usuario} email={infForm.email} onCreada={l=>setInfForm(p=>({...p,driveFolder:l}))}/>}
+              </div>
               <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Cada canje nuevo la hereda: desde el detalle abrís la carpeta y vinculás cada pieza.</div>
             </div>
             <div>
@@ -9315,6 +9373,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     </div>}
                     {/* Carpeta de Drive del influencer + fecha límite general */}
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                      {!carpeta&&driveParent?.id&&<div style={{marginBottom:8}}><BtnCarpeta nombre={c.influencer} usuario={c.usuario} email={c.email} onCreada={l=>{ save({driveFolder:l}); if(infDe?._docId&&!infDe.driveFolder) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }}/></div>}
                       <Field label={c.driveFolder||!infDe?.driveFolder?"Carpeta de Drive":"Carpeta de Drive (del perfil)"} value={c.driveFolder||infDe?.driveFolder||""} onSave={v=>save({driveFolder:(v||"").trim()})} href={carpeta?(/^https?:/i.test(carpeta)?carpeta:"https://"+carpeta):null} placeholder="Link de la carpeta donde sube el contenido"/>
                       <div>
                         <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Fecha límite general</div>
@@ -9821,7 +9880,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
               <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Nicho</label><select style={iS} value={form.nicho||""} onChange={e=>setForm(f=>({...f,nicho:e.target.value}))}><option value="">Sin nicho</option>{NICHOS.map(x=><option key={x}>{x}</option>)}</select></div>
-              <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Carpeta de Drive</label><input style={iS} value={form.driveFolder||""} onChange={e=>setForm(f=>({...f,driveFolder:e.target.value}))} placeholder="Link de la carpeta del influencer"/></div>
+              <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Carpeta de Drive</label><div style={{display:"flex",gap:6,alignItems:"center"}}><input style={{...iS,marginBottom:0}} value={form.driveFolder||""} onChange={e=>setForm(f=>({...f,driveFolder:e.target.value}))} placeholder={driveParent?.id?"Se crea sola al guardar":"Link de la carpeta del influencer"}/>{!(form.driveFolder||"").trim()&&<BtnCarpeta nombre={form.influencer} usuario={form.usuario} email={form.email} onCreada={l=>setForm(f=>({...f,driveFolder:l}))}/>}</div></div>
             </div>
             <div>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Foto (URL)</label>
