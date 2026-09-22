@@ -107,7 +107,7 @@ async function ctxCliente(req, db, { token, uid }) {
   }
   if (!uid) return null;
   const r = await requireUid(req, uid, "envios");
-  if (!r.ok) return null;
+  if (!r.ok || r.viaAdmin || r.user?.impersonatedBy) return null;
   const s = await db.collection("deposito_clientes").where("growithUid", "==", String(uid)).limit(1).get();
   if (s.empty || s.docs[0].data().activo === false) return null;
   return { cliente: { id: s.docs[0].id, ...s.docs[0].data() }, via: "growith", por: r.user.uid, porNombre: r.user.name || r.user.email || s.docs[0].data().nombre };
@@ -127,7 +127,9 @@ function tandaPublica(id, t, { paraCliente = false } = {}) {
     createdAt: ms(t.createdAt),
   };
 }
-const clientePublico = (id, c, conToken) => ({ id, nombre: c.nombre, precio: num(c.precio), growithUid: c.growithUid || null, growithEmail: c.growithEmail || "", activo: c.activo !== false, contacto: c.contacto || "", nota: c.nota || "", ...(conToken ? { token: c.token } : {}) });
+// interno=true (dueño/operario): trae vínculo, nota interna y token. Al cliente solo nombre, precio y contacto.
+const clientePublico = (id, c, interno) => ({ id, nombre: c.nombre, precio: num(c.precio), activo: c.activo !== false, contacto: c.contacto || "",
+  ...(interno ? { growithUid: c.growithUid || null, growithEmail: c.growithEmail || "", nota: c.nota || "", token: c.token } : {}) });
 
 const totalDe = t => Math.max(0, +(num(t.n) * num(t.precioUnit) + num(t.ajuste)).toFixed(2));
 
@@ -177,14 +179,18 @@ export default async function handler(req, res) {
         mail = r.ok ? "enviado" : (r.error || "error");
       }
       // Purga: archivos vencidos y borradores que nunca se cerraron.
-      const venc = await db.collection("deposito_files").where("purgeAt", "<", Date.now()).limit(450).get();
-      const tocadas = new Set();
-      if (!venc.empty) { const b = db.batch(); venc.docs.forEach(d => { b.delete(d.ref); tocadas.add(d.data().tandaId); }); await b.commit(); }
-      for (const id of [...tocadas].slice(0, 60)) await db.collection("deposito_tandas").doc(id).set({ pdf: { purgado: true } }, { merge: true }).catch(() => {});
+      const t0 = Date.now(); const tocadas = new Set(); let archivosPurgados = 0;
+      while (Date.now() - t0 < 40000) {
+        const venc = await db.collection("deposito_files").where("purgeAt", "<", Date.now()).limit(450).get();
+        if (venc.empty) break;
+        const b = db.batch(); venc.docs.forEach(d => { b.delete(d.ref); if (d.data().kind === "pdf") tocadas.add(d.data().tandaId); }); await b.commit();
+        archivosPurgados += venc.size; if (venc.size < 450) break;
+      }
+      for (const id of [...tocadas].slice(0, 200)) await db.collection("deposito_tandas").doc(id).set({ pdf: { purgado: true } }, { merge: true }).catch(() => {});
       const borr = await db.collection("deposito_tandas").where("estado", "==", "borrador").get();
       let borrados = 0;
       for (const d of borr.docs) if ((ms(d.data().createdAt) || 0) < Date.now() - 86400000) { await borrarArchivos(db, d.id); await d.ref.delete(); borrados++; }
-      return res.json({ ok: true, pendientes: vivas.length, mail, archivosPurgados: venc.size, borradores: borrados });
+      return res.json({ ok: true, pendientes: vivas.length, mail, archivosPurgados, borradores: borrados });
     }
 
     if (req.method !== "POST") return res.status(405).json({ error: "POST" });
@@ -193,7 +199,7 @@ export default async function handler(req, res) {
     if (action === "me") {
       const dep = await ctxDeposito(req);
       const cli = body.uid ? await ctxCliente(req, db, { uid: String(body.uid) }) : null;
-      return res.json({ rol: dep ? dep.rol : null, cliente: cli ? clientePublico(cli.cliente.id, cli.cliente, false) : null });
+      return res.json({ rol: dep ? dep.rol : null, cliente: cli ? clientePublico(cli.cliente.id, cli.cliente, false) : null, error: false });
     }
 
     // ══ Acciones del CLIENTE (portal por token o sesión Growith) y del depósito
@@ -205,6 +211,8 @@ export default async function handler(req, res) {
       let cx = await ctxCliente(req, db, { token, uid: body.uid ? String(body.uid) : "" });
       if (!cx && body.clienteId) {
         const dep = await ctxDeposito(req);
+        // Un operario solo puede CARGAR en nombre del cliente; informar pagos o cancelar es del dueño.
+        if (dep && dep.rol !== "owner" && !["c_tanda_crear", "c_file_put", "c_tanda_cerrar", "c_info"].includes(action)) return res.status(403).json({ error: "Solo el dueño del depósito puede hacer esto." });
         if (dep) { const c = await db.collection("deposito_clientes").doc(String(body.clienteId)).get(); if (c.exists) cx = { cliente: { id: c.id, ...c.data() }, via: "deposito", por: dep.user.uid, porNombre: dep.nombre }; }
       }
       if (!cx) return res.status(403).json({ error: token ? "Link inválido o cliente inactivo." : "Esta cuenta no está dada de alta como cliente del depósito." });
@@ -251,8 +259,9 @@ export default async function handler(req, res) {
         const kind = String(body.kind || "");
         const esPdf = kind === "pdf", esComp = kind === "comp", esAdj = /^adj[0-4]$/.test(kind);
         if (!esPdf && !esComp && !esAdj) return res.status(400).json({ error: "Tipo de archivo inválido." });
-        // El PDF de etiquetas y los adjuntos solo se suben mientras es borrador; el comprobante, siempre.
+        // El PDF de etiquetas y los adjuntos solo se suben mientras es borrador; el comprobante, siempre (salvo pago ya verificado o tanda cancelada).
         if (!esComp && t.estado !== "borrador") return res.status(409).json({ error: "La tanda ya fue enviada." });
+        if (esComp && (t.pago?.estado === "verificado" || t.estado === "cancelada")) return res.status(409).json({ error: t.estado === "cancelada" ? "La tanda está cancelada." : "El pago de esta tanda ya está verificado." });
         const i = Math.round(num(body.i)); const data = String(body.data || "");
         if (i < 0 || i >= (esPdf ? MAX_CHUNKS_PDF : MAX_CHUNKS_OTRO)) return res.status(413).json({ error: "El archivo es demasiado grande." });
         if (!data || data.length > CHUNK_MAX || !/^[A-Za-z0-9+/=]+$/.test(data)) return res.status(400).json({ error: "Trozo inválido." });
@@ -302,10 +311,14 @@ export default async function handler(req, res) {
 
       if (action === "c_tanda_cancelar") {
         const s = await miTanda(body.id); if (!s) return res.status(404).json({ error: "Tanda inexistente." });
-        const t = s.data();
-        if (!["borrador", "pendiente"].includes(t.estado)) return res.status(409).json({ error: "El depósito ya empezó a trabajar esta tanda. Avisales por WhatsApp." });
-        await s.ref.set({ estado: "cancelada", hist: FieldValue.arrayUnion({ at: Date.now(), por: cx.por, porNombre: txt(cx.porNombre, 80), de: t.estado, a: "cancelada" }) }, { merge: true });
-        return res.json({ ok: true });
+        const out = await db.runTransaction(async tx => {
+          const cur = (await tx.get(s.ref)).data() || {};
+          if (!["borrador", "pendiente"].includes(cur.estado)) return { error: "El depósito ya empezó a trabajar esta tanda. Avisales por WhatsApp." };
+          tx.set(s.ref, { estado: "cancelada", hist: [...(cur.hist || []).slice(-40), { at: Date.now(), por: cx.por, porNombre: txt(cx.porNombre, 80), de: cur.estado, a: "cancelada" }] }, { merge: true });
+          return { ok: true };
+        });
+        if (out.error) return res.status(409).json(out);
+        return res.json(out);
       }
 
       if (action === "c_file_get") {
@@ -325,7 +338,7 @@ export default async function handler(req, res) {
       // Todo lo no terminado + lo entregado/cancelado de los últimos 4 días.
       const [vivas, rec] = await Promise.all([
         db.collection("deposito_tandas").where("estado", "in", ["pendiente", "impresa", "armada"]).get(),
-        db.collection("deposito_tandas").where("createdAt", ">=", new Date(Date.now() - 4 * 86400000)).get(),
+        db.collection("deposito_tandas").where("entregadaAt", ">=", Date.now() - 4 * 86400000).get(),
       ]);
       const m = new Map();
       for (const d of [...vivas.docs, ...rec.docs]) if (d.data().estado !== "borrador") m.set(d.id, d.data());
@@ -342,7 +355,7 @@ export default async function handler(req, res) {
         const s = await tx.get(ref); if (!s.exists) return null;
         const t = s.data(); if (["borrador", "cancelada"].includes(t.estado)) return { error: "La tanda está cancelada." };
         if (t.estado === estado) return { ok: true };
-        tx.set(ref, { estado, hist: [...(t.hist || []).slice(-40), { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80), de: t.estado, a: estado }] }, { merge: true });
+        tx.set(ref, { estado, ...(estado === "entregada" ? { entregadaAt: Date.now() } : {}), hist: [...(t.hist || []).slice(-40), { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80), de: t.estado, a: estado }] }, { merge: true });
         return { ok: true };
       });
       if (!out) return res.status(404).json({ error: "Tanda inexistente." });
@@ -363,11 +376,13 @@ export default async function handler(req, res) {
     }
 
     if (action === "tanda_nota") {
-      await db.collection("deposito_tandas").doc(String(body.id || "")).set({ notaDeposito: txt(body.nota, 600) }, { merge: true });
+      if (!body.id) return res.status(400).json({ error: "Falta la tanda." });
+      try { await db.collection("deposito_tandas").doc(String(body.id)).update({ notaDeposito: txt(body.nota, 600) }); } catch (_) { return res.status(404).json({ error: "Tanda inexistente." }); }
       return res.json({ ok: true });
     }
 
     if (action === "file_get") {
+      if (String(body.kind || "") === "comp" && dep.rol !== "owner") return res.status(403).json({ error: "Los comprobantes los ve solo el dueño del depósito." });
       const f = await db.collection("deposito_files").doc(`${String(body.id || "")}__${String(body.kind || "")}__${Math.round(num(body.i))}`).get();
       if (!f.exists) return res.status(404).json({ error: "El archivo ya no está disponible (se guardan 30 días)." });
       return res.json({ data: f.data().data });
@@ -378,14 +393,14 @@ export default async function handler(req, res) {
       const s = await db.collection("deposito_tandas").where("createdAt", ">=", new Date(Date.now() - 21 * 86400000)).get();
       const out = [];
       for (const d of s.docs) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado)) continue;
-        (t.pedidos || []).forEach((p, idx) => { if (String(p.numero).toLowerCase().includes(q) || String(p.comprador).toLowerCase().includes(q)) out.push({ tandaId: d.id, idx, clienteNombre: t.clienteNombre, fechaDespacho: t.fechaDespacho, estado: t.estado, numero: p.numero, comprador: p.comprador, items: p.items || [], pags: p.pags || [], pdfOk: !!t.pdf && !t.pdf.purgado }); });
+        (t.pedidos || []).forEach((p, idx) => { if (String(p.numero).toLowerCase().includes(q) || String(p.comprador).toLowerCase().includes(q)) out.push({ tandaId: d.id, idx, clienteNombre: t.clienteNombre, fechaDespacho: t.fechaDespacho, estado: t.estado, numero: p.numero, comprador: p.comprador, items: p.items || [], pags: p.pags || [], pdfOk: !!t.pdf && !t.pdf.purgado, pdfChunks: t.pdf && !t.pdf.purgado ? t.pdf.chunks : 0 }); });
         if (out.length > 40) break; }
       return res.json({ resultados: out.slice(0, 40) });
     }
 
     if (action === "historial") {
       const mes = /^\d{4}-\d{2}$/.test(String(body.mes || "")) ? body.mes : hoyAR().slice(0, 7);
-      const s = await db.collection("deposito_tandas").where("fechaDespacho", ">=", `${mes}-01`).get();
+      const s = await db.collection("deposito_tandas").where("fechaDespacho", ">=", `${mes}-01`).where("fechaDespacho", "<=", `${mes}-31`).get();
       const tandas = s.docs.map(d => ({ id: d.id, t: d.data() })).filter(x => x.t.estado !== "borrador" && String(x.t.fechaDespacho).startsWith(mes) && (!body.clienteId || x.t.clienteId === body.clienteId))
         .sort((a, b) => (b.t.fechaDespacho || "").localeCompare(a.t.fechaDespacho || "") || (ms(b.t.createdAt) || 0) - (ms(a.t.createdAt) || 0));
       return res.json({ mes, tandas: tandas.slice(0, 400).map(x => { const p = tandaPublica(x.id, x.t); p.pedidos = []; return p; }) });
@@ -414,7 +429,10 @@ export default async function handler(req, res) {
       // uid de la TIENDA puntual (figura en Admin > ficha del cliente).
       const crudo = txt(body.growithEmail, 120);
       const em = crudo.includes("@") ? crudo.toLowerCase() : crudo;
-      if (em) {
+      const prevCli = body.id ? (await db.collection("deposito_clientes").doc(String(body.id)).get()).data() : null;
+      if (body.id && !prevCli) return res.status(404).json({ error: "Cliente inexistente." });
+      if (em && prevCli && String(prevCli.growithEmail || "") === em) { /* sin cambio: no se re-resuelve la tienda activa */ }
+      else if (em) {
         let doc = null;
         if (em.includes("@")) { const u = await db.collection("users").where("email", "==", em).limit(5).get(); doc = u.docs.find(d => !d.data().deleted) || null; }
         else if (/^[A-Za-z0-9_-]{10,80}$/.test(em)) { const d1 = await db.collection("users").doc(em).get(); if (d1.exists && !d1.data().deleted) doc = d1; }
@@ -432,14 +450,16 @@ export default async function handler(req, res) {
     if (action === "cliente_token") {
       if (!soloOwner()) return;
       const token = randomBytes(20).toString("hex");
-      await db.collection("deposito_clientes").doc(String(body.id || "")).set({ token }, { merge: true });
+      if (!body.id) return res.status(400).json({ error: "Falta el cliente." });
+      try { await db.collection("deposito_clientes").doc(String(body.id)).update({ token }); } catch (_) { return res.status(404).json({ error: "Cliente inexistente." }); }
       return res.json({ ok: true, token });
     }
 
     if (action === "pago_verificar") {
       if (!soloOwner()) return;
       const estado = body.ok === false ? "rechazado" : "verificado";
-      await db.collection("deposito_tandas").doc(String(body.id || "")).set({ pago: { estado, verificadoPor: dep.user.uid, verificadoAt: FieldValue.serverTimestamp(), nota: txt(body.nota, 300) } }, { merge: true });
+      if (!body.id) return res.status(400).json({ error: "Falta la tanda." });
+      try { await db.collection("deposito_tandas").doc(String(body.id)).update({ "pago.estado": estado, "pago.verificadoPor": dep.user.uid, "pago.verificadoAt": FieldValue.serverTimestamp(), "pago.nota": txt(body.nota, 300) }); } catch (_) { return res.status(404).json({ error: "Tanda inexistente." }); }
       return res.json({ ok: true, estado });
     }
 
@@ -462,7 +482,7 @@ export default async function handler(req, res) {
     if (action === "resumen") {
       if (!soloOwner()) return;
       const mes = /^\d{4}-\d{2}$/.test(String(body.mes || "")) ? body.mes : hoyAR().slice(0, 7);
-      const s = await db.collection("deposito_tandas").where("fechaDespacho", ">=", `${mes}-01`).get();
+      const s = await db.collection("deposito_tandas").where("fechaDespacho", ">=", `${mes}-01`).where("fechaDespacho", "<=", `${mes}-31`).get();
       const por = {};
       for (const d of s.docs) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado) || !String(t.fechaDespacho).startsWith(mes)) continue;
         const k = t.clienteId; por[k] = por[k] || { clienteId: k, nombre: t.clienteNombre, tandas: 0, pedidos: 0, total: 0, verificado: 0, aVerificar: 0, sinInformar: 0 };
