@@ -2778,12 +2778,39 @@ export default async function handler(req, res) {
     // en el mismo paso. Si el código ya existía en TN, no es error: se avisa
     // (yaExistia) y el front lo vincula igual.
     if (action === 'crear_cupon') {
-      if (platform === 'shopify') return res.status(400).json({ error: "Crear códigos desde Growith está disponible para Tienda Nube — en Shopify crealo desde el admin y asignalo acá." });
       const code = String(req.query.code || "").toUpperCase().trim();
       const tipoCup = req.query.tipo === "absolute" ? "absolute" : "percentage";
       const valorCup = parseFloat(req.query.valor);
       if (!/^[A-Z0-9_-]{2,40}$/.test(code)) return res.status(400).json({ error: "Código inválido: solo letras, números y guiones (2 a 40 caracteres, sin espacios)." });
       if (!isFinite(valorCup) || valorCup <= 0 || (tipoCup === "percentage" && valorCup > 100)) return res.status(400).json({ error: "Valor de descuento inválido." });
+      if (platform === 'shopify') {
+        // Shopify: código de descuento básico (GraphQL). Requiere el scope
+        // write_discounts (22/9/2026): una tienda conectada antes tiene que
+        // reconectar Shopify (y, si usa app propia, sumar el permiso a su app).
+        const shStore = (userData?.stores || []).find(s => s.type === "shopify" && s.accessToken && s.shop);
+        const scopesSh = Array.isArray(shStore?.scopes) ? shStore.scopes : null;
+        const sinPermiso = () => res.status(403).json({ code: "shopify_scope", error: shStore?.central === false
+          ? "A tu app de Shopify le falta el permiso para crear descuentos (write_discounts). Sumalo en dev.shopify.com → tu app → Versiones (la lista completa está en Configuración → Conectar Shopify), publicá la versión y reconectá Shopify."
+          : "Shopify todavía no le dio a Growith el permiso para crear descuentos. Reconectá Shopify desde Configuración → Integraciones y volvé a probar." });
+        if (scopesSh && !scopesSh.includes("write_discounts")) return sinPermiso();
+        const valor = tipoCup === "percentage" ? { percentage: +(valorCup / 100).toFixed(4) } : { discountAmount: { amount: String(valorCup), appliesOnEachItem: false } };
+        const gq = { query: `mutation($d: DiscountCodeBasicInput!) { discountCodeBasicCreate(basicCodeDiscount: $d) { codeDiscountNode { id } userErrors { field message code } } }`,
+          variables: { d: { title: code, code, startsAt: new Date().toISOString(), customerSelection: { all: true }, customerGets: { value: valor, items: { all: true } }, combinesWith: { orderDiscounts: false, productDiscounts: false, shippingDiscounts: true } } } };
+        const rG = await fetch(`${SH_BASE}/graphql.json`, { method: "POST", headers: SH_HEADERS, body: JSON.stringify(gq), signal: AbortSignal.timeout(20000) });
+        const dG = await rG.json().catch(() => null);
+        if (rG.status === 401 || rG.status === 403) return sinPermiso();
+        const errs = dG?.data?.discountCodeBasicCreate?.userErrors || [];
+        const gErr = (dG?.errors || []).map(e => e.message).join("; ");
+        if (/access denied|write_discounts/i.test(gErr)) return sinPermiso();
+        if (errs.some(e => /taken|already|in use|unique|exists|ya (está|existe)/i.test(e.message || "") || e.code === "TAKEN")) return res.json({ ok: true, yaExistia: true, code });
+        if (!rG.ok || gErr || errs.length) return res.status(502).json({ error: `Shopify no aceptó el cupón: ${(errs.map(e => e.message).join("; ") || gErr || `HTTP ${rG.status}`).slice(0, 300)}` });
+        try {
+          const cacheCol = initAdmin().collection("users").doc(uid).collection("cache");
+          const snapC = await cacheCol.get();
+          await Promise.all(snapC.docs.filter(d => d.id.startsWith("coupons")).map(d => d.ref.delete()));
+        } catch (_) {}
+        return res.json({ ok: true, creado: true, code, id: dG?.data?.discountCodeBasicCreate?.codeDiscountNode?.id || null, type: tipoCup, value: String(valorCup) });
+      }
       const tnHeadersCup = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)', 'Content-Type': 'application/json' };
       const rCup = await fetch(`https://api.tiendanube.com/v1/${storeId}/coupons`, {
         method: "POST",

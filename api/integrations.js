@@ -51,7 +51,11 @@ const SHOPIFY_APP_SECRET = process.env.SHOPIFY_APP_SECRET || "";
 // el tracking (Seguimientos). Sin estos, Shopify responde 403 en
 // /fulfillment_orders.json y /fulfillments.json y ningún seguimiento sube.
 // Las tiendas conectadas antes de agregarlos tienen que RECONECTAR Shopify.
-const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders,read_fulfillments,write_fulfillments";
+const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders,read_fulfillments,write_fulfillments,read_discounts,write_discounts";
+// Scopes que NO se acusan como faltantes en los banners: solo se exigen al usar
+// la función (cupones de Canjes). Así una tienda vieja no ve un aviso por algo
+// que quizá nunca use.
+const SHOPIFY_SCOPES_OPCIONALES = ["read_discounts", "write_discounts"];
 const SHOPIFY_SCOPE_FULFILL = "write_merchant_managed_fulfillment_orders";
 const SHOPIFY_FULFILL_DESDE = Date.parse("2026-09-15T22:00:00Z"); // deploy de los scopes de fulfillment
 const SHOPIFY_APP_URL = "https://www.growithapp.com";
@@ -413,7 +417,7 @@ async function shopifyCarrierStatus(req, res, db) {
     // (15/9/2026 18:51 AR) y Shopify igual no lo otorgó → no es cosa del
     // vendedor: falta publicar el scope en la app de Growith en Shopify.
     reconectadaSinPermiso: !!(scopes && !scopes.includes(SHOPIFY_SCOPE_FULFILL) && Date.parse(sh.scopesAt || sh.reconnectedAt || sh.connectedAt || "") > SHOPIFY_FULFILL_DESDE),
-    scopesFaltan: scopes ? SHOPIFY_SCOPES.split(",").filter(x => /^write_/.test(x) && !scopes.includes(x)) : null,
+    scopesFaltan: scopes ? SHOPIFY_SCOPES.split(",").filter(x => /^write_/.test(x) && !SHOPIFY_SCOPES_OPCIONALES.includes(x) && !scopes.includes(x)) : null,
     registered: !!f.carrier, carrier: f.carrier ? { id: f.carrier.id, name: f.carrier.name, active: f.carrier.active, callback_url: f.carrier.callback_url } : null,
     otros: (f.list || []).filter(c => !String(c.callback_url || "").startsWith(SHOPIFY_RATES_URL)).map(c => ({ id: c.id, name: c.name, active: c.active })),
     config: userData.andreaniCheckout || null,

@@ -465,6 +465,7 @@ function _showDrivePicker(token, onSelect, onCancel, opts = {}) {
   // (setEnableDrives en esta vista la abría en "Unidades compartidas", vacía.)
   const myDrive = new P.DocsView().setIncludeFolders(true).setSelectFolderEnabled(!!opts.folders).setMode(P.DocsViewMode.LIST);
   if (opts.folders) myDrive.setMimeTypes("application/vnd.google-apps.folder");
+  if (opts.parent) myDrive.setParent(opts.parent);
   const VID = "video/mp4,video/quicktime,video/x-m4v,video/webm,video/x-matroska,video/x-msvideo,video/mpeg";
   const IMG = "image/jpeg,image/png,image/webp,image/gif";
   const DOCS = "application/vnd.google-apps.document,text/plain,text/markdown";
@@ -7462,6 +7463,20 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       return d.link;
     }catch(e){ toast("No se pudo crear la carpeta: "+e.message,"error"); return null; }
   }
+  // Carpeta YA existente (influencers viejos): se elige con el Picker, arrancando
+  // en la carpeta madre; el link queda guardado y no se crea una repetida.
+  async function elegirCarpetaExistente(onElegida){
+    if(driveBusy) return; setDriveBusy(true);
+    try{
+      const r=await authFetch(`/api/integrations?platform=googledrive&action=token&uid=${user?.uid||""}`); const j=await r.json().catch(()=>({}));
+      if(!j.access_token){ setDriveBusy(false); toast(j.not_connected?"Primero conectá Google Drive en Configuración → Integraciones":(j.error||"No pude obtener acceso a Drive"),"warning",6000); return; }
+      await _loadDriveScripts(); setDriveBusy(false);
+      _showDrivePicker(j.access_token, f=>onElegida(f.url||`https://drive.google.com/drive/folders/${f.id}`,f.name),()=>{},{folders:true,parent:driveParent?.id||null,title:"Elegí la carpeta del influencer"});
+    }catch(e){ setDriveBusy(false); toast(e.message,"error"); }
+  }
+  const BtnCarpetaExistente=({onElegida})=>(
+    <button type="button" onClick={()=>elegirCarpetaExistente(onElegida)} disabled={driveBusy} title="Elegí una carpeta que ya existe en tu Drive" style={{...BtnSecondary(T),fontSize:11,padding:"6px 10px",whiteSpace:"nowrap"}}>Elegir de Drive</button>
+  );
   const BtnCarpeta=({onCreada,nombre,usuario,email,disabled})=>(
     <AsyncButton disabled={disabled||driveParent===undefined} onClick={async()=>{ const l=await crearCarpetaDrive(nombre,usuario,email); if(l) onCreada(l); }}
       title={driveParent?.id?`Crea la carpeta adentro de "${driveParent.name}" y la comparte con permiso de subir`:"Elegí primero la carpeta madre en Influencers"}
@@ -9012,7 +9027,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Carpeta de Drive</div>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
                 <input value={infForm.driveFolder||""} onChange={e=>setInfForm(p=>({...p,driveFolder:e.target.value}))} placeholder="Link de la carpeta donde sube su contenido" style={{...iS,marginBottom:0}}/>
-                {!(infForm.driveFolder||"").trim()&&<BtnCarpeta nombre={infForm.nombre} usuario={infForm.usuario} email={infForm.email} onCreada={l=>setInfForm(p=>({...p,driveFolder:l}))}/>}
+                {!(infForm.driveFolder||"").trim()&&<><BtnCarpetaExistente onElegida={l=>setInfForm(p=>({...p,driveFolder:l}))}/><BtnCarpeta nombre={infForm.nombre} usuario={infForm.usuario} email={infForm.email} onCreada={l=>setInfForm(p=>({...p,driveFolder:l}))}/></>}
               </div>
               <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Cada canje nuevo la hereda: desde el detalle abrís la carpeta y vinculás cada pieza.</div>
             </div>
@@ -9373,7 +9388,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     </div>}
                     {/* Carpeta de Drive del influencer + fecha límite general */}
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-                      {!carpeta&&driveParent?.id&&<div style={{marginBottom:8}}><BtnCarpeta nombre={c.influencer} usuario={c.usuario} email={c.email} onCreada={l=>{ save({driveFolder:l}); if(infDe?._docId&&!infDe.driveFolder) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }}/></div>}
+                      {!carpeta&&<div style={{marginBottom:8,display:"flex",gap:6}}><BtnCarpetaExistente onElegida={l=>{ save({driveFolder:l}); if(infDe?._docId&&!infDe.driveFolder) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }}/><BtnCarpeta nombre={c.influencer} usuario={c.usuario} email={c.email} onCreada={l=>{ save({driveFolder:l}); if(infDe?._docId&&!infDe.driveFolder) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }}/></div>}
                       <Field label={c.driveFolder||!infDe?.driveFolder?"Carpeta de Drive":"Carpeta de Drive (del perfil)"} value={c.driveFolder||infDe?.driveFolder||""} onSave={v=>save({driveFolder:(v||"").trim()})} href={carpeta?(/^https?:/i.test(carpeta)?carpeta:"https://"+carpeta):null} placeholder="Link de la carpeta donde sube el contenido"/>
                       <div>
                         <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Fecha límite general</div>
@@ -9656,7 +9671,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
             {/* Código de descuento + % comisión: vincula el canje con la pestaña
                 de Códigos y comisiones. Si el código todavía no existe en la
-                tienda, se puede CREAR en Tienda Nube desde acá mismo. */}
+                tienda, se puede CREAR (Tienda Nube o Shopify) desde acá mismo. */}
             <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 14px"}}>
               <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:7,textTransform:"uppercase",letterSpacing:0.5}}>Código de descuento</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 100px",gap:10,marginBottom:8}}>
@@ -9674,8 +9689,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     const v=parseFloat(formCupDesc);
                     if(!isFinite(v)||v<=0||v>100) throw new Error("Poné el % de descuento del código (1 a 100)");
                     const r=await crearCuponTn((form.codigoDescuento||"").toUpperCase().trim(),v);
-                    toast(r.creado?`Código ${r.code} creado en Tienda Nube (${v}% OFF) — quedó asignado a este canje al guardar`:`El código ${r.code} ya existía en Tienda Nube`,"success",6000);
-                  }} style={{...BtnSecondary(T),fontSize:11,padding:"6px 12px"}}>Crear en Tienda Nube</AsyncButton>
+                    toast(r.creado?`Código ${r.code} creado en tu tienda (${v}% OFF) — quedó asignado a este canje al guardar`:`El código ${r.code} ya existía en tu tienda`,"success",6000);
+                  }} style={{...BtnSecondary(T),fontSize:11,padding:"6px 12px"}}>Crear en mi tienda</AsyncButton>
                 </div>
               )}
             </div>
@@ -9880,7 +9895,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
               <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Nicho</label><select style={iS} value={form.nicho||""} onChange={e=>setForm(f=>({...f,nicho:e.target.value}))}><option value="">Sin nicho</option>{NICHOS.map(x=><option key={x}>{x}</option>)}</select></div>
-              <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Carpeta de Drive</label><div style={{display:"flex",gap:6,alignItems:"center"}}><input style={{...iS,marginBottom:0}} value={form.driveFolder||""} onChange={e=>setForm(f=>({...f,driveFolder:e.target.value}))} placeholder={driveParent?.id?"Se crea sola al guardar":"Link de la carpeta del influencer"}/>{!(form.driveFolder||"").trim()&&<BtnCarpeta nombre={form.influencer} usuario={form.usuario} email={form.email} onCreada={l=>setForm(f=>({...f,driveFolder:l}))}/>}</div></div>
+              <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Carpeta de Drive</label><div style={{display:"flex",gap:6,alignItems:"center"}}><input style={{...iS,marginBottom:0}} value={form.driveFolder||""} onChange={e=>setForm(f=>({...f,driveFolder:e.target.value}))} placeholder={driveParent?.id?"Se crea sola al guardar":"Link de la carpeta del influencer"}/>{!(form.driveFolder||"").trim()&&<><BtnCarpetaExistente onElegida={l=>setForm(f=>({...f,driveFolder:l}))}/><BtnCarpeta nombre={form.influencer} usuario={form.usuario} email={form.email} onCreada={l=>setForm(f=>({...f,driveFolder:l}))}/></>}</div></div>
             </div>
             <div>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Foto (URL)</label>
@@ -16671,7 +16686,7 @@ function DSToggle({T, active, onToggle}) {
 // SHOPIFY_SCOPES en api/integrations.js). El tutorial del modal copiaba una
 // lista vieja SIN los de fulfillment → las apps creadas con él no podían
 // marcar envíos y reconectar no lo arreglaba (caso zensleep, 17/9/2026).
-const GH_SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders,read_fulfillments,write_fulfillments";
+const GH_SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders,read_fulfillments,write_fulfillments,read_discounts,write_discounts";
 function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
   const uid = user?.uid;
   const [st,setSt] = React.useState(null);      // respuesta de carrier_status
