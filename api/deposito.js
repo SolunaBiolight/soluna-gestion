@@ -80,11 +80,30 @@ function rateOk(req, max = 120) {
 // ── Quién llama ──────────────────────────────────────────────────────────────
 // Depósito: dueño (uid del token = DEPOSITO_OWNER, o perfil dueño de esa
 // tienda) u operario (miembro con secciones.deposito). viaAdmin NO alcanza.
+// PANEL POR TOKEN (23/sep/2026): system/deposito {adminToken, pcToken} —
+// #/deposito/panel/<adminToken> = consola completa sin sesión (la dueña, desde
+// cualquier lado, separada de la cuenta de Soluna); <pcToken> = la PC del
+// depósito: cola, historial y buscador SIN precios ni pagos. El nombre de quien
+// está en la PC viaja en body.operario y queda en el historial de cada tanda.
 // Se resuelve con el token + el doc del dueño (caché 60 s) en vez de requireUid:
 // `me` lo llama cada sesión de cada cliente y requireUid loguea un intento de
 // acceso ajeno por cada uno.
 let _ownCache = { at: 0, members: {} };
-async function ctxDeposito(req) {
+let _tokCache = { at: 0, d: null };
+async function tokensDeposito(db) {
+  if (!_tokCache.d || Date.now() - _tokCache.at > 30000) _tokCache = { at: Date.now(), d: (await db.collection("system").doc("deposito").get()).data() || {} };
+  return _tokCache.d;
+}
+async function ctxDeposito(req, body = {}) {
+  const dtoken = body.dtoken ? String(body.dtoken) : "";
+  if (dtoken) {
+    if (!/^[a-f0-9]{40,64}$/i.test(dtoken) || !rateOk(req, 300)) return null;
+    const tk = await tokensDeposito(getFirestore());
+    const op = txt(body.operario, 60);
+    if (tk.adminToken && dtoken === tk.adminToken) return { user: { uid: "panel:admin" }, rol: "owner", nombre: op || "Dueña (panel)", via: "panel" };
+    if (tk.pcToken && dtoken === tk.pcToken) return { user: { uid: `pc:${op || "deposito"}` }, rol: "operador", nombre: op || "PC del depósito", via: "pc" };
+    return null;
+  }
   const user = await verifyAuth(req);
   if (!user || user.impersonatedBy) return null;
   if (user.uid === DEPOSITO_OWNER) return { user, rol: "owner", nombre: user.name || user.email || "Dueño" };
@@ -197,7 +216,7 @@ export default async function handler(req, res) {
 
     // ── me: qué es esta sesión para el depósito ──
     if (action === "me") {
-      const dep = await ctxDeposito(req);
+      const dep = await ctxDeposito(req, body);
       const cli = body.uid ? await ctxCliente(req, db, { uid: String(body.uid) }) : null;
       return res.json({ rol: dep ? dep.rol : null, cliente: cli ? clientePublico(cli.cliente.id, cli.cliente, false) : null, error: false });
     }
@@ -210,7 +229,7 @@ export default async function handler(req, res) {
       if (token && !rateOk(req)) return res.status(429).json({ error: "Demasiadas solicitudes. Esperá un minuto." });
       let cx = await ctxCliente(req, db, { token, uid: body.uid ? String(body.uid) : "" });
       if (!cx && body.clienteId) {
-        const dep = await ctxDeposito(req);
+        const dep = await ctxDeposito(req, body);
         // Un operario solo puede CARGAR en nombre del cliente; informar pagos o cancelar es del dueño.
         if (dep && dep.rol !== "owner" && !["c_tanda_crear", "c_file_put", "c_tanda_cerrar", "c_info"].includes(action)) return res.status(403).json({ error: "Solo el dueño del depósito puede hacer esto." });
         if (dep) { const c = await db.collection("deposito_clientes").doc(String(body.clienteId)).get(); if (c.exists) cx = { cliente: { id: c.id, ...c.data() }, via: "deposito", por: dep.user.uid, porNombre: dep.nombre }; }
@@ -330,8 +349,10 @@ export default async function handler(req, res) {
     }
 
     // ══ Acciones del DEPÓSITO (dueño y operarios) ══
-    const dep = await ctxDeposito(req);
+    const dep = await ctxDeposito(req, body);
     if (!dep) return res.status(403).json({ error: "No tenés acceso al depósito." });
+    // Un operario (miembro o PC del depósito) no ve la parte financiera: ni precios, ni totales, ni pagos.
+    const paraDep = (id, t) => { const p = tandaPublica(id, t); if (dep.rol !== "owner") { p.precioUnit = null; p.ajuste = null; p.ajusteMotivo = ""; p.total = null; p.pago = null; } return p; };
     const soloOwner = () => { if (dep.rol !== "owner") { res.status(403).json({ error: "Solo el dueño del depósito puede hacer esto." }); return false; } return true; };
 
     if (action === "cola") {
@@ -342,9 +363,9 @@ export default async function handler(req, res) {
       ]);
       const m = new Map();
       for (const d of [...vivas.docs, ...rec.docs]) if (d.data().estado !== "borrador") m.set(d.id, d.data());
-      const tandas = [...m.entries()].map(([id, t]) => tandaPublica(id, t)).sort((a, b) => (a.fechaDespacho || "").localeCompare(b.fechaDespacho || "") || (a.createdAt || 0) - (b.createdAt || 0));
+      const tandas = [...m.entries()].map(([id, t]) => paraDep(id, t)).sort((a, b) => (a.fechaDespacho || "").localeCompare(b.fechaDespacho || "") || (a.createdAt || 0) - (b.createdAt || 0));
       const cs = await db.collection("deposito_clientes").get();
-      return res.json({ rol: dep.rol, hoy: hoyAR(), tandas, clientes: cs.docs.map(d => clientePublico(d.id, d.data(), false)).filter(c => c.activo) });
+      return res.json({ rol: dep.rol, via: dep.via || "sesion", nombre: dep.nombre, hoy: hoyAR(), tandas, clientes: cs.docs.map(d => clientePublico(d.id, d.data(), false)).filter(c => c.activo).map(c => dep.rol === "owner" ? c : { ...c, precio: null }) });
     }
 
     if (action === "tanda_estado") {
@@ -403,10 +424,23 @@ export default async function handler(req, res) {
       const s = await db.collection("deposito_tandas").where("fechaDespacho", ">=", `${mes}-01`).where("fechaDespacho", "<=", `${mes}-31`).get();
       const tandas = s.docs.map(d => ({ id: d.id, t: d.data() })).filter(x => x.t.estado !== "borrador" && String(x.t.fechaDespacho).startsWith(mes) && (!body.clienteId || x.t.clienteId === body.clienteId))
         .sort((a, b) => (b.t.fechaDespacho || "").localeCompare(a.t.fechaDespacho || "") || (ms(b.t.createdAt) || 0) - (ms(a.t.createdAt) || 0));
-      return res.json({ mes, tandas: tandas.slice(0, 400).map(x => { const p = tandaPublica(x.id, x.t); p.pedidos = []; return p; }) });
+      return res.json({ mes, tandas: tandas.slice(0, 400).map(x => { const p = paraDep(x.id, x.t); p.pedidos = []; return p; }) });
     }
 
-    // ── Solo el dueño: clientes, precios y plata ──
+    // ── Solo el dueño: accesos al panel por token, clientes, precios y plata ──
+    if (action === "accesos") {
+      if (!soloOwner()) return;
+      const tk = await tokensDeposito(db);
+      return res.json({ adminToken: tk.adminToken || null, pcToken: tk.pcToken || null, adminAt: tk.adminAt || null, pcAt: tk.pcAt || null });
+    }
+    if (action === "acceso_nuevo") {
+      if (!soloOwner()) return;
+      const cual = body.cual === "pc" ? "pc" : "admin";
+      const token = randomBytes(24).toString("hex");
+      await db.collection("system").doc("deposito").set(cual === "pc" ? { pcToken: token, pcAt: Date.now() } : { adminToken: token, adminAt: Date.now() }, { merge: true });
+      _tokCache = { at: 0, d: null };
+      return res.json({ ok: true, cual, token });
+    }
     if (action === "clientes") {
       if (!soloOwner()) return;
       const [cs, ts] = await Promise.all([db.collection("deposito_clientes").get(), db.collection("deposito_tandas").where("createdAt", ">=", new Date(Date.now() - 400 * 86400000)).get()]);

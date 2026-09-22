@@ -20632,6 +20632,8 @@ const GH_DEP_ESTADO={pendiente:"Pendiente",impresa:"Impresa",armada:"Armada",ent
 const GH_DEP_PAGO={sin_informar:"Pago sin informar",a_verificar:"Pago a verificar",verificado:"Pago verificado",rechazado:"Pago rechazado"};
 // api(action, body): con sesión (Growith) o por token (portal público).
 function ghDepApiSesion(extra){ return async(action,body={})=>{ const r=await authFetch(`/api/deposito?action=${action}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...extra(),...body})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`); return d; }; }
+// Panel por token (dueña o PC del depósito): manda dtoken + el nombre de quien opera.
+function ghDepApiPanel(dtoken,getOperario){ return async(action,body={})=>{ const r=await fetch(`/api/deposito?action=${action}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dtoken,operario:getOperario()||"",...body})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`); return d; }; }
 function ghDepApiToken(token){ return async(action,body={})=>{ const r=await fetch(`/api/deposito?action=${action}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,...body})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`); return d; }; }
 async function ghDepSubir(api,id,kind,bytes,onProg){
   const b64=ghBytesToB64(bytes); const total=Math.max(1,Math.ceil(b64.length/GH_DEP_CHUNK));
@@ -20742,8 +20744,8 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,onClose,onDone
         <div>{lbl("Nota para el depósito (opcional)")}<textarea style={{...iS,minHeight:54,resize:"vertical"}} value={nota} onChange={e=>setNota(e.target.value)}/></div>
         <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 14px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-            <span style={{fontSize:DS.font.md,color:T.textMd}}>{cant} pedido{cant!==1?"s":""} × {fmtMoney(cliente?.precio||0)}</span>
-            <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text}}>{fmtMoney(total)}</span>
+            <span style={{fontSize:DS.font.md,color:T.textMd}}>{cant} pedido{cant!==1?"s":""}{cliente?.precio!=null&&<> × {fmtMoney(cliente.precio)}</>}</span>
+            {cliente?.precio!=null&&<span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text}}>{fmtMoney(total)}</span>}
           </div>
           <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginTop:10}}>
             {filePick("application/pdf,image/*",f=>elegirOtro(f,setComp,3*1024*1024),comp?"Cambiar comprobante":"Adjuntar comprobante de pago")}
@@ -20840,10 +20842,41 @@ function DepositoPortalView({token}){
   );
 }
 
+// ── Panel del depósito por token: #/deposito/panel/<token> ──
+// Con el token de la dueña es la consola completa (sin sesión de Growith, separada
+// de la cuenta de Soluna). Con el token de la PC del depósito es la consola de
+// operación: cola, historial y buscador, sin precios ni pagos; pide el nombre de
+// quien está operando y lo manda en cada acción.
+function DepositoPanelView({token}){
+  const [dark,setDark]=useState(()=>{ try{ return localStorage.getItem("growith_theme")!=="light"; }catch(_){ return true; } });
+  const T=dark?DARK:LIGHT;
+  const [operario,setOperario]=useState(()=>{ try{ return localStorage.getItem("growith_depo_operario")||""; }catch(_){ return ""; } });
+  const opRef=React.useRef(operario); opRef.current=operario;
+  const api=React.useMemo(()=>ghDepApiPanel(token,()=>opRef.current),[token]);
+  const [info,setInfo]=useState(null);
+  const [nom,setNom]=useState("");
+  useEffect(()=>{ let vivo=true; api("me").then(d=>{ if(vivo) setInfo(d); }).catch(()=>{ if(vivo) setInfo({rol:null,error:true}); }); return ()=>{ vivo=false; }; },[api]);
+  useEffect(()=>{ try{ localStorage.setItem("growith_theme",dark?"dark":"light"); }catch(_){ } },[dark]);
+  const guardarNombre=()=>{ const v=nom.trim().slice(0,60); if(!v) return; setOperario(v); try{ localStorage.setItem("growith_depo_operario",v); }catch(_){ } };
+  const cambiarOperario=()=>{ setNom(operario); setOperario(""); try{ localStorage.removeItem("growith_depo_operario"); }catch(_){ } };
+  const wrap=(inner)=>(<div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}>{inner}<ToastContainer T={T}/><AppPromptHost T={T}/></div>);
+  if(info===null) return wrap(<div style={{display:"flex",justifyContent:"center",padding:80}}><Spinner size={28} color={T.accent}/></div>);
+  if(!info.rol) return wrap(<div style={{maxWidth:520,margin:"80px auto",padding:"0 16px"}}><DSEmpty T={T} title={info.error?"No pudimos abrir el panel":"Este link ya no sirve"} subtitle={info.error?"Revisá la conexión y volvé a intentar.":"Se generó un link nuevo o el link está mal copiado. Pedile el link actual a la dueña del depósito."} action={info.error?<Btn T={T} variant="secondary" onClick={()=>window.location.reload()}>Reintentar</Btn>:null}/></div>);
+  if(info.rol==="operador"&&!operario) return wrap(<div style={{maxWidth:420,margin:"80px auto",padding:"0 16px"}}>
+    <Card T={T} padding="lg">
+      <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,marginBottom:6}}>¿Quién está en el depósito?</div>
+      <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:14}}>Tu nombre queda en cada tanda que imprimas, armes o entregues. Se puede cambiar arriba a la derecha.</div>
+      <input autoFocus value={nom} onChange={e=>setNom(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") guardarNombre(); }} placeholder="Nombre" style={{...InputStyle(T),marginBottom:12}}/>
+      <Btn T={T} variant="primary" onClick={guardarNombre} disabled={!nom.trim()}>Entrar</Btn>
+    </Card></div>);
+  return wrap(<AppDeposito T={T} info={{rol:info.rol,cliente:null}} api={api} panel={{operario,cambiarOperario,dark,setDark}}/>);
+}
+
 // ── Consola del DEPÓSITO ──
-function AppDeposito({T,user,info,onHome}){
+// api/panel: cuando viene del panel por token se usa ese api en vez de la sesión.
+function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
   const tiendaUid=user?.uid;
-  const apiDep=React.useMemo(()=>ghDepApiSesion(()=>({})),[]);
+  const apiDep=React.useMemo(()=>apiExt||ghDepApiSesion(()=>({})),[apiExt]);
   const apiCli=React.useMemo(()=>ghDepApiSesion(()=>({uid:tiendaUid})),[tiendaUid]);
   const esDep=!!info?.rol, owner=info?.rol==="owner";
   const [tab,setTab]=useState("cola");
@@ -20855,12 +20888,17 @@ function AppDeposito({T,user,info,onHome}){
     historial:"Todas las tandas por mes, para buscar una vieja o ver qué se despachó.",
     clientes:"Quién te manda etiquetas y cuánto le cobrás por pedido armado. Los que usan Growith se vinculan por mail; a los demás les pasás su link privado.",
     pagos:"Comprobantes por verificar, ajustes y el resumen del mes por cliente.",
-    mio:"Tus envíos al depósito, en qué estado están y qué pagos faltan."};
+    mio:"Tus envíos al depósito, en qué estado están y qué pagos faltan.",
+    accesos:"Dos links sin usuario ni contraseña: el tuyo abre esta consola completa desde cualquier lado, y el de la PC del depósito abre solo cola, historial y buscador, sin precios ni pagos. Si un link se filtra, generá uno nuevo."};
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <AppTopbar T={T} section="Depósito" sectionId="deposito" onHome={onHome} onHelp={()=>setGuia(g=>!g)}>
+      <AppTopbar T={T} section={panel?(owner?"Depósito · Panel":"Depósito · PC"):"Depósito"} sectionId="deposito" onHome={onHome} onHelp={()=>setGuia(g=>!g)}>
+        {panel&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textMd}}>
+          {panel.operario&&<span>{panel.operario} · <button onClick={panel.cambiarOperario} style={{background:"none",border:"none",padding:0,color:T.accent,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:DS.font.md}}>cambiar</button></span>}
+          <button onClick={()=>panel.setDark(d=>!d)} title="Tema claro / oscuro" style={{...BtnSecondary(T),fontSize:DS.font.sm,padding:"4px 8px"}}>{panel.dark?"Claro":"Oscuro"}</button>
+        </div>}
         {esDep&&<div style={{display:"flex",gap:4,background:T.surface,borderRadius:DS.r.md,padding:2}}>
-          {[["cola","Cola"],["historial","Historial"],...(owner?[["clientes","Clientes"],["pagos","Pagos"]]:[]),...(info?.cliente?[["mio","Mis envíos"]]:[])].map(([k,l])=>(
+          {[["cola","Cola"],["historial","Historial"],...(owner?[["clientes","Clientes"],["pagos","Pagos"],["accesos","Accesos"]]:[]),...(info?.cliente?[["mio","Mis envíos"]]:[])].map(([k,l])=>(
             <button key={k} onClick={()=>setTab(k)} style={{padding:"6px 12px",fontSize:DS.font.md,border:"none",borderRadius:DS.r.sm,background:tab===k?T.card:"transparent",color:tab===k?T.text:T.textMd,fontWeight:tab===k?600:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>))}
         </div>}
       </AppTopbar>
@@ -20876,7 +20914,8 @@ function AppDeposito({T,user,info,onHome}){
               <p style={{margin:"0 0 8px"}}><strong>Cómo llega una tanda:</strong> desde Envíos de Growith con "Enviar al depósito" (etiquetas con SKU, ordenadas por producto), desde la sección Depósito del cliente, desde su link privado si no usa Growith, o cargada por vos "en nombre de" un cliente. Un <strong>envío especial</strong> es un pedido suelto con instrucciones, por ejemplo un mayorista.</p>
               <p style={{margin:"0 0 8px"}}><strong>En la cola:</strong> "Imprimir etiquetas" abre el PDF y marca la tanda como impresa. Abriendo la tanda ves el picking (cuántas unidades de cada producto bajar) y los pedidos. Un pedido con problema se <strong>aparta</strong> con una nota que el cliente ve. Después: "Marcar armada" y "Entregada al correo". Todo queda con quién y cuándo.</p>
               <p style={{margin:"0 0 8px"}}><strong>Pagos:</strong> cada tanda tiene su total (pedidos por el precio del cliente). El cliente adjunta el comprobante y vos lo verificás en Pagos. <strong>El pago nunca frena el armado.</strong></p>
-              <p style={{margin:0}}><strong>Mails:</strong> uno a las 8 con lo que hay para armar hoy, y uno al instante si llega un especial urgente. Al cliente no le llega ningún aviso: ve todo en su panel.</p>
+              <p style={{margin:"0 0 8px"}}><strong>Mails:</strong> uno a las 8 con lo que hay para armar hoy, y uno al instante si llega un especial urgente. Al cliente no le llega ningún aviso: ve todo en su panel.</p>
+              {owner&&<p style={{margin:0}}><strong>Accesos:</strong> en la pestaña Accesos están los dos links del panel: el tuyo (todo, sin entrar a Growith) y el de la PC del depósito (cola, historial y buscador, sin plata; pide el nombre de quien opera). Los operarios también pueden entrar con su propio usuario de Growith si los invitás desde Equipo con "Depósito" tildado.</p>}
             </>):(<>
               <p style={{margin:"0 0 8px"}}>Tu mercadería se arma y despacha desde nuestro depósito. Acá mandás las etiquetas y ves en qué estado está cada tanda.</p>
               <p style={{margin:"0 0 8px"}}><strong>Para mandar etiquetas:</strong> si las generás en Growith, al terminar aparece "Enviar al depósito" y van solas con los SKU. Si no, tocá "Enviar etiquetas" acá y subí el PDF. Elegí el día de despacho y quién retira (Andreani o Mercado Libre).</p>
@@ -20890,7 +20929,7 @@ function AppDeposito({T,user,info,onHome}){
           <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,marginBottom:6}}>Para empezar</div>
           <ol style={{margin:0,paddingLeft:20,fontSize:DS.font.base,color:T.textMd,lineHeight:1.8}}>
             <li><strong>Cargá tus clientes</strong> con el precio por pedido armado (botón "Nuevo cliente", acá abajo). Si el cliente usa Growith, poné el mail de su cuenta.</li>
-            <li><strong>Invitá a los operarios</strong> desde Equipo, con la sección "Depósito" tildada. Cada uno entra con su usuario y queda registrado quién armó cada tanda.</li>
+            <li><strong>Abrí el panel en la PC del depósito:</strong> en Accesos generá el link de la PC y abrilo ahí (queda como favorito). Pide el nombre de quien está operando y no muestra precios ni pagos. Si preferís, invitá operarios desde Equipo con "Depósito" tildado.</li>
             <li><strong>Avisale a cada cliente:</strong> los que usan Growith ya tienen "Enviar al depósito" en Envíos; a los demás pasales su link privado con "Copiar link del portal".</li>
           </ol>
         </Card>)}
@@ -20899,6 +20938,7 @@ function AppDeposito({T,user,info,onHome}){
           : tab==="historial"? <DepositoHistorial T={T} api={apiDep}/>
           : tab==="clientes"? <DepositoClientes T={T} api={apiDep}/>
           : tab==="pagos"? <DepositoPagos T={T} api={apiDep}/>
+          : tab==="accesos"? <DepositoAccesos T={T} api={apiDep} panel={!!panel}/>
           : <DepositoClienteView T={T} api={apiCli}/>}
       </div>
     </div>
@@ -20957,7 +20997,7 @@ function DepositoCola({T,api,owner}){
             <DSBadge T={T} color={t.canal==="ml"?T.yellow:T.accent} size="sm">{GH_DEP_CANAL[t.canal]||t.canal}</DSBadge>
             {t.tipo==="especial"&&<DSBadge T={T} color={urg(t)?T.red:T.purple} size="sm">{urg(t)?"Especial urgente":"Especial"}</DSBadge>}
             {ap>0&&<DSBadge T={T} color={T.red} size="sm">{ap} apartado{ap!==1?"s":""}</DSBadge>}
-            <DSBadge T={T} color={colP[t.pago.estado]} size="sm">{GH_DEP_PAGO[t.pago.estado]}</DSBadge>
+            {t.pago&&<DSBadge T={T} color={colP[t.pago.estado]} size="sm">{GH_DEP_PAGO[t.pago.estado]}</DSBadge>}
             <span style={{fontSize:DS.font.sm,color:T.textSm}}>despacho {ghDepFechaLinda(t.fechaDespacho)}</span>
           </div>
         </div>
@@ -20975,7 +21015,7 @@ function DepositoCola({T,api,owner}){
           {conItems&&<Btn T={T} variant={v==="picking"?"secondary":"ghost"} size="sm" onClick={()=>setVista(x=>({...x,[t.id]:"picking"}))}>Picking</Btn>}
           {t.pedidos.length>0&&<Btn T={T} variant={v==="pedidos"||!conItems?"secondary":"ghost"} size="sm" onClick={()=>setVista(x=>({...x,[t.id]:"pedidos"}))}>Pedidos ({t.pedidos.length})</Btn>}
           {(t.especial?.adj||[]).map(a=><Btn key={a.kind} T={T} variant="ghost" size="sm" onClick={()=>abrirArchivo(t,a.kind,a)}>{a.nombre||"Adjunto"}</Btn>)}
-          {t.pago.comp&&owner&&<Btn T={T} variant="ghost" size="sm" onClick={()=>abrirArchivo(t,"comp",t.pago.comp)}>Comprobante</Btn>}
+          {t.pago?.comp&&owner&&<Btn T={T} variant="ghost" size="sm" onClick={()=>abrirArchivo(t,"comp",t.pago.comp)}>Comprobante</Btn>}
           <Btn T={T} variant="ghost" size="sm" onClick={()=>notaDep(t)}>{t.notaDeposito?"Editar nota al cliente":"Nota al cliente"}</Btn>
           {t.estado!=="pendiente"&&<Btn T={T} variant="ghost" size="sm" onClick={()=>estado(t,{impresa:"pendiente",armada:"impresa",entregada:"armada"}[t.estado]||"pendiente")}>Volver un paso</Btn>}
         </div>
@@ -21083,6 +21123,41 @@ function DepositoClientes({T,api}){
         <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={()=>setForm(null)}>Cancelar</Btn><Btn T={T} variant="primary" onClick={guardar} disabled={busy}>{busy?"Guardando…":"Guardar"}</Btn></div>
       </div>
     </Modal>)}
+  </div>);
+}
+
+// Links del panel por token (solo dueño): el propio y el de la PC del depósito.
+function DepositoAccesos({T,api,panel}){
+  const iS=InputStyle(T);
+  const [d,setD]=useState(null);
+  const cargar=()=>api("accesos").then(setD).catch(e=>{ toast(e.message,"error"); setD({}); });
+  useEffect(()=>{ cargar(); },[]);
+  const link=t=>t?`${window.location.origin}/#/deposito/panel/${t}`:"";
+  const copiar=async t=>{ try{ await navigator.clipboard.writeText(link(t)); toast("Link copiado","success"); }catch(_){ toast("No pude copiar. Seleccioná el link y copialo a mano.","warning"); } };
+  async function nuevo(cual){
+    const esEste=cual==="admin"&&panel;
+    const msg=cual==="pc"?"¿Generar un link nuevo para la PC del depósito? El actual deja de funcionar y hay que abrir el nuevo en esa PC.":`¿Generar un link nuevo para tu panel? El actual deja de funcionar${esEste?" y esta pestaña pasa al nuevo":""}.`;
+    if(!(await appConfirm(msg,{okLabel:"Generar link"}))) return;
+    try{ const r=await api("acceso_nuevo",{cual}); if(esEste){ window.location.hash=`#/deposito/panel/${r.token}`; window.location.reload(); return; } toast("Link nuevo generado","success"); cargar(); }catch(e){ toast(e.message,"error"); }
+  }
+  if(!d) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
+  const fila=(titulo,desc,tok,cual,at)=>(<Card T={T} padding="lg" style={{marginBottom:14}}>
+    <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:4}}>{titulo}</div>
+    <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:12,lineHeight:1.6}}>{desc}</div>
+    {tok?(<>
+      <input readOnly value={link(tok)} onFocus={e=>e.target.select()} style={{...iS,marginBottom:10,fontFamily:"monospace",fontSize:DS.font.md}}/>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        <Btn T={T} variant="primary" size="sm" onClick={()=>copiar(tok)}>Copiar link</Btn>
+        <Btn T={T} variant="secondary" size="sm" onClick={()=>window.open(link(tok),"_blank","noopener")}>Abrir</Btn>
+        <Btn T={T} variant="ghost" size="sm" onClick={()=>nuevo(cual)}>Generar link nuevo</Btn>
+        {at&&<span style={{fontSize:DS.font.sm,color:T.textSm}}>generado el {new Date(at).toLocaleDateString("es-AR")}</span>}
+      </div>
+    </>):(<Btn T={T} variant="primary" size="sm" onClick={()=>nuevo(cual)}>Generar link</Btn>)}
+  </Card>);
+  return (<div style={{maxWidth:760}}>
+    {fila("Tu panel","Abre esta consola completa (cola, historial, clientes, pagos y accesos) sin entrar a Growith. Es tuyo: no lo compartas.",d.adminToken,"admin",d.adminAt)}
+    {fila("PC del depósito","Abre solo cola, historial y buscador, sin precios ni pagos. Al abrirlo pide el nombre de quien está operando y ese nombre queda en cada tanda que imprime, arma o entrega. Guardalo como favorito en la PC del depósito.",d.pcToken,"pc",d.pcAt)}
+    <div style={{fontSize:DS.font.md,color:T.textSm,lineHeight:1.6}}>Cualquiera con el link entra, sin contraseña. Si se filtra o se va alguien del depósito, "Generar link nuevo" invalida el anterior al instante.</div>
   </div>);
 }
 
@@ -42785,6 +42860,9 @@ export default function App() {
   // Portal del depósito para clientes sin Growith: #/deposito/TOKEN (suben etiquetas y comprobante, ven el estado)
   const _depMatch = _initialHash.match(/^deposito\/([a-f0-9]{32,64})/i);
   const [depositoToken] = useState(_depMatch ? _depMatch[1] : null);
+  // Panel del depósito por token (dueña o PC del depósito): #/deposito/panel/TOKEN
+  const _depPanelMatch = _initialHash.match(/^deposito\/panel\/([a-f0-9]{40,64})/i);
+  const [depositoPanelToken] = useState(_depPanelMatch ? _depPanelMatch[1] : null);
   // Página pública de seguimiento de un envío: #/seguir/<número> (sin sesión, sin datos del destinatario)
   const _segMatch = _initialHash.match(/^seguir\/(\d{10,20})/);
   const [seguirNumero] = useState(_segMatch ? _segMatch[1] : null);
@@ -43400,6 +43478,7 @@ export default function App() {
   if(boardToken) return <ColaboradorBoardView T={T} boardToken={boardToken}/>;
   if(cuponToken) return <CuponPublicoView token={cuponToken}/>;
   if(ejecutivaToken) return <AndreaniPortalView token={ejecutivaToken}/>;
+  if(depositoPanelToken) return <DepositoPanelView token={depositoPanelToken}/>;
   if(depositoToken) return <DepositoPortalView token={depositoToken}/>;
   if(seguirNumero) return <SeguirEnvioView numero={seguirNumero}/>;
 
