@@ -40991,6 +40991,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     if (q.shMp && q.shMp.mpToken && q.shMp.conRef===0 && q.shMp.muestra) qItems.push({k:null, msg:`Shopify no devuelve el id del pago de MP en sus transacciones (gateway ${q.shMp.muestra.gateway||"?"}, campos: ${(q.shMp.muestra.receiptKeys||[]).join(",")||"ninguno"}) — pasale este texto a soporte de Growith`});
     if (q.tnFees && q.tnFees.conCargo===0 && q.tnFees.sinCargo>0 && !q.tnFees.diag && !q.tnMp?.mpToken) qItems.push({k:null, msg:`Tienda Nube no informa el cargo de la pasarela en tus ventas (${q.tnFees.sinCargo} revisadas${q.tnFees.muestra?` · ej. ${q.tnFees.muestra.orden}: ${q.tnFees.muestra.transacciones} transacción(es), estados ${q.tnFees.muestra.estados.join("/")||"—"}, cargos ${q.tnFees.muestra.conCargos?"sí":"no"}, campos ${q.tnFees.muestra.claves.join(",")||"—"}`:""})`});
     if (q.mpSinConfig) qItems.push({k:"comisiones", msg:`Ventas con Mercado Pago sin cargo real informado${q.tnFees?.pendientes?" (se están leyendo de a 60 por cálculo — recargá en un rato)":""}: se estima 7,61% (dinero al instante + IVA). Cargá tu % real en Comisiones e impuestos → Comisión de Mercado Pago`, cta:"Configurar"});
+    if (rendData?.meta?.metaFallo) qItems.push({k:null, msg:`Meta Ads está conectado pero el gasto no está entrando: la pauta figura en $0 y la ganancia de este período está inflada${rendData?.meta?.metaPermisos?" — Meta bloqueó el acceso a la API: revisá en developers.facebook.com que la app esté en modo Activo y que ads_read tenga Acceso avanzado":rendData?.meta?.metaTokenExpired?" — el token venció, reconectá Meta desde Configuración → Integraciones":""}`});
     if (rendData?.meta?.googleAdsConectado && rendData?.meta?.googleAdsFuente!=="auto") qItems.push({k:null, msg:`Google Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.googleAdsDiag?` — ${rendData.meta.googleAdsDiag}`:""}`});
     if (rendData?.meta?.tiktokAdsConectado && rendData?.meta?.tiktokAdsFuente!=="auto") qItems.push({k:null, msg:`TikTok Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.tiktokAdsDiag?` — ${rendData.meta.tiktokAdsDiag}`:""}`});
     if (rendData?.meta?.mlAdsConectado && rendData?.meta?.mlAdsFuente!=="auto") qItems.push({k:null, msg:"Mercado Libre está conectado pero el gasto de Mercado Ads no está entrando: si estás pauteando, la ganancia de este período está inflada. Suele ser que la cuenta no tiene Product Ads habilitado"});
@@ -41281,10 +41282,29 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
         </div>
       )}
 
-      {rendData?.meta?.metaTokenExpired && (
-        <div style={{background:T.red+"18",borderBottom:`1px solid ${T.red}44`,padding:"10px 24px",display:"flex",alignItems:"center",gap:10,fontSize:13,color:T.text,flexWrap:"wrap"}}>
-          <span style={{width:8,height:8,borderRadius:"50%",background:T.red,flexShrink:0}}/>
-          <span><strong>El token de Meta Ads venció.</strong> El Ad Spend y el ROAS pueden estar en 0. Reconectá Meta Ads desde <strong>Configuración → Integraciones</strong> para volver a traer la inversión publicitaria.</span>
+      {/* Meta no respondió: la pauta quedó en $0 y eso INFLA el ROAS y el
+          profit de abajo. El mensaje cambia según la causa, porque el arreglo
+          es distinto: el token vencido se resuelve reconectando, un bloqueo de
+          permisos de la app NO (hay que tocarla en developers.facebook.com). */}
+      {(rendData?.meta?.metaTokenExpired || rendData?.meta?.metaFallo) && (
+        <div style={{background:T.red+"18",borderBottom:`1px solid ${T.red}44`,padding:"10px 24px",display:"flex",alignItems:"flex-start",gap:10,fontSize:13,color:T.text,flexWrap:"wrap"}}>
+          <span style={{width:8,height:8,borderRadius:"50%",background:T.red,flexShrink:0,marginTop:6}}/>
+          <span style={{minWidth:0}}>
+            {rendData?.meta?.metaTokenExpired ? (
+              <><strong>El token de Meta Ads venció.</strong> Reconectá Meta Ads desde <strong>Configuración → Integraciones</strong>.</>
+            ) : rendData?.meta?.metaPermisos ? (
+              <><strong>Meta bloqueó el acceso a la API.</strong> Reconectar no alcanza: revisá en <strong>developers.facebook.com</strong> que la app esté en modo <strong>Activo</strong> (no Desarrollo) y que <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>ads_read</code> tenga <strong>Acceso avanzado</strong>.</>
+            ) : (
+              <><strong>No se pudo leer la inversión de Meta Ads.</strong> Probá refrescar; si sigue, revisá la conexión en <strong>Configuración → Integraciones</strong>.</>
+            )}
+            {" "}<strong>Mientras tanto el gasto de Meta figura en $0, así que el ROAS y el profit de abajo están más altos de lo real.</strong>
+            {rendData?.meta?.metaMotivo && (
+              <details style={{marginTop:6}}>
+                <summary style={{cursor:"pointer",fontSize:11,color:T.textSm}}>Ver el error técnico</summary>
+                <code style={{display:"block",marginTop:4,fontSize:11,color:T.textMd,background:T.bg,padding:"6px 8px",borderRadius:4,wordBreak:"break-word"}}>{rendData.meta.metaMotivo}</code>
+              </details>
+            )}
+          </span>
         </div>
       )}
 

@@ -70,7 +70,21 @@ async function fetchMetaDailySpend(cfg, since, until, errRef) {
     return byDate;
   } catch(e) {
     console.error("Meta daily spend error:", e.message);
-    if (errRef && /expired|invalid.*token|oauth|session|\b190\b|access token/i.test(e.message||"")) errRef.expired = true;
+    // CUALQUIER fallo de Meta tiene que avisarse. Antes solo se marcaba el
+    // token vencido (190) y el resto pasaba como "gastaste $0": con la pauta
+    // en cero el ROAS y el profit del Dashboard quedan INFLADOS y nadie se
+    // entera. Es peor equivocarse callado que mostrar un cartel de más.
+    const msg = String(e.message || "");
+    if (errRef) {
+      errRef.fallo = true;
+      errRef.motivo = msg.slice(0, 300);
+      // Token vencido/revocado: se arregla reconectando desde Config.
+      if (/expired|invalid.*token|oauth.*token|session|\b190\b|access token/i.test(msg)) errRef.expired = true;
+      // Permisos de la APP (200 "API access blocked", 10, 803): reconectar NO
+      // sirve — hay que tocar la app en developers.facebook.com o el rol sobre
+      // la cuenta publicitaria.
+      else if (/API access blocked|\(200|\(10[)/]|\b803\b|permiss/i.test(msg)) errRef.permisos = true;
+    }
     return {};
   }
 }
@@ -2109,6 +2123,10 @@ export default async function handler(req, res) {
           stockDegradado: curr.degradado || prev.degradado || null, // ts del snapshot servido cuando TN/ML no respondieron en vivo
           mlAdsDebug, mlEnvioDebug,
           metaTokenExpired: !!metaErr.expired,
+          // El Dashboard necesita distinguir "no gastó" de "no pude leer Meta".
+          metaFallo: !!metaErr.fallo,
+          metaPermisos: !!metaErr.permisos,
+          metaMotivo: metaErr.motivo || null,
           costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo, dolarAdsHistDias, dolarAdsFallback: +dolarAdsFallback.toFixed(2) } } };
       // Guardar caché + registrar el rango en el warmer (best-effort: si Firestore
       // falla acá, la respuesta en vivo sale igual). Respuesta DEGRADADA (snapshot
