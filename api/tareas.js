@@ -2269,6 +2269,32 @@ async function handlerTareas(req, res) {
       }
     }
 
+    // "Volver a mi cuenta" desde la vista de cliente. Es la ÚNICA acción que
+    // acepta un token de impersonación, porque justamente sirve para salir de
+    // él. La identidad del admin NO viene del body: sale del claim
+    // impersonatedBy del token, que Firebase firma y el cliente no puede tocar.
+    if (action === "adminVolver") {
+      const u = await verifyAuth(req);
+      if (!u) return res.status(401).json({ error: "Sesión inválida." });
+      const adminUid = String(u.impersonatedBy || "").trim();
+      if (!adminUid) return res.status(400).json({ error: "No estás viendo como cliente." });
+      // El admin tiene que SEGUIR siendo admin: si le sacaron el flag mientras
+      // estaba adentro, no le devolvemos una sesión con privilegios.
+      let sigueAdmin = false;
+      try {
+        const aSnap = await db.collection("users").doc(adminUid).get();
+        sigueAdmin = aSnap.exists && aSnap.data().isAdmin === true;
+      } catch (_) {}
+      if (!sigueAdmin && adminUid !== "WJH3ArqDPQcNLha9lOinvkVi9uJ2") {
+        return res.status(403).json({ error: "Tu cuenta ya no es administradora. Iniciá sesión de nuevo." });
+      }
+      let token;
+      try { token = await getAuth().createCustomToken(adminUid); }
+      catch (e) { return res.status(500).json({ error: "No se pudo volver: " + e.message }); }
+      await logAdmin(db, { adminUid, action: "ver_como_salir", targetUid: u.uid, detalle: "Volvió a su cuenta" });
+      return res.json({ ok: true, token });
+    }
+
     // Acciones solo-admin
     const adminActions = ["setSectionsConfig","adminGetData","adminGetUsage","adminGetActividad","adminGetLog","adminGetSystem","adminImpersonar","pagoComprobante","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin","adminBuscarCuenta"];
     if (adminActions.includes(action)) {
@@ -2541,7 +2567,7 @@ async function handlerTareas(req, res) {
         let token;
         try { token = await getAuth().createCustomToken(targetUid, { impersonatedBy: adminUid, ro: true }); }
         catch (e) { return res.status(500).json({ error: "No se pudo generar la sesión: " + e.message }); }
-        await log("ver_como", targetUid, `Vista de cliente (solo lectura) de ${tEmail || targetUid}`);
+        await log("ver_como", targetUid, `Vista de cliente de ${tEmail || targetUid}`);
         return res.json({ ok: true, token, email: tEmail });
       }
 

@@ -3,22 +3,20 @@ import ReactDOM from "react-dom";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, onSnapshot, addDoc as _fsAddDoc, updateDoc as _fsUpdateDoc, deleteDoc as _fsDeleteDoc, doc, serverTimestamp, setDoc as _fsSetDoc, getDoc, query, where, getDocs, orderBy, limit } from "firebase/firestore";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider, reauthenticateWithPopup, signInWithCustomToken } from "firebase/auth";
-// ── Modo solo lectura ("Ver como cliente" desde Admin) ──────────────────────
-// La bandera se levanta ANTES de cualquier escritura: primero desde el marcador
-// de sesión (sincrónico) y después se confirma con el claim del token.
-// Escrituras directas a Firestore bloqueadas acá; las de la API las bloquea
-// el servidor (readOnlyBlock en api/_auth.js).
-try { window.__ghReadOnly = !!sessionStorage.getItem("growith_impersonate"); } catch (_) {}
-function ghRoBlock() {
-  const msg = "Modo solo lectura: estás viendo esta cuenta como administrador y no se pueden hacer cambios.";
-  try { toast(msg, "error", 4000); } catch (_) {}
-  return Promise.reject(new Error(msg));
-}
-const ghRo = () => typeof window !== "undefined" && window.__ghReadOnly === true;
-const addDoc    = (...a) => ghRo() ? ghRoBlock() : _fsAddDoc(...a);
-const updateDoc = (...a) => ghRo() ? ghRoBlock() : _fsUpdateDoc(...a);
-const deleteDoc = (...a) => ghRo() ? ghRoBlock() : _fsDeleteDoc(...a);
-const setDoc    = (...a) => ghRo() ? ghRoBlock() : _fsSetDoc(...a);
+// ── Modo "Ver como cliente" (Admin) ─────────────────────────────────────────
+// El admin entra a la cuenta del cliente y PUEDE operar (soporte real). Lo que
+// no puede es lo irreversible o lo que mueve plata del cliente: emitir etiquetas
+// Andreani, facturar en ARCA y publicar campañas pagas. Ese límite lo pone el
+// SERVIDOR (RO_BLOQUEADAS en api/_auth.js), que es el único lugar confiable:
+// bloquear solo en el front sería cosmético.
+try { window.__ghImpersonando = !!sessionStorage.getItem("growith_impersonate"); } catch (_) {}
+// Compatibilidad: quedan lecturas de __ghReadOnly sueltas por el archivo. Ya no
+// bloquea escrituras, pero se mantiene definido en false para no romperlas.
+try { window.__ghReadOnly = false; } catch (_) {}
+const addDoc    = _fsAddDoc;
+const updateDoc = _fsUpdateDoc;
+const deleteDoc = _fsDeleteDoc;
+const setDoc    = _fsSetDoc;
 
 const firebaseConfig = {
   apiKey: "AIzaSyDT-cAeF1lm-xhIDtv0FZam88yhvLIcbMo",
@@ -19915,10 +19913,10 @@ function AppAdmin({T, user, onBack}) {
     if(ok) toast(ya?"Envíos con saldo quitado":"Envíos con saldo habilitado","success");
   }
   async function verComoCliente(u) {
-    if(!await appConfirm(`Vas a entrar a la cuenta de ${u.email||u._id} en modo solo lectura. Para volver a tu cuenta vas a tener que iniciar sesión de nuevo. ¿Continuar?`,{okLabel:"Ver como cliente"})) return;
+    if(!await appConfirm(`Vas a entrar a la cuenta de ${u.email||u._id}. Vas a poder operar como si fueras el cliente, salvo emitir etiquetas, facturar en ARCA o publicar campañas pagas. Todo lo que hagas queda registrado. ¿Continuar?`,{okLabel:"Ver como cliente"})) return;
     const d=await adminApi({action:"adminImpersonar", targetUid:u._id});
     try{ sessionStorage.setItem("growith_impersonate", JSON.stringify({uid:u._id, email:d.email||u.email||"", adminEmail:user.email||"", adminUid:user.uid, at:Date.now()})); }catch(_){}
-    try{ window.__ghReadOnly=true; }catch(_){}
+    try{ window.__ghImpersonando=true; }catch(_){}
     await signInWithCustomToken(auth, d.token); window.location.hash="#/home"; window.location.reload();
   }
   async function confirmarPago(p) {
@@ -21685,20 +21683,44 @@ function AdmSistema({ctx, sectionsConfig, saveSectionsConfig}) {
   );
 }
 
-// Banner flotante: sesión de administrador viendo la cuenta de un cliente.
+// Banner flotante: sesión de administrador operando la cuenta de un cliente.
+// Siempre visible y con la salida a mano: es la única señal de que lo que tocás
+// le pasa al cliente, no a vos.
 function GhImpersonBanner({T, info}) {
+  const [saliendo,setSaliendo]=useState(false);
   async function salir() {
-    try { sessionStorage.removeItem("growith_impersonate"); } catch (_) {}
-    try { window.__ghReadOnly = false; } catch (_) {}
-    try { await signOut(auth); } catch (_) {}
-    window.location.hash = "#/";
-    window.location.reload();
+    if(saliendo) return;
+    setSaliendo(true);
+    // El backend devuelve un token de la cuenta del admin (la identidad sale
+    // del claim impersonatedBy, no de nada que mande el navegador). Si algo
+    // falla caemos al signOut de siempre para no dejarlo atrapado adentro.
+    try {
+      const r = await fetch("/api/tareas", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", Authorization:`Bearer ${await auth.currentUser.getIdToken()}` },
+        body: JSON.stringify({ action:"adminVolver" }),
+      });
+      const d = await r.json().catch(()=>({}));
+      if(!r.ok || !d?.token) throw new Error(d?.error || "No se pudo volver");
+      try { sessionStorage.removeItem("growith_impersonate"); } catch (_) {}
+      try { window.__ghImpersonando = false; } catch (_) {}
+      await signInWithCustomToken(auth, d.token);
+      window.location.hash = "#/admin/clientes";
+      window.location.reload();
+    } catch (e) {
+      try { toast(String(e.message||e)+" — cerrando sesión","warning",4000); } catch(_){}
+      try { sessionStorage.removeItem("growith_impersonate"); } catch (_) {}
+      try { window.__ghImpersonando = false; } catch (_) {}
+      try { await signOut(auth); } catch (_) {}
+      window.location.hash = "#/";
+      window.location.reload();
+    }
   }
   return (
     <div style={{position:"fixed",left:"50%",bottom:18,transform:"translateX(-50%)",zIndex:3000,display:"flex",alignItems:"center",gap:12,padding:"9px 10px 9px 16px",borderRadius:DS.r.full,background:T.card,border:`1px solid ${T.yellow}66`,boxShadow:"0 10px 40px rgba(0,0,0,0.35)",fontFamily:"'Inter',system-ui,sans-serif",maxWidth:"calc(100vw - 24px)"}}>
       <span style={{width:8,height:8,borderRadius:"50%",background:T.yellow,flexShrink:0}}/>
-      <span style={{fontSize:12,color:T.text,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><strong>Solo lectura.</strong> Estás viendo la cuenta de {info.email||"un cliente"} como administrador.</span>
-      <button onClick={salir} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",whiteSpace:"nowrap"}}>Volver a mi cuenta</button>
+      <span style={{fontSize:12,color:T.text,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>Estás operando la cuenta de <strong>{info.email||"un cliente"}</strong> como administrador. Lo que hagas le pasa a él.</span>
+      <button onClick={salir} disabled={saliendo} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",whiteSpace:"nowrap",opacity:saliendo?0.6:1,cursor:saliendo?"default":"pointer"}}>{saliendo?"Volviendo…":"Volver a mi cuenta"}</button>
     </div>
   );
 }
@@ -42959,8 +42981,8 @@ export default function App() {
         // "Ver como cliente": el token de impersonación trae impersonatedBy.
         try {
           const tr=await u.getIdTokenResult();
-          if(tr?.claims?.impersonatedBy){ window.__ghReadOnly=true; setImpersonando(prev=>({...(prev||{}),email:u.email||prev?.email||"",uid:u.uid,by:tr.claims.impersonatedBy})); }
-          else { window.__ghReadOnly=false; setImpersonando(null); try{ sessionStorage.removeItem("growith_impersonate"); }catch(_){} }
+          if(tr?.claims?.impersonatedBy){ window.__ghImpersonando=true; setImpersonando(prev=>({...(prev||{}),email:u.email||prev?.email||"",uid:u.uid,by:tr.claims.impersonatedBy})); }
+          else { window.__ghImpersonando=false; setImpersonando(null); try{ sessionStorage.removeItem("growith_impersonate"); }catch(_){} }
         } catch(_){}
         // Load sections config (available for all users)
         try {

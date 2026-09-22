@@ -14,7 +14,7 @@
 // token de portal, que ya tiene su propio alcance.
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 function initApp() {
   if (getApps().length > 0) return;
@@ -32,12 +32,31 @@ function initApp() {
 const FOUNDERS = ["WJH3ArqDPQcNLha9lOinvkVi9uJ2"];
 export function isFounder(uid) { return FOUNDERS.includes(String(uid || "")); }
 
-// ── Modo solo lectura ("Ver como cliente" desde Admin) ───────────────────────
-// El token de impersonación lleva el claim impersonatedBy (uid del admin). Con
-// ese token toda acción de ESCRITURA se rechaza: solo pasan GET y las acciones
-// POST cuyo nombre es claramente de lectura. Las escrituras directas a Firestore
-// se bloquean del lado del front (wrappers de setDoc/updateDoc/addDoc/deleteDoc).
-const RO_READ_RX = /^(get|list|load|fetch|read|me$|resumen|status|snapshot|search|buscar|stats|movimientos|comprobante_get|iva_get|envios_list|pendientes|preview|historial|cotizar|sucursales|localidades|trazas|quote|count|poll|saldo|cargas$|catalogo|items|insights|analisis|metrics|pnl|daily|board|conv|calc|verificar|diag|consultar|padron|tracking|adminGet|adminBuscar|dashboard|ordenes|orders|productos|kpi|margenes|etiquetas_pendientes|export|csv|listar|obtener|ping|health|estado)/i;
+// ── Modo "Ver como cliente" (Admin) ─────────────────────────────────
+// El token de impersonación lleva el claim impersonatedBy (uid del admin).
+// Desde 22/sep/2026 el admin PUEDE escribir en la cuenta del cliente (soporte
+// real), salvo las acciones IRREVERSIBLES o que mueven plata del cliente:
+// emitir etiquetas Andreani (debita saldo), facturar en ARCA (CAE definitivo),
+// publicar campañas pagas y mandar mails a compradores. Esas siguen cerradas.
+//
+// La lista es por (endpoint, action) y se compara en minúsculas. Cualquier
+// acción nueva que gaste plata del cliente o emita un comprobante fiscal TIENE
+// que sumarse acá: el default es permitir.
+const RO_BLOQUEADAS = {
+  andreani:   ["emitir"],                                        // debita saldo real
+  arca:       ["emit", "emit_nc", "emit_nc_batch", "emit_nd"],   // CAE irreversible
+  meta:       ["publish"],                                       // campaña con presupuesto
+  "google-ads": ["publish"],
+  "tiktok-ads": ["publish"],
+};
+// Endpoint a partir de la URL: /api/andreani?x=1 → "andreani".
+function _endpointOf(req) {
+  try {
+    const u = String(req.url || "").split("?")[0];
+    const m = /\/api\/([a-z0-9_-]+)/i.exec(u);
+    return m ? m[1].toLowerCase() : "";
+  } catch (_) { return ""; }
+}
 function _actionOf(req) {
   try {
     const q = req.query && req.query.action;
@@ -47,15 +66,21 @@ function _actionOf(req) {
   } catch (_) {}
   return "";
 }
-/** {ok:false,...} si el token es de impersonación y el request escribe. */
+/** {ok:false,...} si el token es de impersonación y la acción es irreversible. */
 export function readOnlyBlock(req, user) {
   if (!user || !user.impersonatedBy) return null;
   const method = String(req.method || "GET").toUpperCase();
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") return null;
-  const action = _actionOf(req);
-  if (action && RO_READ_RX.test(action)) return null;
-  return { ok: false, code: 403, error: "Modo solo lectura: estás viendo esta cuenta como administrador y no se pueden hacer cambios.", readOnly: true };
+  const ep = _endpointOf(req);
+  const action = _actionOf(req).toLowerCase();
+  const lista = RO_BLOQUEADAS[ep];
+  if (lista && lista.includes(action)) {
+    return { ok: false, code: 403, error: "Estás viendo la cuenta como administrador. Esta acción mueve plata o emite un comprobante fiscal del cliente, así que solo puede hacerla el cliente desde su propia cuenta.", readOnly: true, impersonado: true };
+  }
+  return null;
 }
+/** true si este request viene de un admin metido en la cuenta de un cliente. */
+export function esImpersonacion(user) { return !!(user && user.impersonatedBy); }
 
 // Devuelve el token decodificado o null (token ausente/inválido/vencido).
 export async function verifyAuth(req) {
@@ -119,10 +144,11 @@ export async function requireUid(req, uid, seccion) {
     // Tienda MOVIDA a otro perfil: el login original ya no es dueño de su
     // propio doc — no puede operar sobre la tienda aunque el id coincida.
     if (meta.ownerUid && meta.ownerUid !== user.uid) return { ok: false, code: 403, error: "Esta tienda fue movida a otro perfil. Este usuario ya no tiene acceso." };
+    if (user.impersonatedBy) logImpersonacion(req, user, target);
     return { ok: true, user };
   }
   // Perfil DUEÑO de esta tienda (multi-tienda): acceso total, como el dueño clásico.
-  if (meta.ownerUid && meta.ownerUid === user.uid) return { ok: true, user, viaOwner: true };
+  if (meta.ownerUid && meta.ownerUid === user.uid) { if (user.impersonatedBy) logImpersonacion(req, user, target); return { ok: true, user, viaOwner: true }; }
   // ¿el solicitante está habilitado como equipo en la cuenta destino?
   const member = meta.members ? meta.members[user.uid] : null;
   if (member) {
@@ -131,12 +157,13 @@ export async function requireUid(req, uid, seccion) {
     if (seccion && !(member.secciones && member.secciones[seccion] === true)) {
       return { ok: false, code: 403, error: "Tu cuenta no tiene acceso a esta sección. Pedile al dueño que te la habilite desde Equipo." };
     }
+    if (user.impersonatedBy) logImpersonacion(req, user, target);
     return { ok: true, user, viaTeam: true, member };
   }
-  if (meta.team.includes(user.uid)) return { ok: true, user, viaTeam: true }; // legacy: acceso total
+  if (meta.team.includes(user.uid)) { if (user.impersonatedBy) logImpersonacion(req, user, target); return { ok: true, user, viaTeam: true }; } // legacy: acceso total
   // Los admins de la plataforma pueden operar sobre cualquier cuenta (soporte).
   const self = await _userMeta(user.uid);
-  if (self.isAdmin) return { ok: true, user, viaAdmin: true };
+  if (self.isAdmin) { if (user.impersonatedBy) logImpersonacion(req, user, target); return { ok: true, user, viaAdmin: true }; }
   console.warn(`[auth] ${user.uid} intentó operar sobre ${target}`);
   return { ok: false, code: 403, error: "No tenés acceso a esta cuenta." };
 }
@@ -147,6 +174,28 @@ export async function guardUid(req, res, uid, seccion) {
   if (r.ok) return r;
   res.status(r.code).json({ error: r.error });
   return null;
+}
+
+// Auditoría de "Ver como cliente": cada ESCRITURA que un admin hace dentro de
+// la cuenta de un cliente queda en admin_log. Es best-effort y nunca bloquea ni
+// demora el request (no se awaitéa): si el log falla, la acción igual pasa.
+function logImpersonacion(req, user, targetUid) {
+  try {
+    const method = String(req.method || "GET").toUpperCase();
+    if (method === "GET" || method === "HEAD" || method === "OPTIONS") return;
+    const ep = _endpointOf(req);
+    const action = _actionOf(req);
+    initApp();
+    getFirestore().collection("admin_log").add({
+      adminUid: String(user.impersonatedBy || ""),
+      action: "impersonacion_escritura",
+      targetUid: String(targetUid || ""),
+      targetEmail: null,
+      detalle: `${ep || "?"}:${action || method}`.slice(0, 300),
+      data: { endpoint: ep || null, accion: action || null, metodo: method },
+      at: FieldValue.serverTimestamp(),
+    }).catch(() => {});
+  } catch (_) {}
 }
 
 /**
