@@ -1156,6 +1156,34 @@ async function gdriveFolderCreate(req, res, db) {
   } catch (e) { return res.status(502).json({ error: "Drive no respondió: " + e.message }); }
 }
 
+// Carpeta madre SIN Picker: la app crea "Influencers (Growith)" en la raíz del
+// Drive del dueño (con drive.file, lo que la app crea es suyo) y la devuelve.
+// El dueño puede moverla adentro de su carpeta de siempre desde Drive: mover
+// no cambia el id ni el acceso. Si ya existe (por nombre, sin papelera), se reutiliza.
+async function gdriveParentCreate(req, res, db) {
+  const uid = req.body?.uid || req.query.uid;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid, "canjes"))) return;
+  const NOMBRE = "Influencers (Growith)";
+  try {
+    const t = await getValidDriveToken(db, uid);
+    if (!t) return res.status(400).json({ error: "Google Drive no está conectado: Configuración → Integraciones → Google Drive.", not_connected: true });
+    const H = { Authorization: `Bearer ${t.accessToken}`, "Content-Type": "application/json" };
+    const q = encodeURIComponent(`mimeType='application/vnd.google-apps.folder' and name='${NOMBRE}' and trashed=false`);
+    const ex = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,webViewLink)`, { headers: H, signal: AbortSignal.timeout(15000) });
+    const exJ = await ex.json().catch(() => ({}));
+    let folder = exJ.files?.[0] || null;
+    if (!folder) {
+      const r = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink", { method: "POST", headers: H, body: JSON.stringify({ name: NOMBRE, mimeType: "application/vnd.google-apps.folder" }), signal: AbortSignal.timeout(15000) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return res.status(502).json({ error: `Drive no creó la carpeta (HTTP ${r.status}): ${String(j.error?.message || "").slice(0, 200)}` });
+      folder = j;
+    }
+    await db.collection("users").doc(uid).set({ canjesDriveParent: { id: folder.id, name: folder.name || NOMBRE } }, { merge: true });
+    return res.json({ ok: true, id: folder.id, name: folder.name || NOMBRE, link: folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}` });
+  } catch (e) { return res.status(502).json({ error: "Drive no respondió: " + e.message }); }
+}
+
 async function gdriveDisconnect(req, res, db) {
   const uid = req.body?.uid || req.query.uid;
   if (!uid) return res.status(400).json({ error: "Falta uid" });
@@ -1456,6 +1484,7 @@ export default async function handler(req, res) {
       if (action === "status" && req.method === "GET") return gdriveStatus(req, res, db);
       if (action === "token" && req.method === "GET") return gdriveToken(req, res, db);
       if (action === "folder_create" && req.method === "POST") return gdriveFolderCreate(req, res, db);
+      if (action === "parent_create" && req.method === "POST") return gdriveParentCreate(req, res, db);
       if (action === "disconnect" && req.method === "POST") return gdriveDisconnect(req, res, db);
     }
 

@@ -7438,6 +7438,20 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [driveParent,setDriveParent]=useState(undefined); // undefined=cargando, null=sin elegir, {id,name}
   useEffect(()=>{ if(!user?.uid) return; getDoc(doc(db,"users",user.uid)).then(s=>setDriveParent(s.data()?.canjesDriveParent||null)).catch(()=>setDriveParent(null)); },[user?.uid]);
   const [driveBusy,setDriveBusy]=useState(false);
+  const [driveParentLink,setDriveParentLink]=useState("");
+  // Sin el selector de Google (si la API key del Picker falla): la app crea
+  // "Influencers (Growith)" en la raíz de tu Drive y la usa de carpeta madre.
+  // Después la podés mover adentro de tu carpeta de siempre desde Drive.
+  async function crearCarpetaMadre(){
+    if(driveBusy) return; setDriveBusy(true);
+    try{
+      const r=await authFetch(`/api/integrations?platform=googledrive&action=parent_create`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user?.uid})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||d.error){ toast(d.not_connected?"Primero conectá Google Drive en Configuración → Integraciones":(d.error||"No se pudo crear la carpeta madre"),"error",7000); }
+      else { setDriveParent({id:d.id,name:d.name}); setDriveParentLink(d.link||""); toast(`Carpeta madre lista: ${d.name}. Movela adentro de tu carpeta de influencers desde Drive si querés: sigue funcionando igual.`,"success",9000); }
+    }catch(e){ toast(e.message,"error"); }
+    setDriveBusy(false);
+  }
   async function elegirCarpetaMadre(){
     if(driveBusy) return; setDriveBusy(true);
     try{
@@ -8853,7 +8867,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 <div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                   <span>Carpeta madre de Drive: <strong style={{color:driveParent?.id?T.text:T.yellow}}>{driveParent===undefined?"…":driveParent?.name||"sin elegir"}</strong></span>
                   <button onClick={elegirCarpetaMadre} disabled={driveBusy} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>{driveParent?.id?"Cambiar":"Elegir carpeta madre"}</button>
-                  {!driveParent?.id&&driveParent!==undefined&&<span>Con la carpeta madre elegida, cada perfil y cada canje nuevo crean su carpeta solos.</span>}
+                  {!driveParent?.id&&driveParent!==undefined&&<button onClick={crearCarpetaMadre} disabled={driveBusy} title="Growith crea la carpeta \"Influencers (Growith)\" en tu Drive y la usa de carpeta madre. Después podés moverla adentro de tu carpeta de siempre." style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>Crear carpeta madre</button>}
+                  {driveParentLink&&<a href={driveParentLink} target="_blank" rel="noopener" style={{color:T.accent}}>Abrir en Drive</a>}
+                  {!driveParent?.id&&driveParent!==undefined&&<span>Con la carpeta madre lista, cada perfil y cada canje nuevo crean su carpeta solos. Para un influencer viejo, pegá el link de su carpeta en el perfil.</span>}
                 </div>
                 <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{influencers.length} perfil{influencers.length!==1?"es":""}{derivados.length>0?` · ${derivados.length} más desde canjes sin perfil`:""}</div>
               </div>
