@@ -20844,7 +20844,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
   if(err) return <DSEmpty T={T} title="No pudimos cargar el depósito" subtitle={err} action={<Btn T={T} variant="secondary" onClick={cargar}>Reintentar</Btn>}/>;
   if(!st) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
   const colE=ghDepCol(T), colP=ghDepColPago(T);
-  const saldo=st.cuenta?ghDepSaldo(T,st.cuenta.deuda,st.cuenta.aFavor):null;
+  const saldo=st.cuenta?ghDepSaldo(T,st.cuenta.bruta??st.cuenta.deuda,st.cuenta.aFavor):null;
   return (
     <div>
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
@@ -20898,7 +20898,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
         <DepLabel T={T}>Pagos y ajustes</DepLabel>
         <DepTable T={T} minWidth={480} empty="" rows={st.cuenta.pagos} cols={[
           {h:"Fecha",w:"80px",render:p=>p.informadoAt?new Date(p.informadoAt).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—"},
-          {h:"Detalle",w:"1fr",render:p=><span style={{color:T.textMd}}>{p.tipo==="ajuste"?(p.monto<0?"Cargo del depósito":"Crédito del depósito")+(p.nota?`: ${p.nota}`:""):p.estado==="verificado"?`Aplicado a ${p.aplicado?.length||0} tanda${p.aplicado?.length!==1?"s":""}`:p.estado==="rechazado"?`Rechazado: ${p.nota}`:p.notaCliente||"Transferencia informada"}</span>},
+          {h:"Detalle",w:"1fr",render:p=><span style={{color:T.textMd}}>{p.tipo==="ajuste"?(p.monto<0?"Cargo del depósito":"Pago registrado por el depósito")+(p.nota?`: ${p.nota}`:""):p.estado==="verificado"?`Aplicado a ${p.aplicado?.length||0} tanda${p.aplicado?.length!==1?"s":""}`:p.estado==="rechazado"?`Rechazado: ${p.nota}`:p.notaCliente||"Transferencia informada"}</span>},
           {h:"Estado",w:"130px",render:p=><DepDot T={T} color={p.estado==="verificado"?T.green:p.estado==="rechazado"?T.red:T.yellow}>{p.tipo==="ajuste"?"Aplicado":p.estado==="verificado"?"Verificado":p.estado==="rechazado"?"Rechazado":"En verificación"}</DepDot>},
           {h:"Monto",w:"100px",align:"right",render:p=><strong style={{color:p.monto<0?T.red:T.text}}>{p.monto<0?"−":""}{fmtMoney(Math.abs(p.monto))}</strong>},
         ]}/>
@@ -20979,15 +20979,13 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
   // Sin clientes cargados no hay nada que ver en la cola: arranca en Clientes.
   useEffect(()=>{ if(!owner) return; apiDep("clientes").then(d=>{ const n=(d.clientes||[]).length; setSinClientes(n===0); if(n===0) setTab("clientes"); }).catch(()=>{}); },[owner]);
   const CTX={cola:"Lo que hay que armar, agrupado por urgencia y día de despacho. Imprimir marca la tanda como impresa; después armada y entregada al correo.",
-    historial:"Todas las tandas por mes, para buscar una vieja o ver qué se despachó.",
-    clientes:"Quién te manda etiquetas y cuánto le cobrás por pedido armado. Los que usan Growith se vinculan por mail; a los demás les pasás su link privado.",
-    pagos:"Comprobantes por verificar, ajustes y el resumen del mes por cliente.",
+    historial:"Todo lo que pasó por el depósito: las tandas de cada mes y la mercadería que entró de cada cliente.",
+    clientes:"Tus clientes, su precio por pedido y su saldo. Más abajo, las transferencias por verificar y la facturación del mes.",
     mio:"Tus envíos al depósito, en qué estado están y qué pagos faltan.",
-    ingresos:"Mercadería que entra al depósito: cuándo llegó, cuántos bultos y qué productos. El cliente lo ve en su panel.",
     accesos:"Links de acceso al panel (el tuyo y el de la PC del depósito), datos bancarios que ve el cliente para transferir y hora de corte del despacho."};
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
-      {(()=>{ const TABS=[["cola","Cola","box"],["ingresos","Ingresos","inbox"],["historial","Historial","clock"],...(owner?[["clientes","Clientes","users"],["pagos","Pagos","wallet"],["accesos","Configuración","key"]]:[]),...(info?.cliente?[["mio","Mis envíos","truck"]]:[])];
+      {(()=>{ const TABS=[["cola","Cola","box"],...(owner?[["clientes","Clientes y pagos","users"]]:[]),["historial","Movimientos","clock"],...(owner?[["accesos","Configuración","key"]]:[]),...(info?.cliente?[["mio","Mis envíos","truck"]]:[])];
         const tabs=esDep&&<div style={{display:"flex",gap:2,background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:3}}>
           {TABS.map(([k,l,ic])=>(<button key={k} onClick={()=>setTab(k)} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",fontSize:DS.font.base,border:"none",borderRadius:DS.r.md,background:tab===k?T.card:"transparent",color:tab===k?T.text:T.textMd,fontWeight:tab===k?600:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:tab===k?DS.shadow.sm:"none",transition:"all .15s"}}>{panel&&<DepIco d={ic} size={13} color={tab===k?T.accent:T.textSm}/>}{l}</button>))}
         </div>;
@@ -21017,10 +21015,10 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
               <p style={{margin:"0 0 8px"}}>Cada cliente te manda una <strong>tanda</strong>: el PDF con las etiquetas de los pedidos que hay que armar. Reemplaza al grupo de WhatsApp. La tanda entra a la <strong>Cola</strong> con la fecha de despacho, el canal (Andreani o Mercado Libre) y, si viene de Growith, los productos de cada pedido.</p>
               <p style={{margin:"0 0 8px"}}><strong>Cómo llega una tanda:</strong> desde Envíos de Growith con "Enviar al depósito" (etiquetas con SKU, ordenadas por producto), desde la sección Depósito del cliente, desde su link privado si no usa Growith, o cargada por vos "en nombre de" un cliente. Un <strong>envío especial</strong> es un pedido suelto con instrucciones, por ejemplo un mayorista.</p>
               <p style={{margin:"0 0 8px"}}><strong>En la cola:</strong> "Imprimir etiquetas" abre el PDF y marca la tanda como impresa. Abriendo la tanda ves el picking (cuántas unidades de cada producto bajar) y los pedidos. Un pedido con problema se <strong>aparta</strong> con una nota que el cliente ve. Después: "Marcar armada" y "Entregada al correo". Todo queda con quién y cuándo.</p>
-              <p style={{margin:"0 0 8px"}}><strong>Pagos:</strong> cada tanda tiene su total (pedidos por el precio del cliente) y se acumula en su cuenta corriente. El cliente transfiere e informa el pago con el comprobante; en Pagos lo verificás y se aplica solo a las tandas más viejas. <strong>El pago nunca frena el armado.</strong></p>
-              <p style={{margin:"0 0 8px"}}><strong>Ingresos y lector:</strong> en Ingresos anotás la mercadería que llega de cada cliente. En la cola, "Escanear etiqueta" con un lector USB (o tipeando el número) marca cada pedido como armado y avisa cuando la tanda está completa.</p>
+              <p style={{margin:"0 0 8px"}}><strong>Pagos:</strong> cada tanda tiene su total (pedidos por el precio del cliente) y se acumula en su cuenta corriente. El cliente transfiere e informa el pago con el comprobante; en Clientes y pagos lo verificás y se aplica solo a las tandas más viejas. <strong>El pago nunca frena el armado.</strong></p>
+              <p style={{margin:"0 0 8px"}}><strong>Ingresos y lector:</strong> en Movimientos anotás la mercadería que llega de cada cliente. En la cola, "Escanear etiqueta" con un lector USB (o tipeando el número) marca cada pedido como armado y avisa cuando la tanda está completa.</p>
               <p style={{margin:"0 0 8px"}}><strong>Mails:</strong> uno a las 8 con lo que hay para armar hoy, y uno al instante si llega un especial urgente. Al cliente no le llega ningún aviso: ve todo en su panel.</p>
-              {owner&&<p style={{margin:0}}><strong>Accesos:</strong> en la pestaña Accesos están los dos links del panel: el tuyo (todo, sin entrar a Growith) y el de la PC del depósito (cola, historial y buscador, sin plata; pide el nombre de quien opera). Los operarios también pueden entrar con su propio usuario de Growith si los invitás desde Equipo con "Depósito" tildado.</p>}
+              {owner&&<p style={{margin:0}}><strong>Accesos:</strong> en Configuración están los dos links del panel: el tuyo (todo, sin entrar a Growith) y el de la PC del depósito (cola, historial y buscador, sin plata; pide el nombre de quien opera). Los operarios también pueden entrar con su propio usuario de Growith si los invitás desde Equipo con "Depósito" tildado.</p>}
             </>):(<>
               <p style={{margin:"0 0 8px"}}>Tu mercadería se arma y despacha desde nuestro depósito. Acá mandás las etiquetas y ves en qué estado está cada tanda.</p>
               <p style={{margin:"0 0 8px"}}><strong>Para mandar etiquetas:</strong> si las generás en Growith, al terminar aparece "Enviar al depósito" y van solas con los SKU. Si no, tocá "Enviar etiquetas" acá y subí el PDF. Elegí el día de despacho y quién retira (Andreani o Mercado Libre).</p>
@@ -21034,16 +21032,14 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
           <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,marginBottom:6}}>Para empezar</div>
           <ol style={{margin:0,paddingLeft:20,fontSize:DS.font.base,color:T.textMd,lineHeight:1.8}}>
             <li><strong>Cargá tus clientes</strong> con el precio por pedido armado (botón "Nuevo cliente", acá abajo). Si el cliente usa Growith, poné el mail de su cuenta.</li>
-            <li><strong>Abrí el panel en la PC del depósito:</strong> en Accesos generá el link de la PC y abrilo ahí (queda como favorito). Pide el nombre de quien está operando y no muestra precios ni pagos. Si preferís, invitá operarios desde Equipo con "Depósito" tildado.</li>
+            <li><strong>Abrí el panel en la PC del depósito:</strong> en Configuración generá el link de la PC y abrilo ahí (queda como favorito). Pide el nombre de quien está operando y no muestra precios ni pagos. Si preferís, invitá operarios desde Equipo con "Depósito" tildado.</li>
             <li><strong>Avisale a cada cliente:</strong> los que usan Growith ya tienen "Enviar al depósito" en Envíos; a los demás pasales su link privado con "Copiar link del portal".</li>
           </ol>
         </Card>)}
         {!esDep? <DepositoClienteView T={T} api={apiCli} tiendaUid={tiendaUid}/>
           : tab==="cola"? <DepositoCola T={T} api={apiDep} owner={owner}/>
-          : tab==="ingresos"? <DepositoIngresos T={T} api={apiDep} owner={owner}/>
-          : tab==="historial"? <DepositoHistorial T={T} api={apiDep}/>
-          : tab==="clientes"? <DepositoClientes T={T} api={apiDep}/>
-          : tab==="pagos"? <DepositoPagos T={T} api={apiDep}/>
+          : tab==="historial"? <><DepLabel T={T}>Tandas por mes</DepLabel><DepositoHistorial T={T} api={apiDep}/><DepLabel T={T} style={{marginTop:28}}>Mercadería recibida</DepLabel><DepositoIngresos T={T} api={apiDep} owner={owner}/></>
+          : tab==="clientes"? <><DepositoClientes T={T} api={apiDep}/><div style={{height:28}}/><DepositoPagos T={T} api={apiDep}/></>
           : tab==="accesos"? <DepositoAccesos T={T} api={apiDep} panel={!!panel}/>
           : <DepositoClienteView T={T} api={apiCli} tiendaUid={tiendaUid}/>}
       </div>
@@ -21120,27 +21116,44 @@ function DepositoCuentaModal({T,api,cliente,onClose,onAjustar}){
   const [d,setD]=useState(null);
   useEffect(()=>{ api("cuenta_cliente",{clienteId:cliente.id}).then(setD).catch(e=>{ toast(e.message,"error"); setD({error:true}); }); },[cliente.id]);
   const colP=ghDepColPago(T);
-  return (<Modal T={T} open onClose={onClose} title={`Estado de cuenta · ${cliente.nombre}`} width={640}>
+  const movDetalle=p=>{ if(p.tipo==="ajuste") return (p.monto<0?"Cargo":"Pago registrado a mano")+(p.nota?`: ${p.nota}`:""); if(p.estado==="verificado") return `Transferencia · aplicada a ${p.aplicado?.length||0} tanda${p.aplicado?.length!==1?"s":""}`; if(p.estado==="rechazado") return `Transferencia rechazada: ${p.nota}`; return `Transferencia informada${p.notaCliente?` · ${p.notaCliente}`:""}`; };
+  const movEstado=p=>p.tipo==="ajuste"?{c:p.monto<0?T.red:T.green,t:p.monto<0?"Cargo":"Crédito"}:p.estado==="verificado"?{c:T.green,t:"Verificada"}:p.estado==="rechazado"?{c:T.red,t:"Rechazada"}:{c:T.yellow,t:"A verificar"};
+  return (<Modal T={T} open onClose={onClose} title={`Estado de cuenta · ${cliente.nombre}`} width={680}>
     {!d?<div style={{display:"flex",justifyContent:"center",padding:30}}><Spinner size={24} color={T.accent}/></div>
     :d.error?<div style={{fontSize:DS.font.base,color:T.textSm}}>No se pudo cargar.</div>
-    :(<div>
-      <DepStats T={T} items={[{l:"Saldo",v:ghDepSaldo(T,d.deuda,d.aFavor).txt,c:ghDepSaldo(T,d.deuda,d.aFavor).col},{l:"Sin pagar",v:fmtMoney(d.deuda),s:`${d.tandas.length} tanda${d.tandas.length!==1?"s":""}`},{l:d.aFavor<0?"Cargos extra":"A favor",v:fmtMoney(Math.abs(d.aFavor)),c:d.aFavor<0?T.red:d.aFavor>0?T.green:T.textSm}]}/>
-      {onAjustar&&<div style={{display:"flex",gap:6,marginBottom:16,marginTop:-6}}><Btn T={T} variant="secondary" size="sm" onClick={()=>{ onClose(); onAjustar("acreditar"); }}>Acreditar</Btn><Btn T={T} variant="ghost" size="sm" onClick={()=>{ onClose(); onAjustar("cobrar"); }}>Cobrar</Btn><span style={{fontSize:DS.font.sm,color:T.textSm,alignSelf:"center"}}>Ajuste manual del saldo: efectivo, bonificaciones, cargos extra.</span></div>}
+    :(()=>{ const s=ghDepSaldo(T,d.deuda,d.aFavor); const cargos=d.aFavor<0?-d.aFavor:0; const favor=d.aFavor>0?d.aFavor:0; return (<div>
+      <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"16px 18px",marginBottom:12,boxShadow:DS.shadow.sm}}>
+        <DepTile T={T} color={s.col===T.textSm?T.accent:s.col} ico={s.n<0?"hand":"wallet"} size={44}/>
+        <div style={{flex:1,minWidth:180}}>
+          <div style={{fontSize:DS.font.xs,fontWeight:600,letterSpacing:0.5,textTransform:"uppercase",color:T.textSm,marginBottom:4}}>Saldo</div>
+          <div style={{fontSize:DS.font["3xl"],fontWeight:800,color:s.col,letterSpacing:-0.8,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{s.n>0?`Debe ${fmtMoney(s.n)}`:s.n<0?`${fmtMoney(-s.n)} a favor`:"Al día"}</div>
+          <div style={{fontSize:DS.font.md,color:T.textMd,marginTop:8,lineHeight:1.6}}>
+            {d.tandas.length} tanda{d.tandas.length!==1?"s":""} sin pagar: <strong style={{color:T.text}}>{fmtMoney(d.deuda)}</strong>
+            {cargos>0&&<> · cargos extra: <strong style={{color:T.red}}>{fmtMoney(cargos)}</strong></>}
+            {favor>0&&<> · a favor: <strong style={{color:T.green}}>{fmtMoney(favor)}</strong></>}
+          </div>
+        </div>
+      </div>
+      {onAjustar&&(<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:20}}>
+        <Btn T={T} variant="primary" size="sm" onClick={()=>{ onClose(); onAjustar("acreditar"); }}>Registrar un pago</Btn>
+        <Btn T={T} variant="secondary" size="sm" onClick={()=>{ onClose(); onAjustar("cobrar"); }}>Agregar un cargo</Btn>
+        <span style={{fontSize:DS.font.sm,color:T.textSm}}>Un pago en efectivo o una bonificación baja la deuda. Un cargo (un insumo, un envío que pagaste vos) la sube.</span>
+      </div>)}
       <DepLabel T={T}>Tandas sin pagar</DepLabel>
-      <DepTable T={T} minWidth={420} empty="No debe nada" rows={d.tandas} cols={[
+      <DepTable T={T} minWidth={440} empty="No debe ninguna tanda" rows={d.tandas} cols={[
         {h:"Despacho",w:"90px",render:t=>ghDepFechaLinda(t.fechaDespacho)},
         {h:"Tanda",w:"1fr",render:t=><span>{t.tipo==="especial"?(t.especial?.titulo||"Envío especial"):`${t.n} pedidos`}{t.ajuste?<span style={{color:T.textSm}}> · ajuste {fmtMoney(t.ajuste)}</span>:null}</span>},
         {h:"Pago",w:"120px",render:t=><DepDot T={T} color={colP[t.pago?.estado]||T.textSm}>{({sin_informar:"Sin informar",a_verificar:"A verificar",rechazado:"Rechazado"})[t.pago?.estado]||"—"}</DepDot>},
         {h:"Total",w:"110px",align:"right",render:t=><strong>{fmtMoney(t.total)}</strong>},
       ]}/>
-      <DepLabel T={T} style={{marginTop:18}}>Transferencias informadas</DepLabel>
-      <DepTable T={T} minWidth={420} empty="Todavía no informó ninguna transferencia" rows={d.pagos} cols={[
-        {h:"Fecha",w:"90px",render:p=>p.informadoAt?new Date(p.informadoAt).toLocaleDateString("es-AR"):"—"},
-        {h:"Detalle",w:"1fr",render:p=><span style={{color:T.textMd}}>{p.estado==="verificado"?`Aplicado a ${p.aplicado?.length||0} tanda${p.aplicado?.length!==1?"s":""}`:p.estado==="rechazado"?`Rechazado: ${p.nota}`:p.notaCliente||"En verificación"}</span>},
-        {h:"Estado",w:"120px",render:p=><DepDot T={T} color={p.estado==="verificado"?T.green:p.estado==="rechazado"?T.red:T.yellow}>{p.estado==="verificado"?"Verificado":p.estado==="rechazado"?"Rechazado":"A verificar"}</DepDot>},
-        {h:"Monto",w:"110px",align:"right",render:p=><strong>{fmtMoney(p.monto)}</strong>},
+      <DepLabel T={T} style={{marginTop:20}}>Movimientos</DepLabel>
+      <DepTable T={T} minWidth={440} empty="Todavía no hay pagos ni cargos" rows={d.pagos} cols={[
+        {h:"Fecha",w:"80px",render:p=>p.informadoAt?new Date(p.informadoAt).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"}):"—"},
+        {h:"Detalle",w:"1fr",render:p=><span style={{color:T.textMd}}>{movDetalle(p)}</span>},
+        {h:"Estado",w:"110px",render:p=>{ const e=movEstado(p); return <DepDot T={T} color={e.c}>{e.t}</DepDot>; }},
+        {h:"Monto",w:"120px",align:"right",render:p=><strong style={{color:p.monto<0?T.red:p.estado==="rechazado"?T.textSm:T.green,textDecoration:p.estado==="rechazado"?"line-through":"none"}}>{p.monto<0?"− ":"+ "}{fmtMoney(Math.abs(p.monto))}</strong>},
       ]}/>
-    </div>)}
+    </div>); })()}
   </Modal>);
 }
 
@@ -21344,7 +21357,7 @@ function DepositoClientes({T,api}){
   async function ajustar(){
     const m=Number(String(aj.monto).replace(",",".")); if(!isFinite(m)||m===0){ toast("Poné el monto","warning"); return; }
     const monto=aj.tipo==="cobrar"?-Math.abs(m):Math.abs(m);
-    if(!(await appConfirm(`${aj.tipo==="cobrar"?"Cobrar":"Acreditar"} ${fmtMoney(Math.abs(m))} a ${aj.cliente.nombre}. El cliente lo ve en su panel${aj.motivo?` con el motivo "${aj.motivo}"`:""}. ¿Confirmás?`,{okLabel:aj.tipo==="cobrar"?"Cobrar":"Acreditar"}))) return;
+    if(!(await appConfirm(`${aj.tipo==="cobrar"?"Agregar un cargo de":"Registrar un pago de"} ${fmtMoney(Math.abs(m))} a ${aj.cliente.nombre}. El cliente lo ve en su panel${aj.motivo?` con el motivo "${aj.motivo}"`:""}. ¿Confirmás?`,{okLabel:aj.tipo==="cobrar"?"Agregar cargo":"Registrar pago"}))) return;
     setBusy(true); try{ await api("saldo_ajustar",{clienteId:aj.cliente.id,monto,motivo:aj.motivo}); toast("Saldo actualizado","success"); setAj(null); cargar(); }catch(e){ toast(e.message,"error"); } setBusy(false);
   }
   const lbl=t=><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:5}}>{t}</div>;
@@ -21366,21 +21379,21 @@ function DepositoClientes({T,api}){
       {h:"Precio",w:"90px",align:"right",render:c=>fmtMoney(c.precio)},
       {h:"Este mes",w:"130px",align:"right",render:c=><div style={{textAlign:"right"}}><div>{c.stats.mesPedidos} pedidos</div>{depSub(T,fmtMoney(c.stats.mesTotal))}</div>},
       {h:"Saldo",w:"140px",align:"right",render:c=>{ const s=ghDepSaldo(T,(c.stats?.aVerificar||0)+(c.stats?.sinInformar||0),c.aFavor); return <div style={{textAlign:"right"}}><div style={{fontWeight:700,color:s.col}}>{s.txt}</div>{c.stats.aVerificar>0?depSub(T,`${fmtMoney(c.stats.aVerificar)} a verificar`):null}</div>; }},
-      {h:"",w:"170px",align:"right",render:c=><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
-        <Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(c)}>Cuenta</Btn>
+      {h:"",w:"210px",align:"right",render:c=><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
+        <Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(c)}>Estado de cuenta</Btn>
         <Btn T={T} variant="ghost" size="sm" onClick={()=>setForm({id:c.id,nombre:c.nombre,precio:c.precio,growithEmail:c.growithEmail||"",contacto:c.contacto,nota:c.nota,activo:c.activo,_c:c})}>Editar</Btn>
       </div>},
     ]}/>
     {cuenta&&<DepositoCuentaModal T={T} api={api} cliente={cuenta} onClose={()=>setCuenta(null)} onAjustar={tipo=>{ setAj({cliente:cuenta,tipo,monto:"",motivo:""}); }}/>}
-    {aj&&(<Modal T={T} open onClose={()=>setAj(null)} title={`Ajustar saldo · ${aj.cliente.nombre}`} width={420}>
+    {aj&&(<Modal T={T} open onClose={()=>setAj(null)} title={`${aj.tipo==="cobrar"?"Agregar un cargo":"Registrar un pago"} · ${aj.cliente.nombre}`} width={440}>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div style={{display:"flex",border:`1px solid ${T.border}`,borderRadius:DS.r.md,overflow:"hidden"}}>
-          {[["acreditar","Acreditar"],["cobrar","Cobrar"]].map(([k,l])=><button key={k} onClick={()=>setAj(a=>({...a,tipo:k}))} style={{flex:1,padding:"8px 0",border:"none",background:aj.tipo===k?T.accentSolid+"22":"transparent",color:aj.tipo===k?T.text:T.textMd,fontWeight:aj.tipo===k?700:500,fontSize:DS.font.base,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>)}
+          {[["acreditar","Pago recibido","hand"],["cobrar","Cargo extra","tag"]].map(([k,l,ic])=><button key={k} onClick={()=>setAj(a=>({...a,tipo:k}))} style={{flex:1,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 0",border:"none",background:aj.tipo===k?(k==="cobrar"?T.red:T.green)+"1f":"transparent",color:aj.tipo===k?(k==="cobrar"?T.red:T.green):T.textMd,fontWeight:aj.tipo===k?700:500,fontSize:DS.font.base,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}><DepIco d={ic} size={14}/>{l}</button>)}
         </div>
-        <div style={{fontSize:DS.font.md,color:T.textSm,lineHeight:1.6}}>{aj.tipo==="acreditar"?"Suma plata a favor del cliente: se aplica a sus tandas sin pagar y, si sobra, queda a favor. Ej.: un pago en efectivo, una bonificación.":"Le carga plata al cliente: aumenta lo que debe. Ej.: un insumo extra, un envío que pagaste vos."}</div>
+        <div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.6,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,padding:"10px 12px"}}>{aj.tipo==="acreditar"?"Baja la deuda del cliente. Se aplica a sus tandas más viejas sin pagar y, si sobra, queda a su favor. Para un pago en efectivo, una bonificación o un descuento.":"Sube la deuda del cliente. Para un insumo que le compraste, un envío que pagaste vos o cualquier extra que le cobrás."}</div>
         <div style={{width:180}}>{lbl("Monto ($)")}<input style={iS} type="number" min="0" autoFocus value={aj.monto} onChange={e=>setAj(a=>({...a,monto:e.target.value}))}/></div>
         <div>{lbl("Motivo (el cliente lo ve)")}<input style={iS} placeholder="Ej.: pago en efectivo del 20/09" value={aj.motivo} onChange={e=>setAj(a=>({...a,motivo:e.target.value}))}/></div>
-        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={()=>setAj(null)}>Cancelar</Btn><Btn T={T} variant={aj.tipo==="cobrar"?"danger":"primary"} onClick={ajustar} disabled={busy}>{busy?"Guardando…":aj.tipo==="cobrar"?"Cobrar":"Acreditar"}</Btn></div>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={()=>setAj(null)}>Cancelar</Btn><Btn T={T} variant={aj.tipo==="cobrar"?"danger":"success"} onClick={ajustar} disabled={busy}>{busy?"Guardando…":aj.tipo==="cobrar"?"Agregar cargo":"Registrar pago"}</Btn></div>
       </div>
     </Modal>)}
     {form&&(<Modal T={T} open onClose={()=>setForm(null)} title={form.id?"Editar cliente":"Nuevo cliente del depósito"} width={460}>
@@ -21511,11 +21524,11 @@ function DepositoPagos({T,api}){
     {cc&&(<div style={{marginBottom:24}}>
       <DepLabel T={T}>Cuenta corriente</DepLabel>
       {(()=>{ const con=cc.cuentas.filter(c=>c.deuda>0||c.aFavor!==0); return con.length===0?<div style={{fontSize:DS.font.base,color:T.textSm,marginBottom:12}}>Todos los clientes están al día.</div>
-        :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:10,marginBottom:12}}>{con.map(c=>{ const s=ghDepSaldo(T,c.deuda,c.aFavor); return (<div key={c.clienteId} style={{display:"flex",gap:12,alignItems:"center",border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"12px 14px",background:T.card,boxShadow:DS.shadow.sm}}><DepTile T={T} color={s.col===T.textSm?T.accent:s.col} ico={s.n<0?"hand":"wallet"} size={34}/><div style={{minWidth:0}}><div style={{fontSize:DS.font.md,color:T.textMd,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}</div><div style={{fontSize:DS.font.lg,fontWeight:700,color:s.col,fontVariantNumeric:"tabular-nums"}}>{s.txt}</div></div></div>); })}</div>; })()}
+        :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:10,marginBottom:12}}>{con.map(c=>{ const s=ghDepSaldo(T,c.bruta??c.deuda,c.aFavor); return (<div key={c.clienteId} style={{display:"flex",gap:12,alignItems:"center",border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"12px 14px",background:T.card,boxShadow:DS.shadow.sm}}><DepTile T={T} color={s.col===T.textSm?T.accent:s.col} ico={s.n<0?"hand":"wallet"} size={34}/><div style={{minWidth:0}}><div style={{fontSize:DS.font.md,color:T.textMd,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}</div><div style={{fontSize:DS.font.lg,fontWeight:700,color:s.col,fontVariantNumeric:"tabular-nums"}}>{s.txt}</div></div></div>); })}</div>; })()}
       <DepTable T={T} minWidth={720} empty="Ningún cliente informó transferencias todavía" rows={cc.pagos} cols={[
         {h:"Fecha",w:"80px",render:p=>p.informadoAt?new Date(p.informadoAt).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—"},
         {h:"Cliente",w:"1fr",render:p=><div style={{minWidth:0}}><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.clienteNombre}</strong>{p.tipo==="ajuste"?depSub(T,`Ajuste manual${p.nota?` · ${p.nota}`:""}`):p.notaCliente?depSub(T,p.notaCliente):null}</div>},
-        {h:"Estado",w:"180px",render:p=><DepDot T={T} color={p.estado==="verificado"?T.green:p.estado==="rechazado"?T.red:T.yellow}>{p.tipo==="ajuste"?(p.monto<0?"Cobrado":"Acreditado"):p.estado==="verificado"?`Verificado · ${p.aplicado?.length||0} tanda${p.aplicado?.length!==1?"s":""}`:p.estado==="rechazado"?"Rechazado":"A verificar"}</DepDot>},
+        {h:"Estado",w:"180px",render:p=><DepDot T={T} color={p.estado==="verificado"?T.green:p.estado==="rechazado"?T.red:T.yellow}>{p.tipo==="ajuste"?(p.monto<0?"Cargo":"Pago a mano"):p.estado==="verificado"?`Verificado · ${p.aplicado?.length||0} tanda${p.aplicado?.length!==1?"s":""}`:p.estado==="rechazado"?"Rechazado":"A verificar"}</DepDot>},
         {h:"Monto",w:"110px",align:"right",render:p=><strong style={{color:p.monto<0?T.red:T.text}}>{p.monto<0?"−":""}{fmtMoney(Math.abs(p.monto))}</strong>},
         {h:"",w:"260px",align:"right",render:p=><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
           {p.comp&&<Btn T={T} variant="ghost" size="sm" onClick={()=>compCc(p)}>Comprobante</Btn>}

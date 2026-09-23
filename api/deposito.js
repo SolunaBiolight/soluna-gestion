@@ -267,7 +267,7 @@ export default async function handler(req, res) {
         const enVerificacion = pagos.filter(p => p.estado === "a_verificar").reduce((a, p) => a + p.monto, 0);
         const ingresos = gs.docs.map(d => ingresoPublico(d.id, d.data())).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "") || (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 40);
         return res.json({ cliente: clientePublico(cli.id, cli, false), tandas: todas.slice(0, 120).map(x => tandaPublica(x.id, x.t, { paraCliente: true })), saldoPendiente: +deudaBruta.toFixed(2),
-          cuenta: { deuda: +Math.max(0, deudaBruta - num(cli.aFavor)).toFixed(2), aFavor: num(cli.aFavor), enVerificacion: +enVerificacion.toFixed(2), pagos }, ingresos, ...cfg });
+          cuenta: { bruta: +deudaBruta.toFixed(2), deuda: +Math.max(0, deudaBruta - num(cli.aFavor)).toFixed(2), aFavor: num(cli.aFavor), enVerificacion: +enVerificacion.toFixed(2), pagos }, ingresos, ...cfg });
       }
 
       if (action === "c_ingresos") {
@@ -551,7 +551,7 @@ export default async function handler(req, res) {
       ]);
       const deuda = {};
       for (const d of ts.docs) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado) || t.pago?.estado === "verificado") continue; deuda[t.clienteId] = (deuda[t.clienteId] || 0) + num(t.total); }
-      const cuentas = cs.docs.map(d => { const c = d.data(); const bruta = deuda[d.id] || 0; return { clienteId: d.id, nombre: c.nombre, activo: c.activo !== false, deuda: +Math.max(0, bruta - num(c.aFavor)).toFixed(2), aFavor: num(c.aFavor) }; }).filter(c => c.activo || c.deuda > 0).sort((a, b) => b.deuda - a.deuda);
+      const cuentas = cs.docs.map(d => { const c = d.data(); const bruta = deuda[d.id] || 0; return { clienteId: d.id, nombre: c.nombre, activo: c.activo !== false, bruta: +bruta.toFixed(2), deuda: +Math.max(0, bruta - num(c.aFavor)).toFixed(2), aFavor: num(c.aFavor) }; }).filter(c => c.activo || c.deuda > 0).sort((a, b) => b.deuda - a.deuda);
       const pagos = ps.docs.map(d => pagoPublico(d.id, d.data())).filter(p => p.estado !== "borrador").sort((a, b) => ({ a_verificar: 0, rechazado: 1, verificado: 2 }[a.estado] - { a_verificar: 0, rechazado: 1, verificado: 2 }[b.estado]) || (b.informadoAt || 0) - (a.informadoAt || 0));
       return res.json({ cuentas, pagos: pagos.slice(0, 200) });
     }
