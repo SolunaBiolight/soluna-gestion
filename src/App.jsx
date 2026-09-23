@@ -22227,6 +22227,28 @@ function AdmShopifyApps({T}){
 }
 
 // ── Sistema ──────────────────────────────────────────────────────────────────
+// Panel del depósito (solo la cuenta dueña del depósito): abrir o copiar el link
+// del panel por token. Si no hay link todavía, se genera acá.
+function AdmDepositoAcceso({T,user}){
+  const [d,setD]=useState(null);
+  const api=React.useMemo(()=>ghDepApiSesion(()=>({})),[]);
+  const cargar=()=>api("accesos").then(setD).catch(()=>setD({no:true}));
+  useEffect(()=>{ if(user?.uid==="WJH3ArqDPQcNLha9lOinvkVi9uJ2") cargar(); else setD({no:true}); },[user?.uid]);
+  if(!d||d.no) return null;
+  const link=t=>`${window.location.origin}/#/deposito/panel/${t}`;
+  const copiar=t=>navigator.clipboard.writeText(link(t)).then(()=>toast("Link copiado","success")).catch(()=>toast("No pude copiar","warning"));
+  async function generar(cual){ if(!(await appConfirm(cual==="pc"?"¿Generar el link de la PC del depósito? Si ya había uno, deja de funcionar.":"¿Generar tu link del panel? Si ya había uno, deja de funcionar.",{okLabel:"Generar"}))) return; try{ await api("acceso_nuevo",{cual}); toast("Link generado","success"); cargar(); }catch(e){ toast(e.message,"error"); } }
+  const fila=(titulo,desc,tok,cual)=>(<div style={{display:"flex",gap:10,alignItems:"center",padding:"9px 0",borderBottom:cual==="admin"?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
+    <div style={{flex:1,minWidth:160}}><div style={{fontSize:12,fontWeight:600,color:T.text}}>{titulo}</div><div style={{fontSize:11,color:T.textSm}}>{desc}</div></div>
+    {tok?<><Btn T={T} variant="primary" size="sm" onClick={()=>window.open(link(tok),"_blank","noopener")}>Abrir</Btn><Btn T={T} variant="secondary" size="sm" onClick={()=>copiar(tok)}>Copiar link</Btn><Btn T={T} variant="ghost" size="sm" onClick={()=>generar(cual)}>Nuevo</Btn></>
+      :<Btn T={T} variant="secondary" size="sm" onClick={()=>generar(cual)}>Generar link</Btn>}
+  </div>);
+  return (<Card T={T} padding="lg">
+    <AdmTitulo T={T} t="Panel del depósito" sub="Se administra por link, aparte de esta cuenta. Acá lo abrís o lo recuperás si lo perdés."/>
+    {fila("Tu panel","Consola completa: cola, clientes y pagos, movimientos, configuración.",d.adminToken,"admin")}
+    {fila("PC del depósito","Solo cola y movimientos, sin plata. Pide el nombre de quien opera.",d.pcToken,"pc")}
+  </Card>);
+}
 function AdmSistema({ctx, sectionsConfig, saveSectionsConfig}) {
   const {T, adminApi, usuariosPorUid, user, setCuenta} = ctx;
   const [sys,setSys]=useState({loading:true}); const [log,setLog]=useState({loading:true,items:[]}); const [logTipo,setLogTipo]=useState("todos"); const [logQ,setLogQ]=useState("");
@@ -22241,6 +22263,7 @@ function AdmSistema({ctx, sectionsConfig, saveSectionsConfig}) {
   return (
     <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(300px,1fr)",gap:16,alignItems:"start"}}>
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+        <AdmDepositoAcceso T={T} user={user}/>
         <Card T={T} padding="lg">
           <AdmTitulo T={T} t="Crons" sub="Tareas automáticas de Vercel. Cada corrida deja su registro; si una no corre, acá se ve." right={<Btn T={T} variant="secondary" size="sm" onClick={loadSys}>Actualizar</Btn>}/>
           {sys.loading?<AdmSkeleton T={T} filas={6}/>:sys.error?<div style={{fontSize:12,color:T.red}}>{sys.error}</div>:ADM_CRONS.map((c,i)=>{ const d=sys.crons?.[c.key]; const e=estadoCron(c); return (
@@ -43145,7 +43168,10 @@ export default function App() {
   // Publica la tienda activa para el wrapper global de fetch (header X-Growith-Tienda).
   // Depósito (api/deposito.js → me): {rol:"owner"|"operador"|null, cliente:{…}|null}
   const [depositoInfo,setDepositoInfo] = useState(null);
-  const depositoNav = !!(depositoInfo&&(depositoInfo.rol||depositoInfo.cliente));
+  // Sidebar "Depósito" solo para CLIENTES del depósito. El dueño y los operarios
+  // entran por su link (#/deposito/panel/<token>); la ruta #/deposito sigue andando.
+  const depositoNav = !!(depositoInfo&&depositoInfo.cliente);
+  const depositoAcceso = !!(depositoInfo&&(depositoInfo.rol||depositoInfo.cliente));
   useEffect(()=>{ try{ window.__ghTiendaUid = user?.uid || ""; }catch(_){ } },[user?.uid]);
   useEffect(()=>{
     if(!user?.uid){ setDepositoInfo(null); return; }
@@ -44217,7 +44243,7 @@ export default function App() {
     </div>
   ) : <PageView T={T} pageKey="equipo"><AppEquipo T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
-  else if(page==="deposito") pageContent = depositoNav
+  else if(page==="deposito") pageContent = depositoAcceso
     ? <PageView T={T} pageKey="deposito"><AppDeposito T={T} user={user} info={depositoInfo} onHome={()=>setPage("home")}/></PageView>
     : <div style={{padding:40}}><DSEmpty T={T} title={depositoInfo===null?"Cargando…":depositoInfo?.error?"No pudimos consultar el depósito":"Esta sección no está disponible para tu cuenta"} subtitle={depositoInfo===null?"":depositoInfo?.error?"Revisá tu conexión y volvé a intentar.":"El depósito se habilita por cliente. Si tu mercadería se despacha desde nuestro depósito, pedinos el alta."} action={depositoInfo?.error?<Btn T={T} variant="secondary" onClick={()=>window.location.reload()}>Reintentar</Btn>:null}/></div>;
   else if(page==="calendario") pageContent = <PageView T={T} pageKey="calendario"><AppCalendarioPagos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
