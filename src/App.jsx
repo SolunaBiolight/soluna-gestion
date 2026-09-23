@@ -43348,7 +43348,7 @@ export default function App() {
     let vivo=true;
     const cargar=()=>ghDepApiSesion(()=>({}))("me",{uid:user.uid}).then(d=>{ if(vivo) setDepositoInfo(d); }).catch(()=>{ if(vivo) setDepositoInfo(prev=>prev&&!prev.error?prev:{rol:null,cliente:null,error:true}); });
     cargar();
-    const onHash=()=>{ if(/^#/(envios|deposito)(/|$)/.test(window.location.hash||"")) cargar(); };
+    const onHash=()=>{ if(/^#\/(envios|deposito)(\/|$)/.test(window.location.hash||"")) cargar(); };
     window.addEventListener("hashchange",onHash);
     return ()=>{ vivo=false; window.removeEventListener("hashchange",onHash); };
   },[user?.uid]);
