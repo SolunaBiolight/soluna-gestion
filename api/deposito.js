@@ -30,7 +30,7 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { randomBytes } from "crypto";
+import { randomBytes, createHash } from "crypto";
 import { requireUid, verifyAuth, guardCron } from "./_auth.js";
 
 export const DEPOSITO_OWNER = "WJH3ArqDPQcNLha9lOinvkVi9uJ2";
@@ -96,6 +96,32 @@ function rateOk(req, max = 120) {
 // acceso ajeno por cada uno.
 let _ownCache = { at: 0, members: {} };
 let _tokCache = { at: 0, d: null };
+// Uso de los links del panel: se anota (con tope de una escritura cada 10 min por
+// dispositivo) para que la dueña vea desde cuántos navegadores se usó cada link y
+// se avise si el de administración aparece en más de dos el mismo día.
+const _usoMem = new Map();
+function registrarUsoToken(db, req, cual) {
+  try {
+    const ua = String(req.headers["user-agent"] || "").slice(0, 160);
+    const ip = String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").split(",")[0].trim();
+    const h = createHash("sha1").update(ua + "|" + ip).digest("hex").slice(0, 12);
+    const k = cual + ":" + h; const now = Date.now();
+    if ((_usoMem.get(k) || 0) > now - 10 * 60000) return; _usoMem.set(k, now);
+    const hoy = hoyAR(); const ref = db.collection("system").doc("deposito");
+    (async () => {
+      const d = (await ref.get()).data() || {}; const uso = d.uso || {}; const u = uso[cual] || { dispositivos: {} };
+      const disp = { ...(u.dispositivos || {}) }; disp[h] = { at: now, ua: ua.slice(0, 90), ip: ip.replace(/\d+$/, "x") };
+      const ordenados = Object.entries(disp).sort((a, b) => b[1].at - a[1].at).slice(0, 12);
+      const hoyN = ordenados.filter(([, v]) => new Date(v.at - 3 * 3600000).toISOString().slice(0, 10) === hoy).length;
+      const nuevo = { ultimoAt: now, dispositivos: Object.fromEntries(ordenados), hoyN, hoyDia: hoy };
+      let avisar = false;
+      if (cual === "admin" && hoyN > 2 && u.avisoDia !== hoy) { nuevo.avisoDia = hoy; avisar = true; }
+      await ref.set({ uso: { ...uso, [cual]: { ...u, ...nuevo } } }, { merge: true });
+      _tokCache = { at: 0, d: null };
+      if (avisar) { const { owner } = await operadoresEmails(db); if (owner) await sendEmail({ to: [owner], subject: "El link de administración del depósito se usó desde varios dispositivos hoy", html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111"><p>Hoy el link de <strong>administración</strong> del depósito se abrió desde <strong>${hoyN} dispositivos distintos</strong>. Si no fuiste vos desde varios navegadores, generá un link nuevo en Configuración: el anterior deja de servir al instante.</p><p><a href="${SITE}/#/deposito/panel/${d.adminToken || ""}">Abrir Configuración</a></p></div>` }); }
+    })().catch(() => {});
+  } catch (_) { }
+}
 async function tokensDeposito(db) {
   if (!_tokCache.d || Date.now() - _tokCache.at > 30000) _tokCache = { at: Date.now(), d: (await db.collection("system").doc("deposito").get()).data() || {} };
   return _tokCache.d;
@@ -106,8 +132,8 @@ async function ctxDeposito(req, body = {}) {
     if (!/^[a-f0-9]{40,64}$/i.test(dtoken) || !rateOk(req, 300)) return null;
     const tk = await tokensDeposito(getFirestore());
     const op = txt(body.operario, 60);
-    if (tk.adminToken && dtoken === tk.adminToken) return { user: { uid: "panel:admin" }, rol: "owner", nombre: op || "Dueña (panel)", via: "panel" };
-    if (tk.pcToken && dtoken === tk.pcToken) return { user: { uid: `pc:${op || "deposito"}` }, rol: "operador", nombre: op || "PC del depósito", via: "pc" };
+    if (tk.adminToken && dtoken === tk.adminToken) { registrarUsoToken(getFirestore(), req, "admin"); return { user: { uid: "panel:admin" }, rol: "owner", nombre: op || "Dueña (panel)", via: "panel" }; }
+    if (tk.pcToken && dtoken === tk.pcToken) { registrarUsoToken(getFirestore(), req, "pc"); return { user: { uid: `pc:${op || "deposito"}` }, rol: "operador", nombre: op || "PC del depósito", via: "pc" }; }
     return null;
   }
   const user = await verifyAuth(req);
@@ -148,11 +174,11 @@ function tandaPublica(id, t, { paraCliente = false } = {}) {
   return {
     id, clienteId: t.clienteId, clienteNombre: t.clienteNombre, tipo: t.tipo, origen: t.origen, canal: t.canal,
     fechaDespacho: t.fechaDespacho, n: t.n, precioUnit: t.precioUnit, ajuste: t.ajuste || 0, ajusteMotivo: t.ajusteMotivo || "", total: t.total,
-    estado: t.estado, nota: t.nota || "", notaDeposito: t.notaDeposito || "",
+    estado: t.estado, nota: t.nota || "", notaDeposito: t.notaDeposito || "", fueraDeCorte: !!t.fueraDeCorte,
     pago: { estado: t.pago?.estado || "sin_informar", comp: t.pago?.comp ? { nombre: t.pago.comp.nombre, mime: t.pago.comp.mime, chunks: t.pago.comp.chunks } : null, informadoAt: ms(t.pago?.informadoAt), verificadoAt: ms(t.pago?.verificadoAt), nota: t.pago?.nota || "" },
     pdf: t.pdf ? { chunks: t.pdf.chunks, pages: t.pdf.pages || 0, purgado: !!t.pdf.purgado } : null,
     especial: t.especial ? { titulo: t.especial.titulo, instrucciones: t.especial.instrucciones, urgente: !!t.especial.urgente, bultos: t.especial.bultos || 1, adj: (t.especial.adj || []).map(a => ({ kind: a.kind, nombre: a.nombre, mime: a.mime, chunks: a.chunks })) } : null,
-    pedidos: (t.pedidos || []).map(p => ({ numero: p.numero, comprador: p.comprador, items: p.items || [], pags: p.pags || [], tracking: p.tracking || "", armado: p.armado ? { porNombre: p.armado.porNombre, at: p.armado.at } : null, apartado: p.apartado ? { nota: p.apartado.nota, porNombre: p.apartado.porNombre, at: p.apartado.at } : null })),
+    pedidos: (t.pedidos || []).map(p => ({ numero: p.numero, comprador: p.comprador, items: p.items || [], pags: p.pags || [], tracking: p.tracking || "", armado: p.armado ? { porNombre: p.armado.porNombre, at: p.armado.at } : null, apartado: p.apartado ? { nota: p.apartado.nota, porNombre: p.apartado.porNombre, at: p.apartado.at } : null, cancelado: p.cancelado ? { porNombre: p.cancelado.porNombre, at: p.cancelado.at, nota: p.cancelado.nota || "" } : null })),
     hist: paraCliente ? (t.hist || []).map(h => ({ at: h.at, a: h.a })) : (t.hist || []),
     createdAt: ms(t.createdAt),
   };
@@ -308,7 +334,10 @@ export default async function handler(req, res) {
         if (tipo === "especial" && !n) n = 1;
         if (!n) return res.status(400).json({ error: "La tanda no tiene pedidos." });
         const fecha = esFecha(body.fechaDespacho) ? body.fechaDespacho : hoyAR();
-        const t = {
+        const corteHora = Math.min(23, Math.max(0, Math.round(num((await tokensDeposito(db)).corteHora)) || 15));
+        const horaAR = new Date(Date.now() - 3 * 3600000).getUTCHours();
+        const fueraDeCorte = fecha <= hoyAR() && horaAR >= corteHora;
+        const t = { fueraDeCorte,
           clienteId: cli.id, clienteNombre: cli.nombre, growithUid: cli.growithUid || null,
           tipo, origen: cx.via === "deposito" ? "deposito" : (["api", "excel"].includes(body.origen) && cx.via === "growith" ? body.origen : cx.via === "portal" ? "portal" : "manual"),
           canal: CANALES.includes(body.canal) ? body.canal : "andreani",
@@ -423,15 +452,20 @@ export default async function handler(req, res) {
       const hoy = hoyAR(); const inicioMes = Date.parse(`${hoy.slice(0, 7)}-01T03:00:00Z`); const inicioHoy = Date.parse(`${hoy}T03:00:00Z`); const hace4 = Date.now() - 4 * 86400000;
       const [vivas, rec] = await Promise.all([
         db.collection("deposito_tandas").where("estado", "in", ["pendiente", "impresa", "armada"]).get(),
-        db.collection("deposito_tandas").where("entregadaAt", ">=", Math.min(inicioMes, hace4)).get(),
+        db.collection("deposito_tandas").where("entregadaAt", ">=", Math.min(inicioMes, hace4, Date.now() - 60 * 86400000)).get(),
       ]);
+      // Pedidos apartados sin resolver, de cualquier tanda (también entregadas): no se pierden.
+      const apartados = [];
+      for (const d of [...vivas.docs, ...rec.docs]) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado)) continue;
+        (t.pedidos || []).forEach((p, idx) => { if (p.apartado && !p.cancelado) apartados.push({ tandaId: d.id, idx, clienteNombre: t.clienteNombre, tandaEstado: t.estado, fechaDespacho: t.fechaDespacho, numero: p.numero, comprador: p.comprador, items: p.items || [], tracking: p.tracking || "", nota: p.apartado.nota, porNombre: p.apartado.porNombre, at: p.apartado.at, pags: p.pags || [], pdfChunks: t.pdf && !t.pdf.purgado ? t.pdf.chunks : null }); }); }
+      apartados.sort((a, b) => (a.at || 0) - (b.at || 0));
       const m = new Map(); const desp = { hoy: 0, hoyTandas: 0, mes: 0, mesTandas: 0 };
       for (const d of rec.docs) { const t = d.data(); if (t.estado !== "entregada") continue; const at = ms(t.entregadaAt) || 0;
         if (at >= inicioMes) { desp.mes += num(t.n); desp.mesTandas++; } if (at >= inicioHoy) { desp.hoy += num(t.n); desp.hoyTandas++; } }
       for (const d of [...vivas.docs, ...rec.docs]) { const t = d.data(); if (t.estado === "borrador") continue; if (t.estado === "entregada" && (ms(t.entregadaAt) || 0) < hace4) continue; m.set(d.id, t); }
       const tandas = [...m.entries()].map(([id, t]) => paraDep(id, t)).sort((a, b) => (a.fechaDespacho || "").localeCompare(b.fechaDespacho || "") || (a.createdAt || 0) - (b.createdAt || 0));
       const cs = await db.collection("deposito_clientes").get();
-      return res.json({ rol: dep.rol, via: dep.via || "sesion", nombre: dep.nombre, hoy, despachados: desp, tandas, clientes: cs.docs.map(d => clientePublico(d.id, d.data(), false)).filter(c => c.activo).map(c => dep.rol === "owner" ? c : { ...c, precio: null }) });
+      return res.json({ rol: dep.rol, via: dep.via || "sesion", nombre: dep.nombre, hoy, corteHora: Math.min(23, Math.max(0, Math.round(num((await tokensDeposito(db)).corteHora)) || 15)), despachados: desp, apartados: apartados.slice(0, 200), tandas, clientes: cs.docs.map(d => clientePublico(d.id, d.data(), false)).filter(c => c.activo).map(c => dep.rol === "owner" ? c : { ...c, precio: null }) });
     }
 
     // Lector de códigos: la etiqueta escaneada (número de envío de Andreani, id
@@ -440,11 +474,19 @@ export default async function handler(req, res) {
       const cod = txt(body.codigo, 60).replace(/\s+/g, ""); if (cod.length < 3) return res.status(400).json({ error: "Código vacío." });
       const s = await db.collection("deposito_tandas").where("estado", "in", ["pendiente", "impresa", "armada"]).get();
       const cl = cod.toLowerCase(); const solo = cl.replace(/\D/g, "");
-      let hit = null;
+      // 1) por número de envío (único entre clientes); 2) por número de pedido, que se
+      // repite entre tiendas: si aparece en más de una tanda se pide elegir.
+      const porTracking = [], porNumero = [];
       for (const d of s.docs) { const t = d.data();
-        const idx = (t.pedidos || []).findIndex(p => { const n = String(p.numero || "").toLowerCase(), tr = String(p.tracking || "").toLowerCase();
-          return (n && (n === cl || n === solo || (solo.length >= 6 && n.replace(/\D/g, "") === solo))) || (tr && (tr === cl || tr === solo || (tr.length >= 8 && cl.includes(tr)))); });
-        if (idx >= 0) { hit = { ref: d.ref, idx }; break; } }
+        (t.pedidos || []).forEach((p, idx) => { const n = String(p.numero || "").toLowerCase(), tr = String(p.tracking || "").toLowerCase();
+          if (tr && (tr === cl || tr === solo || (tr.length >= 8 && cl.includes(tr)))) porTracking.push({ ref: d.ref, idx, t, p });
+          else if (n && (n === cl || n === solo || (solo.length >= 6 && n.replace(/\D/g, "") === solo))) porNumero.push({ ref: d.ref, idx, t, p }); }); }
+      let hit = porTracking[0] || null;
+      if (!hit) {
+        if (body.tandaId) hit = porNumero.find(x => x.ref.id === String(body.tandaId)) || null;
+        else if (porNumero.length > 1) return res.json({ ambiguo: true, codigo: cod, opciones: porNumero.slice(0, 8).map(x => ({ tandaId: x.ref.id, clienteNombre: x.t.clienteNombre, fechaDespacho: x.t.fechaDespacho, estado: x.t.estado, numero: x.p.numero, comprador: x.p.comprador, items: x.p.items || [], armado: !!x.p.armado })) });
+        else hit = porNumero[0] || null;
+      }
       if (!hit) return res.status(404).json({ error: `No encontré ningún pedido en la cola con el código ${cod}.` });
       const out = await db.runTransaction(async tx => {
         const cur = (await tx.get(hit.ref)).data(); const pedidos = [...(cur.pedidos || [])]; const p = pedidos[hit.idx]; if (!p) return null;
@@ -506,6 +548,36 @@ export default async function handler(req, res) {
       return out ? res.json(out) : res.status(404).json({ error: "Pedido inexistente." });
     }
 
+    // Resolver un pedido apartado: vuelve a la tanda o se da por cancelado (queda registrado, el cliente lo ve).
+    if (action === "pedido_resolver") {
+      const ref = db.collection("deposito_tandas").doc(String(body.id || ""));
+      const idx = Math.round(num(body.idx)); const accion = body.accion === "cancelar" ? "cancelar" : "reincorporar"; const nota = txt(body.nota, 300);
+      const out = await db.runTransaction(async tx => {
+        const s = await tx.get(ref); if (!s.exists) return null;
+        const pedidos = [...(s.data().pedidos || [])]; if (!pedidos[idx]) return null;
+        if (accion === "reincorporar") pedidos[idx] = { ...pedidos[idx], apartado: null };
+        else pedidos[idx] = { ...pedidos[idx], cancelado: { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80), nota } };
+        tx.set(ref, { pedidos }, { merge: true }); return { ok: true };
+      });
+      return out ? res.json(out) : res.status(404).json({ error: "Pedido inexistente." });
+    }
+    // Posponer la fecha de despacho (no vino el correo, falta stock…). Queda en el historial y el cliente lo ve.
+    if (action === "tanda_posponer") {
+      if (!esFecha(body.fecha)) return res.status(400).json({ error: "Fecha inválida." });
+      const motivo = txt(body.motivo, 200); const ref = db.collection("deposito_tandas").doc(String(body.id || ""));
+      const out = await db.runTransaction(async tx => {
+        const s = await tx.get(ref); if (!s.exists) return null; const t = s.data();
+        if (!["pendiente", "impresa", "armada"].includes(t.estado)) return { error: "Esa tanda ya está cerrada." };
+        const linea = `Pospuesta al ${body.fecha.split("-").reverse().slice(0, 2).join("/")}${motivo ? `: ${motivo}` : ""}`;
+        const notaDep = [String(t.notaDeposito || "").trim(), linea].filter(Boolean).join("\n").slice(0, 600);
+        tx.set(ref, { fechaDespacho: body.fecha, fueraDeCorte: false, notaDeposito: notaDep, hist: [...(t.hist || []).slice(-40), { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80), de: t.fechaDespacho, a: "pospuesta", nota: motivo, fecha: body.fecha }] }, { merge: true });
+        return { ok: true };
+      });
+      if (!out) return res.status(404).json({ error: "Tanda inexistente." });
+      if (out.error) return res.status(409).json(out);
+      return res.json(out);
+    }
+
     if (action === "tanda_nota") {
       if (!body.id) return res.status(400).json({ error: "Falta la tanda." });
       try { await db.collection("deposito_tandas").doc(String(body.id)).update({ notaDeposito: txt(body.nota, 600) }); } catch (_) { return res.status(404).json({ error: "Tanda inexistente." }); }
@@ -534,14 +606,16 @@ export default async function handler(req, res) {
       const s = await db.collection("deposito_tandas").where("fechaDespacho", ">=", `${mes}-01`).where("fechaDespacho", "<=", `${mes}-31`).get();
       const tandas = s.docs.map(d => ({ id: d.id, t: d.data() })).filter(x => x.t.estado !== "borrador" && String(x.t.fechaDespacho).startsWith(mes) && (!body.clienteId || x.t.clienteId === body.clienteId))
         .sort((a, b) => (b.t.fechaDespacho || "").localeCompare(a.t.fechaDespacho || "") || (ms(b.t.createdAt) || 0) - (ms(a.t.createdAt) || 0));
-      return res.json({ mes, tandas: tandas.slice(0, 400).map(x => { const p = paraDep(x.id, x.t); p.pedidos = []; return p; }) });
+      const conPedidos = body.pedidos === true && dep.rol === "owner";
+      return res.json({ mes, tandas: tandas.slice(0, 400).map(x => { const p = paraDep(x.id, x.t); if (!conPedidos) p.pedidos = []; p.hist = []; return p; }) });
     }
 
     // ── Solo el dueño: accesos al panel por token, clientes, precios y plata ──
     if (action === "accesos") {
       if (!soloOwner()) return;
       const tk = await tokensDeposito(db);
-      return res.json({ adminToken: tk.adminToken || null, pcToken: tk.pcToken || null, adminAt: tk.adminAt || null, pcAt: tk.pcAt || null, datosPago: tk.datosPago || "", corteHora: Math.min(23, Math.max(0, Math.round(num(tk.corteHora)) || 15)) });
+      const usoDe = k => { const u = tk.uso?.[k]; if (!u) return null; const hoy = hoyAR(); const disp = Object.values(u.dispositivos || {}); return { ultimoAt: u.ultimoAt || null, hoyN: disp.filter(v => new Date(v.at - 3 * 3600000).toISOString().slice(0, 10) === hoy).length, total30: disp.filter(v => v.at > Date.now() - 30 * 86400000).length }; };
+      return res.json({ adminToken: tk.adminToken || null, pcToken: tk.pcToken || null, adminAt: tk.adminAt || null, pcAt: tk.pcAt || null, datosPago: tk.datosPago || "", corteHora: Math.min(23, Math.max(0, Math.round(num(tk.corteHora)) || 15)), uso: { admin: usoDe("admin"), pc: usoDe("pc") } });
     }
     if (action === "config_guardar") {
       if (!soloOwner()) return;
