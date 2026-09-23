@@ -174,12 +174,17 @@ async function andreaniError(r, contexto) {
     const txt = await r.text();
     try {
       const j = JSON.parse(txt);
-      detalle = j.message || j.detail || j.title || j.error ||
-        (Array.isArray(j.errors) ? j.errors.map(e => e.message || e.detail || JSON.stringify(e)).join("; ") : "") ||
-        txt;
+      // ASP.NET ProblemDetails: { title: "One or more validation errors occurred.", errors: { "Campo.Sub": ["msg"] } }
+      // El título solo no sirve para nada: se listan los campos con su mensaje.
+      let campos = "";
+      if (j.errors && typeof j.errors === "object" && !Array.isArray(j.errors)) campos = Object.entries(j.errors).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : String(v)}`).join("; ");
+      else if (Array.isArray(j.errors)) campos = j.errors.map(e => (e.field || e.campo ? `${e.field || e.campo}: ` : "") + (e.message || e.detail || e.mensaje || JSON.stringify(e))).join("; ");
+      const titulo = j.message || j.detail || j.title || j.error || "";
+      detalle = campos ? (titulo && !/validation errors/i.test(titulo) ? `${titulo} — ${campos}` : campos) : (titulo || txt);
     } catch (_) { detalle = txt; }
+    console.error(`[andreani] ${contexto} HTTP ${r.status}: ${String(txt).slice(0, 1500)}`);
   } catch (_) {}
-  return `${contexto} (HTTP ${r.status})${detalle ? `: ${String(detalle).slice(0, 400)}` : ""}`;
+  return `${contexto} (HTTP ${r.status})${detalle ? `: ${String(detalle).slice(0, 500)}` : ""}`;
 }
 
 // ─── Markup / habilitación (andreani_config/global) ────────────────────────
@@ -2213,6 +2218,7 @@ export default async function handler(req, res) {
           await mailFundador(db, `Reverso de saldo FALLIDO — acreditar a mano (uid ${uid})`, `<p>Andreani rechazó la etiqueta del pedido ${envioId} de ${uData.email || uid} y el reverso de $${precio.toLocaleString("es-AR")} falló (${String(e2.message).slice(0, 200)}). Acreditá el saldo a mano desde Admin › Logística › Saldos.</p>`);
           return res.status(502).json({ error: `${ordenErr} — además falló la devolución del saldo: ya avisamos al equipo de Growith, que lo acredita a mano.` });
         }
+        try { await envioRef.set({ emisionError: { ts: Date.now(), msg: String(ordenErr).slice(0, 600), tipo, cp: cpTarifa || null } }, { merge: true }); } catch (_) {}
         return res.status(502).json({ error: ordenErr, reversado: true });
       }
 
