@@ -21102,6 +21102,8 @@ const GH_DEP_ICO={
   key:"M21 2l-2 2m-7.6 7.6a5.5 5.5 0 11-7.8 7.8 5.5 5.5 0 017.8-7.8zm0 0L15 8m0 0l3 3L22 7l-3-3m-4 4l3 3",
   hand:"M18 11V6a2 2 0 00-4 0v5M14 10V4a2 2 0 00-4 0v6M10 10.5V6a2 2 0 00-4 0v8M18 8a2 2 0 014 0v6a8 8 0 01-8 8h-2c-2.8 0-4.5-.9-5.9-2.4L2.7 15.7a2 2 0 012.8-2.8L8 14",
   search:"M21 21l-4.3-4.3M11 19a8 8 0 100-16 8 8 0 000 16z",
+  print:"M6 9V3h12v6M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v7H6z",
+  file:"M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9zM13 2v7h7",
   note:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM14 2v6h6M16 13H8M16 17H8M10 9H8",
   plus:"M12 5v14M5 12h14",
   undo:"M3 7v6h6M21 17a9 9 0 00-15-6.7L3 13",
@@ -21360,11 +21362,11 @@ function DepositoCola({T,api,owner}){
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
           <DepSeg T={T} value={vistaAct} items={segItems} onChange={k=>setVista(x=>({...x,[t.id]:k}))}/>
           <span style={{flex:1}}/>
-          {(t.especial?.adj||[]).map(a=><Btn key={a.kind} T={T} variant="ghost" size="sm" onClick={()=>abrirArchivo(t,a.kind,a)}>{a.nombre||"Adjunto"}</Btn>)}
-          {t.pago?.comp&&owner&&<Btn T={T} variant="ghost" size="sm" onClick={()=>abrirArchivo(t,"comp",t.pago.comp)}>Comprobante</Btn>}
-          {t.pdf&&!t.pdf.purgado&&t.estado!=="pendiente"&&<Btn T={T} variant="ghost" size="sm" disabled={busy===t.id} onClick={()=>imprimir(t)}>Reimprimir</Btn>}
-          <Btn T={T} variant="ghost" size="sm" onClick={()=>notaDep(t)}>{t.notaDeposito?"Editar nota al cliente":"Nota al cliente"}</Btn>
-          {t.estado!=="pendiente"&&<Btn T={T} variant="ghost" size="sm" onClick={()=>estado(t,{impresa:"pendiente",armada:"impresa",entregada:"armada"}[t.estado]||"pendiente")}>Volver un paso</Btn>}
+          {(t.especial?.adj||[]).map(a=><Btn key={a.kind} T={T} variant="secondary" size="sm" onClick={()=>abrirArchivo(t,a.kind,a)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="file" size={13}/>{a.nombre||"Adjunto"}</span></Btn>)}
+          {t.pago?.comp&&owner&&<Btn T={T} variant="secondary" size="sm" onClick={()=>abrirArchivo(t,"comp",t.pago.comp)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="wallet" size={13}/>Comprobante</span></Btn>}
+          {t.pdf&&!t.pdf.purgado&&t.estado!=="pendiente"&&<Btn T={T} variant="secondary" size="sm" disabled={busy===t.id} onClick={()=>imprimir(t)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="print" size={13}/>Reimprimir etiquetas</span></Btn>}
+          <Btn T={T} variant="secondary" size="sm" onClick={()=>notaDep(t)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="note" size={13}/>{t.notaDeposito?"Editar nota al cliente":"Nota al cliente"}</span></Btn>
+          {t.estado!=="pendiente"&&<Btn T={T} variant="secondary" size="sm" onClick={()=>estado(t,{impresa:"pendiente",armada:"impresa",entregada:"armada"}[t.estado]||"pendiente")}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="undo" size={13}/>Volver un paso</span></Btn>}
         </div>
         {t.notaDeposito&&<DepNota T={T} titulo="Nota al cliente" color={T.blue} ico="hand" style={{marginBottom:12}}>{t.notaDeposito}</DepNota>}
         {vistaAct==="picking"&&conItems&&(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:8}}>
