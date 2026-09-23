@@ -43258,7 +43258,7 @@ export default function App() {
     if (typeof window !== "undefined") {
       // En una ruta por link (panel del depósito, portales, seguimiento) la URL es
       // el acceso: no se pisa nunca, si no al recargar vuelve a la app normal.
-      if (/^#/(deposito/(panel/)?[a-f0-9]{32,}|andreani/|seguir/|cupon/|colaborador/|tablero/|editor-produccion/)/i.test(window.location.hash)) return;
+      if (/^#\/(deposito\/(panel\/)?[a-f0-9]{32,}|andreani\/|seguir\/|cupon\/|colaborador\/|tablero\/|editor-produccion\/)/i.test(window.location.hash)) return;
       const newHash = p === "home" ? "" : `#/${p}`;
       if (window.location.hash !== newHash) {
         window.history.pushState(null, "", newHash || window.location.pathname);
