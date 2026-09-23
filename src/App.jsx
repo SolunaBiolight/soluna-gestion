@@ -43340,12 +43340,18 @@ export default function App() {
   const depositoNav = !!(depositoInfo&&depositoInfo.cliente);
   const depositoAcceso = !!(depositoInfo&&(depositoInfo.rol||depositoInfo.cliente));
   useEffect(()=>{ try{ window.__ghTiendaUid = user?.uid || ""; }catch(_){ } },[user?.uid]);
+  // Se consulta al iniciar sesión y cada vez que se entra a Envíos o Depósito por el hash
+  // (si la dueña dio de alta al cliente con la app abierta, el botón aparece igual).
+  // OJO: acá todavía no existe `page` (TDZ), por eso se escucha el hash.
   useEffect(()=>{
     if(!user?.uid){ setDepositoInfo(null); return; }
     let vivo=true;
-    ghDepApiSesion(()=>({}))("me",{uid:user.uid}).then(d=>{ if(vivo) setDepositoInfo(d); }).catch(()=>{ if(vivo) setDepositoInfo(prev=>prev&&!prev.error?prev:{rol:null,cliente:null,error:true}); });
-    return ()=>{ vivo=false; };
-  },[user?.uid,page==="envios"||page==="deposito"?page:""]);
+    const cargar=()=>ghDepApiSesion(()=>({}))("me",{uid:user.uid}).then(d=>{ if(vivo) setDepositoInfo(d); }).catch(()=>{ if(vivo) setDepositoInfo(prev=>prev&&!prev.error?prev:{rol:null,cliente:null,error:true}); });
+    cargar();
+    const onHash=()=>{ if(/^#/(envios|deposito)(/|$)/.test(window.location.hash||"")) cargar(); };
+    window.addEventListener("hashchange",onHash);
+    return ()=>{ vivo=false; window.removeEventListener("hashchange",onHash); };
+  },[user?.uid]);
   useEffect(()=>{ try{ window.__ghDepositoOwner = depositoInfo?.rol==="owner"; }catch(_){ } },[depositoInfo]);
   useEffect(()=>{
     if(!authUser){ setMiembroDe(authUser===null?null:undefined); return; }
