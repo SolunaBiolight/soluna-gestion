@@ -21072,7 +21072,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
         {!esDep? <DepositoClienteView T={T} api={apiCli} tiendaUid={tiendaUid}/>
           : tab==="cola"? <DepositoCola T={T} api={apiDep} owner={owner}/>
           : tab==="historial"? <><DepositoHistorial T={T} api={apiDep}/><DepositoIngresos T={T} api={apiDep} owner={owner}/></>
-          : tab==="clientes"? <><DepositoClientes T={T} api={apiDep}/><DepositoPagos T={T} api={apiDep}/></>
+          : tab==="clientes"? <DepositoCuentas T={T} api={apiDep}/>
           : tab==="accesos"? <DepositoAccesos T={T} api={apiDep} panel={!!panel}/>
           : <DepositoClienteView T={T} api={apiCli} tiendaUid={tiendaUid}/>}
       </div>
@@ -21203,6 +21203,8 @@ function DepNota({T,titulo,color,ico="note",children,style}){ const c=color||T.y
   <DepIco d={ico} size={14} color={c}/>
   <div style={{minWidth:0,flex:1}}>{titulo&&<div style={{fontSize:DS.font.xs,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:c,marginBottom:3}}>{titulo}</div>}<div style={{fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.55}}>{children}</div></div>
 </div>); }
+// Acción principal de una tanda: botón sólido, no se confunde con el resto.
+function DepMainBtn({T,color,ico,children,onClick,disabled}){ const c=color||T.accentSolid; const [h,setH]=useState(false); return <button onClick={onClick} disabled={disabled} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"8px 16px",border:"none",borderRadius:DS.r.lg,background:c,color:"#fff",fontSize:DS.font.base,fontWeight:700,cursor:disabled?"default":"pointer",opacity:disabled?0.6:1,fontFamily:"'Inter',system-ui,sans-serif",boxShadow:h&&!disabled?`0 6px 22px ${c}66`:`0 3px 12px ${c}44`,transform:h&&!disabled?"translateY(-1px)":"none",transition:"all .15s",whiteSpace:"nowrap"}}>{ico&&<DepIco d={ico} size={14} color="#fff" sw={2.4}/>}{children}</button>; }
 // Barra de progreso chica con etiqueta.
 function DepProgress({T,value,total,label,done}){ const pct=total>0?Math.round(value/total*100):0; const c=done?T.green:T.accentSolid; return (<div style={{width:150,flexShrink:0}}>
   <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",fontSize:DS.font.sm,color:T.textSm,fontVariantNumeric:"tabular-nums"}}><span>{label}</span><strong style={{color:done?T.green:T.text,fontSize:DS.font.md}}>{value}/{total}</strong></div>
@@ -21213,8 +21215,6 @@ function DepositoCuentaModal({T,api,cliente,onClose,onAjustar}){
   const [d,setD]=useState(null);
   useEffect(()=>{ api("cuenta_cliente",{clienteId:cliente.id}).then(setD).catch(e=>{ toast(e.message,"error"); setD({error:true}); }); },[cliente.id]);
   const colP=ghDepColPago(T);
-  const movDetalle=p=>{ if(p.tipo==="ajuste") return (p.monto<0?"Cargo":"Pago registrado a mano")+(p.nota?`: ${p.nota}`:""); if(p.estado==="verificado") return `Transferencia · aplicada a ${p.aplicado?.length||0} tanda${p.aplicado?.length!==1?"s":""}`; if(p.estado==="rechazado") return `Transferencia rechazada: ${p.nota}`; return `Transferencia informada${p.notaCliente?` · ${p.notaCliente}`:""}`; };
-  const movEstado=p=>p.tipo==="ajuste"?{c:p.monto<0?T.red:T.green,t:p.monto<0?"Cargo":"Crédito"}:p.estado==="verificado"?{c:T.green,t:"Verificada"}:p.estado==="rechazado"?{c:T.red,t:"Rechazada"}:{c:T.yellow,t:"A verificar"};
   return (<Modal T={T} open onClose={onClose} title={`Estado de cuenta · ${cliente.nombre}`} width={680}>
     {!d?<div style={{display:"flex",justifyContent:"center",padding:30}}><Spinner size={24} color={T.accent}/></div>
     :d.error?<div style={{fontSize:DS.font.base,color:T.textSm}}>No se pudo cargar.</div>
@@ -21236,7 +21236,17 @@ function DepositoCuentaModal({T,api,cliente,onClose,onAjustar}){
         <Btn T={T} variant="secondary" size="sm" onClick={()=>{ onClose(); onAjustar("cobrar"); }}>Agregar un cargo</Btn>
         <span style={{fontSize:DS.font.sm,color:T.textSm}}>Un pago en efectivo o una bonificación baja la deuda. Un cargo (un insumo, un envío que pagaste vos) la sube.</span>
       </div>)}
-      <DepLabel T={T}>Tandas sin pagar</DepLabel>
+      {d.meses?.length>0&&(<>
+        <DepLabel T={T}>Acumulado por mes</DepLabel>
+        <DepTable T={T} minWidth={440} empty="" rows={d.meses.map(m=>({...m,id:m.mes}))} cols={[
+          {h:"Mes",w:"1fr",render:m=><strong>{ghDepMesLindo(m.mes)}</strong>},
+          {h:"Pedidos",w:"80px",align:"right",render:m=>m.pedidos},
+          {h:"Tandas",w:"70px",align:"right",render:m=>m.tandas},
+          {h:"Facturado",w:"110px",align:"right",render:m=><strong>{fmtMoney(m.total)}</strong>},
+          {h:"Cobrado",w:"110px",align:"right",render:m=><span style={{color:m.cobrado>0?T.green:T.textSm}}>{fmtMoney(m.cobrado)}</span>},
+        ]}/>
+      </>)}
+      <DepLabel T={T} style={{marginTop:20}}>Tandas sin pagar</DepLabel>
       <DepTable T={T} minWidth={440} empty="No debe ninguna tanda" rows={d.tandas} cols={[
         {h:"Despacho",w:"90px",render:t=>ghDepFechaLinda(t.fechaDespacho)},
         {h:"Tanda",w:"1fr",render:t=><span>{t.tipo==="especial"?(t.especial?.titulo||"Envío especial"):`${t.n} pedidos`}{t.ajuste?<span style={{color:T.textSm}}> · ajuste {fmtMoney(t.ajuste)}</span>:null}</span>},
@@ -21246,9 +21256,9 @@ function DepositoCuentaModal({T,api,cliente,onClose,onAjustar}){
       <DepLabel T={T} style={{marginTop:20}}>Movimientos</DepLabel>
       <DepTable T={T} minWidth={440} empty="Todavía no hay pagos ni cargos" rows={d.pagos} cols={[
         {h:"Fecha",w:"80px",render:p=>p.informadoAt?new Date(p.informadoAt).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"}):"—"},
-        {h:"Detalle",w:"1fr",render:p=><span style={{color:T.textMd}}>{movDetalle(p)}</span>},
-        {h:"Estado",w:"110px",render:p=>{ const e=movEstado(p); return <DepDot T={T} color={e.c}>{e.t}</DepDot>; }},
-        {h:"Monto",w:"120px",align:"right",render:p=><strong style={{color:p.monto<0?T.red:p.estado==="rechazado"?T.textSm:T.green,textDecoration:p.estado==="rechazado"?"line-through":"none"}}>{p.monto<0?"− ":"+ "}{fmtMoney(Math.abs(p.monto))}</strong>},
+        {h:"Detalle",w:"1fr",render:p=><span style={{color:T.textMd}}>{ghDepMovDetalle(p)}</span>},
+        {h:"Estado",w:"110px",render:p=>{ const e=ghDepMovEstado(T,p); return <DepDot T={T} color={e.c}>{e.t}</DepDot>; }},
+        {h:"Monto",w:"120px",align:"right",render:p=>ghDepMonto(T,p)},
       ]}/>
     </div>); })()}
   </Modal>);
@@ -21316,10 +21326,10 @@ function DepositoCola({T,api,owner}){
     const toggle=()=>setAbierta(open?null:t.id);
     const vistaAct=(v==="picking"&&!conItems)?(nP>0?"pedidos":"hist"):v;
     const segItems=[...(conItems?[["picking","Picking","box"]]:[]),...(nP>0?[["pedidos",`Pedidos (${nP})`,"tag"]]:[]),["hist","Historial","clock"]];
-    const accion=t.pdf&&!t.pdf.purgado&&t.estado==="pendiente"?<Btn T={T} variant="primary" size="sm" disabled={busy===t.id} onClick={()=>imprimir(t)}>Imprimir etiquetas</Btn>
-      :t.estado==="pendiente"&&!t.pdf?<Btn T={T} variant="primary" size="sm" disabled={busy===t.id} onClick={()=>estado(t,"impresa")}>Tomar</Btn>
-      :t.estado==="impresa"?<Btn T={T} variant={done||!nP?"primary":"secondary"} size="sm" disabled={busy===t.id} onClick={()=>estado(t,"armada")}>Marcar armada</Btn>
-      :t.estado==="armada"?<Btn T={T} variant="success" size="sm" disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Entregada al correo</Btn>:null;
+    const accion=t.pdf&&!t.pdf.purgado&&t.estado==="pendiente"?<DepMainBtn T={T} ico="print" disabled={busy===t.id} onClick={()=>imprimir(t)}>Imprimir etiquetas</DepMainBtn>
+      :t.estado==="pendiente"&&!t.pdf?<DepMainBtn T={T} ico="hand" disabled={busy===t.id} onClick={()=>estado(t,"impresa")}>Tomar</DepMainBtn>
+      :t.estado==="impresa"?<DepMainBtn T={T} ico="check" disabled={busy===t.id} onClick={()=>estado(t,"armada")}>Marcar armada</DepMainBtn>
+      :t.estado==="armada"?<DepMainBtn T={T} ico="truck" color={T.isDark?"#16a34a":"#15803d"} disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Entregada al correo</DepMainBtn>:null;
     return (
     <div style={{background:T.card,border:`1px solid ${urg(t)?T.red+"66":open?T.accentSolid+"66":T.border}`,borderRadius:DS.r["2xl"],boxShadow:open?DS.shadow.md:DS.shadow.sm,overflow:"hidden",transition:"box-shadow .15s, border-color .15s",opacity:entregada&&!open?0.85:1}}>
       <div style={{padding:"16px 18px 14px"}}>
@@ -21484,14 +21494,29 @@ function DepositoHistorial({T,api}){
         ]}/>}
   </DepSection>);
 }
-function DepositoClientes({T,api}){
+// Detalle y estado de un movimiento de cuenta corriente (transferencia o ajuste).
+const ghDepMovDetalle=p=>{ if(p.tipo==="ajuste") return (p.monto<0?"Cargo":"Pago registrado a mano")+(p.nota?`: ${p.nota}`:""); if(p.estado==="verificado") return `Transferencia · aplicada a ${p.aplicado?.length||0} tanda${p.aplicado?.length!==1?"s":""}`; if(p.estado==="rechazado") return `Transferencia rechazada: ${p.nota}`; return `Transferencia informada${p.notaCliente?` · ${p.notaCliente}`:""}`; };
+const ghDepMovEstado=(T,p)=>p.tipo==="ajuste"?{c:p.monto<0?T.red:T.green,t:p.monto<0?"Cargo":"Pago a mano"}:p.estado==="verificado"?{c:T.green,t:"Verificada"}:p.estado==="rechazado"?{c:T.red,t:"Rechazada"}:{c:T.yellow,t:"A verificar"};
+const ghDepMesLindo=m=>{ if(!m) return "—"; const d=new Date(`${m}-15T12:00:00`); const s=d.toLocaleDateString("es-AR",{month:"long",year:"numeric"}); return s.charAt(0).toUpperCase()+s.slice(1); };
+const ghDepMonto=(T,p)=><strong style={{color:p.monto<0?T.red:p.estado==="rechazado"?T.textSm:T.green,textDecoration:p.estado==="rechazado"?"line-through":"none",fontVariantNumeric:"tabular-nums"}}>{p.monto<0?"− ":"+ "}{fmtMoney(Math.abs(p.monto))}</strong>;
+const ghDepFechaCorta=ms=>ms?new Date(ms).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—";
+
+// Clientes y pagos (solo dueño): resumen, transferencias por verificar, clientes con su
+// acumulado del mes y saldo, historial de pagos y ajustes, y facturación por mes.
+function DepositoCuentas({T,api}){
   const iS=InputStyle(T);
-  const [d,setD]=useState(null); const [form,setForm]=useState(null); const [busy,setBusy]=useState(false);
-  const [cuenta,setCuenta]=useState(null); const [aj,setAj]=useState(null); // aj: {cliente, monto, motivo}
+  const [d,setD]=useState(null); const [cc,setCc]=useState(null);
+  const [mes,setMes]=useState(hoyAR().slice(0,7)); const [res,setRes]=useState(null); const [hist,setHist]=useState(null); const [verTandas,setVerTandas]=useState(false);
+  const [form,setForm]=useState(null); const [busy,setBusy]=useState(false);
+  const [cuenta,setCuenta]=useState(null); const [aj,setAj]=useState(null); // aj: {cliente, tipo, monto, motivo}
+  const [filtro,setFiltro]=useState("");
   const [bq,setBq]=useState(""); const [bres,setBres]=useState(null);
   useEffect(()=>{ const q=bq.trim(); if(q.length<2){ setBres(null); return; } setBres(null); let vivo=true; const t=setTimeout(()=>api("usuarios_buscar",{q}).then(r=>{ if(vivo) setBres(r.usuarios||[]); }).catch(()=>{ if(vivo) setBres([]); }),350); return ()=>{ vivo=false; clearTimeout(t); }; },[bq]);
-  const cargar=()=>api("clientes").then(setD).catch(e=>{ toast(e.message,"error"); setD({clientes:[]}); });
+  const cargar=()=>{ api("clientes").then(setD).catch(e=>{ toast(e.message,"error"); setD({clientes:[]}); }); api("pagos_cc").then(setCc).catch(()=>setCc({cuentas:[],pagos:[]})); };
+  const cargarMes=()=>{ setRes(null); setHist(null); Promise.all([api("resumen",{mes}),api("historial",{mes})]).then(([a,b])=>{ setRes(a); setHist(b.tandas.filter(t=>t.estado!=="cancelada")); }).catch(e=>{ toast(e.message,"error"); setRes({clientes:[]}); setHist([]); }); };
+  const todo=()=>{ cargar(); cargarMes(); };
   useEffect(()=>{ cargar(); },[]);
+  useEffect(()=>{ cargarMes(); },[mes]);
   async function guardar(){ if(busy) return; setBusy(true); try{ await api("cliente_guardar",form); toast("Cliente guardado","success"); setForm(null); cargar(); }catch(e){ toast(e.message,"error"); } setBusy(false); }
   const link=c=>`${window.location.origin}/#/deposito/${c.token}`;
   async function nuevoLink(c){ if(!(await appConfirm(`¿Generar un link nuevo para ${c.nombre}? El link actual deja de funcionar.`,{okLabel:"Generar link"}))) return; try{ await api("cliente_token",{id:c.id}); cargar(); toast("Link nuevo generado","success"); }catch(e){ toast(e.message,"error"); } }
@@ -21499,32 +21524,104 @@ function DepositoClientes({T,api}){
     const m=Number(String(aj.monto).replace(",",".")); if(!isFinite(m)||m===0){ toast("Poné el monto","warning"); return; }
     const monto=aj.tipo==="cobrar"?-Math.abs(m):Math.abs(m);
     if(!(await appConfirm(`${aj.tipo==="cobrar"?"Agregar un cargo de":"Registrar un pago de"} ${fmtMoney(Math.abs(m))} a ${aj.cliente.nombre}. El cliente lo ve en su panel${aj.motivo?` con el motivo "${aj.motivo}"`:""}. ¿Confirmás?`,{okLabel:aj.tipo==="cobrar"?"Agregar cargo":"Registrar pago"}))) return;
-    setBusy(true); try{ await api("saldo_ajustar",{clienteId:aj.cliente.id,monto,motivo:aj.motivo}); toast("Saldo actualizado","success"); setAj(null); cargar(); }catch(e){ toast(e.message,"error"); } setBusy(false);
+    setBusy(true); try{ await api("saldo_ajustar",{clienteId:aj.cliente.id,monto,motivo:aj.motivo}); toast("Saldo actualizado","success"); setAj(null); todo(); }catch(e){ toast(e.message,"error"); } setBusy(false);
   }
+  async function verificarCc(p,ok){ let nota=""; if(!ok){ nota=await appPrompt("¿Por qué se rechaza la transferencia? El cliente lo ve en su panel.","",{okLabel:"Rechazar"}); if(!nota) return; } try{ const r=await api("pago_cc_verificar",{id:p.id,ok,nota}); if(ok) toast(`Pago verificado: aplicado a ${r.aplicadas||0} tanda${r.aplicadas!==1?"s":""}${r.aFavor>0?` · ${fmtMoney(r.aFavor)} quedan a favor`:""}`,"success",6000); todo(); }catch(e){ toast(e.message,"error"); } }
+  async function compCc(p){ const w=ghDepVentana(p.comp.mime); try{ ghDepAbrirBytes(await ghDepBajar(api,"file_get",p.id,"pcomp",p.comp.chunks),p.comp.mime,p.comp.nombre,w); }catch(e){ if(w&&!w.closed) w.close(); toast(e.message,"error"); } }
+  async function verificar(t,ok){ let nota=""; if(!ok){ nota=await appPrompt("¿Por qué se rechaza el pago? El cliente lo ve en su panel.","",{okLabel:"Rechazar pago"}); if(!nota) return; } try{ await api("pago_verificar",{id:t.id,ok,nota}); todo(); }catch(e){ toast(e.message,"error"); } }
+  async function ajuste(t){ const v=await appPrompt(`Ajuste en pesos para esta tanda (negativo descuenta). Total actual: ${fmtMoney(t.total)}`,String(t.ajuste||0),{okLabel:"Aplicar"}); if(v===null||v===undefined||v==="") return; const n=Number(String(v).replace(",",".")); if(!isFinite(n)){ toast("Poné un número","warning"); return; } try{ await api("tanda_ajuste",{id:t.id,ajuste:n,motivo:"Ajuste manual"}); todo(); }catch(e){ toast(e.message,"error"); } }
+  async function comprobante(t){ const w=ghDepVentana(t.pago.comp.mime); try{ ghDepAbrirBytes(await ghDepBajar(api,"file_get",t.id,"comp",t.pago.comp.chunks),t.pago.comp.mime,t.pago.comp.nombre,w); }catch(e){ if(w&&!w.closed) w.close(); toast(e.message,"error"); } }
+  function exportar(){ const filas=[["Cliente","Tandas","Pedidos","Facturado","Cobrado","A verificar","Sin informar"],...res.clientes.map(c=>[c.nombre,c.tandas,c.pedidos,c.total,c.verificado,c.aVerificar,c.sinInformar])]; const csv="﻿"+filas.map(f=>f.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(";")).join("\n"); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download=`deposito_${mes}.csv`; a.click(); }
   const lbl=t=><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:5}}>{t}</div>;
-  if(!d) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
+  if(!d||!cc) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
+  const colP=ghDepColPago(T);
+  const saldoDe=c=>ghDepSaldo(T,(c.stats?.aVerificar||0)+(c.stats?.sinInformar||0),c.aFavor);
   const activos=d.clientes.filter(c=>c.activo);
-  const deudaTotal=d.clientes.reduce((a,c)=>{ const s=ghDepSaldo(T,(c.stats?.aVerificar||0)+(c.stats?.sinInformar||0),c.aFavor); return a+(s.n>0?s.n:0); },0);
-  const favorTotal=d.clientes.reduce((a,c)=>{ const s=ghDepSaldo(T,(c.stats?.aVerificar||0)+(c.stats?.sinInformar||0),c.aFavor); return a+(s.n<0?-s.n:0); },0);
+  const deudaTotal=d.clientes.reduce((a,c)=>{ const s=saldoDe(c); return a+(s.n>0?s.n:0); },0);
+  const favorTotal=d.clientes.reduce((a,c)=>{ const s=saldoDe(c); return a+(s.n<0?-s.n:0); },0);
+  const pendientes=cc.pagos.filter(p=>p.estado==="a_verificar");
+  const pendTotal=pendientes.reduce((a,p)=>a+p.monto,0);
+  const factMes=d.clientes.reduce((a,c)=>a+(c.stats?.mesTotal||0),0), pedMes=d.clientes.reduce((a,c)=>a+(c.stats?.mesPedidos||0),0), cobMes=d.clientes.reduce((a,c)=>a+(c.stats?.mesCobrado||0),0);
+  const movimientos=cc.pagos.filter(p=>p.estado!=="a_verificar"&&(!filtro||p.clienteId===filtro)).slice(0,100);
+  const tot=k=>(res?.clientes||[]).reduce((a,c)=>a+(c[k]||0),0);
+  const ordenPago={a_verificar:0,sin_informar:1,rechazado:2,verificado:3};
+  const estadoPagoTxt={sin_informar:"Sin informar",a_verificar:"A verificar",verificado:"Verificado",rechazado:"Rechazado"};
+  const esteMes=mes===hoyAR().slice(0,7);
   return (<div>
     <DepStats T={T} items={[
-      {l:"Clientes activos",v:activos.length,ico:"users",s:`${d.clientes.length-activos.length} inactivo${d.clientes.length-activos.length!==1?"s":""}`},
-      {l:"Pedidos este mes",v:d.clientes.reduce((a,c)=>a+(c.stats?.mesPedidos||0),0),ico:"box",s:fmtMoney(d.clientes.reduce((a,c)=>a+(c.stats?.mesTotal||0),0))},
-      {l:"Te deben",v:fmtMoney(deudaTotal),ico:"wallet",c:deudaTotal>0?T.yellow:T.textSm},
-      {l:"A favor de clientes",v:fmtMoney(favorTotal),ico:"hand",c:favorTotal>0?T.green:T.textSm},
+      {l:"Te deben",v:fmtMoney(deudaTotal),ico:"wallet",c:deudaTotal>0?T.yellow:T.textSm,s:favorTotal>0?`${fmtMoney(favorTotal)} a favor de clientes`:"tandas sin pagar menos lo que tienen a favor"},
+      {l:"Por verificar",v:pendientes.length,ico:"inbox",c:pendientes.length?T.orange:T.textSm,s:pendientes.length?`${fmtMoney(pendTotal)} en transferencias`:"ninguna transferencia pendiente"},
+      {l:"Facturado este mes",v:fmtMoney(factMes),ico:"box",s:`${pedMes} pedido${pedMes!==1?"s":""} · ${activos.length} cliente${activos.length!==1?"s":""} activo${activos.length!==1?"s":""}`},
+      {l:"Cobrado este mes",v:fmtMoney(cobMes),ico:"check",c:cobMes>0?T.green:T.textSm,s:"transferencias verificadas y pagos a mano"},
     ]}/>
-    <DepSection T={T} title="Clientes" count={d.clientes.length} desc="Precio por pedido armado, actividad del mes y saldo de la cuenta corriente." extra={<Btn T={T} variant="primary" size="sm" onClick={()=>setForm({nombre:"",precio:"",growithEmail:"",contacto:"",nota:"",activo:true})}>Nuevo cliente</Btn>}>
-    <DepTable T={T} minWidth={760} empty="Todavía no hay clientes. Cargá el primero con su precio por pedido." rows={d.clientes.map(c=>({...c,_dim:!c.activo}))} cols={[
-      {h:"Cliente",w:"1.6fr",render:c=><div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}><DepAvatar T={T} name={c.nombre} size={30} color={c.activo?T.accent:T.textSm}/><div style={{minWidth:0}}><div style={{fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}{!c.activo&&<span style={{fontWeight:500,color:T.textSm}}> · inactivo</span>}</div>{depSub(T,c.growithUid?`Growith · ${c.growithEmail||"vinculado"}`:"Sin Growith · usa el link")}</div></div>},
-      {h:"Contacto",w:"1fr",render:c=><span style={{color:T.textMd,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",display:"block"}}>{c.contacto||"—"}</span>},
-      {h:"Precio",w:"90px",align:"right",render:c=>fmtMoney(c.precio)},
-      {h:"Este mes",w:"130px",align:"right",render:c=><div style={{textAlign:"right"}}><div>{c.stats.mesPedidos} pedido{c.stats.mesPedidos!==1?"s":""}</div>{depSub(T,fmtMoney(c.stats.mesTotal))}</div>},
-      {h:"Saldo",w:"140px",align:"right",render:c=>{ const s=ghDepSaldo(T,(c.stats?.aVerificar||0)+(c.stats?.sinInformar||0),c.aFavor); return <div style={{textAlign:"right"}}><div style={{fontWeight:700,color:s.col}}>{s.txt}</div>{c.stats.aVerificar>0?depSub(T,`${fmtMoney(c.stats.aVerificar)} a verificar`):null}</div>; }},
-      {h:"",w:"210px",align:"right",render:c=><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
+    {pendientes.length>0&&(<DepSection T={T} title="Transferencias por verificar" count={pendientes.length} desc="Lo que informaron los clientes y todavía no revisaste. Verificar aplica el pago a sus tandas más viejas sin pagar; si sobra queda a favor.">
+      <DepTable T={T} minWidth={700} empty="" rows={pendientes} cols={[
+        {h:"Fecha",w:"70px",render:p=>ghDepFechaCorta(p.informadoAt)},
+        {h:"Cliente",w:"1fr",render:p=><div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}><DepAvatar T={T} name={p.clienteNombre} size={28}/><div style={{minWidth:0}}><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.clienteNombre}</strong>{p.notaCliente?depSub(T,p.notaCliente):null}</div></div>},
+        {h:"Monto",w:"120px",align:"right",render:p=><strong style={{fontSize:DS.font.lg}}>{fmtMoney(p.monto)}</strong>},
+        {h:"",w:"290px",align:"right",render:p=><div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+          {p.comp?<Btn T={T} variant="secondary" size="sm" onClick={()=>compCc(p)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="file" size={13}/>Comprobante</span></Btn>:<span style={{fontSize:DS.font.sm,color:T.textSm,alignSelf:"center"}}>sin comprobante</span>}
+          <Btn T={T} variant="success" size="sm" onClick={()=>verificarCc(p,true)}>Verificar</Btn>
+          <Btn T={T} variant="ghost" size="sm" onClick={()=>verificarCc(p,false)}>Rechazar</Btn>
+        </div>},
+      ]}/>
+    </DepSection>)}
+    <DepSection T={T} title="Clientes" count={d.clientes.length} desc="Precio por pedido, lo que acumuló cada uno este mes y su saldo. Estado de cuenta abre el detalle por mes, las tandas sin pagar y los movimientos." extra={<Btn T={T} variant="primary" size="sm" onClick={()=>setForm({nombre:"",precio:"",growithEmail:"",contacto:"",nota:"",activo:true})}>Nuevo cliente</Btn>}>
+    <DepTable T={T} minWidth={860} empty="Todavía no hay clientes. Cargá el primero con su precio por pedido." rows={d.clientes.map(c=>({...c,_dim:!c.activo}))} cols={[
+      {h:"Cliente",w:"1.5fr",render:c=><div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}><DepAvatar T={T} name={c.nombre} size={30} color={c.activo?T.accent:T.textSm}/><div style={{minWidth:0}}><div style={{fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}{!c.activo&&<span style={{fontWeight:500,color:T.textSm}}> · inactivo</span>}</div>{depSub(T,c.growithUid?`Growith · ${c.growithEmail||"vinculado"}`:"Sin Growith · usa el link")}</div></div>},
+      {h:"Precio",w:"80px",align:"right",render:c=><span style={{color:T.textMd}}>{fmtMoney(c.precio)}</span>},
+      {h:"Este mes",w:"130px",align:"right",render:c=><div style={{textAlign:"right"}}><div style={{fontWeight:700}}>{fmtMoney(c.stats.mesTotal)}</div>{depSub(T,`${c.stats.mesPedidos} pedido${c.stats.mesPedidos!==1?"s":""}`)}</div>},
+      {h:"Cobrado",w:"110px",align:"right",render:c=><span style={{color:c.stats.mesCobrado>0?T.green:T.textSm}}>{fmtMoney(c.stats.mesCobrado||0)}</span>},
+      {h:"Sin pagar",w:"130px",align:"right",render:c=>{ const b=(c.stats.aVerificar||0)+(c.stats.sinInformar||0); return <div style={{textAlign:"right"}}><div style={{color:b>0?T.text:T.textSm}}>{fmtMoney(b)}</div>{c.stats.aVerificar>0?depSub(T,`${fmtMoney(c.stats.aVerificar)} a verificar`):null}</div>; }},
+      {h:"Saldo",w:"130px",align:"right",render:c=>{ const s=saldoDe(c); return <strong style={{color:s.col}}>{s.txt}</strong>; }},
+      {h:"",w:"200px",align:"right",render:c=><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
         <Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(c)}>Estado de cuenta</Btn>
         <Btn T={T} variant="ghost" size="sm" onClick={()=>setForm({id:c.id,nombre:c.nombre,precio:c.precio,growithEmail:c.growithEmail||"",contacto:c.contacto,nota:c.nota,activo:c.activo,_c:c})}>Editar</Btn>
       </div>},
     ]}/>
+    </DepSection>
+    <DepSection T={T} title="Historial de pagos y ajustes" desc="Transferencias verificadas o rechazadas y los pagos y cargos que registraste a mano." extra={<select style={{...iS,marginBottom:0,width:"auto"}} value={filtro} onChange={e=>setFiltro(e.target.value)}><option value="">Todos los clientes</option>{d.clientes.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}</select>}>
+      <DepTable T={T} minWidth={720} empty="Todavía no hay pagos ni ajustes" rows={movimientos} cols={[
+        {h:"Fecha",w:"70px",render:p=>ghDepFechaCorta(p.verificadoAt||p.informadoAt)},
+        {h:"Cliente",w:"1fr",render:p=><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.clienteNombre}</strong>},
+        {h:"Detalle",w:"1.6fr",render:p=><span style={{color:T.textMd,display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ghDepMovDetalle(p)}</span>},
+        {h:"Estado",w:"120px",render:p=>{ const e=ghDepMovEstado(T,p); return <DepDot T={T} color={e.c}>{e.t}</DepDot>; }},
+        {h:"Monto",w:"120px",align:"right",render:p=>ghDepMonto(T,p)},
+        {h:"",w:"120px",align:"right",render:p=>p.comp?<Btn T={T} variant="ghost" size="sm" onClick={()=>compCc(p)}>Comprobante</Btn>:null},
+      ]}/>
+    </DepSection>
+    <DepSection T={T} title="Facturación por mes" desc="Lo que se facturó a cada cliente en el mes elegido y cuánto de eso ya está cobrado." extra={<><input type="month" style={{...iS,marginBottom:0,width:170}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>{res&&res.clientes.length>0&&<Btn T={T} variant="secondary" size="sm" onClick={exportar}>Exportar CSV</Btn>}</>}>
+    {!res||!hist? <div style={{display:"flex",justifyContent:"center",padding:40}}><Spinner size={24} color={T.accent}/></div> : (<>
+      <div style={{display:"flex",gap:18,flexWrap:"wrap",alignItems:"baseline",marginBottom:12,fontSize:DS.font.base,color:T.textMd}}>
+        <span><strong style={{color:T.text,fontSize:DS.font.xl}}>{fmtMoney(tot("total"))}</strong> facturados</span>
+        <span><strong style={{color:T.green}}>{fmtMoney(tot("verificado"))}</strong> cobrados</span>
+        <span><strong style={{color:tot("aVerificar")+tot("sinInformar")>0?T.yellow:T.textSm}}>{fmtMoney(tot("aVerificar")+tot("sinInformar"))}</strong> pendientes</span>
+        <span style={{color:T.textSm}}>{tot("pedidos")} pedidos · {tot("tandas")} tandas{esteMes?" · mes en curso":""}</span>
+      </div>
+      <DepTable T={T} minWidth={640} empty="Sin tandas ese mes" rows={res.clientes.map(c=>({...c,id:c.clienteId}))} cols={[
+        {h:"Cliente",w:"1.4fr",render:c=><strong>{c.nombre}</strong>},
+        {h:"Pedidos",w:"90px",align:"right",render:c=>c.pedidos},
+        {h:"Tandas",w:"80px",align:"right",render:c=>c.tandas},
+        {h:"Facturado",w:"120px",align:"right",render:c=><strong>{fmtMoney(c.total)}</strong>},
+        {h:"Cobrado",w:"120px",align:"right",render:c=><span style={{color:c.verificado>0?T.green:T.textSm}}>{fmtMoney(c.verificado)}</span>},
+        {h:"Pendiente",w:"120px",align:"right",render:c=><span style={{color:(c.aVerificar+c.sinInformar)>0?T.yellow:T.textSm}}>{fmtMoney(c.aVerificar+c.sinInformar)}</span>},
+      ]}/>
+      {hist.length>0&&(<div style={{marginTop:12}}>
+        <Btn T={T} variant="ghost" size="sm" onClick={()=>setVerTandas(v=>!v)}>{verTandas?"Ocultar las tandas del mes":`Ver las ${hist.length} tandas del mes`}</Btn>
+        {verTandas&&<div style={{marginTop:10}}><DepTable T={T} minWidth={760} empty="" rows={[...hist].sort((a,b)=>ordenPago[a.pago.estado]-ordenPago[b.pago.estado]||(b.fechaDespacho||"").localeCompare(a.fechaDespacho||""))} cols={[
+          {h:"Despacho",w:"80px",render:t=>ghDepFechaLinda(t.fechaDespacho)},
+          {h:"Cliente",w:"1.2fr",render:t=><div style={{minWidth:0}}><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.clienteNombre}</strong>{depSub(T,`${t.tipo==="especial"?(t.especial?.titulo||"Especial"):`${t.n} pedidos`}${t.ajuste?` · ajuste ${fmtMoney(t.ajuste)}`:""}`)}</div>},
+          {h:"Pago",w:"130px",render:t=><DepDot T={T} color={colP[t.pago.estado]}>{estadoPagoTxt[t.pago.estado]}</DepDot>},
+          {h:"Total",w:"110px",align:"right",render:t=><strong>{fmtMoney(t.total)}</strong>},
+          {h:"",w:"340px",align:"right",render:t=><div style={{display:"flex",gap:4,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            {t.pago.comp&&<Btn T={T} variant="ghost" size="sm" onClick={()=>comprobante(t)}>Comprobante</Btn>}
+            {t.pago.estado!=="verificado"&&<Btn T={T} variant={t.pago.estado==="a_verificar"?"success":"ghost"} size="sm" onClick={()=>verificar(t,true)}>Verificar</Btn>}
+            {t.pago.estado==="a_verificar"&&<Btn T={T} variant="ghost" size="sm" onClick={()=>verificar(t,false)}>Rechazar</Btn>}
+            <Btn T={T} variant="ghost" size="sm" onClick={()=>ajuste(t)}>Ajuste</Btn>
+          </div>},
+        ]}/></div>}
+      </div>)}
+    </>)}
     </DepSection>
     {cuenta&&<DepositoCuentaModal T={T} api={api} cliente={cuenta} onClose={()=>setCuenta(null)} onAjustar={tipo=>{ setAj({cliente:cuenta,tipo,monto:"",motivo:""}); }}/>}
     {aj&&(<Modal T={T} open onClose={()=>setAj(null)} title={`${aj.tipo==="cobrar"?"Agregar un cargo":"Registrar un pago"} · ${aj.cliente.nombre}`} width={440}>
@@ -21644,73 +21741,6 @@ function DepositoAccesos({T,api,panel}){
   </div>);
 }
 
-function DepositoPagos({T,api}){
-  const iS=InputStyle(T);
-  const [mes,setMes]=useState(hoyAR().slice(0,7)); const [res,setRes]=useState(null); const [hist,setHist]=useState(null); const [cc,setCc]=useState(null);
-  const cargar=()=>{ setRes(null); setHist(null); Promise.all([api("resumen",{mes}),api("historial",{mes})]).then(([a,b])=>{ setRes(a); setHist(b.tandas.filter(t=>t.estado!=="cancelada")); }).catch(e=>{ toast(e.message,"error"); setRes({clientes:[]}); setHist([]); }); api("pagos_cc").then(setCc).catch(()=>setCc({cuentas:[],pagos:[]})); };
-  useEffect(()=>{ cargar(); },[mes]);
-  async function verificarCc(p,ok){ let nota=""; if(!ok){ nota=await appPrompt("¿Por qué se rechaza la transferencia? El cliente lo ve en su panel.","",{okLabel:"Rechazar"}); if(!nota) return; } try{ const r=await api("pago_cc_verificar",{id:p.id,ok,nota}); if(ok) toast(`Pago verificado: aplicado a ${r.aplicadas||0} tanda${r.aplicadas!==1?"s":""}${r.aFavor>0?` · ${fmtMoney(r.aFavor)} quedan a favor`:""}`,"success",6000); cargar(); }catch(e){ toast(e.message,"error"); } }
-  async function compCc(p){ const w=ghDepVentana(p.comp.mime); try{ ghDepAbrirBytes(await ghDepBajar(api,"file_get",p.id,"pcomp",p.comp.chunks),p.comp.mime,p.comp.nombre,w); }catch(e){ if(w&&!w.closed) w.close(); toast(e.message,"error"); } }
-  async function verificar(t,ok){ let nota=""; if(!ok){ nota=await appPrompt("¿Por qué se rechaza el pago? El cliente lo ve en su panel.","",{okLabel:"Rechazar pago"}); if(!nota) return; } try{ await api("pago_verificar",{id:t.id,ok,nota}); cargar(); }catch(e){ toast(e.message,"error"); } }
-  async function ajuste(t){ const v=await appPrompt(`Ajuste en pesos para esta tanda (negativo descuenta). Total actual: ${fmtMoney(t.total)}`,String(t.ajuste||0),{okLabel:"Aplicar"}); if(v===null||v===undefined||v==="") return; const n=Number(String(v).replace(",",".")); if(!isFinite(n)){ toast("Poné un número","warning"); return; } try{ await api("tanda_ajuste",{id:t.id,ajuste:n,motivo:"Ajuste manual"}); cargar(); }catch(e){ toast(e.message,"error"); } }
-  async function comprobante(t){ const w=ghDepVentana(t.pago.comp.mime); try{ ghDepAbrirBytes(await ghDepBajar(api,"file_get",t.id,"comp",t.pago.comp.chunks),t.pago.comp.mime,t.pago.comp.nombre,w); }catch(e){ if(w&&!w.closed) w.close(); toast(e.message,"error"); } }
-  function exportar(){ const filas=[["Cliente","Tandas","Pedidos","Total","Verificado","A verificar","Sin informar"],...res.clientes.map(c=>[c.nombre,c.tandas,c.pedidos,c.total,c.verificado,c.aVerificar,c.sinInformar])]; const csv="﻿"+filas.map(f=>f.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(";")).join("\n"); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download=`deposito_${mes}.csv`; a.click(); }
-  const colP=ghDepColPago(T);
-  const tot=k=>(res?.clientes||[]).reduce((a,c)=>a+(c[k]||0),0);
-  const pendientes=(cc?.pagos||[]).filter(p=>p.estado==="a_verificar");
-  const ordenPago={a_verificar:0,sin_informar:1,rechazado:2,verificado:3};
-  const estadoPagoTxt={sin_informar:"Sin informar",a_verificar:"A verificar",verificado:"Verificado",rechazado:"Rechazado"};
-  return (<div>
-    {cc&&(<DepSection T={T} title="Cuenta corriente" count={pendientes.length?`${pendientes.length} por verificar`:null} desc="Transferencias que informan los clientes y ajustes a mano. Verificar aplica el pago a las tandas más viejas sin pagar.">
-      {(()=>{ const con=cc.cuentas.filter(c=>c.deuda>0||c.aFavor!==0); return con.length===0?<div style={{fontSize:DS.font.base,color:T.textSm,marginBottom:12}}>Todos los clientes están al día.</div>
-        :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:10,marginBottom:12}}>{con.map(c=>{ const s=ghDepSaldo(T,c.bruta??c.deuda,c.aFavor); return (<div key={c.clienteId} style={{display:"flex",gap:12,alignItems:"center",border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"12px 14px",background:T.card,boxShadow:DS.shadow.sm}}><DepTile T={T} color={s.col===T.textSm?T.accent:s.col} ico={s.n<0?"hand":"wallet"} size={34}/><div style={{minWidth:0}}><div style={{fontSize:DS.font.md,color:T.textMd,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}</div><div style={{fontSize:DS.font.lg,fontWeight:700,color:s.col,fontVariantNumeric:"tabular-nums"}}>{s.txt}</div></div></div>); })}</div>; })()}
-      <DepTable T={T} minWidth={720} empty="Ningún cliente informó transferencias todavía" rows={cc.pagos} cols={[
-        {h:"Fecha",w:"80px",render:p=>p.informadoAt?new Date(p.informadoAt).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—"},
-        {h:"Cliente",w:"1fr",render:p=><div style={{minWidth:0}}><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.clienteNombre}</strong>{p.tipo==="ajuste"?depSub(T,`Ajuste manual${p.nota?` · ${p.nota}`:""}`):p.notaCliente?depSub(T,p.notaCliente):null}</div>},
-        {h:"Estado",w:"180px",render:p=><DepDot T={T} color={p.estado==="verificado"?T.green:p.estado==="rechazado"?T.red:T.yellow}>{p.tipo==="ajuste"?(p.monto<0?"Cargo":"Pago a mano"):p.estado==="verificado"?`Verificado · ${p.aplicado?.length||0} tanda${p.aplicado?.length!==1?"s":""}`:p.estado==="rechazado"?"Rechazado":"A verificar"}</DepDot>},
-        {h:"Monto",w:"110px",align:"right",render:p=><strong style={{color:p.monto<0?T.red:T.text}}>{p.monto<0?"−":""}{fmtMoney(Math.abs(p.monto))}</strong>},
-        {h:"",w:"260px",align:"right",render:p=><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
-          {p.comp&&<Btn T={T} variant="ghost" size="sm" onClick={()=>compCc(p)}>Comprobante</Btn>}
-          {p.estado==="a_verificar"&&<Btn T={T} variant="success" size="sm" onClick={()=>verificarCc(p,true)}>Verificar</Btn>}
-          {p.estado==="a_verificar"&&<Btn T={T} variant="ghost" size="sm" onClick={()=>verificarCc(p,false)}>Rechazar</Btn>}
-        </div>},
-      ]}/>
-    </DepSection>)}
-    <DepSection T={T} title="Facturación del mes" desc="Lo que se facturó por cliente y el estado de cobro de cada tanda." extra={<><input type="month" style={{...iS,marginBottom:0,width:170}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>{res&&res.clientes.length>0&&<Btn T={T} variant="secondary" size="sm" onClick={exportar}>Exportar CSV</Btn>}</>}>
-    {!res||!hist? <div style={{display:"flex",justifyContent:"center",padding:40}}><Spinner size={24} color={T.accent}/></div> : (<>
-      <DepStats T={T} items={[
-        {l:"Facturado",v:fmtMoney(tot("total")),ico:"wallet",s:`${tot("pedidos")} pedidos · ${tot("tandas")} tandas`},
-        {l:"Verificado",v:fmtMoney(tot("verificado")),ico:"check",c:T.green},
-        {l:"A verificar",v:fmtMoney(tot("aVerificar")),ico:"clock",c:tot("aVerificar")>0?T.yellow:T.textSm},
-        {l:"Sin informar",v:fmtMoney(tot("sinInformar")),ico:"inbox",c:tot("sinInformar")>0?T.orange:T.textSm},
-      ]}/>
-      {res.clientes.length>0&&(<div style={{marginBottom:16}}>
-        <DepTable T={T} minWidth={560} empty="" rows={res.clientes.map(c=>({...c,id:c.clienteId}))} cols={[
-          {h:"Cliente",w:"1.4fr",render:c=><strong>{c.nombre}</strong>},
-          {h:"Pedidos",w:"90px",align:"right",render:c=>c.pedidos},
-          {h:"Tandas",w:"80px",align:"right",render:c=>c.tandas},
-          {h:"Verificado",w:"120px",align:"right",render:c=><span style={{color:T.green}}>{fmtMoney(c.verificado)}</span>},
-          {h:"Pendiente",w:"120px",align:"right",render:c=><span style={{color:(c.aVerificar+c.sinInformar)>0?T.yellow:T.textSm}}>{fmtMoney(c.aVerificar+c.sinInformar)}</span>},
-          {h:"Total",w:"120px",align:"right",render:c=><strong>{fmtMoney(c.total)}</strong>},
-        ]}/>
-      </div>)}
-      <DepLabel T={T} style={{marginTop:4}}>Tandas del mes</DepLabel>
-      <DepTable T={T} minWidth={760} empty="Sin tandas ese mes" rows={[...hist].sort((a,b)=>ordenPago[a.pago.estado]-ordenPago[b.pago.estado]||(b.fechaDespacho||"").localeCompare(a.fechaDespacho||""))} cols={[
-        {h:"Despacho",w:"80px",render:t=>ghDepFechaLinda(t.fechaDespacho)},
-        {h:"Cliente",w:"1.2fr",render:t=><div style={{minWidth:0}}><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.clienteNombre}</strong>{depSub(T,`${t.tipo==="especial"?(t.especial?.titulo||"Especial"):`${t.n} pedidos`}${t.ajuste?` · ajuste ${fmtMoney(t.ajuste)}`:""}`)}</div>},
-        {h:"Pago",w:"130px",render:t=><DepDot T={T} color={colP[t.pago.estado]}>{estadoPagoTxt[t.pago.estado]}</DepDot>},
-        {h:"Total",w:"110px",align:"right",render:t=><strong>{fmtMoney(t.total)}</strong>},
-        {h:"",w:"340px",align:"right",render:t=><div style={{display:"flex",gap:4,justifyContent:"flex-end",flexWrap:"wrap"}}>
-          {t.pago.comp&&<Btn T={T} variant="ghost" size="sm" onClick={()=>comprobante(t)}>Comprobante</Btn>}
-          {t.pago.estado!=="verificado"&&<Btn T={T} variant={t.pago.estado==="a_verificar"?"success":"ghost"} size="sm" onClick={()=>verificar(t,true)}>Verificar</Btn>}
-          {t.pago.estado==="a_verificar"&&<Btn T={T} variant="ghost" size="sm" onClick={()=>verificar(t,false)}>Rechazar</Btn>}
-          <Btn T={T} variant="ghost" size="sm" onClick={()=>ajuste(t)}>Ajuste</Btn>
-        </div>},
-      ]}/>
-    </>)}
-    </DepSection>
-  </div>);
-}
 // PDF 10x15 (Zebra) con todas las etiquetas en el orden dado + páginas de cada una.
 async function ghDepPdfDeEtiquetas(b64List){
   const {PDFDocument}=await import("pdf-lib");

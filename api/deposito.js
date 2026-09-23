@@ -565,7 +565,13 @@ export default async function handler(req, res) {
         .sort((a, b) => (a.t.fechaDespacho || "").localeCompare(b.t.fechaDespacho || "")).map(x => { const p = tandaPublica(x.id, x.t); p.pedidos = []; p.hist = []; return p; });
       const deuda = +tandas.reduce((a, t) => a + num(t.total), 0).toFixed(2);
       const pagos = ps.docs.map(d => pagoPublico(d.id, d.data())).filter(p => p.estado !== "borrador").sort((a, b) => (b.informadoAt || 0) - (a.informadoAt || 0)).slice(0, 60);
-      return res.json({ cliente: clientePublico(c.id, c.data(), true), deuda, aFavor: num(c.data().aFavor), tandas, pagos });
+      const meses = {};
+      const mesRow = k => (meses[k] = meses[k] || { mes: k, tandas: 0, pedidos: 0, total: 0, verificado: 0, cobrado: 0 });
+      for (const x of ts.docs) { const t = x.data(); if (["borrador", "cancelada"].includes(t.estado)) continue; const k = String(t.fechaDespacho || "").slice(0, 7); if (!/^\d{4}-\d{2}$/.test(k)) continue;
+        const r = mesRow(k); r.tandas++; r.pedidos += num(t.n); r.total += num(t.total); if (t.pago?.estado === "verificado") r.verificado += num(t.total); }
+      for (const x of ps.docs) { const p = x.data(); if (p.estado !== "verificado" || num(p.monto) <= 0) continue; const v = ms(p.verificadoAt); if (!v) continue; mesRow(new Date(v - 3 * 3600000).toISOString().slice(0, 7)).cobrado += num(p.monto); }
+      const listaMeses = Object.values(meses).sort((a, b) => b.mes.localeCompare(a.mes)).slice(0, 6).map(r => ({ ...r, total: +r.total.toFixed(2), verificado: +r.verificado.toFixed(2), cobrado: +r.cobrado.toFixed(2) }));
+      return res.json({ cliente: clientePublico(c.id, c.data(), true), deuda, aFavor: num(c.data().aFavor), tandas, pagos, meses: listaMeses });
     }
     // Ajuste manual del saldo: monto > 0 acredita (se aplica a las tandas sin pagar,
     // el resto queda a favor); monto < 0 cobra (aFavor baja, puede quedar negativo =
@@ -644,14 +650,17 @@ export default async function handler(req, res) {
     }
     if (action === "clientes") {
       if (!soloOwner()) return;
-      const [cs, ts] = await Promise.all([db.collection("deposito_clientes").get(), db.collection("deposito_tandas").where("createdAt", ">=", new Date(Date.now() - 400 * 86400000)).get()]);
+      const [cs, ts, ps] = await Promise.all([db.collection("deposito_clientes").get(), db.collection("deposito_tandas").where("createdAt", ">=", new Date(Date.now() - 400 * 86400000)).get(), db.collection("deposito_pagos").where("createdAt", ">=", new Date(Date.now() - 70 * 86400000)).get()]);
       const mes = hoyAR().slice(0, 7); const st = {};
+      const mesDe = m => { const v = ms(m); return v ? new Date(v - 3 * 3600000).toISOString().slice(0, 7) : ""; };
+      const cobrado = {};
+      for (const d of ps.docs) { const p = d.data(); if (p.estado !== "verificado" || num(p.monto) <= 0 || mesDe(p.verificadoAt) !== mes) continue; cobrado[p.clienteId] = (cobrado[p.clienteId] || 0) + num(p.monto); }
       for (const d of ts.docs) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado)) continue;
         const k = t.clienteId; st[k] = st[k] || { mesPedidos: 0, mesTotal: 0, aVerificar: 0, sinInformar: 0 };
         if (String(t.fechaDespacho).startsWith(mes)) { st[k].mesPedidos += num(t.n); st[k].mesTotal += num(t.total); }
         if (t.pago?.estado === "a_verificar") st[k].aVerificar += num(t.total);
         else if (t.pago?.estado !== "verificado") st[k].sinInformar += num(t.total); }
-      return res.json({ clientes: cs.docs.map(d => ({ ...clientePublico(d.id, d.data(), true), stats: st[d.id] || { mesPedidos: 0, mesTotal: 0, aVerificar: 0, sinInformar: 0 } })).sort((a, b) => a.nombre.localeCompare(b.nombre)) });
+      return res.json({ mes, clientes: cs.docs.map(d => ({ ...clientePublico(d.id, d.data(), true), stats: { ...(st[d.id] || { mesPedidos: 0, mesTotal: 0, aVerificar: 0, sinInformar: 0 }), mesCobrado: +(cobrado[d.id] || 0).toFixed(2) } })).sort((a, b) => a.nombre.localeCompare(b.nombre)) });
     }
 
     if (action === "cliente_guardar") {
