@@ -133,9 +133,14 @@ async function ctxCliente(req, db, { token, uid }) {
   if (!uid) return null;
   const r = await requireUid(req, uid, "envios");
   if (!r.ok || r.viaAdmin || r.user?.impersonatedBy) return null;
-  const s = await db.collection("deposito_clientes").where("growithUid", "==", String(uid)).limit(1).get();
-  if (s.empty || s.docs[0].data().activo === false) return null;
-  return { cliente: { id: s.docs[0].id, ...s.docs[0].data() }, via: "growith", por: r.user.uid, porNombre: r.user.name || r.user.email || s.docs[0].data().nombre };
+  // El vínculo puede haberse guardado con el uid de la tienda, el del perfil que
+  // la opera o el del dueño (multi-tienda): se prueban los tres.
+  const cands = [String(uid)]; if (r.user.uid && !cands.includes(r.user.uid)) cands.push(r.user.uid);
+  try { const ud = await db.collection("users").doc(String(uid)).get(); const ow = ud.exists ? ud.data().ownerUid : null; if (ow && !cands.includes(ow)) cands.push(ow); } catch (_) { }
+  const s = await db.collection("deposito_clientes").where("growithUid", "in", cands.slice(0, 10)).get();
+  const doc = s.docs.find(d => d.data().growithUid === String(uid)) || s.docs[0];
+  if (!doc || doc.data().activo === false) return null;
+  return { cliente: { id: doc.id, ...doc.data() }, via: "growith", por: r.user.uid, porNombre: r.user.name || r.user.email || doc.data().nombre };
 }
 
 // ── Formas públicas ──────────────────────────────────────────────────────────
@@ -667,6 +672,21 @@ export default async function handler(req, res) {
       return res.json({ mes, clientes: cs.docs.map(d => ({ ...clientePublico(d.id, d.data(), true), stats: { ...(st[d.id] || { mesPedidos: 0, mesTotal: 0, aVerificar: 0, sinInformar: 0 }), mesCobrado: +(cobrado[d.id] || 0).toFixed(2) } })).sort((a, b) => a.nombre.localeCompare(b.nombre)) });
     }
 
+    // Diagnóstico del vínculo con Growith: qué cuenta quedó apuntada y si sirve para "Enviar al depósito".
+    if (action === "cliente_vinculo") {
+      if (!soloOwner()) return;
+      const c = await db.collection("deposito_clientes").doc(String(body.id || "")).get(); if (!c.exists) return res.status(404).json({ error: "Cliente inexistente." });
+      const gu = c.data().growithUid; if (!gu) return res.json({ vinculado: false, motivo: "Este cliente no tiene una cuenta de Growith vinculada: usa el link del portal." });
+      const u = await db.collection("users").doc(String(gu)).get(); if (!u.exists) return res.json({ vinculado: false, uid: gu, motivo: "La cuenta vinculada ya no existe en Growith. Volvé a cargar el mail en Editar." });
+      const d = u.data(); const plan = d.plan || "free"; const exp = ms(d.planExpiry); const vigente = plan !== "free" && (!exp || exp > Date.now() || ["active", "trialing"].includes(d.stripeStatus));
+      const tiendaDe = d.active_tienda_uid && d.active_tienda_uid !== u.id ? d.active_tienda_uid : null;
+      const avisos = [];
+      if (d.deleted) avisos.push("La cuenta está eliminada.");
+      if (d.soloMiembro) avisos.push("Ese mail es de un miembro de equipo, no del dueño de la tienda: el botón aparece solo si entra a Envíos de esa tienda.");
+      if (!vigente) avisos.push(`El plan de esa cuenta no está activo (${plan}); Envíos no está disponible sin plan.`);
+      if (tiendaDe) avisos.push("Ese perfil tiene varias tiendas: el vínculo apunta a la tienda activa al momento de guardar. Si cambió de tienda, guardá de nuevo el mail en Editar o poné el uid de la tienda.");
+      return res.json({ vinculado: true, uid: gu, email: d.email || "", nombre: d.nombre || d.displayName || d.storeName || "", plan, vigente, tiendaActiva: d.active_tienda_uid || null, ownerUid: d.ownerUid || null, avisos, motivo: avisos.length ? avisos.join(" ") : "El vínculo está bien: al entrar a Envíos (recargando la página) tiene que ver \"Enviar al depósito\" al generar etiquetas." });
+    }
     if (action === "cliente_guardar") {
       if (!soloOwner()) return;
       const nombre = txt(body.nombre, 80); if (!nombre) return res.status(400).json({ error: "Poné el nombre del cliente." });
@@ -682,7 +702,7 @@ export default async function handler(req, res) {
       if (em && prevCli && String(prevCli.growithEmail || "") === em) { /* sin cambio: no se re-resuelve la tienda activa */ }
       else if (em) {
         let doc = null;
-        if (em.includes("@")) { const u = await db.collection("users").where("email", "==", em).limit(5).get(); doc = u.docs.find(d => !d.data().deleted) || null; }
+        if (em.includes("@")) { const u = await db.collection("users").where("email", "==", em).limit(5).get(); const vivos = u.docs.filter(d => !d.data().deleted); doc = vivos.find(d => !d.data().soloMiembro && (d.data().active_tienda_uid || (d.data().stores || []).length)) || vivos.find(d => !d.data().soloMiembro) || vivos[0] || null; }
         else if (/^[A-Za-z0-9_-]{10,80}$/.test(em)) { const d1 = await db.collection("users").doc(em).get(); if (d1.exists && !d1.data().deleted) doc = d1; }
         if (!doc) return res.status(404).json({ error: `No hay ninguna cuenta de Growith con ${em}.` });
         // Por mail: la tienda ACTIVA del perfil (la que genera etiquetas). Por uid: esa tienda.

@@ -21655,7 +21655,7 @@ function DepositoCuentas({T,api}){
         <div>{lbl("Nota interna")}<textarea style={{...iS,minHeight:54,resize:"vertical"}} value={form.nota} onChange={e=>setForm(f=>({...f,nota:e.target.value}))}/></div>
         <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.text,cursor:"pointer"}} onClick={()=>setForm(f=>({...f,activo:!f.activo}))}><DSToggle T={T} active={form.activo} onToggle={()=>{}}/><span>Cliente activo</span></label>
         <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center"}}>
-          {form._c?<div style={{display:"flex",gap:4}}><Btn T={T} variant="ghost" size="sm" onClick={()=>{ navigator.clipboard.writeText(link(form._c)).then(()=>toast("Link del portal copiado","success")).catch(()=>toast("No pude copiar","warning")); }}>Copiar link del portal</Btn><Btn T={T} variant="ghost" size="sm" onClick={()=>nuevoLink(form._c)}>Link nuevo</Btn></div>:<span/>}
+          {form._c?<div style={{display:"flex",gap:4}}><Btn T={T} variant="ghost" size="sm" onClick={()=>{ navigator.clipboard.writeText(link(form._c)).then(()=>toast("Link del portal copiado","success")).catch(()=>toast("No pude copiar","warning")); }}>Copiar link del portal</Btn><Btn T={T} variant="ghost" size="sm" onClick={()=>nuevoLink(form._c)}>Link nuevo</Btn>{form._c.growithUid&&<Btn T={T} variant="ghost" size="sm" onClick={async()=>{ try{ const r=await api("cliente_vinculo",{id:form._c.id}); toast(r.motivo,r.vinculado&&!r.avisos?.length?"success":"warning",9000); }catch(e){ toast(e.message,"error"); } }}>Probar vínculo</Btn>}</div>:<span/>}
           <div style={{display:"flex",gap:8}}><Btn T={T} variant="secondary" onClick={()=>setForm(null)}>Cancelar</Btn><Btn T={T} variant="primary" onClick={guardar} disabled={busy}>{busy?"Guardando…":"Guardar"}</Btn></div>
         </div>
       </div>
@@ -43343,9 +43343,9 @@ export default function App() {
   useEffect(()=>{
     if(!user?.uid){ setDepositoInfo(null); return; }
     let vivo=true;
-    ghDepApiSesion(()=>({}))("me",{uid:user.uid}).then(d=>{ if(vivo) setDepositoInfo(d); }).catch(()=>{ if(vivo) setDepositoInfo({rol:null,cliente:null,error:true}); });
+    ghDepApiSesion(()=>({}))("me",{uid:user.uid}).then(d=>{ if(vivo) setDepositoInfo(d); }).catch(()=>{ if(vivo) setDepositoInfo(prev=>prev&&!prev.error?prev:{rol:null,cliente:null,error:true}); });
     return ()=>{ vivo=false; };
-  },[user?.uid]);
+  },[user?.uid,page==="envios"||page==="deposito"?page:""]);
   useEffect(()=>{ try{ window.__ghDepositoOwner = depositoInfo?.rol==="owner"; }catch(_){ } },[depositoInfo]);
   useEffect(()=>{
     if(!authUser){ setMiembroDe(authUser===null?null:undefined); return; }
