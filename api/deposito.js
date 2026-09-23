@@ -414,15 +414,19 @@ export default async function handler(req, res) {
 
     if (action === "cola") {
       // Todo lo no terminado + lo entregado/cancelado de los últimos 4 días.
+      // Las entregadas se traen desde el 1 del mes para los totales (despachados hoy / este mes); a la cola van solo las de los últimos 4 días.
+      const hoy = hoyAR(); const inicioMes = Date.parse(`${hoy.slice(0, 7)}-01T03:00:00Z`); const inicioHoy = Date.parse(`${hoy}T03:00:00Z`); const hace4 = Date.now() - 4 * 86400000;
       const [vivas, rec] = await Promise.all([
         db.collection("deposito_tandas").where("estado", "in", ["pendiente", "impresa", "armada"]).get(),
-        db.collection("deposito_tandas").where("entregadaAt", ">=", Date.now() - 4 * 86400000).get(),
+        db.collection("deposito_tandas").where("entregadaAt", ">=", Math.min(inicioMes, hace4)).get(),
       ]);
-      const m = new Map();
-      for (const d of [...vivas.docs, ...rec.docs]) if (d.data().estado !== "borrador") m.set(d.id, d.data());
+      const m = new Map(); const desp = { hoy: 0, hoyTandas: 0, mes: 0, mesTandas: 0 };
+      for (const d of rec.docs) { const t = d.data(); if (t.estado !== "entregada") continue; const at = ms(t.entregadaAt) || 0;
+        if (at >= inicioMes) { desp.mes += num(t.n); desp.mesTandas++; } if (at >= inicioHoy) { desp.hoy += num(t.n); desp.hoyTandas++; } }
+      for (const d of [...vivas.docs, ...rec.docs]) { const t = d.data(); if (t.estado === "borrador") continue; if (t.estado === "entregada" && (ms(t.entregadaAt) || 0) < hace4) continue; m.set(d.id, t); }
       const tandas = [...m.entries()].map(([id, t]) => paraDep(id, t)).sort((a, b) => (a.fechaDespacho || "").localeCompare(b.fechaDespacho || "") || (a.createdAt || 0) - (b.createdAt || 0));
       const cs = await db.collection("deposito_clientes").get();
-      return res.json({ rol: dep.rol, via: dep.via || "sesion", nombre: dep.nombre, hoy: hoyAR(), tandas, clientes: cs.docs.map(d => clientePublico(d.id, d.data(), false)).filter(c => c.activo).map(c => dep.rol === "owner" ? c : { ...c, precio: null }) });
+      return res.json({ rol: dep.rol, via: dep.via || "sesion", nombre: dep.nombre, hoy, despachados: desp, tandas, clientes: cs.docs.map(d => clientePublico(d.id, d.data(), false)).filter(c => c.activo).map(c => dep.rol === "owner" ? c : { ...c, precio: null }) });
     }
 
     // Lector de códigos: la etiqueta escaneada (número de envío de Andreani, id

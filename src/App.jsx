@@ -21317,6 +21317,7 @@ function DepositoCola({T,api,owner}){
   const paraHoy=vivas.filter(t=>t.fechaDespacho<=st.hoy);
   const atrasadas=vivas.filter(t=>!urg(t)&&t.fechaDespacho<st.hoy);
   const nPed=l=>l.reduce((a,t)=>a+t.n,0);
+  const mananaStr=new Date(Date.parse(`${st.hoy}T12:00:00Z`)+86400000).toISOString().slice(0,10);
   const colP=ghDepColPago(T);
   const Tanda=({t})=>{ const open=abierta===t.id; const v=vista[t.id]||"picking"; const pick=ghDepPicking(t.pedidos); const ap=t.pedidos.filter(p=>p.apartado).length; const conItems=t.pedidos.some(p=>p.items.length); const arm=t.pedidos.filter(p=>p.armado).length; const nP=t.pedidos.length; const done=nP>0&&arm>=nP;
     const esp=t.tipo==="especial"; const cCanal=esp?(urg(t)?T.red:T.purple):t.canal==="ml"?T.yellow:T.accent; const ico=esp?"bag":t.canal==="ml"?"tag":"truck";
@@ -21407,13 +21408,14 @@ function DepositoCola({T,api,owner}){
     </div>); };
   return (
     <div>
-      <DepStats T={T} items={[
-        {l:"Para hoy",v:nPed(paraHoy),ico:"box",s:`${paraHoy.length} tanda${paraHoy.length!==1?"s":""} · ${new Set(paraHoy.map(t=>t.clienteId)).size} cliente${new Set(paraHoy.map(t=>t.clienteId)).size!==1?"s":""}`},
-        {l:"Atrasadas",v:nPed(atrasadas),ico:"clock",c:atrasadas.length?T.red:T.textSm,s:atrasadas.length?`${atrasadas.length} tanda${atrasadas.length!==1?"s":""}`:"ninguna"},
-        {l:"Urgentes",v:vivas.filter(urg).length,ico:"alert",c:vivas.filter(urg).length?T.orange:T.textSm,s:"envíos especiales"},
-        {l:"Próximos días",v:nPed(vivas.filter(t=>!urg(t)&&t.fechaDespacho>st.hoy)),ico:"calendar",c:T.blue,s:"pedidos ya cargados"},
-        {l:"Entregadas",v:hechas.length,ico:"check",c:T.green,s:"últimos 4 días"},
-      ]}/>
+      {(()=>{ const manana=vivas.filter(t=>t.fechaDespacho===mananaStr), despues=vivas.filter(t=>t.fechaDespacho>mananaStr); const nAtr=nPed(atrasadas), nUrg=vivas.filter(urg).length; const dsp=st.despachados||{hoy:0,hoyTandas:0,mes:0,mesTandas:0};
+        const subHoy=[nAtr?`${nAtr} atrasado${nAtr!==1?"s":""} de otros días`:"",nUrg?`${nUrg} urgente${nUrg!==1?"s":""}`:""].filter(Boolean).join(" · ")||`${new Set(paraHoy.map(t=>t.clienteId)).size} cliente${new Set(paraHoy.map(t=>t.clienteId)).size!==1?"s":""}`;
+        return <DepStats T={T} items={[
+        {l:"Pedidos para hoy",v:nPed(paraHoy),ico:"box",c:nAtr||nUrg?T.red:undefined,s:subHoy},
+        {l:"Para mañana",v:nPed(manana),ico:"calendar",c:T.blue,s:despues.length?`+ ${nPed(despues)} más adelante`:"ya cargados"},
+        {l:"Despachados hoy",v:dsp.hoy,ico:"truck",c:dsp.hoy?T.green:T.textSm,s:`${dsp.hoyTandas} tanda${dsp.hoyTandas!==1?"s":""} entregada${dsp.hoyTandas!==1?"s":""} al correo`},
+        {l:"Despachados este mes",v:dsp.mes,ico:"check",c:T.green,s:`${dsp.mesTandas} tanda${dsp.mesTandas!==1?"s":""}`},
+      ]}/>; })()}
       <div style={{display:"grid",gridTemplateColumns:"minmax(260px,1.6fr) minmax(200px,1fr) auto",gap:10,marginBottom:10,alignItems:"stretch"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,background:T.card,padding:"6px 6px 6px 8px",boxShadow:DS.shadow.sm,minWidth:0}}>
           <DepTile T={T} color={T.accent} ico="scan" size={32}/>
