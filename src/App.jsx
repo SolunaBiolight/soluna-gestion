@@ -20855,10 +20855,10 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
         <Btn T={T} variant="primary" size="sm" onClick={()=>setNuevo({tipo:"tanda"})}>Enviar etiquetas</Btn>
       </div>
       <DepStats T={T} items={[
-        {l:"Por pedido armado",v:fmtMoney(st.cliente?.precio||0)},
-        {l:"Tu saldo",v:saldo?(saldo.n>0?fmtMoney(saldo.n):saldo.n<0?fmtMoney(-saldo.n):"Al día"):"—",c:saldo?.col,s:saldo?(saldo.n>0?"a pagar":saldo.n<0?"a tu favor":"nada pendiente"):""},
-        {l:"En verificación",v:fmtMoney(st.cuenta?.enVerificacion||0),c:st.cuenta?.enVerificacion>0?T.yellow:T.textSm,s:"transferencias informadas"},
-        {l:"Corte",v:`${st.corteHora??15}:00`,s:"antes sale el mismo día"},
+        {l:"Por pedido armado",v:fmtMoney(st.cliente?.precio||0),ico:"tag"},
+        {l:"Tu saldo",ico:"wallet",v:saldo?(saldo.n>0?fmtMoney(saldo.n):saldo.n<0?fmtMoney(-saldo.n):"Al día"):"—",c:saldo?.col,s:saldo?(saldo.n>0?"a pagar":saldo.n<0?"a tu favor":"nada pendiente"):""},
+        {l:"En verificación",ico:"clock",v:fmtMoney(st.cuenta?.enVerificacion||0),c:st.cuenta?.enVerificacion>0?T.yellow:T.textSm,s:"transferencias informadas"},
+        {l:"Corte",ico:"calendar",v:`${st.corteHora??15}:00`,s:"antes sale el mismo día"},
       ]}/>
       <div style={{fontSize:DS.font.md,color:T.textSm,marginBottom:14,lineHeight:1.6}}>{portal
         ?"Subí el PDF con las etiquetas de los pedidos a armar con \"Enviar etiquetas\" y elegí el día de despacho. Un pedido suelto con instrucciones va por \"Envío especial\". Los pagos son por transferencia: \"Informar pago\" con el comprobante y el depósito lo verifica."
@@ -20924,7 +20924,10 @@ function DepositoPortalView({token}){
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}>
       <div style={{maxWidth:860,margin:"0 auto",padding:"28px 16px 64px"}}>
-        <div style={{fontSize:DS.font.md,fontWeight:700,color:T.textSm,letterSpacing:0.6,textTransform:"uppercase",marginBottom:14}}>Depósito · Growith</div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:22}}>
+          <div style={{width:34,height:34,borderRadius:DS.r.lg,background:`linear-gradient(135deg, ${T.accentSolid}, ${T.purple})`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 4px 14px ${T.accentSolid}55`}}><DepIco d="box" size={18} color="#fff" sw={2.2}/></div>
+          <div><div style={{fontSize:DS.font.lg,fontWeight:800,color:T.text,letterSpacing:-0.3,lineHeight:1.1}}>Depósito</div><div style={{fontSize:DS.font.xs,color:T.textSm,letterSpacing:0.4,textTransform:"uppercase",fontWeight:600}}>Portal del cliente</div></div>
+        </div>
         <DepositoClienteView T={T} api={api} portal/>
       </div>
       <ToastContainer T={T}/>
@@ -20960,7 +20963,7 @@ function DepositoPanelView({token}){
       <input autoFocus value={nom} onChange={e=>setNom(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") guardarNombre(); }} placeholder="Nombre" style={{...InputStyle(T),marginBottom:12}}/>
       <Btn T={T} variant="primary" onClick={guardarNombre} disabled={!nom.trim()}>Entrar</Btn>
     </Card></div>);
-  return wrap(<div style={{maxWidth:1180,margin:"0 auto",minHeight:"100vh",borderLeft:`1px solid ${T.border}`,borderRight:`1px solid ${T.border}`}}><AppDeposito T={T} info={{rol:info.rol,cliente:null}} api={api} panel={{operario,cambiarOperario,dark,setDark}}/></div>);
+  return wrap(<AppDeposito T={T} info={{rol:info.rol,cliente:null}} api={api} panel={{operario,cambiarOperario,dark,setDark}}/>);
 }
 
 // ── Consola del DEPÓSITO ──
@@ -20984,17 +20987,26 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
     accesos:"Links de acceso al panel (el tuyo y el de la PC del depósito), datos bancarios que ve el cliente para transferir y hora de corte del despacho."};
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <AppTopbar T={T} section={panel?(owner?"Depósito · Panel":"Depósito · PC"):"Depósito"} sectionId="deposito" onHome={onHome} onHelp={()=>setGuia(g=>!g)}>
-        {panel&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textMd}}>
-          {panel.operario&&<span>{panel.operario} · <button onClick={panel.cambiarOperario} style={{background:"none",border:"none",padding:0,color:T.accent,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:DS.font.md}}>cambiar</button></span>}
-          <button onClick={()=>panel.setDark(d=>!d)} title="Tema claro / oscuro" style={{...BtnSecondary(T),fontSize:DS.font.sm,padding:"4px 8px"}}>{panel.dark?"Claro":"Oscuro"}</button>
-        </div>}
-        {esDep&&<div style={{display:"flex",gap:4,background:T.surface,borderRadius:DS.r.md,padding:2}}>
-          {[["cola","Cola"],["ingresos","Ingresos"],["historial","Historial"],...(owner?[["clientes","Clientes"],["pagos","Pagos"],["accesos","Configuración"]]:[]),...(info?.cliente?[["mio","Mis envíos"]]:[])].map(([k,l])=>(
-            <button key={k} onClick={()=>setTab(k)} style={{padding:"6px 12px",fontSize:DS.font.md,border:"none",borderRadius:DS.r.sm,background:tab===k?T.card:"transparent",color:tab===k?T.text:T.textMd,fontWeight:tab===k?600:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>))}
-        </div>}
-      </AppTopbar>
-      <div style={panel?{padding:"16px 20px 64px",maxWidth:1080,margin:"0 auto"}:{padding:"20px 24px 64px"}}>
+      {(()=>{ const TABS=[["cola","Cola","box"],["ingresos","Ingresos","inbox"],["historial","Historial","clock"],...(owner?[["clientes","Clientes","users"],["pagos","Pagos","wallet"],["accesos","Configuración","key"]]:[]),...(info?.cliente?[["mio","Mis envíos","truck"]]:[])];
+        const tabs=esDep&&<div style={{display:"flex",gap:2,background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:3}}>
+          {TABS.map(([k,l,ic])=>(<button key={k} onClick={()=>setTab(k)} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",fontSize:DS.font.base,border:"none",borderRadius:DS.r.md,background:tab===k?T.card:"transparent",color:tab===k?T.text:T.textMd,fontWeight:tab===k?600:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:tab===k?DS.shadow.sm:"none",transition:"all .15s"}}>{panel&&<DepIco d={ic} size={13} color={tab===k?T.accent:T.textSm}/>}{l}</button>))}
+        </div>;
+        if(!panel) return <AppTopbar T={T} section="Depósito" sectionId="deposito" onHome={onHome} onHelp={()=>setGuia(g=>!g)}>{tabs}</AppTopbar>;
+        return (<div style={{position:"sticky",top:0,zIndex:30,background:T.bg+"e6",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",borderBottom:`1px solid ${T.border}`}}>
+          <div style={{maxWidth:1080,margin:"0 auto",padding:"12px 20px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+              <div style={{width:34,height:34,borderRadius:DS.r.lg,background:`linear-gradient(135deg, ${T.accentSolid}, ${T.purple})`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 4px 14px ${T.accentSolid}55`}}><DepIco d="box" size={18} color="#fff" sw={2.2}/></div>
+              <div><div style={{fontSize:DS.font.lg,fontWeight:800,color:T.text,letterSpacing:-0.3,lineHeight:1.1}}>Depósito</div><div style={{fontSize:DS.font.xs,color:T.textSm,letterSpacing:0.4,textTransform:"uppercase",fontWeight:600}}>{owner?"Panel de administración":"Estación de armado"}</div></div>
+            </div>
+            <div style={{flex:1,display:"flex",justifyContent:"center",minWidth:0}}>{tabs}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+              {panel.operario&&<div style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.text,background:T.surface,border:`1px solid ${T.border}`,borderRadius:99,padding:"4px 10px 4px 5px"}}><span style={{width:22,height:22,borderRadius:99,background:T.accentSolid+"33",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:DS.font.xs,fontWeight:800}}>{panel.operario.slice(0,1).toUpperCase()}</span>{panel.operario}<button onClick={panel.cambiarOperario} title="Cambiar de persona" style={{background:"none",border:"none",padding:0,color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:DS.font.sm}}>cambiar</button></div>}
+              <button onClick={()=>panel.setDark(d=>!d)} title="Tema claro / oscuro" style={{width:32,height:32,border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.surface,color:T.textMd,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{panel.dark?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>}</button>
+              <button onClick={()=>setGuia(g=>!g)} title="¿Cómo funciona?" style={{width:32,height:32,border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.surface,color:T.textMd,cursor:"pointer",fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",fontSize:DS.font.base}}>?</button>
+            </div>
+          </div>
+        </div>); })()}
+      <div style={panel?{padding:"22px 20px 72px",maxWidth:1080,margin:"0 auto"}:{padding:"20px 24px 64px"}}>
         {guia&&(<Card T={T} padding="lg" style={{marginBottom:18}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
             <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text}}>Cómo funciona el Depósito</div>
@@ -21017,7 +21029,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
             </>)}
           </div>
         </Card>)}
-        {esDep&&CTX[tab]&&<div style={{fontSize:DS.font.md,color:T.textSm,marginBottom:14}}>{CTX[tab]}</div>}
+        {esDep&&CTX[tab]&&<div style={{fontSize:DS.font.base,color:T.textSm,marginBottom:16,maxWidth:760,lineHeight:1.5}}>{CTX[tab]}</div>}
         {esDep&&owner&&sinClientes&&tab==="clientes"&&(<Card T={T} padding="lg" style={{marginBottom:18}}>
           <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,marginBottom:6}}>Para empezar</div>
           <ol style={{margin:0,paddingLeft:20,fontSize:DS.font.base,color:T.textMd,lineHeight:1.8}}>
@@ -21044,36 +21056,64 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
 // números alineados a la derecha y tabulares; tablas con borde fino, sin sombras.
 const ghDepCol=T=>({pendiente:T.textMd,impresa:T.accent,armada:T.yellow,entregada:T.green,cancelada:T.red});
 const ghDepColPago=T=>({sin_informar:T.textSm,a_verificar:T.yellow,verificado:T.green,rechazado:T.red});
+// Íconos de línea (24x24) del depósito.
+const GH_DEP_ICO={
+  box:"M21 8l-9-5-9 5v8l9 5 9-5V8zM3.3 8.3L12 13l8.7-4.7M12 13v9",
+  truck:"M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 19a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM18.5 19a1.5 1.5 0 100-3 1.5 1.5 0 000 3z",
+  clock:"M12 22a10 10 0 100-20 10 10 0 000 20zM12 6v6l4 2",
+  alert:"M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0zM12 9v4M12 17h.01",
+  check:"M22 11.1V12a10 10 0 11-5.9-9.1M22 4L12 14l-3-3",
+  calendar:"M3 5h18v16H3zM16 3v4M8 3v4M3 10h18",
+  users:"M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8",
+  wallet:"M21 12V7H5a2 2 0 010-4h14v4M3 5v14a2 2 0 002 2h16v-5M18 12a2 2 0 100 4 2 2 0 000-4z",
+  scan:"M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2M7 8v8M11 8v8M15 8v8",
+  tag:"M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0L2 12V2h10l8.6 8.6a2 2 0 010 2.8zM7 7h.01",
+  bag:"M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18M16 10a4 4 0 01-8 0",
+  inbox:"M22 12h-6l-2 3h-4l-2-3H2M5.5 5.1L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.9A2 2 0 0016.8 4H7.2a2 2 0 00-1.7 1.1z",
+  key:"M21 2l-2 2m-7.6 7.6a5.5 5.5 0 11-7.8 7.8 5.5 5.5 0 017.8-7.8zm0 0L15 8m0 0l3 3L22 7l-3-3m-4 4l3 3",
+  hand:"M18 11V6a2 2 0 00-4 0v5M14 10V4a2 2 0 00-4 0v6M10 10.5V6a2 2 0 00-4 0v8M18 8a2 2 0 014 0v6a8 8 0 01-8 8h-2c-2.8 0-4.5-.9-5.9-2.4L2.7 15.7a2 2 0 012.8-2.8L8 14",
+};
+function DepIco({d,size=16,color,sw=2}){ return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color||"currentColor"} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"><path d={GH_DEP_ICO[d]||d}/></svg>; }
+// Cuadradito de color con ícono (como en las KPI de Growith).
+function DepTile({T,color,ico,size=34}){ const c=color||T.accent; return <div style={{width:size,height:size,borderRadius:DS.r.lg,background:c+"1a",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:c}}><DepIco d={ico} size={Math.round(size*0.5)} color={c}/></div>; }
 function DepDot({T,color,children,strong}){ return <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:DS.font.md,color:strong?T.text:T.textMd,whiteSpace:"nowrap",fontWeight:strong?600:400}}><span style={{width:6,height:6,borderRadius:99,background:color,flexShrink:0}}/>{children}</span>; }
-function DepLabel({T,color,children,style}){ return <div style={{fontSize:DS.font.xs,fontWeight:700,letterSpacing:0.8,textTransform:"uppercase",color:color||T.textSm,marginBottom:8,...style}}>{children}</div>; }
+function DepLabel({T,color,children,style}){ return <div style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.sm,fontWeight:700,letterSpacing:0.6,textTransform:"uppercase",color:color||T.textSm,margin:"0 0 10px",...style}}>{children}</div>; }
+// items: [{l, v, s, c, ico}]
 function DepStats({T,items}){
-  return (<div style={{display:"grid",gridTemplateColumns:`repeat(${items.length},minmax(0,1fr))`,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,background:T.card,marginBottom:16,overflow:"hidden"}}>
-    {items.map((it,i)=>(<div key={i} style={{padding:"12px 16px",borderLeft:i?`1px solid ${T.borderL}`:"none",minWidth:0}}>
-      <div style={{fontSize:DS.font.xs,fontWeight:600,letterSpacing:0.6,textTransform:"uppercase",color:T.textSm,marginBottom:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.l}</div>
-      <div style={{fontSize:DS.font["2xl"],fontWeight:800,color:it.c||T.text,letterSpacing:-0.5,lineHeight:1.1,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.v}</div>
-      {it.s?<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.s}</div>:null}
-    </div>))}
+  return (<div style={{display:"grid",gridTemplateColumns:`repeat(auto-fit,minmax(${items.length>4?150:170}px,1fr))`,gap:10,marginBottom:18}}>
+    {items.map((it,i)=>{ const c=it.c&&it.c!==T.textSm?it.c:null; return (<div key={i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"14px 16px",boxShadow:DS.shadow.sm,display:"flex",gap:12,alignItems:"flex-start",minWidth:0}}>
+      {it.ico&&<DepTile T={T} color={c||T.accent} ico={it.ico} size={34}/>}
+      <div style={{minWidth:0,flex:1}}>
+        <div style={{fontSize:DS.font.xs,fontWeight:600,letterSpacing:0.5,textTransform:"uppercase",color:T.textSm,marginBottom:5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.l}</div>
+        <div style={{fontSize:DS.font["3xl"],fontWeight:800,color:c||T.text,letterSpacing:-0.8,lineHeight:1,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.v}</div>
+        {it.s?<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.s}</div>:null}
+      </div>
+    </div>); })}
   </div>);
 }
 // cols: [{h, w:"1fr"|"120px", align:"right", render:(row)=>node}]
-function DepTable({T,cols,rows,empty,minWidth=0}){
+function DepTable({T,cols,rows,empty,minWidth=0,title,extra}){
   const grid=cols.map(c=>c.w||"1fr").join(" ");
-  return (<div style={{border:`1px solid ${T.border}`,borderRadius:DS.r.lg,background:T.card,overflow:"auto"}}>
-    <div style={{minWidth}}>
-      <div style={{display:"grid",gridTemplateColumns:grid,gap:12,padding:"8px 14px",borderBottom:`1px solid ${T.border}`,background:T.surface}}>
+  const [hov,setHov]=useState(null);
+  return (<div style={{border:`1px solid ${T.border}`,borderRadius:DS.r.xl,background:T.card,overflow:"hidden",boxShadow:DS.shadow.sm}}>
+    {title&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",borderBottom:`1px solid ${T.border}`}}><div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,flex:1}}>{title}</div>{extra}</div>}
+    <div style={{overflow:"auto"}}><div style={{minWidth}}>
+      <div style={{display:"grid",gridTemplateColumns:grid,gap:12,padding:"9px 16px",borderBottom:`1px solid ${T.border}`,background:T.surface}}>
         {cols.map((c,i)=><div key={i} style={{fontSize:DS.font.xs,fontWeight:700,letterSpacing:0.6,textTransform:"uppercase",color:T.textSm,textAlign:c.align||"left",whiteSpace:"nowrap"}}>{c.h}</div>)}
       </div>
-      {rows.length===0?<div style={{padding:"26px 14px",fontSize:DS.font.base,color:T.textSm,textAlign:"center"}}>{empty}</div>
-      :rows.map((r,ri)=>(<div key={r.id||ri} style={{display:"grid",gridTemplateColumns:grid,gap:12,padding:"10px 14px",borderBottom:ri<rows.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:r._dim?0.5:1}}>
+      {rows.length===0?<div style={{padding:"30px 16px",fontSize:DS.font.base,color:T.textSm,textAlign:"center"}}>{empty}</div>
+      :rows.map((r,ri)=>(<div key={r.id||ri} onMouseEnter={()=>setHov(ri)} onMouseLeave={()=>setHov(null)} style={{display:"grid",gridTemplateColumns:grid,gap:12,padding:"11px 16px",borderBottom:ri<rows.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:r._dim?0.5:1,background:hov===ri?T.surface:"transparent",transition:"background .12s"}}>
         {cols.map((c,i)=><div key={i} style={{fontSize:DS.font.base,color:T.text,textAlign:c.align||"left",minWidth:0,fontVariantNumeric:"tabular-nums",display:c.align==="right"?"flex":"block",justifyContent:"flex-end",gap:6,alignItems:"center"}}>{c.render(r)}</div>)}
       </div>))}
-    </div>
+    </div></div>
   </div>);
 }
 const depSub=(T,txt)=><div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{txt}</div>;
 // Saldo de un cliente: lo que debe (a verificar + sin informar) menos lo que tiene a favor.
 const ghDepSaldo=(T,bruta,aFavor)=>{ const s=(bruta||0)-(aFavor||0); return s>0.5?{txt:`Debe ${fmtMoney(s)}`,col:T.yellow,n:s}:s<-0.5?{txt:`${fmtMoney(-s)} a favor`,col:T.green,n:s}:{txt:"Al día",col:T.textSm,n:0}; };
 const ghDepFechaHora=ms=>new Date(ms).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+// Botón chico de ícono (abrir/cerrar detalle).
+function DepChevron({T,open,onClick,title}){ return <button onClick={onClick} title={title} style={{width:30,height:30,border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.surface,color:T.textMd,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{transform:open?"rotate(180deg)":"none",transition:"transform .15s"}}><path d="M6 9l6 6 6-6"/></svg></button>; }
 
 // Estado de cuenta de un cliente (solo dueño): saldo, tandas sin pagar y transferencias.
 function DepositoCuentaModal({T,api,cliente,onClose,onAjustar}){
@@ -21160,39 +21200,38 @@ function DepositoCola({T,api,owner}){
   const meta=txt=><span style={{fontSize:DS.font.md,color:T.textMd,whiteSpace:"nowrap"}}>{txt}</span>;
   const sep=<span style={{color:T.borderL}}>·</span>;
   const Tanda=({t})=>{ const open=abierta===t.id; const v=vista[t.id]||"picking"; const pick=ghDepPicking(t.pedidos); const ap=t.pedidos.filter(p=>p.apartado).length; const conItems=t.pedidos.some(p=>p.items.length); const arm=t.pedidos.filter(p=>p.armado).length; const nP=t.pedidos.length; const done=nP>0&&arm>=nP;
+    const cCanal=t.tipo==="especial"?(urg(t)?T.red:T.purple):t.canal==="ml"?T.yellow:T.accent; const ico=t.tipo==="especial"?"bag":t.canal==="ml"?"tag":"truck";
     return (
-    <div style={{background:T.card,border:`1px solid ${urg(t)?T.red+"77":T.border}`,borderRadius:DS.r.lg,padding:"12px 16px"}}>
-      <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
-        <div style={{flex:1,minWidth:240,cursor:"pointer"}} onClick={()=>setAbierta(open?null:t.id)}>
+    <div style={{background:T.card,border:`1px solid ${urg(t)?T.red+"77":T.border}`,borderRadius:DS.r.xl,padding:"14px 16px",boxShadow:DS.shadow.sm}}>
+      <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+        <DepTile T={T} color={cCanal} ico={ico} size={40}/>
+        <div style={{flex:1,minWidth:220,cursor:"pointer"}} onClick={()=>setAbierta(open?null:t.id)}>
           <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
-            <span style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>{t.clienteNombre}</span>
+            <span style={{fontSize:DS.font.xl,fontWeight:700,color:T.text,letterSpacing:-0.2}}>{t.clienteNombre}</span>
             <span style={{fontSize:DS.font.base,color:T.textMd}}>{t.tipo==="especial"?(t.especial?.titulo||"Envío especial"):`${t.n} pedido${t.n!==1?"s":""}`}</span>
-            {urg(t)&&<span style={{fontSize:DS.font.xs,fontWeight:700,color:T.red,letterSpacing:0.6,textTransform:"uppercase"}}>Urgente</span>}
-            {t.tipo==="especial"&&!urg(t)&&<span style={{fontSize:DS.font.xs,fontWeight:700,color:T.textSm,letterSpacing:0.6,textTransform:"uppercase"}}>Especial</span>}
           </div>
-          <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:5,alignItems:"center"}}>
-            <DepDot T={T} color={COL[t.estado]}>{GH_DEP_ESTADO[t.estado]}</DepDot>{sep}
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6,alignItems:"center"}}>
+            <DSBadge T={T} color={COL[t.estado]} size="sm">{GH_DEP_ESTADO[t.estado]}</DSBadge>
+            {urg(t)&&<DSBadge T={T} color={T.red} size="sm">Urgente</DSBadge>}
+            {ap>0&&<DSBadge T={T} color={T.red} size="sm">{ap} apartado{ap!==1?"s":""}</DSBadge>}
             {meta(GH_DEP_CANAL[t.canal]||t.canal)}{sep}
             {meta(`despacho ${t.fechaDespacho===st.hoy?"hoy":ghDepFechaLinda(t.fechaDespacho)}`)}
-            {ap>0&&<>{sep}<span style={{fontSize:DS.font.md,color:T.red,fontWeight:600}}>{ap} apartado{ap!==1?"s":""}</span></>}
             {t.pago&&t.pago.estado!=="verificado"&&owner&&<>{sep}<span style={{fontSize:DS.font.md,color:colP[t.pago.estado]}}>{GH_DEP_PAGO[t.pago.estado].replace("Pago ","pago ")}</span></>}
           </div>
         </div>
-        {nP>0&&arm>0&&t.estado!=="entregada"&&(<div style={{width:110,flexShrink:0}}>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:DS.font.sm,color:done?T.green:T.textMd,fontVariantNumeric:"tabular-nums"}}><span>armados</span><strong style={{color:done?T.green:T.text}}>{arm}/{nP}</strong></div>
-          <div style={{height:3,background:T.borderL,borderRadius:2,marginTop:4,overflow:"hidden"}}><div style={{height:3,width:`${Math.round(arm/nP*100)}%`,background:done?T.green:T.accent}}/></div>
+        {nP>0&&arm>0&&t.estado!=="entregada"&&(<div style={{width:120,flexShrink:0}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:DS.font.sm,color:T.textSm,fontVariantNumeric:"tabular-nums"}}><span>armados</span><strong style={{color:done?T.green:T.text}}>{arm}/{nP}</strong></div>
+          <div style={{height:5,background:T.borderL,borderRadius:99,marginTop:5,overflow:"hidden"}}><div style={{height:5,width:`${Math.round(arm/nP*100)}%`,background:done?T.green:T.accentSolid,borderRadius:99,transition:"width .3s"}}/></div>
         </div>)}
         <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
           {t.pdf&&!t.pdf.purgado&&<Btn T={T} variant={t.estado==="pendiente"?"primary":"ghost"} size="sm" disabled={busy===t.id} onClick={()=>imprimir(t)}>{t.estado==="pendiente"?"Imprimir etiquetas":"Reimprimir"}</Btn>}
           {t.estado==="pendiente"&&!t.pdf&&<Btn T={T} variant="primary" size="sm" disabled={busy===t.id} onClick={()=>estado(t,"impresa")}>Tomar</Btn>}
           {t.estado==="impresa"&&<Btn T={T} variant={done||!nP?"primary":"secondary"} size="sm" disabled={busy===t.id} onClick={()=>estado(t,"armada")}>Marcar armada</Btn>}
           {t.estado==="armada"&&<Btn T={T} variant="success" size="sm" disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Entregada al correo</Btn>}
-          <button onClick={()=>setAbierta(open?null:t.id)} title={open?"Cerrar":"Ver detalle"} style={{width:30,height:30,border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:"transparent",color:T.textMd,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{transform:open?"rotate(180deg)":"none",transition:"transform .15s"}}><path d="M6 9l6 6 6-6"/></svg>
-          </button>
+          <DepChevron T={T} open={open} onClick={()=>setAbierta(open?null:t.id)} title={open?"Cerrar":"Ver detalle"}/>
         </div>
       </div>
-      {(t.nota||t.especial?.instrucciones)&&<div style={{marginTop:10,borderLeft:`2px solid ${urg(t)?T.red:T.border}`,padding:"2px 12px",fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.55}}>{t.especial?.instrucciones}{t.especial?.instrucciones&&t.nota?"\n":""}{t.nota}{t.especial?<div style={{color:T.textSm,fontSize:DS.font.md,marginTop:2}}>{t.especial.bultos} bulto{t.especial.bultos!==1?"s":""}</div>:null}</div>}
+      {(t.nota||t.especial?.instrucciones)&&<div style={{marginTop:12,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,padding:"10px 14px",fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.55}}>{t.especial?.instrucciones}{t.especial?.instrucciones&&t.nota?"\n":""}{t.nota}{t.especial?<div style={{color:T.textSm,fontSize:DS.font.md,marginTop:4}}>{t.especial.bultos} bulto{t.especial.bultos!==1?"s":""}</div>:null}</div>}
       {open&&(<div style={{marginTop:12,borderTop:`1px solid ${T.borderL}`,paddingTop:12}}>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
           {conItems&&<Btn T={T} variant={v==="picking"?"secondary":"ghost"} size="sm" onClick={()=>setVista(x=>({...x,[t.id]:"picking"}))}>Picking</Btn>}
@@ -21205,7 +21244,7 @@ function DepositoCola({T,api,owner}){
         </div>
         {t.notaDeposito&&<div style={{fontSize:DS.font.md,color:T.textMd,marginBottom:10}}><span style={{color:T.textSm}}>Nota al cliente:</span> {t.notaDeposito}</div>}
         {conItems&&v==="picking"&&(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:6}}>
-          {pick.map(x=>(<div key={x.sku} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,border:`1px solid ${T.border}`,borderRadius:DS.r.md,padding:"8px 12px"}}><span style={{fontSize:DS.font.base,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.sku}</span><strong style={{fontSize:DS.font.xl,color:T.text,fontVariantNumeric:"tabular-nums"}}>{x.cant}</strong></div>))}
+          {pick.map(x=>(<div key={x.sku} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,padding:"10px 14px"}}><span style={{fontSize:DS.font.base,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.sku}</span><strong style={{fontSize:DS.font["2xl"],color:T.accent,fontVariantNumeric:"tabular-nums",letterSpacing:-0.5}}>{x.cant}</strong></div>))}
         </div>)}
         {(v==="pedidos"||!conItems)&&nP>0&&(<div style={{display:"flex",flexDirection:"column",maxHeight:380,overflow:"auto",border:`1px solid ${T.borderL}`,borderRadius:DS.r.md}}>
           {t.pedidos.map((p,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"7px 12px",borderBottom:i<nP-1?`1px solid ${T.borderL}`:"none",background:p.apartado?T.red+"0d":"transparent"}}>
@@ -21221,15 +21260,15 @@ function DepositoCola({T,api,owner}){
   return (
     <div>
       <DepStats T={T} items={[
-        {l:"Para hoy",v:nPed(paraHoy),s:`${paraHoy.length} tanda${paraHoy.length!==1?"s":""} · ${new Set(paraHoy.map(t=>t.clienteId)).size} cliente${new Set(paraHoy.map(t=>t.clienteId)).size!==1?"s":""}`},
-        {l:"Atrasadas",v:nPed(atrasadas),c:atrasadas.length?T.red:T.textSm,s:atrasadas.length?`${atrasadas.length} tanda${atrasadas.length!==1?"s":""}`:"ninguna"},
-        {l:"Urgentes",v:vivas.filter(urg).length,c:vivas.filter(urg).length?T.red:T.textSm,s:"envíos especiales"},
-        {l:"Próximos días",v:nPed(vivas.filter(t=>!urg(t)&&t.fechaDespacho>st.hoy)),s:"pedidos ya cargados"},
-        {l:"Entregadas",v:hechas.length,s:"últimos 4 días"},
+        {l:"Para hoy",v:nPed(paraHoy),ico:"box",s:`${paraHoy.length} tanda${paraHoy.length!==1?"s":""} · ${new Set(paraHoy.map(t=>t.clienteId)).size} cliente${new Set(paraHoy.map(t=>t.clienteId)).size!==1?"s":""}`},
+        {l:"Atrasadas",v:nPed(atrasadas),ico:"clock",c:atrasadas.length?T.red:T.textSm,s:atrasadas.length?`${atrasadas.length} tanda${atrasadas.length!==1?"s":""}`:"ninguna"},
+        {l:"Urgentes",v:vivas.filter(urg).length,ico:"alert",c:vivas.filter(urg).length?T.orange:T.textSm,s:"envíos especiales"},
+        {l:"Próximos días",v:nPed(vivas.filter(t=>!urg(t)&&t.fechaDespacho>st.hoy)),ico:"calendar",c:T.blue,s:"pedidos ya cargados"},
+        {l:"Entregadas",v:hechas.length,ico:"check",c:T.green,s:"últimos 4 días"},
       ]}/>
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:8}}>
-        <div style={{flex:2,minWidth:260,display:"flex",alignItems:"center",gap:8,border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.card,padding:"0 4px 0 12px"}}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2M7 8v8M11 8v8M15 8v8"/></svg>
+        <div style={{flex:2,minWidth:260,display:"flex",alignItems:"center",gap:8,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,background:T.card,padding:"0 4px 0 12px",boxShadow:DS.shadow.sm}}>
+          <DepIco d="scan" size={15} color={T.accent}/>
           <input ref={scanRef} autoFocus value={scan} onChange={e=>setScan(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); escanear(); } }} placeholder="Escanear etiqueta o tipear el número y Enter" style={{flex:1,border:"none",outline:"none",background:"transparent",color:T.text,fontSize:DS.font.base,padding:"9px 0",fontFamily:"'Inter',system-ui,sans-serif",minWidth:0}}/>
           <Btn T={T} variant="ghost" size="sm" onClick={escanear} disabled={!scan.trim()}>Armado</Btn>
         </div>
@@ -21259,7 +21298,7 @@ function DepositoCola({T,api,owner}){
       </div>)}
       {grupos.length===0&&<DSEmpty T={T} title="No hay nada para armar" subtitle={st.clientes.length?"Cuando un cliente mande etiquetas aparecen acá, agrupadas por día de despacho. Para probar, cargá una tanda con \"Cargar en nombre de…\"." :"Primero cargá tus clientes en la pestaña Clientes."}/>}
       {grupos.map(([titulo,lista])=>(<div key={titulo} style={{marginBottom:22}}>
-        <DepLabel T={T} color={titulo==="Urgentes"||titulo==="Atrasadas"?T.red:T.textSm}>{titulo} <span style={{color:T.textSm,fontWeight:500}}>· {nPed(lista)} pedidos</span></DepLabel>
+        <DepLabel T={T} color={titulo==="Urgentes"||titulo==="Atrasadas"?T.red:T.textSm}>{titulo}<span style={{fontSize:DS.font.xs,fontWeight:700,color:T.textMd,background:T.surface,border:`1px solid ${T.border}`,borderRadius:99,padding:"1px 8px",letterSpacing:0,textTransform:"none"}}>{nPed(lista)} pedidos</span></DepLabel>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>{lista.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>
       </div>))}
       {hechas.length>0&&(<div>
@@ -21315,10 +21354,10 @@ function DepositoClientes({T,api}){
   const favorTotal=d.clientes.reduce((a,c)=>{ const s=ghDepSaldo(T,(c.stats?.aVerificar||0)+(c.stats?.sinInformar||0),c.aFavor); return a+(s.n<0?-s.n:0); },0);
   return (<div>
     <DepStats T={T} items={[
-      {l:"Clientes activos",v:activos.length,s:`${d.clientes.length-activos.length} inactivo${d.clientes.length-activos.length!==1?"s":""}`},
-      {l:"Pedidos este mes",v:d.clientes.reduce((a,c)=>a+(c.stats?.mesPedidos||0),0),s:fmtMoney(d.clientes.reduce((a,c)=>a+(c.stats?.mesTotal||0),0))},
-      {l:"Te deben",v:fmtMoney(deudaTotal),c:deudaTotal>0?T.yellow:T.textSm},
-      {l:"A favor de clientes",v:fmtMoney(favorTotal),c:favorTotal>0?T.green:T.textSm},
+      {l:"Clientes activos",v:activos.length,ico:"users",s:`${d.clientes.length-activos.length} inactivo${d.clientes.length-activos.length!==1?"s":""}`},
+      {l:"Pedidos este mes",v:d.clientes.reduce((a,c)=>a+(c.stats?.mesPedidos||0),0),ico:"box",s:fmtMoney(d.clientes.reduce((a,c)=>a+(c.stats?.mesTotal||0),0))},
+      {l:"Te deben",v:fmtMoney(deudaTotal),ico:"wallet",c:deudaTotal>0?T.yellow:T.textSm},
+      {l:"A favor de clientes",v:fmtMoney(favorTotal),ico:"hand",c:favorTotal>0?T.green:T.textSm},
     ]}/>
     <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}><Btn T={T} variant="primary" size="sm" onClick={()=>setForm({nombre:"",precio:"",growithEmail:"",contacto:"",nota:"",activo:true})}>Nuevo cliente</Btn></div>
     <DepTable T={T} minWidth={760} empty="Todavía no hay clientes. Cargá el primero con su precio por pedido." rows={d.clientes.map(c=>({...c,_dim:!c.activo}))} cols={[
@@ -21425,7 +21464,7 @@ function DepositoAccesos({T,api,panel}){
   }
   if(!d) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
   const fila=(titulo,desc,tok,cual,at)=>(<Card T={T} padding="lg" style={{marginBottom:14}}>
-    <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:4}}>{titulo}</div>
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}><DepTile T={T} color={cual==="pc"?T.blue:T.accent} ico={cual==="pc"?"scan":"key"} size={30}/><div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>{titulo}</div></div>
     <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:12,lineHeight:1.6}}>{desc}</div>
     {tok?(<>
       <input readOnly value={link(tok)} onFocus={e=>e.target.select()} style={{...iS,marginBottom:10,fontFamily:"monospace",fontSize:DS.font.md}}/>
@@ -21472,7 +21511,7 @@ function DepositoPagos({T,api}){
     {cc&&(<div style={{marginBottom:24}}>
       <DepLabel T={T}>Cuenta corriente</DepLabel>
       {(()=>{ const con=cc.cuentas.filter(c=>c.deuda>0||c.aFavor!==0); return con.length===0?<div style={{fontSize:DS.font.base,color:T.textSm,marginBottom:12}}>Todos los clientes están al día.</div>
-        :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:8,marginBottom:12}}>{con.map(c=>{ const s=ghDepSaldo(T,c.deuda,c.aFavor); return (<div key={c.clienteId} style={{border:`1px solid ${T.border}`,borderRadius:DS.r.md,padding:"10px 14px",background:T.card}}><div style={{fontSize:DS.font.md,color:T.textMd,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}</div><div style={{fontSize:DS.font.lg,fontWeight:700,color:s.col,fontVariantNumeric:"tabular-nums"}}>{s.txt}</div></div>); })}</div>; })()}
+        :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:10,marginBottom:12}}>{con.map(c=>{ const s=ghDepSaldo(T,c.deuda,c.aFavor); return (<div key={c.clienteId} style={{display:"flex",gap:12,alignItems:"center",border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"12px 14px",background:T.card,boxShadow:DS.shadow.sm}}><DepTile T={T} color={s.col===T.textSm?T.accent:s.col} ico={s.n<0?"hand":"wallet"} size={34}/><div style={{minWidth:0}}><div style={{fontSize:DS.font.md,color:T.textMd,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}</div><div style={{fontSize:DS.font.lg,fontWeight:700,color:s.col,fontVariantNumeric:"tabular-nums"}}>{s.txt}</div></div></div>); })}</div>; })()}
       <DepTable T={T} minWidth={720} empty="Ningún cliente informó transferencias todavía" rows={cc.pagos} cols={[
         {h:"Fecha",w:"80px",render:p=>p.informadoAt?new Date(p.informadoAt).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—"},
         {h:"Cliente",w:"1fr",render:p=><div style={{minWidth:0}}><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.clienteNombre}</strong>{p.tipo==="ajuste"?depSub(T,`Ajuste manual${p.nota?` · ${p.nota}`:""}`):p.notaCliente?depSub(T,p.notaCliente):null}</div>},
@@ -21493,10 +21532,10 @@ function DepositoPagos({T,api}){
     </div>
     {!res||!hist? <div style={{display:"flex",justifyContent:"center",padding:40}}><Spinner size={24} color={T.accent}/></div> : (<>
       <DepStats T={T} items={[
-        {l:"Facturado",v:fmtMoney(tot("total")),s:`${tot("pedidos")} pedidos · ${tot("tandas")} tandas`},
-        {l:"Verificado",v:fmtMoney(tot("verificado")),c:T.green},
-        {l:"A verificar",v:fmtMoney(tot("aVerificar")),c:tot("aVerificar")>0?T.yellow:T.textSm},
-        {l:"Sin informar",v:fmtMoney(tot("sinInformar")),c:tot("sinInformar")>0?T.textMd:T.textSm},
+        {l:"Facturado",v:fmtMoney(tot("total")),ico:"wallet",s:`${tot("pedidos")} pedidos · ${tot("tandas")} tandas`},
+        {l:"Verificado",v:fmtMoney(tot("verificado")),ico:"check",c:T.green},
+        {l:"A verificar",v:fmtMoney(tot("aVerificar")),ico:"clock",c:tot("aVerificar")>0?T.yellow:T.textSm},
+        {l:"Sin informar",v:fmtMoney(tot("sinInformar")),ico:"inbox",c:tot("sinInformar")>0?T.orange:T.textSm},
       ]}/>
       {res.clientes.length>0&&(<div style={{marginBottom:16}}>
         <DepTable T={T} minWidth={560} empty="" rows={res.clientes.map(c=>({...c,id:c.clienteId}))} cols={[
