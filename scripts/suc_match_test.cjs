@@ -3,7 +3,7 @@ const fs=require("fs");
 const src=fs.readFileSync("src/App.jsx","utf8").replace(/\r\n/g,"\n");
 function fn(name){ const i=src.indexOf(`\nfunction ${name}(`); if(i<0) throw new Error("no "+name); const j=src.indexOf("\n}\n",i); return src.slice(i,j+3); }
 const core=src.slice(src.indexOf("// GH_SUC_MATCH_BEGIN"),src.indexOf("// GH_SUC_MATCH_END"));
-const code=core+fn("ghStripUnidad")+fn("ghTplDeOficial")+"\nreturn {ghNrmSuc,ghDirParse,ghMismaCalle,ghPuntoDeOrden,ghConflictoPunto,ghCoincidePunto,ghMatchOficial,ghMatchSucursal,ghStripUnidad,ghTplDeOficial,ghEsHop};";
+const code=core+fn("ghStripUnidad")+fn("ghTplDeOficial")+"\nreturn {ghNrmSuc,ghDirParse,ghMismaCalle,ghPuntoDeOrden,ghConflictoPunto,ghCoincidePunto,ghMatchOficial,ghMatchSucursal,ghStripUnidad,ghTplDeOficial,ghEsHop,ghSucursalNombradaUnica};";
 const M=new Function(code)();
 let fails=0, n=0;
 function eq(desc,got,exp){ n++; const ok=JSON.stringify(got)===JSON.stringify(exp); if(!ok){ fails++; console.log("FAIL",desc,"\n   got:",JSON.stringify(got),"\n   exp:",JSON.stringify(exp)); } }
@@ -204,6 +204,15 @@ eq("tplDeOficial: SAN JUSTO CENTRO",M.ghTplDeOficial(locs,sj),"SAN JUSTO (CENTRO
     for(const h of HOP.filter((_,i)=>i%7===0)){ if(!/^\d+$/.test(h.direccion.numero)) continue; probados++; const p=M.ghPuntoDeOrden(pd("PUNTO ANDREANI HOP",h.direccion.calle,h.direccion.numero,h.direccion.localidad,h.direccion.codigoPostal)); const m=M.ghMatchOficial(HOP.filter(x=>x.direccion.codigoPostal===h.direccion.codigoPostal),p); if(m){ hallados++; if(m.id!==h.id&&!(m.direccion.calle===h.direccion.calle&&m.direccion.numero===h.direccion.numero)) malos++; } }
     eq(`muestra ${probados} HOP por CP: ninguno cae en OTRO punto`,malos,0);
     eq(`muestra ${probados} HOP por CP: la gran mayoría se encuentra (${hallados})`,hallados>=probados*0.9,true);
+  }
+  { const TPL2={sucursales:fs.readFileSync("scripts/fixtures/tpl_sucursales.txt","utf8").split(/\r?\n/).filter(Boolean)};
+    const P={calle:"San Martín",num:"2127",loc:"Rosario",cp:"2000"};
+    eq("Rosario (Av San Martin) única en su calle → match",M.ghSucursalNombradaUnica(TPL2.sucursales,"ROSARIO (AV SAN MARTIN)",P),true);
+    eq("otra calle de Rosario no",M.ghSucursalNombradaUnica(TPL2.sucursales,"ROSARIO (CIRCUNVALACION)",P),false);
+    eq("otra ciudad no",M.ghSucursalNombradaUnica(TPL2.sucursales,"ROSARIO (AV SAN MARTIN)",{...P,loc:"Santa Fe"}),false);
+    eq("sin número de puerta no",M.ghSucursalNombradaUnica(TPL2.sucursales,"ROSARIO (AV SAN MARTIN)",{...P,num:""}),false);
+    eq("HOP recortado no",M.ghSucursalNombradaUnica(TPL2.sucursales,"PUNTO ANDREANI HOP AVENIDA DOCTOR RICARDO BALBÍN",{calle:"Ricardo Balbín",num:"3301",loc:"CABA"}),false);
+    eq("dos hermanas en la misma calle → no",M.ghSucursalNombradaUnica(["X (SAN MARTIN)","X (AV SAN MARTIN)"],"X (SAN MARTIN)",{...P,loc:"X"}),false);
   }
   console.log(`${n-fails}/${n} ok${fails?` — ${fails} FALLAS`:""}`);
   process.exit(fails?1:0);

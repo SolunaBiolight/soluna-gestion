@@ -4749,6 +4749,23 @@ function ghMatchSucursal(locs, direccion, pickupDetails, dirNumero) {
   }));
   return recortadas.length===1?recortadas[0]:null;
 }
+// Sucursal OFICIAL nombrada por calle en el desplegable ("ROSARIO (AV SAN
+// MARTIN)", 23/9): Andreani no le pone número, pero el nombre identifica una
+// única sucursal por ciudad y calle. Si el punto del pedido tiene número, esa
+// calle y esa localidad, y en el desplegable hay UNA sola entrada
+// "LOCALIDAD (…)" con esa calle, es ese punto. No aplica a HOP ni a entradas
+// con números.
+function ghSucursalNombradaUnica(sucursales,tplStr,p){
+  const RX=/^([^()]+?)\s*\(([^()]+)\)\s*$/;
+  const m=String(tplStr||"").trim().match(RX); if(!m||!p||!p.num) return false;
+  const loc=ghNrmSuc(m[1]), calleTpl=m[2];
+  if(!loc||/\bHOP\b/.test(ghNrmSuc(tplStr))||/\d/.test(String(tplStr))) return false;
+  const a=ghDirParse(p.calle,p.num); if(!a.calle) return false;
+  const locP=ghNrmSuc(p.loc); if(!locP||!(locP===loc||locP.includes(loc)||loc.includes(locP))) return false;
+  if(!ghMismaCalle(a,ghDirParse(calleTpl,""))) return false;
+  const hermanas=(sucursales||[]).filter(x=>{ const mm=String(x||"").trim().match(RX); return mm&&ghNrmSuc(mm[1])===loc&&ghMismaCalle(a,ghDirParse(mm[2],"")); });
+  return hermanas.length===1;
+}
 // GH_SUC_MATCH_END
 
 // Traduce una sucursal OFICIAL de la API ({descripcion,direccion}) al string
@@ -10606,7 +10623,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         if(ovr&&!(locs.sucursales||[]).includes(ovr)){ delete sucursalOverridesRef.current[ovrKey(o)]; persistOverrides(); ovr=""; }
         const sucursal=ovr||findAndreaniSucursal(locs,o.direccion,o.pickupDetails,o.dirNumero)||"";
         sucEscritas.push({numero:o.numero,comprador:o.comprador,sucursal});
-        if(!sucReemplazoRef.current.has(ovrKey(o))&&verifSucursalTplVsTienda(o,sucursal)==="warn")verifRows.push({o,suave:verifSuave(o,sucursal),numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:(o.pickupDetails?`${o.pickupDetails.name||""} — ${o.pickupDetails.address?.address||""} ${o.pickupDetails.address?.number||""}`:`${o.direccion||""} ${o.dirNumero||""}, ${o.localidad||o.ciudad||""}`).trim()});
+        if(!sucReemplazoRef.current.has(ovrKey(o))&&verifSucursalTplVsTienda(o,sucursal,locs.sucursales)==="warn")verifRows.push({o,suave:verifSuave(o,sucursal),numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:(o.pickupDetails?`${o.pickupDetails.name||""} — ${o.pickupDetails.address?.address||""} ${o.pickupDetails.address?.number||""}`:`${o.direccion||""} ${o.dirNumero||""}, ${o.localidad||o.ciudad||""}`).trim()});
         const cells=[
           sC('A'+rn,""),
           nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
@@ -10972,7 +10989,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     const a=ghDirParse(p.calle,p.num), b=ghDirParse(tplStr,"");
     return !!(a.num&&ghMismaCalle(a,b)&&!/\b\d{2,5}\b/.test(ghNrmSuc(tplStr)));
   }
-  function verifSucursalTplVsTienda(o,tplStr){
+  function verifSucursalTplVsTienda(o,tplStr,sucursalesTpl){
     // Sucursal vacía en la fila = SIEMPRE warn: un override invalidado a mitad
     // de la generación dejaba la columna vacía y el toast celebraba igual.
     if(!tplStr||!String(tplStr).trim()) return "warn";
@@ -11012,6 +11029,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     // fila del Excel. Si la fila no trae ningún número (texto truncado del
     // template), tampoco alcanza — warn, y la 2da pasada oficial decide.
     const numContradice=!!(num&&calleOk&&(!sNums.length||!sNums.includes(num)));
+    // Sucursal oficial nombrada por calle ("ROSARIO (AV SAN MARTIN)"): única en su ciudad y calle → es el punto.
+    if(numContradice&&!sNums.length&&ghSucursalNombradaUnica(sucursalesTpl,tplStr,ghPuntoDeOrden(o))) return "ok";
     if(numContradice) return "warn";
     if(!calleToks.length&&!calleNums.length&&!tnTokens.length&&!locToks.length) return null; // sin datos comparables
     if(calleOk||nameOk) return "ok";
@@ -12694,10 +12713,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             )}
 
             {/* Acciones (solo cuando no es buscar o hay resultados) */}
-            {(tabEnvio!=="buscar"||tabOrders.length>0)&&(
             {/* Dos filas fijas (pedido 23/9): arriba filtros + contador; abajo selección
                 a la izquierda y las acciones (Paquete / Exportar / Generar) a la derecha,
                 así el botón verde no se apila debajo de los demás. */}
+            {(tabEnvio!=="buscar"||tabOrders.length>0)&&(
             <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
             <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
               {tabEnvio!=="buscar"&&<div style={{display:"flex",gap:4,background:T.surface,borderRadius:8,padding:2}}>
