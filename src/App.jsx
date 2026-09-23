@@ -12695,7 +12695,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
             {/* Acciones (solo cuando no es buscar o hay resultados) */}
             {(tabEnvio!=="buscar"||tabOrders.length>0)&&(
-            <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
+            {/* Dos filas fijas (pedido 23/9): arriba filtros + contador; abajo selección
+                a la izquierda y las acciones (Paquete / Exportar / Generar) a la derecha,
+                así el botón verde no se apila debajo de los demás. */}
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
               {tabEnvio!=="buscar"&&<div style={{display:"flex",gap:4,background:T.surface,borderRadius:8,padding:2}}>
                 {[["todos","Todos"],["domicilio","Domicilio"],["sucursal","Sucursal"]].map(([v,l])=>(
                   <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Map());}} style={{padding:"5px 10px",fontSize:12,border:"none",borderRadius:6,background:filterTipoEnvio===v?T.card:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?500:400,transition:"all 0.1s",boxShadow:filterTipoEnvio===v?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"}}>{l}</button>
@@ -12708,6 +12712,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   {mediosEnvio.map(([k,n])=><option key={k} value={k}>{k} ({n})</option>)}
                 </select>
               )}
+              <span title="Atajos: Ctrl+A selecciona todos · Shift+click selecciona un rango · Esc limpia la selección · Enter exporta"
+                style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"flex",gap:10,alignItems:"center",cursor:"help"}}>
+                <span>{exportables.length} {exportables.length===1?"pedido":"pedidos"}{totalPages>1?` · pág. ${orderPage+1}/${totalPages}`:""}</span>
+              </span>
+            </div>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
               {/* Selector unificado de pedidos */}
               <div style={{position:"relative"}}>
                 <button onClick={e=>{e.stopPropagation();setShowPagePicker(v=>!v);}}
@@ -12785,6 +12795,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               ); })()}
               {/* CTAs de exportación en la fila de controles, junto al selector —
                   la barra flotante quedaba disimulada; acá se ven siempre */}
+              <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
               {selected.size>0&&(
                 <>
                   {/* La config de paquete la usa el XLSX de TODOS (peso/medidas/valor
@@ -12821,10 +12832,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 if(!deHoy.length||!andreani?.enabled) return null;
                 return <AsyncButton title="Vuelve a descargar en un solo PDF todas las etiquetas emitidas hoy por API" disabled={!!bulkDl} onClick={()=>descargarVarias(deHoy.map(e=>{ const o=exportables.find(x=>String(x.numero)===String(e.numero)); return {numero:e.numero,envio:String(e.andreani.numeroDeEnvio),skus:o?ghSkuLinesDe(o):[]}; }))} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap"}}>{bulkDl?`Descargando ${bulkDl.done}/${bulkDl.total}…`:`Reimprimir las de hoy (${deHoy.length})`}</AsyncButton>;
               })()}
-              <span title="Atajos: Ctrl+A selecciona todos · Shift+click selecciona un rango · Esc limpia la selección · Enter exporta"
-                style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"flex",gap:10,alignItems:"center",cursor:"help"}}>
-                <span>{exportables.length} {exportables.length===1?"pedido":"pedidos"}{totalPages>1?` · pág. ${orderPage+1}/${totalPages}`:""}</span>
-              </span>
+              </div>
+            </div>
             </div>
             )}
 
