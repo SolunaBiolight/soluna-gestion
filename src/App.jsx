@@ -12063,7 +12063,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       if(pend>0) toast(`${pend} etiqueta${pend!==1?"s":""} todavía en proceso: no entran en esta tanda`,"warning");
       if(conError.length) toast(`No se pudo descargar la etiqueta de ${conError.join(", ")}: no entran en esta tanda`,"error",8000);
       const armado=await ghDepPdfDeEtiquetas(listas.map(r=>pdfDe.get(r.numero)));
-      setDepEnvio({pdfBytes:armado.bytes,pages:armado.pages,origen:"api",canal:"andreani",pedidos:listas.map((r,i)=>({numero:String(r.numero),comprador:r.order?.comprador||"",items:ghSkuLinesDe(r.order),pags:armado.pags[i]}))});
+      setDepEnvio({pdfBytes:armado.bytes,pages:armado.pages,origen:"api",canal:"andreani",pedidos:listas.map((r,i)=>({numero:String(r.numero),comprador:r.order?.comprador||"",items:ghSkuLinesDe(r.order),pags:armado.pags[i],tracking:String(r.emitido?.numeroDeEnvio||"")}))});
     }catch(e){ toast("No se pudo preparar la tanda: "+e.message,"error"); }
     finally{ setDepArmando(null); }
   }
@@ -20664,16 +20664,16 @@ function ghDepPicking(pedidos){
 function ghDepFirma(items){ return [...(items||[])].map(String).sort().join(" + "); }
 function ghDepOrdenar(lista,itemsDe){ return [...lista].sort((a,b)=>{ const A=itemsDe(a)||[], B=itemsDe(b)||[]; if(!A.length!==!B.length) return A.length?-1:1; return (A.length-B.length)||ghDepFirma(A).localeCompare(ghDepFirma(B)); }); }
 // Por defecto: hoy si todavía es temprano (antes de las 15 AR), si no mañana.
-const ghDepManana=()=>{ const ar=new Date(Date.now()-3*3600000); if(ar.getUTCHours()<15) return ar.toISOString().slice(0,10); return new Date(ar.getTime()+86400000).toISOString().slice(0,10); };
+const ghDepManana=(corte=15)=>{ const ar=new Date(Date.now()-3*3600000); if(ar.getUTCHours()<corte) return ar.toISOString().slice(0,10); return new Date(ar.getTime()+86400000).toISOString().slice(0,10); };
 const ghDepFechaLinda=f=>{ if(!f) return "—"; const [y,m,d]=f.split("-"); return `${d}/${m}`; };
 
 // ── Formulario único de envío al depósito (tanda o envío especial) ──
 // prefill: {pdfBytes, pedidos:[{numero,comprador,items,pags}], origen, canal}
-function DepositoEnvioModal({T,api,cliente,prefill,especial=false,onClose,onDone}){
+function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,onClose,onDone}){
   const iS=InputStyle(T);
   const [tipo]=useState(especial?"especial":"tanda");
   const [canal,setCanal]=useState(prefill?.canal||"andreani");
-  const [fecha,setFecha]=useState(ghDepManana());
+  const [fecha,setFecha]=useState(ghDepManana(corte));
   const [nota,setNota]=useState("");
   const [pdf,setPdf]=useState(prefill?.pdfBytes?{bytes:prefill.pdfBytes,nombre:"etiquetas.pdf",pages:prefill.pages||0}:null);
   const [n,setN]=useState(prefill?.pedidos?.length||0);
@@ -20736,6 +20736,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,onClose,onDone
           <div style={{flex:1,minWidth:150}}>{lbl("Lo retira")}<select style={iS} value={canal} onChange={e=>setCanal(e.target.value)}>{Object.entries(GH_DEP_CANAL).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>
           <div style={{flex:1,minWidth:150}}>{lbl("Día de despacho")}<input style={iS} type="date" value={fecha} min={hoyAR()} onChange={e=>setFecha(e.target.value)}/></div>
         </div>
+        <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:-8}}>Corte del depósito: lo que llega antes de las {corte}:00 sale el mismo día; después, al día siguiente.</div>
         {tipo==="especial"&&(<div>{lbl("Adjuntos (remito, factura, fotos)")}
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
             {adj.length<5&&filePick("application/pdf,image/*",f=>elegirOtro(f,x=>setAdj(a=>[...a,x]),3*1024*1024),"Agregar adjunto")}
@@ -20762,9 +20763,75 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,onClose,onDone
 }
 
 // ── Vista del CLIENTE: sus tandas, estado y pagos (Growith o portal) ──
-function DepositoClienteView({T,api,portal=false}){
+// Pago de cuenta corriente por transferencia: monto + comprobante. Lo verifica el
+// dueño y se aplica a las tandas más viejas sin verificar.
+function DepositoPagoModal({T,api,cuenta,datosPago,onClose,onDone}){
+  const iS=InputStyle(T);
+  const [monto,setMonto]=useState(cuenta?.deuda>0?String(cuenta.deuda):"");
+  const [nota,setNota]=useState(""); const [comp,setComp]=useState(null); const [prog,setProg]=useState(null);
+  async function elegir(f){ if(!f) return; if(f.size>3*1024*1024){ toast("El comprobante supera los 3 MB","warning"); return; } setComp({bytes:new Uint8Array(await f.arrayBuffer()),nombre:f.name,mime:f.type||"application/octet-stream"}); }
+  async function enviar(){
+    const m=Number(String(monto).replace(",",".")); if(!(m>0)){ toast("Poné el monto transferido","warning"); return; }
+    if(!comp){ toast("Adjuntá el comprobante de la transferencia","warning"); return; }
+    setProg("Creando…");
+    try{ const c=await api("c_pago_crear"); setProg("Subiendo comprobante…"); const ch=await ghDepSubir(api,c.id,"pcomp",comp.bytes); setProg("Informando…"); await api("c_pago_cerrar",{id:c.id,monto:m,chunks:ch,nombre:comp.nombre,mime:comp.mime,nota}); toast("Pago informado. El depósito lo verifica y se aplica a tus tandas.","success",6000); onDone&&onDone(); onClose(); }
+    catch(e){ toast(e.message,"error"); setProg(null); }
+  }
+  const lbl=t=><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:5}}>{t}</div>;
+  return (<Modal T={T} open onClose={prog?()=>{}:onClose} title="Informar una transferencia" width={460} zIndex={1700}>
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      {datosPago?<div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 14px",fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.6}}><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:4}}>Transferí a</div>{datosPago}</div>
+        :<div style={{fontSize:DS.font.md,color:T.textSm}}>El depósito todavía no cargó sus datos bancarios. Pediselos por WhatsApp.</div>}
+      <div style={{fontSize:DS.font.md,color:T.textMd}}>Deuda actual: <strong style={{color:T.text}}>{fmtMoney(cuenta?.deuda||0)}</strong>{cuenta?.enVerificacion>0&&<> · {fmtMoney(cuenta.enVerificacion)} ya informado, en verificación</>}{cuenta?.aFavor>0&&<> · {fmtMoney(cuenta.aFavor)} a tu favor</>}</div>
+      <div style={{width:200}}>{lbl("Monto transferido ($)")}<input style={iS} type="number" min="0" value={monto} onChange={e=>setMonto(e.target.value)}/></div>
+      <div>{lbl("Comprobante")}<label style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",cursor:"pointer",display:"inline-flex"}}>{comp?"Cambiar comprobante":"Adjuntar comprobante"}<input type="file" accept="application/pdf,image/*" style={{display:"none"}} onChange={e=>{ elegir(e.target.files?.[0]); e.target.value=""; }}/></label>{comp&&<span style={{fontSize:DS.font.sm,color:T.green,marginLeft:10}}>{comp.nombre}</span>}</div>
+      <div>{lbl("Nota (opcional)")}<input style={iS} placeholder="Ej.: pago de las tandas de la semana" value={nota} onChange={e=>setNota(e.target.value)}/></div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={onClose} disabled={!!prog}>Cancelar</Btn><Btn T={T} variant="primary" onClick={enviar} disabled={!!prog}>{prog||"Informar pago"}</Btn></div>
+    </div>
+  </Modal>);
+}
+
+// Etiquetas de Mercado Libre por API: lista los envíos "listos para despachar"
+// de la cuenta de ML de la tienda, baja el PDF de ML y lo manda como tanda.
+function DepositoMlModal({T,tiendaUid,onListo,onClose}){
+  const [st,setSt]=useState(null); const [sel,setSel]=useState({}); const [prog,setProg]=useState(null);
+  useEffect(()=>{ (async()=>{ try{ const r=await authFetch(`/api/orders?uid=${tiendaUid}&tab=ml_envios&days=10`); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`);
+      const listos=(d.orders||[]).filter(o=>o.shipmentId&&o.envio&&["ready_to_ship","printed"].includes(o.envio.status)&&o.envio.lt!=="fulfillment"); setSt({ml:d.mlConectado!==false,orders:listos}); const s={}; listos.forEach(o=>{ s[o.shipmentId]=true; }); setSel(s); }
+    catch(e){ setSt({error:e.message}); } })(); },[tiendaUid]);
+  async function generar(){
+    const elegidos=(st.orders||[]).filter(o=>sel[o.shipmentId]); if(!elegidos.length){ toast("Elegí al menos un envío","warning"); return; }
+    setProg("Bajando etiquetas de Mercado Libre…");
+    try{ const ids=[...new Set(elegidos.map(o=>o.shipmentId))]; const r=await authFetch(`/api/orders?uid=${tiendaUid}&tab=ml_etiquetas&ids=${ids.join(",")}`); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`);
+      const bytes=ghB64ToBytes(d.pdf); let pages=0; try{ const {PDFDocument}=await import("pdf-lib"); pages=(await PDFDocument.load(bytes,{ignoreEncryption:true})).getPageCount(); }catch(_){}
+      const porEnvio=new Map(); elegidos.forEach(o=>{ const p=porEnvio.get(o.shipmentId)||{numero:o.id,comprador:o.comprador||"",items:[],pags:[],tracking:o.shipmentId}; o.items.forEach(it=>p.items.push(`${it.qty}x ${it.sku||it.titulo}`)); porEnvio.set(o.shipmentId,p); });
+      const pedidos=ids.map((id,i)=>{ const p=porEnvio.get(id); if(pages===ids.length) p.pags=[i+1]; return p; });
+      onListo({pdfBytes:bytes,pages,origen:"api",canal:"ml",pedidos}); onClose();
+    }catch(e){ toast(e.message,"error"); setProg(null); }
+  }
+  const n=Object.values(sel).filter(Boolean).length;
+  return (<Modal T={T} open onClose={prog?()=>{}:onClose} title="Etiquetas de Mercado Libre" width={560} zIndex={1650}>
+    {!st?<div style={{display:"flex",justifyContent:"center",padding:30}}><Spinner size={24} color={T.accent}/></div>
+    :st.error?<DSEmpty T={T} title="No pudimos leer Mercado Libre" subtitle={st.error}/>
+    :!st.ml?<DSEmpty T={T} title="Mercado Libre no está conectado" subtitle="Conectalo en Configuración → Integraciones y volvé a probar."/>
+    :st.orders.length===0?<DSEmpty T={T} title="No hay envíos listos para despachar" subtitle="Aparecen acá las ventas de los últimos 10 días con envío de Mercado Libre pendiente de imprimir."/>
+    :(<div>
+      <div style={{fontSize:DS.font.md,color:T.textMd,marginBottom:10}}>Se baja el PDF oficial de Mercado Libre con estas etiquetas y va al depósito como una tanda con canal Mercado Libre.</div>
+      <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:340,overflow:"auto",marginBottom:12}}>
+        {st.orders.map(o=>(<label key={o.id} style={{display:"flex",gap:10,alignItems:"center",padding:"6px 10px",border:`1px solid ${T.borderL}`,borderRadius:DS.r.sm,cursor:"pointer",fontSize:DS.font.md,color:T.text}}>
+          <input type="checkbox" checked={!!sel[o.shipmentId]} onChange={e=>setSel(s=>({...s,[o.shipmentId]:e.target.checked}))}/>
+          <span style={{fontWeight:700,minWidth:120}}>#{o.id}</span><span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.textMd}}>{o.comprador} — {o.items.map(it=>`${it.qty}x ${it.sku||it.titulo}`).join(", ")}</span>
+          <span style={{fontSize:DS.font.sm,color:T.textSm}}>{o.envio.status==="printed"?"ya impresa":"lista"}</span>
+        </label>))}
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={onClose} disabled={!!prog}>Cancelar</Btn><Btn T={T} variant="primary" onClick={generar} disabled={!!prog||!n}>{prog||`Preparar ${n} etiqueta${n!==1?"s":""}`}</Btn></div>
+    </div>)}
+  </Modal>);
+}
+
+function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
   const [st,setSt]=useState(null); const [err,setErr]=useState("");
-  const [nuevo,setNuevo]=useState(null); // "tanda" | "especial"
+  const [nuevo,setNuevo]=useState(null); // {tipo:"tanda"|"especial", prefill?}
+  const [pago,setPago]=useState(false); const [ml,setMl]=useState(false);
   const [abierta,setAbierta]=useState(null);
   const cargar=()=>api("c_tandas").then(d=>{ setSt(d); setErr(""); }).catch(e=>setErr(e.message));
   useEffect(()=>{ cargar(); },[]);
@@ -20783,14 +20850,16 @@ function DepositoClienteView({T,api,portal=false}){
       <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",marginBottom:18}}>
         <div style={{flex:1,minWidth:220}}>
           <div style={{fontSize:DS.font["2xl"],fontWeight:800,color:T.text,letterSpacing:-0.4}}>{portal?st.cliente?.nombre:"Mis envíos al depósito"}</div>
-          <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:2}}>{fmtMoney(st.cliente?.precio||0)} por pedido armado{st.saldoPendiente>0?` · ${fmtMoney(st.saldoPendiente)} sin verificar`:""}</div>
+          <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:2}}>{fmtMoney(st.cliente?.precio||0)} por pedido armado · corte {st.corteHora??15}:00{st.cuenta?.deuda>0?<> · <span style={{color:T.yellow,fontWeight:600}}>{fmtMoney(st.cuenta.deuda)} a pagar</span></>:st.cuenta?.aFavor>0?<> · {fmtMoney(st.cuenta.aFavor)} a favor</>:<> · sin deuda</>}{st.cuenta?.enVerificacion>0?<> · {fmtMoney(st.cuenta.enVerificacion)} en verificación</>:null}</div>
         </div>
-        <Btn T={T} variant="secondary" onClick={()=>setNuevo("especial")}>Envío especial</Btn>
-        <Btn T={T} variant="primary" onClick={()=>setNuevo("tanda")}>Enviar etiquetas</Btn>
+        <Btn T={T} variant="ghost" onClick={()=>setPago(true)}>Informar pago</Btn>
+        {tiendaUid&&<Btn T={T} variant="secondary" onClick={()=>setMl(true)}>Etiquetas de Mercado Libre</Btn>}
+        <Btn T={T} variant="secondary" onClick={()=>setNuevo({tipo:"especial"})}>Envío especial</Btn>
+        <Btn T={T} variant="primary" onClick={()=>setNuevo({tipo:"tanda"})}>Enviar etiquetas</Btn>
       </div>
       <div style={{fontSize:DS.font.md,color:T.textSm,marginBottom:14,lineHeight:1.6}}>{portal
-        ?"Subí el PDF con las etiquetas de los pedidos a armar con \"Enviar etiquetas\", elegí el día de despacho y adjuntá el comprobante. Un pedido suelto con instrucciones va por \"Envío especial\"."
-        :"Las etiquetas que generás en Envíos van solas con \"Enviar al depósito\" al terminar. Acá podés subir un PDF suelto (por ejemplo la colecta de Mercado Libre), cargar un envío especial y seguir el estado y los pagos de cada tanda."}</div>
+        ?"Subí el PDF con las etiquetas de los pedidos a armar con \"Enviar etiquetas\" y elegí el día de despacho. Un pedido suelto con instrucciones va por \"Envío especial\". Los pagos son por transferencia: \"Informar pago\" con el comprobante y el depósito lo verifica."
+        :"Las etiquetas que generás en Envíos van solas con \"Enviar al depósito\" al terminar. Las de Mercado Libre se bajan solas con \"Etiquetas de Mercado Libre\". También podés subir un PDF suelto o cargar un envío especial. Los pagos son por transferencia: \"Informar pago\" con el comprobante."}</div>
       {st.tandas.length===0
         ? <DSEmpty T={T} title="Todavía no mandaste nada" subtitle="Subí el PDF con las etiquetas y el depósito lo ve al instante en su cola."/>
         : <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -20807,7 +20876,6 @@ function DepositoClienteView({T,api,portal=false}){
                   </div>
                   <div style={{fontSize:DS.font.lg,fontWeight:800,color:T.text}}>{fmtMoney(t.total)}</div>
                   <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                    {t.estado!=="cancelada"&&t.pago.estado!=="verificado"&&<label style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",cursor:"pointer"}}>{t.pago.comp?"Cambiar comprobante":"Subir comprobante"}<input type="file" accept="application/pdf,image/*" style={{display:"none"}} onChange={e=>{ subirComp(t,e.target.files?.[0]); e.target.value=""; }}/></label>}
                     {t.pdf&&!t.pdf.purgado&&<Btn T={T} variant="ghost" size="sm" onClick={()=>verPdf(t)}>Ver PDF</Btn>}
                     {(ap.length>0||t.notaDeposito||t.pedidos.length>0)&&<Btn T={T} variant="ghost" size="sm" onClick={()=>setAbierta(open?null:t.id)}>{open?"Cerrar":"Detalle"}</Btn>}
                     {t.estado==="pendiente"&&<Btn T={T} variant="ghost" size="sm" onClick={()=>cancelar(t)}>Cancelar</Btn>}
@@ -20817,12 +20885,30 @@ function DepositoClienteView({T,api,portal=false}){
                 {open&&(<div style={{marginTop:12,borderTop:`1px solid ${T.borderL}`,paddingTop:10,fontSize:DS.font.md,color:T.textMd}}>
                   {t.notaDeposito&&<div style={{marginBottom:8}}><strong style={{color:T.text}}>Nota del depósito:</strong> {t.notaDeposito}</div>}
                   {ap.map((p,i)=>(<div key={i} style={{color:T.red,marginBottom:4}}>#{p.numero} {p.comprador} — apartado: {p.apartado.nota}</div>))}
-                  {t.pedidos.length>0&&<div style={{color:T.textSm,lineHeight:1.7}}>{t.pedidos.map(p=>`#${p.numero}`).join(" · ")}</div>}
+                  {t.pedidos.length>0&&<div style={{color:T.textSm,lineHeight:1.7}}>{t.pedidos.map(p=>`#${p.numero}${p.armado?" ✓":""}`).join(" · ")}</div>}
                 </div>)}
               </Card>
             ); })}
           </div>}
-      {nuevo&&<DepositoEnvioModal T={T} api={api} cliente={st.cliente} especial={nuevo==="especial"} onClose={()=>setNuevo(null)} onDone={cargar}/>}
+      {(st.cuenta?.pagos||[]).length>0&&(<div style={{marginTop:22}}>
+        <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:8}}>Pagos informados</div>
+        <Card T={T} padding="sm">{st.cuenta.pagos.map((p,i)=>(<div key={p.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 10px",borderBottom:i<st.cuenta.pagos.length-1?`1px solid ${T.borderL}`:"none",fontSize:DS.font.base,flexWrap:"wrap"}}>
+          <span style={{color:T.textSm,minWidth:70}}>{p.informadoAt?new Date(p.informadoAt).toLocaleDateString("es-AR"):"—"}</span>
+          <strong style={{color:T.text,minWidth:90}}>{fmtMoney(p.monto)}</strong>
+          <DSBadge T={T} color={p.estado==="verificado"?T.green:p.estado==="rechazado"?T.red:T.yellow} size="sm">{p.estado==="verificado"?"Verificado":p.estado==="rechazado"?"Rechazado":"En verificación"}</DSBadge>
+          <span style={{flex:1,color:T.textMd,fontSize:DS.font.md}}>{p.estado==="verificado"&&p.aplicado?.length?`aplicado a ${p.aplicado.length} tanda${p.aplicado.length!==1?"s":""}`:""}{p.estado==="rechazado"&&p.nota?`Motivo: ${p.nota}`:""}{p.notaCliente&&p.estado!=="rechazado"?p.notaCliente:""}</span>
+        </div>))}</Card>
+      </div>)}
+      {(st.ingresos||[]).length>0&&(<div style={{marginTop:22}}>
+        <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:8}}>Mercadería recibida en el depósito</div>
+        <Card T={T} padding="sm">{st.ingresos.map((g,i)=>(<div key={g.id} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 10px",borderBottom:i<st.ingresos.length-1?`1px solid ${T.borderL}`:"none",fontSize:DS.font.base,flexWrap:"wrap"}}>
+          <span style={{color:T.textSm,minWidth:48}}>{ghDepFechaLinda(g.fecha)}</span>
+          <span style={{flex:1,color:T.text,lineHeight:1.5}}>{g.bultos?`${g.bultos} bulto${g.bultos!==1?"s":""}`:""}{g.bultos&&g.items.length?" · ":""}{g.items.map(it=>`${it.cant}x ${it.sku}`).join(", ")}{g.nota?<span style={{color:T.textMd}}> — {g.nota}</span>:null}</span>
+        </div>))}</Card>
+      </div>)}
+      {nuevo&&<DepositoEnvioModal T={T} api={api} cliente={st.cliente} especial={nuevo.tipo==="especial"} prefill={nuevo.prefill} corte={st.corteHora??15} onClose={()=>setNuevo(null)} onDone={cargar}/>}
+      {pago&&<DepositoPagoModal T={T} api={api} cuenta={st.cuenta} datosPago={st.datosPago} onClose={()=>setPago(false)} onDone={cargar}/>}
+      {ml&&tiendaUid&&<DepositoMlModal T={T} tiendaUid={tiendaUid} onClose={()=>setMl(false)} onListo={prefill=>setNuevo({tipo:"tanda",prefill})}/>}
     </div>
   );
 }
@@ -20889,7 +20975,8 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
     clientes:"Quién te manda etiquetas y cuánto le cobrás por pedido armado. Los que usan Growith se vinculan por mail; a los demás les pasás su link privado.",
     pagos:"Comprobantes por verificar, ajustes y el resumen del mes por cliente.",
     mio:"Tus envíos al depósito, en qué estado están y qué pagos faltan.",
-    accesos:"Dos links sin usuario ni contraseña: el tuyo abre esta consola completa desde cualquier lado, y el de la PC del depósito abre solo cola, historial y buscador, sin precios ni pagos. Si un link se filtra, generá uno nuevo."};
+    ingresos:"Mercadería que entra al depósito: cuándo llegó, cuántos bultos y qué productos. El cliente lo ve en su panel.",
+    accesos:"Links de acceso al panel (el tuyo y el de la PC del depósito), datos bancarios que ve el cliente para transferir y hora de corte del despacho."};
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
       <AppTopbar T={T} section={panel?(owner?"Depósito · Panel":"Depósito · PC"):"Depósito"} sectionId="deposito" onHome={onHome} onHelp={()=>setGuia(g=>!g)}>
@@ -20898,7 +20985,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
           <button onClick={()=>panel.setDark(d=>!d)} title="Tema claro / oscuro" style={{...BtnSecondary(T),fontSize:DS.font.sm,padding:"4px 8px"}}>{panel.dark?"Claro":"Oscuro"}</button>
         </div>}
         {esDep&&<div style={{display:"flex",gap:4,background:T.surface,borderRadius:DS.r.md,padding:2}}>
-          {[["cola","Cola"],["historial","Historial"],...(owner?[["clientes","Clientes"],["pagos","Pagos"],["accesos","Accesos"]]:[]),...(info?.cliente?[["mio","Mis envíos"]]:[])].map(([k,l])=>(
+          {[["cola","Cola"],["ingresos","Ingresos"],["historial","Historial"],...(owner?[["clientes","Clientes"],["pagos","Pagos"],["accesos","Configuración"]]:[]),...(info?.cliente?[["mio","Mis envíos"]]:[])].map(([k,l])=>(
             <button key={k} onClick={()=>setTab(k)} style={{padding:"6px 12px",fontSize:DS.font.md,border:"none",borderRadius:DS.r.sm,background:tab===k?T.card:"transparent",color:tab===k?T.text:T.textMd,fontWeight:tab===k?600:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>))}
         </div>}
       </AppTopbar>
@@ -20913,7 +21000,8 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
               <p style={{margin:"0 0 8px"}}>Cada cliente te manda una <strong>tanda</strong>: el PDF con las etiquetas de los pedidos que hay que armar. Reemplaza al grupo de WhatsApp. La tanda entra a la <strong>Cola</strong> con la fecha de despacho, el canal (Andreani o Mercado Libre) y, si viene de Growith, los productos de cada pedido.</p>
               <p style={{margin:"0 0 8px"}}><strong>Cómo llega una tanda:</strong> desde Envíos de Growith con "Enviar al depósito" (etiquetas con SKU, ordenadas por producto), desde la sección Depósito del cliente, desde su link privado si no usa Growith, o cargada por vos "en nombre de" un cliente. Un <strong>envío especial</strong> es un pedido suelto con instrucciones, por ejemplo un mayorista.</p>
               <p style={{margin:"0 0 8px"}}><strong>En la cola:</strong> "Imprimir etiquetas" abre el PDF y marca la tanda como impresa. Abriendo la tanda ves el picking (cuántas unidades de cada producto bajar) y los pedidos. Un pedido con problema se <strong>aparta</strong> con una nota que el cliente ve. Después: "Marcar armada" y "Entregada al correo". Todo queda con quién y cuándo.</p>
-              <p style={{margin:"0 0 8px"}}><strong>Pagos:</strong> cada tanda tiene su total (pedidos por el precio del cliente). El cliente adjunta el comprobante y vos lo verificás en Pagos. <strong>El pago nunca frena el armado.</strong></p>
+              <p style={{margin:"0 0 8px"}}><strong>Pagos:</strong> cada tanda tiene su total (pedidos por el precio del cliente) y se acumula en su cuenta corriente. El cliente transfiere e informa el pago con el comprobante; en Pagos lo verificás y se aplica solo a las tandas más viejas. <strong>El pago nunca frena el armado.</strong></p>
+              <p style={{margin:"0 0 8px"}}><strong>Ingresos y lector:</strong> en Ingresos anotás la mercadería que llega de cada cliente. En la cola, "Escanear etiqueta" con un lector USB (o tipeando el número) marca cada pedido como armado y avisa cuando la tanda está completa.</p>
               <p style={{margin:"0 0 8px"}}><strong>Mails:</strong> uno a las 8 con lo que hay para armar hoy, y uno al instante si llega un especial urgente. Al cliente no le llega ningún aviso: ve todo en su panel.</p>
               {owner&&<p style={{margin:0}}><strong>Accesos:</strong> en la pestaña Accesos están los dos links del panel: el tuyo (todo, sin entrar a Growith) y el de la PC del depósito (cola, historial y buscador, sin plata; pide el nombre de quien opera). Los operarios también pueden entrar con su propio usuario de Growith si los invitás desde Equipo con "Depósito" tildado.</p>}
             </>):(<>
@@ -20933,13 +21021,14 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
             <li><strong>Avisale a cada cliente:</strong> los que usan Growith ya tienen "Enviar al depósito" en Envíos; a los demás pasales su link privado con "Copiar link del portal".</li>
           </ol>
         </Card>)}
-        {!esDep? <DepositoClienteView T={T} api={apiCli}/>
+        {!esDep? <DepositoClienteView T={T} api={apiCli} tiendaUid={tiendaUid}/>
           : tab==="cola"? <DepositoCola T={T} api={apiDep} owner={owner}/>
+          : tab==="ingresos"? <DepositoIngresos T={T} api={apiDep} owner={owner}/>
           : tab==="historial"? <DepositoHistorial T={T} api={apiDep}/>
           : tab==="clientes"? <DepositoClientes T={T} api={apiDep}/>
           : tab==="pagos"? <DepositoPagos T={T} api={apiDep}/>
           : tab==="accesos"? <DepositoAccesos T={T} api={apiDep} panel={!!panel}/>
-          : <DepositoClienteView T={T} api={apiCli}/>}
+          : <DepositoClienteView T={T} api={apiCli} tiendaUid={tiendaUid}/>}
       </div>
     </div>
   );
@@ -20953,7 +21042,18 @@ function DepositoCola({T,api,owner}){
   const [q,setQ]=useState(""); const [res,setRes]=useState(null);
   const [nuevoPara,setNuevoPara]=useState(null); // {cliente, especial}
   const [verHechas,setVerHechas]=useState(false);
+  const [scan,setScan]=useState(""); const [scans,setScans]=useState([]); const scanRef=React.useRef(null);
   const cargar=()=>api("cola").then(d=>{ setSt(d); setErr(""); }).catch(e=>setErr(e.message));
+  async function escanear(){
+    const cod=scan.trim(); if(!cod) return; setScan("");
+    try{ const r=await api("pedido_escanear",{codigo:cod}); setScans(s=>[{...r,cod,at:Date.now()},...s].slice(0,6));
+      if(r.apartado) toast(`#${r.numero} está APARTADO: ${r.apartado}`,"warning",6000);
+      else if(r.ya) toast(`#${r.numero} ya estaba armado (${r.yaPor})`,"warning",4000);
+      if(r.completa) toast(`${r.clienteNombre}: los ${r.total} pedidos de la tanda están armados`,"success",6000);
+      cargar(); }
+    catch(e){ setScans(s=>[{error:e.message,cod,at:Date.now()},...s].slice(0,6)); }
+    scanRef.current?.focus();
+  }
   useEffect(()=>{ cargar(); const iv=setInterval(()=>{ if(document.visibilityState==="visible") cargar(); },90000); return ()=>clearInterval(iv); },[]);
   async function estado(t,e){ setBusy(t.id); try{ await api("tanda_estado",{id:t.id,estado:e}); await cargar(); }catch(x){ toast(x.message,"error"); } setBusy(null); }
   async function imprimir(t){
@@ -20986,7 +21086,7 @@ function DepositoCola({T,api,owner}){
   const paraHoy=vivas.filter(t=>t.fechaDespacho<=st.hoy);
   const colE={pendiente:T.textMd,impresa:T.accent,armada:T.yellow,entregada:T.green};
   const colP={sin_informar:T.textSm,a_verificar:T.yellow,verificado:T.green,rechazado:T.red};
-  const Tanda=({t})=>{ const open=abierta===t.id; const v=vista[t.id]||"picking"; const pick=ghDepPicking(t.pedidos); const ap=t.pedidos.filter(p=>p.apartado).length; const conItems=t.pedidos.some(p=>p.items.length);
+  const Tanda=({t})=>{ const open=abierta===t.id; const v=vista[t.id]||"picking"; const pick=ghDepPicking(t.pedidos); const ap=t.pedidos.filter(p=>p.apartado).length; const conItems=t.pedidos.some(p=>p.items.length); const arm=t.pedidos.filter(p=>p.armado).length;
     return (
     <Card T={T} padding="md" style={urg(t)?{borderColor:T.red+"88"}:undefined}>
       <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
@@ -20997,6 +21097,7 @@ function DepositoCola({T,api,owner}){
             <DSBadge T={T} color={t.canal==="ml"?T.yellow:T.accent} size="sm">{GH_DEP_CANAL[t.canal]||t.canal}</DSBadge>
             {t.tipo==="especial"&&<DSBadge T={T} color={urg(t)?T.red:T.purple} size="sm">{urg(t)?"Especial urgente":"Especial"}</DSBadge>}
             {ap>0&&<DSBadge T={T} color={T.red} size="sm">{ap} apartado{ap!==1?"s":""}</DSBadge>}
+            {arm>0&&t.estado!=="entregada"&&<DSBadge T={T} color={arm>=t.pedidos.length?T.green:T.accent} size="sm">{arm}/{t.pedidos.length} armados</DSBadge>}
             {t.pago&&<DSBadge T={T} color={colP[t.pago.estado]} size="sm">{GH_DEP_PAGO[t.pago.estado]}</DSBadge>}
             <span style={{fontSize:DS.font.sm,color:T.textSm}}>despacho {ghDepFechaLinda(t.fechaDespacho)}</span>
           </div>
@@ -21025,7 +21126,7 @@ function DepositoCola({T,api,owner}){
         </div>)}
         {(v==="pedidos"||!conItems)&&t.pedidos.length>0&&(<div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:380,overflow:"auto"}}>
           {t.pedidos.map((p,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"6px 10px",borderRadius:DS.r.sm,background:p.apartado?T.red+"12":"transparent",border:`1px solid ${p.apartado?T.red+"44":T.borderL}`}}>
-            <span style={{fontSize:DS.font.base,fontWeight:700,color:T.text,minWidth:64}}>#{p.numero}</span>
+            <span style={{fontSize:DS.font.base,fontWeight:700,color:p.armado?T.green:T.text,minWidth:64}}>{p.armado?"✓ ":""}#{p.numero}</span>
             <span style={{fontSize:DS.font.md,color:T.textMd,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.comprador}{p.items.length?` — ${p.items.join(", ")}`:""}{p.apartado?` — APARTADO: ${p.apartado.nota}`:""}</span>
             <Btn T={T} variant="ghost" size="sm" onClick={()=>apartar(t,i,p)}>{p.apartado?"Reincorporar":"Apartar"}</Btn>
           </div>))}
@@ -21046,6 +21147,18 @@ function DepositoCola({T,api,owner}){
           {st.clientes.map(c=>[<option key={c.id+"t"} value={c.id+"|t"}>{c.nombre} — tanda</option>,<option key={c.id+"e"} value={c.id+"|e"}>{c.nombre} — envío especial</option>])}
         </select>}
       </div>
+      <Card T={T} padding="md" style={{marginBottom:12}}>
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <div style={{fontSize:DS.font.base,fontWeight:700,color:T.text,minWidth:150}}>Escanear etiqueta</div>
+          <input ref={scanRef} autoFocus value={scan} onChange={e=>setScan(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); escanear(); } }} placeholder="Apuntá el lector al código de la etiqueta o tipeá el número y Enter" style={{...iS,marginBottom:0,flex:1,minWidth:260}}/>
+          <Btn T={T} variant="secondary" size="sm" onClick={escanear} disabled={!scan.trim()}>Marcar armado</Btn>
+        </div>
+        {scans.length>0&&<div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
+          {scans.map((r,i)=>(<div key={r.at+"_"+i} style={{fontSize:DS.font.md,padding:"6px 10px",borderRadius:DS.r.sm,background:r.error?T.red+"12":r.apartado?T.yellow+"18":i===0?T.green+"14":"transparent",color:r.error?T.red:T.text,border:`1px solid ${r.error?T.red+"44":T.borderL}`}}>
+            {r.error?<>{r.cod}: {r.error}</>:<><strong>#{r.numero}</strong> {r.comprador} · {r.clienteNombre}{r.items?.length?<span style={{color:T.textMd}}> — {r.items.join(", ")}</span>:null}{r.apartado?<span style={{color:T.yellow}}> — APARTADO: {r.apartado}</span>:null}{r.ya?<span style={{color:T.textSm}}> — ya estaba armado</span>:null}<span style={{color:T.textSm}}> · {r.armados}/{r.total}</span></>}
+          </div>))}
+        </div>}
+      </Card>
       {res&&(<Card T={T} padding="md" style={{marginBottom:16}}>
         {res.length===0? <div style={{fontSize:DS.font.base,color:T.textSm}}>Sin resultados en las últimas tres semanas.</div>
           : res.map((r,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"6px 0",borderBottom:i<res.length-1?`1px solid ${T.borderL}`:"none"}}>
@@ -21137,12 +21250,48 @@ function DepositoClientes({T,api}){
   </div>);
 }
 
-// Links del panel por token (solo dueño): el propio y el de la PC del depósito.
+// Mercadería recibida de los clientes (registro, sin stock).
+function DepositoIngresos({T,api,owner}){
+  const iS=InputStyle(T);
+  const [d,setD]=useState(null); const [clientes,setClientes]=useState([]); const [form,setForm]=useState(null); const [busy,setBusy]=useState(false);
+  const cargar=()=>api("ingresos").then(r=>setD(r.ingresos||[])).catch(e=>{ toast(e.message,"error"); setD([]); });
+  useEffect(()=>{ cargar(); api("cola").then(r=>setClientes(r.clientes||[])).catch(()=>{}); },[]);
+  async function guardar(){
+    if(busy) return; const items=form.items.split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{ const m=l.match(/^(\d+)\s*[xX×]?\s+(.+)$/)||l.match(/^(.+?)\s+[xX×]?\s*(\d+)$/); if(!m) return {sku:l,cant:1}; return /^\d+$/.test(m[1])?{sku:m[2].trim(),cant:Number(m[1])}:{sku:m[1].trim(),cant:Number(m[2])}; });
+    setBusy(true); try{ await api("ingreso_crear",{clienteId:form.clienteId,fecha:form.fecha,bultos:Number(form.bultos)||0,items,nota:form.nota}); toast("Ingreso registrado","success"); setForm(null); cargar(); }catch(e){ toast(e.message,"error"); } setBusy(false);
+  }
+  async function eliminar(g){ if(!(await appConfirm(`¿Borrar el ingreso de ${g.clienteNombre} del ${ghDepFechaLinda(g.fecha)}?`,{danger:true,okLabel:"Borrar"}))) return; try{ await api("ingreso_eliminar",{id:g.id}); cargar(); }catch(e){ toast(e.message,"error"); } }
+  const lbl=t=><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:5}}>{t}</div>;
+  if(!d) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
+  return (<div>
+    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn T={T} variant="primary" onClick={()=>setForm({clienteId:clientes[0]?.id||"",fecha:hoyAR(),bultos:"",items:"",nota:""})}>Registrar ingreso</Btn></div>
+    {d.length===0? <DSEmpty T={T} title="Todavía no registraste mercadería" subtitle="Cuando llegue una caja de un cliente, anotá cuántos bultos y qué productos trae. El cliente lo ve en su panel."/>
+      : <Card T={T} padding="sm">{d.map((g,i)=>(<div key={g.id} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 10px",borderBottom:i<d.length-1?`1px solid ${T.borderL}`:"none",fontSize:DS.font.base,flexWrap:"wrap"}}>
+          <span style={{color:T.textSm,minWidth:48}}>{ghDepFechaLinda(g.fecha)}</span>
+          <span style={{fontWeight:700,color:T.text,minWidth:140}}>{g.clienteNombre}</span>
+          <span style={{flex:1,minWidth:200,color:T.text,lineHeight:1.5}}>{g.bultos?`${g.bultos} bulto${g.bultos!==1?"s":""}`:""}{g.bultos&&g.items.length?" · ":""}{g.items.map(it=>`${it.cant}x ${it.sku}`).join(", ")}{g.nota?<span style={{color:T.textMd}}> — {g.nota}</span>:null}</span>
+          <span style={{fontSize:DS.font.sm,color:T.textSm}}>{g.porNombre}</span>
+          {owner&&<Btn T={T} variant="ghost" size="sm" onClick={()=>eliminar(g)}>Borrar</Btn>}
+        </div>))}</Card>}
+    {form&&(<Modal T={T} open onClose={()=>setForm(null)} title="Mercadería recibida" width={460}>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div>{lbl("Cliente")}<select style={iS} value={form.clienteId} onChange={e=>setForm(f=>({...f,clienteId:e.target.value}))}>{clientes.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+        <div style={{display:"flex",gap:12}}><div style={{flex:1}}>{lbl("Fecha")}<input style={iS} type="date" value={form.fecha} onChange={e=>setForm(f=>({...f,fecha:e.target.value}))}/></div><div style={{width:120}}>{lbl("Bultos")}<input style={iS} type="number" min="0" value={form.bultos} onChange={e=>setForm(f=>({...f,bultos:e.target.value}))}/></div></div>
+        <div>{lbl("Productos, uno por línea (cantidad y SKU)")}<textarea style={{...iS,minHeight:90,resize:"vertical",fontFamily:"monospace"}} placeholder={"50 ROJ-NN\n20 CLIP-ON"} value={form.items} onChange={e=>setForm(f=>({...f,items:e.target.value}))}/></div>
+        <div>{lbl("Nota")}<input style={iS} placeholder="Ej.: una caja venía abierta" value={form.nota} onChange={e=>setForm(f=>({...f,nota:e.target.value}))}/></div>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={()=>setForm(null)}>Cancelar</Btn><Btn T={T} variant="primary" onClick={guardar} disabled={busy||!form.clienteId}>{busy?"Guardando…":"Registrar"}</Btn></div>
+      </div>
+    </Modal>)}
+  </div>);
+}
+
+// Configuración (solo dueño): links del panel por token, datos bancarios y hora de corte.
 function DepositoAccesos({T,api,panel}){
   const iS=InputStyle(T);
-  const [d,setD]=useState(null);
-  const cargar=()=>api("accesos").then(setD).catch(e=>{ toast(e.message,"error"); setD({}); });
+  const [d,setD]=useState(null); const [cfg,setCfg]=useState(null); const [busy,setBusy]=useState(false);
+  const cargar=()=>api("accesos").then(r=>{ setD(r); setCfg({datosPago:r.datosPago||"",corteHora:r.corteHora??15}); }).catch(e=>{ toast(e.message,"error"); setD({}); setCfg({datosPago:"",corteHora:15}); });
   useEffect(()=>{ cargar(); },[]);
+  async function guardarCfg(){ if(busy) return; setBusy(true); try{ await api("config_guardar",cfg); toast("Configuración guardada","success"); }catch(e){ toast(e.message,"error"); } setBusy(false); }
   const link=t=>t?`${window.location.origin}/#/deposito/panel/${t}`:"";
   const copiar=async t=>{ try{ await navigator.clipboard.writeText(link(t)); toast("Link copiado","success"); }catch(_){ toast("No pude copiar. Seleccioná el link y copialo a mano.","warning"); } };
   async function nuevo(cual){
@@ -21166,7 +21315,15 @@ function DepositoAccesos({T,api,panel}){
     </>):(<Btn T={T} variant="primary" size="sm" onClick={()=>nuevo(cual)}>Generar link</Btn>)}
   </Card>);
   return (<div style={{maxWidth:760}}>
-    {fila("Tu panel","Abre esta consola completa (cola, historial, clientes, pagos y accesos) sin entrar a Growith. Es tuyo: no lo compartas.",d.adminToken,"admin",d.adminAt)}
+    {cfg&&(<Card T={T} padding="lg" style={{marginBottom:14}}>
+      <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:4}}>Datos para transferir</div>
+      <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:10,lineHeight:1.6}}>Lo ve el cliente al informar un pago. CBU o alias, titular y CUIT.</div>
+      <textarea style={{...iS,minHeight:70,resize:"vertical"}} placeholder={"Alias: deposito.soluna\nTitular: …\nCUIT: …"} value={cfg.datosPago} onChange={e=>setCfg(c=>({...c,datosPago:e.target.value}))}/>
+      <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:4,marginTop:6}}>Hora de corte</div>
+      <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:10,lineHeight:1.6}}>Las tandas que llegan antes de esta hora salen el mismo día; después, al día siguiente. El cliente lo ve al enviar.</div>
+      <div style={{display:"flex",gap:10,alignItems:"center"}}><input style={{...iS,width:90,marginBottom:0}} type="number" min="0" max="23" value={cfg.corteHora} onChange={e=>setCfg(c=>({...c,corteHora:e.target.value}))}/><span style={{fontSize:DS.font.md,color:T.textMd}}>:00 hs</span><Btn T={T} variant="primary" size="sm" onClick={guardarCfg} disabled={busy}>{busy?"Guardando…":"Guardar"}</Btn></div>
+    </Card>)}
+    {fila("Tu panel","Abre esta consola completa (cola, historial, clientes, pagos y configuración) sin entrar a Growith. Es tuyo: no lo compartas.",d.adminToken,"admin",d.adminAt)}
     {fila("PC del depósito","Abre solo cola, historial y buscador, sin precios ni pagos. Al abrirlo pide el nombre de quien está operando y ese nombre queda en cada tanda que imprime, arma o entrega. Guardalo como favorito en la PC del depósito.",d.pcToken,"pc",d.pcAt)}
     <div style={{fontSize:DS.font.md,color:T.textSm,lineHeight:1.6}}>Cualquiera con el link entra, sin contraseña. Si se filtra o se va alguien del depósito, "Generar link nuevo" invalida el anterior al instante.</div>
   </div>);
@@ -21174,9 +21331,11 @@ function DepositoAccesos({T,api,panel}){
 
 function DepositoPagos({T,api}){
   const iS=InputStyle(T);
-  const [mes,setMes]=useState(hoyAR().slice(0,7)); const [res,setRes]=useState(null); const [hist,setHist]=useState(null);
-  const cargar=()=>{ setRes(null); setHist(null); Promise.all([api("resumen",{mes}),api("historial",{mes})]).then(([a,b])=>{ setRes(a); setHist(b.tandas.filter(t=>t.estado!=="cancelada")); }).catch(e=>{ toast(e.message,"error"); setRes({clientes:[]}); setHist([]); }); };
+  const [mes,setMes]=useState(hoyAR().slice(0,7)); const [res,setRes]=useState(null); const [hist,setHist]=useState(null); const [cc,setCc]=useState(null);
+  const cargar=()=>{ setRes(null); setHist(null); Promise.all([api("resumen",{mes}),api("historial",{mes})]).then(([a,b])=>{ setRes(a); setHist(b.tandas.filter(t=>t.estado!=="cancelada")); }).catch(e=>{ toast(e.message,"error"); setRes({clientes:[]}); setHist([]); }); api("pagos_cc").then(setCc).catch(()=>setCc({cuentas:[],pagos:[]})); };
   useEffect(()=>{ cargar(); },[mes]);
+  async function verificarCc(p,ok){ let nota=""; if(!ok){ nota=await appPrompt("¿Por qué se rechaza la transferencia? El cliente lo ve en su panel.","",{okLabel:"Rechazar"}); if(!nota) return; } try{ const r=await api("pago_cc_verificar",{id:p.id,ok,nota}); if(ok) toast(`Pago verificado: aplicado a ${r.aplicadas||0} tanda${r.aplicadas!==1?"s":""}${r.aFavor>0?` · ${fmtMoney(r.aFavor)} quedan a favor`:""}`,"success",6000); cargar(); }catch(e){ toast(e.message,"error"); } }
+  async function compCc(p){ const w=ghDepVentana(p.comp.mime); try{ ghDepAbrirBytes(await ghDepBajar(api,"file_get",p.id,"pcomp",p.comp.chunks),p.comp.mime,p.comp.nombre,w); }catch(e){ if(w&&!w.closed) w.close(); toast(e.message,"error"); } }
   async function verificar(t,ok){ let nota=""; if(!ok){ nota=await appPrompt("¿Por qué se rechaza el pago? El cliente lo ve en su panel.","",{okLabel:"Rechazar pago"}); if(!nota) return; } try{ await api("pago_verificar",{id:t.id,ok,nota}); cargar(); }catch(e){ toast(e.message,"error"); } }
   async function ajuste(t){ const v=await appPrompt(`Ajuste en pesos para esta tanda (negativo descuenta). Total actual: ${fmtMoney(t.total)}`,String(t.ajuste||0),{okLabel:"Aplicar"}); if(v===null||v===undefined||v==="") return; const n=Number(String(v).replace(",",".")); if(!isFinite(n)){ toast("Poné un número","warning"); return; } try{ await api("tanda_ajuste",{id:t.id,ajuste:n,motivo:"Ajuste manual"}); cargar(); }catch(e){ toast(e.message,"error"); } }
   async function comprobante(t){ try{ ghDepAbrirBytes(await ghDepBajar(api,"file_get",t.id,"comp",t.pago.comp.chunks),t.pago.comp.mime,t.pago.comp.nombre); }catch(e){ toast(e.message,"error"); } }
@@ -21184,6 +21343,21 @@ function DepositoPagos({T,api}){
   const colP={sin_informar:T.textSm,a_verificar:T.yellow,verificado:T.green,rechazado:T.red};
   return (<div>
     <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}><input type="month" style={{...iS,marginBottom:0,width:180}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>{res&&res.clientes.length>0&&<Btn T={T} variant="secondary" size="sm" onClick={exportar}>Exportar resumen</Btn>}</div>
+    {cc&&(cc.cuentas.some(c=>c.deuda>0||c.aFavor>0)||cc.pagos.length>0)&&(<div style={{marginBottom:22}}>
+      <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:8}}>Cuenta corriente</div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+        {cc.cuentas.filter(c=>c.deuda>0||c.aFavor>0).map(c=>(<div key={c.clienteId} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.md,padding:"8px 12px",fontSize:DS.font.base}}><strong style={{color:T.text}}>{c.nombre}</strong> <span style={{color:c.deuda>0?T.yellow:T.green}}>{c.deuda>0?`debe ${fmtMoney(c.deuda)}`:`${fmtMoney(c.aFavor)} a favor`}</span></div>))}
+      </div>
+      {cc.pagos.length>0&&<Card T={T} padding="sm">{cc.pagos.map((p,i)=>(<div key={p.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 10px",borderBottom:i<cc.pagos.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap",fontSize:DS.font.base}}>
+        <span style={{color:T.textSm,minWidth:70}}>{p.informadoAt?new Date(p.informadoAt).toLocaleDateString("es-AR"):"—"}</span>
+        <span style={{flex:1,minWidth:160,color:T.text,fontWeight:600}}>{p.clienteNombre}{p.notaCliente?<span style={{fontWeight:400,color:T.textMd}}> · {p.notaCliente}</span>:null}</span>
+        <strong style={{color:T.text}}>{fmtMoney(p.monto)}</strong>
+        <DSBadge T={T} color={p.estado==="verificado"?T.green:p.estado==="rechazado"?T.red:T.yellow} size="sm">{p.estado==="verificado"?`Verificado · ${p.aplicado?.length||0} tandas`:p.estado==="rechazado"?"Rechazado":"A verificar"}</DSBadge>
+        {p.comp&&<Btn T={T} variant="ghost" size="sm" onClick={()=>compCc(p)}>Ver comprobante</Btn>}
+        {p.estado==="a_verificar"&&<Btn T={T} variant="success" size="sm" onClick={()=>verificarCc(p,true)}>Verificar</Btn>}
+        {p.estado==="a_verificar"&&<Btn T={T} variant="ghost" size="sm" onClick={()=>verificarCc(p,false)}>Rechazar</Btn>}
+      </div>))}</Card>}
+    </div>)}
     {!res||!hist? <div style={{display:"flex",justifyContent:"center",padding:40}}><Spinner size={24} color={T.accent}/></div> : (<>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(250px,1fr))",gap:10,marginBottom:22}}>
         {res.clientes.map(c=>(<Card key={c.clienteId} T={T} padding="md">

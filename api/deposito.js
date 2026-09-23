@@ -17,6 +17,12 @@
 //   deposito_clientes/{id}  {nombre, precio, growithUid|null, token, activo, contacto, nota}
 //   deposito_tandas/{id}    ver `nuevaTanda`
 //   deposito_files/{tandaId}__{kind}__{i}  {tandaId, kind, i, data(base64), purgeAt}
+//   deposito_pagos/{id}     pago de CUENTA CORRIENTE por transferencia (23/sep/2026): {clienteId, monto,
+//                           comp, estado borrador|a_verificar|verificado|rechazado, aplicado:[tandaId]}.
+//                           Al verificarlo se aplica FIFO a las tandas sin verificar; el sobrante queda
+//                           en deposito_clientes.aFavor. Comprobante en deposito_files/{pagoId}__pcomp__{i}.
+//   deposito_ingresos/{id}  mercadería RECIBIDA de un cliente {clienteId, fecha, bultos, items:[{sku,cant}], nota}
+//   system/deposito         {adminToken, pcToken, datosPago (CBU/alias que ve el cliente), corteHora (default 15)}
 // Los PDF viajan y se guardan en TROZOS de ≤ 700.000 caracteres base64 (límite
 // de 1 MiB por doc y 4,5 MB por request) y se purgan a los 30 días.
 //
@@ -141,13 +147,13 @@ function tandaPublica(id, t, { paraCliente = false } = {}) {
     pago: { estado: t.pago?.estado || "sin_informar", comp: t.pago?.comp ? { nombre: t.pago.comp.nombre, mime: t.pago.comp.mime, chunks: t.pago.comp.chunks } : null, informadoAt: ms(t.pago?.informadoAt), verificadoAt: ms(t.pago?.verificadoAt), nota: t.pago?.nota || "" },
     pdf: t.pdf ? { chunks: t.pdf.chunks, pages: t.pdf.pages || 0, purgado: !!t.pdf.purgado } : null,
     especial: t.especial ? { titulo: t.especial.titulo, instrucciones: t.especial.instrucciones, urgente: !!t.especial.urgente, bultos: t.especial.bultos || 1, adj: (t.especial.adj || []).map(a => ({ kind: a.kind, nombre: a.nombre, mime: a.mime, chunks: a.chunks })) } : null,
-    pedidos: (t.pedidos || []).map(p => ({ numero: p.numero, comprador: p.comprador, items: p.items || [], pags: p.pags || [], apartado: p.apartado ? { nota: p.apartado.nota, porNombre: p.apartado.porNombre, at: p.apartado.at } : null })),
+    pedidos: (t.pedidos || []).map(p => ({ numero: p.numero, comprador: p.comprador, items: p.items || [], pags: p.pags || [], tracking: p.tracking || "", armado: p.armado ? { porNombre: p.armado.porNombre, at: p.armado.at } : null, apartado: p.apartado ? { nota: p.apartado.nota, porNombre: p.apartado.porNombre, at: p.apartado.at } : null })),
     hist: paraCliente ? (t.hist || []).map(h => ({ at: h.at, a: h.a })) : (t.hist || []),
     createdAt: ms(t.createdAt),
   };
 }
 // interno=true (dueño/operario): trae vínculo, nota interna y token. Al cliente solo nombre, precio y contacto.
-const clientePublico = (id, c, interno) => ({ id, nombre: c.nombre, precio: num(c.precio), activo: c.activo !== false, contacto: c.contacto || "",
+const clientePublico = (id, c, interno) => ({ id, nombre: c.nombre, precio: num(c.precio), activo: c.activo !== false, contacto: c.contacto || "", aFavor: num(c.aFavor),
   ...(interno ? { growithUid: c.growithUid || null, growithEmail: c.growithEmail || "", nota: c.nota || "", token: c.token } : {}) });
 
 const totalDe = t => Math.max(0, +(num(t.n) * num(t.precioUnit) + num(t.ajuste)).toFixed(2));
@@ -158,9 +164,14 @@ function sanitPedidos(arr) {
     numero: txt(p?.numero, 40), comprador: txt(p?.comprador, 80),
     items: (Array.isArray(p?.items) ? p.items : []).slice(0, 25).map(i => txt(i, 90)).filter(Boolean),
     pags: (Array.isArray(p?.pags) ? p.pags : []).slice(0, 12).map(n => Math.max(1, Math.round(num(n)))).filter(Boolean),
-    apartado: null,
+    tracking: txt(p?.tracking, 40),
+    apartado: null, armado: null,
   }));
 }
+const pagoPublico = (id, p) => ({ id, clienteId: p.clienteId, clienteNombre: p.clienteNombre, monto: num(p.monto), estado: p.estado, nota: p.nota || "", notaCliente: p.notaCliente || "",
+  comp: p.comp ? { nombre: p.comp.nombre, mime: p.comp.mime, chunks: p.comp.chunks } : null, informadoAt: ms(p.informadoAt), verificadoAt: ms(p.verificadoAt), aplicado: p.aplicado || [], porNombre: p.porNombre || "" });
+const ingresoPublico = (id, g) => ({ id, clienteId: g.clienteId, clienteNombre: g.clienteNombre, fecha: g.fecha, bultos: g.bultos || 0, items: g.items || [], nota: g.nota || "", porNombre: g.porNombre || "", createdAt: ms(g.createdAt) });
+const sanitItems = arr => (Array.isArray(arr) ? arr : []).slice(0, 60).map(i => ({ sku: txt(i?.sku, 60), cant: Math.max(0, Math.round(num(i?.cant))) })).filter(i => i.sku && i.cant > 0);
 
 async function borrarArchivos(db, tandaId) {
   const s = await db.collection("deposito_files").where("tandaId", "==", tandaId).get();
@@ -223,7 +234,7 @@ export default async function handler(req, res) {
 
     // ══ Acciones del CLIENTE (portal por token o sesión Growith) y del depósito
     //    en nombre de un cliente (clienteId) ══
-    const ACC_CLIENTE = ["c_info", "c_tandas", "c_tanda_crear", "c_file_put", "c_tanda_cerrar", "c_pago_informar", "c_tanda_cancelar", "c_file_get"];
+    const ACC_CLIENTE = ["c_info", "c_tandas", "c_tanda_crear", "c_file_put", "c_tanda_cerrar", "c_pago_informar", "c_tanda_cancelar", "c_file_get", "c_pago_crear", "c_pago_cerrar", "c_ingresos"];
     if (ACC_CLIENTE.includes(action)) {
       const token = body.token ? String(body.token) : "";
       if (token && !rateOk(req)) return res.status(429).json({ error: "Demasiadas solicitudes. Esperá un minuto." });
@@ -231,22 +242,57 @@ export default async function handler(req, res) {
       if (!cx && body.clienteId) {
         const dep = await ctxDeposito(req, body);
         // Un operario solo puede CARGAR en nombre del cliente; informar pagos o cancelar es del dueño.
-        if (dep && dep.rol !== "owner" && !["c_tanda_crear", "c_file_put", "c_tanda_cerrar", "c_info"].includes(action)) return res.status(403).json({ error: "Solo el dueño del depósito puede hacer esto." });
-        if (dep) { const c = await db.collection("deposito_clientes").doc(String(body.clienteId)).get(); if (c.exists) cx = { cliente: { id: c.id, ...c.data() }, via: "deposito", por: dep.user.uid, porNombre: dep.nombre }; }
+        if (dep && dep.rol !== "owner" && !["c_tanda_crear", "c_file_put", "c_tanda_cerrar", "c_info", "c_ingresos"].includes(action)) return res.status(403).json({ error: "Solo el dueño del depósito puede hacer esto." });
+        if (dep) { const c = await db.collection("deposito_clientes").doc(String(body.clienteId)).get(); if (c.exists) cx = { cliente: { id: c.id, ...c.data() }, via: "deposito", rol: dep.rol, por: dep.user.uid, porNombre: dep.nombre }; }
       }
       if (!cx) return res.status(403).json({ error: token ? "Link inválido o cliente inactivo." : "Esta cuenta no está dada de alta como cliente del depósito." });
       const cli = cx.cliente;
       const tRef = id => db.collection("deposito_tandas").doc(String(id || ""));
       const miTanda = async id => { if (!/^[A-Za-z0-9]{10,40}$/.test(String(id || ""))) return null; const s = await tRef(id).get(); return s.exists && s.data().clienteId === cli.id ? s : null; };
 
-      if (action === "c_info") return res.json({ cliente: clientePublico(cli.id, cli, false) });
+      const cfgPub = async () => { const c = await tokensDeposito(db); return { corteHora: Math.min(23, Math.max(0, Math.round(num(c.corteHora)) || 15)), datosPago: c.datosPago || "" }; };
+      if (action === "c_info") return res.json({ cliente: clientePublico(cli.id, cli, false), ...(await cfgPub()) });
 
       if (action === "c_tandas") {
-        const s = await db.collection("deposito_tandas").where("clienteId", "==", cli.id).get();
+        const [s, ps, gs, cfg] = await Promise.all([
+          db.collection("deposito_tandas").where("clienteId", "==", cli.id).get(),
+          db.collection("deposito_pagos").where("clienteId", "==", cli.id).get(),
+          db.collection("deposito_ingresos").where("clienteId", "==", cli.id).get(),
+          cfgPub(),
+        ]);
         const todas = s.docs.map(d => ({ id: d.id, t: d.data() })).filter(x => x.t.estado !== "borrador");
         todas.sort((a, b) => (ms(b.t.createdAt) || 0) - (ms(a.t.createdAt) || 0));
-        const deuda = todas.filter(x => x.t.estado !== "cancelada" && x.t.pago?.estado !== "verificado").reduce((a, x) => a + num(x.t.total), 0);
-        return res.json({ cliente: clientePublico(cli.id, cli, false), tandas: todas.slice(0, 120).map(x => tandaPublica(x.id, x.t, { paraCliente: true })), saldoPendiente: +deuda.toFixed(2) });
+        const deudaBruta = todas.filter(x => x.t.estado !== "cancelada" && x.t.pago?.estado !== "verificado").reduce((a, x) => a + num(x.t.total), 0);
+        const pagos = ps.docs.map(d => pagoPublico(d.id, d.data())).filter(p => p.estado !== "borrador").sort((a, b) => (b.informadoAt || 0) - (a.informadoAt || 0)).slice(0, 60);
+        const enVerificacion = pagos.filter(p => p.estado === "a_verificar").reduce((a, p) => a + p.monto, 0);
+        const ingresos = gs.docs.map(d => ingresoPublico(d.id, d.data())).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "") || (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 40);
+        return res.json({ cliente: clientePublico(cli.id, cli, false), tandas: todas.slice(0, 120).map(x => tandaPublica(x.id, x.t, { paraCliente: true })), saldoPendiente: +deudaBruta.toFixed(2),
+          cuenta: { deuda: +Math.max(0, deudaBruta - num(cli.aFavor)).toFixed(2), aFavor: num(cli.aFavor), enVerificacion: +enVerificacion.toFixed(2), pagos }, ingresos, ...cfg });
+      }
+
+      if (action === "c_ingresos") {
+        const gs = await db.collection("deposito_ingresos").where("clienteId", "==", cli.id).get();
+        return res.json({ ingresos: gs.docs.map(d => ingresoPublico(d.id, d.data())).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "")).slice(0, 200) });
+      }
+
+      // Pago de cuenta corriente por transferencia: se crea, se sube el comprobante
+      // (c_file_put kind "pcomp") y se cierra con el monto. Lo verifica el dueño.
+      if (action === "c_pago_crear") {
+        if (cx.via === "deposito" && cx.rol !== "owner") return res.status(403).json({ error: "Solo el dueño del depósito puede hacer esto." });
+        const ref = await db.collection("deposito_pagos").add({ clienteId: cli.id, clienteNombre: cli.nombre, monto: 0, estado: "borrador", comp: null, nota: "", por: cx.por, porNombre: txt(cx.porNombre, 80), createdAt: FieldValue.serverTimestamp() });
+        return res.json({ id: ref.id });
+      }
+      if (action === "c_pago_cerrar") {
+        const id = String(body.id || ""); if (!/^[A-Za-z0-9]{10,40}$/.test(id)) return res.status(400).json({ error: "Pago inválido." });
+        const pRef = db.collection("deposito_pagos").doc(id); const ps = await pRef.get();
+        if (!ps.exists || ps.data().clienteId !== cli.id) return res.status(404).json({ error: "Pago inexistente." });
+        if (ps.data().estado !== "borrador") return res.json({ ok: true, ya: true });
+        const monto = +num(body.monto).toFixed(2); if (!(monto > 0)) return res.status(400).json({ error: "Poné el monto transferido." });
+        const chunks = Math.round(num(body.chunks)); if (chunks < 1 || chunks > MAX_CHUNKS_OTRO) return res.status(400).json({ error: "Falta el comprobante de la transferencia." });
+        const ult = await db.collection("deposito_files").doc(`${id}__pcomp__${chunks - 1}`).get();
+        if (!ult.exists) return res.status(400).json({ error: "La subida quedó incompleta. Probá de nuevo." });
+        await pRef.set({ monto, estado: "a_verificar", comp: { chunks, nombre: txt(body.nombre, 120), mime: txt(body.mime, 60) }, notaCliente: txt(body.nota, 300), informadoAt: FieldValue.serverTimestamp() }, { merge: true });
+        return res.json({ ok: true });
       }
 
       if (action === "c_tanda_crear") {
@@ -272,6 +318,17 @@ export default async function handler(req, res) {
         return res.json({ id: ref.id, chunkMax: CHUNK_MAX, precioUnit: t.precioUnit, total: t.total });
       }
 
+      if (action === "c_file_put" && String(body.kind || "") === "pcomp") {
+        const id = String(body.id || ""); if (!/^[A-Za-z0-9]{10,40}$/.test(id)) return res.status(400).json({ error: "Pago inválido." });
+        const ps = await db.collection("deposito_pagos").doc(id).get();
+        if (!ps.exists || ps.data().clienteId !== cli.id) return res.status(404).json({ error: "Pago inexistente." });
+        if (ps.data().estado !== "borrador") return res.status(409).json({ error: "El pago ya fue informado." });
+        const i = Math.round(num(body.i)); const data = String(body.data || "");
+        if (i < 0 || i >= MAX_CHUNKS_OTRO) return res.status(413).json({ error: "El comprobante es demasiado grande." });
+        if (!data || data.length > CHUNK_MAX || !/^[A-Za-z0-9+/=]+$/.test(data)) return res.status(400).json({ error: "Trozo inválido." });
+        await db.collection("deposito_files").doc(`${id}__pcomp__${i}`).set({ tandaId: id, kind: "pcomp", i, data, purgeAt: Date.now() + 180 * 86400000 });
+        return res.json({ ok: true });
+      }
       if (action === "c_file_put") {
         const s = await miTanda(body.id); if (!s) return res.status(404).json({ error: "Tanda inexistente." });
         const t = s.data();
@@ -368,6 +425,50 @@ export default async function handler(req, res) {
       return res.json({ rol: dep.rol, via: dep.via || "sesion", nombre: dep.nombre, hoy: hoyAR(), tandas, clientes: cs.docs.map(d => clientePublico(d.id, d.data(), false)).filter(c => c.activo).map(c => dep.rol === "owner" ? c : { ...c, precio: null }) });
     }
 
+    // Lector de códigos: la etiqueta escaneada (número de envío de Andreani, id
+    // de envío de ML o número de pedido) marca el pedido como armado.
+    if (action === "pedido_escanear") {
+      const cod = txt(body.codigo, 60).replace(/\s+/g, ""); if (cod.length < 3) return res.status(400).json({ error: "Código vacío." });
+      const s = await db.collection("deposito_tandas").where("estado", "in", ["pendiente", "impresa", "armada"]).get();
+      const cl = cod.toLowerCase(); const solo = cl.replace(/\D/g, "");
+      let hit = null;
+      for (const d of s.docs) { const t = d.data();
+        const idx = (t.pedidos || []).findIndex(p => { const n = String(p.numero || "").toLowerCase(), tr = String(p.tracking || "").toLowerCase();
+          return (n && (n === cl || n === solo || (solo.length >= 6 && n.replace(/\D/g, "") === solo))) || (tr && (tr === cl || tr === solo || (tr.length >= 8 && cl.includes(tr)))); });
+        if (idx >= 0) { hit = { ref: d.ref, idx }; break; } }
+      if (!hit) return res.status(404).json({ error: `No encontré ningún pedido en la cola con el código ${cod}.` });
+      const out = await db.runTransaction(async tx => {
+        const cur = (await tx.get(hit.ref)).data(); const pedidos = [...(cur.pedidos || [])]; const p = pedidos[hit.idx]; if (!p) return null;
+        const ya = !!p.armado;
+        if (!ya) { pedidos[hit.idx] = { ...p, armado: { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80) } }; tx.set(hit.ref, { pedidos }, { merge: true }); }
+        const armados = pedidos.filter(x => x.armado).length;
+        return { tandaId: hit.ref.id, clienteNombre: cur.clienteNombre, estado: cur.estado, numero: p.numero, comprador: p.comprador, items: p.items || [], apartado: p.apartado ? p.apartado.nota : null, ya, yaPor: p.armado?.porNombre || "", armados, total: pedidos.length, completa: armados === pedidos.length };
+      });
+      if (!out) return res.status(404).json({ error: "Pedido inexistente." });
+      return res.json(out);
+    }
+
+    // Mercadería recibida de un cliente (sin stock: es el registro de lo que entró).
+    if (action === "ingreso_crear") {
+      const c = await db.collection("deposito_clientes").doc(String(body.clienteId || "")).get(); if (!c.exists) return res.status(404).json({ error: "Cliente inexistente." });
+      const items = sanitItems(body.items); const bultos = Math.max(0, Math.min(999, Math.round(num(body.bultos))));
+      if (!items.length && !bultos) return res.status(400).json({ error: "Cargá al menos los bultos o un producto con cantidad." });
+      const g = { clienteId: c.id, clienteNombre: c.data().nombre, fecha: esFecha(body.fecha) ? body.fecha : hoyAR(), bultos, items, nota: txt(body.nota, 400), por: dep.user.uid, porNombre: txt(dep.nombre, 80), createdAt: FieldValue.serverTimestamp() };
+      const ref = await db.collection("deposito_ingresos").add(g);
+      return res.json({ ok: true, id: ref.id });
+    }
+    if (action === "ingresos") {
+      const desde = new Date(Date.now() - 90 * 86400000);
+      const gs = await db.collection("deposito_ingresos").where("createdAt", ">=", desde).get();
+      const lista = gs.docs.map(d => ingresoPublico(d.id, d.data())).filter(g => !body.clienteId || g.clienteId === body.clienteId).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "") || (b.createdAt || 0) - (a.createdAt || 0));
+      return res.json({ ingresos: lista.slice(0, 300) });
+    }
+    if (action === "ingreso_eliminar") {
+      if (!soloOwner()) return;
+      await db.collection("deposito_ingresos").doc(String(body.id || "")).delete().catch(() => {});
+      return res.json({ ok: true });
+    }
+
     if (action === "tanda_estado") {
       const estado = String(body.estado || "");
       if (!ESTADOS.includes(estado)) return res.status(400).json({ error: "Estado inválido." });
@@ -403,7 +504,7 @@ export default async function handler(req, res) {
     }
 
     if (action === "file_get") {
-      if (String(body.kind || "") === "comp" && dep.rol !== "owner") return res.status(403).json({ error: "Los comprobantes los ve solo el dueño del depósito." });
+      if (["comp", "pcomp"].includes(String(body.kind || "")) && dep.rol !== "owner") return res.status(403).json({ error: "Los comprobantes los ve solo el dueño del depósito." });
       const f = await db.collection("deposito_files").doc(`${String(body.id || "")}__${String(body.kind || "")}__${Math.round(num(body.i))}`).get();
       if (!f.exists) return res.status(404).json({ error: "El archivo ya no está disponible (se guardan 30 días)." });
       return res.json({ data: f.data().data });
@@ -431,7 +532,50 @@ export default async function handler(req, res) {
     if (action === "accesos") {
       if (!soloOwner()) return;
       const tk = await tokensDeposito(db);
-      return res.json({ adminToken: tk.adminToken || null, pcToken: tk.pcToken || null, adminAt: tk.adminAt || null, pcAt: tk.pcAt || null });
+      return res.json({ adminToken: tk.adminToken || null, pcToken: tk.pcToken || null, adminAt: tk.adminAt || null, pcAt: tk.pcAt || null, datosPago: tk.datosPago || "", corteHora: Math.min(23, Math.max(0, Math.round(num(tk.corteHora)) || 15)) });
+    }
+    if (action === "config_guardar") {
+      if (!soloOwner()) return;
+      const corteHora = Math.min(23, Math.max(0, Math.round(num(body.corteHora)) || 15));
+      await db.collection("system").doc("deposito").set({ datosPago: txt(body.datosPago, 600), corteHora }, { merge: true });
+      _tokCache = { at: 0, d: null };
+      return res.json({ ok: true });
+    }
+    // Pagos de cuenta corriente (transferencias informadas por el cliente).
+    if (action === "pagos_cc") {
+      if (!soloOwner()) return;
+      const [ps, cs, ts] = await Promise.all([
+        db.collection("deposito_pagos").where("createdAt", ">=", new Date(Date.now() - 200 * 86400000)).get(),
+        db.collection("deposito_clientes").get(),
+        db.collection("deposito_tandas").where("createdAt", ">=", new Date(Date.now() - 400 * 86400000)).get(),
+      ]);
+      const deuda = {};
+      for (const d of ts.docs) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado) || t.pago?.estado === "verificado") continue; deuda[t.clienteId] = (deuda[t.clienteId] || 0) + num(t.total); }
+      const cuentas = cs.docs.map(d => { const c = d.data(); const bruta = deuda[d.id] || 0; return { clienteId: d.id, nombre: c.nombre, activo: c.activo !== false, deuda: +Math.max(0, bruta - num(c.aFavor)).toFixed(2), aFavor: num(c.aFavor) }; }).filter(c => c.activo || c.deuda > 0).sort((a, b) => b.deuda - a.deuda);
+      const pagos = ps.docs.map(d => pagoPublico(d.id, d.data())).filter(p => p.estado !== "borrador").sort((a, b) => ({ a_verificar: 0, rechazado: 1, verificado: 2 }[a.estado] - { a_verificar: 0, rechazado: 1, verificado: 2 }[b.estado]) || (b.informadoAt || 0) - (a.informadoAt || 0));
+      return res.json({ cuentas, pagos: pagos.slice(0, 200) });
+    }
+    if (action === "pago_cc_verificar") {
+      if (!soloOwner()) return;
+      const pRef = db.collection("deposito_pagos").doc(String(body.id || ""));
+      const ok = body.ok !== false;
+      const out = await db.runTransaction(async tx => {
+        const ps = await tx.get(pRef); if (!ps.exists) return null; const p = ps.data();
+        if (p.estado === "verificado") return { ok: true, ya: true };
+        if (!ok) { tx.set(pRef, { estado: "rechazado", nota: txt(body.nota, 300), verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid }, { merge: true }); return { ok: true }; }
+        const cRef = db.collection("deposito_clientes").doc(p.clienteId); const cs = await tx.get(cRef); const cli = cs.data() || {};
+        const ts = await tx.get(db.collection("deposito_tandas").where("clienteId", "==", p.clienteId));
+        const pend = ts.docs.map(d => ({ ref: d.ref, id: d.id, t: d.data() })).filter(x => !["borrador", "cancelada"].includes(x.t.estado) && x.t.pago?.estado !== "verificado")
+          .sort((a, b) => (a.t.fechaDespacho || "").localeCompare(b.t.fechaDespacho || "") || (ms(a.t.createdAt) || 0) - (ms(b.t.createdAt) || 0));
+        let resto = num(p.monto) + num(cli.aFavor); const aplicado = [];
+        for (const x of pend) { const tot = num(x.t.total); if (tot > resto + 0.005) break; resto -= tot; aplicado.push(x.id);
+          tx.set(x.ref, { pago: { ...(x.t.pago || {}), estado: "verificado", verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid, pagoId: pRef.id, nota: "" } }, { merge: true }); }
+        tx.set(cRef, { aFavor: +Math.max(0, resto).toFixed(2) }, { merge: true });
+        tx.set(pRef, { estado: "verificado", nota: txt(body.nota, 300), aplicado, verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid }, { merge: true });
+        return { ok: true, aplicadas: aplicado.length, aFavor: +Math.max(0, resto).toFixed(2) };
+      });
+      if (!out) return res.status(404).json({ error: "Pago inexistente." });
+      return res.json(out);
     }
     if (action === "acceso_nuevo") {
       if (!soloOwner()) return;

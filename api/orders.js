@@ -2472,11 +2472,29 @@ export default async function handler(req, res) {
         id: String(o.id),
         fecha: o.date_created || "",
         comprador: o.buyer?.nickname || o.buyer?.first_name || "—",
-        items: (o.order_items || []).map(it => ({ titulo: it.item?.title || "", qty: parseInt(it.quantity) || 0 })),
+        items: (o.order_items || []).map(it => ({ titulo: it.item?.title || "", sku: it.item?.seller_sku || "", qty: parseInt(it.quantity) || 0 })),
         total: parseFloat(o.total_amount) || 0,
+        shipmentId: o.shipping?.id ? String(o.shipping.id) : null,
         envio: o.shipping?.id ? (shipInfo[o.shipping.id] || null) : null,
       }));
       return res.status(200).json({ orders, mlConectado: true });
+    }
+
+    // ML_ETIQUETAS: PDF con las etiquetas de los envíos indicados (colecta /
+    // envíos ME2 en "listo para despachar"). Para mandarlas al depósito sin
+    // pasar por el sitio de ML. Devuelve base64 (≤ 50 envíos por llamada).
+    if (tab === 'ml_etiquetas') {
+      if (!mlUserId || !mlToken) return res.status(400).json({ error: "Mercado Libre no está conectado." });
+      const ids = String(req.query.ids || "").split(",").map(s => s.trim()).filter(s => /^\d{5,20}$/.test(s)).slice(0, 50);
+      if (!ids.length) return res.status(400).json({ error: "No hay envíos para imprimir." });
+      try {
+        const r = await fetch(`https://api.mercadolibre.com/shipment_labels?shipment_ids=${ids.join(",")}&response_type=pdf`, { headers: { Authorization: `Bearer ${mlToken}` }, signal: AbortSignal.timeout(40000) });
+        const ct = String(r.headers.get("content-type") || "");
+        if (!r.ok) { const j = await r.json().catch(() => ({})); return res.status(502).json({ error: `Mercado Libre no entregó las etiquetas (${r.status}): ${(j.message || j.error || "").toString().slice(0, 200)}` }); }
+        if (!/pdf/i.test(ct)) return res.status(502).json({ error: "Mercado Libre devolvió un formato que no es PDF. Probá con menos envíos." });
+        const buf = Buffer.from(await r.arrayBuffer());
+        return res.status(200).json({ pdf: buf.toString("base64"), ids });
+      } catch (e) { return res.status(502).json({ error: "No se pudieron bajar las etiquetas de Mercado Libre: " + e.message }); }
     }
 
     // STATS: facturado + count período actual vs anterior (para Home KPIs)
