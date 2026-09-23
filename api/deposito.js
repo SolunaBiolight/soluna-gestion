@@ -168,7 +168,7 @@ function sanitPedidos(arr) {
     apartado: null, armado: null,
   }));
 }
-const pagoPublico = (id, p) => ({ id, clienteId: p.clienteId, clienteNombre: p.clienteNombre, monto: num(p.monto), estado: p.estado, nota: p.nota || "", notaCliente: p.notaCliente || "",
+const pagoPublico = (id, p) => ({ id, clienteId: p.clienteId, clienteNombre: p.clienteNombre, monto: num(p.monto), estado: p.estado, tipo: p.tipo || "transferencia", nota: p.nota || "", notaCliente: p.notaCliente || "",
   comp: p.comp ? { nombre: p.comp.nombre, mime: p.comp.mime, chunks: p.comp.chunks } : null, informadoAt: ms(p.informadoAt), verificadoAt: ms(p.verificadoAt), aplicado: p.aplicado || [], porNombre: p.porNombre || "" });
 const ingresoPublico = (id, g) => ({ id, clienteId: g.clienteId, clienteNombre: g.clienteNombre, fecha: g.fecha, bultos: g.bultos || 0, items: g.items || [], nota: g.nota || "", porNombre: g.porNombre || "", createdAt: ms(g.createdAt) });
 const sanitItems = arr => (Array.isArray(arr) ? arr : []).slice(0, 60).map(i => ({ sku: txt(i?.sku, 60), cant: Math.max(0, Math.round(num(i?.cant))) })).filter(i => i.sku && i.cant > 0);
@@ -554,6 +554,45 @@ export default async function handler(req, res) {
       const cuentas = cs.docs.map(d => { const c = d.data(); const bruta = deuda[d.id] || 0; return { clienteId: d.id, nombre: c.nombre, activo: c.activo !== false, deuda: +Math.max(0, bruta - num(c.aFavor)).toFixed(2), aFavor: num(c.aFavor) }; }).filter(c => c.activo || c.deuda > 0).sort((a, b) => b.deuda - a.deuda);
       const pagos = ps.docs.map(d => pagoPublico(d.id, d.data())).filter(p => p.estado !== "borrador").sort((a, b) => ({ a_verificar: 0, rechazado: 1, verificado: 2 }[a.estado] - { a_verificar: 0, rechazado: 1, verificado: 2 }[b.estado]) || (b.informadoAt || 0) - (a.informadoAt || 0));
       return res.json({ cuentas, pagos: pagos.slice(0, 200) });
+    }
+    // Estado de cuenta de un cliente: tandas sin pagar + transferencias y ajustes.
+    if (action === "cuenta_cliente") {
+      if (!soloOwner()) return;
+      const cid = String(body.clienteId || "");
+      const [c, ts, ps] = await Promise.all([db.collection("deposito_clientes").doc(cid).get(), db.collection("deposito_tandas").where("clienteId", "==", cid).get(), db.collection("deposito_pagos").where("clienteId", "==", cid).get()]);
+      if (!c.exists) return res.status(404).json({ error: "Cliente inexistente." });
+      const tandas = ts.docs.map(d => ({ id: d.id, t: d.data() })).filter(x => !["borrador", "cancelada"].includes(x.t.estado) && x.t.pago?.estado !== "verificado")
+        .sort((a, b) => (a.t.fechaDespacho || "").localeCompare(b.t.fechaDespacho || "")).map(x => { const p = tandaPublica(x.id, x.t); p.pedidos = []; p.hist = []; return p; });
+      const deuda = +tandas.reduce((a, t) => a + num(t.total), 0).toFixed(2);
+      const pagos = ps.docs.map(d => pagoPublico(d.id, d.data())).filter(p => p.estado !== "borrador").sort((a, b) => (b.informadoAt || 0) - (a.informadoAt || 0)).slice(0, 60);
+      return res.json({ cliente: clientePublico(c.id, c.data(), true), deuda, aFavor: num(c.data().aFavor), tandas, pagos });
+    }
+    // Ajuste manual del saldo: monto > 0 acredita (se aplica a las tandas sin pagar,
+    // el resto queda a favor); monto < 0 cobra (aFavor baja, puede quedar negativo =
+    // deuda extra). Queda registrado como un "pago" tipo ajuste que el cliente ve.
+    if (action === "saldo_ajustar") {
+      if (!soloOwner()) return;
+      const monto = +num(body.monto).toFixed(2); if (!monto) return res.status(400).json({ error: "Poné el monto." });
+      const motivo = txt(body.motivo, 200);
+      const cRef = db.collection("deposito_clientes").doc(String(body.clienteId || ""));
+      const pRef = db.collection("deposito_pagos").doc();
+      const out = await db.runTransaction(async tx => {
+        const cs = await tx.get(cRef); if (!cs.exists) return null; const cli = cs.data();
+        const base = { clienteId: cRef.id, clienteNombre: cli.nombre, monto, tipo: "ajuste", estado: "verificado", comp: null, nota: motivo, notaCliente: "", aplicado: [], por: dep.user.uid, porNombre: txt(dep.nombre, 80), createdAt: FieldValue.serverTimestamp(), informadoAt: FieldValue.serverTimestamp(), verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid };
+        if (monto < 0) { const aFavor = +(num(cli.aFavor) + monto).toFixed(2); tx.set(cRef, { aFavor }, { merge: true }); tx.set(pRef, base); return { ok: true, aFavor, aplicadas: 0 }; }
+        const ts = await tx.get(db.collection("deposito_tandas").where("clienteId", "==", cRef.id));
+        const pend = ts.docs.map(d => ({ ref: d.ref, id: d.id, t: d.data() })).filter(x => !["borrador", "cancelada"].includes(x.t.estado) && x.t.pago?.estado !== "verificado")
+          .sort((a, b) => (a.t.fechaDespacho || "").localeCompare(b.t.fechaDespacho || "") || (ms(a.t.createdAt) || 0) - (ms(b.t.createdAt) || 0));
+        let resto = monto + num(cli.aFavor); const aplicado = [];
+        for (const x of pend) { const tot = num(x.t.total); if (tot > resto + 0.005) break; resto -= tot; aplicado.push(x.id);
+          tx.set(x.ref, { pago: { ...(x.t.pago || {}), estado: "verificado", verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid, pagoId: pRef.id, nota: "" } }, { merge: true }); }
+        const aFavor = +resto.toFixed(2);
+        tx.set(cRef, { aFavor }, { merge: true });
+        tx.set(pRef, { ...base, aplicado });
+        return { ok: true, aFavor, aplicadas: aplicado.length };
+      });
+      if (!out) return res.status(404).json({ error: "Cliente inexistente." });
+      return res.json(out);
     }
     if (action === "pago_cc_verificar") {
       if (!soloOwner()) return;
