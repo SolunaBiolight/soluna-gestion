@@ -2047,7 +2047,7 @@ export default async function handler(req, res) {
       marcar("localidades");
       if (locDestino) console.log(`[andreani] localidad destino CP ${destino.postal.codigoPostal}: "${destino.postal.localidad}" → "${locDestino.localidad}" (${locDestino.provincia}, score ${locDestino.score.toFixed(2)} de ${locDestino.cands})`);
       const destinoBody = tipo === "sucursal"
-        ? { sucursal: { id: Number(destino.sucursalId) } }
+        ? { sucursal: { id: String(destino.sucursalId).trim() } } // Andreani (24/sep/2026) rechaza el id numérico: "could not be converted to System.String"
         : { postal: {
             codigoPostal: String(destino.postal.codigoPostal).trim(),
             calle:        limpiarTxt(destino.postal.calle),
