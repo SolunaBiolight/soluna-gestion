@@ -43535,7 +43535,7 @@ export default function App() {
   // Sincronizar hash con página y sub-tab activo
   useEffect(()=>{
     if(typeof window==="undefined") return;
-    if(colabToken || editorProdToken || boardToken || cuponToken) return;
+    if(colabToken || editorProdToken || boardToken || cuponToken || depositoPanelToken || depositoToken || ejecutivaToken || seguirNumero) return;
     const sub = page==="stock"?`/${stockTab}`:page==="arca"?`/${arcaTab}`:((page==="gads"&&gadsTab==="publicar")||(page==="tiktokads"&&tiktokTab==="publicar"))?"/publicar":"";
     const newHash = `#/${page}${sub}`;
     if(window.location.hash !== newHash) {
