@@ -11840,18 +11840,21 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     const alertaCierre=e=>{ e.preventDefault(); e.returnValue=""; };
     window.addEventListener("beforeunload",alertaCierre);
     try{
-    for(const r of inc){
+    // Cada fila es una llamada al backend (cotizar + orden en Andreani, varios
+    // segundos). En serie, 30 etiquetas eran minutos: van de a 3 en paralelo.
+    // El débito es transaccional por pedido y el tope de saldo se respeta igual.
+    const emitirFila=async(r)=>{
       const o=r.order;
       // Bloqueo duro: sucursal que contradice al punto del cliente (otro
       // número en la misma calle, otra zona) y que nadie confirmó a mano.
       // Una etiqueta a la sucursal equivocada no se puede deshacer.
       if(r.tipo==="sucursal"&&r.oficial&&!r.conflictoOk&&!r.esquina){
         const cf=conflictoSucursal(o,r.oficial);
-        if(cf?.grave){ r.emitError=`No se emitió: ${cf.msg}. Tocá "Cambiar sucursal" y elegí (o confirmá) la correcta.`; r.emitTipo="rechazo"; done++; pushBulk("emitiendo",{done,total:inc.length}); continue; }
+        if(cf?.grave){ r.emitError=`No se emitió: ${cf.msg}. Tocá "Cambiar sucursal" y elegí (o confirmá) la correcta.`; r.emitTipo="rechazo"; done++; pushBulk("emitiendo",{done,total:inc.length}); return; }
       }
       // Se acabó el saldo en una fila anterior: no tiene sentido seguir
       // pegándole al backend fila por fila.
-      if(sinSaldo){ r.emitError="No se intentó: el saldo se agotó en un pedido anterior. Cargá saldo y reintentá."; r.emitTipo="saldo"; done++; pushBulk("emitiendo",{done,total:inc.length}); continue; }
+      if(sinSaldo){ r.emitError="No se intentó: el saldo se agotó en un pedido anterior. Cargá saldo y reintentá."; r.emitTipo="saldo"; done++; pushBulk("emitiendo",{done,total:inc.length}); return; }
       const cuerpo=JSON.stringify({
             envioId:String(o.numero),
             tipo:r.tipo,
@@ -11909,7 +11912,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         }
       done++;
       pushBulk("emitiendo",{done,total:inc.length});
-    }
+    };
+    const colaEmit=[...inc];
+    await Promise.all(Array.from({length:Math.min(3,colaEmit.length)},async()=>{ while(colaEmit.length){ const r=colaEmit.shift(); await emitirFila(r); } }));
     }finally{ window.removeEventListener("beforeunload",alertaCierre); }
     // Registro post-emisión: mismo circuito que el XLSX (historial compartido
     // en Firestore + historial local + métrica), para que seguimiento e
