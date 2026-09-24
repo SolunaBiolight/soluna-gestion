@@ -1878,7 +1878,6 @@ export default async function handler(req, res) {
         ["puntoDeTerceroId", pub?.puntoDeTerceroId != null ? { id: String(pub.puntoDeTerceroId) } : null],
         ["id+nomenclatura", vivo.codigo ? { id: String(vivo.id), nomenclatura: String(vivo.codigo) } : null],
         ["id+nomenclatura+descripcion+direccion", { id: String(vivo.id), nomenclatura: String(vivo.codigo || ""), descripcion: String(vivo.descripcion || ""), direccion: vivo.direccion || undefined }],
-        ["abastecedora.id (sucursal madre, para comparar)", abast?.id != null ? { id: String(abast.id) } : null],
       ].filter(v => v[1] && v[1].id);
       const pedidas = Array.isArray(body.variantes) && body.variantes.length ? todas.filter(v => body.variantes.includes(v[0])) : todas;
       const resultados = [];
@@ -2137,6 +2136,16 @@ export default async function handler(req, res) {
           if (vivo?.direccion) sucDestinoOficial = { ...sucDestinoOficial, ...slimSucursal(vivo), hop: true, raw: vivo };
           if (vivo) console.log(`[emitir] HOP ${destino.sucursalId} vivo: ${JSON.stringify({ id: vivo.id, codigo: vivo.codigo, numero: vivo.numero, idgla_integra: vivo.idgla_integra, idgla_alertran: vivo.idgla_alertran, canal: vivo.canal, tipo: vivo.datosAdicionales?.tipo, abastecedora: vivo.datosAdicionales?.sucursalAbastecedora })}`);
         }
+        // 24/9/2026: Andreani valida la orden contra las sucursales y PD3 asignadas
+        // al CONTRATO, y el nuestro no tiene los puntos HOP (dealers) asignados:
+        // "Sucursal con idgla N no encontrada" para cualquier identificador. Cuando
+        // todas las variantes fallan queda hopApiCaidoAt y durante 6 h los HOP se
+        // rechazan sin cotizar ni debitar; después se vuelve a probar (si Andreani
+        // habilitó los puntos, se emite y la marca se limpia sola).
+        if (sucDestinoOficial.hop) {
+          const caidoAt = Math.max(_hopFallaAt || 0, Number(cfgG?.hopApiCaidoAt) || 0);
+          if (caidoAt && Date.now() - caidoAt < 6 * 3600000) return res.status(400).json({ error: "Andreani no acepta puntos HOP con nuestro contrato por API: su listado de puntos asignados al contrato no incluye los HOP (desde el 23/9 lo validan). Emití este pedido con \"Generar etiquetas\" (Excel) o a mano en el portal de Andreani. No se debitó nada.", code: "hop_no_habilitado" });
+        }
         const cpSuc = String(sucDestinoOficial?.direccion?.codigoPostal || "").replace(/\D/g, "");
         if (cpSuc) cpTarifa = cpSuc;
       } else {
@@ -2304,12 +2313,14 @@ export default async function handler(req, res) {
           console.error(`[emitir] sucursal ${sucDestinoOficial?.id} sin identificador válido: ${detalle}`);
           if (sv.tipo === "hop") {
             _hopFallaAt = Date.now();
-            ordenErr = `Andreani no acepta este punto HOP por API: desde el 23/9 su API busca la sucursal por un "idgla" que los puntos HOP no tienen (probamos ${probadas.length} identificadores, todos rechazados). Mientras Andreani lo resuelve, emitilo con "Generar etiquetas" (Excel) o a mano en su portal. No se debitó nada.`;
+            db.collection("andreani_config").doc("global").set({ hopApiCaidoAt: Date.now() }, { merge: true }).catch(() => {});
+            ordenErr = `Andreani no acepta puntos HOP con nuestro contrato por API: su listado de puntos asignados al contrato no incluye los HOP (desde el 23/9 lo validan; probamos ${probadas.length} identificadores). Emití este pedido con "Generar etiquetas" (Excel) o a mano en el portal de Andreani. No se debitó nada.`;
           } else ordenErr += ` — Se probaron ${probadas.length} formas de identificar la sucursal: ${detalle}`;
           try { await envioRef.set({ emisionDetalle: { ts: Date.now(), detalle: detalle.slice(0, 1500) } }, { merge: true }); } catch (_) {}
         }
         if (sv && varianteOk) {
           const kind = sv.tipo;
+          if (kind === "hop" && (_hopFallaAt || cfgG?.hopApiCaidoAt)) { _hopFallaAt = 0; db.collection("andreani_config").doc("global").set({ hopApiCaidoAt: null }, { merge: true }).catch(() => {}); console.log("[emitir] HOP por API vuelve a funcionar"); }
           if (_sucVarianteMem[kind] !== varianteOk) {
             _sucVarianteMem[kind] = varianteOk;
             console.log(`[emitir] sucursal ${kind}: identificador que acepta Andreani = "${varianteOk}"`);
