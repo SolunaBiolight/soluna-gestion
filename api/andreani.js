@@ -1857,6 +1857,7 @@ export default async function handler(req, res) {
         origen: { postal: { codigoPostal: origen.codigoPostal, calle: limpiarTxt(origen.calle), numero: origen.numero, localidad: limpiarTxt(locOrigen ? locOrigen.localidad : origen.localidad), region: limpiarTxt(locOrigen ? locOrigen.provincia : (origen.region || "")), pais: "Argentina" } },
         remitente: personaDe(remitente), destinatario: [personaDe({ ...remitente, nombreCompleto: "PRUEBA API GROWITH NO DESPACHAR" })], productoAEntregar: "PRUEBA API - NO DESPACHAR",
         bultos: [{ kilos: 0.2, largoCm: 10, altoCm: 5, anchoCm: 10, volumenCm: 500, valorDeclaradoSinImpuestos: 826, valorDeclaradoConImpuestos: 1000, referencias: [{ meta: "detalle", contenido: "PRUEBA API - NO DESPACHAR" }, { meta: "idCliente", contenido: "prueba-hop" }] }] };
+      const cpHopTarifa = String(vivo.direccion?.codigoPostal || "").replace(/D/g, "") || "5010";
       const abast = vivo.datosAdicionales?.sucursalAbastecedora || null;
       // Documentación oficial (api-sucursales-v2-0.xlsx): "/sucursales?contrato=" y
       // "/puntos-de-tercero?contrato=" listan las sucursales y PD3 "asignadas al
@@ -1896,7 +1897,14 @@ export default async function handler(req, res) {
         } catch (e) { resultados.push({ variante: nombre, enviado: suc, status: 0, ok: false, respuesta: e.message }); }
       }
       const exito = resultados.find(x => x.ok) || null;
-      const resumen = { at: Date.now(), sucursalId: sid, contratoHopConfigurado: !!env.contratoHop, contratoAlt: String(body.contrato || "").replace(/D/g, "") ? "(probado)" : null, listas, vivo: { id: vivo.id, codigo: vivo.codigo, numero: vivo.numero, idgla_integra: vivo.idgla_integra, idgla_alertran: vivo.idgla_alertran, canal: vivo.canal, tipo: vivo.datosAdicionales?.tipo, abastecedora: abast }, uuid, pub: pub ? { id: pub.id, idSucursal: pub.idSucursal, puntoDeTerceroId: pub.puntoDeTerceroId, tipo: pub.tipo } : null, resultados, exito };
+      // Cotización con el contrato alternativo y con el de sucursal, para comparar tarifa
+      // (si /v1/tarifas devuelve precio para nuestro código de cliente, el contrato está en nuestra cuenta).
+      const cotizaciones = {};
+      { const cAlt = String(body.contrato || "").replace(/D/g, "") || env.contratoHop; const bultos = [{ kilos: 0.5, largoCm: 20, altoCm: 10, anchoCm: 15, valorDeclarado: 10000 }];
+        for (const [k, envX] of [["contrato_sucursal", env], ...(cAlt ? [["contrato_alternativo", { ...env, contratoHop: cAlt }]] : [])]) {
+          try { const c = await cotizarAndreani(db, envX, { tipo: "sucursal", cpDestino: cpHopTarifa, bultos, hop: k === "contrato_alternativo" }); cotizaciones[k] = { ok: true, total: c?.total ?? c, detalle: c }; }
+          catch (e) { cotizaciones[k] = { ok: false, error: String(e.message).slice(0, 300) }; } } }
+      const resumen = { at: Date.now(), sucursalId: sid, cotizaciones, contratoHopConfigurado: !!env.contratoHop, contratoAlt: String(body.contrato || "").replace(/D/g, "") ? "(probado)" : null, listas, vivo: { id: vivo.id, codigo: vivo.codigo, numero: vivo.numero, idgla_integra: vivo.idgla_integra, idgla_alertran: vivo.idgla_alertran, canal: vivo.canal, tipo: vivo.datosAdicionales?.tipo, abastecedora: abast }, uuid, pub: pub ? { id: pub.id, idSucursal: pub.idSucursal, puntoDeTerceroId: pub.puntoDeTerceroId, tipo: pub.tipo } : null, resultados, exito };
       try { await db.collection("andreani_config").doc("hop_prueba").set(JSON.parse(JSON.stringify(resumen)), { merge: false }); } catch (e) { console.warn("[admin_hop_prueba] no se guardó el resumen:", e.message); }
       console.log("[admin_hop_prueba]", JSON.stringify(resumen).slice(0, 3000));
       return res.json(resumen);
