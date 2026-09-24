@@ -21,6 +21,9 @@ const BASE = require("./_hop_index.json");
 
 export const HOP_ID_MIN = 10000;
 export const HOP_ID_MAX = 21000;            // exclusivo (spot-check: 21.5k..40k → 404)
+// Firestore no admite arrays anidados: cada registro compacto viaja como texto JSON.
+const recA = r => (typeof r === "string" ? r : JSON.stringify(r));
+const recDe = r => { if (typeof r !== "string") return r; try { return JSON.parse(r); } catch (_) { return null; } };
 const SHARD = 600;                          // registros compactos por doc (≈ 90 KB)
 const MEM_TTL_MS = 3600000;                 // caché en memoria por instancia
 
@@ -59,7 +62,7 @@ export async function hopIndexTodas(db) {
     if (meta && Number(meta.ts) > Number(BASE.ts) && Number(meta.shards) > 0 && Number(meta.n) > 0) {
       const refs = []; for (let i = 0; i < Number(meta.shards); i++) refs.push(db.collection("andreani_config").doc(`hop_idx_${i}`));
       const snaps = await db.getAll(...refs);
-      const got = []; for (const s of snaps) for (const r of (s.data()?.recs || [])) got.push(r);
+      const got = []; for (const s of snaps) for (const r of (s.data()?.recs || [])) { const v = recDe(r); if (v) got.push(v); }
       if (got.length >= Number(meta.n) * 0.9) { recs = got; origen = "firestore"; }
     }
   } catch (e) { console.warn("[hop] índice Firestore:", e.message); }
@@ -92,13 +95,13 @@ async function buildLeer(db, col, meta) {
   if (!n) return [];
   const refs = []; for (let i = 0; i < n; i++) refs.push(col.doc(`hop_idx_build_${i}`));
   const snaps = await db.getAll(...refs);
-  const recs = []; for (const s of snaps) for (const r of (s.data()?.recs || [])) recs.push(r);
+  const recs = []; for (const s of snaps) for (const r of (s.data()?.recs || [])) { const v = recDe(r); if (v) recs.push(v); }
   return recs;
 }
 // Escribe los shards nuevos y borra los sobrantes (y el doc viejo hop_idx_build).
 function buildEscribir(batch, col, recs, previos) {
   const shards = Math.ceil(recs.length / SHARD);
-  for (let i = 0; i < shards; i++) batch.set(col.doc(`hop_idx_build_${i}`), { ts: Date.now(), recs: recs.slice(i * SHARD, (i + 1) * SHARD) });
+  for (let i = 0; i < shards; i++) batch.set(col.doc(`hop_idx_build_${i}`), { ts: Date.now(), recs: recs.slice(i * SHARD, (i + 1) * SHARD).map(recA) });
   for (let i = shards; i < previos; i++) batch.delete(col.doc(`hop_idx_build_${i}`));
   batch.delete(col.doc("hop_idx_build"));
   return shards;
@@ -152,7 +155,7 @@ export async function hopIndexSweep(db, fetchOficial, { porCorrida = 1500, concu
     }
     const shards = Math.ceil(recs.length / SHARD);
     const batch = db.batch();
-    for (let i = 0; i < shards; i++) batch.set(col.doc(`hop_idx_${i}`), { ts: Date.now(), recs: recs.slice(i * SHARD, (i + 1) * SHARD) });
+    for (let i = 0; i < shards; i++) batch.set(col.doc(`hop_idx_${i}`), { ts: Date.now(), recs: recs.slice(i * SHARD, (i + 1) * SHARD).map(recA) });
     for (let i = shards; i < (Number(meta.shards) || 0); i++) batch.delete(col.doc(`hop_idx_${i}`));
     buildEscribir(batch, col, [], buildPrevios); // la vuelta cerró: fuera los shards de build
     batch.set(metaRef, { ts: Date.now(), n: recs.length, shards, cursor: HOP_ID_MIN, buildShards: 0, ultimaVuelta: { at: Date.now(), n: recs.length } }, { merge: true });
