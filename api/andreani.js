@@ -187,6 +187,39 @@ async function andreaniError(r, contexto) {
   return `${contexto} (HTTP ${r.status})${detalle ? `: ${String(detalle).slice(0, 500)}` : ""}`;
 }
 
+// ─── Identificador de la sucursal destino en la orden ─────────────────────
+// 23/9/2026: Andreani dejó de aceptar destino.sucursal.id numérico ("could not
+// be converted to System.String"). 24/9: con el id como texto, las sucursales
+// comunes salen pero los puntos HOP responden "Sucursal con idgla 18628 no
+// encontrada": el id 10000+n del HOP no es un idgla (el objeto trae
+// idgla_integra 0). No hay documentación de qué identificador quieren, así
+// que se prueban variantes en orden y la que funciona queda recordada por tipo
+// (hop / oficial) en andreani_config/global.sucVariante. Solo se reintenta
+// ante un 400 que habla del identificador: cualquier otro error corta.
+const SUC_VARIANTES = {
+  id: s => ({ id: String(s.id ?? "").trim() }),
+  codigo: s => (s.codigo ? { id: String(s.codigo).trim() } : null),
+  numero: s => (s.numero != null && String(s.numero).trim() ? { id: String(s.numero).trim() } : null),
+  nomenclatura: s => (s.codigo ? { nomenclatura: String(s.codigo).trim() } : null),
+  idNomenclatura: s => (s.codigo ? { id: String(s.id ?? "").trim(), nomenclatura: String(s.codigo).trim() } : null),
+  idDescripcion: s => ({ id: String(s.id ?? "").trim(), descripcion: String(s.descripcion || "").trim() }),
+};
+const SUC_ORDEN = { hop: ["codigo", "numero", "nomenclatura", "id", "idNomenclatura", "idDescripcion"], oficial: ["id", "codigo", "nomenclatura", "idNomenclatura", "numero", "idDescripcion"] };
+export function sucVariantes(suc, preferida) {
+  const tipo = suc?.hop || /^HOP/i.test(String(suc?.codigo || "")) || Number(suc?.id) >= 11000 ? "hop" : "oficial";
+  const orden = [...SUC_ORDEN[tipo]]; if (preferida && orden.includes(preferida)) { orden.splice(orden.indexOf(preferida), 1); orden.unshift(preferida); }
+  const out = []; const vistos = new Set();
+  for (const k of orden) { const v = SUC_VARIANTES[k](suc || {}); if (!v) continue; const key = JSON.stringify(v); if (vistos.has(key)) continue; vistos.add(key); out.push({ nombre: k, sucursal: v }); }
+  return { tipo, variantes: out };
+}
+// ¿El rechazo es por el identificador de la sucursal (y no por otra cosa)?
+export function esErrorIdSucursal(status, txt) {
+  if (status !== 400) return false;
+  const t = String(txt || "").toLowerCase();
+  return /sucursal[^.]{0,60}no encontrad|idgla|destino\.sucursal|sucursal\.id|sucursal[^.]{0,40}(inv[aá]lid|inexistent)/.test(t);
+}
+let _sucVarianteMem = {};
+
 // ─── Markup / habilitación (andreani_config/global) ────────────────────────
 
 export async function getGlobalConfig(db) {
@@ -2160,20 +2193,37 @@ export default async function handler(req, res) {
       // orden SÍ se creó, el reverso regalaba la etiqueta y la plataforma
       // pagaba el costo real sin registro. Se retiene el débito, se marca el
       // envío como dudoso y se avisa al admin para conciliar contra Andreani.
-      let ordenData = null, ordenErr = null, ambiguo = false;
+      let ordenData = null, ordenErr = null, ambiguo = false, varianteOk = null;
       try {
-        const r = await andreaniFetch(db, env, "/v2/ordenes-de-envio", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(orden),
-        });
-        if (!r.ok) ordenErr = await andreaniError(r, "Andreani rechazó la orden de envío");
-        else {
-          ordenData = await r.json();
-          if (!ordenData?.bultos?.[0]?.numeroDeEnvio) {
-            ordenErr = `Andreani no devolvió número de envío: ${JSON.stringify(ordenData).slice(0, 300)}`;
-            ordenData = null;
-            ambiguo = true;
+        // A sucursal: se prueban los identificadores en orden (ver SUC_VARIANTES);
+        // a domicilio es una sola llamada.
+        const sv = tipo === "sucursal" && sucDestinoOficial ? sucVariantes(sucDestinoOficial, _sucVarianteMem[sucDestinoOficial.hop || Number(sucDestinoOficial.id) >= 11000 ? "hop" : "oficial"] || cfgG?.sucVariante?.[sucDestinoOficial.hop || Number(sucDestinoOficial.id) >= 11000 ? "hop" : "oficial"]) : null;
+        const intentos = sv ? sv.variantes.map(v => ({ nombre: v.nombre, body: { ...orden, destino: { sucursal: v.sucursal } } })) : [{ nombre: "", body: orden }];
+        const probadas = [];
+        for (let k = 0; k < intentos.length; k++) {
+          const it = intentos[k];
+          const r = await andreaniFetch(db, env, "/v2/ordenes-de-envio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(it.body) });
+          if (r.ok) {
+            ordenData = await r.json();
+            if (!ordenData?.bultos?.[0]?.numeroDeEnvio) { ordenErr = `Andreani no devolvió número de envío: ${JSON.stringify(ordenData).slice(0, 300)}`; ordenData = null; ambiguo = true; }
+            else { varianteOk = it.nombre; ordenErr = null; }
+            break;
+          }
+          const txt = await r.text().catch(() => "");
+          const rr = { status: r.status, text: async () => txt };
+          ordenErr = await andreaniError(rr, "Andreani rechazó la orden de envío");
+          probadas.push(it.nombre || "domicilio");
+          // Solo se sigue si el rechazo es por el identificador y quedan variantes.
+          if (!sv || k === intentos.length - 1 || !esErrorIdSucursal(r.status, txt)) break;
+          console.log(`[emitir] sucursal ${sucDestinoOficial?.id} variante "${it.nombre}" rechazada (${String(txt).slice(0, 120)}) → pruebo "${intentos[k + 1].nombre}"`);
+        }
+        if (ordenErr && probadas.length > 1) ordenErr += ` (se probaron ${probadas.length} formas de identificar la sucursal: ${probadas.join(", ")})`;
+        if (sv && varianteOk) {
+          const kind = sv.tipo;
+          if (_sucVarianteMem[kind] !== varianteOk) {
+            _sucVarianteMem[kind] = varianteOk;
+            console.log(`[emitir] sucursal ${kind}: identificador que acepta Andreani = "${varianteOk}"`);
+            db.collection("andreani_config").doc("global").set({ sucVariante: { [kind]: varianteOk, at: Date.now() } }, { merge: true }).catch(() => {});
           }
         }
       } catch (e) {
