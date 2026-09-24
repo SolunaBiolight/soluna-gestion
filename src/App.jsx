@@ -44544,7 +44544,10 @@ export default function App() {
   ) : <PageView T={T} pageKey="equipo"><AppEquipo T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="deposito") pageContent = depositoAcceso
-    ? <PageView T={T} pageKey="deposito"><AppDeposito T={T} user={user} info={depositoInfo} onHome={()=>setPage("home")}/></PageView>
+    ? (depositoInfo.rol==="owner"&&!depositoInfo.cliente
+        ? <div style={{padding:40}}><DSEmpty T={T} title="Tu cuenta no está dada de alta como cliente" subtitle="Dentro de Growith, Depósito es la vista de cliente: mandar etiquetas y seguir tus tandas. La administración del depósito va por su link aparte (Admin → Sistema → Acceso al depósito). Para usar esta sección, cargá esta cuenta como cliente desde ese panel, con el mail de esta cuenta en el vínculo."/></div>
+        // La dueña, dentro de Growith, opera como un cliente más (25/sep): la consola va por el link.
+        : <PageView T={T} pageKey="deposito"><AppDeposito T={T} user={user} info={depositoInfo.rol==="owner"?{...depositoInfo,rol:null}:depositoInfo} onHome={()=>setPage("home")}/></PageView>)
     : <div style={{padding:40}}><DSEmpty T={T} title={depositoInfo===null?"Cargando…":depositoInfo?.error?"No pudimos consultar el depósito":"Esta sección no está disponible para tu cuenta"} subtitle={depositoInfo===null?"":depositoInfo?.error?"Revisá tu conexión y volvé a intentar.":"El depósito se habilita por cliente. Si tu mercadería se despacha desde nuestro depósito, pedinos el alta."} action={depositoInfo?.error?<Btn T={T} variant="secondary" onClick={()=>window.location.reload()}>Reintentar</Btn>:null}/></div>;
   else if(page==="calendario") pageContent = <PageView T={T} pageKey="calendario"><AppCalendarioPagos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="demo") pageContent = (String(user?.email||"").toLowerCase()===DEMO_EMAIL_UI||isAdmin) ? <PageView T={T} pageKey="demo"><AppDemo T={T} user={user} authUid={authUser?.uid} onSwitchOrg={onSwitchOrg} onHome={()=>setPage("home")}/></PageView> : null;
