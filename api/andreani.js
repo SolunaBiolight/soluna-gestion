@@ -196,7 +196,10 @@ async function andreaniError(r, contexto) {
 // que se prueban variantes en orden y la que funciona queda recordada por tipo
 // (hop / oficial) en andreani_config/global.sucVariante. Solo se reintenta
 // ante un 400 que habla del identificador: cualquier otro error corta.
+const idglaDe = (s, k) => { const v = Number(s?.raw?.[k]); return isFinite(v) && v > 0 ? String(v) : null; };
 const SUC_VARIANTES = {
+  idglaIntegra: s => (idglaDe(s, "idgla_integra") ? { id: idglaDe(s, "idgla_integra") } : null),
+  idglaAlertran: s => (idglaDe(s, "idgla_alertran") ? { id: idglaDe(s, "idgla_alertran") } : null),
   id: s => ({ id: String(s.id ?? "").trim() }),
   codigo: s => (s.codigo ? { id: String(s.codigo).trim() } : null),
   numero: s => (s.numero != null && String(s.numero).trim() ? { id: String(s.numero).trim() } : null),
@@ -204,13 +207,17 @@ const SUC_VARIANTES = {
   idNomenclatura: s => (s.codigo ? { id: String(s.id ?? "").trim(), nomenclatura: String(s.codigo).trim() } : null),
   idDescripcion: s => ({ id: String(s.id ?? "").trim(), descripcion: String(s.descripcion || "").trim() }),
 };
-const SUC_ORDEN = { hop: ["codigo", "numero", "nomenclatura", "id", "idNomenclatura", "idDescripcion"], oficial: ["id", "codigo", "nomenclatura", "idNomenclatura", "numero", "idDescripcion"] };
+const SUC_ORDEN = { hop: ["idglaIntegra", "idglaAlertran", "codigo", "numero", "nomenclatura", "id", "idNomenclatura", "idDescripcion"], oficial: ["id", "idglaIntegra", "idglaAlertran", "codigo", "nomenclatura", "idNomenclatura", "numero", "idDescripcion"] };
 export function sucVariantes(suc, preferida) {
   const tipo = suc?.hop || /^HOP/i.test(String(suc?.codigo || "")) || Number(suc?.id) >= 11000 ? "hop" : "oficial";
   const orden = [...SUC_ORDEN[tipo]]; if (preferida && orden.includes(preferida)) { orden.splice(orden.indexOf(preferida), 1); orden.unshift(preferida); }
   const out = []; const vistos = new Set();
   for (const k of orden) { const v = SUC_VARIANTES[k](suc || {}); if (!v) continue; const key = JSON.stringify(v); if (vistos.has(key)) continue; vistos.add(key); out.push({ nombre: k, sucursal: v }); }
   return { tipo, variantes: out };
+}
+export function sucIdsResumen(s) {
+  const r = s?.raw || {};
+  return [`id ${s?.id ?? "?"}`, s?.codigo ? `código ${s.codigo}` : "", s?.numero != null ? `número ${s.numero}` : "", r.idgla_integra != null ? `idgla_integra ${r.idgla_integra}` : "", r.idgla_alertran != null ? `idgla_alertran ${r.idgla_alertran}` : "", r.datosAdicionales?.sucursalAbastecedora?.id ? `abastecedora ${r.datosAdicionales.sucursalAbastecedora.id}` : ""].filter(Boolean).join(", ");
 }
 // ¿El rechazo es por el identificador de la sucursal (y no por otra cosa)?
 export function esErrorIdSucursal(status, txt) {
@@ -2054,7 +2061,8 @@ export default async function handler(req, res) {
           if (rv.status === 404) return res.status(400).json({ error: "Andreani ya no tiene activo ese punto HOP: elegí otro punto o sucursal y avisale al cliente.", code: "hop_inactivo" });
           if (!rv.ok) return res.status(502).json({ error: `Andreani respondió ${rv.status} al confirmar el punto HOP. Reintentá en un minuto.`, code: "sucursal_no_validada" });
           const vivo = await rv.json().catch(() => null);
-          if (vivo?.direccion) sucDestinoOficial = { ...sucDestinoOficial, ...slimSucursal(vivo), hop: true };
+          if (vivo?.direccion) sucDestinoOficial = { ...sucDestinoOficial, ...slimSucursal(vivo), hop: true, raw: vivo };
+          if (vivo) console.log(`[emitir] HOP ${destino.sucursalId} vivo: ${JSON.stringify({ id: vivo.id, codigo: vivo.codigo, numero: vivo.numero, idgla_integra: vivo.idgla_integra, idgla_alertran: vivo.idgla_alertran, canal: vivo.canal, tipo: vivo.datosAdicionales?.tipo, abastecedora: vivo.datosAdicionales?.sucursalAbastecedora })}`);
         }
         const cpSuc = String(sucDestinoOficial?.direccion?.codigoPostal || "").replace(/\D/g, "");
         if (cpSuc) cpTarifa = cpSuc;
@@ -2212,12 +2220,12 @@ export default async function handler(req, res) {
           const txt = await r.text().catch(() => "");
           const rr = { status: r.status, text: async () => txt };
           ordenErr = await andreaniError(rr, "Andreani rechazó la orden de envío");
-          probadas.push(it.nombre || "domicilio");
+          probadas.push(`${it.nombre || "domicilio"}${it.nombre ? `=${JSON.stringify(it.body.destino.sucursal)}` : ""} → ${String(txt).replace(/\s+/g, " ").slice(0, 90)}`);
           // Solo se sigue si el rechazo es por el identificador y quedan variantes.
           if (!sv || k === intentos.length - 1 || !esErrorIdSucursal(r.status, txt)) break;
           console.log(`[emitir] sucursal ${sucDestinoOficial?.id} variante "${it.nombre}" rechazada (${String(txt).slice(0, 120)}) → pruebo "${intentos[k + 1].nombre}"`);
         }
-        if (ordenErr && probadas.length > 1) ordenErr += ` (se probaron ${probadas.length} formas de identificar la sucursal: ${probadas.join(", ")})`;
+        if (ordenErr && probadas.length > 1) ordenErr += ` — Se probaron ${probadas.length} formas de identificar la sucursal [${sucIdsResumen(sucDestinoOficial)}]: ${probadas.join(" | ")}`;
         if (sv && varianteOk) {
           const kind = sv.tipo;
           if (_sucVarianteMem[kind] !== varianteOk) {
