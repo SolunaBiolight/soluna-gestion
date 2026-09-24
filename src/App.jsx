@@ -21254,12 +21254,18 @@ function DepProgress({T,value,total,label,done}){ const pct=total>0?Math.round(v
   <div style={{height:6,background:T.borderL,borderRadius:99,marginTop:5,overflow:"hidden"}}><div style={{height:6,width:`${pct}%`,background:c,borderRadius:99,transition:"width .3s"}}/></div>
 </div>); }
 
-function DepositoCuentaModal({T,api,cliente,onClose,onAjustar}){
-  const [d,setD]=useState(null);
-  useEffect(()=>{ api("cuenta_cliente",{clienteId:cliente.id}).then(setD).catch(e=>{ toast(e.message,"error"); setD({error:true}); }); },[cliente.id]);
+// Ficha del cliente (25/sep): una sola ventana con dos pestañas — Cuenta (saldo,
+// pagos y cargos, acumulado por mes, tandas sin pagar, movimientos) y Datos
+// (nombre, precio, cuenta de Growith, link del portal). `datos` es el formulario
+// que arma DepositoCuentas; `reloadKey` recarga la cuenta tras un pago o cargo.
+function DepositoCuentaModal({T,api,cliente,onClose,onAjustar,datos,reloadKey=0,tabInicial="cuenta"}){
+  const [d,setD]=useState(null); const [tab,setTab]=useState(tabInicial);
+  useEffect(()=>{ api("cuenta_cliente",{clienteId:cliente.id}).then(setD).catch(e=>{ toast(e.message,"error"); setD({error:true}); }); },[cliente.id,reloadKey]);
   const colP=ghDepColPago(T);
-  return (<Modal T={T} open onClose={onClose} title={`Estado de cuenta · ${cliente.nombre}`} width={680}>
-    {!d?<div style={{display:"flex",justifyContent:"center",padding:30}}><Spinner size={24} color={T.accent}/></div>
+  return (<Modal T={T} open onClose={onClose} title={cliente.nombre} width={680}>
+    {datos&&<div style={{marginBottom:16}}><DepSeg T={T} value={tab} onChange={setTab} items={[["cuenta","Cuenta","wallet"],["datos","Datos y acceso","settings"]]}/></div>}
+    {tab==="datos"&&datos?datos
+    :!d?<div style={{display:"flex",justifyContent:"center",padding:30}}><Spinner size={24} color={T.accent}/></div>
     :d.error?<div style={{fontSize:DS.font.base,color:T.textSm}}>No se pudo cargar.</div>
     :(()=>{ const s=ghDepSaldo(T,d.deuda,d.aFavor); const cargos=d.aFavor<0?-d.aFavor:0; const favor=d.aFavor>0?d.aFavor:0; return (<div>
       <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"16px 18px",marginBottom:12,boxShadow:DS.shadow.sm}}>
@@ -21275,8 +21281,8 @@ function DepositoCuentaModal({T,api,cliente,onClose,onAjustar}){
         </div>
       </div>
       {onAjustar&&(<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:20}}>
-        <Btn T={T} variant="primary" size="sm" onClick={()=>{ onClose(); onAjustar("acreditar"); }}>Registrar un pago</Btn>
-        <Btn T={T} variant="secondary" size="sm" onClick={()=>{ onClose(); onAjustar("cobrar"); }}>Agregar un cargo</Btn>
+        <Btn T={T} variant="primary" size="sm" onClick={()=>onAjustar("acreditar")}>Registrar un pago</Btn>
+        <Btn T={T} variant="secondary" size="sm" onClick={()=>onAjustar("cobrar")}>Agregar un cargo</Btn>
         <span style={{fontSize:DS.font.sm,color:T.textSm}}>Un pago en efectivo o una bonificación baja la deuda. Un cargo (un insumo, un envío que pagaste vos) la sube.</span>
       </div>)}
       {d.meses?.length>0&&(<>
@@ -21632,20 +21638,26 @@ function DepositoCuentas({T,api}){
   const [cuenta,setCuenta]=useState(null); const [aj,setAj]=useState(null); // aj: {cliente, tipo, monto, motivo}
   const [filtro,setFiltro]=useState("");
   const [bq,setBq]=useState(""); const [bres,setBres]=useState(null);
+  // Vínculo con Growith del cliente que se está editando: se comprueba solo al abrir
+  // (undefined = sin vínculo guardado / nada que comprobar, null = comprobando).
+  const [vinc,setVinc]=useState(undefined); const [reload,setReload]=useState(0);
+  useEffect(()=>{ const c=form?._c; if(!c||!c.growithUid||!form.growithEmail){ setVinc(undefined); return; } let vivo=true; setVinc(null);
+    api("cliente_vinculo",{id:c.id}).then(r=>{ if(vivo) setVinc(r); }).catch(()=>{ if(vivo) setVinc(undefined); }); return ()=>{ vivo=false; }; },[form?.id]);
+  const abrir=(c,tab="cuenta")=>{ setForm({id:c.id,nombre:c.nombre,precio:c.precio,growithEmail:c.growithEmail||"",contacto:c.contacto,nota:c.nota,activo:c.activo,_c:c}); setCuenta({...c,_tab:tab}); };
   useEffect(()=>{ const q=bq.trim(); if(q.length<2){ setBres(null); return; } setBres(null); let vivo=true; const t=setTimeout(()=>api("usuarios_buscar",{q}).then(r=>{ if(vivo) setBres(r.usuarios||[]); }).catch(()=>{ if(vivo) setBres([]); }),350); return ()=>{ vivo=false; clearTimeout(t); }; },[bq]);
   const cargar=()=>{ api("clientes").then(setD).catch(e=>{ toast(e.message,"error"); setD({clientes:[]}); }); api("pagos_cc").then(setCc).catch(()=>setCc({cuentas:[],pagos:[]})); };
   const cargarMes=()=>{ setRes(null); setHist(null); Promise.all([api("resumen",{mes}),api("historial",{mes})]).then(([a,b])=>{ setRes(a); setHist(b.tandas.filter(t=>t.estado!=="cancelada")); }).catch(e=>{ toast(e.message,"error"); setRes({clientes:[]}); setHist([]); }); };
   const todo=()=>{ cargar(); cargarMes(); };
   useEffect(()=>{ cargar(); },[]);
   useEffect(()=>{ cargarMes(); },[mes]);
-  async function guardar(){ if(busy) return; setBusy(true); try{ await api("cliente_guardar",form); toast("Cliente guardado","success"); setForm(null); cargar(); }catch(e){ toast(e.message,"error"); } setBusy(false); }
+  async function guardar(){ if(busy) return; setBusy(true); try{ await api("cliente_guardar",form); toast("Cliente guardado","success"); if(cuenta){ setCuenta(c=>({...c,nombre:form.nombre})); setReload(r=>r+1); } else setForm(null); cargar(); }catch(e){ toast(e.message,"error"); } setBusy(false); }
   const link=c=>`${window.location.origin}/#/deposito/${c.token}`;
   async function nuevoLink(c){ if(!(await appConfirm(`¿Generar un link nuevo para ${c.nombre}? El link actual deja de funcionar.`,{okLabel:"Generar link"}))) return; try{ await api("cliente_token",{id:c.id}); cargar(); toast("Link nuevo generado","success"); }catch(e){ toast(e.message,"error"); } }
   async function ajustar(){
     const m=Number(String(aj.monto).replace(",",".")); if(!isFinite(m)||m===0){ toast("Poné el monto","warning"); return; }
     const monto=aj.tipo==="cobrar"?-Math.abs(m):Math.abs(m);
     if(!(await appConfirm(`${aj.tipo==="cobrar"?"Agregar un cargo de":"Registrar un pago de"} ${fmtMoney(Math.abs(m))} a ${aj.cliente.nombre}. El cliente lo ve en su panel${aj.motivo?` con el motivo "${aj.motivo}"`:""}. ¿Confirmás?`,{okLabel:aj.tipo==="cobrar"?"Agregar cargo":"Registrar pago"}))) return;
-    setBusy(true); try{ await api("saldo_ajustar",{clienteId:aj.cliente.id,monto,motivo:aj.motivo}); toast("Saldo actualizado","success"); setAj(null); todo(); }catch(e){ toast(e.message,"error"); } setBusy(false);
+    setBusy(true); try{ await api("saldo_ajustar",{clienteId:aj.cliente.id,monto,motivo:aj.motivo}); toast("Saldo actualizado","success"); setAj(null); setReload(r=>r+1); todo(); }catch(e){ toast(e.message,"error"); } setBusy(false);
   }
   async function verificarCc(p,ok){ let nota=""; if(!ok){ nota=await appPrompt("¿Por qué se rechaza la transferencia? El cliente lo ve en su panel.","",{okLabel:"Rechazar"}); if(!nota) return; } try{ const r=await api("pago_cc_verificar",{id:p.id,ok,nota}); if(ok) toast(`Pago verificado: aplicado a ${r.aplicadas||0} tanda${r.aplicadas!==1?"s":""}${r.aFavor>0?` · ${fmtMoney(r.aFavor)} quedan a favor`:""}`,"success",6000); todo(); }catch(e){ toast(e.message,"error"); } }
   async function compCc(p){ const w=ghDepVentana(p.comp.mime); try{ ghDepAbrirBytes(await ghDepBajar(api,"file_get",p.id,"pcomp",p.comp.chunks),p.comp.mime,p.comp.nombre,w); }catch(e){ if(w&&!w.closed) w.close(); toast(e.message,"error"); } }
@@ -21674,6 +21686,49 @@ function DepositoCuentas({T,api}){
   const ordenPago={a_verificar:0,sin_informar:1,rechazado:2,verificado:3};
   const estadoPagoTxt={sin_informar:"Sin informar",a_verificar:"A verificar",verificado:"Verificado",rechazado:"Rechazado"};
   const esteMes=mes===hoyAR().slice(0,7);
+  const formUI=form&&(
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 150px",gap:10}}>
+          <div>{lbl("Nombre")}<input style={{...iS,marginBottom:0}} value={form.nombre} onChange={e=>setForm(f=>({...f,nombre:e.target.value}))}/></div>
+          <div>{lbl("Precio por pedido ($)")}<input style={{...iS,marginBottom:0}} type="number" min="0" value={form.precio} onChange={e=>setForm(f=>({...f,precio:e.target.value}))}/></div>
+        </div>
+        <div>
+          {lbl("Cuenta de Growith (opcional)")}
+          {form.growithEmail?(<div style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.card}}>
+              <DepIco d="link" size={14} color={vinc?.vinculado?T.green:T.textSm}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:DS.font.md,color:T.text,fontWeight:DS.w.semibold,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{form.growithEmail}</div>
+                <div style={{fontSize:DS.font.sm,color:vinc===null?T.textSm:vinc?.vinculado&&!vinc.avisos?.length?T.green:T.yellow,marginTop:2}}>{vinc===undefined?"Al guardar se vincula con su tienda: ve el Depósito en su cuenta y el botón Enviar al depósito en Envíos.":vinc===null?"Comprobando el vínculo…":vinc.motivo}</div>
+              </div>
+              <button onClick={()=>{ setForm(f=>({...f,growithEmail:""})); setVinc(undefined); }} style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:DS.font.md,fontFamily:"'Inter',system-ui,sans-serif",padding:4}} title="Quitar">✕</button>
+            </div>)
+          :(<div>
+              <input style={{...iS,marginBottom:0}} placeholder="Buscá por nombre o mail, o pegá el mail de su cuenta" value={bq} onChange={e=>setBq(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"&&/\S+@\S+\.\S+/.test(bq.trim())){ setForm(f=>({...f,growithEmail:bq.trim()})); setBq(""); setBres(null); } }}/>
+              {bq.trim().length>=2&&(<div style={{marginTop:6,border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.card,overflow:"hidden"}}>
+                {bres===null?<div style={{padding:"8px 10px",fontSize:DS.font.md,color:T.textSm}}>Buscando…</div>
+                :bres.length===0?<div style={{padding:"8px 10px",fontSize:DS.font.md,color:T.textSm}}>{/\S+@\S+\.\S+/.test(bq.trim())?<span>Ninguna cuenta activa con ese mail. <span onClick={()=>{ setForm(f=>({...f,growithEmail:bq.trim()})); setBq(""); setBres(null); }} style={{color:T.accent,cursor:"pointer",fontWeight:DS.w.semibold}}>Usarlo igual</span></span>:"Ninguna cuenta activa coincide"}</div>
+                :bres.map(u=>(<div key={u.id} onClick={()=>{ setForm(f=>({...f,growithEmail:u.email||u.id,nombre:f.nombre||u.nombre||u.email,contacto:f.contacto||u.email})); setBq(""); setBres(null); }} style={{padding:"8px 10px",cursor:"pointer",borderBottom:`1px solid ${T.borderL}`,fontSize:DS.font.md,color:T.text,display:"flex",justifyContent:"space-between",gap:8}}>
+                  <span><strong>{u.nombre||u.email}</strong>{u.nombre&&<span style={{color:T.textMd}}> · {u.email}</span>}</span><span style={{color:T.textSm}}>{u.plan}{u.prueba?" (prueba)":""}</span></div>))}
+              </div>)}
+              <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:6}}>Si el cliente usa Growith, con su cuenta ve el Depósito adentro y manda las etiquetas desde Envíos. Si no, usa el link del portal.</div>
+            </div>)}
+        </div>
+        <div>{lbl("Contacto")}<input style={{...iS,marginBottom:0}} placeholder="Nombre y teléfono" value={form.contacto} onChange={e=>setForm(f=>({...f,contacto:e.target.value}))}/></div>
+        <div>{lbl("Nota interna")}<textarea style={{...iS,marginBottom:0,minHeight:48,resize:"vertical"}} value={form.nota} onChange={e=>setForm(f=>({...f,nota:e.target.value}))}/></div>
+        {form._c&&(<div>
+          {lbl("Link del portal")}
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <input readOnly value={link(form._c)} onFocus={e=>e.target.select()} style={{...iS,marginBottom:0,flex:1,color:T.textMd,fontSize:DS.font.md}}/>
+            <Btn T={T} variant="secondary" onClick={()=>{ navigator.clipboard.writeText(link(form._c)).then(()=>toast("Link copiado","success")).catch(()=>toast("No pude copiar","warning")); }}>Copiar</Btn>
+          </div>
+          <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:6}}>Es el acceso privado del cliente sin cuenta de Growith: desde ahí sube etiquetas y sigue sus tandas.</div>
+        </div>)}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,paddingTop:4,borderTop:`1px solid ${T.borderL}`}}>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.text,cursor:"pointer"}} onClick={()=>setForm(f=>({...f,activo:!f.activo}))}><DSToggle T={T} active={form.activo} onToggle={()=>{}}/><span>Cliente activo</span></label>
+          <div style={{display:"flex",gap:8}}><Btn T={T} variant="secondary" onClick={()=>setForm(null)}>Cancelar</Btn><Btn T={T} variant="primary" onClick={guardar} disabled={busy}>{busy?"Guardando…":"Guardar"}</Btn></div>
+        </div>
+      </div>
+  );
   return (<div>
     <DepStats T={T} items={[
       {l:"Te deben",v:fmtMoney(deudaTotal),ico:"wallet",c:deudaTotal>0?T.yellow:T.textSm,s:favorTotal>0?`${fmtMoney(favorTotal)} a favor de clientes`:"tandas sin pagar menos lo que tienen a favor"},
@@ -21693,7 +21748,7 @@ function DepositoCuentas({T,api}){
         </div>},
       ]}/>
     </DepSection>)}
-    <DepSection T={T} title="Clientes" count={d.clientes.length} desc="Precio por pedido, lo que acumuló cada uno este mes y su saldo. Estado de cuenta abre el detalle por mes, las tandas sin pagar y los movimientos." extra={<Btn T={T} variant="primary" size="sm" onClick={()=>setForm({nombre:"",precio:"",growithEmail:"",contacto:"",nota:"",activo:true})}>Nuevo cliente</Btn>}>
+    <DepSection T={T} title="Clientes" count={d.clientes.length} desc="Precio por pedido, lo que acumuló cada uno este mes y su saldo. Ver cliente abre su ficha: cuenta, pagos y cargos, datos y link del portal." extra={<Btn T={T} variant="primary" size="sm" onClick={()=>setForm({nombre:"",precio:"",growithEmail:"",contacto:"",nota:"",activo:true})}>Nuevo cliente</Btn>}>
     <DepTable T={T} minWidth={860} empty="Todavía no hay clientes. Cargá el primero con su precio por pedido." rows={d.clientes.map(c=>({...c,_dim:!c.activo}))} cols={[
       {h:"Cliente",w:"1.5fr",render:c=><div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}><DepAvatar T={T} name={c.nombre} size={30} color={c.activo?T.accent:T.textSm}/><div style={{minWidth:0}}><div style={{fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}{!c.activo&&<span style={{fontWeight:500,color:T.textSm}}> · inactivo</span>}</div>{depSub(T,c.growithUid?`Growith · ${c.growithEmail||"vinculado"}`:"Sin Growith · usa el link")}</div></div>},
       {h:"Precio",w:"80px",align:"right",render:c=><span style={{color:T.textMd}}>{fmtMoney(c.precio)}</span>},
@@ -21701,9 +21756,8 @@ function DepositoCuentas({T,api}){
       {h:"Cobrado",w:"110px",align:"right",render:c=><span style={{color:c.stats.mesCobrado>0?T.green:T.textSm}}>{fmtMoney(c.stats.mesCobrado||0)}</span>},
       {h:"Sin pagar",w:"130px",align:"right",render:c=>{ const b=(c.stats.aVerificar||0)+(c.stats.sinInformar||0); return <div style={{textAlign:"right"}}><div style={{color:b>0?T.text:T.textSm}}>{fmtMoney(b)}</div>{c.stats.aVerificar>0?depSub(T,`${fmtMoney(c.stats.aVerificar)} a verificar`):null}</div>; }},
       {h:"Saldo",w:"130px",align:"right",render:c=>{ const s=saldoDe(c); return <strong style={{color:s.col}}>{s.txt}</strong>; }},
-      {h:"",w:"200px",align:"right",render:c=><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
-        <Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(c)}>Estado de cuenta</Btn>
-        <Btn T={T} variant="ghost" size="sm" onClick={()=>setForm({id:c.id,nombre:c.nombre,precio:c.precio,growithEmail:c.growithEmail||"",contacto:c.contacto,nota:c.nota,activo:c.activo,_c:c})}>Editar</Btn>
+      {h:"",w:"120px",align:"right",render:c=><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
+        <Btn T={T} variant="secondary" size="sm" onClick={()=>abrir(c)}>Ver cliente</Btn>
       </div>},
     ]}/>
     </DepSection>
@@ -21748,8 +21802,8 @@ function DepositoCuentas({T,api}){
       </div>)}
     </>)}
     </DepSection>
-    {cuenta&&<DepositoCuentaModal T={T} api={api} cliente={cuenta} onClose={()=>setCuenta(null)} onAjustar={tipo=>{ setAj({cliente:cuenta,tipo,monto:"",motivo:""}); }}/>}
-    {aj&&(<Modal T={T} open onClose={()=>setAj(null)} title={`${aj.tipo==="cobrar"?"Agregar un cargo":"Registrar un pago"} · ${aj.cliente.nombre}`} width={440}>
+    {cuenta&&<DepositoCuentaModal T={T} api={api} cliente={cuenta} tabInicial={cuenta._tab||"cuenta"} reloadKey={reload} datos={formUI} onClose={()=>{ setCuenta(null); setForm(null); }} onAjustar={tipo=>{ setAj({cliente:cuenta,tipo,monto:"",motivo:""}); }}/>}
+    {aj&&(<Modal T={T} open onClose={()=>setAj(null)} title={`${aj.tipo==="cobrar"?"Agregar un cargo":"Registrar un pago"} · ${aj.cliente.nombre}`} width={440} zIndex={1650}>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div style={{display:"flex",border:`1px solid ${T.border}`,borderRadius:DS.r.md,overflow:"hidden"}}>
           {[["acreditar","Pago recibido","hand"],["cobrar","Cargo extra","tag"]].map(([k,l,ic])=><button key={k} onClick={()=>setAj(a=>({...a,tipo:k}))} style={{flex:1,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 0",border:"none",background:aj.tipo===k?(k==="cobrar"?T.red:T.green)+"1f":"transparent",color:aj.tipo===k?(k==="cobrar"?T.red:T.green):T.textMd,fontWeight:aj.tipo===k?700:500,fontSize:DS.font.base,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}><DepIco d={ic} size={14}/>{l}</button>)}
@@ -21760,29 +21814,7 @@ function DepositoCuentas({T,api}){
         <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={()=>setAj(null)}>Cancelar</Btn><Btn T={T} variant={aj.tipo==="cobrar"?"danger":"success"} onClick={ajustar} disabled={busy}>{busy?"Guardando…":aj.tipo==="cobrar"?"Agregar cargo":"Registrar pago"}</Btn></div>
       </div>
     </Modal>)}
-    {form&&(<Modal T={T} open onClose={()=>setForm(null)} title={form.id?"Editar cliente":"Nuevo cliente del depósito"} width={460}>
-      <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div>{lbl("Nombre")}<input style={iS} value={form.nombre} onChange={e=>setForm(f=>({...f,nombre:e.target.value}))}/></div>
-        <div style={{width:200}}>{lbl("Precio por pedido armado ($)")}<input style={iS} type="number" min="0" value={form.precio} onChange={e=>setForm(f=>({...f,precio:e.target.value}))}/></div>
-        <div>{lbl("Buscar su cuenta de Growith (solo cuentas con plan activo)")}
-          <input style={iS} placeholder="Nombre o mail…" value={bq} onChange={e=>setBq(e.target.value)}/>
-          {bq.trim().length>=2&&(<div style={{marginTop:-6,marginBottom:10,border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.card,overflow:"hidden"}}>
-            {bres===null?<div style={{padding:"8px 10px",fontSize:DS.font.md,color:T.textSm}}>Buscando…</div>
-            :bres.length===0?<div style={{padding:"8px 10px",fontSize:DS.font.md,color:T.textSm}}>Ninguna cuenta activa coincide</div>
-            :bres.map(u=>(<div key={u.id} onClick={()=>{ setForm(f=>({...f,growithEmail:u.email||u.id,nombre:f.nombre||u.nombre||u.email,contacto:f.contacto||u.email})); setBq(""); setBres(null); }} style={{padding:"8px 10px",cursor:"pointer",borderBottom:`1px solid ${T.borderL}`,fontSize:DS.font.md,color:T.text,display:"flex",justifyContent:"space-between",gap:8}}>
-              <span><strong>{u.nombre||u.email}</strong>{u.nombre&&<span style={{color:T.textMd}}> · {u.email}</span>}</span><span style={{color:T.textSm}}>{u.plan}{u.prueba?" (prueba)":""}</span></div>))}
-          </div>)}
-        </div>
-        <div>{lbl("Mail de su cuenta de Growith, o uid de la tienda (opcional)")}<input style={iS} placeholder="Dejalo vacío si no usa Growith" value={form.growithEmail} onChange={e=>setForm(f=>({...f,growithEmail:e.target.value}))}/></div>
-        <div>{lbl("Contacto")}<input style={iS} placeholder="Nombre y teléfono" value={form.contacto} onChange={e=>setForm(f=>({...f,contacto:e.target.value}))}/></div>
-        <div>{lbl("Nota interna")}<textarea style={{...iS,minHeight:54,resize:"vertical"}} value={form.nota} onChange={e=>setForm(f=>({...f,nota:e.target.value}))}/></div>
-        <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.text,cursor:"pointer"}} onClick={()=>setForm(f=>({...f,activo:!f.activo}))}><DSToggle T={T} active={form.activo} onToggle={()=>{}}/><span>Cliente activo</span></label>
-        <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center"}}>
-          {form._c?<div style={{display:"flex",gap:4}}><Btn T={T} variant="ghost" size="sm" onClick={()=>{ navigator.clipboard.writeText(link(form._c)).then(()=>toast("Link del portal copiado","success")).catch(()=>toast("No pude copiar","warning")); }}>Copiar link del portal</Btn><Btn T={T} variant="ghost" size="sm" onClick={()=>nuevoLink(form._c)}>Link nuevo</Btn>{form._c.growithUid&&<Btn T={T} variant="ghost" size="sm" onClick={async()=>{ try{ const r=await api("cliente_vinculo",{id:form._c.id}); toast(r.motivo,r.vinculado&&!r.avisos?.length?"success":"warning",9000); }catch(e){ toast(e.message,"error"); } }}>Probar vínculo</Btn>}</div>:<span/>}
-          <div style={{display:"flex",gap:8}}><Btn T={T} variant="secondary" onClick={()=>setForm(null)}>Cancelar</Btn><Btn T={T} variant="primary" onClick={guardar} disabled={busy}>{busy?"Guardando…":"Guardar"}</Btn></div>
-        </div>
-      </div>
-    </Modal>)}
+    {form&&!cuenta&&(<Modal T={T} open onClose={()=>setForm(null)} title="Nuevo cliente del depósito" width={480}>{formUI}</Modal>)}
   </div>);
 }
 
