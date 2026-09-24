@@ -43463,7 +43463,8 @@ export default function App() {
   const [depositoInfo,setDepositoInfo] = useState(null);
   // Sidebar "Depósito" solo para CLIENTES del depósito. El dueño y los operarios
   // entran por su link (#/deposito/panel/<token>); la ruta #/deposito sigue andando.
-  const depositoNav = !!(depositoInfo&&depositoInfo.cliente);
+  // En el sidebar: clientes del depósito y también la dueña (pedido 25/sep).
+  const depositoNav = !!(depositoInfo&&(depositoInfo.cliente||depositoInfo.rol==="owner"));
   const depositoAcceso = !!(depositoInfo&&(depositoInfo.rol||depositoInfo.cliente));
   useEffect(()=>{ try{ window.__ghTiendaUid = user?.uid || ""; }catch(_){ } },[user?.uid]);
   // Se consulta al iniciar sesión y cada vez que se entra a Envíos o Depósito por el hash
