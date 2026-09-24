@@ -226,6 +226,9 @@ export function esErrorIdSucursal(status, txt) {
   return /sucursal[^.]{0,60}no encontrad|idgla|destino\.sucursal|sucursal\.id|sucursal[^.]{0,40}(inv[aá]lid|inexistent)/.test(t);
 }
 let _sucVarianteMem = {};
+// Última vez que un HOP falló con TODAS las variantes: durante 30 min los HOP
+// siguientes prueban solo dos formas (no diez segundos por fila para nada).
+let _hopFallaAt = 0;
 
 // ─── Markup / habilitación (andreani_config/global) ────────────────────────
 
@@ -2206,7 +2209,8 @@ export default async function handler(req, res) {
         // A sucursal: se prueban los identificadores en orden (ver SUC_VARIANTES);
         // a domicilio es una sola llamada.
         const sv = tipo === "sucursal" && sucDestinoOficial ? sucVariantes(sucDestinoOficial, _sucVarianteMem[sucDestinoOficial.hop || Number(sucDestinoOficial.id) >= 11000 ? "hop" : "oficial"] || cfgG?.sucVariante?.[sucDestinoOficial.hop || Number(sucDestinoOficial.id) >= 11000 ? "hop" : "oficial"]) : null;
-        const intentos = sv ? sv.variantes.map(v => ({ nombre: v.nombre, body: { ...orden, destino: { sucursal: v.sucursal } } })) : [{ nombre: "", body: orden }];
+        const hopEnFalla = !!(sv && sv.tipo === "hop" && Date.now() - _hopFallaAt < 30 * 60000);
+        const intentos = sv ? sv.variantes.slice(0, hopEnFalla ? 2 : sv.variantes.length).map(v => ({ nombre: v.nombre, body: { ...orden, destino: { sucursal: v.sucursal } } })) : [{ nombre: "", body: orden }];
         const probadas = [];
         for (let k = 0; k < intentos.length; k++) {
           const it = intentos[k];
@@ -2225,7 +2229,15 @@ export default async function handler(req, res) {
           if (!sv || k === intentos.length - 1 || !esErrorIdSucursal(r.status, txt)) break;
           console.log(`[emitir] sucursal ${sucDestinoOficial?.id} variante "${it.nombre}" rechazada (${String(txt).slice(0, 120)}) → pruebo "${intentos[k + 1].nombre}"`);
         }
-        if (ordenErr && probadas.length > 1) ordenErr += ` — Se probaron ${probadas.length} formas de identificar la sucursal [${sucIdsResumen(sucDestinoOficial)}]: ${probadas.join(" | ")}`;
+        if (ordenErr && sv && probadas.length > 1) {
+          const detalle = `[${sucIdsResumen(sucDestinoOficial)}] ${probadas.join(" | ")}`;
+          console.error(`[emitir] sucursal ${sucDestinoOficial?.id} sin identificador válido: ${detalle}`);
+          if (sv.tipo === "hop") {
+            _hopFallaAt = Date.now();
+            ordenErr = `Andreani no acepta este punto HOP por API: desde el 23/9 su API busca la sucursal por un "idgla" que los puntos HOP no tienen (probamos ${probadas.length} identificadores, todos rechazados). Mientras Andreani lo resuelve, emitilo con "Generar etiquetas" (Excel) o a mano en su portal. No se debitó nada.`;
+          } else ordenErr += ` — Se probaron ${probadas.length} formas de identificar la sucursal: ${detalle}`;
+          try { await envioRef.set({ emisionDetalle: { ts: Date.now(), detalle: detalle.slice(0, 1500) } }, { merge: true }); } catch (_) {}
+        }
         if (sv && varianteOk) {
           const kind = sv.tipo;
           if (_sucVarianteMem[kind] !== varianteOk) {
