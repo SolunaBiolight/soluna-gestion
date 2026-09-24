@@ -1854,7 +1854,23 @@ export default async function handler(req, res) {
         remitente: personaDe(remitente), destinatario: [personaDe({ ...remitente, nombreCompleto: "PRUEBA API GROWITH NO DESPACHAR" })], productoAEntregar: "PRUEBA API - NO DESPACHAR",
         bultos: [{ kilos: 0.2, largoCm: 10, altoCm: 5, anchoCm: 10, volumenCm: 500, valorDeclaradoSinImpuestos: 826, valorDeclaradoConImpuestos: 1000, referencias: [{ meta: "detalle", contenido: "PRUEBA API - NO DESPACHAR" }, { meta: "idCliente", contenido: "prueba-hop" }] }] };
       const abast = vivo.datosAdicionales?.sucursalAbastecedora || null;
+      // Documentación oficial (api-sucursales-v2-0.xlsx): "/sucursales?contrato=" y
+      // "/puntos-de-tercero?contrato=" listan las sucursales y PD3 "asignadas al
+      // servicio", con "ID de la sucursal" e "ID no unificado (propiedad id)". El
+      // punto que acepta la orden tiene que salir de AHÍ: se busca el mismo HOP en
+      // esos listados y se prueban sus ids antes que nada.
+      const listas = {}; const deListado = [];
+      const mismo = x => x && (String(x.codigo || "").toUpperCase() === String(vivo.codigo || "").toUpperCase() || String(x.descripcion || "").replace(/\s+/g, " ").trim().toUpperCase() === String(vivo.descripcion || "").replace(/\s+/g, " ").trim().toUpperCase() || String(x.id) === sid || (vivo.numero != null && String(x.numero) === String(vivo.numero) && /HOP/i.test(String(x.codigo || x.descripcion || ""))));
+      for (const [k, path] of [["sucursales_contrato_suc", `/v2/sucursales?contrato=${encodeURIComponent(env.contratoSucursal)}`], ["pd3_contrato_suc", `/v2/puntos-de-tercero?contrato=${encodeURIComponent(env.contratoSucursal)}`], ["sucursales_contrato_dom", `/v2/sucursales?contrato=${encodeURIComponent(env.contratoEstandar)}`], ["pd3_contrato_dom", `/v2/puntos-de-tercero?contrato=${encodeURIComponent(env.contratoEstandar)}`], ["pd3_sin_contrato", "/v2/puntos-de-tercero"]]) {
+        try { const r = await andreaniFetch(db, env, path); const txt = await r.text().catch(() => ""); let j = null; try { j = JSON.parse(txt); } catch (_) {}
+          const arr = Array.isArray(j) ? j : (Array.isArray(j?.sucursales) ? j.sucursales : (Array.isArray(j?.puntos) ? j.puntos : (Array.isArray(j?.data) ? j.data : [])));
+          const hit = arr.find(mismo) || null; const hops = arr.filter(x => /HOP/i.test(String(x?.codigo || "") + " " + String(x?.descripcion || "")));
+          listas[k] = { status: r.status, n: arr.length, hops: hops.length, keys: arr[0] ? Object.keys(arr[0]) : [], hop: hit, ejemploHop: hops[0] || null, ejemplo: hit ? null : (arr[0] || null), cuerpo: arr.length ? undefined : txt.slice(0, 300) };
+          if (hit) for (const [kk, v] of Object.entries(hit)) { if (/id/i.test(kk) && (typeof v === "string" || typeof v === "number") && String(v).trim() && String(v) !== "0") deListado.push([`listado:${k}.${kk}`, { id: String(v).trim() }]); }
+        } catch (e) { listas[k] = { error: e.message }; }
+      }
       const todas = [
+        ...deListado,
         ["id", { id: String(vivo.id) }],
         ["codigo", vivo.codigo ? { id: String(vivo.codigo) } : null],
         ["numero", vivo.numero != null ? { id: String(vivo.numero) } : null],
@@ -1876,7 +1892,7 @@ export default async function handler(req, res) {
         } catch (e) { resultados.push({ variante: nombre, enviado: suc, status: 0, ok: false, respuesta: e.message }); }
       }
       const exito = resultados.find(x => x.ok) || null;
-      const resumen = { at: Date.now(), sucursalId: sid, vivo: { id: vivo.id, codigo: vivo.codigo, numero: vivo.numero, idgla_integra: vivo.idgla_integra, idgla_alertran: vivo.idgla_alertran, canal: vivo.canal, tipo: vivo.datosAdicionales?.tipo, abastecedora: abast }, uuid, pub: pub ? { id: pub.id, idSucursal: pub.idSucursal, puntoDeTerceroId: pub.puntoDeTerceroId, tipo: pub.tipo } : null, resultados, exito };
+      const resumen = { at: Date.now(), sucursalId: sid, listas, vivo: { id: vivo.id, codigo: vivo.codigo, numero: vivo.numero, idgla_integra: vivo.idgla_integra, idgla_alertran: vivo.idgla_alertran, canal: vivo.canal, tipo: vivo.datosAdicionales?.tipo, abastecedora: abast }, uuid, pub: pub ? { id: pub.id, idSucursal: pub.idSucursal, puntoDeTerceroId: pub.puntoDeTerceroId, tipo: pub.tipo } : null, resultados, exito };
       await db.collection("andreani_config").doc("hop_prueba").set(resumen, { merge: false }).catch(() => {});
       console.log("[admin_hop_prueba]", JSON.stringify(resumen).slice(0, 3000));
       return res.json(resumen);
