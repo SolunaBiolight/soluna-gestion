@@ -2357,7 +2357,9 @@ export default async function handler(req, res) {
       try {
         // A sucursal: se prueban los identificadores en orden (ver SUC_VARIANTES);
         // a domicilio es una sola llamada.
-        const sv = tipo === "sucursal" && sucDestinoOficial ? sucVariantes(sucDestinoOficial, _sucVarianteMem[sucDestinoOficial.hop || Number(sucDestinoOficial.id) >= 11000 ? "hop" : "oficial"] || cfgG?.sucVariante?.[sucDestinoOficial.hop || Number(sucDestinoOficial.id) >= 11000 ? "hop" : "oficial"]) : null;
+        const kindSuc = sucDestinoOficial && (sucDestinoOficial.hop || Number(sucDestinoOficial.id) >= 11000) ? "hop" : "oficial";
+        // Con contrato HOP configurado (24/9: comprobado que acepta el id de siempre), el id va primero.
+        const sv = tipo === "sucursal" && sucDestinoOficial ? sucVariantes(sucDestinoOficial, _sucVarianteMem[kindSuc] || cfgG?.sucVariante?.[kindSuc] || (kindSuc === "hop" && env.contratoHop ? "id" : undefined)) : null;
         const hopEnFalla = !!(sv && sv.tipo === "hop" && Date.now() - _hopFallaAt < 30 * 60000);
         const intentos = sv ? sv.variantes.slice(0, hopEnFalla ? 2 : sv.variantes.length).map(v => ({ nombre: v.nombre, body: { ...orden, destino: { sucursal: v.sucursal } } })) : [{ nombre: "", body: orden }];
         const probadas = [];
