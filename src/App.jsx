@@ -21366,7 +21366,7 @@ function DepositoCola({T,api,owner}){
   // Un solo PDF con todas las tandas pendientes de hoy, en el orden de la cola; cada una queda impresa.
   async function imprimirTodoHoy(lista){
     if(!lista.length||todoHoy) return;
-    if(!(await appConfirm(`Se juntan las ${lista.length} tandas sin imprimir (hoy y próximos días) en un solo PDF (${lista.reduce((a,t)=>a+t.n,0)} etiquetas) y quedan marcadas como impresas. ¿Seguimos?`,{okLabel:"Imprimir todo"}))) return;
+    if(!(await appConfirm(`Se juntan las ${lista.length} tandas sin imprimir${lista.some(t=>t.fechaDespacho>st.hoy)?" (hoy y próximos días)":" de hoy"} en un solo PDF (${lista.reduce((a,t)=>a+t.n,0)} etiquetas) y quedan marcadas como impresas. ¿Seguimos?`,{okLabel:"Imprimir todo"}))) return;
     const w=ghDepVentana("application/pdf");
     try{ const {PDFDocument}=await import("pdf-lib"); const out=await PDFDocument.create();
       for(let i=0;i<lista.length;i++){ const t=lista[i]; setTodoHoy({done:i,total:lista.length}); const src=await PDFDocument.load(await ghDepBajar(api,"file_get",t.id,"pdf",t.pdf.chunks),{ignoreEncryption:true}); (await out.copyPages(src,src.getPageIndices())).forEach(p=>out.addPage(p)); }
@@ -21407,9 +21407,10 @@ function DepositoCola({T,api,owner}){
   const atrasadas=vivas.filter(t=>!urg(t)&&t.fechaDespacho<st.hoy);
   const nPed=l=>l.reduce((a,t)=>a+t.n,0);
   const mananaStr=new Date(Date.parse(`${st.hoy}T12:00:00Z`)+86400000).toISOString().slice(0,10);
-  // "Imprimir todo lo pendiente" (25/sep, pedido de Soluna): TODAS las tandas sin imprimir
-  // con PDF, también las de los próximos días — no solo las de hoy.
-  const pendHoyConPdf=vivas.filter(t=>t.estado==="pendiente"&&t.pdf&&!t.pdf.purgado).sort((a,b)=>(urg(b)?1:0)-(urg(a)?1:0)||(a.fechaDespacho||"").localeCompare(b.fechaDespacho||""));
+  // Dos opciones (25/sep, pedido de Soluna): "Imprimir lo de hoy" (tandas con despacho
+  // hasta hoy) y "Todo lo pendiente" (también las de los próximos días).
+  const pendTodoConPdf=vivas.filter(t=>t.estado==="pendiente"&&t.pdf&&!t.pdf.purgado).sort((a,b)=>(urg(b)?1:0)-(urg(a)?1:0)||(a.fechaDespacho||"").localeCompare(b.fechaDespacho||""));
+  const pendHoyConPdf=paraHoy.filter(t=>t.estado==="pendiente"&&t.pdf&&!t.pdf.purgado).sort((a,b)=>(urg(b)?1:0)-(urg(a)?1:0)||(a.fechaDespacho||"").localeCompare(b.fechaDespacho||""));
   const apartados=st.apartados||[];
   const Tanda=({t})=>{ const open=abierta===t.id; const v=vista[t.id]||"picking"; const pick=ghDepPicking(t.pedidos.filter(p=>!p.cancelado)); const ap=t.pedidos.filter(p=>p.apartado&&!p.cancelado).length; const canc=t.pedidos.filter(p=>p.cancelado).length; const conItems=t.pedidos.some(p=>p.items.length); const arm=t.pedidos.filter(p=>p.armado&&!p.cancelado).length; const nP=t.pedidos.filter(p=>!p.cancelado).length; const done=nP>0&&arm>=nP;
     const esp=t.tipo==="especial"; const cCanal=esp?(urg(t)?T.red:T.purple):t.canal==="ml"?T.yellow:T.accent; const ico=esp?"bag":t.canal==="ml"?"tag":"truck";
@@ -21524,7 +21525,8 @@ function DepositoCola({T,api,owner}){
           {q&&<button onClick={()=>setQ("")} style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:DS.font.lg,padding:0,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
         </div>
         <div style={{display:"flex",gap:8,alignItems:"stretch"}}>
-          {pendHoyConPdf.length>1&&<DepMainBtn T={T} ico="print" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendHoyConPdf)}>{todoHoy?`Juntando ${todoHoy.done}/${todoHoy.total}…`:`Imprimir todo lo pendiente (${pendHoyConPdf.length})`}</DepMainBtn>}
+          {pendHoyConPdf.length>1&&<DepMainBtn T={T} ico="print" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendHoyConPdf)}>{todoHoy?`Juntando ${todoHoy.done}/${todoHoy.total}…`:`Imprimir lo de hoy (${pendHoyConPdf.length})`}</DepMainBtn>}
+          {pendTodoConPdf.length>pendHoyConPdf.length&&pendTodoConPdf.length>1&&<Btn T={T} variant="secondary" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendTodoConPdf)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="print" size={13}/>Todo lo pendiente ({pendTodoConPdf.length})</span></Btn>}
           {st.clientes.length>0&&(<div style={{position:"relative",display:"flex",alignItems:"stretch"}}>
             <Btn T={T} variant="secondary" onClick={()=>setMenu(m=>!m)}>Cargar en nombre de…</Btn>
             {menu&&(<>
