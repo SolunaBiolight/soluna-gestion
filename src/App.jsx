@@ -11773,7 +11773,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     // Una sola cotización por combinación (tipo, CP de tarifa, paquete): 30
     // pedidos al mismo CP con el paquete por defecto son 1 request, no 30.
     const grupos=new Map();
-    for(const r of aCotizar){ const k=`${r.tipo}|${cpCotDe(r)}|${JSON.stringify(bultosDe(r))}`; if(!grupos.has(k)) grupos.set(k,[]); grupos.get(k).push(r); }
+    for(const r of aCotizar){ const k=`${r.tipo}|${r.oficial?.hop?"hop":""}|${cpCotDe(r)}|${JSON.stringify(bultosDe(r))}`; if(!grupos.has(k)) grupos.set(k,[]); grupos.get(k).push(r); }
     const lotes=[...grupos.values()];
     // De a 3 en paralelo: rápido sin saturar la API de Andreani
     for(let i=0;i<lotes.length;i+=3){
@@ -11783,7 +11783,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         try{
           const resp=await authFetch("/api/andreani?action=cotizar",{
             method:"POST",headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({tipo:r0.tipo,cpDestino:cpCotDe(r0),bultos:bultosDe(r0)}),
+            body:JSON.stringify({tipo:r0.tipo,cpDestino:cpCotDe(r0),bultos:bultosDe(r0),hop:!!r0.oficial?.hop}),
           });
           const d=await resp.json().catch(()=>({}));
           if(!resp.ok||d.error||typeof d.precio!=="number"){

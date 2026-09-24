@@ -68,6 +68,7 @@ GOOGLE_ADS_LOGIN_CUSTOMER_ID  ← opcional, id del MCC sin guiones
 ANDREANI_USER / ANDREANI_PASS ← cuenta revendedora de la plataforma (Soluna)
 ANDREANI_CLIENTE / ANDREANI_CTA
 ANDREANI_CONTRATO_ESTANDAR / ANDREANI_CONTRATO_SUCURSAL  ← contratos de envío (cambio/retiro pendientes)
+ANDREANI_CONTRATO_HOP         ← OPCIONAL (24/sep/2026): contrato de canal HOP. Andreani valida el punto contra el canal del contrato; con esta var los puntos HOP cotizan y emiten con ese contrato (contratoDe(env,tipo,hop)); sin ella, los HOP se rechazan con code hop_no_habilitado
 ```
 
 ## Secciones de la app (componentes principales en App.jsx)

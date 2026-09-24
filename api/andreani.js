@@ -80,11 +80,15 @@ export function andreaniEnv() {
   const cliente  = process.env.ANDREANI_CLIENTE;
   const contratoEstandar = process.env.ANDREANI_CONTRATO_ESTANDAR;
   const contratoSucursal = process.env.ANDREANI_CONTRATO_SUCURSAL;
+  // Contrato de canal HOP (opcional): desde el 23/9/2026 Andreani valida el punto
+  // contra el contrato y los puntos HOP son de canal HOP ("El canal del request
+  // no coincide con el contrato"). Si la cuenta tiene ese contrato, va acá.
+  const contratoHop = String(process.env.ANDREANI_CONTRATO_HOP || "").trim() || null;
   if (!user || !pass || !cliente || !contratoEstandar || !contratoSucursal) return null;
-  return { user, pass, cliente, contratoEstandar, contratoSucursal };
+  return { user, pass, cliente, contratoEstandar, contratoSucursal, contratoHop };
 }
-
-function contratoDe(env, tipo) {
+function contratoDe(env, tipo, hop = false) {
+  if (tipo === "sucursal" && hop && env.contratoHop) return env.contratoHop;
   return tipo === "sucursal" ? env.contratoSucursal : env.contratoEstandar;
 }
 
@@ -1000,10 +1004,10 @@ export function normalizarBultos(bultos) {
 
 // GET /v1/tarifas — bultos en formato indexado plano bultos[i][campo].
 // Devuelve {tarifaTotal (número, con IVA), pesoAforado, raw}.
-export async function cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen }) {
+export async function cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen, hop = false }) {
   const params = new URLSearchParams();
   params.set("cpDestino", String(cpDestino));
-  params.set("contrato", contratoDe(env, tipo));
+  params.set("contrato", contratoDe(env, tipo, hop));
   params.set("cliente", env.cliente);
   if (sucursalOrigen) params.set("sucursalOrigen", String(sucursalOrigen));
   bultos.forEach((b, i) => {
@@ -1870,6 +1874,7 @@ export default async function handler(req, res) {
         } catch (e) { listas[k] = { error: e.message }; }
       }
       const todas = [
+        ...(env.contratoHop ? [["contratoHOP+id", { id: String(vivo.id) }, env.contratoHop], ["contratoHOP+numero", { id: String(vivo.numero || "") }, env.contratoHop], ["contratoHOP+codigo", { id: String(vivo.codigo || "") }, env.contratoHop]] : []),
         ...deListado,
         ["id", { id: String(vivo.id) }],
         ["codigo", vivo.codigo ? { id: String(vivo.codigo) } : null],
@@ -1881,9 +1886,9 @@ export default async function handler(req, res) {
       ].filter(v => v[1] && v[1].id);
       const pedidas = Array.isArray(body.variantes) && body.variantes.length ? todas.filter(v => body.variantes.includes(v[0])) : todas;
       const resultados = [];
-      for (const [nombre, suc] of pedidas) {
+      for (const [nombre, suc, contratoAlt] of pedidas) {
         try {
-          const r = await andreaniFetch(db, env, "/v2/ordenes-de-envio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...base, destino: { sucursal: suc } }) });
+          const r = await andreaniFetch(db, env, "/v2/ordenes-de-envio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...base, ...(contratoAlt ? { contrato: contratoAlt } : {}), destino: { sucursal: suc } }) });
           const txt = await r.text().catch(() => "");
           let numero = null; try { numero = JSON.parse(txt)?.bultos?.[0]?.numeroDeEnvio || null; } catch (_) {}
           resultados.push({ variante: nombre, enviado: suc, status: r.status, ok: r.ok, numeroDeEnvio: numero, respuesta: txt.slice(0, 500) });
@@ -1891,7 +1896,7 @@ export default async function handler(req, res) {
         } catch (e) { resultados.push({ variante: nombre, enviado: suc, status: 0, ok: false, respuesta: e.message }); }
       }
       const exito = resultados.find(x => x.ok) || null;
-      const resumen = { at: Date.now(), sucursalId: sid, listas, vivo: { id: vivo.id, codigo: vivo.codigo, numero: vivo.numero, idgla_integra: vivo.idgla_integra, idgla_alertran: vivo.idgla_alertran, canal: vivo.canal, tipo: vivo.datosAdicionales?.tipo, abastecedora: abast }, uuid, pub: pub ? { id: pub.id, idSucursal: pub.idSucursal, puntoDeTerceroId: pub.puntoDeTerceroId, tipo: pub.tipo } : null, resultados, exito };
+      const resumen = { at: Date.now(), sucursalId: sid, contratoHopConfigurado: !!env.contratoHop, listas, vivo: { id: vivo.id, codigo: vivo.codigo, numero: vivo.numero, idgla_integra: vivo.idgla_integra, idgla_alertran: vivo.idgla_alertran, canal: vivo.canal, tipo: vivo.datosAdicionales?.tipo, abastecedora: abast }, uuid, pub: pub ? { id: pub.id, idSucursal: pub.idSucursal, puntoDeTerceroId: pub.puntoDeTerceroId, tipo: pub.tipo } : null, resultados, exito };
       try { await db.collection("andreani_config").doc("hop_prueba").set(JSON.parse(JSON.stringify(resumen)), { merge: false }); } catch (e) { console.warn("[admin_hop_prueba] no se guardó el resumen:", e.message); }
       console.log("[admin_hop_prueba]", JSON.stringify(resumen).slice(0, 3000));
       return res.json(resumen);
@@ -1979,7 +1984,7 @@ export default async function handler(req, res) {
       if (!(await isPlatformAdmin(db, uid))) return res.status(403).json({ error: "Solo admin" });
       // {CONTRATO_SUC} / {CONTRATO_DOM} se reemplazan en el servidor: los
       // números de contrato no viajan al navegador.
-      const path = String(body.path || "").trim().replace(/\{CONTRATO_SUC\}/g, encodeURIComponent(env.contratoSucursal)).replace(/\{CONTRATO_DOM\}/g, encodeURIComponent(env.contratoEstandar));
+      const path = String(body.path || "").trim().replace(/\{CONTRATO_SUC\}/g, encodeURIComponent(env.contratoSucursal)).replace(/\{CONTRATO_DOM\}/g, encodeURIComponent(env.contratoEstandar)).replace(/\{CONTRATO_HOP\}/g, encodeURIComponent(env.contratoHop || ""));
       if (!/^\/v[12]\/(sucursales|puntos-de-tercero|tarifas|localidades|provincias)(\/|\?|$)/.test(path)) return res.status(400).json({ error: "Solo se permite /v1|v2/sucursales, puntos-de-tercero, tarifas, localidades o provincias" });
       const t0 = Date.now();
       const r = await andreaniFetch(db, env, path);
@@ -2080,7 +2085,7 @@ export default async function handler(req, res) {
       if (!esAdmin && !cfgG.habilitados.includes(uid)) return res.status(403).json({ error: "Tu cuenta no tiene habilitado Envíos Andreani. Contactá al soporte." });
       const cfg = cfgParaCuenta(cfgG, snap.data());
 
-      const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen: sucOrigenDe(snap.data(), cfg) });
+      const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen: sucOrigenDe(snap.data(), cfg), hop: body.hop === true });
       const precio = precioConMarkup(cot, cfg);
       const out = {
         precio,
@@ -2208,7 +2213,7 @@ export default async function handler(req, res) {
         // rechazan sin cotizar ni debitar; después se vuelve a probar (si Andreani
         // habilitó los puntos, se emite y la marca se limpia sola).
         if (sucDestinoOficial.hop) {
-          const caidoAt = Math.max(_hopFallaAt || 0, Number(cfgG?.hopApiCaidoAt) || 0);
+          const caidoAt = env.contratoHop ? 0 : Math.max(_hopFallaAt || 0, Number(cfgG?.hopApiCaidoAt) || 0);
           if (caidoAt && Date.now() - caidoAt < 6 * 3600000) return res.status(400).json({ error: "Andreani no acepta puntos HOP con nuestro contrato por API: su listado de puntos asignados al contrato no incluye los HOP (desde el 23/9 lo validan). Emití este pedido con \"Generar etiquetas\" (Excel) o a mano en el portal de Andreani. No se debitó nada.", code: "hop_no_habilitado" });
         }
         const cpSuc = String(sucDestinoOficial?.direccion?.codigoPostal || "").replace(/\D/g, "");
@@ -2218,7 +2223,7 @@ export default async function handler(req, res) {
       }
 
       // b. RE-COTIZAR server-side — nunca confiar en el precio del cliente.
-      const cot = await cotizarAndreani(db, env, { tipo, cpDestino: cpTarifa, bultos, sucursalOrigen: sucOrigenDe(uData, cfg) });
+      const cot = await cotizarAndreani(db, env, { tipo, cpDestino: cpTarifa, bultos, sucursalOrigen: sucOrigenDe(uData, cfg), hop: !!sucDestinoOficial?.hop });
       marcar("cotizar");
       const precio = precioConMarkup(cot, cfg);
       if (precioAceptado > 0 && precio > Math.round(precioAceptado * 1.02) + 1) {
@@ -2228,7 +2233,7 @@ export default async function handler(req, res) {
       // Todo lo LENTO que no depende del débito va ANTES de la transacción:
       // así, si Vercel cortara la función, corta sin haber cobrado.
       const limpiarTxt = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9\s.,-]/g, " ").replace(/\s{2,}/g, " ").trim();
-      const contrato = contratoDe(env, tipo);
+      const contrato = contratoDe(env, tipo, !!sucDestinoOficial?.hop);
       let locDestino = null, locOrigen = null;
       if (tipo !== "sucursal") locDestino = await resolverLocalidad(destino.postal.codigoPostal, [destino.postal.localidad, destino.postal.ciudad, destino.postal.partido], destino.postal.region);
       locOrigen = await resolverLocalidad(origen.codigoPostal, [origen.localidad], origen.region);
