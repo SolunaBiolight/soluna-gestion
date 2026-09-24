@@ -1874,7 +1874,7 @@ export default async function handler(req, res) {
         } catch (e) { listas[k] = { error: e.message }; }
       }
       const todas = [
-        ...(env.contratoHop ? [["contratoHOP+id", { id: String(vivo.id) }, env.contratoHop], ["contratoHOP+numero", { id: String(vivo.numero || "") }, env.contratoHop], ["contratoHOP+codigo", { id: String(vivo.codigo || "") }, env.contratoHop]] : []),
+        ...((() => { const c = String(body.contrato || "").replace(/D/g, "") || env.contratoHop; return c ? [["contratoAlt+id", { id: String(vivo.id) }, c], ["contratoAlt+numero", { id: String(vivo.numero || "") }, c], ["contratoAlt+codigo", { id: String(vivo.codigo || "") }, c], ["contratoAlt+madre", { id: String(abast?.id ?? "") }, c]] : []; })()),
         ...deListado,
         ["id", { id: String(vivo.id) }],
         ["codigo", vivo.codigo ? { id: String(vivo.codigo) } : null],
@@ -1896,7 +1896,7 @@ export default async function handler(req, res) {
         } catch (e) { resultados.push({ variante: nombre, enviado: suc, status: 0, ok: false, respuesta: e.message }); }
       }
       const exito = resultados.find(x => x.ok) || null;
-      const resumen = { at: Date.now(), sucursalId: sid, contratoHopConfigurado: !!env.contratoHop, listas, vivo: { id: vivo.id, codigo: vivo.codigo, numero: vivo.numero, idgla_integra: vivo.idgla_integra, idgla_alertran: vivo.idgla_alertran, canal: vivo.canal, tipo: vivo.datosAdicionales?.tipo, abastecedora: abast }, uuid, pub: pub ? { id: pub.id, idSucursal: pub.idSucursal, puntoDeTerceroId: pub.puntoDeTerceroId, tipo: pub.tipo } : null, resultados, exito };
+      const resumen = { at: Date.now(), sucursalId: sid, contratoHopConfigurado: !!env.contratoHop, contratoAlt: String(body.contrato || "").replace(/D/g, "") ? "(probado)" : null, listas, vivo: { id: vivo.id, codigo: vivo.codigo, numero: vivo.numero, idgla_integra: vivo.idgla_integra, idgla_alertran: vivo.idgla_alertran, canal: vivo.canal, tipo: vivo.datosAdicionales?.tipo, abastecedora: abast }, uuid, pub: pub ? { id: pub.id, idSucursal: pub.idSucursal, puntoDeTerceroId: pub.puntoDeTerceroId, tipo: pub.tipo } : null, resultados, exito };
       try { await db.collection("andreani_config").doc("hop_prueba").set(JSON.parse(JSON.stringify(resumen)), { merge: false }); } catch (e) { console.warn("[admin_hop_prueba] no se guardó el resumen:", e.message); }
       console.log("[admin_hop_prueba]", JSON.stringify(resumen).slice(0, 3000));
       return res.json(resumen);
