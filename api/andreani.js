@@ -1865,7 +1865,7 @@ export default async function handler(req, res) {
         try { const r = await andreaniFetch(db, env, path); const txt = await r.text().catch(() => ""); let j = null; try { j = JSON.parse(txt); } catch (_) {}
           const arr = Array.isArray(j) ? j : (Array.isArray(j?.sucursales) ? j.sucursales : (Array.isArray(j?.puntos) ? j.puntos : (Array.isArray(j?.data) ? j.data : [])));
           const hit = arr.find(mismo) || null; const hops = arr.filter(x => /HOP/i.test(String(x?.codigo || "") + " " + String(x?.descripcion || "")));
-          listas[k] = { status: r.status, n: arr.length, hops: hops.length, keys: arr[0] ? Object.keys(arr[0]) : [], hop: hit, ejemploHop: hops[0] || null, ejemplo: hit ? null : (arr[0] || null), cuerpo: arr.length ? undefined : txt.slice(0, 300) };
+          listas[k] = { status: r.status, n: arr.length, hops: hops.length, keys: arr[0] ? Object.keys(arr[0]) : [], hop: hit, ejemploHop: hops[0] || null, ejemplo: hit ? null : (arr[0] || null), cuerpo: arr.length ? null : txt.slice(0, 300) };
           if (hit) for (const [kk, v] of Object.entries(hit)) { if (/id/i.test(kk) && (typeof v === "string" || typeof v === "number") && String(v).trim() && String(v) !== "0") deListado.push([`listado:${k}.${kk}`, { id: String(v).trim() }]); }
         } catch (e) { listas[k] = { error: e.message }; }
       }
@@ -1893,7 +1893,7 @@ export default async function handler(req, res) {
       }
       const exito = resultados.find(x => x.ok) || null;
       const resumen = { at: Date.now(), sucursalId: sid, listas, vivo: { id: vivo.id, codigo: vivo.codigo, numero: vivo.numero, idgla_integra: vivo.idgla_integra, idgla_alertran: vivo.idgla_alertran, canal: vivo.canal, tipo: vivo.datosAdicionales?.tipo, abastecedora: abast }, uuid, pub: pub ? { id: pub.id, idSucursal: pub.idSucursal, puntoDeTerceroId: pub.puntoDeTerceroId, tipo: pub.tipo } : null, resultados, exito };
-      await db.collection("andreani_config").doc("hop_prueba").set(resumen, { merge: false }).catch(() => {});
+      try { await db.collection("andreani_config").doc("hop_prueba").set(JSON.parse(JSON.stringify(resumen)), { merge: false }); } catch (e) { console.warn("[admin_hop_prueba] no se guardó el resumen:", e.message); }
       console.log("[admin_hop_prueba]", JSON.stringify(resumen).slice(0, 3000));
       return res.json(resumen);
     }
