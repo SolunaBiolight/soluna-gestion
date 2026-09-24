@@ -22455,12 +22455,17 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
 // ── Diagnóstico de la API de Andreani (solo admin) ──
 function AdmProbe({T}){
   const [path,setPath]=useState("/v2/sucursales?codigoPostal=1754&canal=B2C");
-  const [out,setOut]=useState(null); const [busy,setBusy]=useState(false);
+  const [out,setOut]=useState(null); const [busy,setBusy]=useState(false); const [hopId,setHopId]=useState("18615");
   const run=async(p)=>{ const pp=p||path; setBusy(true); setOut(null); try{ const d=await admAndreani("admin_probe",{path:pp}); setOut(d); }catch(e){ setOut({error:e.message}); } setBusy(false); };
   const PRESETS=[["HOP por id","/v2/sucursales/14685"],["CP B2C","/v2/sucursales?codigoPostal=1754&canal=B2C"],["CP sin canal","/v2/sucursales?codigoPostal=1754"],["CP HOP","/v2/sucursales?codigoPostal=1754&canal=HOP"],["Todas","/v2/sucursales"],["Todas B2C","/v2/sucursales?canal=B2C"],["Todas HOP","/v2/sucursales?canal=HOP"],["tipo HOP","/v2/sucursales?codigoPostal=1754&tipoDeSucursal=HOP"],["HOP terceros (contrato suc)","/v2/puntos-de-tercero?contrato={CONTRATO_SUC}"],["HOP terceros CP 1754","/v2/puntos-de-tercero?contrato={CONTRATO_SUC}&codigoPostal=1754&canal=B2C"],["HOP terceros (contrato dom)","/v2/puntos-de-tercero?contrato={CONTRATO_DOM}"]];
   return (
     <div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{PRESETS.map(([l,p])=><AdmBtn key={l} T={T} variant="ghost" size="sm" onClick={()=>{setPath(p);return run(p);}}>{l}</AdmBtn>)}</div>
+      <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center",flexWrap:"wrap",padding:"8px 10px",border:`1px solid ${T.border}`,borderRadius:8}}>
+        <span style={{fontSize:12,color:T.textMd}}>Prueba de emisión a un punto HOP (crea una orden real "NO DESPACHAR" sin débito, probando cada identificador hasta que Andreani acepte uno):</span>
+        <AdmInput T={T} value={hopId} onChange={e=>setHopId(e.target.value)} style={{width:110,fontFamily:"monospace",fontSize:12}} placeholder="18615"/>
+        <AdmBtn T={T} size="sm" disabled={busy} onClick={async()=>{ if(!(await appConfirm("Se crean órdenes de prueba reales en Andreani (destinatario: vos, 'NO DESPACHAR'), una por identificador hasta que alguno funcione. No se debita saldo. ¿Seguimos?",{okLabel:"Probar"}))) return; setBusy(true); setOut(null); try{ const d=await admAndreani("admin_hop_prueba",{sucursalId:hopId}); setOut(d); toast(d.exito?`Andreani aceptó la variante "${d.exito.variante}"`:"Ninguna variante aceptada: mirá las respuestas",d.exito?"success":"warning",8000); }catch(e){ setOut({error:e.message}); } setBusy(false); }}>{busy?"…":"Probar emisión a HOP"}</AdmBtn>
+      </div>
       <div style={{display:"flex",gap:8,marginBottom:8}}><AdmInput T={T} value={path} onChange={e=>setPath(e.target.value)} style={{flex:1,fontFamily:"monospace",fontSize:12}}/><AdmBtn T={T} size="sm" onClick={()=>run()}>{busy?"…":"Consultar"}</AdmBtn><AdmBtn T={T} variant="ghost" size="sm" onClick={async()=>{ setBusy(true); setOut(null); try{ setOut(await admAndreani("admin_hop_index",{})); }catch(e){ setOut({error:e.message}); } setBusy(false); }}>Índice HOP</AdmBtn></div>
       {out&&<pre style={{fontSize:11,lineHeight:1.45,background:T.bg,border:`1px solid ${T.borderL||T.border}`,borderRadius:8,padding:10,maxHeight:360,overflow:"auto",whiteSpace:"pre-wrap",wordBreak:"break-all",color:out.error?T.red:T.text}}>{JSON.stringify(out,null,2)}</pre>}
     </div>
