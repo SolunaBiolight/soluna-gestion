@@ -42421,6 +42421,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                   <>
                     <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.4,marginTop:fuentes.length>1?12:0,paddingTop:fuentes.length>1?10:0,borderTop:fuentes.length>1?`1px solid ${T.borderL}`:"none"}}>Cómo se compone el gasto de Meta</div>
                     {monedas.map(([mon,v]) => row(`Gasto según Meta (${mon})`, fmtOrig(mon,v), mon==="ARS"?null:"(lo que factura Meta, en su moneda)"))}
+                    {monedas.filter(([mon])=>ab.fx&&ab.fx[mon]>0).map(([mon,v]) => row(`En dólares (${mon})`, "US$ "+Number(v/ab.fx[mon]).toLocaleString("es-AR",{maximumFractionDigits:0}), `(1 USD = ${Number(ab.fx[mon]).toLocaleString("es-AR",{maximumFractionDigits:2})} ${mon})`))}
                     {hayConv && row("Convertido a pesos", fmtM(ab.convertido), ab.cotizOperativo ? `dólar operativo${ab.cotizProm?` $${Number(ab.cotizProm).toLocaleString("es-AR",{maximumFractionDigits:0})}`:""} (el mismo de Costos)` : `dólar ${TIPO_LBL[ab.cotizTipo]||ab.cotizTipo}${ab.cotizProm?` prom. $${Number(ab.cotizProm).toLocaleString("es-AR",{maximumFractionDigits:0})}`:""}${ab.cotizAjuste?` +${ab.cotizAjuste}% ajuste`:""}, día por día`)}
                     {(ab.feePct>0) && row(`+ Fee sobre pauta (${ab.feePct}%)`, fmtM(ab.feeMonto), "(configurado en Cotización Dólar)")}
                     {row("Ad Spend Meta total", fmtM(ab.total), fuentes.length>1?null:"= la tarjeta AD SPEND", true)}

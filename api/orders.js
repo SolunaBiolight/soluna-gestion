@@ -113,6 +113,31 @@ async function fetchDolarHistorico(casa) {
   } catch (e) { console.error("Dólar histórico error:", e.message); }
   return hit?.map || new Map(); // si falla y había cache vieja, mejor eso que nada
 }
+// Cotizaciones de OTRAS monedas contra el dólar (24/9/2026). Meta, TikTok y
+// Google devuelven el gasto en la moneda propia de cada cuenta publicitaria y
+// hasta ahora toda moneda ≠ ARS se trataba como USD: una cuenta en pesos
+// colombianos (COP 100.327 ≈ US$ 31) se multiplicaba entera por el dólar. Ahora
+// primero se pasa a USD con la tabla "unidades por 1 USD" (open.er-api.com, sin
+// clave, actualizada a diario) y recién después al dólar operativo del cliente.
+// Sin cotización para esa moneda el gasto se EXCLUYE (cuenta como día sin
+// cotización), nunca se suma mal.
+let _fxCache = null; // { ts, rates: {COP: 4100, ...} }
+async function fetchFxPorUsd() {
+  if (_fxCache && Date.now() - _fxCache.ts < 6 * 3600000) return _fxCache.rates;
+  try {
+    const r = await fetch("https://open.er-api.com/v6/latest/USD");
+    const j = await r.json();
+    if (j && j.result === "success" && j.rates && j.rates.USD === 1) { _fxCache = { ts: Date.now(), rates: j.rates }; return j.rates; }
+  } catch (e) { console.error("FX error:", e.message); }
+  return _fxCache?.rates || null;
+}
+// Convierte un monto en `cur` a USD. Devuelve null si no hay cotización.
+function aUsd(monto, cur, fx) {
+  const c = String(cur || "").toUpperCase();
+  if (c === "USD") return monto;
+  const u = fx && parseFloat(fx[c]);
+  return u > 0 ? monto / u : null;
+}
 // Cotización de una fecha puntual: exacta si existe, sino el día hábil
 // anterior más cercano (fines de semana/feriados no siempre tienen registro
 // para oficial/blue/mep — cripto cotiza todos los días).
@@ -521,6 +546,9 @@ export default async function handler(req, res) {
         `meta:${metaAccountsSnap.docs.filter(d => (d.data() || {}).access_token).length}`,
         `gads:${userData.googleAds?.refresh_token ? 1 : 0}`,
         `tt:${userData.tiktokAds?.access_token ? (userData.tiktokAds.advertisers || []).length : 0}`,
+        // 24/9/2026: conversión de monedas ≠ ARS/USD a dólares — invalida las cachés
+        // calculadas cuando esas cuentas se sumaban como si fueran USD.
+        "fx:1",
         // Demo: cada cambio de las ventas ficticias sube demo.version → caché inválida
         ...(demoMode ? [`demo:${userData.demo?.version || 0}`] : []),
       ].join("|");
@@ -764,7 +792,9 @@ export default async function handler(req, res) {
       // Desglose del Ad Spend del período ACTUAL (para el panel "cómo se compone
       // la inversión" del dashboard): gasto original por moneda según Meta,
       // convertido a ARS, cotización promedio usada y días sin cotización.
-      const adsBd = { porMoneda:{}, convertido:0, sinCotiz:0, rateSum:0, rateDias:0, feeMonto:0 };
+      const adsBd = { porMoneda:{}, convertido:0, sinCotiz:0, rateSum:0, rateDias:0, feeMonto:0, fx:{} };
+      // Tabla de monedas → USD, se pide una sola vez por request y solo si hace falta.
+      let _fxProm = null; const fxPorUsd = () => (_fxProm || (_fxProm = fetchFxPorUsd()));
       // Fee adicional POR CUENTA de Meta (recargo tarjeta/agencia). margenesMetaAdFees
       // = { adAccountId: % }. Migración: si no hay % por cuenta, se usa el fee global
       // legacy (margenesDolar.feeAdSpend) para TODAS las cuentas — así nadie pierde su %.
@@ -809,11 +839,16 @@ export default async function handler(req, res) {
         }
         const histMap = await dolarAdsHistProm;
         dolarAdsHistDias = histMap ? histMap.size : -1;
+        const fxMeta = accounts.some(a => a.currency && !["ARS", "USD"].includes(String(a.currency).toUpperCase())) ? await fxPorUsd() : null;
         const arr = await Promise.all(accounts.map(async a => {
           const bd = await fetchMetaDailySpend({ access_token: token, ad_account_id: a.id }, s, u, eRef);
           const curCode = String(a.currency || "ARS").toUpperCase();
           if (a.currency && a.currency !== "ARS") {
+            // Moneda que no es USD ni ARS (COP, MXN, EUR…): primero a USD.
+            const fxUnid = curCode === "USD" ? 1 : (fxMeta && parseFloat(fxMeta[curCode]) > 0 ? parseFloat(fxMeta[curCode]) : null);
+            if (fxUnid && curCode !== "USD" && bdCollect) bdCollect.fx[curCode] = fxUnid;
             for (const [fecha, v] of Object.entries(bd)) {
+              if (!fxUnid) { if (bdCollect) { bdCollect.sinCotiz++; bdCollect.porMoneda[curCode] = (bdCollect.porMoneda[curCode]||0) + (v.spend||0); } delete bd[fecha]; continue; }
               // UN SOLO DÓLAR OPERATIVO: el usuario compra USDT siempre en el mismo
               // lugar, así que el gasto en USD se pasa a ARS con la MISMA cotización
               // efectiva de Costos ($ del día + cometa) que todo lo demás del
@@ -827,14 +862,14 @@ export default async function handler(req, res) {
                 if (!rate && dolarAdsFallback > 0) rate = dolarAdsFallback;
               }
               if (!rate) { if (bdCollect) bdCollect.sinCotiz++; delete bd[fecha]; continue; } // sin NINGUNA cotización: se excluye, no se suma mal
-              const orig = v.spend||0;
+              const orig = v.spend||0, origUsd = orig / fxUnid;
               if (bdCollect) {
                 bdCollect.porMoneda[curCode] = (bdCollect.porMoneda[curCode]||0) + orig;
-                bdCollect.convertido += orig * rate;
+                bdCollect.convertido += origUsd * rate;
                 bdCollect.rateSum += rate; bdCollect.rateDias++;
               }
-              v.spend = orig * rate;
-              v.purchaseVal = (v.purchaseVal||0) * rate;
+              v.spend = origUsd * rate;
+              v.purchaseVal = (v.purchaseVal||0) / fxUnid * rate;
             }
           } else if (bdCollect) {
             for (const v of Object.values(bd)) {
@@ -1614,12 +1649,15 @@ export default async function handler(req, res) {
           const { cuentas, errs } = await ttGastoPeriodo(t, sinceR, untilR);
           if (!cuentas.length) { ttDiag = errs[0] || "TikTok no devolvió gasto para el período"; return null; }
           let total = 0;
+          const fxTt = cuentas.some(c => !["ARS", "USD"].includes(String(c.currency || "ARS").toUpperCase())) ? await fxPorUsd() : null;
           for (const c of cuentas) {
             const cur = String(c.currency || "ARS").toUpperCase();
             if (cur === "ARS") { total += c.spend; continue; }
             const rate = dolarCostosEf > 0 ? dolarCostosEf : (dolarAdsManual > 0 ? dolarAdsManual : dolarAdsFallback);
             if (!(rate > 0)) { ttDiag = `la cuenta de TikTok está en ${cur} y no hay dólar configurado en Costos`; continue; }
-            total += c.spend * rate;
+            const usd = aUsd(c.spend, cur, fxTt);
+            if (usd == null) { ttDiag = `no hay cotización de ${cur} a dólares; ese gasto quedó afuera`; continue; }
+            total += usd * rate;
           }
           if (errs.length && !ttDiag) ttDiag = errs[0];
           return +total.toFixed(2);
@@ -2098,6 +2136,7 @@ export default async function handler(req, res) {
         diasSinCotiz: adsBd.sinCotiz,
         feePct: adsBd.convertido>0 ? +(adsBd.feeMonto/adsBd.convertido*100).toFixed(2) : 0,
         feeMonto: +adsBd.feeMonto.toFixed(2),
+        fx: Object.keys(adsBd.fx).length ? adsBd.fx : null, // unidades de cada moneda por 1 USD (cuentas que no están en ARS ni USD)
         total: +(adsBd.convertido + adsBd.feeMonto).toFixed(2), // convertido + fees por cuenta (feeAd global ya no aplica)
       } : null;
 
