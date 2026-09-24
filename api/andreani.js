@@ -1896,6 +1896,71 @@ export default async function handler(req, res) {
       console.log("[admin_hop_prueba]", JSON.stringify(resumen).slice(0, 3000));
       return res.json(resumen);
     }
+    // ── admin_hop_prueba2: segunda ronda. (A) listados por contrato con canal /
+    //    tipo / CP para ver si los HOP aparecen bajo otro filtro; (B) órdenes con
+    //    los campos de la especificación que nunca mandamos: metadatos de la
+    //    sucursal destino, nomenclatura del HOP sobre la sucursal madre,
+    //    tipoDeServicio, y destino postal con componente "puntoDeTercero". Cada
+    //    orden aceptada dice a qué sucursal de distribución fue: si aparece el HOP,
+    //    esa es la forma. Máximo 4 órdenes reales "NO DESPACHAR", sin débito.
+    if (action === "admin_hop_prueba2") {
+      if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
+      if (!(await isPlatformAdmin(db, uid))) return res.status(403).json({ error: "Solo admin" });
+      const sid = String(body.sucursalId || "").replace(/\D/g, ""); if (!sid) return res.status(400).json({ error: "Poné el id del punto (ej. 18615)." });
+      const uData = (await db.collection("users").doc(uid).get()).data() || {};
+      const origen = uData.andreaniOrigen, remitente = uData.andreaniRemitente;
+      if (!origen?.codigoPostal || !remitente?.nombreCompleto) return res.status(400).json({ error: "Tu cuenta no tiene origen y remitente cargados." });
+      const rv = await andreaniFetch(db, env, `/v2/sucursales/${sid}`); const vivo = rv.ok ? await rv.json().catch(() => null) : null;
+      if (!vivo) return res.status(400).json({ error: `Andreani no resuelve /v2/sucursales/${sid} (HTTP ${rv.status}).` });
+      const cpHop = String(vivo.direccion?.codigoPostal || "").replace(/\D/g, ""); const abast = vivo.datosAdicionales?.sucursalAbastecedora || null;
+      const C = encodeURIComponent(env.contratoSucursal), D = encodeURIComponent(env.contratoEstandar);
+      // (A) listados
+      const listas = {};
+      const esDealer = x => /dealer/i.test(String(x?.datosAdicionales?.tipo || x?.tipo || "")) || /^HOP\d/i.test(String(x?.codigo || ""));
+      for (const [k, path] of [
+        ["suc_contrato_canalHOP", `/v2/sucursales?contrato=${C}&canal=HOP`], ["suc_contrato_canalB2C", `/v2/sucursales?contrato=${C}&canal=B2C`], ["suc_contrato_tipoDealer", `/v2/sucursales?contrato=${C}&tipo=DEALER`],
+        ["suc_contrato_cpHop", `/v2/sucursales?contrato=${C}&codigoPostal=${cpHop}`], ["pd3_contrato_cpHop", `/v2/puntos-de-tercero?contrato=${C}&codigoPostal=${cpHop}`], ["pd3_contrato_canalHOP", `/v2/puntos-de-tercero?contrato=${C}&canal=HOP`],
+        ["pd3_contratoDom_cpHop", `/v2/puntos-de-tercero?contrato=${D}&codigoPostal=${cpHop}`], ["suc_sinContrato_cpHop_canalHOP", `/v2/sucursales?codigoPostal=${cpHop}&canal=HOP`], ["suc_contrato_id", `/v2/sucursales?contrato=${C}&id=${sid}`], ["suc_contrato_codigo", `/v2/sucursales?contrato=${C}&codigo=${encodeURIComponent(vivo.codigo || "")}`],
+      ]) {
+        try { const r = await andreaniFetch(db, env, path); const txt = await r.text().catch(() => ""); let j = null; try { j = JSON.parse(txt); } catch (_) {}
+          const arr = Array.isArray(j) ? j : (Array.isArray(j?.sucursales) ? j.sucursales : (Array.isArray(j?.puntos) ? j.puntos : (Array.isArray(j?.data) ? j.data : (j && typeof j === "object" && j.id ? [j] : []))));
+          const dealers = arr.filter(esDealer); const hit = arr.find(x => String(x?.id) === sid || String(x?.codigo || "").toUpperCase() === String(vivo.codigo || "").toUpperCase()) || null;
+          listas[k] = { status: r.status, n: arr.length, dealers: dealers.length, esteHop: hit ? { id: hit.id, codigo: hit.codigo, numero: hit.numero, idgla_integra: hit.idgla_integra, idgla_alertran: hit.idgla_alertran } : null, ejemploDealer: dealers[0] ? { id: dealers[0].id, codigo: dealers[0].codigo, descripcion: dealers[0].descripcion, idgla_integra: dealers[0].idgla_integra, idgla_alertran: dealers[0].idgla_alertran } : null, cuerpo: arr.length ? null : txt.slice(0, 200) };
+        } catch (e) { listas[k] = { error: e.message }; }
+      }
+      // (B) órdenes
+      const limpiarTxt = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9\s.,-]/g, " ").replace(/\s{2,}/g, " ").trim();
+      const locOrigen = await resolverLocalidad(origen.codigoPostal, [origen.localidad], origen.region).catch(() => null);
+      const personaDe = (p) => ({ nombreCompleto: limpiarTxt(p.nombreCompleto), email: String(p.email || "").trim(), documentoTipo: "DNI", documentoNumero: String(p.documentoNumero || "").replace(/[.\-\s]/g, ""), telefonos: [{ tipo: 1, numero: String(p.telefono || "").trim() }] });
+      const base = { contrato: env.contratoSucursal,
+        origen: { postal: { codigoPostal: origen.codigoPostal, calle: limpiarTxt(origen.calle), numero: origen.numero, localidad: limpiarTxt(locOrigen ? locOrigen.localidad : origen.localidad), region: limpiarTxt(locOrigen ? locOrigen.provincia : (origen.region || "")), pais: "Argentina" } },
+        remitente: personaDe(remitente), destinatario: [personaDe({ ...remitente, nombreCompleto: "PRUEBA API GROWITH NO DESPACHAR" })], productoAEntregar: "PRUEBA API - NO DESPACHAR",
+        bultos: [{ kilos: 0.2, largoCm: 10, altoCm: 5, anchoCm: 10, volumenCm: 500, valorDeclaradoSinImpuestos: 826, valorDeclaradoConImpuestos: 1000, referencias: [{ meta: "detalle", contenido: "PRUEBA API - NO DESPACHAR" }, { meta: "idCliente", contenido: "prueba-hop" }] }] };
+      const metas = [["puntoDeTercero", sid], ["idPuntoDeTercero", sid], ["puntoDeTerceroId", sid], ["pd3", sid], ["idPd3", sid], ["puntoHop", vivo.codigo || ""], ["hop", String(vivo.numero || "")], ["sucursalDeEntrega", sid], ["sucursalEntrega", vivo.codigo || ""], ["nomenclatura", vivo.codigo || ""]].map(([meta, contenido]) => ({ meta, contenido }));
+      const dirHop = vivo.direccion || {};
+      const intentos = [
+        ["madre+metadatos", { ...base, destino: { sucursal: { id: String(abast?.id ?? ""), datosAdicionales: { metadatos: metas } } } }],
+        ["madre+nomenclaturaHOP", { ...base, destino: { sucursal: { id: String(abast?.id ?? ""), nomenclatura: String(vivo.codigo || ""), descripcion: String(vivo.descripcion || ""), direccion: dirHop } } }],
+        ["hop+tipoDeServicio=HOP", { ...base, tipoDeServicio: "HOP", destino: { sucursal: { id: sid } } }],
+        ["hop+tipoDeServicio=PD3", { ...base, tipoDeServicio: "PD3", destino: { sucursal: { id: sid } } }],
+        ["postalHOP+componente", { ...base, destino: { postal: { codigoPostal: String(dirHop.codigoPostal || cpHop), calle: limpiarTxt(dirHop.calle), numero: String(dirHop.numero || ""), localidad: limpiarTxt(dirHop.localidad), region: limpiarTxt(dirHop.provincia || ""), pais: "Argentina", componentesDeDireccion: [{ meta: "puntoDeTercero", contenido: sid }, { meta: "puntoHop", contenido: String(vivo.codigo || "") }, { meta: "observaciones", contenido: `ENTREGAR EN ${vivo.descripcion || ""}` }] } } }],
+      ].filter(x => !/madre/.test(x[0]) || abast?.id != null);
+      const resultados = []; let creadas = 0;
+      for (const [nombre, cuerpo] of intentos) {
+        if (creadas >= 4) { resultados.push({ variante: nombre, saltada: "tope de órdenes de prueba" }); continue; }
+        try {
+          const r = await andreaniFetch(db, env, "/v2/ordenes-de-envio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
+          const txt = await r.text().catch(() => ""); let j = null; try { j = JSON.parse(txt); } catch (_) {}
+          if (r.ok) creadas++;
+          resultados.push({ variante: nombre, destinoEnviado: cuerpo.destino, tipoDeServicio: cuerpo.tipoDeServicio || null, status: r.status, ok: r.ok, numeroDeEnvio: j?.bultos?.[0]?.numeroDeEnvio || null, sucursalDeDistribucion: j?.sucursalDeDistribucion || null, sucursalDeImposicion: j?.sucursalDeImposicion || null, sucursalAbastecedora: j?.sucursalAbastecedora || null, esHop: /HOP/i.test(JSON.stringify(j?.sucursalDeDistribucion || {})), respuesta: r.ok ? null : txt.slice(0, 400) });
+        } catch (e) { resultados.push({ variante: nombre, status: 0, ok: false, respuesta: e.message }); }
+      }
+      const exito = resultados.find(x => x.esHop) || null;
+      const resumen = { at: Date.now(), sucursalId: sid, cpHop, abastecedora: abast, listas, resultados, exito };
+      try { await db.collection("andreani_config").doc("hop_prueba2").set(JSON.parse(JSON.stringify(resumen)), { merge: false }); } catch (e) { console.warn("[admin_hop_prueba2]", e.message); }
+      console.log("[admin_hop_prueba2]", JSON.stringify(resumen).slice(0, 4000));
+      return res.json(resumen);
+    }
     // ── admin_hop_index: estado del índice de puntos HOP (y correr una tanda a mano).
     if (action === "admin_hop_index") {
       if (!(await isPlatformAdmin(db, uid))) return res.status(403).json({ error: "Solo admin" });
