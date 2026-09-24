@@ -74,6 +74,10 @@ async function getSettings(db, uid) {
 }
 
 function computeStatus(stock, sales30d, settings) {
+  // Oversold: se vendió más de lo que había. No es "quedan pocos días", es una
+  // DEUDA de mercadería con compradores que ya pagaron — estado propio y el
+  // más urgente de todos.
+  if ((stock || 0) < 0) return { days_left: 0, status: "oversold" };
   const salesPerDay = ((sales30d || 0) / 30) * (settings.multiplier || 1);
   if (salesPerDay <= 0) return { days_left: null, status: stock > 0 ? "ok" : "empty" };
   const days_left = Math.floor((stock || 0) / salesPerDay);
@@ -293,20 +297,28 @@ export default async function handler(req, res) {
 
       const items = snap.docs.map(d => {
         const data = d.data();
-        // Defensive clamp: si hay datos viejos con stock_total negativo (por bugs anteriores),
-        // los mostramos como 0 al user. El valor en Firestore queda hasta que el user lo edite.
-        const stockClean = Math.max(0, data.stock_total || 0);
-        const sbwClean = Object.fromEntries(Object.entries(data.stock_by_warehouse || {}).map(([k,v]) => [k, Math.max(0, parseInt(v) || 0)]));
+        // El negativo se MUESTRA (oversold = vendido sin stock). Antes se clampeaba
+        // a 0 acá y el dato quedaba invisible aunque Firestore lo tuviera.
+        const stockClean = parseInt(data.stock_total) || 0;
+        const sbwClean = Object.fromEntries(Object.entries(data.stock_by_warehouse || {}).map(([k,v]) => [k, parseInt(v) || 0]));
         const sales_30d = sales30dByItem[d.id] || 0;
         const { days_left, status } = computeStatus(stockClean, sales_30d, settings);
         return { id: d.id, ...data, stock_total: stockClean, stock_by_warehouse: sbwClean, sales_30d, days_left, status };
       });
-      items.sort((a, b) => (a.status === "empty" ? -1 : 1) - (b.status === "empty" ? -1 : 1));
+      // Oversold arriba de todo, después los agotados: son los que necesitan
+      // reposición YA (y los oversold además tienen pedidos sin entregar).
+      const _sevStock = it => it.status === "oversold" ? 0 : it.status === "empty" ? 1 : 2;
+      items.sort((a, b) => _sevStock(a) - _sevStock(b));
+      const oversoldItems = items.filter(i => i.status === "oversold");
       const kpis = {
         total: items.length,
         ok: items.filter(i => i.status === "ok").length,
         low: items.filter(i => i.status === "low").length,
         empty: items.filter(i => i.status === "empty").length,
+        // Vendido sin stock: cuántos productos y cuántas unidades se deben en
+        // total (en positivo, para mostrarlo como "debés N unidades").
+        oversold: oversoldItems.length,
+        oversold_units: oversoldItems.reduce((n, i) => n + Math.abs(i.stock_total || 0), 0),
       };
       return res.json({ items, kpis, settings });
     }
@@ -624,7 +636,10 @@ export default async function handler(req, res) {
             await logMovement(db, uid, {
               item_id: item.id, item_name: item.nombre,
               change: -unitsForItem,
-              old_stock: oldStock, new_stock: Math.max(0, newStock),
+              // El negativo se guarda TAL CUAL: es la deuda de mercadería con el
+              // comprador (oversold). Clamparlo a 0 borraba cuántas unidades se
+              // vendieron sin stock y ya no se podía reconstruir.
+              old_stock: oldStock, new_stock: newStock,
               source: ord.platform, event: `venta ${ord.order_id}`,
               ts: ord.ts,
             });
@@ -634,7 +649,11 @@ export default async function handler(req, res) {
         }
 
         if (stockChange !== 0) {
-          const finalStock = Math.max(0, (item.stock_total || 0) + stockChange);
+          // Sin clamp: si se vendió más de lo que había, stock_total queda NEGATIVO
+          // a propósito. Al reponer, la carga se suma sobre el negativo y descuenta
+          // sola lo que ya se debía. Hacia TN/ML/Shopify se sigue empujando 0
+          // (pushItemStock clampea): las plataformas no aceptan stock negativo.
+          const finalStock = (item.stock_total || 0) + stockChange;
           const allProcessed = Array.from(new Set([...(item.processed_orders || []), ...newProcessed])).slice(-2000);
           await item.ref.update({
             stock_total: finalStock,
@@ -651,6 +670,64 @@ export default async function handler(req, res) {
       }
 
       return res.json({ ok: true, processed_orders: recentOrders.length, items_updated: itemsUpdated, sales_logged: salesLogged });
+    }
+
+    // ── RECALC OVERSOLD — recupera los negativos que el clamp viejo borró ────────
+    // Hasta 24/sep/2026 el stock se clampeaba a 0: si vendías 10 teniendo 2, el
+    // item quedaba en 0 y las 8 unidades adeudadas se perdían. El historial de
+    // movimientos SÍ guardó cada venta (con su `change`), así que el faltante se
+    // reconstruye sumando lo que se descontó de más.
+    //
+    // NO se reprocesan las órdenes: `processed_orders` sigue intacto y no se
+    // descuenta nada dos veces. Solo se corrige el saldo con lo ya registrado.
+    if (action === "recalc_oversold" && req.method === "POST") {
+      const soloItem = String(req.query.item_id || "").trim();
+      const aplicar = String(req.query.aplicar || "") === "1"; // sin esto, simula
+      const itemsCol = db.collection("users").doc(uid).collection("inventory_items");
+      const snap = soloItem
+        ? await itemsCol.where("id", "==", soloItem).get()
+        : await itemsCol.get();
+
+      const movSnap = await db.collection("users").doc(uid).collection("inventory_movements")
+        .orderBy("ts", "asc").limit(5000).get();
+      // Por item: la deuda es lo que se intentó descontar por DEBAJO de cero.
+      // Se reproduce la corrida real (saldo que sube y baja) en vez de sumar los
+      // negativos sueltos, para no contar dos veces una reposición intermedia.
+      const deudaPorItem = new Map();
+      const saldoSim = new Map();
+      for (const d of movSnap.docs) {
+        const m = d.data();
+        if (!m.item_id) continue;
+        const prev = saldoSim.has(m.item_id) ? saldoSim.get(m.item_id) : (m.old_stock || 0);
+        const real = prev + (m.change || 0);
+        // Lo que el clamp viejo se comió en ESTE movimiento.
+        if (real < 0 && prev >= 0) deudaPorItem.set(m.item_id, (deudaPorItem.get(m.item_id) || 0) + Math.abs(real));
+        else if (real < 0 && prev < 0) deudaPorItem.set(m.item_id, (deudaPorItem.get(m.item_id) || 0) + Math.abs(m.change || 0));
+        saldoSim.set(m.item_id, real);
+      }
+
+      const cambios = [];
+      for (const doc of snap.docs) {
+        const it = doc.data();
+        const deuda = deudaPorItem.get(it.id) || 0;
+        if (deuda <= 0) continue;
+        const actual = parseInt(it.stock_total) || 0;
+        // Solo corrige items que hoy están en 0 (el síntoma del clamp). Si ya
+        // tiene stock real, hubo una reposición posterior y la deuda se saldó.
+        if (actual !== 0) continue;
+        const nuevo = -deuda;
+        cambios.push({ item_id: it.id, nombre: it.nombre, de: actual, a: nuevo, unidades: deuda });
+        if (aplicar) {
+          await doc.ref.update({ stock_total: nuevo, updated_at: new Date().toISOString() });
+          await logMovement(db, uid, {
+            item_id: it.id, item_name: it.nombre, change: nuevo - actual,
+            old_stock: actual, new_stock: nuevo,
+            source: "sistema", event: "recalculo de vendido sin stock",
+          });
+        }
+      }
+      return res.json({ ok: true, aplicado: aplicar, items: cambios.length,
+        unidades: cambios.reduce((n,c)=>n+c.unidades,0), cambios });
     }
 
     // ── IMPORT CATALOG — crea/vincula items desde el catálogo TN/Shopify/ML por SKU ──
@@ -883,7 +960,7 @@ export default async function handler(req, res) {
       const oldWh = sbw[warehouse_id] || 0;
       const newWh = new_stock !== undefined && new_stock !== null
         ? parseInt(new_stock) : oldWh + (parseInt(change) || 0);
-      const newSbw = { ...sbw, [warehouse_id]: Math.max(0, newWh) };
+      const newSbw = { ...sbw, [warehouse_id]: newWh }; // puede ser negativo (oversold)
       const newTotal = Object.values(newSbw).reduce((s, v) => s + (parseInt(v) || 0), 0);
       await ref.update({ stock_by_warehouse: newSbw, stock_total: newTotal, updated_at: new Date().toISOString() });
       await logMovement(db, uid, {
@@ -911,11 +988,14 @@ export default async function handler(req, res) {
 
       // stock_by_warehouse: {whId: qty}. Si viene en el body, usar; sino,
       // poner todo el stock_total en el deposito default "main".
+      // Sin clamp a 0: el dueño puede dejar (o poner) un stock negativo cuando
+      // debe mercadería. Si acá se clampeaba, editar cualquier campo del item
+      // —hasta el nombre— borraba la deuda sin que nadie lo pidiera.
       const sbw = body.stock_by_warehouse && typeof body.stock_by_warehouse === "object"
-        ? Object.fromEntries(Object.entries(body.stock_by_warehouse).map(([k,v]) => [String(k), Math.max(0, parseInt(v) || 0)]))
+        ? Object.fromEntries(Object.entries(body.stock_by_warehouse).map(([k,v]) => [String(k), parseInt(v) || 0]))
         : null;
-      const stockTotalFromSbw = sbw ? Object.values(sbw).reduce((s,v)=>s+v,0) : Math.max(0, parseInt(body.stock_total) || 0);
-      const finalSbw = sbw || (body.stock_total ? { main: Math.max(0, parseInt(body.stock_total)) } : (existing?.stock_by_warehouse || {}));
+      const stockTotalFromSbw = sbw ? Object.values(sbw).reduce((s,v)=>s+v,0) : (parseInt(body.stock_total) || 0);
+      const finalSbw = sbw || (body.stock_total != null ? { main: parseInt(body.stock_total) || 0 } : (existing?.stock_by_warehouse || {}));
       const data = {
         id,
         nombre: String(body.nombre).slice(0, 200),

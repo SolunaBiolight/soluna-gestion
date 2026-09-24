@@ -15505,11 +15505,11 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
           if (!matches(p, v)) return false; // sólo lo que está como inventory_item
           const vrate=v.units_sold>0?v.units_sold/30:0;
           const vd=vrate>0?Math.round(v.stock/vrate):null;
-          return v.stock===0||(vd!==null&&vd<=thr);
+          return v.stock<=0||(vd!==null&&vd<=thr);
         }).map(v=>{
           const vrate=v.units_sold>0?v.units_sold/30:0;
           const vd=vrate>0?Math.round(v.stock/vrate):null;
-          return {producto:p.nombre,variante:v.nombre,stock:v.stock,daysLeft:vd,status:v.stock===0?"empty":vd<=7?"critical":"low"};
+          return {producto:p.nombre,variante:v.nombre,stock:v.stock,daysLeft:vd,status:v.stock<0?"oversold":v.stock===0?"empty":vd<=7?"critical":"low"};
         });
       }).sort((a,b)=>(a.daysLeft??-1)-(b.daysLeft??-1)).slice(0,4);
       setStockAlertas(al);
@@ -15558,7 +15558,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
       sub:"Devoluciones, visitas fallidas, en sucursal sin retirar o sin movimiento",badge:String(enviosProblemas),badgeColor:T.orange,accion:()=>onNavigate("envios"),
     }]:[],
     stock:[
-      ...stockAlertas.filter(a=>a.status==="empty").map(a=>({icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>,titulo:`Sin stock: ${a.producto}`,sub:a.variante,badge:"Sin stock",badgeColor:T.red,accion:()=>onNavigate("stock")})),
+      ...stockAlertas.filter(a=>a.status==="empty"||a.status==="oversold").map(a=>({icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>,titulo:`Sin stock: ${a.producto}`,sub:a.variante,badge:"Sin stock",badgeColor:T.red,accion:()=>onNavigate("stock")})),
       ...stockAlertas.filter(a=>a.status==="critical").map(a=>({icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,titulo:`Stock crítico: ${a.producto}`,sub:`${a.variante} · ${a.daysLeft}d restantes`,badge:`${a.daysLeft}d`,badgeColor:T.red,accion:()=>onNavigate("stock")})),
       ...stockAlertas.filter(a=>a.status==="low").map(a=>({icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.yellow||T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,titulo:`Stock bajo: ${a.producto}`,sub:`${a.variante} · ${a.daysLeft}d restantes`,badge:`${a.daysLeft}d`,badgeColor:T.yellow,accion:()=>onNavigate("stock")})),
     ],
@@ -39303,7 +39303,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       p.variants.forEach(v => {
         const vr = v.units_sold/Math.max(1,days);
         const vd = vr>0 ? Math.round(v.stock/vr) : null;
-        const st = v.stock===0?"Sin stock":vd===null?"Sin ventas":vd<=7?"Crítico":vd<=globalThreshold?"Reponer":"OK";
+        const st = v.stock<0?"Vendido sin stock":v.stock===0?"Sin stock":vd===null?"Sin ventas":vd<=7?"Crítico":vd<=globalThreshold?"Reponer":"OK";
         rows.push([p.nombre, v.sku||"", v.stock, v.units_sold, vr.toFixed(2), vd??"-", Math.round(v.revenue), st]);
       });
     });
@@ -39611,6 +39611,25 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       loadInvItems();
     } finally { setSyncingSales(false); }
   }
+  // Recupera los negativos que el clamp viejo borró (items hoy en 0 que en
+  // realidad deben mercadería). Primero SIMULA y pide confirmación: toca el
+  // stock de varios items a la vez.
+  const [recalcando,setRecalcando]=useState(false);
+  async function recalcOversold() {
+    setRecalcando(true);
+    try {
+      const sim = await fetch(`/api/inventory?action=recalc_oversold&uid=${uid}`,{method:"POST"}).then(r=>r.json());
+      if (sim.error) return toast(sim.error,"error");
+      if (!sim.items) return toast("No hay ventas sin stock para recuperar: tu inventario ya está al día","success");
+      const detalle = (sim.cambios||[]).slice(0,8).map(c=>`· ${c.nombre}: 0 → ${c.a}`).join("\n");
+      const mas = sim.items>8?`\n…y ${sim.items-8} más`:"";
+      if (!await appConfirm(`Se encontraron ${sim.unidades} unidades vendidas sin stock en ${sim.items} producto(s):\n\n${detalle}${mas}\n\nSe va a corregir el stock de esos items para que refleje lo que debés. No se vuelven a descontar ventas.`,{okLabel:"Corregir stock"})) return;
+      const ap = await fetch(`/api/inventory?action=recalc_oversold&uid=${uid}&aplicar=1`,{method:"POST"}).then(r=>r.json());
+      if (ap.error) return toast(ap.error,"error");
+      toast(`Listo · ${ap.items} producto(s) corregido(s), ${ap.unidades} unidades adeudadas`,"success");
+      loadInvItems();
+    } finally { setRecalcando(false); }
+  }
   async function loadMovements() {
     if (!uid) return;
     setMovementsLoading(true);
@@ -39729,7 +39748,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const enabledFor   = p => alertConfig[p.id]?.enabled   ?? true;
 
   const stColor = d => d===null?T.textSm:d===0?T.red:d<=7?(T.red+"cc"):(d<=14?(T.yellow||T.yellow):T.green);
-  const stLabel = (stock,d) => stock===0?"Sin stock":d===null?"Sin ventas":d<=7?"Crítico":d<=14?"Reponer":"OK";
+  const stLabel = (stock,d) => stock<0?"Vendido sin stock":stock===0?"Sin stock":d===null?"Sin ventas":d<=7?"Crítico":d<=14?"Reponer":"OK";
   const stBg    = d => stColor(d)+"22";
 
   // Stock del DEPÓSITO Growith como fuente de verdad: si el producto tiene un item
@@ -39789,13 +39808,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     const thr = thresholdFor(p);
     return p.variants.filter(v=>{
       const vd = dLeft(v.stock, vrate(v));
-      return enabledFor(p) && (v.stock===0||(vd!==null&&vd<=thr));
+      return enabledFor(p) && (v.stock<=0||(vd!==null&&vd<=thr));
     }).map(v=>({
       producto:p.nombre, productoId:p.id, imagen:p.imagen,
       variante:v.nombre, sku:v.sku, stock:v.stock,
       daysLeft:dLeft(v.stock,vrate(v)), rate:vrate(v),
       threshold:thr,
-      status:v.stock===0?"empty":((dLeft(v.stock,vrate(v))??99)<=7?"critical":"low"),
+      status:v.stock<0?"oversold":v.stock===0?"empty":((dLeft(v.stock,vrate(v))??99)<=7?"critical":"low"),
       suggested: vrate(v)>0 ? Math.ceil(vrate(v)*30) : 0, // sugerencia: stock para 30 días
     }));
   }).sort((a,b)=>(a.daysLeft??-1)-(b.daysLeft??-1));
@@ -40117,7 +40136,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           <div style={{fontSize:12,fontWeight:500,color:T.text}}>{v.nombre}</div>
                           {v.sku&&<div style={{fontSize:10,color:T.textSm}}>SKU: {v.sku}</div>}
                         </div>
-                        <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:v.stock===0?T.red:T.text}}>{fmt(v.stock)}</div>
+                        <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:v.stock<=0?T.red:T.text}}>{fmt(v.stock)}</div>
                         <div style={{textAlign:"right",fontSize:12,color:T.textMd}}>{fmt(v.units_sold)}</div>
                         <div style={{textAlign:"right",fontSize:11,color:T.accent,fontWeight:600}}>{vr2>0?vr2.toFixed(1):"—"}</div>
                         <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:vc}}>{vd===null?"—":vd+"d"}</div>
@@ -40493,11 +40512,14 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             {/* ── INVENTARIO: items de inventario (entidades centrales con mapeo multi-canal) ── */}
             {tab==="inventario"&&(()=>{
               const filteredItems = invItems.filter(it => !invSearch.trim() || (it.nombre||"").toLowerCase().includes(invSearch.trim().toLowerCase()) || (it.sku||"").toLowerCase().includes(invSearch.trim().toLowerCase()));
+              const oversoldItems = invItems.filter(i => i.status==="oversold" || (i.stock_total||0) < 0);
               const kpis = {
                 total: invItems.length,
                 ok: invItems.filter(i => i.status==="ok").length,
                 low: invItems.filter(i => i.status==="low").length,
                 empty: invItems.filter(i => i.status==="empty").length,
+                oversold: oversoldItems.length,
+                oversoldUnits: oversoldItems.reduce((n,i)=>n+Math.abs(i.stock_total||0),0),
               };
               return (
               <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:16}}>
@@ -40510,6 +40532,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </div>
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                       <button onClick={syncSales} disabled={syncingSales} style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{syncingSales?<><Spinner size={11} color={T.textMd}/> Sincronizando</>:"Sincronizar ventas"}</button>
+                      <button onClick={recalcOversold} disabled={recalcando} title="Si vendiste sin stock antes de esta actualización, el sistema mostraba 0 en vez del negativo. Esto lo recalcula desde tu historial." style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{recalcando?<><Spinner size={11} color={T.textMd}/> Recalculando</>:"Recalcular vendido sin stock"}</button>
                       <button onClick={importCatalog} disabled={importingCatalog} style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.accent}55`,borderRadius:8,background:"transparent",color:T.accent,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{importingCatalog?<><Spinner size={11} color={T.accent}/> Vinculando…</>:"Vincular catálogo (SKU)"}</button>
                       <button onClick={openNewItem} style={{padding:"7px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Crear Item</button>
                     </div>
@@ -40520,6 +40543,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       {l:"OK",v:kpis.ok,c:T.green},
                       {l:"Bajo stock",v:kpis.low,c:T.yellow},
                       {l:"Sin stock",v:kpis.empty,c:T.red},
+                      ...(kpis.oversold>0?[{l:"Vendido sin stock",v:kpis.oversold,c:T.red}]:[]),
                     ].map((k,i)=>(
                       <div key={i} style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:9,padding:"10px 12px"}}>
                         <div style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase"}}>{k.l}</div>
@@ -40528,6 +40552,20 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     ))}
                   </div>
                 </div>
+
+                {/* Vendiste más de lo que tenías: es lo más urgente de la sección
+                    porque hay compradores que pagaron y esperan mercadería. */}
+                {kpis.oversold>0 && (
+                  <div style={{background:T.red+"18",border:`1px solid ${T.red}55`,borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"flex-start",gap:10}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:T.red,flexShrink:0,marginTop:5}}/>
+                    <div style={{fontSize:12,color:T.text,lineHeight:1.6,minWidth:0}}>
+                      <strong>Vendiste {kpis.oversoldUnits} unidad{kpis.oversoldUnits===1?"":"es"} sin stock</strong> en {kpis.oversold} {kpis.oversold===1?"producto":"productos"}.
+                      {" "}Esas ventas ya están cobradas y esperan mercadería: cuando repongas, el stock que cargues descuenta solo lo que debés
+                      {" "}(si estás en <span style={{fontFamily:"monospace"}}>-8</span> y cargás 20, te van a quedar 12 disponibles).
+                      <div style={{marginTop:4,color:T.textSm,fontSize:11}}>A tus tiendas se les sigue informando 0, nunca un número negativo.</div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Guía de onboarding — checklist de 4 pasos para dejar el inventario andando */}
                 {!invGuideDismissed && (()=>{
@@ -40613,7 +40651,10 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                             const chs = [...new Set(links.map(l => l.platform))];
                             const chLabel = (p) => p==="shopify"?"Shopify":p==="tiendanube"?"Tienda Nube":p==="mercadolibre"?"Mercado Libre":p;
                             const chColor = (p) => p==="shopify"?T.green:p==="mercadolibre"?T.yellow:p==="tiendanube"?T.blue:T.textSm;
-                            const statusColor = it.status==="empty"?T.red:it.status==="low"?T.yellow:T.green;
+                            // oversold (stock negativo) se pinta como el agotado pero más
+                            // fuerte: no es "te queda poco", es que ya debés mercadería.
+                            const esOversold = it.status==="oversold" || (it.stock_total||0) < 0;
+                            const statusColor = (esOversold||it.status==="empty")?T.red:it.status==="low"?T.yellow:T.green;
                             const daysLabel = it.days_left==null?"—":(it.days_left===Infinity||it.days_left>9999)?"∞":Math.round(it.days_left)+"d";
                             return (
                               <tr key={it.id} style={{borderBottom:`1px solid ${T.borderL}`}}>
@@ -40634,11 +40675,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                   </div>
                                 </td>
                                 <td style={{padding:"10px 12px",textAlign:"right"}}>
-                                  <span style={{fontFamily:"monospace",fontSize:12,fontWeight:700,padding:"3px 9px",borderRadius:5,
-                                    color:it.status==="empty"?"#fff":statusColor,
-                                    background:it.status==="empty"?T.red:statusColor+"18",
-                                    border:`1px solid ${it.status==="empty"?T.red:it.status==="low"?statusColor+"55":"transparent"}`
-                                  }}>{it.stock_total||0}</span>
+                                  <span title={esOversold?`Se vendieron ${Math.abs(it.stock_total||0)} unidades más de las que había. Cuando repongas, esas ya están comprometidas.`:undefined}
+                                    style={{fontFamily:"monospace",fontSize:12,fontWeight:700,padding:"3px 9px",borderRadius:5,
+                                    color:(esOversold||it.status==="empty")?"#fff":statusColor,
+                                    background:(esOversold||it.status==="empty")?T.red:statusColor+"18",
+                                    border:`1px solid ${(esOversold||it.status==="empty")?T.red:it.status==="low"?statusColor+"55":"transparent"}`
+                                  }}>{Number.isFinite(it.stock_total)?it.stock_total:0}</span>
+                                  {esOversold && <div style={{fontSize:9,color:T.red,marginTop:3,fontWeight:600,whiteSpace:"nowrap"}}>debés {Math.abs(it.stock_total||0)} u.</div>}
                                 </td>
                                 <td style={{padding:"10px 12px",textAlign:"right",fontFamily:"monospace",color:T.textMd}}>{it.sales_30d||0}</td>
                                 <td style={{padding:"10px 12px",textAlign:"right",fontFamily:"monospace",color:it.days_left!=null&&it.days_left<7?T.red:it.days_left!=null&&it.days_left<14?T.yellow:T.textMd}}>{daysLabel}</td>
@@ -40691,8 +40734,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           {allProducts.filter(p=>{const q=search.trim().toLowerCase();return !q||(p.nombre||"").toLowerCase().includes(q)||p.variants.some(v=>(v.sku||"").toLowerCase().includes(q));}).flatMap(p=>p.variants.map(v=>{
                             const vr=v.units_sold/Math.max(1,days);
                             const vd=vr>0?Math.round(v.stock/vr):null;
-                            const sc=v.stock===0?T.red:vd===null?T.textSm:vd<=7?T.red:vd<=globalThreshold?(T.yellow||T.yellow):T.green;
-                            const sl=v.stock===0?"Sin stock":vd===null?"Sin ventas":vd<=7?"Crítico":vd<=globalThreshold?"Reponer":"OK";
+                            const sc=v.stock<=0?T.red:vd===null?T.textSm:vd<=7?T.red:vd<=globalThreshold?(T.yellow||T.yellow):T.green;
+                            const sl=v.stock<0?"Vendido sin stock":v.stock===0?"Sin stock":vd===null?"Sin ventas":vd<=7?"Crítico":vd<=globalThreshold?"Reponer":"OK";
                             const lt=leadTime[p.id];
                             const daysToOrder=lt&&vd!==null?vd-lt:null;
                             return (
@@ -41283,7 +41326,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 {alertas.length===0?null:(
                   <>
                     <div style={{fontSize:12,color:T.textSm}}>
-                      <strong style={{color:T.red}}>{alertas.filter(a=>a.status==="empty").length}</strong> sin stock ·{" "}
+                      <strong style={{color:T.red}}>{alertas.filter(a=>a.status==="empty"||a.status==="oversold").length}</strong> sin stock ·{" "}
                       <strong style={{color:T.red+"cc"}}>{alertas.filter(a=>a.status==="critical").length}</strong> críticos ·{" "}
                       <strong style={{color:T.yellow||T.yellow}}>{alertas.filter(a=>a.status==="low").length}</strong> para reponer
                     </div>
