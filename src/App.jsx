@@ -14059,10 +14059,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
       {/* ── Flujo bulk "Etiquetas listas" (emisión por API) ── */}
       {bulk&&(
-        <Modal T={T} open={true} hideClose={bulk.fase==="cotizando"||bulk.fase==="emitiendo"} onClose={()=>{ if(bulk.fase==="revision"||bulk.fase==="resultado"){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } else if(bulk.fase==="resolviendo"){ bulkCancelRef.current=true; setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } }} title="Etiquetas listas — Andreani" width={680} zIndex={1500}>
+        <Modal T={T} open={true} hideClose={bulk.fase==="cotizando"||bulk.fase==="emitiendo"} onClose={()=>{ if(bulk.fase==="revision"||bulk.fase==="resultado"){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } else if(bulk.fase==="resolviendo"){ bulkCancelRef.current=true; setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } }} title="Etiquetas listas — Andreani" width={920} zIndex={1500}>
           {/* Pasos del flujo: siempre visibles para saber dónde estás */}
           {(()=>{ const pasos=[["Preparar",["resolviendo"]],["Revisar",["cotizando","revision"]],["Emitir",["emitiendo"]],["Listo",["resultado"]]]; const idx=pasos.findIndex(p=>p[1].includes(bulk.fase)); return (
-            <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:12}}>
               {pasos.map(([n],i)=>{ const hecho=i<idx, activo=i===idx; const c=hecho?T.green:activo?T.accent:T.textSm; return (
                 <div key={n} style={{display:"flex",alignItems:"center",flex:i<pasos.length-1?1:"none"}}>
                   <div style={{display:"flex",alignItems:"center",gap:7}}>
@@ -14105,7 +14105,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             const falta=Math.max(0,total-(andreani.saldo||0));
             return (
               <div>
-                <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>Revisá los envíos antes de emitir. Cada etiqueta se debita del saldo al confirmar{tabEnvio==="empaquetar"?"; los pedidos de Por empaquetar se marcan como enviados en tu tienda y el cliente recibe el aviso":""}.</div>
+                <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>Revisá destino y precio. El saldo se debita recién al confirmar{tabEnvio==="empaquetar"?", y los pedidos quedan como enviados en tu tienda":""}.</div>
                 <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:11,color:T.textSm,marginBottom:12}}>
                   <span>Paquete por defecto: <strong style={{color:T.textMd}}>{paqResumen()}</strong></span>
                   {paqPerfiles.length>0&&<select defaultValue="" onChange={e=>{ const pf=paqPerfiles.find(x=>x.nombre===e.target.value); e.target.value=""; if(!pf) return; rows.filter(r=>!r.emitido).forEach(r=>{ r.paq={...pf}; r.cot=null; r.cotError=""; r.incluido=true; }); pushBulk("revision"); cotizarBulk(); }} style={{...iS,marginBottom:0,width:"auto",fontSize:11,padding:"3px 8px"}}><option value="">Aplicar un perfil a todos…</option>{paqPerfiles.map(pf=><option key={pf.nombre} value={pf.nombre}>{pf.nombre} — {paqTxt(pf)}</option>)}</select>}
@@ -14113,11 +14113,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   {paqPerfiles.length>0&&<button onClick={async()=>{ const nombre=await appPrompt("¿Qué perfil querés borrar?\n"+paqPerfiles.map(x=>"• "+x.nombre).join("\n"),paqPerfiles[0].nombre); if(!nombre) return; savePaqPerfiles(paqPerfiles.filter(x=>x.nombre!==String(nombre).trim())); }} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:11,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>Borrar un perfil</button>}
                 </div>
                 {(()=>{ const n=rows.filter(r=>!r.emitido&&sevFila(r)<=1).length; return n>0?<div style={{fontSize:12,fontWeight:700,color:T.red,marginBottom:8}}>{n} pedido{n!==1?"s":""} require{n!==1?"n":""} acción antes de emitir: están arriba de la lista.</div>:null; })()}
-                <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"auto",maxHeight:320,marginBottom:14}}>
+                <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"auto",maxHeight:"min(56vh, 600px)",marginBottom:10}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
                     <thead><tr>
                       {["","Pedido","Destinatario","Destino","Paquete","Precio"].map((h,i)=>(
-                        <th key={i} style={{textAlign:i===5?"right":"left",padding:"8px 10px",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,color:T.textSm,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,background:T.card}}>{h}</th>
+                        <th key={i} style={{textAlign:i===5?"right":"left",padding:"6px 10px",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,color:T.textSm,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,background:T.card}}>{h}</th>
                       ))}
                     </tr></thead>
                     <tbody>
@@ -14130,17 +14130,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         const retryable=!!r.cotError&&!r.emitido&&(r.tipo==="domicilio"||!!r.oficial);
                         return (
                           <tr key={r.numero} style={{opacity:r.incluido?1:0.55,borderBottom:`1px solid ${T.borderL}`}}>
-                            <td style={{padding:"7px 10px",width:26}}>
+                            <td style={{padding:"5px 10px",width:26}}>
                               {r.cot?<input type="checkbox" checked={r.incluido} onChange={()=>{r.incluido=!r.incluido;pushBulk("revision");}} style={{cursor:"pointer"}}/>:null}
                             </td>
-                            <td style={{padding:"7px 10px",fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>#{r.numero}</td>
-                            <td style={{padding:"7px 10px",color:T.text}}>{o.comprador}</td>
-                            <td style={{padding:"7px 10px",color:T.textMd}}>
-                              {destino}
-                              {dirSuc&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{dirSuc}</div>}
-                              {r.tipo==="sucursal"&&r.verif==="ok"&&(
-                                <div style={{color:T.green,fontSize:11,marginTop:2,fontWeight:600}}>✓ Coincide con el punto elegido en tu tienda</div>
-                              )}
+                            <td style={{padding:"5px 10px",fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>#{r.numero}</td>
+                            <td style={{padding:"5px 10px",color:T.text,maxWidth:170,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={o.comprador}>{o.comprador}</td>
+                            <td style={{padding:"5px 10px",color:T.textMd}}>
+                              <span>{destino}{r.tipo==="sucursal"&&r.verif==="ok"&&<span title="Es el punto que eligió el cliente en tu tienda" style={{color:T.green,fontWeight:700,marginLeft:6}}>✓</span>}</span>
+                              {dirSuc&&r.verif!=="ok"&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{dirSuc}</div>}
                               {(()=>{ const cf=r.tipo==="sucursal"&&r.oficial&&!r.esquina?conflictoSucursal(r.order,r.oficial):null; return cf&&(
                                 <div style={{color:cf.grave&&!r.conflictoOk?T.red:T.yellow,fontSize:11,marginTop:2,fontWeight:700}}>{cf.grave&&!r.conflictoOk?`No es el punto que eligió el cliente: ${cf.msg}. No se va a emitir hasta que la cambies o la confirmes.`:cf.grave?`Confirmaste esta sucursal aunque ${cf.msg}.`:`Ojo: ${cf.msg}.`}</div>
                               ); })()}
@@ -14161,7 +14158,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                                 </div>
                               )}
                             </td>
-                            <td style={{padding:"7px 10px",color:T.textMd,fontSize:11,minWidth:150}}>
+                            <td style={{padding:"5px 10px",color:T.textMd,fontSize:11,minWidth:130}}>
                               {r.emitido?<span>{paqTxt(r.paq||exportCfg)}</span>:paqEdit===r.numero?(()=>{ const q=r.paq||{peso:exportCfg.peso,alto:exportCfg.alto,ancho:exportCfg.ancho,prof:exportCfg.prof,valor:exportCfg.valor}; const inp=(k,l,w)=><label style={{display:"inline-flex",flexDirection:"column",gap:2,fontSize:10,color:T.textSm}}>{l}<input type="number" min="0" defaultValue={q[k]} data-k={k} style={{...iS,marginBottom:0,width:w||52,fontSize:11,padding:"3px 6px"}}/></label>; return (
                                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                                   <div data-paq={r.numero} style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"flex-end"}}>{inp("peso","g")}{inp("alto","alto")}{inp("ancho","ancho")}{inp("prof","largo")}{inp("valor","$ decl.",70)}</div>
@@ -14172,39 +14169,32 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                                 </div>
                               ); })():(
                                 <div style={{display:"flex",flexDirection:"column",gap:3,alignItems:"flex-start"}}>
-                                  <span style={{color:r.paq?T.text:T.textMd}}>{paqTxt(r.paq||exportCfg)}{r.paq?"":" (default)"}</span>
+                                  <span style={{color:r.paq?T.text:T.textMd}}>{paqTxt(r.paq||exportCfg)}</span>
                                   <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                                    {paqPerfiles.length>0&&<select value="" onChange={e=>{ const pf=paqPerfiles.find(x=>x.nombre===e.target.value); if(pf) setPaqFila(r,{...pf}); }} style={{...iS,marginBottom:0,width:"auto",fontSize:10,padding:"2px 6px"}}><option value="">Perfil…</option>{paqPerfiles.map(pf=><option key={pf.nombre} value={pf.nombre}>{pf.nombre}</option>)}</select>}
                                     <button onClick={()=>setPaqEdit(r.numero)} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 8px",fontSize:10,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
                                     {r.paq&&<button onClick={()=>setPaqFila(r,null)} title="Volver al paquete por defecto" style={{background:"transparent",border:"none",fontSize:10,color:T.textSm,cursor:"pointer",padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>default</button>}
                                   </div>
                                 </div>
                               )}
                             </td>
-                            <td style={{padding:"7px 10px",textAlign:"right",fontWeight:600,color:T.text,whiteSpace:"nowrap"}}>{r.cot?fmtMoney(r.cot.precio):r.incluido&&!r.cotError?<Spinner size={11} color={T.textSm}/>:"—"}</td>
+                            <td style={{padding:"5px 10px",textAlign:"right",fontWeight:600,color:T.text,whiteSpace:"nowrap"}}>{r.cot?fmtMoney(r.cot.precio):r.incluido&&!r.cotError?<Spinner size={11} color={T.textSm}/>:"—"}</td>
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
                 </div>
-                <div style={{display:"flex",gap:20,alignItems:"center",flexWrap:"wrap",background:T.surface,border:`1px solid ${falta>0?T.red+"55":T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:falta>0?10:14}}>
+                <div style={{display:"flex",gap:18,alignItems:"center",flexWrap:"wrap",borderTop:`1px solid ${T.border}`,paddingTop:12}}>
                   <div>
-                    <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Total ({inc.length} etiqueta{inc.length!==1?"s":""})</div>
-                    <div style={{fontSize:20,fontWeight:800,color:falta>0?T.red:T.text,letterSpacing:-0.5}}>{fmtMoney(total)}</div>
+                    <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Total · {inc.length} etiqueta{inc.length!==1?"s":""}</div>
+                    <div style={{fontSize:20,fontWeight:800,color:falta>0?T.red:T.text,letterSpacing:-0.5,lineHeight:1.1}}>{fmtMoney(total)}</div>
                   </div>
-                  <div style={{marginLeft:"auto",textAlign:"right"}}>
+                  <div>
                     <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Tu saldo</div>
-                    <div style={{fontSize:14,fontWeight:700,color:falta>0?T.red:T.green}}>{fmtMoney(andreani.saldo)}</div>
+                    <div style={{fontSize:14,fontWeight:700,color:falta>0?T.red:T.green,lineHeight:1.3}}>{fmtMoney(andreani.saldo)}</div>
                   </div>
-                </div>
-                {falta>0&&(
-                  <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:8,padding:"9px 12px",fontSize:12,color:T.red,marginBottom:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                    <span>Saldo insuficiente: faltan <strong>{fmtMoney(falta)}</strong> para emitir estas etiquetas.</span>
-                    <button onClick={()=>setAndreaniSaldoOpen(true)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",color:T.red,borderColor:T.red+"66"}}>Cargar saldo</button>
-                  </div>
-                )}
-                <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                  {falta>0&&<span style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:T.red,fontWeight:600}}>Faltan {fmtMoney(falta)}<button onClick={()=>setAndreaniSaldoOpen(true)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red,borderColor:T.red+"66"}}>Cargar saldo</button></span>}
+                  <span style={{flex:1}}/>
                   <button onClick={()=>{setBulk(null);bulkRowsRef.current=[];}} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>
                   <AsyncButton onClick={emitirBulk} disabled={inc.length===0||falta>0} style={{...BtnPrimary(T),fontSize:13,minWidth:170,justifyContent:"center"}}>
                     Emitir {inc.length} etiqueta{inc.length!==1?"s":""}
@@ -14231,8 +14221,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             return (
               <div>
                 {/* Resumen */}
-                <div style={{display:"flex",alignItems:"center",gap:16,padding:"6px 2px 16px",flexWrap:"wrap"}}>
-                  <StatusIcon type={tipoIcon} size={44}/>
+                <div style={{display:"flex",alignItems:"center",gap:14,padding:"0 0 12px",flexWrap:"wrap"}}>
+                  <StatusIcon type={tipoIcon} size={40}/>
                   <div style={{flex:1,minWidth:180}}>
                     <div style={{fontSize:17,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{titulo}</div>
                     <div style={{fontSize:12,color:T.textSm,marginTop:3}}>
@@ -14275,9 +14265,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 )}
 
                 {/* Detalle por envío */}
-                <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:330,overflow:"auto",marginBottom:16}}>
+                <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:"min(46vh, 480px)",overflow:"auto",marginBottom:12}}>
                   {ok.map(r=>{ const o=r.order; const de=destinoDe(r); const ent=fEntrega(r.emitido?.fechaEstimadaDeEntrega); const precio=Number(r.emitido?.precio)||Number(r.cot?.precio)||0; return (
-                    <div key={r.numero} style={{background:T.bg,border:`1px solid ${r.verifFinal==="warn"?T.yellow+"66":T.border}`,borderRadius:10,padding:"11px 14px"}}>
+                    <div key={r.numero} style={{background:T.bg,border:`1px solid ${r.verifFinal==="warn"?T.yellow+"66":T.border}`,borderRadius:10,padding:"8px 12px"}}>
                       <div style={{display:"flex",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
                         <div style={{flex:1,minWidth:200}}>
                           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -14293,12 +14283,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                           )}
                         </div>
                         <div style={{textAlign:"right",minWidth:150}}>
-                          <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>N° de envío</div>
-                          <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6,marginTop:2}}>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6}}>
                             <span style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:"'Cascadia Code','Consolas',monospace",letterSpacing:0.3}}>{r.emitido.numeroDeEnvio}</span>
                             <button onClick={()=>copiar(r.emitido.numeroDeEnvio)} title="Copiar número de envío" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 7px",fontSize:10,fontWeight:600,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Copiar</button>
                           </div>
-                          <div style={{fontSize:11,color:T.textSm,marginTop:4}}>{precio>0?fmtMoney(precio):""}{precio>0&&ent?" · ":""}{ent?`Llega aprox. ${ent}`:""}</div>
+                          <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{precio>0?fmtMoney(precio):""}{precio>0&&ent?" · ":""}{ent?`llega ${ent}`:""}</div>
                         </div>
                         <span style={{display:"flex",gap:6,alignSelf:"center"}}>
                           {ok.length>1&&!r.anulada&&<AsyncButton onClick={()=>descargarEtiquetaBulk(String(r.emitido.numeroDeEnvio),ghSkuLinesDe(r.order))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>PDF</AsyncButton>}
@@ -22455,18 +22444,12 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
 // ── Diagnóstico de la API de Andreani (solo admin) ──
 function AdmProbe({T}){
   const [path,setPath]=useState("/v2/sucursales?codigoPostal=1754&canal=B2C");
-  const [out,setOut]=useState(null); const [busy,setBusy]=useState(false); const [hopId,setHopId]=useState("18615"); const [hopContrato,setHopContrato]=useState("");
+  const [out,setOut]=useState(null); const [busy,setBusy]=useState(false); 
   const run=async(p)=>{ const pp=p||path; setBusy(true); setOut(null); try{ const d=await admAndreani("admin_probe",{path:pp}); setOut(d); }catch(e){ setOut({error:e.message}); } setBusy(false); };
   const PRESETS=[["HOP por id","/v2/sucursales/14685"],["CP B2C","/v2/sucursales?codigoPostal=1754&canal=B2C"],["CP sin canal","/v2/sucursales?codigoPostal=1754"],["CP HOP","/v2/sucursales?codigoPostal=1754&canal=HOP"],["Todas","/v2/sucursales"],["Todas B2C","/v2/sucursales?canal=B2C"],["Todas HOP","/v2/sucursales?canal=HOP"],["tipo HOP","/v2/sucursales?codigoPostal=1754&tipoDeSucursal=HOP"],["HOP terceros (contrato suc)","/v2/puntos-de-tercero?contrato={CONTRATO_SUC}"],["HOP terceros CP 1754","/v2/puntos-de-tercero?contrato={CONTRATO_SUC}&codigoPostal=1754&canal=B2C"],["HOP terceros (contrato dom)","/v2/puntos-de-tercero?contrato={CONTRATO_DOM}"]];
   return (
     <div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{PRESETS.map(([l,p])=><AdmBtn key={l} T={T} variant="ghost" size="sm" onClick={()=>{setPath(p);return run(p);}}>{l}</AdmBtn>)}</div>
-      <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center",flexWrap:"wrap",padding:"8px 10px",border:`1px solid ${T.border}`,borderRadius:8}}>
-        <span style={{fontSize:12,color:T.textMd}}>Prueba de emisión a un punto HOP (crea una orden real "NO DESPACHAR" sin débito, probando cada identificador hasta que Andreani acepte uno):</span>
-        <AdmInput T={T} value={hopId} onChange={e=>setHopId(e.target.value)} style={{width:110,fontFamily:"monospace",fontSize:12}} placeholder="18615"/><AdmInput T={T} value={hopContrato} onChange={e=>setHopContrato(e.target.value)} style={{width:150,fontFamily:"monospace",fontSize:12}} placeholder="contrato a probar" title="Número de contrato alternativo: se prueba primero con el punto HOP"/>
-        <AdmBtn T={T} size="sm" disabled={busy} onClick={async()=>{ if(!(await appConfirm("Se crean órdenes de prueba reales en Andreani (destinatario: vos, 'NO DESPACHAR'), una por identificador hasta que alguno funcione. No se debita saldo. ¿Seguimos?",{okLabel:"Probar"}))) return; setBusy(true); setOut(null); try{ const d=await admAndreani("admin_hop_prueba",{sucursalId:hopId,contrato:hopContrato}); setOut(d); toast(d.exito?`Andreani aceptó la variante "${d.exito.variante}"`:"Ninguna variante aceptada: mirá las respuestas",d.exito?"success":"warning",8000); }catch(e){ setOut({error:e.message}); } setBusy(false); }}>{busy?"…":"Probar emisión a HOP"}</AdmBtn>
-        <AdmBtn T={T} variant="secondary" size="sm" disabled={busy} onClick={async()=>{ if(!(await appConfirm("Segunda ronda: listados por contrato con canal/tipo/CP y hasta 4 órdenes de prueba reales 'NO DESPACHAR' con los campos de la especificación que nunca usamos (metadatos, nomenclatura, tipoDeServicio, postal con componente). ¿Seguimos?",{okLabel:"Probar ronda 2"}))) return; setBusy(true); setOut(null); try{ const d=await admAndreani("admin_hop_prueba2",{sucursalId:hopId}); setOut(d); toast(d.exito?`¡La variante "${d.exito.variante}" fue al HOP!`:"Ninguna fue al HOP: mirá listas y resultados",d.exito?"success":"warning",9000); }catch(e){ setOut({error:e.message}); } setBusy(false); }}>Ronda 2 (campos de la especificación)</AdmBtn>
-      </div>
       <div style={{display:"flex",gap:8,marginBottom:8}}><AdmInput T={T} value={path} onChange={e=>setPath(e.target.value)} style={{flex:1,fontFamily:"monospace",fontSize:12}}/><AdmBtn T={T} size="sm" onClick={()=>run()}>{busy?"…":"Consultar"}</AdmBtn><AdmBtn T={T} variant="ghost" size="sm" onClick={async()=>{ setBusy(true); setOut(null); try{ setOut(await admAndreani("admin_hop_index",{})); }catch(e){ setOut({error:e.message}); } setBusy(false); }}>Índice HOP</AdmBtn></div>
       {out&&<pre style={{fontSize:11,lineHeight:1.45,background:T.bg,border:`1px solid ${T.borderL||T.border}`,borderRadius:8,padding:10,maxHeight:360,overflow:"auto",whiteSpace:"pre-wrap",wordBreak:"break-all",color:out.error?T.red:T.text}}>{JSON.stringify(out,null,2)}</pre>}
     </div>
