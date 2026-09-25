@@ -688,35 +688,53 @@ export default async function handler(req, res) {
         ? await itemsCol.where("id", "==", soloItem).get()
         : await itemsCol.get();
 
-      const movSnap = await db.collection("users").doc(uid).collection("inventory_movements")
-        .orderBy("ts", "asc").limit(5000).get();
-      // Por item: la deuda es lo que se intentó descontar por DEBAJO de cero.
-      // Se reproduce la corrida real (saldo que sube y baja) en vez de sumar los
-      // negativos sueltos, para no contar dos veces una reposición intermedia.
-      const deudaPorItem = new Map();
-      const saldoSim = new Map();
+      // Los movimientos son la fuente de verdad: cada venta quedó registrada con
+      // su `change` real aunque el saldo se clampeara. NO se leen órdenes ni se
+      // toca processed_orders, así que nada se descuenta dos veces.
+      let movQ = db.collection("users").doc(uid).collection("inventory_movements");
+      if (soloItem) movQ = movQ.where("item_id", "==", soloItem);
+      const movSnap = await movQ.get();
+
+      // El clamp viejo dejaba su huella EN EL PROPIO MOVIMIENTO: guardaba
+      // new_stock = max(0, old_stock + change). Cuando esas dos cuentas no dan
+      // igual, la diferencia son exactamente las unidades que se perdieron.
+      // Leer la huella movimiento por movimiento es más fiable que re-simular
+      // la corrida entera, porque old_stock/new_stock ya venían clampeados y
+      // cualquier simulación heredaría ese error.
+      const perdidoPorItem = new Map();
+      const movsPorItem = new Map();
       for (const d of movSnap.docs) {
         const m = d.data();
         if (!m.item_id) continue;
-        const prev = saldoSim.has(m.item_id) ? saldoSim.get(m.item_id) : (m.old_stock || 0);
-        const real = prev + (m.change || 0);
-        // Lo que el clamp viejo se comió en ESTE movimiento.
-        if (real < 0 && prev >= 0) deudaPorItem.set(m.item_id, (deudaPorItem.get(m.item_id) || 0) + Math.abs(real));
-        else if (real < 0 && prev < 0) deudaPorItem.set(m.item_id, (deudaPorItem.get(m.item_id) || 0) + Math.abs(m.change || 0));
-        saldoSim.set(m.item_id, real);
+        movsPorItem.set(m.item_id, (movsPorItem.get(m.item_id) || 0) + 1);
+        const old = parseInt(m.old_stock);
+        const nw  = parseInt(m.new_stock);
+        const ch  = parseInt(m.change) || 0;
+        if (!Number.isFinite(old) || !Number.isFinite(nw)) continue;
+        const esperado = old + ch;
+        if (esperado < nw) { // el clamp levantó el saldo → se comió (nw - esperado)
+          perdidoPorItem.set(m.item_id, (perdidoPorItem.get(m.item_id) || 0) + (nw - esperado));
+        }
       }
 
-      const cambios = [];
+      const cambios = [], sinDatos = [];
       for (const doc of snap.docs) {
         const it = doc.data();
-        const deuda = deudaPorItem.get(it.id) || 0;
-        if (deuda <= 0) continue;
         const actual = parseInt(it.stock_total) || 0;
-        // Solo corrige items que hoy están en 0 (el síntoma del clamp). Si ya
-        // tiene stock real, hubo una reposición posterior y la deuda se saldó.
-        if (actual !== 0) continue;
-        const nuevo = -deuda;
-        cambios.push({ item_id: it.id, nombre: it.nombre, de: actual, a: nuevo, unidades: deuda });
+        const perdido = perdidoPorItem.get(it.id) || 0;
+        // Ya está en negativo: el dato nuevo ya se está registrando bien.
+        if (actual < 0) continue;
+        if (perdido <= 0) {
+          // En 0 y con movimientos, pero sin huella del clamp: el stock lo
+          // escribió la plataforma o un ajuste manual, no las ventas. No hay
+          // de dónde sacar la deuda — se avisa en vez de inventar un número.
+          if (actual === 0 && (movsPorItem.get(it.id) || 0) > 0) {
+            sinDatos.push({ item_id: it.id, nombre: it.nombre, movimientos: movsPorItem.get(it.id) });
+          }
+          continue;
+        }
+        const nuevo = actual - perdido;
+        cambios.push({ item_id: it.id, nombre: it.nombre, de: actual, a: nuevo, unidades: perdido });
         if (aplicar) {
           await doc.ref.update({ stock_total: nuevo, updated_at: new Date().toISOString() });
           await logMovement(db, uid, {
@@ -727,7 +745,7 @@ export default async function handler(req, res) {
         }
       }
       return res.json({ ok: true, aplicado: aplicar, items: cambios.length,
-        unidades: cambios.reduce((n,c)=>n+c.unidades,0), cambios });
+        unidades: cambios.reduce((n,c)=>n+c.unidades,0), cambios, sin_datos: sinDatos });
     }
 
     // ── IMPORT CATALOG — crea/vincula items desde el catálogo TN/Shopify/ML por SKU ──

@@ -39620,7 +39620,17 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     try {
       const sim = await fetch(`/api/inventory?action=recalc_oversold&uid=${uid}`,{method:"POST"}).then(r=>r.json());
       if (sim.error) return toast(sim.error,"error");
-      if (!sim.items) return toast("No hay ventas sin stock para recuperar: tu inventario ya está al día","success");
+      if (!sim.items) {
+        // Puede no haber nada que recuperar, o que el stock lo escriba la
+        // plataforma y las ventas nunca hayan pasado por el inventario: en ese
+        // caso no hay de dónde sacar la deuda y hay que decirlo, no inventarla.
+        const sd = sim.sin_datos || [];
+        if (sd.length) {
+          await appAlert(`No se puede reconstruir la deuda de ${sd.length} producto(s) en 0 (${sd.slice(0,3).map(x=>x.nombre).join(", ")}${sd.length>3?"…":""}).\n\nTienen movimientos registrados, pero su stock lo escribió la plataforma o un ajuste manual, no las ventas descontando. De acá en adelante sí se va a registrar el negativo; para el faltante viejo cargá el número a mano con Editar.`,{okLabel:"Entendido"});
+          return;
+        }
+        return toast("No hay ventas sin stock para recuperar: tu inventario ya está al día","success");
+      }
       const detalle = (sim.cambios||[]).slice(0,8).map(c=>`· ${c.nombre}: 0 → ${c.a}`).join("\n");
       const mas = sim.items>8?`\n…y ${sim.items-8} más`:"";
       if (!await appConfirm(`Se encontraron ${sim.unidades} unidades vendidas sin stock en ${sim.items} producto(s):\n\n${detalle}${mas}\n\nSe va a corregir el stock de esos items para que refleje lo que debés. No se vuelven a descontar ventas.`,{okLabel:"Corregir stock"})) return;
