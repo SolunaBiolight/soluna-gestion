@@ -385,7 +385,10 @@ export default async function handler(req, res) {
         if (sh?.accessToken && sh?.shop) {
           let pageInfoUrl = `https://${sh.shop}/admin/api/2024-10/products.json?limit=250`;
           let shFailed = false, shFirstError = null;
-          for (let i = 0; i < 4 && pageInfoUrl; i++) {
+          // 16 páginas × 250 = 4000 órdenes. Con 4 (=1000) una tienda que vende
+        // ~1900/mes solo veía las más recientes: las ventas que agotaron un
+        // producto quedaban fuera de la ventana y nunca descontaban.
+        for (let i = 0; i < 16 && pageInfoUrl; i++) {
             try {
               const r = await fetch(pageInfoUrl, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
               if (!r.ok) {
@@ -515,7 +518,9 @@ export default async function handler(req, res) {
       // TN
       const tn = stores.find(s => s.type === "tiendanube");
       if (tn?.accessToken && tn?.storeId) {
-        for (let page = 1; page <= 5; page++) {
+        // 20 páginas × 200 = 4000 órdenes (antes 5 = 1000, insuficiente para
+        // una tienda que vende más de mil unidades por mes).
+        for (let page = 1; page <= 20; page++) {
           try {
             const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/orders?per_page=200&page=${page}&payment_status=paid&created_at_min=${sinceDate}`, {
               headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp" },

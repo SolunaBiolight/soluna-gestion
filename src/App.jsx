@@ -39623,23 +39623,22 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       const sim = await fetch(`/api/inventory?action=recalc_oversold&uid=${uid}`,{method:"POST"}).then(r=>r.json());
       if (sim.error) return toast(sim.error,"error");
       if (!sim.items) {
-        // Puede no haber nada que recuperar, o que el stock lo escriba la
-        // plataforma y las ventas nunca hayan pasado por el inventario: en ese
-        // caso no hay de dónde sacar la deuda y hay que decirlo, no inventarla.
-        const sd = sim.sin_datos || [];
-        if (sd.length) {
-          // Diagnóstico real en vez de una excusa genérica: se pide el estado
-          // crudo del item para decir POR QUÉ no se pudo reconstruir.
-          let extra = "";
-          try {
-            const dg = await fetch(`/api/inventory?action=diag_oversold&uid=${uid}&item_id=${encodeURIComponent(sd[0].item_id)}`).then(r=>r.json());
-            const d0 = (dg.items||[])[0];
-            if (d0) extra = `\n\nDiagnóstico de ${d0.nombre}:\n· Stock: ${d0.stock_total}\n· Movimientos: ${d0.movimientos} (${d0.ventas_registradas} ventas, ${d0.unidades_vendidas} unidades)\n· Órdenes ya procesadas: ${d0.ordenes_procesadas}${d0.stock_baseline_at?`\n· Stock fijado a mano el ${new Date(d0.stock_baseline_at).toLocaleDateString("es-AR")}${d0.baseline_tapa_ventas?" (posterior a las ventas: por eso no descontaron)":""}`:""}`;
-          } catch(_) {}
-          await appAlert(`No se pudo reconstruir la deuda de ${sd.length} producto(s) en 0.${extra}\n\nDe acá en adelante el negativo se registra solo. Para el faltante viejo, cargá el número con Editar (podés poner un número negativo).`,{okLabel:"Entendido"});
-          return;
-        }
-        return toast("No hay ventas sin stock para recuperar: tu inventario ya está al día","success");
+        // Antes esto caía en un toast genérico ("ya está al día") que no decía
+        // nada: si el item no tenía movimientos, sin_datos venía vacío y el
+        // usuario se quedaba sin saber por qué. Ahora SIEMPRE se diagnostica.
+        let extra = "";
+        try {
+          const dg = await fetch(`/api/inventory?action=diag_oversold&uid=${uid}`).then(r=>r.json());
+          const enCero = (dg.items||[]).filter(d => d.stock_total <= 0);
+          if (enCero.length) {
+            extra = "\n\n" + enCero.slice(0,4).map(d =>
+              `${d.nombre}\n· Stock: ${d.stock_total}\n· Movimientos registrados: ${d.movimientos} (${d.unidades_vendidas} unidades)\n· Órdenes ya procesadas: ${d.ordenes_procesadas}` +
+              (d.stock_baseline_at ? `\n· Stock fijado el ${new Date(d.stock_baseline_at).toLocaleDateString("es-AR")}${d.baseline_tapa_ventas?" — POSTERIOR a las ventas, por eso no descontaron":""}` : "\n· Sin stock fijado a mano")
+            ).join("\n\n");
+          }
+        } catch(_) {}
+        await appAlert(`No se encontraron unidades para recuperar.${extra}\n\nSi un producto tiene 0 movimientos, sus ventas nunca pasaron por el inventario: tocá "Sincronizar ventas" primero. Si ya lo hiciste y sigue igual, cargá el faltante a mano con Editar (acepta números negativos).`,{okLabel:"Entendido"});
+        return;
       }
       const detalle = (sim.cambios||[]).slice(0,8).map(c=>`· ${c.nombre}: 0 → ${c.a}`).join("\n");
       const mas = sim.items>8?`\n…y ${sim.items-8} más`:"";
@@ -41058,12 +41057,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 <div style={{flex:1}}>
                                   <div style={{fontSize:13,fontWeight:600,color:T.text}}>{w.name}</div>
                                 </div>
-                                <input type="number" min="0" value={stockEditValues[w.id]||0} onChange={e=>setStockEditValues(p=>({...p,[w.id]:e.target.value}))} style={{width:100,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"7px 10px",fontSize:13,color:T.text,textAlign:"right",fontFamily:"monospace"}}/>
+                                {/* Sin min="0": acepta negativo para cargar a mano lo vendido sin stock. */}
+                                <input type="number" value={stockEditValues[w.id]||0} onChange={e=>setStockEditValues(p=>({...p,[w.id]:e.target.value}))} style={{width:100,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"7px 10px",fontSize:13,color:T.text,textAlign:"right",fontFamily:"monospace"}}/>
                               </div>
                             ))}
                             <div style={{padding:"10px 12px",background:T.accent+"10",border:`1px solid ${T.accent}33`,borderRadius:8,marginTop:6,fontSize:12,color:T.text,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                               <span style={{fontWeight:600}}>Total</span>
-                              <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14,color:T.accent}}>{Object.values(stockEditValues).reduce((s,v)=>s+(parseInt(v)||0),0)}</span>
+                              <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14,color:Object.values(stockEditValues).reduce((s,v)=>s+(parseInt(v)||0),0)<0?T.red:T.accent}}>{Object.values(stockEditValues).reduce((s,v)=>s+(parseInt(v)||0),0)}</span>
                             </div>
                           </>
                         )}
