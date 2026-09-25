@@ -609,7 +609,12 @@ export default async function handler(req, res) {
 
         for (const ord of recentOrders) {
           if (processed.has(ord.order_id)) continue;
-          if (baselineMs && ord.ts) { const t = Date.parse(ord.ts); if (isFinite(t) && t <= baselineMs) continue; }
+          // El baseline evita el doble conteo: el stock que fijaste a mano ya
+          // refleja las ventas de ANTES. PERO si el item está en 0 o menos, no
+          // hay nada que proteger — saltear ahí era lo que impedía que el stock
+          // pasara a negativo cuando se sigue vendiendo un producto agotado.
+          const stockActual = (item.stock_total || 0) + stockChange;
+          if (baselineMs && ord.ts && stockActual > 0) { const t = Date.parse(ord.ts); if (isFinite(t) && t <= baselineMs) continue; }
           let unitsForItem = 0;
           for (const prod of ord.products) {
             // 1) Vínculo explícito. Si el link tiene variant_id (mapeo por talle),
@@ -654,7 +659,13 @@ export default async function handler(req, res) {
           // sola lo que ya se debía. Hacia TN/ML/Shopify se sigue empujando 0
           // (pushItemStock clampea): las plataformas no aceptan stock negativo.
           const finalStock = (item.stock_total || 0) + stockChange;
-          const allProcessed = Array.from(new Set([...(item.processed_orders || []), ...newProcessed])).slice(-2000);
+          // Tope alto a propósito: processed_orders es la ÚNICA defensa contra
+          // descontar dos veces la misma orden. La ventana de sync son 30 días y
+          // una tienda activa supera las 2000 órdenes en ese lapso — con el tope
+          // viejo las más antiguas salían de la lista y volvían a descontar.
+          // Se guardan solo ids (strings cortos), así que 8000 entra cómodo en
+          // el límite de 1 MB por documento de Firestore.
+          const allProcessed = Array.from(new Set([...(item.processed_orders || []), ...newProcessed])).slice(-8000);
           await item.ref.update({
             stock_total: finalStock,
             processed_orders: allProcessed,
@@ -680,6 +691,44 @@ export default async function handler(req, res) {
     //
     // NO se reprocesan las órdenes: `processed_orders` sigue intacto y no se
     // descuenta nada dos veces. Solo se corrige el saldo con lo ya registrado.
+    // ── DIAG OVERSOLD — por qué un item en 0 no muestra la deuda ────────────────
+    // Devuelve el estado crudo del item y sus movimientos para entender si la
+    // deuda se puede reconstruir o si nunca se llegó a registrar.
+    if (action === "diag_oversold" && req.method === "GET") {
+      const soloItem = String(req.query.item_id || "").trim();
+      const itemsCol = db.collection("users").doc(uid).collection("inventory_items");
+      const snap = soloItem ? await itemsCol.where("id","==",soloItem).get() : await itemsCol.get();
+      const out = [];
+      for (const doc of snap.docs) {
+        const it = doc.data();
+        const movs = await db.collection("users").doc(uid).collection("inventory_movements")
+          .where("item_id","==",it.id).get();
+        let ventas=0, unidadesVendidas=0, conHuella=0, perdidas=0;
+        let minTs=null, maxTs=null;
+        for (const d of movs.docs) {
+          const m=d.data();
+          const ch=parseInt(m.change)||0;
+          if (ch<0){ ventas++; unidadesVendidas+=Math.abs(ch); }
+          const old=parseInt(m.old_stock), nw=parseInt(m.new_stock);
+          if (Number.isFinite(old)&&Number.isFinite(nw) && old+ch<nw){ conHuella++; perdidas+=(nw-(old+ch)); }
+          if (m.ts){ if(!minTs||m.ts<minTs) minTs=m.ts; if(!maxTs||m.ts>maxTs) maxTs=m.ts; }
+        }
+        out.push({
+          item_id: it.id, nombre: it.nombre, sku: it.sku,
+          stock_total: parseInt(it.stock_total)||0,
+          stock_baseline_at: it.stock_baseline_at || null,
+          // Si el baseline es posterior a las ventas, el sync las saltea TODAS
+          // y la deuda nunca llega a registrarse: ese es el caso que rompe.
+          baseline_tapa_ventas: !!(it.stock_baseline_at && maxTs && it.stock_baseline_at >= maxTs),
+          movimientos: movs.size, ventas_registradas: ventas, unidades_vendidas: unidadesVendidas,
+          movimientos_con_huella: conHuella, unidades_recuperables: perdidas,
+          primer_mov: minTs, ultimo_mov: maxTs,
+          ordenes_procesadas: (it.processed_orders||[]).length,
+        });
+      }
+      return res.json({ ok:true, items: out });
+    }
+
     if (action === "recalc_oversold" && req.method === "POST") {
       const soloItem = String(req.query.item_id || "").trim();
       const aplicar = String(req.query.aplicar || "") === "1"; // sin esto, simula
@@ -688,53 +737,63 @@ export default async function handler(req, res) {
         ? await itemsCol.where("id", "==", soloItem).get()
         : await itemsCol.get();
 
-      // Los movimientos son la fuente de verdad: cada venta quedó registrada con
-      // su `change` real aunque el saldo se clampeara. NO se leen órdenes ni se
-      // toca processed_orders, así que nada se descuenta dos veces.
       let movQ = db.collection("users").doc(uid).collection("inventory_movements");
       if (soloItem) movQ = movQ.where("item_id", "==", soloItem);
       const movSnap = await movQ.get();
 
-      // El clamp viejo dejaba su huella EN EL PROPIO MOVIMIENTO: guardaba
-      // new_stock = max(0, old_stock + change). Cuando esas dos cuentas no dan
-      // igual, la diferencia son exactamente las unidades que se perdieron.
-      // Leer la huella movimiento por movimiento es más fiable que re-simular
-      // la corrida entera, porque old_stock/new_stock ya venían clampeados y
-      // cualquier simulación heredaría ese error.
-      const perdidoPorItem = new Map();
-      const movsPorItem = new Map();
+      // Dos formas distintas de perder la deuda, y hay que cubrir las dos:
+      //
+      // A) HUELLA DEL CLAMP. El código viejo guardaba new_stock = max(0, old+change).
+      //    Cuando new_stock > old+change, la diferencia son las unidades comidas.
+      //    Pasa cuando el item SÍ se descontó por ventas hasta cruzar el cero.
+      //
+      // B) VENTAS QUE NUNCA DESCONTARON. Si el stock se fijó a mano (o lo escribió
+      //    la plataforma), queda `stock_baseline_at` y sync_sales saltea todas las
+      //    ventas anteriores para no contar doble. Si el item quedó en 0 con el
+      //    baseline puesto DESPUÉS de las ventas, esas ventas no dejaron ningún
+      //    movimiento: no hay huella que leer. Ahí la deuda son las unidades
+      //    vendidas después de que el stock llegó a 0.
+      const porItem = new Map();
       for (const d of movSnap.docs) {
         const m = d.data();
         if (!m.item_id) continue;
-        movsPorItem.set(m.item_id, (movsPorItem.get(m.item_id) || 0) + 1);
-        const old = parseInt(m.old_stock);
-        const nw  = parseInt(m.new_stock);
-        const ch  = parseInt(m.change) || 0;
-        if (!Number.isFinite(old) || !Number.isFinite(nw)) continue;
-        const esperado = old + ch;
-        if (esperado < nw) { // el clamp levantó el saldo → se comió (nw - esperado)
-          perdidoPorItem.set(m.item_id, (perdidoPorItem.get(m.item_id) || 0) + (nw - esperado));
-        }
+        const e = porItem.get(m.item_id) || { huella: 0, movs: [] };
+        const ch = parseInt(m.change) || 0;
+        const old = parseInt(m.old_stock), nw = parseInt(m.new_stock);
+        if (Number.isFinite(old) && Number.isFinite(nw) && old + ch < nw) e.huella += (nw - (old + ch));
+        e.movs.push({ ts: m.ts || "", change: ch, old, nw });
+        porItem.set(m.item_id, e);
       }
 
       const cambios = [], sinDatos = [];
       for (const doc of snap.docs) {
         const it = doc.data();
         const actual = parseInt(it.stock_total) || 0;
-        const perdido = perdidoPorItem.get(it.id) || 0;
-        // Ya está en negativo: el dato nuevo ya se está registrando bien.
-        if (actual < 0) continue;
-        if (perdido <= 0) {
-          // En 0 y con movimientos, pero sin huella del clamp: el stock lo
-          // escribió la plataforma o un ajuste manual, no las ventas. No hay
-          // de dónde sacar la deuda — se avisa en vez de inventar un número.
-          if (actual === 0 && (movsPorItem.get(it.id) || 0) > 0) {
-            sinDatos.push({ item_id: it.id, nombre: it.nombre, movimientos: movsPorItem.get(it.id) });
+        if (actual < 0) continue; // ya está en negativo: nada que recuperar
+        const e = porItem.get(it.id) || { huella: 0, movs: [] };
+
+        let deuda = e.huella, via = "huella";
+        if (deuda <= 0 && actual === 0 && e.movs.length) {
+          // Caso B: reproducir la corrida cronológica desde el primer old_stock
+          // conocido y contar lo que se vendió una vez cruzado el cero.
+          const movs = e.movs.slice().sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+          let saldo = Number.isFinite(movs[0].old) ? movs[0].old : 0;
+          let bajoCero = 0;
+          for (const m of movs) {
+            const antes = saldo;
+            saldo += m.change;
+            if (saldo < 0) bajoCero += Math.abs(antes > 0 ? saldo : m.change);
+            if (saldo < 0) saldo = 0; // el clamp viejo: el saldo real se quedaba en 0
           }
+          if (bajoCero > 0) { deuda = bajoCero; via = "corrida"; }
+        }
+
+        if (deuda <= 0) {
+          if (actual === 0 && e.movs.length) sinDatos.push({ item_id: it.id, nombre: it.nombre, movimientos: e.movs.length });
           continue;
         }
-        const nuevo = actual - perdido;
-        cambios.push({ item_id: it.id, nombre: it.nombre, de: actual, a: nuevo, unidades: perdido });
+        const nuevo = actual - deuda;
+        cambios.push({ item_id: it.id, nombre: it.nombre, de: actual, a: nuevo, unidades: deuda, via });
         if (aplicar) {
           await doc.ref.update({ stock_total: nuevo, updated_at: new Date().toISOString() });
           await logMovement(db, uid, {
@@ -745,7 +804,7 @@ export default async function handler(req, res) {
         }
       }
       return res.json({ ok: true, aplicado: aplicar, items: cambios.length,
-        unidades: cambios.reduce((n,c)=>n+c.unidades,0), cambios, sin_datos: sinDatos });
+        unidades: cambios.reduce((n, c) => n + c.unidades, 0), cambios, sin_datos: sinDatos });
     }
 
     // ── IMPORT CATALOG — crea/vincula items desde el catálogo TN/Shopify/ML por SKU ──

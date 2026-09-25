@@ -37899,7 +37899,9 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
                 </div>
                 <div>
                   <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Stock</label>
-                  <input type="number" min="0" value={editStock} onChange={e=>setEditStock(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 11px",fontSize:13,color:T.text,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                  {/* Sin min="0": se admite negativo para cargar a mano lo vendido sin stock. */}
+                  <input type="number" value={editStock} onChange={e=>setEditStock(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 11px",fontSize:13,color:T.text,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                  {(parseInt(editStock)||0) < 0 && <div style={{fontSize:10,color:T.red,marginTop:3}}>Vendido sin stock: debés {Math.abs(parseInt(editStock)||0)} unidades. A tus tiendas se les informa 0.</div>}
                 </div>
               </div>
               <div style={{marginBottom:10}}>
@@ -39626,7 +39628,15 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         // caso no hay de dónde sacar la deuda y hay que decirlo, no inventarla.
         const sd = sim.sin_datos || [];
         if (sd.length) {
-          await appAlert(`No se puede reconstruir la deuda de ${sd.length} producto(s) en 0 (${sd.slice(0,3).map(x=>x.nombre).join(", ")}${sd.length>3?"…":""}).\n\nTienen movimientos registrados, pero su stock lo escribió la plataforma o un ajuste manual, no las ventas descontando. De acá en adelante sí se va a registrar el negativo; para el faltante viejo cargá el número a mano con Editar.`,{okLabel:"Entendido"});
+          // Diagnóstico real en vez de una excusa genérica: se pide el estado
+          // crudo del item para decir POR QUÉ no se pudo reconstruir.
+          let extra = "";
+          try {
+            const dg = await fetch(`/api/inventory?action=diag_oversold&uid=${uid}&item_id=${encodeURIComponent(sd[0].item_id)}`).then(r=>r.json());
+            const d0 = (dg.items||[])[0];
+            if (d0) extra = `\n\nDiagnóstico de ${d0.nombre}:\n· Stock: ${d0.stock_total}\n· Movimientos: ${d0.movimientos} (${d0.ventas_registradas} ventas, ${d0.unidades_vendidas} unidades)\n· Órdenes ya procesadas: ${d0.ordenes_procesadas}${d0.stock_baseline_at?`\n· Stock fijado a mano el ${new Date(d0.stock_baseline_at).toLocaleDateString("es-AR")}${d0.baseline_tapa_ventas?" (posterior a las ventas: por eso no descontaron)":""}`:""}`;
+          } catch(_) {}
+          await appAlert(`No se pudo reconstruir la deuda de ${sd.length} producto(s) en 0.${extra}\n\nDe acá en adelante el negativo se registra solo. Para el faltante viejo, cargá el número con Editar (podés poner un número negativo).`,{okLabel:"Entendido"});
           return;
         }
         return toast("No hay ventas sin stock para recuperar: tu inventario ya está al día","success");
