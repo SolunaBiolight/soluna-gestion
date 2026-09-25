@@ -1699,8 +1699,17 @@ export default async function handler(req, res) {
           const fOrd = ordDia > 0 ? Math.min(1, ordH/ordDia) : fTime;
           const revenueH = +((prevTotals.revenue||0) * fRev).toFixed(2);
           const ordersH  = Math.round((prevTotals.orders||0) * fOrd);
-          const adSpendH = +((prevTotals.adSpend||0) * fTime).toFixed(2);
+          // La pauta se prorratea con la MISMA curva que las ventas, no con el
+          // reloj. Con fTime, a media mañana la base de ayer cargaba ~46 % de la
+          // pauta contra ~20 % de las ventas (el e-commerce AR vende de tarde):
+          // el profit de ayer se hundía o se iba a negativo, y el chip de
+          // comparación mostraba saltos de +300 % sin que nada hubiera mejorado.
+          // Meta/Google gastan más cuando hay más tráfico, así que seguir la
+          // curva de ventas se acerca mucho más que repartir parejo por hora.
+          const adSpendH = +((prevTotals.adSpend||0) * fRev).toFixed(2);
           // Costos proporcionales a las ventas × fRev; fijos/adicionales × fTime
+          // Los costos variables siguen a las ventas; los fijos/adicionales sí se
+          // reparten por reloj (el alquiler corre igual aunque no vendas).
           const costesH  = ((prevTotals.costoProductos||0) + (prevTotals.impuestos||0) + (prevTotals.comisionPlataforma||0) + (prevTotals.comisionPago||0) + (prevTotals.costoEnvio||0)) * fRev
                          + (prevTotals.costosAdicionales||0) * fTime;
           const profitH  = +(revenueH - costesH - adSpendH).toFixed(2);

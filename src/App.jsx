@@ -41945,7 +41945,29 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     {id:"mg",   label:"Margen %",    val:d=>d.rev>0?(d.prof||0)/d.rev*100:0, fmt:v=>(Number(v)||0).toFixed(1)+"%"},
   ];
   const PROD_COLORS=[T.blue,T.green,T.orange,T.accent,"#f0b90b",T.red];
-  const delta=(curr,prev)=>{if(!prev||prev===0)return null;return((curr-prev)/Math.abs(prev)*100);};
+  // Un porcentaje solo significa algo contra una base positiva y no ridícula.
+  // Si ayer el profit fue NEGATIVO, "+378 %" no quiere decir nada: pasar de
+  // perder a ganar no es un porcentaje, y una base cercana a cero convierte
+  // cualquier diferencia en miles por ciento. En esos casos no se muestra chip
+  // (el front cae a una etiqueta cualitativa).
+  const delta=(curr,prev)=>{
+    if(prev==null||curr==null)return null;
+    if(!(prev>0))return null;                       // base ≤ 0 → sin porcentaje
+    const d=((curr-prev)/prev)*100;
+    if(!isFinite(d)||Math.abs(d)>1000)return null;  // base ínfima → número absurdo
+    return d;
+  };
+  // Para los casos que delta() descarta: decir en palabras qué pasó, sin número.
+  const deltaTexto=(curr,prev)=>{
+    if(prev==null||curr==null)return null;
+    if(prev>0)return null;                          // ya lo cubre delta()
+    if(prev<0&&curr>=0)return{txt:"pasó a positivo",good:true};
+    if(prev<0&&curr<prev)return{txt:"peor que ayer",good:false};
+    if(prev<0&&curr<0)return{txt:"sigue negativo",good:false};
+    if(prev===0&&curr>0)return{txt:"desde cero",good:true};
+    if(prev===0&&curr<0)return{txt:"cayó bajo cero",good:false};
+    return null;
+  };
 
   // Paleta de métricas del dashboard — saturada y sobria (los tonos pastel del
   // tema quedaban lavados en las cards). Se usa MÍNIMO: punto del label,
@@ -41953,7 +41975,14 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const MC = { green:"#16c784", red:"#f6465d", blue:"#3861fb", violet:"#7c3aed", gold:"#f0b90b" };
   const DeltaBadge=({curr,prev,invert=false})=>{
     const d=delta(curr,prev);
-    if(d===null)return null;
+    if(d===null){
+      // Sin porcentaje confiable: etiqueta cualitativa en vez de un número
+      // inventado (o nada, cuando tampoco hay nada que decir).
+      const t=deltaTexto(curr,prev);
+      if(!t)return null;
+      const g=invert?!t.good:t.good;
+      return <span title={`Comparado con ${prevHasta?`ayer hasta las ${prevHasta}`:"el período anterior"}. No se muestra porcentaje porque la base era cero o negativa.`} style={{fontSize:10,fontWeight:700,color:g?MC.green:MC.red,background:(g?MC.green:MC.red)+"1c",borderRadius:20,padding:"2px 8px",display:"inline-flex",alignItems:"center",gap:3,cursor:"default",lineHeight:1.4,flexShrink:0}}>{t.txt}</span>;
+    }
     const good=invert?d<0:d>=0;
     // Pill de variación (estilo Escalafy): fondo tenue verde/rojo al lado del
     // número — se lee de un vistazo sin competir en tamaño.
