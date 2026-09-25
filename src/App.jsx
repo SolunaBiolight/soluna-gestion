@@ -39633,6 +39633,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       const r = await fetch(`/api/inventory?action=sync_sales&uid=${uid}`,{method:"POST"});
       const j = await r.json();
       if (j.error) return toast(j.error,"error");
+      const om = j.omitidos || [];
+      if (om.length) {
+        // El backend frenó un descuento enorme: avisar en vez de dejarlo pasar
+        // como si nada (un sync que "no hizo nada" sin explicación asusta menos
+        // que un stock que se desploma, pero igual hay que contarlo).
+        await appAlert(`Sync frenado por seguridad en ${om.length} producto(s):\n\n${om.slice(0,5).map(o=>`· ${o.nombre}: intentaba descontar ${o.unidades} u. de una`).join("\n")}\n\nUn descuento así suele significar que se reprocesó historial viejo, no ventas nuevas. No se tocó el stock. Si el número es correcto, ajustalo con Editar.`,{okLabel:"Entendido"});
+      }
       toast(`Sync OK · ${j.processed_orders||0} órdenes · ${j.items_updated||0} items actualizados`,"success");
       loadInvItems();
     } finally { setSyncingSales(false); }

@@ -602,6 +602,7 @@ export default async function handler(req, res) {
       // Procesar cada item con links y descontar
       let itemsUpdated = 0;
       let salesLogged = 0;
+      const omitidosPorTope = [];
       for (const item of linkedItems) {
         const links = item.product_links || [];
         const itemSku = String(item.sku || "").trim().toUpperCase();
@@ -614,12 +615,17 @@ export default async function handler(req, res) {
 
         for (const ord of recentOrders) {
           if (processed.has(ord.order_id)) continue;
-          // El baseline evita el doble conteo: el stock que fijaste a mano ya
-          // refleja las ventas de ANTES. PERO si el item está en 0 o menos, no
-          // hay nada que proteger — saltear ahí era lo que impedía que el stock
-          // pasara a negativo cuando se sigue vendiendo un producto agotado.
-          const stockActual = (item.stock_total || 0) + stockChange;
-          if (baselineMs && ord.ts && stockActual > 0) { const t = Date.parse(ord.ts); if (isFinite(t) && t <= baselineMs) continue; }
+          // REGLA DURA: el baseline se respeta SIEMPRE. Es la fecha desde la
+          // cual el stock que cargaste es la verdad, y toda venta anterior ya
+          // está reflejada en ese número.
+          //
+          // Intenté saltearlo cuando el stock era ≤ 0 para que un producto
+          // agotado pasara a negativo. Fue un error grave: al desactivarlo, el
+          // sync reprocesó TODO el histórico de 30 días de una (agravado porque
+          // la ventana de Shopify había pasado de 1000 a 4000 órdenes) y un
+          // item quedó en -198 cuando se habían vendido 7 u 8 unidades.
+          // El negativo sale solo de las ventas POSTERIORES al baseline.
+          if (baselineMs && ord.ts) { const t = Date.parse(ord.ts); if (isFinite(t) && t <= baselineMs) continue; }
           let unitsForItem = 0;
           for (const prod of ord.products) {
             // 1) Vínculo explícito. Si el link tiene variant_id (mapeo por talle),
@@ -658,6 +664,18 @@ export default async function handler(req, res) {
           }
         }
 
+        // FRENO DE SEGURIDAD. Un sync normal descuenta las ventas nuevas desde
+        // la última corrida: decenas de unidades, no cientos. Un salto enorme
+        // significa que algo reprocesó histórico (baseline mal aplicado, orden
+        // que se cayó de processed_orders, item recién revinculado), y el daño
+        // es silencioso: deja un negativo gigante que parece real.
+        // Ante la duda NO se escribe y queda avisado en el log.
+        const TOPE_SYNC = 150;
+        if (stockChange < -TOPE_SYNC) {
+          console.warn(`[sync_sales] ${item.nombre||item.id}: descuento de ${Math.abs(stockChange)} u. en una corrida — se omite por seguridad (tope ${TOPE_SYNC}). Puede ser histórico reprocesado.`);
+          omitidosPorTope.push({ item_id: item.id, nombre: item.nombre, unidades: Math.abs(stockChange) });
+          continue;
+        }
         if (stockChange !== 0) {
           // Sin clamp: si se vendió más de lo que había, stock_total queda NEGATIVO
           // a propósito. Al reponer, la carga se suma sobre el negativo y descuenta
@@ -685,7 +703,7 @@ export default async function handler(req, res) {
         }
       }
 
-      return res.json({ ok: true, processed_orders: recentOrders.length, items_updated: itemsUpdated, sales_logged: salesLogged });
+      return res.json({ ok: true, processed_orders: recentOrders.length, items_updated: itemsUpdated, sales_logged: salesLogged, omitidos: omitidosPorTope });
     }
 
     // ── RECALC OVERSOLD — recupera los negativos que el clamp viejo borró ────────
