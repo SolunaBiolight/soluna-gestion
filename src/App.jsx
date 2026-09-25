@@ -40570,8 +40570,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:12}}>
                     <div>
-                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>Inventario central</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Tu stock físico real, unificado por SKU entre canales. Las ventas de TN/Shopify/ML lo descuentan solas. Soporta packs (una venta descuenta N unidades) y depósitos.</div>
+                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>Ítems · tu stock físico</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.6,maxWidth:760}}>
+                        Un <strong style={{color:T.text}}>ítem</strong> es una unidad real de tu depósito: lo que contás cuando abrís la caja.
+                        Puede agrupar <strong style={{color:T.text}}>varios productos</strong> de tu tienda si físicamente mandás lo mismo
+                        (un solo ítem “Talle XL” puede cubrir las publicaciones XL y 2XL). Las ventas de Tienda Nube, Shopify y
+                        Mercado Libre lo descuentan solas, y si vendés más de lo que hay queda en negativo para que sepas cuánto debés.
+                      </div>
                     </div>
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                       <button onClick={syncSales} disabled={syncingSales} style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{syncingSales?<><Spinner size={11} color={T.textMd}/> Sincronizando</>:"Sincronizar ventas"}</button>
@@ -40758,6 +40763,16 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             {/* ── TAB INVENTARIO: catálogo con analytics + items de inventario ── */}
             {tab==="inventario"&&(
                     <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                      {/* Separación explícita: arriba lo físico (ítems), acá lo
+                          que ve el comprador (publicaciones y sus variantes). */}
+                      <div style={{padding:"2px 2px 0"}}>
+                        <div style={{fontSize:15,fontWeight:700,color:T.text}}>Productos · lo que ve el comprador</div>
+                        <div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.6,maxWidth:760}}>
+                          Tus publicaciones de Tienda Nube, Shopify y Mercado Libre con cada variante (talle, color) y sus ventas.
+                          Acá el stock es <strong style={{color:T.text}}>el que muestra cada canal</strong>, no tu depósito:
+                          dos productos distintos pueden salir del mismo ítem de arriba.
+                        </div>
+                      </div>
                       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                         <input type="text" placeholder="Buscar producto o SKU..." value={search} onChange={e=>setSearch(e.target.value)}
                           style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
