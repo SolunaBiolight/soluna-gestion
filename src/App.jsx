@@ -39227,6 +39227,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [whSaving, setWhSaving] = useState(false);
   // Edit stock por depósito (dentro del modal de Item)
   const [stockEditValues, setStockEditValues] = useState({}); // {whId: count}
+  // "sumar" (default) = lo escrito se SUMA a lo que hay; "fijar" = lo reemplaza.
+  const [stockEditMode, setStockEditMode] = useState("sumar");
   // Items (central inventory entities + mapping)
   const [invItems, setInvItems] = useState([]);
   const [invItemsLoading, setInvItemsLoading] = useState(false);
@@ -39504,6 +39506,23 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     setItemEditTab("stock");
     if (platformProducts.length === 0) loadPlatformProducts();
   }
+  // Stock resultante por depósito según el modo elegido. Lo usan el modal (para
+  // mostrar el total) y guardarItem (para persistir): una sola cuenta, así no
+  // pueden divergir.
+  function sbwResultante(editing, valores, modo, whs) {
+    const base = editing?.stock_by_warehouse || {};
+    const out = {};
+    for (const w of (whs || [])) {
+      const actual = parseInt(base[w.id]) || 0;
+      const escrito = valores[w.id];
+      const n = escrito === "" || escrito == null ? null : (parseInt(escrito) || 0);
+      out[w.id] = modo === "sumar" ? actual + (n || 0) : (n == null ? actual : n);
+    }
+    // Depósitos que ya no existen en la lista: se conservan tal cual.
+    for (const k of Object.keys(base)) if (!(k in out)) out[k] = parseInt(base[k]) || 0;
+    return out;
+  }
+
   function openEditItem(item) {
     setEditingItem({
       id: item.id,
@@ -39516,12 +39535,11 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       canales: item.canales || [],
     });
     setItemEditTab("stock");
-    setStockEditValues((()=> {
-      const obj = {};
-      const sbw = item.stock_by_warehouse || {};
-      for (const w of warehouses) obj[w.id] = sbw[w.id] || 0;
-      return obj;
-    })());
+    // Se abre siempre en modo "sumar" con los campos VACÍOS: escribís lo que
+    // entró, no el total. Prellenarlos con el stock actual haría que en sumar
+    // se duplicara todo apenas abrís el modal.
+    setStockEditMode("sumar");
+    setStockEditValues({});
     if (platformProducts.length === 0) loadPlatformProducts();
   }
   async function saveInvItem() {
@@ -39529,7 +39547,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     if (!editingItem.nombre.trim()) return toast("Falta nombre del item","warning");
     setItemSaving(true);
     try {
-      const sbw = itemEditTab==="stock" ? stockEditValues : (editingItem.stock_by_warehouse || {});
+      // MISMA cuenta que muestra el modal (sbwResultante), para que lo que se
+      // guarda sea exactamente el "Total que va a quedar" que viste. Antes acá
+      // se mandaba stockEditValues crudo: en modo sumar habría guardado el
+      // delta como si fuera el total.
+      const sbw = itemEditTab==="stock"
+        ? sbwResultante(editingItem, stockEditValues, stockEditMode, warehouses)
+        : (editingItem.stock_by_warehouse || {});
       const total = Object.values(sbw).reduce((s,v)=>s+(parseInt(v)||0),0);
       const body = {
         nombre: editingItem.nombre.trim(),
@@ -41045,30 +41069,55 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   </div>
                   {/* Body */}
                   <div style={{padding:"18px 20px",flex:1,overflowY:"auto"}}>
-                    {itemEditTab==="stock" && (
+                    {itemEditTab==="stock" && (()=>{
+                      const sbwFinal = sbwResultante(editingItem, stockEditValues, stockEditMode, warehouses);
+                      const stockTotalFinal = Object.values(sbwFinal).reduce((a,b)=>a+(parseInt(b)||0),0);
+                      return (
                       <>
-                        <div style={{fontSize:11,color:T.textSm,marginBottom:12}}>Ajustá el stock por depósito. Esto establece un nuevo punto de partida para el stock total.</div>
+                        {/* Dos modos. "Sumar" es el default porque es lo que uno
+                            hace el 90 % de las veces (llegó mercadería) y porque
+                            el modo fijar borraba silenciosamente la deuda: con
+                            -112 y escribiendo 58 quedaba 58, no -54. */}
+                        <div style={{display:"flex",gap:6,marginBottom:10}}>
+                          {[["sumar","Sumar / restar"],["fijar","Fijar cantidad"]].map(([id,l])=>(
+                            <button key={id} onClick={()=>setStockEditMode(id)} style={{padding:"6px 12px",fontSize:11,fontWeight:600,border:`1px solid ${stockEditMode===id?T.accent:T.border}`,borderRadius:7,background:stockEditMode===id?T.accent+"22":"transparent",color:stockEditMode===id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
+                          ))}
+                        </div>
+                        <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>
+                          {stockEditMode==="sumar"
+                            ? <>Escribí lo que <strong style={{color:T.text}}>entró</strong> (o en negativo lo que salió) y se suma a lo que ya hay. Si debés unidades, la carga descuenta sola lo adeudado.</>
+                            : <>Escribí el stock <strong style={{color:T.text}}>exacto</strong> que querés dejar. Reemplaza lo que había, incluida cualquier deuda.</>}
+                        </div>
                         {warehouses.length === 0 ? (
                           <div style={{padding:"30px 16px",background:T.bg,border:`1px dashed ${T.borderL}`,borderRadius:10,textAlign:"center",fontSize:12,color:T.textSm}}>No tenés depósitos creados. Cerrá este modal y andá a la tab Depósitos para crear uno.</div>
                         ) : (
                           <>
-                            {warehouses.map(w => (
+                            {warehouses.map(w => {
+                              const actual = parseInt((editingItem.stock_by_warehouse||{})[w.id]) || 0;
+                              const escrito = parseInt(stockEditValues[w.id]) || 0;
+                              const resultado = stockEditMode==="sumar" ? actual + escrito : escrito;
+                              return (
                               <div key={w.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,padding:"10px 12px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8}}>
-                                <div style={{flex:1}}>
+                                <div style={{flex:1,minWidth:0}}>
                                   <div style={{fontSize:13,fontWeight:600,color:T.text}}>{w.name}</div>
+                                  <div style={{fontSize:10,color:actual<0?T.red:T.textSm,marginTop:2}}>
+                                    {actual<0 ? `Debés ${Math.abs(actual)} u.` : `Ahora: ${actual} u.`}
+                                    {stockEditMode==="sumar" && escrito!==0 && <> → queda <strong style={{color:resultado<0?T.red:T.green}}>{resultado}</strong></>}
+                                  </div>
                                 </div>
-                                {/* Sin min="0": acepta negativo para cargar a mano lo vendido sin stock. */}
-                                <input type="number" value={stockEditValues[w.id]||0} onChange={e=>setStockEditValues(p=>({...p,[w.id]:e.target.value}))} style={{width:100,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"7px 10px",fontSize:13,color:T.text,textAlign:"right",fontFamily:"monospace"}}/>
+                                {/* Sin min="0": en "sumar" el negativo resta; en "fijar" deja cargar una deuda. */}
+                                <input type="number" value={stockEditValues[w.id]??""} placeholder={stockEditMode==="sumar"?"+0":String(actual)} onChange={e=>setStockEditValues(p=>({...p,[w.id]:e.target.value}))} style={{width:100,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"7px 10px",fontSize:13,color:T.text,textAlign:"right",fontFamily:"monospace"}}/>
                               </div>
-                            ))}
+                            );})}
                             <div style={{padding:"10px 12px",background:T.accent+"10",border:`1px solid ${T.accent}33`,borderRadius:8,marginTop:6,fontSize:12,color:T.text,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                              <span style={{fontWeight:600}}>Total</span>
-                              <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14,color:Object.values(stockEditValues).reduce((s,v)=>s+(parseInt(v)||0),0)<0?T.red:T.accent}}>{Object.values(stockEditValues).reduce((s,v)=>s+(parseInt(v)||0),0)}</span>
+                              <span style={{fontWeight:600}}>Total {stockEditMode==="sumar"?"que va a quedar":"final"}</span>
+                              <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14,color:stockTotalFinal<0?T.red:T.accent}}>{stockTotalFinal}</span>
                             </div>
+                            {stockTotalFinal<0 && <div style={{fontSize:10,color:T.red,marginTop:6}}>Queda en negativo: debés {Math.abs(stockTotalFinal)} unidades. A tus tiendas se les informa 0.</div>}
                           </>
                         )}
                       </>
-                    )}
+                    );})()}
                     {itemEditTab==="mapeo" && (
                       <>
                         {/* Vinculados */}
