@@ -958,6 +958,13 @@ function GrowithLogo({size=28, variant="color", darkMode=false}) {
 // TikTok Ads (análisis y Publicar en TikTok) en PRÓXIMAMENTE en el menú hasta
 // que TikTok apruebe la app y estén TIKTOK_APP_ID/SECRET en Vercel → poner false.
 const TIKTOK_PRONTO = true;
+// Publicadores archivados (26/sep/2026). Meta rechazó `ads_management`, que es
+// el permiso de ESCRITURA: sin él no se pueden crear campañas, subir creativos
+// ni pausar/ajustar presupuestos. Se archivan TODOS los publicadores (Meta,
+// Google, TikTok, ML) y las reglas automáticas de Meta para no ofrecer algo que
+// va a fallar. El análisis (Dashboard, gasto, ROAS) sigue entero: `ads_read` SÍ
+// está aprobado. Para reactivar cuando Meta apruebe: poner esto en false.
+const PUBLICADORES_ARCHIVADOS = true;
 // Menú lateral (estático). También alimenta Admin > Sistema > Accesos por sección.
 const SIDEBAR_GROUPS_BASE = [
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
@@ -986,7 +993,7 @@ const SIDEBAR_GROUPS_BASE = [
     {id:"calendario", label:"Calendario de Pagos", icon:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18", alertKey:"calendario", badge:"red"},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
-      subs:[{id:"analisis",label:"Análisis"},{id:"reglas",label:"Reglas"},/* {id:"publicador",label:"Publicador IA"} — oculto por ahora (Thiago, 2026-09-11) */{id:"cuenta",label:"Cuenta"}]},
+      subs:[{id:"analisis",label:"Análisis"},...(PUBLICADORES_ARCHIVADOS?[]:[{id:"reglas",label:"Reglas"}]),/* {id:"publicador",label:"Publicador IA"} — oculto por ahora (Thiago, 2026-09-11) */{id:"cuenta",label:"Cuenta"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", alertKey:"stock", badge:"red",
       },
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml", alertKey:"ml", badge:"orange",
@@ -996,12 +1003,12 @@ const SIDEBAR_GROUPS_BASE = [
     // "Publicar": una sola entrada desplegable con las cuatro plataformas (con
     // sus logos) en vez de un grupo entero de cuatro filas. Cada hijo lleva a
     // la pestaña Publicar de su sección; el permiso es el de esa sección.
-    {id:"publicar", label:"Publicar", icon:"M3 11l19-9-9 19-2-8-8-2z", hub:[
+    ...(PUBLICADORES_ARCHIVADOS ? [] : [{id:"publicar", label:"Publicar", icon:"M3 11l19-9-9 19-2-8-8-2z", hub:[
       {id:"pubmeta",   permKey:"meta",      label:"Meta",          icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", go:{page:"meta",tab:"creativos"}},
       {id:"pubml",     permKey:"ml",        label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", go:{page:"ml",tab:"publicar"}},
       {id:"pubtiktok", permKey:"tiktokads", label:"TikTok", soon:TIKTOK_PRONTO, icon:"M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z", go:{page:"tiktokads",tab:"publicar"}},
       {id:"pubgads",   permKey:"gads",      label:"Google",        icon:"M12 11v2h5.5c-.3 1.6-1.8 4-5.5 4a6 6 0 010-12c1.7 0 2.9.7 3.6 1.3l2.4-2.4A10 10 0 0012 2a10 10 0 000 20c5.8 0 9.6-4 9.6-9.7 0-.7-.1-1.2-.2-1.3H12z", go:{page:"gads",tab:"publicar"}},
-    ]},
+    ]}]),
     { group:"RECOMPENSAS" },
     {id:"referidos",label:"Referidos", icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
     {id:"planes",   label:"Suscripción", icon:"M2 5h20v14H2zM2 10h20M6 15h4"},
@@ -2006,7 +2013,7 @@ function AppGoogleAds({T, user, onHome, onGoConfig, tab="analisis", setTab=()=>{
         {/* Pestañas Análisis / Publicar: solo en mobile — en desktop se navega desde el sidebar ("Google Ads" y "Publicar en Google") */}
         <div className="mobile-only no-scrollbar" style={{overflowX:"auto"}}>
           <div style={{display:"flex",gap:6,minWidth:"max-content"}}>
-            {[{id:"analisis",l:"Análisis"},{id:"publicar",l:"Publicar"}].map(t=>(
+            {[{id:"analisis",l:"Análisis"},...(PUBLICADORES_ARCHIVADOS?[]:[{id:"publicar",l:"Publicar"}])].map(t=>(
               <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${tab===t.id?T.accentSolid+"88":T.border}`,borderRadius:20,background:tab===t.id?T.accentSolid+"18":T.card,color:tab===t.id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>{t.l}</button>
             ))}
           </div>
@@ -2685,7 +2692,7 @@ function AppTiktokAds({T, user, onHome, onGoConfig, tab="analisis", setTab=()=>{
         {/* Pestañas Análisis / Publicar: solo en mobile — en desktop se navega desde el sidebar */}
         <div className="mobile-only no-scrollbar" style={{overflowX:"auto"}}>
           <div style={{display:"flex",gap:6,minWidth:"max-content"}}>
-            {[{id:"analisis",l:"Análisis"},{id:"publicar",l:"Publicar"}].map(t=>(
+            {[{id:"analisis",l:"Análisis"},...(PUBLICADORES_ARCHIVADOS?[]:[{id:"publicar",l:"Publicar"}])].map(t=>(
               <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${tab===t.id?T.accentSolid+"88":T.border}`,borderRadius:20,background:tab===t.id?T.accentSolid+"18":T.card,color:tab===t.id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>{t.l}</button>
             ))}
           </div>
@@ -15915,11 +15922,16 @@ function LandingPage({T, onLogin}) {
       {gi:"check", n:"Tareas", d:"Tareas del equipo con briefs, entregas y fechas."},
       {gi:"clock", n:"Calendario de pagos", d:"Alquiler, proveedores, cuotas y tarjetas, con aviso."},
     ]},
+    // Los publicadores de PAUTA (Meta/Google/TikTok) están archivados: Meta
+    // rechazó ads_management y sin ese permiso no se puede escribir en ninguna
+    // cuenta publicitaria. No se anuncian features que no se pueden cumplir.
     {t:"Publicar", c:"#22c55e", items:[
-      {gi:"upload", n:"Publicar en Meta", d:"Subí creativos y armá campañas sin salir de Growith."},
       {gi:"upload", n:"Publicar en Mercado Libre", d:"Publicaciones nuevas en tu cuenta de Mercado Libre."},
-      {gi:"upload", n:"Publicar en TikTok", d:"Campañas con tus videos.", soon:true},
-      {gi:"upload", n:"Publicar en Google", d:"Campañas de Búsqueda y Performance Max."},
+      ...(PUBLICADORES_ARCHIVADOS ? [] : [
+        {gi:"upload", n:"Publicar en Meta", d:"Subí creativos y armá campañas sin salir de Growith."},
+        {gi:"upload", n:"Publicar en TikTok", d:"Campañas con tus videos.", soon:true},
+        {gi:"upload", n:"Publicar en Google", d:"Campañas de Búsqueda y Performance Max."},
+      ]),
     ]},
   ];
 
@@ -34710,7 +34722,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         {/* Tabs de la sección (visibles en mobile — en desktop la navegación va por el sidebar) */}
         <div className="mobile-only no-scrollbar" style={{overflowX:"auto",marginBottom:14}}>
           <div style={{display:"flex",gap:6,minWidth:"max-content"}}>
-            {[{id:"productos",l:"Productos"},{id:"analisis",l:"Análisis"},{id:"biblioteca",l:"Biblioteca"},{id:"reglas",l:"Reglas"},{id:"creativos",l:"Publicar"},{id:"cuenta",l:"Cuenta"}].map(t=>(
+            {[{id:"productos",l:"Productos"},{id:"analisis",l:"Análisis"},{id:"biblioteca",l:"Biblioteca"},...(PUBLICADORES_ARCHIVADOS?[]:[{id:"reglas",l:"Reglas"},{id:"creativos",l:"Publicar"}]),{id:"cuenta",l:"Cuenta"}].map(t=>(
               <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${tab===t.id?T.accentSolid+"88":T.border}`,borderRadius:20,background:tab===t.id?T.accentSolid+"18":T.card,color:tab===t.id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>{t.l}</button>
             ))}
           </div>
@@ -43870,6 +43882,15 @@ export default function App() {
     return parts[0]==="tiktokads"&&parts[1]==="publicar" ? "publicar" : "analisis";
   });
   const [canjesTab,setCanjesTab]=useState("activos");
+  // Publicadores archivados: si quedó guardada (o pegada en la URL) una pestaña
+  // que ya no existe, se cae a Análisis en vez de mostrar una pantalla muerta.
+  // Va acá, DESPUÉS de declarar metaTab/gadsTab/tiktokTab.
+  useEffect(()=>{
+    if(!PUBLICADORES_ARCHIVADOS) return;
+    if(metaTab==="creativos"||metaTab==="reglas") setMetaTab("analisis");
+    if(gadsTab==="publicar") setGadsTab("analisis");
+    if(tiktokTab==="publicar") setTiktokTab("analisis");
+  },[metaTab,gadsTab,tiktokTab]);
   const [cmdOpen,setCmdOpen]=useState(false);
   const [andreaniAlertCount,setAndreaniAlertCount]=useState(0);
   const [enviosProblemasN,setEnviosProblemasN]=useState(0); // lo calcula el cron (users/{uid}.enviosProblemasN)

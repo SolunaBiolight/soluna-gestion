@@ -1450,12 +1450,19 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
       // rechaza como "Invalid Scopes" cualquier permiso pedido en el diálogo OAuth
       // que no forme parte de un caso de uso aprobado/en revisión. Se re-agregan
       // cuando se pida esa segunda tanda de permisos.
+      // Solo los permisos que Meta APROBÓ (revisión del 26/sep/2026).
+      // - ads_management: RECHAZADO. Era el de escritura (crear campañas, subir
+      //   creativos, pausar, cambiar presupuestos). Pedirlo igual no sirve: Meta
+      //   no lo otorga y las escrituras fallan con "API access blocked".
+      //   Publicar en Meta y las reglas automáticas quedaron archivadas
+      //   (PUBLICADORES_ARCHIVADOS en App.jsx).
+      // - pages_read_engagement: RECHAZADO, y no se usaba en ningún lado.
+      // Si Meta aprueba ads_management, volver a sumarlo acá y poner
+      // PUBLICADORES_ARCHIVADOS en false.
       const scopes = [
-        "ads_management",
         "ads_read",
         "business_management",
         "pages_show_list",
-        "pages_read_engagement",
       ].join(",");
       const url = `https://www.facebook.com/${META_V}/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${encodeURIComponent(signOauthState(uid))}&scope=${encodeURIComponent(scopes)}&response_type=code`;
       return res.json({ url });
