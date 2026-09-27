@@ -1,6 +1,6 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { getValidMLToken, recurrentesFeesByPayId } from "./integrations.js";
+import { getValidMLToken } from "./integrations.js";
 import { gadsCreds } from "./google-ads.js";
 import { ttGastoPeriodo } from "./tiktok-ads.js";
 import { guardUid, guardCron, isCronRequest } from "./_auth.js";
@@ -688,10 +688,36 @@ export default async function handler(req, res) {
       // Con Recurrentes vinculado (users/{uid}.recurrentes), la comisión EXACTA de cada
       // cobro de suscripción viene de su API por payment_id y pisa/completa el cruce con
       // MP: sirve aunque la tienda no tenga MP conectado acá. Nunca rompe el cálculo.
+      const MP_COMM_VACIO = { fee:0, rev:0, feeByRef:{}, feeByPayId:{}, appByPayId:{} };
       async function fetchMPCommission(sinceYmd, untilYmd) {
+        // Red de contención final: la comisión de MP es un AJUSTE sobre los
+        // costos, no la fuente de la facturación. Que falle tiene que degradar
+        // la precisión del margen, nunca tumbar el Dashboard entero (que es lo
+        // que venía pasando: un error acá dejaba al usuario con el snapshot
+        // viejo y el cartel naranja en cada "Actualizar").
+        try { return await fetchMPCommissionInner(sinceYmd, untilYmd); }
+        catch (e) { console.warn("[mp-comision] falló, sigo sin ella:", e?.message || e); return MP_COMM_VACIO; }
+      }
+      async function fetchMPCommissionInner(sinceYmd, untilYmd) {
         const base = await fetchMPCommissionBase(sinceYmd, untilYmd);
         if (demoMode) return base;
-        const rec = await recurrentesFeesByPayId(userData, sinceYmd, untilYmd);
+        // Recurrentes es un EXTRA (la comisión real de MP de cada cobro
+        // recurrente). Import DINÁMICO y dentro de try: el estático arrastra
+        // integrations.js entero —que a su vez trae andreani, shopify-rates,
+        // tiktok y drive— y si cualquiera de esos falla al cargar, el símbolo
+        // queda undefined y REVIENTA TODO EL DASHBOARD con
+        // "recurrentesFeesByPayId is not defined". Ningún extra puede tumbar el
+        // cálculo principal: si algo falla, se sigue con la comisión base, que
+        // es exactamente lo que había antes de integrar Recurrentes.
+        let rec = {};
+        if (userData?.recurrentes?.connected && userData?.recurrentes?.api_key) {
+          try {
+            const mod = await import("./integrations.js");
+            if (typeof mod.recurrentesFeesByPayId === "function") {
+              rec = (await mod.recurrentesFeesByPayId(userData, sinceYmd, untilYmd)) || {};
+            }
+          } catch (e) { console.warn("[recurrentes] comisiones:", e?.message || e); }
+        }
         if (!Object.keys(rec).length) return base;
         return { ...base, feeByRef: base.feeByRef || {}, feeByPayId: { ...(base.feeByPayId || {}), ...rec }, appByPayId: base.appByPayId || {}, recurrentesFees: Object.keys(rec).length };
       }
