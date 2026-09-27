@@ -15804,35 +15804,233 @@ function PublicSite({T, darkMode, onToggleDark}) {
   return <LandingPage T={T} onLogin={irLogin}/>;
 }
 
-// Video de la home: primero la miniatura con un botón de play y recién al tocar
-// carga el reproductor (el MP4 propio si está `mp4`, si no el de Loom). La home
-// abre rápido y el reproductor pesado no aparece hasta que alguien quiere verlo.
-function GhLandingVideo({T, v}) {
-  const [play,setPlay]=useState(false);
-  const [falloMp4,setFalloMp4]=useState(false); // si el MP4 no carga, respaldo en Loom
-  const caja={position:"relative",display:"block",width:"100%",aspectRatio:"4 / 3",borderRadius:16,overflow:"hidden",border:`1px solid ${T.border}`,background:"#0b0d12",boxShadow:"0 16px 50px rgba(0,0,0,0.25)",padding:0};
-  if(play) return (
-    <div style={caja}>
-      {v.mp4&&!(falloMp4&&v.loom)
-        ? <video src={v.mp4} poster={v.poster||undefined} controls autoPlay playsInline preload="auto" onError={()=>setFalloMp4(true)} style={{position:"absolute",inset:0,width:"100%",height:"100%",background:"#000"}}/>
-        : <iframe src={`https://www.loom.com/embed/${v.loom}?autoplay=1&hide_owner=true&hide_share=true&hide_title=true&hideEmbedTopBar=true`} title={v.titulo} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen style={{position:"absolute",inset:0,width:"100%",height:"100%",border:0}}/>}
-    </div>
-  );
+// ── GH_LANDING_MOTION_BEGIN ──────────────────────────────────────────────
+// Sistema de movimiento de la landing (27-sept-2026): portado del de Recurrentes,
+// con el contenido de Growith. Todo CSS/SVG/DOM, cero dependencias nuevas:
+//   · reveal al entrar en pantalla → IntersectionObserver (ghUseReveal), con
+//     MutationObserver para lo que se monta después y un barrido de seguridad
+//     por rAF (saltos de scroll, celular, pestaña oculta).
+//   · progreso de scroll 0..1 en la CSS var --p (ghUseScrollProgress).
+//   · el hero rota tres facetas (Inicio → Pendientes → Dashboard) con flip 3D,
+//     zoom con desenfoque y cortina (GhHeroLoop).
+// prefers-reduced-motion: todo queda quieto, visible y en su lugar.
+// Prefijo gh-lm- para no chocar con nada de la app.
+function GhMotionStyle({T}) {
+  const F = "'Inter',system-ui,sans-serif";
   return (
-    <button onClick={()=>setPlay(true)} aria-label={`Reproducir: ${v.titulo}`} style={{...caja,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-      {v.poster&&<img src={v.poster} alt="" loading="lazy" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>}
-      <span style={{position:"absolute",inset:0,background:"linear-gradient(180deg,rgba(0,0,0,0) 45%,rgba(0,0,0,0.55))"}}/>
-      <span style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%,-50%)",width:84,height:84,borderRadius:"50%",background:"#6366f1",boxShadow:"0 10px 40px rgba(99,102,241,0.55)",display:"flex",alignItems:"center",justifyContent:"center"}}>
-        <svg width="30" height="30" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
-      </span>
-      {v.dur&&<span style={{position:"absolute",right:14,bottom:14,background:"rgba(0,0,0,0.65)",color:"#fff",fontSize:12,fontWeight:700,borderRadius:8,padding:"4px 9px"}}>{v.dur}</span>}
-    </button>
+    <style>{`
+      /* Reveal al entrar en pantalla (el observer pone .is-in). */
+      [data-reveal]{opacity:0;transform:translateY(22px);transition:opacity .7s cubic-bezier(.22,1,.36,1),transform .7s cubic-bezier(.22,1,.36,1);}
+      [data-reveal="left"]{transform:translateX(-32px);}
+      [data-reveal="right"]{transform:translateX(32px);}
+      [data-reveal="scale"]{transform:scale(.96);}
+      /* Cada sección entra distinto: swing, flip, pop, tilt, rise, wipe, spin. */
+      [data-reveal="swing"]{transform:translate(48px,56px) rotate(5deg) scale(.94);transform-origin:100% 100%;transition-duration:.65s;}
+      [data-reveal="flip"]{transform:perspective(900px) rotateX(-18deg) translateY(40px);transform-origin:50% 100%;}
+      [data-reveal="pop"]{transform:scale(.72);transition-timing-function:cubic-bezier(.34,1.56,.64,1);transition-duration:.55s;}
+      [data-reveal="tilt"]{transform:translateX(-56px) rotate(-3deg);transform-origin:0 100%;}
+      [data-reveal="rise"]{transform:translateY(72px) scale(.98);transition-duration:.8s;}
+      [data-reveal="wipe"]{transform:none;clip-path:inset(0 100% 0 0 round 14px);transition:clip-path .8s cubic-bezier(.22,1,.36,1),opacity .4s;}
+      [data-reveal="spin"]{transform:translate(60px,60px) rotate(12deg) scale(.8);transform-origin:100% 100%;transition-duration:.7s;}
+      [data-reveal].is-in{opacity:1;transform:none;}
+      [data-reveal="wipe"].is-in{clip-path:inset(0 0 0 0 round 14px);}
+      [data-reveal-delay="1"]{transition-delay:.08s}[data-reveal-delay="2"]{transition-delay:.16s}[data-reveal-delay="3"]{transition-delay:.24s}[data-reveal-delay="4"]{transition-delay:.32s}
+      [data-reveal-delay="5"]{transition-delay:.4s}[data-reveal-delay="6"]{transition-delay:.48s}
+      /* ── Hero: tres facetas apiladas, la caja mide siempre lo mismo ── */
+      .gh-lm-stage{position:relative;perspective:1200px;min-width:0;max-width:100%;display:grid;}
+      .gh-lm-face{grid-area:1/1;min-width:0;max-width:100%;align-self:stretch;}
+      .gh-lm-face > *{height:100%;}
+      .gh-lm-face.is-hidden{visibility:hidden;pointer-events:none;}
+      .gh-lm-face.is-out{pointer-events:none;z-index:2;}
+      .gh-lm-in-flip{animation:ghLmInFlip .75s cubic-bezier(.22,1,.36,1) both;transform-origin:50% 50%;}
+      .gh-lm-out-flip{animation:ghLmOutFlip .75s cubic-bezier(.22,1,.36,1) both;transform-origin:50% 50%;}
+      @keyframes ghLmInFlip{from{opacity:0;transform:rotateY(-70deg) translateX(60px)}to{opacity:1;transform:none}}
+      @keyframes ghLmOutFlip{from{opacity:1;transform:none}to{opacity:0;transform:rotateY(60deg) translateX(-80px)}}
+      .gh-lm-in-zoom{animation:ghLmInZoom .8s cubic-bezier(.22,1,.36,1) both;}
+      .gh-lm-out-zoom{animation:ghLmOutZoom .6s ease both;}
+      @keyframes ghLmInZoom{from{opacity:0;transform:scale(.6) translateY(80px);filter:blur(14px)}to{opacity:1;transform:none;filter:blur(0)}}
+      @keyframes ghLmOutZoom{from{opacity:1;transform:none;filter:blur(0)}to{opacity:0;transform:scale(1.15);filter:blur(10px)}}
+      .gh-lm-in-wipe{animation:ghLmInWipe .8s cubic-bezier(.22,1,.36,1) both;}
+      .gh-lm-out-wipe{animation:ghLmOutWipe .7s cubic-bezier(.22,1,.36,1) both;}
+      @keyframes ghLmInWipe{from{clip-path:inset(100% 0 0 0 round 14px);transform:translateY(30px)}to{clip-path:inset(0 0 0 0 round 14px);transform:none}}
+      @keyframes ghLmOutWipe{from{clip-path:inset(0 0 0 0 round 14px);opacity:1}to{clip-path:inset(0 0 100% 0 round 14px);opacity:.4}}
+      .gh-lm-dots{display:flex;gap:6px;justify-content:center;margin-top:16px;}
+      .gh-lm-dots > i{width:24px;height:3px;border-radius:99px;background:${T.border};overflow:hidden;position:relative;}
+      .gh-lm-dots > i.on::after{content:"";position:absolute;inset:0;background:${T.accentSolid};transform-origin:0 50%;animation:ghLmDot var(--dur,6s) linear both;}
+      @keyframes ghLmDot{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+      .gh-lm-facelabel{text-align:center;font-size:12px;color:${T.textSm};margin-top:8px;font-family:${F};}
+      /* Subrayado que se pinta al entrar la sección. */
+      .gh-lm-hi{position:relative;color:${T.text};font-weight:600;background-image:linear-gradient(120deg,${T.accentSolid}55,${T.accentSolid}55);background-repeat:no-repeat;background-size:0% 38%;background-position:0 88%;transition:background-size .6s cubic-bezier(.22,1,.36,1);transition-delay:var(--d,0s);padding:0 2px;border-radius:3px;}
+      .is-in .gh-lm-hi{background-size:100% 38%;}
+      /* Parallax suave donde el navegador lo soporte (Chrome/Edge). */
+      @supports (animation-timeline: view()) {
+        .gh-lm-float{animation:ghLmFloat linear both;animation-timeline:view();animation-range:entry 0% exit 100%;}
+        @keyframes ghLmFloat{from{transform:translateY(24px)}to{transform:translateY(-24px)}}
+      }
+      /* Barra de progreso del scroll de la página (usa --p). */
+      .gh-lm-progress{position:fixed;left:0;top:0;height:2px;width:100%;z-index:60;background:transparent;pointer-events:none;}
+      .gh-lm-progress > i{display:block;height:100%;width:calc(var(--p,0) * 100%);background:${T.accentSolid};}
+      /* ── Marquee de integraciones ── */
+      .gh-lm-marquee{overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);}
+      .gh-lm-marquee-row{display:flex;gap:28px;width:max-content;animation:ghLmMarquee 42s linear infinite;}
+      .gh-lm-marquee:hover .gh-lm-marquee-row{animation-play-state:paused;}
+      @keyframes ghLmMarquee{to{transform:translateX(-50%)}}
+      @media (prefers-reduced-motion: reduce){
+        [data-reveal]{opacity:1;transform:none;transition:none;clip-path:none;}
+        [data-reveal="wipe"]{clip-path:none;}
+        .gh-lm-in-flip,.gh-lm-out-flip,.gh-lm-in-zoom,.gh-lm-out-zoom,.gh-lm-in-wipe,.gh-lm-out-wipe{animation:none;}
+        .gh-lm-face.is-out{display:none;}
+        .gh-lm-dots > i.on::after{animation:none;transform:none;}
+        .gh-lm-float{animation:none;}
+        .gh-lm-hi{background-size:100% 38%;transition:none;}
+        .gh-lm-marquee-row{animation:none;flex-wrap:wrap;width:auto;justify-content:center;}
+        .gh-lm-marquee{-webkit-mask-image:none;mask-image:none;}
+        .gh-lm-progress{display:none;}
+      }
+    `}</style>
   );
 }
+
+// Marca .is-in cuando cada [data-reveal] entra en pantalla. Una sola vez.
+function ghUseReveal(rootRef) {
+  useEffect(() => {
+    // Raíz SIEMPRE document: el efecto corre antes de que exista el <div ref>
+    // (el hook se llama arriba del return), así que rootRef.current es null en
+    // la primera pasada y el efecto no se reejecuta nunca —el objeto ref no
+    // cambia de identidad—. El ref queda por compatibilidad de firma.
+    //
+    // El motor es ÚNICO y global (window.__ghRevealOn): si la landing se
+    // desmonta y se vuelve a montar (cambios de ruta del sitio público), el
+    // efecto anterior limpiaba sus listeners y el reveal quedaba muerto — la
+    // página entera invisible. Con el motor global eso no puede pasar: se
+    // instala una sola vez y sobrevive a los montajes.
+    if (typeof window === "undefined") return;
+    if (window.__ghRevealOn) { window.__ghRevealKick?.(); return; }
+    window.__ghRevealOn = true;
+
+    const VIS = 0.92;
+    let raf = 0;
+    // Barrido: revela lo que ya entró en pantalla O quedó por encima. Sin límite
+    // inferior a propósito: lo de arriba ya pasó por pantalla y tiene que verse
+    // (entrar por un ancla, refrescar a mitad de página, restauración de scroll).
+    const sweep = () => {
+      raf = 0;
+      const vh = window.innerHeight || 1;
+      document.querySelectorAll("[data-reveal]:not(.is-in)").forEach(e => {
+        if (e.getBoundingClientRect().top < vh * VIS) e.classList.add("is-in");
+      });
+    };
+    const kick = () => { if (!raf) raf = requestAnimationFrame(sweep); };
+    window.__ghRevealKick = kick;
+
+    if ("IntersectionObserver" in window) {
+      const io = new IntersectionObserver((ents) => {
+        for (const en of ents) if (en.isIntersecting) { en.target.classList.add("is-in"); io.unobserve(en.target); }
+      }, { threshold: 0.18, rootMargin: "0px 0px -8% 0px" });
+      const seen = new WeakSet();
+      const scan = () => document.querySelectorAll("[data-reveal]:not(.is-in)").forEach(e => {
+        if (!seen.has(e)) { seen.add(e); io.observe(e); }
+      });
+      scan();
+      // Lo que se monta después (secciones nuevas, FAQ que se abre) también entra.
+      if ("MutationObserver" in window) {
+        new MutationObserver(() => { scan(); kick(); }).observe(document.body, { childList: true, subtree: true });
+      }
+    } else {
+      document.querySelectorAll("[data-reveal]").forEach(e => e.classList.add("is-in"));
+    }
+
+    window.addEventListener("scroll", kick, { passive: true });
+    window.addEventListener("resize", kick);
+    window.addEventListener("load", kick);
+    document.addEventListener("visibilitychange", kick);
+    // Barridos escalonados: fuentes e imágenes mueven el layout, y en mobile la
+    // landing pasa de ~14.000 a ~22.000 px de alto.
+    [60, 200, 500, 1000, 2000].forEach(ms => setTimeout(kick, ms));
+    kick();
+    // Sin cleanup a propósito: el motor es global y tiene que seguir vivo
+    // aunque este componente se desmonte.
+  }, []);
+}
+
+// Progreso 0..1 del scroll dentro del elemento: 0 arriba, 1 abajo. Se escribe en
+// la CSS var --p del propio nodo (sin re-render de React).
+function ghUseScrollProgress(ref, {enabled = true} = {}) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !enabled) return;
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const r = el.getBoundingClientRect();
+      const vh = window.innerHeight || 1;
+      const total = Math.max(1, r.height - vh);
+      const p = Math.min(1, Math.max(0, -r.top / total));
+      el.style.setProperty("--p", p.toFixed(4));
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => { window.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, [ref, enabled]);
+}
+
+function ghUseMedia(query) {
+  const [m, setM] = useState(() => typeof window !== "undefined" && window.matchMedia ? window.matchMedia(query).matches : false);
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia(query);
+    const on = () => setM(mq.matches);
+    on();
+    mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
+    return () => { mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on); };
+  }, [query]);
+  return m;
+}
+const ghUseReduced = () => ghUseMedia("(prefers-reduced-motion: reduce)");
+
+// Hero: tres facetas de la app real (Inicio, Pendientes, Dashboard) que van
+// pasando, cada pasaje con una transición distinta (flip 3D · zoom con
+// desenfoque · cortina). Las tres están SIEMPRE montadas y apiladas, así la caja
+// mantiene el mismo tamaño y nada se corta.
+function GhHeroLoop({T, facetas}) {
+  const reduce = ghUseReduced();
+  const [i, setI] = useState(0);
+  const [prev, setPrev] = useState(null); // {i, trans} la faceta que sale
+  useEffect(() => { if (prev == null) return; const t = setTimeout(() => setPrev(null), 800); return () => clearTimeout(t); }, [prev]);
+  useEffect(() => {
+    if (reduce) return;
+    const dur = facetas[i]?.dur || 7000;
+    const t = setTimeout(() => setI(cur => { const n = (cur + 1) % facetas.length; setPrev({i: cur, trans: facetas[n].trans}); return n; }), dur);
+    return () => clearTimeout(t);
+  }, [i, reduce, facetas]);
+  const cur = facetas[i];
+  return (
+    <div style={{position:"relative"}}>
+      <div style={{position:"absolute",inset:-40,background:`radial-gradient(circle at 55% 25%, ${T.accentSolid}26 0%, transparent 62%)`,filter:"blur(30px)",pointerEvents:"none"}} aria-hidden="true"/>
+      <div className="gh-lm-stage">
+        {facetas.map((f, k) => {
+          const esActual = k === i, sale = prev != null && prev.i === k && !reduce;
+          const cls = "gh-lm-face " + (esActual ? (prev && !reduce ? "gh-lm-in-" + cur.trans : "") : sale ? "is-out gh-lm-out-" + prev.trans : "is-hidden");
+          return <div key={f.key} className={cls} aria-hidden={!esActual}>{f.render()}</div>;
+        })}
+      </div>
+      <div className="gh-lm-dots" aria-hidden="true">{facetas.map((f, k) => <i key={f.key} className={k === i ? "on" : ""} style={{"--dur":((f.dur||7000)/1000)+"s"}}/>)}</div>
+      <div className="gh-lm-facelabel">{cur.label} · datos de ejemplo</div>
+    </div>
+  );
+}
+// ── GH_LANDING_MOTION_END ────────────────────────────────────────────────
 
 function LandingPage({T, onLogin}) {
   const F = "'Inter',system-ui,sans-serif";
   const [faqAbierta,setFaqAbierta] = useState(0);
+  // Movimiento de la landing (ver GH_LANDING_MOTION): el reveal por sección y el
+  // progreso del scroll de la página entera en la CSS var --p de la raíz.
+  const landRef = useRef(null);
+  ghUseReveal(landRef);
+  ghUseScrollProgress(landRef);
   // ── Sistema visual de la landing: una sola familia tipográfica, un solo
   // acento, bordes finos, sin brillos ni degradados. Cada sección respira lo
   // mismo (104 px) y se separa con una línea, no con fondos de colores.
@@ -15842,7 +16040,8 @@ function LandingPage({T, onLogin}) {
   const kicker = (txt, c) => <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,fontWeight:600,letterSpacing:0.6,textTransform:"uppercase",color:ink3,marginBottom:14,fontFamily:F}}>{c&&<span style={{width:6,height:6,borderRadius:3,background:c,display:"inline-block"}}/>}{txt}</div>;
   const h2 = (txt, opts={}) => <h2 style={{fontSize:"clamp(28px,3.6vw,40px)",fontWeight:700,letterSpacing:-0.9,lineHeight:1.12,color:ink,margin:"0 0 14px",maxWidth:opts.center?720:640,textAlign:opts.center?"center":"left",marginLeft:opts.center?"auto":0,marginRight:opts.center?"auto":0,fontFamily:F}}>{txt}</h2>;
   const sub = (txt, opts={}) => <p style={{fontSize:16.5,color:ink2,lineHeight:1.6,margin:opts.center?"0 auto":"0",maxWidth:opts.center?600:560,textAlign:opts.center?"center":"left",fontFamily:F}}>{txt}</p>;
-  const head = (k, t, s, opts={}) => <div style={{marginBottom:opts.mb??56}}>{kicker(k, opts.c)}{h2(t,opts)}{s&&<div style={{marginTop:14}}>{sub(s,opts)}</div>}</div>;
+  // El encabezado de cada sección entra con la variante que le toque (opts.rev).
+  const head = (k, t, s, opts={}) => <div data-reveal={opts.rev||"rise"} style={{marginBottom:opts.mb??56}}>{kicker(k, opts.c)}{h2(t,opts)}{s&&<div style={{marginTop:14}}>{sub(s,opts)}</div>}</div>;
   const Check = ({c}) => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={c||ink3} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:3}}><path d="M5 12.5l4.2 4L19 7"/></svg>;
   const lista = (items, c) => <div style={{display:"flex",flexDirection:"column",gap:10}}>{items.map(x=><div key={x} style={{display:"flex",gap:10,fontSize:14.5,color:ink,lineHeight:1.5}}><Check c={c}/>{x}</div>)}</div>;
   const btnPri = (label, onClick, big) => <button onClick={onClick} style={{background:T.accentSolid,border:`1px solid ${T.accentSolid}`,color:"#fff",borderRadius:10,fontSize:big?15:13.5,fontWeight:600,padding:big?"13px 22px":"8px 14px",cursor:"pointer",fontFamily:F,lineHeight:1.2}}>{label}</button>;
@@ -15890,12 +16089,14 @@ function LandingPage({T, onLogin}) {
     ["Stock","Producto A · Negro: quedan 4 días","Reponer",T.yellow],
     ["Canjes","Contenido de @creadora vence mañana","Ver canje","#E1306C"],
   ];
-  // Videos de la home (Loom públicos, en este orden). Solo se muestran los que
-  // tienen `loom`: el del problema se completa cuando esté grabado.
-  const VIDEOS = [
-    { id:"problema", paso:"1", titulo:"El caos de hoy", desc:"Cómo se maneja hoy un e-commerce: planillas, apps sueltas, un facturador tosco y el equipo en WhatsApp.", loom:"343de915a2ae4d87aef42c898adf6da6", mp4:"https://firebasestorage.googleapis.com/v0/b/soluna-gestion.firebasestorage.app/o/el-caos-de-hoy.mp4?alt=media&token=dbdfa563-4768-41a7-b892-c86eb0877b1c", poster:"https://cdn.loom.com/sessions/thumbnails/343de915a2ae4d87aef42c898adf6da6-352df69f1c0a091c.gif", dur:"10 min" },
-    { id:"adentro", paso:"2", titulo:"Growith por dentro", desc:"Un recorrido completo por la app: Inicio, Dashboard, Envíos, Stock, Facturador, publicidad y más.", loom:"8528325183d843f9920af14251ec438c", mp4:"https://firebasestorage.googleapis.com/v0/b/soluna-gestion.firebasestorage.app/o/growith-por-dentro.mp4?alt=media&token=8d31034c-95ab-4f1f-884e-ae50e3f4cb2d", poster:"https://cdn.loom.com/sessions/thumbnails/8528325183d843f9920af14251ec438c-84f5c0867289906d.gif", dur:"14 min" },
-  ].filter(v => v.loom || v.mp4);
+  // Tercera faceta del hero: el Dashboard de márgenes (números de demo).
+  const HERO_DASH = [
+    ["Facturación","$ 12.430.000",T.text],
+    ["Costo de mercadería","− $ 4.980.000",T.textMd],
+    ["Comisiones y envíos","− $ 1.910.000",T.textMd],
+    ["Publicidad","− $ 2.140.000",T.textMd],
+  ];
+  const HERO_CANALES = [["Tienda Nube","62%",62],["Mercado Libre","29%",29],["Shopify","9%",9]];
   const MARQUEE = [["tiendanube","Tienda Nube"],["shopify","Shopify"],["mercadolibre","Mercado Libre"],["mercadopago","Mercado Pago"],["pagonube","Pago Nube"],["pagospers","Pagos personalizados"],["recurrentes","Recurrentes",true],["meta","Meta Ads"],["googleads","Google Ads"],["andreani","Andreani"],["arca","ARCA"],["Claude","Claude"],["ChatGPT","ChatGPT"],["Gemini","Gemini"]];
 
   // ── Hoy: el negocio repartido en pestañas ──
@@ -16064,14 +16265,87 @@ function LandingPage({T, onLogin}) {
     {n:"Intermedio", d:"Toda la gestión de tu e-commerce", p:39, antes:59, anual:32, rec:true, b:["Todo lo del plan Facturador","Meta Ads y Mercado Ads","Stock cruzado entre canales","Mercado Libre integrado","Envíos con etiquetas Andreani","Reclamos, Canjes y Tareas ilimitados"]},
     {n:"Pro", d:"Todo Growith para tu e-commerce", p:69, antes:99, anual:57, b:["Todo lo del plan Intermedio","Dashboard de rentabilidad en tiempo real","Tu profit real por venta: costos, comisiones y publicidad"]},
   ];
-  const split = (izq, der, invert) => (
+  // La caja del hero: misma ventana plana para las tres facetas (título, chip de
+  // período y el contenido que cambia). Alto mínimo fijo para que no salte.
+  const ventanaHero = (titulo, periodo, hijos) => (
+    <div style={{background:T.card,border:`1px solid ${line}`,borderRadius:14,overflow:"hidden",boxShadow:"0 30px 80px -40px rgba(0,0,0,0.6)",height:"100%",display:"flex",flexDirection:"column",minHeight:322}}>
+      <div style={{display:"flex",alignItems:"center",padding:"12px 18px",borderBottom:`1px solid ${lineL}`}}>
+        <span style={{fontSize:12,color:ink2,fontWeight:600}}>{titulo}</span>
+        <span style={{marginLeft:"auto",fontSize:11,color:ink3,border:`1px solid ${lineL}`,borderRadius:6,padding:"2px 8px"}}>{periodo}</span>
+      </div>
+      <div style={{flex:1,minHeight:0}}>{hijos}</div>
+    </div>
+  );
+  const heroFacetas = [
+    {key:"kpis", trans:"flip", label:"Inicio · lo facturado y los pedidos", dur:7000, render:()=>ventanaHero("Inicio","Este mes",
+      <div>
+        <div className="gh-land-kpis" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:0,borderBottom:`1px solid ${lineL}`}}>
+          {HERO_KPIS.map((k,i)=>(
+            <div key={k.l} style={{padding:"18px 20px",borderLeft:i?`1px solid ${lineL}`:"none"}}>
+              <div style={{fontSize:12,color:ink3,fontWeight:500,marginBottom:6}}>{k.l}</div>
+              <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.8,color:k.c,lineHeight:1}}>{k.v}</div>
+              <div style={{fontSize:11.5,color:ink3,marginTop:6}}>{k.d}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{padding:"16px 20px 18px"}}>
+          <div style={{fontSize:12.5,fontWeight:600,marginBottom:10}}>Ventas por canal</div>
+          {HERO_CANALES.map(([n,pct,w])=>(
+            <div key={n} style={{marginBottom:9}}>
+              <div style={{display:"flex",fontSize:12,color:ink2,marginBottom:4}}><span style={{flex:1}}>{n}</span><span style={{fontWeight:600,color:ink}}>{pct}</span></div>
+              <div style={{height:5,borderRadius:4,background:T.bg}}><div style={{height:"100%",width:`${w}%`,borderRadius:4,background:T.accentSolid}}/></div>
+            </div>
+          ))}
+        </div>
+      </div>)},
+    {key:"pend", trans:"zoom", label:"Inicio · todo lo pendiente del día", dur:7500, render:()=>ventanaHero("Inicio · Pendientes","Hoy",
+      <div style={{padding:"14px 20px 18px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+          <span style={{fontSize:12.5,fontWeight:600}}>Pendientes</span>
+          <span style={{fontSize:11,fontWeight:600,color:ink3}}>{HERO_PEND.length}</span>
+        </div>
+        {HERO_PEND.map(([cat,txt,acc,c])=>(
+          <div key={txt} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderTop:`1px solid ${lineL}`,fontSize:13}}>
+            <span style={{width:6,height:6,borderRadius:3,background:c,flexShrink:0}}/>
+            <span style={{width:70,fontSize:11.5,fontWeight:600,color:ink3,flexShrink:0}}>{cat}</span>
+            <span style={{flex:1,minWidth:0,color:ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txt}</span>
+            <span style={{fontSize:12,fontWeight:600,color:T.accent,whiteSpace:"nowrap"}}>{acc} →</span>
+          </div>
+        ))}
+        <div style={{fontSize:11,color:ink3,marginTop:12}}>Un clic en cada línea y estás resolviendo</div>
+      </div>)},
+    {key:"dash", trans:"wipe", label:"Dashboard · tu ganancia real", dur:7000, render:()=>ventanaHero("Dashboard · Márgenes","Este mes",
+      <div style={{padding:"16px 20px 18px"}}>
+        {HERO_DASH.map(([l,v,c])=>(
+          <div key={l} style={{display:"flex",alignItems:"center",padding:"10px 0",borderTop:`1px solid ${lineL}`,fontSize:13}}>
+            <span style={{flex:1,color:ink2}}>{l}</span>
+            <span style={{fontWeight:600,color:c,fontVariantNumeric:"tabular-nums"}}>{v}</span>
+          </div>
+        ))}
+        <div style={{display:"flex",alignItems:"center",padding:"14px 0 4px",borderTop:`1px solid ${line}`,marginTop:4}}>
+          <span style={{flex:1,fontSize:13.5,fontWeight:600}}>Ganancia</span>
+          <span style={{fontSize:22,fontWeight:700,letterSpacing:-0.8,color:T.green,fontVariantNumeric:"tabular-nums"}}>$ 3.400.000</span>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:12}}>
+          {[["Margen","27,4%"],["Ticket promedio","$ 25.580"],["ROAS","3,1x"]].map(([l,v])=>(
+            <div key={l} style={{flex:1,background:T.bg,border:`1px solid ${lineL}`,borderRadius:9,padding:"7px 9px"}}>
+              <div style={{fontSize:9.5,color:ink3}}>{l}</div><div style={{fontSize:14,fontWeight:700}}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>)},
+  ];
+  // Las dos columnas entran por lados opuestos; la mock con su propia variante.
+  const split = (izq, der, invert, rev) => (
     <div className="gh-land-row" style={{display:"grid",gridTemplateColumns:"minmax(0,5fr) minmax(0,6fr)",gap:64,alignItems:"center"}}>
-      <div style={{order:invert?2:1}}>{izq}</div>
-      <div className="gh-land-mock" style={{order:invert?1:2}}>{der}</div>
+      <div data-reveal={invert?"right":"left"} style={{order:invert?2:1}}>{izq}</div>
+      <div data-reveal={rev||(invert?"tilt":"swing")} className="gh-land-mock" style={{order:invert?1:2}}>{der}</div>
     </div>
   );
   return (
-    <div style={{fontFamily:F, background:T.bg, minHeight:"100vh", color:ink, WebkitFontSmoothing:"antialiased"}}>
+    <div ref={landRef} style={{fontFamily:F, background:T.bg, minHeight:"100vh", color:ink, WebkitFontSmoothing:"antialiased"}}>
+      <GhMotionStyle T={T}/>
+      <div className="gh-lm-progress" aria-hidden="true"><i/></div>
       <style>{`
         .gh-land-row{}
         @media(max-width:900px){ .gh-land-row{grid-template-columns:1fr!important;gap:32px!important;} .gh-land-row>.gh-land-mock{order:2!important;} .gh-land-row>div:first-child{order:1!important;} .gh-land-g4{grid-template-columns:repeat(2,1fr)!important;} .gh-land-g3{grid-template-columns:1fr!important;} .gh-land-g2{grid-template-columns:1fr!important;} .gh-land-antes{grid-template-columns:1fr!important;} .gh-land-foot{grid-template-columns:1fr 1fr!important;} .gh-land-stats{grid-template-columns:1fr!important;} }
@@ -16080,8 +16354,6 @@ function LandingPage({T, onLogin}) {
         .gh-land-navlink{color:${ink2};} .gh-land-navlink:hover{color:${ink};}
         .gh-land-logo{opacity:0.72;filter:grayscale(1);transition:opacity .15s ease, filter .15s ease;} .gh-land-logo:hover{opacity:1;filter:none;}
         .gh-land-faqbtn:hover{color:${ink};}
-        @keyframes ghLandUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-        .gh-land-up{animation:ghLandUp .6s cubic-bezier(.22,1,.36,1) both}
       `}</style>
 
       {/* Nav */}
@@ -16099,93 +16371,50 @@ function LandingPage({T, onLogin}) {
 
       {/* Hero */}
       <div className="gh-land-hero" style={{...WRAP,padding:"112px 24px 0",textAlign:"center"}}>
-        <div className="gh-land-up" style={{fontSize:13,fontWeight:500,color:ink2,marginBottom:22}}>14 días de prueba gratis · sin tarjeta</div>
-        <h1 className="gh-land-up" style={{fontSize:"clamp(36px,6.2vw,68px)",fontWeight:700,letterSpacing:-2,lineHeight:1.04,margin:"0 auto 22px",maxWidth:880,animationDelay:".05s"}}>
+        <div data-reveal="left" style={{fontSize:13,fontWeight:500,color:ink2,marginBottom:22}}>14 días de prueba gratis · sin tarjeta</div>
+        <h1 data-reveal="rise" data-reveal-delay="1" style={{fontSize:"clamp(36px,6.2vw,68px)",fontWeight:700,letterSpacing:-2,lineHeight:1.04,margin:"0 auto 22px",maxWidth:880}}>
           Todo tu e‑commerce bajo control.<br/><span style={{color:ink2}}>A un clic.</span>
         </h1>
-        <p className="gh-land-up" style={{fontSize:18,color:ink2,lineHeight:1.55,maxWidth:620,margin:"0 auto 32px",animationDelay:".1s"}}>
+        <p data-reveal="rise" data-reveal-delay="2" style={{fontSize:18,color:ink2,lineHeight:1.55,maxWidth:620,margin:"0 auto 32px"}}>
           Márgenes, pedidos, envíos, stock, reclamos, facturación y publicidad de tu Tienda Nube, Shopify y Mercado Libre, en un solo lugar. Entrás y sabés qué pasó, qué falta y qué resolver hoy.
         </p>
-        <div className="gh-land-up" style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap",animationDelay:".15s"}}>
+        <div data-reveal="pop" data-reveal-delay="3" style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
           {btnPri("Probar gratis 14 días", onLogin, true)}
-          {btnSec(VIDEOS.length>0?"Ver el video":"Ver qué incluye", ()=>irA(VIDEOS.length>0?"gh-landing-video":"gh-landing-features"), true)}
+          {btnSec("Ver qué incluye", ()=>irA("gh-landing-features"), true)}
         </div>
-        <div className="gh-land-up" style={{fontSize:12.5,color:ink3,marginTop:18,animationDelay:".2s"}}>Sin renovación automática · Cancelás cuando quieras · Soporte en español</div>
+        <div data-reveal data-reveal-delay="4" style={{fontSize:12.5,color:ink3,marginTop:18}}>Sin renovación automática · Cancelás cuando quieras · Soporte en español</div>
 
-        {/* El Inicio real, en una ventana plana */}
-        <div className="gh-land-up" style={{margin:"72px auto 0",maxWidth:960,textAlign:"left",animationDelay:".25s"}}>
-          <div style={{background:T.card,border:`1px solid ${line}`,borderRadius:14,overflow:"hidden",boxShadow:"0 30px 80px -40px rgba(0,0,0,0.6)"}}>
-            <div style={{display:"flex",alignItems:"center",padding:"12px 18px",borderBottom:`1px solid ${lineL}`}}>
-              <span style={{fontSize:12,color:ink2,fontWeight:600}}>Inicio</span>
-              <span style={{marginLeft:"auto",fontSize:11,color:ink3,border:`1px solid ${lineL}`,borderRadius:6,padding:"2px 8px"}}>Este mes</span>
-            </div>
-            <div className="gh-land-kpis" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:0,borderBottom:`1px solid ${lineL}`}}>
-              {HERO_KPIS.map((k,i)=>(
-                <div key={k.l} style={{padding:"18px 20px",borderLeft:i?`1px solid ${lineL}`:"none"}}>
-                  <div style={{fontSize:12,color:ink3,fontWeight:500,marginBottom:6}}>{k.l}</div>
-                  <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.8,color:k.c,lineHeight:1}}>{k.v}</div>
-                  <div style={{fontSize:11.5,color:ink3,marginTop:6}}>{k.d}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{padding:"14px 20px 18px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                <span style={{fontSize:12.5,fontWeight:600}}>Pendientes</span>
-                <span style={{fontSize:11,fontWeight:600,color:ink3}}>{HERO_PEND.length}</span>
-              </div>
-              {HERO_PEND.map(([cat,txt,acc,c])=>(
-                <div key={txt} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 0",borderTop:`1px solid ${lineL}`,fontSize:13}}>
-                  <span style={{width:6,height:6,borderRadius:3,background:c,flexShrink:0}}/>
-                  <span style={{width:70,fontSize:11.5,fontWeight:600,color:ink3,flexShrink:0}}>{cat}</span>
-                  <span style={{flex:1,minWidth:0,color:ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txt}</span>
-                  <span style={{fontSize:12,fontWeight:600,color:T.accent,whiteSpace:"nowrap"}}>{acc} →</span>
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* El hero rota tres facetas de la app real: los KPIs del Inicio, los
+            pendientes del día y el Dashboard de márgenes. Cada pasaje entra
+            distinto (flip 3D · zoom con desenfoque · cortina) y la caja mide
+            siempre lo mismo, así nada salta. */}
+        <div data-reveal="pop" className="gh-lm-float" style={{margin:"72px auto 0",maxWidth:960,textAlign:"left"}}>
+          <GhHeroLoop T={T} facetas={heroFacetas}/>
         </div>
 
         {/* Con qué se conecta: fila estática, sin marquee */}
-        <div id="gh-landing-integs" style={{padding:"56px 0 88px"}}>
+        {/* Se conecta con lo que ya usás: la fila se desliza sola (se pausa al
+            pasar el mouse) y con prefers-reduced-motion queda quieta y envuelta. */}
+        <div id="gh-landing-integs" data-reveal="wipe" style={{padding:"56px 0 88px"}}>
           <div style={{fontSize:12,color:ink3,fontWeight:500,marginBottom:20}}>Se conecta con lo que ya usás</div>
-          <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"12px 28px"}}>
-            {MARQUEE.map(([b,n,soon])=>(
-              <span key={n} className="gh-land-logo" style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:13.5,fontWeight:600,color:ink2,whiteSpace:"nowrap"}}>
-                {marca(b,18)}{n}{soon&&pronto}
-              </span>
-            ))}
+          <div className="gh-lm-marquee">
+            <div className="gh-lm-marquee-row">
+              {[...MARQUEE,...MARQUEE].map(([b,n,soon],i)=>(
+                <span key={n+i} className="gh-land-logo" style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:13.5,fontWeight:600,color:ink2,whiteSpace:"nowrap"}}>
+                  {marca(b,18)}{n}{soon&&pronto}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Videos */}
-      {VIDEOS.length>0&&(
-        <div id="gh-landing-video" className="gh-land-sec" style={SEC}>
-          <div style={WRAP}>
-            {head("Mirá Growith", VIDEOS.length>1?"Del caos de hoy a todo bajo control":"Growith por dentro", VIDEOS.length>1?"Primero el problema de todos los días. Después, cómo lo resuelve Growith.":"Un recorrido de punta a punta por la app, con datos de ejemplo.")}
-            <div className="gh-land-g2" style={{display:"grid",gridTemplateColumns:VIDEOS.length>1?"1fr 1fr":"minmax(0,760px)",gap:32}}>
-              {VIDEOS.map((v,i)=>(
-                <div key={v.id}>
-                  <GhLandingVideo T={T} v={v}/>
-                  <div style={{display:"flex",alignItems:"baseline",gap:10,marginTop:16}}>
-                    {VIDEOS.length>1&&<span style={{fontSize:12,fontWeight:600,color:ink3,fontVariantNumeric:"tabular-nums"}}>0{i+1}</span>}
-                    <div style={{fontSize:17,fontWeight:600}}>{v.titulo}</div>
-                    {v.dur&&<span style={{fontSize:12,color:ink3}}>{v.dur}</span>}
-                  </div>
-                  <div style={{fontSize:14,color:ink2,lineHeight:1.6,marginTop:6}}>{v.desc}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Antes / después */}
       <div className="gh-land-sec" style={SEC}>
         <div style={WRAP}>
-          {head("Todo en un lugar","Tu negocio hoy está repartido en diez pestañas","Para saber cómo viene el día tenés que abrir la tienda, Mercado Libre, el portal de Andreani, ARCA, el administrador de anuncios y un par de planillas. Growith lo junta en una sola pantalla.")}
+          {head("Todo en un lugar","Tu negocio hoy está repartido en diez pestañas","Para saber cómo viene el día tenés que abrir la tienda, Mercado Libre, el portal de Andreani, ARCA, el administrador de anuncios y un par de planillas. Growith lo junta en una sola pantalla.",{rev:"tilt"})}
           <div className="gh-land-antes" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
-            <div style={{border:`1px solid ${line}`,borderRadius:12,padding:"22px 24px"}}>
+            <div data-reveal="left" style={{border:`1px solid ${line}`,borderRadius:12,padding:"22px 24px"}}>
               <div style={{fontSize:12,fontWeight:600,letterSpacing:0.6,textTransform:"uppercase",color:ink3,marginBottom:14}}>Hoy</div>
               {PESTANAS.map(p=>(
                 <div key={p} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderTop:`1px solid ${lineL}`,fontSize:14,color:ink2}}>
@@ -16193,7 +16422,7 @@ function LandingPage({T, onLogin}) {
                 </div>
               ))}
             </div>
-            <div style={{border:`1px solid ${T.accentSolid}`,borderRadius:12,padding:"22px 24px",background:T.card}}>
+            <div data-reveal="flip" data-reveal-delay="2" style={{border:`1px solid ${T.accentSolid}`,borderRadius:12,padding:"22px 24px",background:T.card}}>
               <div style={{fontSize:12,fontWeight:600,letterSpacing:0.6,textTransform:"uppercase",color:T.accent,marginBottom:14}}>Con Growith</div>
               <div style={{display:"flex",alignItems:"center",gap:10,paddingBottom:14,borderBottom:`1px solid ${lineL}`,marginBottom:6}}>
                 <img src="/logo-color.png" alt="" style={{width:28,height:28,borderRadius:7}}/>
@@ -16233,10 +16462,10 @@ function LandingPage({T, onLogin}) {
       {/* Mapa de secciones */}
       <div id="gh-landing-features" className="gh-land-sec" style={SEC}>
         <div style={WRAP}>
-          {head("Qué incluye","Cada parte de tu negocio, a un clic","Así está organizado el menú de Growith. Todo lo que hoy hacés en otras apps, planillas y portales, en una sección propia.")}
+          {head("Qué incluye","Cada parte de tu negocio, a un clic","Así está organizado el menú de Growith. Todo lo que hoy hacés en otras apps, planillas y portales, en una sección propia.",{rev:"spin"})}
           <div className="gh-land-g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:0,border:`1px solid ${line}`,borderRadius:12,overflow:"hidden"}}>
             {AREAS.map((a,ai)=>(
-              <div key={a.t} style={{padding:"22px 22px 12px",borderLeft:ai?`1px solid ${lineL}`:"none",background:T.card}}>
+              <div key={a.t} data-reveal="pop" data-reveal-delay={String(ai+1)} style={{padding:"22px 22px 12px",borderLeft:ai?`1px solid ${lineL}`:"none",background:T.card}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,fontWeight:600,letterSpacing:0.6,textTransform:"uppercase",color:ink3,marginBottom:8}}><span style={{width:6,height:6,borderRadius:3,background:a.c}}/>{a.t}</div>
                 {a.items.map(it=>(
                   <div key={it.n} style={{display:"flex",gap:12,padding:"12px 0",borderTop:`1px solid ${lineL}`}}>
@@ -16256,14 +16485,15 @@ function LandingPage({T, onLogin}) {
       {/* Cómo funciona cada sección */}
       <div id="gh-landing-modulos" className="gh-land-sec" style={SEC}>
         <div style={WRAP}>
-          {head("Cómo funciona","Así se ve cada sección por dentro","Cada sección resuelve una parte concreta de la operación. Esto es lo que vas a encontrar cuando entres.",{mb:80})}
+          {head("Cómo funciona","Así se ve cada sección por dentro","Cada sección resuelve una parte concreta de la operación. Esto es lo que vas a encontrar cuando entres.",{mb:80,rev:"flip"})}
           <div style={{display:"flex",flexDirection:"column",gap:96}}>
+            {/* La mock de cada módulo entra con una variante distinta, en ciclo. */}
             {MODULOS.map((m,i)=><div key={m.k}>{split(<div>
               {kicker(m.k, m.c)}
               {h2(m.t)}
               <div style={{marginTop:14,marginBottom:24}}>{sub(m.d)}</div>
               {lista(m.b, m.c)}
-            </div>, mockDe(m.mock), i%2===1)}</div>)}
+            </div>, mockDe(m.mock), i%2===1, ["swing","flip","pop","wipe","spin","tilt","rise"][i%7])}</div>)}
           </div>
         </div>
       </div>
@@ -16271,10 +16501,10 @@ function LandingPage({T, onLogin}) {
       {/* Avisos */}
       <div id="gh-landing-avisos" className="gh-land-sec" style={SEC}>
         <div style={WRAP}>
-          {head("Avisos","Growith te avisa antes de que sea un problema","No tenés que revisar todo el día. Cuando algo necesita tu atención, te enterás.")}
+          {head("Avisos","Growith te avisa antes de que sea un problema","No tenés que revisar todo el día. Cuando algo necesita tu atención, te enterás.",{rev:"swing"})}
           <div className="gh-land-g3" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"40px 32px"}}>
-            {AVISOS.map(a=>(
-              <div key={a.t}>
+            {AVISOS.map((a,i)=>(
+              <div key={a.t} data-reveal="pop" data-reveal-delay={String((i%3)+1)}>
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><span style={{color:a.c,display:"inline-flex"}}><GhI n={a.gi} size={16}/></span><div style={{fontSize:15.5,fontWeight:600}}>{a.t}</div></div>
                 <div style={{fontSize:14,color:ink2,lineHeight:1.6}}>{a.d}</div>
               </div>
@@ -16286,10 +16516,10 @@ function LandingPage({T, onLogin}) {
       {/* Un día con Growith */}
       <div id="gh-landing-dia" className="gh-land-sec" style={SEC}>
         <div style={WRAP}>
-          {head("En la práctica","Un día con Growith","Todo lo del día, desde el mismo lugar.")}
+          {head("En la práctica","Un día con Growith","Todo lo del día, desde el mismo lugar.",{rev:"wipe"})}
           <div style={{maxWidth:760}}>
             {DIA.map(([h,t,d,gi],i)=>(
-              <div key={h} className="gh-land-dia" style={{display:"grid",gridTemplateColumns:"72px 28px 1fr",gap:12,padding:"16px 0",borderTop:`1px solid ${lineL}`,alignItems:"start"}}>
+              <div key={h} data-reveal="left" className="gh-land-dia" style={{display:"grid",gridTemplateColumns:"72px 28px 1fr",gap:12,padding:"16px 0",borderTop:`1px solid ${lineL}`,alignItems:"start"}}>
                 <span style={{fontSize:13,fontWeight:600,color:ink3,fontVariantNumeric:"tabular-nums",paddingTop:2}}>{h}</span>
                 <span className="gh-land-hide-m" style={{color:ink3,display:"inline-flex",paddingTop:2}}><GhI n={gi} size={15}/></span>
                 <div><div style={{fontSize:15.5,fontWeight:600,marginBottom:3}}>{t}</div><div style={{fontSize:14,color:ink2,lineHeight:1.6}}>{d}</div></div>
@@ -16302,10 +16532,10 @@ function LandingPage({T, onLogin}) {
       {/* Equipo, multi-tienda y conexiones */}
       <div className="gh-land-sec" style={SEC}>
         <div style={WRAP}>
-          {head("Equipo","Todos trabajando en el mismo lugar","Vos ves todo. Cada persona de tu equipo ve lo suyo.")}
+          {head("Equipo","Todos trabajando en el mismo lugar","Vos ves todo. Cada persona de tu equipo ve lo suyo.",{rev:"tilt"})}
           <div className="gh-land-g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:32}}>
-            {EQUIPO.map(s=>(
-              <div key={s.t}>
+            {EQUIPO.map((s,i)=>(
+              <div key={s.t} data-reveal="rise" data-reveal-delay={String(i+1)}>
                 <span style={{color:ink3,display:"inline-flex",marginBottom:12}}><GhI n={s.gi} size={18}/></span>
                 <div style={{fontSize:15.5,fontWeight:600,marginBottom:8}}>{s.t}</div>
                 <div style={{fontSize:14,color:ink2,lineHeight:1.6}}>{s.d}</div>
@@ -16329,17 +16559,17 @@ function LandingPage({T, onLogin}) {
               Tenés <strong style={{color:ink}}>2 envíos</strong> con problemas: el #1475 está en sucursal hace 4 días y el #1471 tuvo una visita fallida.<br/><br/>
               En stock, al <strong style={{color:ink}}>Producto A · Negro</strong> le quedan 4 días y el <strong style={{color:ink}}>Producto C · Talle M</strong> está agotado.
             </div>
-          </div>))}
+          </div>), false, "wipe")}
         </div>
       </div>
 
       {/* Integraciones por categoría */}
       <div id="gh-landing-integraciones" className="gh-land-sec" style={SEC}>
         <div style={WRAP}>
-          {head("Integraciones","Todo lo que ya usás, conectado","Growith se conecta con las plataformas de tu negocio. Sin exportar planillas ni copiar datos.")}
+          {head("Integraciones","Todo lo que ya usás, conectado","Growith se conecta con las plataformas de tu negocio. Sin exportar planillas ni copiar datos.",{rev:"rise"})}
           <div className="gh-land-g3" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:0,border:`1px solid ${line}`,borderRadius:12,overflow:"hidden"}}>
             {CATEGORIAS.map((c,i)=>(
-              <div key={c.t} style={{padding:"22px 24px",background:T.card,borderLeft:i%3?`1px solid ${lineL}`:"none",borderTop:i>=3?`1px solid ${lineL}`:"none"}}>
+              <div key={c.t} data-reveal="flip" data-reveal-delay={String((i%3)+1)} style={{padding:"22px 24px",background:T.card,borderLeft:i%3?`1px solid ${lineL}`:"none",borderTop:i>=3?`1px solid ${lineL}`:"none"}}>
                 <div style={{fontSize:15,fontWeight:600,marginBottom:4}}>{c.t}</div>
                 <div style={{fontSize:13,color:ink3,lineHeight:1.5,marginBottom:14}}>{c.d}</div>
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -16362,7 +16592,7 @@ function LandingPage({T, onLogin}) {
               {k:"Con Growith", pre:"desde USD", v:"19", suf:"/mes", l:"todo unificado en un solo lugar; el Pro completo cuesta USD 69"},
               {k:"Puesta en marcha", v:"5", suf:" min", l:"conectás tu tienda y ya ves tus pedidos y pendientes"},
             ].map((s,i)=>(
-              <div key={s.k} style={{padding:"26px 28px",background:T.card,borderLeft:i?`1px solid ${lineL}`:"none"}}>
+              <div key={s.k} data-reveal="spin" data-reveal-delay={String(i+1)} style={{padding:"26px 28px",background:T.card,borderLeft:i?`1px solid ${lineL}`:"none"}}>
                 <div style={{fontSize:12,fontWeight:600,letterSpacing:0.6,textTransform:"uppercase",color:ink3,marginBottom:12}}>{s.k}</div>
                 <div style={{display:"flex",alignItems:"baseline",gap:6}}>
                   {s.pre&&<span style={{fontSize:13,fontWeight:600,color:ink3}}>{s.pre}</span>}
@@ -16373,14 +16603,14 @@ function LandingPage({T, onLogin}) {
               </div>
             ))}
           </div>
-          {head("Cómo empezar","En marcha en minutos","Sin migraciones, sin importar planillas, sin implementación. Conectás y Growith hace el resto.")}
+          {head("Cómo empezar","En marcha en minutos","Sin migraciones, sin importar planillas, sin implementación. Conectás y Growith hace el resto.",{rev:"pop"})}
           <div className="gh-land-g3" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:32}}>
             {[
               {n:"01",t:"Conectá tus canales",d:"Tienda Nube, Shopify, Mercado Libre y tus cuentas publicitarias, con un par de clics. Sin tocar código."},
               {n:"02",t:"Growith junta todo",d:"Pedidos, stock, envíos, reclamos y facturas se ordenan solos y se mantienen al día, canal por canal."},
               {n:"03",t:"Manejá todo desde un lugar",d:"Despachá, facturá, respondé, reponé stock y seguí tus campañas sin saltar entre apps."},
-            ].map(p=>(
-              <div key={p.n} style={{borderTop:`1px solid ${line}`,paddingTop:18}}>
+            ].map((p,i)=>(
+              <div key={p.n} data-reveal="right" data-reveal-delay={String(i+1)} style={{borderTop:`1px solid ${line}`,paddingTop:18}}>
                 <div style={{fontSize:12,fontWeight:600,color:ink3,marginBottom:10,fontVariantNumeric:"tabular-nums"}}>{p.n}</div>
                 <div style={{fontSize:16,fontWeight:600,marginBottom:8}}>{p.t}</div>
                 <div style={{fontSize:14,color:ink2,lineHeight:1.6}}>{p.d}</div>
@@ -16393,10 +16623,10 @@ function LandingPage({T, onLogin}) {
       {/* Precios */}
       <div id="gh-landing-precios" className="gh-land-sec" style={SEC}>
         <div style={WRAP}>
-          {head("Precios","Planes simples, sin letra chica","Probás gratis 14 días con absolutamente todo. Después elegís lo que necesitás.",{center:true})}
+          {head("Precios","Planes simples, sin letra chica","Probás gratis 14 días con absolutamente todo. Después elegís lo que necesitás.",{center:true,rev:"flip"})}
           <div className="gh-land-g3" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16,alignItems:"stretch"}}>
-            {PLANES_L.map(p=>(
-              <div key={p.n} style={{background:T.card,border:`1px solid ${p.rec?T.accentSolid:line}`,borderRadius:14,padding:"26px 26px 24px",display:"flex",flexDirection:"column",position:"relative"}}>
+            {PLANES_L.map((p,i)=>(
+              <div key={p.n} data-reveal="swing" data-reveal-delay={String(i+1)} style={{background:T.card,border:`1px solid ${p.rec?T.accentSolid:line}`,borderRadius:14,padding:"26px 26px 24px",display:"flex",flexDirection:"column",position:"relative"}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
                   <div style={{fontSize:15,fontWeight:600}}>{p.n}</div>
                   {p.rec&&<span style={{fontSize:11,fontWeight:600,color:T.accent,border:`1px solid ${T.accentSolid}66`,borderRadius:6,padding:"2px 8px"}}>Recomendado</span>}
@@ -16419,7 +16649,7 @@ function LandingPage({T, onLogin}) {
               </div>
             ))}
           </div>
-          <div style={{maxWidth:640,margin:"28px auto 0",textAlign:"center",fontSize:13.5,color:ink3,lineHeight:1.6}}>
+          <div data-reveal style={{maxWidth:640,margin:"28px auto 0",textAlign:"center",fontSize:13.5,color:ink3,lineHeight:1.6}}>
             Sin tarjeta · Sin renovación automática · Cancelás cuando quieras.<br/>¿Manejás más de una marca? Sumá tiendas a tu mismo login: <span style={{color:ink2}}>USD 5, 10 o 15 por mes</span> cada una, según el plan.
           </div>
         </div>
@@ -16428,12 +16658,12 @@ function LandingPage({T, onLogin}) {
       {/* Preguntas frecuentes */}
       <div id="gh-landing-faq" className="gh-land-sec" style={SEC}>
         <div style={{...WRAP,maxWidth:820}}>
-          {head("Preguntas frecuentes","Lo que nos preguntan antes de empezar","Si te queda alguna duda, escribinos y te respondemos nosotros.")}
+          {head("Preguntas frecuentes","Lo que nos preguntan antes de empezar","Si te queda alguna duda, escribinos y te respondemos nosotros.",{rev:"left"})}
           <div style={{borderTop:`1px solid ${line}`}}>
             {FAQ.map(([q,a],i)=>{
               const abierta=faqAbierta===i;
               return (
-                <div key={q} style={{borderBottom:`1px solid ${line}`}}>
+                <div key={q} data-reveal="rise" style={{borderBottom:`1px solid ${line}`}}>
                   <button onClick={()=>setFaqAbierta(abierta?-1:i)} aria-expanded={abierta} className="gh-land-faqbtn" style={{width:"100%",display:"flex",alignItems:"center",gap:16,padding:"18px 0",background:"transparent",border:"none",cursor:"pointer",textAlign:"left",fontFamily:F,fontSize:15.5,fontWeight:600,color:abierta?ink:ink2}}>
                     <span style={{flex:1}}>{q}</span>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{flexShrink:0,transform:abierta?"rotate(45deg)":"none",transition:"transform .15s ease",color:ink3}}><path d="M12 5v14M5 12h14"/></svg>
@@ -16449,9 +16679,9 @@ function LandingPage({T, onLogin}) {
       {/* CTA final */}
       <div className="gh-land-sec" style={SEC}>
         <div style={{...WRAP,textAlign:"center"}}>
-          <h2 style={{fontSize:"clamp(30px,4.4vw,48px)",fontWeight:700,letterSpacing:-1.4,lineHeight:1.08,margin:"0 auto 16px",maxWidth:720}}>Tené todo tu negocio bajo control</h2>
-          <p style={{fontSize:16.5,color:ink2,maxWidth:520,margin:"0 auto 28px",lineHeight:1.6}}>14 días gratis con absolutamente todo. Conectás tu tienda en 5 minutos y Growith empieza a ordenar.</p>
-          <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
+          <h2 data-reveal="pop" style={{fontSize:"clamp(30px,4.4vw,48px)",fontWeight:700,letterSpacing:-1.4,lineHeight:1.08,margin:"0 auto 16px",maxWidth:720}}>Tené todo tu negocio bajo control</h2>
+          <p data-reveal data-reveal-delay="1" style={{fontSize:16.5,color:ink2,maxWidth:520,margin:"0 auto 28px",lineHeight:1.6}}>14 días gratis con absolutamente todo. Conectás tu tienda en 5 minutos y Growith empieza a ordenar.</p>
+          <div data-reveal="rise" data-reveal-delay="2" style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
             {btnPri("Probar gratis 14 días", onLogin, true)}
             <a href="mailto:contacto.growith@gmail.com" style={{display:"inline-flex",alignItems:"center",border:`1px solid ${line}`,color:ink,borderRadius:10,fontSize:15,fontWeight:600,padding:"13px 22px",textDecoration:"none",fontFamily:F,lineHeight:1.2}}>Hablar con nosotros</a>
           </div>
@@ -16462,7 +16692,7 @@ function LandingPage({T, onLogin}) {
       {/* Footer */}
       <div style={{borderTop:`1px solid ${lineL}`}}>
         <div style={{...WRAP,padding:"48px 24px 40px"}}>
-          <div className="gh-land-foot" style={{display:"grid",gridTemplateColumns:"1.6fr 1fr 1fr 1fr",gap:28}}>
+          <div data-reveal="rise" className="gh-land-foot" style={{display:"grid",gridTemplateColumns:"1.6fr 1fr 1fr 1fr",gap:28}}>
             <div>
               <div style={{display:"flex",alignItems:"center",gap:8,fontSize:15,fontWeight:700,marginBottom:10}}>
                 <img src="/logo-color.png" alt="" style={{width:22,height:22,borderRadius:5}}/> Growith
