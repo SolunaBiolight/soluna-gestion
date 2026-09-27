@@ -42130,6 +42130,22 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     let url=`/api/orders?action=daily_metrics&uid=${uid}`;
     if(from&&to){url+=`&date_from=${from}&date_to=${to}`;}
     else{url+=`&days=${d}`;}
+    // Vercel devuelve HTML (no JSON) cuando la función se pasa de maxDuration:
+    // r.json() tiraba "Unexpected token '<'" y ese texto técnico terminaba en el
+    // cartel naranja. Acá se traduce a algo accionable.
+    const leerRta = async (res) => {
+      const txt = await res.text();
+      let j = null;
+      try { j = JSON.parse(txt); } catch (_) {
+        if (res.status === 504 || /FUNCTION_INVOCATION_TIMEOUT|gateway/i.test(txt)) {
+          throw new Error("Tu tienda tardó demasiado en responder (más de 90 s). Suele destrabarse solo en unos minutos.");
+        }
+        throw new Error(`El servidor respondió algo inesperado (HTTP ${res.status}).`);
+      }
+      if (j?.error) throw new Error(j.error);
+      return j;
+    };
+
     // fresh=1 solo en las requests EN VIVO (botón Actualizar): saltea la caché de
     // ventas del día en el backend para ver la última venta al segundo. Las
     // lecturas cache=only y las cargas automáticas siguen usando la caché (perf).
@@ -42182,8 +42198,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       const vivoP=(async()=>{
         try{
           const r=await fetch(urlLive);
-          const j=await r.json();
-          if(j.error) throw new Error(j.error);
+          const j=await leerRta(r);
           return usar(j,false);
         }catch(e){ lastErr=e; return false; }
       })();
@@ -42208,14 +42223,21 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     } else {
       // 2b) Datos en vivo, con reintentos automáticos: TN tira 504 seguido cuando
       //     está lenta — reintentamos 2 veces en silencio antes de mostrar error.
-      for(let intento=0;intento<3;intento++){
-        if(intento>0) await sleep(intento===1?2500:6000);
+      // Los reintentos esperaban 2,5 s y 6 s. Cuando el backend tarda 55-90 s en
+      // fallar (tienda lenta), esas esperas no sirven de nada: los tres intentos
+      // pegan contra la MISMA tienda lenta y cada uno dispara un recálculo
+      // completo, sobrecargándola todavía más. Ahora son 2 intentos con 20 s de
+      // espera, que sí le da tiempo a destrabarse, y el segundo va sin fresh
+      // para que el backend pueda servir su caché de 10 min en vez de forzar
+      // otro cálculo en vivo que va a fallar igual.
+      const urlReintento = url; // sin &fresh=1: acepta la caché reciente del backend
+      for(let intento=0;intento<2;intento++){
+        if(intento>0) await sleep(20000);
         if(!vigente()) return;
         try {
-          const r=await fetch(urlLive);
-          const j=await r.json();
+          const r=await fetch(intento===0 ? urlLive : urlReintento);
+          const j=await leerRta(r);
           if(!vigente()) return;
-          if(j.error) throw new Error(j.error);
           const fresh={...j, _sig:periodSig, loadedAt:new Date().toISOString()};
           setRendData(fresh);
           if(j.totals) ghSwrSet(swrKey, fresh);
@@ -42689,8 +42711,15 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           flujo y toda la página saltaba cuando aparecía. */}
       {error && rendData && (
         <div style={{position:"fixed",top:118,left:"50%",transform:"translateX(-50%)",zIndex:55,maxWidth:"min(680px,calc(100vw - 32px))",background:T.card,border:`1px solid ${T.orange}55`,borderRadius:12,boxShadow:"0 12px 32px rgba(0,0,0,0.35)",padding:"9px 16px",fontSize:12,color:T.orange,fontWeight:600,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <span style={{width:6,height:6,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
-          No pudimos actualizar en vivo — mostrando los últimos datos guardados ({new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}).
+          <span style={{width:6,height:6,borderRadius:"50%",background:T.orange,flexShrink:0,marginTop:5,alignSelf:"flex-start"}}/>
+          <span style={{minWidth:0,fontWeight:600,lineHeight:1.5}}>
+            No pudimos actualizar en vivo — mostrando los últimos datos guardados ({new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}).
+            {/* El error del backend dice QUÉ falló (timeout de la tienda, HTTP,
+                red). Sin esto el cartel solo repetía "no pudimos" y no había
+                forma de saber si esperar o si algo está roto de verdad. */}
+            {error && error !== "Failed to fetch" && <span style={{display:"block",fontWeight:500,color:T.textMd,fontSize:11.5,marginTop:3}}>{error}</span>}
+            <span style={{display:"block",fontWeight:500,color:T.textSm,fontSize:11.5,marginTop:3}}>Los números son correctos, pero de esa hora. Growith reintenta solo cada 4 minutos.</span>
+          </span>
           <button onClick={()=>loadData()} style={{background:"transparent",border:"none",color:T.orange,textDecoration:"underline",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}>Reintentar</button>
           <button onClick={()=>setError(null)} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",padding:"0 2px"}}>✕</button>
         </div>
