@@ -37,6 +37,93 @@ async function readBody(req) {
   });
 }
 
+
+// ─── Recurrentes (suscripciones, la otra app de Thiago; 27-sept-2026) ───────────
+// Vinculación por código firmado: "Vincular" acá manda al dueño a Recurrentes
+// (#/config/integraciones?growith_tid=…), allá confirma y vuelve a growithapp.com
+// con ?recurrentes_code=…; el front lo manda a `link`, que lo canjea server-to-server
+// por una api_key de SOLO LECTURA (public?action=growith-link). Con esa key el motor
+// de márgenes (orders.js) lee la comisión REAL de MP de cada cobro de suscripción
+// (public?action=growith-charges). Desvincular avisa a Recurrentes (best-effort).
+export const RECURRENTES_URL = process.env.RECURRENTES_URL || "https://www.recurrentesapp.com";
+
+async function recurrentesStart(req, res, db) {
+  const uid = req.body?.uid || req.query.uid;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
+  const u = (await db.collection("users").doc(uid).get()).data() || {};
+  const name = String(u.nombre || u.storeName || u.empresa || u.email || "Growith").slice(0, 80);
+  const url = `${RECURRENTES_URL}/#/config/integraciones?growith_tid=${encodeURIComponent(uid)}&growith_name=${encodeURIComponent(name)}`;
+  return res.json({ url });
+}
+
+async function recurrentesLink(req, res, db) {
+  const uid = req.body?.uid || req.query.uid;
+  const code = String(req.body?.code || "").trim();
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!code || code.length > 2000) return res.status(400).json({ error: "Falta el código de Recurrentes" });
+  if (!(await guardUid(req, res, uid))) return;
+  const u = (await db.collection("users").doc(uid).get()).data() || {};
+  const store_name = String(u.nombre || u.storeName || u.empresa || u.email || "Growith").slice(0, 80);
+  let j;
+  try {
+    const r = await fetch(`${RECURRENTES_URL}/api/public?action=growith-link`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, tenant_id: uid, store_name }),
+    });
+    j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.api_key) return res.status(400).json({ error: j.error || `Recurrentes respondió ${r.status}` });
+  } catch (e) {
+    return res.status(502).json({ error: "No se pudo hablar con Recurrentes: " + e.message });
+  }
+  const rec = {
+    connected: true, api_key: j.api_key,
+    merchant_id: j.merchant?.id || null, store_name: j.merchant?.store_name || "", channel: j.merchant?.channel || null,
+    shopify_shop: j.merchant?.shopify_shop || null, linkedAt: new Date().toISOString(), disconnectedAt: null,
+  };
+  await db.collection("users").doc(uid).set({ recurrentes: rec }, { merge: true });
+  const { api_key, ...pub } = rec;
+  return res.json({ ok: true, recurrentes: pub });
+}
+
+async function recurrentesStatus(req, res, db) {
+  const uid = req.query.uid;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
+  const r = (await db.collection("users").doc(uid).get()).data()?.recurrentes || null;
+  if (!r) return res.json({ connected: false });
+  const { api_key, ...pub } = r;
+  return res.json({ ...pub, connected: !!(r.connected && api_key) });
+}
+
+async function recurrentesDisconnect(req, res, db) {
+  const uid = req.body?.uid || req.query.uid;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!(await guardUid(req, res, uid))) return;
+  const ref = db.collection("users").doc(uid);
+  const r = (await ref.get()).data()?.recurrentes;
+  if (r?.api_key) {
+    try { await fetch(`${RECURRENTES_URL}/api/public?action=growith-unlink`, { method: "POST", headers: { Authorization: `Bearer ${r.api_key}` } }); } catch (_) {}
+  }
+  await ref.set({ recurrentes: { connected: false, api_key: null, merchant_id: r?.merchant_id || null, store_name: r?.store_name || "", disconnectedAt: new Date().toISOString() } }, { merge: true });
+  return res.json({ ok: true });
+}
+
+// Comisión real de MP de los cobros de Recurrentes del período: { [payment_id]: fee }.
+// La usa orders.js para cruzar las órdenes de suscripción por mp_payment_id. Nunca lanza.
+export async function recurrentesFeesByPayId(userData, sinceYmd, untilYmd) {
+  const key = userData?.recurrentes?.api_key;
+  if (!userData?.recurrentes?.connected || !key) return {};
+  try {
+    const r = await fetch(`${RECURRENTES_URL}/api/public?action=growith-charges&from=${encodeURIComponent(sinceYmd)}&to=${encodeURIComponent(untilYmd)}`, { headers: { Authorization: `Bearer ${key}` } });
+    if (!r.ok) return {};
+    const j = await r.json().catch(() => ({}));
+    const out = {};
+    for (const c of (j.charges || [])) if (c.payment_id && c.fee != null && isFinite(parseFloat(c.fee))) out[String(c.payment_id)] = parseFloat(c.fee);
+    return out;
+  } catch (_) { return {}; }
+}
+
 // ─── Shopify: OAuth con la app pública de Growith (1 click) ────────
 // Por defecto usa las credenciales de la app pública de Growith (env
 // SHOPIFY_APP_ID / SHOPIFY_APP_SECRET): el cliente solo pone su dominio
@@ -774,7 +861,7 @@ export async function getValidMLToken(db, uid, targetUserId = null) {
 
 // ─── Handler principal ──────────────────────────────────────────
 
-const PLATFORMS = ["shopify", "tiendanube", "mercadolibre", "googledrive", "tiktokads"];
+const PLATFORMS = ["shopify", "tiendanube", "mercadolibre", "googledrive", "tiktokads", "recurrentes"];
 
 // ── Sondeo: ¿el token de ML sirve para leer pagos de Mercado Pago? ──
 // Diagnóstico para decidir cómo calcular la comisión real de MP en ventas
@@ -1486,6 +1573,13 @@ export default async function handler(req, res) {
       if (action === "folder_create" && req.method === "POST") return gdriveFolderCreate(req, res, db);
       if (action === "parent_create" && req.method === "POST") return gdriveParentCreate(req, res, db);
       if (action === "disconnect" && req.method === "POST") return gdriveDisconnect(req, res, db);
+    }
+
+    if (platform === "recurrentes") {
+      if (action === "oauth_start" && req.method === "POST") return recurrentesStart(req, res, db);
+      if (action === "link" && req.method === "POST") return recurrentesLink(req, res, db);
+      if (action === "status" && req.method === "GET") return recurrentesStatus(req, res, db);
+      if (action === "disconnect" && req.method === "POST") return recurrentesDisconnect(req, res, db);
     }
 
     if (platform === "mercadolibre") {

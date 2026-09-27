@@ -674,7 +674,17 @@ export default async function handler(req, res) {
       // rXXX = receipt_id de la transacción Shopify). Se excluyen: ML (ref
       // numérica, ya contada en sale_fee), cashback, INSTORE, y no aprobados.
       let mpTokenOk = false;
+      // Con Recurrentes vinculado (users/{uid}.recurrentes), la comisión EXACTA de cada
+      // cobro de suscripción viene de su API por payment_id y pisa/completa el cruce con
+      // MP: sirve aunque la tienda no tenga MP conectado acá. Nunca rompe el cálculo.
       async function fetchMPCommission(sinceYmd, untilYmd) {
+        const base = await fetchMPCommissionBase(sinceYmd, untilYmd);
+        if (demoMode) return base;
+        const rec = await recurrentesFeesByPayId(userData, sinceYmd, untilYmd);
+        if (!Object.keys(rec).length) return base;
+        return { ...base, feeByRef: base.feeByRef || {}, feeByPayId: { ...(base.feeByPayId || {}), ...rec }, appByPayId: base.appByPayId || {}, recurrentesFees: Object.keys(rec).length };
+      }
+      async function fetchMPCommissionBase(sinceYmd, untilYmd) {
         try {
           if (demoMode) return { fee:0, rev:0, feeByRef:{}, feeByPayId:{}, appByPayId:{} }; // demo: la comisión viene en cada venta (saleFee)
           if (mlMpAcc === "__none__") return { fee:0, rev:0, feeByRef:{} }; // ninguna cuenta lee MP

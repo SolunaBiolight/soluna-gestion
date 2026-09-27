@@ -16488,7 +16488,11 @@ function LandingPage({T, onLogin}) {
               <a href="/terminos.html" style={{display:"block",fontSize:13,color:ink3,padding:"4px 0",textDecoration:"none"}}>Términos</a>
             </div>
           </div>
-          <div style={{borderTop:`1px solid ${lineL}`,marginTop:32,paddingTop:18,fontSize:12,color:ink3}}>© {new Date().getFullYear()} Growith · Hecho en Argentina</div>
+          <div style={{borderTop:`1px solid ${lineL}`,marginTop:32,paddingTop:18,fontSize:12,color:ink3,display:"flex",flexWrap:"wrap",gap:"6px 18px",justifyContent:"space-between"}}>
+            <span>© {new Date().getFullYear()} Growith · Hecho en Argentina</span>
+            {/* Partner de la misma casa (27-sept-2026): suscripciones con Mercado Pago para Shopify y Tiendanube. */}
+            <span>Partner: <a href="https://www.recurrentesapp.com/" style={{color:ink2,fontWeight:600,textDecoration:"none"}}>Recurrentes App</a> · suscripciones con Mercado Pago para tu tienda</span>
+          </div>
         </div>
       </div>
     </div>
@@ -17080,6 +17084,24 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
     const shError=url.searchParams.get("shopify_error");
     const mlSuccess=url.searchParams.get("ml_success");
     const mlError=url.searchParams.get("ml_error");
+    // Código de vinculación de Recurrentes (lo dejó la raíz en sessionStorage): se canjea
+    // una sola vez, server-to-server, y la tarjeta pasa a "Vinculado".
+    try {
+      const recCode = sessionStorage.getItem("growith_rec_code");
+      if (recCode && user?.uid) {
+        sessionStorage.removeItem("growith_rec_code");
+        setCfgSec("integraciones");
+        (async()=>{
+          try {
+            const r = await authFetch(`/api/integrations?platform=recurrentes&action=link&uid=${user.uid}`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ uid: user.uid, code: recCode }) });
+            const j = await r.json();
+            if (!r.ok || j.error) throw new Error(j.error || "HTTP "+r.status);
+            setUserDoc(d=>({ ...(d||{}), recurrentes: { ...(j.recurrentes||{}), connected:true } }));
+            setMsg(`Recurrentes vinculado ✓${j.recurrentes?.store_name ? " — "+j.recurrentes.store_name : ""}: las comisiones reales de cada cobro de suscripción ya entran a Márgenes`);
+          } catch(e) { appAlert("No se pudo vincular Recurrentes: "+e.message+"\n\nVolvé a tocar Vincular: el código dura 10 minutos."); }
+        })();
+      }
+    } catch(_) {}
     if(shSuccess){
       const faltan=url.searchParams.get("shopify_scopes_faltan");
       setMsg(faltan?"Shopify conectado, pero a tu app de Shopify le falta el permiso para marcar envíos. En Config → Andreani en el checkout tenés los pasos: sumar los permisos a la app, publicarla y reconectar.":"Shopify conectado ✓");
@@ -17652,11 +17674,30 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
             },
             {
               key:"recurrentes", group:"Apps externas", label:"Recurrentes",
-              // App de suscripciones y cobros recurrentes — integración en camino (PRÓXIMAMENTE).
-              sub: "Próximamente — tus suscripciones y cobros recurrentes, integrados a tus ventas y márgenes",
-              connected:false, disabled:true, soon:true, brand:"#10b981", iconBg:"#fff",
+              // App de suscripciones (misma casa). Vinculación por código firmado: Vincular
+              // manda a Recurrentes, allá se confirma y se vuelve con ?recurrentes_code=…
+              // (lo canjea ConfigScreen al montar). Con la clave, Márgenes lee la comisión
+              // REAL de MP de cada cobro de suscripción (api/orders.js).
+              sub: userDoc?.recurrentes?.connected
+                ? `Vinculado${userDoc.recurrentes.store_name ? ` · ${userDoc.recurrentes.store_name}` : ""} — la comisión real de Mercado Pago de cada cobro de suscripción entra a Márgenes`
+                : "Vinculá tu cuenta de Recurrentes: la comisión exacta de cada cobro de suscripción entra a tus márgenes, sin cargar nada a mano",
+              connected: !!userDoc?.recurrentes?.connected, disabled:false, soon:false, brand:"#10b981", iconBg:"#fff",
               icon:<RecurrentesLogo size={28}/>,
-              onConnect:()=>{}, onDisconnect:()=>{},
+              onConnect: async ()=>{
+                try {
+                  const r = await authFetch(`/api/integrations?platform=recurrentes&action=oauth_start&uid=${user.uid}`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ uid: user.uid }) });
+                  const j = await r.json();
+                  if (j.url) { window.location.href = j.url; return; }
+                  appAlert(j.error || "No se pudo iniciar la vinculación con Recurrentes.");
+                } catch(e) { appAlert("Error: "+e.message); }
+              },
+              onDisconnect: async ()=>{
+                try {
+                  await authFetch(`/api/integrations?platform=recurrentes&action=disconnect&uid=${user.uid}`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ uid: user.uid }) });
+                  setUserDoc(d=>({ ...(d||{}), recurrentes: { ...((d||{}).recurrentes||{}), connected:false } }));
+                  setMsg("Recurrentes desvinculado");
+                } catch(e) { appAlert("Error: "+e.message); }
+              },
             },
             {
               key:"claude", group:"Inteligencia artificial", label:"Claude",
@@ -43803,7 +43844,23 @@ export default function App() {
       return sessionStorage.getItem("growith_mcp_rid") || null;
     } catch(e) { return r; }
   });
-  const [page,_setPage]=useState(()=>{const p=_aliasPage(_initialHash.split("/")[0]);return VALID_PAGES.includes(p)?p:"home";});
+  // Vuelta desde Recurrentes con el código de vinculación (?recurrentes_code=…, 27-sept-2026):
+  // se guarda en sessionStorage (sobrevive al login), se saca de la URL y se abre
+  // Configuración → Integraciones, donde ConfigScreen lo canjea (api/integrations.js).
+  const [recCodePend] = useState(()=>{
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const c = q.get("recurrentes_code");
+      if (c && c.length < 2000) {
+        sessionStorage.setItem("growith_rec_code", c);
+        q.delete("recurrentes_code"); q.delete("recurrentes_merchant"); q.delete("recurrentes_tid");
+        window.history.replaceState(null, "", window.location.pathname + (q.toString() ? "?" + q.toString() : "") + "#/config/integraciones");
+        return true;
+      }
+      return !!sessionStorage.getItem("growith_rec_code");
+    } catch(e) { return false; }
+  });
+  const [page,_setPage]=useState(()=>{ if(recCodePend) return "config"; const p=_aliasPage(_initialHash.split("/")[0]);return VALID_PAGES.includes(p)?p:"home";});
   const setPage = (p) => {
     _setPage(p);
     if (typeof window !== "undefined") {
