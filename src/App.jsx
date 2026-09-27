@@ -42400,7 +42400,16 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     if (rendData?.meta?.googleAdsConectado && rendData?.meta?.googleAdsFuente!=="auto") qItems.push({k:null, msg:`Google Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.googleAdsDiag?` — ${rendData.meta.googleAdsDiag}`:""}`});
     if (rendData?.meta?.tiktokAdsConectado && rendData?.meta?.tiktokAdsFuente!=="auto") qItems.push({k:null, msg:`TikTok Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.tiktokAdsDiag?` — ${rendData.meta.tiktokAdsDiag}`:""}`});
     if (rendData?.meta?.mlAdsConectado && rendData?.meta?.mlAdsFuente!=="auto") qItems.push({k:null, msg:"Mercado Libre está conectado pero el gasto de Mercado Ads no está entrando: si estás pauteando, la ganancia de este período está inflada. Suele ser que la cuenta no tiene Product Ads habilitado"});
-    if (rendData?.meta?.stockDegradado) qItems.push({k:null, msg:`Tu tienda/ML respondieron lento y se muestra el último cálculo completo guardado${typeof rendData.meta.stockDegradado==="string"?` (${new Date(rendData.meta.stockDegradado).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})})`:""} — tocá Actualizar en unos minutos para el dato en vivo`});
+    if (rendData?.meta?.stockDegradado) {
+      // Antes decía solo "tocá Actualizar", pero Actualizar vuelve a pegarle a
+      // la misma tienda lenta y cae en lo mismo: hay que decir QUÉ pasó y por
+      // qué conviene esperar, no mandar a repetir la acción que ya falló.
+      const ts = typeof rendData.meta.stockDegradado==="string"
+        ? new Date(rendData.meta.stockDegradado).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})
+        : null;
+      const motivo = rendData.meta.stockDegradadoMotivo;
+      qItems.push({k:null, msg:`Estos números son de ${ts?`las ${ts}`:"la última actualización completa"}, no de ahora: tu tienda no respondió a tiempo${motivo?` (${motivo})`:""}. Los datos son correctos pero viejos. Suele destrabarse solo en unos minutos — Growith reintenta cada 4 minutos.`});
+    }
     if (q.tnTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Tienda Nube — los totales están TRUNCADOS. Usá un rango más corto."});
     if (q.mlTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Mercado Libre — los totales de ML están TRUNCADOS."});
     if ((q.reembolsosParciales||0)>0) qItems.push({k:null, msg:`${q.reembolsosParciales} orden(es) con reembolso parcial contadas a valor pleno (TN no informa el monto devuelto)`});

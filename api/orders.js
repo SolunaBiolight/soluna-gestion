@@ -616,7 +616,8 @@ export default async function handler(req, res) {
         let j = null, jcFallback = null;
         try {
           const cacheUrl = new URL(stockUrl); cacheUrl.searchParams.set("cache", "only");
-          const rc = await fetch(cacheUrl.toString(), { headers: stockHeaders });
+          // Es un atajo: si tarda, no vale la pena esperarlo — se calcula en vivo.
+          const rc = await fetch(cacheUrl.toString(), { headers: stockHeaders, signal: AbortSignal.timeout(12000) });
           if (rc.ok) {
             const jc = await rc.json();
             if (!jc.noCache && !jc.error && jc.daily_revenue) {
@@ -649,12 +650,22 @@ export default async function handler(req, res) {
           // Datos PARCIALES siguen prohibidos — el fallback es un snapshot íntegro.
           let jr = null, failMsg = null;
           try {
-            const r = await fetch(stockUrl.toString(), { headers: stockHeaders });
+            // TIMEOUT OBLIGATORIO. orders.js y stock.js tienen maxDuration 90s
+            // CADA UNO, pero orders espera a stock DENTRO de sus propios 90: sin
+            // tope, un stock lento consume todo el presupuesto y Vercel mata a
+            // orders antes de que pueda responder. El resultado que veía el
+            // usuario era el snapshot viejo con el cartel amarillo en cada
+            // "Actualizar". Con 55s queda margen para responder algo útil.
+            const r = await fetch(stockUrl.toString(), { headers: stockHeaders, signal: AbortSignal.timeout(55000) });
             if (!r.ok) failMsg = `No se pudieron traer las ventas (HTTP ${r.status}). Reintentá en unos segundos.`;
             else { jr = await r.json(); if (jr.error) { failMsg = `Ventas: ${jr.error}`; jr = null; } }
-          } catch (_) { failMsg = "No se pudieron traer las ventas (red). Reintentá en unos segundos."; }
+          } catch (e) {
+            failMsg = (e?.name === "TimeoutError" || e?.name === "AbortError")
+              ? "Tu tienda tardó más de 55 segundos en responder. Reintentá en un minuto."
+              : "No se pudieron traer las ventas (red). Reintentá en unos segundos.";
+          }
           if (jr) j = jr;
-          else if (jcFallback) { j = jcFallback; j._degradado = jcFallback.cachedAt || "sin fecha"; }
+          else if (jcFallback) { j = jcFallback; j._degradado = jcFallback.cachedAt || "sin fecha"; j._degradadoMotivo = failMsg || null; }
           else throw new Error(failMsg || "No se pudieron traer las ventas.");
         }
         // Combinar TN/Shopify + Mercado Libre (ML viene aparte en ml_data),
@@ -666,7 +677,7 @@ export default async function handler(req, res) {
         const mlOrd = j.ml_data?.daily_orders  || {};
         for (const [day,v] of Object.entries(mlRev)) dailyRevenue[day] = (dailyRevenue[day]||0) + (v||0);
         for (const [day,v] of Object.entries(mlOrd)) dailyOrders[day]  = (dailyOrders[day]||0)  + (v||0);
-        return { dailyRevenue, dailyOrders, raw: j, degradado: j._degradado || null };
+        return { dailyRevenue, dailyOrders, raw: j, degradado: j._degradado || null, degradadoMotivo: j._degradadoMotivo || null };
       }
       // Comisión REAL de Mercado Pago en ventas que NO son ML (Shopify/TN vía MP
       // Checkout). Con el token de ML se consultan los pagos de MP y se suma el
@@ -2179,6 +2190,7 @@ export default async function handler(req, res) {
           tiktokAdsFuente: ttAutoCurr!=null ? "auto" : "sin_datos",
           tiktokAdsDiag: (userData.tiktokAds?.access_token && ttAutoCurr==null) ? ttDiag : null,
           stockDegradado: curr.degradado || prev.degradado || null, // ts del snapshot servido cuando TN/ML no respondieron en vivo
+          stockDegradadoMotivo: curr.degradadoMotivo || prev.degradadoMotivo || null, // qué falló exactamente (timeout, HTTP, red)
           mlAdsDebug, mlEnvioDebug,
           metaTokenExpired: !!metaErr.expired,
           // El Dashboard necesita distinguir "no gastó" de "no pude leer Meta".
