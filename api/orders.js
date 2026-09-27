@@ -1,6 +1,6 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { getValidMLToken } from "./integrations.js";
+import { getValidMLToken, recurrentesFeesByPayId } from "./integrations.js";
 import { gadsCreds } from "./google-ads.js";
 import { ttGastoPeriodo } from "./tiktok-ads.js";
 import { guardUid, guardCron, isCronRequest } from "./_auth.js";
