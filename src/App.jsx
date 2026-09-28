@@ -1481,7 +1481,7 @@ function OnboardingWizard({T, user, onComplete}) {
   const FEATS_NUMEROS = [
     {id:"margenes", nombre:"Dashboard", desc:"Tu profit REAL por venta: comisiones, impuestos, envíos, costo de producto y publicidad, todo descontado solo."},
     {id:"arca",     nombre:"ARCA",      desc:"Facturación AFIP automática de cada venta, con piloto automático, notas de crédito y envío al cliente por mail."},
-    {id:"meta",     nombre:"Meta Ads",  desc:"Tus campañas de Facebook e Instagram con reglas automáticas y el gasto impactado en tu profit."},
+    {id:"meta",     nombre:"Meta Ads",  desc:"Tus campañas de Facebook e Instagram, con el gasto descontado solo en tu profit."},
     {id:"ml",       nombre:"Mercado Libre", desc:"Publicaciones, ventas, comisiones y Mercado Ads integrados a tus números."},
     {id:"copilot",  nombre:"Copilot",   desc:"Una IA que responde sobre TUS datos reales: ventas, stock, márgenes y campañas. No inventa cifras."},
   ];
@@ -16110,7 +16110,7 @@ function LandingPage({T, onLogin}) {
       {gi:"file", n:"Facturador", d:"Facturas electrónicas de ARCA desde tus ventas."},
     ]},
     {t:"Analytics", c:"#3b82f6", items:[
-      {gi:"play", n:"Meta Ads", d:"Campañas, reglas automáticas y cuenta publicitaria."},
+      {gi:"play", n:"Meta Ads", d:META_OAUTH_OK?"Campañas, análisis y el gasto directo en tu profit. Se conecta en un clic con Facebook.":"Campañas, análisis y el gasto directo en tu profit."},
       {gi:"box", n:"Stock", d:"Inventario de todos tus canales y alertas de quiebre."},
       {gi:"store", n:"Mercado Libre", d:"Gestión, preguntas, mensajes, ventas y reputación."},
       {gi:"search", n:"Google Ads", d:"Campañas de tus cuentas de Google, activas y pausadas."},
@@ -16146,7 +16146,7 @@ function LandingPage({T, onLogin}) {
       b:["Facturación automática de tus órdenes","Facturas y notas de crédito manuales","Monotributo y Responsable Inscripto","Varios CUITs y puntos de venta","La factura queda adjunta a la venta"], mock:"factura"},
     {k:"Publicidad", c:"#3b82f6", gi:"play", t:"Tus campañas de Meta y Google en un solo lugar",
       d:"Mirá cómo viene cada campaña, pausala o activala y publicá campañas nuevas sin entrar a cada administrador de anuncios.",
-      b:["Análisis de campañas de Meta Ads y Google Ads","Reglas automáticas en Meta","Publicá en Meta y en Google (Búsqueda y Performance Max)","El gasto publicitario entra solo a tus números","TikTok Ads, muy pronto"], mock:"campanas"},
+      b:["Análisis de campañas de Meta Ads y Google Ads",...(META_OAUTH_OK?["Meta se conecta en un clic con Facebook"]:[]),"ROAS por campaña contra tu break-even","El gasto publicitario entra solo a tus números","TikTok Ads, muy pronto"], mock:"campanas"},
     {k:"Stock", c:"#22c55e", gi:"box", t:"Un solo stock para Tienda Nube, Shopify y Mercado Libre",
       d:"Un inventario central por producto y variante, para saber qué tenés, qué se está por agotar y cuándo reponer.",
       b:["Stock unificado por SKU entre todos tus canales","Alerta cuando a un producto le quedan pocos días","Días de reposición por producto","Historial de agotados"], mock:"stock"},
@@ -17417,7 +17417,9 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
       const e=url.searchParams.get("meta_error");
       const map={
         cancelled:"Cancelaste la conexión con Meta.",
-        token_failed:"Meta rechazó el intercambio de credenciales.",
+        token_failed:"Meta rechazó el intercambio de credenciales. Probá de nuevo.",
+        long_token_failed:"Meta no dejó extender la sesión. Probá de nuevo en unos minutos.",
+        bad_state:"La vuelta desde Facebook no coincide con esta cuenta. Volvé a tocar “Conectar con Facebook” desde acá.",
         me_failed:"No se pudo obtener info de tu cuenta de Meta.",
         user_not_found:"Tu usuario no se encontró en Firestore.",
         server_error:"Error de conexión con Meta.",
@@ -17824,7 +17826,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               onConnect:connectMP, onDisconnect:disconnectMP,
             },
             {
-              key:"meta", group:"Publicidad", label:"Meta Ads", sub: metaConnected ? "Facebook + Instagram" : "Facebook + Instagram: campañas, reglas y publicación desde Growith",
+              key:"meta", group:"Publicidad", label:"Meta Ads", sub: metaConnected ? "Facebook + Instagram" : (META_OAUTH_OK ? "Facebook + Instagram: conectá en un clic y el gasto entra solo al Dashboard" : "Facebook + Instagram: campañas, análisis y el gasto en tu Dashboard"),
               connected:!!metaConnected, disabled:false, brand:"#1877F2", iconBg:"#fff",
               icon:<BrandIcon name="meta" size={30}/>,
               // Mientras META_OAUTH_OK sea false el modal abre directo en la
@@ -19411,7 +19413,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       ["Auto-tracking Andreani","Growith consulta Andreani cada 30 minutos y te avisa de demoras y devoluciones.",false,false,true],
     ]},
     {grupo:"Publicidad",filas:[
-      ["Meta Ads y Mercado Ads","Campañas, resultados y reglas automáticas de Facebook, Instagram y Mercado Libre.",false,true,true],
+      ["Meta Ads y Mercado Ads","Campañas y resultados de Facebook, Instagram y Mercado Libre.",false,true,true],
       ["Google Ads cruzado con tu ganancia","Cada campaña con su ganancia real, no solo el ROAS.",false,false,true],
     ]},
     {grupo:"Rentabilidad e inteligencia",filas:[
@@ -34906,7 +34908,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // directo al tab Cuenta (antes cada tab tenía un aviso distinto y sin botón).
   const NoAccount=()=>(
     <DSEmpty T={T} icon="" title="Conectá tu cuenta de Meta"
-      subtitle="Para ver campañas, métricas y reglas necesitás conectar Meta. Se hace una sola vez desde el tab Cuenta."
+      subtitle={META_OAUTH_OK?"Para ver campañas y métricas necesitás conectar Meta. Es un clic con Facebook desde el tab Cuenta.":"Para ver campañas y métricas necesitás conectar Meta. Se hace una sola vez desde el tab Cuenta."}
       action={<Btn T={T} variant="primary" onClick={()=>setTab("cuenta")}>Ir a Cuenta →</Btn>}/>
   );
 
@@ -35004,14 +35006,20 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           {showGuia&&(
             <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
-                {n:1,icon:"",title:"Conectar Meta",desc:"Hoy se conecta con la 'conexión manual': un token desde Business Manager → Usuarios del sistema, siguiendo las instrucciones paso a paso de Config → Meta Ads. La conexión en 1 clic con Facebook va a estar disponible pronto."},
-                {n:2,icon:"",title:"Ver campañas",desc:"Todas tus campañas con gasto, alcance, impresiones, compras y ROAS del período elegido. Podés pausar o activar campañas y conjuntos desde acá, con confirmación."},
-                {n:3,icon:"",title:"Análisis",desc:"La tabla de análisis desglosa el rendimiento por campaña, conjunto o anuncio, con drill-down, columnas configurables y breakdowns (edad, ubicación, ubicación del anuncio). Definí tu ROAS break-even y se pinta solo qué gana y qué pierde plata."},
-                {n:4,icon:"",title:"Publicar creativos",desc:"En Publicar subís imágenes y videos en masa, escribís el copy y Growith crea los anuncios en tu campaña (con opción de publicación automática al terminar la subida)."},
-                {n:5,icon:"",title:"Reglas automáticas",desc:"En Reglas definís condiciones (ROAS, CPA, gasto) y Growith pausa, sube o baja presupuesto solo — cada 30 min con la app abierta y 1 vez al día en la nube, avisándote de cada acción."},
-                {n:6,icon:"",title:"Gasto en tu profit",desc:"El gasto de Meta se descuenta automáticamente en el Dashboard de márgenes: tu profit ya lo tiene restado, sin planillas."},
-                {n:7,icon:"",title:"Token vencido",desc:"Si el token vence, aparece un banner rojo arriba con el botón para reconectar. Growith además renueva el token automáticamente antes del vencimiento."},
-              ].map(s=>(
+                {title:"Conectar Meta",desc:META_OAUTH_OK
+                  ? "Desde el tab Cuenta (o Config → Conexiones) tocá “Conectar con Facebook”: autorizás y volvés, listo. Growith renueva la conexión sola antes de que venza. Si sos agencia y preferís un token de sistema, también podés pegarlo."
+                  : "Hoy se conecta con la conexión manual: un token desde Business Manager → Usuarios del sistema, siguiendo las instrucciones paso a paso de Config → Meta Ads."},
+                {title:"Ver campañas",desc:PUBLICADORES_ARCHIVADOS
+                  ? "Todas tus campañas con gasto, alcance, impresiones, compras y ROAS del período elegido. Growith es solo lectura: pausar o activar se hace desde el Administrador de anuncios de Meta."
+                  : "Todas tus campañas con gasto, alcance, impresiones, compras y ROAS del período elegido. Podés pausar o activar campañas y conjuntos desde acá, con confirmación."},
+                {title:"Análisis",desc:"La tabla de análisis desglosa el rendimiento por campaña, conjunto o anuncio, con drill-down, columnas configurables y breakdowns (edad, ubicación, ubicación del anuncio). Definí tu ROAS break-even y se pinta solo qué gana y qué pierde plata."},
+                ...(PUBLICADORES_ARCHIVADOS ? [] : [
+                  {title:"Publicar creativos",desc:"En Publicar subís imágenes y videos en masa, escribís el copy y Growith crea los anuncios en tu campaña (con opción de publicación automática al terminar la subida)."},
+                  {title:"Reglas automáticas",desc:"En Reglas definís condiciones (ROAS, CPA, gasto) y Growith pausa, sube o baja presupuesto solo — cada 30 min con la app abierta y 1 vez al día en la nube, avisándote de cada acción."},
+                ]),
+                {title:"Gasto en tu profit",desc:"El gasto de Meta se descuenta automáticamente en el Dashboard de márgenes: tu profit ya lo tiene restado, sin planillas."},
+                {title:"Si la conexión se cae",desc:"Si el token deja de servir, aparece un banner rojo arriba con el botón para reconectar. Con la conexión por Facebook, Growith lo renueva solo antes del vencimiento."},
+              ].map((s,i)=>({...s,n:i+1})).map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
                   <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
@@ -35339,9 +35347,17 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                               return (
                                 <tr key={r.id} style={{borderBottom:`1px solid ${T.borderL}`,opacity:isActive?1:0.6}}>
                                   <td style={{padding:"10px 12px",display:"flex",gap:4}}>
+                                    {PUBLICADORES_ARCHIVADOS ? (
+                                      // Sin ads_management Growith no puede pausar ni activar: se muestra el
+                                      // estado como un punto, no como un interruptor que fallaría al tocarlo.
+                                      <span title={isActive?"Activa (se pausa desde el Administrador de anuncios de Meta)":"Pausada"} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:isActive?T.green:T.textSm,fontWeight:600,whiteSpace:"nowrap"}}>
+                                        <span style={{width:8,height:8,borderRadius:"50%",background:isActive?T.green:(T.textSm+"88"),flexShrink:0}}/>{isActive?"Activa":"Pausada"}
+                                      </span>
+                                    ) : (
                                     <button onClick={()=>toggleStatus(r)} disabled={busy} title={isActive?"Pausar":"Activar"} role="switch" aria-checked={isActive} style={{width:34,height:18,borderRadius:9,border:"none",padding:0,cursor:busy?"wait":"pointer",background:isActive?"#1877f2":(T.textSm+"55"),position:"relative",transition:"background .15s",flexShrink:0,opacity:busy?0.6:1}}>
                                       <span style={{position:"absolute",top:2,left:isActive?18:2,width:14,height:14,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 2px rgba(0,0,0,.3)",transition:"left .15s",display:"flex",alignItems:"center",justifyContent:"center"}}>{busy&&<Spinner size={8} color={isActive?"#1877f2":T.textSm}/>}</span>
                                     </button>
+                                    )}
                                   </td>
                                   <td style={{padding:"10px 12px",fontSize:12,color:T.text,maxWidth:320,overflow:"hidden",whiteSpace:"nowrap"}}>
                                     <div style={{fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
@@ -37068,8 +37084,9 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                   // [[ACCION:navegar:pagina]] · [[ACCION:meta_estado:acc:camp:STATUS:nombre]]
                   const t = String(m.text||"");
                   const mNav = t.match(/\[\[ACCION:navegar:([a-z_]+)\]\]/);
-                  const mMeta = t.match(/\[\[ACCION:meta_estado:([^:\]]+):([^:\]]+):(ACTIVE|PAUSED):([^\]]+)\]\]/);
-                  const mBudget = t.match(/\[\[ACCION:meta_presupuesto:([^:\]]+):([^:\]]+):(\d+):([^\]]+)\]\]/);
+                  // Escrituras en Meta (pausar / presupuesto) solo si hay ads_management; hoy archivadas.
+                  const mMeta = PUBLICADORES_ARCHIVADOS ? null : t.match(/\[\[ACCION:meta_estado:([^:\]]+):([^:\]]+):(ACTIVE|PAUSED):([^\]]+)\]\]/);
+                  const mBudget = PUBLICADORES_ARCHIVADOS ? null : t.match(/\[\[ACCION:meta_presupuesto:([^:\]]+):([^:\]]+):(\d+):([^\]]+)\]\]/);
                   const mTarea = t.match(/\[\[ACCION:crear_tarea:([^|\]]+)\|([^|\]]+)\|([^\]]*)\]\]/);
                   const mStock = t.match(/\[\[ACCION:ajustar_stock:([^|\]]+)\|(\d+)\|([^\]]*)\]\]/);
                   const clean = t.replace(/\[\[ACCION:[^\]]*\]\]/g,"").trim();

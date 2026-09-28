@@ -2674,6 +2674,14 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
 
     // ── SET STATUS (pausar/activar campaña, adset o ad) ──
     // POST { node_id, status: "ACTIVE" | "PAUSED" }
+    // Escrituras en la cuenta publicitaria: Meta RECHAZÓ ads_management
+    // (26/sep/2026) → sin ese permiso cualquier POST falla con "API access
+    // blocked". Se corta acá con un mensaje claro (el front ya no ofrece estas
+    // acciones; esto cubre Copilot, clientes viejos y llamadas directas).
+    // Cuando Meta apruebe ads_management: quitar este bloque y sumar el scope en oauth_start.
+    if ((action === "set_status" || action === "set_budget") && req.method === "POST") {
+      return res.status(403).json({ error: "Meta no le otorgó a Growith el permiso para modificar campañas (ads_management). Pausar, activar o cambiar presupuestos se hace desde el Administrador de anuncios de Meta.", code: "meta_solo_lectura" });
+    }
     if (action === "set_status" && req.method === "POST") {
       const { node_id, status } = req.body || {};
       if (!node_id || !status) return res.status(400).json({ error: "Faltan node_id o status" });
