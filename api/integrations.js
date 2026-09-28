@@ -138,11 +138,12 @@ const SHOPIFY_APP_SECRET = process.env.SHOPIFY_APP_SECRET || "";
 // el tracking (Seguimientos). Sin estos, Shopify responde 403 en
 // /fulfillment_orders.json y /fulfillments.json y ningún seguimiento sube.
 // Las tiendas conectadas antes de agregarlos tienen que RECONECTAR Shopify.
-const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders,read_fulfillments,write_fulfillments,read_discounts,write_discounts";
+const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders,read_fulfillments,write_fulfillments,read_discounts,write_discounts,read_inventory";
 // Scopes que NO se acusan como faltantes en los banners: solo se exigen al usar
 // la función (cupones de Canjes). Así una tienda vieja no ve un aviso por algo
 // que quizá nunca use.
-const SHOPIFY_SCOPES_OPCIONALES = ["read_discounts", "write_discounts"];
+// read_inventory (28/9/2026): costo por artículo para "Importar de Shopify" en Márgenes → Costos.
+const SHOPIFY_SCOPES_OPCIONALES = ["read_discounts", "write_discounts", "read_inventory"];
 const SHOPIFY_SCOPE_FULFILL = "write_merchant_managed_fulfillment_orders";
 const SHOPIFY_FULFILL_DESDE = Date.parse("2026-09-15T22:00:00Z"); // deploy de los scopes de fulfillment
 const SHOPIFY_APP_URL = "https://www.growithapp.com";

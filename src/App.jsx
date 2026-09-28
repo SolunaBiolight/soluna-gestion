@@ -16980,7 +16980,7 @@ function DSToggle({T, active, onToggle}) {
 // SHOPIFY_SCOPES en api/integrations.js). El tutorial del modal copiaba una
 // lista vieja SIN los de fulfillment → las apps creadas con él no podían
 // marcar envíos y reconectar no lo arreglaba (caso zensleep, 17/9/2026).
-const GH_SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders,read_fulfillments,write_fulfillments,read_discounts,write_discounts";
+const GH_SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders,read_fulfillments,write_fulfillments,read_discounts,write_discounts,read_inventory";
 function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
   const uid = user?.uid;
   const [st,setSt] = React.useState(null);      // respuesta de carrier_status
@@ -38507,7 +38507,9 @@ function CostosPanel({ T, uid }) {
     setLoadingProds(false);
   }
 
-  async function save() {
+  // Guarda TODO lo de la pantalla. `costosBase` permite guardar un mapa de
+  // costos recién armado (importación de la tienda) sin esperar al re-render.
+  async function guardar(costosBase) {
     setSaving(true);
     try {
       // Fee % por cuenta de Meta. Guardamos el valor de CADA cuenta tal cual se ve
@@ -38517,7 +38519,7 @@ function CostosPanel({ T, uid }) {
       // Limpieza de costos con historial: descarta tramos sin valor; si queda 1 solo
       // sin fechas lo colapsa a costo plano; si no queda ninguno, saca el producto.
       const costosClean = {};
-      for (const [k,entry] of Object.entries(costos||{})) {
+      for (const [k,entry] of Object.entries(costosBase||{})) {
         if (entry && typeof entry==="object" && Array.isArray(entry.hist)) {
           const tramos = entry.hist.filter(h=>h&&String(h.v).trim()!=="");
           if (!tramos.length) continue;
@@ -38530,6 +38532,56 @@ function CostosPanel({ T, uid }) {
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
+  }
+  const save = () => guardar(costos);
+
+  // ── Importar el costo cargado en la tienda (Shopify: costo por artículo;
+  // Tienda Nube: costo de la variante). Growith no lo lee solo: el COGS sale
+  // únicamente de esta tabla, y muchos clientes creían que ya estaba porque lo
+  // tenían en la tienda. Completa los vacíos y, si hay valores manuales
+  // distintos, pregunta antes de pisarlos. Los que tienen historial por fecha
+  // no se tocan. Al aplicar, guarda solo (mismo guardar() de "Guardar todo").
+  const [importando, setImportando] = React.useState(false);
+  const [importPrev, setImportPrev] = React.useState(null); // {costos, nuevos, distintos, conHist, iguales, conCosto, total}
+  const plataformaNombre = products[0]?.platform==="shopify" ? "Shopify" : products[0]?.platform==="tiendanube" ? "Tienda Nube" : "la tienda";
+  function clasificarImport(tienda) {
+    const nuevos=[], distintos=[], conHist=[], iguales=[];
+    for (const [k,v] of Object.entries(tienda||{})) {
+      const cur = costos[k];
+      if (cur && typeof cur==="object" && Array.isArray(cur.hist)) { conHist.push(k); continue; }
+      const esPct = !!(cur && typeof cur==="object" && cur.t==="pct");
+      const curVal = cur && typeof cur==="object" ? parseFloat(cur.v) : parseFloat(cur);
+      if (!(curVal>0)) { nuevos.push(k); continue; }
+      if (!esPct && Math.abs(curVal - v) < 0.005) iguales.push(k); else distintos.push(k);
+    }
+    return { nuevos, distintos, conHist, iguales };
+  }
+  function aplicarImport(prev, pisar) {
+    const merged = { ...costos };
+    for (const k of prev.nuevos) merged[k] = prev.costos[k];
+    if (pisar) for (const k of prev.distintos) merged[k] = prev.costos[k];
+    setCostos(merged); setImportPrev(null);
+    const n = prev.nuevos.length + (pisar ? prev.distintos.length : 0);
+    guardar(merged).then(()=>{ if (n>0) toast(`${n} costo(s) importado(s) de ${plataformaNombre}`, "success"); });
+  }
+  async function importarCostosTienda() {
+    setImportando(true); setImportPrev(null);
+    try {
+      const r = await fetch(`/api/stock?action=costos_tienda&uid=${uid}`);
+      const j = await r.json().catch(()=>({}));
+      if (!r.ok || j.error) {
+        if (j.code==="shopify_scope") { toast(j.error, "warning", 9000); return; }
+        throw new Error(j.error || `HTTP ${r.status}`);
+      }
+      if (j.demo) { toast("La tienda demo no tiene costos para importar.", "info"); return; }
+      if (!j.conCosto) { toast(`Ningún producto tiene costo cargado en ${plataformaNombre}. Cargalo ahí (costo por artículo) o directamente acá.`, "warning", 7000); return; }
+      const cls = clasificarImport(j.costos);
+      const prev = { costos: j.costos, conCosto: j.conCosto, total: j.total, ...cls };
+      if (!cls.nuevos.length && !cls.distintos.length) { toast(`Los ${cls.iguales.length} costos de ${plataformaNombre} ya están iguales acá.`, "success"); return; }
+      if (cls.distintos.length) setImportPrev(prev); // hay manuales distintos → decide el usuario
+      else aplicarImport(prev, false);
+    } catch (e) { toast("No se pudo importar: " + (e.message||""), "error", 7000); }
+    finally { setImportando(false); }
   }
   const setCosto = (key,val)=>setCostos(c=>{
     const prev=c[key];
@@ -38697,9 +38749,25 @@ function CostosPanel({ T, uid }) {
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10,flexWrap:"wrap"}}>
           <div style={{fontSize:13,fontWeight:700,color:T.text}}>Costo por producto (COGS)</div>
-          {(prodRows.length+mlItems.length)>0 && <span style={{fontSize:11,color:T.textSm}}>{conCosto}/{prodRows.length+mlItems.length} con costo cargado</span>}
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            {(prodRows.length+mlItems.length)>0 && <span style={{fontSize:11,color:T.textSm}}>{conCosto}/{prodRows.length+mlItems.length} con costo cargado</span>}
+            {prodRows.length>0 && <Btn T={T} variant="secondary" size="sm" onClick={importarCostosTienda} disabled={importando||saving||!loaded}>{importando?"Leyendo la tienda…":`Importar de ${plataformaNombre}`}</Btn>}
+          </div>
         </div>
-        <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Aparece cada producto de Shopify/TN y cada publicación de ML. Poné cuánto te cuesta cada uno.</div>
+        <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Aparece cada producto de Shopify/TN y cada publicación de ML. Poné cuánto te cuesta cada uno. <strong style={{color:T.textMd}}>Growith no lee solo el costo que tenés en la tienda:</strong> si ya lo cargaste en Shopify (costo por artículo) o en Tienda Nube (costo de la variante), usá “Importar de {plataformaNombre}” y se copia acá.</div>
+        {importPrev && (
+          <div style={{background:T.accent+"10",border:`1px solid ${T.accent}44`,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+            <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>{plataformaNombre} tiene costo en {importPrev.conCosto} de {importPrev.total} variantes</div>
+            <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:10}}>
+              {importPrev.nuevos.length} sin costo acá (se completan) · {importPrev.distintos.length} ya tienen un costo manual distinto{importPrev.iguales.length?` · ${importPrev.iguales.length} iguales`:""}{importPrev.conHist.length?` · ${importPrev.conHist.length} con historial por fecha (no se tocan)`:""}. ¿Qué hacemos con los que cargaste a mano?
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <Btn T={T} variant="primary" size="sm" onClick={()=>aplicarImport(importPrev,false)} disabled={saving}>Completar solo los vacíos ({importPrev.nuevos.length})</Btn>
+              <Btn T={T} variant="secondary" size="sm" onClick={()=>aplicarImport(importPrev,true)} disabled={saving}>Reemplazar también los manuales ({importPrev.nuevos.length+importPrev.distintos.length})</Btn>
+              <Btn T={T} variant="ghost" size="sm" onClick={()=>setImportPrev(null)}>Cancelar</Btn>
+            </div>
+          </div>
+        )}
         {(prodRows.length+mlItems.length)>6 && <input value={busqProd} onChange={e=>setBusqProd(e.target.value)} placeholder="Buscar producto o SKU…" style={{...InputStyle(T),width:"100%",fontSize:13,marginBottom:10}}/>}
         {loadingProds && <div style={{padding:"24px 0",textAlign:"center",color:T.textSm,fontSize:12}}>Cargando productos…</div>}
         {!loadingProds && prodRows.length===0 && mlItems.length===0 && (

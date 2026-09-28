@@ -812,6 +812,8 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Tienda demo: " + e.message });
     }
   }
+  // La demo no tiene tienda real: no hay costos que importar (y nunca se llama a TN/Shopify).
+  if (esDemo(userDataStock) && action === "costos_tienda") return res.status(200).json({ platform: "demo", costos: {}, total: 0, conCosto: 0, demo: true });
   if(!accessToken) return res.status(403).json({ error: "Tienda no conectada" });
 
   // ── Cache server-side del snapshot (users/{uid}/stock_cache/{periodo}) ──
@@ -863,6 +865,56 @@ export default async function handler(req, res) {
       promise,
       new Promise((_, rej) => setTimeout(() => rej(new Error(`Tiempo agotado trayendo ${label} (${DEADLINE_MS/1000}s) — la tienda o Mercado Libre están respondiendo muy lento. Reintentá en unos segundos.`)), DEADLINE_MS)),
     ]);
+  }
+
+
+  // ── Importar el costo por unidad cargado en la TIENDA (28/9/2026) ────────
+  // Growith NUNCA leía el "costo por artículo" de Shopify ni el "costo" de la
+  // variante de Tienda Nube: el único origen del COGS era la tabla manual de
+  // Márgenes → los clientes que lo cargaban en la tienda creían que ya estaba.
+  // Devuelve {key: costo} con la MISMA key que usa la tabla (sku || variant id)
+  // para que el front lo vuelque en margenesCogs. Solo lectura; nada se guarda
+  // acá (guarda el front al aplicar, con el mismo save() de siempre).
+  //   • TN: variants[].cost (viene en el catálogo, sin permisos extra).
+  //   • Shopify: inventory_items.json?ids= (cost) → requiere el scope
+  //     read_inventory; sin él responde 403 code:"shopify_scope".
+  if (action === "costos_tienda") {
+    try {
+      const costos = {}; let total = 0, conCosto = 0;
+      if (platform === "tiendanube") {
+        const items = await withDeadline(tnProductsCached(storeId, accessToken), "el catálogo de Tienda Nube");
+        for (const p of items) for (const v of (p.variants || [])) {
+          total++;
+          const c = parseFloat(v.cost); if (!(c > 0)) continue;
+          costos[v.sku || String(v.id)] = +c.toFixed(2); conCosto++;
+        }
+        return res.status(200).json({ platform, costos, total, conCosto });
+      }
+      const prods = await withDeadline(shProducts(shop, accessToken), "el catálogo de Shopify");
+      const porInv = {}; // inventory_item_id → key de la tabla
+      for (const p of prods) for (const v of (p.variants || [])) {
+        total++;
+        if (v.inventory_item_id) porInv[String(v.inventory_item_id)] = v.sku || String(v.id);
+      }
+      const ids = Object.keys(porInv);
+      for (let i = 0; i < ids.length; i += 100) {
+        const r = await fetchTR(`${SH_URL(shop)}/inventory_items.json?ids=${ids.slice(i, i + 100).join(",")}&limit=100`, { headers: SH_H(accessToken) });
+        if (r.status === 403) {
+          return res.status(403).json({ error: "Shopify no le dio a Growith el permiso para leer el costo de los productos (read_inventory). Reconectá Shopify desde Config → Integraciones y volvé a intentar.", code: "shopify_scope", scope: "read_inventory" });
+        }
+        if (!r.ok) { let det = ""; try { det = (await r.text()).slice(0, 200); } catch (_) {} throw new Error(`Shopify inventory_items HTTP ${r.status}${det ? `: ${det}` : ""}`); }
+        const j = await r.json();
+        for (const it of (j.inventory_items || [])) {
+          const c = parseFloat(it.cost); if (!(c > 0)) continue;
+          const key = porInv[String(it.id)]; if (!key) continue;
+          costos[key] = +c.toFixed(2); conCosto++;
+        }
+      }
+      return res.status(200).json({ platform, costos, total, conCosto });
+    } catch (e) {
+      console.error("[stock costos_tienda]", e.message);
+      return res.status(500).json({ error: e.message || "No se pudo leer el costo de la tienda" });
+    }
   }
 
   try{
