@@ -989,8 +989,8 @@ const SIDEBAR_GROUPS_BASE = [
     // Tareas y Equipo (28/sep/2026): la sección Equipo suelta quedaba como una
     // tarjeta sola en la nada. Ahora es la pestaña Equipo de Tareas (miembros
     // con cuenta + colaboradores por link en un mismo lugar). #/equipo redirige.
-    {id:"tareas",   label:"Tareas y Equipo", icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", alertKey:"tareas", badge:"orange",
-      subs:[{id:"tareas",label:"Tareas"},{id:"equipo",label:"Equipo"}]},
+    // Sin subs: las pestañas Tareas / Equipo / Referencias viven en la sección.
+    {id:"tareas",   label:"Tareas y Equipo", icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", alertKey:"tareas", badge:"orange"},
     {id:"calendario", label:"Calendario de Pagos", icon:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18", alertKey:"calendario", badge:"red"},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
