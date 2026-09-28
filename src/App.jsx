@@ -979,9 +979,6 @@ const SIDEBAR_GROUPS_BASE = [
       subs:[{id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"costos",label:"Configuraciones"}]},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     { group:"OPERACIONES" },
-    // Equipo arriba de Reclamos y Tareas: es donde se da de alta a la gente que
-    // trabaja en esas dos secciones, así que se busca ahí y no en Config.
-    {id:"equipo", label:"Equipo", icon:"M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 7a4 4 0 108 0 4 4 0 00-8 0M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"},
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"},{id:"checkout",label:"Checkout"}]},
     // Depósito: solo lo ven el dueño del depósito, sus operarios y los clientes dados de alta (lo decide api/deposito.js → me).
@@ -989,7 +986,11 @@ const SIDEBAR_GROUPS_BASE = [
     {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", alertKey:"reclamos", badge:"red",
       subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", alertKey:"canjes", badge:"orange"},
-    {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", alertKey:"tareas", badge:"orange"},
+    // Tareas y Equipo (28/sep/2026): la sección Equipo suelta quedaba como una
+    // tarjeta sola en la nada. Ahora es la pestaña Equipo de Tareas (miembros
+    // con cuenta + colaboradores por link en un mismo lugar). #/equipo redirige.
+    {id:"tareas",   label:"Tareas y Equipo", icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", alertKey:"tareas", badge:"orange",
+      subs:[{id:"tareas",label:"Tareas"},{id:"equipo",label:"Equipo"}]},
     {id:"calendario", label:"Calendario de Pagos", icon:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18", alertKey:"calendario", badge:"red"},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
@@ -1732,24 +1733,9 @@ const SECCIONES_MIEMBRO=[
 // "Depósito" solo se ofrece en la cuenta dueña del depósito (window.__ghDepositoOwner lo levanta App).
 function ghSeccionesMiembro(){ try{ return window.__ghDepositoOwner?[...SECCIONES_MIEMBRO,{id:"deposito",label:"Depósito"}]:SECCIONES_MIEMBRO; }catch(_){ return SECCIONES_MIEMBRO; } }
 
-// ─── Sección Equipo ───
-// La gente que trabaja con vos, en un solo lugar y arriba de Reclamos y
-// Tareas, que es donde se la usa. Antes esto vivía escondido en una pestaña
-// adentro de Tareas y nadie lo encontraba.
-function AppEquipo({T, user, onHome}) {
-  return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <AppTopbar T={T} section="Equipo" sectionId="equipo" onHome={onHome}/>
-      <div style={{padding:"18px 22px",maxWidth:900}}>
-        <div style={{fontSize:13,color:T.textSm,lineHeight:1.6,marginBottom:14}}>
-          Invitá a tu equipo y elegí qué secciones ve cada uno. Entran con su propia cuenta:
-          si a alguien le tildás solo Reclamos, eso es lo único que ve de tu negocio.
-        </div>
-        <MiembrosCuentaCard T={T} user={user}/>
-      </div>
-    </div>
-  );
-}
+// ─── Miembros con cuenta ───
+// Vive en Tareas y Equipo → pestaña Equipo (28/sep/2026). Antes era una
+// sección propia "Equipo" con esta única tarjeta, que quedaba perdida.
 
 function MiembrosCuentaCard({T,user}){
   const iS=InputStyle(T);
@@ -23143,7 +23129,7 @@ function MatCard({T, mat, colabMode, onEdit, onDelete}) {
 // ===========================================
 // APP TAREAS — Delegación a colaboradores externos
 // ===========================================
-function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, colabMode=null, pendingOpenTaskId=null, onPendingOpenTaskConsumed=null}) {
+function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, colabMode=null, esMiembro=false, pendingOpenTaskId=null, onPendingOpenTaskConsumed=null}) {
   const iS = InputStyle(T);
   const [datos, setDatos] = useState({colaboradores:[],tareas:[]});
   const [loading, setLoading] = useState(true);
@@ -23400,10 +23386,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     await saveRefRemote(referencias.filter(r=>r.id!==refId));
   }
   useEffect(()=>{ loadData(); loadProduccion(); loadReferencias(); },[]);
+  // El sidebar (Tareas y Equipo → Tareas / Equipo) y las pills de acá son la
+  // misma navegación: el sidebar manda la vista y las pills devuelven el id.
   useEffect(()=>{
     if(sidebarTab==="equipo") setActiveView("equipo");
+    else if(sidebarTab==="referencias") setActiveView("referencias");
     else if(sidebarTab==="trabajo"||sidebarTab) setActiveView("todo");
   },[sidebarTab]);
+  const irAVista = (id) => { setActiveView(id); setSidebarTab && setSidebarTab(id==="todo" ? "tareas" : id); };
   useEffect(()=>{
     if(!pendingOpenTaskId) return;
     const tarea=(datos.tareas||[]).find(t=>t._id===pendingOpenTaskId);
@@ -24776,7 +24766,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       {/* Topbar */}
-      <AppTopbar T={T} section="Trabajo" sectionId="tareas" onHome={onHome} top={0}
+      <AppTopbar T={T} section={view==="equipo"?"Equipo":"Tareas"} sectionId="tareas" onHome={onHome} top={0}
         onHelp={view==="equipo"
           ? (colabMode?null:()=>setShowGuiaEquipo(s=>!s))
           : view==="referencias"
@@ -24800,7 +24790,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           </div>
         )}
         {view==="todo"&&!calendarView&&(!colabMode||colabMode.permisos?.verTareas)&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:13,padding:"8px 18px",fontWeight:700,letterSpacing:"0.01em"}}>+ Tarea</button>}
-        {view==="equipo"&&!colabMode&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
+        {view==="equipo"&&!colabMode&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador por link</button>}
         {view==="equipo"&&!colabMode&&<button onClick={async()=>{setShowBoardModal(true);if(!boardToken){setBoardLinkLoading(true);try{const d=await tareasApi({action:"generateBoardToken"});setBoardTokenAdmin(d.token);}catch(e){toast("Error generando link","error");}finally{setBoardLinkLoading(false);}}}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}><GhI n="link" size={12}/> Tablero compartido</button>}
         {view==="todo"&&colabMode&&!colabMode.permisos?.verTareas&&<button onClick={()=>setShowNTColab(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>+ Proponer tarea</button>}
       </AppTopbar>
@@ -24825,7 +24815,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           }).map(([id,label,icon])=>{
             const isActive=view===id||(id==="todo"&&view!=="equipo"&&view!=="referencias");
             return (
-              <button key={id} onClick={()=>{setActiveView(id);setKanbanSelected(null);}}
+              <button key={id} onClick={()=>{irAVista(id);setKanbanSelected(null);}}
                 onMouseEnter={e=>{if(!isActive)e.currentTarget.style.color=T.text;}}
                 onMouseLeave={e=>{if(!isActive)e.currentTarget.style.color=T.textMd;}}
                 style={{padding:"8px 18px",fontSize:13,fontWeight:isActive?700:500,borderRadius:8,border:"none",background:isActive?T.accent+"16":"transparent",color:isActive?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,transition:"all 0.15s ease",boxShadow:isActive?`inset 0 0 0 1px ${T.accent}3a`:"none",whiteSpace:"nowrap",flexShrink:0}}>
@@ -25623,15 +25613,24 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         {/* ── TAB EQUIPO (admin): gestión de miembros y permisos ── */}
         {/* Miembros con cuenta propia y permisos por sección (aparte de los
             colaboradores por link, que siguen abajo igual que siempre) */}
-        {/* Los miembros con cuenta se mudaron a la sección Equipo: acá quedan
-            solo los colaboradores por link, que son propios de Tareas. */}
+        {/* 28/sep/2026: las dos formas de sumar gente están juntas acá.
+            1) Miembros con cuenta: entran con su propio usuario de Growith y ven
+               solo las secciones habilitadas (los administra el dueño; un miembro
+               no ve esta tarjeta).
+            2) Colaboradores por link: propios de Tareas, entran a su portal sin
+               cuenta (lista de abajo). */}
         {!loading&&tab==="equipo"&&!colabMode&&(
-          <div style={{marginBottom:10,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-            <div style={{flex:1,minWidth:200}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.text}}>Miembros con cuenta</div>
-              <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Los que entran con su propia cuenta y ven las secciones que les habilitás ahora se manejan en Equipo.</div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:13,color:T.textSm,lineHeight:1.6,marginBottom:12}}>
+              Dos formas de sumar gente: <strong style={{color:T.textMd}}>miembros con cuenta</strong>, que entran con su propio usuario de Growith y ven solo las secciones que les habilitás, y <strong style={{color:T.textMd}}>colaboradores por link</strong>, que reciben tareas y entregan desde un portal sin crear cuenta.
             </div>
-            <button onClick={()=>{try{window.location.hash="#/equipo";}catch(_){}}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",flexShrink:0}}>Ir a Equipo →</button>
+            {esMiembro
+              ? <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 16px",fontSize:12,color:T.textSm}}>Los miembros con cuenta los administra el dueño de la cuenta.</div>
+              : <MiembrosCuentaCard T={T} user={user}/>}
+            <div style={{marginTop:18,marginBottom:4}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.text}}>Colaboradores por link</div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Reciben tareas, suben entregas y comentan desde su portal, sin cuenta de Growith.</div>
+            </div>
           </div>
         )}
         {!loading&&tab==="equipo"&&!colabMode&&(()=>{
@@ -25652,9 +25651,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           if(todos.length===0) return (
             <div style={{textAlign:"center",padding:"70px 0"}}>
               <div style={{marginBottom:14,color:T.textSm}}><GhI n="users" size={36}/></div>
-              <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Sin miembros en el equipo</div>
-              <div style={{fontSize:13,color:T.textSm,marginBottom:24}}>Agregá a alguien para asignarle tareas, creativos y permisos</div>
-              <button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:13}}>+ Agregar miembro</button>
+              <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Sin colaboradores por link</div>
+              <div style={{fontSize:13,color:T.textSm,marginBottom:24}}>Agregá a alguien para asignarle tareas, creativos y permisos desde su portal</div>
+              <button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:13}}>+ Agregar colaborador</button>
             </div>
           );
           return (
@@ -25699,7 +25698,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 {showGuiaEquipo&&(
                   <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
                     {[
-                      {n:1,title:"Agregar miembro",desc:"Usá '+ Equipo'. Con email: recibe tareas, accede a su portal y recibe notificaciones. Sin email: solo producción de creativos."},
+                      {n:0,title:"Miembros con cuenta",desc:"Arriba: invitás por mail y tildás qué secciones ve. Entra con su propio usuario de Growith y solo ve eso de tu negocio."},
+                      {n:1,title:"Agregar colaborador por link",desc:"Usá '+ Colaborador por link'. Con email: recibe tareas, accede a su portal y recibe notificaciones. Sin email: solo producción de creativos."},
                       {n:2,title:"Portal sin cuenta",desc:"Cada colaborador recibe un link único. Desde ahí ve sus tareas, sube entregas y comenta. No necesita crear ninguna cuenta."},
                       {n:3,title:"Permisos",desc:"Clickeá 'Permisos' en la card para elegir qué puede ver en su portal: kanban de tareas, creativos, estado del equipo."},
                       {n:4,title:"Editar datos",desc:"Expandí la card y usá 'Editar datos' para cambiar nombre, rol y WhatsApp."},
@@ -44149,9 +44149,12 @@ export default function App() {
   },[user&&user.uid]);
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","demo","copilot","margenes","arca","meta","gads","tiktokads","claude","chatgpt","gemini","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","equipo","referidos","calendario","deposito"];
+  const VALID_PAGES = ["home","demo","copilot","margenes","arca","meta","gads","tiktokads","claude","chatgpt","gemini","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario","deposito"];
   // Alias legacy: #/rendimiento era el nombre viejo del Dashboard (hoy #/margenes)
-  const _aliasPage = (p) => p === "rendimiento" ? "margenes" : p;
+  // "equipo" fue sección propia hasta el 28/sep/2026; hoy es la pestaña Equipo
+  // de Tareas (#/equipo y #/tareas/equipo abren esa pestaña).
+  const _aliasPage = (p) => p === "rendimiento" ? "margenes" : p === "equipo" ? "tareas" : p;
+  const _hashPideEquipo = (h) => { const seg = String(h||"").split("/"); return seg[0]==="equipo" || (seg[0]==="tareas" && seg[1]==="equipo"); };
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
   // Detectar ruta pública de colaborador: #/colaborador/TOKEN
   const _colabMatch = _initialHash.match(/^colaborador\/([a-z0-9]{8,})/i);
@@ -44241,6 +44244,7 @@ export default function App() {
       try{sessionStorage.removeItem("growith_colab_token");}catch(e){}
       setColabToken(null); setEditorProdToken(null); setBoardToken(null); setCuponToken(null);
       const hPage = _aliasPage(h.split("/")[0]);
+      if (_hashPideEquipo(h)) setTareasTab("equipo");
       if (VALID_PAGES.includes(hPage)) _setPage(hPage);
     };
     window.addEventListener("hashchange", onHash);
@@ -44279,7 +44283,7 @@ export default function App() {
     if(parts[0]==="arca"&&parts[1]) return parts[1];
     return "pendientes";
   });
-  const [tareasTab,setTareasTab]=useState("tareas");
+  const [tareasTab,setTareasTab]=useState(()=>_hashPideEquipo(_initialHash)?"equipo":"tareas");
   const [mlTab,setMlTab]=useState("gestion");
   // Google Ads: "analisis" | "publicar" (Publicar en Google) — #/gads/publicar sobrevive a recargar
   const [gadsTab,setGadsTab]=useState(()=>{
@@ -45156,23 +45160,12 @@ export default function App() {
   else if(page==="stock") pageContent = adminGate("stock") || planGate("medio") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
   else if(page==="ml") pageContent = adminGate("ml") || planGate("medio") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={mlTab} setTab={setMlTab}/></PageView>;
   else if(page==="meta") pageContent = adminGate("meta") || planGate("medio") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
-  else if(page==="tareas") pageContent = adminGate("tareas") || planGate("medio") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab} pendingOpenTaskId={pendingOpenTaskId} onPendingOpenTaskConsumed={()=>setPendingOpenTaskId(null)}/></PageView>;
+  else if(page==="tareas") pageContent = adminGate("tareas") || planGate("medio") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab} esMiembro={!!secMiembro} pendingOpenTaskId={pendingOpenTaskId} onPendingOpenTaskConsumed={()=>setPendingOpenTaskId(null)}/></PageView>;
   else if(page==="reclamos") pageContent = adminGate("reclamos") || planGate("medio") || requiereTN("Reclamos") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
   else if(page==="canjes") pageContent = adminGate("canjes") || planGate("medio") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
   else if(page==="gads") pageContent = adminGate("gads") || planGate("plus") || <PageView T={T} pageKey="gads"><AppGoogleAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={gadsTab} setTab={setGadsTab}/></PageView>;
   else if(page==="tiktokads") pageContent = adminGate("tiktokads") || planGate("medio") || <PageView T={T} pageKey="tiktokads"><AppTiktokAds T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={tiktokTab} setTab={setTiktokTab}/></PageView>;
   else if(page==="claude"||page==="chatgpt"||page==="gemini") pageContent = adminGate(page) || planGate("plus") || <PageView T={T} pageKey={page}><AppConectorIA T={T} user={user} app={{claude:"Claude",chatgpt:"ChatGPT",gemini:"Gemini"}[page]} onHome={()=>setPage("home")}/></PageView>;
-  // Equipo lo administra solo el dueño (el backend también lo exige): un
-  // miembro que escriba #/equipo a mano vuelve al inicio en vez de ver la
-  // tarjeta vacía.
-  else if(page==="equipo") pageContent = secMiembro ? (
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"70vh",fontFamily:"'Inter',system-ui,sans-serif",gap:16,padding:24,background:T.bg}}>
-      <div style={{color:T.textSm}}><GhI n="lock" size={40}/></div>
-      <div style={{fontSize:20,fontWeight:800,color:T.text}}>Acceso restringido</div>
-      <div style={{fontSize:14,color:T.textMd,textAlign:"center",maxWidth:360}}>El equipo lo administra el dueño de la cuenta.</div>
-      <button onClick={()=>setPage("home")} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 24px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>← Volver al inicio</button>
-    </div>
-  ) : <PageView T={T} pageKey="equipo"><AppEquipo T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="referidos") pageContent = <PageView T={T} pageKey="referidos"><AppReferidos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="deposito") pageContent = depositoAcceso
     ? (depositoInfo.rol==="owner"&&!depositoInfo.cliente
