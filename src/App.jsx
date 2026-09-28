@@ -1327,7 +1327,7 @@ function BrandIcon({name, size=20, style}) {
 // funciona para cuentas ajenas (la app queda en modo desarrollo y Meta rechaza
 // el login). El camino que SÍ funciona siempre es el System User Token, que no
 // depende de la verificación. Cuando Meta apruebe la app, volver esto a true.
-const META_OAUTH_OK = false;
+const META_OAUTH_OK = true;
 
 // ── Google Ads OAuth — switch de disponibilidad ──
 // Hasta que Google apruebe el Basic Access del developer token, el OAuth de
