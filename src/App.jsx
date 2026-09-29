@@ -4521,6 +4521,19 @@ const GH_SUC_GEN=new Set([...GH_SUC_VIA,...GH_SUC_TITULO]);
 function ghNrmSuc(s){
   return String(s||"").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();
 }
+// Nombres de personas (rótulos ↔ pedidos): palabras significativas, sin
+// partículas ni números, para comparar en cualquier orden ("PEREZ JUAN" = "Juan Pérez").
+const GH_NOM_STOP=new Set(["DE","DEL","LA","LAS","LOS","EL","Y","DA","DO","DOS","DAS","VAN","VON","SR","SRA","SRTA","DON","DONA"]);
+function ghNomTokens(s){ return [...new Set(ghNrmSuc(s).split(" ").filter(t=>t.length>=2&&!GH_NOM_STOP.has(t)&&!/^\d+$/.test(t)))]; }
+// El rótulo suele pegar en la misma línea teléfono, DNI o dirección después
+// del nombre: se corta ahí.
+function ghNombreRotulo(raw){
+  let x=String(raw||"");
+  x=x.replace(/\s*\b(tel|cel|celular|dni|cuit|cuil|doc|documento|e-?mail|correo|direcci[oó]n|domicilio|calle|cp|c\.p\.|localidad|provincia|piso|dpto|depto)\b.*$/i,"");
+  x=x.replace(/\s*[\d(+][\d\s().-]{4,}.*$/,"");
+  x=x.replace(/\s*[|•·;]+.*$/,"");
+  return x.trim();
+}
 // ¿El pedido es a un punto HOP (comercio adherido)? Andreani los publica en el
 // desplegable del Excel pero NO en la API de sucursales hasta habilitar el
 // canal en el contrato — el flujo por API tiene que saberlo antes de buscar.
@@ -12077,21 +12090,44 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   function buscarOrdenLocal(num){
     return tabOrders.find(o=>o.numero===num)||orders.find(o=>o.numero===num)||skuBulkRef.current.list.find(o=>o.numero===num)||null;
   }
-  // Rótulo sin "N° Interno" (hecho a mano en el portal de Andreani): se busca
-  // el pedido por el nombre del destinatario. Solo si la coincidencia es
-  // ÚNICA (o única entre los pedidos todavía no despachados); si el mismo
-  // cliente tiene varios pedidos, el usuario lo escribe a mano.
-  function ordenPorNombre(nombre,pool){
-    const key=x=>ghNrmSuc(x).split(" ").filter(Boolean).sort().join(" ");
-    const n=key(nombre); if(n.length<5) return null;
-    const cands=pool.filter(o=>key(o.nombreEnvio||o.comprador)===n||key(o.comprador)===n);
-    const porNum=new Map(); cands.forEach(o=>{ if(!porNum.has(o.numero)) porNum.set(o.numero,o); });
-    if(porNum.size===1) return [...porNum.values()][0];
-    if(porNum.size>1){
-      const abiertos=[...porNum.values()].filter(o=>o.estadoEnvio==="Por empaquetar"||o.estadoEnvio==="Por enviar");
-      if(abiertos.length===1) return abiertos[0];
+  // Rótulo sin "N° Interno" (hecho a mano en el portal de Andreani) o con un
+  // número que no existe: se busca el pedido por el nombre del destinatario.
+  // Tolerante a propósito: palabras en cualquier orden, nombre de pila de más
+  // o de menos, y si el campo "Destinatario" no se leyó, el nombre del pedido
+  // se busca en TODO el texto de la página. Un nombre que aparece en todas
+  // las páginas es el remitente y se ignora. Cliente con varios pedidos:
+  // se reparte un pedido distinto por página, del más nuevo al más viejo.
+  function ordenPorNombre(nombre,pool,pageText,usados,tokPages){
+    const tokN=ghNomTokens(ghNombreRotulo(nombre));
+    const tokPage=new Set(ghNrmSuc(pageText||"").split(" "));
+    const porNum=new Map(); pool.forEach(o=>{ if(o.numero&&!porNum.has(o.numero)) porNum.set(o.numero,o); });
+    let best=[],bestScore=0;
+    for(const o of porNum.values()){
+      const nombres=[...new Set([o.nombreEnvio,o.comprador].filter(Boolean))];
+      let score=0;
+      for(const nm of nombres){
+        const tokO=ghNomTokens(nm); if(!tokO.length) continue;
+        if(tokN.length){
+          const setN=new Set(tokN);
+          const inter=tokO.filter(t=>setN.has(t)).length;
+          if(inter===tokO.length&&inter===tokN.length) score=Math.max(score,4);            // mismo nombre, cualquier orden
+          else if(inter>=2&&(inter===tokO.length||inter===tokN.length)) score=Math.max(score,3); // uno contiene al otro
+          else if(inter===1&&(tokO.length===1||tokN.length===1)&&tokO.find(t=>setN.has(t)).length>=6) score=Math.max(score,3);
+        }
+        // Fallback: el nombre completo del pedido está en el texto de la página
+        // (y no en todas las páginas: eso es el remitente).
+        if(score<3&&tokO.length>=2&&tokO.every(t=>tokPage.has(t))){
+          const enTodas=tokPages.length>=2&&tokPages.every(tp=>tokO.every(t=>tp.has(t)));
+          if(!enTodas) score=Math.max(score,2);
+        }
+      }
+      if(score>bestScore){ bestScore=score; best=[o]; } else if(score&&score===bestScore) best.push(o);
     }
-    return null;
+    if(!bestScore) return null;
+    const masNuevo=(a,b)=>(Number(b.numero)||0)-(Number(a.numero)||0);
+    const libres=best.filter(o=>!usados.has(o.numero)).sort(masNuevo);
+    const elegido=libres[0]||best.sort(masNuevo)[0];
+    return {order:elegido,empate:best.length>1};
   }
   // El usuario escribe el número de pedido de una página que no se pudo
   // identificar sola (sin N° Interno o pedido no encontrado).
@@ -12246,8 +12282,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           pagina:i+1,
           tracking:trackingMatch[1].trim(),
           pedidoNum:internoMatch?internoMatch[1].trim():null,
-          destinatario:destMatch?destMatch[1].trim():"",
+          destinatario:destMatch?ghNombreRotulo(destMatch[1]):"",
           sinInterno:!internoMatch,
+          texto:pageText,
         };
       });
       const descartadas=pageData.map((p,i)=>p?null:i+1).filter(Boolean);
@@ -12269,20 +12306,31 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         const cuentaNum={}; pageOk.forEach(p=>{ if(p.pedidoNum) cuentaNum[p.pedidoNum]=(cuentaNum[p.pedidoNum]||0)+1; });
         const numRepetido=n=>!!n&&pageOk.length>=3&&cuentaNum[n]===pageOk.length&&!buscarOrdenLocal(n);
 
-        // 3ª pasada: construir resultados con los datos ya cargados
-        let porNombreN=0;
-        const results=pageOk.map(p=>{
-          let pedidoNum=p.pedidoNum, porNombre=false, sinInterno=p.sinInterno;
-          const numRotulo=p.pedidoNum;
+        // 3ª pasada: construir resultados con los datos ya cargados.
+        // Primero las páginas con número válido (reservan su pedido), después
+        // las que van por nombre, para no darle a una página por nombre un
+        // pedido que otra página ya identificó por número.
+        let porNombreN=0, empates=0;
+        const usados=new Set();
+        const tokPages=pageOk.map(p=>new Set(ghNrmSuc(p.texto).split(" ")));
+        const prelim=pageOk.map(p=>{
+          let pedidoNum=p.pedidoNum, sinInterno=p.sinInterno;
           if(numRepetido(pedidoNum)){ pedidoNum=null; sinInterno=true; }
-          let order=pedidoNum?buscarOrdenLocal(pedidoNum):null;
+          const order=pedidoNum?buscarOrdenLocal(pedidoNum):null;
+          if(order) usados.add(order.numero);
+          return {p,pedidoNum,sinInterno,order};
+        });
+        const results=prelim.map(({p,pedidoNum,sinInterno,order})=>{
+          let porNombre=false, empate=false;
+          const numRotulo=p.pedidoNum;
           // Sin número, o con un número que no está en la tienda: por nombre.
-          if(!order&&p.destinatario){
-            const o=ordenPorNombre(p.destinatario,pool);
-            if(o){ order=o; pedidoNum=o.numero; porNombre=true; porNombreN++; }
+          if(!order){
+            const m=ordenPorNombre(p.destinatario,pool,p.texto,usados,tokPages);
+            if(m){ order=m.order; pedidoNum=order.numero; porNombre=true; empate=m.empate; porNombreN++; if(empate) empates++; usados.add(order.numero); }
           }
           const skuLines=order?(order.productos||[]).map(pr=>`${pr.sku} (x${pr.cantidad})`):[];
-          return {...p,pedidoNum,numRotulo,sinInterno,porNombre,skus:order?skuLines.join(', '):"No encontrado en tu tienda",found:!!order,skuLines};
+          const {texto:_t,...rest}=p;
+          return {...rest,pedidoNum,numRotulo,sinInterno,porNombre,empate,skus:order?skuLines.join(', '):"No encontrado en tu tienda",found:!!order,skuLines};
         });
         resultSetter(results);
         // Un solo upload para todo: el mismo PDF alimenta el estampado de SKUs
@@ -12291,10 +12339,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         // el usuario lo asigne: subirlo a un pedido equivocado es peor que no subirlo.
         setPdfResults(results.map(p=>({pagina:p.pagina,tracking:p.tracking,pedidoNum:p.found||!p.sinInterno?p.pedidoNum:null,destinatario:p.destinatario,status:"pending"})));
         const sinAsignar=results.filter(r=>!r.found&&r.sinInterno).length;
-        if(porNombreN>0) toast(`${porNombreN} rótulo${porNombreN!==1?"s":""} sin número de pedido: lo${porNombreN!==1?"s":""} identificamos por el nombre del destinatario, revisá que sea el pedido correcto`,"info",8000);
+        if(porNombreN>0) toast(`${porNombreN} rótulo${porNombreN!==1?"s":""} identificado${porNombreN!==1?"s":""} por el nombre del destinatario${empates?` (${empates} con varios pedidos a ese nombre: revisá que sea el correcto)`:""}`,empates?"warning":"info",8000);
         if(sinAsignar>0) toast(`${sinAsignar} rótulo${sinAsignar!==1?"s":""} sin número de pedido: escribí el pedido en la tabla para completar los SKU`,"warning",8000);
       } else {
-        resultSetter(pageOk.map(p=>({...p,status:"pending"})));
+        resultSetter(pageOk.map(({texto:_t,...p})=>({...p,status:"pending"})));
       }
 
       if(pageOk.length===0) toast("No encontramos números de seguimiento de Andreani en el PDF. Tiene que ser el PDF de rótulos que descargás de Andreani (desde Growith o hecho a mano en el portal)","warning",9000);
@@ -13286,7 +13334,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       <span style={{fontSize:12,color:T.textSm,paddingTop:2}}>Pág.{r.pagina}</span>
                       <div style={{paddingTop:2,minWidth:0}}>
                         <span style={{fontWeight:700,color:r.found?T.accent:T.red,fontSize:13}}>{r.pedidoNum?`#${r.pedidoNum}`:"—"}</span>
-                        {r.found&&(r.porNombre||r.manual)&&<div style={{fontSize:10,color:T.textSm,marginTop:2}} title={r.porNombre?`Identificado por el nombre del destinatario (${r.destinatario||""})`:"Número escrito a mano"}>{r.porNombre?"por nombre":"a mano"}</div>}
+                        {r.found&&(r.porNombre||r.manual)&&<div style={{fontSize:10,color:T.textSm,marginTop:2}} title={r.porNombre?`Identificado por el nombre del destinatario (${r.destinatario||""})`:"Número escrito a mano"}>{r.porNombre?(r.empate?"por nombre · varios pedidos":"por nombre"):"a mano"}</div>}
                       </div>
                       <div>
                         {r.found
