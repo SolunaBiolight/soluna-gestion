@@ -12100,7 +12100,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     if(!num){ toast("Escribí el número de pedido","warning"); return; }
     let order=buscarOrdenLocal(num);
     if(!order){ await fetchOrdenesBulk(); order=buscarOrdenLocal(num); }
-    if(!order){ toast(`No encontramos el pedido #${num} entre los últimos pedidos de tu tienda`,"warning",6000); return; }
+    if(!order){
+      // Último recurso: búsqueda directa en la tienda (pedidos viejos, fuera de los últimos ~800)
+      try{
+        const r=await authFetch(`/api/orders?uid=${user?.uid||""}&q=${encodeURIComponent(num)}`);
+        const data=r.ok?await r.json():[];
+        const hit=buildOrdersFromAPI(Array.isArray(data)?data:[]).find(o=>o.numero===num);
+        if(hit){ order=hit; skuBulkRef.current.list.push(hit); }
+      }catch(_){}
+    }
+    if(!order){ toast(`No encontramos el pedido #${num} en tu tienda. Fijate que sea el número del pedido (el que ves en Tienda Nube / Shopify), no el de seguimiento`,"warning",7000); return; }
     const skuLines=(order.productos||[]).map(pr=>`${pr.sku} (x${pr.cantidad})`);
     setSkuResults(rs=>rs.map(r=>r.pagina===pagina?{...r,pedidoNum:num,found:true,manual:true,porNombre:false,skus:skuLines.join(", "),skuLines}:r));
     setPdfResults(rs=>rs.map(r=>r.pagina===pagina?{...r,pedidoNum:num}:r));
@@ -12254,22 +12263,33 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         if(missingNums.length>0||sinNum.length>0) await fetchOrdenesBulk();
         const pool=[...tabOrders,...orders,...skuBulkRef.current.list];
 
+        // Un mismo "número" en TODAS las páginas (3 o más) que además no existe
+        // en la tienda no es un pedido: es un dato fijo del rótulo (portal de
+        // Andreani) que el lector confundió → se trata como "sin número".
+        const cuentaNum={}; pageOk.forEach(p=>{ if(p.pedidoNum) cuentaNum[p.pedidoNum]=(cuentaNum[p.pedidoNum]||0)+1; });
+        const numRepetido=n=>!!n&&pageOk.length>=3&&cuentaNum[n]===pageOk.length&&!buscarOrdenLocal(n);
+
         // 3ª pasada: construir resultados con los datos ya cargados
         let porNombreN=0;
         const results=pageOk.map(p=>{
-          let pedidoNum=p.pedidoNum, porNombre=false;
+          let pedidoNum=p.pedidoNum, porNombre=false, sinInterno=p.sinInterno;
+          const numRotulo=p.pedidoNum;
+          if(numRepetido(pedidoNum)){ pedidoNum=null; sinInterno=true; }
           let order=pedidoNum?buscarOrdenLocal(pedidoNum):null;
-          if(!order&&!pedidoNum&&p.destinatario){
+          // Sin número, o con un número que no está en la tienda: por nombre.
+          if(!order&&p.destinatario){
             const o=ordenPorNombre(p.destinatario,pool);
             if(o){ order=o; pedidoNum=o.numero; porNombre=true; porNombreN++; }
           }
           const skuLines=order?(order.productos||[]).map(pr=>`${pr.sku} (x${pr.cantidad})`):[];
-          return {...p,pedidoNum,porNombre,skus:order?skuLines.join(', '):"No encontrado en tu tienda",found:!!order,skuLines};
+          return {...p,pedidoNum,numRotulo,sinInterno,porNombre,skus:order?skuLines.join(', '):"No encontrado en tu tienda",found:!!order,skuLines};
         });
         resultSetter(results);
         // Un solo upload para todo: el mismo PDF alimenta el estampado de SKUs
         // Y la subida de trackings (antes había que subirlo dos veces, en dos tabs).
-        setPdfResults(results.map(p=>({pagina:p.pagina,tracking:p.tracking,pedidoNum:p.pedidoNum,destinatario:p.destinatario,status:"pending"})));
+        // Un número dudoso (sin N° Interno / repetido) NO va al tracking hasta que
+        // el usuario lo asigne: subirlo a un pedido equivocado es peor que no subirlo.
+        setPdfResults(results.map(p=>({pagina:p.pagina,tracking:p.tracking,pedidoNum:p.found||!p.sinInterno?p.pedidoNum:null,destinatario:p.destinatario,status:"pending"})));
         const sinAsignar=results.filter(r=>!r.found&&r.sinInterno).length;
         if(porNombreN>0) toast(`${porNombreN} rótulo${porNombreN!==1?"s":""} sin número de pedido: lo${porNombreN!==1?"s":""} identificamos por el nombre del destinatario, revisá que sea el pedido correcto`,"info",8000);
         if(sinAsignar>0) toast(`${sinAsignar} rótulo${sinAsignar!==1?"s":""} sin número de pedido: escribí el pedido en la tabla para completar los SKU`,"warning",8000);
@@ -13276,7 +13296,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                               ))}
                             </div>
                           : <form onSubmit={e=>{e.preventDefault();const v=e.currentTarget.elements.num.value;return asignarPedidoSku(r.pagina,v);}} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                              <span style={{fontSize:12,color:T.red}}>{r.sinInterno?`El rótulo no trae el número de pedido${r.destinatario?` (${r.destinatario})`:""}`:"No encontrado en tu tienda"}</span>
+                              <span style={{fontSize:12,color:T.red}}>{r.sinInterno?`El rótulo no trae el número de pedido${r.destinatario?` · ${r.destinatario}`:""}`:`No hay un pedido #${r.pedidoNum} en tu tienda${r.destinatario?` · ${r.destinatario}`:""}`}</span>
                               <input name="num" inputMode="numeric" placeholder="N° de pedido" style={{...InputStyle(T),width:120,padding:"5px 9px",fontSize:12}}/>
                               <button type="submit" style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>Asignar</button>
                             </form>
