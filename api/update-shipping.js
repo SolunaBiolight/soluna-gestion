@@ -1167,7 +1167,7 @@ export default async function handler(req, res) {
         await Promise.all(lote.map(e => {
           const numero = String(e.numero || "").trim();
           const docData = {};
-          for (const k of ["tnId","cliente","esSucursal","provincia","localidad","total","skus","estado","activo","tracking","fulfillOk","verificado","tnDone"]) {
+          for (const k of ["tnId","cliente","esSucursal","provincia","localidad","total","skus","estado","activo","tracking","fulfillOk","verificado","tnDone","avisoManual"]) {
             if (e[k] !== undefined) docData[k] = e[k];
           }
           // Productos con cantidad (para "SKU en la etiqueta" al reimprimir desde Seguimientos).

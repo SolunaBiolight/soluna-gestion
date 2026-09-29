@@ -10156,9 +10156,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const [bulkDl,setBulkDl]=useState(null); // progreso de "Descargar todas": {done,total} | null
   const [cotRow,setCotRow]=useState({});
   // "Descargar al terminar": preferencia del dispositivo (como el formato).
-  const [autoDl,setAutoDl]=useState(()=>{ try{ return localStorage.getItem("growith_andreani_autodl")==="1"; }catch(_){ return false; } });
-  const autoDlRef=useRef(autoDl); autoDlRef.current=autoDl;
-  function setAutoDlPref(v){ setAutoDl(v); try{ localStorage.setItem("growith_andreani_autodl",v?"1":"0"); }catch(_){} } // cotización por fila: numero -> {loading}|{precio}|{error} (cache de sesión, no re-cotiza al re-render)
+  const [bulkDetalle,setBulkDetalle]=useState(null); // detalle por envío del resultado: null = automático (abierto solo si hay algo para revisar)
+  // cotización por fila: numero -> {loading}|{precio}|{error} (cache de sesión, no re-cotiza al re-render)
   useEffect(()=>{
     if(!user?.uid) return;
     let alive=true;
@@ -10211,10 +10210,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     }
     updateDoc(doc(db,"canjes",cj.id),patch).catch(()=>{});
   }
+  // Sube el tracking a la TIENDA (marca el pedido como enviado y le avisa al
+  // comprador). Devuelve true si la tienda lo tomó.
   async function activarSeguimientoApi(numero, numeroDeEnvio){
-    if(!user?.uid||!numero||!numeroDeEnvio) return;
+    if(!user?.uid||!numero||!numeroDeEnvio) return false;
     const k=String(numero);
-    if(segApiRef.current.has(k)) return;
+    if(segApiRef.current.has(k)) return true;
     segApiRef.current.add(k);
     let tiendaOk=false;
     try{ await sendTracking({pedidoNum:k,tracking:String(numeroDeEnvio)}); tiendaOk=true; }
@@ -10222,11 +10223,48 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     try{
       await authFetch(`/api/update-shipping?action=envios_registrar&uid=${user.uid}`,{
         method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({envios:[{numero:k,tracking:String(numeroDeEnvio),estado:"despachado",activo:true,tnDone:true,...(tiendaOk?{}:{fulfillOk:false})}]}),
+        body:JSON.stringify({envios:[{numero:k,tracking:String(numeroDeEnvio),estado:"despachado",activo:true,tnDone:true,avisoManual:false,...(tiendaOk?{}:{fulfillOk:false})}]}),
       });
     }catch(_){}
     marcarCanjeEnvio(k,String(numeroDeEnvio),"api");
+    return tiendaOk;
   }
+  // Lote "Etiquetas listas": al emitir, el envío entra al seguimiento de
+  // Growith (el cron lo sigue) pero a la tienda NO se le avisa todavía: eso lo
+  // decide el usuario con "Imprimir y enviar seguimientos" / "Enviar
+  // seguimientos". `avisoManual` evita que la reparación de huérfanos lo mande sola.
+  async function registrarSeguimientoInterno(items){
+    if(!user?.uid||!items.length) return;
+    try{
+      await authFetch(`/api/update-shipping?action=envios_registrar&uid=${user.uid}`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({envios:items.map(x=>({numero:String(x.numero),tracking:String(x.envio),estado:"despachado",activo:true,avisoManual:true}))}),
+      });
+    }catch(_){}
+    items.forEach(x=>marcarCanjeEnvio(String(x.numero),String(x.envio),"api"));
+  }
+  const [segApiProg,setSegApiProg]=useState(null); // {done,total} mientras se suben los seguimientos del lote
+  async function enviarSeguimientosApi(items){
+    const lista=(items||[]).filter(x=>x.numero&&x.envio);
+    if(!lista.length||segApiProg) return;
+    setSegApiProg({done:0,total:lista.length});
+    let ok=0;
+    try{
+      for(let i=0;i<lista.length;i++){
+        segApiRef.current.delete(String(lista[i].numero)); // reintento explícito
+        if(await activarSeguimientoApi(lista[i].numero,lista[i].envio)) ok++;
+        setSegApiProg({done:i+1,total:lista.length});
+        if(i<lista.length-1) await new Promise(r=>setTimeout(r,400));
+      }
+    }finally{ setSegApiProg(null); }
+    const mal=lista.length-ok;
+    if(mal===0) toast(`${ok} seguimiento${ok!==1?"s":""} enviado${ok!==1?"s":""} a tu tienda ✓`,"success");
+    else toast(`${ok} seguimiento${ok!==1?"s":""} enviado${ok!==1?"s":""} · ${mal} no se pudo${mal!==1?"ieron":""} subir ahora: quedan en cola y se reintentan solos`,"warning",8000);
+    refrescarEnviosFs();
+    try{ tabCacheRef.current={}; fetchTabOrders(tabEnvioRef.current||tabEnvio,{background:true,fresh:true}); fetchTabCounts(user.uid,true); }catch(_){}
+  }
+  // Etiquetas emitidas por API cuyo aviso a la tienda quedó pendiente a propósito.
+  const segApiPendientes=Object.entries(enviosFs||{}).filter(([id,e])=>e?.avisoManual&&e?.andreani?.numeroDeEnvio&&!e.andreani.anulada&&!e.tnDone&&!e.entregadoAt&&!e.devolucionAt&&!["ok","warn","cola"].includes(trackingSent[String(e.numero||id)])).map(([id,e])=>({numero:String(e.numero||id),envio:String(e.andreani.numeroDeEnvio)}));
   const refrescarEnviosFs=async()=>{
     if(!user?.uid) return;
     try{
@@ -10236,7 +10274,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         setEnviosFs(d.envios);
         // Reparación de los emitidos por API antes de este fix: tienen número
         // de envío pero nunca entraron al seguimiento. Se activan de a pocos.
-        const huerfanos=Object.entries(d.envios).filter(([id,e])=>e?.andreani?.numeroDeEnvio&&!e.tnDone&&!e.entregadoAt&&!e.devolucionAt).slice(0,10);
+        const huerfanos=Object.entries(d.envios).filter(([id,e])=>e?.andreani?.numeroDeEnvio&&!e.tnDone&&!e.avisoManual&&!e.entregadoAt&&!e.devolucionAt).slice(0,10);
         if(huerfanos.length){
           (async()=>{ for(const [id,e] of huerfanos) await activarSeguimientoApi(e.numero||id, e.andreani.numeroDeEnvio); refrescarEnviosFs(); })();
         }
@@ -11930,7 +11968,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       logUsage("etiquetas",emitidosAhora.length);
       (async()=>{
         await registrarEnviosFs(emitidosAhora.map(r=>r.order));
-        for(const r of emitidosAhora) await activarSeguimientoApi(r.numero, r.emitido?.numeroDeEnvio);
+        await registrarSeguimientoInterno(emitidosAhora.map(r=>({numero:r.numero,envio:r.emitido?.numeroDeEnvio})).filter(x=>x.envio));
         refrescarEnviosFs();
       })();
       try{
@@ -11951,10 +11989,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     if(ultSaldoInfo){
       setAndreani(a=>({...a,saldoBajo:ultSaldoInfo.saldoBajo,etiquetasEstimadas:ultSaldoInfo.etiquetasEstimadas}));
     }
+    setBulkDetalle(null);
     pushBulk("resultado");
-    // Descarga automática: Andreani genera el PDF en segundos; descargarVarias
-    // reintenta sola las que todavía no están.
-    if(autoDlRef.current&&bulkRowsRef.current.some(r=>r.emitido?.numeroDeEnvio&&!r.anulada)) setTimeout(()=>{ descargarTodasBulk().catch(()=>{}); },1500);
   }
   // Severidad de una fila de la revisión (0 = requiere acción): las que
   // necesitan algo van arriba, las emitidas al final.
@@ -12057,9 +12093,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // "Descargar todas": un solo PDF fusionado con pdf-lib (ya es dependencia del
   // proyecto — la usa el backend para rótulos/facturas; acá entra por dynamic
   // import, así que solo se carga cuando se usa).
-  async function descargarTodasBulk(){
-    const nums=bulkRowsRef.current.filter(r=>r.emitido?.numeroDeEnvio&&!r.anulada).map(r=>({numero:r.numero,envio:String(r.emitido.numeroDeEnvio),skus:ghSkuLinesDe(r.order)}));
-    return descargarVarias(nums);
+  function bulkEmitidas(){
+    return bulkRowsRef.current.filter(r=>r.emitido?.numeroDeEnvio&&!r.anulada&&r.incluido!==false).map(r=>({numero:r.numero,envio:String(r.emitido.numeroDeEnvio),skus:ghSkuLinesDe(r.order)}));
+  }
+  async function descargarTodasBulk(){ return descargarVarias(bulkEmitidas()); }
+  // Abre el PDF en una pestaña lista para imprimir. La pestaña se abre ANTES
+  // de bajar el PDF (si no, el navegador la bloquea); si igual la bloquea, se descarga.
+  async function imprimirBulk(){ return descargarVarias(bulkEmitidas(),ghDepVentana("application/pdf")); }
+  async function imprimirYEnviarBulk(){
+    const items=bulkEmitidas();
+    const pend=items.filter(x=>!["ok","warn","cola"].includes(trackingSent[String(x.numero)]));
+    await descargarVarias(items,ghDepVentana("application/pdf"));
+    await enviarSeguimientosApi(pend);
   }
   // ── Depósito: mandar las etiquetas recién generadas a la cola del depósito ──
   // Solo si la tienda está dada de alta como cliente (depositoCliente). Las
@@ -12213,8 +12258,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     return true;
   }
   // Varias etiquetas en un solo PDF (resultado del lote y reimpresión desde Seguimientos).
-  async function descargarVarias(nums){
-    if(!nums.length) return;
+  async function descargarVarias(nums,ventana){
+    if(!nums.length){ try{ ventana&&ventana.close(); }catch(_){} return; }
+    const salida=(bytes,nombre)=>ventana?ghDepAbrirBytes(bytes,"application/pdf",nombre,ventana):ghDescargarPdfBytes(bytes,nombre);
     setBulkDl({done:0,total:nums.length});
     const pendientes=[]; let pdfs=[];
     try{
@@ -12237,7 +12283,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       pdfs=nums.map(n=>ordenPdf.get(n.envio)).filter(Boolean);
       if(pdfs.length){
         if(dlFmt==="termica"){
-          ghDescargarPdfBytes(await ghPdfTermica10x15(pdfs),"Andreani_etiquetas_10x15.pdf");
+          salida(await ghPdfTermica10x15(pdfs),"Andreani_etiquetas_10x15.pdf");
         } else {
           const {PDFDocument}=await import("pdf-lib");
           const out=await PDFDocument.create();
@@ -12246,13 +12292,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             const pages=await out.copyPages(src,src.getPageIndices());
             pages.forEach(p=>out.addPage(p));
           }
-          ghDescargarPdfBytes(await out.save(),`Andreani_etiquetas_${hoyAR()}.pdf`);
+          salida(await out.save(),`Andreani_etiquetas_${hoyAR()}.pdf`);
         }
-      }
-      if(pendientes.length) toast(`${pdfs.length} etiquetas descargadas · ${pendientes.length} todavía en proceso (${pendientes.join(", ")}) — reintentá en unos segundos`,"warning");
-      else toast(`${pdfs.length} etiquetas descargadas en un solo PDF ✓`,"success");
+      } else { try{ ventana&&ventana.close(); }catch(_){} }
+      const verbo=ventana?"lista":"descargada";
+      if(pendientes.length) toast(`${pdfs.length} etiqueta${pdfs.length!==1?"s":""} ${verbo}${pdfs.length!==1?"s":""} · ${pendientes.length} todavía en proceso (${pendientes.join(", ")}) — reintentá en unos segundos`,"warning");
+      else toast(ventana?`${pdfs.length} etiqueta${pdfs.length!==1?"s":""} lista${pdfs.length!==1?"s":""} para imprimir ✓`:`${pdfs.length} etiqueta${pdfs.length!==1?"s":""} descargada${pdfs.length!==1?"s":""} ✓`,"success");
     }catch(e){
       console.error("descargarTodasBulk:",e);
+      try{ ventana&&ventana.close(); }catch(_){}
       toast("Error al descargar las etiquetas: "+e.message,"error");
     }finally{ setBulkDl(null); }
   }
@@ -12728,7 +12776,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de tu tienda se sincronizan solos, sin cargar nada a mano. En 'Por empaquetar' ves todo lo que falta despachar; cuando marcás un pedido como empaquetado pasa a 'Por enviar'. El botón 'Sincronizar' de arriba trae lo último al instante."},
                     {n:2,icon:"",title:"El paquete y el valor declarado",desc:"El botón 'Paquete' guarda las medidas, el peso y el valor declarado con los que se cotizan y emiten TODAS tus etiquetas. El valor declarado define el seguro que cobra Andreani (un % de ese valor) — no es el total de la venta: poné lo que realmente querés asegurar."},
                     {n:3,icon:"",title:"Etiquetas por Excel",desc:"En 'Por enviar', seleccioná pedidos y tocá 'Exportar XLSX': sale el Excel de carga masiva listo para subir al portal de Andreani (domicilio y sucursal/HOP en sus hojas correctas). Si el punto de retiro del cliente no existe en la lista de Andreani, se abre un selector con las sucursales más cercanas ordenadas por distancia para que elijas una."},
-                    {n:4,icon:"",title:"Etiquetas listas (prepago)",desc:"Si tenés el prepago habilitado, el botón 'Generar etiquetas (Saldo)' cotiza y emite directo por la API de Andreani: el PDF sale al instante y el costo se debita de tu saldo. También podés cotizar un pedido puntual con el chip 'Cotizar' de cada fila antes de decidir. Al descargar podés activar 'SKU en la etiqueta' para que los productos salgan impresos en los recuadros de Orden de Ruteo del pie."},
+                    {n:4,icon:"",title:"Etiquetas listas (prepago)",desc:"Si tenés el prepago habilitado, el botón 'Generar etiquetas (Saldo)' cotiza y emite directo por la API de Andreani: el PDF sale al instante y el costo se debita de tu saldo. También podés cotizar un pedido puntual con el chip 'Cotizar' de cada fila antes de decidir. Cuando las etiquetas están listas elegís 'Imprimir y enviar seguimientos' (tu tienda marca los pedidos como enviados y le avisa al comprador) o 'Solo imprimir' si todavía no vas a despachar: en ese caso los seguimientos quedan pendientes en Seguimientos. Con 'Imprimir los SKU en la etiqueta' los productos salen impresos al pie."},
                     {n:5,icon:"",title:"Saldo de envíos",desc:"El chip verde con la billetera (arriba) muestra tu saldo. Tocalo para cargar: con Mercado Pago se acredita solo al instante, o por transferencia con referencia y lo acredita el equipo. Ahí mismo ves los movimientos (cada etiqueta descuenta) y tu sucursal de despacho."},
                     {n:6,icon:"",title:"Procesar rótulos",desc:"Subí el PDF de rótulos UNA sola vez en 'SKU en Rótulos': imprime el SKU de cada pedido en su etiqueta (para armar los paquetes sin errores) Y desde ahí mismo enviás los números de seguimiento a tu tienda, que le avisa al cliente por mail."},
                     {n:7,icon:"",title:"Seguimiento automático",desc:"Después del despacho, Growith consulta Andreani cada 30 minutos, sin que tengas la app abierta. En 'Seguimientos' ves cada envío por etapa: en camino, en sucursal (con días esperando), entregado o devolución, con alertas cuando algo se demora."},
@@ -13408,6 +13456,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           const segBtn=(on)=>({padding:"5px 12px",fontSize:12,fontWeight:on?700:500,border:"none",borderRadius:6,background:on?T.card:"transparent",color:on?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:on?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"});
           return (
           <div key="seguimientos" className="gh-tab-content" style={{maxWidth:"100%",margin:"0 auto",paddingBottom:48}}>
+            {segApiPendientes.length>0&&(
+              <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",background:T.card,border:`1px solid ${T.orange}55`,borderRadius:12,padding:"12px 16px",marginBottom:14}}>
+                <div style={{flex:1,minWidth:220}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text}}>{segApiPendientes.length} etiqueta{segApiPendientes.length!==1?"s":""} con el seguimiento sin enviar a tu tienda</div>
+                  <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{segApiPendientes.length===1?"El pedido sigue":"Los pedidos siguen"} como "por enviar" y el comprador todavía no tiene su número de Andreani (#{segApiPendientes.slice(0,6).map(x=>x.numero).join(", #")}{segApiPendientes.length>6?"…":""}).</div>
+                </div>
+                <AsyncButton onClick={()=>enviarSeguimientosApi(segApiPendientes)} disabled={!!segApiProg} style={{...BtnPrimary(T),fontSize:13,justifyContent:"center"}}>{segApiProg?`Enviando ${segApiProg.done}/${segApiProg.total}…`:`Enviar ${segApiPendientes.length===1?"el seguimiento":`los ${segApiPendientes.length} seguimientos`}`}</AsyncButton>
+              </div>
+            )}
 
             {/* Barra: título + acciones chicas */}
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
@@ -14329,6 +14386,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             const copiar=async(txt)=>{ try{ await navigator.clipboard.writeText(String(txt)); toast("Número de envío copiado","success"); }catch(_){ toast("No se pudo copiar","error"); } };
             const destinoDe=r=>{ const o=r.order; if(r.tipo==="sucursal"){ const sd=r.sucReal||r.oficial; const dir=sd?.direccion?[[sd.direccion.calle,sd.direccion.numero].filter(Boolean).join(" "),sd.direccion.localidad].filter(Boolean).join(", "):""; return {t:"Sucursal",d:sd?.descripcion||"",dir}; } return {t:"Domicilio",d:[String(o.direccion||"").trim(),String(o.dirNumero||"").trim()].filter(Boolean).join(" "),dir:[o.localidad||o.ciudad||"",o.cp?`CP ${o.cp}`:""].filter(Boolean).join(" · ")}; };
             const chipS={fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:DS.r.full,whiteSpace:"nowrap"};
+            // Etiquetas que se pueden imprimir (nuevas + las que ya estaban), sin las anuladas.
+            const vivas=[...ok,...yaEstaban].filter(r=>!r.anulada);
+            const segDe=r=>trackingSent[String(r.numero)];
+            const segPend=ok.filter(r=>!r.anulada&&!["ok","warn","cola"].includes(segDe(r))).map(r=>({numero:r.numero,envio:String(r.emitido.numeroDeEnvio)}));
+            const ocupado=!!bulkDl||!!segApiProg;
+            const revisar=fails.length+ok.filter(r=>r.verifFinal==="warn").length;
+            const detalleAbierto=bulkDetalle===null?(revisar>0||ok.length+yaEstaban.length<=3):bulkDetalle;
+            const cerrarResultado=()=>{ if(segPend.length) toast(`${segPend.length} seguimiento${segPend.length!==1?"s":""} sin enviar a tu tienda: los encontrás en Envíos → Seguimientos`,"info",7000); setBulk(null); bulkRowsRef.current=[]; };
             return (
               <div>
                 {/* Resumen */}
@@ -14337,7 +14402,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   <div style={{flex:1,minWidth:180}}>
                     <div style={{fontSize:17,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{titulo}</div>
                     <div style={{fontSize:12,color:T.textSm,marginTop:3}}>
-                      {ok.length>0?"Ya están registradas en Seguimientos y el tracking arranca solo.":(dudosos.length?"Hay emisiones sin confirmar (ver abajo).":"No se debitó nada del saldo.")}
+                      {ok.length>0?"Growith ya las está siguiendo. Falta imprimirlas y avisarle a tu tienda.":(dudosos.length?"Hay emisiones sin confirmar (ver abajo).":"No se debitó nada del saldo.")}
                       {sinDebito.length>0&&ok.length>0&&<span style={{color:T.yellow,fontWeight:600}}> {sinDebito.length} pedido{sinDebito.length!==1?"s":""} sin emitir.</span>}
                       {yaEstaban.length>0&&<span> {yaEstaban.length} ya {yaEstaban.length!==1?"tenían":"tenía"} etiqueta.</span>}
                     </div>
@@ -14354,27 +14419,51 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   </div>
                 </div>
 
-                {/* Descarga: acción principal */}
-                {ok.length>0&&(
-                  <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
-                    <div style={{flex:1,minWidth:200}}>
-                      <div style={{fontSize:13,fontWeight:700,color:T.text}}>Etiqueta{ok.length!==1?"s":""} para imprimir</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Elegí el formato de tu impresora y si querés los SKU impresos; después descargá{ok.length>1?" todas en un solo PDF":""}.</div>
-                    </div>
-                    <div style={{width:"100%",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-                      <AndreaniOpcionesImpresion T={T} fmt={dlFmt} onFmt={setDlFmt} sku={dlSku} onSku={setDlSku}/>
-                      <label onClick={()=>setAutoDlPref(!autoDl)} title="La próxima vez, el PDF con todas las etiquetas se descarga solo al terminar de emitir" style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textMd,cursor:"pointer"}}>
-                        <DSToggle T={T} active={autoDl} onToggle={()=>{}}/>
-                        <span>Descargar al terminar el lote</span>
+                {/* Acción principal: imprimir (y avisar a la tienda) */}
+                {vivas.length>0&&(
+                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+                    <div style={{display:"flex",alignItems:"center",gap:18,flexWrap:"wrap",marginBottom:12}}>
+                      <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textMd}}>
+                        <span>Impresora</span>
+                        <AndreaniFmtToggle T={T} fmt={dlFmt} onChange={setDlFmt}/>
+                      </label>
+                      <label onClick={()=>setDlSku(!dlSku)} title="Imprime los productos del pedido al pie de cada etiqueta, para armar el paquete sin mirar la pantalla" style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:dlSku?T.text:T.textMd,cursor:"pointer",fontWeight:dlSku?600:400}}>
+                        <DSToggle T={T} active={dlSku} onToggle={()=>{}}/>
+                        <span>Imprimir los SKU en la etiqueta</span>
                       </label>
                     </div>
-                    {ok.length>1
-                      ?<AsyncButton onClick={descargarTodasBulk} disabled={!!bulkDl} style={{...BtnPrimary(T),fontSize:13,minWidth:180,justifyContent:"center"}}>{bulkDl?`Descargando ${bulkDl.done}/${bulkDl.total}…`:`Descargar las ${ok.length} (1 PDF)`}</AsyncButton>
-                      :<AsyncButton onClick={()=>descargarEtiquetaBulk(String(ok[0].emitido.numeroDeEnvio),ghSkuLinesDe(ok[0].order))} style={{...BtnPrimary(T),fontSize:13,minWidth:160,justifyContent:"center"}}>Descargar etiqueta</AsyncButton>}
-                    {depositoCliente&&<AsyncButton onClick={enviarDepositoBulk} disabled={!!depArmando} title="Manda estas etiquetas, con los SKU y ordenadas por producto, a la cola del depósito" style={{...BtnSecondary(T),fontSize:13,justifyContent:"center"}}>{depArmando?`Preparando ${depArmando.done}/${depArmando.total}…`:"Enviar al depósito"}</AsyncButton>}
+                    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                      {segPend.length>0
+                        ?<>
+                          <AsyncButton onClick={imprimirYEnviarBulk} disabled={ocupado} style={{...BtnPrimary(T),fontSize:13,minWidth:250,justifyContent:"center"}}>{bulkDl?`Preparando ${bulkDl.done}/${bulkDl.total}…`:segApiProg?`Enviando seguimientos ${segApiProg.done}/${segApiProg.total}…`:"Imprimir y enviar seguimientos"}</AsyncButton>
+                          <AsyncButton onClick={imprimirBulk} disabled={ocupado} style={{...BtnSecondary(T),fontSize:13,justifyContent:"center"}}>Solo imprimir</AsyncButton>
+                        </>
+                        :<AsyncButton onClick={imprimirBulk} disabled={ocupado} style={{...BtnPrimary(T),fontSize:13,minWidth:200,justifyContent:"center"}}>{bulkDl?`Preparando ${bulkDl.done}/${bulkDl.total}…`:`Imprimir ${vivas.length===1?"la etiqueta":`las ${vivas.length} etiquetas`}`}</AsyncButton>}
+                      <AsyncButton onClick={descargarTodasBulk} disabled={ocupado} title="Guarda el PDF en tu computadora en vez de abrirlo" style={{...BtnSecondary(T),fontSize:13,justifyContent:"center"}}>Descargar PDF</AsyncButton>
+                      {depositoCliente&&<AsyncButton onClick={enviarDepositoBulk} disabled={!!depArmando||ocupado} title="Manda estas etiquetas, con los SKU y ordenadas por producto, a la cola del depósito" style={{...BtnSecondary(T),fontSize:13,justifyContent:"center"}}>{depArmando?`Preparando ${depArmando.done}/${depArmando.total}…`:"Enviar al depósito"}</AsyncButton>}
+                    </div>
+                    {ok.some(r=>!r.anulada)&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:12,fontSize:12,color:T.textSm,lineHeight:1.5}}>
+                      {segPend.length>0
+                        ?<>
+                          <DSBadge T={T} color={T.orange} size="sm">{segPend.length===vivas.length?"Seguimientos sin enviar":`${segPend.length} seguimiento${segPend.length!==1?"s":""} sin enviar`}</DSBadge>
+                          <span>Al enviarlos, tu tienda marca {segPend.length===1?"el pedido":"los pedidos"} como enviado{segPend.length===1?"":"s"} y le avisa al comprador con el número de Andreani.</span>
+                          <AsyncButton onClick={()=>enviarSeguimientosApi(segPend)} disabled={ocupado} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>Enviar sin imprimir</AsyncButton>
+                        </>
+                        :<>
+                          <DSBadge T={T} color={T.green} size="sm">Seguimientos enviados</DSBadge>
+                          <span>Tu tienda ya marcó {vivas.length===1?"el pedido":"los pedidos"} como enviado{vivas.length===1?"":"s"} y el comprador tiene su número de Andreani.</span>
+                        </>}
+                    </div>}
                   </div>
                 )}
 
+                {/* Detalle por envío: plegado si salió todo bien */}
+                <button onClick={()=>setBulkDetalle(!detalleAbierto)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",background:"transparent",border:"none",padding:"2px 0 8px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:700,color:T.textMd,textAlign:"left"}}>
+                  <span style={{display:"inline-block",transform:detalleAbierto?"rotate(90deg)":"none",transition:`transform 0.15s ${DS.ease}`,color:T.textSm}}>›</span>
+                  <span>Detalle de {rows.filter(r=>r.emitido?.numeroDeEnvio||r.emitError).length===1?"el envío":`los ${rows.filter(r=>r.emitido?.numeroDeEnvio||r.emitError).length} envíos`}</span>
+                  {revisar>0&&<DSBadge T={T} color={T.yellow} size="sm">{revisar} para revisar</DSBadge>}
+                </button>
+                {detalleAbierto&&<>
                 {/* Detalle por envío */}
                 <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:"min(46vh, 480px)",overflow:"auto",marginBottom:12}}>
                   {ok.map(r=>{ const o=r.order; const de=destinoDe(r); const ent=fEntrega(r.emitido?.fechaEstimadaDeEntrega); const precio=Number(r.emitido?.precio)||Number(r.cot?.precio)||0; return (
@@ -14385,7 +14474,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                             <span style={{fontWeight:800,color:T.text,fontSize:13}}>#{r.numero}</span>
                             <span style={{fontSize:13,color:T.text,fontWeight:500}}>{o.comprador}</span>
                             <span style={{...chipS,background:de.t==="Sucursal"?T.accent+"18":T.surface,color:de.t==="Sucursal"?T.accent:T.textMd,border:`1px solid ${de.t==="Sucursal"?T.accent+"33":T.border}`}}>{de.t}</span>
-                            {r.verifFinal==="ok"&&<span style={{...chipS,background:T.green+"18",color:T.green,border:`1px solid ${T.green}33`}}>✓ Punto verificado</span>}
+                            {!r.anulada&&(()=>{ const st=segDe(r); const [tx,c]=st==="ok"?["Seguimiento enviado",T.green]:st==="warn"?["Enviado · la tienda no avisó",T.orange]:st==="cola"?["Seguimiento en cola",T.orange]:st==="error"?["No se pudo enviar",T.red]:["Seguimiento sin enviar",T.textSm]; return <span style={{...chipS,background:c+"18",color:c,border:`1px solid ${c}33`}}>{tx}</span>; })()}
                             {r.verifFinal==="warn"&&<span style={{...chipS,background:T.yellow+"18",color:T.yellow,border:`1px solid ${T.yellow}44`}}>Revisar destino</span>}
                           </div>
                           <div style={{fontSize:12,color:T.textMd,marginTop:4}}>{de.d}{de.dir?<span style={{color:T.textSm}}> · {de.dir}</span>:null}</div>
@@ -14401,7 +14490,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                           <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{precio>0?fmtMoney(precio):""}{precio>0&&ent?" · ":""}{ent?`llega ${ent}`:""}</div>
                         </div>
                         <span style={{display:"flex",gap:6,alignSelf:"center"}}>
-                          {ok.length>1&&!r.anulada&&<AsyncButton onClick={()=>descargarEtiquetaBulk(String(r.emitido.numeroDeEnvio),ghSkuLinesDe(r.order))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>PDF</AsyncButton>}
+                          {vivas.length>1&&!r.anulada&&<AsyncButton title="Descargar solo esta etiqueta" onClick={()=>descargarEtiquetaBulk(String(r.emitido.numeroDeEnvio),ghSkuLinesDe(r.order))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>PDF</AsyncButton>}
                           {r.anulada
                             ?<span style={{...chipS,background:T.surface,color:T.textMd,border:`1px solid ${T.border}`,alignSelf:"center"}}>Anulada · saldo devuelto</span>
                             :<AsyncButton title="Me equivoqué: anular esta etiqueta ahora y recuperar el saldo (hasta 30 minutos)" onClick={async()=>{ if(await anularInmediata(r.numero)){ r.anulada=true; pushBulk("resultado"); } }} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",color:T.red,borderColor:T.red+"55"}}>Anular</AsyncButton>}
@@ -14444,12 +14533,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     </div>
                   ))}
                 </div>
+                </>}
 
-                <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",alignItems:"center"}}>
+                <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",alignItems:"center",marginTop:4}}>
                   {faltaSaldo&&<button onClick={()=>setAndreaniSaldoOpen(true)} style={{...BtnSecondary(T),fontSize:13,color:T.red,borderColor:T.red+"66"}}>Cargar saldo</button>}
                   {sinDebito.length>0&&<button onClick={()=>{ const ords=sinDebito.map(r=>r.order); setBulk(null); bulkRowsRef.current=[]; iniciarBulkAndreani(ords); }} style={{...BtnSecondary(T),fontSize:13}}>Reintentar {sinDebito.length===1?"el pedido":`los ${sinDebito.length}`}</button>}
-                  {ok.length>0&&<button onClick={()=>{setBulk(null);bulkRowsRef.current=[];setTab("seguimientos");}} style={{...BtnSecondary(T),fontSize:13}}>Ver en Seguimientos</button>}
-                  <button onClick={()=>{setBulk(null);bulkRowsRef.current=[];}} style={{...(ok.length?BtnPrimary(T):BtnSecondary(T)),fontSize:13,minWidth:110,justifyContent:"center"}}>Listo</button>
+                  {ok.length>0&&<button onClick={()=>{cerrarResultado();setTab("seguimientos");}} style={{...BtnSecondary(T),fontSize:13}}>Ver en Seguimientos</button>}
+                  <button onClick={cerrarResultado} style={{...BtnSecondary(T),fontSize:13,minWidth:110,justifyContent:"center"}}>Cerrar</button>
                 </div>
               </div>
             );
