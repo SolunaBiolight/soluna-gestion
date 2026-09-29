@@ -12056,6 +12056,57 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const [depArmando,setDepArmando]=useState(null); // {done,total}
   const depApi=React.useMemo(()=>ghDepApiSesion(()=>({uid:user?.uid})),[user?.uid]);
   const skuOrdenRef=useRef([]);
+  // Últimos ~800 pedidos de la tienda (4 páginas EN PARALELO, caché 5 min):
+  // para encontrar los pedidos de un PDF de rótulos que no están cargados
+  // en Envíos (pedidos viejos, rótulos hechos a mano en Andreani, etc.).
+  const skuBulkRef=useRef({ts:0,list:[]});
+  async function fetchOrdenesBulk(){
+    if(Date.now()-skuBulkRef.current.ts<5*60*1000&&skuBulkRef.current.list.length) return skuBulkRef.current.list;
+    const pageDatas=await Promise.all([1,2,3,4].map(async page=>{
+      try{
+        const r=await authFetch(`/api/orders?uid=${user?.uid||""}&tab=bulk_lookup&page=${page}`);
+        if(!r.ok) return [];
+        const data=await r.json();
+        return Array.isArray(data)?data:[];
+      }catch(_){ return []; }
+    }));
+    const list=[]; pageDatas.forEach(data=>buildOrdersFromAPI(data).forEach(o=>list.push(o)));
+    skuBulkRef.current={ts:Date.now(),list};
+    return list;
+  }
+  function buscarOrdenLocal(num){
+    return tabOrders.find(o=>o.numero===num)||orders.find(o=>o.numero===num)||skuBulkRef.current.list.find(o=>o.numero===num)||null;
+  }
+  // Rótulo sin "N° Interno" (hecho a mano en el portal de Andreani): se busca
+  // el pedido por el nombre del destinatario. Solo si la coincidencia es
+  // ÚNICA (o única entre los pedidos todavía no despachados); si el mismo
+  // cliente tiene varios pedidos, el usuario lo escribe a mano.
+  function ordenPorNombre(nombre,pool){
+    const key=x=>ghNrmSuc(x).split(" ").filter(Boolean).sort().join(" ");
+    const n=key(nombre); if(n.length<5) return null;
+    const cands=pool.filter(o=>key(o.nombreEnvio||o.comprador)===n||key(o.comprador)===n);
+    const porNum=new Map(); cands.forEach(o=>{ if(!porNum.has(o.numero)) porNum.set(o.numero,o); });
+    if(porNum.size===1) return [...porNum.values()][0];
+    if(porNum.size>1){
+      const abiertos=[...porNum.values()].filter(o=>o.estadoEnvio==="Por empaquetar"||o.estadoEnvio==="Por enviar");
+      if(abiertos.length===1) return abiertos[0];
+    }
+    return null;
+  }
+  // El usuario escribe el número de pedido de una página que no se pudo
+  // identificar sola (sin N° Interno o pedido no encontrado).
+  async function asignarPedidoSku(pagina,numeroRaw){
+    const num=String(numeroRaw||"").replace(/[^0-9]/g,"");
+    if(!num){ toast("Escribí el número de pedido","warning"); return; }
+    let order=buscarOrdenLocal(num);
+    if(!order){ await fetchOrdenesBulk(); order=buscarOrdenLocal(num); }
+    if(!order){ toast(`No encontramos el pedido #${num} entre los últimos pedidos de tu tienda`,"warning",6000); return; }
+    const skuLines=(order.productos||[]).map(pr=>`${pr.sku} (x${pr.cantidad})`);
+    setSkuResults(rs=>rs.map(r=>r.pagina===pagina?{...r,pedidoNum:num,found:true,manual:true,porNombre:false,skus:skuLines.join(", "),skuLines}:r));
+    setPdfResults(rs=>rs.map(r=>r.pagina===pagina?{...r,pedidoNum:num}:r));
+    setSkuBlob(null); // el PDF generado (si había) ya no corresponde
+    toast(`Pág. ${pagina} → pedido #${num} · ${skuLines.length} producto${skuLines.length!==1?"s":""}`,"success");
+  }
   async function enviarDepositoBulk(){
     const rows=ghDepOrdenar(bulkRowsRef.current.filter(r=>r.emitido?.numeroDeEnvio&&!r.anulada),r=>ghSkuLinesDe(r.order));
     if(!rows.length) return;
@@ -12172,69 +12223,61 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       const text=await extractPdfText(file);
       const pages=text.split("---PAGE---");
 
-      // 1ª pasada: extraer datos de cada página sin llamadas a la API
+      // 1ª pasada: extraer datos de cada página sin llamadas a la API.
+      // Solo hace falta el número de seguimiento de Andreani: el "N° Interno"
+      // (número de pedido) puede faltar — los rótulos hechos a mano en el
+      // portal de Andreani muchas veces no lo traen. Esas páginas se matchean
+      // por el nombre del destinatario o el usuario escribe el pedido en la tabla.
       const pageData=pages.map((pageText,i)=>{
-        const trackingMatch=pageText.match(/(36\d{13})/);
-        const internoMatch=pageText.match(/N[°ºo]?\s*[°º]?\s*Interno\s*:?\s*#?\s*(\d{3,6})/i);
+        const trackingMatch=pageText.match(/(36\d{13})/)||pageText.match(/(?:Env[ií]o|Seguimiento|Tracking)[^\d]{0,24}(\d{15})/i);
+        const internoMatch=pageText.match(/N[°ºo]?\s*[°º]?\s*Interno\s*:?\s*#?\s*(\d{3,8})(?!\d)/i)||pageText.match(/Interno[^\d\n\r]{0,20}(\d{3,8})(?!\d)/i);
         const destMatch=pageText.match(/Destinatario\s*:\s*([^\n\r]{2,60})/i);
-        if(!trackingMatch||!internoMatch) return null;
+        if(!trackingMatch) return null;
         return {
           pagina:i+1,
           tracking:trackingMatch[1].trim(),
-          pedidoNum:internoMatch[1].trim(),
+          pedidoNum:internoMatch?internoMatch[1].trim():null,
           destinatario:destMatch?destMatch[1].trim():"",
+          sinInterno:!internoMatch,
         };
       });
       const descartadas=pageData.map((p,i)=>p?null:i+1).filter(Boolean);
       const pageOk=pageData.filter(Boolean);
-      if(descartadas.length&&pageOk.length) toast(`${descartadas.length} página${descartadas.length!==1?"s":""} del PDF sin número de seguimiento o sin "N° Interno" (pág. ${descartadas.slice(0,8).join(", ")}${descartadas.length>8?"…":""}): quedan afuera`,"warning",8000);
+      if(descartadas.length&&pageOk.length) toast(`${descartadas.length} página${descartadas.length!==1?"s":""} del PDF sin número de seguimiento de Andreani (pág. ${descartadas.slice(0,8).join(", ")}${descartadas.length>8?"…":""}): quedan afuera`,"warning",8000);
 
       if(type==="sku") {
-        // 2ª pasada: identificar pedidos que NO están en memoria
-        const missingNums=[...new Set(
-          pageOk
-            .filter(p=>!tabOrders.find(o=>o.numero===p.pedidoNum)&&!orders.find(o=>o.numero===p.pedidoNum))
-            .map(p=>p.pedidoNum)
-        )];
-
+        // 2ª pasada: pedidos que NO están en memoria, o páginas sin número de
+        // pedido (hay que buscar por nombre en los últimos pedidos de la tienda).
+        const sinNum=pageOk.filter(p=>!p.pedidoNum);
+        const missingNums=[...new Set(pageOk.filter(p=>p.pedidoNum&&!buscarOrdenLocal(p.pedidoNum)).map(p=>p.pedidoNum))];
         // Traer órdenes recientes en bulk (TN no busca por número con q=).
-        // Las 4 páginas van EN PARALELO: antes eran secuenciales y con TN lenta
-        // el análisis tardaba minutos (4 × 200 órdenes, una espera detrás de otra).
-        const fetchedMap={};
-        if(missingNums.length>0){
-          const missingSet=new Set(missingNums);
-          const pageDatas=await Promise.all([1,2,3,4].map(async page=>{
-            try{
-              const r=await authFetch(`/api/orders?uid=${user?.uid||""}&tab=bulk_lookup&page=${page}`);
-              if(!r.ok) return [];
-              const data=await r.json();
-              return Array.isArray(data)?data:[];
-            }catch(_){ return []; }
-          }));
-          pageDatas.forEach(data=>{
-            buildOrdersFromAPI(data).forEach(o=>{
-              if(missingSet.has(o.numero)){ fetchedMap[o.numero]=o; missingSet.delete(o.numero); }
-            });
-          });
-        }
+        if(missingNums.length>0||sinNum.length>0) await fetchOrdenesBulk();
+        const pool=[...tabOrders,...orders,...skuBulkRef.current.list];
 
         // 3ª pasada: construir resultados con los datos ya cargados
+        let porNombreN=0;
         const results=pageOk.map(p=>{
-          const order=tabOrders.find(o=>o.numero===p.pedidoNum)
-                   ||orders.find(o=>o.numero===p.pedidoNum)
-                   ||fetchedMap[p.pedidoNum]||null;
-          const skuLines=order?order.productos.map(pr=>`${pr.sku} (x${pr.cantidad})`):[];
-          return {...p,skus:order?skuLines.join(', '):"No encontrado en tu tienda",found:!!order,skuLines};
+          let pedidoNum=p.pedidoNum, porNombre=false;
+          let order=pedidoNum?buscarOrdenLocal(pedidoNum):null;
+          if(!order&&!pedidoNum&&p.destinatario){
+            const o=ordenPorNombre(p.destinatario,pool);
+            if(o){ order=o; pedidoNum=o.numero; porNombre=true; porNombreN++; }
+          }
+          const skuLines=order?(order.productos||[]).map(pr=>`${pr.sku} (x${pr.cantidad})`):[];
+          return {...p,pedidoNum,porNombre,skus:order?skuLines.join(', '):"No encontrado en tu tienda",found:!!order,skuLines};
         });
         resultSetter(results);
         // Un solo upload para todo: el mismo PDF alimenta el estampado de SKUs
         // Y la subida de trackings (antes había que subirlo dos veces, en dos tabs).
-        setPdfResults(pageOk.map(p=>({...p,status:"pending"})));
+        setPdfResults(results.map(p=>({pagina:p.pagina,tracking:p.tracking,pedidoNum:p.pedidoNum,destinatario:p.destinatario,status:"pending"})));
+        const sinAsignar=results.filter(r=>!r.found&&r.sinInterno).length;
+        if(porNombreN>0) toast(`${porNombreN} rótulo${porNombreN!==1?"s":""} sin número de pedido: lo${porNombreN!==1?"s":""} identificamos por el nombre del destinatario, revisá que sea el pedido correcto`,"info",8000);
+        if(sinAsignar>0) toast(`${sinAsignar} rótulo${sinAsignar!==1?"s":""} sin número de pedido: escribí el pedido en la tabla para completar los SKU`,"warning",8000);
       } else {
         resultSetter(pageOk.map(p=>({...p,status:"pending"})));
       }
 
-      if(pageOk.length===0) toast("No se encontraron rótulos válidos en el PDF","warning");
+      if(pageOk.length===0) toast("No encontramos números de seguimiento de Andreani en el PDF. Tiene que ser el PDF de rótulos que descargás de Andreani (desde Growith o hecho a mano en el portal)","warning",9000);
       // No auto-generar — el usuario confirma con botón
       if(type==="sku"&&pageOk.length>0) { setter(false); return; }
     } catch(e){ toast("Error al procesar el PDF: "+e.message,"error"); }
@@ -13072,7 +13115,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   : <div>
                       <div style={{display:"flex",justifyContent:"center",marginBottom:12}}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>
                       <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Subí el PDF de rótulos de Andreani</div>
-                      <div style={{fontSize:13,color:T.textSm,marginBottom:16,lineHeight:1.6}}>Detecta el pedido, busca los SKUs en TN y escribe los productos en cada etiqueta</div>
+                      <div style={{fontSize:13,color:T.textSm,marginBottom:16,lineHeight:1.6}}>Detecta el pedido, busca los SKUs en tu tienda y escribe los productos en cada etiqueta. Sirve para rótulos exportados desde Growith o hechos a mano en el portal de Andreani</div>
                       <div style={{display:"inline-block",background:T.accentSolid,color:"#fff",borderRadius:8,padding:"8px 22px",fontSize:13,fontWeight:600}}>Seleccionar PDF</div>
                     </div>
               }
@@ -13087,7 +13130,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   </div>
                   <div style={{flex:1}}>
                     <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:3}}>
-                      {skuProcessing?"Buscando pedidos en TN...":skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rótulos...":"Generando PDF con SKUs..."}
+                      {skuProcessing?"Buscando pedidos en tu tienda...":skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rótulos...":"Generando PDF con SKUs..."}
                     </div>
                     <div style={{fontSize:12,color:T.textMd}}>
                       {skuProcessing?"Esto puede tardar unos segundos según la cantidad de pedidos":`${skuProgress}% completado`}
@@ -13221,7 +13264,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   {skuResults.map((r,i)=>(
                     <div key={i} style={{display:"grid",gridTemplateColumns:"50px 80px 1fr",gap:8,padding:"11px 18px",borderBottom:i<skuResults.length-1?`1px solid ${T.borderL}`:"none",alignItems:"start",background:r.found?"transparent":T.redBg+"22"}}>
                       <span style={{fontSize:12,color:T.textSm,paddingTop:2}}>Pág.{r.pagina}</span>
-                      <span style={{fontWeight:700,color:r.found?T.accent:T.red,fontSize:13,paddingTop:2}}>#{r.pedidoNum}</span>
+                      <div style={{paddingTop:2,minWidth:0}}>
+                        <span style={{fontWeight:700,color:r.found?T.accent:T.red,fontSize:13}}>{r.pedidoNum?`#${r.pedidoNum}`:"—"}</span>
+                        {r.found&&(r.porNombre||r.manual)&&<div style={{fontSize:10,color:T.textSm,marginTop:2}} title={r.porNombre?`Identificado por el nombre del destinatario (${r.destinatario||""})`:"Número escrito a mano"}>{r.porNombre?"por nombre":"a mano"}</div>}
+                      </div>
                       <div>
                         {r.found
                           ? <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
@@ -13229,7 +13275,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                                 <span key={j} style={{fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:12,background:T.accentSolid+"18",color:T.accent,border:`1px solid ${T.accentSolid}33`,borderRadius:5,padding:"2px 7px"}}>{s}</span>
                               ))}
                             </div>
-                          : <span style={{fontSize:12,color:T.red}}>No encontrado en TN</span>
+                          : <form onSubmit={e=>{e.preventDefault();const v=e.currentTarget.elements.num.value;return asignarPedidoSku(r.pagina,v);}} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                              <span style={{fontSize:12,color:T.red}}>{r.sinInterno?`El rótulo no trae el número de pedido${r.destinatario?` (${r.destinatario})`:""}`:"No encontrado en tu tienda"}</span>
+                              <input name="num" inputMode="numeric" placeholder="N° de pedido" style={{...InputStyle(T),width:120,padding:"5px 9px",fontSize:12}}/>
+                              <button type="submit" style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>Asignar</button>
+                            </form>
                         }
                       </div>
                     </div>
