@@ -628,22 +628,45 @@ export default async function handler(req, res) {
           if (baselineMs && ord.ts) { const t = Date.parse(ord.ts); if (isFinite(t) && t <= baselineMs) continue; }
           let unitsForItem = 0;
           for (const prod of ord.products) {
-            // 1) Vínculo explícito. Si el link tiene variant_id (mapeo por talle),
-            //    SOLO matchea esa variante. Si no, matchea el producto entero (todas
-            //    las variantes) = comportamiento clásico. 2) Fallback por SKU.
+            // Orden de matcheo, del más preciso al más laxo:
+            //  1) link con variant_id → SOLO esa variante (mapeo por talle).
+            //  2) SKU del item = SKU de la línea vendida → es esa variante.
+            //  3) link SIN variant_id → producto entero (todas las variantes).
+            //
+            // El 3 era el primero y causaba el desastre: un item que representa
+            // UN talle, vinculado al producto sin variant_id, se comía las ventas
+            // de TODOS los talles. Con 5 talles vendiendo, el XL llegaba a -200
+            // sin haber vendido 200. Peor: si M/L/XL/2XL están todos vinculados
+            // al mismo producto, UNA venta descontaba de los cuatro.
+            //
+            // Ahora el producto entero solo aplica si la venta NO trae variante o
+            // el item no puede identificarse por SKU — es decir, cuando de verdad
+            // no hay forma de saber qué talle se vendió.
             let matched = false;
+            // 1) variante exacta
             for (const l of links) {
-              if (l.product_id !== prod.id) continue;
-              if (l.variant_id) {
-                if (prod.variant_id != null && String(l.variant_id) === String(prod.variant_id)) {
-                  unitsForItem += prod.quantity * (parseInt(l.quantity) || 1); matched = true; break;
-                }
-              } else {
+              if (l.product_id !== prod.id || !l.variant_id) continue;
+              if (prod.variant_id != null && String(l.variant_id) === String(prod.variant_id)) {
                 unitsForItem += prod.quantity * (parseInt(l.quantity) || 1); matched = true; break;
               }
             }
             if (matched) continue;
-            if (itemSku && String(prod.sku || "").trim().toUpperCase() === itemSku) unitsForItem += prod.quantity;
+            // 2) SKU exacto de la línea vendida
+            if (itemSku && String(prod.sku || "").trim().toUpperCase() === itemSku) {
+              unitsForItem += prod.quantity; continue;
+            }
+            // 3) producto entero — solo si no hay forma de distinguir la variante
+            const linkAmplio = links.find(l => l.product_id === prod.id && !l.variant_id);
+            if (linkAmplio) {
+              const ventaTraeVariante = prod.variant_id != null;
+              const itemTieneSku = !!itemSku;
+              const lineaTraeSku = !!String(prod.sku || "").trim();
+              // Si la venta identifica la variante Y el item tiene SKU propio,
+              // este item NO es el de esa variante (si lo fuera habría entrado
+              // por 1 o por 2): no se le descuenta nada.
+              if (ventaTraeVariante && itemTieneSku && lineaTraeSku) continue;
+              unitsForItem += prod.quantity * (parseInt(linkAmplio.quantity) || 1);
+            }
           }
           if (unitsForItem > 0) {
             const oldStock = (item.stock_total || 0) + stockChange;
@@ -750,6 +773,79 @@ export default async function handler(req, res) {
         });
       }
       return res.json({ ok:true, items: out });
+    }
+
+    // ── RECONSTRUIR STOCK — el stock real desde el último punto de partida ──────
+    // "Reprocesar el stock que realmente tengo": toma el ÚLTIMO ajuste manual de
+    // cada item (el número que cargaste a mano, que es la verdad física) y le
+    // aplica SOLO los movimientos posteriores a ese ajuste. Nada de reprocesar
+    // órdenes: se reconstruye desde inventory_movements, que ya tiene una
+    // entrada por venta, así que no puede descontar dos veces.
+    //
+    // Sirve para limpiar lo que dejó el bug del matcheo por variante (un item de
+    // un talle se comía las ventas de todos los talles del producto).
+    if (action === "reconstruir_stock" && req.method === "POST") {
+      const soloItem = String(req.query.item_id || "").trim();
+      const aplicar = String(req.query.aplicar || "") === "1"; // sin esto, simula
+      const itemsCol = db.collection("users").doc(uid).collection("inventory_items");
+      const snap = soloItem ? await itemsCol.where("id", "==", soloItem).get() : await itemsCol.get();
+
+      let movQ = db.collection("users").doc(uid).collection("inventory_movements");
+      if (soloItem) movQ = movQ.where("item_id", "==", soloItem);
+      const movSnap = await movQ.get();
+      const porItem = new Map();
+      for (const d of movSnap.docs) {
+        const m = d.data();
+        if (!m.item_id) continue;
+        if (!porItem.has(m.item_id)) porItem.set(m.item_id, []);
+        porItem.get(m.item_id).push(m);
+      }
+
+      const cambios = [], sinBase = [];
+      for (const doc of snap.docs) {
+        const it = doc.data();
+        const actual = parseInt(it.stock_total) || 0;
+        const movs = (porItem.get(it.id) || []).slice()
+          .sort((a, b) => String(a.ts || "").localeCompare(String(b.ts || "")));
+
+        // Punto de partida: el último ajuste MANUAL (o de sistema) que fijó el
+        // stock. Es lo último que una persona contó de verdad.
+        let idxBase = -1;
+        for (let i = movs.length - 1; i >= 0; i--) {
+          const src = String(movs[i].source || "");
+          if (src === "manual" || src === "sistema") { idxBase = i; break; }
+        }
+        if (idxBase < 0) {
+          // Sin ajuste manual no hay verdad física de dónde partir: el stock
+          // actual puede venir de la plataforma. Se reporta y no se toca.
+          sinBase.push({ item_id: it.id, nombre: it.nombre, stock: actual, movimientos: movs.length });
+          continue;
+        }
+        const base = parseInt(movs[idxBase].new_stock);
+        if (!Number.isFinite(base)) { sinBase.push({ item_id: it.id, nombre: it.nombre, stock: actual, movimientos: movs.length }); continue; }
+
+        // Solo los movimientos POSTERIORES al punto de partida.
+        let correcto = base, ventas = 0, unidades = 0;
+        for (let i = idxBase + 1; i < movs.length; i++) {
+          const ch = parseInt(movs[i].change) || 0;
+          correcto += ch;
+          if (ch < 0) { ventas++; unidades += Math.abs(ch); }
+        }
+        if (correcto === actual) continue; // ya está bien
+        cambios.push({
+          item_id: it.id, nombre: it.nombre, de: actual, a: correcto,
+          base, desde: movs[idxBase].ts || null, ventasDespues: ventas, unidadesDespues: unidades,
+        });
+        if (aplicar) {
+          await doc.ref.update({ stock_total: correcto, updated_at: new Date().toISOString() });
+          await logMovement(db, uid, {
+            item_id: it.id, item_name: it.nombre, change: correcto - actual,
+            old_stock: actual, new_stock: correcto,
+            source: "sistema", event: "reconstruccion de stock",
+          });
+        }
+      }
+      return res.json({ ok: true, aplicado: aplicar, items: cambios.length, cambios, sin_base: sinBase });
     }
 
     if (action === "recalc_oversold" && req.method === "POST") {

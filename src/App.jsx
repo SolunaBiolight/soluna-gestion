@@ -40233,6 +40233,32 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // realidad deben mercadería). Primero SIMULA y pide confirmación: toca el
   // stock de varios items a la vez.
   const [recalcando,setRecalcando]=useState(false);
+  // Reconstruye el stock desde el último recuento manual + los movimientos
+  // posteriores. Es el botón para dejar los números como REALMENTE están
+  // cuando el histórico quedó sucio.
+  const [reconstruyendo,setReconstruyendo]=useState(false);
+  async function reconstruirStock() {
+    setReconstruyendo(true);
+    try {
+      const sim = await fetch(`/api/inventory?action=reconstruir_stock&uid=${uid}`,{method:"POST"}).then(r=>r.json());
+      if (sim.error) return toast(sim.error,"error");
+      const sb = sim.sin_base || [];
+      if (!sim.items) {
+        await appAlert(`Tu stock ya coincide con los movimientos registrados: no hay nada que corregir.${sb.length?`\n\n${sb.length} producto(s) no se pueden reconstruir porque nunca les cargaste el stock a mano — su número viene de la plataforma. Para esos, editá el stock una vez y desde ahí se sigue solo.`:""}`,{okLabel:"Entendido"});
+        return;
+      }
+      const det = (sim.cambios||[]).slice(0,10).map(c=>{
+        const d = c.desde ? new Date(c.desde).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}) : "?";
+        return `· ${c.nombre}: ${c.de} → ${c.a}\n   (partiendo de ${c.base} del ${d}, menos ${c.unidadesDespues} u. vendidas)`;
+      }).join("\n");
+      const mas = sim.items>10?`\n…y ${sim.items-10} más`:"";
+      if (!await appConfirm(`Se van a corregir ${sim.items} producto(s):\n\n${det}${mas}\n\nCada uno parte del último stock que cargaste a mano y le resta solo las ventas posteriores. No se reprocesan órdenes.`,{okLabel:"Corregir stock"})) return;
+      const ap = await fetch(`/api/inventory?action=reconstruir_stock&uid=${uid}&aplicar=1`,{method:"POST"}).then(r=>r.json());
+      if (ap.error) return toast(ap.error,"error");
+      toast(`Listo · ${ap.items} producto(s) con el stock corregido`,"success");
+      loadInvItems();
+    } finally { setReconstruyendo(false); }
+  }
   async function recalcOversold() {
     setRecalcando(true);
     try {
@@ -41172,6 +41198,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </div>
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                       <button onClick={syncSales} disabled={syncingSales} style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{syncingSales?<><Spinner size={11} color={T.textMd}/> Sincronizando</>:"Sincronizar ventas"}</button>
+                      <button onClick={reconstruirStock} disabled={reconstruyendo} title="Recalcula el stock desde el último recuento que cargaste a mano, aplicando solo las ventas posteriores. Úsalo si los números quedaron mal." style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.accent}55`,borderRadius:8,background:"transparent",color:T.accent,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{reconstruyendo?<><Spinner size={11} color={T.accent}/> Reconstruyendo</>:"Reconstruir stock real"}</button>
                       <button onClick={recalcOversold} disabled={recalcando} title="Si vendiste sin stock antes de esta actualización, el sistema mostraba 0 en vez del negativo. Esto lo recalcula desde tu historial." style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{recalcando?<><Spinner size={11} color={T.textMd}/> Recalculando</>:"Recalcular vendido sin stock"}</button>
                       <button onClick={importCatalog} disabled={importingCatalog} style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.accent}55`,borderRadius:8,background:"transparent",color:T.accent,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{importingCatalog?<><Spinner size={11} color={T.accent}/> Vinculando…</>:"Vincular catálogo (SKU)"}</button>
                       <button onClick={openNewItem} style={{padding:"7px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Crear Item</button>
