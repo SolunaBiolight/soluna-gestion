@@ -38488,6 +38488,8 @@ function ComisionesPanel({ T, uid }) {
         setPlats({
           ml: stores.some(s=>s.type==="mercadolibre") || !!(d&&d.impuestosML),
           shopify: stores.some(s=>s.type==="shopify") || !!(d&&d.shopify),
+          tn: stores.some(s=>s.type==="tiendanube") || (d&&d.tnDiasLiberacion!=null&&d.tnDiasLiberacion!==""),
+          mp: stores.some(s=>s.type==="mercadopago"||s.type==="mercadolibre"),
         });
       } catch (_) {}
       try {
@@ -38542,15 +38544,22 @@ function ComisionesPanel({ T, uid }) {
           de8af09 creyendo que MP era 100% automático; solo lo es en Shopify. */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
         <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Comisión de Mercado Pago</div>
+        {plats.shopify&&(
+          <div style={{display:"flex",alignItems:"flex-start",gap:8,background:plats.mp?T.greenBg:T.surface,border:`1px solid ${plats.mp?T.green+"33":T.border}`,borderRadius:8,padding:"9px 12px",margin:"6px 0 12px",fontSize:12,color:T.text,lineHeight:1.5}}>
+            {plats.mp
+              ?<span><strong>Mercado Pago conectado:</strong> Growith lee el cargo real de cada pago. Una venta en cuotas sin interés trae su costo de financiación y una venta en un pago no, así que no hace falta promediar nada. En Dashboard → Órdenes cada venta muestra su comisión y si el cargo es real.</span>
+              :<span><strong>Mercado Pago sin conectar:</strong> Shopify no informa cuánto te cobró Mercado Pago, así que todas tus ventas usan el % de abajo. Conectá la cuenta en Configuración → Integraciones → Mercado Pago (cobros) y se lee el cargo exacto de cada pago, con o sin cuotas.</span>}
+          </div>
+        )}
         <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:240}}>
-            <div style={{fontSize:12,fontWeight:600,color:T.text}}>% que te cobra Mercado Pago por cada venta de tu tienda</div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.5}}>Respaldo: solo se usa en las ventas cobradas con MP donde la tienda no informa el cargo real. Es el % de tu plan de cobro (según los días de liberación), con IVA. Lo ves en Mercado Pago → Tu negocio → Costos.</div>
+            <div style={{fontSize:12,fontWeight:600,color:T.text}}>% de respaldo de Mercado Pago</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.5}}>Solo se usa en las ventas donde Growith no encuentra el pago real. Se aplica parejo, sin distinguir cuotas: si parte de tus ventas son en cuotas sin interés, cargá un promedio (ej. 62% en cuotas al 7,50 y 38% al 7,01 = 7,31). Lo ves en Mercado Pago → Tu negocio → Costos, con IVA.</div>
           </div>
           <input type="number" step="0.01" min="0" max="30" value={cfg.mpPct} onChange={e=>setCfg(c=>({...c,mpPct:e.target.value}))} placeholder="Ej: 7.61" style={{...InputStyle(T),width:100,fontSize:13,textAlign:"right"}}/>
           <span style={{fontSize:13,color:T.textSm}}>%</span>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL||T.border}`}}>
+        {plats.tn&&<div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL||T.border}`}}>
           <div style={{flex:1,minWidth:240}}>
             <div style={{fontSize:12,fontWeight:600,color:T.text}}>Plan de liberación del dinero en Mercado Pago (Tienda Nube)</div>
             <div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.5}}>Cuando la tienda informa las tarifas de MP, la comisión de cada venta se calcula por método de pago según este plan. Lo ves en Mercado Pago → Tu negocio → Costos. Vacío = se toma la tarifa más alta (al instante).</div>
@@ -38565,7 +38574,7 @@ function ComisionesPanel({ T, uid }) {
             <option value="18">18 días</option>
             <option value="30">30 días</option>
           </select>
-        </div>
+        </div>}
         {!(parseFloat(cfg.mpPct)>0)&&<div style={{fontSize:11,color:T.textSm,marginTop:8}}>Vacío = se estima 7,61% (tarifa de MP para dinero al instante, con IVA) en las ventas donde la tienda no informe el cargo real.</div>}
       </div>
 
@@ -42693,6 +42702,16 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
 
   // ── Calidad del dato + alertas proactivas ──
   const q = rendData?.quality || {};
+  // Resumen de Mercado Pago bajo "Comisiones de Pago": cuántas ventas tienen el
+  // cargo real, a qué % promedio y cuántas fueron en cuotas a cargo del vendedor.
+  // Montos chicos (comisión de una venta) sin abreviar a K: para auditar.
+  const fmtExacto = v => (v==null||isNaN(Number(v))) ? "—" : (usdOn?"US$":"$")+Number(cv(v)).toLocaleString("es-AR",{maximumFractionDigits:usdOn?2:0});
+  const mpR = q.mpResumen;
+  const pctTxt = n => String(n).replace(".",",");
+  const mpSub = !mpR ? null : mpR.conReal>0
+    ? `MP: ${mpR.conReal}/${mpR.total} con cargo real${mpR.pctReal!=null?` · ${pctTxt(mpR.pctReal)}% prom.`:""}${mpR.conInfo>0?` · ${mpR.finN} en cuotas a tu cargo`:""}`
+    : `MP: ${mpR.total} venta${mpR.total!==1?"s":""} al ${pctTxt(mpR.pctFallback)}% ${mpR.fallbackEstimado?"estimado":"configurado"}`;
+  const mpSubTitle = !mpR ? "" : `Ventas de la tienda cobradas con Mercado Pago en el período: ${mpR.total}. Con el cargo real leído de cada pago: ${mpR.conReal}${mpR.pctReal!=null?` (promedio ${pctTxt(mpR.pctReal)}% sobre lo vendido)`:""}. ${mpR.conInfo>0?`Pagadas en más de una cuota: ${mpR.cuotasN}; con cuotas sin interés a tu cargo: ${mpR.finN}. `:""}Sin cargo real (usan ${pctTxt(mpR.pctFallback)}% ${mpR.fallbackEstimado?"estimado":"configurado"}): ${mpR.sinReal}.`;
   const byProduct = rendData?.byProduct || [];
   const clientes = rendData?.clientes || null;
   const cashflow = rendData?.cashflow || {};
@@ -42710,6 +42729,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     if (q.shMp && q.shMp.mpToken && q.shMp.conFee===0 && q.shMp.conRef>0) qItems.push({k:null, msg:`Mercado Pago está conectado pero ninguna venta de Shopify cruzó con su pago (${q.shMp.conRef} con referencia). Puede ser otra cuenta de MP que la que cobra en Shopify: revisá en Dashboard → Configuraciones qué cuenta lee los pagos`});
     if (q.shMp && q.shMp.mpToken && q.shMp.conRef===0 && q.shMp.muestra) qItems.push({k:null, msg:`Shopify no devuelve el id del pago de MP en sus transacciones (gateway ${q.shMp.muestra.gateway||"?"}, campos: ${(q.shMp.muestra.receiptKeys||[]).join(",")||"ninguno"}) — pasale este texto a soporte de Growith`});
     if (q.tnFees && q.tnFees.conCargo===0 && q.tnFees.sinCargo>0 && !q.tnFees.diag && !q.tnMp?.mpToken) qItems.push({k:null, msg:`Tienda Nube no informa el cargo de la pasarela en tus ventas (${q.tnFees.sinCargo} revisadas${q.tnFees.muestra?` · ej. ${q.tnFees.muestra.orden}: ${q.tnFees.muestra.transacciones} transacción(es), estados ${q.tnFees.muestra.estados.join("/")||"—"}, cargos ${q.tnFees.muestra.conCargos?"sí":"no"}, campos ${q.tnFees.muestra.claves.join(",")||"—"}`:""})`});
+    if (q.mpResumen && q.mpResumen.mpToken && q.mpResumen.conReal>0 && q.mpResumen.sinReal>0) qItems.push({k:"comisiones", msg:`${q.mpResumen.sinReal} de ${q.mpResumen.total} ventas cobradas con Mercado Pago todavía no cruzaron con su pago real: en esas se usa ${String(q.mpResumen.pctFallback).replace(".",",")}% (${q.mpResumen.fallbackEstimado?"estimado":"el que cargaste"}), parejo para todas, sin distinguir cuotas. Tocá Actualizar para que se sigan leyendo; en Órdenes cada venta dice si su cargo es real`, cta:"Ver %"});
     if (q.mpSinConfig) qItems.push({k:"comisiones", msg:`Ventas con Mercado Pago sin cargo real informado${q.tnFees?.pendientes?" (se están leyendo de a 60 por cálculo — recargá en un rato)":""}: se estima 7,61% (dinero al instante + IVA). Cargá tu % real en Comisiones e impuestos → Comisión de Mercado Pago`, cta:"Configurar"});
     if (rendData?.meta?.metaFallo) qItems.push({k:null, msg:`Meta Ads está conectado pero el gasto no está entrando: la pauta figura en $0 y la ganancia de este período está inflada${rendData?.meta?.metaPermisos?" — Meta bloqueó el acceso a la API: revisá en developers.facebook.com que la app esté en modo Activo y que ads_read tenga Acceso avanzado":rendData?.meta?.metaTokenExpired?" — el token venció, reconectá Meta desde Configuración → Integraciones":""}`});
     if (rendData?.meta?.googleAdsConectado && rendData?.meta?.googleAdsFuente!=="auto") qItems.push({k:null, msg:`Google Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.googleAdsDiag?` — ${rendData.meta.googleAdsDiag}`:""}`});
@@ -43547,7 +43567,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {label:"Costos de Envío",      val:tot.costoEnvio},
               {label:"Impuestos",            val:tot.impuestos},
               {label:"Comisiones Plataforma",val:tot.comisionPlataforma},
-              {label:"Comisiones de Pago",   val:tot.comisionPago},
+              {label:"Comisiones de Pago",   val:tot.comisionPago, sub: mpSub, subTitle: mpSubTitle},
               {label:"Costos Adicionales",   val:tot.costosAdicionales},
               ...(((tot.fulfillment||0)>0)?[{label:"Fulfillment (incl. en Envío)",val:tot.fulfillment}]:[]),
               ...(((tot.facturacionExterna||0)>0)?[{label:"Fact. Externa (incluida)",val:tot.facturacionExterna,color:T.green}]:[]),
@@ -43555,6 +43575,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
                 <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</div>
                 <div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.5,fontVariantNumeric:"tabular-nums"}}>{fmtM(k.val||0)}</div>
+                {k.sub&&<div title={k.subTitle||""} style={{fontSize:10,color:T.textSm,marginTop:4,lineHeight:1.4}}>{k.sub}</div>}
               </div>
             ))}
           </div>}
@@ -44049,8 +44070,23 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                                 </div>
                                 <div>
                                   <div style={{fontSize:DS.font.xs,color:T.textSm,fontWeight:DS.w.bold,textTransform:"uppercase",letterSpacing:0.4,marginBottom:2}}>Pago</div>
-                                  <div style={{color:T.text}}>{s.pay||"—"} {s.feeReal&&<DSBadge T={T} color={T.green} size="sm">fee real</DSBadge>}</div>
+                                  <div style={{color:T.text}}>{s.pay||"—"}{s.cuotas>1?` · ${s.cuotas} cuotas`:s.cuotas===1?" · 1 pago":""}</div>
                                 </div>
+                                {s.pagoFee!=null && (
+                                  <div>
+                                    <div style={{fontSize:DS.font.xs,color:T.textSm,fontWeight:DS.w.bold,textTransform:"uppercase",letterSpacing:0.4,marginBottom:2}}>Comisión de pago</div>
+                                    <div style={{color:T.text,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                                      <span>{fmtExacto(s.pagoFee)}{(s.revenue||0)>0?` (${(s.pagoFee/s.revenue*100).toFixed(2).replace(".",",")}%)`:""}</span>
+                                      {s.feeOrigen==="real"
+                                        ?<span title="Cargo leído del pago real en Mercado Pago / la tienda"><DSBadge T={T} color={T.green} size="sm">cargo real</DSBadge></span>
+                                        :s.feeOrigen==="estimado"
+                                          ?<span title="No se encontró el pago real de esta venta: se estima con la tarifa publicada de Mercado Pago"><DSBadge T={T} color={T.orange} size="sm">estimado</DSBadge></span>
+                                          :<span title="No se encontró el pago real de esta venta: se usa el % que cargaste en Comisiones e impuestos"><DSBadge T={T} color={T.orange} size="sm">% configurado</DSBadge></span>}
+                                    </div>
+                                    {(s.finFee||0)>0&&<div style={{fontSize:DS.font.sm,color:T.textSm}}>incluye {fmtExacto(s.finFee)} de cuotas sin interés a tu cargo</div>}
+                                    {(s.platFee||0)>0&&<div style={{fontSize:DS.font.sm,color:T.textSm}}>+ {fmtExacto(s.platFee)} de comisión de la plataforma</div>}
+                                  </div>
+                                )}
                                 {s.cust && (
                                   <div>
                                     <div style={{fontSize:DS.font.xs,color:T.textSm,fontWeight:DS.w.bold,textTransform:"uppercase",letterSpacing:0.4,marginBottom:2}}>Cliente</div>
