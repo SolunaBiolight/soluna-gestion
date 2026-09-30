@@ -528,6 +528,29 @@ export async function sucursalesPorCp(db, env, cp) {
   return conHop(sucursales, await hopIndexPorCp(db, cp));
 }
 
+// Puntos de tercero (HOP) que Andreani tiene ASIGNADOS al contrato HOP para un
+// CP: GET /v2/puntos-de-tercero?contrato=…&atencionPorCodigoPostal=CP (indicación
+// de la ejecutiva de Andreani, 1/oct/2026: trae la sucursal abastecedora y todos
+// los HOP de ese CP). Es la lista contra la que Andreani valida la orden, así que
+// al emitir a un HOP se usa para confirmar el punto y su identificador. Sin
+// contrato HOP, o si falla, devuelve [] y todo sigue como antes. Caché 6 h.
+export async function puntosDeTerceroPorCp(db, env, cp) {
+  if (!env?.contratoHop || !cp) return [];
+  const ref = db.collection("andreani_config").doc(`pd3_${cp}`);
+  try { const h = await ref.get(); if (h.exists) { const d = h.data(); if (Array.isArray(d.puntos) && Date.now() - (d.ts || 0) < 6 * 3600000) return d.puntos; } } catch (_) {}
+  try {
+    const r = await andreaniFetch(db, env, `/v2/puntos-de-tercero?contrato=${encodeURIComponent(env.contratoHop)}&atencionPorCodigoPostal=${encodeURIComponent(cp)}`);
+    const txt = await r.text();
+    if (!r.ok) { console.warn(`[pd3] CP ${cp}: ${r.status} ${txt.slice(0, 200)}`); return []; }
+    let j = null; try { j = JSON.parse(txt); } catch (_) {}
+    const lista = Array.isArray(j) ? j : (Array.isArray(j?.puntosDeTercero) ? j.puntosDeTercero : Array.isArray(j?.sucursales) ? j.sucursales : Array.isArray(j?.puntos) ? j.puntos : []);
+    const puntos = lista.map(x => ({ ...slimSucursal(x), hop: !!(x?.hop || /^HOP/i.test(String(x?.codigo || "")) || /hop|dealer|tercero/i.test(String(x?.tipoDeSucursal || x?.tipo || x?.datosAdicionales?.tipo || "")) || Number(x?.id) >= 11000), raw: x }));
+    if (lista.length && !puntos.some(p => p.hop)) console.log(`[pd3] CP ${cp}: ${lista.length} registros, ninguno reconocido como HOP; claves: ${Object.keys(lista[0] || {}).join(",")}`);
+    try { await ref.set({ ts: Date.now(), puntos: puntos.map(({ raw, ...p }) => p) }); } catch (_) {}
+    return puntos;
+  } catch (e) { console.warn(`[pd3] CP ${cp}:`, e?.message || e); return []; }
+}
+
 // Listado COMPLETO (para el buscador de sucursal de origen). Cacheado 7 días.
 export async function sucursalesTodas(db, env, force = false, { sinHop = false } = {}) {
   const cacheRef = db.collection("andreani_config").doc("suc_all2"); // v2: con lat/lng
@@ -2044,6 +2067,7 @@ export default async function handler(req, res) {
       // la etiqueta a otro caro: la diferencia la absorbía la plataforma).
       let cpTarifa = cpDestino;
       let sucDestinoOficial = null;
+      let pd3Info = null; // resultado del cruce del HOP contra puntos-de-tercero (queda en emisionDetalle)
       if (tipo === "sucursal") {
         // Primero el listado del CP (barato: un doc cacheado + índice HOP);
         // el listado completo solo si ahí no está. Fail-closed: sin ningún
@@ -2077,6 +2101,19 @@ export default async function handler(req, res) {
         // todas las variantes fallan queda hopApiCaidoAt y durante 6 h los HOP se
         // rechazan sin cotizar ni debitar; después se vuelve a probar (si Andreani
         // habilitó los puntos, se emite y la marca se limpia sola).
+        // Con contrato HOP: ¿el punto está entre los asignados al contrato para
+        // su CP? Si está, sus identificadores van primero; si la lista viene
+        // vacía o no está, se intenta igual y queda registrado en emisionDetalle
+        // (es el dato que Andreani pide para diagnosticar).
+        if (sucDestinoOficial.hop && env.contratoHop) {
+          const cpHop = String(sucDestinoOficial?.direccion?.codigoPostal || cpDestino || "").replace(/\D/g, "");
+          const pd3 = await puntosDeTerceroPorCp(db, env, cpHop);
+          const idsSuc = new Set([String(sucDestinoOficial.id ?? ""), String(sucDestinoOficial.codigo ?? ""), String(sucDestinoOficial.numero ?? "")].filter(Boolean));
+          const hit = pd3.find(p => idsSuc.has(String(p.id ?? "")) || idsSuc.has(String(p.codigo ?? "")) || (p.numero != null && idsSuc.has(String(p.numero))));
+          pd3Info = { cp: cpHop, n: pd3.length, hop: pd3.filter(p => p.hop).length, encontrado: !!hit, ids: pd3.slice(0, 12).map(p => `${p.id}${p.codigo ? "/" + p.codigo : ""}`) };
+          if (hit) sucDestinoOficial.pd3 = { id: hit.id, codigo: hit.codigo };
+          console.log(`[emitir] HOP ${destino.sucursalId} vs puntos-de-tercero CP ${cpHop}: ${JSON.stringify(pd3Info)}`);
+        }
         if (sucDestinoOficial.hop) {
           const caidoAt = env.contratoHop ? 0 : Math.max(_hopFallaAt || 0, Number(cfgG?.hopApiCaidoAt) || 0);
           if (caidoAt && Date.now() - caidoAt < 6 * 3600000) return res.status(400).json({ error: "Andreani no acepta puntos HOP con nuestro contrato por API: su listado de puntos asignados al contrato no incluye los HOP (desde el 23/9 lo validan). Emití este pedido con \"Generar etiquetas\" (Excel) o a mano en el portal de Andreani. No se debitó nada.", code: "hop_no_habilitado" });
@@ -2226,6 +2263,14 @@ export default async function handler(req, res) {
         // Con contrato HOP configurado (24/9: comprobado que acepta el id de siempre), el id va primero.
         const sv = tipo === "sucursal" && sucDestinoOficial ? sucVariantes(sucDestinoOficial, _sucVarianteMem[kindSuc] || cfgG?.sucVariante?.[kindSuc] || (kindSuc === "hop" && env.contratoHop ? "id" : undefined)) : null;
         const hopEnFalla = !!(sv && sv.tipo === "hop" && Date.now() - _hopFallaAt < 30 * 60000);
+        if (sv && sucDestinoOficial?.pd3) {
+          // Identificadores tal como los devuelve puntos-de-tercero para el contrato HOP.
+          const extra = [];
+          if (sucDestinoOficial.pd3.id != null && String(sucDestinoOficial.pd3.id).trim()) extra.push({ nombre: "pd3Id", sucursal: { id: String(sucDestinoOficial.pd3.id).trim() } });
+          if (sucDestinoOficial.pd3.codigo) extra.push({ nombre: "pd3Codigo", sucursal: { id: String(sucDestinoOficial.pd3.codigo).trim() } });
+          const vistos = new Set(extra.map(v => JSON.stringify(v.sucursal)));
+          sv.variantes = [...extra, ...sv.variantes.filter(v => !vistos.has(JSON.stringify(v.sucursal)))];
+        }
         const intentos = sv ? sv.variantes.slice(0, hopEnFalla ? 2 : sv.variantes.length).map(v => ({ nombre: v.nombre, body: { ...orden, destino: { sucursal: v.sucursal } } })) : [{ nombre: "", body: orden }];
         const probadas = [];
         for (let k = 0; k < intentos.length; k++) {
@@ -2240,7 +2285,7 @@ export default async function handler(req, res) {
           const txt = await r.text().catch(() => "");
           const rr = { status: r.status, text: async () => txt };
           ordenErr = await andreaniError(rr, "Andreani rechazó la orden de envío");
-          probadas.push(`${it.nombre || "domicilio"}${it.nombre ? `=${JSON.stringify(it.body.destino.sucursal)}` : ""} → ${String(txt).replace(/\s+/g, " ").slice(0, 90)}`);
+          probadas.push(`${it.nombre || "domicilio"}${it.nombre ? `=${JSON.stringify(it.body.destino.sucursal)}` : ""} → HTTP ${r.status} ${String(txt).replace(/\s+/g, " ").slice(0, 240)}`);
           // Solo se sigue si el rechazo es por el identificador y quedan variantes.
           if (!sv || k === intentos.length - 1 || !esErrorIdSucursal(r.status, txt)) break;
           console.log(`[emitir] sucursal ${sucDestinoOficial?.id} variante "${it.nombre}" rechazada (${String(txt).slice(0, 120)}) → pruebo "${intentos[k + 1].nombre}"`);
@@ -2253,7 +2298,10 @@ export default async function handler(req, res) {
             db.collection("andreani_config").doc("global").set({ hopApiCaidoAt: Date.now() }, { merge: true }).catch(() => {});
             ordenErr = `Andreani no acepta puntos HOP con nuestro contrato por API: su listado de puntos asignados al contrato no incluye los HOP (desde el 23/9 lo validan; probamos ${probadas.length} identificadores). Emití este pedido con "Generar etiquetas" (Excel) o a mano en el portal de Andreani. No se debitó nada.`;
           } else ordenErr += ` — Se probaron ${probadas.length} formas de identificar la sucursal: ${detalle}`;
-          try { await envioRef.set({ emisionDetalle: { ts: Date.now(), detalle: detalle.slice(0, 1500) } }, { merge: true }); } catch (_) {}
+          // Request completo del primer intento (sin datos de contacto del comprador)
+          // para pasárselo a Andreani cuando piden "el request que falla".
+          const reqMuestra = (() => { try { const b = intentos[0]?.body || {}; const sinPersona = p => (p ? { ...p, email: undefined, telefono: undefined, telefonos: undefined, documento: undefined, documentoNumero: undefined } : p); return JSON.stringify({ metodo: "POST /v2/ordenes-de-envio", body: { ...b, remitente: sinPersona(b.remitente), destinatario: (b.destinatario || []).map(sinPersona) } }).slice(0, 3000); } catch (_) { return null; } })();
+          try { await envioRef.set({ emisionDetalle: { ts: Date.now(), detalle: detalle.slice(0, 1500), pd3: pd3Info || null, request: reqMuestra } }, { merge: true }); } catch (_) {}
         }
         if (sv && varianteOk) {
           const kind = sv.tipo;

@@ -68,7 +68,7 @@ GOOGLE_ADS_LOGIN_CUSTOMER_ID  ← opcional, id del MCC sin guiones
 ANDREANI_USER / ANDREANI_PASS ← cuenta revendedora de la plataforma (Soluna)
 ANDREANI_CLIENTE / ANDREANI_CTA
 ANDREANI_CONTRATO_ESTANDAR / ANDREANI_CONTRATO_SUCURSAL  ← contratos de envío (cambio/retiro pendientes)
-ANDREANI_CONTRATO_HOP         ← OPCIONAL (24/sep/2026): contrato de canal HOP. Andreani valida el punto contra el canal del contrato; con esta var los puntos HOP cotizan y emiten con ese contrato (contratoDe(env,tipo,hop)); sin ella, los HOP se rechazan con code hop_no_habilitado
+ANDREANI_CONTRATO_HOP         ← OPCIONAL (24/sep/2026): contrato de canal HOP. **1/oct/2026, mail de la ejecutiva de Andreani (Melisa Onega): el contrato de la integración es 400042316 y los puntos HOP se habilitan sobre ese contrato (pedido en curso); con la var cargada, `puntosDeTerceroPorCp(db,env,cp)` consulta `/v2/puntos-de-tercero?contrato=…&atencionPorCodigoPostal=CP` (caché 6 h `andreani_config/pd3_{cp}`), `emitir` cruza el HOP contra esa lista (identificadores `pd3Id`/`pd3Codigo` primero) y guarda `envios/{id}.emisionDetalle {pd3, request}` con el request completo sin datos de contacto, para mandarle a Andreani cuando pide "el request que falla".** Andreani valida el punto contra el canal del contrato; con esta var los puntos HOP cotizan y emiten con ese contrato (contratoDe(env,tipo,hop)); sin ella, los HOP se rechazan con code hop_no_habilitado
 ```
 
 ## Secciones de la app (componentes principales en App.jsx)
