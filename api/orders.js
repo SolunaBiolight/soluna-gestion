@@ -723,6 +723,28 @@ export default async function handler(req, res) {
         if (!Object.keys(rec).length) return base;
         return { ...base, feeByRef: base.feeByRef || {}, feeByPayId: { ...(base.feeByPayId || {}), ...rec }, appByPayId: base.appByPayId || {}, recurrentesFees: Object.keys(rec).length };
       }
+      // Cargo que paga el VENDEDOR en un pago de MP: fee_details que no paga el
+      // comprador; si viene vacío, charges_details (formato nuevo) cobrados al
+      // collector; y si no hay nada pero neto = bruto, es un 0 confirmado.
+      // Devuelve f (null = no se pudo saber), c (cuotas) y fin (financiación del vendedor).
+      function mpFeeDePago(p) {
+        const fds = (p.fee_details||[]).filter(fd => fd.fee_payer !== "payer");
+        let f = null, fin = 0;
+        if (fds.length) {
+          f = fds.reduce((a,fd)=>a+(parseFloat(fd.amount)||0),0);
+          fin = fds.filter(fd=>fd.type==="financing_fee").reduce((a,fd)=>a+(parseFloat(fd.amount)||0),0);
+        } else {
+          const chs = (p.charges_details||[]).filter(c => String(c?.accounts?.from||"").toLowerCase()==="collector" && /fee/i.test(String(c.type||"")));
+          if (chs.length) {
+            f = chs.reduce((a,c)=>a+(parseFloat(c?.amounts?.original)||0),0);
+            fin = chs.filter(c=>/financ/i.test(String(c.name||""))).reduce((a,c)=>a+(parseFloat(c?.amounts?.original)||0),0);
+          } else {
+            const neto = parseFloat(p.transaction_details?.net_received_amount), bruto = parseFloat(p.transaction_amount);
+            if (isFinite(neto) && isFinite(bruto) && bruto > 0 && Math.abs(neto - bruto) < 0.01) f = 0;
+          }
+        }
+        return { f: f == null ? null : +f.toFixed(2), c: parseInt(p.installments)||1, fin: +fin.toFixed(2) };
+      }
       async function fetchMPCommissionBase(sinceYmd, untilYmd) {
         try {
           if (demoMode) return { fee:0, rev:0, feeByRef:{}, feeByPayId:{}, appByPayId:{} }; // demo: la comisión viene en cada venta (saleFee)
@@ -757,10 +779,11 @@ export default async function handler(req, res) {
               // recurring_payment): las órdenes de Recurrentes guardan su mp_payment_id
               // y no matchean por external_reference, así que se cruzan por ID directo.
               if (p.status==="approved") {
-                const fId = (p.fee_details||[]).filter(fd=>fd.fee_payer!=="payer").reduce((s,fd)=>s+(parseFloat(fd.amount)||0),0);
-                if (fId>0) feeByPayId[String(p.id)] = fId;
-                const finV = (p.fee_details||[]).filter(fd=>fd.type==="financing_fee" && fd.fee_payer!=="payer").reduce((s,fd)=>s+(parseFloat(fd.amount)||0),0);
-                infoByPayId[String(p.id)] = { c: parseInt(p.installments)||1, fin: +finV.toFixed(2) };
+                const fx = mpFeeDePago(p);
+                // fee 0 CONFIRMADO (neto = bruto: promoción sin comisión) también
+                // cuenta como real — antes caía al 7,61 % estimado.
+                if (fx.f != null) feeByPayId[String(p.id)] = fx.f;
+                infoByPayId[String(p.id)] = { c: fx.c, fin: fx.fin };
                 // application_fee = comisión del MARKETPLACE (Tienda Nube) cobrada
                 // vía MP: es comisión de plataforma, no de pago.
                 const fApp = (p.fee_details||[]).filter(fd=>fd.type==="application_fee" && fd.fee_payer!=="payer").reduce((s,fd)=>s+(parseFloat(fd.amount)||0),0);
@@ -1458,15 +1481,21 @@ export default async function handler(req, res) {
       // al borde del rango, o pago aprobado pasada la medianoche): se busca en
       // el mapa pedido y después en los dos períodos leídos. Antes una venta así
       // caía al % de respaldo aunque su pago real estuviera leído.
+      // Pagos consultados uno por uno en MP (los que el listado por fechas no
+      // trajo): users/{uid}.margenesMpFees {payId: {f, c, fin, st, ts}}.
+      const mpFeeCache = (userData.margenesMpFees && typeof userData.margenesMpFees==="object" && !Array.isArray(userData.margenesMpFees)) ? { ...userData.margenesMpFees } : {};
       const payFeeDe = (id, fbPay) => {
         if (!id) return null; const k = String(id);
         if (fbPay && fbPay[k] != null) return fbPay[k];
         if (feeByPayId[k] != null) return feeByPayId[k];
         if (feeByPayIdPrev[k] != null) return feeByPayIdPrev[k];
+        if (mpFeeCache[k] && mpFeeCache[k].f != null) return mpFeeCache[k].f;
         return null;
       };
       const infoByPayIdAll = { ...(mpCommPrev.infoByPayId || {}), ...(mpCommCurr.infoByPayId || {}) };
-      const mpInfoDe = o => { const id = o.mpPayId || mpRefCache[o.id]; return id ? (infoByPayIdAll[String(id)] || null) : null; };
+      const mpInfoDe = o => { const id = o.mpPayId || mpRefCache[o.id]; if (!id) return null; const k = String(id); return infoByPayIdAll[k] || (mpFeeCache[k] && mpFeeCache[k].f != null ? { c: mpFeeCache[k].c || 1, fin: mpFeeCache[k].fin || 0 } : null); };
+      // Diagnóstico de las ventas de Shopify+MP que no cruzan (para el cartel de precisión).
+      const shMpDiag = { sinRef: 0, consultados: 0, estados: {} };
       const mpRefCache = (userData.margenesMpRefs && typeof userData.margenesMpRefs==="object" && !Array.isArray(userData.margenesMpRefs)) ? { ...userData.margenesMpRefs } : {};
       let shFeesMuestra = null;
       const shStoreRef = (userData.stores||[]).find(s => s.type==="shopify");
@@ -1541,6 +1570,46 @@ export default async function handler(req, res) {
             try { await db.collection("users").doc(uid).set({ margenesMpRefs: guardar }, { merge:true }); } catch(_) {}
           }
         }
+      }
+      // ── Shopify + MP: pagos con referencia que el listado por fechas NO trajo ──
+      // Pasa cuando el pago se creó fuera del rango leído, la cuenta tiene más
+      // de 2.500 pagos en el período, o el pago está en otro estado. Se consulta
+      // cada uno por id (GET /v1/payments/{id}), hasta 25 por cálculo, y el
+      // resultado queda cacheado para siempre (un pago no cambia de comisión).
+      if (!demoMode && mlMpAcc !== "__none__" && mpTokenOk) {
+        try {
+          const ordsMp = [...(curr.raw?.orders_detail||[]), ...(prev.raw?.orders_detail||[])].filter(o => o.platform==="shopify" && /mercado[\s_-]*pago/i.test(o.pay||""));
+          shMpDiag.sinRef = ordsMp.filter(o => !mpRefCache[o.id]).length;
+          const faltan = [...new Set(ordsMp.map(o => mpRefCache[o.id]).filter(Boolean).map(String).filter(k => payFeeDe(k, null) == null && !(mpFeeCache[k] && Date.now() - (mpFeeCache[k].ts||0) < 6*3600000)))].slice(0, 25);
+          if (faltan.length) {
+            const tokMp = await getValidMLToken(db, uid, mlMpAcc);
+            if (tokMp?.accessToken) {
+              let cambio = false;
+              await Promise.all(faltan.map(async k => {
+                try {
+                  const r = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(k)}`, { headers: { Authorization: `Bearer ${tokMp.accessToken}` }, signal: AbortSignal.timeout(8000) });
+                  shMpDiag.consultados++;
+                  if (r.status === 404 || r.status === 403 || r.status === 401) { mpFeeCache[k] = { f: null, st: r.status === 404 ? "no_existe" : "otra_cuenta", ts: Date.now() }; cambio = true; return; }
+                  if (!r.ok) return;
+                  const p = await r.json();
+                  const fx = mpFeeDePago(p);
+                  const st = String(p.status || "");
+                  // Aprobado (o acreditado/devuelto: la comisión existió): cargo real.
+                  // Rechazado/cancelado/pendiente: no hay cargo que contar → 0 real.
+                  const f = /^(approved|refunded|charged_back|in_mediation)$/.test(st) ? fx.f : (/^(rejected|cancelled|pending|in_process|authorized)$/.test(st) ? 0 : fx.f);
+                  mpFeeCache[k] = { f, c: fx.c, fin: fx.fin, st, ts: Date.now() }; cambio = true;
+                } catch(_) {}
+              }));
+              if (cambio) {
+                for (const k of faltan) if (mpFeeCache[k]) shMpDiag.estados[mpFeeCache[k].st || "?"] = (shMpDiag.estados[mpFeeCache[k].st || "?"]||0) + 1;
+                let guardar = mpFeeCache;
+                if (Object.keys(guardar).length > 4000) { const vivos = new Set(ordsMp.map(o => String(mpRefCache[o.id]||""))); guardar = Object.fromEntries(Object.entries(mpFeeCache).filter(([k]) => vivos.has(k))); }
+                // update() reemplaza el campo entero (nunca set sin merge: pisaría el doc del usuario).
+                try { await db.collection("users").doc(uid).update({ margenesMpFees: guardar }); } catch(_) {}
+              }
+            }
+          }
+        } catch (e) { console.warn("[mp-fees] consulta individual:", e?.message || e); }
       }
       // ── Tienda Nube: cargos REALES de pago por orden ──
       // GET /orders/{id}/transactions trae, por transacción, merchant_charges
@@ -2236,7 +2305,7 @@ export default async function handler(req, res) {
         // sin match → diagnóstico de qué trae el receipt.
         shMp: (()=>{ const ords=(curr.raw?.orders_detail||[]).filter(o=>o.platform==="shopify" && /mercado[\s_-]*pago/i.test(o.pay||"")); if(!ords.length) return null;
           const conRef=ords.filter(o=>mpRefCache[o.id]).length, conFee=ords.filter(o=>realMpDe(o, feeByRef, feeByPayId)!=null).length;
-          return { total: ords.length, conRef, conFee, mpToken: mlMpAcc !== "__none__" && !!mpTokenOk, muestra: shFeesMuestra }; })(),
+          return { total: ords.length, conRef, conFee, mpToken: mlMpAcc !== "__none__" && !!mpTokenOk, muestra: shFeesMuestra, sinRef: ords.filter(o=>!mpRefCache[o.id]).length, estados: shMpDiag.estados }; })(),
         dolarAdsHistorico: dolarAdsHistDias>0,
         tnTruncated: !!rawQ.tn_truncated, mlTruncated: !!rawQ.ml_truncated,
         canceladasExcluidas: rawQ.cancelled_excluded||0,
