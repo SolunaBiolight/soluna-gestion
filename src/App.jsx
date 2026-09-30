@@ -10488,6 +10488,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     return [];
   }
 
+  // Dirección "en esquina" = SIN numeración real ("Rivadavia esquina Callao"):
+  // Andreani la rechaza a domicilio. Si hay número de puerta ("Chiclana 685
+  // esquina Independencia") es una dirección normal con una referencia, y se
+  // emite a domicilio como cualquier otra (30/9/2026: antes cualquier
+  // "esquina" en el texto obligaba a elegir sucursal).
   function hasEsquinaAddress(o) {
     const fields=[
       o.direccion, o.dirNumero,
@@ -10496,7 +10501,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       o.pickupDetails?.address?.floor,
       o.pickupDetails?.name,
     ];
-    return fields.some(f=>f&&/\bESQ\.?(\b|$)|\bESQUINA\b/i.test(f));
+    if(!fields.some(f=>f&&/\bESQ\.?(\b|$)|\bESQUINA\b/i.test(f))) return false;
+    const num=String(o.dirNumero||o.pickupDetails?.address?.number||"").trim();
+    if(/^\d{1,5}$/.test(num)&&Number(num)>0) return false;
+    // Número dentro de la calle, ANTES de la palabra "esquina": "Chiclana 685 esquina …"
+    const calle=String(o.direccion||o.pickupDetails?.address?.address||"");
+    const antes=calle.split(/\bESQ\.?(?:\b|$)|\bESQUINA\b/i)[0]||"";
+    if(/\b\d{1,5}\b/.test(antes)) return false;
+    return true;
   }
 
   // Match contra el desplegable del template — núcleo único ghMatchSucursal
