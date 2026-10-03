@@ -5040,9 +5040,13 @@ export default async function handler(req, res) {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
 
+      // q (2/oct/2026): búsqueda GLOBAL por N° de venta, N° de comprobante, CAE,
+      // cliente o documento en TODAS las fechas del CUIT — ignora el rango. Es lo
+      // que necesita "¿dónde está la factura del pedido 6736?" sin adivinar el mes.
+      const q = String(req.query.q || "").trim().toLowerCase();
       // Rango libre desde/hasta (YYYY-MM-DD inclusive, por fecha_cbte con
       // fallback a emitido_at): si viene, se ignora month/year.
-      const rango = rangoFechas(req.query);
+      const rango = q ? null : rangoFechas(req.query);
       if (rango?.error) return res.status(400).json({ error: rango.error });
 
       // Filtro opcional por mes/año (mismo formato que dashboard_stats)
@@ -5068,8 +5072,17 @@ export default async function handler(req, res) {
 
       // _docId: id REAL del documento (formato viejo sin PV o nuevo con PV) —
       // es lo que get_batch_pdfs necesita para reimprimir.
-      const comprobantes = snap.docs.map(d => ({ _docId: d.id, ...d.data() }))
+      const qNum = q.replace(/\D/g, "");
+      const pasaQ = (c) => {
+        if (!q) return true;
+        const campos = [c.orden_id, c.nro, c.nro != null ? String(c.nro).padStart(8, "0") : "", c.cae, c.cliente, c.doc_nro];
+        if (campos.filter(v => v != null && v !== "").map(String).join(" ").toLowerCase().includes(q)) return true;
+        // "6736" también matchea "TN-6736" / "ML-6736…" y el documento sin puntos
+        return !!qNum && qNum.length >= 3 && (String(c.orden_id || "").replace(/\D/g, "") === qNum || String(c.doc_nro || "").replace(/\D/g, "").includes(qNum));
+      };
+      const comprobantesTodos = snap.docs.map(d => ({ _docId: d.id, ...d.data() }))
         .filter(c => {
+          if (q) return pasaQ(c);
           if (rango) {
             const key = c.fecha_cbte || (c.emitido_at || "").slice(0, 10);
             return key >= rango.desde && key <= rango.hasta;
@@ -5077,6 +5090,13 @@ export default async function handler(req, res) {
           return !filterStart || (c.emitido_at >= filterStart && c.emitido_at < filterEnd);
         })
         .sort((a, b) => (b.emitido_at || "").localeCompare(a.emitido_at || ""));
+      // Antes se cortaba en 100 LOTES: con el piloto automático (un lote por hora)
+      // un mes entero tenía ~700 lotes y las facturas de principio de mes
+      // desaparecían de Registros sin aviso. Ahora el tope es por comprobantes
+      // y se avisa (`truncado`).
+      const MAX_CBTES = 4000;
+      const truncado = comprobantesTodos.length > MAX_CBTES;
+      const comprobantes = truncado ? comprobantesTodos.slice(0, MAX_CBTES) : comprobantesTodos;
 
       const GROUP_WINDOW_MS = 10 * 60 * 1000; // 10 minutos
       const batches = [];
@@ -5127,12 +5147,12 @@ export default async function handler(req, res) {
       }
 
       // Limpiar campo interno antes de devolver
-      const out = batches.slice(0, 100).map(b => {
+      const out = batches.map(b => {
         const { _lastTs, ...rest } = b;
         return rest;
       });
 
-      return res.json({ batches: out });
+      return res.json({ batches: out, total: comprobantesTodos.length, truncado, q: q || null });
     }
 
     // ── HISTORIAL: notas de crédito del CUIT (misma auth y patrón que list_batches) ──

@@ -29297,7 +29297,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [batchPdfs, setBatchPdfs] = useState({}); // {batchId: [pdfs]}
   const [loadingBatchPdfs, setLoadingBatchPdfs] = useState(null);
   // Filtros y vista de Registros
-  const [regView, setRegView] = useState("lotes");      // "lotes" | "comprobantes"
+  const [regView, setRegView] = useState("comprobantes"); // "comprobantes" | "lotes" — 2/oct/2026: arranca en Comprobantes (ahí está el buscador y las acciones)
+  const [regQ, setRegQ] = useState("");                  // búsqueda GLOBAL activa (todas las fechas): el texto que se mandó al backend
+  const [regTruncado, setRegTruncado] = useState(false);
   const [regSub, setRegSub] = useState("facturas");     // "facturas" | "ncs"
   const [regLetra, setRegLetra] = useState("");         // "" | "A" | "B" | "C"
   const [regPv, setRegPv] = useState("");               // "" | número de PV
@@ -29416,6 +29418,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const labelS = {fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,display:"block"};
   // Período navegado en Registros (default = mes actual completo, hora Argentina).
   // Reemplaza al viejo navegador ‹ mes ›: los loads llaman con desde/hasta.
+  const [regReload, setRegReload] = useState(0); // fuerza recargar el período (al salir de una búsqueda global)
   const [regDesde, setRegDesde] = useState(()=>arcaMesRango(0)[0]);
   const [regHasta, setRegHasta] = useState(()=>arcaMesRango(0)[1]);
   // Label del período: si es un mes calendario exacto muestra "agosto 2026",
@@ -29478,7 +29481,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       api("list_batches","GET",null,{cuit:cuitSel,desde:regDesde,hasta:regHasta}),
       api("list_ncs","GET",null,{cuit:cuitSel,desde:regDesde,hasta:regHasta}),
     ]).then(([b,n])=>{
-      if(!b.error) setBatches(b.batches||[]);
+      if(!b.error){ setBatches(b.batches||[]); setRegTruncado(!!b.truncado); setRegQ(""); }
       if(!n.error) setNcs(n.ncs||[]);
     }).catch(e=>{
       toast("No se pudieron cargar los registros: "+(e?.message||"error de conexión"),"error");
@@ -29486,7 +29489,24 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     // Canceladas con factura activa del período (sección al final). Fire-and-forget,
     // es una sección secundaria: si falla no rompe Registros.
     loadCanceladas(false);
-  },[uid, cuitSel, regDesde, regHasta]);
+  },[uid, cuitSel, regDesde, regHasta, regReload]);
+  // Búsqueda GLOBAL (2/oct/2026): con 3+ caracteres en el buscador, Registros
+  // consulta TODAS las fechas del CUIT (list_batches?q=) en vez de solo el período
+  // visible. Al borrar la búsqueda vuelve el período.
+  useEffect(()=>{
+    if(!uid || !cuitSel) return;
+    const q = regBusq.trim();
+    if(q.length<3){ if(regQ){ setRegQ(""); setRegReload(n=>n+1); } return; }
+    const t = setTimeout(async()=>{
+      try{
+        const b = await api("list_batches","GET",null,{cuit:cuitSel,q});
+        if(b.error) return;
+        if(regBusq.trim()!==q) return; // el usuario siguió escribiendo
+        setBatches(b.batches||[]); setRegTruncado(!!b.truncado); setRegQ(q); setRegBatch(null);
+      }catch(_){}
+    },450);
+    return ()=>clearTimeout(t);
+  },[regBusq, uid, cuitSel]);
 
   // ── Limpieza al cambiar de CUIT: nada del CUIT anterior debe quedar pintado ──
   const primeraLimpiezaCuit = useRef(true);
@@ -31938,8 +31958,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       {/* Header */}
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,gap:14,flexWrap:"wrap"}}>
                         <div>
-                          <div style={{fontSize:14,fontWeight:700,color:T.text}}>Comprobantes emitidos · <span style={{textTransform:"capitalize"}}>{mesActual}</span></div>
-                          <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Facturas, notas de débito y notas de crédito del período en una sola lista. Las acciones de cada comprobante están en el botón ⋯ de su fila.</div>
+                          <div style={{fontSize:14,fontWeight:700,color:T.text}}>{regQ?<>Resultados en todas las fechas para «{regQ}»</>:<>Comprobantes emitidos · <span style={{textTransform:"capitalize"}}>{mesActual}</span></>}</div>
+                          <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{regQ?"Buscando en todo el historial del CUIT, no solo en el período. Borrá la búsqueda para volver al período.":"Facturas, notas de débito y notas de crédito del período en una sola lista. Buscá por N° de venta, cliente, CUIT/DNI, N° de comprobante o CAE: con 3 letras o números ya busca en todas las fechas."}</div>
+                          {regTruncado&&<div style={{fontSize:11,color:T.orange,marginTop:4}}>Hay más de 4.000 comprobantes en este rango: se muestran los más recientes. Acotá el período o buscá por número.</div>}
                         </div>
                         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                           <div style={{display:"inline-flex",background:T.bg,borderRadius:8,padding:2,border:"1px solid "+T.border,gap:2}}>
@@ -31951,12 +31972,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         </div>
                       </div>
 
-                      {/* Barra de filtros (solo en Comprobantes) */}
-                      {regView==="comprobantes" && (
+                      {/* Barra de filtros: el buscador se ve SIEMPRE (también en Lotes) */}
+                      {(
                         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:12}}>
                           <div style={{position:"relative",flex:1,minWidth:200}}>
                             <svg style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",color:T.textSm}} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-                            <input type="text" placeholder="Buscar por N°, CAE, cliente, CUIT/DNI o N° de venta…" value={regBusq} onChange={e=>setRegBusq(e.target.value)}
+                            <input type="text" placeholder="Buscar por N° de venta, cliente, CUIT/DNI, N° de comprobante o CAE (en todas las fechas)…" value={regBusq} onChange={e=>{ setRegBusq(e.target.value); if(regView==="lotes") setRegView("comprobantes"); }}
                               style={{...iS,width:"100%",padding:"7px 12px 7px 32px",fontSize:12,boxSizing:"border-box"}}/>
                           </div>
                           <select value={regTipo} onChange={e=>setRegTipo(e.target.value)} style={selS} title="Tipo de comprobante">
@@ -31997,8 +32018,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <div style={{position:"absolute",inset:0,background:`linear-gradient(90deg, transparent, ${T.border}40, transparent)`,backgroundSize:"200% 100%",animation:"growith-shimmer 1.6s infinite"}}/>
                         </div>
                       ) : vacio ? (
-                        <DSEmpty T={T} title={`Sin registros en ${mesActual}`}
-                          subtitle="No hay comprobantes emitidos en el período. Si emitiste facturas y no aparecen acá, podés reconstruirlas desde AFIP."
+                        <DSEmpty T={T} title={regQ?`Nada para «${regQ}» en todas las fechas`:`Sin registros en ${mesActual}`}
+                          subtitle={regQ?"Se buscó en todo el historial de este CUIT por N° de venta, cliente, documento, N° de comprobante y CAE. Si la factura existe en AFIP y no está acá, podés reconstruirla desde AFIP.":"No hay comprobantes emitidos en el período. Si emitiste facturas y no aparecen acá, podés reconstruirlas desde AFIP."}
                           action={
                             <button onClick={recuperarDesdeAfip} disabled={resyncing} style={{background:"transparent",border:"none",cursor:resyncing?"wait":"pointer",fontSize:13,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",padding:0,display:"inline-flex",alignItems:"center",gap:6}}>
                               {resyncing ? <><Spinner size={12} color={T.accent}/> {resyncMsg||"Consultando AFIP…"}</> : "Recuperar desde AFIP"}
@@ -32107,7 +32128,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                         <td style={{...tdS,textAlign:"right",color:T.textMd,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fmtMonto(r.iva)}</td>
                                         <td style={{...tdS,textAlign:"right",fontWeight:700,color:T.text,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fmtMonto(r.total)}</td>
                                         <td style={{...tdS,color:T.textSm,fontFamily:"monospace",fontSize:11,whiteSpace:"nowrap"}} title={r.cae_vto?`Vto CAE ${r.cae_vto}`:undefined}>{r.cae||"—"}</td>
-                                        <td style={{...tdS,textAlign:"right"}}><RowMenu x={x}/></td>
+                                        <td style={{...tdS,textAlign:"right",whiteSpace:"nowrap"}}>
+                                          <AsyncButton onClick={()=>descargarPdfDe(r)} title="Descargar el PDF de este comprobante" style={{...BtnSecondary(T),fontSize:11,padding:"4px 9px",marginRight:6,verticalAlign:"middle"}}>PDF</AsyncButton>
+                                          <RowMenu x={x}/>
+                                        </td>
                                       </tr>
                                     );
                                   })}
@@ -32143,10 +32167,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       )}
 
                       {/* Menú de acciones flotante */}
-                      {regMenu && menuX && menuX.k==="f" && (
+                      {/* Portal a <body>: la pestaña tiene una animación con transform que
+                          convierte a position:fixed en relativo al contenedor — el menú
+                          se dibujaba fuera de la pantalla y parecía que ⋯ no hacía nada. */}
+                      {regMenu && menuX && menuX.k==="f" && ReactDOM.createPortal(
                         <>
-                          <div onClick={()=>setRegMenu(null)} style={{position:"fixed",inset:0,zIndex:60}}/>
-                          <div className="gh-dropdown" style={{position:"fixed",top:regMenu.top,right:regMenu.right,zIndex:61,minWidth:230,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,boxShadow:DS.shadow.lg,padding:6}}>
+                          <div onClick={()=>setRegMenu(null)} style={{position:"fixed",inset:0,zIndex:1600}}/>
+                          <div className="gh-dropdown" style={{position:"fixed",top:regMenu.top,right:regMenu.right,zIndex:1601,minWidth:230,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,boxShadow:DS.shadow.lg,padding:6}}>
                             <div style={{padding:"6px 10px 8px",fontSize:11,color:T.textSm,borderBottom:`1px solid ${T.borderL}`,marginBottom:4,whiteSpace:"nowrap"}}>
                               <b style={{color:T.text}}>{menuX.tipo==="ND"?"ND":"Factura "+menuX.tipo} N° {String(menuX.r.comprobante).padStart(8,"0")}</b> · {fmtMonto(menuX.r.total)}
                             </div>
@@ -32159,8 +32186,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               </button>
                             ))}
                           </div>
-                        </>
-                      )}
+                        </>, document.body)}
                     </Card>
                   );
                 })()}
