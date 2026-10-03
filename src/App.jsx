@@ -29284,6 +29284,36 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // Búsqueda libre en pendientes — matchea nombre del cliente, ID de orden
   // Shopify/TN, número de operación ML, o cualquier substring del email.
   const [busquedaPend, setBusquedaPend] = useState("");
+  const [busqGlobal, setBusqGlobal] = useState(null); // {numero, loading, data} búsqueda del pedido fuera del período (buscar_orden)
+  async function buscarPedidoGlobal(numero){
+    if(!cuitSel||!numero) return;
+    setBusqGlobal({numero, loading:true, data:null});
+    try{ const d = await api("buscar_orden","GET",null,{cuit:cuitSel, numero}); setBusqGlobal({numero, loading:false, data:d.error?{motivo:"error", error:d.error}:d}); }
+    catch(e){ setBusqGlobal({numero, loading:false, data:{motivo:"error", error:e?.message||"error de conexión"}}); }
+  }
+  // Tarjeta "este pedido no está en el período": busca en la tienda y en los
+  // comprobantes de cualquier fecha, y ofrece la acción que corresponda.
+  const renderBusqGlobal = () => {
+    const num = busquedaPend.replace(/\D/g,"");
+    if(num.length<3) return null;
+    const g = busqGlobal && busqGlobal.numero===num ? busqGlobal : null;
+    const box = (children) => <div style={{marginTop:12,padding:"12px 14px",background:T.card,border:`1px solid ${T.border}`,borderRadius:10,fontSize:12,color:T.textMd,lineHeight:1.6,textAlign:"left"}}>{children}</div>;
+    const fechaLinda = f => f ? `${f.slice(8,10)}/${f.slice(5,7)}/${f.slice(0,4)}` : "";
+    if(!g) return box(<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span>El pedido <strong style={{color:T.text}}>#{num}</strong> no está en el período que estás viendo.</span><Btn T={T} variant="primary" size="sm" onClick={()=>buscarPedidoGlobal(num)}>Buscarlo en toda la tienda y en los comprobantes</Btn></div>);
+    if(g.loading) return box(<span><Spinner size={12} color={T.textMd}/> Buscando el pedido #{num} en tu tienda y en tus comprobantes…</span>);
+    const d = g.data || {};
+    const fa = d.facturaActiva;
+    const verRegistros = () => { setRegBusq(num); setSidebarTab&&setSidebarTab("registros"); };
+    const mostrarEnLista = () => { setPeriodoModo("custom"); setFechaDesde(d.orden.fecha); setFechaHasta(d.orden.fecha); };
+    if(d.motivo==="error") return box(<span>No se pudo buscar: {d.error}</span>);
+    if(d.motivo==="facturada") return box(<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span>El pedido <strong style={{color:T.text}}>#{num}</strong>{d.orden?.fecha?` (del ${fechaLinda(d.orden.fecha)})`:""} <strong style={{color:T.green}}>ya está facturado</strong>: Factura {fa.letra} {String(fa.punto_venta||0).padStart(4,"0")}-{String(fa.nro).padStart(8,"0")}{fa.fecha_cbte?` del ${fechaLinda(fa.fecha_cbte)}`:""}.</span><Btn T={T} variant="primary" size="sm" onClick={verRegistros}>Ver y descargar en Registros</Btn></div>);
+    if(d.motivo==="pendiente") return box(<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span>El pedido <strong style={{color:T.text}}>#{num}</strong> del {fechaLinda(d.orden.fecha)}{d.orden.nombre?` (${d.orden.nombre})`:""} está pago y <strong style={{color:T.orange}}>sin facturar</strong>, pero es más viejo que el período que estás viendo.</span><Btn T={T} variant="primary" size="sm" onClick={mostrarEnLista}>Mostrarlo en la lista para facturarlo</Btn></div>);
+    if(d.motivo==="sin_pago") return box(<span>El pedido <strong style={{color:T.text}}>#{num}</strong> del {fechaLinda(d.orden.fecha)} existe en tu tienda pero <strong style={{color:T.orange}}>no figura como pago</strong> (estado: {d.orden.estado_pago||d.orden.estado}). Solo se facturan las ventas pagas: cuando la tienda lo marque como pago va a aparecer acá.</span>);
+    if(d.motivo==="cancelada") return box(<span>El pedido <strong style={{color:T.text}}>#{num}</strong> del {fechaLinda(d.orden.fecha)} está <strong style={{color:T.red}}>cancelado</strong> en tu tienda, por eso no se factura.</span>);
+    if(d.motivo==="solo_anulada") return box(<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span>El pedido <strong style={{color:T.text}}>#{num}</strong> tuvo una factura que fue <strong style={{color:T.red}}>anulada con nota de crédito</strong> y no está en la tienda como venta paga.</span><Btn T={T} variant="secondary" size="sm" onClick={verRegistros}>Ver en Registros</Btn></div>);
+    if(d.motivo==="no_lista") return box(<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span>El pedido <strong style={{color:T.text}}>#{num}</strong> del {fechaLinda(d.orden.fecha)} está pago en tu tienda pero no entró en la lista de ese día. Probá mostrándolo y tocando Actualizar.</span><Btn T={T} variant="secondary" size="sm" onClick={mostrarEnLista}>Mostrar ese día</Btn></div>);
+    return box(<span>No encontramos el pedido <strong style={{color:T.text}}>#{num}</strong> ni en tu tienda ni en tus comprobantes. Fijate que sea el número de pedido de la tienda (no el de seguimiento ni el de factura).</span>);
+  };
   // Paginación de la lista de pendientes (50 por página). Se resetea al tocar
   // cualquier filtro o cambiar el período para no quedar en una página vacía.
   const [pendPage, setPendPage] = useState(1);
@@ -31168,6 +31198,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <div style={{width:40,height:40,borderRadius:10,background:T.green+"18",border:"1px solid "+T.green+"33",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px"}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
                       <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>No hay ventas pendientes</div>
                       <div style={{fontSize:11,color:T.textSm}}>No encontramos ventas pagas sin facturar en el período seleccionado.</div>
+                      {renderBusqGlobal()}
                     </div>
                   ) : (() => {
                     // El backend ya manda ordenado por fecha desc. Filtrado y totales
@@ -31181,6 +31212,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               <div style={{width:40,height:40,borderRadius:10,background:T.green+"18",border:"1px solid "+T.green+"33",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px"}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
                               <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>Todo facturado en el período</div>
                               <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>{itemsBilled.length} {itemsBilled.length===1?"venta facturada":"ventas facturadas"} · cambiá el período para ver más</div>
+                              {renderBusqGlobal()}
                               <button onClick={()=>setSidebarTab&&setSidebarTab("registros")} style={{background:"transparent",border:"none",cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",padding:0}}>
                                 Ver las {itemsBilled.length} facturadas en Registros →
                               </button>
@@ -31189,6 +31221,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <>
                               <div style={{marginBottom:6,display:"flex",justifyContent:"center"}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
                               <div style={{fontSize:12,color:T.textSm}}>No hay ventas que coincidan con los filtros aplicados.</div>
+                              {renderBusqGlobal()}
                             </>
                           )}
                         </div>

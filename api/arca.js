@@ -5254,6 +5254,68 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     }
 
+    // ── buscar_orden (2/oct/2026): ¿dónde está la factura del pedido N? Busca
+    // en los comprobantes del CUIT (cualquier fecha) y en la tienda, sin depender
+    // del período que se está mirando en Facturar. Si la venta está paga y sin
+    // facturar, devuelve su fecha para que el front muestre ese día en la lista.
+    if (action === "buscar_orden" && req.method === "GET") {
+      const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
+      const numero = String(req.query.numero || "").replace(/\D/g, "");
+      if (!cuitParam || !numero) return res.status(400).json({ error: "Falta cuit o numero" });
+      const userSnap = await db.collection("users").doc(uid).get();
+      const stores = userSnap.exists ? (userSnap.data().stores || []) : [];
+      // 1) Comprobantes con ese N° de venta (TN-6736, SH-#6736, SH-6736, ML-6736)
+      let facturas = [];
+      try {
+        const cb = await db.collection("users").doc(uid).collection("arca_comprobantes")
+          .where("orden_id", "in", [`TN-${numero}`, `SH-#${numero}`, `SH-${numero}`, `ML-${numero}`])
+          .select("orden_id", "cuit_emisor", "letra", "nro", "punto_venta", "emitido_at", "fecha_cbte", "anulada", "nc_nro", "total", "cae", "nd")
+          .get();
+        facturas = cb.docs.map(d => ({ _docId: d.id, ...d.data() })).filter(c => String(c.cuit_emisor || "") === cuitParam)
+          .sort((a, b) => String(b.emitido_at || "").localeCompare(String(a.emitido_at || "")));
+      } catch (e) { console.warn("[buscar_orden] comprobantes:", e.message); }
+      // 2) La venta en la tienda
+      const argYmd = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
+      let orden = null;
+      const tnStore = stores.find(s => s.type === "tiendanube");
+      const shStore = stores.find(s => s.type === "shopify");
+      try {
+        if (tnStore?.accessToken && tnStore?.storeId) {
+          const r = await fetch(`https://api.tiendanube.com/v1/${tnStore.storeId}/orders?q=${encodeURIComponent(numero)}&per_page=50`, { headers: { "Authentication": `bearer ${tnStore.accessToken}`, "User-Agent": "GrowithApp (contacto.growith@gmail.com)" }, signal: AbortSignal.timeout(15000) });
+          const lista = r.ok ? await r.json() : [];
+          const o = (Array.isArray(lista) ? lista : []).find(x => String(x.number) === numero);
+          if (o) orden = { plataforma: "tiendanube", orderId: `TN-${numero}`, fecha: o.created_at ? argYmd(new Date(o.created_at)) : null, estado: String(o.status || ""), estado_pago: String(o.payment_status || ""), nombre: `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim() || o.contact_name || "", total: parseFloat(o.total) || 0 };
+        }
+        if (!orden && shStore?.accessToken && shStore?.shop) {
+          await ensureShopifyToken(db, uid, shStore);
+          const r = await fetch(`https://${shStore.shop}/admin/api/2024-10/orders.json?name=%23${encodeURIComponent(numero)}&status=any&limit=5`, { headers: { "X-Shopify-Access-Token": shStore.accessToken }, signal: AbortSignal.timeout(15000) });
+          const j = r.ok ? await r.json() : {};
+          const o = (j.orders || []).find(x => String(x.order_number) === numero || String(x.name || "").replace(/\D/g, "") === numero);
+          if (o) orden = { plataforma: "shopify", orderId: `SH-${o.name || numero}`, fecha: o.created_at ? argYmd(new Date(o.created_at)) : null, estado: o.cancelled_at ? "cancelled" : String(o.financial_status || ""), estado_pago: String(o.financial_status || ""), nombre: `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim() || o.email || "", total: parseFloat(o.total_price) || 0 };
+        }
+      } catch (e) { console.warn("[buscar_orden] tienda:", e.message); }
+      // 3) ¿Está entre las facturables de su día? (misma lógica que la lista)
+      let enPendientes = false, pendiente = null;
+      const pagada = orden && ["paid", "authorized", "partially_paid"].includes(String(orden.estado_pago).toLowerCase()) && String(orden.estado).toLowerCase() !== "cancelled";
+      if (orden?.fecha && pagada) {
+        try {
+          const { ordenes } = await obtenerPendientes(db, uid, cuitParam, { sinceDate: orden.fecha, untilDate: orden.fecha, force: false });
+          const hit = Object.entries(ordenes).find(([k]) => String(k).replace(/\D/g, "") === numero);
+          if (hit) { enPendientes = !hit[1]._billed; pendiente = { orderId: hit[0], billed: !!hit[1]._billed, billed_info: hit[1]._billed_info || null }; }
+        } catch (e) { console.warn("[buscar_orden] pendientes:", e.message); }
+      }
+      const facturaActiva = facturas.find(c => !c.anulada && !c.nd) || null;
+      let motivo = null;
+      if (!orden && !facturas.length) motivo = "no_existe";
+      else if (facturaActiva) motivo = "facturada";
+      else if (orden && !pagada) motivo = String(orden.estado).toLowerCase() === "cancelled" ? "cancelada" : "sin_pago";
+      else if (enPendientes) motivo = "pendiente";
+      else if (orden) motivo = "no_lista";
+      else motivo = "solo_anulada";
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ numero, orden, facturas, facturaActiva, enPendientes, pendiente, motivo });
+    }
+
     if (action === "list_ncs" && req.method === "GET") {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
