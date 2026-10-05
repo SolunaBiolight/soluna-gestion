@@ -4552,6 +4552,15 @@ function ghDirParse(calle,numero){
   let num=numRaw.replace(/\D.*/,"").trim();
   const m=c.match(/\b(\d{1,5})\s*$/);
   if(m&&((!numRaw&&!num)||m[1]===num)){ num=num||m[1]; c=c.replace(/\b\d{1,5}\s*$/,"").trim(); }
+  // Número en el MEDIO seguido de una referencia ("Pio XII 1706 Av La Plata y
+  // Almafuerte numero de local 4"): si lo que sigue al número es una esquina,
+  // otra vía o "numero de…", ese es el número de puerta y lo demás sobra.
+  // No toca "Avenida 9 de Julio 1398" ni "Calle 13 621" (ahí lo que sigue no es referencia).
+  if(!num&&!numRaw){
+    const mm=c.match(/^(.*?\S)\s+(\d{1,5})\s+(?:(?:AV|AVENIDA|AVDA|CALLE|RUTA|ESQ|ESQUINA|ENTRE|NUMERO|NRO|Y|E)\b)/);
+    // Vías numeradas ("RUTA 5 Y …", "CALLE 13 …"): ahí el número es parte del nombre.
+    if(mm&&/[A-Z]/.test(mm[1])&&!/\b(RUTA|RN|RP|CALLE|AV|AVENIDA|AVDA|DIAGONAL|CAMINO|AUTOPISTA|KM)$/.test(mm[1].trim())){ num=mm[2]; c=mm[1].trim(); }
+  }
   // Abreviaturas a forma larga y fuera los tipos de vía; títulos y palabras
   // cortas se descartan solo si queda algo con qué comparar.
   const all=c.split(" ").filter(Boolean).map(w=>GH_SUC_ABREV[w]||w).filter(w=>!GH_SUC_VIA.has(w));
@@ -4664,7 +4673,10 @@ function ghMatchOficial(oficiales,p,geo){
     if(!dirMatch&&!nameMatch) return false;
     if(!dirMatch&&c.a.num&&c.b.num&&!c.calle) return false;
     if(ghConflictoPunto(p,s)?.grave) return false;
-    if(geo?.exacto&&s.distM!=null&&s.distM>4000) return false;
+    // La distancia solo descarta matches por NOMBRE: con calle y número iguales
+    // (y sin contradicción de CP/localidad) es el mismo lugar aunque el
+    // geocodificador haya puesto el ancla a 4 km (#7181, NEUQUEN (CENTRO)).
+    if(!dirMatch&&geo?.exacto&&s.distM!=null&&s.distM>4000) return false;
     return true;
   });
   // El listado repite la misma sucursal con variantes de nombre/espaciado:
@@ -4829,7 +4841,7 @@ function ghStripUnidad(s){
   // TN pega a la calle y que mandan al geocoder a cualquier lado (#6207).
   // "Entre" solo como referencia ("entre X y Z"): "Av. Entre Ríos 1234" es una
   // calle y antes quedaba en "Av." (sin match posible ni geocodificación).
-  return String(s||"").replace(/[,\s]+ENTRE\s+\S[\s\S]*?\s+Y\s+[\s\S]*$/i,"").replace(/[,\s]+(LOCAL(?:ES)?|PISO|DPTO\.?|DEPTO\.?|DEPARTAMENTO|OFICINA|OF\.|UF|GALERIA|GALERÍA|TIMBRE|CASA|PB|E\/|ESQ\.?|ESQUINA)\b[\s\S]*$/i,"").trim();
+  return String(s||"").replace(/[,\s]+ENTRE\s+\S[\s\S]*?\s+Y\s+[\s\S]*$/i,"").replace(/[,\s]+(LOCAL(?:ES)?|PISO|DPTO\.?|DEPTO\.?|DEPARTAMENTO|OFICINA|OF\.|UF|GALERIA|GALERÍA|TIMBRE|CASA|PB|E\/|ESQ\.?|ESQUINA|N[UÚ]MERO\s+DE)\b[\s\S]*$/i,"").trim();
 }
 
 // Tokens significativos del punto de retiro ("JURAMENTO 2385") para buscar
@@ -10493,19 +10505,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // esquina Independencia") es una dirección normal con una referencia, y se
   // emite a domicilio como cualquier otra (30/9/2026: antes cualquier
   // "esquina" en el texto obligaba a elegir sucursal).
+  // Solo mira el destino REAL del envío: a sucursal, el punto de retiro; a
+  // domicilio, la dirección del comprador. Antes un pedido a sucursal quedaba
+  // excluido porque la casa del comprador decía "esq." (#7150, Corrientes).
   function hasEsquinaAddress(o) {
-    const fields=[
-      o.direccion, o.dirNumero,
-      o.pickupDetails?.address?.address,
-      o.pickupDetails?.address?.number,
-      o.pickupDetails?.address?.floor,
-      o.pickupDetails?.name,
-    ];
+    const aSuc=!!(o.esSucursal||o.pickupDetails);
+    const fields=aSuc
+      ? [o.pickupDetails?.address?.address, o.pickupDetails?.address?.number, o.pickupDetails?.name]
+      : [o.direccion, o.dirNumero];
     if(!fields.some(f=>f&&/\bESQ\.?(\b|$)|\bESQUINA\b/i.test(f))) return false;
-    const num=String(o.dirNumero||o.pickupDetails?.address?.number||"").trim();
+    const num=String(aSuc?(o.pickupDetails?.address?.number||""):(o.dirNumero||"")).trim();
     if(/^\d{1,5}$/.test(num)&&Number(num)>0) return false;
     // Número dentro de la calle, ANTES de la palabra "esquina": "Chiclana 685 esquina …"
-    const calle=String(o.direccion||o.pickupDetails?.address?.address||"");
+    const calle=String(aSuc?(o.pickupDetails?.address?.address||""):(o.direccion||""));
     const antes=calle.split(/\bESQ\.?(?:\b|$)|\bESQUINA\b/i)[0]||"";
     if(/\b\d{1,5}\b/.test(antes)) return false;
     return true;
@@ -13845,7 +13857,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           // no tiene equivalente ahí. En la emisión API (wantOficial) el select
           // oficial sigue siendo el único camino (ahí se usa el id, no el string).
           const showManual=!isSuc||(wantOficial?false:!!locs);
-          const results=showManual?(isSuc?searchSucursales(locs,locSearch):searchAndreaniLocations(locs,locSearch,locSearchType)):[];
+          const resultsTpl=showManual?(isSuc?searchSucursales(locs,locSearch):searchAndreaniLocations(locs,locSearch,locSearchType)):[];
           // ── Emisión por API: UNA lista (cercanas + CP + buscador vivo) con
           //    selección explícita y confirmación inline si hay conflicto. ──
           const apiUI=isSuc&&wantOficial;
@@ -13853,6 +13865,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           const qToks=apiUI?nrmQ(locSearch).split(" ").filter(Boolean):[];
           const txtDe=x=>{const d=x.direccion||{};return nrmQ(`${x.descripcion||""} ${d.calle||""} ${d.numero||""} ${d.localidad||""} ${d.codigoPostal||""}`);};
           const pasa=x=>!qToks.length||qToks.every(t=>txtDe(x).includes(t));
+          // Flujo Excel: el desplegable nombra las sucursales clásicas por localidad
+          // ("NEUQUEN (CENTRO)"), así que buscar por la calle no las encontraba. Se
+          // buscan también las oficiales (buscador vivo + cercanas + CP) por su
+          // dirección y se traducen al texto del desplegable.
+          const excelUI=isSuc&&!wantOficial&&!!locs;
+          const candsExcel=excelUI?[...new Map([...(sucEnrich?.lista||[]),...(locCerca?.lista||[]),...(Array.isArray(oficiales)?oficiales:[])].filter(x=>x).map(s=>[String(s.id??s.descripcion),s])).values()]:[];
+          const qToksExcel=excelUI?nrmQ(locSearch).split(" ").filter(Boolean):[];
+          const extraTpl=qToksExcel.length?candsExcel.filter(x=>qToksExcel.every(t=>txtDe(x).includes(t))).map(x=>ghTplDeOficial(locs,x)).filter(Boolean):[];
+          const results=excelUI?[...new Set([...extraTpl,...resultsTpl])].slice(0,30):resultsTpl;
+          // El punto del cliente existe en Andreani pero la plantilla no lo tiene:
+          // decirlo claro en vez de dejar que el usuario adivine.
+          const puntoApiSinTpl=(()=>{ if(!excelUI||!order?.pickupDetails||!candsExcel.length) return null; const m=ghMatchOficial(candsExcel,ghPuntoDeOrden(order)); return m&&!ghTplDeOficial(locs,m)?m:null; })();
           const cerca=apiUI?(locCerca?.lista||[]).filter(x=>x.id!=null):[];
           const idsCerca=new Set(cerca.map(x=>String(x.id)));
           const sugeridas=cerca.filter(pasa);
@@ -14039,6 +14063,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         </div>
                       );
                     })}
+                  </div>
+                )}
+                {puntoApiSinTpl&&(
+                  <div style={{padding:"12px 14px",background:T.yellowBg||T.surface,border:`1px solid ${T.yellow}66`,borderRadius:10,fontSize:12,color:T.text,lineHeight:1.55,marginBottom:10}}>
+                    <strong>El punto que eligió el cliente existe en Andreani</strong> ({puntoApiSinTpl.descripcion}{puntoApiSinTpl.direccion?` · ${[puntoApiSinTpl.direccion.calle,puntoApiSinTpl.direccion.numero].filter(Boolean).join(" ")}`:""}) <strong>pero no está en la plantilla de carga masiva</strong> que usa Growith: Andreani lo agregó después de la última plantilla. Descargá la plantilla nueva desde Andreani Empresas → Carga masiva y pasásela a Growith para actualizarla, o emití este pedido por Etiquetas listas (API) o a mano.
                   </div>
                 )}
                 {locSearch.length>=2&&results.length===0&&(

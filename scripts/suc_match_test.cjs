@@ -91,7 +91,13 @@ eq("nombre no genérico sin dirección oficial → match",M.ghMatchOficial([suc(
 eq("nombre coincide, calle distinta con números → null",M.ghMatchOficial([suc(8,"HOP JURAMENTO","Cabildo","2000","CABA","1428")],M.ghPuntoDeOrden(pd("Punto HOP Juramento","Juramento","2385","CABA","1428"))),null);
 eq("dos domicilios distintos → null",M.ghMatchOficial([libOk,suc(11,"OTRO","Libertador Gral San Martin","3916","San Justo","1754",{})],M.ghPuntoDeOrden(lib))?.direccion?.numero,"3916");
 eq("variantes mismo nombre → 1",M.ghMatchOficial([suc(12,"SAN MIGUEL (CENTRO)","Mendoza","2552","San Justo","1754"),suc(13,"SAN MIGUEL (CENTRO)","Mendoza 2552","","San Justo","")],M.ghPuntoDeOrden(clas))?.id,12);
-eq("distancia > 4 km con ancla exacta → veto",M.ghMatchOficial([{...libOk,distM:9000}],M.ghPuntoDeOrden(lib),{exacto:true}),null);
+// 4/oct/2026 (#7181 NEUQUEN (CENTRO)): con calle + número iguales la distancia NO veta
+// (el geocodificador puso el ancla a 4 km del punto real); solo veta un match por nombre.
+eq("distancia > 4 km con ancla exacta, calle+número iguales → match",M.ghMatchOficial([{...libOk,distM:9000}],M.ghPuntoDeOrden(lib),{exacto:true})?.id,1);
+eq("distancia > 4 km con ancla exacta, solo nombre → veto",M.ghMatchOficial([{...suc(8,"HOP JURAMENTO","","","",""),distM:9000}],M.ghPuntoDeOrden(pd("Punto HOP Juramento","Juramento","2385","CABA","1428")),{exacto:true}),null);
+// Número en el medio seguido de referencia de esquina ("Pio XII 1706 Av La plata y Almafuerte numero de local 4")
+eq("num en el medio + esquina",M.ghDirParse("Pio XII 1706 Av La plata y Almafuerte numero de local 4",""),{calle:"PIO XII",num:"1706",toks:["PIO","XII"],words:["PIO","XII"],nums:[]});
+eq("9 de Julio no se rompe",M.ghDirParse("Avenida 9 de Julio 1398","").num,"1398");
 eq("distancia sin ancla exacta → no veta",M.ghMatchOficial([{...libOk,distM:9000}],M.ghPuntoDeOrden(lib),{exacto:false})?.id,1);
 eq("dobles espacios / acentos",M.ghMatchOficial([suc(14,"HOP  BELGRANO","Belgrano","995","San Justo","1754")],M.ghPuntoDeOrden(pd("Punto HOP Belgrano","Belgrano","995","San Justo","1754")))?.id,14);
 
