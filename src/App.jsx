@@ -40198,15 +40198,32 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // pueden divergir.
   function sbwResultante(editing, valores, modo, whs) {
     const base = editing?.stock_by_warehouse || {};
+    const lista = whs || [];
+    // La VERDAD del stock es stock_total: el sync de ventas, el recálculo y la
+    // reconstrucción lo actualizan a él y no al mapa por depósito, así que el
+    // mapa queda desfasado. Con un solo depósito (el caso normal) se parte de
+    // stock_total, no del mapa.
+    const totalActual = parseInt(editing?.stock_total) || 0;
+    const unico = lista.length === 1;
     const out = {};
-    for (const w of (whs || [])) {
-      const actual = parseInt(base[w.id]) || 0;
+    let delta = 0;
+    for (const w of lista) {
+      const actual = unico ? totalActual : (parseInt(base[w.id]) || 0);
       const escrito = valores[w.id];
       const n = escrito === "" || escrito == null ? null : (parseInt(escrito) || 0);
-      out[w.id] = modo === "sumar" ? actual + (n || 0) : (n == null ? actual : n);
+      if (modo === "sumar") { out[w.id] = actual + (n || 0); delta += (n || 0); }
+      else out[w.id] = (n == null ? actual : n);
     }
-    // Depósitos que ya no existen en la lista: se conservan tal cual.
-    for (const k of Object.keys(base)) if (!(k in out)) out[k] = parseInt(base[k]) || 0;
+    // Con varios depósitos en modo sumar, el objetivo es stock_total + delta;
+    // cualquier diferencia con el mapa (desfasado) cae en el primero.
+    if (modo === "sumar" && !unico && lista.length) {
+      const objetivo = totalActual + delta;
+      const suma = Object.values(out).reduce((a, b) => a + b, 0);
+      if (objetivo !== suma) out[lista[0].id] += objetivo - suma;
+    }
+    // NUNCA se conservan claves de depósitos que no están en la lista. Era el
+    // bug del 480 → 1226: una clave vieja "main" (del import del catálogo)
+    // seguía viva y se sumaba al total aunque el usuario no la viera.
     return out;
   }
 
@@ -41829,7 +41846,9 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         ) : (
                           <>
                             {warehouses.map(w => {
-                              const actual = parseInt((editingItem.stock_by_warehouse||{})[w.id]) || 0;
+                              const actual = warehouses.length === 1
+                                ? (parseInt(editingItem.stock_total) || 0)
+                                : (parseInt((editingItem.stock_by_warehouse||{})[w.id]) || 0);
                               const escrito = parseInt(stockEditValues[w.id]) || 0;
                               const resultado = stockEditMode==="sumar" ? actual + escrito : escrito;
                               return (

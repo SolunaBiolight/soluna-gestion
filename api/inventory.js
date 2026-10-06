@@ -1230,6 +1230,11 @@ export default async function handler(req, res) {
         updated_at: new Date().toISOString(),
       };
       await itemsCol.doc(id).set(data, { merge: true });
+      // set+merge hace merge PROFUNDO de mapas: una clave vieja de
+      // stock_by_warehouse (ej. "main" del import del catálogo) sobrevivía para
+      // siempre aunque el front mandara el mapa limpio, y después se sumaba al
+      // total. update() reemplaza el campo entero.
+      await itemsCol.doc(id).update({ stock_by_warehouse: finalSbw });
 
       // Log si cambió el stock manualmente
       if (existing && existing.stock_total !== data.stock_total) {
