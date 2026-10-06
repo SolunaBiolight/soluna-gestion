@@ -29254,6 +29254,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [cuitSel, setCuitSel] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showCuitMenu, setShowCuitMenu] = useState(false);
+  const [cuitMenuPos, setCuitMenuPos] = useState({top:0,right:8}); // posición fija del desplegable (va por portal: la topbar tiene overflow y lo recortaba)
   const [showGuia, setShowGuia] = useState(false);
 
   // Wizard CUIT - individual states to avoid re-render focus loss
@@ -30807,7 +30808,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       <AppTopbar T={T} section="Facturador" sectionId="arca" onHome={onHome}
         onHelp={cuits.length>0&&tab==="facturar"?()=>setShowGuia(s=>!s):null}>
         <div className="arca-cuit-menu" style={{position:"relative"}}>
-          <button onClick={(e)=>{e.stopPropagation();setShowCuitMenu(s=>!s);}} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 12px",borderRadius:10,border:"1px solid "+T.border,background:T.card,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",minWidth:200}}>
+          <button onClick={(e)=>{e.stopPropagation();const rc=e.currentTarget.getBoundingClientRect();setCuitMenuPos({top:rc.bottom+6,right:Math.max(8,window.innerWidth-rc.right)});setShowCuitMenu(s=>!s);}} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 12px",borderRadius:10,border:"1px solid "+T.border,background:T.card,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",minWidth:200}}>
             {cuitActivo ? (
               <>
                 <div style={{width:8,height:8,borderRadius:"50%",background:T.green,flexShrink:0}}/>
@@ -30824,8 +30825,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             )}
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round"><path d="M6 9l6 6 6-6"/></svg>
           </button>
-          {showCuitMenu && (
-            <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",right:0,minWidth:280,background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:6,zIndex:200,boxShadow:"0 8px 30px rgba(0,0,0,0.35)"}}>
+          {/* Portal a <body>: los controles de la topbar tienen overflow-x auto y
+              recortaban el desplegable — se abría pero no se veía (5/oct/2026). */}
+          {showCuitMenu && ReactDOM.createPortal(
+            <div className="gh-dropdown arca-cuit-menu" style={{position:"fixed",top:cuitMenuPos.top,right:cuitMenuPos.right,minWidth:280,maxWidth:"calc(100vw - 16px)",background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:6,zIndex:1600,boxShadow:"0 8px 30px rgba(0,0,0,0.35)"}}>
               {cuits.map(c=>(
                 <div key={c.cuit} style={{display:"flex",alignItems:"center",gap:4,padding:"4px",borderRadius:8,background:cuitSel===c.cuit?T.accentSolid+"18":"transparent"}}
                   onMouseEnter={e=>{if(cuitSel!==c.cuit)e.currentTarget.style.background=T.surface;}}
@@ -30853,8 +30856,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   + Conectar nuevo CUIT
                 </button>
               </div>
-            </div>
-          )}
+            </div>, document.body)}
         </div>
       </AppTopbar>
 
