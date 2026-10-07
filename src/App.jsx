@@ -38584,7 +38584,7 @@ function ComisionesPanel({ T, uid }) {
         const snap = await getDoc(doc(db, "users", uid));
         const data = snap.exists() ? snap.data() : {};
         const d = data.margenesComisionesCfg;
-        if (d) setCfg({ impuestos:d.impuestos??"", impuestosML:d.impuestosML??"", mpPct:d.mpPct??"", tnDiasLiberacion:d.tnDiasLiberacion??"", shopify:d.shopify??"", metodos:(d.metodos && typeof d.metodos==="object" && !Array.isArray(d.metodos)) ? d.metodos : {} });
+        if (d) setCfg({ impuestos:d.impuestos??"", impuestosML:d.impuestosML??"", mlRetencionesReales:!!d.mlRetencionesReales, mpPct:d.mpPct??"", tnDiasLiberacion:d.tnDiasLiberacion??"", shopify:d.shopify??"", metodos:(d.metodos && typeof d.metodos==="object" && !Array.isArray(d.metodos)) ? d.metodos : {} });
         // Solo mostramos campos de plataformas que la cuenta tiene conectadas
         // (o donde ya hay un valor cargado, para no esconder config existente).
         const stores = Array.isArray(data.stores) ? data.stores : [];
@@ -38700,6 +38700,18 @@ function ComisionesPanel({ T, uid }) {
           </div>
           <input type="number" step="0.1" min="0" value={cfg.impuestosML??""} onChange={e=>setCfg(c=>({...c,impuestosML:e.target.value}))} placeholder={String(cfg.impuestos||0)} style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
           <span style={{fontSize:13,color:T.textSm}}>%</span>
+        </div>
+        )}
+        {plats.ml && (
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
+          <div style={{flex:1,minWidth:220}}>
+            <div style={{fontSize:13,fontWeight:600,color:T.text}}>Descontar las percepciones y retenciones reales de Mercado Libre</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.5}}>Growith lee de cada cobro de ML lo que te retuvieron de IIBB, IVA y Ganancias y lo descuenta del profit del canal. Si lo activás, bajá el "Impuestos de Mercado Libre" a lo que NO te retienen (si no, se cuenta dos veces). Si sos Responsable Inscripto consultá con tu contador: esas percepciones suelen recuperarse después.</div>
+          </div>
+          <label onClick={()=>setCfg(c=>({...c,mlRetencionesReales:!c.mlRetencionesReales}))} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:12,color:cfg.mlRetencionesReales?T.text:T.textMd,fontWeight:cfg.mlRetencionesReales?600:400}}>
+            <DSToggle T={T} active={!!cfg.mlRetencionesReales} onToggle={()=>{}}/>
+            <span>{cfg.mlRetencionesReales?"Se descuentan":"No se descuentan"}</span>
+          </label>
         </div>
         )}
       </div>
@@ -42856,6 +42868,10 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   // Montos chicos (comisión de una venta) sin abreviar a K: para auditar.
   const fmtExacto = v => (v==null||isNaN(Number(v))) ? "—" : (usdOn?"US$":"$")+Number(cv(v)).toLocaleString("es-AR",{maximumFractionDigits:usdOn?2:0});
   const mpR = q.mpResumen;
+  // Percepciones/retenciones de Mercado Libre bajo "Impuestos"
+  const mlRet = rendData?.meta?.mlRetenciones;
+  const impSub = mlRet && mlRet.total>0 ? `ML retuvo ${fmtM(mlRet.total)} (${mlRet.on?"descontado":"no descontado"})` : null;
+  const impSubTitle = mlRet && mlRet.total>0 ? `Percepciones y retenciones impositivas (IIBB, IVA, Ganancias) que Mercado Libre / Mercado Pago le descontaron a ${mlRet.conOrden} de ${mlRet.ordenes} ventas de ML del período, leídas de cada cobro. ${mlRet.on?"Están descontadas del profit del canal ML.":"No están descontadas: activalo en Comisiones e impuestos si tu % de impuestos de ML no las contempla."}` : "";
   const pctTxt = n => String(n).replace(".",",");
   const mpSub = !mpR ? null : mpR.conReal>0
     ? `MP: ${mpR.conReal}/${mpR.total} con cargo real${mpR.pctReal!=null?` · ${pctTxt(mpR.pctReal)}% prom.`:""}${mpR.conInfo>0?` · ${mpR.finN} en cuotas a tu cargo`:""}`
@@ -42885,6 +42901,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       const porQue = (d.sinRef||0)>0 ? `Shopify no devolvió el id del pago de ${d.sinRef} de ellas` : est ? `al consultarlas en MP: ${est}` : "se siguen leyendo en cada actualización";
       qItems.push({k:"comisiones", msg:`Mercado Pago: ${r.conReal} de ${r.total} ventas ya tienen su cargo real. Las ${r.sinReal} restantes usan ${String(r.pctFallback).replace(".",",")}% ${r.fallbackEstimado?"estimado":"(el % que cargaste)"} mientras tanto (${porQue}). Es una aproximación en pocas ventas, no un error: en Órdenes cada venta dice si su cargo es real`, cta:r.fallbackEstimado?"Ver %":null});
     }
+    if (mlRet && mlRet.total>0 && !mlRet.on) qItems.push({k:"comisiones", msg:`Mercado Libre te retuvo ${fmtM(mlRet.total)} en percepciones y retenciones este período y no están descontadas del profit. Si tu "Impuestos de Mercado Libre" no las contempla, activá "Descontar las percepciones y retenciones reales" en Comisiones e impuestos`, cta:"Activar"});
     if (q.mpSinConfig && !mpParcial) qItems.push({k:"comisiones", msg:`Ventas con Mercado Pago sin cargo real informado${q.tnFees?.pendientes?" (se están leyendo de a 60 por cálculo — recargá en un rato)":""}: se estima 7,61% (dinero al instante + IVA). Cargá tu % real en Comisiones e impuestos → Comisión de Mercado Pago`, cta:"Configurar"});
     if (rendData?.meta?.metaFallo) qItems.push({k:null, msg:`Meta Ads está conectado pero el gasto no está entrando: la pauta figura en $0 y la ganancia de este período está inflada${rendData?.meta?.metaPermisos?" — Meta bloqueó el acceso a la API: revisá en developers.facebook.com que la app esté en modo Activo y que ads_read tenga Acceso avanzado":rendData?.meta?.metaTokenExpired?" — el token venció, reconectá Meta desde Configuración → Integraciones":""}`});
     if (rendData?.meta?.googleAdsConectado && rendData?.meta?.googleAdsFuente!=="auto") qItems.push({k:null, msg:`Google Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.googleAdsDiag?` — ${rendData.meta.googleAdsDiag}`:""}`});
@@ -43720,7 +43737,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             {[
               {label:"Costos de Productos",  val:tot.costoProductos},
               {label:"Costos de Envío",      val:tot.costoEnvio},
-              {label:"Impuestos",            val:tot.impuestos},
+              {label:"Impuestos",            val:tot.impuestos, sub: impSub, subTitle: impSubTitle},
               {label:"Comisiones Plataforma",val:tot.comisionPlataforma},
               {label:"Comisiones de Pago",   val:tot.comisionPago, sub: mpSub, subTitle: mpSubTitle},
               {label:"Costos Adicionales",   val:tot.costosAdicionales},

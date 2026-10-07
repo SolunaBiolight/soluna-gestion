@@ -551,6 +551,8 @@ export default async function handler(req, res) {
         "fx:1",
         // 30/9/2026: detalle de Mercado Pago por venta (cuotas, financiación, origen del cargo)
         "mpi:1",
+        // 7/oct/2026: percepciones y retenciones de Mercado Libre por pago
+        "mlret:1",
         // Demo: cada cambio de las ventas ficticias sube demo.version → caché inválida
         ...(demoMode ? [`demo:${userData.demo?.version || 0}`] : []),
       ].join("|");
@@ -745,18 +747,28 @@ export default async function handler(req, res) {
         }
         return { f: f == null ? null : +f.toFixed(2), c: parseInt(p.installments)||1, fin: +fin.toFixed(2) };
       }
-      async function fetchMPCommissionBase(sinceYmd, untilYmd) {
+      // Percepciones / retenciones impositivas (IIBB, IVA, Ganancias) que MP le
+      // descuenta al VENDEDOR en un cobro: charges_details de tipo "tax" cobrados
+      // al collector, netos de lo devuelto. No se usa taxes_amount (impuestos del
+      // comprador). Es lo que el cliente ve como "percepciones" en la liquidación.
+      function mlTaxDePago(p) {
+        const chs = (p.charges_details||[]).filter(c => String(c?.type||"").toLowerCase()==="tax" && String(c?.accounts?.from||"collector").toLowerCase()==="collector");
+        return +chs.reduce((a,c)=>a+Math.max(0,(parseFloat(c?.amounts?.original)||0)-(parseFloat(c?.amounts?.refunded)||0)),0).toFixed(2);
+      }
+      async function fetchMPCommissionBase(sinceYmd, untilYmd, acc = mlMpAcc) {
         try {
           if (demoMode) return { fee:0, rev:0, feeByRef:{}, feeByPayId:{}, appByPayId:{} }; // demo: la comisión viene en cada venta (saleFee)
-          if (mlMpAcc === "__none__") return { fee:0, rev:0, feeByRef:{} }; // ninguna cuenta lee MP
-          const tok = await getValidMLToken(db, uid, mlMpAcc); // cuenta de MP (Shopify)
+          if (acc === "__none__") return { fee:0, rev:0, feeByRef:{} }; // ninguna cuenta lee MP
+          const tok = await getValidMLToken(db, uid, acc); // cuenta de MP (Shopify) o de ventas ML (retenciones)
           if (!tok?.accessToken) return { fee:0, rev:0 };
-          mpTokenOk = true;
+          if (acc === mlMpAcc) mpTokenOk = true;
           const begin = `${sinceYmd}T00:00:00.000-03:00`, end = `${untilYmd}T23:59:59.999-03:00`;
           let fee = 0, rev = 0, offset = 0; const feeByRef = {}; const feeByPayId = {}; const appByPayId = {};
           // Detalle por pago para auditar: cuotas y costo de financiación que paga
           // el VENDEDOR (cuotas sin interés). c = cuotas, fin = financiación.
           const infoByPayId = {};
+          // Percepciones/retenciones por ORDEN de Mercado Libre (p.order.type === "mercadolibre").
+          const retByMlOrder = {}; let retencionesML = 0;
           // Cashflow real de MP: profit ≠ caja. money_release_date dice cuándo MP
           // libera cada pago (0-18 días). Se acumula el NETO recibido (post fees)
           // liberado vs retenido, sobre TODOS los pagos aprobados de la cuenta en
@@ -788,6 +800,10 @@ export default async function handler(req, res) {
                 // vía MP: es comisión de plataforma, no de pago.
                 const fApp = (p.fee_details||[]).filter(fd=>fd.type==="application_fee" && fd.fee_payer!=="payer").reduce((s,fd)=>s+(parseFloat(fd.amount)||0),0);
                 if (fApp>0) appByPayId[String(p.id)] = fApp;
+                if (String(p.order?.type||"").toLowerCase()==="mercadolibre" && p.order?.id != null) {
+                  const taxV = mlTaxDePago(p);
+                  if (taxV > 0) { const k = String(p.order.id); retByMlOrder[k] = +((retByMlOrder[k]||0) + taxV).toFixed(2); retencionesML += taxV; }
+                }
               }
               if (esRegular && !/^cashback|^INSTORE/i.test(ref)) {
                 const neto = parseFloat(p.transaction_details?.net_received_amount);
@@ -812,7 +828,7 @@ export default async function handler(req, res) {
             offset += results.length;
             if (results.length < 100 || offset >= (j.paging?.total||0)) break;
           }
-          return { fee, rev, feeByRef, feeByPayId, appByPayId, infoByPayId, cashflow:{ liberado:+liberado.toFixed(2), retenido:+retenido.toFixed(2) }, financingFee:+financingFee.toFixed(2), retenciones:+retenciones.toFixed(2) };
+          return { fee, rev, feeByRef, feeByPayId, appByPayId, infoByPayId, retByMlOrder, retencionesML:+retencionesML.toFixed(2), cashflow:{ liberado:+liberado.toFixed(2), retenido:+retenido.toFixed(2) }, financingFee:+financingFee.toFixed(2), retenciones:+retenciones.toFixed(2) };
         } catch(_) { return { fee:0, rev:0, feeByRef:{}, feeByPayId:{} }; }
       }
       // Solo exige token: fetchMetaAll descubre las cuentas publicitarias vía
@@ -991,6 +1007,21 @@ export default async function handler(req, res) {
         ]),
         new Promise((_, rej) => setTimeout(() => rej(new Error("Tiempo agotado trayendo métricas (55s) — la tienda, Meta o Mercado Libre están respondiendo muy lento. Reintentá en unos segundos.")), 55000)),
       ]);
+      // Percepciones/retenciones de Mercado Libre: salen de los pagos de la cuenta
+      // de VENTAS de ML. Si es la misma cuenta que lee MP ya vienen en mpComm; si
+      // no, una lectura aparte con el token de ventas. Nunca rompe el cálculo.
+      async function fetchMlRetenciones(sinceYmd, untilYmd, mpComm) {
+        const vacio = { retByMlOrder:{}, retencionesML:0 };
+        try {
+          if (demoMode || !hasML) return vacio;
+          const vAcc = mlVentasAcc || null;
+          if (vAcc === "__none__") return vacio;
+          if (!vAcc || vAcc === String(mlMpAcc||"")) return { retByMlOrder: mpComm?.retByMlOrder||{}, retencionesML: mpComm?.retencionesML||0 };
+          const r = await fetchMPCommissionBase(sinceYmd, untilYmd, vAcc);
+          return { retByMlOrder: r?.retByMlOrder||{}, retencionesML: r?.retencionesML||0 };
+        } catch (e) { console.warn("[ml-retenciones]", e?.message||e); return vacio; }
+      }
+      const [mlRetCurr, mlRetPrev] = await Promise.all([fetchMlRetenciones(since, until, mpCommCurr), fetchMlRetenciones(prevSince, prevUntil, mpCommPrev)]);
       // commission=0: las filas se re-derivan después con el motor real
       // (alinearRowsExacto) — el % legacy quedó eliminado.
       let rows = buildRendRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, 0);
@@ -1102,6 +1133,10 @@ export default async function handler(req, res) {
         return res;
       };
       const comCfg    = userData.margenesComisionesCfg || {};
+      // Descontar del canal ML las percepciones/retenciones REALES de cada cobro
+      // (opt-in: si el % de impuestos de ML ya las contempla, activarlo las duplicaría).
+      const mlRetOn   = comCfg.mlRetencionesReales === true || comCfg.mlRetencionesReales === "1";
+      const mlRetDeOrden = o => { const k = String(o?.id||""); return (mlRetCurr.retByMlOrder[k] ?? mlRetPrev.retByMlOrder[k] ?? 0) || 0; };
       const metodos   = comCfg.metodos && typeof comCfg.metodos==="object" ? comCfg.metodos : {};
       const envioProm = parseFloat(userData.margenesEnvioProm) || 0;
       // Config de envío v2: la tienda puede usar el costo REAL de cada orden
@@ -1246,7 +1281,7 @@ export default async function handler(req, res) {
       }
       const feeAd     = 0; // el fee adicional ahora es POR CUENTA (horneado en fetchMetaAll)
 
-      function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio, mlAdsAuto, gAdsAuto, ttAuto) {
+      function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio, mlAdsAuto, gAdsAuto, ttAuto, retMl = 0) {
         // COGS = costo por producto/variante, ORDEN por ORDEN (cada una toma el
         // costo vigente a su fecha; con costos sin historial = método viejo exacto).
         const _cg = cogsPorCanal(raw);
@@ -1260,7 +1295,7 @@ export default async function handler(req, res) {
         // Impuestos: % de tienda sobre (tienda + externa) y % propio de ML sobre
         // ML. Los métodos con impuesto propio sustituyen el % de tienda en SUS ventas.
         const mlRev = Object.values(raw?.ml_data?.daily_revenue||{}).reduce((a,b)=>a+b,0);
-        let impuestos = Math.max(0, revenue - mlRev) * pctImp + mlRev * pctImpML;
+        let impuestos = Math.max(0, revenue - mlRev) * pctImp + mlRev * pctImpML + (mlRetOn ? (parseFloat(retMl)||0) : 0);
         for (const o of (raw?.orders_detail||[])) {
           const rate = impFor(o.pay);
           if (rate !== pctImp) impuestos += (parseFloat(o.revenue)||0) * (rate - pctImp);
@@ -1848,8 +1883,8 @@ export default async function handler(req, res) {
 
       // Gasto real de Mercado Ads y Google Ads (API): ya se trajo en el
       // Promise.all principal de arriba (mlAdsAutoCurr/Prev, gAdsAutoCurr/Prev).
-      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef, feeByPayId),     mlEnvioTot(curr.raw), mlAdsAutoCurr, gAdsAutoCurr, ttAutoCurr);
-      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev, feeByPayIdPrev), mlEnvioTot(prev.raw), mlAdsAutoPrev, gAdsAutoPrev, ttAutoPrev);
+      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef, feeByPayId),     mlEnvioTot(curr.raw), mlAdsAutoCurr, gAdsAutoCurr, ttAutoCurr, mlRetCurr.retencionesML);
+      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev, feeByPayIdPrev), mlEnvioTot(prev.raw), mlAdsAutoPrev, gAdsAutoPrev, ttAutoPrev, mlRetPrev.retencionesML);
 
       // ── Comparativa estilo Shopify: "Hoy" vs AYER HASTA LA MISMA HORA ──
       // Con rango = hoy, comparar el día parcial contra ayer COMPLETO infla los
@@ -1980,7 +2015,7 @@ export default async function handler(req, res) {
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
           if (o.refunded) continue; // devoluciones/contracargos ML: fuera de los totales (processML ya las excluye)
           const rev=parseFloat(o.revenue)||0;
-          add(o.fecha, "ml", cogsDe(o) + rev*pctImpML + (parseFloat(o.saleFee)||0) + mlEnvioDe(o)+fulfillFee, rev);
+          add(o.fecha, "ml", cogsDe(o) + rev*pctImpML + (mlRetOn ? mlRetDeOrden(o) : 0) + (parseFloat(o.saleFee)||0) + mlEnvioDe(o)+fulfillFee, rev);
         }
         return { porDia, chContrib };
       }
@@ -2016,7 +2051,7 @@ export default async function handler(req, res) {
       // ── Desglose por canal (Tienda vs Mercado Libre) para los tableros ──
       // adSpend: Tienda = Meta Ads (toda la pauta de Meta empuja la tienda);
       // ML = publicidad de Mercado Ads (pendiente de integrar; por ahora 0).
-      function canal(raw, isMl, mpComm, adSpend, mlEnv, mpRev) {
+      function canal(raw, isMl, mpComm, adSpend, mlEnv, mpRev, retMl = 0) {
         const dr = isMl ? (raw?.ml_data?.daily_revenue||{}) : (raw?.daily_revenue||{});
         const dord = isMl ? (raw?.ml_data?.daily_orders||{}) : (raw?.daily_orders||{});
         const rev = Object.values(dr).reduce((a,b)=>a+b,0);
@@ -2024,7 +2059,7 @@ export default async function handler(req, res) {
         const cogs = isMl ? cogsPorCanal(raw).ml : cogsPorCanal(raw).tienda;
         // Impuestos: tienda con su % (+ ajuste por método), ML con el suyo.
         let impuestos;
-        if (isMl) { impuestos = rev*pctImpML; }
+        if (isMl) { impuestos = rev*pctImpML + (mlRetOn ? (parseFloat(retMl)||0) : 0); }
         else {
           impuestos = rev*pctImp;
           for (const o of (raw?.orders_detail||[])) {
@@ -2076,9 +2111,9 @@ export default async function handler(req, res) {
             } : {}) };
         })(),
         tienda: canal(curr.raw, false, shopifyPayComm(curr.raw, feeByRef, feeByPayId), totals.adSpendMeta + (totals.adSpendGoogle||0) + (totals.adSpendTiktok||0), 0, mpCommCurr.rev),
-        ml:     canal(curr.raw, true,  0, totals.adSpendMl, mlEnvioTot(curr.raw), 0),
+        ml:     canal(curr.raw, true,  0, totals.adSpendMl, mlEnvioTot(curr.raw), 0, mlRetCurr.retencionesML),
         tiendaPrev: canal(prev.raw, false, shopifyPayComm(prev.raw, feeByRefPrev, feeByPayIdPrev), prevTotals.adSpendMeta + (prevTotals.adSpendGoogle||0) + (prevTotals.adSpendTiktok||0), 0, mpCommPrev.rev),
-        mlPrev:     canal(prev.raw, true,  0, prevTotals.adSpendMl, mlEnvioTot(prev.raw), 0),
+        mlPrev:     canal(prev.raw, true,  0, prevTotals.adSpendMl, mlEnvioTot(prev.raw), 0, mlRetPrev.retencionesML),
         platform: curr.raw?.platform || (curr.raw?.products?.[0]?.platform) || "tiendanube",
         hasMl: !!(curr.raw?.ml_data),
       };
@@ -2140,10 +2175,11 @@ export default async function handler(req, res) {
         }
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
           if (o.refunded) continue; // devoluciones/contracargos ML: no van en la tabla (los totales ya las excluyen)
-          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o), imp=rev*pctImpML, comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o)+fulfillFee;
+          const retO=mlRetDeOrden(o);
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o), imp=rev*pctImpML+(mlRetOn?retO:0), comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o)+fulfillFee;
           const profit=rev-cogs-imp-comis-env;
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]?.lt==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0,
-            pay:"Mercado Pago", cust:o.cust||"", items:itemsDe(o.items), feeReal: true, mlLink:`https://www.mercadolibre.com.ar/ventas/${o.id}/detalle` });
+            pay:"Mercado Pago", cust:o.cust||"", items:itemsDe(o.items), feeReal: true, retMl:+retO.toFixed(2), retMlOn: mlRetOn, mlLink:`https://www.mercadolibre.com.ar/ventas/${o.id}/detalle` });
         }
         // Orden por INSTANTE real, no por texto: cada canal trae la fecha en un
         // formato distinto (TN hora AR sin offset, Shopify -03:00, ML -04:00) y
@@ -2205,7 +2241,7 @@ export default async function handler(req, res) {
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
           if (o.refunded) continue; // devoluciones/contracargos ML: fuera del desglose por producto
           const rev = parseFloat(o.revenue)||0;
-          repartir(o, o.items, rev*pctImpML, parseFloat(o.saleFee)||0, mlEnvioDe(o)+fulfillFee, "ml");
+          repartir(o, o.items, rev*pctImpML + (mlRetOn ? mlRetDeOrden(o) : 0), parseFloat(o.saleFee)||0, mlEnvioDe(o)+fulfillFee, "ml");
         }
         return Object.values(agg).map(a=>{
           const profit = a.revenue - a.cogs - a.impuestos - a.comisiones - a.envio;
@@ -2352,6 +2388,9 @@ export default async function handler(req, res) {
       // cliente (P&L mensual) descarten resultados viejos.
       const responseBody = { engineV: 6, fp, rows, prevRows, totals, prevTotals, prevTotalsHora, prevHasta, byDow, byChannel, byChannelDaily, sales, byProduct, byProductAdsModo: "prorrateo_revenue_diario", clientes, facturacionBreakdown, adSpendBreakdown,
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
+        // Percepciones/retenciones de ML del período: total leído de los pagos, si se
+        // descuentan (opt-in) y cuántas órdenes del período tienen el dato.
+        mlRetenciones: { total: +(mlRetCurr.retencionesML||0).toFixed(2), on: mlRetOn, conOrden: (curr.raw?.ml_data?.ml_orders_detail||[]).filter(o=>mlRetDeOrden(o)>0).length, ordenes: (curr.raw?.ml_data?.ml_orders_detail||[]).length },
         dolarSerie, dolarActual, quality,
         since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, metaAccountsCount: metaAccounts.length,
