@@ -23639,6 +23639,15 @@ function matDetectTipo(url) {
   return "link";
 }
 // GhI — set de íconos de línea (heredan currentColor) para reemplazar emojis en UI
+// Plan pago cargado a mano (USDT / transferencia / activación por admin) sin
+// suscripción en Stripe. Las pruebas otorgadas (isTrial) y las cuentas
+// solo-miembro no cuentan. Mismo criterio que manualVigente en api/stripe.js.
+function ghPagoManual(d){
+  if(!d||!d.plan||d.plan==="free") return false;
+  if(d.isTrial===true||d.soloMiembro===true) return false;
+  if(d.stripeSubscriptionId) return false;
+  return true;
+}
 function GhI({n, size=13, style}) {
   const p={width:size,height:size,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2,strokeLinecap:"round",strokeLinejoin:"round",style:{flexShrink:0,display:"inline-block",verticalAlign:"-2px",...style}};
   switch(n){
@@ -45097,6 +45106,11 @@ export default function App() {
   const [userPlan,setUserPlan]=useState("free"); // free | plus | full
   const [planExpiry,setPlanExpiry]=useState(null); // Date or null
   const [trialEnd,setTrialEnd]=useState(null);    // Date or null — fin del período de prueba
+  // Plan pago activado a mano (USDT / transferencia / admin), sin suscripción en
+  // Stripe: se le muestra el cartel para que cargue la tarjeta (la suscripción
+  // arranca al vencer el plan actual, no se cobra dos veces).
+  const [pagoManual,setPagoManual]=useState(false);
+  const [tarjetaDismissed,setTarjetaDismissed]=useState(false);
   // true recién cuando el plan/trial reales llegaron de Firestore (o del workspace
   // para miembros). Sin esto, al recargar la app arranca con plan "free" y durante
   // ~1s aparecía el paywall/UpgradeWall aunque el usuario tenga plan pago vigente.
@@ -45306,6 +45320,7 @@ export default function App() {
               setUserPlan(d.plan||"free");
               setPlanExpiry(d.planExpiry?.toDate?.()||null);
               setTrialEnd(d.trialEnd instanceof Date ? d.trialEnd : d.trialEnd?.toDate?.()??null);
+              setPagoManual(ghPagoManual(d));
             }
             setIsAdmin(["WJH3ArqDPQcNLha9lOinvkVi9uJ2"].includes(u.uid) || d?.isAdmin===true);
             // Onboarding: localStorage se pierde en incógnito/otro dispositivo — si
@@ -45389,6 +45404,7 @@ export default function App() {
       // Sincronizar plan y trial en tiempo real (cubre race condition en primer login)
       setUserPlan(d.plan||"free");
       setPlanExpiry(d.planExpiry?.toDate?.()||null);
+      setPagoManual(ghPagoManual(d));
       setPlanLoaded(true);
       // A una cuenta solo-miembro no se le re-crea la prueba: no tiene tienda
       // propia y el trial solo servía para terminar mostrándole el paywall.
@@ -45858,6 +45874,12 @@ export default function App() {
   const _expiryDismissKey = `growith_expiry_dismiss_${user?.uid}_${(planExpiring?planExpiry:trialEnd)?.toDateString?.()}`;
   const _expiryStoredDismiss = !expiryDismissed && (() => { try { return localStorage.getItem(_expiryDismissKey)==="1"; } catch(e) { return false; } })();
   const _showExpiryBanner = planReady && showExpiryWarning && !expiryDismissed && !_expiryStoredDismiss;
+  // Cartel "pasate a tarjeta" para planes pagos a mano (USDT/transferencia) sin
+  // Stripe. No se muestra junto al de vencimiento (ese ya manda a Suscripción),
+  // ni a admins, ni en "Ver como cliente". Cerrarlo lo oculta 7 días.
+  const _tarjetaDismissKey = `growith_tarjeta_dismiss_${user?.uid}`;
+  const _tarjetaStoredDismiss = !tarjetaDismissed && (() => { try { const t=+localStorage.getItem(_tarjetaDismissKey)||0; return Date.now()-t < 7*86400000; } catch(e) { return false; } })();
+  const _showTarjetaBanner = planReady && pagoManual && !isInTrial && !planVencido && userPlan !== "free" && !isAdmin && !impersonando && !_showExpiryBanner && !tarjetaDismissed && !_tarjetaStoredDismiss && page !== "planes";
 
   // ─── Render page content ───
   // Plan gate: devuelve <UpgradeWall> si el plan no alcanza, o null si puede pasar
@@ -45958,6 +45980,21 @@ export default function App() {
           <MobileTopHeader/>
           {/* Mini topbar global con Cmd+K hint */}
           {/* (barra superior con búsqueda/campanita retirada — ⌘K sigue abriendo la búsqueda) */}
+          {_showTarjetaBanner&&(
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"10px 24px",backgroundColor:T.accent+"14",borderBottom:`1px solid ${T.accent}40`,fontFamily:"'Inter',system-ui,sans-serif",flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                <span style={{color:T.accent}}><GhI n="star" size={17}/></span>
+                <div style={{minWidth:0}}>
+                  <span style={{fontSize:13,fontWeight:700,color:T.text}}>Pasá tu plan a tarjeta y olvidate de renovar</span>
+                  <span style={{fontSize:12,color:T.textMd,marginLeft:8}}>Tu plan está pago hasta el {planExpiry?planExpiry.toLocaleDateString("es-AR",{day:"numeric",month:"long"}):"vencimiento"}. Cargá la tarjeta ahora: no se te cobra nada hasta ese día y de ahí en más se renueva sola.</span>
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                <button onClick={()=>setPage("planes")} style={{padding:"5px 14px",background:T.accentSolid,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>Cargar tarjeta</button>
+                <button onClick={()=>{try{localStorage.setItem(_tarjetaDismissKey,String(Date.now()));}catch(e){}setTarjetaDismissed(true);}} title="Recordar en 7 días" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:18,lineHeight:1,padding:"2px 4px"}}>✕</button>
+              </div>
+            </div>
+          )}
           {_showExpiryBanner&&(
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"10px 24px",background:expiryDays<=1?T.red+"15":""+T.orange+" 15",backgroundImage:"none",backgroundColor:expiryDays<=1?T.red+"15":"#f9741615",borderBottom:`1px solid ${expiryDays<=1?T.red+"40":"#f9741640"}`,fontFamily:"'Inter',system-ui,sans-serif"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>

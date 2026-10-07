@@ -228,6 +228,7 @@ growith_stock_autosync_{uid} → timestamp del último autosync de stock
 growith_conceptos_{uid}    → JSON conceptos frecuentes del facturador ARCA
 growith_colab_banner_{token} / growith_pwa_banner_{token} → "1" banners cerrados en portal colaborador
 growith_expiry_dismiss_{uid}_{fecha} → "1" banner de vencimiento de plan/trial cerrado ese día
+growith_tarjeta_dismiss_{uid} → timestamp (ms) en que se cerró el cartel "Pasá tu plan a tarjeta" (plan pago a mano sin Stripe, `ghPagoManual`); se vuelve a mostrar a los 7 días
 growith_home_start_{uid}   → "1" checklist "Empecemos" del Home cerrado manualmente
 growith_calpagos_cat_{uid}  → SWR catálogo (producto/variante/SKU) para el selector de pedidos de mercadería del Calendario de Pagos
 growith_calpagos_alert_{uid} → número de pagos vencidos/hoy/mañana (badge del sidebar; evento "gh-calpagos-alert"). Avisos por mail (día anterior + mismo día, y resumen los lunes) a dueño + notifEmails + miembros con la sección: cron /api/pagos-cal?action=cron_avisos (índice users.pagosCalDias). Comprobantes en users/{uid}/pagos_cal_adj/{pagoId}
