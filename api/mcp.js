@@ -656,7 +656,20 @@ async function checkAccess(db, tok, origin) {
   ]);
   if (!u.exists || !g.exists || g.data().revoked) return null;
   if ((u.data() || {}).deleted === true) return null;
-  return { perfil: t.uid, grantId: t.grantId };
+  // El perfil es QUIEN TOCÓ "Permitir" (grantedBy = r.user.uid en approve).
+  // Los grants viejos pueden tener en `uid` la tienda activa de ese momento;
+  // con ese uid la enumeración de tiendas daba vacío ("no tiene ninguna
+  // tienda") aunque el usuario tuviera varias.
+  const perfil = String(g.data().grantedBy || t.uid);
+  return { perfil, grantId: t.grantId, tokenUid: t.uid };
+}
+
+// Con qué cuenta está autorizado el conector: va en listar_clientes y en los
+// errores, para que "no tiene tiendas" se pueda diagnosticar sin adivinar.
+async function cuentaDe(db, perfil) {
+  const s = await db.collection("users").doc(perfil).get();
+  const d = s.exists ? (s.data() || {}) : {};
+  return { uid: perfil, email: d.email || null, nombre: d.nombre || null };
 }
 
 // ─── Clientes (tiendas) del perfil y sesiones MCP ─────────────────────────
@@ -815,8 +828,8 @@ async function handleRpc(db, ctx, msg) {
       db.collection("mcp_grants").doc(ctx.grantId).update({ lastUsedAt: new Date() }).catch(() => {});
       try {
         if (name === "listar_clientes") {
-          const clientes = await tiendasDePerfil(db, ctx.perfil);
-          return okTool({ cliente_activo: ctx.sesion.clienteUid, clientes: clientes.map(c => ({ ...c, activo: c.cliente_id === ctx.sesion.clienteUid })) });
+          const [clientes, cuenta] = await Promise.all([tiendasDePerfil(db, ctx.perfil), cuentaDe(db, ctx.perfil)]);
+          return okTool({ cuenta_conectada: cuenta, cliente_activo: ctx.sesion.clienteUid, clientes: clientes.map(c => ({ ...c, activo: c.cliente_id === ctx.sesion.clienteUid })) });
         }
         if (name === "seleccionar_cliente") {
           const id = String(args.cliente_id || "").trim();
@@ -849,7 +862,8 @@ async function handleRpc(db, ctx, msg) {
             await guardarSesion(db, ctx, ctx.sesion.id, clienteUid);
             ctx.sesion.clienteUid = clienteUid;
           } else if (clientes.length === 0) {
-            return errTool("Este usuario no tiene ninguna tienda en Growith todavía.");
+            const c = await cuentaDe(db, ctx.perfil);
+            return errTool(`La cuenta de Growith conectada (${c.email || c.uid}) no tiene ninguna tienda. Si el usuario esperaba ver sus tiendas, el conector quedó autorizado con otra cuenta: hay que desconectarlo en la app de IA y volver a conectarlo con el login correcto de Growith.`);
           } else {
             return errTool(`Falta elegir sobre qué cliente responder. Preguntale al usuario y llamá a seleccionar_cliente con el cliente_id. Disponibles: ${clientes.map(c => `${c.nombre} (${c.cliente_id})`).join(", ")}.`);
           }
