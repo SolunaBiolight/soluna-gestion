@@ -36,7 +36,8 @@
 import crypto from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { initAdmin } from "./integrations/_shared.js";
-import { requireUid, verifyAuth } from "./_auth.js";
+import { requireUid, verifyAuth, isFounder } from "./_auth.js";
+import { getValidMLToken } from "./integrations.js";
 import { snapshotMargenes, snapshotEnvios, snapshotStock, snapshotCuentas, estadoConfiguracion } from "./_snapshot.js";
 import { gadsCuentas, gadsReporteCampanas } from "./google-ads.js";
 import { ttReporteCampanas } from "./tiktok-ads.js";
@@ -55,6 +56,8 @@ const CODE_TTL = 300;             // s
 const REQ_TTL = 900;              // s
 const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 const LIMITE_DIARIO = 300;        // llamadas a herramientas por tienda y por día
+const SESSION_TTL = 30 * 86400;   // s — una sesión MCP (un chat) recuerda su cliente activo 30 días
+//   mcp_sessions/{sid}  cliente activo de UNA sesión MCP (un chat de Claude/ChatGPT): {grantId, perfil, clienteUid}
 
 // ─── Utilidades ──────────────────────────────────────────────────────────
 
@@ -429,7 +432,8 @@ const INSTRUCCIONES = `Growith es la app de gestión del e-commerce del usuario 
 - Las herramientas devuelven cifras REALES calculadas por Growith. Citá solo esos números: no estimes ni inventes datos del negocio. Si un dato no está, decilo e indicá en qué sección de Growith verlo (https://www.growithapp.com).
 - Los montos están en pesos argentinos (ARS) salvo que el campo diga USD. "datos_al" indica cuándo se calcularon las cifras: aclaralo si te preguntan por lo más reciente.
 - Respondé en el idioma del usuario (por defecto, español rioplatense con voseo).
-- El acceso es de solo lectura: para pausar campañas, ajustar stock o cualquier cambio, el usuario lo hace desde Growith.`;
+- El acceso es de solo lectura: para pausar campañas, ajustar stock o cualquier cambio, el usuario lo hace desde Growith.
+- La conexión es por USUARIO y cubre todos sus clientes (tiendas). Cada chat tiene UN cliente activo: si el usuario tiene varios y todavía no eligió, llamá a listar_clientes y preguntale cuál (o elegilo vos si lo nombra), y fijalo con seleccionar_cliente. Si tiene uno solo, se usa ese automáticamente. Cuando respondas, aclará de qué cliente son los números.`;
 
 // ─── Rentabilidad de cualquier período y campañas en vivo ────────────────
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -626,7 +630,15 @@ const TOOLS = [
   tool("campanas_publicidad", "Campañas de Meta, Google y TikTok",
     "Campañas de Meta Ads, Google Ads y TikTok Ads conectadas a Growith con métricas del período: estado, presupuesto, gasto, impresiones, clicks, CTR, CPC, conversiones o compras, valor y ROAS según cada plataforma. Cada cuenta indica su moneda. Por defecto, últimos 7 días de todas las plataformas.",
     { type: "object", properties: { plataforma: { type: "string", enum: ["todas", "meta", "google", "tiktok"], description: "Plataforma a consultar (por defecto todas)." }, ...PROPS_PERIODO }, additionalProperties: false }),
+  tool("listar_clientes", "Lista los clientes (tiendas) de Growith a los que este usuario tiene acceso, con sus plataformas conectadas (Tienda Nube, Shopify, Mercado Libre) y cuál está activo en este chat. Llamala primero si no sabés sobre qué cliente responder.",
+    { type: "object", properties: {}, additionalProperties: false }),
+  tool("seleccionar_cliente", "Fija el cliente (tienda) activo para ESTE chat. Todas las demás herramientas (resumen_negocio, rentabilidad, stock, envios, campañas…) pasan a responder sobre ese cliente. Otros chats no se ven afectados.",
+    { type: "object", properties: { cliente_id: { type: "string", description: "El cliente_id que devuelve listar_clientes." } }, required: ["cliente_id"], additionalProperties: false }),
+  tool("obtener_token_ml", "SOLO ADMINISTRADORES de Growith. Devuelve el access token vigente de Mercado Libre de un cliente (si venció, lo renueva primero con su refresh token). El token da acceso a la cuenta de ML del cliente: usalo únicamente para lo que el usuario pidió y no lo repitas en la respuesta salvo que lo pida explícitamente.",
+    { type: "object", properties: { cliente_id: { type: "string", description: "El cliente_id que devuelve listar_clientes." } }, required: ["cliente_id"], additionalProperties: false }),
 ];
+// Herramientas que NO necesitan un cliente activo.
+const TOOLS_SIN_CLIENTE = new Set(["listar_clientes", "seleccionar_cliente", "obtener_token_ml"]);
 
 async function checkAccess(db, tok, origin) {
   const snap = await db.collection("mcp_tokens").doc(sha(tok)).get();
@@ -634,18 +646,85 @@ async function checkAccess(db, tok, origin) {
   const t = snap.data();
   if (Date.now() > t.exp) return null;
   if (String(t.resource || "").toLowerCase() !== `${origin}/mcp`.toLowerCase()) return null; // audiencia (RFC 8707)
-  // La tienda sigue existiendo y quien la conectó sigue siendo dueño.
+  // La conexión es del PERFIL (el login de Growith), no de una tienda: con un
+  // solo "Permitir" quedan conectadas todas las tiendas a las que ese perfil
+  // tiene acceso (como la app de Shopify). AutorizarIAView manda user.uid y el
+  // grant guarda ese mismo uid, así que t.uid ES el perfil.
   const [u, g] = await Promise.all([
     db.collection("users").doc(t.uid).get(),
     db.collection("mcp_grants").doc(t.grantId).get(),
   ]);
   if (!u.exists || !g.exists || g.data().revoked) return null;
-  const d = u.data() || {}, by = g.data().grantedBy;
-  if (d.deleted === true) return null;
-  const owner = d.ownerUid ? String(d.ownerUid) : t.uid;
-  const legacyTeam = Array.isArray(d.teamUids) && d.teamUids.includes(by) && !(d.teamMembers || {})[by];
-  if (by !== owner && !legacyTeam) return null;
-  return { uid: t.uid, grantId: t.grantId };
+  if ((u.data() || {}).deleted === true) return null;
+  return { perfil: t.uid, grantId: t.grantId };
+}
+
+// ─── Clientes (tiendas) del perfil y sesiones MCP ─────────────────────────
+
+const PLATAFORMA_LABEL = { tiendanube: "Tienda Nube", shopify: "Shopify", mercadolibre: "Mercado Libre", meli: "Mercado Libre", mercadopago: "Mercado Pago" };
+function plataformasDe(d) {
+  const out = [];
+  for (const s of (d.stores || [])) { const l = PLATAFORMA_LABEL[s.type]; if (l && !out.includes(l)) out.push(l); }
+  return out;
+}
+function nombreTienda(d, fallback = "Tienda") { return d.nombreTienda || d.nombre || d.email || fallback; }
+
+// Misma enumeración que el `workspace` de tareas.js: el doc propio del perfil
+// (si sigue siendo suyo) + todos los docs donde figura en teamUids.
+async function tiendasDePerfil(db, perfil) {
+  const [mySnap, qs] = await Promise.all([
+    db.collection("users").doc(perfil).get(),
+    db.collection("users").where("teamUids", "array-contains", perfil).get(),
+  ]);
+  const my = mySnap.exists ? (mySnap.data() || {}) : {};
+  const out = [];
+  const selfMovida = !!(my.ownerUid && my.ownerUid !== perfil);
+  if (mySnap.exists && !selfMovida && my.deleted !== true && my.tiendaEliminada !== true) {
+    out.push({ cliente_id: perfil, nombre: nombreTienda(my, "Mi tienda"), rol: "owner", plataformas: plataformasDe(my) });
+  }
+  for (const doc of qs.docs) {
+    if (doc.id === perfil) continue;
+    const d = doc.data() || {};
+    if (d.deleted === true) continue;
+    const m = (d.teamMembers || {})[perfil] || {};
+    const esOwner = d.ownerUid === perfil || m.rol === "owner";
+    out.push({ cliente_id: doc.id, nombre: nombreTienda(d), rol: esOwner ? "owner" : "miembro", plataformas: plataformasDe(d) });
+  }
+  return out;
+}
+
+async function esAdminPerfil(db, perfil) {
+  if (isFounder(perfil)) return true;
+  const s = await db.collection("users").doc(perfil).get();
+  return s.exists && (s.data() || {}).isAdmin === true;
+}
+
+// Sesión = un chat. Claude/ChatGPT mandan el header Mcp-Session-Id que les dimos
+// en `initialize`; el cliente activo vive ahí, así dos chats pueden estar parados
+// en clientes distintos sin pisarse. Un cliente MCP que no mande el header cae a
+// una sesión por conexión (grant), compartida entre sus chats.
+function sidDe(req) {
+  const h = req.headers["mcp-session-id"] || req.headers["Mcp-Session-Id"];
+  const sid = Array.isArray(h) ? h[0] : h;
+  return sid && /^[A-Za-z0-9_-]{8,128}$/.test(String(sid)) ? String(sid) : null;
+}
+async function cargarSesion(db, ctx, sid) {
+  const id = sid || `grant_${ctx.grantId}`;
+  const s = await db.collection("mcp_sessions").doc(id).get();
+  if (!s.exists) return { id, clienteUid: null, nueva: true };
+  const d = s.data() || {};
+  // Una sesión solo vale para la conexión que la creó: un sid robado de otro
+  // grant no da acceso a otro perfil.
+  if (d.grantId !== ctx.grantId || d.perfil !== ctx.perfil) return { id, clienteUid: null, nueva: true };
+  if (d.exp && Date.now() > d.exp) return { id, clienteUid: null, nueva: true };
+  return { id, clienteUid: d.clienteUid || null, nueva: false };
+}
+async function guardarSesion(db, ctx, id, clienteUid) {
+  const now = Date.now();
+  await db.collection("mcp_sessions").doc(id).set({
+    grantId: ctx.grantId, perfil: ctx.perfil, clienteUid: clienteUid || null,
+    exp: now + SESSION_TTL * 1000, expiresAt: new Date(now + SESSION_TTL * 1000), lastUsedAt: new Date(),
+  }, { merge: true });
 }
 
 async function runTool(db, uid, name, args, origin) {
@@ -729,17 +808,60 @@ async function handleRpc(db, ctx, msg) {
     case "tools/list": return ok({ tools: TOOLS });
     case "tools/call": {
       const name = msg.params?.name;
+      const args = msg.params?.arguments || {};
       if (!TOOLS.some(t => t.name === name)) return fail(-32602, `Herramienta desconocida: ${name}`);
-      if (!(await usoDelDia(db, ctx.uid))) {
-        return ok({ isError: true, content: [{ type: "text", text: `Se alcanzó el límite de ${LIMITE_DIARIO} consultas por día a Growith. Mañana se renueva solo.` }] });
-      }
+      const errTool = (text) => ok({ isError: true, content: [{ type: "text", text }] });
+      const okTool = (data) => ok({ content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data });
       db.collection("mcp_grants").doc(ctx.grantId).update({ lastUsedAt: new Date() }).catch(() => {});
       try {
-        const data = await runTool(db, ctx.uid, name, msg.params?.arguments || {}, ctx.origin);
-        return ok({ content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data });
+        if (name === "listar_clientes") {
+          const clientes = await tiendasDePerfil(db, ctx.perfil);
+          return okTool({ cliente_activo: ctx.sesion.clienteUid, clientes: clientes.map(c => ({ ...c, activo: c.cliente_id === ctx.sesion.clienteUid })) });
+        }
+        if (name === "seleccionar_cliente") {
+          const id = String(args.cliente_id || "").trim();
+          const clientes = await tiendasDePerfil(db, ctx.perfil);
+          const c = clientes.find(x => x.cliente_id === id);
+          if (!c) return errTool(`No existe un cliente con id "${id}" entre los de este usuario. Llamá a listar_clientes para ver los disponibles.`);
+          await guardarSesion(db, ctx, ctx.sesion.id, id);
+          ctx.sesion.clienteUid = id;
+          return okTool({ ok: true, cliente_activo: c, mensaje: `Listo: este chat ahora responde sobre ${c.nombre}.` });
+        }
+        if (name === "obtener_token_ml") {
+          if (!(await esAdminPerfil(db, ctx.perfil))) return errTool("Esta herramienta es solo para administradores de Growith.");
+          const id = String(args.cliente_id || "").trim();
+          const clientes = await tiendasDePerfil(db, ctx.perfil);
+          const c = clientes.find(x => x.cliente_id === id);
+          if (!c) return errTool(`No existe un cliente con id "${id}" entre los de este usuario.`);
+          const tk = await getValidMLToken(db, id); // renueva solo si venció
+          if (!tk?.accessToken) return errTool(`${c.nombre} no tiene una cuenta de Mercado Libre conectada en Growith.`);
+          // Queda registrado: un token de ML da acceso a la cuenta del cliente.
+          db.collection("admin_log").add({ adminUid: ctx.perfil, action: "mcp_token_ml", targetUid: id, targetEmail: null, detalle: `Token de ML de ${c.nombre} entregado por MCP (grant ${ctx.grantId})`, data: null, at: FieldValue.serverTimestamp() }).catch(() => {});
+          return okTool({ cliente: { cliente_id: id, nombre: c.nombre }, ml_user_id: tk.userId || null, access_token: tk.accessToken, aviso: "Token con acceso a la cuenta de Mercado Libre del cliente. No lo pegues en respuestas ni lo compartas." });
+        }
+
+        // Las demás herramientas necesitan un cliente activo en este chat.
+        let clienteUid = ctx.sesion.clienteUid;
+        if (!clienteUid) {
+          const clientes = await tiendasDePerfil(db, ctx.perfil);
+          if (clientes.length === 1) {
+            clienteUid = clientes[0].cliente_id;
+            await guardarSesion(db, ctx, ctx.sesion.id, clienteUid);
+            ctx.sesion.clienteUid = clienteUid;
+          } else if (clientes.length === 0) {
+            return errTool("Este usuario no tiene ninguna tienda en Growith todavía.");
+          } else {
+            return errTool(`Falta elegir sobre qué cliente responder. Preguntale al usuario y llamá a seleccionar_cliente con el cliente_id. Disponibles: ${clientes.map(c => `${c.nombre} (${c.cliente_id})`).join(", ")}.`);
+          }
+        }
+        if (!(await usoDelDia(db, clienteUid))) {
+          return errTool(`Se alcanzó el límite de ${LIMITE_DIARIO} consultas por día a Growith para este cliente. Mañana se renueva solo.`);
+        }
+        const data = await runTool(db, clienteUid, name, args, ctx.origin);
+        return okTool(data);
       } catch (e) {
         console.error("[mcp] tool", name, e.message);
-        return ok({ isError: true, content: [{ type: "text", text: `Growith no pudo leer esos datos: ${e.message}` }] });
+        return errTool(`Growith no pudo leer esos datos: ${e.message}`);
       }
     }
     case "resources/list": return ok({ resources: [] });
@@ -765,6 +887,18 @@ async function mcp(req, res, db, origin) {
 
   ctx.origin = origin;
   const body = bodyOf(req);
+  const msgs = Array.isArray(body) ? body : [body];
+  // Sesión (un chat): en `initialize` se crea una nueva y se le devuelve el id en
+  // Mcp-Session-Id; el cliente lo manda en cada request siguiente.
+  const inicializa = msgs.some(m => m && m.method === "initialize");
+  if (inicializa) {
+    const sid = rnd(24);
+    await guardarSesion(db, ctx, sid, null);
+    res.setHeader("Mcp-Session-Id", sid);
+    ctx.sesion = { id: sid, clienteUid: null, nueva: true };
+  } else {
+    ctx.sesion = await cargarSesion(db, ctx, sidDe(req));
+  }
   if (Array.isArray(body)) {
     const out = (await Promise.all(body.map(x => handleRpc(db, ctx, x)))).filter(Boolean);
     return out.length ? res.status(200).json(out) : res.status(202).end();
@@ -772,6 +906,9 @@ async function mcp(req, res, db, origin) {
   const out = await handleRpc(db, ctx, body);
   return out ? res.status(200).json(out) : res.status(202).end();
 }
+
+// Para tests locales (no se usa en producción).
+export const __test = { handleRpc, tiendasDePerfil, cargarSesion, guardarSesion, checkAccess, TOOLS, TOOLS_SIN_CLIENTE };
 
 // ─── Handler ─────────────────────────────────────────────────────────────
 

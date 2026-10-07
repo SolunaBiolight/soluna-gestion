@@ -3136,7 +3136,8 @@ function TtPublicador({T, user, accounts, account, setAcc, sym, onVerAnalisis}) 
 
 // ── Conector de IA (Claude / ChatGPT / Gemini): pantalla de permiso (api/mcp.js) ──
 // Llega desde /oauth/authorize (?ia_auth=<id>). Muestra qué va a poder leer la app de
-// IA de la tienda activa y, al autorizar, vuelve a esa app con el código (OAuth).
+// IA (la CUENTA entera: todas las tiendas del login, el cliente activo se elige por
+// chat desde la IA) y, al autorizar, vuelve a esa app con el código (OAuth).
 // Logo de Recurrentes (app de suscripciones, integración en camino): el mismo
 // RecLogo de su app — círculo verde con la flecha ↻. El círculo sólido de abajo
 // queda de respaldo si el degradé no se dibuja.
@@ -3200,13 +3201,13 @@ function AutorizarIAView({T, user, rid, onSalir}) {
         )}
         {info&&!err&&(
           <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
-            <div style={{fontSize:DS.font.xl,fontWeight:DS.w.black,color:T.text,textAlign:"center",lineHeight:1.35}}>{app} quiere leer los datos de <span style={{color:T.accent}}>{info.tienda||"tu tienda"}</span></div>
+            <div style={{fontSize:DS.font.xl,fontWeight:DS.w.black,color:T.text,textAlign:"center",lineHeight:1.35}}>{app} quiere leer los datos de <span style={{color:T.accent}}>todas tus tiendas</span></div>
             <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.55}}>Vas a poder preguntarle a {app} por tu negocio. Va a poder <strong style={{color:T.text}}>ver</strong>:</div>
             <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
               {PUEDE.map(t=><div key={t} style={{display:"flex",gap:DS.sp.sm,fontSize:DS.font.base,color:T.text}}><span style={{color:T.green,fontWeight:DS.w.bold}}>✓</span>{t}</div>)}
             </div>
             <div style={{fontSize:DS.font.md,color:T.textSm,lineHeight:1.55,padding:"10px 12px",borderRadius:DS.r.lg,background:T.surface,border:`1px solid ${T.borderL}`}}>
-              Es <strong style={{color:T.text}}>solo lectura</strong>: no puede cambiar nada, publicar, pausar campañas ni ver contraseñas. Se conecta la tienda en la que estás parado; lo desconectás cuando quieras desde Configuración → Integraciones.
+              Es <strong style={{color:T.text}}>solo lectura</strong>: no puede cambiar nada, publicar, pausar campañas ni ver contraseñas. Se conecta tu cuenta entera: desde {app} vas a poder elegir sobre cuál de tus tiendas preguntar en cada chat. Lo desconectás cuando quieras desde Configuración → Integraciones.
             </div>
             <div style={{display:"flex",gap:DS.sp.sm,justifyContent:"flex-end",flexWrap:"wrap"}}>
               <Btn T={T} variant="secondary" onClick={()=>responder(false)} disabled={busy}>Cancelar</Btn>
