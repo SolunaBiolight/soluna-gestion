@@ -630,13 +630,25 @@ const TOOLS = [
   tool("campanas_publicidad", "Campañas de Meta, Google y TikTok",
     "Campañas de Meta Ads, Google Ads y TikTok Ads conectadas a Growith con métricas del período: estado, presupuesto, gasto, impresiones, clicks, CTR, CPC, conversiones o compras, valor y ROAS según cada plataforma. Cada cuenta indica su moneda. Por defecto, últimos 7 días de todas las plataformas.",
     { type: "object", properties: { plataforma: { type: "string", enum: ["todas", "meta", "google", "tiktok"], description: "Plataforma a consultar (por defecto todas)." }, ...PROPS_PERIODO }, additionalProperties: false }),
-  tool("listar_clientes", "Lista los clientes (tiendas) de Growith a los que este usuario tiene acceso, con sus plataformas conectadas (Tienda Nube, Shopify, Mercado Libre) y cuál está activo en este chat. Llamala primero si no sabés sobre qué cliente responder.",
-    { type: "object", properties: {}, additionalProperties: false }),
-  tool("seleccionar_cliente", "Fija el cliente (tienda) activo para ESTE chat. Todas las demás herramientas (resumen_negocio, rentabilidad, stock, envios, campañas…) pasan a responder sobre ese cliente. Otros chats no se ven afectados.",
+  // OJO: tool(name, TÍTULO, descripción, inputSchema). Un argumento de menos
+  // deja la descripción como objeto y claude.ai descarta la lista ENTERA
+  // ("Este conector no tiene herramientas disponibles"), ver testTools abajo.
+  tool("listar_clientes", "Clientes (tiendas) del usuario",
+    "Lista los clientes (tiendas) de Growith a los que este usuario tiene acceso, con sus plataformas conectadas (Tienda Nube, Shopify, Mercado Libre) y cuál está activo en este chat. Llamala primero si no sabés sobre qué cliente responder."),
+  tool("seleccionar_cliente", "Elegir el cliente activo de este chat",
+    "Fija el cliente (tienda) activo para ESTE chat. Todas las demás herramientas (resumen_negocio, rentabilidad, stock, envios, campañas…) pasan a responder sobre ese cliente. Otros chats no se ven afectados.",
     { type: "object", properties: { cliente_id: { type: "string", description: "El cliente_id que devuelve listar_clientes." } }, required: ["cliente_id"], additionalProperties: false }),
-  tool("obtener_token_ml", "SOLO ADMINISTRADORES de Growith. Devuelve el access token vigente de Mercado Libre de un cliente (si venció, lo renueva primero con su refresh token). El token da acceso a la cuenta de ML del cliente: usalo únicamente para lo que el usuario pidió y no lo repitas en la respuesta salvo que lo pida explícitamente.",
+  tool("obtener_token_ml", "Token de Mercado Libre de un cliente (solo admins)",
+    "SOLO ADMINISTRADORES de Growith. Devuelve el access token vigente de Mercado Libre de un cliente (si venció, lo renueva primero con su refresh token). El token da acceso a la cuenta de ML del cliente: usalo únicamente para lo que el usuario pidió y no lo repitas en la respuesta salvo que lo pida explícitamente.",
     { type: "object", properties: { cliente_id: { type: "string", description: "El cliente_id que devuelve listar_clientes." } }, required: ["cliente_id"], additionalProperties: false }),
 ];
+// Toda herramienta tiene que ser JSON válido para el cliente MCP: título y
+// descripción de texto, inputSchema objeto. Se verifica al cargar el módulo.
+for (const t of TOOLS) {
+  if (typeof t.title !== "string" || typeof t.description !== "string" || !t.inputSchema || t.inputSchema.type !== "object") {
+    throw new Error(`Herramienta MCP mal definida: ${t.name}`);
+  }
+}
 // Herramientas que NO necesitan un cliente activo.
 const TOOLS_SIN_CLIENTE = new Set(["listar_clientes", "seleccionar_cliente", "obtener_token_ml"]);
 
