@@ -22116,19 +22116,32 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
     catch(x){ if(w&&!w.closed) w.close(); toast(x.message,"error"); } setBusy(null);
   }
   // Un solo PDF con todas las tandas pendientes de hoy, en el orden de la cola; cada una queda impresa.
-  async function imprimirTodoHoy(lista){
+  // modo "pdf": todo junto en un PDF que se abre para imprimir. modo "zip": un PDF POR TANDA
+  // dentro de un .zip (si la impresora se queda sin etiquetas se sigue desde la tanda que faltó).
+  async function imprimirTodoHoy(lista,modo="pdf"){
     if(!lista.length||todoHoy) return;
-    if(!(await appConfirm(lista.length===1?`Se abre el PDF de la tanda de ${lista[0].clienteNombre} (${lista[0].n} etiquetas) y queda marcada como impresa. ¿Seguimos?`:`Se juntan las ${lista.length} tandas sin imprimir${lista.some(t=>t.fechaDespacho>st.hoy)?" (hoy y próximos días)":" de hoy"} en un solo PDF (${lista.reduce((a,t)=>a+t.n,0)} etiquetas) y quedan marcadas como impresas. ¿Seguimos?`,{okLabel:"Imprimir todo"}))) return;
-    const w=ghDepVentana("application/pdf");
-    try{ const {PDFDocument}=await import("pdf-lib"); const out=await PDFDocument.create();
+    const nE=lista.reduce((a,t)=>a+t.n,0), zip=modo==="zip";
+    const cuales=lista.length===1?`la tanda de ${lista[0].clienteNombre} (${nE} etiquetas)`:`las ${lista.length} tandas sin imprimir${lista.some(t=>t.fechaDespacho>st.hoy)?" (hoy y próximos días)":" de hoy"} (${nE} etiquetas)`;
+    if(!(await appConfirm(zip?`Se descarga un archivo .zip con un PDF por cada tanda: ${cuales}. Quedan marcadas como impresas. ¿Seguimos?`:lista.length===1?`Se abre el PDF de ${cuales} y queda marcada como impresa. ¿Seguimos?`:`Se juntan ${cuales} en un solo PDF y quedan marcadas como impresas. ¿Seguimos?`,{okLabel:zip?"Descargar ZIP":"Imprimir todo"}))) return;
+    const w=zip?null:ghDepVentana("application/pdf");
+    try{
       const bajados=new Array(lista.length); let listos=0; setTodoHoy({done:0,total:lista.length});
       await ghPool(lista,3,async(t,i)=>{ bajados[i]=await ghDepBajar(api,"file_get",t.id,"pdf",t.pdf.chunks); listos++; setTodoHoy({done:listos,total:lista.length}); });
-      for(let i=0;i<lista.length;i++){ const src=await PDFDocument.load(bajados[i],{ignoreEncryption:true}); (await out.copyPages(src,src.getPageIndices())).forEach(p=>out.addPage(p)); }
-      ghDepAbrirBytes(await out.save(),"application/pdf",`deposito_${st.hoy}.pdf`,w);
+      if(zip){
+        if(!window.JSZip){ await new Promise((ok,ko)=>{ const sc=document.createElement("script"); sc.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"; sc.onload=ok; sc.onerror=()=>ko(new Error("No se pudo cargar el compresor. Revisá la conexión.")); document.head.appendChild(sc); }); }
+        const z=new window.JSZip(); const limpio=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40)||"cliente";
+        // Numerados en el orden de la cola: "01_Cliente_25-09_16etiquetas.pdf"
+        lista.forEach((t,i)=>z.file(`${String(i+1).padStart(2,"0")}_${limpio(t.clienteNombre)}_${ghDepFechaLinda(t.fechaDespacho).replace("/","-")}_${t.n}etiquetas.pdf`,bajados[i]));
+        const blob=await z.generateAsync({type:"blob"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`deposito_${st.hoy}_${lista.length}tandas.zip`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000);
+      } else {
+        const {PDFDocument}=await import("pdf-lib"); const out=await PDFDocument.create();
+        for(let i=0;i<lista.length;i++){ const src=await PDFDocument.load(bajados[i],{ignoreEncryption:true}); (await out.copyPages(src,src.getPageIndices())).forEach(p=>out.addPage(p)); }
+        ghDepAbrirBytes(await out.save(),"application/pdf",`deposito_${st.hoy}.pdf`,w);
+      }
       const fallidas=[];
       for(const t of lista){ try{ await api("tanda_estado",{id:t.id,estado:"impresa"}); }catch(x){ fallidas.push(`${t.clienteNombre} (${x.message})`); } }
-      if(fallidas.length) toast(`El PDF salió, pero ${fallidas.length} tanda${fallidas.length!==1?"s":""} no quedó marcada como impresa: ${fallidas.join("; ")}. Marcala a mano para que no se vuelva a imprimir.`,"warning",10000);
-      else toast(`${lista.length} tandas impresas`,"success");
+      if(fallidas.length) toast(`${zip?"El ZIP":"El PDF"} salió, pero ${fallidas.length} tanda${fallidas.length!==1?"s":""} no quedó marcada como impresa: ${fallidas.join("; ")}. Marcala a mano para que no se vuelva a imprimir.`,"warning",10000);
+      else toast(zip?`ZIP descargado: ${lista.length} PDF, uno por tanda`:`${lista.length} tanda${lista.length!==1?"s":""} impresa${lista.length!==1?"s":""}`,"success");
       await cargar();
     }catch(x){ if(w&&!w.closed) w.close(); toast(x.message,"error"); }
     setTodoHoy(null);
@@ -22300,6 +22313,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
             {masAdelante&&<DepBtn T={T} variant="secondary" size="lg" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendTodoConPdf)}>Incluir próximos días ({nPed(pendTodoConPdf)})</DepBtn>}
+            <DepBtn T={T} variant="secondary" size="lg" ico="file" disabled={!!todoHoy} title="Descarga un .zip con un PDF por cada tanda, para imprimir de a una" onClick={()=>imprimirTodoHoy(lista,"zip")}>Por separado (ZIP)</DepBtn>
             <button onClick={()=>imprimirTodoHoy(lista)} disabled={!!todoHoy} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:10,height:56,boxSizing:"border-box",padding:"0 30px",border:"none",borderRadius:DS.r.full,background:T.accentSolid,color:"#fff",fontSize:DS.font.xl,fontWeight:DS.w.black,fontFamily:"'Inter',system-ui,sans-serif",cursor:todoHoy?"wait":"pointer",opacity:todoHoy?0.75:1,boxShadow:`0 8px 26px ${T.accentSolid}77`,whiteSpace:"nowrap",letterSpacing:-0.2}}><DepIco d="print" size={20} color="#fff" sw={2.4}/>{todoHoy?`Juntando ${todoHoy.done}/${todoHoy.total}…`:hayHoy?"Imprimir todo lo de hoy":"Imprimir todo"}</button>
           </div>
         </div>); })()}
