@@ -21364,6 +21364,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   const [esp,setEsp]=useState({titulo:"",instrucciones:"",urgente:false,bultos:1});
   const [adj,setAdj]=useState([]);
   const [prog,setProg]=useState(null);
+  const [drag,setDrag]=useState(false); const [verCant,setVerCant]=useState(false); const [verLista,setVerLista]=useState(false);
   const pedidosLista=React.useMemo(()=>ghDepParsearLista(lista),[lista]);
   const pedidos=prefill?.pedidos?.length?prefill.pedidos:pedidosLista;
   const cant=tipo==="especial"?Math.max(1,Number(n)||1):(pedidos.length||Number(n)||0);
@@ -21376,9 +21377,10 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   const hoy=hoyAR(); const horaAR=new Date(Date.now()-3*3600000).getUTCHours(); const fueraDeCorte=fecha<=hoy&&horaAR>=corte;
   const leer=f=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(new Uint8Array(r.result)); r.onerror=()=>rej(new Error("No se pudo leer el archivo")); r.readAsArrayBuffer(f); });
   async function elegirPdf(f){
-    if(!f) return; if(f.size>22*1024*1024){ toast("El PDF supera los 22 MB. Dividilo en dos tandas.","warning"); return; }
+    if(!f) return; if(f.type&&f.type!=="application/pdf"&&!/\.pdf$/i.test(f.name||"")){ toast("Ese archivo no es un PDF","warning"); return; }
+    if(f.size>22*1024*1024){ toast("El PDF supera los 22 MB. Dividilo en dos tandas.","warning"); return; }
     try{ const bytes=await leer(f); let pages=0; try{ const {PDFDocument}=await import("pdf-lib"); pages=(await PDFDocument.load(bytes,{ignoreEncryption:true})).getPageCount(); }catch(_){}
-      setPdf({bytes,nombre:f.name,pages}); if(!pedidos.length&&pages&&tipo==="tanda") setN(pages); }catch(e){ toast(e.message,"error"); }
+      setPdf({bytes,nombre:f.name,pages}); if(!pedidos.length&&tipo==="tanda"){ setN(pages||0); setVerCant(false); } }catch(e){ toast(e.message,"error"); }
   }
   async function elegirOtro(f,setter,max){ if(!f) return; if(f.size>max){ toast(`El archivo supera los ${Math.round(max/1024/1024)} MB`,"warning"); return; } try{ setter({bytes:await leer(f),nombre:f.name,mime:f.type||"application/octet-stream"}); }catch(e){ toast(e.message,"error"); } }
   async function enviar(){
@@ -21412,7 +21414,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
     }catch(e){ setFallo(e.message||"error de conexión"); toast("No se pudo enviar: "+(e.message||"error de conexión"),"error",8000); setProg(null); }
   }
   const lbl=t=><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:5}}>{t}</div>;
-  const filePick=(accept,onFile,texto)=>(<label style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",cursor:"pointer",display:"inline-flex"}}>{texto}<input type="file" accept={accept} style={{display:"none"}} onChange={e=>{ onFile(e.target.files?.[0]); e.target.value=""; }}/></label>);
+  const filePick=(accept,onFile,texto)=>(<label style={{display:"inline-flex",alignItems:"center",height:36,boxSizing:"border-box",padding:"0 16px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:DS.font.base,fontWeight:DS.w.semibold,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{texto}<input type="file" accept={accept} style={{display:"none"}} onChange={e=>{ onFile(e.target.files?.[0]); e.target.value=""; }}/></label>);
   return (
     <Modal T={T} open onClose={prog?()=>{}:onClose} title={tipo==="especial"?"Envío especial al depósito":"Enviar al depósito"} width={540} zIndex={1700}>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -21425,19 +21427,48 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
             <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.text,cursor:"pointer",paddingBottom:9}} onClick={()=>setEsp(s=>({...s,urgente:!s.urgente}))}><DSToggle T={T} active={esp.urgente} onToggle={()=>{}}/><span>Urgente</span></label>
           </div>
         </>)}
-        <div>
-          {lbl(tipo==="especial"?"Etiqueta (opcional)":"PDF con las etiquetas")}
+        {/* PDF de etiquetas: es LO principal del formulario. Zona grande para elegir o arrastrar. */}
+        {tipo==="especial"?(<div>
+          {lbl("Etiqueta (opcional)")}
           <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-            {!prefill?.pdfBytes&&filePick("application/pdf",elegirPdf,pdf?"Cambiar PDF":"Elegir PDF")}
-            <span style={{fontSize:DS.font.md,color:pdf?T.text:T.textSm}}>{pdf?`${prefill?.pdfBytes?(prefill.canal==="ml"?"Etiquetas de Mercado Libre":"Etiquetas generadas en Growith"):pdf.nombre}${pdf.pages?` · ${pdf.pages} página${pdf.pages!==1?"s":""}`:""}`:"Todavía no elegiste ningún archivo"}</span>
+            {filePick("application/pdf",elegirPdf,pdf?"Cambiar PDF":"Elegir PDF")}
+            <span style={{fontSize:DS.font.md,color:pdf?T.text:T.textSm}}>{pdf?`${pdf.nombre}${pdf.pages?` · ${pdf.pages} página${pdf.pages!==1?"s":""}`:""}`:"Sin etiqueta"}</span>
           </div>
-        </div>
-        {tipo==="tanda"&&!prefill?.pedidos?.length&&(<div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-start"}}>
-          <div style={{width:150}}>{lbl(pdf?.pages&&!pedidos.length?"Etiquetas en el PDF":"Cantidad de pedidos")}<input style={iS} type="number" min="1" value={pedidos.length||n||""} disabled={pedidos.length>0} onChange={e=>setN(e.target.value)}/>{pdf?.pages>0&&!pedidos.length&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:4}}>Contadas del PDF: {pdf.pages}. Corregila solo si una etiqueta ocupa más de una página.</div>}</div>
-          <div style={{flex:1,minWidth:240}}>{lbl("Pedidos y productos (opcional, para que el depósito tenga el picking)")}
+        </div>)
+        :!pdf?(
+          <label onDragOver={e=>{ e.preventDefault(); setDrag(true); }} onDragLeave={()=>setDrag(false)} onDrop={e=>{ e.preventDefault(); setDrag(false); elegirPdf(e.dataTransfer?.files?.[0]); }}
+            style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,textAlign:"center",padding:"28px 20px",border:`2px dashed ${drag?T.accentSolid:T.accentSolid+"88"}`,borderRadius:DS.r["2xl"],background:drag?T.accentSolid+"26":T.accentSolid+"12",cursor:"pointer",transition:`all .15s ${DS.ease}`}}>
+            <DepTile T={T} color={T.accent} ico="file" size={48}/>
+            <div style={{fontSize:DS.font.xl,fontWeight:DS.w.black,color:T.text,letterSpacing:-0.3}}>Subí el PDF con las etiquetas</div>
+            <div style={{fontSize:DS.font.base,color:T.textMd,maxWidth:360,lineHeight:1.5}}>Arrastralo acá o elegilo desde tu computadora. Contamos las etiquetas solos.</div>
+            <span style={{display:"inline-flex",alignItems:"center",gap:8,height:42,padding:"0 22px",borderRadius:DS.r.full,background:T.accentSolid,color:"#fff",fontSize:DS.font.lg,fontWeight:DS.w.bold,fontFamily:"'Inter',system-ui,sans-serif",boxShadow:`0 3px 14px ${T.accentSolid}55`,marginTop:2}}><DepIco d="plus" size={16} color="#fff" sw={2.6}/>Elegir PDF</span>
+            <input type="file" accept="application/pdf" style={{display:"none"}} onChange={e=>{ elegirPdf(e.target.files?.[0]); e.target.value=""; }}/>
+          </label>
+        ):(
+          <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 16px",border:`1px solid ${T.green}66`,borderRadius:DS.r["2xl"],background:T.green+"12"}}>
+            <DepTile T={T} color={T.green} ico="check" size={44}/>
+            <div style={{flex:1,minWidth:180}}>
+              <div style={{fontSize:DS.font["2xl"],fontWeight:DS.w.black,color:T.text,letterSpacing:-0.4,lineHeight:1.15}}>{cant>0?`${cant} etiqueta${cant!==1?"s":""}`:"PDF cargado"}</div>
+              <div style={{fontSize:DS.font.md,color:T.textMd,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:300}}>{prefill?.pdfBytes?(prefill.canal==="ml"?"Etiquetas de Mercado Libre":"Generadas en Growith, con los productos de cada pedido"):pdf.nombre}</div>
+            </div>
+            {!prefill?.pdfBytes&&filePick("application/pdf",elegirPdf,"Cambiar PDF")}
+          </div>
+        )}
+        {/* La cantidad sale sola del PDF. Solo se pide a mano si no se pudo contar, o si el usuario quiere corregirla. */}
+        {tipo==="tanda"&&pdf&&!prefill?.pedidos?.length&&(<div style={{display:"flex",flexDirection:"column",gap:10,marginTop:-4}}>
+          {(verCant||!pdf.pages)&&!pedidos.length&&(<div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{fontSize:DS.font.md,color:T.textMd}}>{pdf.pages?"Cantidad de etiquetas":"No pudimos contar las etiquetas. ¿Cuántas son?"}</span>
+            <input style={{...iS,width:110,marginBottom:0}} type="number" min="1" value={n||""} onChange={e=>setN(e.target.value)}/>
+            {pdf.pages>0&&<span style={{fontSize:DS.font.sm,color:T.textSm}}>El PDF tiene {pdf.pages} página{pdf.pages!==1?"s":""}.</span>}
+          </div>)}
+          {verLista&&(<div>{lbl("Productos de cada pedido (para que el depósito sepa qué va en cada paquete)")}
             <textarea style={{...iS,minHeight:74,resize:"vertical",fontFamily:"monospace",fontSize:DS.font.md}} placeholder={"Una línea por pedido:\n1234; Juan Pérez; 2x ROJ-NN, 1x LIQ\n1235; Ana Ríos; 1x NARAN-TT"} value={lista} onChange={e=>setLista(e.target.value)}/>
             {pedidosLista.length>0&&<div style={{fontSize:DS.font.sm,color:T.green,marginTop:-6}}>{pedidosLista.length} pedido{pedidosLista.length!==1?"s":""} leído{pedidosLista.length!==1?"s":""}{pedidosLista.some(p=>p.items.length)?" con productos":""}</div>}
-          </div>
+          </div>)}
+          {(!verLista||(!verCant&&pdf.pages>0&&!pedidos.length))&&(<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {!verLista&&<DepBtn T={T} size="sm" ico="plus" onClick={()=>setVerLista(true)}>Agregar los productos de cada pedido</DepBtn>}
+            {!verCant&&pdf.pages>0&&!pedidos.length&&<DepBtn T={T} size="sm" onClick={()=>setVerCant(true)}>La cantidad no es {cant}</DepBtn>}
+          </div>)}
         </div>)}
         <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:150}}>{lbl("Lo retira")}<select style={iS} value={canal} onChange={e=>setCanal(e.target.value)}>{Object.entries(GH_DEP_CANAL).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>
@@ -21452,14 +21483,15 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
             {adj.map((a,i)=>(<span key={i} style={{fontSize:DS.font.sm,color:T.textMd,background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.sm,padding:"4px 8px",display:"inline-flex",gap:6,alignItems:"center"}}>{a.nombre}<span onClick={()=>setAdj(x=>x.filter((_,j)=>j!==i))} style={{cursor:"pointer",color:T.textSm}}>✕</span></span>))}
           </div></div>)}
         <div>{lbl("Nota para el depósito (opcional)")}<textarea style={{...iS,minHeight:54,resize:"vertical"}} value={nota} onChange={e=>setNota(e.target.value)}/></div>
-        {cliente?.precio!=null&&cliente.precio>0&&(<div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+        {cliente?.precio!=null&&cliente.precio>0&&cant>0&&(<div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
           <span style={{fontSize:DS.font.md,color:T.textMd}}>{conBase} pedido{conBase!==1?"s":""} × {fmtMoney(cliente.precio)}{extra.monto>0?<> + {extra.pedidosConExtra} pedido{extra.pedidosConExtra!==1?"s":""} por unidad: {extra.extraUnidades} unidad{extra.extraUnidades!==1?"es":""} × {fmtMoney(extra.precioExtra)}</>:null} <span style={{color:T.textSm}}>· se suma a tu cuenta corriente; el pago se informa desde "Informar pago"</span>{extra.monto>0&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:3}}>Un pedido con más de {extra.incluidos} unidades se cobra por unidad, todas sus unidades, en vez del precio por paquete.</div>}</span>
           <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text}}>{fmtMoney(total)}</span>
         </div>)}
         {fallo&&<DepNota T={T} titulo="No se pudo enviar" color={T.red} ico="alert">{fallo}{borrRef.current?" Lo que ya se subió quedó guardado: con Reintentar se completa desde donde quedó.":""}</DepNota>}
-        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
-          <DepBtn T={T} variant="secondary" onClick={onClose} disabled={!!prog}>Cancelar</DepBtn>
-          <DepBtn T={T} variant="primary" onClick={enviar} disabled={!!prog}>{prog||(fallo?"Reintentar":"Enviar al depósito")}</DepBtn>
+        {prefill?.seg?.length>0&&<div style={{fontSize:DS.font.md,color:T.textMd}}>Al enviar, tu tienda también le avisa a {prefill.seg.length===1?"el comprador":`los ${prefill.seg.length} compradores`} con su número de seguimiento.</div>}
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap"}}>
+          <DepBtn T={T} variant="secondary" size="lg" onClick={onClose} disabled={!!prog}>Cancelar</DepBtn>
+          <DepBtn T={T} variant="success" size="lg" ico={prog?undefined:"truck"} onClick={enviar} disabled={!!prog||(tipo==="tanda"&&!pdf)} style={prog||(tipo==="tanda"&&!pdf)?{}:{background:T.isDark?"#16a34a":"#15803d",borderColor:T.isDark?"#16a34a":"#15803d",color:"#fff",boxShadow:"0 3px 14px rgba(22,163,74,0.4)"}}>{prog||(fallo?"Reintentar":tipo==="tanda"&&!pdf?"Primero subí el PDF":cant>0&&tipo==="tanda"?`Enviar ${cant} etiqueta${cant!==1?"s":""} al depósito`:"Enviar al depósito")}</DepBtn>
         </div>
       </div>
     </Modal>
