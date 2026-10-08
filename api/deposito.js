@@ -17,10 +17,15 @@
 //   deposito_clientes/{id}  {nombre, precio, growithUid|null, token, activo, contacto, nota}
 //   deposito_tandas/{id}    ver `nuevaTanda`
 //   deposito_files/{tandaId}__{kind}__{i}  {tandaId, kind, i, data(base64), purgeAt}
-//   deposito_pagos/{id}     pago de CUENTA CORRIENTE por transferencia (23/sep/2026): {clienteId, monto,
-//                           comp, estado borrador|a_verificar|verificado|rechazado, aplicado:[tandaId]}.
-//                           Al verificarlo se aplica FIFO a las tandas sin verificar; el sobrante queda
-//                           en deposito_clientes.aFavor. Comprobante en deposito_files/{pagoId}__pcomp__{i}.
+//   deposito_pagos/{id}     pago de CUENTA CORRIENTE (23/sep/2026): {clienteId, monto, comp, tipo
+//                           transferencia|ajuste, estado borrador|a_verificar|verificado|rechazado}.
+//                           Comprobante en deposito_files/{pagoId}__pcomp__{i}.
+//   CUENTA CORRIENTE = LEDGER (7/oct/2026 tarde, pedido de Lautaro): cada tanda suma su total
+//   (etiquetas × precio, o por unidad) y cada pago verificado lo resta; saldo = cargos − pagos,
+//   calculado SIEMPRE desde las tandas y los pagos con `ledgerDe` (no hay estado por tanda, ni
+//   reparto FIFO, ni saldo guardado en el cliente). Los pagos tipo reverso/saldo del modelo viejo
+//   se ignoran (ya están implícitos). Una tanda del modelo más viejo cobrada con comprobante por
+//   tanda (pago.estado verificado SIN pagoId) cuenta como cargo + pago en la misma fecha.
 //   deposito_ingresos/{id}  mercadería RECIBIDA de un cliente {clienteId, fecha, bultos, items:[{sku,cant}], nota}
 //   system/deposito         {adminToken, pcToken, datosPago (CBU/alias que ve el cliente), corteHora (default 15)}
 // Los PDF viajan y se guardan en TROZOS de ≤ 700.000 caracteres base64 (límite
@@ -84,15 +89,40 @@ export function extraItemsDe(pedidos, cfg) {
   for (const p of pedidos || []) { if (p?.cancelado) continue; const u = unidadesDe(p?.items); unidades += u; if (u > incl) { extraUnidades += u; pedidosConExtra++; } }
   return { unidades, extraUnidades, pedidosConExtra, incluidos: incl, precioExtra: precio, monto: +(extraUnidades * precio).toFixed(2) };
 }
-// FIFO puro (sin Firestore, testeable): `disponible` = monto + saldo a favor
-// previo (puede ser negativo = cargo pendiente); `tandas` ya ordenadas, con
-// {id, total}. Devuelve qué tandas quedan pagas y el resto, SIN tope en cero:
-// un resto negativo es deuda que sigue existiendo.
-export function fifoPuro(disponible, tandas) {
-  let resto = +num(disponible).toFixed(2); const aplicado = [];
-  for (const t of tandas || []) { const tot = num(t.total); if (tot > resto + 0.005) break; resto = +(resto - tot).toFixed(2); aplicado.push(t.id); }
-  return { aplicado, resto: +resto.toFixed(2) };
+// Ledger de la cuenta corriente (puro, testeable). `tandas` = [{id, t}], `pagos` = [{id, p}].
+// Devuelve los movimientos ordenados del más nuevo al más viejo con el saldo DESPUÉS de cada
+// uno (positivo = debe, negativo = a favor), los totales y el resumen por mes.
+export function ledgerDe(tandas, pagos) {
+  const movs = [];
+  const diaMs = f => { const t = Date.parse(`${String(f || "").slice(0, 10)}T15:00:00Z`); return isFinite(t) ? t : 0; };
+  for (const x of tandas || []) { const t = x.t || x; if (!t || ["borrador", "cancelada"].includes(t.estado)) continue;
+    const total = num(t.total), n = num(t.n), fecha = diaMs(t.fechaDespacho) || ms(t.createdAt) || 0;
+    const porUnidad = num(t.extraDetalle?.pedidosConExtra);
+    const concepto = t.tipo === "especial" ? `Envío especial: ${t.especial?.titulo || ""}`.trim() : `${n} etiqueta${n !== 1 ? "s" : ""}${porUnidad > 0 ? ` (${porUnidad} por unidad)` : ""}${num(t.ajuste) ? ` · ajuste ${num(t.ajuste) > 0 ? "+" : "−"}${Math.abs(num(t.ajuste))}` : ""}`;
+    movs.push({ id: `t_${x.id}`, tandaId: x.id, tipo: "tanda", fecha, orden: ms(t.createdAt) || fecha, concepto, debe: total, haber: 0, etiquetas: n, tanda: 1 });
+    if (t.pago?.estado === "verificado" && !t.pago.pagoId && total > 0) { const f = ms(t.pago.verificadoAt) || fecha; movs.push({ id: `tc_${x.id}`, tandaId: x.id, tipo: "comprobante", fecha: f, orden: f + 1, concepto: "Pago con comprobante de la tanda", debe: 0, haber: total }); }
+  }
+  let porVerificar = 0;
+  for (const x of pagos || []) { const p = x.p || x; if (!p) continue; const monto = num(p.monto), tipo = p.tipo || "transferencia";
+    if (p.estado === "a_verificar") { porVerificar += monto; continue; }
+    if (p.estado !== "verificado" || !["transferencia", "ajuste"].includes(tipo) || !monto) continue;
+    const fecha = ms(p.verificadoAt) || ms(p.informadoAt) || ms(p.createdAt) || 0;
+    movs.push({ id: `p_${x.id}`, pagoId: x.id, tipo: tipo === "ajuste" ? (monto < 0 ? "cargo" : "ajuste") : "transferencia", fecha, orden: fecha,
+      concepto: tipo === "ajuste" ? ((monto < 0 ? "Cargo" : "Pago registrado a mano") + (p.nota ? `: ${p.nota}` : "")) : `Transferencia${p.notaCliente ? ` · ${p.notaCliente}` : ""}`,
+      debe: monto < 0 ? -monto : 0, haber: monto > 0 ? monto : 0, comp: !!p.comp && !p.compPurgado });
+  }
+  movs.sort((a, b) => a.fecha - b.fecha || a.orden - b.orden);
+  let saldo = 0, cargos = 0, creditos = 0; const meses = {};
+  for (const m of movs) { saldo = +(saldo + m.debe - m.haber).toFixed(2); m.saldo = saldo; cargos += m.debe; creditos += m.haber;
+    const k = m.fecha ? new Date(m.fecha - 3 * 3600000).toISOString().slice(0, 7) : ""; if (!k) continue;
+    const r = meses[k] = meses[k] || { mes: k, etiquetas: 0, tandas: 0, cargos: 0, pagos: 0, saldoCierre: 0 };
+    r.etiquetas += m.etiquetas || 0; r.tandas += m.tanda || 0; r.cargos += m.debe; r.pagos += m.haber; r.saldoCierre = saldo; }
+  return { saldo, cargos: +cargos.toFixed(2), creditos: +creditos.toFixed(2), porVerificar: +porVerificar.toFixed(2), movs: movs.reverse(),
+    meses: Object.values(meses).sort((a, b) => b.mes.localeCompare(a.mes)).map(r => ({ ...r, cargos: +r.cargos.toFixed(2), pagos: +r.pagos.toFixed(2) })) };
 }
+// Campos de una tanda que necesita el ledger (sin los pedidos: las listas de clientes no los cargan).
+const LEDGER_SEL = ["clienteId", "estado", "total", "n", "fechaDespacho", "createdAt", "tipo", "especial", "extraDetalle", "ajuste", "pago"];
+const porCliente = (ts, ps) => { const g = {}; const r = k => (g[k] = g[k] || { t: [], p: [] }); for (const d of ts.docs) r(d.data().clienteId).t.push({ id: d.id, t: d.data() }); for (const d of ps.docs) r(d.data().clienteId).p.push({ id: d.id, p: d.data() }); return r; };
 const cfgExtraDe = c => ({ extraItemsIncluidos: Math.max(0, Math.round(num(c?.extraItemsIncluidos ?? 5))), extraItemPrecio: Math.max(0, num(c?.extraItemPrecio ?? 500)) });
 
 async function sendEmail({ to, subject, html }) {
@@ -220,7 +250,7 @@ function tandaPublica(id, t, { paraCliente = false } = {}) {
   };
 }
 // interno=true (dueño/operario): trae vínculo, nota interna y token. Al cliente solo nombre, precio y contacto.
-const clientePublico = (id, c, interno) => ({ id, nombre: c.nombre, precio: num(c.precio), activo: c.activo !== false, contacto: c.contacto || "", aFavor: num(c.aFavor),
+const clientePublico = (id, c, interno) => ({ id, nombre: c.nombre, precio: num(c.precio), activo: c.activo !== false, contacto: c.contacto || "",
   ...(interno ? { growithUid: c.growithUid || null, growithEmail: c.growithEmail || "", nota: c.nota || "", token: c.token } : {}) });
 
 // Los pedidos cobrados por unidad (`extraDetalle.pedidosConExtra`) no pagan el precio por paquete.
@@ -247,33 +277,6 @@ async function borrarArchivos(db, tandaId) {
   return s.size;
 }
 
-// FIFO ÚNICO (7/oct/2026): antes había dos copias (ajuste y verificación) y una
-// tenía un tope en cero que borraba los cargos pendientes (aFavor negativo).
-// Lee las tandas sin pagar del cliente, aplica `fifoPuro` y escribe. Llamar
-// DENTRO de una transacción, con las lecturas antes que cualquier escritura.
-async function aplicarFifo(tx, db, cRef, cli, monto, pagoId, porUid) {
-  const ts = await tx.get(db.collection("deposito_tandas").where("clienteId", "==", cRef.id));
-  const pend = ts.docs.map(d => ({ ref: d.ref, id: d.id, t: d.data() })).filter(x => !["borrador", "cancelada"].includes(x.t.estado) && x.t.pago?.estado !== "verificado")
-    .sort((a, b) => (a.t.fechaDespacho || "").localeCompare(b.t.fechaDespacho || "") || (ms(a.t.createdAt) || 0) - (ms(b.t.createdAt) || 0));
-  const { aplicado, resto } = fifoPuro(num(monto) + num(cli?.aFavor), pend.map(x => ({ id: x.id, total: x.t.total })));
-  for (const x of pend) if (aplicado.includes(x.id)) tx.set(x.ref, { pago: { ...(x.t.pago || {}), estado: "verificado", verificadoAt: FieldValue.serverTimestamp(), verificadoPor: porUid, pagoId, nota: "" } }, { merge: true });
-  tx.set(cRef, { aFavor: resto }, { merge: true });
-  return { aplicado, aFavor: resto };
-}
-// Reverso de una tanda YA COBRADA que se cancela, ajusta o elimina: el dinero
-// vuelve al saldo del cliente y queda un movimiento "reverso" visible. Dos
-// pasos para respetar "todas las lecturas antes que las escrituras".
-async function reversoLeer(tx, db, t) {
-  if (t?.pago?.estado !== "verificado" || !(num(t.total) > 0) || !t.clienteId) return null;
-  const cRef = db.collection("deposito_clientes").doc(String(t.clienteId)); const cs = await tx.get(cRef);
-  return cs.exists ? { cRef, aFavor: num(cs.data().aFavor), nombre: cs.data().nombre } : null;
-}
-function reversoEscribir(tx, db, rev, tandaId, t, monto, motivo, porUid, porNombre) {
-  if (!rev || !monto) return;
-  const pRef = db.collection("deposito_pagos").doc();
-  tx.set(rev.cRef, { aFavor: +(rev.aFavor + num(monto)).toFixed(2) }, { merge: true });
-  tx.set(pRef, { clienteId: rev.cRef.id, clienteNombre: rev.nombre || t.clienteNombre || "", monto: +num(monto).toFixed(2), tipo: "reverso", estado: "verificado", comp: null, nota: motivo, notaCliente: "", aplicado: [tandaId], por: porUid, porNombre: txt(porNombre, 80), createdAt: FieldValue.serverTimestamp(), informadoAt: FieldValue.serverTimestamp(), verificadoAt: FieldValue.serverTimestamp() });
-}
 // Mail al CLIENTE dueño de Growith (no al comprador final): solo si tiene un
 // mail (cuenta vinculada o contacto con @). Nunca rompe la acción que lo llama.
 async function mailCliente(db, cli, subject, cuerpoHtml) {
@@ -377,12 +380,11 @@ export default async function handler(req, res) {
         ]);
         const todas = s.docs.map(d => ({ id: d.id, t: d.data() })).filter(x => x.t.estado !== "borrador");
         todas.sort((a, b) => (ms(b.t.createdAt) || 0) - (ms(a.t.createdAt) || 0));
-        const deudaBruta = todas.filter(x => x.t.estado !== "cancelada" && x.t.pago?.estado !== "verificado").reduce((a, x) => a + num(x.t.total), 0);
-        const pagos = ps.docs.map(d => pagoPublico(d.id, d.data())).filter(p => p.estado !== "borrador").sort((a, b) => (b.informadoAt || 0) - (a.informadoAt || 0)).slice(0, 60);
-        const enVerificacion = pagos.filter(p => p.estado === "a_verificar").reduce((a, p) => a + p.monto, 0);
+        const L = ledgerDe(todas, ps.docs.map(d => ({ id: d.id, p: d.data() })));
+        const pagos = ps.docs.map(d => pagoPublico(d.id, d.data())).filter(p => ["a_verificar", "rechazado"].includes(p.estado)).sort((a, b) => (b.informadoAt || 0) - (a.informadoAt || 0)).slice(0, 30);
         const ingresos = gs.docs.map(d => ingresoPublico(d.id, d.data())).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "") || (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 40);
-        return res.json({ cliente: clientePublico(cli.id, cli, false), tandas: todas.slice(0, 120).map(x => tandaPublica(x.id, x.t, { paraCliente: true })), saldoPendiente: +deudaBruta.toFixed(2),
-          cuenta: { bruta: +deudaBruta.toFixed(2), deuda: +Math.max(0, deudaBruta - num(cli.aFavor)).toFixed(2), aFavor: num(cli.aFavor), enVerificacion: +enVerificacion.toFixed(2), pagos }, ingresos, ...cfg });
+        return res.json({ cliente: clientePublico(cli.id, cli, false), tandas: todas.slice(0, 120).map(x => tandaPublica(x.id, x.t, { paraCliente: true })),
+          cuenta: { saldo: L.saldo, cargos: L.cargos, creditos: L.creditos, porVerificar: L.porVerificar, pagos, movs: L.movs.slice(0, 120), meses: L.meses.slice(0, 6) }, ingresos, ...cfg });
       }
 
       if (action === "c_ingresos") {
@@ -497,23 +499,12 @@ export default async function handler(req, res) {
         // "revisar cantidad" para el depósito. Multi-bulto normal (hasta 2×) no avisa.
         if (t.tipo === "tanda" && upd.pdf?.pages > 0 && num(t.n) > 0 && (upd.pdf.pages < num(t.n) || upd.pdf.pages > num(t.n) * 2)) upd.revisarCantidad = { pages: upd.pdf.pages, n: num(t.n) };
         // Cierre en transacción: dos envíos simultáneos del mismo borrador no
-        // mandan dos mails ni pisan el estado; y si el cliente tiene saldo a favor
-        // que cubre la tanda, queda paga en el acto (pago tipo "saldo").
-        const cRefC = db.collection("deposito_clientes").doc(cli.id);
+        // mandan dos mails ni pisan el estado. El cargo entra a la cuenta corriente
+        // por el solo hecho de existir la tanda (ledger).
         const cierre = await db.runTransaction(async tx => {
-          const [ts, cs] = await Promise.all([tx.get(s.ref), tx.get(cRefC)]);
-          const cur = ts.data() || {}; if (cur.estado !== "borrador") return { ya: true };
-          const aFavor = num(cs.data()?.aFavor), total = num(cur.total);
-          let pagoSaldo = null;
-          if (total > 0 && aFavor >= total - 0.005) {
-            const pRef = db.collection("deposito_pagos").doc();
-            pagoSaldo = { id: pRef.id };
-            tx.set(pRef, { clienteId: cli.id, clienteNombre: cli.nombre, monto: total, tipo: "saldo", estado: "verificado", comp: null, nota: "Saldo a favor aplicado a la tanda", notaCliente: "", aplicado: [s.id], por: cx.por, porNombre: txt(cx.porNombre, 80), createdAt: FieldValue.serverTimestamp(), informadoAt: FieldValue.serverTimestamp(), verificadoAt: FieldValue.serverTimestamp() });
-            tx.set(cRefC, { aFavor: +(aFavor - total).toFixed(2) }, { merge: true });
-            upd.pago = { estado: "verificado", verificadoAt: FieldValue.serverTimestamp(), pagoId: pRef.id, nota: "saldo a favor" };
-          }
+          const cur = (await tx.get(s.ref)).data() || {}; if (cur.estado !== "borrador") return { ya: true };
           tx.set(s.ref, upd, { merge: true });
-          return { ok: true, pagoSaldo };
+          return { ok: true };
         });
         if (cierre.ya) return res.json({ ok: true, ya: true });
         // Aviso al cliente dueño de Growith (no al comprador final) si quedó fuera de corte.
@@ -542,10 +533,9 @@ export default async function handler(req, res) {
         const out = await db.runTransaction(async tx => {
           const cur = (await tx.get(s.ref)).data() || {};
           if (!["borrador", "pendiente"].includes(cur.estado)) return { error: "El depósito ya empezó a trabajar esta tanda. Avisales por WhatsApp." };
-          const rev = await reversoLeer(tx, db, cur);
+          // Cancelada = deja de ser un cargo en la cuenta corriente; no hace falta devolver nada.
           tx.set(s.ref, { estado: "cancelada", hist: [...(cur.hist || []).slice(-40), { at: Date.now(), por: cx.por, porNombre: txt(cx.porNombre, 80), de: cur.estado, a: "cancelada" }] }, { merge: true });
-          reversoEscribir(tx, db, rev, s.id, cur, num(cur.total), "Tanda cancelada por el cliente", cx.por, cx.porNombre);
-          return { ok: true, devuelto: rev ? num(cur.total) : 0 };
+          return { ok: true };
         });
         if (out.error) return res.status(409).json(out);
         return res.json(out);
@@ -593,7 +583,7 @@ export default async function handler(req, res) {
       const tandas = [...m.entries()].map(([id, t]) => paraDep(id, t)).sort((a, b) => (a.fechaDespacho || "").localeCompare(b.fechaDespacho || "") || (a.createdAt || 0) - (b.createdAt || 0));
       const cs = await db.collection("deposito_clientes").get();
       const cfgCola = await tokensDeposito(db);
-      return res.json({ rol: dep.rol, via: dep.via || "sesion", nombre: dep.nombre, hoy, corteHora: Math.min(23, Math.max(0, Math.round(num(cfgCola.corteHora)) || 15)), ...cfgExtraDe(cfgCola), despachados: desp, apartados: apartados.slice(0, 200), tandas, clientes: cs.docs.map(d => clientePublico(d.id, d.data(), false)).filter(c => c.activo).map(c => dep.rol === "owner" ? c : { ...c, precio: null, aFavor: null, contacto: "" }) });
+      return res.json({ rol: dep.rol, via: dep.via || "sesion", nombre: dep.nombre, hoy, corteHora: Math.min(23, Math.max(0, Math.round(num(cfgCola.corteHora)) || 15)), ...cfgExtraDe(cfgCola), despachados: desp, apartados: apartados.slice(0, 200), tandas, clientes: cs.docs.map(d => clientePublico(d.id, d.data(), false)).filter(c => c.activo).map(c => dep.rol === "owner" ? c : { ...c, precio: null, contacto: "" }) });
     }
 
     // Lector de códigos: la etiqueta escaneada (número de envío de Andreani, id
@@ -671,6 +661,7 @@ export default async function handler(req, res) {
 
     // Cancelar una tanda desde el depósito (solo la dueña): antes no había forma y
     // una tanda impresa que el cliente abandonaba quedaba como deuda para siempre.
+    // Cancelada = sale de la cuenta corriente (el ledger no la cuenta).
     if (action === "tanda_cancelar") {
       if (!soloOwner()) return;
       const motivo = txt(body.motivo, 200); if (!motivo) return res.status(400).json({ error: "Contá por qué se cancela." });
@@ -678,10 +669,8 @@ export default async function handler(req, res) {
       const out = await db.runTransaction(async tx => {
         const s = await tx.get(ref); if (!s.exists) return null; const t = s.data();
         if (["borrador", "cancelada", "entregada"].includes(t.estado)) return { error: t.estado === "entregada" ? "Una tanda entregada no se cancela: hacé un ajuste de saldo." : "La tanda ya está cancelada." };
-        const rev = await reversoLeer(tx, db, t);
         tx.set(ref, { estado: "cancelada", canceladaAt: Date.now(), notaDeposito: [String(t.notaDeposito || "").trim(), `Cancelada: ${motivo}`].filter(Boolean).join("\n").slice(0, 600), hist: [...(t.hist || []).slice(-40), { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80), de: t.estado, a: "cancelada", nota: motivo }] }, { merge: true });
-        reversoEscribir(tx, db, rev, s.id, t, num(t.total), `Tanda cancelada por el depósito: ${motivo}`, dep.user.uid, dep.nombre);
-        return { ok: true, devuelto: rev ? num(t.total) : 0 };
+        return { ok: true };
       });
       if (!out) return res.status(404).json({ error: "Tanda inexistente." });
       if (out.error) return res.status(409).json(out);
@@ -780,59 +769,38 @@ export default async function handler(req, res) {
       _tokCache = { at: 0, d: null };
       return res.json({ ok: true });
     }
-    // Pagos de cuenta corriente (transferencias informadas por el cliente).
+    // Cuentas corrientes: saldo de cada cliente (ledger) + transferencias informadas.
     if (action === "pagos_cc") {
       if (!soloOwner()) return;
-      const [ps, cs, ts] = await Promise.all([
-        db.collection("deposito_pagos").where("createdAt", ">=", new Date(Date.now() - 200 * 86400000)).get(),
-        db.collection("deposito_clientes").get(),
-        db.collection("deposito_tandas").where("createdAt", ">=", new Date(Date.now() - 400 * 86400000)).get(),
-      ]);
-      const deuda = {};
-      for (const d of ts.docs) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado) || t.pago?.estado === "verificado") continue; deuda[t.clienteId] = (deuda[t.clienteId] || 0) + num(t.total); }
-      const cuentas = cs.docs.map(d => { const c = d.data(); const bruta = deuda[d.id] || 0; return { clienteId: d.id, nombre: c.nombre, activo: c.activo !== false, bruta: +bruta.toFixed(2), deuda: +Math.max(0, bruta - num(c.aFavor)).toFixed(2), aFavor: num(c.aFavor) }; }).filter(c => c.activo || c.deuda > 0).sort((a, b) => b.deuda - a.deuda);
+      const [ps, cs, ts] = await Promise.all([db.collection("deposito_pagos").get(), db.collection("deposito_clientes").get(), db.collection("deposito_tandas").select(...LEDGER_SEL).get()]);
+      const g = porCliente(ts, ps);
+      const cuentas = cs.docs.map(d => { const c = d.data(); const L = ledgerDe(g(d.id).t, g(d.id).p); return { clienteId: d.id, nombre: c.nombre, activo: c.activo !== false, saldo: L.saldo, porVerificar: L.porVerificar }; }).filter(c => c.activo || Math.abs(c.saldo) > 0.5).sort((a, b) => b.saldo - a.saldo);
       const pagos = ps.docs.map(d => pagoPublico(d.id, d.data())).filter(p => p.estado !== "borrador").sort((a, b) => ({ a_verificar: 0, rechazado: 1, verificado: 2 }[a.estado] - { a_verificar: 0, rechazado: 1, verificado: 2 }[b.estado]) || (b.informadoAt || 0) - (a.informadoAt || 0));
       return res.json({ cuentas, pagos: pagos.slice(0, 200) });
     }
-    // Estado de cuenta de un cliente: tandas sin pagar + transferencias y ajustes.
+    // Estado de cuenta de un cliente: ledger completo (movimientos con saldo), resumen por mes
+    // y transferencias que esperan verificación.
     if (action === "cuenta_cliente") {
       if (!soloOwner()) return;
       const cid = String(body.clienteId || "");
-      const [c, ts, ps] = await Promise.all([db.collection("deposito_clientes").doc(cid).get(), db.collection("deposito_tandas").where("clienteId", "==", cid).get(), db.collection("deposito_pagos").where("clienteId", "==", cid).get()]);
+      const [c, ts, ps] = await Promise.all([db.collection("deposito_clientes").doc(cid).get(), db.collection("deposito_tandas").where("clienteId", "==", cid).select(...LEDGER_SEL).get(), db.collection("deposito_pagos").where("clienteId", "==", cid).get()]);
       if (!c.exists) return res.status(404).json({ error: "Cliente inexistente." });
-      const tandas = ts.docs.map(d => ({ id: d.id, t: d.data() })).filter(x => !["borrador", "cancelada"].includes(x.t.estado) && x.t.pago?.estado !== "verificado")
-        .sort((a, b) => (a.t.fechaDespacho || "").localeCompare(b.t.fechaDespacho || "")).map(x => { const p = tandaPublica(x.id, x.t); p.pedidos = []; p.hist = []; return p; });
-      const deuda = +tandas.reduce((a, t) => a + num(t.total), 0).toFixed(2);
-      const pagos = ps.docs.map(d => pagoPublico(d.id, d.data())).filter(p => p.estado !== "borrador").sort((a, b) => (b.informadoAt || 0) - (a.informadoAt || 0)).slice(0, 60);
-      const meses = {};
-      const mesRow = k => (meses[k] = meses[k] || { mes: k, tandas: 0, pedidos: 0, total: 0, verificado: 0, cobrado: 0 });
-      for (const x of ts.docs) { const t = x.data(); if (["borrador", "cancelada"].includes(t.estado)) continue; const k = String(t.fechaDespacho || "").slice(0, 7); if (!/^\d{4}-\d{2}$/.test(k)) continue;
-        const r = mesRow(k); r.tandas++; r.pedidos += num(t.n); r.total += num(t.total); if (t.pago?.estado === "verificado") r.verificado += num(t.total); }
-      for (const x of ps.docs) { const p = x.data(); if (p.estado !== "verificado" || num(p.monto) <= 0) continue; const v = ms(p.verificadoAt); if (!v) continue; mesRow(new Date(v - 3 * 3600000).toISOString().slice(0, 7)).cobrado += num(p.monto); }
-      const listaMeses = Object.values(meses).sort((a, b) => b.mes.localeCompare(a.mes)).slice(0, 6).map(r => ({ ...r, total: +r.total.toFixed(2), verificado: +r.verificado.toFixed(2), cobrado: +r.cobrado.toFixed(2) }));
-      return res.json({ cliente: clientePublico(c.id, c.data(), true), deuda, aFavor: num(c.data().aFavor), tandas, pagos, meses: listaMeses });
+      const L = ledgerDe(ts.docs.map(d => ({ id: d.id, t: d.data() })), ps.docs.map(d => ({ id: d.id, p: d.data() })));
+      const pagos = ps.docs.map(d => pagoPublico(d.id, d.data())).filter(p => ["a_verificar", "rechazado"].includes(p.estado)).sort((a, b) => (b.informadoAt || 0) - (a.informadoAt || 0)).slice(0, 30);
+      return res.json({ cliente: clientePublico(c.id, c.data(), true), saldo: L.saldo, cargos: L.cargos, creditos: L.creditos, porVerificar: L.porVerificar, movs: L.movs.slice(0, 300), meses: L.meses.slice(0, 12), pagos });
     }
-    // Ajuste manual del saldo: monto > 0 acredita (se aplica a las tandas sin pagar,
-    // el resto queda a favor); monto < 0 cobra (aFavor baja, puede quedar negativo =
-    // deuda extra). Queda registrado como un "pago" tipo ajuste que el cliente ve.
+    // Ajuste manual: monto > 0 = pago recibido (baja la deuda); monto < 0 = cargo extra
+    // (la sube). Es un movimiento más del ledger (pago tipo "ajuste") que el cliente ve.
     if (action === "saldo_ajustar") {
       if (!soloOwner()) return;
       const monto = +num(body.monto).toFixed(2); if (!monto) return res.status(400).json({ error: "Poné el monto." });
       if (Math.abs(monto) > MONTO_MAX) return res.status(400).json({ error: "El monto no parece correcto." });
-      const motivo = txt(body.motivo, 200);
-      const cRef = db.collection("deposito_clientes").doc(String(body.clienteId || ""));
-      const pRef = db.collection("deposito_pagos").doc();
-      const out = await db.runTransaction(async tx => {
-        const cs = await tx.get(cRef); if (!cs.exists) return null; const cli = cs.data();
-        const base = { clienteId: cRef.id, clienteNombre: cli.nombre, monto, tipo: "ajuste", estado: "verificado", comp: null, nota: motivo, notaCliente: "", aplicado: [], por: dep.user.uid, porNombre: txt(dep.nombre, 80), createdAt: FieldValue.serverTimestamp(), informadoAt: FieldValue.serverTimestamp(), verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid };
-        if (monto < 0) { const aFavor = +(num(cli.aFavor) + monto).toFixed(2); tx.set(cRef, { aFavor }, { merge: true }); tx.set(pRef, base); return { ok: true, aFavor, aplicadas: 0 }; }
-        const { aplicado, aFavor } = await aplicarFifo(tx, db, cRef, cli, monto, pRef.id, dep.user.uid);
-        tx.set(pRef, { ...base, aplicado });
-        return { ok: true, aFavor, aplicadas: aplicado.length };
-      });
-      if (!out) return res.status(404).json({ error: "Cliente inexistente." });
-      return res.json(out);
+      const cs = await db.collection("deposito_clientes").doc(String(body.clienteId || "")).get(); if (!cs.exists) return res.status(404).json({ error: "Cliente inexistente." });
+      await db.collection("deposito_pagos").add({ clienteId: cs.id, clienteNombre: cs.data().nombre, monto, tipo: "ajuste", estado: "verificado", comp: null, nota: txt(body.motivo, 200), notaCliente: "", por: dep.user.uid, porNombre: txt(dep.nombre, 80), createdAt: FieldValue.serverTimestamp(), informadoAt: FieldValue.serverTimestamp(), verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid });
+      return res.json({ ok: true });
     }
+    // Verificar (o rechazar) una transferencia informada por el cliente: el paso sigue
+    // siendo obligatorio (decisión de Lautaro 7/oct); verificada, entra al ledger como pago.
     if (action === "pago_cc_verificar") {
       if (!soloOwner()) return;
       const pRef = db.collection("deposito_pagos").doc(String(body.id || ""));
@@ -840,13 +808,9 @@ export default async function handler(req, res) {
       const out = await db.runTransaction(async tx => {
         const ps = await tx.get(pRef); if (!ps.exists) return null; const p = ps.data();
         if (p.estado === "verificado") return { ok: true, ya: true };
-        // Solo lo que el cliente informó: un borrador (monto 0) o un rechazado no se "verifica".
         if (p.estado !== "a_verificar" || !(num(p.monto) > 0)) return { error: "Este pago no está pendiente de verificación." };
-        if (!ok) { tx.set(pRef, { estado: "rechazado", nota: txt(body.nota, 300), verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid }, { merge: true }); return { ok: true }; }
-        const cRef = db.collection("deposito_clientes").doc(String(p.clienteId || "")); const cs = await tx.get(cRef); if (!cs.exists) return { error: "El cliente de este pago ya no existe." };
-        const { aplicado, aFavor } = await aplicarFifo(tx, db, cRef, cs.data(), num(p.monto), pRef.id, dep.user.uid);
-        tx.set(pRef, { estado: "verificado", nota: txt(body.nota, 300), aplicado, verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid }, { merge: true });
-        return { ok: true, aplicadas: aplicado.length, aFavor };
+        tx.set(pRef, { estado: ok ? "verificado" : "rechazado", nota: txt(body.nota, 300), verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid }, { merge: true });
+        return { ok: true };
       });
       if (!out) return res.status(404).json({ error: "Pago inexistente." });
       if (out.error) return res.status(409).json(out);
@@ -881,17 +845,14 @@ export default async function handler(req, res) {
     }
     if (action === "clientes") {
       if (!soloOwner()) return;
-      const [cs, ts, ps] = await Promise.all([db.collection("deposito_clientes").get(), db.collection("deposito_tandas").where("createdAt", ">=", new Date(Date.now() - 400 * 86400000)).get(), db.collection("deposito_pagos").where("createdAt", ">=", new Date(Date.now() - 70 * 86400000)).get()]);
-      const mes = hoyAR().slice(0, 7); const st = {};
+      const [cs, ts, ps] = await Promise.all([db.collection("deposito_clientes").get(), db.collection("deposito_tandas").select(...LEDGER_SEL).get(), db.collection("deposito_pagos").get()]);
+      const mes = hoyAR().slice(0, 7); const g = porCliente(ts, ps);
       const mesDe = m => { const v = ms(m); return v ? new Date(v - 3 * 3600000).toISOString().slice(0, 7) : ""; };
-      const cobrado = {};
-      for (const d of ps.docs) { const p = d.data(); if (p.estado !== "verificado" || num(p.monto) <= 0 || mesDe(p.verificadoAt) !== mes) continue; cobrado[p.clienteId] = (cobrado[p.clienteId] || 0) + num(p.monto); }
-      for (const d of ts.docs) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado)) continue;
-        const k = t.clienteId; st[k] = st[k] || { mesPedidos: 0, mesTotal: 0, aVerificar: 0, sinInformar: 0 };
-        if (String(t.fechaDespacho).startsWith(mes)) { st[k].mesPedidos += num(t.n); st[k].mesTotal += num(t.total); }
-        if (t.pago?.estado === "a_verificar") st[k].aVerificar += num(t.total);
-        else if (t.pago?.estado !== "verificado") st[k].sinInformar += num(t.total); }
-      return res.json({ mes, clientes: cs.docs.map(d => ({ ...clientePublico(d.id, d.data(), true), stats: { ...(st[d.id] || { mesPedidos: 0, mesTotal: 0, aVerificar: 0, sinInformar: 0 }), mesCobrado: +(cobrado[d.id] || 0).toFixed(2) } })).sort((a, b) => a.nombre.localeCompare(b.nombre)) });
+      const statsDe = id => { const { t, p } = g(id); const L = ledgerDe(t, p); const st = { mesPedidos: 0, mesTotal: 0, mesCobrado: 0, saldo: L.saldo, porVerificar: L.porVerificar };
+        for (const x of t) { if (["borrador", "cancelada"].includes(x.t.estado) || !String(x.t.fechaDespacho).startsWith(mes)) continue; st.mesPedidos += num(x.t.n); st.mesTotal += num(x.t.total); }
+        for (const x of p) { if (x.p.estado !== "verificado" || num(x.p.monto) <= 0 || !["transferencia", "ajuste"].includes(x.p.tipo || "transferencia") || mesDe(x.p.verificadoAt) !== mes) continue; st.mesCobrado += num(x.p.monto); }
+        st.mesTotal = +st.mesTotal.toFixed(2); st.mesCobrado = +st.mesCobrado.toFixed(2); return st; };
+      return res.json({ mes, clientes: cs.docs.map(d => ({ ...clientePublico(d.id, d.data(), true), stats: statsDe(d.id) })).sort((a, b) => a.nombre.localeCompare(b.nombre)) });
     }
 
     // Diagnóstico del vínculo con Growith: qué cuenta quedó apuntada y si sirve para "Enviar al depósito".
@@ -960,13 +921,10 @@ export default async function handler(req, res) {
       const out = await db.runTransaction(async tx => {
         const s = await tx.get(ref); if (!s.exists) return null; const prev = s.data();
         const t = { ...prev, ajuste: num(body.ajuste), ...(body.n != null ? { n: Math.max(0, Math.min(MAX_PEDIDOS, Math.round(num(body.n)))) } : {}) };
-        const nuevo = totalDe(t), dif = +(nuevo - num(prev.total)).toFixed(2);
-        // Tanda ya cobrada: la diferencia va al saldo del cliente (baja el total →
-        // devolución; sube → cargo), en vez de desaparecer.
-        const rev = dif !== 0 ? await reversoLeer(tx, db, prev) : null;
+        const nuevo = totalDe(t);
+        // El total nuevo es el cargo que cuenta el ledger: no hay nada más que mover.
         tx.set(ref, { ajuste: t.ajuste, ajusteMotivo: txt(body.motivo, 200), n: t.n, total: nuevo }, { merge: true });
-        if (rev) reversoEscribir(tx, db, rev, s.id, prev, -dif, `Ajuste de una tanda ya cobrada: ${txt(body.motivo, 200) || "sin motivo"}`, dep.user.uid, dep.nombre);
-        return { ok: true, total: nuevo, saldoMovido: rev ? -dif : 0 };
+        return { ok: true, total: nuevo };
       });
       if (!out) return res.status(404).json({ error: "Tanda inexistente." });
       return res.json(out);
@@ -977,11 +935,9 @@ export default async function handler(req, res) {
       const id = String(body.id || "");
       const ref = db.collection("deposito_tandas").doc(id);
       const out = await db.runTransaction(async tx => {
-        const s = await tx.get(ref); if (!s.exists) return null; const t = s.data();
-        const rev = await reversoLeer(tx, db, t);
+        const s = await tx.get(ref); if (!s.exists) return null;
         tx.delete(ref);
-        reversoEscribir(tx, db, rev, id, t, num(t.total), "Tanda eliminada por el depósito", dep.user.uid, dep.nombre);
-        return { ok: true, devuelto: rev ? num(t.total) : 0 };
+        return { ok: true };
       });
       if (!out) return res.status(404).json({ error: "Tanda inexistente." });
       await borrarArchivos(db, id);
@@ -991,12 +947,18 @@ export default async function handler(req, res) {
     if (action === "resumen") {
       if (!soloOwner()) return;
       const mes = /^\d{4}-\d{2}$/.test(String(body.mes || "")) ? body.mes : hoyAR().slice(0, 7);
-      const s = await db.collection("deposito_tandas").where("fechaDespacho", ">=", `${mes}-01`).where("fechaDespacho", "<=", `${mes}-31`).get();
+      // Por cliente: facturado en el mes (tandas por fecha de despacho), cobrado en el mes
+      // (pagos verificados en ese mes) y saldo de HOY (ledger completo).
+      const [ts, ps, cs] = await Promise.all([db.collection("deposito_tandas").select(...LEDGER_SEL).get(), db.collection("deposito_pagos").get(), db.collection("deposito_clientes").get()]);
+      const g = porCliente(ts, ps); const nombres = {}; cs.docs.forEach(d => { nombres[d.id] = d.data().nombre; });
+      const mesDe = m => { const v = ms(m); return v ? new Date(v - 3 * 3600000).toISOString().slice(0, 7) : ""; };
       const por = {};
-      for (const d of s.docs) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado) || !String(t.fechaDespacho).startsWith(mes)) continue;
-        const k = t.clienteId; por[k] = por[k] || { clienteId: k, nombre: t.clienteNombre, tandas: 0, pedidos: 0, total: 0, verificado: 0, aVerificar: 0, sinInformar: 0 };
-        por[k].tandas++; por[k].pedidos += num(t.n); por[k].total += num(t.total);
-        if (t.pago?.estado === "verificado") por[k].verificado += num(t.total); else if (t.pago?.estado === "a_verificar") por[k].aVerificar += num(t.total); else por[k].sinInformar += num(t.total); }
+      for (const d of ts.docs) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado) || !String(t.fechaDespacho).startsWith(mes)) continue;
+        const k = t.clienteId; por[k] = por[k] || { clienteId: k, nombre: nombres[k] || "", tandas: 0, pedidos: 0, total: 0, cobrado: 0, saldo: 0 };
+        por[k].tandas++; por[k].pedidos += num(t.n); por[k].total += num(t.total); }
+      for (const d of ps.docs) { const p = d.data(); if (p.estado !== "verificado" || num(p.monto) <= 0 || !["transferencia", "ajuste"].includes(p.tipo || "transferencia") || mesDe(p.verificadoAt) !== mes) continue;
+        const k = p.clienteId; por[k] = por[k] || { clienteId: k, nombre: nombres[k] || p.clienteNombre || "", tandas: 0, pedidos: 0, total: 0, cobrado: 0, saldo: 0 }; por[k].cobrado += num(p.monto); }
+      for (const k of Object.keys(por)) { por[k].saldo = ledgerDe(g(k).t, g(k).p).saldo; por[k].total = +por[k].total.toFixed(2); por[k].cobrado = +por[k].cobrado.toFixed(2); }
       return res.json({ mes, clientes: Object.values(por).sort((a, b) => b.total - a.total) });
     }
 

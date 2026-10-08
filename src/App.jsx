@@ -21361,14 +21361,14 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
 
 function DepositoPagoModal({T,api,cuenta,datosPago,onClose,onDone}){
   const iS=InputStyle(T);
-  const [monto,setMonto]=useState(cuenta?.deuda>0?String(cuenta.deuda):"");
+  const [monto,setMonto]=useState(cuenta?.saldo>0?String(cuenta.saldo):"");
   const [nota,setNota]=useState(""); const [comp,setComp]=useState(null); const [prog,setProg]=useState(null);
   async function elegir(f){ if(!f) return; if(f.size>3*1024*1024){ toast("El comprobante supera los 3 MB","warning"); return; } setComp({bytes:new Uint8Array(await f.arrayBuffer()),nombre:f.name,mime:f.type||"application/octet-stream"}); }
   async function enviar(){
     const m=Number(String(monto).replace(",",".")); if(!(m>0)){ toast("Poné el monto transferido","warning"); return; }
     if(!comp){ toast("Adjuntá el comprobante de la transferencia","warning"); return; }
     setProg("Creando…");
-    try{ const c=await api("c_pago_crear"); setProg("Subiendo comprobante…"); const ch=await ghDepSubir(api,c.id,"pcomp",comp.bytes); setProg("Informando…"); await api("c_pago_cerrar",{id:c.id,monto:m,chunks:ch,nombre:comp.nombre,mime:comp.mime,nota}); toast("Pago informado. El depósito lo verifica y se aplica a tus tandas.","success",6000); onDone&&onDone(); onClose(); }
+    try{ const c=await api("c_pago_crear"); setProg("Subiendo comprobante…"); const ch=await ghDepSubir(api,c.id,"pcomp",comp.bytes); setProg("Informando…"); await api("c_pago_cerrar",{id:c.id,monto:m,chunks:ch,nombre:comp.nombre,mime:comp.mime,nota}); toast("Pago informado. Cuando el depósito lo verifique, se descuenta de tu cuenta.","success",6000); onDone&&onDone(); onClose(); }
     catch(e){ toast(e.message,"error"); setProg(null); }
   }
   const lbl=t=><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:5}}>{t}</div>;
@@ -21376,7 +21376,7 @@ function DepositoPagoModal({T,api,cuenta,datosPago,onClose,onDone}){
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       {datosPago?<div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 14px",fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.6}}><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:4}}>Transferí a</div>{datosPago}</div>
         :<div style={{fontSize:DS.font.md,color:T.textSm}}>El depósito todavía no cargó sus datos bancarios. Pediselos por WhatsApp.</div>}
-      <div style={{fontSize:DS.font.md,color:T.textMd}}>Deuda actual: <strong style={{color:T.text}}>{fmtMoney(cuenta?.deuda||0)}</strong>{cuenta?.enVerificacion>0&&<> · {fmtMoney(cuenta.enVerificacion)} ya informado, en verificación</>}{cuenta?.aFavor>0&&<> · {fmtMoney(cuenta.aFavor)} a tu favor</>}</div>
+      <div style={{fontSize:DS.font.md,color:T.textMd}}>Saldo actual: <strong style={{color:T.text}}>{cuenta?.saldo>0?fmtMoney(cuenta.saldo):cuenta?.saldo<-0.5?`${fmtMoney(-cuenta.saldo)} a tu favor`:"al día"}</strong>{cuenta?.porVerificar>0&&<> · {fmtMoney(cuenta.porVerificar)} ya informado, en verificación</>}</div>
       <div style={{width:200}}>{lbl("Monto transferido ($)")}<input style={iS} type="number" min="0" value={monto} onChange={e=>setMonto(e.target.value)}/></div>
       <div>{lbl("Comprobante")}<label style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",cursor:"pointer",display:"inline-flex"}}>{comp?"Cambiar comprobante":"Adjuntar comprobante"}<input type="file" accept="application/pdf,image/*" style={{display:"none"}} onChange={e=>{ elegir(e.target.files?.[0]); e.target.value=""; }}/></label>{comp&&<span style={{fontSize:DS.font.sm,color:T.green,marginLeft:10}}>{comp.nombre}</span>}</div>
       <div>{lbl("Nota (opcional)")}<input style={iS} placeholder="Ej.: pago de las tandas de la semana" value={nota} onChange={e=>setNota(e.target.value)}/></div>
@@ -21437,11 +21437,11 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
   const cargar=()=>api("c_tandas").then(d=>{ setSt(d); setErr(""); }).catch(e=>setErr(e.message));
   // Refresco liviano cada 60 s con la pestaña visible: el cliente ve avanzar su tanda sin recargar.
   useEffect(()=>{ cargar(); const iv=setInterval(()=>{ if(document.visibilityState==="visible") cargar(); },60000); return ()=>clearInterval(iv); },[]);
-  async function cancelar(t){ if(!(await appConfirm("¿Cancelar esta tanda? El depósito todavía no empezó a trabajarla.",{danger:true,okLabel:"Cancelar tanda"}))) return; try{ const r=await api("c_tanda_cancelar",{id:t.id}); toast(r?.devuelto>0?`Tanda cancelada: ${fmtMoney(r.devuelto)} volvieron a tu saldo`:"Tanda cancelada","success"); cargar(); }catch(e){ toast(e.message,"error"); } }
+  async function cancelar(t){ if(!(await appConfirm("¿Cancelar esta tanda? El depósito todavía no empezó a trabajarla.",{danger:true,okLabel:"Cancelar tanda"}))) return; try{ const r=await api("c_tanda_cancelar",{id:t.id}); toast("Tanda cancelada","success"); cargar(); }catch(e){ toast(e.message,"error"); } }
   async function verPdf(t){ const w=ghDepVentana("application/pdf"); try{ ghDepAbrirBytes(await ghDepBajar(api,"c_file_get",t.id,"pdf",t.pdf.chunks),"application/pdf",`etiquetas_${t.fechaDespacho}.pdf`,w); }catch(e){ if(w&&!w.closed) w.close(); toast(e.message,"error"); } }
   if(err) return <DSEmpty T={T} title="No pudimos cargar el depósito" subtitle={/inv[aá]lido|inactivo/i.test(err)?"Este link ya no sirve: pedile al depósito que te mande el link nuevo.":err} action={/inv[aá]lido|inactivo/i.test(err)?null:<Btn T={T} variant="secondary" onClick={cargar}>Reintentar</Btn>}/>;
   if(!st) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
-  const saldo=st.cuenta?ghDepSaldo(T,st.cuenta.bruta??st.cuenta.deuda,st.cuenta.aFavor):null;
+  const saldo=st.cuenta?ghDepSaldo(T,st.cuenta.saldo):null;
   const extraCfg={extraItemsIncluidos:st.extraItemsIncluidos,extraItemPrecio:st.extraItemPrecio};
   const hoy=hoyAR(); const corte=st.corteHora??15;
   const vivas=st.tandas.filter(t=>["pendiente","impresa","armada"].includes(t.estado)), cerradas=st.tandas.filter(t=>!["pendiente","impresa","armada"].includes(t.estado));
@@ -21463,7 +21463,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
             </div>
             <div style={{display:"flex",gap:16,flexWrap:"wrap",marginTop:6,alignItems:"center"}}>
               <DepFact T={T} ico="calendar" color={t.fechaDespacho===hoy&&!entregada&&!cancelada?T.accent:undefined}>{t.fechaDespacho===hoy?"despacho hoy":`despacho ${ghDepFechaLinda(t.fechaDespacho)}`}</DepFact>
-              {t.total>0&&<DepFact T={T} ico="wallet">{fmtMoney(t.total)}{t.extraItems>0?<span style={{color:T.textSm}}> ({t.extraDetalle?.pedidosConExtra||""} pedido{t.extraDetalle?.pedidosConExtra!==1?"s":""} por unidad: {fmtMoney(t.extraItems)} por {t.extraDetalle?.extraUnidades||""} unidad{t.extraDetalle?.extraUnidades!==1?"es":""})</span>:null}{t.pago?.estado==="verificado"?<span style={{color:T.green}}> · cobrada</span>:null}</DepFact>}
+              {t.total>0&&<DepFact T={T} ico="wallet">{fmtMoney(t.total)}{t.extraItems>0?<span style={{color:T.textSm}}> ({t.extraDetalle?.pedidosConExtra||""} pedido{t.extraDetalle?.pedidosConExtra!==1?"s":""} por unidad: {fmtMoney(t.extraItems)} por {t.extraDetalle?.extraUnidades||""} unidad{t.extraDetalle?.extraUnidades!==1?"es":""})</span>:null}</DepFact>}
               {t.hist?.length>0&&<DepFact T={T} ico="clock">{ghDepFechaHora(t.hist[t.hist.length-1].at)}</DepFact>}
             </div>
           </div>
@@ -21504,13 +21504,13 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
       </div>
       <DepStats T={T} items={[
         {l:"Tu saldo",ico:"wallet",v:saldo?(saldo.n>0?fmtMoney(saldo.n):saldo.n<0?fmtMoney(-saldo.n):"Al día"):"—",c:saldo?.col,s:saldo?(saldo.n>0?"a pagar por transferencia":saldo.n<0?"a tu favor":"nada pendiente"):""},
-        {l:"En verificación",ico:"clock",v:fmtMoney(st.cuenta?.enVerificacion||0),c:st.cuenta?.enVerificacion>0?T.yellow:T.textSm,s:"transferencias informadas"},
+        {l:"En verificación",ico:"clock",v:fmtMoney(st.cuenta?.porVerificar||0),c:st.cuenta?.porVerificar>0?T.yellow:T.textSm,s:"transferencias informadas"},
         {l:"En el depósito",ico:"box",v:vivas.reduce((a,t)=>a+t.n,0),s:`${vivas.length} tanda${vivas.length!==1?"s":""} en proceso`},
         {l:"Corte",ico:"calendar",v:`${corte}:00`,s:"antes sale el mismo día"},
       ]}/>
       <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginTop:-6,marginBottom:22,padding:"10px 14px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl}}>
         <DepTile T={T} color={T.green} ico="bank" size={30}/>
-        <div style={{flex:1,minWidth:220,fontSize:DS.font.md,color:T.textMd,lineHeight:1.5}}>{saldo?.n>0?<>Tenés <strong style={{color:T.text}}>{fmtMoney(saldo.n)}</strong> a pagar. Transferí y avisá con el comprobante: el depósito lo verifica y lo aplica a tus tandas más viejas.</>:"Cuando transfieras, avisá con el comprobante desde acá."}{st.datosPago?<div style={{fontSize:DS.font.sm,color:T.textSm,whiteSpace:"pre-wrap",marginTop:2}}>{st.datosPago}</div>:null}</div>
+        <div style={{flex:1,minWidth:220,fontSize:DS.font.md,color:T.textMd,lineHeight:1.5}}>{saldo?.n>0?<>Tenés <strong style={{color:T.text}}>{fmtMoney(saldo.n)}</strong> a pagar. Transferí y avisá con el comprobante: cuando el depósito lo verifique, se descuenta de tu cuenta.</>:"Cuando transfieras, avisá con el comprobante desde acá."}{st.datosPago?<div style={{fontSize:DS.font.sm,color:T.textSm,whiteSpace:"pre-wrap",marginTop:2}}>{st.datosPago}</div>:null}</div>
         <Btn T={T} variant={saldo?.n>0?"primary":"secondary"} size="sm" onClick={()=>setPago(true)}>Informar pago</Btn>
       </div>
       <DepSection T={T} title="En proceso" count={vivas.length} desc="Lo que el depósito tiene para armar o ya armó y todavía no entregó al correo.">
@@ -21521,13 +21521,16 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
       {cerradas.length>0&&(<DepSection T={T} title="Entregadas y canceladas" count={cerradas.length} extra={<Btn T={T} variant="ghost" size="sm" onClick={()=>setVerCerradas(v=>!v)}>{verCerradas?"Ocultar":"Ver"}</Btn>}>
         {verCerradas&&<div style={{display:"flex",flexDirection:"column",gap:10}}>{cerradas.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>}
       </DepSection>)}
-      {(st.cuenta?.pagos||[]).length>0&&(<DepSection T={T} title="Pagos y ajustes" desc="Transferencias que informaste y lo que el depósito registró a mano.">
-        <DepTable T={T} minWidth={480} empty="" rows={st.cuenta.pagos} cols={[
-          {h:"Fecha",w:"80px",render:p=>p.informadoAt?new Date(p.informadoAt).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—"},
-          {h:"Detalle",w:"1fr",render:p=><span style={{color:T.textMd}}>{p.tipo==="reverso"?"Devolución a tu saldo"+(p.nota?`: ${p.nota}`:""):p.tipo==="saldo"?"Saldo a favor aplicado a una tanda":p.tipo==="ajuste"?(p.monto<0?"Cargo del depósito":"Pago registrado por el depósito")+(p.nota?`: ${p.nota}`:""):p.estado==="verificado"?`Aplicado a ${p.aplicado?.length||0} tanda${p.aplicado?.length!==1?"s":""}`:p.estado==="rechazado"?`Rechazado: ${p.nota}`:p.notaCliente||"Transferencia informada"}</span>},
-          {h:"Estado",w:"130px",render:p=><DepDot T={T} color={p.estado==="verificado"?T.green:p.estado==="rechazado"?T.red:T.yellow}>{p.tipo==="reverso"||p.tipo==="saldo"||p.tipo==="ajuste"?"Aplicado":p.estado==="verificado"?"Verificado":p.estado==="rechazado"?"Rechazado":"En verificación"}</DepDot>},
-          {h:"Monto",w:"100px",align:"right",render:p=><strong style={{color:p.monto<0?T.red:T.text}}>{p.monto<0?"−":""}{fmtMoney(Math.abs(p.monto))}</strong>},
+      {(st.cuenta?.pagos||[]).length>0&&(<DepSection T={T} title="Transferencias informadas" desc="Las que avisaste y el depósito todavía no verificó, o rechazó. Las verificadas ya figuran como pago en tu cuenta, abajo.">
+        <DepTable T={T} minWidth={440} empty="" rows={st.cuenta.pagos} cols={[
+          {h:"Fecha",w:"80px",render:p=>ghDepFechaCorta(p.informadoAt)},
+          {h:"Detalle",w:"1fr",render:p=><span style={{color:T.textMd}}>{p.estado==="rechazado"?`Rechazada: ${p.nota}`:p.notaCliente||"Transferencia informada"}</span>},
+          {h:"Estado",w:"130px",render:p=><DepDot T={T} color={p.estado==="rechazado"?T.red:T.yellow}>{p.estado==="rechazado"?"Rechazada":"En verificación"}</DepDot>},
+          {h:"Monto",w:"100px",align:"right",render:p=><strong style={{color:T.text}}>{fmtMoney(p.monto)}</strong>},
         ]}/>
+      </DepSection>)}
+      {(st.cuenta?.movs||[]).length>0&&(<DepSection T={T} title="Tu cuenta" desc="Cada tanda suma lo que cuesta y cada pago verificado lo descuenta. El saldo de la primera fila es lo que debés hoy.">
+        <DepLedger T={T} movs={st.cuenta.movs}/>
       </DepSection>)}
       {(st.ingresos||[]).length>0&&(<DepSection T={T} title="Mercadería recibida en el depósito">
         <DepTable T={T} minWidth={420} empty="" rows={st.ingresos} cols={[
@@ -21683,7 +21686,6 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
 // Criterio: un solo color por estado (punto + texto), el resto en texto gris;
 // números alineados a la derecha y tabulares; tablas con borde fino, sin sombras.
 const ghDepCol=T=>({pendiente:T.textMd,impresa:T.accent,armada:T.yellow,entregada:T.green,cancelada:T.red});
-const ghDepColPago=T=>({sin_informar:T.textSm,a_verificar:T.yellow,verificado:T.green,rechazado:T.red});
 // Íconos de línea (24x24) del depósito.
 const GH_DEP_ICO={
   box:"M21 8l-9-5-9 5v8l9 5 9-5V8zM3.3 8.3L12 13l8.7-4.7M12 13v9",
@@ -21746,8 +21748,8 @@ function DepTable({T,cols,rows,empty,minWidth=0,title,extra}){
   </div>);
 }
 const depSub=(T,txt)=><div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{txt}</div>;
-// Saldo de un cliente: lo que debe (a verificar + sin informar) menos lo que tiene a favor.
-const ghDepSaldo=(T,bruta,aFavor)=>{ const s=(bruta||0)-(aFavor||0); return s>0.5?{txt:`Debe ${fmtMoney(s)}`,col:T.yellow,n:s}:s<-0.5?{txt:`${fmtMoney(-s)} a favor`,col:T.green,n:s}:{txt:"Al día",col:T.textSm,n:0}; };
+// Saldo de un cliente (cuenta corriente = ledger): cargos − pagos verificados. Positivo = debe, negativo = a favor.
+const ghDepSaldo=(T,saldo)=>{ const s=Number(saldo)||0; return s>0.5?{txt:`Debe ${fmtMoney(s)}`,col:T.yellow,n:s}:s<-0.5?{txt:`${fmtMoney(-s)} a favor`,col:T.green,n:s}:{txt:"Al día",col:T.textSm,n:0}; };
 const ghDepFechaHora=ms=>new Date(ms).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
 // Botón chico de ícono (abrir/cerrar detalle).
 function DepChevron({T,open,onClick,title}){ return <button onClick={onClick} title={title} style={{width:30,height:30,border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.surface,color:T.textMd,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{transform:open?"rotate(180deg)":"none",transition:"transform .15s"}}><path d="M6 9l6 6 6-6"/></svg></button>; }
@@ -21817,22 +21819,20 @@ function DepProgress({T,value,total,label,done}){ const pct=total>0?Math.round(v
 function DepositoCuentaModal({T,api,cliente,onClose,onAjustar,datos,reloadKey=0,tabInicial="cuenta"}){
   const [d,setD]=useState(null); const [tab,setTab]=useState(tabInicial);
   useEffect(()=>{ api("cuenta_cliente",{clienteId:cliente.id}).then(setD).catch(e=>{ toast(e.message,"error"); setD({error:true}); }); },[cliente.id,reloadKey]);
-  const colP=ghDepColPago(T);
   return (<Modal T={T} open onClose={onClose} title={cliente.nombre} width={680}>
     {datos&&<div style={{marginBottom:16}}><DepSeg T={T} value={tab} onChange={setTab} items={[["cuenta","Cuenta","wallet"],["datos","Datos y acceso","settings"]]}/></div>}
     {tab==="datos"&&datos?datos
     :!d?<div style={{display:"flex",justifyContent:"center",padding:30}}><Spinner size={24} color={T.accent}/></div>
     :d.error?<div style={{fontSize:DS.font.base,color:T.textSm}}>No se pudo cargar.</div>
-    :(()=>{ const s=ghDepSaldo(T,d.deuda,d.aFavor); const cargos=d.aFavor<0?-d.aFavor:0; const favor=d.aFavor>0?d.aFavor:0; return (<div>
+    :(()=>{ const s=ghDepSaldo(T,d.saldo); return (<div>
       <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"16px 18px",marginBottom:12,boxShadow:DS.shadow.sm}}>
         <DepTile T={T} color={s.col===T.textSm?T.accent:s.col} ico={s.n<0?"hand":"wallet"} size={44}/>
         <div style={{flex:1,minWidth:180}}>
           <div style={{fontSize:DS.font.xs,fontWeight:600,letterSpacing:0.5,textTransform:"uppercase",color:T.textSm,marginBottom:4}}>Saldo</div>
           <div style={{fontSize:DS.font["3xl"],fontWeight:800,color:s.col,letterSpacing:-0.8,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{s.n>0?`Debe ${fmtMoney(s.n)}`:s.n<0?`${fmtMoney(-s.n)} a favor`:"Al día"}</div>
           <div style={{fontSize:DS.font.md,color:T.textMd,marginTop:8,lineHeight:1.6}}>
-            {d.tandas.length} tanda{d.tandas.length!==1?"s":""} sin pagar: <strong style={{color:T.text}}>{fmtMoney(d.deuda)}</strong>
-            {cargos>0&&<> · cargos extra: <strong style={{color:T.red}}>{fmtMoney(cargos)}</strong></>}
-            {favor>0&&<> · a favor: <strong style={{color:T.green}}>{fmtMoney(favor)}</strong></>}
+            Cargos: <strong style={{color:T.text}}>{fmtMoney(d.cargos||0)}</strong> · Pagos: <strong style={{color:T.green}}>{fmtMoney(d.creditos||0)}</strong>
+            {d.porVerificar>0&&<> · por verificar: <strong style={{color:T.yellow}}>{fmtMoney(d.porVerificar)}</strong></>}
           </div>
         </div>
       </div>
@@ -21841,30 +21841,22 @@ function DepositoCuentaModal({T,api,cliente,onClose,onAjustar,datos,reloadKey=0,
         <Btn T={T} variant="secondary" size="sm" onClick={()=>onAjustar("cobrar")}>Agregar un cargo</Btn>
         <span style={{fontSize:DS.font.sm,color:T.textSm}}>Un pago en efectivo o una bonificación baja la deuda. Un cargo (un insumo, un envío que pagaste vos) la sube.</span>
       </div>)}
+      {(d.pagos||[]).some(p=>p.estado==="a_verificar")&&(<div style={{fontSize:DS.font.md,color:T.textMd,marginBottom:16,padding:"10px 12px",background:T.yellow+"14",border:`1px solid ${T.yellow}55`,borderRadius:DS.r.lg}}>
+        Informó {d.pagos.filter(p=>p.estado==="a_verificar").length} transferencia{d.pagos.filter(p=>p.estado==="a_verificar").length!==1?"s":""} por {fmtMoney(d.porVerificar)} que todavía no verificaste. Se verifican desde "Transferencias por verificar", arriba de la lista de clientes.
+      </div>)}
       {d.meses?.length>0&&(<>
-        <DepLabel T={T}>Acumulado por mes</DepLabel>
-        <DepTable T={T} minWidth={440} empty="" rows={d.meses.map(m=>({...m,id:m.mes}))} cols={[
+        <DepLabel T={T}>Resumen por mes</DepLabel>
+        <DepTable T={T} minWidth={520} empty="" rows={d.meses.map(m=>({...m,id:m.mes}))} cols={[
           {h:"Mes",w:"1fr",render:m=><strong>{ghDepMesLindo(m.mes)}</strong>},
-          {h:"Pedidos",w:"80px",align:"right",render:m=>m.pedidos},
+          {h:"Etiquetas",w:"80px",align:"right",render:m=>m.etiquetas},
           {h:"Tandas",w:"70px",align:"right",render:m=>m.tandas},
-          {h:"Facturado",w:"110px",align:"right",render:m=><strong>{fmtMoney(m.total)}</strong>},
-          {h:"Cobrado",w:"110px",align:"right",render:m=><span style={{color:m.cobrado>0?T.green:T.textSm}}>{fmtMoney(m.cobrado)}</span>},
+          {h:"Cargos",w:"110px",align:"right",render:m=><strong>{fmtMoney(m.cargos)}</strong>},
+          {h:"Pagos",w:"110px",align:"right",render:m=><span style={{color:m.pagos>0?T.green:T.textSm}}>{fmtMoney(m.pagos)}</span>},
+          {h:"Saldo al cierre",w:"120px",align:"right",render:m=>{ const x=ghDepSaldo(T,m.saldoCierre); return <strong style={{color:x.col}}>{x.txt}</strong>; }},
         ]}/>
       </>)}
-      <DepLabel T={T} style={{marginTop:20}}>Tandas sin pagar</DepLabel>
-      <DepTable T={T} minWidth={440} empty="No debe ninguna tanda" rows={d.tandas} cols={[
-        {h:"Despacho",w:"90px",render:t=>ghDepFechaLinda(t.fechaDespacho)},
-        {h:"Tanda",w:"1fr",render:t=><span>{t.tipo==="especial"?(t.especial?.titulo||"Envío especial"):`${t.n} pedidos`}{t.ajuste?<span style={{color:T.textSm}}> · ajuste {fmtMoney(t.ajuste)}</span>:null}</span>},
-        {h:"Cobro",w:"110px",render:t=><DepDot T={T} color={T.yellow}>Sin cobrar</DepDot>},
-        {h:"Total",w:"110px",align:"right",render:t=><strong>{fmtMoney(t.total)}</strong>},
-      ]}/>
       <DepLabel T={T} style={{marginTop:20}}>Movimientos</DepLabel>
-      <DepTable T={T} minWidth={440} empty="Todavía no hay pagos ni cargos" rows={d.pagos} cols={[
-        {h:"Fecha",w:"80px",render:p=>p.informadoAt?new Date(p.informadoAt).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"}):"—"},
-        {h:"Detalle",w:"1fr",render:p=><span style={{color:T.textMd}}>{ghDepMovDetalle(p)}</span>},
-        {h:"Estado",w:"110px",render:p=>{ const e=ghDepMovEstado(T,p); return <DepDot T={T} color={e.c}>{e.t}</DepDot>; }},
-        {h:"Monto",w:"120px",align:"right",render:p=>ghDepMonto(T,p)},
-      ]}/>
+      <DepLedger T={T} movs={d.movs||[]}/>
     </div>); })()}
   </Modal>);
 }
@@ -21959,12 +21951,12 @@ function DepositoCola({T,api,owner}){
     let nota=""; if(accion==="cancelar"){ nota=await appPrompt(`¿Por qué se cancela el pedido #${a.numero} de ${a.clienteNombre}? El cliente lo ve.`,"",{okLabel:"Cancelar pedido"}); if(!nota) return; }
     setBusy(a.tandaId); try{ await api("pedido_resolver",{id:a.tandaId,idx:a.idx,accion,nota}); toast(accion==="cancelar"?`#${a.numero} cancelado`:`#${a.numero} vuelve a la tanda`,"success"); await cargar(); }catch(x){ toast(x.message,"error"); } setBusy(null);
   }
-  // Cancelar una tanda desde el depósito (solo la dueña): si ya estaba cobrada, el dinero vuelve al saldo del cliente.
+  // Cancelar una tanda desde el depósito (solo la dueña): sale de la cuenta corriente del cliente.
   async function cancelarTanda(t){
     if(busy) return;
-    const motivo=await appPrompt(`¿Por qué se cancela la tanda de ${t.clienteNombre} (${t.n} pedidos)? El cliente lo ve en su panel${t.pago?.estado==="verificado"?" y el importe vuelve a su saldo":""}.`,"",{okLabel:"Cancelar tanda"});
+    const motivo=await appPrompt(`¿Por qué se cancela la tanda de ${t.clienteNombre} (${t.n} pedidos)? El cliente lo ve en su panel y la tanda deja de contar en su cuenta.`,"",{okLabel:"Cancelar tanda"});
     if(!motivo) return;
-    setBusy(t.id); try{ const r=await api("tanda_cancelar",{id:t.id,motivo}); toast(r?.devuelto>0?`Tanda cancelada · ${fmtMoney(r.devuelto)} devueltos al saldo del cliente`:"Tanda cancelada","success"); await cargar(); }catch(x){ toast(x.message,"error"); } setBusy(null);
+    setBusy(t.id); try{ const r=await api("tanda_cancelar",{id:t.id,motivo}); toast("Tanda cancelada","success"); await cargar(); }catch(x){ toast(x.message,"error"); } setBusy(null);
   }
   async function notaDep(t){ const n=await appPrompt("Nota del depósito para el cliente (la ve en su panel):",t.notaDeposito||"",{okLabel:"Guardar"}); if(n===null||n===undefined) return; try{ await api("tanda_nota",{id:t.id,nota:n}); cargar(); }catch(x){ toast(x.message,"error"); } }
   async function reimprimir(r){
@@ -22216,11 +22208,22 @@ function DepositoHistorial({T,api}){
   </DepSection>);
 }
 // Detalle y estado de un movimiento de cuenta corriente (transferencia o ajuste).
-const ghDepMovDetalle=p=>{ if(p.tipo==="reverso") return "Devolución al saldo"+(p.nota?`: ${p.nota}`:""); if(p.tipo==="saldo") return "Saldo a favor aplicado a una tanda"; if(p.tipo==="ajuste") return (p.monto<0?"Cargo":"Pago registrado a mano")+(p.nota?`: ${p.nota}`:""); if(p.estado==="verificado") return `Transferencia · aplicada a ${p.aplicado?.length||0} tanda${p.aplicado?.length!==1?"s":""}`; if(p.estado==="rechazado") return `Transferencia rechazada: ${p.nota}`; return `Transferencia informada${p.notaCliente?` · ${p.notaCliente}`:""}`; };
+const ghDepMovDetalle=p=>{ if(p.tipo==="reverso") return "Devolución al saldo (modelo viejo)"+(p.nota?`: ${p.nota}`:""); if(p.tipo==="saldo") return "Saldo a favor aplicado (modelo viejo)"; if(p.tipo==="ajuste") return (p.monto<0?"Cargo":"Pago registrado a mano")+(p.nota?`: ${p.nota}`:""); if(p.estado==="verificado") return `Transferencia${p.notaCliente?` · ${p.notaCliente}`:""}`; if(p.estado==="rechazado") return `Transferencia rechazada: ${p.nota}`; return `Transferencia informada${p.notaCliente?` · ${p.notaCliente}`:""}`; };
 const ghDepMovEstado=(T,p)=>p.tipo==="reverso"?{c:T.green,t:"Devolución"}:p.tipo==="saldo"?{c:T.green,t:"Saldo aplicado"}:p.tipo==="ajuste"?{c:p.monto<0?T.red:T.green,t:p.monto<0?"Cargo":"Pago a mano"}:p.estado==="verificado"?{c:T.green,t:"Verificada"}:p.estado==="rechazado"?{c:T.red,t:"Rechazada"}:{c:T.yellow,t:"A verificar"};
 const ghDepMesLindo=m=>{ if(!m) return "—"; const d=new Date(`${m}-15T12:00:00`); const s=d.toLocaleDateString("es-AR",{month:"long",year:"numeric"}); return s.charAt(0).toUpperCase()+s.slice(1); };
 const ghDepMonto=(T,p)=><strong style={{color:p.monto<0?T.red:p.estado==="rechazado"?T.textSm:T.green,textDecoration:p.estado==="rechazado"?"line-through":"none",fontVariantNumeric:"tabular-nums"}}>{p.monto<0?"− ":"+ "}{fmtMoney(Math.abs(p.monto))}</strong>;
 const ghDepFechaCorta=ms=>ms?new Date(ms).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—";
+// Cuenta corriente como resumen bancario: fecha, concepto, debe, haber y saldo DESPUÉS del movimiento (del más nuevo al más viejo).
+function DepLedger({T,movs,minWidth=540}){
+  const celda=v=>v?<span style={{fontVariantNumeric:"tabular-nums"}}>{fmtMoney(v)}</span>:<span style={{color:T.textSm}}>—</span>;
+  return <DepTable T={T} minWidth={minWidth} empty="Todavía no hay movimientos" rows={movs} cols={[
+    {h:"Fecha",w:"80px",render:m=>m.fecha?new Date(m.fecha).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"}):"—"},
+    {h:"Detalle",w:"1fr",render:m=><span style={{color:T.textMd,display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.concepto}</span>},
+    {h:"Debe",w:"100px",align:"right",render:m=>celda(m.debe)},
+    {h:"Haber",w:"100px",align:"right",render:m=>m.haber?<span style={{color:T.green,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(m.haber)}</span>:<span style={{color:T.textSm}}>—</span>},
+    {h:"Saldo",w:"120px",align:"right",render:m=>{ const x=ghDepSaldo(T,m.saldo); return <strong style={{color:x.col,fontVariantNumeric:"tabular-nums"}}>{x.n>0?fmtMoney(x.n):x.n<0?`${fmtMoney(-x.n)} a favor`:"Al día"}</strong>; }},
+  ]}/>;
+}
 
 // Clientes y pagos (solo dueño): resumen, transferencias por verificar, clientes con su
 // acumulado del mes y saldo, historial de pagos y ajustes, y facturación por mes.
@@ -22252,11 +22255,11 @@ function DepositoCuentas({T,api,onClientes}){
     if(!(await appConfirm(`${aj.tipo==="cobrar"?"Agregar un cargo de":"Registrar un pago de"} ${fmtMoney(Math.abs(m))} a ${aj.cliente.nombre}. El cliente lo ve en su panel${aj.motivo?` con el motivo "${aj.motivo}"`:""}. ¿Confirmás?`,{okLabel:aj.tipo==="cobrar"?"Agregar cargo":"Registrar pago"}))) return;
     setBusy(true); try{ await api("saldo_ajustar",{clienteId:aj.cliente.id,monto,motivo:aj.motivo}); toast("Saldo actualizado","success"); setAj(null); setReload(r=>r+1); todo(); }catch(e){ toast(e.message,"error"); } setBusy(false);
   }
-  async function verificarCc(p,ok){ if(busy) return; let nota=""; if(!ok){ nota=await appPrompt("¿Por qué se rechaza la transferencia? El cliente lo ve en su panel.","",{okLabel:"Rechazar"}); if(!nota) return; } setBusy(true); try{ const r=await api("pago_cc_verificar",{id:p.id,ok,nota}); if(ok) toast(`Pago verificado: aplicado a ${r.aplicadas||0} tanda${r.aplicadas!==1?"s":""}${r.aFavor>0?` · ${fmtMoney(r.aFavor)} quedan a favor`:""}`,"success",6000); todo(); }catch(e){ toast(e.message,"error"); }  setBusy(false); }
+  async function verificarCc(p,ok){ if(busy) return; let nota=""; if(!ok){ nota=await appPrompt("¿Por qué se rechaza la transferencia? El cliente lo ve en su panel.","",{okLabel:"Rechazar"}); if(!nota) return; } setBusy(true); try{ await api("pago_cc_verificar",{id:p.id,ok,nota}); if(ok) toast("Pago verificado: ya descuenta de la cuenta del cliente","success"); todo(); }catch(e){ toast(e.message,"error"); }  setBusy(false); }
   async function compCc(p){ const w=ghDepVentana(p.comp.mime); try{ ghDepAbrirBytes(await ghDepBajar(api,"file_get",p.id,"pcomp",p.comp.chunks),p.comp.mime,p.comp.nombre,w); }catch(e){ if(w&&!w.closed) w.close(); toast(e.message,"error"); } }
   async function ajuste(t){ const v=await appPrompt(`Ajuste en pesos para esta tanda (negativo descuenta). Total actual: ${fmtMoney(t.total)}`,String(t.ajuste||0),{okLabel:"Aplicar"}); if(v===null||v===undefined||v==="") return; const n=Number(String(v).replace(",",".")); if(!isFinite(n)){ toast("Poné un número","warning"); return; } try{ await api("tanda_ajuste",{id:t.id,ajuste:n,motivo:"Ajuste manual"}); todo(); }catch(e){ toast(e.message,"error"); } }
   const bajarCsv=(filas,nombre)=>{ const csv="\ufeff"+filas.map(f=>f.map(x=>`"${String(x??"").replace(/"/g,'""')}"`).join(";")).join("\n"); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download=nombre; a.click(); };
-  function exportar(){ bajarCsv([["Cliente","Tandas","Pedidos","Facturado","Cobrado","A verificar","Sin informar"],...res.clientes.map(c=>[c.nombre,c.tandas,c.pedidos,c.total,c.verificado,c.aVerificar,c.sinInformar])],`deposito_${mes}.csv`); }
+  function exportar(){ bajarCsv([["Cliente","Tandas","Pedidos","Facturado en el mes","Cobrado en el mes","Saldo actual"],...res.clientes.map(c=>[c.nombre,c.tandas,c.pedidos,c.total,c.cobrado,c.saldo])],`deposito_${mes}.csv`); }
   // Un renglón por pedido del mes: para cruzar contra la factura de Andreani.
   async function exportarPedidos(){ try{ const d=await api("historial",{mes,pedidos:true}); const filas=[["Despacho","Cliente","Tanda","Canal","Estado tanda","Nº pedido","Comprador","Nº envío","Productos","Armado por","Apartado","Cancelado"]];
       for(const t of d.tandas){ if(t.estado==="cancelada") continue; const base=[t.fechaDespacho,t.clienteNombre,t.tipo==="especial"?(t.especial?.titulo||"Especial"):`${t.n} pedidos`,GH_DEP_CANAL[t.canal]||t.canal,GH_DEP_ESTADO[t.estado]||t.estado];
@@ -22264,8 +22267,7 @@ function DepositoCuentas({T,api,onClientes}){
       bajarCsv(filas,`deposito_pedidos_${mes}.csv`); }catch(e){ toast(e.message,"error"); } }
   const lbl=t=><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:5}}>{t}</div>;
   if(!d||!cc) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
-  const colP=ghDepColPago(T);
-  const saldoDe=c=>ghDepSaldo(T,(c.stats?.aVerificar||0)+(c.stats?.sinInformar||0),c.aFavor);
+  const saldoDe=c=>ghDepSaldo(T,c.stats?.saldo);
   const activos=d.clientes.filter(c=>c.activo);
   const deudaTotal=d.clientes.reduce((a,c)=>{ const s=saldoDe(c); return a+(s.n>0?s.n:0); },0);
   const favorTotal=d.clientes.reduce((a,c)=>{ const s=saldoDe(c); return a+(s.n<0?-s.n:0); },0);
@@ -22274,7 +22276,6 @@ function DepositoCuentas({T,api,onClientes}){
   const factMes=d.clientes.reduce((a,c)=>a+(c.stats?.mesTotal||0),0), pedMes=d.clientes.reduce((a,c)=>a+(c.stats?.mesPedidos||0),0), cobMes=d.clientes.reduce((a,c)=>a+(c.stats?.mesCobrado||0),0);
   const movimientos=cc.pagos.filter(p=>p.estado!=="a_verificar"&&(!filtro||p.clienteId===filtro)).slice(0,100);
   const tot=k=>(res?.clientes||[]).reduce((a,c)=>a+(c[k]||0),0);
-  const ordenPago={a_verificar:0,sin_informar:1,rechazado:2,verificado:3};
   const esteMes=mes===hoyAR().slice(0,7);
   const formUI=form&&(
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -22321,12 +22322,12 @@ function DepositoCuentas({T,api,onClientes}){
   );
   return (<div>
     <DepStats T={T} items={[
-      {l:"Te deben",v:fmtMoney(deudaTotal),ico:"wallet",c:deudaTotal>0?T.yellow:T.textSm,s:favorTotal>0?`${fmtMoney(favorTotal)} a favor de clientes`:"tandas sin pagar menos lo que tienen a favor"},
+      {l:"Te deben",v:fmtMoney(deudaTotal),ico:"wallet",c:deudaTotal>0?T.yellow:T.textSm,s:favorTotal>0?`${fmtMoney(favorTotal)} a favor de clientes`:"cargos menos pagos verificados"},
       {l:"Por verificar",v:pendientes.length,ico:"inbox",c:pendientes.length?T.orange:T.textSm,s:pendientes.length?`${fmtMoney(pendTotal)} en transferencias`:"ninguna transferencia pendiente"},
       {l:"Facturado este mes",v:fmtMoney(factMes),ico:"box",s:`${pedMes} pedido${pedMes!==1?"s":""} · ${activos.length} cliente${activos.length!==1?"s":""} activo${activos.length!==1?"s":""}`},
       {l:"Cobrado este mes",v:fmtMoney(cobMes),ico:"check",c:cobMes>0?T.green:T.textSm,s:"transferencias verificadas y pagos a mano"},
     ]}/>
-    {pendientes.length>0&&(<DepSection T={T} title="Transferencias por verificar" count={pendientes.length} desc="Lo que informaron los clientes y todavía no revisaste. Verificar aplica el pago a sus tandas más viejas sin pagar; si sobra queda a favor.">
+    {pendientes.length>0&&(<DepSection T={T} title="Transferencias por verificar" count={pendientes.length} desc="Lo que informaron los clientes y todavía no revisaste. Verificar la descuenta de la cuenta del cliente; rechazar la deja afuera.">
       <DepTable T={T} minWidth={700} empty="" rows={pendientes} cols={[
         {h:"Fecha",w:"70px",render:p=>ghDepFechaCorta(p.informadoAt)},
         {h:"Cliente",w:"1fr",render:p=><div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}><DepAvatar T={T} name={p.clienteNombre} size={28}/><div style={{minWidth:0}}><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.clienteNombre}</strong>{p.notaCliente?depSub(T,p.notaCliente):null}</div></div>},
@@ -22344,8 +22345,7 @@ function DepositoCuentas({T,api,onClientes}){
       {h:"Precio",w:"80px",align:"right",render:c=><span style={{color:T.textMd}}>{fmtMoney(c.precio)}</span>},
       {h:"Este mes",w:"130px",align:"right",render:c=><div style={{textAlign:"right"}}><div style={{fontWeight:700}}>{fmtMoney(c.stats.mesTotal)}</div>{depSub(T,`${c.stats.mesPedidos} pedido${c.stats.mesPedidos!==1?"s":""}`)}</div>},
       {h:"Cobrado",w:"110px",align:"right",render:c=><span style={{color:c.stats.mesCobrado>0?T.green:T.textSm}}>{fmtMoney(c.stats.mesCobrado||0)}</span>},
-      {h:"Sin pagar",w:"130px",align:"right",render:c=>{ const b=(c.stats.aVerificar||0)+(c.stats.sinInformar||0); return <div style={{textAlign:"right"}}><div style={{color:b>0?T.text:T.textSm}}>{fmtMoney(b)}</div>{c.stats.aVerificar>0?depSub(T,`${fmtMoney(c.stats.aVerificar)} a verificar`):null}</div>; }},
-      {h:"Saldo",w:"130px",align:"right",render:c=>{ const s=saldoDe(c); return <strong style={{color:s.col}}>{s.txt}</strong>; }},
+      {h:"Saldo",w:"150px",align:"right",render:c=>{ const s=saldoDe(c); return <div style={{textAlign:"right"}}><strong style={{color:s.col}}>{s.txt}</strong>{c.stats.porVerificar>0?depSub(T,`${fmtMoney(c.stats.porVerificar)} por verificar`):null}</div>; }},
       {h:"",w:"120px",align:"right",render:c=><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
         <Btn T={T} variant="secondary" size="sm" onClick={()=>abrir(c)}>Ver cliente</Btn>
       </div>},
@@ -22361,12 +22361,11 @@ function DepositoCuentas({T,api,onClientes}){
         {h:"",w:"120px",align:"right",render:p=>p.comp?<Btn T={T} variant="ghost" size="sm" onClick={()=>compCc(p)}>Comprobante</Btn>:null},
       ]}/>
     </DepSection>
-    <DepSection T={T} title="Facturación por mes" desc="Lo que se facturó a cada cliente en el mes elegido y cuánto de eso ya está cobrado." extra={<><input type="month" style={{...iS,marginBottom:0,width:170}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>{res&&res.clientes.length>0&&<Btn T={T} variant="secondary" size="sm" onClick={exportar}>Exportar resumen</Btn>}{hist&&hist.length>0&&<Btn T={T} variant="secondary" size="sm" onClick={exportarPedidos}>Exportar pedidos</Btn>}</>}>
+    <DepSection T={T} title="Facturación por mes" desc="Lo que se facturó a cada cliente en el mes elegido, lo que pagó en ese mes y su saldo de hoy." extra={<><input type="month" style={{...iS,marginBottom:0,width:170}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>{res&&res.clientes.length>0&&<Btn T={T} variant="secondary" size="sm" onClick={exportar}>Exportar resumen</Btn>}{hist&&hist.length>0&&<Btn T={T} variant="secondary" size="sm" onClick={exportarPedidos}>Exportar pedidos</Btn>}</>}>
     {!res||!hist? <div style={{display:"flex",justifyContent:"center",padding:40}}><Spinner size={24} color={T.accent}/></div> : (<>
       <div style={{display:"flex",gap:18,flexWrap:"wrap",alignItems:"baseline",marginBottom:12,fontSize:DS.font.base,color:T.textMd}}>
         <span><strong style={{color:T.text,fontSize:DS.font.xl}}>{fmtMoney(tot("total"))}</strong> facturados</span>
-        <span><strong style={{color:T.green}}>{fmtMoney(tot("verificado"))}</strong> cobrados</span>
-        <span><strong style={{color:tot("aVerificar")+tot("sinInformar")>0?T.yellow:T.textSm}}>{fmtMoney(tot("aVerificar")+tot("sinInformar"))}</strong> pendientes</span>
+        <span><strong style={{color:T.green}}>{fmtMoney(tot("cobrado"))}</strong> cobrados en el mes</span>
         <span style={{color:T.textSm}}>{tot("pedidos")} pedidos · {tot("tandas")} tandas{esteMes?" · mes en curso":""}</span>
       </div>
       <DepTable T={T} minWidth={640} empty="Sin tandas ese mes" rows={res.clientes.map(c=>({...c,id:c.clienteId}))} cols={[
@@ -22374,15 +22373,14 @@ function DepositoCuentas({T,api,onClientes}){
         {h:"Pedidos",w:"90px",align:"right",render:c=>c.pedidos},
         {h:"Tandas",w:"80px",align:"right",render:c=>c.tandas},
         {h:"Facturado",w:"120px",align:"right",render:c=><strong>{fmtMoney(c.total)}</strong>},
-        {h:"Cobrado",w:"120px",align:"right",render:c=><span style={{color:c.verificado>0?T.green:T.textSm}}>{fmtMoney(c.verificado)}</span>},
-        {h:"Pendiente",w:"120px",align:"right",render:c=><span style={{color:(c.aVerificar+c.sinInformar)>0?T.yellow:T.textSm}}>{fmtMoney(c.aVerificar+c.sinInformar)}</span>},
+        {h:"Cobrado en el mes",w:"130px",align:"right",render:c=><span style={{color:c.cobrado>0?T.green:T.textSm}}>{fmtMoney(c.cobrado)}</span>},
+        {h:"Saldo hoy",w:"130px",align:"right",render:c=>{ const s=ghDepSaldo(T,c.saldo); return <strong style={{color:s.col}}>{s.txt}</strong>; }},
       ]}/>
       {hist.length>0&&(<div style={{marginTop:12}}>
         <Btn T={T} variant="ghost" size="sm" onClick={()=>setVerTandas(v=>!v)}>{verTandas?"Ocultar las tandas del mes":`Ver las ${hist.length} tandas del mes`}</Btn>
-        {verTandas&&<div style={{marginTop:10}}><DepTable T={T} minWidth={760} empty="" rows={[...hist].sort((a,b)=>ordenPago[a.pago.estado]-ordenPago[b.pago.estado]||(b.fechaDespacho||"").localeCompare(a.fechaDespacho||""))} cols={[
+        {verTandas&&<div style={{marginTop:10}}><DepTable T={T} minWidth={760} empty="" rows={[...hist].sort((a,b)=>(b.fechaDespacho||"").localeCompare(a.fechaDespacho||""))} cols={[
           {h:"Despacho",w:"80px",render:t=>ghDepFechaLinda(t.fechaDespacho)},
           {h:"Cliente",w:"1.2fr",render:t=><div style={{minWidth:0}}><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.clienteNombre}</strong>{depSub(T,`${t.tipo==="especial"?(t.especial?.titulo||"Especial"):`${t.n} pedidos`}${t.ajuste?` · ajuste ${fmtMoney(t.ajuste)}`:""}`)}</div>},
-          {h:"Cobro",w:"120px",render:t=><DepDot T={T} color={t.pago.estado==="verificado"?T.green:T.yellow}>{t.pago.estado==="verificado"?"Cobrada":"Sin cobrar"}</DepDot>},
           {h:"Total",w:"110px",align:"right",render:t=><strong>{fmtMoney(t.total)}</strong>},
           {h:"",w:"120px",align:"right",render:t=><div style={{display:"flex",gap:4,justifyContent:"flex-end",flexWrap:"wrap"}}>
             <Btn T={T} variant="ghost" size="sm" onClick={()=>ajuste(t)}>Ajuste</Btn>
@@ -22397,7 +22395,7 @@ function DepositoCuentas({T,api,onClientes}){
         <div style={{display:"flex",border:`1px solid ${T.border}`,borderRadius:DS.r.md,overflow:"hidden"}}>
           {[["acreditar","Pago recibido","hand"],["cobrar","Cargo extra","tag"]].map(([k,l,ic])=><button key={k} onClick={()=>setAj(a=>({...a,tipo:k}))} style={{flex:1,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 0",border:"none",background:aj.tipo===k?(k==="cobrar"?T.red:T.green)+"1f":"transparent",color:aj.tipo===k?(k==="cobrar"?T.red:T.green):T.textMd,fontWeight:aj.tipo===k?700:500,fontSize:DS.font.base,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}><DepIco d={ic} size={14}/>{l}</button>)}
         </div>
-        <div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.6,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,padding:"10px 12px"}}>{aj.tipo==="acreditar"?"Baja la deuda del cliente. Se aplica a sus tandas más viejas sin pagar y, si sobra, queda a su favor. Para un pago en efectivo, una bonificación o un descuento.":"Sube la deuda del cliente. Para un insumo que le compraste, un envío que pagaste vos o cualquier extra que le cobrás."}</div>
+        <div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.6,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,padding:"10px 12px"}}>{aj.tipo==="acreditar"?"Baja la deuda del cliente. Para un pago en efectivo, una bonificación o un descuento.":"Sube la deuda del cliente. Para un insumo que le compraste, un envío que pagaste vos o cualquier extra que le cobrás."}</div>
         <div style={{width:180}}>{lbl("Monto ($)")}<input style={iS} type="number" min="0" autoFocus value={aj.monto} onChange={e=>setAj(a=>({...a,monto:e.target.value}))}/></div>
         <div>{lbl("Motivo (el cliente lo ve)")}<input style={iS} placeholder="Ej.: pago en efectivo del 20/09" value={aj.motivo} onChange={e=>setAj(a=>({...a,motivo:e.target.value}))}/></div>
         <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={()=>setAj(null)}>Cancelar</Btn><Btn T={T} variant={aj.tipo==="cobrar"?"danger":"success"} onClick={ajustar} disabled={busy}>{busy?"Guardando…":aj.tipo==="cobrar"?"Agregar cargo":"Registrar pago"}</Btn></div>

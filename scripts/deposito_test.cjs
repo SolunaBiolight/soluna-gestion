@@ -1,11 +1,11 @@
-// Pruebas de las funciones puras del Depósito (api/deposito.js): FIFO de
-// cuenta corriente y extra por unidades. Sin dependencias: node scripts/deposito_test.cjs
+// Pruebas de las funciones puras del Depósito (api/deposito.js): cobro por
+// unidad, total de la tanda y ledger de la cuenta corriente. Sin dependencias: node scripts/deposito_test.cjs
 const fs=require("fs");
 const src=fs.readFileSync("api/deposito.js","utf8");
 function fn(name){ const i=src.indexOf(`\nexport function ${name}(`); if(i<0) throw new Error("no "+name); const j=src.indexOf("\n}\n",i); return src.slice(i,j+3).replace("export function","function"); }
-const num=`const num = v => { const n = Number(v); return isFinite(n) ? n : 0; };`;
+const num=`const num = v => { const n = Number(v); return isFinite(n) ? n : 0; }; const ms = v => v?.toMillis?.() ?? (v?._seconds ? v._seconds * 1000 : (typeof v === "number" ? v : null));`;
 const tot=src.slice(src.indexOf("const totalDe = "),src.indexOf("\n",src.indexOf("const totalDe = "))+1);
-const M=new Function(num+fn("unidadesDe")+fn("extraItemsDe")+fn("fifoPuro")+tot+"\nreturn {unidadesDe,extraItemsDe,fifoPuro,totalDe};")();
+const M=new Function(num+fn("unidadesDe")+fn("extraItemsDe")+fn("ledgerDe")+tot+"\nreturn {unidadesDe,extraItemsDe,ledgerDe,totalDe};")();
 let fails=0,n=0;
 const eq=(d,g,e)=>{ n++; if(JSON.stringify(g)!==JSON.stringify(e)){ fails++; console.log("FAIL",d,"\n   got:",JSON.stringify(g),"\n   exp:",JSON.stringify(e)); } };
 // unidades
@@ -28,12 +28,18 @@ eq("8 unidades: 4.000 y sin paquete",tt([{items:["8x A"]}]),4000);
 eq("mezcla: 2 paquetes + 7 unidades",tt([{items:["A"]},{items:["B"]},{items:["7x A"]}]),7500);
 eq("sin detalle (tanda vieja o por páginas)",M.totalDe({n:4,precioUnit:2000,extraItems:0,ajuste:-500}),7500);
 eq("ajuste no deja negativo",tt([{items:["A"]}],-9000),0);
-// fifo
-const T=[{id:"a",total:1000},{id:"b",total:2000},{id:"c",total:3000}];
-eq("paga la primera y sobra",M.fifoPuro(1500,T),{aplicado:["a"],resto:500});
-eq("paga todas, resto a favor",M.fifoPuro(6500,T),{aplicado:["a","b","c"],resto:500});
-eq("no alcanza ninguna",M.fifoPuro(900,T),{aplicado:[],resto:900});
-eq("cargo pendiente (aFavor negativo) se conserva",M.fifoPuro(2000+(-5000),T),{aplicado:[],resto:-3000});
-eq("cargo cubierto y paga",M.fifoPuro(4000+(-500),T),{aplicado:["a","b"],resto:500});
-eq("centavos",M.fifoPuro(1000.004,T),{aplicado:["a"],resto:0});
+// ledger: cargos (tandas) − pagos verificados; movimientos del más nuevo al más viejo con saldo
+const D=f=>Date.parse(`${f}T15:00:00Z`);
+const T1=[{id:"a",t:{estado:"entregada",total:1000,n:2,fechaDespacho:"2026-09-10",createdAt:D("2026-09-09")}},{id:"b",t:{estado:"pendiente",total:2000,n:4,fechaDespacho:"2026-10-02",createdAt:D("2026-10-01")}},{id:"x",t:{estado:"cancelada",total:9000,n:9,fechaDespacho:"2026-10-03",createdAt:D("2026-10-01")}},{id:"y",t:{estado:"borrador",total:500,n:1,fechaDespacho:"2026-10-03"}}];
+const P1=[{id:"p1",p:{estado:"verificado",monto:1500,verificadoAt:D("2026-09-20")}},{id:"p2",p:{estado:"a_verificar",monto:700,informadoAt:D("2026-10-05")}},{id:"p3",p:{estado:"rechazado",monto:300}},{id:"p4",p:{estado:"verificado",tipo:"ajuste",monto:-200,nota:"insumo",verificadoAt:D("2026-10-04")}}];
+const L=M.ledgerDe(T1,P1);
+eq("saldo = cargos − pagos (cancelada y borrador no cuentan)",[L.saldo,L.cargos,L.creditos,L.porVerificar],[1700,3200,1500,700]);
+eq("orden: más nuevo primero, con saldo después de cada uno",L.movs.map(m=>[m.tipo,m.saldo]),[["cargo",1700],["tanda",1500],["transferencia",-500],["tanda",1000]]);
+eq("concepto de la tanda",L.movs[3].concepto,"2 etiquetas");
+eq("meses: etiquetas, cargos, pagos y saldo al cierre",L.meses,[{mes:"2026-10",etiquetas:4,tandas:1,cargos:2200,pagos:0,saldoCierre:1700},{mes:"2026-09",etiquetas:2,tandas:1,cargos:1000,pagos:1500,saldoCierre:-500}]);
+eq("reverso y saldo (modelo viejo) se ignoran",M.ledgerDe(T1,[...P1,{id:"r",p:{estado:"verificado",tipo:"reverso",monto:1000}},{id:"s",p:{estado:"verificado",tipo:"saldo",monto:1000}}]).saldo,1700);
+eq("tanda cobrada con comprobante por tanda (sin pagoId) = cargo + pago",M.ledgerDe([{id:"v",t:{estado:"entregada",total:800,n:1,fechaDespacho:"2026-08-01",pago:{estado:"verificado",verificadoAt:D("2026-08-02")}}}],[]).saldo,0);
+eq("tanda verificada por FIFO (con pagoId) sigue siendo cargo",M.ledgerDe([{id:"v",t:{estado:"entregada",total:800,n:1,fechaDespacho:"2026-08-01",pago:{estado:"verificado",pagoId:"p9"}}}],[{id:"p9",p:{estado:"verificado",monto:800,verificadoAt:D("2026-08-02")}}]).saldo,0);
+eq("ajuste y por unidad en el concepto",M.ledgerDe([{id:"z",t:{estado:"impresa",total:3500,n:3,ajuste:-500,extraDetalle:{pedidosConExtra:1},fechaDespacho:"2026-10-06"}}],[]).movs[0].concepto,"3 etiquetas (1 por unidad) · ajuste −500");
+eq("vacío",M.ledgerDe([],[]),{saldo:0,cargos:0,creditos:0,porVerificar:0,movs:[],meses:[]});
 console.log(`${n-fails}/${n} ok${fails?" — "+fails+" FALLAS":""}`); if(fails) process.exit(1);
