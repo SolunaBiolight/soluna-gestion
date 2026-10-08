@@ -31,7 +31,7 @@ function agruparFamiliasML(products) {
     if (grupo.length < 2) continue;
     const base = grupo[0];
     const titulos = grupo.map(g => g.title);
-    const comun = prefijoComun(titulos).replace(/[\s\-·,]+$/, "") || base.title;
+    const comun = base._familiaNombre || prefijoComun(titulos).replace(/[\s\-·,]+$/, "") || base.title;
     const variants = grupo.map(g => ({
       id: g.id, product_id: g.id,
       title: g._variante || g.title.slice(comun.length).trim() || g.id,
@@ -41,7 +41,7 @@ function agruparFamiliasML(products) {
     products.splice(idx, 1, { id: `MLF-${fid}`, platform: "mercadolibre", platform_label: "ML", title: comun, sku: "", image: base.image, price: base.price, variants, familia: true });
     for (const g of grupo.slice(1)) { const i = products.indexOf(g); if (i >= 0) products.splice(i, 1); }
   }
-  for (const p of products) { delete p._familia; delete p._variante; }
+  for (const p of products) { delete p._familia; delete p._variante; delete p._familiaNombre; }
 }
 function prefijoComun(arr) {
   if (!arr.length) return "";
@@ -541,7 +541,10 @@ export default async function handler(req, res) {
                       // Shopify/TN: el mapeo elige una y pushML/sync_sales ya las
                       // resuelven por variant_id (= id de la variación).
                       variants: mlVariantes(d.body.variations),
-                      _familia: d.body.user_product_id || d.body.family_id || null,
+                      // user_product_id es único por publicación; el que agrupa las
+                      // hermanas (M / L / XL) es family_id.
+                      _familia: d.body.family_id ? String(d.body.family_id) : null,
+                      _familiaNombre: d.body.family_name || null,
                       _variante: mlVarianteDeAtributos(d.body.attributes, d.body.title),
                     });
                   }
