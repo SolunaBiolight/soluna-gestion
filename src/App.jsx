@@ -22484,13 +22484,14 @@ function DepositoAccesos({T,api,panel}){
       <textarea style={{...iS,minHeight:70,resize:"vertical"}} placeholder={"Alias: deposito.soluna\nTitular: …\nCUIT: …"} value={cfg.datosPago} onChange={e=>setCfg(c=>({...c,datosPago:e.target.value}))}/>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6,marginTop:8}}><DepTile T={T} color={T.orange} ico="clock" size={30}/><div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>Hora de corte</div></div>
       <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:10,lineHeight:1.6}}>Las tandas que llegan antes de esta hora salen el mismo día; después, al día siguiente. El cliente lo ve al enviar.</div>
+      <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:12}}><input style={{...iS,width:90,marginBottom:0}} type="number" min="0" max="23" value={cfg.corteHora} onChange={e=>setCfg(c=>({...c,corteHora:e.target.value}))}/><span style={{fontSize:DS.font.md,color:T.textMd}}>:00 hs</span></div>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6,marginTop:12}}><DepTile T={T} color={T.purple} ico="box" size={30}/><div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>Cobro por unidad</div></div>
       <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:10,lineHeight:1.6}}>Un pedido con hasta estas unidades paga el precio por paquete. Con más unidades, paga el precio por unidad por TODAS sus unidades y NO paga el precio por paquete: es uno u otro. Con 5 incluidas y $500 por unidad, un pedido de 6 unidades paga $3.000 y uno de 8 paga $4.000. Se calcula con los productos de cada pedido.</div>
       <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
         <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textMd}}>Incluidas<input style={{...iS,width:70,marginBottom:0}} type="number" min="0" max="999" value={cfg.extraItemsIncluidos} onChange={e=>setCfg(c=>({...c,extraItemsIncluidos:e.target.value}))}/></label>
         <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textMd}}>Extra por unidad $<input style={{...iS,width:90,marginBottom:0}} type="number" min="0" value={cfg.extraItemPrecio} onChange={e=>setCfg(c=>({...c,extraItemPrecio:e.target.value}))}/></label>
       </div>
-      <div style={{display:"flex",gap:10,alignItems:"center"}}><input style={{...iS,width:90,marginBottom:0}} type="number" min="0" max="23" value={cfg.corteHora} onChange={e=>setCfg(c=>({...c,corteHora:e.target.value}))}/><span style={{fontSize:DS.font.md,color:T.textMd}}>:00 hs</span><Btn T={T} variant="primary" size="sm" onClick={guardarCfg} disabled={busy}>{busy?"Guardando…":"Guardar"}</Btn></div>
+      <div style={{display:"flex",justifyContent:"flex-end"}}><Btn T={T} variant="primary" size="sm" onClick={guardarCfg} disabled={busy}>{busy?"Guardando…":"Guardar"}</Btn></div>
     </Card>)}
     <div>
     {fila("Tu panel","Abre esta consola completa (cola, historial, clientes, pagos y configuración) sin entrar a Growith. Es tuyo: no lo compartas.",d.adminToken,"admin",d.adminAt)}
