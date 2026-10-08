@@ -12,6 +12,15 @@ import { esTiendaDemo, inventarioDemo } from "./_demo_ads.js";
 
 // Tope de ids por llamada a GET /items?ids= de Mercado Libre (bajó de 50 a 20 en oct/2026).
 const ML_MULTIGET = 20;
+// Variaciones de una publicación de ML → [{id, title, sku}] para el mapeo por talle.
+function mlVariantes(variations) {
+  if (!Array.isArray(variations) || !variations.length) return [];
+  return variations.map(v => {
+    const combo = (v.attribute_combinations || []).map(a => a.value_name).filter(Boolean).join(" / ");
+    const skuAttr = (v.attributes || []).find(a => a.id === "SELLER_SKU")?.value_name;
+    return { id: String(v.id), title: combo || `Variación ${v.id}`, sku: v.seller_custom_field || skuAttr || "", stock: v.available_quantity ?? null };
+  });
+}
 
 // Con varias cuentas de ML conectadas, las publicaciones/gestión de ML usan la
 // cuenta elegida para VENTAS de ML (margenesMlVentas). Vacío = primera (1 solo ML).
@@ -468,7 +477,7 @@ export default async function handler(req, res) {
                 const details = [];
                 let detErr = null;
                 for (let k = 0; k < ids.length && !detErr; k += ML_MULTIGET) {
-                  const detailsRes = await fetch(`https://api.mercadolibre.com/items?ids=${ids.slice(k, k + ML_MULTIGET).join(",")}&attributes=id,title,thumbnail,price,seller_custom_field`, {
+                  const detailsRes = await fetch(`https://api.mercadolibre.com/items?ids=${ids.slice(k, k + ML_MULTIGET).join(",")}&attributes=id,title,thumbnail,price,seller_custom_field,variations`, {
                     headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
                   });
                   if (!detailsRes.ok) { detErr = `HTTP ${detailsRes.status} (details): ${(await detailsRes.text().catch(()=>"")).slice(0, 200)}`; break; }
@@ -489,6 +498,10 @@ export default async function handler(req, res) {
                       sku: d.body.seller_custom_field || "",
                       image: d.body.thumbnail,
                       price: parseFloat(d.body.price) || 0,
+                      // Variaciones de ML (talle, color…) como variantes, igual que
+                      // Shopify/TN: el mapeo elige una y pushML/sync_sales ya las
+                      // resuelven por variant_id (= id de la variación).
+                      variants: mlVariantes(d.body.variations),
                     });
                   }
                 }
