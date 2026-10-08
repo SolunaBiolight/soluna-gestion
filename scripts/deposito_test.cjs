@@ -13,19 +13,19 @@ eq("2x",M.unidadesDe(["2x ROJ-NN","1x LIQ"]),3);
 eq("(x2)",M.unidadesDe(["ROJ-NN (x2)","LIQ"]),3);
 eq("sin cantidad",M.unidadesDe(["ROJ-NN","NARAN-TT"]),2);
 eq("vacío",M.unidadesDe([]),0);
-// extra: 5 incluidas, $500 por unidad desde la sexta
+// cobro por unidad: hasta 5 unidades = paquete; más de 5 = $500 por CADA unidad, sin paquete
 const cfg={extraItemsIncluidos:5,extraItemPrecio:500};
-eq("5 unidades sin extra",M.extraItemsDe([{items:["5x A"]}],cfg).monto,0);
-eq("6 unidades = 1 extra",M.extraItemsDe([{items:["4x A","2x B"]}],cfg).monto,500);
-eq("8 unidades = 3 extra",M.extraItemsDe([{items:["8x A"]}],cfg),{unidades:8,extraUnidades:3,pedidosConExtra:1,incluidos:5,precioExtra:500,monto:1500});
+eq("5 unidades = paquete, sin extra",M.extraItemsDe([{items:["5x A"]}],cfg).monto,0);
+eq("6 unidades = 6 × 500",M.extraItemsDe([{items:["4x A","2x B"]}],cfg).monto,3000);
+eq("8 unidades = 8 × 500",M.extraItemsDe([{items:["8x A"]}],cfg),{unidades:8,extraUnidades:8,pedidosConExtra:1,incluidos:5,precioExtra:500,monto:4000});
 eq("por pedido, no por tanda",M.extraItemsDe([{items:["3x A"]},{items:["3x A"]}],cfg).monto,0);
-eq("cancelado no cuenta",M.extraItemsDe([{items:["9x A"],cancelado:true},{items:["7x A"]}],cfg).monto,1000);
-eq("defaults",M.extraItemsDe([{items:["6x A"]}],null).monto,500);
+eq("cancelado no cuenta",M.extraItemsDe([{items:["9x A"],cancelado:true},{items:["7x A"]}],cfg).monto,3500);
+eq("defaults",M.extraItemsDe([{items:["6x A"]}],null).monto,3000);
 // total: el pedido cobrado por unidad NO paga el precio por paquete
 const tt=(peds,ajuste=0)=>{ const e=M.extraItemsDe(peds,cfg); return M.totalDe({n:peds.length,precioUnit:2000,extraItems:e.monto,extraDetalle:e,ajuste}); };
 eq("3 pedidos chicos = 3 paquetes",tt([{items:["A"]},{items:["5x A"]},{items:["2x B"]}]),6000);
-eq("8 unidades: 3 extras y sin paquete",tt([{items:["8x A"]}]),1500);
-eq("mezcla: 2 paquetes + 1 por unidad",tt([{items:["A"]},{items:["B"]},{items:["7x A"]}]),5000);
+eq("8 unidades: 4.000 y sin paquete",tt([{items:["8x A"]}]),4000);
+eq("mezcla: 2 paquetes + 7 unidades",tt([{items:["A"]},{items:["B"]},{items:["7x A"]}]),7500);
 eq("sin detalle (tanda vieja o por páginas)",M.totalDe({n:4,precioUnit:2000,extraItems:0,ajuste:-500}),7500);
 eq("ajuste no deja negativo",tt([{items:["A"]}],-9000),0);
 // fifo

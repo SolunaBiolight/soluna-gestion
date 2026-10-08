@@ -65,10 +65,11 @@ const ms = v => v?.toMillis?.() ?? (v?._seconds ? v._seconds * 1000 : (typeof v 
 const idOk = v => /^[A-Za-z0-9_-]{10,40}$/.test(String(v || ""));
 const fechaOk = v => { const f = String(v || ""); if (!esFecha(f)) return false; const t = Date.parse(`${f}T12:00:00Z`); return isFinite(t) && new Date(t).toISOString().slice(0, 10) === f && Math.abs(t - Date.now()) < 400 * 86400000; };
 const MONTO_MAX = 50000000;
-// Extra por unidades (7/oct/2026): un pedido con hasta `incluidos` unidades
-// paga el precio por paquete; con MÁS unidades paga `precioExtra` por cada
-// unidad de más y NO paga el precio por paquete (es uno u otro, regla de
-// Soluna 7/oct). `pedidosConExtra` = pedidos que se cobran por unidad.
+// Cobro por unidad (7/oct/2026): un pedido con hasta `incluidos` unidades
+// paga el precio por paquete; con MÁS unidades paga `precioExtra` por CADA
+// unidad (todas, no solo las de más) y NO paga el precio por paquete (es uno
+// u otro, regla de Soluna 7/oct: 6 unidades = 6 × 500). `pedidosConExtra` =
+// pedidos cobrados por unidad; `extraUnidades` = unidades cobradas.
 // "2x ROJ-NN" / "ROJ-NN (x2)" / "ROJ-NN" = 2 / 2 / 1 unidades.
 export function unidadesDe(items) {
   let u = 0;
@@ -80,7 +81,7 @@ export function unidadesDe(items) {
 export function extraItemsDe(pedidos, cfg) {
   const incl = Math.max(0, Math.round(num(cfg?.extraItemsIncluidos ?? 5))), precio = Math.max(0, num(cfg?.extraItemPrecio ?? 500));
   let unidades = 0, extraUnidades = 0, pedidosConExtra = 0;
-  for (const p of pedidos || []) { if (p?.cancelado) continue; const u = unidadesDe(p?.items); unidades += u; const ex = Math.max(0, u - incl); if (ex > 0) { extraUnidades += ex; pedidosConExtra++; } }
+  for (const p of pedidos || []) { if (p?.cancelado) continue; const u = unidadesDe(p?.items); unidades += u; if (u > incl) { extraUnidades += u; pedidosConExtra++; } }
   return { unidades, extraUnidades, pedidosConExtra, incluidos: incl, precioExtra: precio, monto: +(extraUnidades * precio).toFixed(2) };
 }
 // FIFO puro (sin Firestore, testeable): `disponible` = monto + saldo a favor
