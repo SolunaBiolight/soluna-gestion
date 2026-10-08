@@ -22044,7 +22044,8 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   const pendHoyConPdf=paraHoy.filter(t=>t.estado==="pendiente"&&t.pdf&&!t.pdf.purgado).sort((a,b)=>(urg(b)?1:0)-(urg(a)?1:0)||(a.fechaDespacho||"").localeCompare(b.fechaDespacho||""));
   const apartados=st.apartados||[];
   const Tanda=({t})=>{ const open=abierta===t.id; const v=vista[t.id]||"picking"; const pick=ghDepPicking(t.pedidos.filter(p=>!p.cancelado)); const ap=t.pedidos.filter(p=>p.apartado&&!p.cancelado).length; const canc=t.pedidos.filter(p=>p.cancelado).length; const conItems=t.pedidos.some(p=>p.items.length); const arm=t.pedidos.filter(p=>p.armado&&!p.cancelado).length; const nP=t.pedidos.filter(p=>!p.cancelado).length; const done=nP>0&&arm>=nP;
-    const esp=t.tipo==="especial"; const cCanal=esp?(urg(t)?T.red:T.purple):t.canal==="ml"?T.yellow:T.accent; const ico=esp?"bag":t.canal==="ml"?"tag":"truck";
+    // Color por CANAL (quién retira): Andreani rojo, Mercado Libre amarillo, retiro azul, otro gris; especial violeta.
+    const esp=t.tipo==="especial"; const cCanal=esp?T.purple:({andreani:T.red,ml:T.yellow,retiro:T.blue}[t.canal]||T.textMd); const ico=esp?"bag":t.canal==="ml"?"tag":"truck";
     const entregada=t.estado==="entregada"; const atras=!entregada&&t.fechaDespacho<st.hoy; const esHoy=t.fechaDespacho===st.hoy;
     const unidades=pick.reduce((a,x)=>a+x.cant,0); const maxCant=pick.reduce((a,x)=>Math.max(a,x.cant),0);
     const ult=t.hist?.length?t.hist[t.hist.length-1]:null;
@@ -22057,14 +22058,15 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
       :t.estado==="armada"?<DepMainBtn T={T} ico="truck" color={T.isDark?"#16a34a":"#15803d"} disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Entregada al correo</DepMainBtn>:null;
     const bi=(d,txt)=><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d={d} size={13}/>{txt}</span>;
     return (
-    <div style={{background:T.card,border:`1px solid ${urg(t)?T.red+"66":open?T.accentSolid+"66":T.border}`,borderRadius:20,boxShadow:open?DS.shadow.md:DS.shadow.sm,overflow:"hidden",transition:"box-shadow .15s, border-color .15s",opacity:entregada&&!open?0.85:1}}>
-      <div style={{padding:"18px 20px 16px"}}>
+    <div style={{position:"relative",background:`linear-gradient(90deg, ${cCanal}14 0%, ${T.card} 38%)`,backgroundColor:T.card,border:`1px solid ${urg(t)?T.red+"88":open?cCanal+"88":cCanal+"40"}`,borderRadius:20,boxShadow:open?DS.shadow.md:DS.shadow.sm,overflow:"hidden",transition:"box-shadow .15s, border-color .15s",opacity:entregada&&!open?0.85:1}}>
+      <div style={{position:"absolute",left:0,top:0,bottom:0,width:6,background:cCanal}}/>
+      <div style={{padding:"18px 20px 16px 24px"}}>
         <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
           <DepTile T={T} color={cCanal} ico={ico} size={46}/>
           <div style={{flex:"1 1 260px",minWidth:0,cursor:"pointer"}} onClick={toggle}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",minHeight:24}}>
               <span style={{fontSize:DS.font["2xl"],fontWeight:800,color:T.text,letterSpacing:-0.4,lineHeight:1.15}}>{t.clienteNombre}</span>
-              <DepCount T={T} color={cCanal}>{esp?(t.especial?.titulo||"Envío especial"):`${t.n} pedido${t.n!==1?"s":""}`}</DepCount>
+              <DepCount T={T}>{esp?(t.especial?.titulo||"Envío especial"):`${t.n} pedido${t.n!==1?"s":""}`}</DepCount>
               {urg(t)&&<DSBadge T={T} color={T.red} size="sm">Urgente</DSBadge>}
               {t.fueraDeCorte&&!entregada&&<DSBadge T={T} color={T.yellow} size="sm">Fuera de corte</DSBadge>}
               {t.revisarCantidad&&!entregada&&<span title={`El cliente declaró ${t.revisarCantidad.n} pedidos y el PDF tiene ${t.revisarCantidad.pages} páginas`}><DSBadge T={T} color={T.orange} size="sm">Revisar cantidad: {t.revisarCantidad.n} pedidos, PDF de {t.revisarCantidad.pages} pág.</DSBadge></span>}
@@ -22072,7 +22074,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
               {canc>0&&<DSBadge T={T} color={T.textSm} size="sm">{canc} cancelado{canc!==1?"s":""}</DSBadge>}
             </div>
             <div style={{display:"flex",gap:16,flexWrap:"wrap",marginTop:7,alignItems:"center"}}>
-              <DepFact T={T} ico={esp?"bag":t.canal==="ml"?"tag":"truck"}>{GH_DEP_CANAL[t.canal]||t.canal}</DepFact>
+              <span style={{display:"inline-flex",alignItems:"center",gap:6,height:24,padding:"0 10px",borderRadius:DS.r.full,background:cCanal+"26",border:`1px solid ${cCanal}66`,color:T.text,fontSize:DS.font.md,fontWeight:700,whiteSpace:"nowrap"}}><span style={{width:8,height:8,borderRadius:99,background:cCanal}}/>{GH_DEP_CANAL[t.canal]||t.canal}{esp?" · especial":""}</span>
               <DepFact T={T} ico="calendar" color={atras?T.red:esHoy&&!entregada?T.accent:undefined}>{atras?`atrasada · era el ${ghDepFechaLinda(t.fechaDespacho)}`:esHoy?"despacho hoy":`despacho ${ghDepFechaLinda(t.fechaDespacho)}`}</DepFact>
               {conItems&&<DepFact T={T} ico="box">{pick.length} producto{pick.length!==1?"s":""} · {unidades} unidad{unidades!==1?"es":""}</DepFact>}
               {esp&&t.especial?.bultos>0&&<DepFact T={T} ico="inbox">{t.especial.bultos} bulto{t.especial.bultos!==1?"s":""}</DepFact>}
@@ -22104,7 +22106,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
         {(t.nota||t.especial?.instrucciones)&&<DepNota T={T} titulo={esp?"Instrucciones del cliente":"Nota del cliente"} color={esp?cCanal:T.yellow} style={{marginTop:12}}>{t.especial?.instrucciones}{t.especial?.instrucciones&&t.nota?"\n":""}{t.nota}</DepNota>}
         {t.notaDeposito&&!open&&<DepNota T={T} titulo="Nota al cliente" color={T.blue} ico="hand" style={{marginTop:8}}>{t.notaDeposito}</DepNota>}
       </div>
-      {open&&(<div style={{borderTop:`1px solid ${T.borderL}`,background:T.isDark?T.surface+"66":T.surface,padding:"16px 20px 18px"}}>
+      {open&&(<div style={{borderTop:`1px solid ${T.borderL}`,background:T.isDark?T.surface+"66":T.surface,padding:"16px 20px 18px 24px"}}>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
           <DepSeg T={T} value={vistaAct} items={segItems} onChange={k=>setVista(x=>({...x,[t.id]:k}))}/>
           <span style={{flex:1}}/>
