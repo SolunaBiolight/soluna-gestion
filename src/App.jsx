@@ -21892,6 +21892,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
 const ghDepCol=T=>({pendiente:T.textMd,impresa:T.accent,armada:T.yellow,entregada:T.green,cancelada:T.red});
 // Íconos de línea (24x24) del depósito.
 const GH_DEP_ICO={
+  eye:"M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 15a3 3 0 100-6 3 3 0 000 6z",
   box:"M21 8l-9-5-9 5v8l9 5 9-5V8zM3.3 8.3L12 13l8.7-4.7M12 13v9",
   truck:"M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 19a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM18.5 19a1.5 1.5 0 100-3 1.5 1.5 0 000 3z",
   clock:"M12 22a10 10 0 100-20 10 10 0 000 20zM12 6v6l4 2",
@@ -22130,6 +22131,14 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   const [menu,setMenu]=useState(false);
   const [verHechas,setVerHechas]=useState(false);
   const [posponer,setPosponer]=useState(null);
+  const [previa,setPrevia]=useState(null);
+  // Vista previa: muestra el PDF adentro de la consola SIN marcar la tanda como impresa.
+  async function verPrevia(t){
+    setBusy(t.id);
+    try{ const bytes=await ghDepBajar(api,"file_get",t.id,"pdf",t.pdf.chunks); setPrevia({t,url:URL.createObjectURL(new Blob([bytes],{type:"application/pdf"}))}); }
+    catch(x){ toast(x.message,"error"); } setBusy(null);
+  }
+  const cerrarPrevia=()=>{ if(previa?.url) URL.revokeObjectURL(previa.url); setPrevia(null); };
   const [todoHoy,setTodoHoy]=useState(null); // progreso "Imprimir todo lo de hoy"
   const [scan,setScan]=useState(""); const [scans,setScans]=useState([]); const [elegir,setElegir]=useState(null); const scanRef=React.useRef(null);
   const [flash,setFlash]=useState(null); // "ok"|"warn"|"error": color del lector tras cada lectura
@@ -22289,8 +22298,10 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
             </div>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+            {t.pdf&&!t.pdf.purgado&&t.estado==="pendiente"&&<DepBtn T={T} variant="secondary" ico="eye" disabled={busy===t.id} onClick={()=>verPrevia(t)}>Vista previa</DepBtn>}
             {accion}
             <DepMenu T={T} disabled={busy===t.id} items={[
+              t.pdf&&!t.pdf.purgado&&t.estado!=="pendiente"&&{ico:"eye",label:"Ver el PDF",onClick:()=>verPrevia(t)},
               t.pdf&&!t.pdf.purgado&&t.estado!=="pendiente"&&{ico:"print",label:"Reimprimir etiquetas",onClick:()=>imprimir(t)},
               !entregada&&{ico:"calendar",label:"Posponer",onClick:()=>setPosponer(t)},
               {ico:"note",label:t.notaDeposito?"Editar nota al cliente":"Nota al cliente",onClick:()=>notaDep(t)},
@@ -22464,6 +22475,18 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
         {verHechas&&<div style={{display:"flex",flexDirection:"column",gap:10,marginTop:10}}>{hechas.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>}
       </div>)}
       {nuevoPara&&<DepositoEnvioModal T={T} api={(a,b)=>api(a,{...b,clienteId:nuevoPara.cliente.id})} cliente={nuevoPara.cliente} especial={nuevoPara.especial} corte={st.corteHora??15} extraCfg={{extraItemsIncluidos:st.extraItemsIncluidos,extraItemPrecio:st.extraItemPrecio}} onClose={()=>setNuevoPara(null)} onDone={cargar}/>}
+      {previa&&(<Modal T={T} open onClose={cerrarPrevia} title={`Vista previa · ${previa.t.clienteNombre} · ${previa.t.n} etiqueta${previa.t.n!==1?"s":""}`} width={920} zIndex={1700}>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <iframe title="Vista previa de las etiquetas" src={previa.url} style={{width:"100%",height:"70vh",border:`1px solid ${T.border}`,borderRadius:DS.r.lg,background:"#fff"}}/>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:DS.font.md,color:T.textMd}}>{previa.t.estado==="pendiente"?"Solo estás mirando: la tanda sigue pendiente hasta que la imprimas.":"Esta tanda ya está impresa."}</span>
+            <div style={{display:"flex",gap:8}}>
+              <DepBtn T={T} variant="secondary" size="lg" onClick={cerrarPrevia}>Cerrar</DepBtn>
+              <DepMainBtn T={T} ico="print" onClick={()=>{ const t=previa.t; cerrarPrevia(); imprimir(t); }}>{previa.t.estado==="pendiente"?"Imprimir etiquetas":"Reimprimir"}</DepMainBtn>
+            </div>
+          </div>
+        </div>
+      </Modal>)}
       {posponer&&<DepPosponerModal T={T} tanda={posponer} hoy={st.hoy} onClose={()=>setPosponer(null)} onDone={async(fecha,motivo)=>{ await api("tanda_posponer",{id:posponer.id,fecha,motivo}); toast("Tanda pospuesta","success"); cargar(); }}/>}
     </div>
   );
