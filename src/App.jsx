@@ -42261,7 +42261,12 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                       // ML: una publicación por talle (familia). Un vínculo sin variant_id
                                       // apunta a ESA publicación, no a "todas las variantes": se muestra
                                       // el talle que figura al final del título. Solo cambia la etiqueta.
-                                      const vt = l.variant_title || (l.platform==="mercadolibre" && !l.variant_id ? ((String(l.title||"").match(/\b(XXS|XS|S|M|L|XL|XXL|2XL|3XL|XXXL|4XL)\s*$/i)||[])[1]||"").toUpperCase() : "");
+                                      // El talle sale de la publicación REAL (el listado de familias sabe qué
+                                      // publicación es cada talle), nunca del título guardado.
+                                      let vt = l.variant_title || "";
+                                      if (!vt && l.platform==="mercadolibre" && !l.variant_id) {
+                                        for (const pp of platformProducts) { const hv=(pp.variants||[]).find(v=>v.product_id===l.product_id); if (hv) { vt=hv.title; break; } }
+                                      }
                                       return vt
                                         ? <span style={{fontSize:9,padding:"1px 6px",borderRadius:4,fontWeight:700,background:T.accent+"22",color:T.accent}}>{vt}</span>
                                         : <span style={{fontSize:9,color:T.textSm}}>{l.platform==="mercadolibre"&&!l.variant_id?"Publicación completa":"Todas las variantes"}</span>;
