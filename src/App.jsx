@@ -12340,10 +12340,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     try{
       const t=await traerEtiquetas(rows.map(r=>({numero:r.numero,envio:String(r.emitido.numeroDeEnvio)})),h=>setDepArmando({done:h,total:rows.length}));
       const conError=t.conError.map(n=>`#${n.numero}`);
-      const pdfDe=new Map();
+      const pdfDe=new Map(); const sinSkuDep=[];
       for(const r of rows){ let b64=t.pdfs.get(String(r.emitido.numeroDeEnvio)); if(!b64) continue;
-        const skus=ghSkuLinesDe(r.order); if(skus.length){ try{ b64=await ghEstamparSkuPdf(b64,skus); }catch(e){ console.error("sku depósito:",e); } }
+        const skus=ghSkuLinesDe(r.order); if(skus.length){ const inf={}; try{ b64=await ghEstamparSkuPdf(b64,skus,inf); }catch(e){ console.error("sku depósito:",e); inf.ok=false; } if(inf.ok===false) sinSkuDep.push(`#${r.numero}`); }
         pdfDe.set(r.numero,b64); }
+      if(sinSkuDep.length&&!(await appConfirm(`${sinSkuDep.length} etiqueta${sinSkuDep.length!==1?"s quedaron":" quedó"} SIN los productos impresos (${sinSkuDep.slice(0,12).join(", ")}${sinSkuDep.length>12?"…":""}) porque Andreani cambió el diseño de esa etiqueta. El depósito no va a saber qué va en esos paquetes mirando la etiqueta. ¿Mandar la tanda igual?`,{danger:true,okLabel:"Mandar igual"}))) return;
       const listas=rows.filter(r=>pdfDe.has(r.numero));
       if(!listas.length){ toast("Andreani todavía está generando las etiquetas. Probá de nuevo en unos segundos.","warning"); return; }
       const pend=rows.length-listas.length-conError.length;
@@ -12393,13 +12394,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     if(!nums.length){ try{ ventana&&ventana.close(); }catch(_){} return; }
     const salida=(bytes,nombre)=>ventana?ghDepAbrirBytes(bytes,"application/pdf",nombre,ventana):ghDescargarPdfBytes(bytes,nombre);
     setBulkDl({done:0,total:nums.length});
-    const pendientes=[]; let pdfs=[];
+    const pendientes=[]; let pdfs=[]; const sinSku=[];
     try{
       const t=await traerEtiquetas(nums,h=>setBulkDl({done:h,total:nums.length}));
       for(const n of [...t.conError,...t.enProceso]) pendientes.push(`#${n.numero}`);
       for(const n of nums){ let b64=t.pdfs.get(String(n.envio)); if(!b64) continue;
-        if(dlSkuRef.current&&n.skus?.length){ try{ b64=await ghEstamparSkuPdf(b64,n.skus); }catch(e){ console.error("sku en etiqueta:",e); } }
+        if(dlSkuRef.current&&n.skus?.length){ const inf={}; try{ b64=await ghEstamparSkuPdf(b64,n.skus,inf); }catch(e){ console.error("sku en etiqueta:",e); inf.ok=false; } if(inf.ok===false) sinSku.push(`#${n.numero}`); }
         pdfs.push(b64); }
+      if(sinSku.length) toast(`Atención: ${sinSku.length} etiqueta${sinSku.length!==1?"s salieron":" salió"} SIN los productos impresos (${sinSku.slice(0,12).join(", ")}${sinSku.length>12?"…":""}): Andreani cambió el diseño de esa etiqueta. Avisanos para corregirlo.`,"error",15000);
       if(pdfs.length){
         if(dlFmt==="termica"){
           salida(await ghPdfTermica10x15(pdfs),"Andreani_etiquetas_10x15.pdf");
@@ -14839,7 +14841,13 @@ async function ghSkuZonasRuteo(bytes){
       const id=its.find(i=>/^ID:/i.test(i.str.trim())), peso=its.find(i=>/^Peso:/i.test(i.str.trim()));
       if(id&&peso&&id.transform[5]-peso.transform[5]>30){
         const num=its.find(i=>/^\d{15}$/.test(i.str.trim())&&i.transform[4]>120&&i.transform[5]<id.transform[5]&&i.transform[5]>peso.transform[5]);
-        zona={libre:true,x0:id.transform[4],x1:(num?num.transform[4]:200)-8,yTop:id.transform[5]-5,yBottom:peso.transform[5]+13};
+        let x0=id.transform[4], x1=(num?num.transform[4]:200)-8, yTop=id.transform[5]-5, yBottom=peso.transform[5]+13;
+        // Nada impreso puede quedar debajo de los productos: cualquier texto que caiga
+        // dentro del hueco lo achica (a la derecha → se corta el ancho; si no → se baja el techo).
+        for(const it of its){ if(it===id||it===peso) continue; const ix=it.transform[4], iy=it.transform[5], ih=it.height||8, iw=it.width||0;
+          if(iy+ih<=yBottom||iy>=yTop||ix+iw<=x0||ix>=x1) continue;
+          if(ix>x0+60) x1=Math.min(x1,ix-6); else yTop=Math.min(yTop,iy-3); }
+        if(yTop-yBottom>=10&&x1-x0>=60) zona={libre:true,x0,x1,yTop,yBottom};
       }
     }
     zonas.push(zona?{...zona,yImp}:null);
@@ -14850,8 +14858,12 @@ async function ghSkuZonasRuteo(bytes){
 // (están vacíos y son los mismos en todas): un producto por línea, hasta 3
 // líneas por recuadro según el alto real de la tabla. Si en una página no se
 // encuentra la tabla, esa página queda intacta antes que pisar algo.
-async function ghEstamparSkuPdf(b64, lines){
+// `info` (opcional) recibe {ok}: false si la etiqueta tenía productos para mostrar y NO se
+// pudieron escribir (diseño de etiqueta no reconocido) — quien llama avisa al usuario.
+async function ghEstamparSkuPdf(b64, lines, info){
+  if(info) info.ok=true;
   if(!lines||!lines.length) return b64;
+  if(info) info.ok=false;
   const bytes=ghB64ToBytes(b64);
   let zonas=[]; try{ zonas=await ghSkuZonasRuteo(bytes); }catch(e){ console.error("sku: no se pudo leer la etiqueta",e); return b64; }
   const {PDFDocument,StandardFonts,rgb}=await import("pdf-lib");
@@ -14887,6 +14899,7 @@ async function ghEstamparSkuPdf(b64, lines){
     const ajustar=(t,maxW)=>{ let out=t; while(out.length>1&&font.widthOfTextAtSize(out,size)>maxW) out=out.slice(0,-2)+"…"; return out; };
     items.forEach((t,i)=>{ const c=cols[Math.floor(i/n)]; if(!c) return; const y=yTop-size-(i%n)*paso; page.drawText(ajustar(String(t),c.maxW),{x:c.x,y,size,font,color:rgb(0,0,0)}); alguna=true; });
   });
+  if(info) info.ok=alguna;
   return alguna?ghBytesToB64(await doc.save()):b64;
 }
 // Preferencia "SKU en la etiqueta" (sin uid: es del dispositivo/impresora, como el formato).
