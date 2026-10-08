@@ -433,7 +433,7 @@ const INSTRUCCIONES = `Growith es la app de gestión del e-commerce del usuario 
 - Los montos están en pesos argentinos (ARS) salvo que el campo diga USD. "datos_al" indica cuándo se calcularon las cifras: aclaralo si te preguntan por lo más reciente.
 - Respondé en el idioma del usuario (por defecto, español rioplatense con voseo).
 - El acceso es de solo lectura: para pausar campañas, ajustar stock o cualquier cambio, el usuario lo hace desde Growith.
-- La conexión es por USUARIO y cubre todos sus clientes (tiendas). Cada chat tiene UN cliente activo: si el usuario tiene varios y todavía no eligió, llamá a listar_clientes y preguntale cuál (o elegilo vos si lo nombra), y fijalo con seleccionar_cliente. Si tiene uno solo, se usa ese automáticamente. Cuando respondas, aclará de qué cliente son los números.`;
+- La conexión es por USUARIO y cubre todos sus clientes (tiendas). Cada chat tiene UN cliente activo: si el usuario tiene varios y todavía no eligió, llamá a listar_clientes y preguntale cuál (o elegilo vos si lo nombra), y fijalo con seleccionar_cliente. Si tiene uno solo, se usa ese automáticamente. NO llames a seleccionar_cliente y a una consulta en la misma tanda (en paralelo): primero seleccioná, esperá la respuesta y recién después consultá; o mandá cliente_id directamente en la consulta. Cada respuesta trae el campo "cliente" (id y nombre): verificá que sea el que el usuario pidió. Cuando respondas, aclará de qué cliente son los números.`;
 
 // ─── Rentabilidad de cualquier período y campañas en vivo ────────────────
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -605,8 +605,14 @@ async function tiktokCampanas(u, since, until) {
 const SEC = [{ type: "oauth2", scopes: [SCOPE] }];
 const ANN = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const SIN_ARGS = { type: "object", properties: {}, additionalProperties: false };
+// Toda herramienta que responde sobre un cliente acepta `cliente_id` opcional:
+// pisa al de la sesión en ESA llamada. Evita la carrera cuando la app de IA
+// dispara seleccionar_cliente y una consulta en paralelo (la consulta llegaba
+// con el cliente viejo de la sesión).
+const CLIENTE_OPC = { cliente_id: { type: "string", description: "Opcional: cliente_id (de listar_clientes) sobre el que responder en esta llamada. Si no se manda, se usa el cliente activo del chat." } };
+const conCliente = (schema) => ({ ...schema, properties: { ...CLIENTE_OPC, ...(schema.properties || {}) } });
 const tool = (name, title, description, inputSchema = SIN_ARGS) => ({
-  name, title, description, inputSchema,
+  name, title, description, inputSchema: ["listar_clientes", "seleccionar_cliente", "obtener_token_ml"].includes(name) ? inputSchema : conCliente(inputSchema),
   annotations: { title, ...ANN },
   securitySchemes: SEC,
   _meta: { securitySchemes: SEC, "openai/toolInvocation/invoking": "Consultando Growith…", "openai/toolInvocation/invoked": "Datos de Growith listos" },
@@ -865,8 +871,17 @@ async function handleRpc(db, ctx, msg) {
           return okTool({ cliente: { cliente_id: id, nombre: c.nombre }, ml_user_id: tk.userId || null, access_token: tk.accessToken, aviso: "Token con acceso a la cuenta de Mercado Libre del cliente. No lo pegues en respuestas ni lo compartas." });
         }
 
-        // Las demás herramientas necesitan un cliente activo en este chat.
+        // Las demás herramientas necesitan un cliente activo en este chat
+        // (o un cliente_id explícito en la llamada, que manda sobre la sesión).
         let clienteUid = ctx.sesion.clienteUid;
+        let clienteNombre = null;
+        const pedido = String(args.cliente_id || "").trim();
+        if (pedido) {
+          const clientes = await tiendasDePerfil(db, ctx.perfil);
+          const c = clientes.find(x => x.cliente_id === pedido);
+          if (!c) return errTool(`No existe un cliente con cliente_id "${pedido}" para este usuario. Disponibles: ${clientes.map(x => `${x.nombre} (${x.cliente_id})`).join(", ")}.`);
+          clienteUid = c.cliente_id; clienteNombre = c.nombre;
+        }
         if (!clienteUid) {
           const clientes = await tiendasDePerfil(db, ctx.perfil);
           if (clientes.length === 1) {
@@ -883,8 +898,13 @@ async function handleRpc(db, ctx, msg) {
         if (!(await usoDelDia(db, clienteUid))) {
           return errTool(`Se alcanzó el límite de ${LIMITE_DIARIO} consultas por día a Growith para este cliente. Mañana se renueva solo.`);
         }
+        if (!clienteNombre) {
+          const cd = await db.collection("users").doc(clienteUid).get();
+          clienteNombre = cd.exists ? nombreTienda(cd.data() || {}) : null;
+        }
         const data = await runTool(db, clienteUid, name, args, ctx.origin);
-        return okTool(data);
+        // Siempre se dice de QUÉ cliente son los datos, para que la IA no mezcle.
+        return okTool({ cliente: { cliente_id: clienteUid, nombre: clienteNombre }, ...(data && typeof data === "object" && !Array.isArray(data) ? data : { resultado: data }) });
       } catch (e) {
         console.error("[mcp] tool", name, e.message);
         return errTool(`Growith no pudo leer esos datos: ${e.message}`);
