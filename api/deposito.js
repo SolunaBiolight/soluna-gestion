@@ -59,6 +59,38 @@ const hoyAR = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10
 const esFecha = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
 const num = v => { const n = Number(v); return isFinite(n) ? n : 0; };
 const ms = v => v?.toMillis?.() ?? (v?._seconds ? v._seconds * 1000 : (typeof v === "number" ? v : null));
+// Validaciones de entrada (7/oct/2026): ids de Firestore, fechas reales dentro
+// de ±400 días y montos con tope — antes un id vacío daba "Error interno" y
+// pasaban fechas como 2026-13-45 o montos de 1e15.
+const idOk = v => /^[A-Za-z0-9_-]{10,40}$/.test(String(v || ""));
+const fechaOk = v => { const f = String(v || ""); if (!esFecha(f)) return false; const t = Date.parse(`${f}T12:00:00Z`); return isFinite(t) && new Date(t).toISOString().slice(0, 10) === f && Math.abs(t - Date.now()) < 400 * 86400000; };
+const MONTO_MAX = 50000000;
+// Extra por unidades (7/oct/2026): cada etiqueta incluye hasta `incluidos`
+// unidades; de la siguiente en adelante se cobra `precioExtra` por unidad.
+// "2x ROJ-NN" / "ROJ-NN (x2)" / "ROJ-NN" = 2 / 2 / 1 unidades.
+export function unidadesDe(items) {
+  let u = 0;
+  for (const it of items || []) { const t = String(it || "").trim(); if (!t) continue;
+    const a = t.match(/^(\d+)\s*x\s+/i); const b = t.match(/\(x\s*(\d+)\)\s*$/i);
+    u += Math.max(1, Math.round(num(a ? a[1] : b ? b[1] : 1)) || 1); }
+  return u;
+}
+export function extraItemsDe(pedidos, cfg) {
+  const incl = Math.max(0, Math.round(num(cfg?.extraItemsIncluidos ?? 5))), precio = Math.max(0, num(cfg?.extraItemPrecio ?? 500));
+  let unidades = 0, extraUnidades = 0, pedidosConExtra = 0;
+  for (const p of pedidos || []) { if (p?.cancelado) continue; const u = unidadesDe(p?.items); unidades += u; const ex = Math.max(0, u - incl); if (ex > 0) { extraUnidades += ex; pedidosConExtra++; } }
+  return { unidades, extraUnidades, pedidosConExtra, incluidos: incl, precioExtra: precio, monto: +(extraUnidades * precio).toFixed(2) };
+}
+// FIFO puro (sin Firestore, testeable): `disponible` = monto + saldo a favor
+// previo (puede ser negativo = cargo pendiente); `tandas` ya ordenadas, con
+// {id, total}. Devuelve qué tandas quedan pagas y el resto, SIN tope en cero:
+// un resto negativo es deuda que sigue existiendo.
+export function fifoPuro(disponible, tandas) {
+  let resto = +num(disponible).toFixed(2); const aplicado = [];
+  for (const t of tandas || []) { const tot = num(t.total); if (tot > resto + 0.005) break; resto = +(resto - tot).toFixed(2); aplicado.push(t.id); }
+  return { aplicado, resto: +resto.toFixed(2) };
+}
+const cfgExtraDe = c => ({ extraItemsIncluidos: Math.max(0, Math.round(num(c?.extraItemsIncluidos ?? 5))), extraItemPrecio: Math.max(0, num(c?.extraItemPrecio ?? 500)) });
 
 async function sendEmail({ to, subject, html }) {
   const key = process.env.RESEND_API_KEY;
@@ -118,7 +150,7 @@ function registrarUsoToken(db, req, cual) {
       if (cual === "admin" && hoyN > 2 && u.avisoDia !== hoy) { nuevo.avisoDia = hoy; avisar = true; }
       await ref.set({ uso: { ...uso, [cual]: { ...u, ...nuevo } } }, { merge: true });
       _tokCache = { at: 0, d: null };
-      if (avisar) { const { owner } = await operadoresEmails(db); if (owner) await sendEmail({ to: [owner], subject: "El link de administración del depósito se usó desde varios dispositivos hoy", html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111"><p>Hoy el link de <strong>administración</strong> del depósito se abrió desde <strong>${hoyN} dispositivos distintos</strong>. Si no fuiste vos desde varios navegadores, generá un link nuevo en Configuración: el anterior deja de servir al instante.</p><p><a href="${SITE}/#/deposito/panel/${d.adminToken || ""}">Abrir Configuración</a></p></div>` }); }
+      if (avisar) { const { owner } = await operadoresEmails(db); if (owner) await sendEmail({ to: [owner], subject: "El link de administración del depósito se usó desde varios dispositivos hoy", html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111"><p>Hoy el link de <strong>administración</strong> del depósito se abrió desde <strong>${hoyN} dispositivos distintos</strong>. Si no fuiste vos desde varios navegadores, generá un link nuevo en Configuración: el anterior deja de servir al instante.</p><p>Entrá a Growith con tu sesión → Admin → Sistema → Depósito y generá el link nuevo. Este mail no incluye el link a propósito.</p></div>` }); }
     })().catch(() => {});
   } catch (_) { }
 }
@@ -174,11 +206,12 @@ function tandaPublica(id, t, { paraCliente = false } = {}) {
   return {
     id, clienteId: t.clienteId, clienteNombre: t.clienteNombre, tipo: t.tipo, origen: t.origen, canal: t.canal,
     fechaDespacho: t.fechaDespacho, n: t.n, precioUnit: t.precioUnit, ajuste: t.ajuste || 0, ajusteMotivo: t.ajusteMotivo || "", total: t.total,
+    extraItems: num(t.extraItems), extraDetalle: t.extraDetalle || null, revisarCantidad: t.revisarCantidad || null, adjPurgados: !!t.adjPurgados,
     estado: t.estado, nota: t.nota || "", notaDeposito: t.notaDeposito || "", fueraDeCorte: !!t.fueraDeCorte,
     pago: { estado: t.pago?.estado || "sin_informar", comp: t.pago?.comp ? { nombre: t.pago.comp.nombre, mime: t.pago.comp.mime, chunks: t.pago.comp.chunks } : null, informadoAt: ms(t.pago?.informadoAt), verificadoAt: ms(t.pago?.verificadoAt), nota: t.pago?.nota || "" },
     pdf: t.pdf ? { chunks: t.pdf.chunks, pages: t.pdf.pages || 0, purgado: !!t.pdf.purgado } : null,
     especial: t.especial ? { titulo: t.especial.titulo, instrucciones: t.especial.instrucciones, urgente: !!t.especial.urgente, bultos: t.especial.bultos || 1, adj: (t.especial.adj || []).map(a => ({ kind: a.kind, nombre: a.nombre, mime: a.mime, chunks: a.chunks })) } : null,
-    pedidos: (t.pedidos || []).map(p => ({ numero: p.numero, comprador: p.comprador, items: p.items || [], pags: p.pags || [], tracking: p.tracking || "", armado: p.armado ? { porNombre: p.armado.porNombre, at: p.armado.at } : null, apartado: p.apartado ? { nota: p.apartado.nota, porNombre: p.apartado.porNombre, at: p.apartado.at } : null, cancelado: p.cancelado ? { porNombre: p.cancelado.porNombre, at: p.cancelado.at, nota: p.cancelado.nota || "" } : null })),
+    pedidos: (t.pedidos || []).map(p => ({ numero: p.numero, comprador: p.comprador, items: p.items || [], pags: p.pags || [], tracking: p.tracking || "", armado: p.armado ? { porNombre: paraCliente ? "depósito" : p.armado.porNombre, at: p.armado.at } : null, apartado: p.apartado ? { nota: p.apartado.nota, porNombre: p.apartado.porNombre, at: p.apartado.at } : null, cancelado: p.cancelado ? { porNombre: p.cancelado.porNombre, at: p.cancelado.at, nota: p.cancelado.nota || "" } : null })),
     hist: paraCliente ? (t.hist || []).map(h => ({ at: h.at, a: h.a })) : (t.hist || []),
     createdAt: ms(t.createdAt),
   };
@@ -187,7 +220,7 @@ function tandaPublica(id, t, { paraCliente = false } = {}) {
 const clientePublico = (id, c, interno) => ({ id, nombre: c.nombre, precio: num(c.precio), activo: c.activo !== false, contacto: c.contacto || "", aFavor: num(c.aFavor),
   ...(interno ? { growithUid: c.growithUid || null, growithEmail: c.growithEmail || "", nota: c.nota || "", token: c.token } : {}) });
 
-const totalDe = t => Math.max(0, +(num(t.n) * num(t.precioUnit) + num(t.ajuste)).toFixed(2));
+const totalDe = t => Math.max(0, +(num(t.n) * num(t.precioUnit) + num(t.extraItems) + num(t.ajuste)).toFixed(2));
 
 function sanitPedidos(arr) {
   if (!Array.isArray(arr)) return [];
@@ -210,6 +243,42 @@ async function borrarArchivos(db, tandaId) {
   return s.size;
 }
 
+// FIFO ÚNICO (7/oct/2026): antes había dos copias (ajuste y verificación) y una
+// tenía un tope en cero que borraba los cargos pendientes (aFavor negativo).
+// Lee las tandas sin pagar del cliente, aplica `fifoPuro` y escribe. Llamar
+// DENTRO de una transacción, con las lecturas antes que cualquier escritura.
+async function aplicarFifo(tx, db, cRef, cli, monto, pagoId, porUid) {
+  const ts = await tx.get(db.collection("deposito_tandas").where("clienteId", "==", cRef.id));
+  const pend = ts.docs.map(d => ({ ref: d.ref, id: d.id, t: d.data() })).filter(x => !["borrador", "cancelada"].includes(x.t.estado) && x.t.pago?.estado !== "verificado")
+    .sort((a, b) => (a.t.fechaDespacho || "").localeCompare(b.t.fechaDespacho || "") || (ms(a.t.createdAt) || 0) - (ms(b.t.createdAt) || 0));
+  const { aplicado, resto } = fifoPuro(num(monto) + num(cli?.aFavor), pend.map(x => ({ id: x.id, total: x.t.total })));
+  for (const x of pend) if (aplicado.includes(x.id)) tx.set(x.ref, { pago: { ...(x.t.pago || {}), estado: "verificado", verificadoAt: FieldValue.serverTimestamp(), verificadoPor: porUid, pagoId, nota: "" } }, { merge: true });
+  tx.set(cRef, { aFavor: resto }, { merge: true });
+  return { aplicado, aFavor: resto };
+}
+// Reverso de una tanda YA COBRADA que se cancela, ajusta o elimina: el dinero
+// vuelve al saldo del cliente y queda un movimiento "reverso" visible. Dos
+// pasos para respetar "todas las lecturas antes que las escrituras".
+async function reversoLeer(tx, db, t) {
+  if (t?.pago?.estado !== "verificado" || !(num(t.total) > 0) || !t.clienteId) return null;
+  const cRef = db.collection("deposito_clientes").doc(String(t.clienteId)); const cs = await tx.get(cRef);
+  return cs.exists ? { cRef, aFavor: num(cs.data().aFavor), nombre: cs.data().nombre } : null;
+}
+function reversoEscribir(tx, db, rev, tandaId, t, monto, motivo, porUid, porNombre) {
+  if (!rev || !monto) return;
+  const pRef = db.collection("deposito_pagos").doc();
+  tx.set(rev.cRef, { aFavor: +(rev.aFavor + num(monto)).toFixed(2) }, { merge: true });
+  tx.set(pRef, { clienteId: rev.cRef.id, clienteNombre: rev.nombre || t.clienteNombre || "", monto: +num(monto).toFixed(2), tipo: "reverso", estado: "verificado", comp: null, nota: motivo, notaCliente: "", aplicado: [tandaId], por: porUid, porNombre: txt(porNombre, 80), createdAt: FieldValue.serverTimestamp(), informadoAt: FieldValue.serverTimestamp(), verificadoAt: FieldValue.serverTimestamp() });
+}
+// Mail al CLIENTE dueño de Growith (no al comprador final): solo si tiene un
+// mail (cuenta vinculada o contacto con @). Nunca rompe la acción que lo llama.
+async function mailCliente(db, cli, subject, cuerpoHtml) {
+  let to = String(cli?.growithEmail || "").trim();
+  if (!to.includes("@") && cli?.growithUid) { try { to = String((await db.collection("users").doc(String(cli.growithUid)).get()).data()?.email || ""); } catch (_) {} }
+  if (!to.includes("@") && String(cli?.contacto || "").includes("@")) to = String(cli.contacto).match(/[^\s,;<>]+@[^\s,;<>]+/)?.[0] || "";
+  if (!to.includes("@")) return { error: "sin_mail" };
+  return sendEmail({ to: [to], subject: `Depósito · ${subject}`, html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111">${cuerpoHtml}<p><a href="${SITE}/#/deposito">Ver mis envíos en Growith</a></p></div>` });
+}
 async function operadoresEmails(db) {
   const d = (await db.collection("users").doc(DEPOSITO_OWNER).get()).data() || {};
   const ops = Object.values(d.teamMembers || {}).filter(m => m?.secciones?.deposito === true && m.email).map(m => m.email);
@@ -229,7 +298,10 @@ export default async function handler(req, res) {
       const s = await db.collection("deposito_tandas").where("estado", "in", ["pendiente", "impresa"]).get();
       const vivas = s.docs.map(d => d.data()).filter(t => !t.fechaDespacho || t.fechaDespacho <= hoy);
       let mail = "sin_pendientes";
-      if (vivas.length) {
+      // Una sola vez por día aunque el cron se reintente o se corra a mano.
+      const sysRef = db.collection("system").doc("deposito"); const sysD = (await sysRef.get()).data() || {};
+      if (sysD.cronMailDia === hoy) mail = "ya_enviado";
+      else if (vivas.length) {
         const porCliente = {};
         for (const t of vivas) { const k = t.clienteNombre || "?"; porCliente[k] = porCliente[k] || { n: 0, tandas: 0, esp: 0 }; porCliente[k].n += num(t.n); porCliente[k].tandas++; if (t.tipo === "especial") porCliente[k].esp++; }
         const total = vivas.reduce((a, t) => a + num(t.n), 0);
@@ -238,19 +310,26 @@ export default async function handler(req, res) {
         const r = await sendEmail({ to: [owner, ...ops].filter(Boolean), subject: `Depósito hoy: ${total} pedidos de ${Object.keys(porCliente).length} cliente${Object.keys(porCliente).length !== 1 ? "s" : ""}`,
           html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111"><p>Para armar hoy (${hoy.split("-").reverse().join("/")}):</p><table style="border-collapse:collapse;font-size:15px">${filas}</table><p><a href="${SITE}/#/deposito">Abrir la cola del depósito</a></p></div>` });
         mail = r.ok ? "enviado" : (r.error || "error");
+        if (r.ok) await sysRef.set({ cronMailDia: hoy }, { merge: true });
       }
       // Purga: archivos vencidos y borradores que nunca se cerraron.
-      const t0 = Date.now(); const tocadas = new Set(); let archivosPurgados = 0;
+      const t0 = Date.now(); const tocadas = new Set(), tocadasAdj = new Set(), tocadasPago = new Set(); let archivosPurgados = 0;
       while (Date.now() - t0 < 40000) {
         const venc = await db.collection("deposito_files").where("purgeAt", "<", Date.now()).limit(450).get();
         if (venc.empty) break;
-        const b = db.batch(); venc.docs.forEach(d => { b.delete(d.ref); if (d.data().kind === "pdf") tocadas.add(d.data().tandaId); }); await b.commit();
+        const b = db.batch(); venc.docs.forEach(d => { b.delete(d.ref); const k = String(d.data().kind || ""); if (k === "pdf") tocadas.add(d.data().tandaId); else if (k === "pcomp") tocadasPago.add(d.data().tandaId); else tocadasAdj.add(d.data().tandaId); }); await b.commit();
         archivosPurgados += venc.size; if (venc.size < 450) break;
       }
+      // Lo purgado queda MARCADO: el front esconde los botones en vez de dar 404.
       for (const id of [...tocadas].slice(0, 200)) await db.collection("deposito_tandas").doc(id).set({ pdf: { purgado: true } }, { merge: true }).catch(() => {});
+      for (const id of [...tocadasAdj].slice(0, 200)) await db.collection("deposito_tandas").doc(id).set({ adjPurgados: true }, { merge: true }).catch(() => {});
+      for (const id of [...tocadasPago].slice(0, 200)) await db.collection("deposito_pagos").doc(id).set({ compPurgado: true }, { merge: true }).catch(() => {});
       const borr = await db.collection("deposito_tandas").where("estado", "==", "borrador").get();
       let borrados = 0;
       for (const d of borr.docs) if ((ms(d.data().createdAt) || 0) < Date.now() - 86400000) { await borrarArchivos(db, d.id); await d.ref.delete(); borrados++; }
+      // Pagos que el cliente empezó a informar y nunca cerró.
+      const pagosBorr = await db.collection("deposito_pagos").where("estado", "==", "borrador").get();
+      for (const d of pagosBorr.docs) if ((ms(d.data().createdAt) || 0) < Date.now() - 86400000) { await borrarArchivos(db, d.id); await d.ref.delete(); borrados++; }
       return res.json({ ok: true, pendientes: vivas.length, mail, archivosPurgados, borradores: borrados });
     }
 
@@ -260,7 +339,8 @@ export default async function handler(req, res) {
     if (action === "me") {
       const dep = await ctxDeposito(req, body);
       const cli = body.uid ? await ctxCliente(req, db, { uid: String(body.uid) }) : null;
-      return res.json({ rol: dep ? dep.rol : null, cliente: cli ? clientePublico(cli.cliente.id, cli.cliente, false) : null, error: false });
+      const cfgMe = await tokensDeposito(db);
+      return res.json({ rol: dep ? dep.rol : null, cliente: cli ? clientePublico(cli.cliente.id, cli.cliente, false) : null, error: false, corteHora: Math.min(23, Math.max(0, Math.round(num(cfgMe.corteHora)) || 15)), ...cfgExtraDe(cfgMe) });
     }
 
     // ══ Acciones del CLIENTE (portal por token o sesión Growith) y del depósito
@@ -281,7 +361,7 @@ export default async function handler(req, res) {
       const tRef = id => db.collection("deposito_tandas").doc(String(id || ""));
       const miTanda = async id => { if (!/^[A-Za-z0-9]{10,40}$/.test(String(id || ""))) return null; const s = await tRef(id).get(); return s.exists && s.data().clienteId === cli.id ? s : null; };
 
-      const cfgPub = async () => { const c = await tokensDeposito(db); return { corteHora: Math.min(23, Math.max(0, Math.round(num(c.corteHora)) || 15)), datosPago: c.datosPago || "" }; };
+      const cfgPub = async () => { const c = await tokensDeposito(db); return { corteHora: Math.min(23, Math.max(0, Math.round(num(c.corteHora)) || 15)), datosPago: c.datosPago || "", ...cfgExtraDe(c) }; };
       if (action === "c_info") return res.json({ cliente: clientePublico(cli.id, cli, false), ...(await cfgPub()) });
 
       if (action === "c_tandas") {
@@ -319,6 +399,7 @@ export default async function handler(req, res) {
         if (!ps.exists || ps.data().clienteId !== cli.id) return res.status(404).json({ error: "Pago inexistente." });
         if (ps.data().estado !== "borrador") return res.json({ ok: true, ya: true });
         const monto = +num(body.monto).toFixed(2); if (!(monto > 0)) return res.status(400).json({ error: "Poné el monto transferido." });
+        if (monto > MONTO_MAX) return res.status(400).json({ error: "El monto no parece correcto." });
         const chunks = Math.round(num(body.chunks)); if (chunks < 1 || chunks > MAX_CHUNKS_OTRO) return res.status(400).json({ error: "Falta el comprobante de la transferencia." });
         const ult = await db.collection("deposito_files").doc(`${id}__pcomp__${chunks - 1}`).get();
         if (!ult.exists) return res.status(400).json({ error: "La subida quedó incompleta. Probá de nuevo." });
@@ -330,10 +411,13 @@ export default async function handler(req, res) {
         const tipo = body.tipo === "especial" ? "especial" : "tanda";
         const pedidos = sanitPedidos(body.pedidos);
         const pages = Math.max(0, Math.min(5000, Math.round(num(body.pages))));
-        let n = pedidos.length || Math.max(0, Math.min(MAX_PEDIDOS, Math.round(num(body.n))));
+        // Cantidad = pedidos listados; si no hay lista, las PÁGINAS del PDF (una
+        // etiqueta por página); recién si no se pudieron contar, lo que tipeó el cliente.
+        let n = pedidos.length || (tipo === "tanda" && pages > 0 ? Math.min(MAX_PEDIDOS, pages) : 0) || Math.max(0, Math.min(MAX_PEDIDOS, Math.round(num(body.n))));
         if (tipo === "especial" && !n) n = 1;
+        const extra = extraItemsDe(pedidos, cfgExtraDe(await tokensDeposito(db)));
         if (!n) return res.status(400).json({ error: "La tanda no tiene pedidos." });
-        const fecha = esFecha(body.fechaDespacho) ? body.fechaDespacho : hoyAR();
+        const fecha = fechaOk(body.fechaDespacho) ? body.fechaDespacho : hoyAR();
         const corteHora = Math.min(23, Math.max(0, Math.round(num((await tokensDeposito(db)).corteHora)) || 15));
         const horaAR = new Date(Date.now() - 3 * 3600000).getUTCHours();
         const fueraDeCorte = fecha <= hoyAR() && horaAR >= corteHora;
@@ -341,7 +425,7 @@ export default async function handler(req, res) {
           clienteId: cli.id, clienteNombre: cli.nombre, growithUid: cli.growithUid || null,
           tipo, origen: cx.via === "deposito" ? "deposito" : (["api", "excel"].includes(body.origen) && cx.via === "growith" ? body.origen : cx.via === "portal" ? "portal" : "manual"),
           canal: CANALES.includes(body.canal) ? body.canal : "andreani",
-          fechaDespacho: fecha, n, precioUnit: num(cli.precio), ajuste: 0, total: 0,
+          fechaDespacho: fecha, n, precioUnit: num(cli.precio), extraItems: extra.monto, extraDetalle: extra, ajuste: 0, total: 0,
           estado: "borrador", nota: txt(body.nota, 600), pedidos,
           pdf: null, pago: { estado: "sin_informar" },
           especial: tipo === "especial" ? { titulo: txt(body.especial?.titulo, 120) || "Envío especial", instrucciones: txt(body.especial?.instrucciones, 2000), urgente: body.especial?.urgente === true, bultos: Math.max(1, Math.min(99, Math.round(num(body.especial?.bultos)) || 1)), adj: [] } : null,
@@ -390,8 +474,13 @@ export default async function handler(req, res) {
           const kind = String(a?.kind || ""); const chunks = Math.round(num(a?.chunks));
           if (!chunks || chunks < 1) continue;
           const okKind = kind === "pdf" || kind === "comp" || /^adj[0-4]$/.test(kind); if (!okKind) continue;
-          const ult = await db.collection("deposito_files").doc(`${s.id}__${kind}__${chunks - 1}`).get();
-          if (!ult.exists) return res.status(400).json({ error: "La subida quedó incompleta. Probá de nuevo." });
+          // TODOS los trozos tienen que estar (antes solo se miraba el último y un
+          // hueco en el medio recién aparecía al imprimir). Si falta alguno, se
+          // devuelve cuál para que el cliente lo re-suba sin empezar de cero.
+          const refs = Array.from({ length: Math.min(chunks, MAX_CHUNKS_PDF) }, (_, i) => db.collection("deposito_files").doc(`${s.id}__${kind}__${i}`));
+          const snaps = await db.getAll(...refs);
+          const faltan = snaps.map((x, i) => (x.exists ? null : i)).filter(i => i != null);
+          if (faltan.length) return res.status(400).json({ error: `La subida del ${kind === "pdf" ? "PDF" : "archivo"} quedó incompleta (faltan ${faltan.length} parte${faltan.length !== 1 ? "s" : ""}). Tocá "Reintentar": se completa sin volver a subir todo.`, code: "chunks_faltan", kind, faltan: faltan.slice(0, 50) });
           const meta = { chunks, nombre: txt(a.nombre, 120), mime: txt(a.mime, 60) };
           if (kind === "pdf") upd.pdf = { chunks, pages: Math.max(0, Math.round(num(a.pages))) };
           else if (kind === "comp") upd.pago = { estado: "a_verificar", comp: meta, informadoAt: FieldValue.serverTimestamp() };
@@ -399,7 +488,32 @@ export default async function handler(req, res) {
         }
         if (t.tipo === "tanda" && !upd.pdf) return res.status(400).json({ error: "Falta el PDF de etiquetas." });
         if (t.especial) upd.especial = { ...t.especial, adj };
-        await s.ref.set(upd, { merge: true });
+        // Cantidad declarada vs. páginas reales: menos páginas que pedidos (se
+        // cobra de más) o más del doble (¿PDF equivocado?) → la tanda queda marcada
+        // "revisar cantidad" para el depósito. Multi-bulto normal (hasta 2×) no avisa.
+        if (t.tipo === "tanda" && upd.pdf?.pages > 0 && num(t.n) > 0 && (upd.pdf.pages < num(t.n) || upd.pdf.pages > num(t.n) * 2)) upd.revisarCantidad = { pages: upd.pdf.pages, n: num(t.n) };
+        // Cierre en transacción: dos envíos simultáneos del mismo borrador no
+        // mandan dos mails ni pisan el estado; y si el cliente tiene saldo a favor
+        // que cubre la tanda, queda paga en el acto (pago tipo "saldo").
+        const cRefC = db.collection("deposito_clientes").doc(cli.id);
+        const cierre = await db.runTransaction(async tx => {
+          const [ts, cs] = await Promise.all([tx.get(s.ref), tx.get(cRefC)]);
+          const cur = ts.data() || {}; if (cur.estado !== "borrador") return { ya: true };
+          const aFavor = num(cs.data()?.aFavor), total = num(cur.total);
+          let pagoSaldo = null;
+          if (total > 0 && aFavor >= total - 0.005) {
+            const pRef = db.collection("deposito_pagos").doc();
+            pagoSaldo = { id: pRef.id };
+            tx.set(pRef, { clienteId: cli.id, clienteNombre: cli.nombre, monto: total, tipo: "saldo", estado: "verificado", comp: null, nota: "Saldo a favor aplicado a la tanda", notaCliente: "", aplicado: [s.id], por: cx.por, porNombre: txt(cx.porNombre, 80), createdAt: FieldValue.serverTimestamp(), informadoAt: FieldValue.serverTimestamp(), verificadoAt: FieldValue.serverTimestamp() });
+            tx.set(cRefC, { aFavor: +(aFavor - total).toFixed(2) }, { merge: true });
+            upd.pago = { estado: "verificado", verificadoAt: FieldValue.serverTimestamp(), pagoId: pRef.id, nota: "saldo a favor" };
+          }
+          tx.set(s.ref, upd, { merge: true });
+          return { ok: true, pagoSaldo };
+        });
+        if (cierre.ya) return res.json({ ok: true, ya: true });
+        // Aviso al cliente dueño de Growith (no al comprador final) si quedó fuera de corte.
+        if (t.fueraDeCorte) { try { await mailCliente(db, cli, `Tu tanda quedó fuera de corte`, `<p>Tu tanda de <strong>${num(t.n)} pedido${num(t.n) !== 1 ? "s" : ""}</strong> entró después del horario de corte del depósito. Se arma al día siguiente hábil, salvo que el depósito la tome antes.</p>`); } catch (_) {} }
         // Envío especial URGENTE: aviso inmediato al depósito (lo demás va en el resumen de las 8).
         if (t.especial?.urgente) {
           const { owner, ops } = await operadoresEmails(db);
@@ -424,8 +538,10 @@ export default async function handler(req, res) {
         const out = await db.runTransaction(async tx => {
           const cur = (await tx.get(s.ref)).data() || {};
           if (!["borrador", "pendiente"].includes(cur.estado)) return { error: "El depósito ya empezó a trabajar esta tanda. Avisales por WhatsApp." };
+          const rev = await reversoLeer(tx, db, cur);
           tx.set(s.ref, { estado: "cancelada", hist: [...(cur.hist || []).slice(-40), { at: Date.now(), por: cx.por, porNombre: txt(cx.porNombre, 80), de: cur.estado, a: "cancelada" }] }, { merge: true });
-          return { ok: true };
+          reversoEscribir(tx, db, rev, s.id, cur, num(cur.total), "Tanda cancelada por el cliente", cx.por, cx.porNombre);
+          return { ok: true, devuelto: rev ? num(cur.total) : 0 };
         });
         if (out.error) return res.status(409).json(out);
         return res.json(out);
@@ -445,6 +561,13 @@ export default async function handler(req, res) {
     // Un operario (miembro o PC del depósito) no ve la parte financiera: ni precios, ni totales, ni pagos.
     const paraDep = (id, t) => { const p = tandaPublica(id, t); if (dep.rol !== "owner") { p.precioUnit = null; p.ajuste = null; p.ajusteMotivo = ""; p.total = null; p.pago = null; } return p; };
     const soloOwner = () => { if (dep.rol !== "owner") { res.status(403).json({ error: "Solo el dueño del depósito puede hacer esto." }); return false; } return true; };
+    // Acciones de PLATAFORMA (buscar usuarios de Growith, diagnosticar vínculos,
+    // regenerar el link de administración) solo con sesión: si el link del panel se
+    // filtra, quien lo tenga no puede escalar a datos de toda la plataforma ni
+    // rotar el link para dejar afuera a la dueña.
+    const soloSesion = () => { if (dep.via === "panel" || dep.via === "pc") { res.status(403).json({ error: "Esto se hace desde Growith con tu sesión (Admin → Sistema), no desde el link del panel." }); return false; } return true; };
+    const ID_DE = { tanda_estado: "id", tanda_cancelar: "id", pedido_apartar: "id", pedido_resolver: "id", tanda_posponer: "id", tanda_nota: "id", tanda_ajuste: "id", tanda_eliminar: "id", pago_cc_verificar: "id", cliente_vinculo: "id", cuenta_cliente: "clienteId", saldo_ajustar: "clienteId", ingreso_crear: "clienteId" }[action];
+    if (ID_DE && !idOk(body[ID_DE])) return res.status(400).json({ error: "Identificador inválido." });
 
     if (action === "cola") {
       // Todo lo no terminado + lo entregado/cancelado de los últimos 4 días.
@@ -465,7 +588,8 @@ export default async function handler(req, res) {
       for (const d of [...vivas.docs, ...rec.docs]) { const t = d.data(); if (t.estado === "borrador") continue; if (t.estado === "entregada" && (ms(t.entregadaAt) || 0) < hace4) continue; m.set(d.id, t); }
       const tandas = [...m.entries()].map(([id, t]) => paraDep(id, t)).sort((a, b) => (a.fechaDespacho || "").localeCompare(b.fechaDespacho || "") || (a.createdAt || 0) - (b.createdAt || 0));
       const cs = await db.collection("deposito_clientes").get();
-      return res.json({ rol: dep.rol, via: dep.via || "sesion", nombre: dep.nombre, hoy, corteHora: Math.min(23, Math.max(0, Math.round(num((await tokensDeposito(db)).corteHora)) || 15)), despachados: desp, apartados: apartados.slice(0, 200), tandas, clientes: cs.docs.map(d => clientePublico(d.id, d.data(), false)).filter(c => c.activo).map(c => dep.rol === "owner" ? c : { ...c, precio: null }) });
+      const cfgCola = await tokensDeposito(db);
+      return res.json({ rol: dep.rol, via: dep.via || "sesion", nombre: dep.nombre, hoy, corteHora: Math.min(23, Math.max(0, Math.round(num(cfgCola.corteHora)) || 15)), ...cfgExtraDe(cfgCola), despachados: desp, apartados: apartados.slice(0, 200), tandas, clientes: cs.docs.map(d => clientePublico(d.id, d.data(), false)).filter(c => c.activo).map(c => dep.rol === "owner" ? c : { ...c, precio: null, aFavor: null, contacto: "" }) });
     }
 
     // Lector de códigos: la etiqueta escaneada (número de envío de Andreani, id
@@ -492,8 +616,8 @@ export default async function handler(req, res) {
         const cur = (await tx.get(hit.ref)).data(); const pedidos = [...(cur.pedidos || [])]; const p = pedidos[hit.idx]; if (!p) return null;
         const ya = !!p.armado;
         if (!ya) { pedidos[hit.idx] = { ...p, armado: { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80) } }; tx.set(hit.ref, { pedidos }, { merge: true }); }
-        const armados = pedidos.filter(x => x.armado).length;
-        return { tandaId: hit.ref.id, clienteNombre: cur.clienteNombre, estado: cur.estado, numero: p.numero, comprador: p.comprador, items: p.items || [], apartado: p.apartado ? p.apartado.nota : null, ya, yaPor: p.armado?.porNombre || "", armados, total: pedidos.length, completa: armados === pedidos.length };
+        const armados = pedidos.filter(x => x.armado && !x.cancelado).length; const vivosN = pedidos.filter(x => !x.cancelado).length;
+        return { tandaId: hit.ref.id, clienteNombre: cur.clienteNombre, estado: cur.estado, numero: p.numero, comprador: p.comprador, items: p.items || [], apartado: p.apartado ? p.apartado.nota : null, ya, yaPor: p.armado?.porNombre || "", armados, total: vivosN, completa: vivosN > 0 && armados === vivosN };
       });
       if (!out) return res.status(404).json({ error: "Pedido inexistente." });
       return res.json(out);
@@ -504,7 +628,7 @@ export default async function handler(req, res) {
       const c = await db.collection("deposito_clientes").doc(String(body.clienteId || "")).get(); if (!c.exists) return res.status(404).json({ error: "Cliente inexistente." });
       const items = sanitItems(body.items); const bultos = Math.max(0, Math.min(999, Math.round(num(body.bultos))));
       if (!items.length && !bultos) return res.status(400).json({ error: "Cargá al menos los bultos o un producto con cantidad." });
-      const g = { clienteId: c.id, clienteNombre: c.data().nombre, fecha: esFecha(body.fecha) ? body.fecha : hoyAR(), bultos, items, nota: txt(body.nota, 400), por: dep.user.uid, porNombre: txt(dep.nombre, 80), createdAt: FieldValue.serverTimestamp() };
+      const g = { clienteId: c.id, clienteNombre: c.data().nombre, fecha: fechaOk(body.fecha) ? body.fecha : hoyAR(), bultos, items, nota: txt(body.nota, 400), por: dep.user.uid, porNombre: txt(dep.nombre, 80), createdAt: FieldValue.serverTimestamp() };
       const ref = await db.collection("deposito_ingresos").add(g);
       return res.json({ ok: true, id: ref.id });
     }
@@ -528,8 +652,32 @@ export default async function handler(req, res) {
         const s = await tx.get(ref); if (!s.exists) return null;
         const t = s.data(); if (["borrador", "cancelada"].includes(t.estado)) return { error: "La tanda está cancelada." };
         if (t.estado === estado) return { ok: true };
-        tx.set(ref, { estado, ...(estado === "entregada" ? { entregadaAt: Date.now() } : {}), hist: [...(t.hist || []).slice(-40), { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80), de: t.estado, a: estado }] }, { merge: true });
+        // Máquina de estados: hacia adelante libre (impresa → entregada vale si no se
+        // escanea), salvo entregar sin imprimir; hacia atrás solo UN paso.
+        const i = ESTADOS.indexOf(t.estado), j = ESTADOS.indexOf(estado);
+        if (t.estado === "pendiente" && estado === "entregada") return { error: "Primero hay que imprimirla (o tomarla)." };
+        if (j < i - 1) return { error: `De "${t.estado}" solo se puede volver a "${ESTADOS[i - 1]}".` };
+        tx.set(ref, { estado, ...(estado === "entregada" ? { entregadaAt: Date.now() } : {}), ...(t.estado === "entregada" ? { entregadaAt: FieldValue.delete() } : {}), hist: [...(t.hist || []).slice(-40), { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80), de: t.estado, a: estado }] }, { merge: true });
         return { ok: true };
+      });
+      if (!out) return res.status(404).json({ error: "Tanda inexistente." });
+      if (out.error) return res.status(409).json(out);
+      return res.json(out);
+    }
+
+    // Cancelar una tanda desde el depósito (solo la dueña): antes no había forma y
+    // una tanda impresa que el cliente abandonaba quedaba como deuda para siempre.
+    if (action === "tanda_cancelar") {
+      if (!soloOwner()) return;
+      const motivo = txt(body.motivo, 200); if (!motivo) return res.status(400).json({ error: "Contá por qué se cancela." });
+      const ref = db.collection("deposito_tandas").doc(String(body.id));
+      const out = await db.runTransaction(async tx => {
+        const s = await tx.get(ref); if (!s.exists) return null; const t = s.data();
+        if (["borrador", "cancelada", "entregada"].includes(t.estado)) return { error: t.estado === "entregada" ? "Una tanda entregada no se cancela: hacé un ajuste de saldo." : "La tanda ya está cancelada." };
+        const rev = await reversoLeer(tx, db, t);
+        tx.set(ref, { estado: "cancelada", canceladaAt: Date.now(), notaDeposito: [String(t.notaDeposito || "").trim(), `Cancelada: ${motivo}`].filter(Boolean).join("\n").slice(0, 600), hist: [...(t.hist || []).slice(-40), { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80), de: t.estado, a: "cancelada", nota: motivo }] }, { merge: true });
+        reversoEscribir(tx, db, rev, s.id, t, num(t.total), `Tanda cancelada por el depósito: ${motivo}`, dep.user.uid, dep.nombre);
+        return { ok: true, devuelto: rev ? num(t.total) : 0 };
       });
       if (!out) return res.status(404).json({ error: "Tanda inexistente." });
       if (out.error) return res.status(409).json(out);
@@ -563,7 +711,7 @@ export default async function handler(req, res) {
     }
     // Posponer la fecha de despacho (no vino el correo, falta stock…). Queda en el historial y el cliente lo ve.
     if (action === "tanda_posponer") {
-      if (!esFecha(body.fecha)) return res.status(400).json({ error: "Fecha inválida." });
+      if (!fechaOk(body.fecha)) return res.status(400).json({ error: "Fecha inválida." });
       const motivo = txt(body.motivo, 200); const ref = db.collection("deposito_tandas").doc(String(body.id || ""));
       const out = await db.runTransaction(async tx => {
         const s = await tx.get(ref); if (!s.exists) return null; const t = s.data();
@@ -575,6 +723,8 @@ export default async function handler(req, res) {
       });
       if (!out) return res.status(404).json({ error: "Tanda inexistente." });
       if (out.error) return res.status(409).json(out);
+      // Aviso al cliente dueño de Growith (aprobado 7/oct/2026): su tanda cambió de día.
+      try { const tp = (await ref.get()).data() || {}; const cs = await db.collection("deposito_clientes").doc(String(tp.clienteId || "")).get(); if (cs.exists) await mailCliente(db, { id: cs.id, ...cs.data() }, "El depósito pospuso tu tanda", `<p>Tu tanda de <strong>${num(tp.n)} pedido${num(tp.n) !== 1 ? "s" : ""}</strong> pasó al <strong>${String(body.fecha).split("-").reverse().join("/")}</strong>${motivo ? `: ${esc(motivo)}` : "."}</p>`); } catch (_) {}
       return res.json(out);
     }
 
@@ -615,12 +765,14 @@ export default async function handler(req, res) {
       if (!soloOwner()) return;
       const tk = await tokensDeposito(db);
       const usoDe = k => { const u = tk.uso?.[k]; if (!u) return null; const hoy = hoyAR(); const disp = Object.values(u.dispositivos || {}); return { ultimoAt: u.ultimoAt || null, hoyN: disp.filter(v => new Date(v.at - 3 * 3600000).toISOString().slice(0, 10) === hoy).length, total30: disp.filter(v => v.at > Date.now() - 30 * 86400000).length }; };
-      return res.json({ adminToken: tk.adminToken || null, pcToken: tk.pcToken || null, adminAt: tk.adminAt || null, pcAt: tk.pcAt || null, datosPago: tk.datosPago || "", corteHora: Math.min(23, Math.max(0, Math.round(num(tk.corteHora)) || 15)), uso: { admin: usoDe("admin"), pc: usoDe("pc") } });
+      return res.json({ adminToken: tk.adminToken || null, pcToken: tk.pcToken || null, adminAt: tk.adminAt || null, pcAt: tk.pcAt || null, datosPago: tk.datosPago || "", corteHora: Math.min(23, Math.max(0, Math.round(num(tk.corteHora)) || 15)), ...cfgExtraDe(tk), via: dep.via || "sesion", uso: { admin: usoDe("admin"), pc: usoDe("pc") } });
     }
     if (action === "config_guardar") {
       if (!soloOwner()) return;
       const corteHora = Math.min(23, Math.max(0, Math.round(num(body.corteHora)) || 15));
-      await db.collection("system").doc("deposito").set({ datosPago: txt(body.datosPago, 600), corteHora }, { merge: true });
+      const extraItemsIncluidos = Math.max(0, Math.min(999, Math.round(num(body.extraItemsIncluidos ?? 5))));
+      const extraItemPrecio = Math.max(0, Math.min(1000000, +num(body.extraItemPrecio ?? 500).toFixed(2)));
+      await db.collection("system").doc("deposito").set({ datosPago: txt(body.datosPago, 600), corteHora, extraItemsIncluidos, extraItemPrecio }, { merge: true });
       _tokCache = { at: 0, d: null };
       return res.json({ ok: true });
     }
@@ -662,6 +814,7 @@ export default async function handler(req, res) {
     if (action === "saldo_ajustar") {
       if (!soloOwner()) return;
       const monto = +num(body.monto).toFixed(2); if (!monto) return res.status(400).json({ error: "Poné el monto." });
+      if (Math.abs(monto) > MONTO_MAX) return res.status(400).json({ error: "El monto no parece correcto." });
       const motivo = txt(body.motivo, 200);
       const cRef = db.collection("deposito_clientes").doc(String(body.clienteId || ""));
       const pRef = db.collection("deposito_pagos").doc();
@@ -669,14 +822,7 @@ export default async function handler(req, res) {
         const cs = await tx.get(cRef); if (!cs.exists) return null; const cli = cs.data();
         const base = { clienteId: cRef.id, clienteNombre: cli.nombre, monto, tipo: "ajuste", estado: "verificado", comp: null, nota: motivo, notaCliente: "", aplicado: [], por: dep.user.uid, porNombre: txt(dep.nombre, 80), createdAt: FieldValue.serverTimestamp(), informadoAt: FieldValue.serverTimestamp(), verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid };
         if (monto < 0) { const aFavor = +(num(cli.aFavor) + monto).toFixed(2); tx.set(cRef, { aFavor }, { merge: true }); tx.set(pRef, base); return { ok: true, aFavor, aplicadas: 0 }; }
-        const ts = await tx.get(db.collection("deposito_tandas").where("clienteId", "==", cRef.id));
-        const pend = ts.docs.map(d => ({ ref: d.ref, id: d.id, t: d.data() })).filter(x => !["borrador", "cancelada"].includes(x.t.estado) && x.t.pago?.estado !== "verificado")
-          .sort((a, b) => (a.t.fechaDespacho || "").localeCompare(b.t.fechaDespacho || "") || (ms(a.t.createdAt) || 0) - (ms(b.t.createdAt) || 0));
-        let resto = monto + num(cli.aFavor); const aplicado = [];
-        for (const x of pend) { const tot = num(x.t.total); if (tot > resto + 0.005) break; resto -= tot; aplicado.push(x.id);
-          tx.set(x.ref, { pago: { ...(x.t.pago || {}), estado: "verificado", verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid, pagoId: pRef.id, nota: "" } }, { merge: true }); }
-        const aFavor = +resto.toFixed(2);
-        tx.set(cRef, { aFavor }, { merge: true });
+        const { aplicado, aFavor } = await aplicarFifo(tx, db, cRef, cli, monto, pRef.id, dep.user.uid);
         tx.set(pRef, { ...base, aplicado });
         return { ok: true, aFavor, aplicadas: aplicado.length };
       });
@@ -690,24 +836,22 @@ export default async function handler(req, res) {
       const out = await db.runTransaction(async tx => {
         const ps = await tx.get(pRef); if (!ps.exists) return null; const p = ps.data();
         if (p.estado === "verificado") return { ok: true, ya: true };
+        // Solo lo que el cliente informó: un borrador (monto 0) o un rechazado no se "verifica".
+        if (p.estado !== "a_verificar" || !(num(p.monto) > 0)) return { error: "Este pago no está pendiente de verificación." };
         if (!ok) { tx.set(pRef, { estado: "rechazado", nota: txt(body.nota, 300), verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid }, { merge: true }); return { ok: true }; }
-        const cRef = db.collection("deposito_clientes").doc(p.clienteId); const cs = await tx.get(cRef); const cli = cs.data() || {};
-        const ts = await tx.get(db.collection("deposito_tandas").where("clienteId", "==", p.clienteId));
-        const pend = ts.docs.map(d => ({ ref: d.ref, id: d.id, t: d.data() })).filter(x => !["borrador", "cancelada"].includes(x.t.estado) && x.t.pago?.estado !== "verificado")
-          .sort((a, b) => (a.t.fechaDespacho || "").localeCompare(b.t.fechaDespacho || "") || (ms(a.t.createdAt) || 0) - (ms(b.t.createdAt) || 0));
-        let resto = num(p.monto) + num(cli.aFavor); const aplicado = [];
-        for (const x of pend) { const tot = num(x.t.total); if (tot > resto + 0.005) break; resto -= tot; aplicado.push(x.id);
-          tx.set(x.ref, { pago: { ...(x.t.pago || {}), estado: "verificado", verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid, pagoId: pRef.id, nota: "" } }, { merge: true }); }
-        tx.set(cRef, { aFavor: +Math.max(0, resto).toFixed(2) }, { merge: true });
+        const cRef = db.collection("deposito_clientes").doc(String(p.clienteId || "")); const cs = await tx.get(cRef); if (!cs.exists) return { error: "El cliente de este pago ya no existe." };
+        const { aplicado, aFavor } = await aplicarFifo(tx, db, cRef, cs.data(), num(p.monto), pRef.id, dep.user.uid);
         tx.set(pRef, { estado: "verificado", nota: txt(body.nota, 300), aplicado, verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid }, { merge: true });
-        return { ok: true, aplicadas: aplicado.length, aFavor: +Math.max(0, resto).toFixed(2) };
+        return { ok: true, aplicadas: aplicado.length, aFavor };
       });
       if (!out) return res.status(404).json({ error: "Pago inexistente." });
+      if (out.error) return res.status(409).json(out);
       return res.json(out);
     }
     if (action === "acceso_nuevo") {
       if (!soloOwner()) return;
       const cual = body.cual === "pc" ? "pc" : "admin";
+      if (cual === "admin" && !soloSesion()) return;
       const token = randomBytes(24).toString("hex");
       await db.collection("system").doc("deposito").set(cual === "pc" ? { pcToken: token, pcAt: Date.now() } : { adminToken: token, adminAt: Date.now() }, { merge: true });
       _tokCache = { at: 0, d: null };
@@ -716,7 +860,7 @@ export default async function handler(req, res) {
     // Buscar cuentas de Growith con plan activo para darlas de alta como cliente
     // sin tipear el mail. Barrido en memoria (solo el dueño, uso esporádico).
     if (action === "usuarios_buscar") {
-      if (!soloOwner()) return;
+      if (!soloOwner() || !soloSesion()) return;
       const q = txt(body.q, 60).toLowerCase(); if (q.length < 2) return res.json({ usuarios: [] });
       const s = await db.collection("users").select("email", "nombre", "displayName", "plan", "planExpiry", "isTrial", "stripeStatus", "deleted", "soloMiembro", "esTienda", "active_tienda_uid", "storeName", "tiendaNombre").get();
       const now = Date.now(); const out = [];
@@ -748,7 +892,7 @@ export default async function handler(req, res) {
 
     // Diagnóstico del vínculo con Growith: qué cuenta quedó apuntada y si sirve para "Enviar al depósito".
     if (action === "cliente_vinculo") {
-      if (!soloOwner()) return;
+      if (!soloOwner() || !soloSesion()) return;
       const c = await db.collection("deposito_clientes").doc(String(body.id || "")).get(); if (!c.exists) return res.status(404).json({ error: "Cliente inexistente." });
       const gu = c.data().growithUid; if (!gu) return res.json({ vinculado: false, motivo: "Este cliente no tiene una cuenta de Growith vinculada: usa el link del portal." });
       const u = await db.collection("users").doc(String(gu)).get(); if (!u.exists) return res.json({ vinculado: false, uid: gu, motivo: "La cuenta vinculada ya no existe en Growith. Volvé a cargar el mail en Editar." });
@@ -808,17 +952,36 @@ export default async function handler(req, res) {
     if (action === "tanda_ajuste") {
       if (!soloOwner()) return;
       const ref = db.collection("deposito_tandas").doc(String(body.id || ""));
-      const s = await ref.get(); if (!s.exists) return res.status(404).json({ error: "Tanda inexistente." });
-      const t = { ...s.data(), ajuste: num(body.ajuste), ...(body.n != null ? { n: Math.max(0, Math.min(MAX_PEDIDOS, Math.round(num(body.n)))) } : {}) };
-      await ref.set({ ajuste: t.ajuste, ajusteMotivo: txt(body.motivo, 200), n: t.n, total: totalDe(t) }, { merge: true });
-      return res.json({ ok: true, total: totalDe(t) });
+      if (Math.abs(num(body.ajuste)) > MONTO_MAX) return res.status(400).json({ error: "El ajuste no parece correcto." });
+      const out = await db.runTransaction(async tx => {
+        const s = await tx.get(ref); if (!s.exists) return null; const prev = s.data();
+        const t = { ...prev, ajuste: num(body.ajuste), ...(body.n != null ? { n: Math.max(0, Math.min(MAX_PEDIDOS, Math.round(num(body.n)))) } : {}) };
+        const nuevo = totalDe(t), dif = +(nuevo - num(prev.total)).toFixed(2);
+        // Tanda ya cobrada: la diferencia va al saldo del cliente (baja el total →
+        // devolución; sube → cargo), en vez de desaparecer.
+        const rev = dif !== 0 ? await reversoLeer(tx, db, prev) : null;
+        tx.set(ref, { ajuste: t.ajuste, ajusteMotivo: txt(body.motivo, 200), n: t.n, total: nuevo }, { merge: true });
+        if (rev) reversoEscribir(tx, db, rev, s.id, prev, -dif, `Ajuste de una tanda ya cobrada: ${txt(body.motivo, 200) || "sin motivo"}`, dep.user.uid, dep.nombre);
+        return { ok: true, total: nuevo, saldoMovido: rev ? -dif : 0 };
+      });
+      if (!out) return res.status(404).json({ error: "Tanda inexistente." });
+      return res.json(out);
     }
 
     if (action === "tanda_eliminar") {
       if (!soloOwner()) return;
-      const id = String(body.id || ""); if (!id) return res.status(400).json({ error: "Falta la tanda." });
-      await borrarArchivos(db, id); await db.collection("deposito_tandas").doc(id).delete();
-      return res.json({ ok: true });
+      const id = String(body.id || "");
+      const ref = db.collection("deposito_tandas").doc(id);
+      const out = await db.runTransaction(async tx => {
+        const s = await tx.get(ref); if (!s.exists) return null; const t = s.data();
+        const rev = await reversoLeer(tx, db, t);
+        tx.delete(ref);
+        reversoEscribir(tx, db, rev, id, t, num(t.total), "Tanda eliminada por el depósito", dep.user.uid, dep.nombre);
+        return { ok: true, devuelto: rev ? num(t.total) : 0 };
+      });
+      if (!out) return res.status(404).json({ error: "Tanda inexistente." });
+      await borrarArchivos(db, id);
+      return res.json(out);
     }
 
     if (action === "resumen") {
