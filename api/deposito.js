@@ -292,10 +292,23 @@ async function operadoresEmails(db) {
   return { owner: d.email || "", ops };
 }
 
+// TIEMPO REAL (7/oct/2026): las colecciones son server-only y el panel por link no
+// tiene sesión, así que no hay onSnapshot. En su lugar, cada acción que cambia algo
+// que se ve en la consola sube un contador (`system/deposito_ver.v`) y la consola
+// lo consulta cada pocos segundos con `cola_ver` (UNA lectura): si cambió, recarga.
+// Una acción nueva que escriba tandas, pedidos o pagos TIENE que sumarse acá.
+const MUEVEN_VER = new Set(["c_tanda_cerrar", "c_tanda_cancelar", "c_pago_cerrar", "c_pago_informar", "pedido_escanear", "tanda_estado", "tanda_cancelar", "pedido_apartar", "pedido_resolver", "tanda_posponer", "tanda_nota", "tanda_ajuste", "tanda_eliminar", "pago_cc_verificar", "pago_verificar", "saldo_ajustar", "saldo_fijar", "cliente_guardar", "ingreso_crear", "ingreso_eliminar"]);
+const verRef = db => db.collection("system").doc("deposito_ver");
+
 export default async function handler(req, res) {
   const db = initAdmin();
   const body = (req.body && typeof req.body === "object") ? req.body : {};
   const action = String(req.query.action || body.action || "");
+  if (MUEVEN_VER.has(action)) {
+    // Se sube DESPUÉS de escribir y antes de responder (la función puede congelarse al responder).
+    const json = res.json.bind(res);
+    res.json = d => (res.statusCode < 400 && !d?.ya ? verRef(db).set({ v: FieldValue.increment(1), at: Date.now(), por: action }, { merge: true }).catch(() => {}) : Promise.resolve()).then(() => json(d));
+  }
 
   try {
     // ── Cron diario (8:00 AR): resumen de lo que hay para armar + purga ──
@@ -563,7 +576,11 @@ export default async function handler(req, res) {
     const ID_DE = { tanda_estado: "id", tanda_cancelar: "id", pedido_apartar: "id", pedido_resolver: "id", tanda_posponer: "id", tanda_nota: "id", tanda_ajuste: "id", tanda_eliminar: "id", pago_cc_verificar: "id", cliente_vinculo: "id", cuenta_cliente: "clienteId", saldo_ajustar: "clienteId", ingreso_crear: "clienteId" }[action];
     if (ID_DE && !idOk(body[ID_DE])) return res.status(400).json({ error: "Identificador inválido." });
 
+    if (action === "cola_ver") { const d = (await verRef(db).get()).data() || {}; return res.json({ v: num(d.v), at: num(d.at) }); }
+
     if (action === "cola") {
+      // La versión se lee ANTES que las tandas: si entra algo en el medio, la consola recarga de más, nunca de menos.
+      const ver = num(((await verRef(db).get()).data() || {}).v);
       // Todo lo no terminado + lo entregado/cancelado de los últimos 4 días.
       // Las entregadas se traen desde el 1 del mes para los totales (despachados hoy / este mes); a la cola van solo las de los últimos 4 días.
       const hoy = hoyAR(); const inicioMes = Date.parse(`${hoy.slice(0, 7)}-01T03:00:00Z`); const inicioHoy = Date.parse(`${hoy}T03:00:00Z`); const hace4 = Date.now() - 4 * 86400000;
@@ -583,7 +600,7 @@ export default async function handler(req, res) {
       const tandas = [...m.entries()].map(([id, t]) => paraDep(id, t)).sort((a, b) => (a.fechaDespacho || "").localeCompare(b.fechaDespacho || "") || (a.createdAt || 0) - (b.createdAt || 0));
       const cs = await db.collection("deposito_clientes").get();
       const cfgCola = await tokensDeposito(db);
-      return res.json({ rol: dep.rol, via: dep.via || "sesion", nombre: dep.nombre, hoy, corteHora: Math.min(23, Math.max(0, Math.round(num(cfgCola.corteHora)) || 15)), ...cfgExtraDe(cfgCola), despachados: desp, apartados: apartados.slice(0, 200), tandas, clientes: cs.docs.map(d => clientePublico(d.id, d.data(), false)).filter(c => c.activo).map(c => dep.rol === "owner" ? c : { ...c, precio: null, contacto: "" }) });
+      return res.json({ ver, rol: dep.rol, via: dep.via || "sesion", nombre: dep.nombre, hoy, corteHora: Math.min(23, Math.max(0, Math.round(num(cfgCola.corteHora)) || 15)), ...cfgExtraDe(cfgCola), despachados: desp, apartados: apartados.slice(0, 200), tandas, clientes: cs.docs.map(d => clientePublico(d.id, d.data(), false)).filter(c => c.activo).map(c => dep.rol === "owner" ? c : { ...c, precio: null, contacto: "" }) });
     }
 
     // Lector de códigos: la etiqueta escaneada (número de envío de Andreani, id
