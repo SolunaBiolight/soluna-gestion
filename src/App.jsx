@@ -21959,6 +21959,12 @@ function DepositoCola({T,api,owner}){
     if(!motivo) return;
     setBusy(t.id); try{ const r=await api("tanda_cancelar",{id:t.id,motivo}); toast("Tanda cancelada","success"); await cargar(); }catch(x){ toast(x.message,"error"); } setBusy(null);
   }
+  // Eliminar una tanda (solo la dueña, en cualquier estado): se borra con sus archivos y deja de contar en la cuenta del cliente.
+  async function eliminarTanda(t){
+    if(busy) return;
+    if(!(await appConfirm(`¿Eliminar la tanda de ${t.clienteNombre} (${t.n} pedido${t.n!==1?"s":""})? Se borra con sus etiquetas, desaparece del panel del cliente y deja de contar en su cuenta. No se puede deshacer.`,{danger:true,okLabel:"Eliminar tanda"}))) return;
+    setBusy(t.id); try{ await api("tanda_eliminar",{id:t.id}); toast("Tanda eliminada","success"); await cargar(); }catch(x){ toast(x.message,"error"); } setBusy(null);
+  }
   async function notaDep(t){ const n=await appPrompt("Nota del depósito para el cliente (la ve en su panel):",t.notaDeposito||"",{okLabel:"Guardar"}); if(n===null||n===undefined) return; try{ await api("tanda_nota",{id:t.id,nota:n}); cargar(); }catch(x){ toast(x.message,"error"); } }
   async function reimprimir(r){
     const chunks=r.pdfChunks||st.tandas.find(x=>x.id===r.tandaId)?.pdf?.chunks; if(!chunks){ toast("El PDF de esa tanda ya no está disponible (se guardan 30 días)","warning"); return; }
@@ -22054,6 +22060,7 @@ function DepositoCola({T,api,owner}){
                 <Btn T={T} variant="ghost" size="sm" onClick={()=>{ setMasMenu(null); notaDep(t); }}>{bi("note",t.notaDeposito?"Editar nota al cliente":"Nota al cliente")}</Btn>
                 {t.estado!=="pendiente"&&<Btn T={T} variant="ghost" size="sm" onClick={()=>{ setMasMenu(null); estado(t,{impresa:"pendiente",armada:"impresa",entregada:"armada"}[t.estado]||"pendiente"); }}>{bi("undo","Volver un paso")}</Btn>}
                 {owner&&!entregada&&<Btn T={T} variant="ghost" size="sm" onClick={()=>{ setMasMenu(null); cancelarTanda(t); }}><span style={{color:T.red,display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="alert" size={13}/>Cancelar tanda</span></Btn>}
+                {owner&&<Btn T={T} variant="ghost" size="sm" onClick={()=>{ setMasMenu(null); eliminarTanda(t); }}><span style={{color:T.red,display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="alert" size={13}/>Eliminar tanda</span></Btn>}
               </div>
             </>)}
           </div>
@@ -22193,18 +22200,23 @@ function DepositoCola({T,api,owner}){
 }
 function DepositoHistorial({T,api}){
   const iS=InputStyle(T);
-  const [mes,setMes]=useState(hoyAR().slice(0,7)); const [d,setD]=useState(null);
-  useEffect(()=>{ setD(null); api("historial",{mes}).then(setD).catch(e=>{ toast(e.message,"error"); setD({tandas:[]}); }); },[mes]);
+  const [mes,setMes]=useState(hoyAR().slice(0,7)); const [d,setD]=useState(null); const [rk,setRk]=useState(0);
+  useEffect(()=>{ setD(null); api("historial",{mes}).then(setD).catch(e=>{ toast(e.message,"error"); setD({tandas:[]}); }); },[mes,rk]);
+  async function eliminar(t){
+    if(!(await appConfirm(`¿Eliminar la tanda de ${t.clienteNombre} del ${ghDepFechaLinda(t.fechaDespacho)} (${t.n} pedido${t.n!==1?"s":""})? Deja de contar en la cuenta del cliente. No se puede deshacer.`,{danger:true,okLabel:"Eliminar tanda"}))) return;
+    try{ await api("tanda_eliminar",{id:t.id}); toast("Tanda eliminada","success"); setRk(k=>k+1); }catch(x){ toast(x.message,"error"); }
+  }
   const COL=ghDepCol(T);
   const ok=d?d.tandas.filter(t=>t.estado!=="cancelada"):[];
   return (<DepSection T={T} title="Tandas por mes" desc={d?<span><strong style={{color:T.text}}>{ok.reduce((a,t)=>a+t.n,0)}</strong> pedidos en <strong style={{color:T.text}}>{ok.length}</strong> tandas ese mes.</span>:"Cargando…"} extra={<input type="month" style={{...iS,marginBottom:0,width:170}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>}>
     {!d? <div style={{display:"flex",justifyContent:"center",padding:40}}><Spinner size={24} color={T.accent}/></div>
-      : <DepTable T={T} minWidth={520} empty="Sin movimientos ese mes" rows={d.tandas.map(t=>({...t,_dim:t.estado==="cancelada"}))} cols={[
+      : <DepTable T={T} minWidth={620} empty="Sin movimientos ese mes" rows={d.tandas.map(t=>({...t,_dim:t.estado==="cancelada"}))} cols={[
           {h:"Despacho",w:"90px",render:t=>ghDepFechaLinda(t.fechaDespacho)},
           {h:"Cliente",w:"1.2fr",render:t=><strong>{t.clienteNombre}</strong>},
           {h:"Tanda",w:"1.4fr",render:t=><span style={{color:T.textMd}}>{t.tipo==="especial"?(t.especial?.titulo||"Especial"):`${t.n} pedidos`} · {GH_DEP_CANAL[t.canal]||t.canal}</span>},
           {h:"Estado",w:"150px",render:t=><DepDot T={T} color={COL[t.estado]||T.textSm}>{GH_DEP_ESTADO[t.estado]||t.estado}</DepDot>},
           ...(d.tandas.some(t=>t.total!=null)?[{h:"Total",w:"110px",align:"right",render:t=>t.total!=null?fmtMoney(t.total):""}]:[]),
+          {h:"",w:"90px",align:"right",render:t=><Btn T={T} variant="ghost" size="sm" onClick={()=>eliminar(t)}><span style={{color:T.red}}>Eliminar</span></Btn>},
         ]}/>}
   </DepSection>);
 }
