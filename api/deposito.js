@@ -432,7 +432,9 @@ export default async function handler(req, res) {
         const pages = Math.max(0, Math.min(5000, Math.round(num(body.pages))));
         // Cantidad = pedidos listados; si no hay lista, las PÁGINAS del PDF (una
         // etiqueta por página); recién si no se pudieron contar, lo que tipeó el cliente.
-        let n = pedidos.length || (tipo === "tanda" && pages > 0 ? Math.min(MAX_PEDIDOS, pages) : 0) || Math.max(0, Math.min(MAX_PEDIDOS, Math.round(num(body.n))));
+        // nManual: el cliente corrigió la cantidad a mano ("La cantidad no es N").
+        const nBody = Math.max(0, Math.min(MAX_PEDIDOS, Math.round(num(body.n))));
+        let n = pedidos.length || (body.nManual === true && nBody > 0 ? nBody : 0) || (tipo === "tanda" && pages > 0 ? Math.min(MAX_PEDIDOS, pages) : 0) || nBody;
         if (tipo === "especial" && !n) n = 1;
         const extra = extraItemsDe(pedidos, cfgExtraDe(await tokensDeposito(db)));
         if (!n) return res.status(400).json({ error: "La tanda no tiene pedidos." });

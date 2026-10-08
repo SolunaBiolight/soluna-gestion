@@ -21379,11 +21379,25 @@ async function ghDepTextoPaginas(bytes){
 function ghDepParsearLista(texto){
   return String(texto||"").split(/\r?\n/).map(l=>l.trim()).filter(Boolean).slice(0,800).map(l=>{
     const partes=l.split(/\s*[;|\t]\s*|\s+·\s+/).map(x=>x.trim()).filter(Boolean);
-    const numero=(partes[0]||"").replace(/^#/,""); if(!numero) return null;
-    const items=partes.length>1?partes[partes.length-1].split(",").map(x=>x.trim()).filter(Boolean):[];
+    if(!partes.length) return null;
+    const items=partes[partes.length-1].split(",").map(x=>x.trim()).filter(Boolean).map(ghDepItemNorm);
+    const numero=partes.length>1?(partes[0]||"").replace(/^#/,""):"";
     const comprador=partes.length>2?partes.slice(1,-1).join(" "):"";
-    return {numero,comprador,items:partes.length>1?items:[],pags:[],tracking:""};
+    return {numero,comprador,items,pags:[],tracking:""};
   }).filter(Boolean);
+}
+// "AN X1" / "LIQ x 2" → "1x AN" / "2x LIQ" (el formato que entiende el picking).
+function ghDepItemNorm(it){ const m=String(it).match(/^(.+?)\s+x\s*(\d+)$/i); return m?`${Number(m[2])}x ${m[1].trim()}`:String(it); }
+// La CANTIDAD de pedidos la manda el PDF (una etiqueta por página), nunca los
+// renglones del texto: un pedido puede escribirse en varios renglones (canje).
+// Renglones = etiquetas → uno por pedido. Una sola etiqueta → todo es de ese
+// pedido. Si no coincide, no se sabe qué va en cada paquete: va como nota.
+function ghDepListaAPedidos(texto,etiquetas){
+  const filas=ghDepParsearLista(texto); const n=Number(etiquetas)||0;
+  if(!filas.length) return {pedidos:[],modo:"vacio",filas:0};
+  if(!n||filas.length===n) return {pedidos:filas,modo:"uno_por_renglon",filas:filas.length};
+  if(n===1) return {pedidos:[{numero:filas.find(f=>f.numero)?.numero||"",comprador:filas.find(f=>f.comprador)?.comprador||"",items:filas.flatMap(f=>f.items),pags:[],tracking:""}],modo:"un_pedido",filas:filas.length};
+  return {pedidos:[],modo:"nota",filas:filas.length};
 }
 function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extraCfg=null,onClose,onDone}){
   const iS=InputStyle(T);
@@ -21398,9 +21412,12 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   const [adj,setAdj]=useState([]);
   const [prog,setProg]=useState(null);
   const [drag,setDrag]=useState(false); const [verCant,setVerCant]=useState(false); const [verLista,setVerLista]=useState(false);
-  const pedidosLista=React.useMemo(()=>ghDepParsearLista(lista),[lista]);
+  const etiquetasPdf=tipo==="tanda"?(verCant||!pdf?.pages?Number(n)||0:pdf.pages):0;
+  const listaInfo=React.useMemo(()=>ghDepListaAPedidos(lista,etiquetasPdf),[lista,etiquetasPdf]);
+  const pedidosLista=listaInfo.pedidos;
   const pedidos=prefill?.pedidos?.length?prefill.pedidos:pedidosLista;
-  const cant=tipo==="especial"?Math.max(1,Number(n)||1):(pedidos.length||Number(n)||0);
+  const cant=tipo==="especial"?Math.max(1,Number(n)||1):(prefill?.pedidos?.length||etiquetasPdf||pedidos.length||0);
+  const notaFinal=listaInfo.modo==="nota"&&!prefill?.pedidos?.length?[nota.trim(),"Productos:\n"+lista.trim()].filter(Boolean).join("\n").slice(0,600):nota;
   const extra=ghDepExtra(pedidos,extraCfg);
   const conBase=Math.max(0,cant-(cliente?.precio>0?extra.pedidosConExtra:0));
   const total=conBase*(Number(cliente?.precio)||0)+(cliente?.precio>0?extra.monto:0);
@@ -21413,7 +21430,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
     if(!f) return; if(f.type&&f.type!=="application/pdf"&&!/\.pdf$/i.test(f.name||"")){ toast("Ese archivo no es un PDF","warning"); return; }
     if(f.size>22*1024*1024){ toast("El PDF supera los 22 MB. Dividilo en dos tandas.","warning"); return; }
     try{ const bytes=await leer(f); let pages=0; try{ const {PDFDocument}=await import("pdf-lib"); pages=(await PDFDocument.load(bytes,{ignoreEncryption:true})).getPageCount(); }catch(_){}
-      setPdf({bytes,nombre:f.name,pages}); if(!pedidos.length&&tipo==="tanda"){ setN(pages||0); setVerCant(false); } }catch(e){ toast(e.message,"error"); }
+      setPdf({bytes,nombre:f.name,pages}); if(tipo==="tanda"){ setN(pages||0); setVerCant(false); } }catch(e){ toast(e.message,"error"); }
   }
   async function elegirOtro(f,setter,max){ if(!f) return; if(f.size>max){ toast(`El archivo supera los ${Math.round(max/1024/1024)} MB`,"warning"); return; } try{ setter({bytes:await leer(f),nombre:f.name,mime:f.type||"application/octet-stream"}); }catch(e){ toast(e.message,"error"); } }
   async function enviar(){
@@ -21425,7 +21442,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
     setProg(borrRef.current?"Retomando…":"Creando…"); setFallo(null);
     try{
       if(pdf&&pdf.bytes.length>22*1024*1024){ toast("El PDF de etiquetas supera los 22 MB: mandá la tanda en dos partes.","warning",7000); setProg(null); return; }
-      if(!borrRef.current){ const c=await api("c_tanda_crear",{tipo,canal,fechaDespacho:fecha,nota,pedidos,n:cant,pages:pdf?.pages||0,origen:prefill?.origen||"manual",especial:tipo==="especial"?esp:undefined}); borrRef.current={id:c.id,hechos:{}}; }
+      if(!borrRef.current){ const c=await api("c_tanda_crear",{tipo,canal,fechaDespacho:fecha,nota:notaFinal,pedidos,n:cant,nManual:tipo==="tanda"&&verCant&&!prefill?.pedidos?.length,pages:pdf?.pages||0,origen:prefill?.origen||"manual",especial:tipo==="especial"?esp:undefined}); borrRef.current={id:c.id,hechos:{}}; }
       const b=borrRef.current;
       const subir=async(kind,bytes,label)=>{ const total=Math.max(1,Math.ceil(ghBytesToB64(bytes).length/GH_DEP_CHUNK)); const faltan=Array.from({length:total},(_,i)=>i).filter(i=>!b.hechos[`${kind}:${i}`]);
         await ghDepSubir(api,b.id,kind,bytes,(a,c2,t)=>setProg(`Subiendo ${label} ${a}/${c2}${c2!==t?` (de ${t})`:""}…`),faltan); for(const i of faltan) b.hechos[`${kind}:${i}`]=true; return total; };
@@ -21489,18 +21506,20 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
         )}
         {/* La cantidad sale sola del PDF. Solo se pide a mano si no se pudo contar, o si el usuario quiere corregirla. */}
         {tipo==="tanda"&&pdf&&!prefill?.pedidos?.length&&(<div style={{display:"flex",flexDirection:"column",gap:10,marginTop:-4}}>
-          {(verCant||!pdf.pages)&&!pedidos.length&&(<div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          {(verCant||!pdf.pages)&&(<div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
             <span style={{fontSize:DS.font.md,color:T.textMd}}>{pdf.pages?"Cantidad de etiquetas":"No pudimos contar las etiquetas. ¿Cuántas son?"}</span>
             <input style={{...iS,width:110,marginBottom:0}} type="number" min="1" value={n||""} onChange={e=>setN(e.target.value)}/>
             {pdf.pages>0&&<span style={{fontSize:DS.font.sm,color:T.textSm}}>El PDF tiene {pdf.pages} página{pdf.pages!==1?"s":""}.</span>}
           </div>)}
-          {verLista&&(<div>{lbl("Productos de cada pedido (para que el depósito sepa qué va en cada paquete)")}
-            <textarea style={{...iS,minHeight:74,resize:"vertical",fontFamily:"monospace",fontSize:DS.font.md}} placeholder={"Una línea por pedido:\n1234; Juan Pérez; 2x ROJ-NN, 1x LIQ\n1235; Ana Ríos; 1x NARAN-TT"} value={lista} onChange={e=>setLista(e.target.value)}/>
-            {pedidosLista.length>0&&<div style={{fontSize:DS.font.sm,color:T.green,marginTop:-6}}>{pedidosLista.length} pedido{pedidosLista.length!==1?"s":""} leído{pedidosLista.length!==1?"s":""}{pedidosLista.some(p=>p.items.length)?" con productos":""}</div>}
+          {verLista&&(<div>{lbl("Productos (para que el depósito sepa qué va en cada paquete)")}
+            <textarea style={{...iS,minHeight:74,resize:"vertical",fontFamily:"monospace",fontSize:DS.font.md}} placeholder={cant===1?"Qué lleva el paquete, un producto por renglón:\n1x ROJ-NN\n1x LIQ":"Un renglón por etiqueta, en el orden del PDF:\n2x ROJ-NN, 1x LIQ\n1x NARAN-TT"} value={lista} onChange={e=>setLista(e.target.value)}/>
+            {listaInfo.modo==="un_pedido"&&<div style={{fontSize:DS.font.sm,color:T.green,marginTop:-6}}>Es 1 etiqueta: todo esto va en ese paquete.</div>}
+            {listaInfo.modo==="uno_por_renglon"&&<div style={{fontSize:DS.font.sm,color:T.green,marginTop:-6}}>{cant>1?`${listaInfo.filas} renglones para ${cant} etiquetas: uno por paquete, en el orden del PDF.`:"Productos cargados."}</div>}
+            {listaInfo.modo==="nota"&&<div style={{fontSize:DS.font.sm,color:T.yellow,marginTop:-6}}>El PDF tiene {cant} etiquetas y escribiste {listaInfo.filas} renglón{listaInfo.filas!==1?"es":""}: se cuentan {cant} pedidos y esto le llega al depósito como nota. Para que sepan qué va en cada paquete, escribí un renglón por etiqueta.</div>}
           </div>)}
-          {(!verLista||(!verCant&&pdf.pages>0&&!pedidos.length))&&(<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {(!verLista||(!verCant&&pdf.pages>0))&&(<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {!verLista&&<DepBtn T={T} size="sm" ico="plus" onClick={()=>setVerLista(true)}>Agregar los productos de cada pedido</DepBtn>}
-            {!verCant&&pdf.pages>0&&!pedidos.length&&<DepBtn T={T} size="sm" onClick={()=>setVerCant(true)}>La cantidad no es {cant}</DepBtn>}
+            {!verCant&&pdf.pages>0&&<DepBtn T={T} size="sm" onClick={()=>setVerCant(true)}>La cantidad no es {cant}</DepBtn>}
           </div>)}
         </div>)}
         <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
