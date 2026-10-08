@@ -976,13 +976,32 @@ async function catalogoLocalidades() {
   _locCat = { ts: Date.now(), byCp };
   return byCp;
 }
+// Provincia en forma comparable (sin acentos; CABA en todas sus formas = "caba").
+export function provCanon(p) {
+  let t = String(p || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/^provincia (de |del )?/, "").replace(/ province$/, "");
+  if (!t) return "";
+  if (/^(caba|c a b a|capital|capital federal|ciudad (autonoma )?(de )?buenos aires|autonomous city of buenos aires|buenos aires city|distrito federal)$/.test(t)) return "caba";
+  if (/^(gran buenos aires|gba|buenos aires (gba|interior)|bs as)$/.test(t)) return "buenos aires";
+  if (/^tierra del fuego/.test(t)) return "tierra del fuego";
+  return t;
+}
+// Buenos Aires ↔ Capital se toleran (confusión habitual del comprador); el resto tiene que coincidir.
+export function provCompatibles(a, b) {
+  const x = provCanon(a), y = provCanon(b);
+  if (!x || !y || x === y) return true;
+  const par = new Set([x, y]);
+  return par.has("caba") && par.has("buenos aires");
+}
 // Elige la localidad oficial para un CP a partir de los textos que manda la
 // tienda (localidad, ciudad, provincia). Devuelve null si no puede resolver.
 async function resolverLocalidad(cp, textos = [], region = "") {
   try {
     const byCp = await catalogoLocalidades();
-    const cands = byCp.get(String(cp || "").trim()) || [];
-    if (!cands.length) return null;
+    const todas = byCp.get(String(cp || "").trim()) || [];
+    if (!todas.length) return null;
+    // Un CP puede existir en dos provincias (82 casos): primero las de la provincia del pedido.
+    const mismas = region ? todas.filter(c => provCanon(c.provincia) === provCanon(region)) : [];
+    const cands = mismas.length ? mismas : todas;
     const toks = s => nrmTxt(s).split(/[^a-z0-9]+/).filter(t => t.length > 1);
     const textoToks = new Set(textos.flatMap(t => toks(t)));
     const regionN = nrmTxt(region);
@@ -2140,6 +2159,14 @@ export default async function handler(req, res) {
       if (tipo !== "sucursal") locDestino = await resolverLocalidad(destino.postal.codigoPostal, [destino.postal.localidad, destino.postal.ciudad, destino.postal.partido], destino.postal.region);
       locOrigen = await resolverLocalidad(origen.codigoPostal, [origen.localidad], origen.region);
       marcar("localidades");
+      // FAIL-CLOSED (7/oct/2026): la localidad y la PROVINCIA de la etiqueta salen del
+      // catálogo de Andreani según el CP. Si el comprador escribió un CP de otra
+      // provincia (en Shopify el CP es texto libre), la etiqueta salía a esa otra
+      // provincia sin aviso. Si la provincia del pedido contradice la del CP, no se
+      // emite ni se debita: hay que corregir el pedido.
+      if (locDestino && provCanon(destino.postal.region) && provCanon(locDestino.provincia) && !provCompatibles(destino.postal.region, locDestino.provincia)) {
+        return res.status(400).json({ code: "destino_cp_provincia", error: `El código postal ${destino.postal.codigoPostal} es de ${locDestino.provincia}, pero el pedido dice ${destino.postal.region}${destino.postal.localidad ? ` (${destino.postal.localidad})` : ""}. No se emitió ni se cobró: corregí el código postal o la provincia en el pedido y volvé a generar.` });
+      }
       if (locDestino) console.log(`[andreani] localidad destino CP ${destino.postal.codigoPostal}: "${destino.postal.localidad}" → "${locDestino.localidad}" (${locDestino.provincia}, score ${locDestino.score.toFixed(2)} de ${locDestino.cands})`);
       const destinoBody = tipo === "sucursal"
         ? { sucursal: { id: String(destino.sucursalId).trim() } } // Andreani (24/sep/2026) rechaza el id numérico: "could not be converted to System.String"

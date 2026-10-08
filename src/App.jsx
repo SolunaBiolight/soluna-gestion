@@ -4463,6 +4463,104 @@ function buildOrdersFromAPI(data) {
 // --- Andreani shared cache (module level) ---
 const _andreaniLocsCache = { current: null };
 
+// GH_LOC_MATCH_BEGIN ─── Localidad de Andreani para envíos A DOMICILIO (puro, sin React).
+// El Excel de Andreani pide "PROVINCIA / LOCALIDAD / CP" tal cual figura en su
+// plantilla. REGLA DURA (7/oct/2026, pedidos de Shopify que salían a otra ciudad
+// y hasta a otra provincia): NUNCA se adivina. Solo se acepta una entrada si
+// tiene el MISMO código postal del pedido y la provincia no la contradice; entre
+// las entradas de ese CP se elige por nombre de localidad. Si no cierra, devuelve
+// null y el pedido va al selector manual. No existe "la primera del CP", "la
+// primera de la provincia" ni "la primera de Buenos Aires".
+// Tests: node scripts/loc_match_test.cjs
+const GH_LOC_STOP=new Set(["DE","DEL","LA","LAS","LOS","EL","Y","E"]);
+// CP de 4 dígitos desde lo que escriba el comprador: "1425", "C1425", "C1425DKA", "b 7600".
+function ghLocCp(cp){
+  const t=String(cp??"").toUpperCase().replace(/[\s.\-]/g,"");
+  const m=t.match(/^[A-Z]?(\d{4})(?:[A-Z]{3})?$/);
+  return m?m[1]:"";
+}
+// Provincia como la escribe la plantilla (sin acentos; CABA = "CAPITAL FEDERAL").
+function ghLocProv(p){
+  let t=ghNrmSuc(p).replace(/^PROVINCIA (DE |DEL )?/,"").replace(/ PROVINCE$/,"").trim();
+  if(!t) return "";
+  if(/^(CABA|C A B A|CAPITAL|CAPITAL FEDERAL|CIUDAD (AUTONOMA )?(DE )?BUENOS AIRES|AUTONOMOUS CITY OF BUENOS AIRES|BUENOS AIRES CITY|DISTRITO FEDERAL)$/.test(t)) return "CAPITAL FEDERAL";
+  if(/^(GRAN BUENOS AIRES|GBA|BUENOS AIRES (GBA|INTERIOR)|BS AS|BS AS GBA|PCIA BS AS)$/.test(t)) return "BUENOS AIRES";
+  if(/^TIERRA DEL FUEGO/.test(t)) return "TIERRA DEL FUEGO";
+  if(/^SGO DEL ESTERO$/.test(t)) return "SANTIAGO DEL ESTERO";
+  return t;
+}
+function ghLocPartes(loc){ const p=String(loc||"").split(" / "); return p.length===3?{prov:ghNrmSuc(p[0]),loc:ghNrmSuc(p[1]),cp:p[2].trim()}:null; }
+function ghLocPalabras(t){ return [...new Set(ghNrmSuc(t).split(" ").filter(w=>w.length>=2&&!GH_LOC_STOP.has(w)))]; }
+// ¿La provincia del pedido admite la de la entrada? true / false / null (el pedido no trae provincia).
+// "caba" = el comprador puso Buenos Aires para un CP de Capital, o al revés (confusión habitual).
+function ghLocProvOk(provPedido,provEntrada){
+  if(!provPedido) return null;
+  if(provPedido===provEntrada) return true;
+  const par=new Set([provPedido,provEntrada]);
+  if(par.has("BUENOS AIRES")&&par.has("CAPITAL FEDERAL")) return "caba";
+  return false;
+}
+// Parecido de localidad: 3 = igual, 2 = una contiene todas las palabras de la otra, 0 = no coincide.
+function ghLocScore(locPedido,locEntrada){
+  const a=ghNrmSuc(locPedido), b=ghNrmSuc(locEntrada); if(!a||!b) return 0;
+  if(a===b) return 3;
+  const ta=ghLocPalabras(a), tb=ghLocPalabras(b); if(!ta.length||!tb.length) return 0;
+  if(tb.every(w=>ta.includes(w))||ta.every(w=>tb.includes(w))) return 2;
+  return 0;
+}
+// Entradas de la plantilla con el CP del pedido cuya provincia no lo contradice.
+function ghLocCandidatas(locs,cp,provincia){
+  const c=ghLocCp(cp); if(!c) return [];
+  const prov=ghLocProv(provincia);
+  return (locs?.cpIndex?.[c]||[]).filter(l=>{ const x=ghLocPartes(l); return x&&ghLocProvOk(prov,x.prov)!==false; });
+}
+// → {loc, motivo} o null. `motivo` explica por qué se aceptó (para diagnóstico y tests).
+function ghMatchLocalidad(locs,cp,provincia,localidad){
+  const c=ghLocCp(cp), prov=ghLocProv(provincia), locTxt=ghNrmSuc(localidad);
+  if(c){
+    const cands=ghLocCandidatas(locs,c,provincia).map(l=>({l,x:ghLocPartes(l)}));
+    if(!cands.length) return null; // CP que Andreani no tiene, o de otra provincia: a mano
+    // Capital Federal: las entradas del CP son sinónimos ("CIUDAD AUTONOMA (DE) BUENOS AIRES").
+    if(cands.every(k=>k.x.prov==="CAPITAL FEDERAL")){
+      const pref=cands.find(k=>k.x.loc==="CIUDAD AUTONOMA DE BUENOS AIRES")||cands[0];
+      return {loc:pref.l,motivo:"cp_caba"};
+    }
+    const sc=cands.map(k=>({...k,s:ghLocScore(locTxt,k.x.loc),ok:ghLocProvOk(prov,k.x.prov)}));
+    const exactas=sc.filter(k=>k.s===3);
+    if(exactas.length===1) return {loc:exactas[0].l,motivo:"cp_localidad"};
+    if(exactas.length>1){ const mismaProv=exactas.filter(k=>k.ok===true); if(mismaProv.length===1) return {loc:mismaProv[0].l,motivo:"cp_localidad"}; return null; }
+    const parecidas=sc.filter(k=>k.s===2);
+    if(parecidas.length===1) return {loc:parecidas[0].l,motivo:"cp_localidad_parecida"};
+    if(parecidas.length>1){
+      // "Villa Carlos Paz" contra "CARLOS PAZ" y "VILLA CARLOS PAZ SUR": gana la que comparte más palabras, si es una sola.
+      const ta=ghLocPalabras(locTxt); const n=k=>ghLocPalabras(k.x.loc).filter(w=>ta.includes(w)).length;
+      const max=Math.max(...parecidas.map(n)); const top=parecidas.filter(k=>n(k)===max);
+      if(top.length===1) return {loc:top[0].l,motivo:"cp_localidad_parecida"};
+      return null;
+    }
+    // Ninguna localidad del CP se parece (el comprador puso un barrio): solo si el CP
+    // tiene UNA entrada y la provincia coincide exacta — no queda nada que elegir.
+    if(cands.length===1&&sc[0].ok===true) return {loc:cands[0].l,motivo:"cp_unico_provincia"};
+    return null;
+  }
+  // Sin CP legible: provincia + localidad EXACTA, y solo si esa localidad tiene una única entrada.
+  if(!prov||!locTxt) return null;
+  const enProv=(locs?.provIndex?.[prov]||[]).filter(l=>ghLocPartes(l)?.loc===locTxt);
+  return enProv.length===1?{loc:enProv[0],motivo:"provincia_localidad"}:null;
+}
+// Control final de una fila ya escrita: "ok" solo si el CP es el del pedido y la
+// provincia no lo contradice (sin CP: provincia + localidad). Si no, "warn".
+function ghLocVerif(o,ubicacion){
+  const x=ghLocPartes(ubicacion); if(!x) return ubicacion?"warn":null;
+  const c=ghLocCp(o?.cp), prov=ghLocProv(o?.provincia), loc=o?.localidad||o?.ciudad||"";
+  if(!c&&!ghNrmSuc(loc)) return null;
+  const pOk=ghLocProvOk(prov,x.prov);
+  if(pOk===false) return "warn";
+  if(c) return x.cp===c?"ok":"warn";
+  return pOk===true&&ghLocScore(loc,x.loc)>=2?"ok":"warn";
+}
+// GH_LOC_MATCH_END
+
 // Ubicaciones válidas del template oficial de Andreani (compartido por
 // Reclamos y Canjes; AppEnvios tiene su propia copia con más lógica).
 async function ghLoadAndreaniLocations() {
@@ -4889,14 +4987,9 @@ async function ghEtiquetaAndreaniXlsxUno(o) {
   if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
   else if(clean.length>=8){telCod=clean.slice(0,clean.length-8)||'';telNum=clean.slice(clean.length-8);}
   else if(clean.length>0){telNum=clean;}
-  const cpIndex=locs.cpIndex;const provIndex=locs.provIndex;
-  const cpStr=String(o.cp||"").trim();
-  const provU=(o.provincia||"").toUpperCase().replace(/^CIUDAD AUTONOMA.*/,"CAPITAL FEDERAL");
-  let ubicacion="";
-  const byCp=cpIndex[cpStr]||[];
-  if(byCp.length>=1){const byProv=byCp.find(l=>l.startsWith(provU));ubicacion=byProv||byCp[0];}
-  if(!ubicacion){const provList=provIndex[provU]||[];if(provList.length>0)ubicacion=provList[0];}
-  if(!ubicacion)ubicacion=locs.list.find(l=>l.startsWith('BUENOS AIRES'))||locs.list[0]||"";
+  // Localidad: núcleo ghMatchLocalidad. Sin coincidencia segura NO se genera el Excel
+  // (antes caía a "la primera de la provincia" o "la primera de Buenos Aires").
+  const ubicacion=ghMatchLocalidad(locs,o.cp,o.provincia,o.localidad||o.ciudad)?.loc||"";
   const dirNum=String(o.dirNumero||"");
   const direccion=cl(o.direccion||"");
   // Medidas del paquete: la misma config que usa Envíos (modal "Paquete"),
@@ -4920,6 +5013,7 @@ async function ghEtiquetaAndreaniXlsxUno(o) {
     const newSheet2=sheet2.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:N3"/>').replace('</sheetData>',rowXml+'</sheetData>').replace(/<dataValidations[\s\S]*?<\/dataValidations>/g,'');
     zip.file('xl/worksheets/sheet2.xml',newSheet2);
   } else {
+    if(!ubicacion) throw new Error(`no pude ubicar la localidad en la lista de Andreani con seguridad (${o.localidad||o.ciudad||"sin localidad"}${o.provincia?`, ${o.provincia}`:""}, CP ${o.cp||"—"}). Revisá el código postal y la provincia del pedido, o generá la etiqueta desde Envíos, que permite elegir la localidad a mano`);
     const cells=[...baseCells,sC('N'+rn,direccion),(dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,0),sC('P'+rn,cl(o.piso||"")),sC('Q'+rn,""),sC('R'+rn,ubicacion),sC('S'+rn,"")].join('');
     const rowXml='<row r="3" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>';
     const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
@@ -10463,42 +10557,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     andreaniLocsRef.current={list,cpIndex,provIndex,sucursales};
     return andreaniLocsRef.current;
   }
+  // Núcleo único ghMatchLocalidad (bloque GH_LOC_MATCH): nunca adivina.
   function findAndreaniLocation(locs,cp,provincia,localidad) {
-    const cpStr=String(cp||"").trim();
-    const provU=(provincia||"").toUpperCase().trim()
-      .replace(/^CIUDAD AUTONOMA.*/,"CAPITAL FEDERAL")
-      .replace(/^CABA$/,"CAPITAL FEDERAL");
-    const locU=(localidad||"").toUpperCase().trim();
-
-    // 1. CP exacto + localidad
-    const byCp=locs.cpIndex[cpStr]||[];
-    if(byCp.length===1) return byCp[0];
-    if(byCp.length>1){
-      const byLoc=byCp.find(l=>l.toUpperCase().includes(locU)&&locU.length>2);
-      if(byLoc) return byLoc;
-      const byProv=byCp.find(l=>l.startsWith(provU));
-      if(byProv) return byProv;
-      return byCp[0];
-    }
-
-    // 2. Provincia + localidad
-    const provList=locs.provIndex[provU]||[];
-    if(provList.length>0){
-      const byLoc=provList.find(l=>l.toUpperCase().includes(locU)&&locU.length>2);
-      if(byLoc) return byLoc;
-    }
-
-    // 3. No encontrado - retornar null para mostrar modal
-    return null;
+    return ghMatchLocalidad(locs,cp,provincia,localidad)?.loc||null;
   }
 
-  function searchAndreaniLocations(locs, query, type) {
-    if(!query||query.length<2) return [];
-    const q=query.toUpperCase().trim();
-    if(type==="cp") return (locs.cpIndex[q]||[]).slice(0,20);
-    if(type==="ciudad") return locs.list.filter(l=>l.toUpperCase().includes(q)).slice(0,20);
-    if(type==="calle") return locs.list.filter(l=>l.toUpperCase().includes(q)).slice(0,20);
-    return [];
+  // Selector manual de localidad. Sin texto: las localidades del CP del pedido.
+  // Con texto: búsqueda sin acentos, primero las de la provincia del pedido.
+  function searchAndreaniLocations(locs, query, type, order) {
+    const provO=ghLocProv(order?.provincia);
+    const orden=arr=>provO?[...arr.filter(l=>ghLocPartes(l)?.prov===provO),...arr.filter(l=>ghLocPartes(l)?.prov!==provO)]:arr;
+    if(!query||query.trim().length<2) return order?ghLocCandidatas(locs,order.cp,order.provincia).slice(0,30):[];
+    if(type==="cp"){ const c=ghLocCp(query)||query.replace(/\D/g,""); return orden(locs.cpIndex[c]||[]).slice(0,30); }
+    const toks=ghNrmSuc(query).split(" ").filter(Boolean); if(!toks.length) return [];
+    return orden(locs.list.filter(l=>{ const n=ghNrmSuc(l); return toks.every(t=>n.includes(t)); })).slice(0,30);
   }
 
   // Dirección "en esquina" = SIN numeración real ("Rivadavia esquina Callao"):
@@ -10649,10 +10721,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       ords.forEach(function(o,i){
         const rn=startRow+i;
         const {nombre,apellido,telCod,telNum}=getPersonData(o);
-        const ubicacion=locationOverridesRef.current[ovrKey(o)]||findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad)||locs.list.find(l=>l.startsWith('BUENOS AIRES'))||locs.list[0]||"";
+        // Sin respaldo: si no hay localidad segura la celda va VACÍA (Andreani rechaza la fila) y se avisa.
+        const _ovrLoc=locationOverridesRef.current[ovrKey(o)];
+        const ubicacion=(_ovrLoc&&_ovrLoc!=="EXCLUIR"&&locs.list.includes(_ovrLoc)?_ovrLoc:"")||findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad)||"";
         const dirNum=extractStreetNum(o.direccion, o.dirNumero);
         const direccion=extractStreetName(o.direccion, o.dirNumero);
-        if(verifUbicacionVsPedido(o,ubicacion)==="warn")verifRows.push({o,numero:o.numero,comprador:o.comprador,tipo:"domicilio",escrito:ubicacion,esperado:`${o.localidad||o.ciudad||""}${o.cp?` (CP ${o.cp})`:""}`});
+        if(!ubicacion||verifUbicacionVsPedido(o,ubicacion)==="warn")verifRows.push({o,numero:o.numero,comprador:o.comprador,tipo:"domicilio",escrito:ubicacion||"(sin localidad: la fila sale vacía)",esperado:`${o.localidad||o.ciudad||""}${o.provincia?`, ${o.provincia}`:""}${o.cp?` (CP ${o.cp})`:""}`});
         const cells=[
           sC('A'+rn,""),
           nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
@@ -11225,14 +11299,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // Flujo XLSX domicilio: la calle/número se copian tal cual del pedido; lo
   // resuelto es la LOCALIDAD del desplegable — verificar que contenga el CP
   // del pedido o un token de su localidad.
-  function verifUbicacionVsPedido(o,ubicacion){
-    if(!ubicacion) return null;
-    const s=nrmSucTxt(ubicacion);
-    const cpO=String(o?.cp||"").replace(/\D/g,"");
-    const locToks=nrmSucTxt(o?.localidad||o?.ciudad||"").split(" ").filter(w=>w.length>=4);
-    if(!cpO&&!locToks.length) return null;
-    return ((cpO&&s.includes(cpO))||locToks.some(t=>s.includes(t)))?"ok":"warn";
-  }
+  function verifUbicacionVsPedido(o,ubicacion){ return ghLocVerif(o,ubicacion); }
 
   // Atajos de teclado
   useEffect(()=>{
@@ -13858,7 +13925,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           // no tiene equivalente ahí. En la emisión API (wantOficial) el select
           // oficial sigue siendo el único camino (ahí se usa el id, no el string).
           const showManual=!isSuc||(wantOficial?false:!!locs);
-          const resultsTpl=showManual?(isSuc?searchSucursales(locs,locSearch):searchAndreaniLocations(locs,locSearch,locSearchType)):[];
+          const resultsTpl=showManual?(isSuc?searchSucursales(locs,locSearch):searchAndreaniLocations(locs,locSearch,locSearchType,order)):[];
           // ── Emisión por API: UNA lista (cercanas + CP + buscador vivo) con
           //    selección explícita y confirmación inline si hay conflicto. ──
           const apiUI=isSuc&&wantOficial;
