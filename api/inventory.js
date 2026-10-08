@@ -10,6 +10,9 @@ import { guardUid } from "./_auth.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
 import { esTiendaDemo, inventarioDemo } from "./_demo_ads.js";
 
+// Tope de ids por llamada a GET /items?ids= de Mercado Libre (bajó de 50 a 20 en oct/2026).
+const ML_MULTIGET = 20;
+
 // Con varias cuentas de ML conectadas, las publicaciones/gestión de ML usan la
 // cuenta elegida para VENTAS de ML (margenesMlVentas). Vacío = primera (1 solo ML).
 async function mlVentasAcc(db, uid) {
@@ -460,16 +463,22 @@ export default async function handler(req, res) {
                 const idsData = await idsRes.json();
                 const ids = idsData.results || [];
                 if (ids.length === 0) break;
-                const detailsRes = await fetch(`https://api.mercadolibre.com/items?ids=${ids.join(",")}&attributes=id,title,thumbnail,price,seller_custom_field`, {
-                  headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
-                });
-                if (!detailsRes.ok) {
-                  const txt = await detailsRes.text().catch(()=>"");
+                // Multiget de ML: tope de 20 ids por llamada (oct/2026: con 50 responde
+                // 400 "The parameter 'ids' only allows 20 elements").
+                const details = [];
+                let detErr = null;
+                for (let k = 0; k < ids.length && !detErr; k += ML_MULTIGET) {
+                  const detailsRes = await fetch(`https://api.mercadolibre.com/items?ids=${ids.slice(k, k + ML_MULTIGET).join(",")}&attributes=id,title,thumbnail,price,seller_custom_field`, {
+                    headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
+                  });
+                  if (!detailsRes.ok) { detErr = `HTTP ${detailsRes.status} (details): ${(await detailsRes.text().catch(()=>"")).slice(0, 200)}`; break; }
+                  details.push(...(await detailsRes.json()));
+                }
+                if (detErr) {
                   mlFailed = offset === 0;
-                  mlFirstError = `HTTP ${detailsRes.status} (details): ${txt.slice(0, 200)}`;
+                  mlFirstError = detErr;
                   break;
                 }
-                const details = await detailsRes.json();
                 for (const d of details) {
                   if (d.body) {
                     products.push({
@@ -1008,11 +1017,17 @@ export default async function handler(req, res) {
               if (!idsRes.ok) break;
               const ids = (await idsRes.json()).results || [];
               if (ids.length === 0) break;
-              const detRes = await fetch(`https://api.mercadolibre.com/items?ids=${ids.join(",")}&attributes=id,title,thumbnail,available_quantity,seller_custom_field`, {
-                headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
-              });
-              if (!detRes.ok) break;
-              for (const d of (await detRes.json())) {
+              const dets = [];
+              let detOk = true;
+              for (let k = 0; k < ids.length; k += ML_MULTIGET) {
+                const detRes = await fetch(`https://api.mercadolibre.com/items?ids=${ids.slice(k, k + ML_MULTIGET).join(",")}&attributes=id,title,thumbnail,available_quantity,seller_custom_field`, {
+                  headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
+                });
+                if (!detRes.ok) { detOk = false; break; }
+                dets.push(...(await detRes.json()));
+              }
+              if (!detOk) break;
+              for (const d of dets) {
                 if (d.body) catalog.push({ link_id: `ML-${d.body.id}`, product_id: `ML-${d.body.id}`, platform: "mercadolibre", title: d.body.title, sku: d.body.seller_custom_field || "", image: d.body.thumbnail, stock: parseInt(d.body.available_quantity) || 0 });
               }
               if (ids.length < 50) break;
