@@ -12534,12 +12534,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       setSkuProgress(40);
       let cfg={x:10,y:10,fontSize:4,sortBy:"sin"};
       try{const s=localStorage.getItem(ghKey("growith_skuCfg"));if(s)cfg={...cfg,...JSON.parse(s)};}catch(_){}
-      // Ordenar páginas agrupadas por SKU principal para que las del mismo SKU salgan juntas
-      const sortedResults=[...results].sort((a,b)=>{
-        const sA=a.skuLines?.[0]||""; const sB=b.skuLines?.[0]||"";
-        if(!sA&&!sB) return 0; if(!sA) return 1; if(!sB) return -1;
-        return sA.localeCompare(sB);
-      });
+      // MISMO orden que las etiquetas por API (ghDepOrdenar): primero los pedidos de un solo
+      // producto, los iguales juntos; después los combinados; al final las páginas sin productos.
+      const sortedResults=ghDepOrdenar(results,r=>(r.found&&r.skuLines?.length?r.skuLines:[]));
       cfg={...cfg, sortBy:"sku", pageOrder:sortedResults.map(r=>r.pagina-1)};
       skuOrdenRef.current=sortedResults;
       const fd=new FormData();
