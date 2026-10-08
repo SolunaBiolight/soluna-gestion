@@ -22116,34 +22116,32 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
     catch(x){ if(w&&!w.closed) w.close(); toast(x.message,"error"); } setBusy(null);
   }
   // Un solo PDF con todas las tandas pendientes de hoy, en el orden de la cola; cada una queda impresa.
-  // modo "pdf": todo junto en un PDF que se abre para imprimir. modo "zip": un PDF POR TANDA
-  // dentro de un .zip (si la impresora se queda sin etiquetas se sigue desde la tanda que faltó).
-  async function imprimirTodoHoy(lista,modo="pdf"){
+  // "Imprimir todo": descarga un PDF POR TANDA, nunca uno solo con todo junto (decisión
+  // de Lautaro, 7/oct/2026: el PDF único arrastraba errores cuando la impresora se cortaba).
+  // Varias tandas → un .zip con los PDF numerados en el orden de la cola; una sola → su PDF.
+  async function imprimirTodoHoy(lista){
     if(!lista.length||todoHoy) return;
-    const nE=lista.reduce((a,t)=>a+t.n,0), zip=modo==="zip";
-    const cuales=lista.length===1?`la tanda de ${lista[0].clienteNombre} (${nE} etiquetas)`:`las ${lista.length} tandas sin imprimir${lista.some(t=>t.fechaDespacho>st.hoy)?" (hoy y próximos días)":" de hoy"} (${nE} etiquetas)`;
-    if(!(await appConfirm(zip?`Se descarga un archivo .zip con un PDF por cada tanda: ${cuales}. Quedan marcadas como impresas. ¿Seguimos?`:lista.length===1?`Se abre el PDF de ${cuales} y queda marcada como impresa. ¿Seguimos?`:`Se juntan ${cuales} en un solo PDF y quedan marcadas como impresas. ¿Seguimos?`,{okLabel:zip?"Descargar ZIP":"Imprimir todo"}))) return;
-    const w=zip?null:ghDepVentana("application/pdf");
+    const nE=lista.reduce((a,t)=>a+t.n,0), una=lista.length===1;
+    if(!(await appConfirm(una?`Se descarga el PDF de la tanda de ${lista[0].clienteNombre} (${nE} etiquetas) y queda marcada como impresa. ¿Seguimos?`:`Se descarga un archivo .zip con ${lista.length} PDF, uno por cada tanda sin imprimir${lista.some(t=>t.fechaDespacho>st.hoy)?" (hoy y próximos días)":" de hoy"}: ${nE} etiquetas en total. Quedan marcadas como impresas. ¿Seguimos?`,{okLabel:"Descargar"}))) return;
     try{
       const bajados=new Array(lista.length); let listos=0; setTodoHoy({done:0,total:lista.length});
       await ghPool(lista,3,async(t,i)=>{ bajados[i]=await ghDepBajar(api,"file_get",t.id,"pdf",t.pdf.chunks); listos++; setTodoHoy({done:listos,total:lista.length}); });
-      if(zip){
-        if(!window.JSZip){ await new Promise((ok,ko)=>{ const sc=document.createElement("script"); sc.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"; sc.onload=ok; sc.onerror=()=>ko(new Error("No se pudo cargar el compresor. Revisá la conexión.")); document.head.appendChild(sc); }); }
-        const z=new window.JSZip(); const limpio=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40)||"cliente";
-        // Numerados en el orden de la cola: "01_Cliente_25-09_16etiquetas.pdf"
-        lista.forEach((t,i)=>z.file(`${String(i+1).padStart(2,"0")}_${limpio(t.clienteNombre)}_${ghDepFechaLinda(t.fechaDespacho).replace("/","-")}_${t.n}etiquetas.pdf`,bajados[i]));
-        const blob=await z.generateAsync({type:"blob"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`deposito_${st.hoy}_${lista.length}tandas.zip`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000);
-      } else {
-        const {PDFDocument}=await import("pdf-lib"); const out=await PDFDocument.create();
-        for(let i=0;i<lista.length;i++){ const src=await PDFDocument.load(bajados[i],{ignoreEncryption:true}); (await out.copyPages(src,src.getPageIndices())).forEach(p=>out.addPage(p)); }
-        ghDepAbrirBytes(await out.save(),"application/pdf",`deposito_${st.hoy}.pdf`,w);
+      const limpio=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40)||"cliente";
+      // "01_Cliente_25-09_16etiquetas.pdf": numerados en el orden de la cola.
+      const nombre=(t,i)=>`${String(i+1).padStart(2,"0")}_${limpio(t.clienteNombre)}_${ghDepFechaLinda(t.fechaDespacho).replace("/","-")}_${t.n}etiquetas.pdf`;
+      const bajar=(blob,archivo)=>{ const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=archivo; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000); };
+      if(una) bajar(new Blob([bajados[0]],{type:"application/pdf"}),nombre(lista[0],0));
+      else {
+        if(!window.JSZip){ await new Promise((ok,ko)=>{ const sc=document.createElement("script"); sc.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"; sc.onload=ok; sc.onerror=()=>ko(new Error("No se pudo preparar el .zip. Revisá la conexión y probá de nuevo.")); document.head.appendChild(sc); }); }
+        const z=new window.JSZip(); lista.forEach((t,i)=>z.file(nombre(t,i),bajados[i]));
+        bajar(await z.generateAsync({type:"blob"}),`deposito_${st.hoy}_${lista.length}tandas.zip`);
       }
       const fallidas=[];
       for(const t of lista){ try{ await api("tanda_estado",{id:t.id,estado:"impresa"}); }catch(x){ fallidas.push(`${t.clienteNombre} (${x.message})`); } }
-      if(fallidas.length) toast(`${zip?"El ZIP":"El PDF"} salió, pero ${fallidas.length} tanda${fallidas.length!==1?"s":""} no quedó marcada como impresa: ${fallidas.join("; ")}. Marcala a mano para que no se vuelva a imprimir.`,"warning",10000);
-      else toast(zip?`ZIP descargado: ${lista.length} PDF, uno por tanda`:`${lista.length} tanda${lista.length!==1?"s":""} impresa${lista.length!==1?"s":""}`,"success");
+      if(fallidas.length) toast(`La descarga salió, pero ${fallidas.length} tanda${fallidas.length!==1?"s":""} no quedó marcada como impresa: ${fallidas.join("; ")}. Marcala a mano para que no se vuelva a imprimir.`,"warning",10000);
+      else toast(una?"PDF descargado":`Descargado: ${lista.length} PDF, uno por tanda`,"success");
       await cargar();
-    }catch(x){ if(w&&!w.closed) w.close(); toast(x.message,"error"); }
+    }catch(x){ toast(x.message,"error"); }
     setTodoHoy(null);
   }
   async function abrirArchivo(t,kind,meta){ const w=ghDepVentana(meta.mime); try{ ghDepAbrirBytes(await ghDepBajar(api,"file_get",t.id,kind,meta.chunks),meta.mime,meta.nombre,w); }catch(x){ if(w&&!w.closed) w.close(); toast(x.message,"error"); } }
@@ -22309,12 +22307,11 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
           <DepTile T={T} color={T.accent} ico="print" size={52}/>
           <div style={{flex:"1 1 240px",minWidth:0}}>
             <div style={{fontSize:DS.font["2xl"],fontWeight:DS.w.black,color:T.text,letterSpacing:-0.5,lineHeight:1.15}}>{nE} etiqueta{nE!==1?"s":""} para imprimir{hayHoy?" hoy":""}</div>
-            <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:4,lineHeight:1.45}}>{nT} tanda{nT!==1?"s":""} sin imprimir{hayHoy?"":" de los próximos días"}. Sale todo junto en un solo PDF y {nT===1?"queda marcada como impresa":"quedan marcadas como impresas"}.</div>
+            <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:4,lineHeight:1.45}}>{nT} tanda{nT!==1?"s":""} sin imprimir{hayHoy?"":" de los próximos días"}. {nT===1?"Se descarga su PDF y queda marcada como impresa.":"Se descarga un PDF por cada tanda (en un .zip) y quedan marcadas como impresas."}</div>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
             {masAdelante&&<DepBtn T={T} variant="secondary" size="lg" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendTodoConPdf)}>Incluir próximos días ({nPed(pendTodoConPdf)})</DepBtn>}
-            <DepBtn T={T} variant="secondary" size="lg" ico="file" disabled={!!todoHoy} title="Descarga un .zip con un PDF por cada tanda, para imprimir de a una" onClick={()=>imprimirTodoHoy(lista,"zip")}>Por separado (ZIP)</DepBtn>
-            <button onClick={()=>imprimirTodoHoy(lista)} disabled={!!todoHoy} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:10,height:56,boxSizing:"border-box",padding:"0 30px",border:"none",borderRadius:DS.r.full,background:T.accentSolid,color:"#fff",fontSize:DS.font.xl,fontWeight:DS.w.black,fontFamily:"'Inter',system-ui,sans-serif",cursor:todoHoy?"wait":"pointer",opacity:todoHoy?0.75:1,boxShadow:`0 8px 26px ${T.accentSolid}77`,whiteSpace:"nowrap",letterSpacing:-0.2}}><DepIco d="print" size={20} color="#fff" sw={2.4}/>{todoHoy?`Juntando ${todoHoy.done}/${todoHoy.total}…`:hayHoy?"Imprimir todo lo de hoy":"Imprimir todo"}</button>
+            <button onClick={()=>imprimirTodoHoy(lista)} disabled={!!todoHoy} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:10,height:56,boxSizing:"border-box",padding:"0 30px",border:"none",borderRadius:DS.r.full,background:T.accentSolid,color:"#fff",fontSize:DS.font.xl,fontWeight:DS.w.black,fontFamily:"'Inter',system-ui,sans-serif",cursor:todoHoy?"wait":"pointer",opacity:todoHoy?0.75:1,boxShadow:`0 8px 26px ${T.accentSolid}77`,whiteSpace:"nowrap",letterSpacing:-0.2}}><DepIco d="print" size={20} color="#fff" sw={2.4}/>{todoHoy?`Descargando ${todoHoy.done}/${todoHoy.total}…`:hayHoy?"Imprimir todo lo de hoy":"Imprimir todo"}</button>
           </div>
         </div>); })()}
       <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:8,alignItems:"stretch"}}>
