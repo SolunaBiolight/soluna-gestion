@@ -21763,7 +21763,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
     mirar(); const iv=setInterval(mirar,6000); const vis=()=>mirar(); document.addEventListener("visibilitychange",vis); window.addEventListener("focus",vis);
     return ()=>{ vivo=false; clearInterval(iv); document.removeEventListener("visibilitychange",vis); window.removeEventListener("focus",vis); }; },[esDep,apiDep]);
   useEffect(()=>{ if(!esDep) return; let vivo=true;
-    apiDep("cola").then(d=>{ if(!vivo) return; const vivas=(d.tandas||[]).filter(t=>["pendiente","impresa","armada"].includes(t.estado)); const n=vivas.filter(t=>t.fechaDespacho<=d.hoy).length; setBadges(b=>({...b,cola:n}));
+    apiDep("cola").then(d=>{ if(!vivo) return; const vivas=(d.tandas||[]).filter(t=>t.estado==="pendiente"); const n=vivas.filter(t=>t.fechaDespacho<=d.hoy).length; setBadges(b=>({...b,cola:n}));
       // Aviso de tanda NUEVA (sonido + cartel), también si estás en otra pestaña del panel.
       const antes=conocidasRef.current; conocidasRef.current=new Set(vivas.map(t=>t.id));
       if(antes){ const nuevas=vivas.filter(t=>!antes.has(t.id)&&t.estado==="pendiente"); if(nuevas.length){ ghDepBeep(); toast(nuevas.length===1?`Tanda nueva de ${nuevas[0].clienteNombre}: ${nuevas[0].tipo==="especial"?(nuevas[0].especial?.titulo||"envío especial"):`${nuevas[0].n} pedido${nuevas[0].n!==1?"s":""}`}`:`${nuevas.length} tandas nuevas: ${[...new Set(nuevas.map(t=>t.clienteNombre))].join(", ")}`,"success",9000); } }
@@ -22185,8 +22185,9 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   useEffect(()=>{ const s=q.trim(); if(s.length<2){ setRes(null); return; } const id=setTimeout(()=>api("buscar",{q:s}).then(d=>setRes(d.resultados)).catch(()=>setRes([])),350); return ()=>clearTimeout(id); },[q]);
   if(err) return <DSEmpty T={T} title="No pudimos cargar la cola" subtitle={err} action={<DepBtn T={T} variant="secondary" onClick={cargar}>Reintentar</DepBtn>}/>;
   if(!st) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
-  const vivas=st.tandas.filter(t=>["pendiente","impresa","armada"].includes(t.estado));
-  const hechas=st.tandas.filter(t=>t.estado==="entregada");
+  // En la cola solo lo que falta imprimir; lo impreso (incluidas tandas del flujo viejo) va a "recientes".
+  const vivas=st.tandas.filter(t=>t.estado==="pendiente");
+  const hechas=st.tandas.filter(t=>["entregada","impresa","armada"].includes(t.estado));
   const urg=t=>t.tipo==="especial"&&t.especial?.urgente;
   const atencion=vivas.filter(t=>urg(t)||t.fechaDespacho<st.hoy);
   const grupos=[["Atención",atencion,T.red,"urgentes y atrasadas"],["Hoy",vivas.filter(t=>!urg(t)&&t.fechaDespacho===st.hoy),T.accent,""],["Próximos días",vivas.filter(t=>!urg(t)&&t.fechaDespacho>st.hoy),T.blue,""]].filter(g=>g[1].length);
@@ -22202,14 +22203,15 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   const Tanda=({t})=>{ const open=abierta===t.id; const v=vista[t.id]||"picking"; const pick=ghDepPicking(t.pedidos.filter(p=>!p.cancelado)); const ap=t.pedidos.filter(p=>p.apartado&&!p.cancelado).length; const canc=t.pedidos.filter(p=>p.cancelado).length; const conItems=t.pedidos.some(p=>p.items.length); const arm=t.pedidos.filter(p=>p.armado&&!p.cancelado).length; const nP=t.pedidos.filter(p=>!p.cancelado).length; const done=nP>0&&arm>=nP;
     // Color por CANAL (quién retira): Andreani rojo, Mercado Libre amarillo, retiro azul, otro gris; especial violeta.
     const esp=t.tipo==="especial"; const cCanal=esp?T.purple:({andreani:T.red,ml:T.yellow,retiro:T.blue}[t.canal]||T.textMd); const ico=esp?"bag":t.canal==="ml"?"tag":"truck";
-    const entregada=t.estado==="entregada"; const atras=!entregada&&t.fechaDespacho<st.hoy; const esHoy=t.fechaDespacho===st.hoy;
+    const entregada=t.estado!=="pendiente"; const atras=!entregada&&t.fechaDespacho<st.hoy; const esHoy=t.fechaDespacho===st.hoy;
     const unidades=pick.reduce((a,x)=>a+x.cant,0); const maxCant=pick.reduce((a,x)=>Math.max(a,x.cant),0);
     const ult=t.hist?.length?t.hist[t.hist.length-1]:null;
     const toggle=()=>setAbierta(open?null:t.id);
     const vistaAct=(v==="picking"&&!conItems)?(t.pedidos.length>0?"pedidos":"hist"):v;
     const segItems=[...(conItems?[["picking","Picking","box"]]:[]),...(t.pedidos.length>0?[["pedidos",`Pedidos (${t.pedidos.length})`,"tag"]]:[]),["hist","Historial","clock"]];
     const accion=t.pdf&&!t.pdf.purgado&&t.estado==="pendiente"?<DepMainBtn T={T} ico="print" disabled={busy===t.id} onClick={()=>imprimir(t)}>Imprimir etiquetas</DepMainBtn>
-      :t.estado!=="entregada"?<DepMainBtn T={T} ico="check" color={T.isDark?"#16a34a":"#15803d"} disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Marcar lista</DepMainBtn>:null;
+      // Sin PDF no hay nada que imprimir (envío especial solo con instrucciones): se cierra a mano.
+      :t.estado==="pendiente"?<DepMainBtn T={T} ico="check" color={T.isDark?"#16a34a":"#15803d"} disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Ya está hecho</DepMainBtn>:null;
     const bi=(d,txt)=><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d={d} size={13}/>{txt}</span>;
     return (
     <div style={{position:"relative",background:`linear-gradient(90deg, ${cCanal}14 0%, ${T.card} 38%)`,backgroundColor:T.card,border:`1px solid ${urg(t)?T.red+"88":open?cCanal+"88":cCanal+"40"}`,borderRadius:20,boxShadow:open?DS.shadow.md:DS.shadow.sm,overflow:"hidden",transition:"box-shadow .15s, border-color .15s",opacity:entregada&&!open?0.85:1}}>

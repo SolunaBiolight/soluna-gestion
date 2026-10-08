@@ -588,6 +588,15 @@ export default async function handler(req, res) {
         db.collection("deposito_tandas").where("estado", "in", ["pendiente", "impresa", "armada"]).get(),
         db.collection("deposito_tandas").where("entregadaAt", ">=", Math.min(inicioMes, hace4, Date.now() - 60 * 86400000)).get(),
       ]);
+      // Tandas del flujo viejo que quedaron "impresa"/"armada": ya están impresas, así que
+      // pasan solas a listas (estado final) con la fecha de su último movimiento. Se hace
+      // una sola vez por tanda; después no queda ninguna en esos estados.
+      const viejas = vivas.docs.filter(d => ["impresa", "armada"].includes(d.data().estado));
+      if (viejas.length) {
+        const b = db.batch();
+        for (const d of viejas.slice(0, 400)) { const t = d.data(); const at = num((t.hist || []).slice(-1)[0]?.at) || Date.now(); const upd = { estado: "entregada", entregadaAt: at }; b.update(d.ref, upd); Object.assign(t, upd); d.data = () => t; }
+        await b.commit().catch(e => console.warn("[deposito] migrar impresas:", e.message));
+      }
       // Pedidos apartados sin resolver, de cualquier tanda (también entregadas): no se pierden.
       const apartados = [];
       for (const d of [...vivas.docs, ...rec.docs]) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado)) continue;
