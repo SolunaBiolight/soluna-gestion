@@ -21351,8 +21351,8 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
         </div>)}
         {fallo&&<DepNota T={T} titulo="No se pudo enviar" color={T.red} ico="alert">{fallo}{borrRef.current?" Lo que ya se subió quedó guardado: con Reintentar se completa desde donde quedó.":""}</DepNota>}
         <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
-          <Btn T={T} variant="secondary" onClick={onClose} disabled={!!prog}>Cancelar</Btn>
-          <Btn T={T} variant="primary" onClick={enviar} disabled={!!prog}>{prog||(fallo?"Reintentar":"Enviar al depósito")}</Btn>
+          <DepBtn T={T} variant="secondary" onClick={onClose} disabled={!!prog}>Cancelar</DepBtn>
+          <DepBtn T={T} variant="primary" onClick={enviar} disabled={!!prog}>{prog||(fallo?"Reintentar":"Enviar al depósito")}</DepBtn>
         </div>
       </div>
     </Modal>
@@ -21380,7 +21380,7 @@ function DepositoPagoModal({T,api,cuenta,datosPago,onClose,onDone}){
       <div style={{width:200}}>{lbl("Monto transferido ($)")}<input style={iS} type="number" min="0" value={monto} onChange={e=>setMonto(e.target.value)}/></div>
       <div>{lbl("Comprobante")}<label style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",cursor:"pointer",display:"inline-flex"}}>{comp?"Cambiar comprobante":"Adjuntar comprobante"}<input type="file" accept="application/pdf,image/*" style={{display:"none"}} onChange={e=>{ elegir(e.target.files?.[0]); e.target.value=""; }}/></label>{comp&&<span style={{fontSize:DS.font.sm,color:T.green,marginLeft:10}}>{comp.nombre}</span>}</div>
       <div>{lbl("Nota (opcional)")}<input style={iS} placeholder="Ej.: pago de las tandas de la semana" value={nota} onChange={e=>setNota(e.target.value)}/></div>
-      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={onClose} disabled={!!prog}>Cancelar</Btn><Btn T={T} variant="primary" onClick={enviar} disabled={!!prog}>{prog||"Informar pago"}</Btn></div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><DepBtn T={T} variant="secondary" onClick={onClose} disabled={!!prog}>Cancelar</DepBtn><DepBtn T={T} variant="primary" onClick={enviar} disabled={!!prog}>{prog||"Informar pago"}</DepBtn></div>
     </div>
   </Modal>);
 }
@@ -21424,7 +21424,7 @@ function DepositoMlModal({T,tiendaUid,onListo,onClose}){
           <span style={{fontSize:DS.font.sm,color:T.textSm}}>{o.envio.status==="printed"?"ya impresa":"lista"}</span>
         </label>))}
       </div>
-      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={onClose} disabled={!!prog}>Cancelar</Btn><Btn T={T} variant="primary" onClick={generar} disabled={!!prog||!n}>{prog||`Preparar ${n} etiqueta${n!==1?"s":""}`}</Btn></div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><DepBtn T={T} variant="secondary" onClick={onClose} disabled={!!prog}>Cancelar</DepBtn><DepBtn T={T} variant="primary" onClick={generar} disabled={!!prog||!n}>{prog||`Preparar ${n} etiqueta${n!==1?"s":""}`}</DepBtn></div>
     </div>)}
   </Modal>);
 }
@@ -21439,7 +21439,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
   useEffect(()=>{ cargar(); const iv=setInterval(()=>{ if(document.visibilityState==="visible") cargar(); },60000); return ()=>clearInterval(iv); },[]);
   async function cancelar(t){ if(!(await appConfirm("¿Cancelar esta tanda? El depósito todavía no empezó a trabajarla.",{danger:true,okLabel:"Cancelar tanda"}))) return; try{ const r=await api("c_tanda_cancelar",{id:t.id}); toast("Tanda cancelada","success"); cargar(); }catch(e){ toast(e.message,"error"); } }
   async function verPdf(t){ const w=ghDepVentana("application/pdf"); try{ ghDepAbrirBytes(await ghDepBajar(api,"c_file_get",t.id,"pdf",t.pdf.chunks),"application/pdf",`etiquetas_${t.fechaDespacho}.pdf`,w); }catch(e){ if(w&&!w.closed) w.close(); toast(e.message,"error"); } }
-  if(err) return <DSEmpty T={T} title="No pudimos cargar el depósito" subtitle={/inv[aá]lido|inactivo/i.test(err)?"Este link ya no sirve: pedile al depósito que te mande el link nuevo.":err} action={/inv[aá]lido|inactivo/i.test(err)?null:<Btn T={T} variant="secondary" onClick={cargar}>Reintentar</Btn>}/>;
+  if(err) return <DSEmpty T={T} title="No pudimos cargar el depósito" subtitle={/inv[aá]lido|inactivo/i.test(err)?"Este link ya no sirve: pedile al depósito que te mande el link nuevo.":err} action={/inv[aá]lido|inactivo/i.test(err)?null:<DepBtn T={T} variant="secondary" onClick={cargar}>Reintentar</DepBtn>}/>;
   if(!st) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
   const saldo=st.cuenta?ghDepSaldo(T,st.cuenta.saldo):null;
   const extraCfg={extraItemsIncluidos:st.extraItemsIncluidos,extraItemPrecio:st.extraItemPrecio};
@@ -21468,8 +21468,8 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
             </div>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
-            {t.pdf&&!t.pdf.purgado&&<Btn T={T} variant="secondary" size="sm" onClick={()=>verPdf(t)}>Ver PDF</Btn>}
-            {t.estado==="pendiente"&&<Btn T={T} variant="ghost" size="sm" onClick={()=>cancelar(t)}>Cancelar</Btn>}
+            {t.pdf&&!t.pdf.purgado&&<DepBtn T={T} variant="secondary" size="sm" onClick={()=>verPdf(t)}>Ver PDF</DepBtn>}
+            {t.estado==="pendiente"&&<DepBtn T={T} variant="ghost" size="sm" onClick={()=>cancelar(t)}>Cancelar</DepBtn>}
             <DepChevron T={T} open={open} onClick={toggle}/>
           </div>
         </div>
@@ -21498,8 +21498,8 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
     <div>
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:16}}>
         <div style={{flex:1,minWidth:200}}><div style={{fontSize:DS.font["3xl"],fontWeight:800,color:T.text,letterSpacing:-0.8,lineHeight:1.1}}>{portal?st.cliente?.nombre:"Mis envíos al depósito"}</div><div style={{fontSize:DS.font.base,color:T.textSm,marginTop:6}}>{portal?"Subí el PDF con las etiquetas de los pedidos a armar y elegí el día de despacho.":"Las etiquetas que generás en Envíos van solas con \"Enviar al depósito\". Acá también podés subir un PDF suelto, bajar las de Mercado Libre o cargar un envío especial."}</div></div>
-        {tiendaUid&&<Btn T={T} variant="secondary" onClick={()=>setMl(true)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="tag" size={13}/>Etiquetas de Mercado Libre</span></Btn>}
-        <Btn T={T} variant="secondary" onClick={()=>setNuevo({tipo:"especial"})}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="bag" size={13}/>Envío especial</span></Btn>
+        {tiendaUid&&<DepBtn T={T} variant="secondary" onClick={()=>setMl(true)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="tag" size={13}/>Etiquetas de Mercado Libre</span></DepBtn>}
+        <DepBtn T={T} variant="secondary" onClick={()=>setNuevo({tipo:"especial"})}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="bag" size={13}/>Envío especial</span></DepBtn>
         <DepMainBtn T={T} ico="plus" onClick={()=>setNuevo({tipo:"tanda"})}>Enviar etiquetas</DepMainBtn>
       </div>
       <DepStats T={T} items={[
@@ -21511,14 +21511,14 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
       <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginTop:-6,marginBottom:22,padding:"10px 14px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl}}>
         <DepTile T={T} color={T.green} ico="bank" size={30}/>
         <div style={{flex:1,minWidth:220,fontSize:DS.font.md,color:T.textMd,lineHeight:1.5}}>{saldo?.n>0?<>Tenés <strong style={{color:T.text}}>{fmtMoney(saldo.n)}</strong> a pagar. Transferí y avisá con el comprobante: cuando el depósito lo verifique, se descuenta de tu cuenta.</>:"Cuando transfieras, avisá con el comprobante desde acá."}{st.datosPago?<div style={{fontSize:DS.font.sm,color:T.textSm,whiteSpace:"pre-wrap",marginTop:2}}>{st.datosPago}</div>:null}</div>
-        <Btn T={T} variant={saldo?.n>0?"primary":"secondary"} size="sm" onClick={()=>setPago(true)}>Informar pago</Btn>
+        <DepBtn T={T} variant={saldo?.n>0?"primary":"secondary"} size="sm" onClick={()=>setPago(true)}>Informar pago</DepBtn>
       </div>
       <DepSection T={T} title="En proceso" count={vivas.length} desc="Lo que el depósito tiene para armar o ya armó y todavía no entregó al correo.">
         {vivas.length===0
           ? <DSEmpty T={T} title="No hay tandas en proceso" subtitle="Subí el PDF con las etiquetas y el depósito lo ve al instante en su cola."/>
           : <div style={{display:"flex",flexDirection:"column",gap:10}}>{vivas.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>}
       </DepSection>
-      {cerradas.length>0&&(<DepSection T={T} title="Entregadas y canceladas" count={cerradas.length} extra={<Btn T={T} variant="ghost" size="sm" onClick={()=>setVerCerradas(v=>!v)}>{verCerradas?"Ocultar":"Ver"}</Btn>}>
+      {cerradas.length>0&&(<DepSection T={T} title="Entregadas y canceladas" count={cerradas.length} extra={<DepBtn T={T} variant="ghost" size="sm" onClick={()=>setVerCerradas(v=>!v)}>{verCerradas?"Ocultar":"Ver"}</DepBtn>}>
         {verCerradas&&<div style={{display:"flex",flexDirection:"column",gap:10}}>{cerradas.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>}
       </DepSection>)}
       {(st.cuenta?.pagos||[]).length>0&&(<DepSection T={T} title="Transferencias informadas" desc="Las que avisaste y el depósito todavía no verificó, o rechazó. Las verificadas ya figuran como pago en tu cuenta, abajo.">
@@ -21583,13 +21583,13 @@ function DepositoPanelView({token}){
   const cambiarOperario=()=>{ setNom(operario); setOperario(""); try{ localStorage.removeItem("growith_depo_operario"); }catch(_){ } };
   const wrap=(inner)=>(<div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",color:T.text,colorScheme:dark?"dark":"light"}}>{inner}<ToastContainer T={T}/><AppPromptHost T={T}/></div>);
   if(info===null) return wrap(<div style={{display:"flex",justifyContent:"center",padding:80}}><Spinner size={28} color={T.accent}/></div>);
-  if(!info.rol) return wrap(<div style={{maxWidth:520,margin:"80px auto",padding:"0 16px"}}><DSEmpty T={T} title={info.error?"No pudimos abrir el panel":"Este link ya no sirve"} subtitle={info.error?"Revisá la conexión y volvé a intentar.":"Se generó un link nuevo o el link está mal copiado. Pedile el link actual a la dueña del depósito."} action={info.error?<Btn T={T} variant="secondary" onClick={()=>window.location.reload()}>Reintentar</Btn>:null}/></div>);
+  if(!info.rol) return wrap(<div style={{maxWidth:520,margin:"80px auto",padding:"0 16px"}}><DSEmpty T={T} title={info.error?"No pudimos abrir el panel":"Este link ya no sirve"} subtitle={info.error?"Revisá la conexión y volvé a intentar.":"Se generó un link nuevo o el link está mal copiado. Pedile el link actual a la dueña del depósito."} action={info.error?<DepBtn T={T} variant="secondary" onClick={()=>window.location.reload()}>Reintentar</DepBtn>:null}/></div>);
   if(info.rol==="operador"&&!operario) return wrap(<div style={{maxWidth:420,margin:"80px auto",padding:"0 16px"}}>
     <Card T={T} padding="lg">
       <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,marginBottom:6}}>¿Quién está en el depósito?</div>
       <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:14}}>Tu nombre queda en cada tanda que imprimas, armes o entregues. Se puede cambiar arriba a la derecha.</div>
       <input autoFocus value={nom} onChange={e=>setNom(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") guardarNombre(); }} placeholder="Nombre" style={{...InputStyle(T),marginBottom:12}}/>
-      <Btn T={T} variant="primary" onClick={guardarNombre} disabled={!nom.trim()}>Entrar</Btn>
+      <DepBtn T={T} variant="primary" onClick={guardarNombre} disabled={!nom.trim()}>Entrar</DepBtn>
     </Card></div>);
   return wrap(<AppDeposito T={T} info={{rol:info.rol,cliente:null}} api={api} panel={{operario,cambiarOperario,dark,setDark}}/>);
 }
@@ -21708,6 +21708,7 @@ const GH_DEP_ICO={
   note:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM14 2v6h6M16 13H8M16 17H8M10 9H8",
   plus:"M12 5v14M5 12h14",
   undo:"M3 7v6h6M21 17a9 9 0 00-15-6.7L3 13",
+  trash:"M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6",
   link:"M10 13a5 5 0 007.5.5l3-3a5 5 0 00-7-7l-1.7 1.7M14 11a5 5 0 00-7.5-.5l-3 3a5 5 0 007 7l1.7-1.7",
   bank:"M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3",
   settings:"M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z",
@@ -21752,7 +21753,7 @@ const depSub=(T,txt)=><div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:
 const ghDepSaldo=(T,saldo)=>{ const s=Number(saldo)||0; return s>0.5?{txt:`Debe ${fmtMoney(s)}`,col:T.yellow,n:s}:s<-0.5?{txt:`${fmtMoney(-s)} a favor`,col:T.green,n:s}:{txt:"Al día",col:T.textSm,n:0}; };
 const ghDepFechaHora=ms=>new Date(ms).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
 // Botón chico de ícono (abrir/cerrar detalle).
-function DepChevron({T,open,onClick,title}){ return <button onClick={onClick} title={title} style={{width:30,height:30,border:`1px solid ${T.border}`,borderRadius:DS.r.md,background:T.surface,color:T.textMd,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{transform:open?"rotate(180deg)":"none",transition:"transform .15s"}}><path d="M6 9l6 6 6-6"/></svg></button>; }
+function DepChevron({T,open,onClick,title}){ return <button onClick={onClick} title={title} style={{width:38,height:38,boxSizing:"border-box",border:`1px solid ${T.border}`,borderRadius:DS.r.lg,background:T.surface,color:T.text,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{transform:open?"rotate(180deg)":"none",transition:"transform .15s"}}><path d="M6 9l6 6 6-6"/></svg></button>; }
 
 // Estado de cuenta de un cliente (solo dueño): saldo, tandas sin pagar y transferencias.
 // Pasos de una tanda (pendiente → impresa → armada → entregada) como stepper compacto.
@@ -21804,8 +21805,42 @@ function DepNota({T,titulo,color,ico="note",children,style}){ const c=color||T.y
   <DepIco d={ico} size={14} color={c}/>
   <div style={{minWidth:0,flex:1}}>{titulo&&<div style={{fontSize:DS.font.xs,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:c,marginBottom:3}}>{titulo}</div>}<div style={{fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.55}}>{children}</div></div>
 </div>); }
-// Acción principal de una tanda: botón sólido, no se confunde con el resto.
-function DepMainBtn({T,color,ico,children,onClick,disabled}){ const c=color||T.accentSolid; const [h,setH]=useState(false); return <button onClick={onClick} disabled={disabled} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"8px 16px",border:"none",borderRadius:DS.r.lg,background:c,color:"#fff",fontSize:DS.font.base,fontWeight:700,cursor:disabled?"default":"pointer",opacity:disabled?0.6:1,fontFamily:"'Inter',system-ui,sans-serif",boxShadow:h&&!disabled?`0 6px 22px ${c}66`:`0 3px 12px ${c}44`,transform:h&&!disabled?"translateY(-1px)":"none",transition:"all .15s",whiteSpace:"nowrap"}}>{ico&&<DepIco d={ico} size={14} color="#fff" sw={2.4}/>}{children}</button>; }
+// Botón del depósito: siempre se lee como botón (fondo, borde y texto con contraste).
+// Mismas props que <Btn>: variant primary | secondary | ghost | danger | success, size sm | md | lg.
+// primary = sólido; secondary/ghost = neutro con borde; danger/success = teñidos.
+function DepBtn({T,variant="secondary",size="md",ico,icon,children,onClick,disabled,style={},...rest}){
+  const [h,setH]=useState(false); const on=h&&!disabled;
+  const col=variant==="danger"?T.red:variant==="success"?T.green:T.accentSolid;
+  const V=variant==="primary"?{bg:col,fg:"#fff",bd:col,sh:on?`0 6px 20px ${col}59`:`0 2px 10px ${col}38`}
+    :variant==="danger"||variant==="success"?{bg:col+(on?"2b":"1a"),fg:col,bd:col+(on?"99":"66"),sh:"none"}
+    :{bg:on?T.borderL:T.surface,fg:T.text,bd:on?T.textSm:T.border,sh:"none"};
+  const S=size==="sm"?{height:32,padding:"0 12px",fontSize:DS.font.md,gap:6}:size==="lg"?{height:44,padding:"0 22px",fontSize:DS.font.lg,gap:8}:{height:38,padding:"0 16px",fontSize:DS.font.base,gap:7};
+  return <button onClick={onClick} disabled={disabled} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} {...rest} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",boxSizing:"border-box",border:`1px solid ${V.bd}`,borderRadius:DS.r.lg,background:V.bg,color:V.fg,fontWeight:DS.w.semibold,fontFamily:"'Inter',system-ui,sans-serif",cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.45:1,boxShadow:disabled?"none":V.sh,transition:`all .15s ${DS.ease}`,whiteSpace:"nowrap",flexShrink:0,...S,...style}}>{ico&&<DepIco d={ico} size={size==="sm"?13:15} sw={2.2}/>}{icon&&<span style={{display:"inline-flex",alignItems:"center"}}>{icon}</span>}{children}</button>;
+}
+// Acción principal de una tanda: el botón sólido (con color propio para "Entregada").
+function DepMainBtn({T,color,ico,children,onClick,disabled}){ const c=color||T.accentSolid; const [h,setH]=useState(false); return <button onClick={onClick} disabled={disabled} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,height:38,boxSizing:"border-box",padding:"0 16px",border:`1px solid ${c}`,borderRadius:DS.r.lg,background:c,color:"#fff",fontSize:DS.font.base,fontWeight:700,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"'Inter',system-ui,sans-serif",boxShadow:h&&!disabled?`0 6px 20px ${c}59`:`0 2px 10px ${c}38`,transition:`all .15s ${DS.ease}`,whiteSpace:"nowrap",flexShrink:0}}>{ico&&<DepIco d={ico} size={15} color="#fff" sw={2.4}/>}{children}</button>; }
+// Menú de acciones secundarias ("Más"). Se dibuja en un portal a body para que
+// la tarjeta (overflow hidden) no lo recorte. items: [{ico,label,onClick,danger,sep}]
+function DepMenu({T,items,label="Más",size="md",disabled}){
+  const [pos,setPos]=useState(null); const ref=React.useRef(null);
+  const lista=(items||[]).filter(Boolean);
+  useEffect(()=>{ if(!pos) return; const c=()=>setPos(null); const k=e=>{ if(e.key==="Escape") setPos(null); }; window.addEventListener("resize",c); window.addEventListener("scroll",c,true); window.addEventListener("keydown",k); return ()=>{ window.removeEventListener("resize",c); window.removeEventListener("scroll",c,true); window.removeEventListener("keydown",k); }; },[pos]);
+  if(!lista.length) return null;
+  const abrir=()=>{ if(pos){ setPos(null); return; } const r=ref.current.getBoundingClientRect(); const alto=lista.length*40+16; const arriba=r.bottom+alto+12>window.innerHeight&&r.top>alto+12; setPos({right:Math.max(8,window.innerWidth-r.right),...(arriba?{bottom:window.innerHeight-r.top+6}:{top:r.bottom+6})}); };
+  return (<span ref={ref} style={{display:"inline-flex",flexShrink:0}}>
+    <DepBtn T={T} size={size} disabled={disabled} onClick={abrir} aria-haspopup="menu" aria-expanded={!!pos}>{label}<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg></DepBtn>
+    {pos&&ReactDOM.createPortal(<>
+      <div onClick={()=>setPos(null)} style={{position:"fixed",inset:0,zIndex:9998}}/>
+      <div role="menu" style={{position:"fixed",...pos,zIndex:9999,minWidth:230,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,boxShadow:DS.shadow.xl,padding:6,display:"flex",flexDirection:"column",gap:2,fontFamily:"'Inter',system-ui,sans-serif"}}>
+        {lista.map((it,i)=><DepMenuItem key={i} T={T} it={it} onPick={()=>{ setPos(null); it.onClick&&it.onClick(); }}/>)}
+      </div>
+    </>,document.body)}
+  </span>);
+}
+function DepMenuItem({T,it,onPick}){ const [h,setH]=useState(false); const c=it.danger?T.red:T.text;
+  return (<>{it.sep&&<div style={{height:1,background:T.border,margin:"4px 6px"}}/>}
+    <button role="menuitem" onClick={onPick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",height:36,boxSizing:"border-box",padding:"0 12px",border:"none",borderRadius:DS.r.md,background:h?(it.danger?T.red+"1a":T.surface):"transparent",color:c,fontSize:DS.font.base,fontWeight:DS.w.semibold,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",textAlign:"left",whiteSpace:"nowrap"}}>{it.ico&&<DepIco d={it.ico} size={15} color={it.danger?T.red:T.textMd} sw={2.1}/>}{it.label}</button></>);
+}
 // Barra de progreso chica con etiqueta.
 function DepProgress({T,value,total,label,done}){ const pct=total>0?Math.round(value/total*100):0; const c=done?T.green:T.accentSolid; return (<div style={{width:150,flexShrink:0}}>
   <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",fontSize:DS.font.sm,color:T.textSm,fontVariantNumeric:"tabular-nums"}}><span>{label}</span><strong style={{color:done?T.green:T.text,fontSize:DS.font.md}}>{value}/{total}</strong></div>
@@ -21837,9 +21872,9 @@ function DepositoCuentaModal({T,api,cliente,onClose,onAjustar,datos,reloadKey=0,
         </div>
       </div>
       {onAjustar&&(<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:20}}>
-        <Btn T={T} variant="primary" size="sm" onClick={()=>onAjustar("acreditar")}>Registrar un pago</Btn>
-        <Btn T={T} variant="secondary" size="sm" onClick={()=>onAjustar("cobrar")}>Agregar un cargo</Btn>
-        <Btn T={T} variant="ghost" size="sm" onClick={()=>onAjustar("fijar")}>Corregir el saldo</Btn>
+        <DepBtn T={T} variant="primary" size="sm" onClick={()=>onAjustar("acreditar")}>Registrar un pago</DepBtn>
+        <DepBtn T={T} variant="secondary" size="sm" onClick={()=>onAjustar("cobrar")}>Agregar un cargo</DepBtn>
+        <DepBtn T={T} variant="ghost" size="sm" onClick={()=>onAjustar("fijar")}>Corregir el saldo</DepBtn>
         <span style={{fontSize:DS.font.sm,color:T.textSm}}>Un pago baja la deuda, un cargo la sube. Corregir el saldo lo deja en el número que vos digas, con motivo.</span>
       </div>)}
       {(d.pagos||[]).some(p=>p.estado==="a_verificar")&&(<div style={{fontSize:DS.font.md,color:T.textMd,marginBottom:16,padding:"10px 12px",background:T.yellow+"14",border:`1px solid ${T.yellow}55`,borderRadius:DS.r.lg}}>
@@ -21871,9 +21906,9 @@ function DepPosponerModal({T,tanda,hoy,onClose,onDone}){
   return (<Modal T={T} open onClose={onClose} title={`Posponer · ${tanda.clienteNombre}`} width={420}>
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       <div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.6}}>La tanda pasa a la fecha nueva y deja de figurar como atrasada. El motivo queda en el historial y el cliente lo ve en su panel.</div>
-      <div style={{display:"flex",gap:8}}>{[["Mañana",manana],["Pasado",new Date(Date.parse(`${hoy}T12:00:00Z`)+2*86400000).toISOString().slice(0,10)]].map(([l,f])=><Btn key={f} T={T} variant={fecha===f?"primary":"secondary"} size="sm" onClick={()=>setFecha(f)}>{l}</Btn>)}<input type="date" min={hoy} value={fecha} onChange={e=>setFecha(e.target.value)} style={{...iS,marginBottom:0,width:160}}/></div>
+      <div style={{display:"flex",gap:8}}>{[["Mañana",manana],["Pasado",new Date(Date.parse(`${hoy}T12:00:00Z`)+2*86400000).toISOString().slice(0,10)]].map(([l,f])=><DepBtn key={f} T={T} variant={fecha===f?"primary":"secondary"} size="sm" onClick={()=>setFecha(f)}>{l}</DepBtn>)}<input type="date" min={hoy} value={fecha} onChange={e=>setFecha(e.target.value)} style={{...iS,marginBottom:0,width:160}}/></div>
       <div>{lbl("Motivo")}<input style={iS} autoFocus placeholder="Ej.: no pasó el correo / falta stock de ROJ-NN" value={motivo} onChange={e=>setMotivo(e.target.value)}/></div>
-      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={onClose}>Cancelar</Btn><Btn T={T} variant="primary" disabled={busy||!fecha} onClick={async()=>{ setBusy(true); try{ await onDone(fecha,motivo); onClose(); }catch(e){ toast(e.message,"error"); } setBusy(false); }}>{busy?"Guardando…":"Posponer"}</Btn></div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><DepBtn T={T} variant="secondary" onClick={onClose}>Cancelar</DepBtn><DepBtn T={T} variant="primary" disabled={busy||!fecha} onClick={async()=>{ setBusy(true); try{ await onDone(fecha,motivo); onClose(); }catch(e){ toast(e.message,"error"); } setBusy(false); }}>{busy?"Guardando…":"Posponer"}</DepBtn></div>
     </div>
   </Modal>);
 }
@@ -21890,7 +21925,7 @@ function DepositoCola({T,api,owner}){
   const [todoHoy,setTodoHoy]=useState(null); // progreso "Imprimir todo lo de hoy"
   const [scan,setScan]=useState(""); const [scans,setScans]=useState([]); const [elegir,setElegir]=useState(null); const scanRef=React.useRef(null);
   const [flash,setFlash]=useState(null); // "ok"|"warn"|"error": color del lector tras cada lectura
-  const scanBusyRef=React.useRef({cod:"",at:0}); const [masMenu,setMasMenu]=useState(null); // id de tanda con el menú "Más" abierto
+  const scanBusyRef=React.useRef({cod:"",at:0});
   const cargar=()=>api("cola").then(d=>{ setSt(d); setErr(""); }).catch(e=>setErr(e.message));
   const beep=ok=>{ try{ const ac=new (window.AudioContext||window.webkitAudioContext)(); const o=ac.createOscillator(), g=ac.createGain(); o.connect(g); g.connect(ac.destination); o.frequency.value=ok?880:220; g.gain.value=0.08; o.start(); o.stop(ac.currentTime+(ok?0.12:0.3)); setTimeout(()=>ac.close(),400); }catch(_){ } };
   async function escanear(codigo,tandaId){
@@ -21975,7 +22010,7 @@ function DepositoCola({T,api,owner}){
     }catch(x){ if(w&&!w.closed) w.close(); toast(x.message,"error"); }
   }
   useEffect(()=>{ const s=q.trim(); if(s.length<2){ setRes(null); return; } const id=setTimeout(()=>api("buscar",{q:s}).then(d=>setRes(d.resultados)).catch(()=>setRes([])),350); return ()=>clearTimeout(id); },[q]);
-  if(err) return <DSEmpty T={T} title="No pudimos cargar la cola" subtitle={err} action={<Btn T={T} variant="secondary" onClick={cargar}>Reintentar</Btn>}/>;
+  if(err) return <DSEmpty T={T} title="No pudimos cargar la cola" subtitle={err} action={<DepBtn T={T} variant="secondary" onClick={cargar}>Reintentar</DepBtn>}/>;
   if(!st) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
   const vivas=st.tandas.filter(t=>["pendiente","impresa","armada"].includes(t.estado));
   const hechas=st.tandas.filter(t=>t.estado==="entregada");
@@ -22026,8 +22061,16 @@ function DepositoCola({T,api,owner}){
               {esp&&t.especial?.bultos>0&&<DepFact T={T} ico="inbox">{t.especial.bultos} bulto{t.especial.bultos!==1?"s":""}</DepFact>}
             </div>
           </div>
-          <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
             {accion}
+            <DepMenu T={T} disabled={busy===t.id} items={[
+              t.pdf&&!t.pdf.purgado&&t.estado!=="pendiente"&&{ico:"print",label:"Reimprimir etiquetas",onClick:()=>imprimir(t)},
+              !entregada&&{ico:"calendar",label:"Posponer",onClick:()=>setPosponer(t)},
+              {ico:"note",label:t.notaDeposito?"Editar nota al cliente":"Nota al cliente",onClick:()=>notaDep(t)},
+              t.estado!=="pendiente"&&{ico:"undo",label:"Volver un paso",onClick:()=>estado(t,{impresa:"pendiente",armada:"impresa",entregada:"armada"}[t.estado]||"pendiente")},
+              owner&&!entregada&&{ico:"alert",label:"Cancelar tanda",danger:true,sep:true,onClick:()=>cancelarTanda(t)},
+              owner&&{ico:"trash",label:"Eliminar tanda",danger:true,sep:entregada,onClick:()=>eliminarTanda(t)},
+            ]}/>
             <DepChevron T={T} open={open} onClick={toggle} title={open?"Cerrar":"Ver detalle"}/>
           </div>
         </div>
@@ -22048,22 +22091,7 @@ function DepositoCola({T,api,owner}){
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
           <DepSeg T={T} value={vistaAct} items={segItems} onChange={k=>setVista(x=>({...x,[t.id]:k}))}/>
           <span style={{flex:1}}/>
-          {!t.adjPurgados&&(t.especial?.adj||[]).map(a=><Btn key={a.kind} T={T} variant="secondary" size="sm" onClick={()=>abrirArchivo(t,a.kind,a)}>{bi("file",a.nombre||"Adjunto")}</Btn>)}
-          {t.pdf&&!t.pdf.purgado&&t.estado!=="pendiente"&&<Btn T={T} variant="secondary" size="sm" disabled={busy===t.id} onClick={()=>imprimir(t)}>{bi("print","Reimprimir etiquetas")}</Btn>}
-          {/* Lo secundario va en un menú "Más": la acción principal no compite con cinco botones. */}
-          <div style={{position:"relative"}}>
-            <Btn T={T} variant="secondary" size="sm" onClick={()=>setMasMenu(m=>m===t.id?null:t.id)}>Más ⋯</Btn>
-            {masMenu===t.id&&(<>
-              <div onClick={()=>setMasMenu(null)} style={{position:"fixed",inset:0,zIndex:19}}/>
-              <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:20,minWidth:230,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,boxShadow:DS.shadow.lg,padding:6,display:"flex",flexDirection:"column",gap:2}}>
-                {!entregada&&<Btn T={T} variant="ghost" size="sm" onClick={()=>{ setMasMenu(null); setPosponer(t); }}>{bi("calendar","Posponer")}</Btn>}
-                <Btn T={T} variant="ghost" size="sm" onClick={()=>{ setMasMenu(null); notaDep(t); }}>{bi("note",t.notaDeposito?"Editar nota al cliente":"Nota al cliente")}</Btn>
-                {t.estado!=="pendiente"&&<Btn T={T} variant="ghost" size="sm" onClick={()=>{ setMasMenu(null); estado(t,{impresa:"pendiente",armada:"impresa",entregada:"armada"}[t.estado]||"pendiente"); }}>{bi("undo","Volver un paso")}</Btn>}
-                {owner&&!entregada&&<Btn T={T} variant="ghost" size="sm" onClick={()=>{ setMasMenu(null); cancelarTanda(t); }}><span style={{color:T.red,display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="alert" size={13}/>Cancelar tanda</span></Btn>}
-                {owner&&<Btn T={T} variant="ghost" size="sm" onClick={()=>{ setMasMenu(null); eliminarTanda(t); }}><span style={{color:T.red,display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="alert" size={13}/>Eliminar tanda</span></Btn>}
-              </div>
-            </>)}
-          </div>
+          {!t.adjPurgados&&(t.especial?.adj||[]).map(a=><DepBtn key={a.kind} T={T} variant="secondary" size="sm" onClick={()=>abrirArchivo(t,a.kind,a)}>{bi("file",a.nombre||"Adjunto")}</DepBtn>)}
         </div>
         {t.notaDeposito&&<DepNota T={T} titulo="Nota al cliente" color={T.blue} ico="hand" style={{marginBottom:12}}>{t.notaDeposito}</DepNota>}
         {vistaAct==="picking"&&conItems&&(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:8}}>
@@ -22080,7 +22108,7 @@ function DepositoCola({T,api,owner}){
             {p.cancelado?<span style={{fontSize:DS.font.sm,color:T.textSm,whiteSpace:"nowrap"}}>cancelado{p.cancelado.nota?` · ${p.cancelado.nota}`:""}</span>
             :<>{p.apartado&&<span style={{fontSize:DS.font.sm,color:T.red,background:T.red+"14",border:`1px solid ${T.red}33`,borderRadius:99,padding:"2px 9px",whiteSpace:"nowrap",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis"}}>apartado · {p.apartado.nota}</span>}
             {p.armado&&!p.apartado&&<span style={{fontSize:DS.font.sm,color:T.textSm,whiteSpace:"nowrap"}}>{p.armado.porNombre}</span>}
-            <Btn T={T} variant="ghost" size="sm" onClick={()=>apartar(t,i,p)}>{p.apartado?"Reincorporar":"Apartar"}</Btn></>}
+            <DepBtn T={T} variant="ghost" size="sm" onClick={()=>apartar(t,i,p)}>{p.apartado?"Reincorporar":"Apartar"}</DepBtn></>}
           </div>))}
         </div>)}
         {vistaAct==="hist"&&(<div style={{display:"flex",flexDirection:"column",gap:0,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,background:T.card,padding:"6px 14px"}}>
@@ -22107,7 +22135,7 @@ function DepositoCola({T,api,owner}){
         <div style={{display:"flex",alignItems:"center",gap:10,border:`1px solid ${flash==="ok"?T.green:flash==="warn"?T.yellow:flash==="error"?T.red:T.border}`,borderRadius:DS.r.xl,background:flash==="ok"?T.green+"14":flash==="warn"?T.yellow+"14":flash==="error"?T.red+"14":T.card,padding:"6px 6px 6px 8px",boxShadow:DS.shadow.sm,minWidth:0,transition:"background .2s, border-color .2s"}}>
           <DepTile T={T} color={T.accent} ico="scan" size={32}/>
           <input ref={scanRef} autoFocus value={scan} onChange={e=>setScan(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); escanear(); } }} placeholder="Escaneá la etiqueta o tipeá el número y Enter" style={{flex:1,border:"none",outline:"none",background:"transparent",color:T.text,fontSize:DS.font.lg,padding:"6px 0",fontFamily:"'Inter',system-ui,sans-serif",minWidth:0}}/>
-          <Btn T={T} variant={scan.trim()?"primary":"ghost"} size="sm" onClick={()=>escanear()} disabled={!scan.trim()}>Armado</Btn>
+          <DepBtn T={T} variant="primary" size="sm" onClick={()=>escanear()} disabled={!scan.trim()}>Marcar armado</DepBtn>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,background:T.card,padding:"0 10px 0 12px",boxShadow:DS.shadow.sm,minWidth:0}}>
           <DepIco d="search" size={15} color={T.textSm}/>
@@ -22116,17 +22144,17 @@ function DepositoCola({T,api,owner}){
         </div>
         <div style={{display:"flex",gap:8,alignItems:"stretch"}}>
           {pendHoyConPdf.length>1&&<DepMainBtn T={T} ico="print" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendHoyConPdf)}>{todoHoy?`Juntando ${todoHoy.done}/${todoHoy.total}…`:`Imprimir lo de hoy (${pendHoyConPdf.length})`}</DepMainBtn>}
-          {pendTodoConPdf.length>pendHoyConPdf.length&&pendTodoConPdf.length>1&&<Btn T={T} variant="secondary" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendTodoConPdf)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="print" size={13}/>Todo lo pendiente ({pendTodoConPdf.length})</span></Btn>}
+          {pendTodoConPdf.length>pendHoyConPdf.length&&pendTodoConPdf.length>1&&<DepBtn T={T} variant="secondary" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendTodoConPdf)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="print" size={13}/>Todo lo pendiente ({pendTodoConPdf.length})</span></DepBtn>}
           {owner&&st.clientes.length>0&&(<div style={{position:"relative",display:"flex",alignItems:"stretch"}}>
-            <Btn T={T} variant="secondary" onClick={()=>setMenu(m=>!m)}>Cargar en nombre de…</Btn>
+            <DepBtn T={T} variant="secondary" onClick={()=>setMenu(m=>!m)}>Cargar en nombre de…</DepBtn>
             {menu&&(<>
               <div onClick={()=>setMenu(false)} style={{position:"fixed",inset:0,zIndex:19}}/>
               <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:20,minWidth:280,maxHeight:360,overflow:"auto",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,boxShadow:DS.shadow.lg,padding:6}}>
                 {st.clientes.map(c=>(<div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:DS.r.lg}}>
                   <DepAvatar T={T} name={c.nombre} size={26}/>
                   <div style={{flex:1,minWidth:0,fontSize:DS.font.base,fontWeight:600,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}</div>
-                  <Btn T={T} variant="ghost" size="sm" onClick={()=>{ setMenu(false); setNuevoPara({cliente:c,especial:false}); }}>Tanda</Btn>
-                  <Btn T={T} variant="ghost" size="sm" onClick={()=>{ setMenu(false); setNuevoPara({cliente:c,especial:true}); }}>Especial</Btn>
+                  <DepBtn T={T} variant="ghost" size="sm" onClick={()=>{ setMenu(false); setNuevoPara({cliente:c,especial:false}); }}>Tanda</DepBtn>
+                  <DepBtn T={T} variant="ghost" size="sm" onClick={()=>{ setMenu(false); setNuevoPara({cliente:c,especial:true}); }}>Especial</DepBtn>
                 </div>))}
               </div>
             </>)}
@@ -22134,10 +22162,10 @@ function DepositoCola({T,api,owner}){
         </div>
       </div>
       {elegir&&(<div style={{border:`1px solid ${T.yellow}66`,background:T.yellow+"0c",borderRadius:DS.r.xl,padding:"12px 14px",marginBottom:12}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><DepTile T={T} color={T.yellow} ico="alert" size={26}/><div style={{flex:1,fontSize:DS.font.base,color:T.text}}>El número <strong>{elegir.codigo}</strong> está en {elegir.opciones.length} tandas de clientes distintos. ¿Cuál es la etiqueta que tenés en la mano?</div><Btn T={T} variant="ghost" size="sm" onClick={()=>{ setElegir(null); scanRef.current?.focus(); }}>Cancelar</Btn></div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><DepTile T={T} color={T.yellow} ico="alert" size={26}/><div style={{flex:1,fontSize:DS.font.base,color:T.text}}>El número <strong>{elegir.codigo}</strong> está en {elegir.opciones.length} tandas de clientes distintos. ¿Cuál es la etiqueta que tenés en la mano?</div><DepBtn T={T} variant="ghost" size="sm" onClick={()=>{ setElegir(null); scanRef.current?.focus(); }}>Cancelar</DepBtn></div>
         <div style={{display:"flex",flexDirection:"column",gap:4}}>{elegir.opciones.map(o=>(<div key={o.tandaId} style={{display:"flex",gap:10,alignItems:"center",padding:"7px 10px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg}}>
           <DepAvatar T={T} name={o.clienteNombre} size={24}/><strong style={{fontSize:DS.font.base,color:T.text}}>{o.clienteNombre}</strong><span style={{fontSize:DS.font.md,color:T.textMd,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>#{o.numero} · {o.comprador}{o.items.length?` · ${o.items.join(", ")}`:""} · despacho {ghDepFechaLinda(o.fechaDespacho)}{o.armado?" · ya armado":""}</span>
-          <Btn T={T} variant="primary" size="sm" onClick={()=>escanear(elegir.codigo,o.tandaId)}>Es este</Btn>
+          <DepBtn T={T} variant="primary" size="sm" onClick={()=>escanear(elegir.codigo,o.tandaId)}>Es este</DepBtn>
         </div>))}</div>
       </div>)}
       {scans.length>0&&<div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14}}>
@@ -22157,7 +22185,7 @@ function DepositoCola({T,api,owner}){
               <span style={{fontWeight:700,color:T.text,fontSize:DS.font.base,minWidth:76,fontVariantNumeric:"tabular-nums"}}>#{r.numero}</span>
               <span style={{flex:1,fontSize:DS.font.md,color:T.textMd,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.comprador} · <strong style={{color:T.text}}>{r.clienteNombre}</strong> · {ghDepFechaLinda(r.fechaDespacho)}{r.items.length?` · ${r.items.join(", ")}`:""}</span>
               <DepDot T={T} color={ghDepCol(T)[r.estado]||T.textSm}>{GH_DEP_ESTADO[r.estado]}</DepDot>
-              {r.pdfOk&&<Btn T={T} variant="secondary" size="sm" onClick={()=>reimprimir(r)}>Reimprimir etiqueta</Btn>}
+              {r.pdfOk&&<DepBtn T={T} variant="secondary" size="sm" onClick={()=>reimprimir(r)}>Reimprimir etiqueta</DepBtn>}
             </div>))}
       </div>)}
       {apartados.length>0&&(<div style={{marginBottom:24}}>
@@ -22172,9 +22200,9 @@ function DepositoCola({T,api,owner}){
             <DepAvatar T={T} name={a.clienteNombre} size={26} color={T.red}/>
             <div style={{flex:1,minWidth:220}}><div style={{fontSize:DS.font.base,color:T.text}}><strong>#{a.numero}</strong> · {a.comprador} <span style={{color:T.textSm}}>· {a.clienteNombre} · tanda del {ghDepFechaLinda(a.fechaDespacho)}{a.tandaEstado==="entregada"?" (ya entregada)":""}</span></div><div style={{fontSize:DS.font.md,color:T.red,marginTop:2}}>{a.nota} <span style={{color:T.textSm}}>· {a.porNombre} · {ghDepFechaHora(a.at)}</span>{a.items.length?<span style={{color:T.textSm}}> · {a.items.join(", ")}</span>:null}</div></div>
             <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-              {a.pdfChunks&&a.pags?.length>0&&<Btn T={T} variant="ghost" size="sm" onClick={()=>reimprimir(a)}>Reimprimir etiqueta</Btn>}
-              <Btn T={T} variant="success" size="sm" disabled={busy===a.tandaId} onClick={()=>resolver(a,"reincorporar")}>Reincorporar</Btn>
-              <Btn T={T} variant="danger" size="sm" disabled={busy===a.tandaId} onClick={()=>resolver(a,"cancelar")}>Cancelar pedido</Btn>
+              {a.pdfChunks&&a.pags?.length>0&&<DepBtn T={T} variant="ghost" size="sm" onClick={()=>reimprimir(a)}>Reimprimir etiqueta</DepBtn>}
+              <DepBtn T={T} variant="success" size="sm" disabled={busy===a.tandaId} onClick={()=>resolver(a,"reincorporar")}>Reincorporar</DepBtn>
+              <DepBtn T={T} variant="danger" size="sm" disabled={busy===a.tandaId} onClick={()=>resolver(a,"cancelar")}>Cancelar pedido</DepBtn>
             </div>
           </div>))}
         </div>
@@ -22190,7 +22218,7 @@ function DepositoCola({T,api,owner}){
         <div style={{display:"flex",flexDirection:"column",gap:10}}>{lista.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>
       </div>))}
       {hechas.length>0&&(<div>
-        <Btn T={T} variant="ghost" size="sm" onClick={()=>setVerHechas(v=>!v)}>{verHechas?"Ocultar entregadas":`Ver entregadas recientes (${hechas.length})`}</Btn>
+        <DepBtn T={T} variant="ghost" size="sm" onClick={()=>setVerHechas(v=>!v)}>{verHechas?"Ocultar entregadas":`Ver entregadas recientes (${hechas.length})`}</DepBtn>
         {verHechas&&<div style={{display:"flex",flexDirection:"column",gap:10,marginTop:10}}>{hechas.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>}
       </div>)}
       {nuevoPara&&<DepositoEnvioModal T={T} api={(a,b)=>api(a,{...b,clienteId:nuevoPara.cliente.id})} cliente={nuevoPara.cliente} especial={nuevoPara.especial} corte={st.corteHora??15} extraCfg={{extraItemsIncluidos:st.extraItemsIncluidos,extraItemPrecio:st.extraItemPrecio}} onClose={()=>setNuevoPara(null)} onDone={cargar}/>}
@@ -22216,7 +22244,7 @@ function DepositoHistorial({T,api}){
           {h:"Tanda",w:"1.4fr",render:t=><span style={{color:T.textMd}}>{t.tipo==="especial"?(t.especial?.titulo||"Especial"):`${t.n} pedidos`} · {GH_DEP_CANAL[t.canal]||t.canal}</span>},
           {h:"Estado",w:"150px",render:t=><DepDot T={T} color={COL[t.estado]||T.textSm}>{GH_DEP_ESTADO[t.estado]||t.estado}</DepDot>},
           ...(d.tandas.some(t=>t.total!=null)?[{h:"Total",w:"110px",align:"right",render:t=>t.total!=null?fmtMoney(t.total):""}]:[]),
-          {h:"",w:"90px",align:"right",render:t=><Btn T={T} variant="ghost" size="sm" onClick={()=>eliminar(t)}><span style={{color:T.red}}>Eliminar</span></Btn>},
+          {h:"",w:"110px",align:"right",render:t=><DepBtn T={T} variant="danger" size="sm" ico="trash" onClick={()=>eliminar(t)}>Eliminar</DepBtn>},
         ]}/>}
   </DepSection>);
 }
@@ -22330,13 +22358,13 @@ function DepositoCuentas({T,api,onClientes}){
           {lbl("Link del portal")}
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <input readOnly value={link(form._c)} onFocus={e=>e.target.select()} style={{...iS,marginBottom:0,flex:1,color:T.textMd,fontSize:DS.font.md}}/>
-            <Btn T={T} variant="secondary" onClick={()=>{ navigator.clipboard.writeText(link(form._c)).then(()=>toast("Link copiado","success")).catch(()=>toast("No pude copiar","warning")); }}>Copiar</Btn>
+            <DepBtn T={T} variant="secondary" onClick={()=>{ navigator.clipboard.writeText(link(form._c)).then(()=>toast("Link copiado","success")).catch(()=>toast("No pude copiar","warning")); }}>Copiar</DepBtn>
           </div>
           <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:6}}>Es el acceso privado del cliente sin cuenta de Growith: desde ahí sube etiquetas y sigue sus tandas.</div>
         </div>)}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,paddingTop:4,borderTop:`1px solid ${T.borderL}`}}>
           <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.text,cursor:"pointer"}} onClick={()=>setForm(f=>({...f,activo:!f.activo}))}><DSToggle T={T} active={form.activo} onToggle={()=>{}}/><span>Cliente activo</span></label>
-          <div style={{display:"flex",gap:8}}><Btn T={T} variant="secondary" onClick={()=>{ if(cuenta&&form?._c){ abrir(form._c,"cuenta"); } else setForm(null); }}>{cuenta?"Descartar cambios":"Cancelar"}</Btn><Btn T={T} variant="primary" onClick={guardar} disabled={busy}>{busy?"Guardando…":"Guardar"}</Btn></div>
+          <div style={{display:"flex",gap:8}}><DepBtn T={T} variant="secondary" onClick={()=>{ if(cuenta&&form?._c){ abrir(form._c,"cuenta"); } else setForm(null); }}>{cuenta?"Descartar cambios":"Cancelar"}</DepBtn><DepBtn T={T} variant="primary" onClick={guardar} disabled={busy}>{busy?"Guardando…":"Guardar"}</DepBtn></div>
         </div>
       </div>
   );
@@ -22353,13 +22381,13 @@ function DepositoCuentas({T,api,onClientes}){
         {h:"Cliente",w:"1fr",render:p=><div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}><DepAvatar T={T} name={p.clienteNombre} size={28}/><div style={{minWidth:0}}><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.clienteNombre}</strong>{p.notaCliente?depSub(T,p.notaCliente):null}</div></div>},
         {h:"Monto",w:"120px",align:"right",render:p=><strong style={{fontSize:DS.font.lg}}>{fmtMoney(p.monto)}</strong>},
         {h:"",w:"290px",align:"right",render:p=><div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-          {p.comp?<Btn T={T} variant="secondary" size="sm" onClick={()=>compCc(p)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="file" size={13}/>Comprobante</span></Btn>:<span style={{fontSize:DS.font.sm,color:T.textSm,alignSelf:"center"}}>sin comprobante</span>}
-          <Btn T={T} variant="success" size="sm" disabled={busy} onClick={()=>verificarCc(p,true)}>Verificar</Btn>
-          <Btn T={T} variant="ghost" size="sm" disabled={busy} onClick={()=>verificarCc(p,false)}>Rechazar</Btn>
+          {p.comp?<DepBtn T={T} variant="secondary" size="sm" onClick={()=>compCc(p)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="file" size={13}/>Comprobante</span></DepBtn>:<span style={{fontSize:DS.font.sm,color:T.textSm,alignSelf:"center"}}>sin comprobante</span>}
+          <DepBtn T={T} variant="success" size="sm" disabled={busy} onClick={()=>verificarCc(p,true)}>Verificar</DepBtn>
+          <DepBtn T={T} variant="ghost" size="sm" disabled={busy} onClick={()=>verificarCc(p,false)}>Rechazar</DepBtn>
         </div>},
       ]}/>
     </DepSection>)}
-    <DepSection T={T} title="Clientes" count={d.clientes.length} desc="Precio por pedido, lo que acumuló cada uno este mes y su saldo. Ver cliente abre su ficha: cuenta, pagos y cargos, datos y link del portal." extra={<Btn T={T} variant="primary" size="sm" onClick={()=>setForm({nombre:"",precio:"",growithEmail:"",contacto:"",nota:"",activo:true})}>Nuevo cliente</Btn>}>
+    <DepSection T={T} title="Clientes" count={d.clientes.length} desc="Precio por pedido, lo que acumuló cada uno este mes y su saldo. Ver cliente abre su ficha: cuenta, pagos y cargos, datos y link del portal." extra={<DepBtn T={T} variant="primary" size="sm" onClick={()=>setForm({nombre:"",precio:"",growithEmail:"",contacto:"",nota:"",activo:true})}>Nuevo cliente</DepBtn>}>
     <DepTable T={T} minWidth={860} empty="Todavía no hay clientes. Cargá el primero con su precio por pedido." rows={d.clientes.map(c=>({...c,_dim:!c.activo}))} cols={[
       {h:"Cliente",w:"1.5fr",render:c=><div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}><DepAvatar T={T} name={c.nombre} size={30} color={c.activo?T.accent:T.textSm}/><div style={{minWidth:0}}><div style={{fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}{!c.activo&&<span style={{fontWeight:500,color:T.textSm}}> · inactivo</span>}</div>{depSub(T,c.growithUid?`Growith · ${c.growithEmail||"vinculado"}`:"Sin Growith · usa el link")}</div></div>},
       {h:"Precio",w:"80px",align:"right",render:c=><span style={{color:T.textMd}}>{fmtMoney(c.precio)}</span>},
@@ -22367,7 +22395,7 @@ function DepositoCuentas({T,api,onClientes}){
       {h:"Cobrado",w:"110px",align:"right",render:c=><span style={{color:c.stats.mesCobrado>0?T.green:T.textSm}}>{fmtMoney(c.stats.mesCobrado||0)}</span>},
       {h:"Saldo",w:"150px",align:"right",render:c=>{ const s=saldoDe(c); return <div style={{textAlign:"right"}}><strong style={{color:s.col}}>{s.txt}</strong>{c.stats.porVerificar>0?depSub(T,`${fmtMoney(c.stats.porVerificar)} por verificar`):null}</div>; }},
       {h:"",w:"120px",align:"right",render:c=><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
-        <Btn T={T} variant="secondary" size="sm" onClick={()=>abrir(c)}>Ver cliente</Btn>
+        <DepBtn T={T} variant="secondary" size="sm" onClick={()=>abrir(c)}>Ver cliente</DepBtn>
       </div>},
     ]}/>
     </DepSection>
@@ -22378,10 +22406,10 @@ function DepositoCuentas({T,api,onClientes}){
         {h:"Detalle",w:"1.6fr",render:p=><span style={{color:T.textMd,display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ghDepMovDetalle(p)}</span>},
         {h:"Estado",w:"120px",render:p=>{ const e=ghDepMovEstado(T,p); return <DepDot T={T} color={e.c}>{e.t}</DepDot>; }},
         {h:"Monto",w:"120px",align:"right",render:p=>ghDepMonto(T,p)},
-        {h:"",w:"120px",align:"right",render:p=>p.comp?<Btn T={T} variant="ghost" size="sm" onClick={()=>compCc(p)}>Comprobante</Btn>:null},
+        {h:"",w:"120px",align:"right",render:p=>p.comp?<DepBtn T={T} variant="ghost" size="sm" onClick={()=>compCc(p)}>Comprobante</DepBtn>:null},
       ]}/>
     </DepSection>
-    <DepSection T={T} title="Facturación por mes" desc="Lo que se facturó a cada cliente en el mes elegido, lo que pagó en ese mes y su saldo de hoy." extra={<><input type="month" style={{...iS,marginBottom:0,width:170}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>{res&&res.clientes.length>0&&<Btn T={T} variant="secondary" size="sm" onClick={exportar}>Exportar resumen</Btn>}{hist&&hist.length>0&&<Btn T={T} variant="secondary" size="sm" onClick={exportarPedidos}>Exportar pedidos</Btn>}</>}>
+    <DepSection T={T} title="Facturación por mes" desc="Lo que se facturó a cada cliente en el mes elegido, lo que pagó en ese mes y su saldo de hoy." extra={<><input type="month" style={{...iS,marginBottom:0,width:170}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>{res&&res.clientes.length>0&&<DepBtn T={T} variant="secondary" size="sm" onClick={exportar}>Exportar resumen</DepBtn>}{hist&&hist.length>0&&<DepBtn T={T} variant="secondary" size="sm" onClick={exportarPedidos}>Exportar pedidos</DepBtn>}</>}>
     {!res||!hist? <div style={{display:"flex",justifyContent:"center",padding:40}}><Spinner size={24} color={T.accent}/></div> : (<>
       <div style={{display:"flex",gap:18,flexWrap:"wrap",alignItems:"baseline",marginBottom:12,fontSize:DS.font.base,color:T.textMd}}>
         <span><strong style={{color:T.text,fontSize:DS.font.xl}}>{fmtMoney(tot("total"))}</strong> facturados</span>
@@ -22397,13 +22425,13 @@ function DepositoCuentas({T,api,onClientes}){
         {h:"Saldo hoy",w:"130px",align:"right",render:c=>{ const s=ghDepSaldo(T,c.saldo); return <strong style={{color:s.col}}>{s.txt}</strong>; }},
       ]}/>
       {hist.length>0&&(<div style={{marginTop:12}}>
-        <Btn T={T} variant="ghost" size="sm" onClick={()=>setVerTandas(v=>!v)}>{verTandas?"Ocultar las tandas del mes":`Ver las ${hist.length} tandas del mes`}</Btn>
+        <DepBtn T={T} variant="ghost" size="sm" onClick={()=>setVerTandas(v=>!v)}>{verTandas?"Ocultar las tandas del mes":`Ver las ${hist.length} tandas del mes`}</DepBtn>
         {verTandas&&<div style={{marginTop:10}}><DepTable T={T} minWidth={760} empty="" rows={[...hist].sort((a,b)=>(b.fechaDespacho||"").localeCompare(a.fechaDespacho||""))} cols={[
           {h:"Despacho",w:"80px",render:t=>ghDepFechaLinda(t.fechaDespacho)},
           {h:"Cliente",w:"1.2fr",render:t=><div style={{minWidth:0}}><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.clienteNombre}</strong>{depSub(T,`${t.tipo==="especial"?(t.especial?.titulo||"Especial"):`${t.n} pedidos`}${t.ajuste?` · ajuste ${fmtMoney(t.ajuste)}`:""}`)}</div>},
           {h:"Total",w:"110px",align:"right",render:t=><strong>{fmtMoney(t.total)}</strong>},
           {h:"",w:"120px",align:"right",render:t=><div style={{display:"flex",gap:4,justifyContent:"flex-end",flexWrap:"wrap"}}>
-            <Btn T={T} variant="ghost" size="sm" onClick={()=>ajuste(t)}>Ajuste</Btn>
+            <DepBtn T={T} variant="ghost" size="sm" onClick={()=>ajuste(t)}>Ajuste</DepBtn>
           </div>},
         ]}/></div>}
       </div>)}
@@ -22418,7 +22446,7 @@ function DepositoCuentas({T,api,onClientes}){
         <div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.6,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,padding:"10px 12px"}}>{aj.tipo==="acreditar"?"Baja la deuda del cliente. Para un pago en efectivo, una bonificación o un descuento.":aj.tipo==="fijar"?"Dejá el saldo en el número que corresponde (0 = al día; negativo = a favor del cliente). La diferencia con el saldo de hoy queda como un movimiento con tu motivo, así la cuenta sigue cuadrando.":"Sube la deuda del cliente. Para un insumo que le compraste, un envío que pagaste vos o cualquier extra que le cobrás."}</div>
         <div style={{width:200}}>{lbl(aj.tipo==="fijar"?"Saldo que tiene que quedar ($)":"Monto ($)")}<input style={iS} type="number" min={aj.tipo==="fijar"?undefined:"0"} autoFocus value={aj.monto} onChange={e=>setAj(a=>({...a,monto:e.target.value}))}/></div>
         <div>{lbl(aj.tipo==="fijar"?"Motivo (obligatorio, el cliente lo ve)":"Motivo (el cliente lo ve)")}<input style={iS} placeholder={aj.tipo==="fijar"?"Ej.: arreglo por las etiquetas mal contadas de septiembre":"Ej.: pago en efectivo del 20/09"} value={aj.motivo} onChange={e=>setAj(a=>({...a,motivo:e.target.value}))}/></div>
-        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={()=>setAj(null)}>Cancelar</Btn><Btn T={T} variant={aj.tipo==="cobrar"?"danger":aj.tipo==="fijar"?"primary":"success"} onClick={ajustar} disabled={busy}>{busy?"Guardando…":aj.tipo==="cobrar"?"Agregar cargo":aj.tipo==="fijar"?"Corregir saldo":"Registrar pago"}</Btn></div>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><DepBtn T={T} variant="secondary" onClick={()=>setAj(null)}>Cancelar</DepBtn><DepBtn T={T} variant={aj.tipo==="cobrar"?"danger":aj.tipo==="fijar"?"primary":"success"} onClick={ajustar} disabled={busy}>{busy?"Guardando…":aj.tipo==="cobrar"?"Agregar cargo":aj.tipo==="fijar"?"Corregir saldo":"Registrar pago"}</DepBtn></div>
       </div>
     </Modal>)}
     {form&&!cuenta&&(<Modal T={T} open onClose={()=>setForm(null)} title="Nuevo cliente del depósito" width={480}>{formUI}</Modal>)}
@@ -22438,14 +22466,14 @@ function DepositoIngresos({T,api,owner}){
   async function eliminar(g){ if(!(await appConfirm(`¿Borrar el ingreso de ${g.clienteNombre} del ${ghDepFechaLinda(g.fecha)}?`,{danger:true,okLabel:"Borrar"}))) return; try{ await api("ingreso_eliminar",{id:g.id}); cargar(); }catch(e){ toast(e.message,"error"); } }
   const lbl=t=><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:5}}>{t}</div>;
   if(!d) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
-  return (<DepSection T={T} title="Mercadería recibida" desc="Últimos 90 días. Cada ingreso queda con quién lo recibió." extra={<Btn T={T} variant="primary" size="sm" onClick={()=>setForm({clienteId:clientes[0]?.id||"",fecha:hoyAR(),bultos:"",items:"",nota:""})}>Registrar ingreso</Btn>}>
+  return (<DepSection T={T} title="Mercadería recibida" desc="Últimos 90 días. Cada ingreso queda con quién lo recibió." extra={<DepBtn T={T} variant="primary" size="sm" onClick={()=>setForm({clienteId:clientes[0]?.id||"",fecha:hoyAR(),bultos:"",items:"",nota:""})}>Registrar ingreso</DepBtn>}>
     <DepTable T={T} minWidth={640} empty="Todavía no registraste mercadería. Cuando llegue una caja de un cliente, anotá cuántos bultos y qué trae." rows={d} cols={[
       {h:"Fecha",w:"80px",render:g=>ghDepFechaLinda(g.fecha)},
       {h:"Cliente",w:"1fr",render:g=><strong>{g.clienteNombre}</strong>},
       {h:"Bultos",w:"70px",align:"right",render:g=>g.bultos||"—"},
       {h:"Contenido",w:"2fr",render:g=><span style={{color:T.textMd}}>{g.items.length?g.items.map(it=>`${it.cant}x ${it.sku}`).join(", "):"—"}{g.nota?<span style={{color:T.textSm}}> — {g.nota}</span>:null}</span>},
       {h:"Recibió",w:"110px",render:g=><span style={{color:T.textSm}}>{g.porNombre}</span>},
-      ...(owner?[{h:"",w:"70px",align:"right",render:g=><Btn T={T} variant="ghost" size="sm" onClick={()=>eliminar(g)}>Borrar</Btn>}]:[]),
+      ...(owner?[{h:"",w:"70px",align:"right",render:g=><DepBtn T={T} variant="ghost" size="sm" onClick={()=>eliminar(g)}>Borrar</DepBtn>}]:[]),
     ]}/>
     {form&&(<Modal T={T} open onClose={()=>setForm(null)} title="Mercadería recibida" width={460}>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -22453,7 +22481,7 @@ function DepositoIngresos({T,api,owner}){
         <div style={{display:"flex",gap:12}}><div style={{flex:1}}>{lbl("Fecha")}<input style={iS} type="date" value={form.fecha} onChange={e=>setForm(f=>({...f,fecha:e.target.value}))}/></div><div style={{width:120}}>{lbl("Bultos")}<input style={iS} type="number" min="0" value={form.bultos} onChange={e=>setForm(f=>({...f,bultos:e.target.value}))}/></div></div>
         <div>{lbl("Productos, uno por línea (cantidad y SKU)")}<textarea style={{...iS,minHeight:90,resize:"vertical",fontFamily:"monospace"}} placeholder={"50 ROJ-NN\n20 CLIP-ON"} value={form.items} onChange={e=>setForm(f=>({...f,items:e.target.value}))}/></div>
         <div>{lbl("Nota")}<input style={iS} placeholder="Ej.: una caja venía abierta" value={form.nota} onChange={e=>setForm(f=>({...f,nota:e.target.value}))}/></div>
-        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={()=>setForm(null)}>Cancelar</Btn><Btn T={T} variant="primary" onClick={guardar} disabled={busy||!form.clienteId}>{busy?"Guardando…":"Registrar"}</Btn></div>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><DepBtn T={T} variant="secondary" onClick={()=>setForm(null)}>Cancelar</DepBtn><DepBtn T={T} variant="primary" onClick={guardar} disabled={busy||!form.clienteId}>{busy?"Guardando…":"Registrar"}</DepBtn></div>
       </div>
     </Modal>)}
   </DepSection>);
@@ -22481,13 +22509,13 @@ function DepositoAccesos({T,api,panel}){
     {tok?(<>
       <input readOnly value={link(tok)} onFocus={e=>e.target.select()} style={{...iS,marginBottom:10,fontFamily:"monospace",fontSize:DS.font.md}}/>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-        <Btn T={T} variant="primary" size="sm" onClick={()=>copiar(tok)}>Copiar link</Btn>
-        <Btn T={T} variant="secondary" size="sm" onClick={()=>window.open(link(tok),"_blank","noopener")}>Abrir</Btn>
-        {(cual==="pc"||d.via==="sesion")?<Btn T={T} variant="ghost" size="sm" onClick={()=>nuevo(cual)}>Generar link nuevo</Btn>:<span style={{fontSize:DS.font.sm,color:T.textSm}}>El link de administración se regenera desde Growith con tu sesión (Admin → Sistema), no desde el panel.</span>}
+        <DepBtn T={T} variant="primary" size="sm" onClick={()=>copiar(tok)}>Copiar link</DepBtn>
+        <DepBtn T={T} variant="secondary" size="sm" onClick={()=>window.open(link(tok),"_blank","noopener")}>Abrir</DepBtn>
+        {(cual==="pc"||d.via==="sesion")?<DepBtn T={T} variant="ghost" size="sm" onClick={()=>nuevo(cual)}>Generar link nuevo</DepBtn>:<span style={{fontSize:DS.font.sm,color:T.textSm}}>El link de administración se regenera desde Growith con tu sesión (Admin → Sistema), no desde el panel.</span>}
         {at&&<span style={{fontSize:DS.font.sm,color:T.textSm}}>generado el {new Date(at).toLocaleDateString("es-AR")}</span>}
       </div>
       {(()=>{ const u=d.uso?.[cual]; if(!u||!u.ultimoAt) return <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8}}>Todavía no se usó.</div>; const alerta=cual==="admin"&&u.hoyN>2; return <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center",marginTop:8,fontSize:DS.font.sm,color:alerta?T.red:T.textSm}}><DepIco d={alerta?"alert":"clock"} size={12} color={alerta?T.red:T.textSm}/><span>Último uso {ghDepFechaHora(u.ultimoAt)} · hoy desde {u.hoyN} dispositivo{u.hoyN!==1?"s":""} · {u.total30} en 30 días</span>{alerta&&<strong>Si no fuiste vos desde varios navegadores, generá un link nuevo.</strong>}</div>; })()}
-    </>):(<Btn T={T} variant="primary" size="sm" onClick={()=>nuevo(cual)}>Generar link</Btn>)}
+    </>):(<DepBtn T={T} variant="primary" size="sm" onClick={()=>nuevo(cual)}>Generar link</DepBtn>)}
   </Card>);
   return (<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(340px,1fr))",gap:14,alignItems:"start"}}>
     {cfg&&(<Card T={T} padding="lg">
@@ -22503,7 +22531,7 @@ function DepositoAccesos({T,api,panel}){
         <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textMd}}>Incluidas<input style={{...iS,width:70,marginBottom:0}} type="number" min="0" max="999" value={cfg.extraItemsIncluidos} onChange={e=>setCfg(c=>({...c,extraItemsIncluidos:e.target.value}))}/></label>
         <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textMd}}>Extra por unidad $<input style={{...iS,width:90,marginBottom:0}} type="number" min="0" value={cfg.extraItemPrecio} onChange={e=>setCfg(c=>({...c,extraItemPrecio:e.target.value}))}/></label>
       </div>
-      <div style={{display:"flex",justifyContent:"flex-end"}}><Btn T={T} variant="primary" size="sm" onClick={guardarCfg} disabled={busy}>{busy?"Guardando…":"Guardar"}</Btn></div>
+      <div style={{display:"flex",justifyContent:"flex-end"}}><DepBtn T={T} variant="primary" size="sm" onClick={guardarCfg} disabled={busy}>{busy?"Guardando…":"Guardar"}</DepBtn></div>
     </Card>)}
     <div>
     {fila("Tu panel","Abre esta consola completa (cola, historial, clientes, pagos y configuración) sin entrar a Growith. Es tuyo: no lo compartas.",d.adminToken,"admin",d.adminAt)}
