@@ -65,8 +65,10 @@ const ms = v => v?.toMillis?.() ?? (v?._seconds ? v._seconds * 1000 : (typeof v 
 const idOk = v => /^[A-Za-z0-9_-]{10,40}$/.test(String(v || ""));
 const fechaOk = v => { const f = String(v || ""); if (!esFecha(f)) return false; const t = Date.parse(`${f}T12:00:00Z`); return isFinite(t) && new Date(t).toISOString().slice(0, 10) === f && Math.abs(t - Date.now()) < 400 * 86400000; };
 const MONTO_MAX = 50000000;
-// Extra por unidades (7/oct/2026): cada etiqueta incluye hasta `incluidos`
-// unidades; de la siguiente en adelante se cobra `precioExtra` por unidad.
+// Extra por unidades (7/oct/2026): un pedido con hasta `incluidos` unidades
+// paga el precio por paquete; con MÁS unidades paga `precioExtra` por cada
+// unidad de más y NO paga el precio por paquete (es uno u otro, regla de
+// Soluna 7/oct). `pedidosConExtra` = pedidos que se cobran por unidad.
 // "2x ROJ-NN" / "ROJ-NN (x2)" / "ROJ-NN" = 2 / 2 / 1 unidades.
 export function unidadesDe(items) {
   let u = 0;
@@ -220,7 +222,8 @@ function tandaPublica(id, t, { paraCliente = false } = {}) {
 const clientePublico = (id, c, interno) => ({ id, nombre: c.nombre, precio: num(c.precio), activo: c.activo !== false, contacto: c.contacto || "", aFavor: num(c.aFavor),
   ...(interno ? { growithUid: c.growithUid || null, growithEmail: c.growithEmail || "", nota: c.nota || "", token: c.token } : {}) });
 
-const totalDe = t => Math.max(0, +(num(t.n) * num(t.precioUnit) + num(t.extraItems) + num(t.ajuste)).toFixed(2));
+// Los pedidos cobrados por unidad (`extraDetalle.pedidosConExtra`) no pagan el precio por paquete.
+const totalDe = t => Math.max(0, +(Math.max(0, num(t.n) - num(t.extraDetalle?.pedidosConExtra)) * num(t.precioUnit) + num(t.extraItems) + num(t.ajuste)).toFixed(2));
 
 function sanitPedidos(arr) {
   if (!Array.isArray(arr)) return [];
