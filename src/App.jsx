@@ -22118,10 +22118,12 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   // Un solo PDF con todas las tandas pendientes de hoy, en el orden de la cola; cada una queda impresa.
   async function imprimirTodoHoy(lista){
     if(!lista.length||todoHoy) return;
-    if(!(await appConfirm(`Se juntan las ${lista.length} tandas sin imprimir${lista.some(t=>t.fechaDespacho>st.hoy)?" (hoy y próximos días)":" de hoy"} en un solo PDF (${lista.reduce((a,t)=>a+t.n,0)} etiquetas) y quedan marcadas como impresas. ¿Seguimos?`,{okLabel:"Imprimir todo"}))) return;
+    if(!(await appConfirm(lista.length===1?`Se abre el PDF de la tanda de ${lista[0].clienteNombre} (${lista[0].n} etiquetas) y queda marcada como impresa. ¿Seguimos?`:`Se juntan las ${lista.length} tandas sin imprimir${lista.some(t=>t.fechaDespacho>st.hoy)?" (hoy y próximos días)":" de hoy"} en un solo PDF (${lista.reduce((a,t)=>a+t.n,0)} etiquetas) y quedan marcadas como impresas. ¿Seguimos?`,{okLabel:"Imprimir todo"}))) return;
     const w=ghDepVentana("application/pdf");
     try{ const {PDFDocument}=await import("pdf-lib"); const out=await PDFDocument.create();
-      for(let i=0;i<lista.length;i++){ const t=lista[i]; setTodoHoy({done:i,total:lista.length}); const src=await PDFDocument.load(await ghDepBajar(api,"file_get",t.id,"pdf",t.pdf.chunks),{ignoreEncryption:true}); (await out.copyPages(src,src.getPageIndices())).forEach(p=>out.addPage(p)); }
+      const bajados=new Array(lista.length); let listos=0; setTodoHoy({done:0,total:lista.length});
+      await ghPool(lista,3,async(t,i)=>{ bajados[i]=await ghDepBajar(api,"file_get",t.id,"pdf",t.pdf.chunks); listos++; setTodoHoy({done:listos,total:lista.length}); });
+      for(let i=0;i<lista.length;i++){ const src=await PDFDocument.load(bajados[i],{ignoreEncryption:true}); (await out.copyPages(src,src.getPageIndices())).forEach(p=>out.addPage(p)); }
       ghDepAbrirBytes(await out.save(),"application/pdf",`deposito_${st.hoy}.pdf`,w);
       const fallidas=[];
       for(const t of lista){ try{ await api("tanda_estado",{id:t.id,estado:"impresa"}); }catch(x){ fallidas.push(`${t.clienteNombre} (${x.message})`); } }
@@ -22289,6 +22291,18 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
         {l:"Despachados hoy",v:dsp.hoy,ico:"truck",c:dsp.hoy?T.green:T.textSm,s:`${dsp.hoyTandas} tanda${dsp.hoyTandas!==1?"s":""} entregada${dsp.hoyTandas!==1?"s":""} al correo`},
         ...(owner?[{l:"Despachados este mes",v:dsp.mes,ico:"check",c:T.green,s:`${dsp.mesTandas} tanda${dsp.mesTandas!==1?"s":""}`}]:[]),
       ]}/>; })()}
+      {(pendHoyConPdf.length>0||pendTodoConPdf.length>0)&&(()=>{ const hayHoy=pendHoyConPdf.length>0; const lista=hayHoy?pendHoyConPdf:pendTodoConPdf; const nT=lista.length, nE=nPed(lista); const masAdelante=hayHoy&&pendTodoConPdf.length>pendHoyConPdf.length;
+        return (<div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",padding:"18px 20px",marginBottom:14,borderRadius:20,border:`1px solid ${T.accentSolid}88`,background:`linear-gradient(90deg, ${T.accentSolid}33 0%, ${T.accentSolid}12 100%)`,backgroundColor:T.card,boxShadow:`0 6px 26px ${T.accentSolid}26`}}>
+          <DepTile T={T} color={T.accent} ico="print" size={52}/>
+          <div style={{flex:"1 1 240px",minWidth:0}}>
+            <div style={{fontSize:DS.font["2xl"],fontWeight:DS.w.black,color:T.text,letterSpacing:-0.5,lineHeight:1.15}}>{nE} etiqueta{nE!==1?"s":""} para imprimir{hayHoy?" hoy":""}</div>
+            <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:4,lineHeight:1.45}}>{nT} tanda{nT!==1?"s":""} sin imprimir{hayHoy?"":" de los próximos días"}. Sale todo junto en un solo PDF y {nT===1?"queda marcada como impresa":"quedan marcadas como impresas"}.</div>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            {masAdelante&&<DepBtn T={T} variant="secondary" size="lg" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendTodoConPdf)}>Incluir próximos días ({nPed(pendTodoConPdf)})</DepBtn>}
+            <button onClick={()=>imprimirTodoHoy(lista)} disabled={!!todoHoy} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:10,height:56,boxSizing:"border-box",padding:"0 30px",border:"none",borderRadius:DS.r.full,background:T.accentSolid,color:"#fff",fontSize:DS.font.xl,fontWeight:DS.w.black,fontFamily:"'Inter',system-ui,sans-serif",cursor:todoHoy?"wait":"pointer",opacity:todoHoy?0.75:1,boxShadow:`0 8px 26px ${T.accentSolid}77`,whiteSpace:"nowrap",letterSpacing:-0.2}}><DepIco d="print" size={20} color="#fff" sw={2.4}/>{todoHoy?`Juntando ${todoHoy.done}/${todoHoy.total}…`:hayHoy?"Imprimir todo lo de hoy":"Imprimir todo"}</button>
+          </div>
+        </div>); })()}
       <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:8,alignItems:"stretch"}}>
         <div style={{flex:"1.5 1 320px",height:52,boxSizing:"border-box",display:"flex",alignItems:"center",gap:10,border:`1px solid ${flash==="ok"?T.green:flash==="warn"?T.yellow:flash==="error"?T.red:T.border}`,borderRadius:DS.r.full,background:flash==="ok"?T.green+"14":flash==="warn"?T.yellow+"14":flash==="error"?T.red+"14":T.card,padding:"0 8px 0 16px",boxShadow:DS.shadow.sm,minWidth:0,transition:"background .2s, border-color .2s"}}>
           <DepIco d="scan" size={18} color={T.accent}/>
@@ -22301,8 +22315,6 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
           {q&&<button onClick={()=>setQ("")} style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:DS.font.lg,padding:0,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-          {pendHoyConPdf.length>1&&<DepMainBtn T={T} ico="print" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendHoyConPdf)}>{todoHoy?`Juntando ${todoHoy.done}/${todoHoy.total}…`:`Imprimir lo de hoy (${pendHoyConPdf.length})`}</DepMainBtn>}
-          {pendTodoConPdf.length>pendHoyConPdf.length&&pendTodoConPdf.length>1&&<DepBtn T={T} variant="secondary" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendTodoConPdf)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="print" size={13}/>Todo lo pendiente ({pendTodoConPdf.length})</span></DepBtn>}
           {owner&&st.clientes.length>0&&(<div style={{position:"relative",display:"flex",alignItems:"stretch"}}>
             <DepBtn T={T} variant="secondary" ico="plus" onClick={()=>setMenu(m=>!m)}>Cargar tanda</DepBtn>
             {menu&&(<>
