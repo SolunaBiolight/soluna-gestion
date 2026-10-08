@@ -42257,9 +42257,15 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                   <div style={{fontSize:11,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.title}</div>
                                   <div style={{display:"flex",alignItems:"center",gap:5,marginTop:1}}>
                                     <span style={{fontSize:9,padding:"1px 6px",borderRadius:4,fontWeight:700,letterSpacing:0.3,background:chColor+"22",color:chColor}}>{chLabel}</span>
-                                    {l.variant_title
-                                      ? <span style={{fontSize:9,padding:"1px 6px",borderRadius:4,fontWeight:700,background:T.accent+"22",color:T.accent}}>{l.variant_title}</span>
-                                      : <span style={{fontSize:9,color:T.textSm}}>Todas las variantes</span>}
+                                    {(()=>{
+                                      // ML: una publicación por talle (familia). Un vínculo sin variant_id
+                                      // apunta a ESA publicación, no a "todas las variantes": se muestra
+                                      // el talle que figura al final del título. Solo cambia la etiqueta.
+                                      const vt = l.variant_title || (l.platform==="mercadolibre" && !l.variant_id ? ((String(l.title||"").match(/\b(XXS|XS|S|M|L|XL|XXL|2XL|3XL|XXXL|4XL)\s*$/i)||[])[1]||"").toUpperCase() : "");
+                                      return vt
+                                        ? <span style={{fontSize:9,padding:"1px 6px",borderRadius:4,fontWeight:700,background:T.accent+"22",color:T.accent}}>{vt}</span>
+                                        : <span style={{fontSize:9,color:T.textSm}}>{l.platform==="mercadolibre"&&!l.variant_id?"Publicación completa":"Todas las variantes"}</span>;
+                                    })()}
                                   </div>
                                 </div>
                                 <div style={{display:"flex",alignItems:"center",gap:6}}>
