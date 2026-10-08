@@ -21839,7 +21839,8 @@ function DepositoCuentaModal({T,api,cliente,onClose,onAjustar,datos,reloadKey=0,
       {onAjustar&&(<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:20}}>
         <Btn T={T} variant="primary" size="sm" onClick={()=>onAjustar("acreditar")}>Registrar un pago</Btn>
         <Btn T={T} variant="secondary" size="sm" onClick={()=>onAjustar("cobrar")}>Agregar un cargo</Btn>
-        <span style={{fontSize:DS.font.sm,color:T.textSm}}>Un pago en efectivo o una bonificación baja la deuda. Un cargo (un insumo, un envío que pagaste vos) la sube.</span>
+        <Btn T={T} variant="ghost" size="sm" onClick={()=>onAjustar("fijar")}>Corregir el saldo</Btn>
+        <span style={{fontSize:DS.font.sm,color:T.textSm}}>Un pago baja la deuda, un cargo la sube. Corregir el saldo lo deja en el número que vos digas, con motivo.</span>
       </div>)}
       {(d.pagos||[]).some(p=>p.estado==="a_verificar")&&(<div style={{fontSize:DS.font.md,color:T.textMd,marginBottom:16,padding:"10px 12px",background:T.yellow+"14",border:`1px solid ${T.yellow}55`,borderRadius:DS.r.lg}}>
         Informó {d.pagos.filter(p=>p.estado==="a_verificar").length} transferencia{d.pagos.filter(p=>p.estado==="a_verificar").length!==1?"s":""} por {fmtMoney(d.porVerificar)} que todavía no verificaste. Se verifican desde "Transferencias por verificar", arriba de la lista de clientes.
@@ -22208,8 +22209,8 @@ function DepositoHistorial({T,api}){
   </DepSection>);
 }
 // Detalle y estado de un movimiento de cuenta corriente (transferencia o ajuste).
-const ghDepMovDetalle=p=>{ if(p.tipo==="reverso") return "Devolución al saldo (modelo viejo)"+(p.nota?`: ${p.nota}`:""); if(p.tipo==="saldo") return "Saldo a favor aplicado (modelo viejo)"; if(p.tipo==="ajuste") return (p.monto<0?"Cargo":"Pago registrado a mano")+(p.nota?`: ${p.nota}`:""); if(p.estado==="verificado") return `Transferencia${p.notaCliente?` · ${p.notaCliente}`:""}`; if(p.estado==="rechazado") return `Transferencia rechazada: ${p.nota}`; return `Transferencia informada${p.notaCliente?` · ${p.notaCliente}`:""}`; };
-const ghDepMovEstado=(T,p)=>p.tipo==="reverso"?{c:T.green,t:"Devolución"}:p.tipo==="saldo"?{c:T.green,t:"Saldo aplicado"}:p.tipo==="ajuste"?{c:p.monto<0?T.red:T.green,t:p.monto<0?"Cargo":"Pago a mano"}:p.estado==="verificado"?{c:T.green,t:"Verificada"}:p.estado==="rechazado"?{c:T.red,t:"Rechazada"}:{c:T.yellow,t:"A verificar"};
+const ghDepMovDetalle=p=>{ if(p.tipo==="reverso") return "Devolución al saldo (modelo viejo)"+(p.nota?`: ${p.nota}`:""); if(p.tipo==="saldo") return "Saldo a favor aplicado (modelo viejo)"; if(p.fijado) return `Saldo corregido a ${p.fijado.a<-0.5?`${fmtMoney(-p.fijado.a)} a favor`:fmtMoney(Math.max(0,p.fijado.a))}`+(p.nota?`: ${p.nota}`:""); if(p.tipo==="ajuste") return (p.monto<0?"Cargo":"Pago registrado a mano")+(p.nota?`: ${p.nota}`:""); if(p.estado==="verificado") return `Transferencia${p.notaCliente?` · ${p.notaCliente}`:""}`; if(p.estado==="rechazado") return `Transferencia rechazada: ${p.nota}`; return `Transferencia informada${p.notaCliente?` · ${p.notaCliente}`:""}`; };
+const ghDepMovEstado=(T,p)=>p.tipo==="reverso"?{c:T.green,t:"Devolución"}:p.tipo==="saldo"?{c:T.green,t:"Saldo aplicado"}:p.fijado?{c:T.accent,t:"Corrección"}:p.tipo==="ajuste"?{c:p.monto<0?T.red:T.green,t:p.monto<0?"Cargo":"Pago a mano"}:p.estado==="verificado"?{c:T.green,t:"Verificada"}:p.estado==="rechazado"?{c:T.red,t:"Rechazada"}:{c:T.yellow,t:"A verificar"};
 const ghDepMesLindo=m=>{ if(!m) return "—"; const d=new Date(`${m}-15T12:00:00`); const s=d.toLocaleDateString("es-AR",{month:"long",year:"numeric"}); return s.charAt(0).toUpperCase()+s.slice(1); };
 const ghDepMonto=(T,p)=><strong style={{color:p.monto<0?T.red:p.estado==="rechazado"?T.textSm:T.green,textDecoration:p.estado==="rechazado"?"line-through":"none",fontVariantNumeric:"tabular-nums"}}>{p.monto<0?"− ":"+ "}{fmtMoney(Math.abs(p.monto))}</strong>;
 const ghDepFechaCorta=ms=>ms?new Date(ms).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—";
@@ -22250,7 +22251,14 @@ function DepositoCuentas({T,api,onClientes}){
   async function guardar(){ if(busy) return; setBusy(true); try{ const {_c,...datosForm}=form; await api("cliente_guardar",datosForm); toast("Cliente guardado","success"); if(cuenta){ setCuenta(c=>({...c,nombre:form.nombre})); setReload(r=>r+1); } else setForm(null); cargar(); }catch(e){ toast(e.message,"error"); } setBusy(false); }
   const link=c=>`${window.location.origin}/#/deposito/${c.token}`;
   async function ajustar(){
-    const m=Number(String(aj.monto).replace(",",".")); if(!isFinite(m)||m===0){ toast("Poné el monto","warning"); return; }
+    const m=Number(String(aj.monto).replace(",","."));
+    if(aj.tipo==="fijar"){
+      if(!isFinite(m)||aj.monto===""){ toast("Poné el saldo que tiene que quedar","warning"); return; }
+      if(!aj.motivo.trim()){ toast("Contá por qué corregís el saldo","warning"); return; }
+      if(!(await appConfirm(`El saldo de ${aj.cliente.nombre} queda en ${m<0?`${fmtMoney(-m)} a favor`:m>0?`${fmtMoney(m)} a pagar`:"cero"}. La diferencia queda como un movimiento con el motivo "${aj.motivo}" y el cliente lo ve. ¿Confirmás?`,{okLabel:"Corregir saldo"}))) return;
+      setBusy(true); try{ const r=await api("saldo_fijar",{clienteId:aj.cliente.id,saldo:m,motivo:aj.motivo}); toast(r?.igual?"El saldo ya era ese":"Saldo corregido","success"); setAj(null); setReload(r=>r+1); todo(); }catch(e){ toast(e.message,"error"); } setBusy(false); return;
+    }
+    if(!isFinite(m)||m===0){ toast("Poné el monto","warning"); return; }
     const monto=aj.tipo==="cobrar"?-Math.abs(m):Math.abs(m);
     if(!(await appConfirm(`${aj.tipo==="cobrar"?"Agregar un cargo de":"Registrar un pago de"} ${fmtMoney(Math.abs(m))} a ${aj.cliente.nombre}. El cliente lo ve en su panel${aj.motivo?` con el motivo "${aj.motivo}"`:""}. ¿Confirmás?`,{okLabel:aj.tipo==="cobrar"?"Agregar cargo":"Registrar pago"}))) return;
     setBusy(true); try{ await api("saldo_ajustar",{clienteId:aj.cliente.id,monto,motivo:aj.motivo}); toast("Saldo actualizado","success"); setAj(null); setReload(r=>r+1); todo(); }catch(e){ toast(e.message,"error"); } setBusy(false);
@@ -22390,15 +22398,15 @@ function DepositoCuentas({T,api,onClientes}){
     </>)}
     </DepSection>
     {cuenta&&<DepositoCuentaModal T={T} api={api} cliente={cuenta} tabInicial={cuenta._tab||"cuenta"} reloadKey={reload} datos={formUI} onClose={()=>{ setCuenta(null); setForm(null); }} onAjustar={tipo=>{ setAj({cliente:cuenta,tipo,monto:"",motivo:""}); }}/>}
-    {aj&&(<Modal T={T} open onClose={()=>setAj(null)} title={`${aj.tipo==="cobrar"?"Agregar un cargo":"Registrar un pago"} · ${aj.cliente.nombre}`} width={440} zIndex={1650}>
+    {aj&&(<Modal T={T} open onClose={()=>setAj(null)} title={`${aj.tipo==="cobrar"?"Agregar un cargo":aj.tipo==="fijar"?"Corregir el saldo":"Registrar un pago"} · ${aj.cliente.nombre}`} width={440} zIndex={1650}>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div style={{display:"flex",border:`1px solid ${T.border}`,borderRadius:DS.r.md,overflow:"hidden"}}>
-          {[["acreditar","Pago recibido","hand"],["cobrar","Cargo extra","tag"]].map(([k,l,ic])=><button key={k} onClick={()=>setAj(a=>({...a,tipo:k}))} style={{flex:1,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 0",border:"none",background:aj.tipo===k?(k==="cobrar"?T.red:T.green)+"1f":"transparent",color:aj.tipo===k?(k==="cobrar"?T.red:T.green):T.textMd,fontWeight:aj.tipo===k?700:500,fontSize:DS.font.base,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}><DepIco d={ic} size={14}/>{l}</button>)}
+          {[["acreditar","Pago recibido","hand"],["cobrar","Cargo extra","tag"],["fijar","Corregir saldo","note"]].map(([k,l,ic])=>{ const col=k==="cobrar"?T.red:k==="fijar"?T.accent:T.green; return <button key={k} onClick={()=>setAj(a=>({...a,tipo:k}))} style={{flex:1,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 0",border:"none",background:aj.tipo===k?col+"1f":"transparent",color:aj.tipo===k?col:T.textMd,fontWeight:aj.tipo===k?700:500,fontSize:DS.font.base,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}><DepIco d={ic} size={14}/>{l}</button>; })}
         </div>
-        <div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.6,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,padding:"10px 12px"}}>{aj.tipo==="acreditar"?"Baja la deuda del cliente. Para un pago en efectivo, una bonificación o un descuento.":"Sube la deuda del cliente. Para un insumo que le compraste, un envío que pagaste vos o cualquier extra que le cobrás."}</div>
-        <div style={{width:180}}>{lbl("Monto ($)")}<input style={iS} type="number" min="0" autoFocus value={aj.monto} onChange={e=>setAj(a=>({...a,monto:e.target.value}))}/></div>
-        <div>{lbl("Motivo (el cliente lo ve)")}<input style={iS} placeholder="Ej.: pago en efectivo del 20/09" value={aj.motivo} onChange={e=>setAj(a=>({...a,motivo:e.target.value}))}/></div>
-        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={()=>setAj(null)}>Cancelar</Btn><Btn T={T} variant={aj.tipo==="cobrar"?"danger":"success"} onClick={ajustar} disabled={busy}>{busy?"Guardando…":aj.tipo==="cobrar"?"Agregar cargo":"Registrar pago"}</Btn></div>
+        <div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.6,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,padding:"10px 12px"}}>{aj.tipo==="acreditar"?"Baja la deuda del cliente. Para un pago en efectivo, una bonificación o un descuento.":aj.tipo==="fijar"?"Dejá el saldo en el número que corresponde (0 = al día; negativo = a favor del cliente). La diferencia con el saldo de hoy queda como un movimiento con tu motivo, así la cuenta sigue cuadrando.":"Sube la deuda del cliente. Para un insumo que le compraste, un envío que pagaste vos o cualquier extra que le cobrás."}</div>
+        <div style={{width:200}}>{lbl(aj.tipo==="fijar"?"Saldo que tiene que quedar ($)":"Monto ($)")}<input style={iS} type="number" min={aj.tipo==="fijar"?undefined:"0"} autoFocus value={aj.monto} onChange={e=>setAj(a=>({...a,monto:e.target.value}))}/></div>
+        <div>{lbl(aj.tipo==="fijar"?"Motivo (obligatorio, el cliente lo ve)":"Motivo (el cliente lo ve)")}<input style={iS} placeholder={aj.tipo==="fijar"?"Ej.: arreglo por las etiquetas mal contadas de septiembre":"Ej.: pago en efectivo del 20/09"} value={aj.motivo} onChange={e=>setAj(a=>({...a,motivo:e.target.value}))}/></div>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn T={T} variant="secondary" onClick={()=>setAj(null)}>Cancelar</Btn><Btn T={T} variant={aj.tipo==="cobrar"?"danger":aj.tipo==="fijar"?"primary":"success"} onClick={ajustar} disabled={busy}>{busy?"Guardando…":aj.tipo==="cobrar"?"Agregar cargo":aj.tipo==="fijar"?"Corregir saldo":"Registrar pago"}</Btn></div>
       </div>
     </Modal>)}
     {form&&!cuenta&&(<Modal T={T} open onClose={()=>setForm(null)} title="Nuevo cliente del depósito" width={480}>{formUI}</Modal>)}

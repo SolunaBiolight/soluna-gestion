@@ -108,7 +108,7 @@ export function ledgerDe(tandas, pagos) {
     if (p.estado !== "verificado" || !["transferencia", "ajuste"].includes(tipo) || !monto) continue;
     const fecha = ms(p.verificadoAt) || ms(p.informadoAt) || ms(p.createdAt) || 0;
     movs.push({ id: `p_${x.id}`, pagoId: x.id, tipo: tipo === "ajuste" ? (monto < 0 ? "cargo" : "ajuste") : "transferencia", fecha, orden: fecha,
-      concepto: tipo === "ajuste" ? ((monto < 0 ? "Cargo" : "Pago registrado a mano") + (p.nota ? `: ${p.nota}` : "")) : `Transferencia${p.notaCliente ? ` · ${p.notaCliente}` : ""}`,
+      concepto: p.fijado ? `Saldo corregido a ${num(p.fijado.a) < -0.5 ? `${Math.abs(num(p.fijado.a))} a favor` : num(p.fijado.a)}${p.nota ? `: ${p.nota}` : ""}` : tipo === "ajuste" ? ((monto < 0 ? "Cargo" : "Pago registrado a mano") + (p.nota ? `: ${p.nota}` : "")) : `Transferencia${p.notaCliente ? ` · ${p.notaCliente}` : ""}`,
       debe: monto < 0 ? -monto : 0, haber: monto > 0 ? monto : 0, comp: !!p.comp && !p.compPurgado });
   }
   movs.sort((a, b) => a.fecha - b.fecha || a.orden - b.orden);
@@ -266,7 +266,7 @@ function sanitPedidos(arr) {
     apartado: null, armado: null,
   }));
 }
-const pagoPublico = (id, p) => ({ id, clienteId: p.clienteId, clienteNombre: p.clienteNombre, monto: num(p.monto), estado: p.estado, tipo: p.tipo || "transferencia", nota: p.nota || "", notaCliente: p.notaCliente || "",
+const pagoPublico = (id, p) => ({ id, clienteId: p.clienteId, clienteNombre: p.clienteNombre, monto: num(p.monto), estado: p.estado, tipo: p.tipo || "transferencia", fijado: p.fijado || null, nota: p.nota || "", notaCliente: p.notaCliente || "",
   comp: p.comp ? { nombre: p.comp.nombre, mime: p.comp.mime, chunks: p.comp.chunks } : null, informadoAt: ms(p.informadoAt), verificadoAt: ms(p.verificadoAt), aplicado: p.aplicado || [], porNombre: p.porNombre || "" });
 const ingresoPublico = (id, g) => ({ id, clienteId: g.clienteId, clienteNombre: g.clienteNombre, fecha: g.fecha, bultos: g.bultos || 0, items: g.items || [], nota: g.nota || "", porNombre: g.porNombre || "", createdAt: ms(g.createdAt) });
 const sanitItems = arr => (Array.isArray(arr) ? arr : []).slice(0, 60).map(i => ({ sku: txt(i?.sku, 60), cant: Math.max(0, Math.round(num(i?.cant))) })).filter(i => i.sku && i.cant > 0);
@@ -798,6 +798,22 @@ export default async function handler(req, res) {
       const cs = await db.collection("deposito_clientes").doc(String(body.clienteId || "")).get(); if (!cs.exists) return res.status(404).json({ error: "Cliente inexistente." });
       await db.collection("deposito_pagos").add({ clienteId: cs.id, clienteNombre: cs.data().nombre, monto, tipo: "ajuste", estado: "verificado", comp: null, nota: txt(body.motivo, 200), notaCliente: "", por: dep.user.uid, porNombre: txt(dep.nombre, 80), createdAt: FieldValue.serverTimestamp(), informadoAt: FieldValue.serverTimestamp(), verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid });
       return res.json({ ok: true });
+    }
+    // Corregir el saldo a un valor exacto (solo la dueña, motivo obligatorio): se calcula
+    // la diferencia contra el ledger y queda como un ajuste visible (`fijado {de, a}`),
+    // así la cuenta sigue cuadrando y el cliente ve por qué cambió.
+    if (action === "saldo_fijar") {
+      if (!soloOwner()) return;
+      const motivo = txt(body.motivo, 200); if (!motivo) return res.status(400).json({ error: "Contá por qué corregís el saldo." });
+      const nuevo = +num(body.saldo).toFixed(2); if (Math.abs(nuevo) > MONTO_MAX) return res.status(400).json({ error: "El saldo no parece correcto." });
+      const cid = String(body.clienteId || "");
+      const [cs, ts, ps] = await Promise.all([db.collection("deposito_clientes").doc(cid).get(), db.collection("deposito_tandas").where("clienteId", "==", cid).select(...LEDGER_SEL).get(), db.collection("deposito_pagos").where("clienteId", "==", cid).get()]);
+      if (!cs.exists) return res.status(404).json({ error: "Cliente inexistente." });
+      const actual = ledgerDe(ts.docs.map(d => ({ id: d.id, t: d.data() })), ps.docs.map(d => ({ id: d.id, p: d.data() }))).saldo;
+      const monto = +(actual - nuevo).toFixed(2); // > 0 baja la deuda (como un pago), < 0 la sube (como un cargo)
+      if (!monto) return res.json({ ok: true, igual: true, saldo: actual });
+      await db.collection("deposito_pagos").add({ clienteId: cs.id, clienteNombre: cs.data().nombre, monto, tipo: "ajuste", fijado: { de: actual, a: nuevo }, estado: "verificado", comp: null, nota: motivo, notaCliente: "", por: dep.user.uid, porNombre: txt(dep.nombre, 80), createdAt: FieldValue.serverTimestamp(), informadoAt: FieldValue.serverTimestamp(), verificadoAt: FieldValue.serverTimestamp(), verificadoPor: dep.user.uid });
+      return res.json({ ok: true, de: actual, a: nuevo, monto });
     }
     // Verificar (o rechazar) una transferencia informada por el cliente: el paso sigue
     // siendo obligatorio (decisión de Lautaro 7/oct); verificada, entra al ledger como pago.
