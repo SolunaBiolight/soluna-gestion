@@ -374,6 +374,7 @@ export default async function handler(req, res) {
 
     // ── LIST PLATFORM PRODUCTS — todas las publicaciones de TN/Shopify/ML conectadas ──
     if (action === "list_platform_products" && req.method === "GET") {
+      const mlDiag = []; // ?diag=1 — campos de familia de las primeras publicaciones de ML
       const platform = req.query.platform || "all";
       const userSnap = await db.collection("users").doc(uid).get();
       const stores = userSnap.data()?.stores || [];
@@ -525,6 +526,7 @@ export default async function handler(req, res) {
                   mlFirstError = detErr;
                   break;
                 }
+                if (req.query.diag === "1") mlDiag.push(...details.slice(0, 3).map(d => d.body ? { id: d.body.id, user_product_id: d.body.user_product_id ?? null, family_id: d.body.family_id ?? null, family_name: d.body.family_name ?? null, keys: Object.keys(d.body) } : { code: d.code }));
                 for (const d of details) {
                   if (d.body) {
                     products.push({
@@ -560,7 +562,7 @@ export default async function handler(req, res) {
       // sin variant_id): el push y el descuento de ventas trabajan por item.
       agruparFamiliasML(products);
 
-      return res.json({ products, errors });
+      return res.json({ products, errors, ...(req.query.diag === "1" ? { mlDiag } : {}) });
     }
 
     // ── SYNC SALES — recorre ordenes recientes, descuenta stock de items vinculados ──
