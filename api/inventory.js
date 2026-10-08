@@ -37,6 +37,9 @@ function agruparFamiliasML(products) {
       title: g._variante || g.title.slice(comun.length).trim() || g.id,
       sku: g.sku || "", stock: null,
     }));
+    const ORDEN = ["XXS","XS","S","M","L","XL","XXL","2XL","3XL","XXXL","4XL"];
+    const rank = (t) => { const tal = String(t || "").split("/").pop().trim().toUpperCase(); const i = ORDEN.indexOf(tal); return i < 0 ? (parseInt(tal) || 999) : i; };
+    variants.sort((a, b) => rank(a.title) - rank(b.title) || a.title.localeCompare(b.title));
     const idx = products.indexOf(base);
     products.splice(idx, 1, { id: `MLF-${fid}`, platform: "mercadolibre", platform_label: "ML", title: comun, sku: "", image: base.image, price: base.price, variants, familia: true });
     for (const g of grupo.slice(1)) { const i = products.indexOf(g); if (i >= 0) products.splice(i, 1); }
