@@ -40654,12 +40654,15 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   function linkProductToItem(prod, variant) {
     if (!editingItem) return;
     const links = editingItem.product_links || [];
-    const linkId = variant ? `${prod.id}::v${variant.id}` : prod.id;
+    // Familia de ML: cada "variante" es una publicación propia (product_id
+    // distinto, sin variant_id). El vínculo apunta a ESA publicación.
+    const hermana = !!(variant && variant.product_id);
+    const linkId = hermana ? variant.product_id : (variant ? `${prod.id}::v${variant.id}` : prod.id);
     if (links.some(l => (l.link_id || l.product_id) === linkId)) return toast("Ya está vinculado","info");
     const next = [...links, {
       link_id: linkId,
-      product_id: prod.id,
-      variant_id: variant ? String(variant.id) : null,
+      product_id: hermana ? variant.product_id : prod.id,
+      variant_id: (variant && !hermana) ? String(variant.id) : null,
       variant_title: variant ? variant.title : null,
       platform: prod.platform,
       title: prod.title,
@@ -42334,6 +42337,11 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                   </div>
                                   {multi && exp && (
                                     <div style={{background:T.bg,paddingBottom:4}}>
+                                      {p.familia && (
+                                        <div style={{padding:"6px 12px 6px 48px",fontSize:10,color:T.textSm,lineHeight:1.4}}>
+                                          En Mercado Libre cada talle es una publicación aparte; acá se muestran juntas. Al elegir uno, el vínculo va a esa publicación.
+                                        </div>
+                                      )}
                                       {linkedSet.has(p.id) && (
                                         <div style={{padding:"6px 12px 6px 48px",fontSize:10,color:T.yellow||T.textSm,lineHeight:1.4}}>
                                           Este producto está vinculado como <strong>"Todas las variantes"</strong>. Para llevar stock por talle, quitá ese vínculo arriba (× roja) y después agregá cada talle acá.
@@ -42341,7 +42349,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                       )}
                                       {realVars.map(v=>{
                                         // "already" = ese talle ya está vinculado, O el producto entero está vinculado (cubre todos los talles).
-                                        const already = linkedSet.has(`${p.id}::v${v.id}`) || linkedSet.has(p.id);
+                                        const already = v.product_id ? linkedSet.has(v.product_id) : (linkedSet.has(`${p.id}::v${v.id}`) || linkedSet.has(p.id));
                                         return (
                                           <div key={v.id} onClick={()=>{ if(!already) linkProductToItem(p, v); }}
                                             style={{display:"flex",alignItems:"center",gap:10,padding:"6px 10px 6px 48px",cursor:already?"default":"pointer",opacity:already?0.45:1}}>

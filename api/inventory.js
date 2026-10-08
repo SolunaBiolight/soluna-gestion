@@ -12,6 +12,43 @@ import { esTiendaDemo, inventarioDemo } from "./_demo_ads.js";
 
 // Tope de ids por llamada a GET /items?ids= de Mercado Libre (bajó de 50 a 20 en oct/2026).
 const ML_MULTIGET = 20;
+// Talle / color de una publicación de ML sin variaciones, desde sus atributos.
+function mlVarianteDeAtributos(attrs, title) {
+  const get = (id) => (attrs || []).find(a => a.id === id)?.value_name;
+  const partes = [get("COLOR"), get("SIZE")].filter(Boolean);
+  if (partes.length) return partes.join(" / ");
+  const m = String(title || "").match(/\b(XXS|XS|S|M|L|XL|XXL|2XL|3XL|XXXL|\d{2})\s*$/i);
+  return m ? m[1].toUpperCase() : null;
+}
+function agruparFamiliasML(products) {
+  const fam = new Map();
+  for (const p of products) {
+    if (p.platform !== "mercadolibre" || !p._familia || (p.variants || []).length) continue;
+    if (!fam.has(p._familia)) fam.set(p._familia, []);
+    fam.get(p._familia).push(p);
+  }
+  for (const [fid, grupo] of fam) {
+    if (grupo.length < 2) continue;
+    const base = grupo[0];
+    const titulos = grupo.map(g => g.title);
+    const comun = prefijoComun(titulos).replace(/[\s\-·,]+$/, "") || base.title;
+    const variants = grupo.map(g => ({
+      id: g.id, product_id: g.id,
+      title: g._variante || g.title.slice(comun.length).trim() || g.id,
+      sku: g.sku || "", stock: null,
+    }));
+    const idx = products.indexOf(base);
+    products.splice(idx, 1, { id: `MLF-${fid}`, platform: "mercadolibre", platform_label: "ML", title: comun, sku: "", image: base.image, price: base.price, variants, familia: true });
+    for (const g of grupo.slice(1)) { const i = products.indexOf(g); if (i >= 0) products.splice(i, 1); }
+  }
+  for (const p of products) { delete p._familia; delete p._variante; }
+}
+function prefijoComun(arr) {
+  if (!arr.length) return "";
+  let pre = arr[0];
+  for (const t of arr.slice(1)) { let i = 0; while (i < pre.length && i < t.length && pre[i] === t[i]) i++; pre = pre.slice(0, i); }
+  return pre;
+}
 // Variaciones de una publicación de ML → [{id, title, sku}] para el mapeo por talle.
 function mlVariantes(variations) {
   if (!Array.isArray(variations) || !variations.length) return [];
@@ -477,7 +514,7 @@ export default async function handler(req, res) {
                 const details = [];
                 let detErr = null;
                 for (let k = 0; k < ids.length && !detErr; k += ML_MULTIGET) {
-                  const detailsRes = await fetch(`https://api.mercadolibre.com/items?ids=${ids.slice(k, k + ML_MULTIGET).join(",")}&attributes=id,title,thumbnail,price,seller_custom_field,variations`, {
+                  const detailsRes = await fetch(`https://api.mercadolibre.com/items?ids=${ids.slice(k, k + ML_MULTIGET).join(",")}&attributes=id,title,thumbnail,price,seller_custom_field,variations,user_product_id,family_id,family_name,attributes`, {
                     headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
                   });
                   if (!detailsRes.ok) { detErr = `HTTP ${detailsRes.status} (details): ${(await detailsRes.text().catch(()=>"")).slice(0, 200)}`; break; }
@@ -502,6 +539,8 @@ export default async function handler(req, res) {
                       // Shopify/TN: el mapeo elige una y pushML/sync_sales ya las
                       // resuelven por variant_id (= id de la variación).
                       variants: mlVariantes(d.body.variations),
+                      _familia: d.body.user_product_id || d.body.family_id || null,
+                      _variante: mlVarianteDeAtributos(d.body.attributes, d.body.title),
                     });
                   }
                 }
@@ -514,6 +553,12 @@ export default async function handler(req, res) {
           }
         }
       }
+
+      // ML "familias": una publicación POR talle/color (M, L, XL = tres ids) que
+      // ML agrupa bajo un user_product_id. Se muestran como UN producto con
+      // variantes, y cada variante apunta a su publicación (product_id propio,
+      // sin variant_id): el push y el descuento de ventas trabajan por item.
+      agruparFamiliasML(products);
 
       return res.json({ products, errors });
     }
