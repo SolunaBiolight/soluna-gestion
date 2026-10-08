@@ -607,7 +607,10 @@ export default async function handler(req, res) {
     // de envío de ML o número de pedido) marca el pedido como armado.
     if (action === "pedido_escanear") {
       const cod = txt(body.codigo, 60).replace(/\s+/g, ""); if (cod.length < 3) return res.status(400).json({ error: "Código vacío." });
-      const s = await db.collection("deposito_tandas").where("estado", "in", ["pendiente", "impresa", "armada"]).get();
+      // Desde que imprimir deja la tanda lista, el lector se usa DESPUÉS de imprimir:
+      // busca también en las impresas de los últimos 10 días.
+      const [sv, sr] = await Promise.all([db.collection("deposito_tandas").where("estado", "in", ["pendiente", "impresa", "armada"]).get(), db.collection("deposito_tandas").where("entregadaAt", ">=", Date.now() - 10 * 86400000).get()]);
+      const s = { docs: [...sv.docs, ...sr.docs.filter(d => d.data().estado === "entregada")] };
       const cl = cod.toLowerCase(); const solo = cl.replace(/\D/g, "");
       // 1) por número de envío (único entre clientes); 2) por número de pedido, que se
       // repite entre tiendas: si aparece en más de una tanda se pide elegir.
@@ -663,11 +666,9 @@ export default async function handler(req, res) {
         const s = await tx.get(ref); if (!s.exists) return null;
         const t = s.data(); if (["borrador", "cancelada"].includes(t.estado)) return { error: "La tanda está cancelada." };
         if (t.estado === estado) return { ok: true };
-        // Máquina de estados: hacia adelante libre (impresa → entregada vale si no se
-        // escanea), salvo entregar sin imprimir; hacia atrás solo UN paso.
-        const i = ESTADOS.indexOf(t.estado), j = ESTADOS.indexOf(estado);
-        if (t.estado === "pendiente" && estado === "entregada") return { error: "Primero hay que imprimirla (o tomarla)." };
-        if (j < i - 1) return { error: `De "${t.estado}" solo se puede volver a "${ESTADOS[i - 1]}".` };
+        // Dos pasos (8/oct/2026, decisión de Lautaro): pendiente → entregada ("Impresa"); al
+        // imprimir la tanda queda lista, sin "armada" ni "entregada al correo". Se puede
+        // volver a pendiente. "impresa"/"armada" siguen siendo válidos para tandas viejas en curso.
         tx.set(ref, { estado, ...(estado === "entregada" ? { entregadaAt: Date.now() } : {}), ...(t.estado === "entregada" ? { entregadaAt: FieldValue.delete() } : {}), hist: [...(t.hist || []).slice(-40), { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80), de: t.estado, a: estado }] }, { merge: true });
         return { ok: true };
       });
@@ -685,8 +686,8 @@ export default async function handler(req, res) {
       const ref = db.collection("deposito_tandas").doc(String(body.id));
       const out = await db.runTransaction(async tx => {
         const s = await tx.get(ref); if (!s.exists) return null; const t = s.data();
-        if (["borrador", "cancelada", "entregada"].includes(t.estado)) return { error: t.estado === "entregada" ? "Una tanda entregada no se cancela: hacé un ajuste de saldo." : "La tanda ya está cancelada." };
-        tx.set(ref, { estado: "cancelada", canceladaAt: Date.now(), notaDeposito: [String(t.notaDeposito || "").trim(), `Cancelada: ${motivo}`].filter(Boolean).join("\n").slice(0, 600), hist: [...(t.hist || []).slice(-40), { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80), de: t.estado, a: "cancelada", nota: motivo }] }, { merge: true });
+        if (["borrador", "cancelada"].includes(t.estado)) return { error: "La tanda ya está cancelada." };
+        tx.set(ref, { estado: "cancelada", canceladaAt: Date.now(), entregadaAt: FieldValue.delete(), notaDeposito: [String(t.notaDeposito || "").trim(), `Cancelada: ${motivo}`].filter(Boolean).join("\n").slice(0, 600), hist: [...(t.hist || []).slice(-40), { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80), de: t.estado, a: "cancelada", nota: motivo }] }, { merge: true });
         return { ok: true };
       });
       if (!out) return res.status(404).json({ error: "Tanda inexistente." });

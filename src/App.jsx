@@ -21275,7 +21275,7 @@ function AdmIngresos({ctx, stats}) {
 // ═══════════════════════════════════════════════════════════════════════════
 const GH_DEP_CHUNK=700000;
 const GH_DEP_CANAL={andreani:"Andreani",ml:"Mercado Libre",retiro:"Retiro en persona",otro:"Otro"};
-const GH_DEP_ESTADO={pendiente:"Pendiente",impresa:"Impresa",armada:"Armada",entregada:"Entregada al correo",cancelada:"Cancelada",pospuesta:"Pospuesta"};
+const GH_DEP_ESTADO={pendiente:"Pendiente",impresa:"Impresa",armada:"Armada",entregada:"Impresa",cancelada:"Cancelada",pospuesta:"Pospuesta"};
 // Cobro por unidad (mismo cálculo que extraItemsDe en api/deposito.js): un pedido con hasta
 // `extraItemsIncluidos` unidades paga el precio por paquete; con más, paga `extraItemPrecio` por
 // CADA unidad (todas) EN VEZ del precio por paquete (uno u otro, nunca los dos).
@@ -21652,12 +21652,12 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
         <div style={{flex:1,minWidth:220,fontSize:DS.font.md,color:T.textMd,lineHeight:1.5}}>{saldo?.n>0?<>Tenés <strong style={{color:T.text}}>{fmtMoney(saldo.n)}</strong> a pagar. Transferí y avisá con el comprobante: cuando el depósito lo verifique, se descuenta de tu cuenta.</>:"Cuando transfieras, avisá con el comprobante desde acá."}{st.datosPago?<div style={{fontSize:DS.font.sm,color:T.textSm,whiteSpace:"pre-wrap",marginTop:2}}>{st.datosPago}</div>:null}</div>
         <DepBtn T={T} variant={saldo?.n>0?"primary":"secondary"} size="sm" onClick={()=>setPago(true)}>Informar pago</DepBtn>
       </div>
-      <DepSection T={T} title="En proceso" count={vivas.length} desc="Lo que el depósito tiene para armar o ya armó y todavía no entregó al correo.">
+      <DepSection T={T} title="En proceso" count={vivas.length} desc="Lo que el depósito todavía tiene para imprimir y armar.">
         {vivas.length===0
           ? <DSEmpty T={T} title="No hay tandas en proceso" subtitle="Subí el PDF con las etiquetas y el depósito lo ve al instante en su cola."/>
           : <div style={{display:"flex",flexDirection:"column",gap:10}}>{vivas.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>}
       </DepSection>
-      {cerradas.length>0&&(<DepSection T={T} title="Entregadas y canceladas" count={cerradas.length} extra={<DepBtn T={T} variant="ghost" size="sm" onClick={()=>setVerCerradas(v=>!v)}>{verCerradas?"Ocultar":"Ver"}</DepBtn>}>
+      {cerradas.length>0&&(<DepSection T={T} title="Impresas y canceladas" count={cerradas.length} extra={<DepBtn T={T} variant="ghost" size="sm" onClick={()=>setVerCerradas(v=>!v)}>{verCerradas?"Ocultar":"Ver"}</DepBtn>}>
         {verCerradas&&<div style={{display:"flex",flexDirection:"column",gap:10}}>{cerradas.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>}
       </DepSection>)}
       {(st.cuenta?.pagos||[]).length>0&&(<DepSection T={T} title="Transferencias informadas" desc="Las que avisaste y el depósito todavía no verificó, o rechazó. Las verificadas ya figuran como pago en tu cuenta, abajo.">
@@ -21747,7 +21747,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
   useEffect(()=>{ if(!owner) return; apiDep("clientes").then(d=>{ const n=(d.clientes||[]).length; setSinClientes(n===0); if(n===0) setTab("clientes"); }).catch(()=>{}); },[owner]);
   // "Para empezar" desaparece apenas se crea el primer cliente (antes quedaba hasta recargar).
   const onClientes=n=>setSinClientes(n===0);
-  const HEAD={cola:["Cola de armado","Lo que hay que armar, agrupado por urgencia y día de despacho. Imprimir marca la tanda como impresa; después armada y entregada al correo."],
+  const HEAD={cola:["Cola de armado","Lo que hay que armar, agrupado por urgencia y día de despacho. Al imprimir, la tanda queda lista: no hay más pasos."],
     historial:["Movimientos","Todo lo que pasó por el depósito: las tandas de cada mes y la mercadería que entró de cada cliente."],
     clientes:["Clientes y pagos","Tus clientes, su precio por pedido y su saldo. Más abajo, las transferencias por verificar y la facturación del mes."],
     accesos:["Configuración","Links de acceso al panel, datos bancarios que ve el cliente para transferir y hora de corte del despacho."]};
@@ -21801,7 +21801,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
             {esDep?(<>
               <p style={{margin:"0 0 8px"}}>Cada cliente te manda una <strong>tanda</strong>: el PDF con las etiquetas de los pedidos que hay que armar. Reemplaza al grupo de WhatsApp. La tanda entra a la <strong>Cola</strong> con la fecha de despacho, el canal (Andreani o Mercado Libre) y, si viene de Growith, los productos de cada pedido.</p>
               <p style={{margin:"0 0 8px"}}><strong>Cómo llega una tanda:</strong> desde Envíos de Growith con "Enviar al depósito" (etiquetas con SKU, ordenadas por producto), desde la sección Depósito del cliente, desde su link privado si no usa Growith, o cargada por vos "en nombre de" un cliente. Un <strong>envío especial</strong> es un pedido suelto con instrucciones, por ejemplo un mayorista.</p>
-              <p style={{margin:"0 0 8px"}}><strong>En la cola:</strong> "Imprimir etiquetas" abre el PDF y marca la tanda como impresa. Abriendo la tanda ves el picking (cuántas unidades de cada producto bajar) y los pedidos. Un pedido con problema se <strong>aparta</strong> con una nota que el cliente ve. Después: "Marcar armada" y "Entregada al correo". Todo queda con quién y cuándo.</p>
+              <p style={{margin:"0 0 8px"}}><strong>En la cola:</strong> "Imprimir etiquetas" abre el PDF y marca la tanda como impresa. Abriendo la tanda ves el picking (cuántas unidades de cada producto bajar) y los pedidos. Un pedido con problema se <strong>aparta</strong> con una nota que el cliente ve. Al imprimir, la tanda queda lista (no hay que marcar nada más). Todo queda con quién y cuándo.</p>
               <p style={{margin:"0 0 8px"}}><strong>Pagos:</strong> cada tanda tiene su total (pedidos por el precio del cliente, más el extra por unidad cuando un pedido supera las unidades incluidas; se configura en Configuración) y se acumula en su cuenta corriente. El cliente transfiere e informa el pago con el comprobante; en Clientes y pagos lo verificás y se aplica solo a las tandas más viejas. <strong>El pago nunca frena el armado.</strong></p>
               <p style={{margin:"0 0 8px"}}><strong>Ingresos y lector:</strong> en Movimientos anotás la mercadería que llega de cada cliente. En la cola, "Escanear etiqueta" con un lector USB (o tipeando el número) marca cada pedido como armado y avisa cuando la tanda está completa.</p>
               <p style={{margin:"0 0 8px"}}><strong>Mails:</strong> uno a las 8 con lo que hay para armar hoy, y uno al instante si llega un especial urgente. Al cliente no le llega ningún aviso: ve todo en su panel.</p>
@@ -21909,10 +21909,12 @@ function DepChevron({T,open,onClick,title}){ return <button onClick={onClick} ti
 
 // Estado de cuenta de un cliente (solo dueño): saldo, tandas sin pagar y transferencias.
 // Pasos de una tanda (pendiente → impresa → armada → entregada) como stepper compacto.
-const GH_DEP_PASOS=[["pendiente","Pendiente"],["impresa","Impresa"],["armada","Armada"],["entregada","Entregada"]];
+// Dos pasos (8/oct/2026): al imprimir la tanda queda LISTA (estado "entregada" en los datos, que
+// se muestra como "Impresa"). "impresa"/"armada" quedan solo para tandas viejas en curso.
+const GH_DEP_PASOS=[["pendiente","Pendiente"],["entregada","Impresa"]];
 function DepSteps({T,estado,compact=false}){
   if(estado==="cancelada") return <DepDot T={T} color={T.red} strong>Cancelada</DepDot>;
-  const idx=GH_DEP_PASOS.findIndex(p=>p[0]===estado);
+  const idx=estado==="pendiente"?0:estado==="entregada"?2:1; // 2 = los dos pasos cumplidos
   return (<div style={{display:"flex",alignItems:"center",gap:0,flexShrink:0}}>
     {GH_DEP_PASOS.map(([k,l],i)=>{ const done=i<idx, cur=i===idx;
       return (<React.Fragment key={k}>
@@ -21922,7 +21924,7 @@ function DepSteps({T,estado,compact=false}){
             {done&&<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.isDark?"#052e16":"#fff"} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}
             {cur&&<span style={{width:6,height:6,borderRadius:99,background:"#fff"}}/>}
           </span>
-          {(!compact||cur)&&<span style={{fontSize:DS.font.sm,fontWeight:cur?700:500,color:cur?T.text:done?T.textMd:T.textSm,whiteSpace:"nowrap"}}>{l}</span>}
+          {(!compact||cur||done)&&<span style={{fontSize:DS.font.sm,fontWeight:cur?700:500,color:cur?T.text:done?T.textMd:T.textSm,whiteSpace:"nowrap"}}>{l}</span>}
         </div>
       </React.Fragment>); })}
   </div>);
@@ -22094,7 +22096,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
       else if(r.ya){ toast(`#${r.numero} ya estaba armado (${r.yaPor})`,"warning",4000); setFlash("warn"); beep(false); }
       else { setFlash("ok"); beep(true); }
       // Manual a propósito (decisión de Soluna): la tanda no se cierra sola, se avisa.
-      if(r.completa) toast(`${r.clienteNombre}: los ${r.total} pedidos de la tanda están armados. Tocá "Marcar armada" en la tanda.`,"success",8000);
+      if(r.completa) toast(`${r.clienteNombre}: los ${r.total} pedidos de la tanda ya están armados.`,"success",8000);
       cargar(); }
     catch(e){ setScans(s=>[{error:e.message,cod,at:Date.now()},...s].slice(0,5)); setFlash("error"); beep(false); }
     setTimeout(()=>setFlash(null),900);
@@ -22107,12 +22109,12 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   // campo cae en el lector, aunque se haya tocado un botón antes.
   useEffect(()=>{ const h=e=>{ if(e.ctrlKey||e.metaKey||e.altKey) return; const a=document.activeElement; const enCampo=a&&(a.tagName==="INPUT"||a.tagName==="TEXTAREA"||a.tagName==="SELECT"||a.isContentEditable); if(enCampo&&a!==scanRef.current) return; if(e.key.length===1&&scanRef.current&&a!==scanRef.current){ scanRef.current.focus(); } }; window.addEventListener("keydown",h); return ()=>window.removeEventListener("keydown",h); },[]);
   async function estado(t,e){
-    if(e==="entregada"){ const ap=t.pedidos.filter(p=>p.apartado&&!p.cancelado).length; if(ap>0&&!(await appConfirm(`Esta tanda tiene ${ap} pedido${ap!==1?"s":""} apartado${ap!==1?"s":""}. Quedan en la lista "Pedidos apartados" hasta que los reincorpores o los canceles. ¿Marcar la tanda como entregada igual?`,{okLabel:"Entregada igual"}))) return; }
+    if(e==="entregada"){ const ap=t.pedidos.filter(p=>p.apartado&&!p.cancelado).length; if(ap>0&&!(await appConfirm(`Esta tanda tiene ${ap} pedido${ap!==1?"s":""} apartado${ap!==1?"s":""}. Quedan en la lista "Pedidos apartados" hasta que los reincorpores o los canceles. ¿Marcar la tanda como lista igual?`,{okLabel:"Marcar lista"}))) return; }
     setBusy(t.id); try{ await api("tanda_estado",{id:t.id,estado:e}); await cargar(); }catch(x){ toast(x.message,"error"); } setBusy(null);
   }
   async function imprimir(t){
     setBusy(t.id); const w=ghDepVentana("application/pdf");
-    try{ const bytes=await ghDepBajar(api,"file_get",t.id,"pdf",t.pdf.chunks); ghDepAbrirBytes(bytes,"application/pdf",`${t.clienteNombre}_${t.fechaDespacho}.pdf`,w); if(t.estado==="pendiente"){ await api("tanda_estado",{id:t.id,estado:"impresa"}); await cargar(); } }
+    try{ const bytes=await ghDepBajar(api,"file_get",t.id,"pdf",t.pdf.chunks); ghDepAbrirBytes(bytes,"application/pdf",`${t.clienteNombre}_${t.fechaDespacho}.pdf`,w); if(t.estado!=="entregada"){ await api("tanda_estado",{id:t.id,estado:"entregada"}); await cargar(); } }
     catch(x){ if(w&&!w.closed) w.close(); toast(x.message,"error"); } setBusy(null);
   }
   // Un solo PDF con todas las tandas pendientes de hoy, en el orden de la cola; cada una queda impresa.
@@ -22139,7 +22141,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
         bajar(await z.generateAsync({type:"blob"}),`deposito_${st.hoy}_${lista.length}tandas.zip`);
       }
       const fallidas=[];
-      for(const t of lista){ try{ await api("tanda_estado",{id:t.id,estado:"impresa"}); }catch(x){ fallidas.push(`${t.clienteNombre} (${x.message})`); } }
+      for(const t of lista){ try{ await api("tanda_estado",{id:t.id,estado:"entregada"}); }catch(x){ fallidas.push(`${t.clienteNombre} (${x.message})`); } }
       if(fallidas.length) toast(`La descarga salió, pero ${fallidas.length} tanda${fallidas.length!==1?"s":""} no quedó marcada como impresa: ${fallidas.join("; ")}. Marcala a mano para que no se vuelva a imprimir.`,"warning",10000);
       else toast(una?"PDF descargado":`Descargado: ${lista.length} PDF, uno por tanda${Object.keys(cuenta).length>1?`, en carpetas separadas (${Object.keys(cuenta).map(k=>k.replace(/_/g," ")).join(" y ")})`:""}`,"success");
       await cargar();
@@ -22207,9 +22209,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
     const vistaAct=(v==="picking"&&!conItems)?(t.pedidos.length>0?"pedidos":"hist"):v;
     const segItems=[...(conItems?[["picking","Picking","box"]]:[]),...(t.pedidos.length>0?[["pedidos",`Pedidos (${t.pedidos.length})`,"tag"]]:[]),["hist","Historial","clock"]];
     const accion=t.pdf&&!t.pdf.purgado&&t.estado==="pendiente"?<DepMainBtn T={T} ico="print" disabled={busy===t.id} onClick={()=>imprimir(t)}>Imprimir etiquetas</DepMainBtn>
-      :t.estado==="pendiente"&&!t.pdf?<DepMainBtn T={T} ico="hand" disabled={busy===t.id} onClick={()=>estado(t,"impresa")}>Tomar</DepMainBtn>
-      :t.estado==="impresa"?<DepMainBtn T={T} ico="check" disabled={busy===t.id} onClick={()=>estado(t,"armada")}>Marcar armada</DepMainBtn>
-      :t.estado==="armada"?<DepMainBtn T={T} ico="truck" color={T.isDark?"#16a34a":"#15803d"} disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Entregada al correo</DepMainBtn>:null;
+      :t.estado!=="entregada"?<DepMainBtn T={T} ico="check" color={T.isDark?"#16a34a":"#15803d"} disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Marcar lista</DepMainBtn>:null;
     const bi=(d,txt)=><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d={d} size={13}/>{txt}</span>;
     return (
     <div style={{position:"relative",background:`linear-gradient(90deg, ${cCanal}14 0%, ${T.card} 38%)`,backgroundColor:T.card,border:`1px solid ${urg(t)?T.red+"88":open?cCanal+"88":cCanal+"40"}`,borderRadius:20,boxShadow:open?DS.shadow.md:DS.shadow.sm,overflow:"hidden",transition:"box-shadow .15s, border-color .15s",opacity:entregada&&!open?0.85:1}}>
@@ -22240,9 +22240,9 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
               t.pdf&&!t.pdf.purgado&&t.estado!=="pendiente"&&{ico:"print",label:"Reimprimir etiquetas",onClick:()=>imprimir(t)},
               !entregada&&{ico:"calendar",label:"Posponer",onClick:()=>setPosponer(t)},
               {ico:"note",label:t.notaDeposito?"Editar nota al cliente":"Nota al cliente",onClick:()=>notaDep(t)},
-              t.estado!=="pendiente"&&{ico:"undo",label:"Volver un paso",onClick:()=>estado(t,{impresa:"pendiente",armada:"impresa",entregada:"armada"}[t.estado]||"pendiente")},
-              owner&&!entregada&&{ico:"alert",label:"Cancelar tanda",danger:true,sep:true,onClick:()=>cancelarTanda(t)},
-              owner&&{ico:"trash",label:"Eliminar tanda",danger:true,sep:entregada,onClick:()=>eliminarTanda(t)},
+              t.estado!=="pendiente"&&{ico:"undo",label:"Volver a pendiente",onClick:()=>estado(t,"pendiente")},
+              owner&&{ico:"alert",label:"Cancelar tanda",danger:true,sep:true,onClick:()=>cancelarTanda(t)},
+              owner&&{ico:"trash",label:"Eliminar tanda",danger:true,onClick:()=>eliminarTanda(t)},
             ]}/>
             <DepChevron T={T} open={open} onClick={toggle} title={open?"Cerrar":"Ver detalle"}/>
           </div>
@@ -22250,7 +22250,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
         <div style={{display:"flex",gap:18,alignItems:"center",marginTop:14,flexWrap:"wrap"}}>
           <DepSteps T={T} estado={t.estado}/>
           <span style={{flex:1}}/>
-          {nP>0&&!entregada&&<DepProgress T={T} value={arm} total={nP} label="armados" done={done}/>}
+          {nP>0&&arm>0&&<DepProgress T={T} value={arm} total={nP} label="armados" done={done}/>}
           {!open&&ult&&<span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:DS.font.sm,color:T.textSm,whiteSpace:"nowrap"}}><DepAvatar T={T} name={ult.porNombre} size={20}/><span><strong style={{color:T.textMd,fontWeight:600}}>{GH_DEP_ESTADO[ult.a]||ult.a}</strong> · {ult.porNombre} · {ghDepFechaHora(ult.at)}</span></span>}
         </div>
         {conItems&&!open&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:12,cursor:"pointer"}} onClick={toggle}>
@@ -22301,8 +22301,8 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
         return <DepStats T={T} items={[
         {l:"Pedidos para hoy",v:nPed(paraHoy),ico:"box",c:nAtr||nUrg?T.red:undefined,s:subHoy},
         {l:"Para mañana",v:nPed(manana),ico:"calendar",c:T.blue,s:despues.length?`+ ${nPed(despues)} más adelante`:"ya cargados"},
-        {l:"Despachados hoy",v:dsp.hoy,ico:"truck",c:dsp.hoy?T.green:T.textSm,s:`${dsp.hoyTandas} tanda${dsp.hoyTandas!==1?"s":""} entregada${dsp.hoyTandas!==1?"s":""} al correo`},
-        ...(owner?[{l:"Despachados este mes",v:dsp.mes,ico:"check",c:T.green,s:`${dsp.mesTandas} tanda${dsp.mesTandas!==1?"s":""}`}]:[]),
+        {l:"Impresos hoy",v:dsp.hoy,ico:"print",c:dsp.hoy?T.green:T.textSm,s:`${dsp.hoyTandas} tanda${dsp.hoyTandas!==1?"s":""} lista${dsp.hoyTandas!==1?"s":""}`},
+        ...(owner?[{l:"Impresos este mes",v:dsp.mes,ico:"check",c:T.green,s:`${dsp.mesTandas} tanda${dsp.mesTandas!==1?"s":""}`}]:[]),
       ]}/>; })()}
       {(pendHoyConPdf.length>0||pendTodoConPdf.length>0)&&(()=>{ const hayHoy=pendHoyConPdf.length>0; const lista=hayHoy?pendHoyConPdf:pendTodoConPdf; const nT=lista.length, nE=nPed(lista); const masAdelante=hayHoy&&pendTodoConPdf.length>pendHoyConPdf.length;
         return (<div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",padding:"18px 20px",marginBottom:14,borderRadius:20,border:`1px solid ${T.accentSolid}88`,background:`linear-gradient(90deg, ${T.accentSolid}33 0%, ${T.accentSolid}12 100%)`,backgroundColor:T.card,boxShadow:`0 6px 26px ${T.accentSolid}26`}}>
@@ -22406,7 +22406,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
         <div style={{display:"flex",flexDirection:"column",gap:10}}>{lista.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>
       </div>))}
       {hechas.length>0&&(<div>
-        <DepBtn T={T} variant="ghost" size="sm" onClick={()=>setVerHechas(v=>!v)}>{verHechas?"Ocultar entregadas":`Ver entregadas recientes (${hechas.length})`}</DepBtn>
+        <DepBtn T={T} variant="ghost" size="sm" onClick={()=>setVerHechas(v=>!v)}>{verHechas?"Ocultar impresas":`Ver impresas recientes (${hechas.length})`}</DepBtn>
         {verHechas&&<div style={{display:"flex",flexDirection:"column",gap:10,marginTop:10}}>{hechas.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>}
       </div>)}
       {nuevoPara&&<DepositoEnvioModal T={T} api={(a,b)=>api(a,{...b,clienteId:nuevoPara.cliente.id})} cliente={nuevoPara.cliente} especial={nuevoPara.especial} corte={st.corteHora??15} extraCfg={{extraItemsIncluidos:st.extraItemsIncluidos,extraItemPrecio:st.extraItemPrecio}} onClose={()=>setNuevoPara(null)} onDone={cargar}/>}
