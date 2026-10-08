@@ -14831,6 +14831,17 @@ async function ghSkuZonasRuteo(bytes){
       }
       if(/^importante/i.test(txt)) yImp=Number(y);
     }
+    // Etiqueta del contrato HOP / punto de tercero (8/oct/2026): otro diseño, SIN la tabla
+    // "Orden de Ruteo". Los productos van en el hueco que queda bajo "ID: <pedido>", a la
+    // izquierda del QR y arriba de "Peso:".
+    if(!zona){
+      const its=tc.items.filter(i=>i.str&&i.str.trim());
+      const id=its.find(i=>/^ID:/i.test(i.str.trim())), peso=its.find(i=>/^Peso:/i.test(i.str.trim()));
+      if(id&&peso&&id.transform[5]-peso.transform[5]>30){
+        const num=its.find(i=>/^\d{15}$/.test(i.str.trim())&&i.transform[4]>120&&i.transform[5]<id.transform[5]&&i.transform[5]>peso.transform[5]);
+        zona={libre:true,x0:id.transform[4],x1:(num?num.transform[4]:200)-8,yTop:id.transform[5]-5,yBottom:peso.transform[5]+13};
+      }
+    }
     zonas.push(zona?{...zona,yImp}:null);
   }
   return zonas;
@@ -14848,7 +14859,19 @@ async function ghEstamparSkuPdf(b64, lines){
   const font=await doc.embedFont(StandardFonts.HelveticaBold);
   let alguna=false;
   doc.getPages().forEach((page,pi)=>{
-    const z=zonas[pi]; if(!z||z.centros.length<2) return;
+    const z=zonas[pi]; if(!z) return;
+    if(z.libre){
+      // Diseño HOP: hueco libre a la izquierda del QR. Hasta 4 renglones; si hay más productos, dos columnas.
+      const alto=z.yTop-z.yBottom, ancho=z.x1-z.x0; if(alto<10||ancho<60) return;
+      const grande=lines.length<=3; const size=grande?9:7.5, paso=grande?11:9.2;
+      const n=Math.max(1,Math.min(4,Math.floor((alto-size)/paso)+1));
+      const nCols=lines.length>n?2:1; const colW=ancho/nCols; const slots=n*nCols;
+      let items=lines.slice(); if(items.length>slots) items=[...items.slice(0,slots-1),items.slice(slots-1).join(" · ")];
+      const ajustar=(t,maxW)=>{ let out=t; while(out.length>1&&font.widthOfTextAtSize(out,size)>maxW) out=out.slice(0,-2)+"…"; return out; };
+      items.forEach((t,i)=>{ const col=Math.floor(i/n); page.drawText(ajustar(String(t),colW-6),{x:z.x0+col*colW,y:z.yTop-size-(i%n)*paso,size,font,color:rgb(0,0,0)}); alguna=true; });
+      return;
+    }
+    if(!z.centros||z.centros.length<2) return;
     const colW=z.centros[1]-z.centros[0];
     const cols=z.centros.slice(0,3).map(c=>({x:c-colW/2+5,maxW:colW-10}));
     const size=6.5, paso=8;
