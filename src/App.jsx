@@ -4514,6 +4514,21 @@ function ghLocCandidatas(locs,cp,provincia){
   const prov=ghLocProv(provincia);
   return (locs?.cpIndex?.[c]||[]).filter(l=>{ const x=ghLocPartes(l); return x&&ghLocProvOk(prov,x.prov)!==false; });
 }
+// Varias localidades comparten el CP del pedido y ninguna se llama como la que
+// escribió el comprador (puso un barrio, o la tienda manda cualquier cosa en
+// "ciudad"): mientras el CP sea el del pedido y la provincia coincida, cualquiera
+// de esas entradas lleva el paquete a la misma zona postal — se elige sola, sin
+// preguntar (8/oct/2026: preguntar por cada pedido hacía inusable el Excel).
+// Se prefiere la localidad más grande (la que figura con más códigos postales).
+// Sigue yendo a mano si la provincia contradice al CP o si el CP no existe.
+function ghLocElegirDelCp(locs,lista,prov){
+  let pool=lista.filter(k=>k.ok===true);
+  if(!pool.length&&!prov&&new Set(lista.map(k=>k.x.prov)).size===1) pool=lista;
+  if(!pool.length) return null;
+  if(!locs._peso){ const w={}; for(const [pv,arr] of Object.entries(locs.provIndex||{})) for(const l of arr){ const x=ghLocPartes(l); if(x){ const key=pv+"|"+x.loc; w[key]=(w[key]||0)+1; } } locs._peso=w; }
+  const peso=k=>locs._peso[k.x.prov+"|"+k.x.loc]||0;
+  return [...pool].sort((a,b)=>peso(b)-peso(a)||a.x.loc.localeCompare(b.x.loc))[0];
+}
 // → {loc, motivo} o null. `motivo` explica por qué se aceptó (para diagnóstico y tests).
 function ghMatchLocalidad(locs,cp,provincia,localidad){
   const c=ghLocCp(cp), prov=ghLocProv(provincia), locTxt=ghNrmSuc(localidad);
@@ -4528,7 +4543,7 @@ function ghMatchLocalidad(locs,cp,provincia,localidad){
     const sc=cands.map(k=>({...k,s:ghLocScore(locTxt,k.x.loc),ok:ghLocProvOk(prov,k.x.prov)}));
     const exactas=sc.filter(k=>k.s===3);
     if(exactas.length===1) return {loc:exactas[0].l,motivo:"cp_localidad"};
-    if(exactas.length>1){ const mismaProv=exactas.filter(k=>k.ok===true); if(mismaProv.length===1) return {loc:mismaProv[0].l,motivo:"cp_localidad"}; return null; }
+    if(exactas.length>1){ const mismaProv=exactas.filter(k=>k.ok===true); if(mismaProv.length===1) return {loc:mismaProv[0].l,motivo:"cp_localidad"}; const e=ghLocElegirDelCp(locs,exactas,prov); return e?{loc:e.l,motivo:"cp_zona"}:null; }
     const parecidas=sc.filter(k=>k.s===2);
     if(parecidas.length===1) return {loc:parecidas[0].l,motivo:"cp_localidad_parecida"};
     if(parecidas.length>1){
@@ -4536,12 +4551,12 @@ function ghMatchLocalidad(locs,cp,provincia,localidad){
       const ta=ghLocPalabras(locTxt); const n=k=>ghLocPalabras(k.x.loc).filter(w=>ta.includes(w)).length;
       const max=Math.max(...parecidas.map(n)); const top=parecidas.filter(k=>n(k)===max);
       if(top.length===1) return {loc:top[0].l,motivo:"cp_localidad_parecida"};
-      return null;
+      const e=ghLocElegirDelCp(locs,top,prov); return e?{loc:e.l,motivo:"cp_zona"}:null;
     }
     // Ninguna localidad del CP se parece (el comprador puso un barrio): solo si el CP
     // tiene UNA entrada y la provincia coincide exacta — no queda nada que elegir.
     if(cands.length===1&&sc[0].ok===true) return {loc:cands[0].l,motivo:"cp_unico_provincia"};
-    return null;
+    const e=ghLocElegirDelCp(locs,sc,prov); return e?{loc:e.l,motivo:"cp_zona"}:null;
   }
   // Sin CP legible: provincia + localidad EXACTA, y solo si esa localidad tiene una única entrada.
   if(!prov||!locTxt) return null;

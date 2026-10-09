@@ -45,9 +45,13 @@ eq("Mar del Plata",m("7600","Buenos Aires","Mar del Plata"),"BUENOS AIRES / MAR 
 // NUNCA adivinar
 eq("CP de Córdoba con provincia Mendoza → a mano",m("5000","Mendoza","Godoy Cruz"),null);
 eq("CP único pero otra provincia → a mano",m("5000","Buenos Aires","La Plata"),null);
-eq("CP con varias localidades y barrio que no figura → a mano",m("4000","Tucumán","Barrio Sur"),null);
-eq("sin provincia y localidad que no coincide → a mano",m("5000","","Villa Allende"),null);
-eq("CP inexistente → a mano (no cae a la provincia)",m("9999","Buenos Aires","La Plata"),null);
+// Mismo CP + misma provincia: se elige sola una localidad de ESE CP (no se pregunta)
+{ const r=M.ghLocPartes(m("4000","Tucumán","Barrio Sur")); eq("barrio que no figura: entrada del mismo CP y provincia",[r?.prov,r?.cp],["TUCUMAN","4000"]); }
+{ const r=M.ghLocPartes(m("1842","Buenos Aires","Autónomos I")); eq("#7365 (ciudad basura de la tienda): entrada de Buenos Aires 1842",[r?.prov,r?.cp],["BUENOS AIRES","1842"]); }
+eq("mismo pedido, siempre la misma elección",m("1842","Buenos Aires","Autónomos I"),m("1842","Buenos Aires","xx"));
+{ const r=M.ghLocPartes(m("5000","","Villa Allende")); eq("sin provincia pero todo el CP es de una sola: entrada de ese CP",[r?.prov,r?.cp],["CORDOBA","5000"]); }
+{ const libre=["0001","0002","9998","9997"].find(c=>!cpIndex[c]); eq("CP inexistente → a mano (no cae a la provincia)",m(libre,"Buenos Aires","La Plata"),null); }
+console.log("elige:",m("1842","Buenos Aires","Autónomos I"),"|",m("4000","Tucumán","Barrio Sur"),"|",m("1900","Buenos Aires","Tolosa centro"));
 eq("sin CP y sin provincia → a mano",m("","","Rosario"),null);
 eq("sin nada → a mano",m("","",""),null);
 eq("Olivos con provincia Capital y localidad que no coincide → a mano",m("1636","Ciudad Autónoma de Buenos Aires","Belgrano"),null);
