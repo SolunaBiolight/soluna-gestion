@@ -2860,6 +2860,7 @@ export default async function handler(req, res) {
         created_at: o.created_at,
         paid_at: o.processed_at,
         shipped_at: fulfillments[0]?.created_at || null,
+        owner_note: o.note || "", // nota del pedido en Shopify (marca "DEPO:" → etiqueta)
         total: o.total_price,
         subtotal: o.subtotal_price,
         discount: o.total_discounts || "0",

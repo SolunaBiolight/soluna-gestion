@@ -4450,6 +4450,7 @@ function buildOrdersFromAPI(data) {
       linkOrden:o.admin_url||(o.id?`https://www.tiendanube.com/admin/orders/${o.id}`:""),
       fechaPago:o.paid_at||'', fechaEnvio:o.shipped_at||'',
       isPacked:!!(o.fulfillments?.some(f=>f.status==='PACKED')),
+      notaDepo:ghNotaDepo(o.owner_note),
       productos:Array.isArray(o.products)?o.products.map(p=>({
         nombre:p.name||p.product_name||'',
         precio:String(p.price||p.unit_price||''),
@@ -12308,7 +12309,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       }catch(_){}
     }
     if(!order){ toast(`No encontramos el pedido #${num} en tu tienda. Fijate que sea el número del pedido (el que ves en Tienda Nube / Shopify), no el de seguimiento`,"warning",7000); return; }
-    const skuLines=(order.productos||[]).map(pr=>`${pr.sku} (x${pr.cantidad})`);
+    const skuLines=[...(order.productos||[]).map(pr=>`${pr.sku} (x${pr.cantidad})`),...(order.notaDepo||[])];
     setSkuResults(rs=>rs.map(r=>r.pagina===pagina?{...r,pedidoNum:num,found:true,manual:true,porNombre:false,skus:skuLines.join(", "),skuLines}:r));
     setPdfResults(rs=>rs.map(r=>r.pagina===pagina?{...r,pedidoNum:num}:r));
     setSkuBlob(null); // el PDF generado (si había) ya no corresponde
@@ -12478,7 +12479,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             const m=ordenPorNombre(p.destinatario,pool,p.texto,usados,tokPages);
             if(m){ order=m.order; pedidoNum=order.numero; porNombre=true; empate=m.empate; porNombreN++; if(empate) empates++; usados.add(order.numero); }
           }
-          const skuLines=order?(order.productos||[]).map(pr=>`${pr.sku} (x${pr.cantidad})`):[];
+          const skuLines=order?[...(order.productos||[]).map(pr=>`${pr.sku} (x${pr.cantidad})`),...(order.notaDepo||[])]:[];
           const {texto:_t,...rest}=p;
           return {...rest,pedidoNum,numRotulo,sinInterno,porNombre,empate,skus:order?skuLines.join(', '):"No encontrado en tu tienda",found:!!order,skuLines};
         });
@@ -14770,10 +14771,20 @@ function ghBytesToB64(bytes){
 }
 // Renglones de SKU de un pedido/envío ("2x ROJ-NN", "CLIP-ON"): usa productos
 // (con cantidad) y cae a la lista plana `skus` de los envíos viejos.
+// Nota interna del pedido en la tienda con la marca "DEPO:" → renglones extra
+// que se imprimen en la etiqueta y viajan al depósito (canjes y despachos con
+// cosas de más). Ej.: "DEPO: 1x LIQ, 1x CLIP-ON, nota de regalo". Sin la marca,
+// la nota NO se imprime (puede tener cosas que no son para el depósito).
+function ghNotaDepo(nota){
+  const out=[];
+  for(const l of String(nota||"").split(/\r?\n/)){ const m=l.match(/^\s*(?:DEPO|DEP[OÓ]SITO)\s*:\s*(.+)$/i); if(m) out.push(...m[1].split(/\s*[,;]\s*|\s+\+\s+/).map(x=>x.trim()).filter(Boolean).map(x=>typeof ghDepItemNorm==="function"?ghDepItemNorm(x):x)); }
+  return out.slice(0,8);
+}
 function ghSkuLinesDe(o){
   const ps=Array.isArray(o?.productos)?o.productos:null;
-  if(ps&&ps.length) return ps.map(p=>`${Number(p.cantidad)>1?`${p.cantidad}x `:""}${p.sku||p.nombre||""}`.trim()).filter(Boolean);
-  return Array.isArray(o?.skus)?o.skus.filter(Boolean):[];
+  const extra=Array.isArray(o?.notaDepo)?o.notaDepo:[];
+  if(ps&&ps.length) return [...ps.map(p=>`${Number(p.cantidad)>1?`${p.cantidad}x `:""}${p.sku||p.nombre||""}`.trim()).filter(Boolean),...extra];
+  return [...(Array.isArray(o?.skus)?o.skus.filter(Boolean):[]),...extra];
 }
 // pdf.js (CDN, el mismo loader que "Subir PDF de rótulos") para leer dónde
 // está cada texto de la etiqueta.
@@ -14828,6 +14839,19 @@ async function ghSkuZonasRuteo(bytes){
         if(yTop-yBottom>=10&&x1-x0>=60) zona={libre:true,x0,x1,yTop,yBottom};
       }
     }
+    // Etiqueta hecha a mano en el portal de Andreani (196x298 pt, "N° de seguimiento"
+    // arriba y abajo, sin "Orden de Ruteo" ni "ID:"): el único lugar libre es la franja
+    // del pie, debajo de los QR (misma zona que usa api/process-sku.js).
+    if(!zona){
+      const its=tc.items.filter(i=>i.str&&i.str.trim());
+      const vp=page.getViewport({scale:1}); const W=vp.width, H=vp.height; const sx=W/196, sy=H/298;
+      const segs=its.filter(i=>/seguimiento/i.test(i.str)).map(i=>i.transform[5]);
+      if(segs.length>=2&&Math.max(...segs)-Math.min(...segs)>H*0.5&&Math.abs(W/H-196/298)<0.04){
+        const yBottom=7*sy, yTop=Math.min(23.8*sy,Math.min(...segs)-6*sy);
+        const pisa=its.some(i=>i.transform[5]<yTop+1);
+        if(!pisa&&yTop-yBottom>=12) zona={libre:true,franja:true,x0:9.7*sx,x1:W*0.97,yTop,yBottom};
+      }
+    }
     zonas.push(zona?{...zona,yImp}:null);
   }
   return zonas;
@@ -14838,9 +14862,13 @@ async function ghSkuZonasRuteo(bytes){
 // encuentra la tabla, esa página queda intacta antes que pisar algo.
 // `info` (opcional) recibe {ok}: false si la etiqueta tenía productos para mostrar y NO se
 // pudieron escribir (diseño de etiqueta no reconocido) — quien llama avisa al usuario.
+// `lines`: los mismos renglones para todas las páginas, o una función
+// (índice de página) → renglones de ESA página (PDF con varias etiquetas).
+// `info.fallas` = páginas que tenían renglones y no se pudieron escribir.
 async function ghEstamparSkuPdf(b64, lines, info){
-  if(info) info.ok=true;
-  if(!lines||!lines.length) return b64;
+  if(info){ info.ok=true; info.fallas=[]; }
+  const linesDe=typeof lines==="function"?lines:()=>lines;
+  if(typeof lines!=="function"&&(!lines||!lines.length)) return b64;
   if(info) info.ok=false;
   const bytes=ghB64ToBytes(b64);
   let zonas=[]; try{ zonas=await ghSkuZonasRuteo(bytes); }catch(e){ console.error("sku: no se pudo leer la etiqueta",e); return b64; }
@@ -14849,7 +14877,22 @@ async function ghEstamparSkuPdf(b64, lines, info){
   const font=await doc.embedFont(StandardFonts.HelveticaBold);
   let alguna=false;
   doc.getPages().forEach((page,pi)=>{
+    const lines=(linesDe(pi)||[]).map(String).filter(Boolean); if(!lines.length) return;
+    const antes=alguna; alguna=false;
+    try{ escribir(page,pi); }finally{ if(!alguna&&info) info.fallas.push(pi); alguna=antes||alguna; }
+    function escribir(page,pi){
     const z=zonas[pi]; if(!z) return;
+    if(z.franja){
+      // Franja del pie (etiqueta del portal): texto corrido a todo el ancho, con la
+      // letra más grande que entre; si ni con la más chica entra, se corta con "…".
+      const ancho=z.x1-z.x0, alto=z.yTop-z.yBottom; const txt=lines.join("  ·  ");
+      const partir=size=>{ const out=[]; let cur=""; for(const w of txt.split(/\s+/)){ const t=cur?cur+" "+w:w; if(!cur||font.widthOfTextAtSize(t,size)<=ancho) cur=t; else { out.push(cur); cur=w; } } if(cur) out.push(cur); return out; };
+      let size=8, filas=[], maxF=1;
+      for(const sz of [8,7,6,5.2]){ size=sz; filas=partir(sz); maxF=Math.max(1,Math.floor((alto+sz*0.12)/(sz*1.12))); if(filas.length<=maxF) break; }
+      if(filas.length>maxF){ filas=filas.slice(0,maxF); let u=filas[maxF-1]+" …"; while(u.length>2&&font.widthOfTextAtSize(u,size)>ancho) u=u.slice(0,-3)+"…"; filas[maxF-1]=u; if(info) info.cortado=true; }
+      filas.forEach((t,i)=>{ let u=t; while(u.length>1&&font.widthOfTextAtSize(u,size)>ancho) u=u.slice(0,-2)+"…"; page.drawText(u,{x:z.x0,y:z.yTop-size-i*size*1.12,size,font,color:rgb(0,0,0)}); alguna=true; });
+      return;
+    }
     if(z.libre){
       // Diseño HOP: hueco libre a la izquierda del QR. Hasta 4 renglones; si hay más productos, dos columnas.
       const alto=z.yTop-z.yBottom, ancho=z.x1-z.x0; if(alto<10||ancho<60) return;
@@ -14876,8 +14919,9 @@ async function ghEstamparSkuPdf(b64, lines, info){
     if(items.length>slots) items=[...items.slice(0,slots-1),items.slice(slots-1).join(" · ")];
     const ajustar=(t,maxW)=>{ let out=t; while(out.length>1&&font.widthOfTextAtSize(out,size)>maxW) out=out.slice(0,-2)+"…"; return out; };
     items.forEach((t,i)=>{ const c=cols[Math.floor(i/n)]; if(!c) return; const y=yTop-size-(i%n)*paso; page.drawText(ajustar(String(t),c.maxW),{x:c.x,y,size,font,color:rgb(0,0,0)}); alguna=true; });
+    }
   });
-  if(info) info.ok=alguna;
+  if(info) info.ok=alguna&&!info.fallas.length;
   return alguna?ghBytesToB64(await doc.save()):b64;
 }
 // Preferencia "SKU en la etiqueta" (sin uid: es del dispositivo/impresora, como el formato).
@@ -21378,7 +21422,7 @@ async function ghDepContarEtiquetas(bytes){
   let textos=[]; try{ textos=await ghDepTextoPaginas(bytes); }catch(_){ }
   const pags=doc.getPages().map((pg,i)=>{ const z=pg.getSize(); return {w:z.width,h:z.height,texto:textos[i]||""}; });
   const resumen=ghDepHojasResumen(pags);
-  return {total,resumen:resumen.length,pages:total-resumen.length};
+  return {total,resumen:resumen.length,resumenIdx:resumen,pages:total-resumen.length};
 }
 // Lista pegada por el cliente (portal o PDF suelto): una línea por pedido,
 // "número; comprador; 2x ROJ-NN, 1x LIQ". Con eso el depósito tiene picking igual.
@@ -21417,7 +21461,8 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   const [esp,setEsp]=useState({titulo:"",instrucciones:"",urgente:false,bultos:1});
   const [adj,setAdj]=useState([]);
   const [prog,setProg]=useState(null);
-  const [drag,setDrag]=useState(false); const [verCant,setVerCant]=useState(false); const [verLista,setVerLista]=useState(false);
+  const [drag,setDrag]=useState(false); const [verCant,setVerCant]=useState(false); const [verLista,setVerLista]=useState(!prefill?.pedidos?.length&&!especial);
+  const estRef=React.useRef(null); // PDF con los productos ya escritos (se reusa si hay que reintentar)
   const etiquetasPdf=tipo==="tanda"?(verCant||!pdf?.pages?Number(n)||0:pdf.pages):0;
   const listaInfo=React.useMemo(()=>ghDepListaAPedidos(lista,etiquetasPdf),[lista,etiquetasPdf]);
   const pedidosLista=listaInfo.pedidos;
@@ -21435,8 +21480,8 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   async function elegirPdf(f){
     if(!f) return; if(f.type&&f.type!=="application/pdf"&&!/\.pdf$/i.test(f.name||"")){ toast("Ese archivo no es un PDF","warning"); return; }
     if(f.size>22*1024*1024){ toast("El PDF supera los 22 MB. Dividilo en dos tandas.","warning"); return; }
-    try{ const bytes=await leer(f); let pages=0, resumen=0; try{ const c=await ghDepContarEtiquetas(bytes); pages=c.pages; resumen=c.resumen; }catch(_){}
-      setPdf({bytes,nombre:f.name,pages,resumen}); if(tipo==="tanda"){ setN(pages||0); setVerCant(false); } }catch(e){ toast(e.message,"error"); }
+    try{ const bytes=await leer(f); let pages=0, resumen=0; let resumenIdx=[]; try{ const c=await ghDepContarEtiquetas(bytes); pages=c.pages; resumen=c.resumen; resumenIdx=c.resumenIdx; }catch(_){}
+      setPdf({bytes,nombre:f.name,pages,resumen,resumenIdx}); if(tipo==="tanda"){ setN(pages||0); setVerCant(false); } }catch(e){ toast(e.message,"error"); }
   }
   async function elegirOtro(f,setter,max){ if(!f) return; if(f.size>max){ toast(`El archivo supera los ${Math.round(max/1024/1024)} MB`,"warning"); return; } try{ setter({bytes:await leer(f),nombre:f.name,mime:f.type||"application/octet-stream"}); }catch(e){ toast(e.message,"error"); } }
   async function enviar(){
@@ -21445,8 +21490,30 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
     if(tipo==="tanda"&&!cant){ toast("No pudimos contar las etiquetas del PDF: indicá cuántos pedidos tiene la tanda","warning"); return; }
     if(tipo==="especial"&&!esp.instrucciones.trim()&&!esp.titulo.trim()){ toast("Contale al depósito qué hay que armar","warning"); return; }
     if(!borrRef.current&&fueraDeCorte&&!(await appConfirm(`Ya pasó el corte de las ${corte}:00. El depósito la va a ver como "fuera de corte" y puede salir recién el próximo día hábil. ¿La mandás igual con fecha de hoy?`,{okLabel:"Mandar igual"}))) return;
+    // PDF subido a mano: lo que se escribió en "Qué va en cada paquete" se IMPRIME en
+    // cada etiqueta (pedido k = etiqueta k, salteando hojas de resumen), así no se
+    // pierde cuando el depósito imprime todo junto.
+    let pdfEnv=pdf;
+    if(tipo==="tanda"&&pdf&&!prefill?.pdfBytes&&pedidosLista.some(p=>p.items.length)){
+      const key=lista+"|"+pdf.nombre+"|"+pdf.bytes.length;
+      if(estRef.current?.key!==key){
+        setProg("Escribiendo los productos en las etiquetas…");
+        try{
+          const {PDFDocument}=await import("pdf-lib"); const total=(await PDFDocument.load(pdf.bytes,{ignoreEncryption:true})).getPageCount();
+          const etiqPags=Array.from({length:total},(_,i)=>i).filter(i=>!(pdf.resumenIdx||[]).includes(i));
+          const porPag={}; pedidosLista.forEach((p,k)=>{ if(p.items.length&&etiqPags[k]!=null) porPag[etiqPags[k]]=p.items; });
+          const inf={}; const b64=await ghEstamparSkuPdf(ghBytesToB64(pdf.bytes),pi=>porPag[pi],inf);
+          const fallas=(inf.fallas||[]).length;
+          if(fallas){ setProg(null); if(!(await appConfirm(`No pudimos escribir los productos en ${fallas===1?"una etiqueta":fallas+" etiquetas"} porque no reconocemos su diseño. El depósito los va a ver en pantalla, pero NO van a salir impresos. ¿La mandás igual?`,{okLabel:"Mandar igual"}))) return; }
+          estRef.current={key,bytes:ghB64ToBytes(b64),cortado:!!inf.cortado};
+          if(inf.cortado) toast("El texto era largo y se cortó en alguna etiqueta: revisala en la vista previa del depósito.","warning",7000);
+        }catch(e){ console.error("productos en etiqueta:",e); setProg(null); if(!(await appConfirm("No pudimos escribir los productos en las etiquetas. El depósito los va a ver en pantalla, pero NO impresos. ¿La mandás igual?",{okLabel:"Mandar igual"}))) return; estRef.current={key,bytes:pdf.bytes}; }
+      }
+      pdfEnv={...pdf,bytes:estRef.current.bytes};
+    }
     setProg(borrRef.current?"Retomando…":"Creando…"); setFallo(null);
     try{
+      const pdf=pdfEnv;
       if(pdf&&pdf.bytes.length>22*1024*1024){ toast("El PDF de etiquetas supera los 22 MB: mandá la tanda en dos partes.","warning",7000); setProg(null); return; }
       if(!borrRef.current){ const c=await api("c_tanda_crear",{tipo,canal,fechaDespacho:fecha,nota:notaFinal,pedidos,n:cant,nManual:tipo==="tanda"&&verCant&&!prefill?.pedidos?.length,pages:pdf?.pages||0,origen:prefill?.origen||"manual",especial:tipo==="especial"?esp:undefined}); borrRef.current={id:c.id,hechos:{}}; }
       const b=borrRef.current;
@@ -21518,11 +21585,11 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
             <input style={{...iS,width:110,marginBottom:0}} type="number" min="1" value={n||""} onChange={e=>setN(e.target.value)}/>
             {pdf.pages>0&&<span style={{fontSize:DS.font.sm,color:T.textSm}}>El PDF tiene {pdf.pages+(pdf.resumen||0)} página{pdf.pages+(pdf.resumen||0)!==1?"s":""}{pdf.resumen?` (${pdf.resumen} de resumen)`:""}.</span>}
           </div>)}
-          {verLista&&(<div>{lbl("Productos (para que el depósito sepa qué va en cada paquete)")}
+          {verLista&&(<div>{lbl("Qué va en cada paquete · se imprime en la etiqueta")}
             <textarea style={{...iS,minHeight:74,resize:"vertical",fontFamily:"monospace",fontSize:DS.font.md}} placeholder={cant===1?"Qué lleva el paquete, un producto por renglón:\n1x ROJ-NN\n1x LIQ":"Un renglón por etiqueta, en el orden del PDF:\n2x ROJ-NN, 1x LIQ\n1x NARAN-TT"} value={lista} onChange={e=>setLista(e.target.value)}/>
-            {listaInfo.modo==="un_pedido"&&<div style={{fontSize:DS.font.sm,color:T.green,marginTop:-6}}>Es 1 etiqueta: todo esto va en ese paquete.</div>}
-            {listaInfo.modo==="uno_por_renglon"&&<div style={{fontSize:DS.font.sm,color:T.green,marginTop:-6}}>{cant>1?`${listaInfo.filas} renglones para ${cant} etiquetas: uno por paquete, en el orden del PDF.`:"Productos cargados."}</div>}
-            {listaInfo.modo==="nota"&&<div style={{fontSize:DS.font.sm,color:T.yellow,marginTop:-6}}>El PDF tiene {cant} etiquetas y escribiste {listaInfo.filas} renglón{listaInfo.filas!==1?"es":""}: se cuentan {cant} pedidos y esto le llega al depósito como nota. Para que sepan qué va en cada paquete, escribí un renglón por etiqueta.</div>}
+            {listaInfo.modo==="un_pedido"&&<div style={{fontSize:DS.font.sm,color:T.green,marginTop:-6}}>Es 1 etiqueta: todo esto se imprime en esa etiqueta.</div>}
+            {listaInfo.modo==="uno_por_renglon"&&<div style={{fontSize:DS.font.sm,color:T.green,marginTop:-6}}>{cant>1?`${listaInfo.filas} renglones para ${cant} etiquetas: uno por paquete, en el orden del PDF. Cada uno se imprime en su etiqueta.`:"Se imprime en la etiqueta."}</div>}
+            {listaInfo.modo==="nota"&&<div style={{fontSize:DS.font.sm,color:T.yellow,marginTop:-6}}>El PDF tiene {cant} etiquetas y escribiste {listaInfo.filas} renglón{listaInfo.filas!==1?"es":""}: se cuentan {cant} pedidos y esto le llega al depósito como nota, SIN imprimirse en las etiquetas. Para que salga impreso, escribí un renglón por etiqueta.</div>}
           </div>)}
           {(!verLista||(!verCant&&pdf.pages>0))&&(<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {!verLista&&<DepBtn T={T} size="sm" ico="plus" onClick={()=>setVerLista(true)}>Agregar los productos de cada pedido</DepBtn>}

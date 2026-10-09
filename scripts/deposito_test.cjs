@@ -55,4 +55,12 @@ eq("vacío",M.ledgerDe([],[]),{saldo:0,cargos:0,creditos:0,porVerificar:0,movs:[
   eq("una sola página nunca es resumen",R([A4("RESUMEN SKU")]),[]);
   eq("etiqueta A4 con envío entre 10x15 no es resumen",R([L(),L(),A4("Envio 360000123456789")]),[]);
 }
+// nota del pedido con la marca DEPO: → renglones extra de la etiqueta
+{ const app=fs.readFileSync("src/App.jsx","utf8"); const cut=(a,b)=>app.slice(app.indexOf(a),app.indexOf(b,app.indexOf(a)));
+  const N=new Function(cut("function ghDepItemNorm(","// La CANTIDAD de pedidos")+cut("function ghNotaDepo(","function ghSkuLinesDe(")+cut("function ghSkuLinesDe(","// pdf.js (CDN")+"return {ghNotaDepo,ghSkuLinesDe};")();
+  eq("nota con marca",N.ghNotaDepo("Cliente VIP\nDEPO: 1x LIQ, CLIP-ON x2 + nota de regalo\notra cosa"),["1x LIQ","2x CLIP-ON","nota de regalo"]);
+  eq("depósito con acento y minúsculas",N.ghNotaDepo("depósito: paño"),["paño"]);
+  eq("nota sin marca no se imprime",N.ghNotaDepo("mandar rápido, es regalo"),[]);
+  eq("se suma a los productos del pedido",N.ghSkuLinesDe({productos:[{sku:"ROJ-NN",cantidad:"2"}],notaDepo:["1x LIQ"]}),["2x ROJ-NN","1x LIQ"]);
+}
 console.log(`${n-fails}/${n} ok${fails?" — "+fails+" FALLAS":""}`); if(fails) process.exit(1);
