@@ -49,13 +49,19 @@ eq("CP único pero otra provincia → a mano",m("5000","Buenos Aires","La Plata"
 { const r=M.ghLocPartes(m("4000","Tucumán","Barrio Sur")); eq("barrio que no figura: entrada del mismo CP y provincia",[r?.prov,r?.cp],["TUCUMAN","4000"]); }
 { const r=M.ghLocPartes(m("1842","Buenos Aires","Autónomos I")); eq("#7365 (ciudad basura de la tienda): entrada de Buenos Aires 1842",[r?.prov,r?.cp],["BUENOS AIRES","1842"]); }
 eq("mismo pedido, siempre la misma elección",m("1842","Buenos Aires","Autónomos I"),m("1842","Buenos Aires","xx"));
-{ const r=M.ghLocPartes(m("5000","","Villa Allende")); eq("sin provincia pero todo el CP es de una sola: entrada de ese CP",[r?.prov,r?.cp],["CORDOBA","5000"]); }
+{ const r=M.ghLocPartes(m("5000","","Barrio Jardin Espinosa")); eq("sin provincia pero todo el CP es de una sola: entrada de ese CP",[r?.prov,r?.cp],["CORDOBA","5000"]); }
+eq("sin provincia y la ciudad es OTRA localidad real → a mano",m("5000","","Mar del Plata"),null);
 { const libre=["0001","0002","9998","9997"].find(c=>!cpIndex[c]); eq("CP inexistente → a mano (no cae a la provincia)",m(libre,"Buenos Aires","La Plata"),null); }
 console.log("elige:",m("1842","Buenos Aires","Autónomos I"),"|",m("4000","Tucumán","Barrio Sur"),"|",m("1900","Buenos Aires","Tolosa centro"));
 eq("sin CP y sin provincia → a mano",m("","","Rosario"),null);
 eq("sin nada → a mano",m("","",""),null);
 eq("Olivos con provincia Capital y localidad que no coincide → a mano",m("1636","Ciudad Autónoma de Buenos Aires","Belgrano"),null);
 
+// Ciudad real de la provincia pero con el CP de otra: no se sabe cuál está mal → a mano
+eq("Olivos con CP de Monte Grande → a mano",m("1842","Buenos Aires","Olivos"),null);
+eq("Mar del Plata con CP de La Plata → a mano",m("1900","Buenos Aires","Mar del Plata"),null);
+eq("Monte Grande con su CP sigue saliendo solo",m("1842","Buenos Aires","Monte Grande"),"BUENOS AIRES / MONTE GRANDE / 1842");
+{ const r=M.ghLocPartes(m("1834","Buenos Aires","Lomas de Zamora")); eq("partido como ciudad (Lomas de Zamora con CP de Temperley): sale solo con su CP",[r?.prov,r?.cp],["BUENOS AIRES","1834"]); }
 // Verificación final
 eq("verif ok",M.ghLocVerif({cp:"5000",provincia:"Córdoba",localidad:"Córdoba"},"CORDOBA / CORDOBA / 5000"),"ok");
 eq("verif otra provincia",M.ghLocVerif({cp:"5000",provincia:"Mendoza",localidad:"X"},"CORDOBA / CORDOBA / 5000"),"warn");
