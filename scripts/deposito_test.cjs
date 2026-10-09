@@ -43,4 +43,16 @@ eq("tanda verificada por FIFO (con pagoId) sigue siendo cargo",M.ledgerDe([{id:"
 eq("ajuste y por unidad en el concepto",M.ledgerDe([{id:"z",t:{estado:"impresa",total:3500,n:3,ajuste:-500,extraDetalle:{pedidosConExtra:1},fechaDespacho:"2026-10-06"}}],[]).movs[0].concepto,"3 etiquetas (1 por unidad) · ajuste −500");
 eq("corrección directa del saldo: concepto y efecto",(()=>{ const L=M.ledgerDe([{id:"a",t:{estado:"entregada",total:5000,n:5,fechaDespacho:"2026-10-01"}}],[{id:"f",p:{estado:"verificado",tipo:"ajuste",monto:3000,fijado:{de:5000,a:2000},nota:"mal contadas",verificadoAt:D("2026-10-02")}}]); return [L.saldo,L.movs[0].concepto]; })(),[2000,"Saldo corregido a 2000: mal contadas"]);
 eq("vacío",M.ledgerDe([],[]),{saldo:0,cargos:0,creditos:0,porVerificar:0,movs:[],meses:[]});
+// hojas de resumen dentro del PDF de etiquetas (front): no se cuentan ni se cobran
+{ const app=fs.readFileSync("src/App.jsx","utf8"); const i=app.indexOf("function ghDepHojasResumen("),j=app.indexOf("async function ghDepContarEtiquetas(");
+  const R=new Function(app.slice(i,j)+"return ghDepHojasResumen;")();
+  const L=(t="Envio 360000123456789 Juan")=>({w:283,h:425,texto:t}), A4=t=>({w:595,h:842,texto:t});
+  eq("resumen de Growith (A4 al final)",R([L(),L(),L(),A4("RESUMEN SKU DESPACHADOS DETALLE ROJ-NN -> 2 u")]),[3]);
+  eq("resumen adelante y del mismo tamaño",R([L("Resumen de pedidos ROJ-NN x2"),L(),L()]),[0]);
+  eq("A4 sin texto entre etiquetas 10x15",R([L(""),L(""),L(""),A4("")]),[3]);
+  eq("todas A4 con número de envío: son etiquetas",R([A4("360000123456789"),A4("360000123456780")]),[]);
+  eq("todas iguales y sin texto: son etiquetas",R([L(""),L(""),L("")]),[]);
+  eq("una sola página nunca es resumen",R([A4("RESUMEN SKU")]),[]);
+  eq("etiqueta A4 con envío entre 10x15 no es resumen",R([L(),L(),A4("Envio 360000123456789")]),[]);
+}
 console.log(`${n-fails}/${n} ok${fails?" — "+fails+" FALLAS":""}`); if(fails) process.exit(1);

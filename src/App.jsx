@@ -21355,6 +21355,31 @@ async function ghDepTextoPaginas(bytes){
   for(let i=1;i<=pdf.numPages;i++){ const c=await (await pdf.getPage(i)).getTextContent(); out.push(c.items.map(x=>x.str||"").join(" ")); }
   return out;
 }
+// Hojas que NO son etiquetas dentro de un PDF subido a mano (la página de resumen
+// / picking que agregan Growith —"RESUMEN SKU DESPACHADOS"— y otros sistemas):
+// no se cobran. Pura: recibe por página {w,h,texto} y devuelve los índices.
+// Una página es resumen si su texto lo dice, o si es mucho más grande que las
+// demás (A4 entre etiquetas 10x15) y no trae un número de envío. Nunca marca todas.
+function ghDepHojasResumen(pags){
+  const n=(pags||[]).length; if(n<2) return [];
+  const RX=/RESUMEN\s+(DE\s+)?(SKU|PEDIDOS|PRODUCTOS|PICKING|DESPACHO|ENV[IÍ]OS|LA\s+TANDA)|LISTA\s+DE\s+PICKING|HOJA\s+DE\s+PICKING|PICKING\s+LIST|PACKING\s+LIST|TOTAL\s+DE\s+(ETIQUETAS|PEDIDOS|UNIDADES)/i;
+  const conEnvio=t=>/\d{11,}/.test(String(t||"").replace(/[\s.\-]/g,""));
+  const areas=pags.map(p=>Math.round((p.w||0)*(p.h||0))); const orden=[...areas].sort((a,b)=>a-b); const mediana=orden[Math.floor((n-1)/2)]||0;
+  const out=[];
+  pags.forEach((p,i)=>{ const t=String(p.texto||"");
+    const porTexto=RX.test(t)&&!/\b36\d{13}\b/.test(t);
+    const porTamano=mediana>0&&areas[i]>=mediana*1.8&&!conEnvio(t);
+    if(porTexto||porTamano) out.push(i); });
+  return out.length>=n?[]:out;
+}
+async function ghDepContarEtiquetas(bytes){
+  const {PDFDocument}=await import("pdf-lib");
+  const doc=await PDFDocument.load(bytes,{ignoreEncryption:true}); const total=doc.getPageCount();
+  let textos=[]; try{ textos=await ghDepTextoPaginas(bytes); }catch(_){ }
+  const pags=doc.getPages().map((pg,i)=>{ const z=pg.getSize(); return {w:z.width,h:z.height,texto:textos[i]||""}; });
+  const resumen=ghDepHojasResumen(pags);
+  return {total,resumen:resumen.length,pages:total-resumen.length};
+}
 // Lista pegada por el cliente (portal o PDF suelto): una línea por pedido,
 // "número; comprador; 2x ROJ-NN, 1x LIQ". Con eso el depósito tiene picking igual.
 function ghDepParsearLista(texto){
@@ -21410,8 +21435,8 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   async function elegirPdf(f){
     if(!f) return; if(f.type&&f.type!=="application/pdf"&&!/\.pdf$/i.test(f.name||"")){ toast("Ese archivo no es un PDF","warning"); return; }
     if(f.size>22*1024*1024){ toast("El PDF supera los 22 MB. Dividilo en dos tandas.","warning"); return; }
-    try{ const bytes=await leer(f); let pages=0; try{ const {PDFDocument}=await import("pdf-lib"); pages=(await PDFDocument.load(bytes,{ignoreEncryption:true})).getPageCount(); }catch(_){}
-      setPdf({bytes,nombre:f.name,pages}); if(tipo==="tanda"){ setN(pages||0); setVerCant(false); } }catch(e){ toast(e.message,"error"); }
+    try{ const bytes=await leer(f); let pages=0, resumen=0; try{ const c=await ghDepContarEtiquetas(bytes); pages=c.pages; resumen=c.resumen; }catch(_){}
+      setPdf({bytes,nombre:f.name,pages,resumen}); if(tipo==="tanda"){ setN(pages||0); setVerCant(false); } }catch(e){ toast(e.message,"error"); }
   }
   async function elegirOtro(f,setter,max){ if(!f) return; if(f.size>max){ toast(`El archivo supera los ${Math.round(max/1024/1024)} MB`,"warning"); return; } try{ setter({bytes:await leer(f),nombre:f.name,mime:f.type||"application/octet-stream"}); }catch(e){ toast(e.message,"error"); } }
   async function enviar(){
@@ -21481,6 +21506,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
             <div style={{flex:1,minWidth:180}}>
               <div style={{fontSize:DS.font["2xl"],fontWeight:DS.w.black,color:T.text,letterSpacing:-0.4,lineHeight:1.15}}>{cant>0?`${cant} etiqueta${cant!==1?"s":""}`:"PDF cargado"}</div>
               <div style={{fontSize:DS.font.md,color:T.textMd,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:300}}>{prefill?.pdfBytes?(prefill.canal==="ml"?"Etiquetas de Mercado Libre":"Generadas en Growith, con los productos de cada pedido"):pdf.nombre}</div>
+              {pdf.resumen>0&&!verCant&&<div style={{fontSize:DS.font.md,color:T.green,fontWeight:600,marginTop:4}}>{pdf.resumen===1?"La hoja de resumen no se cuenta ni se cobra.":`Las ${pdf.resumen} hojas de resumen no se cuentan ni se cobran.`}</div>}
             </div>
             {!prefill?.pdfBytes&&filePick("application/pdf",elegirPdf,"Cambiar PDF")}
           </div>
@@ -21490,7 +21516,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
           {(verCant||!pdf.pages)&&(<div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
             <span style={{fontSize:DS.font.md,color:T.textMd}}>{pdf.pages?"Cantidad de etiquetas":"No pudimos contar las etiquetas. ¿Cuántas son?"}</span>
             <input style={{...iS,width:110,marginBottom:0}} type="number" min="1" value={n||""} onChange={e=>setN(e.target.value)}/>
-            {pdf.pages>0&&<span style={{fontSize:DS.font.sm,color:T.textSm}}>El PDF tiene {pdf.pages} página{pdf.pages!==1?"s":""}.</span>}
+            {pdf.pages>0&&<span style={{fontSize:DS.font.sm,color:T.textSm}}>El PDF tiene {pdf.pages+(pdf.resumen||0)} página{pdf.pages+(pdf.resumen||0)!==1?"s":""}{pdf.resumen?` (${pdf.resumen} de resumen)`:""}.</span>}
           </div>)}
           {verLista&&(<div>{lbl("Productos (para que el depósito sepa qué va en cada paquete)")}
             <textarea style={{...iS,minHeight:74,resize:"vertical",fontFamily:"monospace",fontSize:DS.font.md}} placeholder={cant===1?"Qué lleva el paquete, un producto por renglón:\n1x ROJ-NN\n1x LIQ":"Un renglón por etiqueta, en el orden del PDF:\n2x ROJ-NN, 1x LIQ\n1x NARAN-TT"} value={lista} onChange={e=>setLista(e.target.value)}/>
