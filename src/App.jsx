@@ -21627,8 +21627,8 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
 function DepositoPagoModal({T,api,cuenta,datosPago,onClose,onDone}){
   const iS=InputStyle(T);
   const [monto,setMonto]=useState(cuenta?.saldo>0?String(cuenta.saldo):"");
-  const [nota,setNota]=useState(""); const [comp,setComp]=useState(null); const [prog,setProg]=useState(null);
-  async function elegir(f){ if(!f) return; if(f.size>3*1024*1024){ toast("El comprobante supera los 3 MB","warning"); return; } setComp({bytes:new Uint8Array(await f.arrayBuffer()),nombre:f.name,mime:f.type||"application/octet-stream"}); }
+  const [nota,setNota]=useState(""); const [comp,setComp]=useState(null); const [prog,setProg]=useState(null); const [drag,setDrag]=useState(false);
+  async function elegir(f){ if(!f) return; if(!/^(application\/pdf|image\/)/.test(f.type||"")&&!/\.(pdf|jpe?g|png|webp|heic)$/i.test(f.name||"")){ toast("El comprobante tiene que ser un PDF o una imagen","warning"); return; } if(f.size>3*1024*1024){ toast("El comprobante supera los 3 MB","warning"); return; } setComp({bytes:new Uint8Array(await f.arrayBuffer()),nombre:f.name,mime:f.type||"application/octet-stream"}); }
   async function enviar(){
     const m=Number(String(monto).replace(",",".")); if(!(m>0)){ toast("Poné el monto transferido","warning"); return; }
     if(!comp){ toast("Adjuntá el comprobante de la transferencia","warning"); return; }
@@ -21638,12 +21638,23 @@ function DepositoPagoModal({T,api,cuenta,datosPago,onClose,onDone}){
   }
   const lbl=t=><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:5}}>{t}</div>;
   return (<Modal T={T} open onClose={prog?()=>{}:onClose} title="Informar una transferencia" width={460} zIndex={1700}>
-    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <div onDragOver={e=>{ e.preventDefault(); setDrag(true); }} onDragLeave={e=>{ if(!e.currentTarget.contains(e.relatedTarget)) setDrag(false); }} onDrop={e=>{ e.preventDefault(); setDrag(false); elegir(e.dataTransfer?.files?.[0]); }} style={{display:"flex",flexDirection:"column",gap:14}}>
       {datosPago?<div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 14px",fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.6}}><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:4}}>Transferí a</div>{datosPago}</div>
         :<div style={{fontSize:DS.font.md,color:T.textSm}}>El depósito todavía no cargó sus datos bancarios. Pediselos por WhatsApp.</div>}
       <div style={{fontSize:DS.font.md,color:T.textMd}}>Saldo actual: <strong style={{color:T.text}}>{cuenta?.saldo>0?fmtMoney(cuenta.saldo):cuenta?.saldo<-0.5?`${fmtMoney(-cuenta.saldo)} a tu favor`:"al día"}</strong>{cuenta?.porVerificar>0&&<> · {fmtMoney(cuenta.porVerificar)} ya informado, en verificación</>}</div>
       <div style={{width:200}}>{lbl("Monto transferido ($)")}<input style={iS} type="number" min="0" value={monto} onChange={e=>setMonto(e.target.value)}/></div>
-      <div>{lbl("Comprobante")}<label style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",cursor:"pointer",display:"inline-flex"}}>{comp?"Cambiar comprobante":"Adjuntar comprobante"}<input type="file" accept="application/pdf,image/*" style={{display:"none"}} onChange={e=>{ elegir(e.target.files?.[0]); e.target.value=""; }}/></label>{comp&&<span style={{fontSize:DS.font.sm,color:T.green,marginLeft:10}}>{comp.nombre}</span>}</div>
+      <div>{lbl("Comprobante")}
+        {/* Zona para arrastrar el comprobante (o tocar para elegirlo) */}
+        <label onDragOver={e=>{ e.preventDefault(); setDrag(true); }} onDragLeave={()=>setDrag(false)} onDrop={e=>{ e.preventDefault(); setDrag(false); elegir(e.dataTransfer?.files?.[0]); }}
+          style={{display:"flex",alignItems:"center",gap:12,padding:comp?"12px 14px":"20px 16px",border:comp&&!drag?`1px solid ${T.green}66`:`2px dashed ${drag?T.accentSolid:T.accentSolid+"88"}`,borderRadius:DS.r.xl,background:drag?T.accentSolid+"26":comp?T.green+"12":T.accentSolid+"12",cursor:"pointer",transition:`all .15s ${DS.ease}`}}>
+          <DepTile T={T} color={comp?T.green:T.accent} ico={comp?"check":"file"} size={40}/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{drag?"Soltalo acá":comp?comp.nombre:"Arrastrá el comprobante acá"}</div>
+            <div style={{fontSize:DS.font.md,color:T.textMd,marginTop:2}}>{comp?"Tocá o arrastrá otro para cambiarlo":"o tocá para elegirlo · PDF o imagen, hasta 3 MB"}</div>
+          </div>
+          <input type="file" accept="application/pdf,image/*" style={{display:"none"}} onChange={e=>{ elegir(e.target.files?.[0]); e.target.value=""; }}/>
+        </label>
+      </div>
       <div>{lbl("Nota (opcional)")}<input style={iS} placeholder="Ej.: pago de las tandas de la semana" value={nota} onChange={e=>setNota(e.target.value)}/></div>
       <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><DepBtn T={T} variant="secondary" onClick={onClose} disabled={!!prog}>Cancelar</DepBtn><DepBtn T={T} variant="primary" onClick={enviar} disabled={!!prog}>{prog||"Informar pago"}</DepBtn></div>
     </div>
