@@ -5818,6 +5818,87 @@ function OrderSearchField({T, orders, onSelect, uid}) {
 // ===========================================
 // APP RECLAMOS
 // ===========================================
+// GH_RECLAMOS_BEGIN — reglas puras del flujo de Reclamos (qué paso sigue, qué
+// hay que hacer ahora, mensaje sugerido). Tests: node scripts/reclamos_test.cjs
+const GH_REC_CERRADOS=["Resuelto","Rechazado"];
+const ghRecAbierto=r=>!GH_REC_CERRADOS.includes(r?.estado);
+// Cada tipo recorre solo los pasos que le sirven: una devolución no tiene
+// "Envío en camino" y un reclamo simple no espera ningún producto.
+function ghRecPasos(tipo){
+  if(tipo==="Cambio") return ["Nuevo","Contactado","Esperando producto","Producto recibido","Envío en camino","Resuelto"];
+  if(tipo==="Devolución") return ["Nuevo","Contactado","Esperando producto","Producto recibido","Resuelto"];
+  return ["Nuevo","Contactado","Resuelto"];
+}
+function ghRecSiguiente(r){
+  if(!ghRecAbierto(r)) return null;
+  const p=ghRecPasos(r.tipo); const i=p.indexOf(r.estado);
+  if(i>=0) return p[i+1]||null;
+  const g=ESTADOS_R.indexOf(r.estado);
+  return p.find(e=>ESTADOS_R.indexOf(e)>g)||"Resuelto";
+}
+// Texto del botón principal: dice lo que PASÓ, no el nombre de la columna.
+function ghRecVerbo(r,sig){
+  if(sig==="Contactado") return "Ya le escribí";
+  if(sig==="Esperando producto") return "Va a mandar el producto";
+  if(sig==="Producto recibido") return "Llegó el producto";
+  if(sig==="Envío en camino") return "Ya despaché el cambio";
+  if(sig==="Resuelto") return r.tipo==="Devolución"?"Reembolso hecho, cerrar":r.tipo==="Cambio"?"Lo recibió, cerrar":"Resuelto, cerrar";
+  return sig||"";
+}
+// Qué hay que hacer AHORA con este reclamo. accion=true: depende de nosotros;
+// false: se espera al cliente o al correo. alerta=true: algo salió mal o apura.
+function ghRecQueHacer(r){
+  const A=(txt,alerta=false)=>({txt,accion:true,alerta}), E=txt=>({txt,accion:false,alerta:false});
+  const env=r.tipo==="Cambio"||r.tipo==="Devolución";
+  const tiene=v=>!!String(v||"").trim();
+  switch(r.estado){
+    case "Resuelto": return E("Resuelto");
+    case "Rechazado": return E("Rechazado");
+    case "Contactado": return E(env?"Esperando que despache el producto":"Esperando su respuesta");
+    case "Esperando producto":
+      if(r.trackDevolCat==="en_sucursal") return A("Retirar la devolución en la sucursal",true);
+      if(r.trackDevolCat==="entregado") return A("Llegó la devolución: revisar el producto");
+      if(!tiene(r.trackingDevolucion)&&!tiene(r.devolLink)) return A("Pedirle el seguimiento de la devolución");
+      return E("Devolución en viaje hacia nosotros");
+    case "Producto recibido": return A(r.tipo==="Devolución"?"Hacer el reembolso":r.tipo==="Cambio"?"Despachar el cambio":"Resolver el caso");
+    case "Envío en camino":
+      if(r.trackCambioCat==="en_sucursal") return A("Avisarle que el cambio está para retirar",true);
+      if(r.trackCambioCat==="visita_fallida"||r.trackCambioCat==="devolucion") return A("El cambio no se pudo entregar: avisarle",true);
+      if(r.trackCambioCat==="entregado") return A("El cambio llegó: cerrar el caso");
+      if(!tiene(r.trackingCambio)) return A("Cargar el seguimiento del cambio");
+      return E("Cambio en viaje al cliente");
+    default: return A("Escribirle al cliente");
+  }
+}
+function ghRecDias(r){ return r?.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):null; }
+// Teléfono para wa.me: solo dígitos y con el 54 adelante.
+function ghRecTel(tel){ const dig=String(tel||"").replace(/\D/g,""); if(dig.length<8) return ""; return dig.startsWith("54")?dig:"54"+dig.replace(/^0/,""); }
+// Mensaje sugerido para el cliente según el paso. Es un borrador: se edita antes de mandar y nunca se envía solo.
+function ghRecMensaje(r){
+  const nom=String(r.clienteNombre||"").trim().split(/\s+/)[0]; const hola=`Hola${nom?" "+nom:""},`;
+  const ped=`tu pedido #${r.orderNum}`; const que=r.tipo==="Devolución"?"la devolución":r.tipo==="Cambio"?"el cambio":"tu caso";
+  const link=t=>`https://www.andreani.com/envio/${String(t).trim()}`;
+  switch(r.estado){
+    case "Contactado": return r.tipo==="Cambio"||r.tipo==="Devolución"
+      ?`${hola} para avanzar con ${que} de ${ped} necesitamos que nos envíes el producto. Cuando lo despaches, pasanos el número de seguimiento así lo vamos siguiendo.`
+      :`${hola} te escribimos por ${ped}. ¿Pudiste ver nuestro mensaje anterior? Quedamos atentos.`;
+    case "Esperando producto":
+      if(r.trackDevolCat==="en_sucursal") return `${hola} ya vemos que tu envío de ${ped} llegó a la sucursal. Lo retiramos y te escribimos para seguir con ${que}.`;
+      if(r.trackDevolCat==="entregado") return `${hola} ya nos llegó el producto de ${ped}. Lo revisamos y te escribimos para seguir con ${que}.`;
+      if(!String(r.trackingDevolucion||"").trim()&&!String(r.devolLink||"").trim()) return `${hola} ¿pudiste despachar el producto de ${ped}? Si ya lo enviaste, pasanos el número de seguimiento así lo seguimos.`;
+      return `${hola} ya vemos tu envío en camino. Apenas llegue te avisamos para seguir con ${que}.`;
+    case "Producto recibido": return r.tipo==="Devolución"
+      ?`${hola} ya recibimos el producto de ${ped}. Estamos procesando tu reembolso y te avisamos apenas esté hecho.`
+      :`${hola} ya recibimos el producto de ${ped}. En breve despachamos tu cambio y te pasamos el seguimiento.`;
+    case "Envío en camino":
+      if(r.trackCambioCat==="en_sucursal") return `${hola} tu cambio ya está en la sucursal de Andreani para retirar. Acordate de llevar tu DNI.${String(r.trackingCambio||"").trim()?` Seguimiento: ${link(r.trackingCambio)}`:""}`;
+      return `${hola} ya despachamos tu cambio.${String(r.trackingCambio||"").trim()?` Lo podés seguir acá: ${link(r.trackingCambio)}`:" En un rato te pasamos el seguimiento."}`;
+    case "Resuelto": return `${hola} damos por resuelto ${que} de ${ped}. Cualquier cosa nos escribís. ¡Gracias!`;
+    case "Rechazado": return `${hola} revisamos ${que} de ${ped} y esta vez no vamos a poder avanzar. Si querés te contamos el motivo.`;
+    default: return `${hola} ¿cómo estás? Te escribimos por ${ped}. Recibimos tu mensaje y ya lo estamos viendo. ¿Nos contás un poco más de lo que pasó?`;
+  }
+}
+// GH_RECLAMOS_END
 function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHome, totalOrdersCount, onGenerarCanje, view:viewProp, setView:setViewProp}) {
   // Sugerencias de producto tomadas de los pedidos reales de la cuenta.
   const catalogoProd=useMemo(()=>catalogoProductos(orders),[orders]);
@@ -5839,8 +5920,6 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const [slaConfig,setSlaConfig]=useState({dias:3});
   const [andreaniAlertas,setAndreaniAlertas]=useState([]);
   const [andreaniChecked,setAndreaniChecked]=useState(false);
-  const [bulkSelected,setBulkSelected]=useState(new Set());
-  const [bulkEstado,setBulkEstado]=useState("");
   const [dragOverEstado,setDragOverEstado]=useState(null);
   const [isMobile,setIsMobile]=useState(()=>typeof window!=="undefined"&&window.innerWidth<768);
   const [showGuia,setShowGuia]=useState(false);
@@ -5919,7 +5998,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const emptyForm=(orderNum="", clienteData={})=>({
     _docId:null, orderNum, tipo:"Cambio", motivo:"", descripcion:"", estado:"Nuevo",
     resolucion:"", notas:"", trackingCambio:"", trackingDevolucion:"",
-    productosRecibe:[{producto:"",cantidad:1}],
+    // Si el pedido tiene un solo producto, es el que devuelve: se precarga.
+    productosRecibe:[{producto:(clienteData.productos||[]).length===1?clienteData.productos[0]:"",cantidad:1}],
     productosEnvia:[{producto:"",cantidad:1}],
     historial:[],
     estadoRecepcion:"", estadoReembolso:"",
@@ -5970,7 +6050,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       if(reclamoForm._docId) {
         await updateDoc(doc(db,"reclamos",reclamoForm._docId),{...p,updatedAt:serverTimestamp(),...(reclamoForm.estado==="Resuelto"&&prev?.estado!=="Resuelto"?{resolvedAt:serverTimestamp()}:{})});
       } else {
-        await addDoc(collection(db,"reclamos"),{...p,ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),resolvedAt:null,historial:[{accion:"Reclamo creado",fecha:new Date().toISOString()}]});
+        const nuevo=await addDoc(collection(db,"reclamos"),{...p,ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),resolvedAt:null,historial:[{accion:"Reclamo creado",fecha:new Date().toISOString()}]});
+        setView("reclamos"); setActiveReclamo(nuevo.id); toast("Reclamo creado","success");
       }
       setReclamoForm(null);
     } catch(e){appAlert("Error al guardar.");}
@@ -6272,19 +6353,12 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   // Order search results for creating reclamos
   const searchOrderResults=useMemo(()=>{
     if(!search||search.length<2) return [];
-    return searchApiResults.filter(o=>!reclamos.some(r=>r.orderNum===o.numero)).slice(0,5);
+    return searchApiResults.filter(o=>!reclamos.some(r=>r.orderNum===o.numero&&ghRecAbierto(r))).slice(0,5);
   },[search,searchApiResults,reclamos]);
 
   // Buscar en TN API cuando cambia search — solo si el kanban no tiene matches propios
   useEffect(()=>{
     if(!search||search.length<2){ setSearchApiResults([]); return; }
-    const sq=search.toLowerCase();
-    const kanbanMatches=reclamos.some(r=>
-      r.orderNum?.toLowerCase().includes(sq)||
-      r.clienteNombre?.toLowerCase().includes(sq)||
-      r.clienteEmail?.toLowerCase().includes(sq)
-    );
-    if(kanbanMatches){ setSearchApiResults([]); return; }
     const timer=setTimeout(async()=>{
       setSearchApiLoading(true);
       try{
@@ -6293,7 +6367,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         if(Array.isArray(data)) setSearchApiResults(buildOrdersFromAPI(data));
       }catch(e){}
       setSearchApiLoading(false);
-    },250);
+    },400);
     return ()=>clearTimeout(timer);
   },[search,user?.uid,reclamos]);
 
@@ -6380,6 +6454,63 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     else setMpThread(null);
   },[activeReclamo]);
 
+  // ── Tablero: filtros, urgencia y tarjeta (una sola tarjeta para todas las vistas) ──
+  const [vista,setVistaState]=useState(()=>{ try{ return localStorage.getItem("growith_reclamos_vista")==="etapa"?"etapa":"prioridad"; }catch(_){ return "prioridad"; } });
+  const setVista=v=>{ setVistaState(v); try{ localStorage.setItem("growith_reclamos_vista",v); }catch(_){} };
+  const [verEnvioCli,setVerEnvioCli]=useState(false);
+  const [waMsg,setWaMsg]=useState("");
+  useEffect(()=>{ setWaMsg(activeR?ghRecMensaje(activeR):""); setVerEnvioCli(false); },[activeR?._docId,activeR?.estado,activeR?.trackCambioCat,activeR?.trackDevolCat]);
+  const sqR=search.trim().toLowerCase();
+  const pasaBusqueda=r=>!sqR||[r.orderNum,r.clienteNombre,r.clienteEmail,r.clienteTelefono].some(x=>String(x||"").toLowerCase().includes(sqR));
+  const pasaFiltro=r=>pasaBusqueda(r)&&(kanbanTipo==="Todos"||(kanbanTipo==="Otros"?!["Cambio","Devolución"].includes(r.tipo):r.tipo===kanbanTipo))&&(!kanbanResp||(kanbanResp==="__sin__"?!r.asignadoEmail:r.asignadoEmail===kanbanResp));
+  const esUrgente=r=>{ const d=ghRecDias(r); return ghRecAbierto(r)&&d!==null&&d>=slaConfig.dias; };
+  async function moverA(r,estado){
+    if(!r||!estado||r.estado===estado) return;
+    try{ await updateEstado(r._docId,estado); toast(`#${r.orderNum} · ${estado}`,"success"); }
+    catch(_){ toast("No se pudo guardar el cambio","error"); }
+  }
+  const tarjeta=(r,drag=false)=>{
+    const q=ghRecQueHacer(r); const dias=ghRecDias(r); const urg=esUrgente(r);
+    const sc=getEstadoRC(T,r.estado); const tc=getTipoRC(T,r.tipo); const on=activeReclamo===r._docId;
+    const franja=urg||q.alerta?T.red:q.accion?T.accentSolid:T.border;
+    const nombre=r.clienteNombre||orders.find(o=>o.numero===r.orderNum)?.comprador||`Pedido #${r.orderNum}`;
+    return (
+      <div key={r._docId} draggable={drag}
+        onDragStart={drag?e=>{e.dataTransfer.setData("reclamoId",r._docId);e.dataTransfer.effectAllowed="move";ghDragScrollStart(e.currentTarget);}:undefined}
+        onDragEnd={drag?()=>ghDragScrollStop():undefined}
+        onClick={()=>setActiveReclamo(on?null:r._docId)}
+        onMouseEnter={e=>{e.currentTarget.style.boxShadow=DS.shadow.md;}}
+        onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";}}
+        style={{boxSizing:"border-box",minWidth:0,background:on?T.accentSolid+"18":T.card,border:`1px solid ${on?T.accentSolid:T.border}`,borderLeft:`4px solid ${franja}`,borderRadius:DS.r.xl,padding:"12px 14px",cursor:"pointer",display:"flex",flexDirection:"column",gap:6,transition:`box-shadow .15s ${DS.ease}`,fontFamily:"'Inter',system-ui,sans-serif",userSelect:"none"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:DS.font.sm,fontWeight:700,color:tc.text,background:tc.bg,borderRadius:DS.r.full,padding:"2px 9px"}}>{r.tipo}</span>
+          <span style={{fontSize:DS.font.md,color:T.textMd,fontWeight:600}}>#{r.orderNum}</span>
+          <span style={{flex:1}}/>
+          {urg&&<span style={{fontSize:DS.font.xs,fontWeight:800,color:T.red,background:T.red+"1a",borderRadius:DS.r.full,padding:"2px 8px"}}>URGENTE</span>}
+          {r.asignadoEmail&&<span title={`Responsable: ${r.asignadoNombre||r.asignadoEmail}`} style={{width:22,height:22,borderRadius:"50%",background:T.accentSolid,color:"#fff",fontSize:9,fontWeight:800,display:"grid",placeItems:"center",flexShrink:0}}>{inicialesDe(r.asignadoNombre||r.asignadoEmail)}</span>}
+        </div>
+        <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>
+        {r.motivo&&<div style={{fontSize:DS.font.md,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.motivo}</div>}
+        <div style={{display:"flex",alignItems:"flex-start",gap:6,fontSize:DS.font.base,fontWeight:q.accion?700:500,color:q.alerta?T.red:q.accion?T.text:T.textMd,lineHeight:1.35}}>
+          <span style={{color:q.alerta?T.red:q.accion?T.accent:T.textSm,flexShrink:0}}>{q.accion?"→":"…"}</span><span>{q.txt}</span>
+        </div>
+        {(r.trackCambioEstado||r.trackDevolEstado)&&(
+          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+            {r.trackingDevolucion&&r.trackDevolEstado&&<TrkChipR cat={r.trackDevolCat} estado={r.trackDevolEstado} tipo="devolucion" size={10}/>}
+            {r.trackingCambio&&r.trackCambioEstado&&<TrkChipR cat={r.trackCambioCat} estado={r.trackCambioEstado} tipo="cambio" size={10}/>}
+          </div>
+        )}
+        <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2,paddingTop:8,borderTop:`1px solid ${T.borderL||T.border}`}}>
+          <span style={{width:7,height:7,borderRadius:"50%",background:sc.dot,flexShrink:0}}/>
+          <span style={{fontSize:DS.font.sm,color:T.textMd,fontWeight:600}}>{r.estado}</span>
+          {r.notasInternas&&<span title={r.notasInternas} style={{fontSize:DS.font.xs,fontWeight:700,color:T.yellow,background:T.yellow+"1a",borderRadius:DS.r.full,padding:"1px 7px"}}>nota</span>}
+          <span style={{flex:1}}/>
+          {dias!==null&&<span style={{fontSize:DS.font.sm,fontWeight:600,color:urg?T.red:T.textSm}}>{dias===0?"hoy":`hace ${dias} d`}</span>}
+        </div>
+      </div>
+    );
+  };
+
   // -- Render --
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
@@ -6395,30 +6526,29 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}));a.download=`reclamos_${hoyAR()}.csv`;a.click();
           toast("CSV exportado ✓","success");
         }},
-          {label:"Configurar SLA",onClick:()=>setView("config")},
+          {label:"Días para marcar urgente",onClick:()=>setView("config")},
         ]}/>
         <button onClick={fetchOrders} disabled={ordersStatus==="loading"} title="Actualizar pedidos" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",opacity:ordersStatus==="loading"?0.5:1,minWidth:32,justifyContent:"center"}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}</button>
         <button onClick={refrescarTrackingReclamos} disabled={refrescandoTrk} title="Consultar Andreani ahora para todos los reclamos con tracking" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",display:"inline-flex",alignItems:"center",gap:6,opacity:refrescandoTrk?0.6:1}}>{refrescandoTrk?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>}Actualizar envíos</button>
         {false && <button onClick={()=>syncReclamosMP(true)} disabled={syncingMP} title="Traer contracargos y reclamos de Mercado Pago / Mercado Libre" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",display:"inline-flex",alignItems:"center",gap:6,opacity:syncingMP?0.6:1}}>{syncingMP?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}MP/ML</button>}
-        <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px"}}>+ Nuevo reclamo</button>
+        <DepBtn T={T} variant="primary" size="sm" ico="plus" onClick={()=>setReclamoForm(emptyForm())}>Nuevo reclamo</DepBtn>
       </AppTopbar>
 
       {/* Tabs internos removidos — navegación va por el sidebar izquierdo */}
 
-      <div style={{padding:"20px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%",boxSizing:"border-box",paddingRight:activeReclamo?460:24,transition:`padding-right 0.25s ${DS.ease}`}}>
+      <div style={{padding:"20px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%",boxSizing:"border-box",paddingRight:activeReclamo&&!isMobile?484:24,transition:`padding-right 0.25s ${DS.ease}`}}>
 
         {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
         <div>
           {showGuia&&(
             <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
-                {n:1,icon:"",title:"Pipeline Kanban",desc:"Cada reclamo es una card que se mueve por etapas: Nuevo → Contactado → Esperando producto → Producto recibido → Envío en camino → Resuelto. Arrastrala de columna a medida que avanza, así todo el equipo ve el estado real de un vistazo."},
-                {n:2,icon:"",title:"Crear un reclamo",desc:"Con '+ Reclamo' lo cargás a mano, o buscá el pedido por número/cliente y tocá '+ Reclamo' en la fila: se autocompletan cliente, productos y total. Elegí si es Cambio o Devolución y el motivo — cuanto más claro, más rápido se resuelve."},
-                {n:3,icon:"",title:"Qué entra y qué sale",desc:"En cambios, registrá qué productos te devuelve el cliente y cuáles le enviás vos. Queda el historial completo para que nunca haya dudas de qué se acordó."},
-                {n:4,icon:"",title:"Tracking en vivo",desc:"Cargá el número de seguimiento de Andreani (del envío del cliente hacia vos, o del tuyo hacia él) y la card muestra sola en qué etapa está: en camino hacia acá, llegó, listo para retirar en sucursal, en camino al cliente o entregado. Se actualiza automáticamente cada 30 minutos."},
-                {n:5,icon:"",title:"Actualizar ahora",desc:"El botón 'Actualizar envíos' del topbar consulta Andreani en el momento, para cuando atención al cliente necesita el estado ya."},
-                {n:6,icon:"",title:"Notas y seguimiento",desc:"Cada reclamo tiene notas internas con fecha: qué se habló con el cliente, qué falta, promesas hechas. Ideal para que cualquiera del equipo retome la conversación sin preguntar."},
-                {n:7,icon:"",title:"Historial",desc:"Los reclamos resueltos y rechazados quedan guardados para siempre: sirven para detectar patrones (productos que fallan, motivos repetidos) y responder disputas con evidencia."},
+                {n:1,title:"Qué hacer",desc:"Los reclamos abiertos se dividen en dos: los que dependen de vos (escribir, despachar, reembolsar, retirar) y los que están esperando al cliente o al correo. Cada tarjeta dice qué hay que hacer."},
+                {n:2,title:"Crear un reclamo",desc:"Tocá 'Nuevo reclamo' o buscá el pedido arriba. Elegís qué quiere el cliente y por qué, y listo: el seguimiento y las notas se cargan después, en la ficha."},
+                {n:3,title:"Avanzar",desc:"Abrí la tarjeta: arriba está el paso actual y un botón con lo que acaba de pasar ('Ya le escribí', 'Llegó el producto'). Cada tipo tiene solo los pasos que le sirven."},
+                {n:4,title:"Mensajes",desc:"La ficha arma un mensaje para el cliente según el paso. Lo editás y lo abrís en WhatsApp o lo copiás. Nunca se manda solo."},
+                {n:5,title:"Seguimiento de Andreani",desc:"Con el número cargado, Growith consulta a Andreani cada 30 minutos, avisa cuando hay un paquete para retirar y avanza el reclamo cuando llega."},
+                {n:6,title:"Historial",desc:"Los resueltos y rechazados salen del tablero y quedan en Historial, con buscador."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -6436,7 +6566,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           return (
           <div style={{display:"flex",flexDirection:"column",gap:8,margin:"16px 0 4px"}}>
             {retiros.length>0&&(
-              <div style={{background:"linear-gradient(135deg,#052e16,#0a2a1a)",border:`1.5px solid ${T.green}55`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:14,animation:"growith-fadeIn 0.4s ease",boxShadow:`0 0 24px ${T.green}22`}}>
+              <div style={{background:T.green+"12",border:`1.5px solid ${T.green}55`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:14,animation:"growith-fadeIn 0.4s ease",boxShadow:`0 0 24px ${T.green}22`}}>
                 <div style={{width:36,height:36,borderRadius:9,background:T.green+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
                 <div style={{flex:1}}>
                   <div style={{fontWeight:700,fontSize:14,color:T.green,marginBottom:6}}>
@@ -6463,7 +6593,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
               </div>
             )}
             {recibidos.length>0&&(
-              <div style={{background:"linear-gradient(135deg,#0a1628,#0d1f35)",border:`1.5px solid ${T.blue}55`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:14,animation:"growith-fadeIn 0.4s ease"}}>
+              <div style={{background:T.blue+"12",border:`1.5px solid ${T.blue}55`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:14,animation:"growith-fadeIn 0.4s ease"}}>
                 <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",width:32,height:32,borderRadius:8,background:T.blue+"22"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.blue} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
                 <div style={{flex:1}}>
                   <div style={{fontWeight:700,fontSize:14,color:T.blue,marginBottom:6}}>
@@ -6482,243 +6612,133 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           </div>
           );
         })()}
-        {/* === RECLAMOS TAB === */}
-        {view==="reclamos"&&(
-          <div>
-            {/* Buscador siempre visible */}
-            {(()=>{
-              const sq2=search.toLowerCase();
-              const matchCount=search.length>=2?reclamosManual.filter(r=>r.orderNum?.toLowerCase().includes(sq2)||r.clienteNombre?.toLowerCase().includes(sq2)||r.clienteEmail?.toLowerCase().includes(sq2)).length:0;
-              return(
-              <div style={{marginBottom:16}}>
-                <div style={{position:"relative"}}>
-                  <svg style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                  <input autoComplete="off" placeholder="Buscar reclamo, cliente o #pedido..." value={search} onChange={e=>setSearch(e.target.value)}
-                    style={{...InputStyle(T),paddingLeft:40,fontSize:14,padding:"11px 40px 11px 40px",width:"100%",boxSizing:"border-box"}}
-                    onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=InputStyle(T).borderColor}/>
-                  {search&&<button onClick={()=>{setSearch("");setSearchApiResults([]);}} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:20,lineHeight:1,padding:4}}>×</button>}
-                  {searchApiLoading&&<div style={{position:"absolute",right:search?36:14,top:"50%",transform:"translateY(-50%)"}}><Spinner size={13} color={T.textSm}/></div>}
-                </div>
-                {/* Ver solo los reclamos de una persona */}
-                <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8,flexWrap:"wrap"}}>
-                  <span style={{fontSize:12,color:T.textSm}}>Responsable:</span>
-                  <select value={kanbanResp} onChange={e=>{setKanbanResp(e.target.value);setBulkSelected(new Set());}} style={{...InputStyle(T),fontSize:12,padding:"6px 10px",width:"auto",minWidth:170}}>
-                    <option value="">Todos</option>
-                    <option value="__sin__">Sin responsable</option>
-                    {equipo.map(m=><option key={m.email} value={m.email}>{m.nombre}</option>)}
-                  </select>
-                  {kanbanResp&&<button onClick={()=>setKanbanResp("")} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Quitar filtro</button>}
-                </div>
-                {search.length>=2&&<div style={{fontSize:11,color:matchCount>0?T.accent:T.textSm,marginTop:5,paddingLeft:2,fontWeight:matchCount>0?600:400}}>
-                  {matchCount>0?`${matchCount} reclamo${matchCount!==1?"s":""} encontrado${matchCount!==1?"s":""}`:searchApiLoading?"Buscando en tu tienda...":"Sin resultados en reclamos"}
-                </div>}
+        {/* === Abiertos / Historial === */}
+        {(view==="reclamos"||view==="historial")&&(()=>{
+          const cerrados=reclamosManual.filter(r=>!ghRecAbierto(r));
+          return (
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
+              <DepSeg T={T} size="md" value={view} onChange={v=>{setView(v);setActiveReclamo(null);}} items={[["reclamos",`Abiertos · ${abiertos.length}`],["historial",`Historial · ${cerrados.length}`]]}/>
+              <div style={{position:"relative",flex:"1 1 240px",minWidth:200}}>
+                <svg style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                <input autoComplete="off" placeholder="Buscar por cliente, teléfono o número de pedido" value={search} onChange={e=>setSearch(e.target.value)}
+                  style={{...InputStyle(T),height:40,boxSizing:"border-box",borderRadius:DS.r.full,padding:"0 38px 0 38px",fontSize:DS.font.base,width:"100%",marginBottom:0}}/>
+                {search&&<button onClick={()=>{setSearch("");setSearchApiResults([]);}} title="Borrar" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:20,lineHeight:1,padding:4}}>×</button>}
+                {searchApiLoading&&<div style={{position:"absolute",right:search?36:14,top:"50%",transform:"translateY(-50%)"}}><Spinner size={13} color={T.textSm}/></div>}
               </div>
-              );
-            })()}
-            {/* Resultados pedidos TN sin reclamo */}
-            {search.length>=2&&searchOrderResults.length>0&&(
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 16px",marginBottom:16,animation:"growith-fadeIn 0.2s ease"}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:10}}>Pedidos TN sin reclamo abierto</div>
-                {searchOrderResults.map(o=>(
-                  <div key={o.numero} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <span style={{fontWeight:700,fontSize:14,color:T.text}}>{o.comprador}</span>
-                      <span style={{fontSize:13,color:T.accent,marginLeft:8}}>#{o.numero}</span>
-                      <div style={{fontSize:12,color:T.textSm,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(o.productos||[]).map(p=>nombreProducto(p.nombre)).join(' · ')}</div>
-                    </div>
-                    <button onClick={()=>{setReclamoForm(emptyForm(o.numero,{nombre:o.comprador,email:o.email,telefono:o.telefono,productos:(o.productos||[]).map(p=>nombreProducto(p.nombre)).filter(Boolean),total:o.total}));setSearch("");}} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0,marginLeft:12}}>+ Reclamo</button>
-                  </div>
-                ))}
+            </div>
+          );
+        })()}
+        {/* Pedidos de la tienda que coinciden con la búsqueda: crear el reclamo desde ahí */}
+        {(view==="reclamos"||view==="historial")&&search.length>=2&&searchOrderResults.length>0&&(
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"12px 16px",marginBottom:14}}>
+            <div style={{fontSize:DS.font.md,color:T.textMd,fontWeight:600,marginBottom:6}}>Pedidos de tu tienda sin reclamo abierto</div>
+            {searchOrderResults.map((o,i)=>(
+              <div key={o.numero} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,padding:"8px 0",borderTop:i?`1px solid ${T.borderL||T.border}`:"none"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <span style={{fontWeight:700,fontSize:DS.font.lg,color:T.text}}>{o.comprador}</span>
+                  <span style={{fontSize:DS.font.base,color:T.textMd,marginLeft:8}}>#{o.numero}</span>
+                  <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(o.productos||[]).map(p=>nombreProducto(p.nombre)).join(" · ")}</div>
+                </div>
+                <DepBtn T={T} variant="primary" size="sm" ico="plus" onClick={()=>{setReclamoForm(emptyForm(o.numero,{nombre:o.comprador,email:o.email,telefono:o.telefono,productos:(o.productos||[]).map(p=>nombreProducto(p.nombre)).filter(Boolean),total:o.total}));setSearch("");}}>Crear reclamo</DepBtn>
               </div>
-            )}
-            {/* Stats — mismo patrón de tiles clickeables que Tareas: número grande + label, filtran el kanban */}
-            {(()=>{
-              const METRICS=[
-                {l:"abiertos",     v:stats.pendientes,   c:T.blue,   tipo:"Todos"},
-                {l:"cambios",      v:stats.cambios,      c:T.purple, tipo:"Cambio"},
-                {l:"devoluciones", v:stats.devoluciones, c:T.orange, tipo:"Devolución"},
-                {l:`urgente${stats.urgentes!==1?"s":""}`, v:stats.urgentes, c:T.red, tipo:null},
-              ];
-              return (
-                <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
-                  {METRICS.map(s=>{
-                    const clickable=s.tipo!==null;
-                    const isActive=clickable&&kanbanTipo===s.tipo;
+            ))}
+          </div>
+        )}
+        {view==="reclamos"&&(()=>{
+          const lista=abiertos.filter(pasaFiltro);
+          const orden=(a,b)=>(Number(esUrgente(b))-Number(esUrgente(a)))||((a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+          const hacer=lista.filter(r=>ghRecQueHacer(r).accion).sort(orden);
+          const esperar=lista.filter(r=>!ghRecQueHacer(r).accion).sort(orden);
+          const cuenta=t=>abiertos.filter(r=>t==="Otros"?!["Cambio","Devolución"].includes(r.tipo):r.tipo===t).length;
+          const grilla={display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(250px,1fr))",gap:10};
+          const grupo=(titulo,sub,color,items,vacio)=>(
+            <div style={{marginBottom:22}}>
+              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",marginBottom:10}}>
+                <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{titulo}</span>
+                <span style={{fontSize:DS.font.md,fontWeight:800,color,background:color+"1a",borderRadius:DS.r.full,padding:"2px 10px"}}>{items.length}</span>
+                <span style={{fontSize:DS.font.md,color:T.textSm}}>{sub}</span>
+              </div>
+              {items.length?<div style={grilla}>{items.map(r=>tarjeta(r))}</div>
+                :<div style={{fontSize:DS.font.base,color:T.textSm,background:T.card,border:`1px dashed ${T.border}`,borderRadius:DS.r.xl,padding:"16px 18px"}}>{vacio}</div>}
+            </div>
+          );
+          const soltar=estado=>({
+            onDragOver:e=>{e.preventDefault();setDragOverEstado(estado);},
+            onDragLeave:()=>setDragOverEstado(null),
+            onDrop:e=>{e.preventDefault();setDragOverEstado(null);moverA(reclamos.find(x=>x._docId===e.dataTransfer.getData("reclamoId")),estado);},
+          });
+          return (
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:18}}>
+                <DepSeg T={T} value={kanbanTipo} onChange={setKanbanTipo} items={[["Todos","Todos"],["Cambio",`Cambios · ${cuenta("Cambio")}`],["Devolución",`Devoluciones · ${cuenta("Devolución")}`],["Otros",`Otros · ${cuenta("Otros")}`]]}/>
+                {equipo.length>1&&<select value={kanbanResp} onChange={e=>setKanbanResp(e.target.value)} title="Ver solo los reclamos de una persona" style={{...InputStyle(T),height:36,boxSizing:"border-box",borderRadius:DS.r.full,fontSize:DS.font.md,padding:"0 12px",width:"auto",minWidth:170,marginBottom:0}}>
+                  <option value="">De todo el equipo</option>
+                  <option value="__sin__">Sin responsable</option>
+                  {equipo.map(m=><option key={m.email} value={m.email}>{m.nombre}</option>)}
+                </select>}
+                <span style={{flex:1}}/>
+                {!isMobile&&<DepSeg T={T} value={vista} onChange={setVista} items={[["prioridad","Qué hacer"],["etapa","Por etapa"]]}/>}
+              </div>
+              {abiertos.length===0?(
+                <DSEmpty T={T} title="No hay reclamos abiertos" subtitle="Cuando un cliente pida un cambio o una devolución, cargalo acá y seguilo paso a paso." action={<DepBtn T={T} variant="primary" ico="plus" onClick={()=>setReclamoForm(emptyForm())}>Nuevo reclamo</DepBtn>}/>
+              ):lista.length===0?(
+                <div style={{fontSize:DS.font.base,color:T.textSm,padding:"18px 4px"}}>Ningún reclamo abierto coincide con la búsqueda o el filtro.</div>
+              ):(vista==="prioridad"||isMobile)?(
+                <div>
+                  {grupo("Para hacer ahora","Dependen de vos: escribir, despachar, reembolsar o retirar.",T.accent,hacer,"Nada pendiente de tu lado.")}
+                  {grupo("Esperando","Dependen del cliente o del correo. No hay que hacer nada todavía.",T.textMd,esperar,"Ningún reclamo en espera.")}
+                </div>
+              ):(
+                <div style={{display:"flex",flexDirection:"column",gap:12,paddingBottom:16}}>
+                  {ESTADOS_R.filter(e=>!GH_REC_CERRADOS.includes(e)).map(estado=>{
+                    const sc=getEstadoRC(T,estado);
+                    const items=lista.filter(r=>(ESTADOS_R.includes(r.estado)?r.estado:"Nuevo")===estado).sort(orden);
+                    const sobre=dragOverEstado===estado;
                     return (
-                      <div key={s.l} onClick={clickable?()=>{setKanbanTipo(s.tipo);setBulkSelected(new Set());}:undefined}
-                        style={{flex:"1 1 100px",background:isActive?s.c+"18":T.card,border:`1.5px solid ${isActive?s.c:s.c+"28"}`,borderRadius:DS.r.xl,padding:"14px 16px",cursor:clickable?"pointer":"default",transition:"all 0.15s",userSelect:"none"}}
-                        onMouseEnter={e=>{if(clickable&&!isActive){e.currentTarget.style.borderColor=s.c+"70";e.currentTarget.style.background=s.c+"08";}}}
-                        onMouseLeave={e=>{if(clickable&&!isActive){e.currentTarget.style.borderColor=s.c+"28";e.currentTarget.style.background=T.card;}}}>
-                        <div style={{fontSize:26,fontWeight:800,color:s.c,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>{s.v}</div>
-                        <div style={{fontSize:12,color:isActive?s.c:T.textSm,fontWeight:isActive?600:400,marginTop:5,fontFamily:"'Inter',system-ui,sans-serif"}}>{s.l}</div>
+                      <div key={estado} {...soltar(estado)} style={{background:T.card,border:`1.5px solid ${sobre?sc.dot:T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden",transition:"border-color .15s"}}>
+                        <div style={{padding:"10px 16px",background:sc.dot+(sobre?"30":"14"),display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{width:8,height:8,borderRadius:"50%",background:sc.dot}}/>
+                          <span style={{fontSize:DS.font.base,fontWeight:700,color:T.text}}>{estado}</span>
+                          <span style={{fontSize:DS.font.sm,fontWeight:800,color:sc.dot,background:sc.dot+"22",borderRadius:DS.r.full,padding:"1px 9px"}}>{items.length}</span>
+                        </div>
+                        <div style={{padding:10,minHeight:54}}>
+                          {items.length?<div style={grilla}>{items.map(r=>tarjeta(r,true))}</div>
+                            :<div style={{textAlign:"center",padding:"12px 8px",fontSize:DS.font.md,color:T.textSm}}>Arrastrá un reclamo acá</div>}
+                        </div>
                       </div>
                     );
                   })}
-                </div>
-              );
-            })()}
-            {/* Bulk actions */}
-            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
-              {bulkSelected.size>0&&(
-                <div style={{display:"flex",alignItems:"center",gap:8,marginLeft:"auto",background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}44`,borderRadius:8,padding:"5px 10px"}}>
-                  <span style={{fontSize:12,fontWeight:600,color:T.accent}}>{bulkSelected.size} seleccionados</span>
-                  <select value={bulkEstado} onChange={e=>setBulkEstado(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"4px 8px",fontSize:11,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                    <option value="">Mover a...</option>
-                    {ESTADOS_R.map(e=><option key={e} value={e}>{e}</option>)}
-                  </select>
-                  <button disabled={!bulkEstado} onClick={async()=>{
-                    for(const id of bulkSelected){const r=reclamos.find(r=>r._docId===id);if(r&&r.estado!==bulkEstado){const entry={accion:`Estado > ${bulkEstado}`,fecha:new Date().toISOString()};await updateDoc(doc(db,"reclamos",id),{estado:bulkEstado,historial:[...(r.historial||[]),entry],updatedAt:serverTimestamp(),...(bulkEstado==="Resuelto"&&r.estado!=="Resuelto"?{resolvedAt:serverTimestamp()}:{})});}}
-                    toast(`${bulkSelected.size} reclamos movidos a ${bulkEstado}`,"success");setBulkSelected(new Set());setBulkEstado("");
-                  }} style={{...BtnPrimary(T),fontSize:11,padding:"4px 10px",opacity:bulkEstado?1:0.5}}>Aplicar</button>
-                  <button onClick={()=>setBulkSelected(new Set())} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:14,padding:0}}>✕</button>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                    {GH_REC_CERRADOS.map(estado=>{ const sc=getEstadoRC(T,estado); const sobre=dragOverEstado===estado; return (
+                      <div key={estado} {...soltar(estado)} style={{border:`1.5px dashed ${sobre?sc.dot:T.border}`,background:sobre?sc.dot+"1a":"transparent",borderRadius:DS.r["2xl"],padding:"16px 14px",textAlign:"center",fontSize:DS.font.base,color:sobre?sc.text:T.textSm,fontWeight:600,transition:"all .15s"}}>Soltá acá para marcarlo {estado.toLowerCase()}</div>
+                    ); })}
+                  </div>
                 </div>
               )}
             </div>
-            {/* Vista mobile: lista agrupada por estado */}
-            {isMobile ? (
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {ESTADOS_R.map(estado=>{
-                  const sc=getEstadoRC(T,estado);
-                  const sq=search.toLowerCase();
-                  const items=reclamosManual.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo)&&(!kanbanResp||(kanbanResp==="__sin__"?!r.asignadoEmail:r.asignadoEmail===kanbanResp))&&(!search||r.orderNum?.toLowerCase().includes(sq)||r.clienteNombre?.toLowerCase().includes(sq)||r.clienteEmail?.toLowerCase().includes(sq)));
-                  if(!items.length) return null;
-                  return (
-                    <div key={estado}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0 6px",borderBottom:`1px solid ${T.borderL}`}}>
-                        <span style={{width:8,height:8,borderRadius:"50%",background:sc.dot,flexShrink:0}}/>
-                        <span style={{fontSize:12,fontWeight:700,color:sc.text}}>{estado}</span>
-                        <span style={{fontSize:11,fontWeight:800,color:sc.dot,background:sc.dot+"22",borderRadius:DS.r.full,padding:"1px 7px",marginLeft:"auto"}}>{items.length}</span>
-                      </div>
-                      <div style={{display:"flex",flexDirection:"column",gap:6,paddingTop:6}}>
-                        {items.map(r=>{
-                          const o=orders.find(o=>o.numero===r.orderNum);
-                          const nombre=r.clienteNombre||o?.comprador;
-                          const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):null;
-                          const urgente=!["Resuelto","Rechazado"].includes(r.estado)&&dias>=slaConfig.dias;
-                          const tc=getTipoRC(T,r.tipo);
-                          return (
-                            <div key={r._docId}
-                              onClick={()=>setActiveReclamo(activeReclamo===r._docId?null:r._docId)}
-                              style={{background:activeReclamo===r._docId?T.accentSolid+"18":T.card,border:`1px solid ${urgente?T.red+"55":T.borderL}`,borderLeft:`3px solid ${urgente?T.red:sc.dot}`,borderRadius:DS.r.md,padding:"10px 12px",cursor:"pointer"}}>
-                              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                                <div style={{minWidth:0}}>
-                                  {nombre&&<div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>}
-                                  <div style={{fontSize:11,color:T.accent}}>#{r.orderNum}</div>
-                                </div>
-                                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3,flexShrink:0}}>
-                                  <span style={{fontSize:10,fontWeight:600,color:tc.text,background:tc.bg,borderRadius:DS.r.sm,padding:"2px 6px"}}>{r.tipo}</span>
-                                  {dias!==null&&<span style={{fontSize:10,color:urgente?T.red:T.textSm,fontWeight:urgente?700:400}}>{dias}d</span>}
-                                </div>
-                              </div>
-                              <div style={{marginTop:8,display:"flex",alignItems:"center",gap:6}}>
-                                <span style={{fontSize:10,color:T.textSm}}>Mover a:</span>
-                                <select value={r.estado} onChange={async e=>{
-                                  const nuevo=e.target.value;
-                                  if(nuevo===r.estado) return;
-                                  const entry={accion:`Estado > ${nuevo}`,fecha:new Date().toISOString()};
-                                  await updateDoc(doc(db,"reclamos",r._docId),{estado:nuevo,historial:[...(r.historial||[]),entry],updatedAt:serverTimestamp(),...(nuevo==="Resuelto"?{resolvedAt:serverTimestamp()}:{})});
-                                  toast(`Movido a ${nuevo}`,"success");
-                                }} onClick={e=>e.stopPropagation()} style={{...InputStyle(T),fontSize:11,padding:"3px 6px",flex:1}}>
-                                  {ESTADOS_R.map(s=><option key={s} value={s}>{s}</option>)}
-                                </select>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-            /* KANBAN desktop: una fila por estado, las tarjetas se acumulan hacia la derecha */
-            <div style={{display:"flex",flexDirection:"column",gap:12,paddingBottom:16}}>
-                {ESTADOS_R.map(estado=>{
-                  const sc=getEstadoRC(T,estado);
-                  const sq=search.toLowerCase();
-                  const items=reclamosManual.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo)&&(!kanbanResp||(kanbanResp==="__sin__"?!r.asignadoEmail:r.asignadoEmail===kanbanResp))&&(!search||r.orderNum?.toLowerCase().includes(sq)||r.clienteNombre?.toLowerCase().includes(sq)||r.clienteEmail?.toLowerCase().includes(sq)));
-                  const isDragOver=dragOverEstado===estado;
-                  return(
-                    <div key={estado}
-                      onDragOver={e=>{e.preventDefault();setDragOverEstado(estado);}}
-                      onDragLeave={()=>setDragOverEstado(null)}
-                      onDrop={async e=>{
-                        e.preventDefault();setDragOverEstado(null);
-                        const docId=e.dataTransfer.getData("reclamoId");
-                        const r=reclamos.find(r=>r._docId===docId);
-                        if(!r||r.estado===estado) return;
-                        const entry={accion:`Estado > ${estado}`,fecha:new Date().toISOString()};
-                        await updateDoc(doc(db,"reclamos",docId),{estado,historial:[...(r.historial||[]),entry],updatedAt:serverTimestamp(),...(estado==="Resuelto"&&r.estado!=="Resuelto"?{resolvedAt:serverTimestamp()}:{})});
-                        toast(`Movido a ${estado}`,"success");
-                      }}
-                      style={{width:"100%",boxSizing:"border-box",background:T.card,border:`1.5px solid ${isDragOver?sc.dot:sc.dot+"33"}`,borderRadius:DS.r.xl,overflow:"hidden",transition:"border-color 0.15s",boxShadow:isDragOver?`0 0 0 2px ${sc.dot}44`:"none"}}>
-                      <div style={{padding:"10px 14px",background:isDragOver?sc.dot+"30":sc.dot+"18",borderBottom:`1px solid ${sc.dot}22`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                        <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{width:8,height:8,borderRadius:"50%",background:sc.dot}}/><span style={{fontSize:12,fontWeight:700,color:sc.text}}>{estado}</span></div>
-                        <span style={{fontSize:11,fontWeight:800,color:sc.dot,background:sc.dot+"22",borderRadius:DS.r.full,padding:"1px 8px"}}>{items.length}</span>
-                      </div>
-                      <div style={{padding:10,display:"flex",flexWrap:"wrap",gap:8,minHeight:58,alignItems:"stretch"}}>
-                        {items.length===0&&<div style={{flex:1,textAlign:"center",padding:"14px 8px",fontSize:12,color:T.textSm,opacity:0.5}}>Soltá aquí</div>}
-                        {items.map(r=>{
-                          const o=orders.find(o=>o.numero===r.orderNum);
-                          const nombre=r.clienteNombre||o?.comprador;
-                          const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):null;
-                          const urgente=!["Resuelto","Rechazado"].includes(r.estado)&&dias>=slaConfig.dias;
-                          const isActive=activeReclamo===r._docId;
-                          const isBulk=bulkSelected.has(r._docId);
-                          const tc=getTipoRC(T,r.tipo);
-                          const hasTracking=!!(r.trackingCambio||r.trackingDevolucion);
-                          return(
-                            <div key={r._docId}
-                              draggable
-                              onDragStart={e=>{e.dataTransfer.setData("reclamoId",r._docId);e.dataTransfer.effectAllowed="move";ghDragScrollStart(e.currentTarget);}}
-                              onDragEnd={()=>ghDragScrollStop()}
-                              onClick={(e)=>{if(e.shiftKey||e.metaKey||e.ctrlKey){const ns=new Set(bulkSelected);ns.has(r._docId)?ns.delete(r._docId):ns.add(r._docId);setBulkSelected(ns);}else{setActiveReclamo(isActive?null:r._docId);}}}
-                              style={{width:236,flex:"0 0 236px",boxSizing:"border-box",background:isBulk?T.accentSolid+"28":isActive?T.accentSolid+"18":T.card,border:`1.5px solid ${isBulk?T.accentSolid:isActive?T.accentSolid:urgente?T.red:T.border}`,borderRadius:DS.r.xl,padding:"14px 16px 12px",cursor:"grab",transition:"box-shadow 0.15s, background 0.12s",userSelect:"none",display:"flex",flexDirection:"column",fontFamily:"'Inter',system-ui,sans-serif"}}
-                              onMouseEnter={e=>{e.currentTarget.style.boxShadow=DS.shadow.lg;if(!isActive&&!isBulk)e.currentTarget.style.background=T.surface;}}
-                              onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";e.currentTarget.style.background=isBulk?T.accentSolid+"28":isActive?T.accentSolid+"18":T.card;}}>
-                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                                <div style={{display:"flex",alignItems:"center",gap:5}}>
-                                  <div style={{width:6,height:6,borderRadius:"50%",background:urgente?T.red:sc.dot,flexShrink:0}}/>
-                                  <span style={{fontSize:11,fontWeight:600,color:urgente?T.red:sc.text}}>{estado}</span>
-                                </div>
-                                <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                                  {urgente&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"12",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
-                                  {hasTracking&&!r.trackCambioEstado&&!r.trackDevolEstado&&<span title="Tiene tracking — consultando estado con Andreani" style={{fontSize:9,fontWeight:700,color:T.blue,background:T.blue+"15",borderRadius:4,padding:"2px 7px"}}>TRK</span>}
-                                  {r.notasInternas&&<span title="Tiene notas" style={{fontSize:9,fontWeight:700,color:T.yellow,background:T.yellow+"15",borderRadius:4,padding:"2px 7px"}}>NOTA</span>}
-                                  {r.asignadoEmail&&<span title={`Responsable: ${r.asignadoNombre||r.asignadoEmail}`} style={{width:18,height:18,borderRadius:"50%",background:T.accentSolid,color:"#fff",fontSize:8,fontWeight:800,display:"grid",placeItems:"center",flexShrink:0}}>{inicialesDe(r.asignadoNombre||r.asignadoEmail)}</span>}
-                                  {r.origen==="mp"&&<span title="Importado de Mercado Pago" style={{fontSize:9,fontWeight:800,color:T.blue,background:T.blue+"15",borderRadius:4,padding:"2px 7px"}}>MP</span>}
-                                  {r.origen==="ml"&&<span title="Importado de Mercado Libre" style={{fontSize:9,fontWeight:800,color:T.orange,background:T.orange+"15",borderRadius:4,padding:"2px 7px"}}>ML</span>}
-                                </div>
-                              </div>
-                              {nombre&&<div style={{fontSize:14,fontWeight:700,color:T.text,lineHeight:1.4,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>}
-                              {r.motivo&&<div style={{fontSize:11,color:T.textSm,lineHeight:1.5,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",marginBottom:8}}>{r.motivo}</div>}
-                              {(r.trackCambioEstado||r.trackDevolEstado)&&(
-                                <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:8}}>
-                                  {r.trackingCambio&&r.trackCambioEstado&&<TrkChipR cat={r.trackCambioCat} estado={r.trackCambioEstado} tipo="cambio"/>}
-                                  {r.trackingDevolucion&&r.trackDevolEstado&&<TrkChipR cat={r.trackDevolCat} estado={r.trackDevolEstado} tipo="devolucion"/>}
-                                </div>
-                              )}
-                              <div style={{flex:1}}/>
-                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:10,borderTop:`1px solid ${T.borderL||T.border}`}}>
-                                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                  <span style={{fontSize:10,fontWeight:600,color:tc.text,background:tc.bg,borderRadius:DS.r.sm,padding:"2px 6px"}}>{r.tipo}</span>
-                                  <span style={{fontSize:11,color:T.accent,fontWeight:500}}>#{r.orderNum}</span>
-                                </div>
-                                {dias!==null&&<span style={{fontSize:11,fontWeight:600,color:urgente?T.red:T.textSm}}>{dias}d</span>}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-
+          );
+        })()}
+        {view==="historial"&&(()=>{
+          const cerr=reclamosManual.filter(r=>!ghRecAbierto(r)).filter(pasaBusqueda).sort((a,b)=>((b.resolvedAt?.seconds||b.updatedAt?.seconds||0)-(a.resolvedAt?.seconds||a.updatedAt?.seconds||0)));
+          const fecha=s=>s?new Date(s*1000).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"}):"—";
+          if(!cerr.length) return <DSEmpty T={T} title={sqR?"Sin resultados en el historial":"Todavía no hay reclamos cerrados"} subtitle="Acá quedan guardados los reclamos resueltos y rechazados, para consultar qué se acordó con cada cliente."/>;
+          return (
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden"}}>
+              {cerr.slice(0,300).map((r,i)=>{ const sc=getEstadoRC(T,r.estado); const tc=getTipoRC(T,r.tipo); const on=activeReclamo===r._docId; return (
+                <div key={r._docId} onClick={()=>setActiveReclamo(on?null:r._docId)} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"12px 16px",borderTop:i?`1px solid ${T.borderL||T.border}`:"none",cursor:"pointer",background:on?T.accentSolid+"14":"transparent"}}>
+                  <span style={{fontSize:DS.font.md,color:T.textSm,width:64,flexShrink:0}}>{fecha(r.resolvedAt?.seconds||r.updatedAt?.seconds)}</span>
+                  <div style={{flex:"1 1 200px",minWidth:0}}>
+                    <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.clienteNombre||`Pedido #${r.orderNum}`} <span style={{fontWeight:500,color:T.textMd,fontSize:DS.font.base}}>#{r.orderNum}</span></div>
+                    {r.motivo&&<div style={{fontSize:DS.font.md,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.motivo}</div>}
+                  </div>
+                  <span style={{fontSize:DS.font.sm,fontWeight:700,color:tc.text,background:tc.bg,borderRadius:DS.r.full,padding:"2px 9px"}}>{r.tipo}</span>
+                  <span style={{fontSize:DS.font.sm,fontWeight:700,color:sc.text,background:sc.bg,borderRadius:DS.r.full,padding:"2px 9px",minWidth:70,textAlign:"center"}}>{r.estado}</span>
+                </div>
+              ); })}
+              {cerr.length>300&&<div style={{padding:"10px 16px",fontSize:DS.font.md,color:T.textSm,borderTop:`1px solid ${T.borderL||T.border}`}}>Se muestran los 300 más recientes de {cerr.length}. Usá el buscador para encontrar uno más viejo.</div>}
+            </div>
+          );
+        })()}
 
         {false&&view==="mp"&&(
           <div style={{padding:"4px 0 48px"}}>
@@ -6788,77 +6808,77 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         )}
       </div>
 
-      {/* === DRAWER PANEL LATERAL === */}
-      {activeR&&(
-        <div style={{position:"fixed",right:0,top:65,bottom:0,width:"min(440px,100vw)",background:T.card,borderLeft:`1px solid ${T.border}`,zIndex:35,overflowY:"auto",boxShadow:`-8px 0 32px rgba(0,0,0,0.12)`,animation:"slideInRight 0.22s cubic-bezier(0.4,0,0.2,1)",fontFamily:"'Inter',system-ui,sans-serif"}}>
-          {/* Header */}
-          <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",position:"sticky",top:0,zIndex:1}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{activeOrder?.comprador||activeR.clienteNombre||`Pedido #${activeR.orderNum}`}</div>
-              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                <span style={{fontSize:12,color:T.accent}}>#{activeR.orderNum}</span>
-                <span style={{fontSize:12,color:T.textSm}}>· {activeR.tipo}</span>
-                {!activeOrder&&<span style={{fontSize:11,color:T.textSm,opacity:0.7}}>Cargando...</span>}
-              </div>
+      {/* === FICHA DEL RECLAMO (panel lateral) === */}
+      {activeR&&(()=>{
+        const r=activeR; const q=ghRecQueHacer(r); const sig=ghRecSiguiente(r); const pasos=ghRecPasos(r.tipo); const iPaso=pasos.indexOf(r.estado);
+        const dias=ghRecDias(r); const urg=esUrgente(r); const abierto=ghRecAbierto(r); const tc=getTipoRC(T,r.tipo); const sc=getEstadoRC(T,r.estado);
+        const nombre=r.clienteNombre||activeOrder?.comprador||`Pedido #${r.orderNum}`;
+        const email=r.clienteEmail||activeOrder?.email||""; const tel=r.clienteTelefono||activeOrder?.telefono||""; const wa=ghRecTel(tel);
+        const prods=r.clienteProductos?.length>0?r.clienteProductos:(activeOrder?.productos||[]).map(p=>`${nombreProducto(p.nombre)}${p.cantidad>1?` ×${p.cantidad}`:""}`);
+        const total=r.clienteTotal||activeOrder?.total||"";
+        const conEnvio=r.tipo==="Cambio"||r.tipo==="Devolución";
+        const hayEnvioCli=!!(r.devolEmpresa||r.devolFecha||r.devolLink||r.devolComprobante||r.incidente);
+        const caja={background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"14px 16px",marginBottom:12};
+        const tit=t=><div style={{fontSize:DS.font.base,fontWeight:700,color:T.text,marginBottom:10}}>{t}</div>;
+        const pill={display:"inline-flex",alignItems:"center",justifyContent:"center",height:40,boxSizing:"border-box",padding:"0 16px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:DS.font.base,fontWeight:DS.w.semibold,textDecoration:"none",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"};
+        const guardar=k=>async e=>{ const v=e.target.value.trim(); if(v!==(r[k]||"")){ try{ await updateDoc(doc(db,"reclamos",r._docId),{[k]:v,updatedAt:serverTimestamp()}); toast("Guardado","success",1500); }catch(_){ toast("No se pudo guardar","error"); } } };
+        const trk=(campo,tipo,titulo,ph)=>{ const val=r[campo]||""; const est=tipo==="cambio"?r.trackCambioEstado:r.trackDevolEstado; const cat=tipo==="cambio"?r.trackCambioCat:r.trackDevolCat; return (
+          <div style={{marginBottom:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+              <span style={{fontSize:DS.font.md,fontWeight:600,color:T.textMd}}>{titulo}</span>
+              {val&&est&&<TrkChipR cat={cat} estado={est} tipo={tipo} size={10}/>}
             </div>
-            <button onClick={()=>setActiveReclamo(null)}
-              style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textSm,cursor:"pointer",padding:"4px 9px",fontSize:18,lineHeight:1,flexShrink:0,marginLeft:8,display:"flex",alignItems:"center",justifyContent:"center"}}
-              onMouseEnter={e=>{e.currentTarget.style.background=T.surface;e.currentTarget.style.color=T.text;}}
-              onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color=T.textSm;}}>✕</button>
+            <div style={{display:"flex",gap:8}}>
+              <input key={r._docId+campo} style={{...iS,flex:1,height:40,boxSizing:"border-box",marginBottom:0}} defaultValue={val} placeholder={ph} onBlur={guardar(campo)} onKeyDown={e=>{ if(e.key==="Enter") e.target.blur(); }}/>
+              {val&&<a href={`https://www.andreani.com/envio/${encodeURIComponent(val)}`} target="_blank" rel="noopener noreferrer" style={pill}>Ver</a>}
+            </div>
+            {val&&est&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:5}}>Andreani dice: {est}</div>}
           </div>
-          <div style={{padding:"16px 18px"}}>
-            {/* Estado + cambio rápido */}
-            {(()=>{const sc=getEstadoRC(T,activeR.estado);const dias=activeR.createdAt?.seconds?Math.floor((Date.now()-activeR.createdAt.seconds*1000)/86400000):null;const urgente=!["Resuelto","Rechazado"].includes(activeR.estado)&&dias>=slaConfig.dias;return(
-              <div style={{background:sc.bg,border:`1px solid ${sc.dot}33`,borderRadius:DS.r.lg,padding:"12px 14px",marginBottom:14}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                  <span style={{width:10,height:10,borderRadius:"50%",background:sc.dot,boxShadow:`0 0 6px ${sc.dot}`,flexShrink:0}}/>
-                  <span style={{fontSize:15,fontWeight:700,color:sc.text}}>{activeR.estado}</span>
-                  {dias!==null&&<span style={{fontSize:11,fontWeight:urgente?700:400,color:urgente?T.red:T.textSm,marginLeft:"auto"}}>{dias}d abierto</span>}
-                </div>
-                <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                  {ESTADOS_R.filter(e=>e!==activeR.estado).map(e=>{const c=getEstadoRC(T,e);return(
-                    <button key={e} onClick={()=>updateEstado(activeR._docId,e)}
-                      style={{fontSize:11,fontWeight:500,padding:"4px 10px",borderRadius:DS.r.md,background:T.card,color:c.text,border:`1px solid ${c.dot}44`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all 0.1s ${DS.ease}`}}
-                      onMouseEnter={e2=>{e2.currentTarget.style.background=c.dot+"22";e2.currentTarget.style.borderColor=c.dot;}}
-                      onMouseLeave={e2=>{e2.currentTarget.style.background=T.card;e2.currentTarget.style.borderColor=c.dot+"44";}}>{e}</button>
-                  );})}
-                </div>
+        ); };
+        return (
+        <div style={{position:"fixed",right:0,top:65,bottom:0,width:"min(460px,100vw)",background:T.card,borderLeft:`1px solid ${T.border}`,zIndex:35,overflowY:"auto",overscrollBehavior:"contain",boxShadow:`-8px 0 32px rgba(0,0,0,0.12)`,animation:"slideInRight 0.22s cubic-bezier(0.4,0,0.2,1)",fontFamily:"'Inter',system-ui,sans-serif"}}>
+          {/* Encabezado */}
+          <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,position:"sticky",top:0,zIndex:1}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:DS.font.sm,fontWeight:700,color:tc.text,background:tc.bg,borderRadius:DS.r.full,padding:"2px 9px"}}>{r.tipo}</span>
+                <span style={{fontSize:DS.font.md,color:T.textMd,fontWeight:600}}>Pedido #{r.orderNum}</span>
+                {dias!==null&&<span style={{fontSize:DS.font.md,color:urg?T.red:T.textSm,fontWeight:urg?700:500}}>{dias===0?"abierto hoy":`abierto hace ${dias} día${dias!==1?"s":""}`}</span>}
               </div>
-            );})()}
-            {/* Responsable */}
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-              <div title="Responsable" style={{width:28,height:28,borderRadius:"50%",background:activeR.asignadoEmail?T.accentSolid:T.border,color:"#fff",display:"grid",placeItems:"center",fontSize:11,fontWeight:800,flexShrink:0}}>{activeR.asignadoEmail?inicialesDe(activeR.asignadoNombre||activeR.asignadoEmail):"?"}</div>
-              <select style={{...InputStyle(T),fontSize:12,flex:1}} value={activeR.asignadoEmail||""} onChange={e=>asignarReclamo(activeR._docId,e.target.value)}>
-                <option value="">Sin responsable</option>
-                {equipo.map(m=><option key={m.email} value={m.email}>{m.nombre}{m.rol!=="Miembro"?` · ${m.rol}`:""}</option>)}
-                {activeR.asignadoEmail&&!equipo.some(m=>m.email===activeR.asignadoEmail)&&<option value={activeR.asignadoEmail}>{activeR.asignadoNombre||activeR.asignadoEmail}</option>}
-              </select>
             </div>
-            {/* Cliente */}
-            <div style={{marginBottom:14}}>
-              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Cliente</div>
-              {(()=>{
-                const nombre=activeR.clienteNombre||activeOrder?.comprador||"--";
-                const email=activeR.clienteEmail||activeOrder?.email||"";
-                const tel=activeR.clienteTelefono||activeOrder?.telefono||"";
-                const prods=activeR.clienteProductos?.length>0?activeR.clienteProductos:(activeOrder?.productos||[]).map(p=>nombreProducto(p.nombre));
-                const total=activeR.clienteTotal||activeOrder?.total||"";
-                return(
-                  <div>
-                    <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:3}}>{nombre}</div>
-                    {prods.length>0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>{prods.join(' · ')}{total&&<span style={{color:T.accent,fontWeight:600,marginLeft:8}}>${total}</span>}</div>}
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                      {tel&&<a href={`https://wa.me/${tel.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"
-                        style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",textDecoration:"none",color:T.green,background:T.greenBg,border:`1px solid ${T.green}44`,display:"inline-flex",alignItems:"center",gap:5}}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                        WhatsApp
-                      </a>}
-                      {activeOrder?.linkOrden&&<a href={activeOrder.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",textDecoration:"none",color:T.purple,display:"inline-flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>{/shopify|myshopify/i.test(activeOrder.linkOrden)?"Shopify":"TN"}</a>}
-                      {email&&<span style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:4}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>{email}</span>}
-                    </div>
-                  </div>
-                );
-              })()}
+            <ModalCloseBtn T={T} onClick={()=>setActiveReclamo(null)}/>
+          </div>
+          <div style={{padding:"16px 18px 28px"}}>
+            {/* 1 · En qué está y qué sigue */}
+            <div style={{...caja,background:(q.alerta?T.red:abierto?T.accentSolid:sc.dot)+"12",border:`1px solid ${(q.alerta?T.red:abierto?T.accentSolid:sc.dot)}44`}}>
+              <div style={{fontSize:DS.font.sm,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{abierto?(q.accion?"Ahora te toca":"Por ahora hay que esperar"):"Caso cerrado"}</div>
+              <div style={{fontSize:DS.font.xl,fontWeight:800,color:q.alerta?T.red:T.text,lineHeight:1.3,marginBottom:12}}>{abierto?q.txt:r.estado}</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:abierto?14:10}}>
+                {[...pasos,...(pasos.includes(r.estado)?[]:[r.estado])].map((e,i)=>{ const actual=e===r.estado; const hecho=iPaso>=0&&i<iPaso; const c=getEstadoRC(T,e); return (
+                  <button key={e} onClick={()=>moverA(r,e)} title={actual?"Paso actual":`Pasar a "${e}"`} style={{display:"inline-flex",alignItems:"center",gap:5,height:28,padding:"0 11px",borderRadius:DS.r.full,border:`1px solid ${actual?c.dot:hecho?T.green+"55":T.border}`,background:actual?c.dot:hecho?T.green+"14":T.card,color:actual?"#fff":hecho?T.green:T.textMd,fontSize:DS.font.md,fontWeight:actual?700:500,cursor:actual?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{hecho?"✓ ":""}{e}</button>
+                ); })}
+              </div>
+              {abierto?(
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                  {sig&&<DepMainBtn T={T} ico="check" onClick={()=>moverA(r,sig)}>{ghRecVerbo(r,sig)}</DepMainBtn>}
+                  <DepBtn T={T} variant="danger" onClick={async()=>{ if(await appConfirm(`¿Rechazar el reclamo de ${nombre}? Queda guardado en el historial.`,{okLabel:"Rechazar"})) moverA(r,"Rechazado"); }}>Rechazar</DepBtn>
+                </div>
+              ):(
+                <DepBtn T={T} ico="undo" onClick={()=>moverA(r,"Contactado")}>Volver a abrir</DepBtn>
+              )}
+            </div>
+            {/* 2 · Hablar con el cliente */}
+            <div style={caja}>
+              {tit("Escribirle al cliente")}
+              <textarea value={waMsg} onChange={e=>setWaMsg(e.target.value)} rows={4} style={{...iS,width:"100%",boxSizing:"border-box",resize:"vertical",fontSize:DS.font.base,lineHeight:1.5,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:8}}/>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                {wa?<a href={`https://wa.me/${wa}?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noopener noreferrer" style={{...pill,background:T.isDark?"#16a34a":"#15803d",borderColor:T.isDark?"#16a34a":"#15803d",color:"#fff"}}>Abrir WhatsApp</a>
+                  :<span style={{fontSize:DS.font.md,color:T.textSm}}>Sin teléfono cargado.</span>}
+                <DepBtn T={T} onClick={async()=>{ try{ await navigator.clipboard.writeText(waMsg); toast("Mensaje copiado","success",1500); }catch(_){ toast("No se pudo copiar","error"); } }}>Copiar</DepBtn>
+                {email&&<a href={`mailto:${email}?subject=${encodeURIComponent(`Tu pedido #${r.orderNum}`)}&body=${encodeURIComponent(waMsg)}`} style={pill}>Mail</a>}
+              </div>
+              <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8,lineHeight:1.5}}>Es un mensaje sugerido para este paso: editalo si hace falta. No se manda solo.{tel?` Tel.: ${tel}`:""}{email?` · ${email}`:""}</div>
             </div>
             {/* Conversación del reclamo MP/ML — leer hilo + responder al comprador */}
             {activeR&&(activeR.origen==="mp"||activeR.origen==="ml")&&(
@@ -6891,229 +6911,159 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 )}
               </div>
             )}
-            {/* Productos del pedido */}
-            {activeOrder?.productos?.length>0&&(
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 14px",marginBottom:14}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Productos comprados</div>
-                {activeOrder.productos.map((p,i)=>(
-                  <div key={i} style={{fontSize:13,color:T.text,padding:"4px 0",borderBottom:i<activeOrder.productos.length-1?`1px solid ${T.borderL}`:"none",display:"flex",justifyContent:"space-between"}}>
-                    <span>{nombreProducto(p.nombre)}</span><span style={{color:T.textSm}}>x{p.cantidad}</span>
+            {/* 3 · Qué pasó */}
+            <div style={caja}>
+              {tit("Qué pasó")}
+              <div style={{fontSize:DS.font.lg,fontWeight:600,color:T.text}}>{r.motivo||"Sin motivo cargado"}</div>
+              {r.descripcion&&<div style={{fontSize:DS.font.base,color:T.textMd,marginTop:6,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{r.descripcion}</div>}
+              {r.notas&&<div style={{fontSize:DS.font.base,color:T.textMd,marginTop:6,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{r.notas}</div>}
+              {prods.length>0&&<div style={{fontSize:DS.font.md,color:T.textSm,marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderL||T.border}`,lineHeight:1.5}}><span style={{fontWeight:600,color:T.textMd}}>Compró:</span> {prods.join(" · ")}{total?` · $${total}`:""}</div>}
+              {r.tipo==="Cambio"&&((r.productosRecibe||[]).some(p=>p.producto)||(r.productosEnvia||[]).some(p=>p.producto))&&(
+                <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:10,alignItems:"start",marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderL||T.border}`}}>
+                  <div><div style={{fontSize:DS.font.sm,color:T.textSm,fontWeight:600,marginBottom:4}}>Nos devuelve</div>{(r.productosRecibe||[]).filter(p=>p.producto).map((it,i)=><div key={i} style={{fontSize:DS.font.base,fontWeight:600,color:T.text,marginBottom:2}}>{it.cantidad>1?`${it.cantidad}× `:""}{it.producto}</div>)}</div>
+                  <div style={{color:T.textSm,paddingTop:16,fontSize:16}}>→</div>
+                  <div><div style={{fontSize:DS.font.sm,color:T.textSm,fontWeight:600,marginBottom:4}}>Le enviamos</div>{(r.productosEnvia||[]).filter(p=>p.producto).map((it,i)=><div key={i} style={{fontSize:DS.font.base,fontWeight:600,color:T.green,marginBottom:2}}>{it.cantidad>1?`${it.cantidad}× `:""}{it.producto}</div>)}</div>
+                </div>
+              )}
+            </div>
+            {/* 4 · Envíos (solo cambios y devoluciones) */}
+            {conEnvio&&(
+              <div style={caja}>
+                {tit("Envíos")}
+                {trk("trackingDevolucion","devolucion","Lo que el cliente nos manda","Número de seguimiento de Andreani")}
+                {r.tipo==="Cambio"&&trk("trackingCambio","cambio","El cambio que le mandamos","Número de seguimiento de Andreani")}
+                {r.tipo==="Cambio"&&r.trackingCambio&&<AsyncButton onClick={async()=>{const x=await authFetch(`/api/update-shipping?uid=${user?.uid}&orderId=${r.orderNum}&tracking=${r.trackingCambio}`);const d=await x.json().catch(()=>({}));if(x.ok)toast("Seguimiento cargado en la tienda","success");else appAlert("No se pudo cargar en la tienda: "+(d.error||""));}} style={{...pill,height:34,fontSize:DS.font.md,cursor:"pointer",marginBottom:12}}>Cargar este seguimiento en la tienda</AsyncButton>}
+                {r.tipo==="Devolución"&&(
+                  <div style={{marginBottom:12}}>
+                    <div style={{fontSize:DS.font.md,fontWeight:600,color:T.textMd,marginBottom:6}}>Reembolso</div>
+                    <DepSeg T={T} value={r.estadoReembolso||""} onChange={async v=>{ await updateDoc(doc(db,"reclamos",r._docId),{estadoReembolso:v,updatedAt:serverTimestamp()}); }} items={[["","Sin definir"],["Pendiente","Pendiente"],["En proceso","En proceso"],["Procesado","Hecho"]]}/>
                   </div>
-                ))}
+                )}
+                <div style={{fontSize:DS.font.sm,color:T.textSm,lineHeight:1.5}}>Con el número cargado, Growith consulta a Andreani cada 30 minutos y avanza el reclamo solo cuando el paquete llega.</div>
+                {(verEnvioCli||hayEnvioCli)?envioClienteFicha(r)
+                  :<div style={{marginTop:10}}><DepBtn T={T} size="sm" ico="plus" onClick={()=>setVerEnvioCli(true)}>Lo mandó por otro correo, o hubo un problema</DepBtn></div>}
               </div>
             )}
-            {/* Detalle Cambio */}
-            {activeR.tipo==="Cambio"&&(
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 14px",marginBottom:14}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.purple,fontWeight:600,letterSpacing:0.5,marginBottom:10,display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>Cambio</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:8,alignItems:"start",marginBottom:12}}>
-                  <div><div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Nos devuelve</div>{(activeR.productosRecibe||[]).filter(p=>p.producto).map((item,i)=><div key={i} style={{fontSize:13,fontWeight:600,color:T.red,marginBottom:2}}>{item.cantidad>1&&<span style={{color:T.textSm,fontSize:11}}>{item.cantidad}× </span>}{item.producto}</div>)}</div>
-                  <div style={{color:T.textSm,paddingTop:18,fontSize:16}}>→</div>
-                  <div><div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Le enviamos</div>{(activeR.productosEnvia||[]).filter(p=>p.producto).map((item,i)=><div key={i} style={{fontSize:13,fontWeight:600,color:T.green,marginBottom:2}}>{item.cantidad>1&&<span style={{color:T.textSm,fontSize:11}}>{item.cantidad}× </span>}{item.producto}</div>)}</div>
+            {/* 5 · Equipo y notas */}
+            <div style={caja}>
+              {tit("Notas del equipo")}
+              {equipo.length>1&&(
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                  <span style={{fontSize:DS.font.md,color:T.textMd,fontWeight:600,flexShrink:0}}>Lo lleva</span>
+                  <select style={{...iS,flex:1,height:36,boxSizing:"border-box",marginBottom:0,fontSize:DS.font.md}} value={r.asignadoEmail||""} onChange={e=>asignarReclamo(r._docId,e.target.value)}>
+                    <option value="">Sin responsable</option>
+                    {equipo.map(m=><option key={m.email} value={m.email}>{m.nombre}{m.rol!=="Miembro"?` · ${m.rol}`:""}</option>)}
+                    {r.asignadoEmail&&!equipo.some(m=>m.email===r.asignadoEmail)&&<option value={r.asignadoEmail}>{r.asignadoNombre||r.asignadoEmail}</option>}
+                  </select>
                 </div>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6,display:"flex",alignItems:"center",gap:8}}>Tracking envío (al cliente){activeR.trackingCambio&&activeR.trackCambioEstado&&<TrkChipR cat={activeR.trackCambioCat} estado={activeR.trackCambioEstado} tipo="cambio" size={10}/>}</div>
-                {activeR.trackingCambio&&activeR.trackCambioEstado&&<div style={{fontSize:11,color:T.textSm,marginBottom:6,fontStyle:"italic"}}>Andreani: "{activeR.trackCambioEstado}"</div>}
-                <div style={{display:"flex",gap:8,marginBottom:6}}>
-                  <input key={activeR._docId+"_tc"} style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px"}} defaultValue={activeR.trackingCambio||""} placeholder="Código Andreani..." onBlur={async e=>{const v=e.target.value;if(v!==(activeR.trackingCambio||""))await updateDoc(doc(db,"reclamos",activeR._docId),{trackingCambio:v,updatedAt:serverTimestamp()});}}/>
-                  {activeR.trackingCambio&&<a href={`https://www.andreani.com/envio/${activeR.trackingCambio}`} target="_blank" rel="noopener noreferrer" style={{...BtnPurple(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,display:"inline-flex",alignItems:"center",gap:5}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Ver</a>}
-                </div>
-                {activeR.trackingCambio&&(<AsyncButton onClick={async()=>{const r=await authFetch(`/api/update-shipping?uid=${user?.uid}&orderId=${activeR.orderNum}&tracking=${activeR.trackingCambio}`);const d=await r.json();if(r.ok)appAlert("Tracking actualizado en TN");else appAlert("Error: "+(d.error||""));}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,marginBottom:8}}>↑ Subir a TN</AsyncButton>)}
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6,display:"flex",alignItems:"center",gap:8}}><span style={{display:"flex",alignItems:"center",gap:5}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0018 9h-1.26A8 8 0 103 16.29"/></svg>Tracking devolución (cliente → nosotros)</span>{activeR.trackingDevolucion&&activeR.trackDevolEstado&&<TrkChipR cat={activeR.trackDevolCat} estado={activeR.trackDevolEstado} tipo="devolucion" size={10}/>}</div>
-                {activeR.trackingDevolucion&&activeR.trackDevolEstado&&<div style={{fontSize:11,color:T.textSm,marginBottom:6,fontStyle:"italic"}}>Andreani: "{activeR.trackDevolEstado}"</div>}
-                <div style={{display:"flex",gap:8}}>
-                  <input key={activeR._docId+"_td1"} style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px",borderColor:activeR.trackingDevolucion?T.green+"88":InputStyle(T).borderColor}} defaultValue={activeR.trackingDevolucion||""} placeholder="Código Andreani del cliente..." onBlur={async e=>{const v=e.target.value;if(v!==(activeR.trackingDevolucion||""))await updateDoc(doc(db,"reclamos",activeR._docId),{trackingDevolucion:v,updatedAt:serverTimestamp()});}}/>
-                  {activeR.trackingDevolucion&&<a href={`https://www.andreani.com/envio/${activeR.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,color:T.green,display:"inline-flex",alignItems:"center",gap:4}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Ver</a>}
-                </div>
-                {!activeR.trackingDevolucion&&<div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",alignItems:"center",gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Te avisamos cuando llegue a sucursal</div>}
-                {envioClienteFicha(activeR)}
-              </div>
-            )}
-            {/* Devolución */}
-            {activeR.tipo==="Devolución"&&(
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 14px",marginBottom:14}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.orange,fontWeight:600,letterSpacing:0.5,marginBottom:10,display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 00-4-4H4"/></svg>Devolución</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px",marginBottom:10}}>
-                  <div><div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:5}}>Recepción</div>
-                    <select style={{...InputStyle(T),fontSize:12}} value={activeR.estadoRecepcion||""} onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{estadoRecepcion:e.target.value,updatedAt:serverTimestamp()});}}><option value="">-</option><option>Esperando envío</option><option>En tránsito</option><option>Recibido</option><option>Inspeccionado</option></select>
-                  </div>
-                  <div><div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:5}}>Reembolso</div>
-                    <select style={{...InputStyle(T),fontSize:12}} value={activeR.estadoReembolso||""} onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{estadoReembolso:e.target.value,updatedAt:serverTimestamp()});}}><option value="">-</option><option>Pendiente</option><option>En proceso</option><option>Procesado</option></select>
-                  </div>
-                </div>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6,display:"flex",alignItems:"center",gap:8}}><span style={{display:"flex",alignItems:"center",gap:5}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0018 9h-1.26A8 8 0 103 16.29"/></svg>Tracking devolución</span>{activeR.trackingDevolucion&&activeR.trackDevolEstado&&<TrkChipR cat={activeR.trackDevolCat} estado={activeR.trackDevolEstado} tipo="devolucion" size={10}/>}</div>
-                {activeR.trackingDevolucion&&activeR.trackDevolEstado&&<div style={{fontSize:11,color:T.textSm,marginBottom:6,fontStyle:"italic"}}>Andreani: "{activeR.trackDevolEstado}"</div>}
-                <div style={{display:"flex",gap:8}}>
-                  <input key={activeR._docId+"_td2"} style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px",borderColor:activeR.trackingDevolucion?T.green+"88":InputStyle(T).borderColor}} defaultValue={activeR.trackingDevolucion||""} placeholder="Código Andreani..." onBlur={async e=>{const v=e.target.value;if(v!==(activeR.trackingDevolucion||""))await updateDoc(doc(db,"reclamos",activeR._docId),{trackingDevolucion:v,updatedAt:serverTimestamp()});}}/>
-                  {activeR.trackingDevolucion&&<a href={`https://www.andreani.com/envio/${activeR.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,color:T.green,display:"inline-flex",alignItems:"center",gap:4}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Ver</a>}
-                </div>
-                {envioClienteFicha(activeR)}
-              </div>
-            )}
-            {/* Notas internas */}
-            <div style={{marginBottom:14}}>
-              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <span style={{display:"flex",alignItems:"center",gap:5}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Notas internas</span>
-                {notaGuardada&&<span style={{fontSize:10,color:T.green,fontWeight:500}}>✓ Guardado</span>}
-              </div>
-              <textarea rows={3} placeholder="Notas privadas..." value={notaInterna}
+              )}
+              <textarea rows={2} placeholder="Dato importante para tener siempre a la vista (queda fijo arriba)" value={notaInterna}
                 onChange={e=>{setNotaInterna(e.target.value);setNotaGuardada(false);}}
-                style={{...InputStyle(T),width:"100%",resize:"vertical",fontSize:12,padding:"8px 10px",lineHeight:1.5,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",minHeight:70,background:T.yellowBg||T.surface,borderColor:notaGuardada?T.green+"66":T.yellow+"44"}}/>
-              {notaInterna!==(activeR.notasInternas||"")&&(
-                <AsyncButton onClick={async()=>{
-                  await updateDoc(doc(db,"reclamos",activeR._docId),{notasInternas:notaInterna,updatedAt:serverTimestamp()});
-                  setNotaGuardada(true);
-                }} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px",marginTop:6,color:T.yellow,borderColor:T.yellow+"44"}}>
-                  Guardar nota
-                </AsyncButton>
-              )}
+                onBlur={async()=>{ if(notaInterna!==(r.notasInternas||"")){ await updateDoc(doc(db,"reclamos",r._docId),{notasInternas:notaInterna,updatedAt:serverTimestamp()}); setNotaGuardada(true); } }}
+                style={{...iS,width:"100%",boxSizing:"border-box",resize:"vertical",fontSize:DS.font.base,lineHeight:1.5,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:4,borderColor:T.yellow+"66"}}/>
+              <div style={{fontSize:DS.font.sm,color:notaGuardada?T.green:T.textSm,marginBottom:12,minHeight:14}}>{notaGuardada?"Guardado":notaInterna!==(r.notasInternas||"")?"Se guarda al salir del cuadro":""}</div>
+              <HistorialReclamo T={T} reclamo={r} onAdd={addNotaReclamo}/>
             </div>
-            {/* Historial */}
-            <div style={{marginBottom:14}}>
-              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:12}}>Historial</div>
-              <HistorialReclamo T={T} reclamo={activeR} onAdd={addNotaReclamo}/>
-            </div>
-            {/* Acciones */}
-            <div style={{display:"flex",gap:8,paddingTop:14,borderTop:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
-              <AsyncButton onClick={()=>generarEtiquetaAndreani(activeOrder)} disabled={!activeOrder} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.blue,gap:5,display:"flex",alignItems:"center"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Etiqueta Andreani</AsyncButton>
-              <button onClick={()=>{setReclamoForm({...activeR,productosRecibe:activeR.productosRecibe||[{producto:"",cantidad:1}],productosEnvia:activeR.productosEnvia||[{producto:"",cantidad:1}],historial:activeR.historial||[],trackingCambio:activeR.trackingCambio||"",trackingDevolucion:activeR.trackingDevolucion||"",estadoRecepcion:activeR.estadoRecepcion||"",estadoReembolso:activeR.estadoReembolso||""});}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",gap:5,display:"flex",alignItems:"center"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Editar</button>
-              {deleteConfirm===activeR._docId?(
-                <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:12,color:T.red}}>¿Eliminar?</span><AsyncButton onClick={()=>deleteReclamo(activeR._docId)} style={{...BtnDanger(T),padding:"6px 12px",fontSize:12}}>Sí</AsyncButton><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:12}}>No</button></div>
-              ):(
-                <button onClick={()=>setDeleteConfirm(activeR._docId)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>Eliminar</button>
-              )}
+            {/* Acciones secundarias */}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+              <DepBtn T={T} ico="note" onClick={()=>setReclamoForm({...r,productosRecibe:r.productosRecibe?.length?r.productosRecibe:[{producto:"",cantidad:1}],productosEnvia:r.productosEnvia?.length?r.productosEnvia:[{producto:"",cantidad:1}],historial:r.historial||[]})}>Editar datos</DepBtn>
+              <DepMenu T={T} items={[
+                activeOrder&&{ico:"file",label:"Excel para la etiqueta de Andreani",onClick:()=>generarEtiquetaAndreani(activeOrder)},
+                activeOrder?.linkOrden&&{ico:"link",label:"Ver el pedido en la tienda",onClick:()=>window.open(activeOrder.linkOrden,"_blank","noopener")},
+                {ico:"trash",label:"Eliminar reclamo",danger:true,sep:true,onClick:async()=>{ if(await appConfirm(`¿Eliminar el reclamo de ${nombre}? No se puede deshacer.`,{okLabel:"Eliminar"})) deleteReclamo(r._docId); }},
+              ]}/>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
-      {/* Form Modal - Nuevo/Editar Reclamo */}
-      <Modal T={T} open={!!reclamoForm} onClose={()=>setReclamoForm(null)} title={reclamoForm?._docId?"Editar Reclamo":reclamoForm?.orderNum?`Nuevo Reclamo - #${reclamoForm.orderNum}`:"Nuevo Reclamo"} width={580}>
-        {reclamoForm&&(
-          <div>
-            {/* Buscar pedido - solo cuando es nuevo y sin número */}
-            {!reclamoForm._docId&&!reclamoForm.orderNum&&(
-              <Field T={T} label="Pedido" required>
+      {/* Formulario corto: pedido, tipo, motivo y (si es cambio) productos. El seguimiento y las notas se cargan después, en la ficha. */}
+      <Modal T={T} open={!!reclamoForm} onClose={()=>setReclamoForm(null)} title={reclamoForm?._docId?"Editar reclamo":"Nuevo reclamo"} width={560}>
+        {reclamoForm&&(()=>{
+          const f=reclamoForm; const set=p=>setReclamoForm(x=>({...x,...p}));
+          const lbl=t=><div style={{fontSize:DS.font.md,fontWeight:600,color:T.textMd,marginBottom:8}}>{t}</div>;
+          const chip=(activo,color)=>({display:"inline-flex",alignItems:"center",height:36,padding:"0 16px",borderRadius:DS.r.full,border:`1px solid ${activo?color:T.border}`,background:activo?color:T.surface,color:activo?"#fff":T.text,fontSize:DS.font.base,fontWeight:activo?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all .12s ${DS.ease}`});
+          const o=orders.find(x=>x.numero===f.orderNum);
+          const nombre=f.clienteNombre||o?.comprador||""; const prods=(f.clienteProductos||[]).length>0?f.clienteProductos:(o?.productos||[]).map(p=>nombreProducto(p.nombre)).filter(Boolean);
+          const total=f.clienteTotal||o?.total||"";
+          return (
+          <div style={{display:"flex",flexDirection:"column",gap:18}}>
+            {!f.orderNum?(
+              <div>
+                {lbl("¿De qué pedido es?")}
                 <OrderSearchField T={T} orders={orders} uid={user?.uid} onSelect={num=>{
-                  // Buscar el pedido y poblar datos del cliente automáticamente
-                  const o=orders.find(o=>o.numero===num)||searchApiResults.find(o=>o.numero===num);
-                  setReclamoForm(f=>({...f,
-                    orderNum:num,
-                    clienteNombre:o?.comprador||f.clienteNombre||"",
-                    clienteEmail:o?.email||f.clienteEmail||"",
-                    clienteTelefono:o?.telefono||f.clienteTelefono||"",
-                    clienteProductos:o?(o.productos||[]).map(p=>nombreProducto(p.nombre)).filter(Boolean):f.clienteProductos||[],
-                    clienteTotal:o?.total||f.clienteTotal||"",
-                  }));
+                  const x=orders.find(y=>y.numero===num)||searchApiResults.find(y=>y.numero===num);
+                  set({orderNum:num,clienteNombre:x?.comprador||f.clienteNombre||"",clienteEmail:x?.email||f.clienteEmail||"",clienteTelefono:x?.telefono||f.clienteTelefono||"",clienteProductos:x?(x.productos||[]).map(p=>nombreProducto(p.nombre)).filter(Boolean):f.clienteProductos||[],clienteTotal:x?.total||f.clienteTotal||""});
                 }}/>
-              </Field>
-            )}
-            {/* Info del pedido + datos del cliente */}
-            {reclamoForm.orderNum&&(()=>{
-              const o=orders.find(o=>o.numero===reclamoForm.orderNum);
-              const nombre=reclamoForm.clienteNombre||o?.comprador||"";
-              const email=reclamoForm.clienteEmail||o?.email||"";
-              const tel=reclamoForm.clienteTelefono||o?.telefono||"";
-              const prods=(reclamoForm.clienteProductos||[]).length>0?reclamoForm.clienteProductos:(o?.productos||[]).map(p=>nombreProducto(p.nombre)).filter(Boolean);
-              const total=reclamoForm.clienteTotal||o?.total||"";
-              return (
-                <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                    <div style={{flex:1}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                        <span style={{fontWeight:700,fontSize:14,color:T.accent}}>#{reclamoForm.orderNum}</span>
-                        {nombre&&<span style={{fontWeight:700,fontSize:14,color:T.text}}>{nombre}</span>}
-                        {total&&<span style={{fontSize:13,color:T.text,fontWeight:600,marginLeft:"auto"}}>${total}</span>}
-                      </div>
-                      {prods.length>0&&<div style={{fontSize:12,color:T.textSm,marginBottom:6}}>{prods.join(' · ')}</div>}
-                      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                        {email&&<span style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:3}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>{email}</span>}
-                        {tel&&<span style={{fontSize:12,color:T.green,display:"flex",alignItems:"center",gap:3}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.15 1.18 2 2 0 012.11 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>{tel}</span>}
-                      </div>
-                    </div>
-                    {!reclamoForm._docId&&<button onClick={()=>setReclamoForm(f=>({...f,orderNum:"",clienteNombre:"",clienteEmail:"",clienteTelefono:"",clienteProductos:[],clienteTotal:""}))} style={{...BtnDanger(T),padding:"4px 8px",fontSize:11,flexShrink:0,marginLeft:8}}>Cambiar</button>}
-                  </div>
-                </div>
-              );
-            })()}
-            {reclamoForm.orderNum&&(<>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 14px"}}>
-                <Field T={T} label="Tipo"><select style={iS} value={reclamoForm.tipo} onChange={e=>setReclamoForm(f=>({...f,tipo:e.target.value}))}>{TIPOS_R.map(t=><option key={t}>{t}</option>)}</select></Field>
-                <Field T={T} label="Motivo" required><select style={iS} value={reclamoForm.motivo} onChange={e=>setReclamoForm(f=>({...f,motivo:e.target.value}))}><option value="">-</option>{MOTIVOS_R.map(m=><option key={m}>{m}</option>)}</select></Field>
-                <Field T={T} label="Responsable">
-                  <select style={iS} value={reclamoForm.asignadoEmail||""} onChange={e=>{const em=e.target.value;setReclamoForm(f=>({...f,asignadoEmail:em,asignadoNombre:em?nombreEquipo(em):""}));}}>
-                    <option value="">Sin asignar</option>
-                    {equipo.map(m=><option key={m.email} value={m.email}>{m.nombre}{m.rol!=="Miembro"?` · ${m.rol}`:""}</option>)}
-                  </select>
-                </Field>
+                <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:8}}>Buscá por número de pedido o por nombre del cliente.</div>
               </div>
-              {reclamoForm.tipo==="Cambio"&&(
-                <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:14,marginBottom:12}}>
-                  <div style={{fontSize:11,textTransform:"uppercase",color:T.purple,fontWeight:700,letterSpacing:0.5,marginBottom:10,display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>Detalle del cambio</div>
+            ):(
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>{nombre||"Cliente"} <span style={{fontWeight:500,color:T.textMd}}>· pedido #{f.orderNum}</span></div>
+                  {prods.length>0&&<div style={{fontSize:DS.font.md,color:T.textSm,marginTop:3,lineHeight:1.45}}>{prods.join(" · ")}{total?` · $${total}`:""}</div>}
+                </div>
+                {!f._docId&&<DepBtn T={T} size="sm" onClick={()=>set({orderNum:"",clienteNombre:"",clienteEmail:"",clienteTelefono:"",clienteProductos:[],clienteTotal:""})}>Cambiar</DepBtn>}
+              </div>
+            )}
+            {f.orderNum&&(<>
+              <div>
+                {lbl("¿Qué quiere el cliente?")}
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {[["Cambio","Cambiar el producto"],["Devolución","Devolverlo y recuperar la plata"],["Reclamo","Otro reclamo"],["Contracargo","Contracargo"]].map(([t,l])=><button key={t} onClick={()=>set({tipo:t})} style={chip(f.tipo===t,T.accentSolid)}>{l}</button>)}
+                </div>
+              </div>
+              <div>
+                {lbl("¿Por qué?")}
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {MOTIVOS_R.map(m=><button key={m} onClick={()=>set({motivo:m})} style={chip(f.motivo===m,T.accentSolid)}>{m}</button>)}
+                  {f.motivo&&!MOTIVOS_R.includes(f.motivo)&&<button style={chip(true,T.accentSolid)}>{f.motivo}</button>}
+                </div>
+              </div>
+              {f.tipo==="Cambio"&&(
+                <div>
+                  {lbl("¿Qué devuelve y qué le mandamos?")}
                   <datalist id="gh-catalogo-prod">{catalogoProd.map(p=><option key={p} value={p}/>)}</datalist>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
-                    {["productosRecibe","productosEnvia"].map((key,side)=>(
-                      <div key={key}>
-                        <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase"}}>{side===0?"Nos devuelve":"Le enviamos"}</div>
-                        {(reclamoForm[key]||[]).map((item,i)=>(
-                          <div key={i} style={{display:"flex",gap:4,marginBottom:6,alignItems:"center"}}>
-                            <input list="gh-catalogo-prod" placeholder="Producto" style={{...iS,flex:1,fontSize:12,padding:"7px 8px"}} value={item.producto} onChange={e=>{const arr=[...reclamoForm[key]];arr[i]={...arr[i],producto:e.target.value};setReclamoForm(f=>({...f,[key]:arr}));}}/>
-                            <input type="number" min={1} value={item.cantidad} onChange={e=>{const arr=[...reclamoForm[key]];arr[i]={...arr[i],cantidad:parseInt(e.target.value)||1};setReclamoForm(f=>({...f,[key]:arr}));}} style={{...iS,width:48,textAlign:"center",fontSize:12,padding:"7px 4px",flexShrink:0}}/>
-                            {reclamoForm[key].length>1&&<button onClick={()=>setReclamoForm(f=>({...f,[key]:f[key].filter((_,j)=>j!==i)}))} style={{...BtnDanger(T),padding:"4px 6px",fontSize:12,flexShrink:0}}>✕</button>}
+                  <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14}}>
+                    {["productosRecibe","productosEnvia"].map((key,lado)=>(
+                      <div key={key} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:12}}>
+                        <div style={{fontSize:DS.font.md,color:T.textMd,fontWeight:600,marginBottom:8}}>{lado===0?"Nos devuelve":"Le enviamos"}</div>
+                        {(f[key]||[]).map((item,i)=>(
+                          <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
+                            <input list="gh-catalogo-prod" placeholder="Producto" style={{...iS,flex:1,minWidth:0,marginBottom:0}} value={item.producto} onChange={e=>{const arr=[...f[key]];arr[i]={...arr[i],producto:e.target.value};set({[key]:arr});}}/>
+                            <input type="number" min={1} title="Cantidad" value={item.cantidad} onChange={e=>{const arr=[...f[key]];arr[i]={...arr[i],cantidad:parseInt(e.target.value)||1};set({[key]:arr});}} style={{...iS,width:54,textAlign:"center",flexShrink:0,marginBottom:0}}/>
+                            {f[key].length>1&&<button onClick={()=>set({[key]:f[key].filter((_,j)=>j!==i)})} title="Quitar" style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:18,padding:"0 4px",flexShrink:0}}>×</button>}
                           </div>
                         ))}
-                        <button onClick={()=>setReclamoForm(f=>({...f,[key]:[...(f[key]||[]),{producto:"",cantidad:1}]}))} style={{...BtnSecondary(T),width:"100%",justifyContent:"center",fontSize:11,padding:"5px"}}>+ Agregar</button>
+                        <DepBtn T={T} size="sm" ico="plus" onClick={()=>set({[key]:[...(f[key]||[]),{producto:"",cantidad:1}]})}>Otro producto</DepBtn>
                       </div>
                     ))}
                   </div>
-                  <div style={{marginTop:12}}>
-                  <Field T={T} label="Tracking del nuevo envío (a cliente)">
-                    <input style={iS} value={reclamoForm.trackingCambio||""} onChange={e=>setReclamoForm(f=>({...f,trackingCambio:e.target.value}))} placeholder="Código Andreani del envío al cliente"/>
-                  </Field>
-                  </div>
-                  <div style={{marginTop:4}}>
-                  <Field T={T} label="Tracking devolución (viene a nosotros)">
-                    <div style={{position:"relative"}}>
-                      <input style={{...iS, borderColor: reclamoForm.trackingDevolucion ? T.green+"88" : iS.borderColor}} value={reclamoForm.trackingDevolucion||""} onChange={e=>setReclamoForm(f=>({...f,trackingDevolucion:e.target.value}))} placeholder="Código Andreani que nos manda el cliente"/>
-                      {reclamoForm.trackingDevolucion&&(
-                        <a href={`https://www.andreani.com/envio/${reclamoForm.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:11,color:T.blue,textDecoration:"none",background:T.card,padding:"2px 6px",borderRadius:4,border:`1px solid ${T.blue}33`}}>Ver →</a>
-                      )}
-                    </div>
-                    <div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",alignItems:"center",gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Te notificamos cuando llegue a sucursal</div>
-                  </Field>
-                  </div>
-                  {envioClienteForm()}
                 </div>
               )}
-              <Field T={T} label="Descripción"><textarea style={{...iS,minHeight:60,resize:"vertical"}} value={reclamoForm.descripcion} onChange={e=>setReclamoForm(f=>({...f,descripcion:e.target.value}))} placeholder="Detalle del reclamo..."/></Field>
-              {reclamoForm.tipo==="Devolución"&&(
-                <Field T={T} label="Tracking devolución (viene a nosotros)">
-                  <div style={{position:"relative"}}>
-                    <input style={{...iS, borderColor: reclamoForm.trackingDevolucion ? T.green+"88" : iS.borderColor}} value={reclamoForm.trackingDevolucion||""} onChange={e=>setReclamoForm(f=>({...f,trackingDevolucion:e.target.value}))} placeholder="Código Andreani que nos manda el cliente"/>
-                    {reclamoForm.trackingDevolucion&&(
-                      <a href={`https://www.andreani.com/envio/${reclamoForm.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:11,color:T.blue,textDecoration:"none",background:T.card,padding:"2px 6px",borderRadius:4,border:`1px solid ${T.blue}33`}}>Ver →</a>
-                    )}
-                  </div>
-                  <div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",alignItems:"center",gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Te notificamos cuando llegue a sucursal</div>
-                </Field>
+              <div>
+                {lbl("Contá lo que pasó (opcional)")}
+                <textarea style={{...iS,width:"100%",boxSizing:"border-box",minHeight:70,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:0}} value={f.descripcion||""} onChange={e=>set({descripcion:e.target.value})} placeholder="Lo que dijo el cliente, qué se le prometió, cualquier detalle que ayude a quien lo siga."/>
+              </div>
+              {equipo.length>1&&(
+                <div>
+                  {lbl("¿Quién lo lleva?")}
+                  <select style={{...iS,marginBottom:0}} value={f.asignadoEmail||""} onChange={e=>{const em=e.target.value;set({asignadoEmail:em,asignadoNombre:em?nombreEquipo(em):""});}}>
+                    <option value="">Sin asignar</option>
+                    {equipo.map(m=><option key={m.email} value={m.email}>{m.nombre}{m.rol!=="Miembro"?` · ${m.rol}`:""}</option>)}
+                  </select>
+                </div>
               )}
-              {reclamoForm.tipo==="Devolución"&&(
-                <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"0 14px 14px",marginBottom:12}}>{envioClienteForm()}</div>
-              )}
-              {reclamoForm._docId&&(
-                <Field T={T} label="Estado">
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                    {ESTADOS_R.map(e=>{const c=getEstadoRC(T,e);const sel=reclamoForm.estado===e;return(<button key={e} onClick={()=>setReclamoForm(f=>({...f,estado:e}))} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:8,fontSize:12,fontWeight:sel?700:400,background:sel?c.bg:T.card,color:sel?c.text:T.textMd,border:`1.5px solid ${sel?c.dot:T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}><span style={{width:7,height:7,borderRadius:"50%",background:sel?c.dot:T.textSm}}/>{e}</button>);})}
-                  </div>
-                </Field>
-              )}
-              <Field T={T} label="Notas internas"><textarea style={{...iS,minHeight:50,resize:"vertical"}} value={reclamoForm.notas||""} onChange={e=>setReclamoForm(f=>({...f,notas:e.target.value}))} placeholder="Notas para el equipo..."/></Field>
-              <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:10}}>
-                <button onClick={()=>setReclamoForm(null)} style={BtnSecondary(T)}>Cancelar</button>
-                <AsyncButton onClick={saveReclamo} disabled={!reclamoForm.motivo} style={{...BtnPrimary(T)}}>{reclamoForm._docId?"Guardar":"Crear Reclamo"}</AsyncButton>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
+                {!f.motivo&&<span style={{fontSize:DS.font.md,color:T.textSm,marginRight:"auto"}}>Elegí el motivo para poder guardar.</span>}
+                <DepBtn T={T} size="lg" onClick={()=>setReclamoForm(null)} disabled={saving}>Cancelar</DepBtn>
+                <DepBtn T={T} variant="primary" size="lg" onClick={saveReclamo} disabled={!f.motivo||saving}>{saving?"Guardando…":f._docId?"Guardar cambios":"Crear reclamo"}</DepBtn>
               </div>
             </>)}
           </div>
-        )}
+          );
+        })()}
       </Modal>
     </div>
   );
@@ -7133,9 +7083,9 @@ function HistorialReclamo({T, reclamo, onAdd}) {
   }
   function getEntryStyle(accion) {
     if(accion.startsWith("Nota:")) return {icon:"·",color:T.blue,bold:false};
-    if(accion.startsWith("Estado >")) return {icon:"→",color:"#a78bfa",bold:true};
-    if(accion.startsWith("Reclamo creado")) return {icon:"✓",color:"#34d399",bold:true};
-    return {icon:"·",color:"#94a3b8",bold:false};
+    if(accion.startsWith("Estado >")) return {icon:"→",color:T.purple,bold:true};
+    if(accion.startsWith("Reclamo creado")) return {icon:"✓",color:T.green,bold:true};
+    return {icon:"·",color:T.textSm,bold:false};
   }
   function fmtHistFecha(fecha) {
     try{
@@ -7150,8 +7100,8 @@ function HistorialReclamo({T, reclamo, onAdd}) {
   return(
     <div>
       <div style={{display:"flex",gap:6,marginBottom:14}}>
-        <input style={{...iS,flex:1,fontSize:12,padding:"8px 10px"}} value={texto} onChange={e=>setTexto(e.target.value)} placeholder="Agregar nota al historial..." onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();handleAdd();}}}/>
-        <button onClick={handleAdd} disabled={guardando||!texto.trim()} style={{...BtnPrimary(T),padding:"8px 12px",fontSize:12,opacity:guardando||!texto.trim()?0.5:1,flexShrink:0}}>+</button>
+        <input style={{...iS,flex:1,fontSize:12,padding:"8px 10px"}} value={texto} onChange={e=>setTexto(e.target.value)} placeholder="Anotá lo que se habló o lo que falta…" onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();handleAdd();}}}/>
+        <DepBtn T={T} variant="primary" size="sm" style={{height:36}} onClick={handleAdd} disabled={guardando||!texto.trim()}>Agregar</DepBtn>
       </div>
       {historial.length===0&&<div style={{fontSize:12,color:T.textSm,textAlign:"center",padding:"8px 0",opacity:0.5}}>Sin historial todavía</div>}
       {historial.length>0&&(
@@ -45581,7 +45531,8 @@ export default function App() {
       // Separamos reclamos manuales de los importados de MP/ML: son alertas distintas.
       let manual=0, mp=0;
       snap.docs.forEach(d=>{const r=d.data(); const esMp=r.origen==="mp"||r.origen==="ml";
-        if(esMp){ if(!["Resuelto","Rechazado"].includes(r.estado)) mp++; } else { manual++; }});
+        const abierto=!["Resuelto","Rechazado"].includes(r.estado);
+        if(esMp){ if(abierto) mp++; } else if(abierto){ manual++; }});
       setReclamosCount(manual); setReclamosMpCount(mp); setFbStatus("ok");
     },()=>setFbStatus("error"));
     const u2=onSnapshot(q2,snap=>{
