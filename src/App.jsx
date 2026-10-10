@@ -12401,14 +12401,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       }catch(e){ toast("No se pudo preparar la tanda: "+e.message,"error"); }
       return;
     }
-    if(!skuBlob) return;
+    // El PDF con los productos se arma en el momento si todavía no está (ya no hay paso "Generar").
+    const blobSku=skuBlob||await autoGenerateSkuPdf(skuResults,skuFile);
+    if(!blobSku) return;
     try{
       // Mismo orden que el PDF generado: con SKU primero (ordenadas por SKU), sin SKU al final.
       // process-sku agrega una página A4 de resumen al final: al depósito no va
       // (la Zebra la imprimiría como una etiqueta más). Y todo a 10x15.
       const orden=skuOrdenRef.current||[];
       const {PDFDocument}=await import("pdf-lib");
-      const srcDoc=await PDFDocument.load(new Uint8Array(await skuBlob.arrayBuffer()));
+      const srcDoc=await PDFDocument.load(new Uint8Array(await blobSku.arrayBuffer()));
       const nEtiq=srcDoc.getPageCount()>orden.length&&orden.length>0?orden.length:srcDoc.getPageCount();
       const soloEtiq=await PDFDocument.create();
       (await soloEtiq.copyPages(srcDoc,[...Array(nEtiq).keys()])).forEach(p=>soloEtiq.addPage(p));
@@ -12595,10 +12597,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       setSkuProgress(100);
       const notFound=results.filter(r=>!r.found).length;
       logUsage("skus", results.length);
-      if(notFound>0) toast(`PDF listo - ${notFound} pedido${notFound>1?"s":""} no encontrado${notFound>1?"s":""}`, "warning");
-      else toast(`PDF listo para descargar - ${results.length} rotulos`, "success");
+      if(notFound>0) toast(`${notFound} pedido${notFound>1?"s":""} no encontrado${notFound>1?"s":""}: esos rótulos van sin productos`, "warning");
       setTimeout(()=>{setSkuGenerating(false);setSkuProgress(0);},600);
-    } catch(e){ toast("Error al generar PDF: "+e.message,"error"); setSkuGenerating(false); setSkuProgress(0); }
+      return blob; // el botón que lo pidió (descargar / enviar al depósito) sigue de largo con este PDF
+    } catch(e){ toast("Error al generar PDF: "+e.message,"error"); setSkuGenerating(false); setSkuProgress(0); return null; }
   }
 
   async function extractPdfText(file) {
@@ -13455,62 +13457,39 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   </div>
                 </div>
 
-                {/* PASO 1 — Despachar. UNA sola card en un lugar FIJO: dos opciones con interruptor
-                    (productos en la etiqueta / enviar seguimientos) y un botón principal que hace
-                    todo lo que esté prendido de una. */}
-                {found.length>0&&!skuGenerating&&(()=>{ const segPendN=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]).length;
-                  const listo=!!skuBlob||!skuConSku; const conSeg=skuSegAuto&&segPendN>0; const verde=T.isDark?"#16a34a":"#15803d";
-                  const descargar=()=>{ const blob=skuConSku?skuBlob:skuFile; if(!blob) return; const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=skuConSku?`rotulos-con-sku-${hoyAR()}.pdf`:`rotulos-${hoyAR()}.pdf`; a.click(); URL.revokeObjectURL(url); if(!depositoCliente&&conSeg) sendAllTracking(); };
-                  const opcion=(on,toggle,titulo,desc,off)=>(<div onClick={off?undefined:toggle} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",borderRadius:12,background:T.card,border:`1px solid ${on&&!off?T.green+"55":T.border}`,cursor:off?"default":"pointer",opacity:off?0.55:1,userSelect:"none",flex:"1 1 260px",minWidth:0}}>
-                    <DSToggle T={T} active={on&&!off} onToggle={()=>{}}/>
+                {/* Despachar: UNA sola card. Dos interruptores (productos en la etiqueta / enviar seguimientos)
+                    y un botón principal que hace todo lo prendido de una. El PDF con SKU se arma solo al
+                    tocar el botón (ya no hay paso "Generar"), y los seguimientos se pueden mandar solos. */}
+                {found.length>0&&(()=>{ const segPendN=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]).length;
+                  const segOk=Object.values(trackingSent).filter(v=>v==="ok"||v==="warn").length;
+                  const conSeg=skuSegAuto&&segPendN>0; const verde=T.isDark?"#16a34a":"#15803d"; const off=skuGenerating;
+                  const descargar=async()=>{ const blob=skuConSku?(skuBlob||await autoGenerateSkuPdf(skuResults,skuFile)):skuFile; if(!blob) return; const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=skuConSku?`rotulos-con-sku-${hoyAR()}.pdf`:`rotulos-${hoyAR()}.pdf`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),60000); if(!depositoCliente&&conSeg) sendAllTracking(); };
+                  const opcion=(on,toggle,titulo,desc,apagada)=>(<div onClick={apagada?undefined:toggle} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",borderRadius:12,background:T.card,border:`1px solid ${on&&!apagada?T.green+"55":T.border}`,cursor:apagada?"default":"pointer",opacity:apagada?0.55:1,userSelect:"none",flex:"1 1 260px",minWidth:0}}>
+                    <DSToggle T={T} active={on&&!apagada} onToggle={()=>{}}/>
                     <div style={{minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:T.text}}>{titulo}</div><div style={{fontSize:12,color:T.textSm,marginTop:1}}>{desc}</div></div>
                   </div>);
-                  const resumen=[depositoCliente?"Va a la cola del depósito":"Se descarga el PDF",skuConSku?"con los productos en cada etiqueta":"sin productos en la etiqueta",conSeg?`y se avisa a ${segPendN} comprador${segPendN!==1?"es":""}`:"sin enviar seguimientos"].join(" · ");
+                  const resumen=[depositoCliente?"Va a la cola del depósito":"Se descarga el PDF",skuConSku?"con los productos en cada etiqueta":"sin productos en la etiqueta",conSeg?`y se avisa a ${segPendN} comprador${segPendN!==1?"es":""}`:segPendN>0?"sin enviar seguimientos":"seguimientos ya enviados"].join(" · ");
+                  const btnP={...BtnPrimary(T),background:verde,borderColor:verde,color:"#fff",boxShadow:`0 6px 22px ${T.green}44`,fontSize:15,fontWeight:800,padding:"13px 26px",display:"flex",alignItems:"center",gap:9,flexShrink:0};
+                  const btnS={...BtnSecondary(T),fontSize:13,padding:"11px 16px",display:"flex",alignItems:"center",gap:8,flexShrink:0};
+                  const icoBajar=<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
                   return (
-                  <div style={{background:T.card,backgroundImage:`linear-gradient(135deg,${T.green}12,transparent 60%)`,border:`1px solid ${T.green}44`,borderRadius:16,padding:"18px 20px",marginBottom:12,animation:"growith-fadeIn 0.3s ease"}}>
-                    <div style={{fontSize:10,fontWeight:800,letterSpacing:0.8,textTransform:"uppercase",color:T.green,marginBottom:4}}>Paso 1 · Despachar</div>
+                  <div style={{background:T.card,backgroundImage:`linear-gradient(135deg,${T.green}12,transparent 60%)`,border:`1px solid ${T.green}44`,borderRadius:16,padding:"18px 20px",marginBottom:20,animation:"growith-fadeIn 0.3s ease"}}>
+                    <div style={{fontSize:10,fontWeight:800,letterSpacing:0.8,textTransform:"uppercase",color:T.green,marginBottom:4}}>Despachar</div>
                     <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{found.length} rótulo{found.length!==1?"s":""} listo{found.length!==1?"s":""}{notFound.length>0?<span style={{fontSize:12,fontWeight:600,color:T.yellow}}> · {notFound.length} sin pedido</span>:null}</div>
                     <div style={{display:"flex",gap:10,flexWrap:"wrap",margin:"14px 0"}}>
                       {opcion(skuConSku,toggleSkuConSku,"Productos (SKU) en la etiqueta","Cada rótulo sale con lo que lleva el paquete.")}
-                      {opcion(skuSegAuto,toggleSkuSegAuto,"Enviar seguimientos a la tienda",segPendN>0?`Avisa a ${segPendN} comprador${segPendN!==1?"es":""} y activa el seguimiento.`:"Ya están enviados.",segPendN===0)}
+                      {opcion(skuSegAuto,toggleSkuSegAuto,"Enviar seguimientos a la tienda",segPendN>0?`Avisa a ${segPendN} comprador${segPendN!==1?"es":""} y activa el seguimiento.`:segOk>0?`Ya se enviaron (${segOk}). Estado en la pestaña Seguimientos.`:"No hay seguimientos para enviar.",segPendN===0)}
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                      <div style={{flex:"1 1 220px",minWidth:0,fontSize:12,color:T.textMd}}>{listo?resumen:"Falta generar el PDF con los productos."}</div>
-                      {!listo
-                        ? <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}} style={{...BtnPrimary(T),fontSize:14,padding:"12px 24px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>Generar PDF con SKUs</AsyncButton>
-                        : <>
-                          {depositoCliente&&<button onClick={descargar} style={{...BtnSecondary(T),fontSize:13,padding:"11px 16px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Descargar PDF</button>}
-                          {depositoCliente
-                            ? <AsyncButton onClick={enviarDepositoSku} style={{...BtnPrimary(T),background:verde,borderColor:verde,color:"#fff",boxShadow:`0 6px 22px ${T.green}44`,fontSize:15,fontWeight:800,padding:"13px 26px",display:"flex",alignItems:"center",gap:9,flexShrink:0}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Enviar al depósito</AsyncButton>
-                            : <button onClick={descargar} style={{...BtnPrimary(T),background:verde,borderColor:verde,color:"#fff",boxShadow:`0 6px 22px ${T.green}44`,fontSize:15,fontWeight:800,padding:"13px 26px",display:"flex",alignItems:"center",gap:9,flexShrink:0}}>
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>{conSeg?"Descargar y enviar seguimientos":"Descargar PDF"}</button>}
-                        </>}
+                      <div style={{flex:"1 1 220px",minWidth:0,fontSize:12,color:T.textMd}}>{off?"Preparando el PDF con los productos…":resumen}</div>
+                      {segPendN>0&&<AsyncButton onClick={sendAllTracking} disabled={off} title="Sube los seguimientos a tu tienda sin descargar ni mandar nada al depósito" style={btnS}>Solo enviar seguimientos</AsyncButton>}
+                      {depositoCliente&&<AsyncButton onClick={descargar} disabled={off} style={btnS}>{icoBajar}Descargar PDF</AsyncButton>}
+                      {depositoCliente
+                        ? <AsyncButton onClick={enviarDepositoSku} disabled={off} style={btnP}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Enviar al depósito</AsyncButton>
+                        : <AsyncButton onClick={descargar} disabled={off} style={btnP}>{icoBajar}{conSeg?"Descargar y enviar seguimientos":"Descargar PDF"}</AsyncButton>}
                     </div>
                   </div>
                 ); })()}
-                {/* PASO 2 — Enviar seguimientos desde el MISMO PDF. Siempre debajo
-                    del Paso 1, siempre en el mismo lugar. */}
-                {(()=>{
-                  const pend=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]);
-                  const okCount=Object.values(trackingSent).filter(v=>v==="ok"||v==="warn").length;
-                  if(!pdfResults.length) return null;
-                  const done=pend.length===0&&okCount>0;
-                  return (
-                    <div style={{background:T.card,border:`1.5px solid ${done?T.green+"55":T.blue+"44"}`,borderRadius:14,padding:"16px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-                      <div style={{flex:1,minWidth:220}}>
-                        <div style={{fontSize:10,fontWeight:800,letterSpacing:0.8,textTransform:"uppercase",color:done?T.green:T.blue,marginBottom:4}}>Paso 2 · Avisar a los clientes</div>
-                        <div style={{fontSize:14,fontWeight:800,color:T.text,marginBottom:2}}>{done?"Seguimientos enviados":"Enviar seguimientos a tu tienda"}</div>
-                        <div style={{fontSize:12,color:T.textSm}}>{pend.length>0?`${pend.length} tracking(s) del mismo PDF, listos para subir (avisa al cliente y activa el seguimiento automático)`:done?`${okCount} enviados — ver estado en la pestaña Seguimientos`:"Sin trackings pendientes"}</div>
-                      </div>
-                      {pend.length>0&&(
-                        <AsyncButton onClick={sendAllTracking} style={{...BtnPrimary(T),background:`${T.blue}1f`,borderColor:`${T.blue}88`,color:T.blue,boxShadow:`0 0 0 1px ${T.blue}15, 0 4px 16px ${T.blue}22`,fontSize:14,padding:"12px 22px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                          Enviar {pend.length} seguimiento{pend.length!==1?"s":""}
-                        </AsyncButton>
-                      )}
-                    </div>
-                  );
-                })()}
                 {Object.keys(skuTotals).length>0&&(
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
