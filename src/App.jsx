@@ -4618,18 +4618,20 @@ function ghLocEnOtroCp(locs,prov,localidad,cp){
   }
   return lejos;
 }
-function ghLocElegirDelCp(locs,lista,prov,localidad){
-  if(ghLocEnOtroCp(locs,prov,localidad,lista[0]?.x.cp)) return null;
+// `pista` = texto libre del pedido (calle, piso, ciudad): si nombra a una de las localidades del CP
+// ("Champagnat 682, Pilar Centro" con CP 1629 → PILAR), se prefiere esa.
+function ghLocElegirDelCp(locs,lista,prov,localidad,pista){
   let pool=lista.filter(k=>k.ok===true);
   if(!pool.length&&!prov&&new Set(lista.map(k=>k.x.prov)).size===1) pool=lista;
   if(!pool.length) return null;
   if(!locs._peso){ const w={}; for(const [pv,arr] of Object.entries(locs.provIndex||{})) for(const l of arr){ const x=ghLocPartes(l); if(x){ const key=pv+"|"+x.loc; w[key]=(w[key]||0)+1; } } locs._peso=w; }
   const peso=k=>locs._peso[k.x.prov+"|"+k.x.loc]||0;
-  return [...pool].sort((a,b)=>peso(b)-peso(a)||a.x.loc.localeCompare(b.x.loc))[0];
+  const pn=" "+ghNrmSuc(pista||"")+" "; const nombrada=k=>k.x.loc.length>=4&&pn.includes(" "+k.x.loc+" ")?1:0;
+  return [...pool].sort((a,b)=>nombrada(b)-nombrada(a)||b.x.loc.length*nombrada(b)-a.x.loc.length*nombrada(a)||peso(b)-peso(a)||a.x.loc.localeCompare(b.x.loc))[0];
 }
 // → {loc, motivo} o null. `motivo` explica por qué se aceptó (para diagnóstico y tests).
 // `localidad`: un texto o la lista [localidad, ciudad] del pedido.
-function ghMatchLocalidad(locs,cp,provincia,localidad){
+function ghMatchLocalidad(locs,cp,provincia,localidad,pista){
   const c=ghLocCp(cp), prov=ghLocProvDe(locs,provincia), textos=ghLocTextos(localidad);
   if(c){
     const delCp=(locs?.cpIndex?.[c]||[]).map(l=>({l,x:ghLocPartes(l)})).filter(k=>k.x);
@@ -4656,9 +4658,10 @@ function ghMatchLocalidad(locs,cp,provincia,localidad){
     const exactas=sc.filter(k=>k.s===3);
     if(exactas.length===1) return {loc:exactas[0].l,motivo:"cp_localidad"};
     if(exactas.length>1){ const mismaProv=exactas.filter(k=>k.ok===true); if(mismaProv.length===1) return {loc:mismaProv[0].l,motivo:"cp_localidad"}; const e=ghLocElegirDelCp(locs,exactas,prov,""); return e?{loc:e.l,motivo:"cp_zona"}:null; }
-    // Ninguna entrada de este CP se llama igual. Si lo que escribió ES otra localidad
-    // lejana, no se acepta un parecido ("Mar del Plata" ≠ "La Plata"): a mano.
-    if(ghLocEnOtroCp(locs,prov,textos,c)) return null;
+    // Ninguna entrada de este CP se llama igual. REGLA (10/oct/2026 noche, pedido de Lautaro tras el
+    // #7406 "Las Mercedes" con CP 1629 de Pilar: "son a domicilio, es imposible que fallen"): con CP
+    // válido y provincia compatible NUNCA se pregunta, aunque la localidad escrita exista en otro lado.
+    // Manda el código postal, igual que en Andreani; se elige una entrada de ESE CP.
     const parecidas=sc.filter(k=>k.s===2);
     if(parecidas.length===1) return {loc:parecidas[0].l,motivo:"cp_localidad_parecida"};
     if(parecidas.length>1){
@@ -4671,7 +4674,7 @@ function ghMatchLocalidad(locs,cp,provincia,localidad){
     // Ninguna localidad del CP se parece (el comprador puso un barrio): solo si el CP
     // tiene UNA entrada y la provincia coincide exacta — no queda nada que elegir.
     if(cands.length===1&&sc[0].ok===true) return {loc:cands[0].l,motivo:"cp_unico_provincia"};
-    const e=ghLocElegirDelCp(locs,sc,prov,textos); return e?{loc:e.l,motivo:"cp_zona"}:null;
+    const e=ghLocElegirDelCp(locs,sc,prov,textos,[pista,...textos].filter(Boolean).join(" ")); return e?{loc:e.l,motivo:"cp_zona"}:null;
   }
   // Sin CP legible: provincia + localidad EXACTA, y solo si esa localidad tiene una única entrada.
   if(!prov||!textos.length) return null;
@@ -5121,7 +5124,7 @@ async function ghEtiquetaAndreaniXlsxUno(o) {
   else if(clean.length>0){telNum=clean;}
   // Localidad: núcleo ghMatchLocalidad. Sin coincidencia segura NO se genera el Excel
   // (antes caía a "la primera de la provincia" o "la primera de Buenos Aires").
-  const ubicacion=ghMatchLocalidad(locs,o.cp,o.provincia,[o.localidad,o.ciudad])?.loc||"";
+  const ubicacion=ghMatchLocalidad(locs,o.cp,o.provincia,[o.localidad,o.ciudad],`${o.direccion||""} ${o.piso||""}`)?.loc||"";
   const dirNum=String(o.dirNumero||"");
   const direccion=cl(o.direccion||"");
   // Medidas del paquete: la misma config que usa Envíos (modal "Paquete"),
@@ -10646,8 +10649,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     return andreaniLocsRef.current;
   }
   // Núcleo único ghMatchLocalidad (bloque GH_LOC_MATCH): nunca adivina.
-  function findAndreaniLocation(locs,cp,provincia,localidad) {
-    return ghMatchLocalidad(locs,cp,provincia,localidad)?.loc||null;
+  function findAndreaniLocation(locs,cp,provincia,localidad,pista) {
+    return ghMatchLocalidad(locs,cp,provincia,localidad,pista)?.loc||null;
   }
 
   // Selector manual de localidad. Sin texto: las localidades del CP del pedido.
@@ -10811,7 +10814,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         const {nombre,apellido,telCod,telNum}=getPersonData(o);
         // Sin respaldo: si no hay localidad segura la celda va VACÍA (Andreani rechaza la fila) y se avisa.
         const _ovrLoc=locationOverridesRef.current[ovrKey(o)];
-        const ubicacion=(_ovrLoc&&_ovrLoc!=="EXCLUIR"&&locs.list.includes(_ovrLoc)?_ovrLoc:"")||findAndreaniLocation(locs,o.cp,o.provincia,[o.localidad,o.ciudad])||"";
+        const ubicacion=(_ovrLoc&&_ovrLoc!=="EXCLUIR"&&locs.list.includes(_ovrLoc)?_ovrLoc:"")||findAndreaniLocation(locs,o.cp,o.provincia,[o.localidad,o.ciudad],`${o.direccion||""} ${o.piso||""}`)||"";
         const dirNum=extractStreetNum(o.direccion, o.dirNumero);
         const direccion=extractStreetName(o.direccion, o.dirNumero);
         if(!ubicacion||verifUbicacionVsPedido(o,ubicacion)==="warn")verifRows.push({o,numero:o.numero,comprador:o.comprador,tipo:"domicilio",escrito:ubicacion||"(sin localidad: la fila sale vacía)",esperado:`${o.localidad||o.ciudad||""}${o.provincia?`, ${o.provincia}`:""}${o.cp?` (CP ${o.cp})`:""}`});
@@ -11553,7 +11556,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
       const unresolvedDom=domicilioOrdersSinEsquina.filter(o=>{
         if(locationOverridesRef.current[ovrKey(o)]) return false;
-        return !findAndreaniLocation(locs,o.cp,o.provincia,[o.localidad,o.ciudad]);
+        return !findAndreaniLocation(locs,o.cp,o.provincia,[o.localidad,o.ciudad],`${o.direccion||""} ${o.piso||""}`);
       });
       // Marcas "no operativa" viejas: si esa sucursal ya no figura dada de
       // baja (p. ej. fue un falso positivo), se desmarca y vuelve al flujo normal.
@@ -14301,17 +14304,24 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       <span style={{fontSize:11,color:pd?.name?T.accent:T.textSm,fontWeight:600,textAlign:"right",maxWidth:180}}>{pd?.name||(isSucursalOrder(o)?"Retiro en sucursal":"A domicilio")}</span>
                     </div>
                     {dirDisplay&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{dirDisplay}{locDisplay?` — ${locDisplay}`:""}</div>}
+                    {!isSucursalOrder(o)&&(<div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}>
+                      <span style={{fontSize:12,color:T.textMd}}>Altura (número de puerta):</span>
+                      <input type="number" min="1" placeholder="Ej.: 450" value={esquinaModal.alturas?.[o.numero]||""} onChange={e=>setEsquinaModal(m=>m&&({...m,alturas:{...(m.alturas||{}),[o.numero]:e.target.value}}))} style={{...iS,marginBottom:0,width:110,padding:"6px 10px",fontSize:13}}/>
+                    </div>)}
                   </div>
                 );
               })}
             </div>
             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 14px",marginBottom:16,fontSize:12,color:T.textMd,lineHeight:1.6}}>
               <strong style={{color:T.text}}>¿Qué hacer?</strong><br/>
-              {esquinaModal.orders.some(o=>!isSucursalOrder(o))&&<>A domicilio: pedile la altura al cliente y corregí la dirección en tu tienda, o cargalo a mano en <strong>Andreani Empresas → Carga individual</strong>. Con "Generar etiquetas (Saldo)" también podés mandarlo a una sucursal cercana.<br/></>}
+              {esquinaModal.orders.some(o=>!isSucursalOrder(o))&&<>A domicilio: si sabés la altura, escribila arriba y exportá ese pedido ahí mismo; si no, pedísela al cliente y corregí la dirección en tu tienda, o cargalo a mano en <strong>Andreani Empresas → Carga individual</strong>. Con "Generar etiquetas (Saldo)" también podés mandarlo a una sucursal cercana.<br/></>}
               {esquinaModal.orders.some(o=>isSucursalOrder(o))&&<>Retiro en sucursal: cargalo a mano en <strong>Andreani Empresas → Carga individual</strong> buscando la sucursal por la otra calle de la esquina.</>}
             </div>
-            <div style={{display:"flex",justifyContent:"flex-end"}}>
-              <button onClick={()=>setEsquinaModal(null)} style={{...BtnPrimary(T),fontSize:13}}>Entendido</button>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap"}}>
+              {(()=>{ const listos=esquinaModal.orders.filter(o=>!isSucursalOrder(o)&&Number(esquinaModal.alturas?.[o.numero])>0);
+                // Con la altura cargada acá, el pedido deja de ser "en esquina": se exporta en un Excel aparte con esos pedidos.
+                return listos.length>0?<button onClick={()=>{ listos.forEach(o=>{ o.dirNumero=String(Math.round(Number(esquinaModal.alturas[o.numero]))); }); setEsquinaModal(null); setExportSingleOrder(null); exportAndreani(listos); }} style={{...BtnPrimary(T),fontSize:13}}>Exportar {listos.length===1?"este pedido":`estos ${listos.length}`} con la altura</button>:null; })()}
+              <button onClick={()=>setEsquinaModal(null)} style={{...BtnSecondary(T),fontSize:13}}>Cerrar</button>
             </div>
           </div>
         )}

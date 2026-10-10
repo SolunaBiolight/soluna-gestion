@@ -50,7 +50,7 @@ eq("CP único pero otra provincia → a mano",m("5000","Buenos Aires","La Plata"
 { const r=M.ghLocPartes(m("1842","Buenos Aires","Autónomos I")); eq("#7365 (ciudad basura de la tienda): entrada de Buenos Aires 1842",[r?.prov,r?.cp],["BUENOS AIRES","1842"]); }
 eq("mismo pedido, siempre la misma elección",m("1842","Buenos Aires","Autónomos I"),m("1842","Buenos Aires","xx"));
 { const r=M.ghLocPartes(m("5000","","Barrio Jardin Espinosa")); eq("sin provincia pero todo el CP es de una sola: entrada de ese CP",[r?.prov,r?.cp],["CORDOBA","5000"]); }
-eq("sin provincia y la ciudad es OTRA localidad real → a mano",m("5000","","Mar del Plata"),null);
+{ const r=M.ghLocPartes(m("5000","","Mar del Plata")); eq("sin provincia y la ciudad es otra localidad: manda el CP",[r?.prov,r?.cp],["CORDOBA","5000"]); }
 { const libre=["0001","0002","9998","9997"].find(c=>!cpIndex[c]); eq("CP inexistente → a mano (no cae a la provincia)",m(libre,"Buenos Aires","La Plata"),null); }
 console.log("elige:",m("1842","Buenos Aires","Autónomos I"),"|",m("4000","Tucumán","Barrio Sur"),"|",m("1900","Buenos Aires","Tolosa centro"));
 eq("sin CP y sin provincia → a mano",m("","","Rosario"),null);
@@ -58,8 +58,8 @@ eq("sin nada → a mano",m("","",""),null);
 eq("Olivos con provincia Capital y localidad que no coincide → a mano",m("1636","Ciudad Autónoma de Buenos Aires","Belgrano"),null);
 
 // Ciudad real de la provincia pero con el CP de otra: no se sabe cuál está mal → a mano
-eq("Olivos con CP de Monte Grande → a mano",m("1842","Buenos Aires","Olivos"),null);
-eq("Mar del Plata con CP de La Plata → a mano",m("1900","Buenos Aires","Mar del Plata"),null);
+{ const r=M.ghLocPartes(m("1842","Buenos Aires","Olivos")); eq("Olivos con CP de Monte Grande: manda el CP, no se pregunta",[r?.prov,r?.cp],["BUENOS AIRES","1842"]); }
+{ const r=M.ghLocPartes(m("1900","Buenos Aires","Mar del Plata")); eq("Mar del Plata con CP de La Plata: manda el CP",[r?.prov,r?.cp],["BUENOS AIRES","1900"]); }
 eq("Monte Grande con su CP sigue saliendo solo",m("1842","Buenos Aires","Monte Grande"),"BUENOS AIRES / MONTE GRANDE / 1842");
 { const r=M.ghLocPartes(m("1834","Buenos Aires","Lomas de Zamora")); eq("partido como ciudad (Lomas de Zamora con CP de Temperley): sale solo con su CP",[r?.prov,r?.cp],["BUENOS AIRES","1834"]); }
 // Verificación final
@@ -96,8 +96,8 @@ eq("provincia que no se entiende (texto libre de Shopify) no contradice",m("5000
 eq("provincia equivocada pero CP + localidad iguales: vale el CP",m("3100","Santa Fe","Paraná"),"ENTRE RIOS / PARANA / 3100");
 eq("provincia equivocada y localidad que no es de ese CP → a mano",m("3100","Santa Fe","Rosario"),null);
 { const libre=["5026","5027","5028","5029","5030"].find(c=>!cpIndex[c]); if(libre){ const r=M.ghLocPartes(m(libre,"Córdoba","Córdoba")); eq("CP que no existe + localidad exacta con CP vecino: va a esa localidad",[r?.prov,r?.loc],["CORDOBA","CORDOBA"]); eq("…y la verificación final lo da por bueno",M.ghLocVerif({cp:libre,provincia:"Córdoba",localidad:"Córdoba"},m(libre,"Córdoba","Córdoba"),locs),"ok"); } }
-eq("siguen frenando: Olivos con CP de Monte Grande, aunque la ciudad repita",m("1842","Buenos Aires",["Olivos","Olivos"]),null);
-eq("siguen frenando: Mar del Plata con CP de La Plata",m("1900","Buenos Aires",["","Mar del Plata"]),null);
+{ const r=M.ghLocPartes(M.ghMatchLocalidad(locs,"1629","Buenos Aires",["Las Mercedes","Las Mercedes"],"740, Champagnat 682, B1630 Pilar Centro, Provincia de Buenos Aires 740")?.loc); eq("#7406 real: Las Mercedes con CP 1629 y la calle nombra Pilar → sale solo a PILAR 1629",[r?.prov,r?.loc,r?.cp],["BUENOS AIRES","PILAR","1629"]); }
+{ const r=M.ghLocPartes(m("1629","Buenos Aires","Las Mercedes")); eq("sin pista en la calle igual sale con una entrada del 1629",[r?.prov,r?.cp],["BUENOS AIRES","1629"]); }
 eq("zonas: 1896 y 1900 son vecinas",M.ghLocCpCerca("1896","1900"),true);
 eq("zonas: 1636 y 1842 no",M.ghLocCpCerca("1636","1842"),false);
 eq("zonas: 7600 y 1900 no",M.ghLocCpCerca("7600","1900"),false);
