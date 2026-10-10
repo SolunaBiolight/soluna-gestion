@@ -13030,20 +13030,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     <button key={t.id} onClick={()=>{
                       setTabEnvio(t.id);setSelected(new Map());setSearchEnvios("");setBuscarQuery("");
                       fetchTabOrders(t.id);if(!tabCounts[t.id])fetchTabCounts(user?.uid);
-                    }} style={{display:"inline-flex",alignItems:"center",gap:9,height:42,padding:"0 20px",borderRadius:DS.r.full,fontSize:15,fontWeight:isActive?700:500,border:"none",background:isActive?(T.isDark?"rgba(255,255,255,.09)":T.surface):"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.14s",whiteSpace:"nowrap"}}>
+                    }} style={{display:"inline-flex",alignItems:"center",gap:8,height:36,padding:"0 16px",borderRadius:DS.r.full,fontSize:14,fontWeight:isActive?700:500,border:"none",background:isActive?(T.isDark?"rgba(255,255,255,.09)":T.surface):"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.14s",whiteSpace:"nowrap"}}>
                       {t.label}
-                      <span style={{background:isActive?T.accentSolid:T.surface,color:isActive?"#fff":T.textMd,fontSize:12,fontWeight:800,borderRadius:DS.r.full,padding:"0 8px",minWidth:24,height:22,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>
+                      <span style={{background:isActive?T.accentSolid:T.surface,color:isActive?"#fff":T.textMd,fontSize:11,fontWeight:800,borderRadius:DS.r.full,padding:"0 7px",minWidth:22,height:20,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>
                         {counts[t.id]===null?"·":counts[t.id]}
                       </span>
                     </button>
                   );
                 })}
               </div>
-              <div style={{flex:"1 1 280px",maxWidth:460,height:50,boxSizing:"border-box",display:"flex",alignItems:"center",gap:10,padding:"0 8px 0 18px",background:T.card,border:`1px solid ${tabEnvio==="buscar"?T.textSm:T.border}`,borderRadius:DS.r.full,minWidth:0}}>
+              <div style={{flex:"1 1 280px",maxWidth:440,height:44,boxSizing:"border-box",display:"flex",alignItems:"center",gap:10,padding:"0 6px 0 16px",background:T.card,border:`1px solid ${tabEnvio==="buscar"?T.textSm:T.border}`,borderRadius:DS.r.full,minWidth:0}}>
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={tabEnvio==="buscar"?T.accent:T.textSm} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <input value={buscarQuery} onChange={e=>setBuscarQuery(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); buscar(); } if(e.key==="Escape"){ e.stopPropagation(); salirBusqueda(); } }} placeholder="Buscar pedido, nombre o email" style={{flex:1,minWidth:0,border:"none",outline:"none",background:"transparent",color:T.text,fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                 {(buscarQuery||tabEnvio==="buscar")&&<button onClick={salirBusqueda} title="Cerrar la búsqueda" style={{width:30,height:30,borderRadius:99,border:"none",background:"transparent",color:T.textSm,cursor:"pointer",fontSize:15,fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>✕</button>}
-                {buscarQuery.trim().length>=2&&<button onClick={buscar} style={{height:36,padding:"0 16px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>Buscar</button>}
+                {buscarQuery.trim().length>=2&&<button onClick={buscar} style={{height:32,padding:"0 14px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>Buscar</button>}
               </div>
               {tabRefreshing&&(
                 <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,fontWeight:500,color:T.textSm}}>
@@ -13064,7 +13064,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             <div style={{display:"flex",columnGap:16,rowGap:12,alignItems:"center",flexWrap:"wrap"}}>
               {tabEnvio!=="buscar"&&<div style={{display:"flex",gap:2,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:4,gap:4}}>
                 {[["todos","Todos"],["domicilio","Domicilio"],["sucursal","Sucursal"]].map(([v,l])=>(
-                  <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Map());}} style={{height:36,padding:"0 20px",fontSize:14,border:"none",borderRadius:DS.r.full,background:filterTipoEnvio===v?T.surface:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?700:500,transition:"all 0.1s",boxShadow:"none",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
+                  <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Map());}} style={{height:30,padding:"0 16px",fontSize:13,border:"none",borderRadius:DS.r.full,background:filterTipoEnvio===v?T.surface:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?700:500,transition:"all 0.1s",boxShadow:"none",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
                 ))}
               </div>}
               <span title="Atajos: Ctrl+A selecciona todos · Shift+click selecciona un rango · Esc limpia la selección · Enter exporta"
@@ -13142,7 +13142,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               {/* Seleccionar todo a un clic, sin entrar al desplegable (pedido 17/9) */}
               {exportables.length>0&&(()=>{ const todo=selected.size===exportables.length; return (
                 <button onClick={()=>toggleAll()} title={todo?"Quitar la selección":`Seleccionar los ${exportables.length} pedidos de la lista`}
-                  style={{order:1,display:"inline-flex",alignItems:"center",gap:10,height:44,padding:"0 22px 0 16px",fontSize:14,fontWeight:700,borderRadius:DS.r.full,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap",transition:"all .12s",border:`1px solid ${todo?T.accentSolid:T.textSm}`,background:todo?T.accentSolid+"1f":T.card,color:T.text}}>
+                  style={{order:1,display:"inline-flex",alignItems:"center",gap:9,height:38,padding:"0 18px 0 13px",fontSize:13,fontWeight:700,borderRadius:DS.r.full,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap",transition:"all .12s",border:`1px solid ${todo?T.accentSolid:T.textSm}`,background:todo?T.accentSolid+"1f":T.card,color:T.text}}>
                   <span style={{width:18,height:18,borderRadius:99,border:`1.5px solid ${todo?T.accentSolid:T.textSm}`,background:todo?T.accentSolid:"transparent",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{todo&&<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}</span>
                   {todo?`${exportables.length} seleccionados · quitar`:`Seleccionar todo (${exportables.length})`}
                 </button>
@@ -13157,7 +13157,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       declarado) — no solo la emisión por API. Sin este botón, las
                       cuentas sin Andreani prepago exportaban con los defaults sin
                       poder cambiarlos. */}
-                  <button onClick={()=>setPaqModal(true)} title={paqResumen()} style={{...BtnSecondary(T),height:48,boxSizing:"border-box",borderRadius:DS.r.full,fontSize:14,fontWeight:600,padding:"0 20px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:8}}>
+                  <button onClick={()=>setPaqModal(true)} title={paqResumen()} style={{...BtnSecondary(T),height:42,boxSizing:"border-box",borderRadius:DS.r.full,fontSize:13,fontWeight:600,padding:"0 18px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:8}}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
                     Paquete
                   </button>
@@ -13165,14 +13165,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       saldo = verde (la vía recomendada, mismo verde del saldo). */}
                   <button onClick={()=>{setExportSingleOrder(null);exportAndreani([...selected.values()]);}}
                     title="Genera el Excel para subir al portal de Andreani y pagar con tu propia cuenta"
-                    style={{...BtnPrimary(T),height:48,boxSizing:"border-box",borderRadius:DS.r.full,fontWeight:700,fontSize:15,padding:"0 26px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:9}}>
+                    style={{...BtnPrimary(T),height:42,boxSizing:"border-box",borderRadius:DS.r.full,fontWeight:700,fontSize:14,padding:"0 22px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:9}}>
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
                     Exportar XLSX Andreani ({selected.size})
                   </button>
                   {andreani.enabled&&(
                     <button onClick={()=>{setExportSingleOrder(null);lanzarBulkAndreani([...selected.values()]);}}
                       title="Cotiza y emite las etiquetas al instante, debitando del saldo de envíos"
-                      style={{...BtnPrimary(T),height:48,boxSizing:"border-box",borderRadius:DS.r.full,border:`1px solid ${T.isDark?"#16a34a":"#15803d"}`,background:T.isDark?"#16a34a":"#15803d",color:"#fff",boxShadow:`0 6px 22px ${T.green}3d`,fontSize:15,fontWeight:700,padding:"0 26px",display:"flex",alignItems:"center",gap:9,whiteSpace:"nowrap",position:"relative"}}>
+                      style={{...BtnPrimary(T),height:42,boxSizing:"border-box",borderRadius:DS.r.full,border:`1px solid ${T.isDark?"#16a34a":"#15803d"}`,background:T.isDark?"#16a34a":"#15803d",color:"#fff",boxShadow:`0 6px 22px ${T.green}3d`,fontSize:14,fontWeight:700,padding:"0 22px",display:"flex",alignItems:"center",gap:9,whiteSpace:"nowrap",position:"relative"}}>
                       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                       Generar etiquetas (Saldo) ({selected.size})
                       <span style={{fontSize:10,fontWeight:800,letterSpacing:0.4,textTransform:"uppercase",background:"rgba(255,255,255,.22)",color:"#fff",borderRadius:DS.r.full,padding:"3px 9px",marginLeft:2}}>Recomendado</span>
