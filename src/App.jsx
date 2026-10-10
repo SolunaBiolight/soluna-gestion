@@ -13032,20 +13032,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     <button key={t.id} onClick={()=>{
                       setTabEnvio(t.id);setSelected(new Map());setSearchEnvios("");setBuscarQuery("");
                       fetchTabOrders(t.id);if(!tabCounts[t.id])fetchTabCounts(user?.uid);
-                    }} style={{display:"inline-flex",alignItems:"center",gap:9,height:42,padding:"0 20px",borderRadius:DS.r.full,fontSize:15,fontWeight:isActive?700:500,border:"none",background:isActive?T.accentSolid:"transparent",color:isActive?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.14s",whiteSpace:"nowrap"}}>
+                    }} style={{display:"inline-flex",alignItems:"center",gap:9,height:42,padding:"0 20px",borderRadius:DS.r.full,fontSize:15,fontWeight:isActive?700:500,border:"none",background:isActive?(T.isDark?"rgba(255,255,255,.09)":T.surface):"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.14s",whiteSpace:"nowrap"}}>
                       {t.label}
-                      <span style={{background:isActive?"rgba(255,255,255,.22)":T.surface,color:isActive?"#fff":T.textMd,fontSize:12,fontWeight:800,borderRadius:DS.r.full,padding:"0 8px",minWidth:24,height:22,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>
+                      <span style={{background:isActive?T.accentSolid:T.surface,color:isActive?"#fff":T.textMd,fontSize:12,fontWeight:800,borderRadius:DS.r.full,padding:"0 8px",minWidth:24,height:22,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>
                         {counts[t.id]===null?"·":counts[t.id]}
                       </span>
                     </button>
                   );
                 })}
               </div>
-              <div style={{flex:"1 1 280px",maxWidth:460,height:50,boxSizing:"border-box",display:"flex",alignItems:"center",gap:10,padding:"0 8px 0 18px",background:T.card,border:`1px solid ${tabEnvio==="buscar"?T.accentSolid:T.border}`,borderRadius:DS.r.full,minWidth:0}}>
+              <div style={{flex:"1 1 280px",maxWidth:460,height:50,boxSizing:"border-box",display:"flex",alignItems:"center",gap:10,padding:"0 8px 0 18px",background:T.card,border:`1px solid ${tabEnvio==="buscar"?T.textSm:T.border}`,borderRadius:DS.r.full,minWidth:0}}>
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={tabEnvio==="buscar"?T.accent:T.textSm} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <input value={buscarQuery} onChange={e=>setBuscarQuery(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); buscar(); } if(e.key==="Escape"){ e.stopPropagation(); salirBusqueda(); } }} placeholder="Buscar pedido, nombre o email" style={{flex:1,minWidth:0,border:"none",outline:"none",background:"transparent",color:T.text,fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                 {(buscarQuery||tabEnvio==="buscar")&&<button onClick={salirBusqueda} title="Cerrar la búsqueda" style={{width:30,height:30,borderRadius:99,border:"none",background:"transparent",color:T.textSm,cursor:"pointer",fontSize:15,fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>✕</button>}
-                {buscarQuery.trim().length>=2&&<button onClick={buscar} style={{height:36,padding:"0 16px",borderRadius:DS.r.full,border:"none",background:T.accentSolid,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>Buscar</button>}
+                {buscarQuery.trim().length>=2&&<button onClick={buscar} style={{height:36,padding:"0 16px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>Buscar</button>}
               </div>
               {tabRefreshing&&(
                 <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,fontWeight:500,color:T.textSm}}>
@@ -13075,8 +13075,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               </span>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-              {/* Selector unificado de pedidos */}
-              <div style={{position:"relative"}}>
+              {/* Elegir por página: solo cuando hay más de una (con una sola alcanza "Seleccionar todo") */}
+              {totalPages>1&&<div style={{position:"relative",order:2}}>
                 <button onClick={e=>{e.stopPropagation();setShowPagePicker(v=>!v);}}
                   style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",gap:6,
                     color:selected.size>0?T.accent:T.textMd,
@@ -13087,7 +13087,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       ? <><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12l3 3 5-6"/></>
                       : <rect x="3" y="3" width="18" height="18" rx="3"/>}
                   </svg>
-                  {selected.size>0?`${selected.size} seleccionados`:"Seleccionar"}<span style={{fontSize:10,opacity:0.7,marginLeft:2}}>▾</span>
+                  {selected.size>0&&selected.size<exportables.length?`${selected.size} seleccionados`:"Elegir por página"}<span style={{fontSize:10,opacity:0.7,marginLeft:2}}>▾</span>
                 </button>
                 {showPagePicker&&(
                   <>
@@ -13142,17 +13142,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     </div>
                   </>
                 )}
-              </div>
+              </div>}
               {/* Seleccionar todo a un clic, sin entrar al desplegable (pedido 17/9) */}
               {exportables.length>0&&(()=>{ const todo=selected.size===exportables.length; return (
                 <button onClick={()=>toggleAll()} title={todo?"Quitar la selección":`Seleccionar los ${exportables.length} pedidos de la lista`}
-                  style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:todo?T.accent:T.textMd,borderColor:todo?T.accent:T.border,background:todo?T.accent+"12":"transparent"}}>
-                  {todo?"Deseleccionar todo":`Seleccionar todo (${exportables.length})`}
+                  style={{order:1,display:"inline-flex",alignItems:"center",gap:9,height:40,padding:"0 18px 0 14px",fontSize:14,fontWeight:700,borderRadius:DS.r.full,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap",transition:"all .12s",border:`1px solid ${todo?T.accentSolid:T.textSm}`,background:todo?T.accentSolid+"1f":T.card,color:T.text}}>
+                  <span style={{width:18,height:18,borderRadius:99,border:`1.5px solid ${todo?T.accentSolid:T.textSm}`,background:todo?T.accentSolid:"transparent",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{todo&&<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}</span>
+                  {todo?`${exportables.length} seleccionados · quitar`:`Seleccionar todo (${exportables.length})`}
                 </button>
               ); })()}
+              {selected.size>0&&selected.size<exportables.length&&totalPages<=1&&<span style={{order:2,fontSize:13,color:T.textMd}}>{selected.size} seleccionado{selected.size!==1?"s":""} · <span onClick={()=>setSelected(new Map())} style={{color:T.accent,fontWeight:600,cursor:"pointer"}}>quitar</span></span>}
               {/* CTAs de exportación en la fila de controles, junto al selector —
                   la barra flotante quedaba disimulada; acá se ven siempre */}
-              <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+              <div style={{marginLeft:"auto",order:3,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
               {selected.size>0&&(
                 <>
                   {/* La config de paquete la usa el XLSX de TODOS (peso/medidas/valor
