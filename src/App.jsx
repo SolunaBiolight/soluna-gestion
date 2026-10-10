@@ -13176,12 +13176,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             </div>
             )}
 
-            {/* La tabla vive en una tarjeta (borde, esquinas y encabezado con fondo) en vez de flotar sobre la página */}
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden"}}>
             {tabLoading||buscarLoading?(
               <div>
                 {[...Array(6)].map((_,i)=>(
-                  <div key={i} style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1.2fr 140px 180px 110px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,alignItems:"center",opacity:1-i*0.12}}>
+                  <div key={i} style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 90px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,alignItems:"center",opacity:1-i*0.12}}>
                     {[40,70,120,100,140,100,70].map((w,j)=>(
                       <div key={j} style={{height:12,borderRadius:6,background:T.surface,animation:"growith-skeleton 1.4s ease infinite",animationDelay:`${i*80+j*40}ms`,width:w,maxWidth:"100%"}}/>
                     ))}
@@ -13230,7 +13228,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 {/* Scroll horizontal en pantallas chicas — la grilla de 7 columnas
                     fijas antes se aplastaba/desbordaba en mobile */}
                 <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><div style={{minWidth:720}}>
-                <div style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1.2fr 140px 180px 110px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.border}`,background:T.surface}}>
+                <div style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
                   <span/><span>Pedido</span><span>Cliente</span><span>Productos</span>
                   <span>Estado</span>
                   <span>Envío</span>
@@ -13242,9 +13240,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   const exportedOn=exportadoMap[o.numero]?new Date(exportadoMap[o.numero]).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
                   return (
                     <div key={o.numero} onClick={()=>setOrderDetail(o)}
-                      style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1.2fr 140px 180px 110px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"14":exportedOn?T.green+"0a":"transparent",boxShadow:sel?`inset 3px 0 0 ${T.accentSolid}`:"none",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
-                      onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.surface;}}
-                      onMouseLeave={e=>{if(!sel)e.currentTarget.style.background=sel?T.accentSolid+"14":exportedOn?T.green+"0a":"transparent";}}>
+                      style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
+                      onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
+                      onMouseLeave={e=>{if(!sel)e.currentTarget.style.background=sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent";}}>
                       {/* En mobile el target es más grande (dedo, no mouse): padding invisible alrededor del check */}
                       <div onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e,o);}} style={{width:32,height:32,margin:-7,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1,cursor:"pointer"}}>
                         <div style={{width:typeof window!=="undefined"&&window.innerWidth<=760?22:18,height:typeof window!=="undefined"&&window.innerWidth<=760?22:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -13259,13 +13257,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</div>
                         {<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{o.localidad||o.ciudad}{o.provincia?`, ${o.provincia}`:""}</div>}
                       </div>
-                      <div title={o.productos.map(p=>`${Number(p.cantidad)||1}x ${p.nombre}`).join("\n")} style={{display:"flex",gap:5,alignItems:"center",minWidth:0,overflow:"hidden"}}>
-                        {o.productos.slice(0,3).map((p,pi)=>(<span key={pi} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 8px",borderRadius:DS.r.sm,background:T.surface,border:`1px solid ${T.border}`,fontSize:12,fontWeight:600,color:T.text,whiteSpace:"nowrap",maxWidth:180,flexShrink:pi?1:0,minWidth:0}}><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{p.sku||nombreCorto(p.nombre)}</span>{(Number(p.cantidad)||1)>1&&<span style={{color:T.accent,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>×{Number(p.cantidad)}</span>}</span>))}
-                        {o.productos.length>3&&<span style={{fontSize:12,color:T.textSm,whiteSpace:"nowrap",flexShrink:0}}>+{o.productos.length-3}</span>}
+                      <div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        <LensDots productos={o.productos}/>
+                        {<span style={{marginLeft:6}}>{o.productos.map(p=>nombreCorto(p.nombre)).join(', ')}</span>}
                       </div>
-                      <span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:T.text,whiteSpace:"nowrap"}}><span style={{width:8,height:8,borderRadius:99,background:ec.dot,flexShrink:0}}/>{o.estadoEnvio}</span>
+                      <Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>
                       <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:0}}>
-                        <div title={o.medioEnvio||""} style={{fontSize:12,color:T.textMd,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}>
+                        <div style={{fontSize:11,color:o.esSucursal?T.purple:T.blue,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
                           {o.esSucursal
                             ?<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9h18l-1.5-5h-15L3 9z"/><path d="M4 9v11h16V9"/><path d="M9 20v-6h6v6"/></svg>
                             :<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>}
@@ -13294,12 +13292,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         {andreani.enabled&&filaEsAndreani(o)&&(()=>{
                           const c=cotRow[o.numero];
                           const yaNum=andreaniNumeroDe(o);
-                          const lk={fontSize:12,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5,width:"fit-content",fontFamily:"'Inter',system-ui,sans-serif",background:"none",border:"none",padding:0,whiteSpace:"nowrap"};
-                          if(yaNum) return <span style={{display:"inline-flex",alignItems:"center",gap:10}}><span title={`Etiqueta emitida — envío ${yaNum}`} onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...lk,color:T.green}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Etiqueta emitida</span><button title="Descargar el PDF de la etiqueta" onClick={e=>{e.stopPropagation();descargarEtiquetaBulk(String(yaNum),ghSkuLinesDe(o));}} style={{...lk,color:T.accent}}>PDF</button></span>;
-                          if(c?.loading) return <span style={{...lk,cursor:"default",color:T.textSm,fontWeight:500}}><Spinner size={10} color={T.textSm}/> Cotizando…</span>;
-                          if(c?.error) return <span title={`${c.error} — click para reintentar`} onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...lk,color:T.red}}>No se pudo cotizar · reintentar</span>;
-                          if(typeof c?.precio==="number") return <span title="Emitir la etiqueta de Andreani de este pedido" onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...lk,color:T.text}}><span style={{color:T.textSm,fontWeight:500}}>Etiqueta</span><span style={{color:T.green,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(c.precio)}</span></span>;
-                          return <span title="Cotizar el envío por Andreani" onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...lk,color:T.accent}}>Cotizar envío</span>;
+                          const chip={fontSize:10,fontWeight:700,borderRadius:5,padding:"2px 7px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,width:"fit-content",fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1.4};
+                          if(yaNum) return <span style={{display:"inline-flex",alignItems:"center",gap:4}}><span title={`Etiqueta emitida — envío ${yaNum}`} onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...chip,color:T.green,border:`1px solid ${T.green}55`,background:T.green+"12"}}>✓ Emitida</span><button title="Descargar el PDF de la etiqueta" onClick={e=>{e.stopPropagation();descargarEtiquetaBulk(String(yaNum),ghSkuLinesDe(o));}} style={{...chip,color:T.textMd,border:`1px solid ${T.border}`,background:"transparent",padding:"2px 6px"}}>PDF</button></span>;
+                          if(c?.loading) return <span style={{...chip,cursor:"default",color:T.textSm,border:`1px solid ${T.border}`}}><Spinner size={9} color={T.textSm}/> Cotizando…</span>;
+                          if(c?.error) return <span title={`${c.error} — click para reintentar`} onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...chip,color:T.red,border:`1px solid ${T.red}55`,background:T.red+"12"}}>Error al cotizar</span>;
+                          if(typeof c?.precio==="number") return <span title="Emitir etiqueta Andreani con este pedido" onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...chip,color:T.green,border:`1px solid ${T.green}55`,background:T.green+"12"}}>{fmtMoney(c.precio)}</span>;
+                          return <span title="Cotizar envío por Andreani" onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...chip,color:T.textMd,border:`1px dashed ${T.border}`}}>Cotizar</span>;
                         })()}
                       </div>
                       {/* El ✓ por fila se sacó: ensuciaba la tabla y empujaba a
@@ -13338,7 +13336,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 )}
               </>
             )}
-            </div>
           </div>
         )}
 
