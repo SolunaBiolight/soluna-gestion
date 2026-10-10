@@ -21457,7 +21457,11 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   const [nota,setNota]=useState("");
   const [pdf,setPdf]=useState(prefill?.pdfBytes?{bytes:prefill.pdfBytes,nombre:"etiquetas.pdf",pages:prefill.pages||0}:null);
   const [n,setN]=useState(prefill?.pedidos?.length||0);
-  const [lista,setLista]=useState("");
+  const [listaTxt,setLista]=useState("");
+  // Dos formularios distintos según el canal (10/oct/2026): las etiquetas de Mercado Libre ya vienen con
+  // sus productos, así que NO se pide ni se imprime qué va en cada paquete (solo nota); eso es de Andreani.
+  // `prefill.canalFijo` (botones por canal del cliente) quita además el selector "Lo retira".
+  const esML=canal==="ml"&&!especial; const canalFijo=!!prefill?.canalFijo&&!especial; const lista=esML?"":listaTxt;
   const [esp,setEsp]=useState({titulo:"",instrucciones:"",urgente:false,bultos:1});
   const [adj,setAdj]=useState([]);
   const [prog,setProg]=useState(null);
@@ -21539,7 +21543,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   const lbl=t=><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:5}}>{t}</div>;
   const filePick=(accept,onFile,texto)=>(<label style={{display:"inline-flex",alignItems:"center",height:36,boxSizing:"border-box",padding:"0 16px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:DS.font.base,fontWeight:DS.w.semibold,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{texto}<input type="file" accept={accept} style={{display:"none"}} onChange={e=>{ onFile(e.target.files?.[0]); e.target.value=""; }}/></label>);
   return (
-    <Modal T={T} open onClose={prog?()=>{}:onClose} title={tipo==="especial"?"Envío especial al depósito":"Enviar al depósito"} width={540} zIndex={1700}>
+    <Modal T={T} open onClose={prog?()=>{}:onClose} title={tipo==="especial"?"Envío especial al depósito":canalFijo?`Enviar etiquetas de ${GH_DEP_CANAL[canal]||canal}`:"Enviar al depósito"} width={540} zIndex={1700}>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         {tipo==="especial"&&(<>
           <div>{lbl("Qué es")}<input style={iS} placeholder="Ej.: Pedido mayorista Óptica Sur" value={esp.titulo} onChange={e=>setEsp(s=>({...s,titulo:e.target.value}))}/></div>
@@ -21585,19 +21589,19 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
             <input style={{...iS,width:110,marginBottom:0}} type="number" min="1" value={n||""} onChange={e=>setN(e.target.value)}/>
             {pdf.pages>0&&<span style={{fontSize:DS.font.sm,color:T.textSm}}>El PDF tiene {pdf.pages+(pdf.resumen||0)} página{pdf.pages+(pdf.resumen||0)!==1?"s":""}{pdf.resumen?` (${pdf.resumen} de resumen)`:""}.</span>}
           </div>)}
-          {verLista&&(<div>{lbl("Qué va en cada paquete · se imprime en la etiqueta")}
-            <textarea style={{...iS,minHeight:74,resize:"vertical",fontFamily:"monospace",fontSize:DS.font.md}} placeholder={cant===1?"Qué lleva el paquete, un producto por renglón:\n1x ROJ-NN\n1x LIQ":"Un renglón por etiqueta, en el orden del PDF:\n2x ROJ-NN, 1x LIQ\n1x NARAN-TT"} value={lista} onChange={e=>setLista(e.target.value)}/>
+          {verLista&&!esML&&(<div>{lbl("Qué va en cada paquete · se imprime en la etiqueta")}
+            <textarea style={{...iS,minHeight:74,resize:"vertical",fontFamily:"monospace",fontSize:DS.font.md}} placeholder={cant===1?"Qué lleva el paquete, un producto por renglón:\n1x ROJ-NN\n1x LIQ":"Un renglón por etiqueta, en el orden del PDF:\n2x ROJ-NN, 1x LIQ\n1x NARAN-TT"} value={listaTxt} onChange={e=>setLista(e.target.value)}/>
             {listaInfo.modo==="un_pedido"&&<div style={{fontSize:DS.font.sm,color:T.green,marginTop:-6}}>Es 1 etiqueta: todo esto se imprime en esa etiqueta.</div>}
             {listaInfo.modo==="uno_por_renglon"&&<div style={{fontSize:DS.font.sm,color:T.green,marginTop:-6}}>{cant>1?`${listaInfo.filas} renglones para ${cant} etiquetas: uno por paquete, en el orden del PDF. Cada uno se imprime en su etiqueta.`:"Se imprime en la etiqueta."}</div>}
             {listaInfo.modo==="nota"&&<div style={{fontSize:DS.font.sm,color:T.yellow,marginTop:-6}}>El PDF tiene {cant} etiquetas y escribiste {listaInfo.filas} renglón{listaInfo.filas!==1?"es":""}: se cuentan {cant} pedidos y esto le llega al depósito como nota, SIN imprimirse en las etiquetas. Para que salga impreso, escribí un renglón por etiqueta.</div>}
           </div>)}
-          {(!verLista||(!verCant&&pdf.pages>0))&&(<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {!verLista&&<DepBtn T={T} size="sm" ico="plus" onClick={()=>setVerLista(true)}>Agregar los productos de cada pedido</DepBtn>}
+          {((!verLista&&!esML)||(!verCant&&pdf.pages>0))&&(<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {!verLista&&!esML&&<DepBtn T={T} size="sm" ico="plus" onClick={()=>setVerLista(true)}>Agregar los productos de cada pedido</DepBtn>}
             {!verCant&&pdf.pages>0&&<DepBtn T={T} size="sm" onClick={()=>setVerCant(true)}>La cantidad no es {cant}</DepBtn>}
           </div>)}
         </div>)}
         <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-          <div style={{flex:1,minWidth:150}}>{lbl("Lo retira")}<select style={iS} value={canal} onChange={e=>setCanal(e.target.value)}>{Object.entries(GH_DEP_CANAL).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>
+          {!canalFijo&&<div style={{flex:1,minWidth:150}}>{lbl("Lo retira")}<select style={iS} value={canal} onChange={e=>setCanal(e.target.value)}>{Object.entries(GH_DEP_CANAL).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>}
           <div style={{flex:1,minWidth:150}}>{lbl("Día de despacho")}<input style={iS} type="date" value={fecha} min={hoy} onChange={e=>setFecha(e.target.value)}/></div>
         </div>
         {fueraDeCorte
@@ -21812,8 +21816,8 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
           {/* Un botón por canal: los dos abren la carga del PDF con el canal ya puesto. Traer las etiquetas
               de Mercado Libre por API (DepositoMlModal) quedó apagado el 10/oct/2026: todavía tenía errores. */}
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-            {[["andreani","Andreani",T.red,()=>setNuevo({tipo:"tanda",prefill:{canal:"andreani"}})],
-              ["ml","Mercado Libre",T.yellow,()=>setNuevo({tipo:"tanda",prefill:{canal:"ml"}})]].map(([k,l,c,fn])=>(
+            {[["andreani","Andreani",T.red,()=>setNuevo({tipo:"tanda",prefill:{canal:"andreani",canalFijo:true}})],
+              ["ml","Mercado Libre",T.yellow,()=>setNuevo({tipo:"tanda",prefill:{canal:"ml",canalFijo:true}})]].map(([k,l,c,fn])=>(
               <DepCanalBtn key={k} T={T} marca={k} color={c} canal={l} onClick={fn}/>
             ))}
           </div>
