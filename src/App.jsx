@@ -21709,112 +21709,185 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
   const [st,setSt]=useState(null); const [err,setErr]=useState("");
   const [nuevo,setNuevo]=useState(null); // {tipo:"tanda"|"especial", prefill?}
   const [pago,setPago]=useState(false); const [ml,setMl]=useState(false);
-  const [abierta,setAbierta]=useState(null); const [verCerradas,setVerCerradas]=useState(false);
+  const [tab,setTab]=useState("envios"); const [abierta,setAbierta]=useState(null);
+  const [q,setQ]=useState(""); const [mes,setMes]=useState("");
   const cargar=()=>api("c_tandas").then(d=>{ setSt(d); setErr(""); }).catch(e=>setErr(e.message));
   // Refresco liviano cada 60 s con la pestaña visible: el cliente ve avanzar su tanda sin recargar.
   useEffect(()=>{ cargar(); const iv=setInterval(()=>{ if(document.visibilityState==="visible") cargar(); },60000); return ()=>clearInterval(iv); },[]);
-  async function cancelar(t){ if(!(await appConfirm("¿Cancelar esta tanda? El depósito todavía no empezó a trabajarla.",{danger:true,okLabel:"Cancelar tanda"}))) return; try{ const r=await api("c_tanda_cancelar",{id:t.id}); toast("Tanda cancelada","success"); cargar(); }catch(e){ toast(e.message,"error"); } }
+  async function cancelar(t){ if(!(await appConfirm("¿Cancelar esta tanda? El depósito todavía no empezó a trabajarla.",{danger:true,okLabel:"Cancelar tanda"}))) return; try{ await api("c_tanda_cancelar",{id:t.id}); toast("Tanda cancelada","success"); cargar(); }catch(e){ toast(e.message,"error"); } }
   async function verPdf(t){ const w=ghDepVentana("application/pdf"); try{ ghDepAbrirBytes(await ghDepBajar(api,"c_file_get",t.id,"pdf",t.pdf.chunks),"application/pdf",`etiquetas_${t.fechaDespacho}.pdf`,w); }catch(e){ if(w&&!w.closed) w.close(); toast(e.message,"error"); } }
   if(err) return <DSEmpty T={T} title="No pudimos cargar el depósito" subtitle={/inv[aá]lido|inactivo/i.test(err)?"Este link ya no sirve: pedile al depósito que te mande el link nuevo.":err} action={/inv[aá]lido|inactivo/i.test(err)?null:<DepBtn T={T} variant="secondary" onClick={cargar}>Reintentar</DepBtn>}/>;
   if(!st) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
-  const saldo=st.cuenta?ghDepSaldo(T,st.cuenta.saldo):null;
+  const saldo=st.cuenta?ghDepSaldo(T,st.cuenta.saldo):{n:0,col:T.textSm};
+  const porVerificar=Number(st.cuenta?.porVerificar)||0;
   const extraCfg={extraItemsIncluidos:st.extraItemsIncluidos,extraItemPrecio:st.extraItemPrecio};
   const hoy=hoyAR(); const corte=st.corteHora??15;
-  const vivas=st.tandas.filter(t=>["pendiente","impresa","armada"].includes(t.estado)), cerradas=st.tandas.filter(t=>!["pendiente","impresa","armada"].includes(t.estado));
-  const Tanda=({t})=>{ const open=abierta===t.id; const esp=t.tipo==="especial"; const cCanal=esp?T.purple:t.canal==="ml"?T.yellow:T.accent; const ico=esp?"bag":t.canal==="ml"?"tag":"truck";
-    const ap=t.pedidos.filter(p=>p.apartado&&!p.cancelado), canc=t.pedidos.filter(p=>p.cancelado); const nP=t.pedidos.filter(p=>!p.cancelado).length; const arm=t.pedidos.filter(p=>p.armado&&!p.cancelado).length;
-    const cancelada=t.estado==="cancelada"; const entregada=t.estado==="entregada";
-    const toggle=()=>setAbierta(open?null:t.id);
-    return (<div style={{background:T.card,border:`1px solid ${open?T.accentSolid+"66":T.border}`,borderRadius:DS.r["2xl"],boxShadow:DS.shadow.sm,overflow:"hidden",opacity:cancelada?0.55:1}}>
-      <div style={{padding:"14px 16px 12px"}}>
-        <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
-          <DepTile T={T} color={cCanal} ico={ico} size={40}/>
-          <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={toggle}>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{esp?(t.especial?.titulo||"Envío especial"):`${t.n} pedido${t.n!==1?"s":""}`}</span>
-              <DepCount T={T} color={cCanal}>{GH_DEP_CANAL[t.canal]||t.canal}</DepCount>
-              {t.fueraDeCorte&&!entregada&&!cancelada&&<DSBadge T={T} color={T.yellow} size="sm">Fuera de corte</DSBadge>}
-              {ap.length>0&&<DSBadge T={T} color={T.red} size="sm">{ap.length} apartado{ap.length!==1?"s":""}</DSBadge>}
-              {canc.length>0&&<DSBadge T={T} color={T.textSm} size="sm">{canc.length} cancelado{canc.length!==1?"s":""}</DSBadge>}
-            </div>
-            <div style={{display:"flex",gap:16,flexWrap:"wrap",marginTop:6,alignItems:"center"}}>
-              <DepFact T={T} ico="calendar" color={t.fechaDespacho===hoy&&!entregada&&!cancelada?T.accent:undefined}>{t.fechaDespacho===hoy?"despacho hoy":`despacho ${ghDepFechaLinda(t.fechaDespacho)}`}</DepFact>
-              {t.total>0&&<DepFact T={T} ico="wallet">{fmtMoney(t.total)}{t.extraItems>0?<span style={{color:T.textSm}}> ({t.extraDetalle?.pedidosConExtra||""} pedido{t.extraDetalle?.pedidosConExtra!==1?"s":""} por unidad: {fmtMoney(t.extraItems)} por {t.extraDetalle?.extraUnidades||""} unidad{t.extraDetalle?.extraUnidades!==1?"es":""})</span>:null}</DepFact>}
-              {t.hist?.length>0&&<DepFact T={T} ico="clock">{ghDepFechaHora(t.hist[t.hist.length-1].at)}</DepFact>}
-            </div>
+  // Dos pasos: pendiente → impresa. Todo lo que no está pendiente ni cancelado ya salió impreso.
+  const colorCanal=t=>t.tipo==="especial"?T.purple:t.canal==="andreani"?T.red:t.canal==="ml"?T.yellow:t.canal==="retiro"?T.blue:T.textMd;
+  const estadoDe=t=>t.estado==="cancelada"?["Cancelada",T.textSm]:t.estado==="pendiente"?["Pendiente",T.yellow]:["Impresa",T.green];
+  const vivas=st.tandas.filter(t=>t.estado==="pendiente").sort((a,b)=>(a.fechaDespacho||"").localeCompare(b.fechaDespacho||""));
+  const cerradas=st.tandas.filter(t=>t.estado!=="pendiente");
+  const nVivos=vivas.reduce((a,t)=>a+(t.n||0),0), nHoy=vivas.filter(t=>t.fechaDespacho<=hoy).reduce((a,t)=>a+(t.n||0),0);
+  // Avisos del depósito: pedidos apartados sin resolver, pedidos que canceló y notas en tandas pendientes.
+  const avisos=[];
+  for(const t of st.tandas){ if(t.estado==="cancelada") continue;
+    for(const p of t.pedidos||[]){ if(p.apartado&&!p.cancelado) avisos.push({id:t.id,c:T.red,ico:"alert",titulo:`Pedido #${p.numero} apartado`,txt:`${p.comprador?p.comprador+": ":""}${p.apartado.nota||"el depósito lo separó de la tanda"}`}); }
+    if(t.estado==="pendiente"){ for(const p of t.pedidos||[]){ if(p.cancelado) avisos.push({id:t.id,c:T.red,ico:"alert",titulo:`Pedido #${p.numero} cancelado por el depósito`,txt:p.cancelado.nota||""}); }
+      if(t.notaDeposito) avisos.push({id:t.id,c:T.blue,ico:"hand",titulo:"Nota del depósito",txt:t.notaDeposito});
+      if(t.fueraDeCorte) avisos.push({id:t.id,c:T.yellow,ico:"clock",titulo:"Tanda fuera de corte",txt:`Llegó después de las ${corte}:00: puede salir el próximo día hábil.`}); } }
+  // Historial: por mes y por texto (número de pedido o comprador).
+  const meses=[...new Set(cerradas.map(t=>(t.fechaDespacho||"").slice(0,7)).filter(Boolean))].sort().reverse();
+  const nomMes=m=>{ const [y,mm]=m.split("-"); return `${["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"][Number(mm)-1]||mm} ${y}`; };
+  const qq=q.trim().toLowerCase().replace(/^#/,"");
+  const coincide=p=>String(p.numero||"").toLowerCase().includes(qq)||String(p.comprador||"").toLowerCase().includes(qq);
+  const historial=cerradas.filter(t=>(!mes||(t.fechaDespacho||"").startsWith(mes))&&(!qq||(t.pedidos||[]).some(coincide)));
+  function descargarMes(){
+    const lista=st.tandas.filter(t=>t.estado!=="cancelada"&&(!mes||(t.fechaDespacho||"").startsWith(mes)));
+    if(!lista.length){ toast("No hay envíos para descargar","info"); return; }
+    const filas=[["Despacho","Canal","Estado","Pedidos de la tanda","Importe de la tanda","Nº pedido","Comprador","Productos","Situación"]];
+    for(const t of [...lista].sort((a,b)=>(a.fechaDespacho||"").localeCompare(b.fechaDespacho||""))){
+      const base=[t.fechaDespacho,t.tipo==="especial"?"Envío especial":(GH_DEP_CANAL[t.canal]||t.canal),estadoDe(t)[0],t.n,t.total||0];
+      if(!(t.pedidos||[]).length) filas.push([...base,"","","",""]);
+      (t.pedidos||[]).forEach((p,i)=>filas.push([...(i?[t.fechaDespacho,"","","",""]:base),p.numero,p.comprador,(p.items||[]).join(", "),p.cancelado?"Cancelado":p.apartado?"Apartado":""]));
+    }
+    filas.push([]); filas.push(["Total",`${lista.length} tandas`,"",lista.reduce((a,t)=>a+(t.n||0),0),lista.reduce((a,t)=>a+(Number(t.total)||0),0)]);
+    const csv=filas.map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(";")).join("\n");
+    const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"})); a.download=`deposito_${mes||"todo"}.csv`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),60000);
+  }
+  // Una tanda = una línea; el detalle se abre al tocarla.
+  const fila=(t,primera)=>{ const open=abierta===t.id; const esp=t.tipo==="especial"; const c=colorCanal(t); const [eTxt,eCol]=estadoDe(t);
+    const peds=t.pedidos||[]; const ap=peds.filter(p=>p.apartado&&!p.cancelado).length; const canc=peds.filter(p=>p.cancelado).length;
+    const pendiente=t.estado==="pendiente"; const cancelada=t.estado==="cancelada";
+    const cuando=!pendiente?ghDepFechaLinda(t.fechaDespacho):t.fechaDespacho<hoy?`atrasada · era el ${ghDepFechaLinda(t.fechaDespacho)}`:t.fechaDespacho===hoy?"sale hoy":`sale el ${ghDepFechaLinda(t.fechaDespacho)}`;
+    const hallados=qq&&!pendiente?peds.filter(coincide):[];
+    return (<div key={t.id} style={{borderTop:primera?"none":`1px solid ${T.borderL||T.border}`,opacity:cancelada?0.6:1}}>
+      <div onClick={()=>setAbierta(open?null:t.id)} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"12px 16px",cursor:"pointer",background:open?T.surface:"transparent",borderLeft:`4px solid ${c}`}}>
+        <div style={{flex:"1 1 220px",minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <span style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>{esp?(t.especial?.titulo||"Envío especial"):`${t.n} pedido${t.n!==1?"s":""}`}</span>
+            <span style={{fontSize:DS.font.md,color:T.textMd}}>{esp?"Envío especial":(GH_DEP_CANAL[t.canal]||t.canal)}</span>
+            {ap>0&&<DSBadge T={T} color={T.red} size="sm">{ap} apartado{ap!==1?"s":""}</DSBadge>}
+            {canc>0&&<DSBadge T={T} color={T.textSm} size="sm">{canc} cancelado{canc!==1?"s":""}</DSBadge>}
+            {t.fueraDeCorte&&pendiente&&<DSBadge T={T} color={T.yellow} size="sm">Fuera de corte</DSBadge>}
           </div>
-          <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
-            {t.pdf&&!t.pdf.purgado&&<DepBtn T={T} variant="secondary" size="sm" onClick={()=>verPdf(t)}>Ver PDF</DepBtn>}
-            {t.estado==="pendiente"&&<DepBtn T={T} variant="ghost" size="sm" onClick={()=>cancelar(t)}>Cancelar</DepBtn>}
-            <DepChevron T={T} open={open} onClick={toggle}/>
-          </div>
+          {hallados.length>0&&<div style={{fontSize:DS.font.md,color:T.accent,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{hallados.slice(0,3).map(p=>`#${p.numero} ${p.comprador||""}`.trim()).join(" · ")}{hallados.length>3?` y ${hallados.length-3} más`:""}</div>}
         </div>
-        <div style={{display:"flex",gap:18,alignItems:"center",marginTop:12,flexWrap:"wrap"}}>
-          <DepSteps T={T} estado={t.estado}/>
-          <span style={{flex:1}}/>
-          {nP>0&&!entregada&&!cancelada&&<DepProgress T={T} value={arm} total={nP} label="armados" done={arm>=nP}/>}
+        <span style={{fontSize:DS.font.md,color:pendiente&&t.fechaDespacho<hoy?T.red:T.textMd,fontWeight:pendiente&&t.fechaDespacho<=hoy?700:500,minWidth:96}}>{cuando}</span>
+        <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:DS.font.md,fontWeight:600,color:T.text,minWidth:88}}><span style={{width:8,height:8,borderRadius:99,background:eCol}}/>{eTxt}</span>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}} onClick={e=>e.stopPropagation()}>
+          {t.pdf&&!t.pdf.purgado&&<DepBtn T={T} size="sm" ico="eye" onClick={()=>verPdf(t)}>Ver PDF</DepBtn>}
+          {pendiente&&<DepBtn T={T} variant="danger" size="sm" onClick={()=>cancelar(t)}>Cancelar</DepBtn>}
         </div>
-        {t.notaDeposito&&<DepNota T={T} titulo="Nota del depósito" color={T.blue} ico="hand" style={{marginTop:10}}>{t.notaDeposito}</DepNota>}
-        {ap.length>0&&!open&&<DepNota T={T} titulo="Pedidos apartados" color={T.red} ico="alert" style={{marginTop:8}}>{ap.map(p=>`#${p.numero} ${p.comprador}: ${p.apartado.nota}`).join("\n")}</DepNota>}
       </div>
-      {open&&(<div style={{borderTop:`1px solid ${T.borderL}`,background:T.isDark?T.surface+"66":T.surface,padding:"12px 16px 14px"}}>
-        {t.nota&&<div style={{fontSize:DS.font.md,color:T.textMd,marginBottom:10}}><span style={{color:T.textSm}}>Tu nota:</span> {t.nota}</div>}
-        {t.pedidos.length>0?(<div style={{display:"flex",flexDirection:"column",maxHeight:360,overflow:"auto",border:`1px solid ${T.border}`,borderRadius:DS.r.xl,background:T.card}}>
-          {t.pedidos.map((p,i)=>(<div key={i} style={{display:"flex",gap:12,alignItems:"center",padding:"7px 14px",borderBottom:i<t.pedidos.length-1?`1px solid ${T.borderL}`:"none",background:p.apartado&&!p.cancelado?T.red+"0d":"transparent",opacity:p.cancelado?0.5:1}}>
-            <span style={{width:18,height:18,borderRadius:99,display:"flex",alignItems:"center",justifyContent:"center",background:p.armado&&!p.cancelado?T.green:"transparent",border:`2px solid ${p.armado&&!p.cancelado?T.green:T.border}`,flexShrink:0,fontSize:9,color:T.textSm,fontWeight:800}}>{p.cancelado?"✕":p.armado?<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.isDark?"#052e16":"#fff"} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>:null}</span>
-            <span style={{fontSize:DS.font.base,fontWeight:700,color:T.text,minWidth:70,fontVariantNumeric:"tabular-nums",textDecoration:p.cancelado?"line-through":"none"}}>#{p.numero}</span>
-            <span style={{fontSize:DS.font.md,color:T.textMd,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.comprador}{p.items.length?<span style={{color:T.textSm}}> · {p.items.join(", ")}</span>:null}</span>
-            {p.cancelado?<span style={{fontSize:DS.font.sm,color:T.textSm}}>cancelado por el depósito{p.cancelado.nota?`: ${p.cancelado.nota}`:""}</span>:p.apartado?<span style={{fontSize:DS.font.sm,color:T.red}}>apartado: {p.apartado.nota}</span>:p.armado?<span style={{fontSize:DS.font.sm,color:T.green}}>armado</span>:null}
+      {open&&(<div style={{padding:"12px 16px 16px 20px",background:T.surface,borderLeft:`4px solid ${c}`}}>
+        <div style={{display:"flex",gap:18,flexWrap:"wrap",fontSize:DS.font.md,color:T.textMd,marginBottom:10}}>
+          {t.total>0&&<span>Importe: <strong style={{color:T.text}}>{fmtMoney(t.total)}</strong>{t.extraItems>0?<span style={{color:T.textSm}}> ({t.extraDetalle?.pedidosConExtra||""} pedido{t.extraDetalle?.pedidosConExtra!==1?"s":""} cobrado{t.extraDetalle?.pedidosConExtra!==1?"s":""} por unidad)</span>:null}</span>}
+          {(t.hist||[]).map((h,i)=><span key={i} style={{color:T.textSm}}>{h.a==="pospuesta"?"Pospuesta":h.a==="entregada"||h.a==="impresa"?"Impresa":(GH_DEP_ESTADO[h.a]||h.a)} · {ghDepFechaHora(h.at)}</span>)}
+        </div>
+        {t.nota&&<div style={{fontSize:DS.font.md,color:T.textMd,marginBottom:10,whiteSpace:"pre-wrap"}}><span style={{color:T.textSm}}>Tu nota:</span> {t.nota}</div>}
+        {t.notaDeposito&&<DepNota T={T} titulo="Nota del depósito" color={T.blue} ico="hand" style={{marginBottom:10}}>{t.notaDeposito}</DepNota>}
+        {peds.length>0?(<div style={{maxHeight:320,overflow:"auto",border:`1px solid ${T.border}`,borderRadius:DS.r.xl,background:T.card}}>
+          {peds.map((p,i)=>(<div key={i} style={{display:"flex",gap:12,alignItems:"baseline",flexWrap:"wrap",padding:"8px 14px",borderTop:i?`1px solid ${T.borderL||T.border}`:"none",background:p.apartado&&!p.cancelado?T.red+"0d":qq&&coincide(p)?T.accentSolid+"14":"transparent",opacity:p.cancelado?0.55:1}}>
+            <span style={{fontSize:DS.font.base,fontWeight:700,color:T.text,minWidth:64,fontVariantNumeric:"tabular-nums",textDecoration:p.cancelado?"line-through":"none"}}>{p.numero?`#${p.numero}`:`${i+1}.`}</span>
+            <span style={{fontSize:DS.font.md,color:T.textMd,flex:"1 1 200px",minWidth:0}}>{p.comprador}{(p.items||[]).length?<span style={{color:T.textSm}}>{p.comprador?" · ":""}{p.items.join(", ")}</span>:null}</span>
+            {p.cancelado?<span style={{fontSize:DS.font.sm,color:T.textSm}}>cancelado por el depósito{p.cancelado.nota?`: ${p.cancelado.nota}`:""}</span>:p.apartado?<span style={{fontSize:DS.font.sm,color:T.red,fontWeight:600}}>apartado: {p.apartado.nota}</span>:null}
           </div>))}
-        </div>):<div style={{fontSize:DS.font.md,color:T.textSm}}>Esta tanda no tiene el detalle de pedidos.</div>}
-        {t.hist?.length>0&&<div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:10,fontSize:DS.font.sm,color:T.textSm}}>{t.hist.map((h,i)=><span key={i}>{h.a==="pospuesta"?"Pospuesta":(GH_DEP_ESTADO[h.a]||h.a)} · {ghDepFechaHora(h.at)}</span>)}</div>}
+        </div>):<div style={{fontSize:DS.font.md,color:T.textSm}}>Esta tanda no tiene el detalle de pedidos: se contaron las etiquetas del PDF.</div>}
       </div>)}
     </div>); };
+  const caja={background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden"};
+  const h2=(t,extra)=>(<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",margin:"26px 0 10px"}}><span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{t}</span><span style={{flex:1}}/>{extra}</div>);
+  // Cuenta: una sola tabla. Arriba van las transferencias avisadas que el depósito todavía no verificó (o rechazó).
+  const filasCuenta=[...(st.cuenta?.pagos||[]).map(p=>({pend:p})),...(st.cuenta?.movs||[])];
+  const plata=v=>v?<span style={{fontVariantNumeric:"tabular-nums"}}>{fmtMoney(v)}</span>:<span style={{color:T.textSm}}>—</span>;
   return (
     <div>
-      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:16}}>
-        <div style={{flex:1,minWidth:200}}><div style={{fontSize:DS.font["3xl"],fontWeight:800,color:T.text,letterSpacing:-0.8,lineHeight:1.1}}>{portal?st.cliente?.nombre:"Mis envíos al depósito"}</div><div style={{fontSize:DS.font.base,color:T.textSm,marginTop:6}}>{portal?"Subí el PDF con las etiquetas de los pedidos a armar y elegí el día de despacho.":"Las etiquetas que generás en Envíos van solas con \"Enviar al depósito\". Acá también podés subir un PDF suelto, bajar las de Mercado Libre o cargar un envío especial."}</div></div>
-        {tiendaUid&&<DepBtn T={T} variant="secondary" onClick={()=>setMl(true)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="tag" size={13}/>Etiquetas de Mercado Libre</span></DepBtn>}
-        <DepBtn T={T} variant="secondary" onClick={()=>setNuevo({tipo:"especial"})}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="bag" size={13}/>Envío especial</span></DepBtn>
-        <DepMainBtn T={T} ico="plus" onClick={()=>setNuevo({tipo:"tanda"})}>Enviar etiquetas</DepMainBtn>
+      <div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap",marginBottom:18}}>
+        <div style={{flex:"1 1 280px",minWidth:0}}>
+          <div style={{fontSize:DS.font.md,fontWeight:600,color:T.textSm,marginBottom:4}}>{portal?st.cliente?.nombre:"Depósito"}</div>
+          <div style={{fontSize:DS.font["3xl"],fontWeight:800,color:T.text,letterSpacing:-0.8,lineHeight:1.15}}>{nVivos>0?`${nVivos} pedido${nVivos!==1?"s":""} en el depósito`:"Nada pendiente en el depósito"}</div>
+          <div style={{fontSize:DS.font.lg,color:T.textMd,marginTop:6}}>{nVivos>0?(vivas.some(t=>t.fechaDespacho<hoy)?"Hay pedidos de días anteriores que el depósito todavía no imprimió.":nHoy>=nVivos?(nVivos===1?"Sale hoy.":"Salen todos hoy."):nHoy>0?`${nHoy} sale${nHoy!==1?"n":""} hoy, el resto en los próximos días.`:"Salen en los próximos días."):"Cuando mandes etiquetas, las vas a ver acá hasta que el depósito las imprima."}</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <DepMenu T={T} label="Otros envíos" items={[
+              tiendaUid&&{ico:"tag",label:"Etiquetas de Mercado Libre",onClick:()=>setMl(true)},
+              {ico:"bag",label:"Envío especial (con instrucciones)",onClick:()=>setNuevo({tipo:"especial"})},
+            ]}/>
+            <DepMainBtn T={T} ico="plus" onClick={()=>setNuevo({tipo:"tanda"})}>Enviar etiquetas</DepMainBtn>
+          </div>
+          <div style={{fontSize:DS.font.md,color:T.textSm}}>Lo que llega antes de las {corte}:00 sale el mismo día.</div>
+        </div>
       </div>
-      <DepStats T={T} items={[
-        {l:"Tu saldo",ico:"wallet",v:saldo?(saldo.n>0?fmtMoney(saldo.n):saldo.n<0?fmtMoney(-saldo.n):"Al día"):"—",c:saldo?.col,s:saldo?(saldo.n>0?"a pagar por transferencia":saldo.n<0?"a tu favor":"nada pendiente"):""},
-        {l:"En verificación",ico:"clock",v:fmtMoney(st.cuenta?.porVerificar||0),c:st.cuenta?.porVerificar>0?T.yellow:T.textSm,s:"transferencias informadas"},
-        {l:"En el depósito",ico:"box",v:vivas.reduce((a,t)=>a+t.n,0),s:`${vivas.length} tanda${vivas.length!==1?"s":""} en proceso`},
-        {l:"Corte",ico:"calendar",v:`${corte}:00`,s:"antes sale el mismo día"},
-      ]}/>
-      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginTop:-6,marginBottom:22,padding:"10px 14px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl}}>
-        <DepTile T={T} color={T.green} ico="bank" size={30}/>
-        <div style={{flex:1,minWidth:220,fontSize:DS.font.md,color:T.textMd,lineHeight:1.5}}>{saldo?.n>0?<>Tenés <strong style={{color:T.text}}>{fmtMoney(saldo.n)}</strong> a pagar. Transferí y avisá con el comprobante: cuando el depósito lo verifique, se descuenta de tu cuenta.</>:"Cuando transfieras, avisá con el comprobante desde acá."}{st.datosPago?<div style={{fontSize:DS.font.sm,color:T.textSm,whiteSpace:"pre-wrap",marginTop:2}}>{st.datosPago}</div>:null}</div>
-        <DepBtn T={T} variant={saldo?.n>0?"primary":"secondary"} size="sm" onClick={()=>setPago(true)}>Informar pago</DepBtn>
-      </div>
-      <DepSection T={T} title="En proceso" count={vivas.length} desc="Lo que el depósito todavía tiene para imprimir y armar.">
-        {vivas.length===0
-          ? <DSEmpty T={T} title="No hay tandas en proceso" subtitle="Subí el PDF con las etiquetas y el depósito lo ve al instante en su cola."/>
-          : <div style={{display:"flex",flexDirection:"column",gap:10}}>{vivas.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>}
-      </DepSection>
-      {cerradas.length>0&&(<DepSection T={T} title="Impresas y canceladas" count={cerradas.length} extra={<DepBtn T={T} variant="ghost" size="sm" onClick={()=>setVerCerradas(v=>!v)}>{verCerradas?"Ocultar":"Ver"}</DepBtn>}>
-        {verCerradas&&<div style={{display:"flex",flexDirection:"column",gap:10}}>{cerradas.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>}
-      </DepSection>)}
-      {(st.cuenta?.pagos||[]).length>0&&(<DepSection T={T} title="Transferencias informadas" desc="Las que avisaste y el depósito todavía no verificó, o rechazó. Las verificadas ya figuran como pago en tu cuenta, abajo.">
-        <DepTable T={T} minWidth={440} empty="" rows={st.cuenta.pagos} cols={[
-          {h:"Fecha",w:"80px",render:p=>ghDepFechaCorta(p.informadoAt)},
-          {h:"Detalle",w:"1fr",render:p=><span style={{color:T.textMd}}>{p.estado==="rechazado"?`Rechazada: ${p.nota}`:p.notaCliente||"Transferencia informada"}</span>},
-          {h:"Estado",w:"130px",render:p=><DepDot T={T} color={p.estado==="rechazado"?T.red:T.yellow}>{p.estado==="rechazado"?"Rechazada":"En verificación"}</DepDot>},
-          {h:"Monto",w:"100px",align:"right",render:p=><strong style={{color:T.text}}>{fmtMoney(p.monto)}</strong>},
+      {avisos.length>0&&(<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>
+        {avisos.slice(0,6).map((a,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"10px 14px",background:a.c+"12",border:`1px solid ${a.c}44`,borderRadius:DS.r.xl}}>
+          <DepIco d={a.ico} size={16} color={a.c}/>
+          <div style={{flex:"1 1 240px",minWidth:0,fontSize:DS.font.base,color:T.text,lineHeight:1.45}}><strong>{a.titulo}</strong>{a.txt?<span style={{color:T.textMd}}> · {a.txt}</span>:null}</div>
+          <DepBtn T={T} size="sm" onClick={()=>{ setTab("envios"); setAbierta(a.id); }}>Ver tanda</DepBtn>
+        </div>))}
+        {avisos.length>6&&<div style={{fontSize:DS.font.md,color:T.textSm}}>Y {avisos.length-6} aviso{avisos.length-6!==1?"s":""} más en tus tandas.</div>}
+      </div>)}
+      <DepSeg T={T} size="md" value={tab} onChange={setTab} items={[["envios","Envíos"],["cuenta",saldo.n>0?`Cuenta · debés ${fmtMoney(saldo.n)}`:porVerificar>0?"Cuenta · pago en verificación":"Cuenta"]]}/>
+      {tab==="envios"&&(<div>
+        {h2("En el depósito")}
+        {vivas.length?<div style={caja}>{vivas.map((t,i)=>fila(t,i===0))}</div>
+          :<div style={{...caja,padding:"18px 18px",fontSize:DS.font.base,color:T.textSm,borderStyle:"dashed"}}>No hay tandas esperando. Tocá "Enviar etiquetas" y el depósito las ve al instante.</div>}
+        {cerradas.length>0&&(<>
+          {h2("Historial",<>
+            <div style={{position:"relative"}}>
+              <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",display:"flex",pointerEvents:"none"}}><DepIco d="search" size={14} color={T.textSm}/></span>
+              <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Número de pedido o comprador" style={{...InputStyle(T),height:36,boxSizing:"border-box",borderRadius:DS.r.full,padding:"0 14px 0 34px",width:240,fontSize:DS.font.md}}/>
+            </div>
+            <select value={mes} onChange={e=>setMes(e.target.value)} style={{...InputStyle(T),height:36,boxSizing:"border-box",borderRadius:DS.r.full,padding:"0 12px",width:"auto",fontSize:DS.font.md}}>
+              <option value="">Todos los meses</option>{meses.map(m=><option key={m} value={m}>{nomMes(m)}</option>)}
+            </select>
+            <DepBtn T={T} size="sm" ico="file" onClick={descargarMes}>{mes?"Descargar el mes":"Descargar todo"}</DepBtn>
+          </>)}
+          {historial.length?<div style={caja}>{historial.slice(0,60).map((t,i)=>fila(t,i===0))}</div>
+            :<div style={{...caja,padding:"18px 18px",fontSize:DS.font.base,color:T.textSm,borderStyle:"dashed"}}>Ningún envío coincide con la búsqueda.</div>}
+          {historial.length>60&&<div style={{fontSize:DS.font.md,color:T.textSm,marginTop:8}}>Se muestran 60 de {historial.length}. Elegí un mes o buscá un pedido para acotar.</div>}
+        </>)}
+        {(st.ingresos||[]).length>0&&(<>
+          {h2("Mercadería que recibió el depósito")}
+          <DepTable T={T} minWidth={420} empty="" rows={st.ingresos} cols={[
+            {h:"Fecha",w:"70px",render:g=>ghDepFechaLinda(g.fecha)},
+            {h:"Bultos",w:"70px",align:"right",render:g=>g.bultos||"—"},
+            {h:"Contenido",w:"1fr",render:g=><span style={{color:T.textMd}}>{g.items.length?g.items.map(it=>`${it.cant}x ${it.sku}`).join(", "):"—"}{g.nota?<span style={{color:T.textSm}}> — {g.nota}</span>:null}</span>},
+          ]}/>
+        </>)}
+      </div>)}
+      {tab==="cuenta"&&(<div>
+        <div style={{...caja,marginTop:18,padding:"20px 22px",display:"flex",gap:20,alignItems:"center",flexWrap:"wrap"}}>
+          <div style={{flex:"1 1 240px",minWidth:0}}>
+            <div style={{fontSize:DS.font.md,fontWeight:600,color:T.textSm}}>{saldo.n>0?"Tenés para pagar":saldo.n<0?"Tenés a favor":"Tu cuenta"}</div>
+            <div style={{fontSize:DS.font["4xl"],fontWeight:800,color:saldo.n>0?T.text:saldo.n<0?T.green:T.text,letterSpacing:-1,lineHeight:1.15,fontVariantNumeric:"tabular-nums"}}>{saldo.n>0?fmtMoney(saldo.n):saldo.n<0?fmtMoney(-saldo.n):"Al día"}</div>
+            {porVerificar>0&&<div style={{fontSize:DS.font.base,color:T.yellow,fontWeight:600,marginTop:4}}>{fmtMoney(porVerificar)} ya avisado, el depósito lo está verificando.</div>}
+            {st.datosPago?<div style={{fontSize:DS.font.md,color:T.textMd,whiteSpace:"pre-wrap",marginTop:10,lineHeight:1.55}}><span style={{color:T.textSm}}>Transferí a: </span>{st.datosPago}</div>:null}
+          </div>
+          <DepBtn T={T} variant="primary" size="lg" ico="bank" onClick={()=>setPago(true)}>Informar un pago</DepBtn>
+        </div>
+        {(st.cuenta?.meses||[]).length>0&&(<>
+          {h2("Por mes")}
+          <DepTable T={T} minWidth={480} empty="" rows={st.cuenta.meses} cols={[
+            {h:"Mes",w:"1fr",render:m=><strong style={{color:T.text,textTransform:"capitalize"}}>{nomMes(m.mes)}</strong>},
+            {h:"Etiquetas",w:"90px",align:"right",render:m=>m.etiquetas},
+            {h:"Facturado",w:"120px",align:"right",render:m=>plata(m.cargos)},
+            {h:"Pagado",w:"120px",align:"right",render:m=>m.pagos?<span style={{color:T.green,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(m.pagos)}</span>:<span style={{color:T.textSm}}>—</span>},
+            {h:"Saldo al cierre",w:"140px",align:"right",render:m=>{ const x=ghDepSaldo(T,m.saldoCierre); return <span style={{color:x.n>0?T.text:x.col,fontVariantNumeric:"tabular-nums"}}>{x.n>0?fmtMoney(x.n):x.n<0?`${fmtMoney(-x.n)} a favor`:"Al día"}</span>; }},
+          ]}/>
+        </>)}
+        {h2("Movimientos")}
+        <DepTable T={T} minWidth={560} empty="Todavía no hay movimientos" rows={filasCuenta} cols={[
+          {h:"Fecha",w:"80px",render:m=>m.pend?ghDepFechaCorta(m.pend.informadoAt):m.fecha?new Date(m.fecha).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"}):"—"},
+          {h:"Detalle",w:"1fr",render:m=>m.pend
+            ?<span style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><DSBadge T={T} color={m.pend.estado==="rechazado"?T.red:T.yellow} size="sm">{m.pend.estado==="rechazado"?"Rechazada":"En verificación"}</DSBadge><span style={{color:T.textMd}}>{m.pend.estado==="rechazado"?(m.pend.nota||"El depósito rechazó esta transferencia"):(m.pend.notaCliente||"Transferencia avisada")}</span></span>
+            :<span style={{color:T.textMd,display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.concepto}</span>},
+          {h:"Cargo",w:"100px",align:"right",render:m=>m.pend?<span style={{color:T.textSm}}>—</span>:plata(m.debe)},
+          {h:"Pago",w:"100px",align:"right",render:m=>m.pend?<span style={{color:m.pend.estado==="rechazado"?T.textSm:T.yellow,textDecoration:m.pend.estado==="rechazado"?"line-through":"none",fontVariantNumeric:"tabular-nums"}}>{fmtMoney(m.pend.monto)}</span>:m.haber?<span style={{color:T.green,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(m.haber)}</span>:<span style={{color:T.textSm}}>—</span>},
+          {h:"Saldo",w:"120px",align:"right",render:m=>{ if(m.pend) return <span style={{color:T.textSm}}>—</span>; const x=ghDepSaldo(T,m.saldo); return <strong style={{color:x.n>0?T.text:x.col,fontVariantNumeric:"tabular-nums"}}>{x.n>0?fmtMoney(x.n):x.n<0?`${fmtMoney(-x.n)} a favor`:"Al día"}</strong>; }},
         ]}/>
-      </DepSection>)}
-      {(st.cuenta?.movs||[]).length>0&&(<DepSection T={T} title="Tu cuenta" desc="Cada tanda suma lo que cuesta y cada pago verificado lo descuenta. El saldo de la primera fila es lo que debés hoy.">
-        <DepLedger T={T} movs={st.cuenta.movs}/>
-      </DepSection>)}
-      {(st.ingresos||[]).length>0&&(<DepSection T={T} title="Mercadería recibida en el depósito">
-        <DepTable T={T} minWidth={420} empty="" rows={st.ingresos} cols={[
-          {h:"Fecha",w:"70px",render:g=>ghDepFechaLinda(g.fecha)},
-          {h:"Bultos",w:"70px",align:"right",render:g=>g.bultos||"—"},
-          {h:"Contenido",w:"1fr",render:g=><span style={{color:T.textMd}}>{g.items.length?g.items.map(it=>`${it.cant}x ${it.sku}`).join(", "):"—"}{g.nota?<span style={{color:T.textSm}}> — {g.nota}</span>:null}</span>},
-        ]}/>
-      </DepSection>)}
+        <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:8}}>Cada tanda suma su importe y cada pago verificado lo descuenta. Las transferencias "en verificación" todavía no bajan el saldo.</div>
+      </div>)}
       {nuevo&&<DepositoEnvioModal T={T} api={api} cliente={st.cliente} especial={nuevo.tipo==="especial"} prefill={nuevo.prefill} corte={corte} extraCfg={extraCfg} onClose={()=>setNuevo(null)} onDone={cargar}/>}
       {pago&&<DepositoPagoModal T={T} api={api} cuenta={st.cuenta} datosPago={st.datosPago} onClose={()=>setPago(false)} onDone={cargar}/>}
       {ml&&tiendaUid&&<DepositoMlModal T={T} tiendaUid={tiendaUid} onClose={()=>setMl(false)} onListo={prefill=>setNuevo({tipo:"tanda",prefill})}/>}
