@@ -22516,7 +22516,9 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
       {(()=>{ const manana=vivas.filter(t=>t.fechaDespacho===mananaStr), despues=vivas.filter(t=>t.fechaDespacho>mananaStr); const nAtr=nPed(atrasadas), nUrg=vivas.filter(urg).length; const dsp=st.despachados||{hoy:0,hoyTandas:0,mes:0,mesTandas:0};
         const nHoy=nPed(paraHoy), nMan=nPed(manana), nDesp=nPed(despues);
         const hayHoy=pendHoyConPdf.length>0; const lista=hayHoy?pendHoyConPdf:pendTodoConPdf; const nT=lista.length, nE=nPed(lista); const masAdelante=hayHoy&&pendTodoConPdf.length>pendHoyConPdf.length;
-        const nCli=new Set(paraHoy.map(t=>t.clienteId)).size;
+        // Pedidos del día: todo lo que tiene despacho HOY, esté pendiente o ya impreso, y cuántos son de cada correo.
+        const delDia=st.tandas.filter(t=>t.estado!=="cancelada"&&t.fechaDespacho===st.hoy); const nDia=nPed(delDia);
+        const diaCanal=Object.entries(delDia.reduce((m,t)=>{ m[t.canal]=(m[t.canal]||0)+t.n; return m; },{})).sort((a,b)=>b[1]-a[1]);
         const fechaHoy=(()=>{ const s=new Date(`${st.hoy}T12:00:00`).toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"}); return s.charAt(0).toUpperCase()+s.slice(1); })();
         return (<>
         <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",marginBottom:16}}>
@@ -22542,10 +22544,10 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
           </div>)}
         </div>
         <DepStrip T={T} items={[
-          {l:"Para hoy",v:nHoy,c:T.accent,s:nHoy?`${pl(paraHoy.length,"tanda")} de ${pl(nCli,"cliente")}`:"nada pendiente"},
+          {l:"Pedidos de hoy",v:nDia,c:nDia?T.accent:null,s:nDia?<span style={{display:"inline-flex",gap:12,alignItems:"center",color:T.textMd,fontWeight:600}}>{diaCanal.map(([c,n])=>(<span key={c} style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:99,background:colCanal(c)}}/>{GH_DEP_CANAL[c]||c} {n}</span>))}</span>:"todavía no llegó nada"},
+          {l:"Falta imprimir",v:nHoy,c:nHoy?T.yellow:null,s:`${dsp.hoy} ya impreso${dsp.hoy!==1?"s":""} hoy${owner?` · ${dsp.mes} en el mes`:""}`},
           {l:"Atrasados y urgentes",v:nAtr+nUrg,c:nAtr||nUrg?T.red:null,s:nAtr||nUrg?[nAtr?`${nAtr} de días anteriores`:"",nUrg?pl(nUrg,"urgente"):""].filter(Boolean).join(" · "):"todo al día"},
           {l:"Próximos días",v:nMan+nDesp,c:nMan+nDesp?T.blue:null,s:nMan?`${nMan} para mañana`:nDesp?"ya cargados":"sin tandas cargadas"},
-          {l:"Impresos hoy",v:dsp.hoy,c:dsp.hoy?T.green:null,s:owner?`${dsp.mes} en el mes`:pl(dsp.hoyTandas,"tanda")},
         ]}/>
         {nT>0&&(<div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",padding:"16px 18px",marginBottom:14,borderRadius:DS.r["2xl"],border:`1px solid ${T.accentSolid}66`,backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${T.accentSolid}30 0%, ${T.accentSolid}10 55%, transparent 100%)`}}>
           <span style={{width:46,height:46,borderRadius:DS.r.xl,background:T.accentSolid,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><DepIco d="print" size={22} color="#fff" sw={2.2}/></span>
