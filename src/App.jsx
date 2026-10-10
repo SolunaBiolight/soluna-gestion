@@ -21814,7 +21814,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
             {[["andreani","Andreani",T.red,()=>setNuevo({tipo:"tanda",prefill:{canal:"andreani"}})],
               ["ml","Mercado Libre",T.yellow,()=>tiendaUid?setMl(true):setNuevo({tipo:"tanda",prefill:{canal:"ml"}})]].map(([k,l,c,fn])=>(
-              <DepCanalBtn key={k} T={T} marca={k} canal={l} onClick={fn}/>
+              <DepCanalBtn key={k} T={T} marca={k} color={c} canal={l} onClick={fn}/>
             ))}
           </div>
           <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
@@ -22141,8 +22141,8 @@ function DepBtn({T,variant="secondary",size="md",ico,icon,children,onClick,disab
   return <button onClick={onClick} disabled={disabled} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} {...rest} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",boxSizing:"border-box",border:`1px solid ${V.bd}`,borderRadius:DS.r.full,background:V.bg,color:V.fg,fontWeight:DS.w.semibold,fontFamily:"'Inter',system-ui,sans-serif",cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.45:1,boxShadow:disabled?"none":V.sh,transition:`all .15s ${DS.ease}`,whiteSpace:"nowrap",flexShrink:0,...S,...style}}>{ico&&<DepIco d={ico} size={size==="sm"?13:15} sw={2.2}/>}{icon&&<span style={{display:"inline-flex",alignItems:"center"}}>{icon}</span>}{children}</button>;
 }
 // Botón grande por canal de la vista del cliente: neutro, con el logo oficial de la plataforma (BrandIcon) y dos renglones.
-function DepCanalBtn({T,marca,canal,onClick}){ const [h,setH]=useState(false);
-  return <button onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"inline-flex",alignItems:"center",gap:12,height:58,boxSizing:"border-box",padding:"0 22px 0 14px",border:`1px solid ${h?T.textSm:T.border}`,borderRadius:DS.r.xl,background:h?T.surface:T.card,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left",boxShadow:h?DS.shadow.md:DS.shadow.sm,transition:`all .15s ${DS.ease}`,flexShrink:0}}>
+function DepCanalBtn({T,marca,color,canal,onClick}){ const [h,setH]=useState(false);
+  return <button onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"inline-flex",alignItems:"center",gap:12,height:58,boxSizing:"border-box",padding:"0 22px 0 14px",border:`1px solid ${color}${h?"88":"44"}`,borderRadius:DS.r.xl,backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${color}${h?"38":"26"} 0%, ${color}${h?"14":"0a"} 55%, transparent 100%)`,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left",boxShadow:h?`0 6px 22px ${color}2e`:DS.shadow.sm,transition:`all .15s ${DS.ease}`,flexShrink:0}}>
     {/* Logo directo sobre el botón, sin recuadro. Andreani: isotipo oficial recortado y con fondo transparente (/brand/andreani-iso.png). */}
     <span style={{width:44,height:34,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{marca==="andreani"?<img src="/brand/andreani-iso.png" alt="Andreani" style={{width:44,height:"auto",display:"block"}}/>:<BrandIcon name={marca} size={36}/>}</span>
     <span style={{display:"flex",flexDirection:"column",lineHeight:1.25}}><span style={{fontSize:DS.font.sm,fontWeight:DS.w.medium,color:T.textSm}}>Enviar etiquetas de</span><span style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,whiteSpace:"nowrap"}}>{canal}</span></span>
