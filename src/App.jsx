@@ -10195,6 +10195,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const [skuBlob,setSkuBlob]=useState(null);
   // "Todo de una" en rótulos con SKU: el botón principal (Enviar al depósito / Descargar) también manda los seguimientos a la tienda.
   const [skuSegAuto,setSkuSegAuto]=useState(()=>{ try{ return localStorage.getItem("growith_sku_segauto")!=="0"; }catch(_){ return true; } });
+  const [skuConSku,setSkuConSku]=useState(()=>{ try{ return localStorage.getItem("growith_sku_consku")!=="0"; }catch(_){ return true; } });
+  const toggleSkuConSku=()=>setSkuConSku(v=>{ try{ localStorage.setItem("growith_sku_consku",v?"0":"1"); }catch(_){ } return !v; });
   const toggleSkuSegAuto=()=>setSkuSegAuto(v=>{ try{ localStorage.setItem("growith_sku_segauto",v?"0":"1"); }catch(_){ } return !v; });
   const [skuGenerating,setSkuGenerating]=useState(false);
   const [skuProgress,setSkuProgress]=useState(0);
@@ -12387,6 +12389,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     finally{ setDepArmando(null); }
   }
   async function enviarDepositoSku(){
+    // Sin "Productos en la etiqueta": va el PDF tal cual se subió (pasado a 10x15), en su orden
+    // original; los productos viajan igual como dato para el picking del depósito.
+    if(!skuConSku){
+      if(!skuFile) return;
+      try{
+        const armado=await ghDepPdfDeEtiquetas([ghBytesToB64(new Uint8Array(await skuFile.arrayBuffer()))]);
+        const porNum=new Map();
+        [...(skuResults||[])].filter(r=>r.pagina>=1&&r.pagina<=armado.pages).sort((a,b)=>a.pagina-b.pagina).forEach(r=>{ const k=String(r.pedidoNum||`pag${r.pagina}`); const p=porNum.get(k)||{numero:k,comprador:r.destinatario||"",items:r.skuLines||[],pags:[]}; p.pags.push(r.pagina); porNum.set(k,p); });
+        setDepEnvio({segPdf:true,pdfBytes:armado.bytes,pages:armado.pages,origen:"excel",canal:"andreani",pedidos:[...porNum.values()]});
+      }catch(e){ toast("No se pudo preparar la tanda: "+e.message,"error"); }
+      return;
+    }
     if(!skuBlob) return;
     try{
       // Mismo orden que el PDF generado: con SKU primero (ordenadas por SKU), sin SKU al final.
@@ -13441,36 +13455,38 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   </div>
                 </div>
 
-                {/* PASO 1 — Generar / Descargar el PDF con SKUs. UNA sola card en un
-                    lugar FIJO: cambia el botón según el estado, así la acción
-                    principal nunca salta de posición al terminar de procesar. */}
-                {found.length>0&&!skuGenerating&&(()=>{ const segPendN=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]).length; return (
-                  <div style={{background:skuBlob?`linear-gradient(135deg,${T.green}14,${T.green}06)`:`linear-gradient(135deg,${T.accentSolid}14,${T.accentSolid}06)`,border:`1.5px solid ${(skuBlob?T.green:T.accentSolid)}55`,borderRadius:14,padding:"16px 20px",marginBottom:12,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",animation:"growith-fadeIn 0.3s ease"}}>
-                    <div style={{flex:1,minWidth:220}}>
-                      <div style={{fontSize:10,fontWeight:800,letterSpacing:0.8,textTransform:"uppercase",color:skuBlob?T.green:T.accent,marginBottom:4}}>Paso 1 · PDF con SKUs</div>
-                      <div style={{fontSize:14,fontWeight:800,color:T.text,marginBottom:2}}>{skuBlob?(depositoCliente?"PDF listo para mandar al depósito":"PDF listo para descargar"):"Resultados listos"}</div>
-                      <div style={{fontSize:12,color:T.textSm}}>{found.length} rótulos {skuBlob?"con SKUs escritos":"encontrados"}{notFound.length>0?` · ${notFound.length} sin match`:""}</div>
-                      {skuBlob&&segPendN>0&&(<label onClick={toggleSkuSegAuto} style={{display:"inline-flex",alignItems:"center",gap:8,marginTop:10,fontSize:12,color:T.textMd,cursor:"pointer",userSelect:"none"}}>
-                        <DSToggle T={T} active={skuSegAuto} onToggle={()=>{}}/>
-                        <span>{skuSegAuto?`Todo de una: también se envían los ${segPendN} seguimientos a tu tienda`:"Enviar los seguimientos a la tienda en el mismo paso"}</span>
-                      </label>)}
+                {/* PASO 1 — Despachar. UNA sola card en un lugar FIJO: dos opciones con interruptor
+                    (productos en la etiqueta / enviar seguimientos) y un botón principal que hace
+                    todo lo que esté prendido de una. */}
+                {found.length>0&&!skuGenerating&&(()=>{ const segPendN=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]).length;
+                  const listo=!!skuBlob||!skuConSku; const conSeg=skuSegAuto&&segPendN>0; const verde=T.isDark?"#16a34a":"#15803d";
+                  const descargar=()=>{ const blob=skuConSku?skuBlob:skuFile; if(!blob) return; const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=skuConSku?`rotulos-con-sku-${hoyAR()}.pdf`:`rotulos-${hoyAR()}.pdf`; a.click(); URL.revokeObjectURL(url); if(!depositoCliente&&conSeg) sendAllTracking(); };
+                  const opcion=(on,toggle,titulo,desc,off)=>(<div onClick={off?undefined:toggle} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",borderRadius:12,background:T.card,border:`1px solid ${on&&!off?T.green+"55":T.border}`,cursor:off?"default":"pointer",opacity:off?0.55:1,userSelect:"none",flex:"1 1 260px",minWidth:0}}>
+                    <DSToggle T={T} active={on&&!off} onToggle={()=>{}}/>
+                    <div style={{minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:T.text}}>{titulo}</div><div style={{fontSize:12,color:T.textSm,marginTop:1}}>{desc}</div></div>
+                  </div>);
+                  const resumen=[depositoCliente?"Va a la cola del depósito":"Se descarga el PDF",skuConSku?"con los productos en cada etiqueta":"sin productos en la etiqueta",conSeg?`y se avisa a ${segPendN} comprador${segPendN!==1?"es":""}`:"sin enviar seguimientos"].join(" · ");
+                  return (
+                  <div style={{background:T.card,backgroundImage:`linear-gradient(135deg,${T.green}12,transparent 60%)`,border:`1px solid ${T.green}44`,borderRadius:16,padding:"18px 20px",marginBottom:12,animation:"growith-fadeIn 0.3s ease"}}>
+                    <div style={{fontSize:10,fontWeight:800,letterSpacing:0.8,textTransform:"uppercase",color:T.green,marginBottom:4}}>Paso 1 · Despachar</div>
+                    <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{found.length} rótulo{found.length!==1?"s":""} listo{found.length!==1?"s":""}{notFound.length>0?<span style={{fontSize:12,fontWeight:600,color:T.yellow}}> · {notFound.length} sin pedido</span>:null}</div>
+                    <div style={{display:"flex",gap:10,flexWrap:"wrap",margin:"14px 0"}}>
+                      {opcion(skuConSku,toggleSkuConSku,"Productos (SKU) en la etiqueta","Cada rótulo sale con lo que lleva el paquete.")}
+                      {opcion(skuSegAuto,toggleSkuSegAuto,"Enviar seguimientos a la tienda",segPendN>0?`Avisa a ${segPendN} comprador${segPendN!==1?"es":""} y activa el seguimiento.`:"Ya están enviados.",segPendN===0)}
                     </div>
-                    {skuBlob&&depositoCliente&&<AsyncButton onClick={enviarDepositoSku} title="Manda este PDF con los SKU a la cola del depósito y envía los seguimientos a tu tienda" style={{...BtnPrimary(T),background:T.isDark?"#16a34a":"#15803d",borderColor:T.isDark?"#16a34a":"#15803d",color:"#fff",boxShadow:`0 6px 22px ${T.green}44`,fontSize:15,fontWeight:800,padding:"14px 26px",display:"flex",alignItems:"center",gap:9,flexShrink:0,order:2}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>{skuSegAuto&&segPendN>0?"Enviar al depósito y avisar":"Enviar al depósito"}</AsyncButton>}
-                    {skuBlob
-                      ? <button onClick={()=>{
-                          const url=URL.createObjectURL(skuBlob);
-                          const a=document.createElement("a");
-                          a.href=url;a.download=`rotulos-con-sku-${hoyAR()}.pdf`;a.click();
-                          URL.revokeObjectURL(url);
-                          if(!depositoCliente&&skuSegAuto&&segPendN>0) sendAllTracking();
-                        }} style={depositoCliente?{...BtnSecondary(T),fontSize:14,padding:"12px 20px",display:"flex",alignItems:"center",gap:8,flexShrink:0,order:1}:{...BtnPrimary(T),background:`${T.green}1f`,borderColor:`${T.green}88`,color:T.green,boxShadow:`0 0 0 1px ${T.green}15, 0 4px 16px ${T.green}22`,fontSize:14,padding:"12px 24px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                          {!depositoCliente&&skuSegAuto&&segPendN>0?"Descargar y enviar seguimientos":"Descargar PDF"}
-                        </button>
-                      : <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}}
-                          style={{...BtnPrimary(T),fontSize:14,padding:"12px 24px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                          Generar PDF con SKUs
-                        </AsyncButton>}
+                    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                      <div style={{flex:"1 1 220px",minWidth:0,fontSize:12,color:T.textMd}}>{listo?resumen:"Falta generar el PDF con los productos."}</div>
+                      {!listo
+                        ? <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}} style={{...BtnPrimary(T),fontSize:14,padding:"12px 24px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>Generar PDF con SKUs</AsyncButton>
+                        : <>
+                          {depositoCliente&&<button onClick={descargar} style={{...BtnSecondary(T),fontSize:13,padding:"11px 16px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Descargar PDF</button>}
+                          {depositoCliente
+                            ? <AsyncButton onClick={enviarDepositoSku} style={{...BtnPrimary(T),background:verde,borderColor:verde,color:"#fff",boxShadow:`0 6px 22px ${T.green}44`,fontSize:15,fontWeight:800,padding:"13px 26px",display:"flex",alignItems:"center",gap:9,flexShrink:0}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Enviar al depósito</AsyncButton>
+                            : <button onClick={descargar} style={{...BtnPrimary(T),background:verde,borderColor:verde,color:"#fff",boxShadow:`0 6px 22px ${T.green}44`,fontSize:15,fontWeight:800,padding:"13px 26px",display:"flex",alignItems:"center",gap:9,flexShrink:0}}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>{conSeg?"Descargar y enviar seguimientos":"Descargar PDF"}</button>}
+                        </>}
+                    </div>
                   </div>
                 ); })()}
                 {/* PASO 2 — Enviar seguimientos desde el MISMO PDF. Siempre debajo
@@ -21821,11 +21837,11 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
     const cuando=!pendiente?ghDepFechaLinda(t.fechaDespacho):t.fechaDespacho<hoy?`atrasada · era el ${ghDepFechaLinda(t.fechaDespacho)}`:t.fechaDespacho===hoy?"sale hoy":`sale el ${ghDepFechaLinda(t.fechaDespacho)}`;
     const hallados=qq&&!pendiente?peds.filter(coincide):[];
     const logo=esp?<DepIco d="bag" size={20} color={T.purple}/>:t.canal==="andreani"?<img src="/brand/andreani-iso.png" alt="" style={{width:30,height:"auto",display:"block"}}/>:t.canal==="ml"?<BrandIcon name="ml" size={28}/>:<DepIco d={t.canal==="retiro"?"hand":"truck"} size={20} color={c}/>;
-    const chip=(txt,cc,fuerte)=>(<span style={{display:"inline-flex",alignItems:"center",gap:7,height:28,padding:"0 12px",borderRadius:DS.r.full,background:cc+(fuerte?"26":"14"),border:`1px solid ${cc}${fuerte?"77":"3d"}`,color:fuerte?cc:T.text,fontSize:DS.font.md,fontWeight:700,whiteSpace:"nowrap"}}><span style={{width:7,height:7,borderRadius:99,background:cc}}/>{txt}</span>);
+    const chip=(txt,cc,fuerte)=>(<span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:DS.font.base,fontWeight:600,color:fuerte&&cc===T.red?T.red:T.text,whiteSpace:"nowrap"}}><span style={{width:8,height:8,borderRadius:99,background:cc,flexShrink:0}}/>{txt}</span>);
     const items=[...new Set(peds.filter(p=>!p.cancelado).flatMap(p=>p.items||[]))];
-    return (<div key={t.id} style={{backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${c}${pendiente?"24":"10"} 0%, ${c}08 45%, transparent 80%)`,border:`1px solid ${c}${open?"88":"3d"}`,borderRadius:DS.r["2xl"],overflow:"hidden",boxShadow:open?DS.shadow.md:DS.shadow.sm,opacity:cancelada?0.6:1,transition:"border-color .15s, box-shadow .15s"}}>
+    return (<div key={t.id} style={{background:T.card,border:`1px solid ${open?T.textSm:T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden",opacity:cancelada?0.6:1,transition:"border-color .15s"}}>
       <div onClick={()=>setAbierta(open?null:t.id)} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",cursor:"pointer"}}>
-        <span style={{width:46,height:46,borderRadius:DS.r.xl,background:c+"1f",border:`1px solid ${c}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
+        <span style={{width:44,height:44,borderRadius:DS.r.xl,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
         <div style={{flex:"1 1 200px",minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{esp?(t.especial?.titulo||"Envío especial"):(GH_DEP_CANAL[t.canal]||t.canal)}</span>
@@ -21850,7 +21866,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
           {pendiente&&<DepBtn T={T} variant="danger" onClick={()=>cancelar(t)}>Cancelar</DepBtn>}
         </div>
       </div>
-      {open&&(<div style={{padding:"14px 18px 16px",background:T.surface,borderTop:`1px solid ${c}26`}}>
+      {open&&(<div style={{padding:"14px 18px 16px",background:T.surface,borderTop:`1px solid ${T.borderL||T.border}`}}>
         <div style={{display:"flex",gap:18,flexWrap:"wrap",fontSize:DS.font.md,color:T.textMd,marginBottom:10}}>
           {t.total>0&&<span>Importe: <strong style={{color:T.text}}>{fmtMoney(t.total)}</strong>{t.extraItems>0?<span style={{color:T.textSm}}> ({t.extraDetalle?.pedidosConExtra||""} pedido{t.extraDetalle?.pedidosConExtra!==1?"s":""} cobrado{t.extraDetalle?.pedidosConExtra!==1?"s":""} por unidad)</span>:null}</span>}
           {(t.hist||[]).map((h,i)=><span key={i} style={{color:T.textSm}}>{h.a==="pospuesta"?"Pospuesta":h.a==="entregada"||h.a==="impresa"?"Impresa":(GH_DEP_ESTADO[h.a]||h.a)} · {ghDepFechaHora(h.at)}</span>)}
@@ -21938,7 +21954,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
         </>)}
       </div>)}
       {tab==="cuenta"&&(<div>
-        <div style={{...caja,marginTop:18,padding:"20px 22px",display:"flex",gap:20,alignItems:"center",flexWrap:"wrap",borderColor:(saldo.n>0?T.yellow:saldo.n<0?T.green:T.textSm)+"44",backgroundImage:`linear-gradient(100deg, ${(saldo.n>0?T.yellow:saldo.n<0?T.green:T.textSm)}22 0%, transparent 70%)`}}>
+        <div style={{...caja,marginTop:18,padding:"20px 22px",display:"flex",gap:20,alignItems:"center",flexWrap:"wrap"}}>
           <div style={{flex:"1 1 240px",minWidth:0}}>
             <div style={{fontSize:DS.font.md,fontWeight:600,color:T.textSm}}>{saldo.n>0?"Tenés para pagar":saldo.n<0?"Tenés a favor":"Tu cuenta"}</div>
             <div style={{fontSize:DS.font["4xl"],fontWeight:800,color:saldo.n>0?T.yellow:saldo.n<0?T.green:T.text,letterSpacing:-1,lineHeight:1.15,fontVariantNumeric:"tabular-nums"}}>{saldo.n>0?fmtMoney(saldo.n):saldo.n<0?fmtMoney(-saldo.n):"Al día"}</div>
@@ -22156,14 +22172,14 @@ function DepIco({d,size=16,color,sw=2}){ return <svg width={size} height={size} 
 function DepTile({T,color,ico,size=34}){ const c=color||T.accent; return <div style={{width:size,height:size,borderRadius:DS.r.lg,background:c+"1a",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:c}}><DepIco d={ico} size={Math.round(size*0.5)} color={c}/></div>; }
 function DepDot({T,color,children,strong}){ return <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:DS.font.md,color:strong?T.text:T.textMd,whiteSpace:"nowrap",fontWeight:strong?600:400}}><span style={{width:6,height:6,borderRadius:99,background:color,flexShrink:0}}/>{children}</span>; }
 function DepLabel({T,color,children,style}){ return <div style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.sm,fontWeight:700,letterSpacing:0.6,textTransform:"uppercase",color:color||T.textSm,margin:"0 0 10px",...style}}>{children}</div>; }
-// Franja de números del tablero: una celda por dato, con un toque del color del dato (línea arriba y tinte suave).
+// Franja de números del tablero: celdas neutras; el color del dato va solo en el número y en su punto.
 // items: [{l, v, s, c}]
 function DepStrip({T,items}){
   return (<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10,marginBottom:14}}>
-    {items.map((it,i)=>{ const c=it.c||T.textSm; return (<div key={i} style={{position:"relative",backgroundColor:T.card,backgroundImage:it.c?`linear-gradient(160deg, ${c}1f 0%, transparent 65%)`:"none",border:`1px solid ${it.c?c+"3d":T.border}`,borderRadius:DS.r["2xl"],padding:"14px 16px 13px",minWidth:0,overflow:"hidden"}}>
+    {items.map((it,i)=>{ const c=it.c||T.textSm; return (<div key={i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],padding:"14px 16px 13px",minWidth:0,overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",gap:7,fontSize:DS.font.md,fontWeight:600,color:T.textMd}}><span style={{width:8,height:8,borderRadius:99,background:c,flexShrink:0}}/>{it.l}</div>
       <div style={{fontSize:DS.font["4xl"]-4,fontWeight:800,color:it.c?c:T.text,letterSpacing:-1,lineHeight:1.1,fontVariantNumeric:"tabular-nums",marginTop:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.v}</div>
-      {it.s?<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.s}</div>:null}
+      {it.s?<div style={typeof it.s==="string"?{fontSize:DS.font.sm,color:T.textSm,marginTop:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}:{fontSize:DS.font.sm,color:T.textSm,marginTop:4}}>{it.s}</div>:null}
     </div>); })}
   </div>);
 }
@@ -22229,7 +22245,7 @@ function DepBtn({T,variant="secondary",size="md",ico,icon,children,onClick,disab
 }
 // Botón grande por canal de la vista del cliente: neutro, con el logo oficial de la plataforma (BrandIcon) y dos renglones.
 function DepCanalBtn({T,marca,color,canal,onClick}){ const [h,setH]=useState(false);
-  return <button onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"inline-flex",alignItems:"center",gap:12,height:58,boxSizing:"border-box",padding:"0 22px 0 14px",border:`1px solid ${color}${h?"88":"44"}`,borderRadius:DS.r.xl,backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${color}${h?"38":"26"} 0%, ${color}${h?"14":"0a"} 55%, transparent 100%)`,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left",boxShadow:h?`0 6px 22px ${color}2e`:DS.shadow.sm,transition:`all .15s ${DS.ease}`,flexShrink:0}}>
+  return <button onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"inline-flex",alignItems:"center",gap:12,height:58,boxSizing:"border-box",padding:"0 22px 0 14px",border:`1px solid ${h?color+"77":T.border}`,borderRadius:DS.r.xl,backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${color}${h?"26":"18"} 0%, transparent 70%)`,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left",transition:`all .15s ${DS.ease}`,flexShrink:0}}>
     {/* Logo directo sobre el botón, sin recuadro. Andreani: isotipo oficial recortado y con fondo transparente (/brand/andreani-iso.png). */}
     <span style={{width:44,height:34,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{marca==="andreani"?<img src="/brand/andreani-iso.png" alt="Andreani" style={{width:44,height:"auto",display:"block"}}/>:<BrandIcon name={marca} size={36}/>}</span>
     <span style={{display:"flex",flexDirection:"column",lineHeight:1.25}}><span style={{fontSize:DS.font.sm,fontWeight:DS.w.medium,color:T.textSm}}>Enviar etiquetas de</span><span style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,whiteSpace:"nowrap"}}>{canal}</span></span>
@@ -22486,11 +22502,11 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
     const notas=<>{notaCli&&<div style={{fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.5}}><span style={{color:T.yellow,fontWeight:700}}>{esp?"Instrucciones":"Nota del cliente"}: </span>{notaCli}</div>}
       {t.notaDeposito&&<div style={{fontSize:DS.font.md,color:T.textMd,whiteSpace:"pre-wrap",lineHeight:1.5}}><span style={{color:T.blue,fontWeight:700}}>Tu nota al cliente: </span>{t.notaDeposito}</div>}</>;
     const logo=esp?<DepIco d="bag" size={20} color={T.purple}/>:t.canal==="andreani"?<img src="/brand/andreani-iso.png" alt="" style={{width:30,height:"auto",display:"block"}}/>:t.canal==="ml"?<BrandIcon name="ml" size={28}/>:<DepIco d={t.canal==="retiro"?"hand":"truck"} size={20} color={cCanal}/>;
-    const chip=(txt,c,fuerte)=>(<span style={{display:"inline-flex",alignItems:"center",gap:7,height:28,padding:"0 12px",borderRadius:DS.r.full,background:c+(fuerte?"26":"14"),border:`1px solid ${c}${fuerte?"77":"3d"}`,color:fuerte?c:T.text,fontSize:DS.font.md,fontWeight:700,whiteSpace:"nowrap"}}><span style={{width:7,height:7,borderRadius:99,background:c}}/>{txt}</span>);
+    const chip=(txt,cc,fuerte)=>(<span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:DS.font.base,fontWeight:600,color:fuerte&&cc===T.red?T.red:T.text,whiteSpace:"nowrap"}}><span style={{width:8,height:8,borderRadius:99,background:cc,flexShrink:0}}/>{txt}</span>);
     return (
-    <div style={{backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${cCanal}${entregada?"12":"24"} 0%, ${cCanal}08 45%, transparent 80%)`,border:`1px solid ${urg(t)||atras?T.red+"77":cCanal+(open?"88":"3d")}`,borderRadius:DS.r["2xl"],overflow:"hidden",boxShadow:open?DS.shadow.md:DS.shadow.sm,transition:`border-color .15s, box-shadow .15s`}}>
+    <div style={{background:T.card,border:`1px solid ${urg(t)||atras?T.red+"66":open?T.textSm:T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden",transition:"border-color .15s"}}>
       <div onClick={toggle} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",cursor:"pointer"}}>
-        <span style={{width:46,height:46,borderRadius:DS.r.xl,background:cCanal+"1f",border:`1px solid ${cCanal}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
+        <span style={{width:44,height:44,borderRadius:DS.r.xl,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
         <div style={{flex:"1 1 220px",minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{t.clienteNombre}</span>
@@ -22526,14 +22542,14 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
           ]}/>
         </div>
       </div>
-      {!open&&!entregada&&(conItems||notaCli||t.notaDeposito)&&(<div onClick={toggle} style={{borderTop:`1px solid ${cCanal}26`,background:T.isDark?"rgba(0,0,0,.18)":"rgba(0,0,0,.025)",padding:"10px 18px",display:"flex",flexDirection:"column",gap:8,cursor:"pointer"}}>
+      {!open&&!entregada&&(conItems||notaCli||t.notaDeposito)&&(<div onClick={toggle} style={{borderTop:`1px solid ${T.borderL||T.border}`,padding:"10px 18px",display:"flex",flexDirection:"column",gap:8,cursor:"pointer"}}>
         {conItems&&<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-          {pick.slice(0,10).map(x=>(<span key={x.sku} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"4px 10px",borderRadius:DS.r.md,background:T.card,border:`1px solid ${T.border}`,fontSize:DS.font.md,color:T.text,fontWeight:600,whiteSpace:"nowrap",maxWidth:240}}><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{x.sku}</span><strong style={{color:T.accent,fontVariantNumeric:"tabular-nums"}}>×{x.cant}</strong></span>))}
+          {pick.slice(0,10).map(x=>(<span key={x.sku} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"4px 10px",borderRadius:DS.r.md,background:T.card,border:`1px solid ${T.border}`,fontSize:DS.font.md,color:T.text,fontWeight:600,whiteSpace:"nowrap",maxWidth:240}}><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{x.sku}</span><strong style={{color:T.textMd,fontVariantNumeric:"tabular-nums"}}>×{x.cant}</strong></span>))}
           {pick.length>10&&<span style={{fontSize:DS.font.md,color:T.textSm}}>+{pick.length-10} más</span>}
         </div>}
         {notas}
       </div>)}
-      {open&&(<div style={{borderTop:`1px solid ${cCanal}26`,padding:"14px 18px 16px",background:T.surface}}>
+      {open&&(<div style={{borderTop:`1px solid ${T.borderL||T.border}`,padding:"14px 18px 16px",background:T.surface}}>
         {(notaCli||t.notaDeposito)&&<div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:12}}>{notas}</div>}
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
           <DepSeg T={T} value={vistaAct} items={segItems} onChange={k=>setVista(x=>({...x,[t.id]:k}))}/>
@@ -22599,13 +22615,13 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
           </div>)}
         </div>
         <DepStrip T={T} items={[
-          {l:"Pedidos de hoy",v:nDia,c:nDia?T.accent:null,s:nDia?<span style={{display:"inline-flex",gap:12,alignItems:"center",color:T.textMd,fontWeight:600}}>{diaCanal.map(([c,n])=>(<span key={c} style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:99,background:colCanal(c)}}/>{GH_DEP_CANAL[c]||c} {n}</span>))}</span>:"todavía no llegó nada"},
+          {l:"Pedidos de hoy",v:nDia,c:nDia?T.accent:null,s:nDia?<span style={{display:"flex",columnGap:10,rowGap:2,flexWrap:"wrap",alignItems:"center",color:T.textMd,fontWeight:600}}>{diaCanal.map(([c,n])=>(<span key={c} style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:99,background:colCanal(c)}}/>{GH_DEP_CANAL[c]||c} {n}</span>))}</span>:"todavía no llegó nada"},
           {l:"Falta imprimir",v:nHoy,c:nHoy?T.yellow:null,s:`${dsp.hoy} ya impreso${dsp.hoy!==1?"s":""} hoy${owner?` · ${dsp.mes} en el mes`:""}`},
           {l:"Atrasados y urgentes",v:nAtr+nUrg,c:nAtr||nUrg?T.red:null,s:nAtr||nUrg?[nAtr?`${nAtr} de días anteriores`:"",nUrg?pl(nUrg,"urgente"):""].filter(Boolean).join(" · "):"todo al día"},
           {l:"Próximos días",v:nMan+nDesp,c:nMan+nDesp?T.blue:null,s:nMan?`${nMan} para mañana`:nDesp?"ya cargados":"sin tandas cargadas"},
         ]}/>
-        {nT>0&&(<div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",padding:"16px 18px",marginBottom:14,borderRadius:DS.r["2xl"],border:`1px solid ${T.accentSolid}66`,backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${T.accentSolid}30 0%, ${T.accentSolid}10 55%, transparent 100%)`}}>
-          <span style={{width:46,height:46,borderRadius:DS.r.xl,background:T.accentSolid,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><DepIco d="print" size={22} color="#fff" sw={2.2}/></span>
+        {nT>0&&(<div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",padding:"16px 18px",marginBottom:14,borderRadius:DS.r["2xl"],border:`1px solid ${T.accentSolid}44`,background:T.accentSolid+"12"}}>
+          <DepIco d="print" size={22} color={T.accent} sw={2.2}/>
           <div style={{flex:"1 1 240px",minWidth:0}}>
             <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{pl(nE,"etiqueta")} lista{nE!==1?"s":""} para imprimir{hayHoy?" hoy":""}</div>
             <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",fontSize:DS.font.md,color:T.textMd,marginTop:4}}>
