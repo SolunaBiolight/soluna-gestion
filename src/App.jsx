@@ -12953,16 +12953,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 </div>
               )}
             </div>
-            {/* Números del panel: qué falta empaquetar y enviar, y cómo se reparte la lista (clic = filtra) */}
-            {tabEnvio!=="buscar"&&(()=>{ const base=(tabOrders||[]); const nDom=base.filter(o=>!isSucursalOrder(o)).length, nSuc=base.filter(o=>isSucursalOrder(o)).length;
-              const ir=id=>{ setTabEnvio(id);setSelected(new Map());setSearchEnvios("");fetchTabOrders(id);if(!tabCounts[id])fetchTabCounts(user?.uid); };
-              const num=v=>v===null||v===undefined?"·":v;
-              return <DepStrip T={T} items={[
-                {l:"Por empaquetar",v:num(counts.empaquetar),c:counts.empaquetar?T.yellow:null,s:"falta armar el paquete",onClick:()=>ir("empaquetar")},
-                {l:"Por enviar",v:num(counts.enviar),c:counts.enviar?T.accent:null,s:"listos para generar la etiqueta",onClick:()=>ir("enviar")},
-                {l:"A domicilio",v:nDom,c:nDom?T.blue:null,s:"en esta lista",onClick:()=>{ setFilterTipoEnvio(filterTipoEnvio==="domicilio"?"todos":"domicilio"); setSelected(new Map()); }},
-                {l:"A sucursal",v:nSuc,c:nSuc?T.purple:null,s:"en esta lista",onClick:()=>{ setFilterTipoEnvio(filterTipoEnvio==="sucursal"?"todos":"sucursal"); setSelected(new Map()); }},
-              ]}/>; })()}
             {/* Tabs */}
             <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
               {/* Segmented control */}
