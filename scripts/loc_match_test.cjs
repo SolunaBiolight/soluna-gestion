@@ -6,7 +6,7 @@ const fs=require("fs"),path=require("path");
 const src=fs.readFileSync(path.join(__dirname,"..","src","App.jsx"),"utf8");
 const blk=src.slice(src.indexOf("// GH_LOC_MATCH_BEGIN"),src.indexOf("// GH_LOC_MATCH_END"));
 const nrm=src.slice(src.indexOf("function ghNrmSuc(s){"),src.indexOf("\n}\n",src.indexOf("function ghNrmSuc(s){"))+3);
-const M=new Function(nrm+blk+"\nreturn {ghLocCp,ghLocProv,ghMatchLocalidad,ghLocVerif,ghLocCandidatas,ghLocPartes};")();
+const M=new Function(nrm+blk+"\nreturn {ghLocCp,ghLocProv,ghMatchLocalidad,ghLocVerif,ghLocCandidatas,ghLocPartes,ghLocCpCerca};")();
 const list=fs.readFileSync(path.join(__dirname,"fixtures","tpl_localidades.txt"),"utf8").split("\n").filter(Boolean);
 const cpIndex={},provIndex={};
 for(const l of list){ const p=l.split(" / "); (cpIndex[p[2].trim()]=cpIndex[p[2].trim()]||[]).push(l); (provIndex[p[0].trim()]=provIndex[p[0].trim()]||[]).push(l); }
@@ -77,11 +77,30 @@ const otras=p=>p==="MENDOZA"?"SALTA":"MENDOZA";
 for(const l of list){ const x=M.ghLocPartes(l); const [pv,lc,cp]=l.split(" / ");
   const r=m(cp,pv,lc);
   if(!r) nulos++; else { const y=M.ghLocPartes(r); if(y.cp!==x.cp||y.prov!==x.prov){ mal++; if(ej.length<5) ej.push([l,r]); } }
-  const r2=m(cp,otras(pv),lc);
+  const r2=m(cp,otras(pv),"zzz barrio inventado"); // otra provincia y una localidad que no dice nada: a mano
+  const r3=m(cp,otras(pv),lc); if(r3&&r3!==l&&M.ghLocPartes(r3).cp!==cp){ mal++; } // provincia mal pero CP + localidad iguales: solo puede devolver una entrada de ESE CP
   if(r2){ const y=M.ghLocPartes(r2); if(y.prov!==M.ghLocProv(otras(pv))){ cruzadas++; if(ej.length<5) ej.push(["otra prov",l,r2]); } }
 }
 eq("barrido: ninguna entrada devuelve otro CP u otra provincia",mal,0);
 eq("barrido: con la provincia cambiada nunca devuelve la entrada de la provincia original",cruzadas,0);
 if(ej.length) console.log(ej);
+
+// ── Afinado 10/oct/2026: menos preguntas sin perder los frenos de verdad ──
+const pc=(cp,prov,loc)=>{ const r=M.ghLocPartes(m(cp,prov,loc)); return r?[r.prov,r.cp]:null; };
+eq("Tienda Nube: barrio en localidad + ciudad en ciudad → matchea por la ciudad",m("5000","Córdoba",["San Vicente","Córdoba"]),"CORDOBA / CORDOBA / 5000");
+eq("barrio que se llama como un pueblo lejano, CP de una sola entrada, con la ciudad correcta",m("5000","Córdoba",["General Paz","Cordoba Capital"]),"CORDOBA / CORDOBA / 5000");
+eq("La Plata con el CP de City Bell (cabecera vecina): sale solo a City Bell",pc("1896","Buenos Aires","La Plata"),["BUENOS AIRES","1896"]);
+eq("Córdoba con el CP de Argüello: sale solo con ese CP",pc("5147","Córdoba","Córdoba"),["CORDOBA","5147"]);
+eq("la provincia escrita como ciudad no frena (Mendoza / San Rafael)",pc("5600","Mendoza","Mendoza"),["MENDOZA","5600"]);
+eq("provincia que no se entiende (texto libre de Shopify) no contradice",m("5000","Argentina","Córdoba"),"CORDOBA / CORDOBA / 5000");
+eq("provincia equivocada pero CP + localidad iguales: vale el CP",m("3100","Santa Fe","Paraná"),"ENTRE RIOS / PARANA / 3100");
+eq("provincia equivocada y localidad que no es de ese CP → a mano",m("3100","Santa Fe","Rosario"),null);
+{ const libre=["5026","5027","5028","5029","5030"].find(c=>!cpIndex[c]); if(libre){ const r=M.ghLocPartes(m(libre,"Córdoba","Córdoba")); eq("CP que no existe + localidad exacta con CP vecino: va a esa localidad",[r?.prov,r?.loc],["CORDOBA","CORDOBA"]); eq("…y la verificación final lo da por bueno",M.ghLocVerif({cp:libre,provincia:"Córdoba",localidad:"Córdoba"},m(libre,"Córdoba","Córdoba"),locs),"ok"); } }
+eq("siguen frenando: Olivos con CP de Monte Grande, aunque la ciudad repita",m("1842","Buenos Aires",["Olivos","Olivos"]),null);
+eq("siguen frenando: Mar del Plata con CP de La Plata",m("1900","Buenos Aires",["","Mar del Plata"]),null);
+eq("zonas: 1896 y 1900 son vecinas",M.ghLocCpCerca("1896","1900"),true);
+eq("zonas: 1636 y 1842 no",M.ghLocCpCerca("1636","1842"),false);
+eq("zonas: 7600 y 1900 no",M.ghLocCpCerca("7600","1900"),false);
+eq("verif con provincia mal pero CP + localidad iguales",M.ghLocVerif({cp:"3100",provincia:"Santa Fe",localidad:"Paraná"},"ENTRE RIOS / PARANA / 3100",locs),"ok");
 console.log(`barrido: ${list.length} localidades · ${nulos} van a mano con sus propios datos (${(nulos/list.length*100).toFixed(1)} %)`);
 console.log(`${n-fails}/${n} ok${fails?" — "+fails+" FALLAS":""}`); if(fails) process.exit(1);

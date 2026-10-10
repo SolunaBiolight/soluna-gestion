@@ -4509,10 +4509,31 @@ function ghLocScore(locPedido,locEntrada){
   if(tb.every(w=>ta.includes(w))||ta.every(w=>tb.includes(w))) return 2;
   return 0;
 }
+// Provincia del pedido como clave de la plantilla, o "" si el texto no es ninguna de las 24
+// (Shopify deja texto libre): una provincia que no se entiende NO contradice nada.
+function ghLocProvDe(locs,p){ const t=ghLocProv(p); return t&&locs?.provIndex&&!locs.provIndex[t]?"":t; }
+// Textos de localidad del pedido (Tienda Nube manda barrio en "localidad" y la ciudad en "ciudad"):
+// se prueban TODOS. Acepta un texto o una lista.
+function ghLocTextos(localidad){ return [...new Set((Array.isArray(localidad)?localidad:[localidad]).map(ghNrmSuc).filter(Boolean))]; }
+function ghLocScoreMax(textos,locEntrada){ let m=0; for(const t of textos){ const x=ghLocScore(t,locEntrada); if(x>m) m=x; } return m; }
+// ¿Dos códigos postales son de la misma zona? Mismos dos primeros dígitos, o vecinos:
+// en el área 1000-1999 (GBA y La Plata, muy densa) hasta 12 de diferencia ("La Plata" 1900 con
+// City Bell 1896); en el interior, mismo primer dígito y hasta 250 ("Córdoba" 5000 con Argüello 5147).
+function ghLocCpCerca(a,b){
+  const A=String(a||""), B=String(b||""), x=Number(A), y=Number(B); if(!x||!y) return false;
+  if(A.slice(0,2)===B.slice(0,2)) return true;
+  const d=Math.abs(x-y);
+  if(x<2000&&y<2000) return d<=12;
+  return A[0]===B[0]&&d<=250;
+}
+function ghLocNombres(locs){
+  if(!locs._nombres){ const m={}; for(const [pv,arr] of Object.entries(locs.provIndex||{})) for(const l of arr){ const x=ghLocPartes(l); if(x) (m[pv+"|"+x.loc]=m[pv+"|"+x.loc]||new Set()).add(x.cp); } locs._nombres=m; }
+  return locs._nombres;
+}
 // Entradas de la plantilla con el CP del pedido cuya provincia no lo contradice.
 function ghLocCandidatas(locs,cp,provincia){
   const c=ghLocCp(cp); if(!c) return [];
-  const prov=ghLocProv(provincia);
+  const prov=ghLocProvDe(locs,provincia);
   return (locs?.cpIndex?.[c]||[]).filter(l=>{ const x=ghLocPartes(l); return x&&ghLocProvOk(prov,x.prov)!==false; });
 }
 // Varias localidades comparten el CP del pedido y ninguna se llama como la que
@@ -4521,21 +4542,28 @@ function ghLocCandidatas(locs,cp,provincia){
 // de esas entradas lleva el paquete a la misma zona postal — se elige sola, sin
 // preguntar (8/oct/2026: preguntar por cada pedido hacía inusable el Excel).
 // Se prefiere la localidad más grande (la que figura con más códigos postales).
-// Sigue yendo a mano si la provincia contradice al CP o si el CP no existe.
-// Excepción: si lo que escribió el comprador ES una localidad de esa provincia
-// pero con OTRO código postal ("Olivos" con CP 1842), el CP o la ciudad están mal
-// y no se puede saber cuál: ese pedido sí va al selector.
-function ghLocEnOtroCp(locs,prov,locTxt,cp){
-  if(!locTxt) return false;
-  if(!locs._nombres){ const m={}; for(const [pv,arr] of Object.entries(locs.provIndex||{})) for(const l of arr){ const x=ghLocPartes(l); if(x) (m[pv+"|"+x.loc]=m[pv+"|"+x.loc]||new Set()).add(x.cp); } locs._nombres=m; }
+// Excepción (afinada el 10/oct/2026 para no preguntar de más): solo va al selector
+// cuando lo que escribió el comprador ES una localidad real de esa provincia que
+// queda LEJOS del CP (ghLocCpCerca) — "Olivos" con CP 1842, "Mar del Plata" con
+// 1900 — y ninguno de sus otros textos (barrio / ciudad) cierra con el CP. NO frena:
+// el partido o la ciudad cabecera vecina ("La Plata" con el 1896 de City Bell,
+// "Córdoba" con el 5147 de Argüello), ni la provincia escrita como ciudad ("Mendoza").
+function ghLocEnOtroCp(locs,prov,localidad,cp){
+  const textos=ghLocTextos(localidad); if(!textos.length) return false;
+  const nombres=ghLocNombres(locs);
   const provs=prov?[prov]:Object.keys(locs.provIndex||{});
-  // Solo cuenta si esa localidad queda en OTRA zona postal (los dos primeros dígitos):
-  // "Lomas de Zamora" (1832) con CP 1834 de Temperley es el partido, no un error.
-  const zona=String(cp||"").slice(0,2);
-  return provs.some(pv=>{ const cps=locs._nombres[pv+"|"+locTxt]; return !!cps&&![...cps].some(x=>x.slice(0,2)===zona); });
+  let lejos=false;
+  for(const t of textos){
+    if(provs.includes(t)||ghLocProv(t)==="CAPITAL FEDERAL") continue; // la provincia repetida como ciudad no dice nada
+    let esLocalidad=false, cerca=false;
+    for(const pv of provs){ const cps=nombres[pv+"|"+t]; if(!cps) continue; esLocalidad=true; if([...cps].some(x=>ghLocCpCerca(x,cp))) cerca=true; }
+    if(esLocalidad&&cerca) return false; // un texto del pedido cierra con el CP: no hay conflicto
+    if(esLocalidad) lejos=true;
+  }
+  return lejos;
 }
-function ghLocElegirDelCp(locs,lista,prov,locTxt){
-  if(ghLocEnOtroCp(locs,prov,locTxt,lista[0]?.x.cp)) return null;
+function ghLocElegirDelCp(locs,lista,prov,localidad){
+  if(ghLocEnOtroCp(locs,prov,localidad,lista[0]?.x.cp)) return null;
   let pool=lista.filter(k=>k.ok===true);
   if(!pool.length&&!prov&&new Set(lista.map(k=>k.x.prov)).size===1) pool=lista;
   if(!pool.length) return null;
@@ -4544,52 +4572,68 @@ function ghLocElegirDelCp(locs,lista,prov,locTxt){
   return [...pool].sort((a,b)=>peso(b)-peso(a)||a.x.loc.localeCompare(b.x.loc))[0];
 }
 // → {loc, motivo} o null. `motivo` explica por qué se aceptó (para diagnóstico y tests).
+// `localidad`: un texto o la lista [localidad, ciudad] del pedido.
 function ghMatchLocalidad(locs,cp,provincia,localidad){
-  const c=ghLocCp(cp), prov=ghLocProv(provincia), locTxt=ghNrmSuc(localidad);
+  const c=ghLocCp(cp), prov=ghLocProvDe(locs,provincia), textos=ghLocTextos(localidad);
   if(c){
-    const cands=ghLocCandidatas(locs,c,provincia).map(l=>({l,x:ghLocPartes(l)}));
-    if(!cands.length) return null; // CP que Andreani no tiene, o de otra provincia: a mano
+    const delCp=(locs?.cpIndex?.[c]||[]).map(l=>({l,x:ghLocPartes(l)})).filter(k=>k.x);
+    const cands=delCp.filter(k=>ghLocProvOk(prov,k.x.prov)!==false);
+    if(!cands.length){
+      // El CP existe pero es de OTRA provincia que la del pedido: si la localidad que escribió
+      // es justo una de ese CP, dos de tres datos coinciden y la provincia es la que está mal.
+      const ex=delCp.filter(k=>ghLocScoreMax(textos,k.x.loc)===3);
+      if(ex.length===1) return {loc:ex[0].l,motivo:"cp_localidad_otra_provincia"};
+      // El CP no existe en la plantilla (mal tipeado o muy nuevo): si la localidad escrita existe
+      // en la provincia con un CP vecino, va a esa entrada (la del CP más cercano).
+      if(!delCp.length&&prov&&textos.length){
+        const cerca=[]; for(const t of textos) for(const l of (locs?.provIndex?.[prov]||[])){ const x=ghLocPartes(l); if(x&&x.loc===t&&ghLocCpCerca(x.cp,c)) cerca.push({l,x,d:Math.abs(Number(x.cp)-Number(c))}); }
+        if(cerca.length&&new Set(cerca.map(k=>k.x.loc)).size===1) return {loc:cerca.sort((a,b)=>a.d-b.d)[0].l,motivo:"localidad_cp_cercano"};
+      }
+      return null; // a mano
+    }
     // Capital Federal: las entradas del CP son sinónimos ("CIUDAD AUTONOMA (DE) BUENOS AIRES").
     if(cands.every(k=>k.x.prov==="CAPITAL FEDERAL")){
       const pref=cands.find(k=>k.x.loc==="CIUDAD AUTONOMA DE BUENOS AIRES")||cands[0];
       return {loc:pref.l,motivo:"cp_caba"};
     }
-    const sc=cands.map(k=>({...k,s:ghLocScore(locTxt,k.x.loc),ok:ghLocProvOk(prov,k.x.prov)}));
+    const sc=cands.map(k=>({...k,s:ghLocScoreMax(textos,k.x.loc),ok:ghLocProvOk(prov,k.x.prov)}));
     const exactas=sc.filter(k=>k.s===3);
     if(exactas.length===1) return {loc:exactas[0].l,motivo:"cp_localidad"};
     if(exactas.length>1){ const mismaProv=exactas.filter(k=>k.ok===true); if(mismaProv.length===1) return {loc:mismaProv[0].l,motivo:"cp_localidad"}; const e=ghLocElegirDelCp(locs,exactas,prov,""); return e?{loc:e.l,motivo:"cp_zona"}:null; }
     // Ninguna entrada de este CP se llama igual. Si lo que escribió ES otra localidad
-    // (de otro CP), no se acepta un parecido ("Mar del Plata" ≠ "La Plata"): a mano.
-    if(!exactas.length&&ghLocEnOtroCp(locs,prov,locTxt,c)) return null;
+    // lejana, no se acepta un parecido ("Mar del Plata" ≠ "La Plata"): a mano.
+    if(ghLocEnOtroCp(locs,prov,textos,c)) return null;
     const parecidas=sc.filter(k=>k.s===2);
     if(parecidas.length===1) return {loc:parecidas[0].l,motivo:"cp_localidad_parecida"};
     if(parecidas.length>1){
       // "Villa Carlos Paz" contra "CARLOS PAZ" y "VILLA CARLOS PAZ SUR": gana la que comparte más palabras, si es una sola.
-      const ta=ghLocPalabras(locTxt); const n=k=>ghLocPalabras(k.x.loc).filter(w=>ta.includes(w)).length;
+      const ta=[...new Set(textos.flatMap(ghLocPalabras))]; const n=k=>ghLocPalabras(k.x.loc).filter(w=>ta.includes(w)).length;
       const max=Math.max(...parecidas.map(n)); const top=parecidas.filter(k=>n(k)===max);
       if(top.length===1) return {loc:top[0].l,motivo:"cp_localidad_parecida"};
       const e=ghLocElegirDelCp(locs,top,prov,""); return e?{loc:e.l,motivo:"cp_zona"}:null;
     }
     // Ninguna localidad del CP se parece (el comprador puso un barrio): solo si el CP
     // tiene UNA entrada y la provincia coincide exacta — no queda nada que elegir.
-    if(cands.length===1&&sc[0].ok===true&&!ghLocEnOtroCp(locs,prov,locTxt,c)) return {loc:cands[0].l,motivo:"cp_unico_provincia"};
-    const e=ghLocElegirDelCp(locs,sc,prov,locTxt); return e?{loc:e.l,motivo:"cp_zona"}:null;
+    if(cands.length===1&&sc[0].ok===true) return {loc:cands[0].l,motivo:"cp_unico_provincia"};
+    const e=ghLocElegirDelCp(locs,sc,prov,textos); return e?{loc:e.l,motivo:"cp_zona"}:null;
   }
   // Sin CP legible: provincia + localidad EXACTA, y solo si esa localidad tiene una única entrada.
-  if(!prov||!locTxt) return null;
-  const enProv=(locs?.provIndex?.[prov]||[]).filter(l=>ghLocPartes(l)?.loc===locTxt);
+  if(!prov||!textos.length) return null;
+  const enProv=(locs?.provIndex?.[prov]||[]).filter(l=>textos.includes(ghLocPartes(l)?.loc));
   return enProv.length===1?{loc:enProv[0],motivo:"provincia_localidad"}:null;
 }
-// Control final de una fila ya escrita: "ok" solo si el CP es el del pedido y la
-// provincia no lo contradice (sin CP: provincia + localidad). Si no, "warn".
-function ghLocVerif(o,ubicacion){
+// Control final de una fila ya escrita: "ok" si el destino escrito cierra con el pedido con las
+// MISMAS reglas del matcher (mismo CP y provincia compatible; mismo CP + localidad igual aunque
+// la provincia esté mal; o localidad igual con un CP vecino). Si no, "warn".
+function ghLocVerif(o,ubicacion,locs){
   const x=ghLocPartes(ubicacion); if(!x) return ubicacion?"warn":null;
-  const c=ghLocCp(o?.cp), prov=ghLocProv(o?.provincia), loc=o?.localidad||o?.ciudad||"";
-  if(!c&&!ghNrmSuc(loc)) return null;
-  const pOk=ghLocProvOk(prov,x.prov);
+  const c=ghLocCp(o?.cp), prov=locs?ghLocProvDe(locs,o?.provincia):ghLocProv(o?.provincia), textos=ghLocTextos([o?.localidad,o?.ciudad]);
+  if(!c&&!textos.length) return null;
+  const pOk=ghLocProvOk(prov,x.prov), igual=ghLocScoreMax(textos,x.loc)===3;
+  if(c&&x.cp===c) return pOk!==false||igual?"ok":"warn";
   if(pOk===false) return "warn";
-  if(c) return x.cp===c?"ok":"warn";
-  return pOk===true&&ghLocScore(loc,x.loc)>=2?"ok":"warn";
+  if(c) return igual&&ghLocCpCerca(x.cp,c)&&!!locs&&!locs.cpIndex?.[c]?"ok":"warn"; // CP vecino solo vale si el del pedido no existe en la plantilla
+  return pOk===true&&ghLocScoreMax(textos,x.loc)>=2?"ok":"warn";
 }
 // GH_LOC_MATCH_END
 
@@ -5021,7 +5065,7 @@ async function ghEtiquetaAndreaniXlsxUno(o) {
   else if(clean.length>0){telNum=clean;}
   // Localidad: núcleo ghMatchLocalidad. Sin coincidencia segura NO se genera el Excel
   // (antes caía a "la primera de la provincia" o "la primera de Buenos Aires").
-  const ubicacion=ghMatchLocalidad(locs,o.cp,o.provincia,o.localidad||o.ciudad)?.loc||"";
+  const ubicacion=ghMatchLocalidad(locs,o.cp,o.provincia,[o.localidad,o.ciudad])?.loc||"";
   const dirNum=String(o.dirNumero||"");
   const direccion=cl(o.direccion||"");
   // Medidas del paquete: la misma config que usa Envíos (modal "Paquete"),
@@ -10705,7 +10749,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         const {nombre,apellido,telCod,telNum}=getPersonData(o);
         // Sin respaldo: si no hay localidad segura la celda va VACÍA (Andreani rechaza la fila) y se avisa.
         const _ovrLoc=locationOverridesRef.current[ovrKey(o)];
-        const ubicacion=(_ovrLoc&&_ovrLoc!=="EXCLUIR"&&locs.list.includes(_ovrLoc)?_ovrLoc:"")||findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad)||"";
+        const ubicacion=(_ovrLoc&&_ovrLoc!=="EXCLUIR"&&locs.list.includes(_ovrLoc)?_ovrLoc:"")||findAndreaniLocation(locs,o.cp,o.provincia,[o.localidad,o.ciudad])||"";
         const dirNum=extractStreetNum(o.direccion, o.dirNumero);
         const direccion=extractStreetName(o.direccion, o.dirNumero);
         if(!ubicacion||verifUbicacionVsPedido(o,ubicacion)==="warn")verifRows.push({o,numero:o.numero,comprador:o.comprador,tipo:"domicilio",escrito:ubicacion||"(sin localidad: la fila sale vacía)",esperado:`${o.localidad||o.ciudad||""}${o.provincia?`, ${o.provincia}`:""}${o.cp?` (CP ${o.cp})`:""}`});
@@ -11281,7 +11325,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // Flujo XLSX domicilio: la calle/número se copian tal cual del pedido; lo
   // resuelto es la LOCALIDAD del desplegable — verificar que contenga el CP
   // del pedido o un token de su localidad.
-  function verifUbicacionVsPedido(o,ubicacion){ return ghLocVerif(o,ubicacion); }
+  function verifUbicacionVsPedido(o,ubicacion){ return ghLocVerif(o,ubicacion,andreaniLocsRef.current); }
 
   // Atajos de teclado
   useEffect(()=>{
@@ -11447,7 +11491,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
       const unresolvedDom=domicilioOrdersSinEsquina.filter(o=>{
         if(locationOverridesRef.current[ovrKey(o)]) return false;
-        return !findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
+        return !findAndreaniLocation(locs,o.cp,o.provincia,[o.localidad,o.ciudad]);
       });
       // Marcas "no operativa" viejas: si esa sucursal ya no figura dada de
       // baja (p. ej. fue un falso positivo), se desmarca y vuelve al flujo normal.
@@ -11880,7 +11924,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   }
   // CP que define la tarifa: para sucursal es el CP de la SUCURSAL (así lo
   // tarifa el backend al emitir), no el del pedido.
-  function cpCotDe(r){ return r.tipo==="sucursal"?(String(r.oficial?.direccion?.codigoPostal||"").replace(/\D/g,"")||cpDestinoDe(r.order)):String(r.order.cp||"").trim(); }
+  function cpCotDe(r){ return r.tipo==="sucursal"?(String(r.oficial?.direccion?.codigoPostal||"").replace(/\D/g,"")||cpDestinoDe(r.order)):(ghLocCp(r.order.cp)||String(r.order.cp||"").trim()); }
   async function cotizarBulk(opts={}){
     const rows=bulkRowsRef.current;
     const aCotizar=rows.filter(r=>r.incluido&&!r.cot&&!r.emitido);
@@ -11980,7 +12024,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             cpDestino:r.tipo==="sucursal"?cpDestinoDe(o):String(o.cp||"").trim(),
             destino:r.tipo==="sucursal"
               ?{sucursalId:String(r.oficial.id)}
-              :{postal:{codigoPostal:String(o.cp||"").trim(),calle:String(o.direccion||"").trim(),numero:String(o.dirNumero||"").trim(),localidad:String(o.localidad||o.ciudad||"").trim(),ciudad:String(o.ciudad||"").trim(),region:String(o.provincia||"").trim()}},
+              :{postal:{codigoPostal:ghLocCp(o.cp)||String(o.cp||"").trim(),calle:String(o.direccion||"").trim(),numero:String(o.dirNumero||"").trim(),localidad:String(o.localidad||o.ciudad||"").trim(),ciudad:String(o.ciudad||"").trim(),region:String(o.provincia||"").trim()}},
             destinatario:{
               nombreCompleto:String(o.comprador||"").trim(),
               documentoNumero:String(o.dni||"").replace(/\D/g,""),
@@ -12354,7 +12398,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       const bytes=(await ghDepPdfDeEtiquetas([ghBytesToB64(await soloEtiq.save())])).bytes; const conSku=orden.filter(r=>r.found&&r.skuLines?.length), sinSku=orden.filter(r=>!(r.found&&r.skuLines?.length));
       const porNum=new Map();
       [...conSku,...sinSku].forEach((r,i)=>{ const k=String(r.pedidoNum||`pag${r.pagina}`); const p=porNum.get(k)||{numero:k,comprador:r.destinatario||"",items:r.skuLines||[],pags:[]}; p.pags.push(i+1); porNum.set(k,p); });
-      setDepEnvio({pdfBytes:bytes,pages:orden.length,origen:"excel",canal:"andreani",pedidos:[...porNum.values()]});
+      setDepEnvio({segPdf:true,pdfBytes:bytes,pages:orden.length,origen:"excel",canal:"andreani",pedidos:[...porNum.values()]});
     }catch(e){ toast("No se pudo preparar la tanda: "+e.message,"error"); }
   }
   // Anulación inmediata (hasta 30 min después de emitir, sin ingreso): el
@@ -13401,17 +13445,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   <div style={{background:skuBlob?`linear-gradient(135deg,${T.green}14,${T.green}06)`:`linear-gradient(135deg,${T.accentSolid}14,${T.accentSolid}06)`,border:`1.5px solid ${(skuBlob?T.green:T.accentSolid)}55`,borderRadius:14,padding:"16px 20px",marginBottom:12,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",animation:"growith-fadeIn 0.3s ease"}}>
                     <div style={{flex:1,minWidth:220}}>
                       <div style={{fontSize:10,fontWeight:800,letterSpacing:0.8,textTransform:"uppercase",color:skuBlob?T.green:T.accent,marginBottom:4}}>Paso 1 · PDF con SKUs</div>
-                      <div style={{fontSize:14,fontWeight:800,color:T.text,marginBottom:2}}>{skuBlob?"PDF listo para descargar":"Resultados listos"}</div>
-                      <div style={{fontSize:12,color:T.textSm}}>{found.length} rótulos {skuBlob?"con SKUs escritos":"encontrados"}{notFound.length>0?` · ${notFound.length} sin match`:""}</div>
+                      <div style={{fontSize:14,fontWeight:800,color:T.text,marginBottom:2}}>{skuBlob?(depositoCliente?"PDF listo para mandar al depósito":"PDF listo para descargar"):"Resultados listos"}</div>
+                      <div style={{fontSize:12,color:T.textSm}}>{found.length} rótulos {skuBlob?"con SKUs escritos":"encontrados"}{notFound.length>0?` · ${notFound.length} sin match`:""}{skuBlob&&depositoCliente?" · al enviarlo también se mandan los seguimientos a tu tienda":""}</div>
                     </div>
-                    {skuBlob&&depositoCliente&&<AsyncButton onClick={enviarDepositoSku} title="Manda este PDF con los SKU a la cola del depósito" style={{...BtnSecondary(T),fontSize:14,padding:"12px 20px",flexShrink:0}}>Enviar al depósito</AsyncButton>}
+                    {skuBlob&&depositoCliente&&<AsyncButton onClick={enviarDepositoSku} title="Manda este PDF con los SKU a la cola del depósito y envía los seguimientos a tu tienda" style={{...BtnPrimary(T),background:T.isDark?"#16a34a":"#15803d",borderColor:T.isDark?"#16a34a":"#15803d",color:"#fff",boxShadow:`0 6px 22px ${T.green}44`,fontSize:15,fontWeight:800,padding:"14px 26px",display:"flex",alignItems:"center",gap:9,flexShrink:0,order:2}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Enviar al depósito</AsyncButton>}
                     {skuBlob
                       ? <button onClick={()=>{
                           const url=URL.createObjectURL(skuBlob);
                           const a=document.createElement("a");
                           a.href=url;a.download=`rotulos-con-sku-${hoyAR()}.pdf`;a.click();
                           URL.revokeObjectURL(url);
-                        }} style={{...BtnPrimary(T),background:`${T.green}1f`,borderColor:`${T.green}88`,color:T.green,boxShadow:`0 0 0 1px ${T.green}15, 0 4px 16px ${T.green}22`,fontSize:14,padding:"12px 24px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                        }} style={depositoCliente?{...BtnSecondary(T),fontSize:14,padding:"12px 20px",display:"flex",alignItems:"center",gap:8,flexShrink:0,order:1}:{...BtnPrimary(T),background:`${T.green}1f`,borderColor:`${T.green}88`,color:T.green,boxShadow:`0 0 0 1px ${T.green}15, 0 4px 16px ${T.green}22`,fontSize:14,padding:"12px 24px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                           Descargar PDF
                         </button>
@@ -14268,7 +14312,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         })()}
       </Modal>
 
-      {depEnvio&&depositoCliente&&<DepositoEnvioModal T={T} api={depApi} cliente={depositoCliente} prefill={depEnvio} corte={depositoCfg?.corteHora??15} extraCfg={depositoCfg} onClose={()=>setDepEnvio(null)} onDone={()=>{ const seg=depEnvio?.seg||[]; if(seg.length){ toast(`Tanda enviada al depósito. Avisando a ${seg.length} comprador${seg.length!==1?"es":""}…`,"success"); enviarSeguimientosApi(seg); } }}/>}
+      {depEnvio&&depositoCliente&&<DepositoEnvioModal T={T} api={depApi} cliente={depositoCliente} prefill={depEnvio} corte={depositoCfg?.corteHora??15} extraCfg={depositoCfg} onClose={()=>setDepEnvio(null)} onDone={()=>{ const seg=depEnvio?.seg||[];
+        // Flujo Excel (rótulos con SKU): al quedar la tanda en el depósito se suben solos los seguimientos del mismo PDF.
+        if(depEnvio?.segPdf){ const pend=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]).length; if(pend){ toast(`Tanda enviada al depósito. Enviando ${pend} seguimiento${pend!==1?"s":""} a tu tienda…`,"success"); sendAllTracking(); } return; }
+        if(seg.length){ toast(`Tanda enviada al depósito. Avisando a ${seg.length} comprador${seg.length!==1?"es":""}…`,"success"); enviarSeguimientosApi(seg); } }}/>}
 
       {/* Modal: pedidos con esquina excluidos del export */}
       <Modal T={T} open={!!esquinaModal} onClose={()=>setEsquinaModal(null)} title="Pedidos no incluidos en el Excel" width={500}>
@@ -15471,7 +15518,7 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
     telefono:o.telefono||"",
   });
   const [dom,setDom]=useState({
-    codigoPostal:String(o.cp||"").trim(),
+    codigoPostal:ghLocCp(o.cp)||String(o.cp||"").trim(),
     calle:o.direccion||"",
     numero:String(o.dirNumero||"").trim(),
     localidad:o.localidad||o.ciudad||"",

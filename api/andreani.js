@@ -976,6 +976,12 @@ async function catalogoLocalidades() {
   _locCat = { ts: Date.now(), byCp };
   return byCp;
 }
+// CP de 4 dígitos desde lo que escriba el comprador ("1425", "C1425", "C1425DKA"): en Shopify el CP
+// es texto libre y el CPA con letras no existe en el catálogo ni lo acepta la tarifa.
+export function cp4(v) { const t = String(v ?? "").toUpperCase().replace(/[\s.\-]/g, ""); const m = t.match(/^[A-Z]?(\d{4})(?:[A-Z]{3})?$/); return m ? m[1] : String(v ?? "").trim(); }
+// Las 24 provincias en forma canónica: un texto que no es ninguna (Shopify deja escribir cualquier cosa)
+// no contradice al código postal.
+const PROVS_AR = new Set(["caba", "buenos aires", "catamarca", "chaco", "chubut", "cordoba", "corrientes", "entre rios", "formosa", "jujuy", "la pampa", "la rioja", "mendoza", "misiones", "neuquen", "rio negro", "salta", "san juan", "san luis", "santa cruz", "santa fe", "santiago del estero", "tierra del fuego", "tucuman"]);
 // Provincia en forma comparable (sin acentos; CABA en todas sus formas = "caba").
 export function provCanon(p) {
   let t = String(p || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/^provincia (de |del )?/, "").replace(/ province$/, "");
@@ -1444,6 +1450,7 @@ async function accionAndreaniDemo({ req, res, db, uid, action, body, uData }) {
       if (!destino?.sucursalId) return responder({ error: "destino.sucursalId requerido para envío a sucursal" }, 400);
     } else {
       const p = destino?.postal;
+      if (p?.codigoPostal) p.codigoPostal = cp4(p.codigoPostal);
       if (!p?.codigoPostal || !p?.calle || !p?.numero || !p?.localidad) return responder({ error: "destino.postal necesita codigoPostal, calle, numero y localidad" }, 400);
     }
     if (!origen?.codigoPostal || !origen?.calle || !remitente?.nombreCompleto || !remitente?.documentoNumero) {
@@ -2038,6 +2045,7 @@ export default async function handler(req, res) {
         if (!destino?.sucursalId) return res.status(400).json({ error: "destino.sucursalId requerido para envío a sucursal" });
       } else {
         const p = destino?.postal;
+        if (p?.codigoPostal) p.codigoPostal = cp4(p.codigoPostal);
         if (!p?.codigoPostal || !p?.calle || !p?.numero || !p?.localidad) {
           return res.status(400).json({ error: "destino.postal necesita codigoPostal, calle, numero y localidad" });
         }
@@ -2164,7 +2172,10 @@ export default async function handler(req, res) {
       // provincia (en Shopify el CP es texto libre), la etiqueta salía a esa otra
       // provincia sin aviso. Si la provincia del pedido contradice la del CP, no se
       // emite ni se debita: hay que corregir el pedido.
-      if (locDestino && provCanon(destino.postal.region) && provCanon(locDestino.provincia) && !provCompatibles(destino.postal.region, locDestino.provincia)) {
+      // Afinado 10/oct/2026 (mismas reglas que el Excel): no frena si la "provincia" del pedido no es
+      // ninguna de las 24 (texto libre), ni si la localidad que escribió el comprador ES la de ese CP
+      // (score 1 = todas sus palabras): ahí dos de tres datos coinciden y la provincia es la que está mal.
+      if (locDestino && PROVS_AR.has(provCanon(destino.postal.region)) && provCanon(locDestino.provincia) && !provCompatibles(destino.postal.region, locDestino.provincia) && !(locDestino.score >= 1)) {
         return res.status(400).json({ code: "destino_cp_provincia", error: `El código postal ${destino.postal.codigoPostal} es de ${locDestino.provincia}, pero el pedido dice ${destino.postal.region}${destino.postal.localidad ? ` (${destino.postal.localidad})` : ""}. No se emitió ni se cobró: corregí el código postal o la provincia en el pedido y volvé a generar.` });
       }
       if (locDestino) console.log(`[andreani] localidad destino CP ${destino.postal.codigoPostal}: "${destino.postal.localidad}" → "${locDestino.localidad}" (${locDestino.provincia}, score ${locDestino.score.toFixed(2)} de ${locDestino.cands})`);
