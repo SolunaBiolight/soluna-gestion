@@ -21809,14 +21809,18 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
           <div style={{fontSize:DS.font.lg,color:T.textMd,marginTop:6}}>{nVivos>0?(vivas.some(t=>t.fechaDespacho<hoy)?"Hay pedidos de días anteriores que el depósito todavía no imprimió.":nHoy>=nVivos?(nVivos===1?"Sale hoy.":"Salen todos hoy."):nHoy>0?`${nHoy} sale${nHoy!==1?"n":""} hoy, el resto en los próximos días.`:"Salen en los próximos días."):"Cuando mandes etiquetas, las vas a ver acá hasta que el depósito las imprima."}</div>
         </div>
         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
+          {/* Un botón por canal (con su color): Andreani abre la carga del PDF; Mercado Libre trae las
+              etiquetas solo si la tienda está conectada, y si no abre la misma carga ya puesta en ML. */}
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-            <DepMenu T={T} label="Otros envíos" items={[
-              tiendaUid&&{ico:"tag",label:"Etiquetas de Mercado Libre",onClick:()=>setMl(true)},
-              {ico:"bag",label:"Envío especial (con instrucciones)",onClick:()=>setNuevo({tipo:"especial"})},
-            ]}/>
-            <DepMainBtn T={T} ico="plus" onClick={()=>setNuevo({tipo:"tanda"})}>Enviar etiquetas</DepMainBtn>
+            {[["andreani","Enviar etiquetas de Andreani",T.red,()=>setNuevo({tipo:"tanda",prefill:{canal:"andreani"}})],
+              ["ml","Enviar etiquetas de Mercado Libre",T.yellow,()=>tiendaUid?setMl(true):setNuevo({tipo:"tanda",prefill:{canal:"ml"}})]].map(([k,l,c,fn])=>(
+              <DepBtn key={k} T={T} size="lg" onClick={fn} style={{padding:"0 20px",borderColor:c+"88"}}><span style={{width:10,height:10,borderRadius:99,background:c,flexShrink:0}}/>{l}</DepBtn>
+            ))}
           </div>
-          <div style={{fontSize:DS.font.md,color:T.textSm}}>Lo que llega antes de las {corte}:00 sale el mismo día.</div>
+          <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <span style={{fontSize:DS.font.md,color:T.textSm}}>Lo que llega antes de las {corte}:00 sale el mismo día.</span>
+            <DepBtn T={T} size="sm" ico="bag" onClick={()=>setNuevo({tipo:"especial"})}>Envío especial</DepBtn>
+          </div>
         </div>
       </div>
       {avisos.length>0&&(<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>
@@ -21831,7 +21835,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
       {tab==="envios"&&(<div>
         {h2("En el depósito")}
         {vivas.length?<div style={caja}>{vivas.map((t,i)=>fila(t,i===0))}</div>
-          :<div style={{...caja,padding:"18px 18px",fontSize:DS.font.base,color:T.textSm,borderStyle:"dashed"}}>No hay tandas esperando. Tocá "Enviar etiquetas" y el depósito las ve al instante.</div>}
+          :<div style={{...caja,padding:"18px 18px",fontSize:DS.font.base,color:T.textSm,borderStyle:"dashed"}}>No hay tandas esperando. Mandá las etiquetas con los botones de arriba y el depósito las ve al instante.</div>}
         {cerradas.length>0&&(<>
           {h2("Historial",<>
             <div style={{position:"relative"}}>
