@@ -22083,6 +22083,17 @@ function DepIco({d,size=16,color,sw=2}){ return <svg width={size} height={size} 
 function DepTile({T,color,ico,size=34}){ const c=color||T.accent; return <div style={{width:size,height:size,borderRadius:DS.r.lg,background:c+"1a",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:c}}><DepIco d={ico} size={Math.round(size*0.5)} color={c}/></div>; }
 function DepDot({T,color,children,strong}){ return <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:DS.font.md,color:strong?T.text:T.textMd,whiteSpace:"nowrap",fontWeight:strong?600:400}}><span style={{width:6,height:6,borderRadius:99,background:color,flexShrink:0}}/>{children}</span>; }
 function DepLabel({T,color,children,style}){ return <div style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.sm,fontWeight:700,letterSpacing:0.6,textTransform:"uppercase",color:color||T.textSm,margin:"0 0 10px",...style}}>{children}</div>; }
+// Franja de números del tablero: una celda por dato, con un toque del color del dato (línea arriba y tinte suave).
+// items: [{l, v, s, c}]
+function DepStrip({T,items}){
+  return (<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10,marginBottom:14}}>
+    {items.map((it,i)=>{ const c=it.c||T.textSm; return (<div key={i} style={{position:"relative",backgroundColor:T.card,backgroundImage:it.c?`linear-gradient(160deg, ${c}1f 0%, transparent 65%)`:"none",border:`1px solid ${it.c?c+"3d":T.border}`,borderRadius:DS.r["2xl"],padding:"14px 16px 13px",minWidth:0,overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",gap:7,fontSize:DS.font.md,fontWeight:600,color:T.textMd}}><span style={{width:8,height:8,borderRadius:99,background:c,flexShrink:0}}/>{it.l}</div>
+      <div style={{fontSize:DS.font["4xl"]-4,fontWeight:800,color:it.c?c:T.text,letterSpacing:-1,lineHeight:1.1,fontVariantNumeric:"tabular-nums",marginTop:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.v}</div>
+      {it.s?<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.s}</div>:null}
+    </div>); })}
+  </div>);
+}
 // cols: [{h, w:"1fr"|"120px", align:"right", render:(row)=>node}]
 function DepTable({T,cols,rows,empty,minWidth=0,title,extra}){
   const grid=cols.map(c=>c.w||"1fr").join(" ");
@@ -22385,15 +22396,9 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   const colCanal=c=>({andreani:T.red,ml:T.yellow,retiro:T.blue}[c]||T.textMd);
   const caja={background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden"};
   const h2=(t,color,sub)=>(<div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",margin:"24px 0 10px"}}><span style={{fontSize:DS.font.xl,fontWeight:800,color:color||T.text,letterSpacing:-0.3}}>{t}</span>{sub&&<span style={{fontSize:DS.font.md,color:T.textSm}}>{sub}</span>}</div>);
-  // Tandas como tabla: columnas fijas (cliente, correo con su logo, pedidos, cuándo sale / impresa, acciones)
-  // alineadas entre filas, con encabezado; el detalle se abre al tocar la fila.
-  const GRID="minmax(220px,1fr) 170px 120px 150px 240px";
-  const tabla=(lista,impresas)=>(<div style={caja}><div style={{overflowX:"auto"}}><div style={{minWidth:900}}>
-    <div style={{display:"grid",gridTemplateColumns:GRID,columnGap:16,padding:"9px 18px",background:T.surface,fontSize:DS.font.xs,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:T.textSm}}>
-      <span>Cliente</span><span>Correo</span><span>Pedidos</span><span>{impresas?"Estado":"Sale"}</span><span/>
-    </div>
-    {lista.map((t,i)=><React.Fragment key={t.id}>{Tanda({t,primera:i===0})}</React.Fragment>)}
-  </div></div></div>);
+  // Cada tanda es una tarjeta teñida del color de su correo (como los botones por canal del cliente):
+  // logo, cliente, cantidad grande, cuándo sale y acciones; abajo los productos a bajar. El detalle se abre al tocarla.
+  const tabla=lista=>(<div style={{display:"flex",flexDirection:"column",gap:10}}>{lista.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>);
   const Tanda=({t,primera})=>{ const open=abierta===t.id; const v=vista[t.id]||"picking"; const pick=ghDepPicking(t.pedidos.filter(p=>!p.cancelado)); const ap=t.pedidos.filter(p=>p.apartado&&!p.cancelado).length; const canc=t.pedidos.filter(p=>p.cancelado).length; const conItems=t.pedidos.some(p=>p.items.length); const arm=t.pedidos.filter(p=>p.armado&&!p.cancelado).length; const nP=t.pedidos.filter(p=>!p.cancelado).length;
     // Color por CANAL (quién retira): Andreani rojo, Mercado Libre amarillo, retiro azul, otro gris; especial violeta.
     const esp=t.tipo==="especial"; const cCanal=esp?T.purple:colCanal(t.canal);
@@ -22405,40 +22410,40 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
     const conPdf=t.pdf&&!t.pdf.purgado;
     const cuando=entregada?(ult?`${GH_DEP_ESTADO[ult.a]||ult.a} · ${ult.porNombre} · ${ghDepFechaHora(ult.at)}`:ghDepFechaLinda(t.fechaDespacho)):atras?`atrasada · era el ${ghDepFechaLinda(t.fechaDespacho)}`:esHoy?"sale hoy":`sale el ${ghDepFechaLinda(t.fechaDespacho)}`;
     const notaCli=[t.especial?.instrucciones,t.nota].filter(Boolean).join("\n");
-    const fondo=open?T.surface:"transparent";
+    const notas=<>{notaCli&&<div style={{fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.5}}><span style={{color:T.yellow,fontWeight:700}}>{esp?"Instrucciones":"Nota del cliente"}: </span>{notaCli}</div>}
+      {t.notaDeposito&&<div style={{fontSize:DS.font.md,color:T.textMd,whiteSpace:"pre-wrap",lineHeight:1.5}}><span style={{color:T.blue,fontWeight:700}}>Tu nota al cliente: </span>{t.notaDeposito}</div>}</>;
+    const logo=esp?<DepIco d="bag" size={20} color={T.purple}/>:t.canal==="andreani"?<img src="/brand/andreani-iso.png" alt="" style={{width:30,height:"auto",display:"block"}}/>:t.canal==="ml"?<BrandIcon name="ml" size={28}/>:<DepIco d={t.canal==="retiro"?"hand":"truck"} size={20} color={cCanal}/>;
+    const chip=(txt,c,fuerte)=>(<span style={{display:"inline-flex",alignItems:"center",gap:7,height:28,padding:"0 12px",borderRadius:DS.r.full,background:c+(fuerte?"26":"14"),border:`1px solid ${c}${fuerte?"77":"3d"}`,color:fuerte?c:T.text,fontSize:DS.font.md,fontWeight:700,whiteSpace:"nowrap"}}><span style={{width:7,height:7,borderRadius:99,background:c}}/>{txt}</span>);
     return (
-    <div style={{borderTop:`1px solid ${T.borderL||T.border}`}}>
-      <div onClick={toggle} style={{display:"grid",gridTemplateColumns:GRID,alignItems:"center",columnGap:16,padding:"12px 18px",cursor:"pointer",background:fondo}}>
-        <div style={{minWidth:0}}>
+    <div style={{backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${cCanal}${entregada?"12":"24"} 0%, ${cCanal}08 45%, transparent 80%)`,border:`1px solid ${urg(t)||atras?T.red+"77":cCanal+(open?"88":"3d")}`,borderRadius:DS.r["2xl"],overflow:"hidden",boxShadow:open?DS.shadow.md:DS.shadow.sm,transition:`border-color .15s, box-shadow .15s`}}>
+      <div onClick={toggle} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",cursor:"pointer"}}>
+        <span style={{width:46,height:46,borderRadius:DS.r.xl,background:cCanal+"1f",border:`1px solid ${cCanal}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
+        <div style={{flex:"1 1 220px",minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <span style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>{t.clienteNombre}</span>
+            <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{t.clienteNombre}</span>
             {urg(t)&&<DSBadge T={T} color={T.red} size="sm">Urgente</DSBadge>}
             {t.fueraDeCorte&&!entregada&&<DSBadge T={T} color={T.yellow} size="sm">Fuera de corte</DSBadge>}
             {t.revisarCantidad&&!entregada&&<span title={`El cliente declaró ${t.revisarCantidad.n} pedidos y el PDF tiene ${t.revisarCantidad.pages} páginas`}><DSBadge T={T} color={T.orange} size="sm">Revisar cantidad: PDF de {t.revisarCantidad.pages} pág.</DSBadge></span>}
             {ap>0&&<DSBadge T={T} color={T.red} size="sm">{ap} apartado{ap!==1?"s":""}</DSBadge>}
             {canc>0&&<DSBadge T={T} color={T.textSm} size="sm">{canc} cancelado{canc!==1?"s":""}</DSBadge>}
           </div>
-          {(conItems||esp)&&<div style={{fontSize:DS.font.md,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{esp?`${t.especial?.titulo||"Envío especial"}${t.especial?.bultos>0?` · ${pl(t.especial.bultos,"bulto")}`:""}`:`${pick.slice(0,6).map(x=>`${x.sku} ×${x.cant}`).join(" · ")}${pick.length>6?` · +${pick.length-6} más`:""}`}</div>}
+          <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{esp?`Envío especial · ${t.especial?.titulo||"con instrucciones"}${t.especial?.bultos>0?` · ${pl(t.especial.bultos,"bulto")}`:""}`:(GH_DEP_CANAL[t.canal]||t.canal)}{arm>0?<span style={{color:arm>=nP?T.green:T.textMd,fontWeight:600}}> · {arm} de {nP} armados</span>:null}</div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:9,minWidth:0,fontSize:DS.font.base,color:T.text,fontWeight:500}}>
-          <span style={{width:26,height:22,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{esp?<DepIco d="bag" size={17} color={T.purple}/>:t.canal==="andreani"?<img src="/brand/andreani-iso.png" alt="" style={{width:26,height:"auto",display:"block"}}/>:t.canal==="ml"?<BrandIcon name="ml" size={22}/>:<DepIco d={t.canal==="retiro"?"hand":"truck"} size={17} color={cCanal}/>}</span>
-          <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{esp?"Envío especial":(GH_DEP_CANAL[t.canal]||t.canal)}</span>
+        <div style={{textAlign:"center",minWidth:64,flexShrink:0}}>
+          <div style={{fontSize:DS.font["2xl"]+2,fontWeight:800,color:T.text,letterSpacing:-0.6,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{t.n}</div>
+          <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:3}}>pedido{t.n!==1?"s":""}</div>
         </div>
-        <div style={{fontVariantNumeric:"tabular-nums"}}>
-          <span style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>{t.n}</span>
-          {arm>0&&<div style={{fontSize:DS.font.sm,color:arm>=nP?T.green:T.textSm,whiteSpace:"nowrap"}}>{arm} de {nP} armados</div>}
+        <div style={{minWidth:120,display:"flex",flexDirection:"column",alignItems:"flex-start",gap:3,flexShrink:0}}>
+          {entregada?<>{chip("Impresa",T.green)}{ult&&<span style={{fontSize:DS.font.sm,color:T.textSm,whiteSpace:"nowrap"}}>{ult.porNombre} · {ghDepFechaHora(ult.at)}</span>}</>
+            :atras?<>{chip("Atrasada",T.red,true)}<span style={{fontSize:DS.font.sm,color:T.textSm}}>era el {ghDepFechaLinda(t.fechaDespacho)}</span></>
+            :esHoy?chip("Sale hoy",T.accent,true):chip(`Sale el ${ghDepFechaLinda(t.fechaDespacho)}`,T.blue)}
         </div>
-        <div style={{minWidth:0}}>
-          {entregada?<><div style={{display:"flex",alignItems:"center",gap:7,fontSize:DS.font.base,fontWeight:600,color:T.text}}><span style={{width:7,height:7,borderRadius:99,background:T.green,flexShrink:0}}/>Impresa</div>{ult&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ult.porNombre} · {ghDepFechaHora(ult.at)}</div>}</>
-          :<><div style={{fontSize:DS.font.base,fontWeight:600,color:atras?T.red:T.text}}>{atras?"Atrasada":esHoy?"Hoy":ghDepFechaLinda(t.fechaDespacho)}</div>{atras&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:1}}>era el {ghDepFechaLinda(t.fechaDespacho)}</div>}</>}
-        </div>
-        <div style={{display:"flex",gap:6,alignItems:"center",justifyContent:"flex-end"}} onClick={e=>e.stopPropagation()}>
-          {conPdf&&!entregada&&<DepBtn T={T} size="sm" ico="eye" disabled={busy===t.id} onClick={()=>verPrevia(t)}>Ver</DepBtn>}
-          {conPdf&&!entregada?<DepBtn T={T} variant="primary" size="sm" ico="print" disabled={busy===t.id} onClick={()=>imprimir(t)} style={{boxShadow:"none"}}>Imprimir</DepBtn>
+        <div style={{display:"flex",gap:6,alignItems:"center",justifyContent:"flex-end",flexShrink:0}} onClick={e=>e.stopPropagation()}>
+          {conPdf&&<DepBtn T={T} ico="eye" disabled={busy===t.id} onClick={()=>verPrevia(t)}>{entregada?"Ver PDF":"Vista previa"}</DepBtn>}
+          {conPdf&&!entregada?<DepBtn T={T} variant="primary" ico="print" disabled={busy===t.id} onClick={()=>imprimir(t)}>Imprimir</DepBtn>
             // Sin PDF no hay nada que imprimir (envío especial solo con instrucciones): se cierra a mano.
-            :!entregada?<DepBtn T={T} variant="success" size="sm" ico="check" disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Ya está hecho</DepBtn>
-            :conPdf?<DepBtn T={T} size="sm" ico="eye" disabled={busy===t.id} onClick={()=>verPrevia(t)}>Ver PDF</DepBtn>:null}
-          <DepMenu T={T} size="sm" disabled={busy===t.id} items={[
+            :!entregada?<DepBtn T={T} variant="success" ico="check" disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Ya está hecho</DepBtn>:null}
+          <DepMenu T={T} disabled={busy===t.id} items={[
             conPdf&&entregada&&{ico:"print",label:"Reimprimir etiquetas",onClick:()=>imprimir(t)},
             !entregada&&{ico:"calendar",label:"Posponer",onClick:()=>setPosponer(t)},
             {ico:"note",label:t.notaDeposito?"Editar nota al cliente":"Nota al cliente",onClick:()=>notaDep(t)},
@@ -22448,11 +22453,15 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
           ]}/>
         </div>
       </div>
-      {(notaCli||t.notaDeposito)&&(!entregada||open)&&(<div style={{padding:"0 18px 12px",background:fondo,display:"flex",flexDirection:"column",gap:4}}>
-        {notaCli&&<div style={{fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.5}}><span style={{color:T.yellow,fontWeight:700}}>{esp?"Instrucciones":"Nota del cliente"}: </span>{notaCli}</div>}
-        {t.notaDeposito&&<div style={{fontSize:DS.font.md,color:T.textMd,whiteSpace:"pre-wrap",lineHeight:1.5}}><span style={{color:T.textSm}}>Tu nota al cliente: </span>{t.notaDeposito}</div>}
+      {!open&&!entregada&&(conItems||notaCli||t.notaDeposito)&&(<div onClick={toggle} style={{borderTop:`1px solid ${cCanal}26`,background:T.isDark?"rgba(0,0,0,.18)":"rgba(0,0,0,.025)",padding:"10px 18px",display:"flex",flexDirection:"column",gap:8,cursor:"pointer"}}>
+        {conItems&&<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+          {pick.slice(0,10).map(x=>(<span key={x.sku} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"4px 10px",borderRadius:DS.r.md,background:T.card,border:`1px solid ${T.border}`,fontSize:DS.font.md,color:T.text,fontWeight:600,whiteSpace:"nowrap",maxWidth:240}}><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{x.sku}</span><strong style={{color:T.accent,fontVariantNumeric:"tabular-nums"}}>×{x.cant}</strong></span>))}
+          {pick.length>10&&<span style={{fontSize:DS.font.md,color:T.textSm}}>+{pick.length-10} más</span>}
+        </div>}
+        {notas}
       </div>)}
-      {open&&(<div style={{padding:"4px 18px 16px",background:T.surface}}>
+      {open&&(<div style={{borderTop:`1px solid ${cCanal}26`,padding:"14px 18px 16px",background:T.surface}}>
+        {(notaCli||t.notaDeposito)&&<div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:12}}>{notas}</div>}
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
           <DepSeg T={T} value={vistaAct} items={segItems} onChange={k=>setVista(x=>({...x,[t.id]:k}))}/>
           <span style={{flex:1}}/>
@@ -22489,61 +22498,63 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
       {(()=>{ const manana=vivas.filter(t=>t.fechaDespacho===mananaStr), despues=vivas.filter(t=>t.fechaDespacho>mananaStr); const nAtr=nPed(atrasadas), nUrg=vivas.filter(urg).length; const dsp=st.despachados||{hoy:0,hoyTandas:0,mes:0,mesTandas:0};
         const nHoy=nPed(paraHoy), nMan=nPed(manana), nDesp=nPed(despues);
         const hayHoy=pendHoyConPdf.length>0; const lista=hayHoy?pendHoyConPdf:pendTodoConPdf; const nT=lista.length, nE=nPed(lista); const masAdelante=hayHoy&&pendTodoConPdf.length>pendHoyConPdf.length;
-        const alerta=[nAtr?`${nAtr} de días anteriores`:"",nUrg?pl(nUrg,"urgente"):""].filter(Boolean).join(" · ");
-        const resto=[nMan?`${nMan} para mañana`:"",nDesp?`${nDesp} más adelante`:""].filter(Boolean).join(" · ");
         const nCli=new Set(paraHoy.map(t=>t.clienteId)).size;
-        return (<div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap",marginBottom:18}}>
-          <div style={{flex:"1 1 300px",minWidth:0}}>
-            <div style={{fontSize:DS.font["3xl"],fontWeight:800,color:T.text,letterSpacing:-0.8,lineHeight:1.15}}>{nHoy>0?`${pl(nHoy,"pedido")} para hoy`:vivas.length?"Hoy no queda nada por imprimir":"No hay nada para imprimir"}</div>
-            <div style={{fontSize:DS.font.lg,color:T.textMd,marginTop:6,lineHeight:1.45}}>
-              {alerta&&<strong style={{color:T.red}}>{alerta}. </strong>}
-              {nHoy>0&&!alerta?`De ${pl(nCli,"cliente")}. `:""}
-              {resto?`${resto.charAt(0).toUpperCase()+resto.slice(1)}.`:(!nHoy?"Cuando un cliente mande etiquetas aparecen acá solas.":"")}
+        const fechaHoy=(()=>{ const s=new Date(`${st.hoy}T12:00:00`).toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"}); return s.charAt(0).toUpperCase()+s.slice(1); })();
+        return (<>
+        <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",marginBottom:16}}>
+          <div style={{flex:"1 1 260px",minWidth:0}}>
+            <div style={{fontSize:DS.font["3xl"],fontWeight:800,color:T.text,letterSpacing:-0.8,lineHeight:1.15}}>Cola de armado</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.base,color:enVivo===false?T.red:T.textMd,marginTop:4,flexWrap:"wrap"}}>
+              <span>{fechaHoy}</span><span style={{color:T.textSm}}>·</span>
+              <span style={{display:"inline-flex",alignItems:"center",gap:6}}><span style={{width:7,height:7,borderRadius:99,background:enVivo===false?T.red:T.green,boxShadow:`0 0 0 3px ${(enVivo===false?T.red:T.green)}26`}}/>{enVivo===false?"Sin conexión: la cola no se está actualizando":"En vivo"}</span>
             </div>
-            <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:6}}>Impresos hoy: {pl(dsp.hoy,"pedido")} en {pl(dsp.hoyTandas,"tanda")}{owner?` · este mes: ${pl(dsp.mes,"pedido")}`:""}</div>
           </div>
-          {nT>0&&(<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
-            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-              {masAdelante&&<DepBtn T={T} size="lg" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendTodoConPdf)} style={{height:52}}>Incluir próximos días ({nPed(pendTodoConPdf)})</DepBtn>}
-              <DepBtn T={T} variant="primary" size="lg" ico="print" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(lista)} style={{height:52,padding:"0 28px",fontSize:DS.font.xl,fontWeight:DS.w.black,opacity:todoHoy?0.75:1,cursor:todoHoy?"wait":"pointer"}}>{todoHoy?`Descargando ${todoHoy.done}/${todoHoy.total}…`:`${hayHoy?"Imprimir todo lo de hoy":"Imprimir todo"} · ${pl(nE,"etiqueta")}`}</DepBtn>
-            </div>
-            <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end",fontSize:DS.font.md,color:T.textSm}}>
-              {Object.entries(lista.reduce((m,t)=>{ m[t.canal]=(m[t.canal]||0)+t.n; return m; },{})).map(([c,n])=>(<span key={c} style={{display:"inline-flex",alignItems:"center",gap:6,color:T.textMd,fontWeight:600}}><span style={{width:8,height:8,borderRadius:99,background:colCanal(c)}}/>{GH_DEP_CANAL[c]||c} {n}</span>))}
-              <span>{nT===1?"Baja su PDF y queda impresa.":"Un PDF por tanda, en un .zip con una carpeta por correo."}</span>
-            </div>
-          </div>)}
-        </div>); })()}
-      <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:8,alignItems:"stretch"}}>
-        <div style={{flex:"1.5 1 320px",height:52,boxSizing:"border-box",display:"flex",alignItems:"center",gap:10,border:`1px solid ${flash==="ok"?T.green:flash==="warn"?T.yellow:flash==="error"?T.red:T.border}`,borderRadius:DS.r.full,background:flash==="ok"?T.green+"14":flash==="warn"?T.yellow+"14":flash==="error"?T.red+"14":T.card,padding:"0 8px 0 16px",boxShadow:DS.shadow.sm,minWidth:0,transition:"background .2s, border-color .2s"}}>
-          <DepIco d="scan" size={18} color={T.accent}/>
-          <input ref={scanRef} autoFocus value={scan} onChange={e=>setScan(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); escanear(); } }} placeholder="Escaneá la etiqueta o tipeá el número y Enter" style={{flex:1,border:"none",outline:"none",background:"transparent",color:T.text,fontSize:DS.font.lg,padding:"6px 0",fontFamily:"'Inter',system-ui,sans-serif",minWidth:0}}/>
-          <DepBtn T={T} variant="primary" size="sm" onClick={()=>escanear()} disabled={!scan.trim()}>Marcar armado</DepBtn>
-        </div>
-        <div style={{flex:"1 1 240px",height:52,boxSizing:"border-box",display:"flex",alignItems:"center",gap:10,border:`1px solid ${T.border}`,borderRadius:DS.r.full,background:T.card,padding:"0 16px",boxShadow:DS.shadow.sm,minWidth:0}}>
-          <DepIco d="search" size={16} color={T.textSm}/>
-          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar pedido o comprador" style={{flex:1,border:"none",outline:"none",background:"transparent",color:T.text,fontSize:DS.font.base,padding:"10px 0",fontFamily:"'Inter',system-ui,sans-serif",minWidth:0}}/>
-          {q&&<button onClick={()=>setQ("")} style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:DS.font.lg,padding:0,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
-        </div>
-        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           {owner&&st.clientes.length>0&&(<div style={{position:"relative",display:"flex",alignItems:"stretch"}}>
-            <DepBtn T={T} variant="secondary" ico="plus" onClick={()=>setMenu(m=>!m)}>Cargar tanda</DepBtn>
+            <DepBtn T={T} size="lg" ico="plus" onClick={()=>setMenu(m=>!m)}>Cargar tanda</DepBtn>
             {menu&&(<>
               <div onClick={()=>setMenu(false)} style={{position:"fixed",inset:0,zIndex:19}}/>
               <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:20,minWidth:280,maxHeight:360,overflow:"auto",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,boxShadow:DS.shadow.lg,padding:6}}>
                 {st.clientes.map(c=>(<div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:DS.r.lg}}>
-                  <DepAvatar T={T} name={c.nombre} size={26}/>
                   <div style={{flex:1,minWidth:0,fontSize:DS.font.base,fontWeight:600,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}</div>
-                  <DepBtn T={T} variant="ghost" size="sm" onClick={()=>{ setMenu(false); setNuevoPara({cliente:c,especial:false}); }}>Tanda</DepBtn>
-                  <DepBtn T={T} variant="ghost" size="sm" onClick={()=>{ setMenu(false); setNuevoPara({cliente:c,especial:true}); }}>Especial</DepBtn>
+                  <DepBtn T={T} size="sm" onClick={()=>{ setMenu(false); setNuevoPara({cliente:c,especial:false}); }}>Tanda</DepBtn>
+                  <DepBtn T={T} size="sm" onClick={()=>{ setMenu(false); setNuevoPara({cliente:c,especial:true}); }}>Especial</DepBtn>
                 </div>))}
               </div>
             </>)}
           </div>)}
         </div>
-      </div>
-      <div style={{display:"flex",alignItems:"center",gap:7,fontSize:DS.font.sm,color:enVivo===false?T.red:T.textSm,margin:"0 4px 16px"}}>
-        <span style={{width:7,height:7,borderRadius:99,background:enVivo===false?T.red:T.green,boxShadow:`0 0 0 3px ${(enVivo===false?T.red:T.green)}26`}}/>
-        {enVivo===false?"Sin conexión: la cola no se está actualizando. Revisá internet.":"En vivo · las tandas nuevas aparecen solas, sin recargar la página"}
+        <DepStrip T={T} items={[
+          {l:"Para hoy",v:nHoy,c:T.accent,s:nHoy?`${pl(paraHoy.length,"tanda")} de ${pl(nCli,"cliente")}`:"nada pendiente"},
+          {l:"Atrasados y urgentes",v:nAtr+nUrg,c:nAtr||nUrg?T.red:null,s:nAtr||nUrg?[nAtr?`${nAtr} de días anteriores`:"",nUrg?pl(nUrg,"urgente"):""].filter(Boolean).join(" · "):"todo al día"},
+          {l:"Próximos días",v:nMan+nDesp,c:nMan+nDesp?T.blue:null,s:nMan?`${nMan} para mañana`:nDesp?"ya cargados":"sin tandas cargadas"},
+          {l:"Impresos hoy",v:dsp.hoy,c:dsp.hoy?T.green:null,s:owner?`${dsp.mes} en el mes`:pl(dsp.hoyTandas,"tanda")},
+        ]}/>
+        {nT>0&&(<div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",padding:"16px 18px",marginBottom:14,borderRadius:DS.r["2xl"],border:`1px solid ${T.accentSolid}66`,backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${T.accentSolid}30 0%, ${T.accentSolid}10 55%, transparent 100%)`}}>
+          <span style={{width:46,height:46,borderRadius:DS.r.xl,background:T.accentSolid,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><DepIco d="print" size={22} color="#fff" sw={2.2}/></span>
+          <div style={{flex:"1 1 240px",minWidth:0}}>
+            <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{pl(nE,"etiqueta")} lista{nE!==1?"s":""} para imprimir{hayHoy?" hoy":""}</div>
+            <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",fontSize:DS.font.md,color:T.textMd,marginTop:4}}>
+              {Object.entries(lista.reduce((m,t)=>{ m[t.canal]=(m[t.canal]||0)+t.n; return m; },{})).map(([c,n])=>(<span key={c} style={{display:"inline-flex",alignItems:"center",gap:6,color:T.text,fontWeight:600}}><span style={{width:8,height:8,borderRadius:99,background:colCanal(c)}}/>{GH_DEP_CANAL[c]||c} · {n}</span>))}
+              <span>{nT===1?"Baja su PDF y queda impresa.":`${nT} tandas: un PDF por cada una, en un .zip con una carpeta por correo.`}</span>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            {masAdelante&&<DepBtn T={T} size="lg" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendTodoConPdf)}>Incluir próximos días ({nPed(pendTodoConPdf)})</DepBtn>}
+            <DepBtn T={T} variant="primary" size="lg" ico="print" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(lista)} style={{padding:"0 26px",fontWeight:DS.w.bold,opacity:todoHoy?0.75:1,cursor:todoHoy?"wait":"pointer"}}>{todoHoy?`Descargando ${todoHoy.done}/${todoHoy.total}…`:hayHoy?"Imprimir todo lo de hoy":"Imprimir todo"}</DepBtn>
+          </div>
+        </div>)}
+        </>); })()}
+      <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16,alignItems:"stretch"}}>
+        <div style={{flex:"1.5 1 320px",height:48,boxSizing:"border-box",display:"flex",alignItems:"center",gap:10,border:`1px solid ${flash==="ok"?T.green:flash==="warn"?T.yellow:flash==="error"?T.red:T.border}`,borderRadius:DS.r.xl,background:flash==="ok"?T.green+"14":flash==="warn"?T.yellow+"14":flash==="error"?T.red+"14":T.card,padding:"0 8px 0 14px",minWidth:0,transition:"background .2s, border-color .2s"}}>
+          <DepIco d="scan" size={18} color={T.accent}/>
+          <input ref={scanRef} autoFocus value={scan} onChange={e=>setScan(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); escanear(); } }} placeholder="Escaneá la etiqueta o tipeá el número y Enter" style={{flex:1,border:"none",outline:"none",background:"transparent",color:T.text,fontSize:DS.font.lg,padding:"6px 0",fontFamily:"'Inter',system-ui,sans-serif",minWidth:0}}/>
+          <DepBtn T={T} variant="primary" size="sm" onClick={()=>escanear()} disabled={!scan.trim()}>Marcar armado</DepBtn>
+        </div>
+        <div style={{flex:"1 1 240px",height:48,boxSizing:"border-box",display:"flex",alignItems:"center",gap:10,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,background:T.card,padding:"0 14px",minWidth:0}}>
+          <DepIco d="search" size={16} color={T.textSm}/>
+          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar pedido o comprador" style={{flex:1,border:"none",outline:"none",background:"transparent",color:T.text,fontSize:DS.font.base,padding:"10px 0",fontFamily:"'Inter',system-ui,sans-serif",minWidth:0}}/>
+          {q&&<button onClick={()=>setQ("")} style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:DS.font.lg,padding:0,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
+        </div>
       </div>
       {elegir&&(<div style={{border:`1px solid ${T.yellow}66`,background:T.yellow+"0c",borderRadius:DS.r.xl,padding:"12px 14px",marginBottom:12}}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><DepTile T={T} color={T.yellow} ico="alert" size={26}/><div style={{flex:1,fontSize:DS.font.base,color:T.text}}>El número <strong>{elegir.codigo}</strong> está en {elegir.opciones.length} tandas de clientes distintos. ¿Cuál es la etiqueta que tenés en la mano?</div><DepBtn T={T} variant="ghost" size="sm" onClick={()=>{ setElegir(null); scanRef.current?.focus(); }}>Cancelar</DepBtn></div>
@@ -22768,13 +22779,19 @@ function DepositoCuentas({T,api,onClientes}){
   const clientesVis=d.clientes.filter(c=>!cq.trim()||String(c.nombre||"").toLowerCase().includes(cq.trim().toLowerCase())||String(c.growithEmail||"").toLowerCase().includes(cq.trim().toLowerCase()));
   const pildora={...iS,marginBottom:0,height:36,boxSizing:"border-box",borderRadius:DS.r.full,fontSize:DS.font.md};
   return (<div>
-    <div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap",marginBottom:18}}>
-      <div style={{flex:"1 1 300px",minWidth:0}}>
-        <div style={{fontSize:DS.font["3xl"],fontWeight:800,color:T.text,letterSpacing:-0.8,lineHeight:1.15,fontVariantNumeric:"tabular-nums"}}>{deudaTotal>0?`Te deben ${fmtMoney(deudaTotal)}`:"Nadie te debe nada"}</div>
-        <div style={{fontSize:DS.font.lg,color:T.textMd,marginTop:6,lineHeight:1.45}}>Este mes facturaste <strong style={{color:T.text}}>{fmtMoney(factMes)}</strong> en {pedMes} pedido{pedMes!==1?"s":""} y cobraste <strong style={{color:cobMes>0?T.green:T.text}}>{fmtMoney(cobMes)}</strong>.{favorTotal>0?` Hay ${fmtMoney(favorTotal)} a favor de clientes.`:""}</div>
+    <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",marginBottom:16}}>
+      <div style={{flex:"1 1 260px",minWidth:0}}>
+        <div style={{fontSize:DS.font["3xl"],fontWeight:800,color:T.text,letterSpacing:-0.8,lineHeight:1.15}}>Clientes y pagos</div>
+        <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:4}}>{activos.length} cliente{activos.length!==1?"s":""} activo{activos.length!==1?"s":""} · {pedMes} pedido{pedMes!==1?"s":""} este mes</div>
       </div>
       <DepBtn T={T} variant="primary" size="lg" ico="plus" onClick={()=>setForm({nombre:"",precio:"",growithEmail:"",contacto:"",nota:"",activo:true})}>Nuevo cliente</DepBtn>
     </div>
+    <DepStrip T={T} items={[
+      {l:"Te deben",v:fmtMoney(deudaTotal),c:deudaTotal>0?T.yellow:null,s:favorTotal>0?`${fmtMoney(favorTotal)} a favor de clientes`:deudaTotal>0?"cargos menos pagos verificados":"nadie te debe"},
+      {l:"Por verificar",v:pendientes.length,c:pendientes.length?T.orange:null,s:pendientes.length?`${fmtMoney(pendTotal)} en transferencias`:"ninguna transferencia pendiente"},
+      {l:"Facturado este mes",v:fmtMoney(factMes),c:factMes>0?T.accent:null,s:`${pedMes} pedido${pedMes!==1?"s":""}`},
+      {l:"Cobrado este mes",v:fmtMoney(cobMes),c:cobMes>0?T.green:null,s:"transferencias y pagos a mano"},
+    ]}/>
     {pendientes.length>0&&(<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>
       <div style={{fontSize:DS.font.base,fontWeight:700,color:T.text}}>{pendientes.length} transferencia{pendientes.length!==1?"s":""} por verificar · {fmtMoney(pendTotal)}</div>
       {pendientes.map(p=>(<div key={p.id} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 14px",background:T.yellow+"12",border:`1px solid ${T.yellow}44`,borderRadius:DS.r.xl}}>
