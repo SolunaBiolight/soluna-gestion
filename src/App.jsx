@@ -12953,6 +12953,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 </div>
               )}
             </div>
+            {/* Números del panel: qué falta empaquetar y enviar, y cómo se reparte la lista (clic = filtra) */}
+            {tabEnvio!=="buscar"&&(()=>{ const base=(tabOrders||[]); const nDom=base.filter(o=>!isSucursalOrder(o)).length, nSuc=base.filter(o=>isSucursalOrder(o)).length;
+              const ir=id=>{ setTabEnvio(id);setSelected(new Map());setSearchEnvios("");fetchTabOrders(id);if(!tabCounts[id])fetchTabCounts(user?.uid); };
+              const num=v=>v===null||v===undefined?"·":v;
+              return <DepStrip T={T} items={[
+                {l:"Por empaquetar",v:num(counts.empaquetar),c:counts.empaquetar?T.yellow:null,s:"falta armar el paquete",onClick:()=>ir("empaquetar")},
+                {l:"Por enviar",v:num(counts.enviar),c:counts.enviar?T.accent:null,s:"listos para generar la etiqueta",onClick:()=>ir("enviar")},
+                {l:"A domicilio",v:nDom,c:nDom?T.blue:null,s:"en esta lista",onClick:()=>{ setFilterTipoEnvio(filterTipoEnvio==="domicilio"?"todos":"domicilio"); setSelected(new Map()); }},
+                {l:"A sucursal",v:nSuc,c:nSuc?T.purple:null,s:"en esta lista",onClick:()=>{ setFilterTipoEnvio(filterTipoEnvio==="sucursal"?"todos":"sucursal"); setSelected(new Map()); }},
+              ]}/>; })()}
             {/* Tabs */}
             <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
               {/* Segmented control */}
@@ -13142,7 +13152,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       cuentas sin Andreani prepago exportaban con los defaults sin
                       poder cambiarlos. */}
                   <button onClick={()=>setPaqModal(true)} title={paqResumen()} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
                     Paquete
                   </button>
                   {/* Exportar = violeta (acción primaria clásica); Generar con
@@ -13176,6 +13186,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             </div>
             )}
 
+            {/* La tabla vive en una tarjeta (borde, esquinas y encabezado con fondo) en vez de flotar sobre la página */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden"}}>
             {tabLoading||buscarLoading?(
               <div>
                 {[...Array(6)].map((_,i)=>(
@@ -13228,7 +13240,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 {/* Scroll horizontal en pantallas chicas — la grilla de 7 columnas
                     fijas antes se aplastaba/desbordaba en mobile */}
                 <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><div style={{minWidth:720}}>
-                <div style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
+                <div style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.border}`,background:T.surface}}>
                   <span/><span>Pedido</span><span>Cliente</span><span>Productos</span>
                   <span>Estado</span>
                   <span>Envío</span>
@@ -13240,9 +13252,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   const exportedOn=exportadoMap[o.numero]?new Date(exportadoMap[o.numero]).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
                   return (
                     <div key={o.numero} onClick={()=>setOrderDetail(o)}
-                      style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
-                      onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
-                      onMouseLeave={e=>{if(!sel)e.currentTarget.style.background=sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent";}}>
+                      style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"14":exportedOn?T.green+"0a":"transparent",boxShadow:sel?`inset 3px 0 0 ${T.accentSolid}`:"none",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
+                      onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.surface;}}
+                      onMouseLeave={e=>{if(!sel)e.currentTarget.style.background=sel?T.accentSolid+"14":exportedOn?T.green+"0a":"transparent";}}>
                       {/* En mobile el target es más grande (dedo, no mouse): padding invisible alrededor del check */}
                       <div onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e,o);}} style={{width:32,height:32,margin:-7,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1,cursor:"pointer"}}>
                         <div style={{width:typeof window!=="undefined"&&window.innerWidth<=760?22:18,height:typeof window!=="undefined"&&window.innerWidth<=760?22:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -13336,6 +13348,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 )}
               </>
             )}
+            </div>
           </div>
         )}
 
