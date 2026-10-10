@@ -20190,6 +20190,7 @@ const ADM_CRONS = [
   { key:"arca_cron_autopilot",        label:"Piloto automático de facturación", cada:"Cada hora",               maxH:2 },
   { key:"pagos-cal_cron_avisos",      label:"Avisos del Calendario de Pagos",  cada:"Todos los días 12:00 UTC", maxH:26 },
   { key:"deposito_cron_diario",       label:"Resumen diario del depósito",     cada:"Todos los días 11:00 UTC", maxH:26 },
+  { key:"inventory_cron_sync_ventas", label:"Descuento de ventas del Stock",   cada:"Cada 10 minutos",          maxH:1 },
 ];
 const ADM_LOG_LABEL = {
   activar_plan:"Activó plan", dar_prueba:"Dio prueba", desactivar_plan:"Desactivó plan", extender_plan:"Extendió plan", ajustar_dias:"Ajustó vencimiento",
@@ -41020,10 +41021,14 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       loadInvItems();
     } finally { setRecalcando(false); }
   }
-  async function loadMovements() {
+  // conSync: antes de leer el historial descuenta las ventas nuevas, así
+  // "Refrescar" y el polling muestran la venta de hace 5 minutos sin esperar al
+  // cron ni a volver a entrar a Stock.
+  async function loadMovements(conSync=false) {
     if (!uid) return;
     setMovementsLoading(true);
     try {
+      if (conSync) { try { const sj = await fetch(`/api/inventory?action=sync_sales&uid=${uid}`,{method:"POST"}).then(r=>r.json()); if (sj && (sj.items_updated>0||sj.sales_logged>0)) loadInvItems(); } catch(_) {} }
       const r = await fetch(`/api/inventory?action=list_movements&uid=${uid}&limit=200`);
       const j = await r.json();
       if (!j.error) setMovements(j.movements || []);
@@ -41043,7 +41048,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // de tab o desmontar para no quedar pegado en segundo plano.
   useEffect(() => {
     if (!uid || tab !== "movimientos") return;
-    const id = setInterval(() => { if (document.visibilityState !== "hidden") loadMovements(); }, 60_000);
+    const id = setInterval(() => { if (document.visibilityState !== "hidden") loadMovements(true); }, 60_000);
     return () => clearInterval(id);
     /* eslint-disable-next-line */
   }, [uid, tab]);
@@ -41062,7 +41067,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       .then(j => {
         // Si descontó algo, recargar los items — actualiza tanto la lista de
         // Inventario como el número "Inventario Growith" del panel de Stock.
-        if (j.items_updated > 0 || j.sales_logged > 0) loadInvItems();
+        if (j.items_updated > 0 || j.sales_logged > 0) { loadInvItems(); if (tab === "movimientos") loadMovements(); }
       })
       .catch(()=>{});
     /* eslint-disable-next-line */
@@ -42317,7 +42322,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Mostrando los últimos <strong>200 movimientos</strong>. Las ventas descuentan, los ajustes manuales se ven con el origen "manual".</div>
                   </div>
                   <div style={{display:"flex",gap:6}}>
-                    <button onClick={loadMovements} disabled={movementsLoading} style={{padding:"6px 12px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{movementsLoading?<Spinner size={11} color={T.textMd}/>:"↻"} Refrescar</button>
+                    <button onClick={()=>loadMovements(true)} disabled={movementsLoading} style={{padding:"6px 12px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{movementsLoading?<Spinner size={11} color={T.textMd}/>:"↻"} Refrescar</button>
                     <button onClick={()=>{
                       const cols=["fecha","producto","origen","evento","cambio","stock_resultante","deposito"];
                       const rows=filteredMov.map(m=>[

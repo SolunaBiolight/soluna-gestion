@@ -6,7 +6,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getValidMLToken } from "./integrations.js";
-import { guardUid } from "./_auth.js";
+import { guardUid, guardCron } from "./_auth.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
 import { esTiendaDemo, inventarioDemo } from "./_demo_ads.js";
 
@@ -297,6 +297,241 @@ async function pushItemStock(db, uid, item, stores, settings) {
   return results;
 }
 
+// Descuenta del inventario central las ventas nuevas (TN / Shopify / ML) de
+// UNA cuenta. La usan la acción sync_sales (al entrar a Stock) y el cron
+// cron_sync_ventas (cada 10 min, para que el stock no dependa de abrir la app).
+async function syncVentas(db, uid) {
+    const itemsSnap = await db.collection("users").doc(uid).collection("inventory_items").get();
+    const items = itemsSnap.docs.map(d => ({ ref: d.ref, ...d.data() }));
+    // Un item se descuenta si tiene product_links (vínculo explícito por producto)
+    // O un SKU — el SKU es la MISMA llave con la que la UI vincula item↔producto,
+    // así una venta descuenta aunque el item nunca haya sido "linkeado" a mano.
+    const linkedItems = items.filter(i => (Array.isArray(i.product_links) && i.product_links.length > 0) || String(i.sku || "").trim());
+    if (linkedItems.length === 0) return { ok: true, processed_orders: 0, items_updated: 0 };
+
+    const settings = await getSettings(db, uid);
+    const userSnap = await db.collection("users").doc(uid).get();
+    const stores = userSnap.data()?.stores || [];
+
+    // Acumular órdenes recientes de las plataformas
+    const recentOrders = [];
+    const sinceISO = new Date(Date.now() - 30 * 86400000).toISOString();
+    const sinceDate = sinceISO.slice(0, 10);
+
+    // TN
+    const tn = stores.find(s => s.type === "tiendanube");
+    if (tn?.accessToken && tn?.storeId) {
+      // 20 páginas × 200 = 4000 órdenes (antes 5 = 1000, insuficiente para
+      // una tienda que vende más de mil unidades por mes).
+      for (let page = 1; page <= 20; page++) {
+        try {
+          const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/orders?per_page=200&page=${page}&payment_status=paid&created_at_min=${sinceDate}`, {
+            headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp" },
+          });
+          if (!r.ok) break;
+          const batch = await r.json();
+          if (!Array.isArray(batch) || batch.length === 0) break;
+          for (const o of batch) {
+            if ((o.status || "").toLowerCase() === "cancelled") continue;
+            recentOrders.push({
+              order_id: `TN-ORD-${o.id}`,
+              platform: "tiendanube",
+              ts: o.paid_at || o.created_at,
+              products: (o.products || []).map(p => ({ id: `TN-${p.product_id || p.id}`, variant_id: p.variant_id != null ? String(p.variant_id) : null, sku: p.sku || "", quantity: parseInt(p.quantity) || 1 })),
+            });
+          }
+          if (batch.length < 200) break;
+        } catch (e) { break; }
+      }
+    }
+
+    // Shopify
+    const sh = stores.find(s => s.type === "shopify");
+    if (sh) await ensureShopifyToken(db, uid, sh);
+    if (sh?.accessToken && sh?.shop) {
+      let pageInfoUrl = `https://${sh.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&order=created_at+desc&created_at_min=${sinceISO}`;
+      for (let i = 0; i < 4 && pageInfoUrl; i++) {
+        try {
+          const r = await fetch(pageInfoUrl, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+          if (!r.ok) break;
+          const data = await r.json();
+          for (const o of (data.orders || [])) {
+            if (o.cancelled_at) continue;
+            if ((o.financial_status || "").toLowerCase() !== "paid") continue;
+            recentOrders.push({
+              order_id: `SH-ORD-${o.id}`,
+              platform: "shopify",
+              ts: o.processed_at || o.created_at,
+              products: (o.line_items || []).map(li => ({ id: `SH-${li.product_id}`, variant_id: li.variant_id != null ? String(li.variant_id) : null, sku: li.sku || "", quantity: parseInt(li.quantity) || 1 })),
+            });
+          }
+          const linkHeader = r.headers.get("link") || "";
+          const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+          pageInfoUrl = nextMatch ? nextMatch[1] : null;
+        } catch (e) { break; }
+      }
+    }
+
+    // ML — si el cliente maneja el stock de ML por separado, sus ventas no
+    // descuentan del inventario central.
+    const ml = stores.find(s => s.type === "mercadolibre");
+    if (ml?.userId && !settings.sync_ml_separado) {
+      try {
+        const tokenInfo = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
+        if (tokenInfo?.accessToken) {
+          const untilISO = new Date().toISOString();
+          for (let offset = 0; offset < 500; offset += 50) {
+            const r = await fetch(`https://api.mercadolibre.com/orders/search?seller=${tokenInfo.userId}&order.status=paid&order.date_created.from=${sinceISO}&order.date_created.to=${untilISO}&limit=50&offset=${offset}&sort=date_desc`, {
+              headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
+            });
+            if (!r.ok) break;
+            const data = await r.json();
+            const orders = data.results || [];
+            for (const o of orders) {
+              if (["cancelled", "invalid"].includes((o.status || "").toLowerCase())) continue;
+              recentOrders.push({
+                order_id: `ML-ORD-${o.id}`,
+                platform: "mercadolibre",
+                ts: o.date_closed || o.date_created,
+                products: (o.order_items || []).map(it => ({ id: `ML-${it.item?.id}`, variant_id: it.item?.variation_id != null ? String(it.item.variation_id) : null, sku: it.item?.seller_sku || it.item?.seller_custom_field || "", quantity: parseInt(it.quantity) || 1 })),
+              });
+            }
+            if (orders.length < 50) break;
+          }
+        }
+      } catch (e) { /* ignorar */ }
+    }
+
+    // Procesar cada item con links y descontar
+    let itemsUpdated = 0;
+    let salesLogged = 0;
+    const omitidosPorTope = [];
+    for (const item of linkedItems) {
+      const links = item.product_links || [];
+      const itemSku = String(item.sku || "").trim().toUpperCase();
+      const processed = new Set(item.processed_orders || []);
+      // Baseline: el stock que fijaste a mano ya refleja las ventas de ANTES. Solo
+      // las ventas posteriores al baseline descuentan (evita doble conteo).
+      const baselineMs = item.stock_baseline_at ? Date.parse(item.stock_baseline_at) : 0;
+      let stockChange = 0;
+      const newProcessed = [];
+
+      for (const ord of recentOrders) {
+        if (processed.has(ord.order_id)) continue;
+        // REGLA DURA: el baseline se respeta SIEMPRE. Es la fecha desde la
+        // cual el stock que cargaste es la verdad, y toda venta anterior ya
+        // está reflejada en ese número.
+        //
+        // Intenté saltearlo cuando el stock era ≤ 0 para que un producto
+        // agotado pasara a negativo. Fue un error grave: al desactivarlo, el
+        // sync reprocesó TODO el histórico de 30 días de una (agravado porque
+        // la ventana de Shopify había pasado de 1000 a 4000 órdenes) y un
+        // item quedó en -198 cuando se habían vendido 7 u 8 unidades.
+        // El negativo sale solo de las ventas POSTERIORES al baseline.
+        if (baselineMs && ord.ts) { const t = Date.parse(ord.ts); if (isFinite(t) && t <= baselineMs) continue; }
+        let unitsForItem = 0;
+        for (const prod of ord.products) {
+          // Orden de matcheo, del más preciso al más laxo:
+          //  1) link con variant_id → SOLO esa variante (mapeo por talle).
+          //  2) SKU del item = SKU de la línea vendida → es esa variante.
+          //  3) link SIN variant_id → producto entero (todas las variantes).
+          //
+          // El 3 era el primero y causaba el desastre: un item que representa
+          // UN talle, vinculado al producto sin variant_id, se comía las ventas
+          // de TODOS los talles. Con 5 talles vendiendo, el XL llegaba a -200
+          // sin haber vendido 200. Peor: si M/L/XL/2XL están todos vinculados
+          // al mismo producto, UNA venta descontaba de los cuatro.
+          //
+          // Ahora el producto entero solo aplica si la venta NO trae variante o
+          // el item no puede identificarse por SKU — es decir, cuando de verdad
+          // no hay forma de saber qué talle se vendió.
+          let matched = false;
+          // 1) variante exacta
+          for (const l of links) {
+            if (l.product_id !== prod.id || !l.variant_id) continue;
+            if (prod.variant_id != null && String(l.variant_id) === String(prod.variant_id)) {
+              unitsForItem += prod.quantity * (parseInt(l.quantity) || 1); matched = true; break;
+            }
+          }
+          if (matched) continue;
+          // 2) SKU exacto de la línea vendida
+          if (itemSku && String(prod.sku || "").trim().toUpperCase() === itemSku) {
+            unitsForItem += prod.quantity; continue;
+          }
+          // 3) producto entero — solo si no hay forma de distinguir la variante
+          const linkAmplio = links.find(l => l.product_id === prod.id && !l.variant_id);
+          if (linkAmplio) {
+            const ventaTraeVariante = prod.variant_id != null;
+            const itemTieneSku = !!itemSku;
+            const lineaTraeSku = !!String(prod.sku || "").trim();
+            // Si la venta identifica la variante Y el item tiene SKU propio,
+            // este item NO es el de esa variante (si lo fuera habría entrado
+            // por 1 o por 2): no se le descuenta nada.
+            if (ventaTraeVariante && itemTieneSku && lineaTraeSku) continue;
+            unitsForItem += prod.quantity * (parseInt(linkAmplio.quantity) || 1);
+          }
+        }
+        if (unitsForItem > 0) {
+          const oldStock = (item.stock_total || 0) + stockChange;
+          stockChange -= unitsForItem;
+          const newStock = oldStock - unitsForItem;
+          await logMovement(db, uid, {
+            item_id: item.id, item_name: item.nombre,
+            change: -unitsForItem,
+            // El negativo se guarda TAL CUAL: es la deuda de mercadería con el
+            // comprador (oversold). Clamparlo a 0 borraba cuántas unidades se
+            // vendieron sin stock y ya no se podía reconstruir.
+            old_stock: oldStock, new_stock: newStock,
+            source: ord.platform, event: `venta ${ord.order_id}`,
+            ts: ord.ts,
+          });
+          newProcessed.push(ord.order_id);
+          salesLogged++;
+        }
+      }
+
+      // FRENO DE SEGURIDAD. Un sync normal descuenta las ventas nuevas desde
+      // la última corrida: decenas de unidades, no cientos. Un salto enorme
+      // significa que algo reprocesó histórico (baseline mal aplicado, orden
+      // que se cayó de processed_orders, item recién revinculado), y el daño
+      // es silencioso: deja un negativo gigante que parece real.
+      // Ante la duda NO se escribe y queda avisado en el log.
+      const TOPE_SYNC = 150;
+      if (stockChange < -TOPE_SYNC) {
+        console.warn(`[sync_sales] ${item.nombre||item.id}: descuento de ${Math.abs(stockChange)} u. en una corrida — se omite por seguridad (tope ${TOPE_SYNC}). Puede ser histórico reprocesado.`);
+        omitidosPorTope.push({ item_id: item.id, nombre: item.nombre, unidades: Math.abs(stockChange) });
+        continue;
+      }
+      if (stockChange !== 0) {
+        // Sin clamp: si se vendió más de lo que había, stock_total queda NEGATIVO
+        // a propósito. Al reponer, la carga se suma sobre el negativo y descuenta
+        // sola lo que ya se debía. Hacia TN/ML/Shopify se sigue empujando 0
+        // (pushItemStock clampea): las plataformas no aceptan stock negativo.
+        const finalStock = (item.stock_total || 0) + stockChange;
+        // Tope alto a propósito: processed_orders es la ÚNICA defensa contra
+        // descontar dos veces la misma orden. La ventana de sync son 30 días y
+        // una tienda activa supera las 2000 órdenes en ese lapso — con el tope
+        // viejo las más antiguas salían de la lista y volvían a descontar.
+        // Se guardan solo ids (strings cortos), así que 8000 entra cómodo en
+        // el límite de 1 MB por documento de Firestore.
+        const allProcessed = Array.from(new Set([...(item.processed_orders || []), ...newProcessed])).slice(-8000);
+        await item.ref.update({
+          stock_total: finalStock,
+          processed_orders: allProcessed,
+          last_sync_at: new Date().toISOString(),
+        });
+        itemsUpdated++;
+        // Stock cruzado: propagar el nuevo stock a las plataformas (best-effort)
+        try { await pushItemStock(db, uid, { ...item, stock_total: finalStock }, stores, settings); } catch (_) {}
+      } else if (newProcessed.length === 0 && !item.last_sync_at) {
+        // primer sync sin ventas — solo marcamos timestamp
+        await item.ref.update({ last_sync_at: new Date().toISOString() });
+      }
+    }
+
+    return { ok: true, processed_orders: recentOrders.length, items_updated: itemsUpdated, sales_logged: salesLogged, omitidos: omitidosPorTope };
+}
+
 export default async function handler(req, res) {
   { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||_o.endsWith("-soluna1.vercel.app")||_o.startsWith("http://localhost"))?_o:"https://www.growithapp.com"); } // allowlist CORS
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, PATCH");
@@ -306,6 +541,39 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end(); // el preflight nunca lleva credenciales
 
   const { action, uid } = req.query;
+
+  // ── CRON: sincronizar ventas de TODAS las cuentas con inventario (cada 10 min) ──
+  // Antes el descuento solo corría cuando alguien abría Stock: una venta de las
+  // 19:41 no aparecía hasta que el dueño entraba a la app. Recorre las cuentas
+  // con items por tandas con cursor (system_warm/inv_sync) y un presupuesto de
+  // tiempo, así ninguna corrida se pasa del maxDuration.
+  if (action === "cron_sync_ventas") {
+    if (!guardCron(req, res)) return;
+    const db = initAdmin();
+    const t0 = Date.now(), PRESUPUESTO_MS = 70000;
+    const cursorRef = db.collection("system_warm").doc("inv_sync");
+    const curSnap = await cursorRef.get().catch(() => null);
+    const cur = curSnap && curSnap.exists ? (curSnap.data() || {}) : {};
+    // Cuentas con inventario: padres de inventory_items (solo ids, sin datos).
+    const grp = await db.collectionGroup("inventory_items").select("id").limit(20000).get();
+    const uids = [...new Set(grp.docs.map(d => d.ref.parent.parent?.id).filter(Boolean))].sort();
+    if (!uids.length) return res.json({ ok: true, cuentas: 0 });
+    let idx = Math.max(0, uids.indexOf(String(cur.ultimo || "")) + 1);
+    if (idx >= uids.length) idx = 0;
+    const hechos = [], errores = [];
+    let ultimo = cur.ultimo || null, vueltas = 0;
+    while (vueltas < uids.length && Date.now() - t0 < PRESUPUESTO_MS) {
+      const u = uids[idx]; idx = (idx + 1) % uids.length; vueltas++; ultimo = u;
+      try {
+        if (await esTiendaDemo(db, u)) continue;
+        const r = await syncVentas(db, u);
+        hechos.push({ uid: u, ventas: r.sales_logged || 0, items: r.items_updated || 0 });
+      } catch (e) { errores.push({ uid: u, error: e.message }); }
+    }
+    await cursorRef.set({ ultimo, at: new Date(), cuentas: uids.length, corrida: hechos.length, errores: errores.length }, { merge: true }).catch(() => {});
+    return res.json({ ok: true, cuentas: uids.length, corridas: hechos.length, con_ventas: hechos.filter(h => h.ventas > 0), errores, ms: Date.now() - t0 });
+  }
+
   if (!uid) return res.status(401).json({ error: "Falta uid" });
 
   // Autorización multi-tenant: el uid solo no prueba nada. Este guard cubre TODAS
@@ -573,235 +841,7 @@ export default async function handler(req, res) {
 
     // ── SYNC SALES — recorre ordenes recientes, descuenta stock de items vinculados ──
     if (action === "sync_sales" && req.method === "POST") {
-      const itemsSnap = await db.collection("users").doc(uid).collection("inventory_items").get();
-      const items = itemsSnap.docs.map(d => ({ ref: d.ref, ...d.data() }));
-      // Un item se descuenta si tiene product_links (vínculo explícito por producto)
-      // O un SKU — el SKU es la MISMA llave con la que la UI vincula item↔producto,
-      // así una venta descuenta aunque el item nunca haya sido "linkeado" a mano.
-      const linkedItems = items.filter(i => (Array.isArray(i.product_links) && i.product_links.length > 0) || String(i.sku || "").trim());
-      if (linkedItems.length === 0) return res.json({ ok: true, processed_orders: 0, items_updated: 0 });
-
-      const settings = await getSettings(db, uid);
-      const userSnap = await db.collection("users").doc(uid).get();
-      const stores = userSnap.data()?.stores || [];
-
-      // Acumular órdenes recientes de las plataformas
-      const recentOrders = [];
-      const sinceISO = new Date(Date.now() - 30 * 86400000).toISOString();
-      const sinceDate = sinceISO.slice(0, 10);
-
-      // TN
-      const tn = stores.find(s => s.type === "tiendanube");
-      if (tn?.accessToken && tn?.storeId) {
-        // 20 páginas × 200 = 4000 órdenes (antes 5 = 1000, insuficiente para
-        // una tienda que vende más de mil unidades por mes).
-        for (let page = 1; page <= 20; page++) {
-          try {
-            const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/orders?per_page=200&page=${page}&payment_status=paid&created_at_min=${sinceDate}`, {
-              headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp" },
-            });
-            if (!r.ok) break;
-            const batch = await r.json();
-            if (!Array.isArray(batch) || batch.length === 0) break;
-            for (const o of batch) {
-              if ((o.status || "").toLowerCase() === "cancelled") continue;
-              recentOrders.push({
-                order_id: `TN-ORD-${o.id}`,
-                platform: "tiendanube",
-                ts: o.paid_at || o.created_at,
-                products: (o.products || []).map(p => ({ id: `TN-${p.product_id || p.id}`, variant_id: p.variant_id != null ? String(p.variant_id) : null, sku: p.sku || "", quantity: parseInt(p.quantity) || 1 })),
-              });
-            }
-            if (batch.length < 200) break;
-          } catch (e) { break; }
-        }
-      }
-
-      // Shopify
-      const sh = stores.find(s => s.type === "shopify");
-      if (sh) await ensureShopifyToken(db, uid, sh);
-      if (sh?.accessToken && sh?.shop) {
-        let pageInfoUrl = `https://${sh.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&created_at_min=${sinceISO}`;
-        for (let i = 0; i < 4 && pageInfoUrl; i++) {
-          try {
-            const r = await fetch(pageInfoUrl, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
-            if (!r.ok) break;
-            const data = await r.json();
-            for (const o of (data.orders || [])) {
-              if (o.cancelled_at) continue;
-              if ((o.financial_status || "").toLowerCase() !== "paid") continue;
-              recentOrders.push({
-                order_id: `SH-ORD-${o.id}`,
-                platform: "shopify",
-                ts: o.processed_at || o.created_at,
-                products: (o.line_items || []).map(li => ({ id: `SH-${li.product_id}`, variant_id: li.variant_id != null ? String(li.variant_id) : null, sku: li.sku || "", quantity: parseInt(li.quantity) || 1 })),
-              });
-            }
-            const linkHeader = r.headers.get("link") || "";
-            const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-            pageInfoUrl = nextMatch ? nextMatch[1] : null;
-          } catch (e) { break; }
-        }
-      }
-
-      // ML — si el cliente maneja el stock de ML por separado, sus ventas no
-      // descuentan del inventario central.
-      const ml = stores.find(s => s.type === "mercadolibre");
-      if (ml?.userId && !settings.sync_ml_separado) {
-        try {
-          const tokenInfo = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
-          if (tokenInfo?.accessToken) {
-            const untilISO = new Date().toISOString();
-            for (let offset = 0; offset < 500; offset += 50) {
-              const r = await fetch(`https://api.mercadolibre.com/orders/search?seller=${tokenInfo.userId}&order.status=paid&order.date_created.from=${sinceISO}&order.date_created.to=${untilISO}&limit=50&offset=${offset}&sort=date_desc`, {
-                headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
-              });
-              if (!r.ok) break;
-              const data = await r.json();
-              const orders = data.results || [];
-              for (const o of orders) {
-                if (["cancelled", "invalid"].includes((o.status || "").toLowerCase())) continue;
-                recentOrders.push({
-                  order_id: `ML-ORD-${o.id}`,
-                  platform: "mercadolibre",
-                  ts: o.date_closed || o.date_created,
-                  products: (o.order_items || []).map(it => ({ id: `ML-${it.item?.id}`, variant_id: it.item?.variation_id != null ? String(it.item.variation_id) : null, sku: it.item?.seller_sku || it.item?.seller_custom_field || "", quantity: parseInt(it.quantity) || 1 })),
-                });
-              }
-              if (orders.length < 50) break;
-            }
-          }
-        } catch (e) { /* ignorar */ }
-      }
-
-      // Procesar cada item con links y descontar
-      let itemsUpdated = 0;
-      let salesLogged = 0;
-      const omitidosPorTope = [];
-      for (const item of linkedItems) {
-        const links = item.product_links || [];
-        const itemSku = String(item.sku || "").trim().toUpperCase();
-        const processed = new Set(item.processed_orders || []);
-        // Baseline: el stock que fijaste a mano ya refleja las ventas de ANTES. Solo
-        // las ventas posteriores al baseline descuentan (evita doble conteo).
-        const baselineMs = item.stock_baseline_at ? Date.parse(item.stock_baseline_at) : 0;
-        let stockChange = 0;
-        const newProcessed = [];
-
-        for (const ord of recentOrders) {
-          if (processed.has(ord.order_id)) continue;
-          // REGLA DURA: el baseline se respeta SIEMPRE. Es la fecha desde la
-          // cual el stock que cargaste es la verdad, y toda venta anterior ya
-          // está reflejada en ese número.
-          //
-          // Intenté saltearlo cuando el stock era ≤ 0 para que un producto
-          // agotado pasara a negativo. Fue un error grave: al desactivarlo, el
-          // sync reprocesó TODO el histórico de 30 días de una (agravado porque
-          // la ventana de Shopify había pasado de 1000 a 4000 órdenes) y un
-          // item quedó en -198 cuando se habían vendido 7 u 8 unidades.
-          // El negativo sale solo de las ventas POSTERIORES al baseline.
-          if (baselineMs && ord.ts) { const t = Date.parse(ord.ts); if (isFinite(t) && t <= baselineMs) continue; }
-          let unitsForItem = 0;
-          for (const prod of ord.products) {
-            // Orden de matcheo, del más preciso al más laxo:
-            //  1) link con variant_id → SOLO esa variante (mapeo por talle).
-            //  2) SKU del item = SKU de la línea vendida → es esa variante.
-            //  3) link SIN variant_id → producto entero (todas las variantes).
-            //
-            // El 3 era el primero y causaba el desastre: un item que representa
-            // UN talle, vinculado al producto sin variant_id, se comía las ventas
-            // de TODOS los talles. Con 5 talles vendiendo, el XL llegaba a -200
-            // sin haber vendido 200. Peor: si M/L/XL/2XL están todos vinculados
-            // al mismo producto, UNA venta descontaba de los cuatro.
-            //
-            // Ahora el producto entero solo aplica si la venta NO trae variante o
-            // el item no puede identificarse por SKU — es decir, cuando de verdad
-            // no hay forma de saber qué talle se vendió.
-            let matched = false;
-            // 1) variante exacta
-            for (const l of links) {
-              if (l.product_id !== prod.id || !l.variant_id) continue;
-              if (prod.variant_id != null && String(l.variant_id) === String(prod.variant_id)) {
-                unitsForItem += prod.quantity * (parseInt(l.quantity) || 1); matched = true; break;
-              }
-            }
-            if (matched) continue;
-            // 2) SKU exacto de la línea vendida
-            if (itemSku && String(prod.sku || "").trim().toUpperCase() === itemSku) {
-              unitsForItem += prod.quantity; continue;
-            }
-            // 3) producto entero — solo si no hay forma de distinguir la variante
-            const linkAmplio = links.find(l => l.product_id === prod.id && !l.variant_id);
-            if (linkAmplio) {
-              const ventaTraeVariante = prod.variant_id != null;
-              const itemTieneSku = !!itemSku;
-              const lineaTraeSku = !!String(prod.sku || "").trim();
-              // Si la venta identifica la variante Y el item tiene SKU propio,
-              // este item NO es el de esa variante (si lo fuera habría entrado
-              // por 1 o por 2): no se le descuenta nada.
-              if (ventaTraeVariante && itemTieneSku && lineaTraeSku) continue;
-              unitsForItem += prod.quantity * (parseInt(linkAmplio.quantity) || 1);
-            }
-          }
-          if (unitsForItem > 0) {
-            const oldStock = (item.stock_total || 0) + stockChange;
-            stockChange -= unitsForItem;
-            const newStock = oldStock - unitsForItem;
-            await logMovement(db, uid, {
-              item_id: item.id, item_name: item.nombre,
-              change: -unitsForItem,
-              // El negativo se guarda TAL CUAL: es la deuda de mercadería con el
-              // comprador (oversold). Clamparlo a 0 borraba cuántas unidades se
-              // vendieron sin stock y ya no se podía reconstruir.
-              old_stock: oldStock, new_stock: newStock,
-              source: ord.platform, event: `venta ${ord.order_id}`,
-              ts: ord.ts,
-            });
-            newProcessed.push(ord.order_id);
-            salesLogged++;
-          }
-        }
-
-        // FRENO DE SEGURIDAD. Un sync normal descuenta las ventas nuevas desde
-        // la última corrida: decenas de unidades, no cientos. Un salto enorme
-        // significa que algo reprocesó histórico (baseline mal aplicado, orden
-        // que se cayó de processed_orders, item recién revinculado), y el daño
-        // es silencioso: deja un negativo gigante que parece real.
-        // Ante la duda NO se escribe y queda avisado en el log.
-        const TOPE_SYNC = 150;
-        if (stockChange < -TOPE_SYNC) {
-          console.warn(`[sync_sales] ${item.nombre||item.id}: descuento de ${Math.abs(stockChange)} u. en una corrida — se omite por seguridad (tope ${TOPE_SYNC}). Puede ser histórico reprocesado.`);
-          omitidosPorTope.push({ item_id: item.id, nombre: item.nombre, unidades: Math.abs(stockChange) });
-          continue;
-        }
-        if (stockChange !== 0) {
-          // Sin clamp: si se vendió más de lo que había, stock_total queda NEGATIVO
-          // a propósito. Al reponer, la carga se suma sobre el negativo y descuenta
-          // sola lo que ya se debía. Hacia TN/ML/Shopify se sigue empujando 0
-          // (pushItemStock clampea): las plataformas no aceptan stock negativo.
-          const finalStock = (item.stock_total || 0) + stockChange;
-          // Tope alto a propósito: processed_orders es la ÚNICA defensa contra
-          // descontar dos veces la misma orden. La ventana de sync son 30 días y
-          // una tienda activa supera las 2000 órdenes en ese lapso — con el tope
-          // viejo las más antiguas salían de la lista y volvían a descontar.
-          // Se guardan solo ids (strings cortos), así que 8000 entra cómodo en
-          // el límite de 1 MB por documento de Firestore.
-          const allProcessed = Array.from(new Set([...(item.processed_orders || []), ...newProcessed])).slice(-8000);
-          await item.ref.update({
-            stock_total: finalStock,
-            processed_orders: allProcessed,
-            last_sync_at: new Date().toISOString(),
-          });
-          itemsUpdated++;
-          // Stock cruzado: propagar el nuevo stock a las plataformas (best-effort)
-          try { await pushItemStock(db, uid, { ...item, stock_total: finalStock }, stores, settings); } catch (_) {}
-        } else if (newProcessed.length === 0 && !item.last_sync_at) {
-          // primer sync sin ventas — solo marcamos timestamp
-          await item.ref.update({ last_sync_at: new Date().toISOString() });
-        }
-      }
-
-      return res.json({ ok: true, processed_orders: recentOrders.length, items_updated: itemsUpdated, sales_logged: salesLogged, omitidos: omitidosPorTope });
+      return res.json(await syncVentas(db, uid));
     }
 
     // ── RECALC OVERSOLD — recupera los negativos que el clamp viejo borró ────────

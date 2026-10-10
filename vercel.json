@@ -151,6 +151,10 @@
     {
       "path": "/api/deposito?action=cron_diario",
       "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/inventory?action=cron_sync_ventas",
+      "schedule": "*/10 * * * *"
     }
   ]
 }
