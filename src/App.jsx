@@ -21708,7 +21708,7 @@ function DepositoMlModal({T,tiendaUid,onListo,onClose}){
 function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
   const [st,setSt]=useState(null); const [err,setErr]=useState("");
   const [nuevo,setNuevo]=useState(null); // {tipo:"tanda"|"especial", prefill?}
-  const [pago,setPago]=useState(false); const [ml,setMl]=useState(false);
+  const [pago,setPago]=useState(false);
   const [tab,setTab]=useState("envios"); const [abierta,setAbierta]=useState(null);
   const [q,setQ]=useState(""); const [mes,setMes]=useState("");
   const cargar=()=>api("c_tandas").then(d=>{ setSt(d); setErr(""); }).catch(e=>setErr(e.message));
@@ -21809,11 +21809,11 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
           <div style={{fontSize:DS.font.lg,color:T.textMd,marginTop:6}}>{nVivos>0?(vivas.some(t=>t.fechaDespacho<hoy)?"Hay pedidos de días anteriores que el depósito todavía no imprimió.":nHoy>=nVivos?(nVivos===1?"Sale hoy.":"Salen todos hoy."):nHoy>0?`${nHoy} sale${nHoy!==1?"n":""} hoy, el resto en los próximos días.`:"Salen en los próximos días."):"Cuando mandes etiquetas, las vas a ver acá hasta que el depósito las imprima."}</div>
         </div>
         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
-          {/* Un botón por canal (con su color): Andreani abre la carga del PDF; Mercado Libre trae las
-              etiquetas solo si la tienda está conectada, y si no abre la misma carga ya puesta en ML. */}
+          {/* Un botón por canal: los dos abren la carga del PDF con el canal ya puesto. Traer las etiquetas
+              de Mercado Libre por API (DepositoMlModal) quedó apagado el 10/oct/2026: todavía tenía errores. */}
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
             {[["andreani","Andreani",T.red,()=>setNuevo({tipo:"tanda",prefill:{canal:"andreani"}})],
-              ["ml","Mercado Libre",T.yellow,()=>tiendaUid?setMl(true):setNuevo({tipo:"tanda",prefill:{canal:"ml"}})]].map(([k,l,c,fn])=>(
+              ["ml","Mercado Libre",T.yellow,()=>setNuevo({tipo:"tanda",prefill:{canal:"ml"}})]].map(([k,l,c,fn])=>(
               <DepCanalBtn key={k} T={T} marca={k} color={c} canal={l} onClick={fn}/>
             ))}
           </div>
@@ -21894,7 +21894,6 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
       </div>)}
       {nuevo&&<DepositoEnvioModal T={T} api={api} cliente={st.cliente} especial={nuevo.tipo==="especial"} prefill={nuevo.prefill} corte={corte} extraCfg={extraCfg} onClose={()=>setNuevo(null)} onDone={cargar}/>}
       {pago&&<DepositoPagoModal T={T} api={api} cuenta={st.cuenta} datosPago={st.datosPago} onClose={()=>setPago(false)} onDone={cargar}/>}
-      {ml&&tiendaUid&&<DepositoMlModal T={T} tiendaUid={tiendaUid} onClose={()=>setMl(false)} onListo={prefill=>setNuevo({tipo:"tanda",prefill})}/>}
     </div>
   );
 }
