@@ -13058,18 +13058,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 así el botón verde no se apila debajo de los demás. */}
             {(tabEnvio!=="buscar"||tabOrders.length>0)&&(
             <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
-            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-              {tabEnvio!=="buscar"&&<div style={{display:"flex",gap:2,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:3}}>
+            <div style={{display:"flex",columnGap:16,rowGap:12,alignItems:"center",flexWrap:"wrap"}}>
+              {tabEnvio!=="buscar"&&<div style={{display:"flex",gap:2,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:4,gap:4}}>
                 {[["todos","Todos"],["domicilio","Domicilio"],["sucursal","Sucursal"]].map(([v,l])=>(
-                  <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Map());}} style={{padding:"7px 16px",fontSize:13,border:"none",borderRadius:DS.r.full,background:filterTipoEnvio===v?T.surface:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?700:500,transition:"all 0.1s",boxShadow:"none",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
+                  <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Map());}} style={{height:36,padding:"0 20px",fontSize:14,border:"none",borderRadius:DS.r.full,background:filterTipoEnvio===v?T.surface:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?700:500,transition:"all 0.1s",boxShadow:"none",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
                 ))}
               </div>}
               <span title="Atajos: Ctrl+A selecciona todos · Shift+click selecciona un rango · Esc limpia la selección · Enter exporta"
-                style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"flex",gap:10,alignItems:"center",cursor:"help"}}>
+                style={{fontSize:12,color:T.textSm,marginLeft:"auto",order:3,display:"flex",gap:10,alignItems:"center",cursor:"help"}}>
                 <span>{exportables.length} {exportables.length===1?"pedido":"pedidos"}{totalPages>1?` · pág. ${orderPage+1}/${totalPages}`:""}</span>
               </span>
-            </div>
-            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
               {/* Elegir por página: solo cuando hay más de una (con una sola alcanza "Seleccionar todo") */}
               {totalPages>1&&<div style={{position:"relative",order:2}}>
                 <button onClick={e=>{e.stopPropagation();setShowPagePicker(v=>!v);}}
@@ -13141,7 +13139,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               {/* Seleccionar todo a un clic, sin entrar al desplegable (pedido 17/9) */}
               {exportables.length>0&&(()=>{ const todo=selected.size===exportables.length; return (
                 <button onClick={()=>toggleAll()} title={todo?"Quitar la selección":`Seleccionar los ${exportables.length} pedidos de la lista`}
-                  style={{order:1,display:"inline-flex",alignItems:"center",gap:9,height:40,padding:"0 18px 0 14px",fontSize:14,fontWeight:700,borderRadius:DS.r.full,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap",transition:"all .12s",border:`1px solid ${todo?T.accentSolid:T.textSm}`,background:todo?T.accentSolid+"1f":T.card,color:T.text}}>
+                  style={{order:1,display:"inline-flex",alignItems:"center",gap:10,height:44,padding:"0 22px 0 16px",fontSize:14,fontWeight:700,borderRadius:DS.r.full,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap",transition:"all .12s",border:`1px solid ${todo?T.accentSolid:T.textSm}`,background:todo?T.accentSolid+"1f":T.card,color:T.text}}>
                   <span style={{width:18,height:18,borderRadius:99,border:`1.5px solid ${todo?T.accentSolid:T.textSm}`,background:todo?T.accentSolid:"transparent",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{todo&&<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}</span>
                   {todo?`${exportables.length} seleccionados · quitar`:`Seleccionar todo (${exportables.length})`}
                 </button>
@@ -13149,14 +13147,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               {selected.size>0&&selected.size<exportables.length&&totalPages<=1&&<span style={{order:2,fontSize:13,color:T.textMd}}>{selected.size} seleccionado{selected.size!==1?"s":""} · <span onClick={()=>setSelected(new Map())} style={{color:T.accent,fontWeight:600,cursor:"pointer"}}>quitar</span></span>}
               {/* CTAs de exportación en la fila de controles, junto al selector —
                   la barra flotante quedaba disimulada; acá se ven siempre */}
-              <div style={{marginLeft:"auto",order:3,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+              <div style={{flex:"1 1 100%",order:4,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
               {selected.size>0&&(
                 <>
                   {/* La config de paquete la usa el XLSX de TODOS (peso/medidas/valor
                       declarado) — no solo la emisión por API. Sin este botón, las
                       cuentas sin Andreani prepago exportaban con los defaults sin
                       poder cambiarlos. */}
-                  <button onClick={()=>setPaqModal(true)} title={paqResumen()} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+                  <button onClick={()=>setPaqModal(true)} title={paqResumen()} style={{...BtnSecondary(T),height:48,boxSizing:"border-box",borderRadius:DS.r.full,fontSize:14,fontWeight:600,padding:"0 20px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:8}}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
                     Paquete
                   </button>
@@ -13164,17 +13162,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       saldo = verde (la vía recomendada, mismo verde del saldo). */}
                   <button onClick={()=>{setExportSingleOrder(null);exportAndreani([...selected.values()]);}}
                     title="Genera el Excel para subir al portal de Andreani y pagar con tu propia cuenta"
-                    style={{...BtnPrimary(T),fontWeight:600,fontSize:12,padding:"7px 12px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
+                    style={{...BtnPrimary(T),height:48,boxSizing:"border-box",borderRadius:DS.r.full,fontWeight:700,fontSize:15,padding:"0 26px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:9}}>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
                     Exportar XLSX Andreani ({selected.size})
                   </button>
                   {andreani.enabled&&(
                     <button onClick={()=>{setExportSingleOrder(null);lanzarBulkAndreani([...selected.values()]);}}
                       title="Cotiza y emite las etiquetas al instante, debitando del saldo de envíos"
-                      style={{...BtnPrimary(T),border:`1.5px solid ${T.green}55`,background:T.green+"1a",color:T.green,boxShadow:`0 0 0 1px ${T.green}15, 0 4px 20px ${T.green}20`,fontSize:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",position:"relative"}}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                      style={{...BtnPrimary(T),height:48,boxSizing:"border-box",borderRadius:DS.r.full,border:`1px solid ${T.isDark?"#16a34a":"#15803d"}`,background:T.isDark?"#16a34a":"#15803d",color:"#fff",boxShadow:`0 6px 22px ${T.green}3d`,fontSize:15,fontWeight:700,padding:"0 26px",display:"flex",alignItems:"center",gap:9,whiteSpace:"nowrap",position:"relative"}}>
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                       Generar etiquetas (Saldo) ({selected.size})
-                      <span style={{fontSize:9,fontWeight:800,letterSpacing:0.4,textTransform:"uppercase",background:T.green,color:"#fff",borderRadius:5,padding:"2px 6px",marginLeft:2}}>Recomendado</span>
+                      <span style={{fontSize:10,fontWeight:800,letterSpacing:0.4,textTransform:"uppercase",background:"rgba(255,255,255,.22)",color:"#fff",borderRadius:DS.r.full,padding:"3px 9px",marginLeft:2}}>Recomendado</span>
                     </button>
                   )}
                 </>
