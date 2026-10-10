@@ -402,6 +402,14 @@ async function syncVentas(db, uid) {
       } catch (e) { /* ignorar */ }
     }
 
+    // Cuántos items tienen vínculo "producto entero" (sin variant_id) al mismo
+    // producto. Si es UNO solo, ese item representa el producto completo y toda
+    // venta del producto le descuenta, coincida o no el SKU de la línea. Si son
+    // varios (un item por talle, todos sin variant_id), no hay forma de saber
+    // cuál se vendió y se aplica la regla restrictiva de abajo.
+    const compartido = {};
+    for (const it of linkedItems) for (const l of (it.product_links || [])) { if (l.product_id && !l.variant_id) compartido[l.product_id] = (compartido[l.product_id] || 0) + 1; }
+
     // Procesar cada item con links y descontar
     let itemsUpdated = 0;
     let salesLogged = 0;
@@ -466,8 +474,12 @@ async function syncVentas(db, uid) {
             const lineaTraeSku = !!String(prod.sku || "").trim();
             // Si la venta identifica la variante Y el item tiene SKU propio,
             // este item NO es el de esa variante (si lo fuera habría entrado
-            // por 1 o por 2): no se le descuenta nada.
-            if (ventaTraeVariante && itemTieneSku && lineaTraeSku) continue;
+            // por 1 o por 2): no se le descuenta nada… SALVO que sea el único
+            // item vinculado a ese producto. Caso real (Lumina, 10/oct/2026):
+            // un solo item con vínculo al producto entero, le cambiaron el SKU
+            // a "… (Seny)" y la venta dejó de descontar porque el SKU de la
+            // línea ya no coincidía — el item igual era el dueño del producto.
+            if (ventaTraeVariante && itemTieneSku && lineaTraeSku && (compartido[prod.id] || 0) > 1) continue;
             unitsForItem += prod.quantity * (parseInt(linkAmplio.quantity) || 1);
           }
         }
