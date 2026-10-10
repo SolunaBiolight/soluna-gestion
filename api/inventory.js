@@ -841,7 +841,24 @@ export default async function handler(req, res) {
 
     // ── SYNC SALES — recorre ordenes recientes, descuenta stock de items vinculados ──
     if (action === "sync_sales" && req.method === "POST") {
-      return res.json(await syncVentas(db, uid));
+      const out = await syncVentas(db, uid);
+      // ?diag=1 — las últimas órdenes de Shopify SIN filtrar por pago, con su
+      // estado: para entender por qué una venta "no aparece" (pendiente de pago,
+      // cancelada, sin producto vinculado…).
+      if (req.query.diag === "1") {
+        try {
+          const stores = (await db.collection("users").doc(uid).get()).data()?.stores || [];
+          const sh = stores.find(s => s.type === "shopify");
+          if (sh) await ensureShopifyToken(db, uid, sh);
+          if (sh?.accessToken && sh?.shop) {
+            const r = await fetch(`https://${sh.shop}/admin/api/2024-10/orders.json?status=any&limit=8&order=created_at+desc&fields=id,name,created_at,processed_at,financial_status,fulfillment_status,cancelled_at,line_items`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+            const j = r.ok ? await r.json() : { error: `HTTP ${r.status}` };
+            out.diag_shopify = (j.orders || []).map(o => ({ name: o.name, id: o.id, created_at: o.created_at, processed_at: o.processed_at, financial_status: o.financial_status, cancelled: !!o.cancelled_at, items: (o.line_items || []).map(li => `${li.sku || li.product_id}${li.variant_id ? "/v" + li.variant_id : ""} x${li.quantity}`) }));
+            if (j.error) out.diag_shopify_error = j.error;
+          }
+        } catch (e) { out.diag_shopify_error = e.message; }
+      }
+      return res.json(out);
     }
 
     // ── RECALC OVERSOLD — recupera los negativos que el clamp viejo borró ────────
