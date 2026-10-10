@@ -5653,7 +5653,7 @@ function AppTopbar({T, section, sectionId, onHelp, onHome, children, top=0}) {
           {children}
           {onHelp&&(
             <button onClick={onHelp} title="¿Cómo funciona esta sección?"
-              style={{width:34,height:34,borderRadius:DS.r.full,boxSizing:"border-box",border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,fontSize:13,fontWeight:DS.w.bold,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1,padding:0}}>?</button>
+              style={{width:36,height:36,borderRadius:DS.r.full,boxSizing:"border-box",border:`1px solid ${T.border}`,background:T.card,color:T.textMd,fontSize:13,fontWeight:DS.w.bold,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1,padding:0}}>?</button>
           )}
         </div>
       </div>
@@ -12960,16 +12960,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           const chipTitle=andreani.saldoBajo?"Saldo bajo — hacé clic para cargar saldo":"Saldo de envíos Andreani";
           return (
           <button onClick={()=>setAndreaniSaldoOpen(true)} title={chipTitle}
-            style={{display:"inline-flex",alignItems:"center",gap:10,height:42,margin:"2px 0",padding:"0 14px",borderRadius:12,boxSizing:"border-box",border:`1px solid ${chipColor}44`,background:`linear-gradient(135deg, ${chipColor}16, ${chipColor}05)`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,alignSelf:"center"}}>
-            <span style={{width:28,height:28,borderRadius:8,background:chipColor+"22",border:`1px solid ${chipColor}44`,display:"inline-flex",alignItems:"center",justifyContent:"center",color:chipColor,flexShrink:0}}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
-            </span>
-            <span style={{display:"flex",flexDirection:"column",alignItems:"flex-start",lineHeight:1.25}}>
-              <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6}}>Saldo de envíos</span>
-              <span style={{display:"flex",alignItems:"baseline",gap:6}}>
-                <span style={{fontSize:16,fontWeight:800,color:chipColor,letterSpacing:-0.4,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(andreani.saldo)}</span>
-              </span>
-            </span>
+            style={{display:"inline-flex",alignItems:"center",gap:8,height:36,padding:"0 14px 0 12px",borderRadius:DS.r.full,boxSizing:"border-box",border:`1px solid ${T.border}`,background:T.card,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,alignSelf:"center",whiteSpace:"nowrap"}}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={chipColor} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
+            <span style={{fontSize:13,fontWeight:500,color:T.textMd}}>Saldo</span>
+            <span style={{fontSize:14,fontWeight:800,color:chipColor,letterSpacing:-0.2,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(andreani.saldo)}</span>
           </button>
           );
         })()}
@@ -12977,8 +12971,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           tabCacheRef.current={};
           // No vaciar la lista: se mantiene visible con el chip "Actualizando" (SWR)
           await Promise.all([fetchTabOrders(tabEnvio,{background:true,fresh:true}), fetchTabCounts(user?.uid,true)]);
-        }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px"}}>
-          ⟳ Sincronizar
+        }} style={{display:"inline-flex",alignItems:"center",gap:7,height:36,padding:"0 14px",borderRadius:DS.r.full,boxSizing:"border-box",border:`1px solid ${T.border}`,background:T.card,color:T.text,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"}}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 11-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>
+          Sincronizar
         </AsyncButton>
       </AppTopbar>
       {/* Tabs internos removidos — navegación va por el sidebar izquierdo */}
