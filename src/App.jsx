@@ -1285,21 +1285,14 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
   );
 }
 
-// Tipo de envío de un pedido, para filtrar y mostrar: rápido / estándar (a domicilio), sucursal / punto HOP.
-// "Rápido" sale del nombre del medio de envío de la tienda (rápido, express, prioritario, urgente, 24 hs, en el día).
-const GH_TIPO_ENVIO={rapido:{l:"Envío rápido",c:"orange"},estandar:{l:"Domicilio estándar",c:"blue"},sucursal:{l:"Sucursal",c:"purple"},hop:{l:"Punto HOP",c:"green"}};
-function ghTipoEnvio(o){
-  if(o?.esSucursal) return ghEsHop(o)?"hop":"sucursal";
-  return /r[aá]pid|express|expres|prioritari|urgente|24 ?hs?|en el d[ií]a|same day|moto/i.test(String(o?.medioEnvio||""))?"rapido":"estandar";
-}
-const GH_ENVIO_GRID="26px minmax(210px,1.1fr) minmax(230px,1.2fr) minmax(200px,1.3fr) 150px";
-// Fila del panel de Envíos (dentro de UNA tarjeta contenedora, con columnas alineadas): pedido y cliente,
-// tipo de envío con su color + a dónde va, productos como SKU ×cantidad y, a la derecha, total y costo
-// de la etiqueta. El estado solo se muestra en la búsqueda (en cada pestaña es el mismo para todos).
-// Pura: todo llega por props (se puede ver sin sesión con el arnés /?env=1).
-function EnvioFilaCard({T,o,sel,exportedOn,ec,canje,cot,nombre,onToggle,onOpen,idx=0,primera=false,verEstado=false}){
+// Fila del panel de Envíos: fila redondeada y sin bordes (cuarta versión, 10/oct/2026 noche). Inicial del
+// cliente en un círculo, nombre + pedido y localidad, productos en píldoras, tipo de envío (domicilio /
+// sucursal) con su punto de color y, a la derecha, total y costo de la etiqueta. El estado solo se muestra
+// en la búsqueda. Pura: todo llega por props (se puede ver sin sesión con el arnés /?env=1).
+const GH_ENVIO_GRID="24px minmax(230px,1.15fr) minmax(220px,1.35fr) minmax(190px,1fr) 150px";
+function EnvioFilaCard({T,o,sel,exportedOn,ec,canje,cot,nombre,onToggle,onOpen,idx=0,verEstado=false}){
   const [h,setH]=useState(false);
-  const tipo=ghTipoEnvio(o), tc=T[GH_TIPO_ENVIO[tipo].c]||T.blue;
+  const tc=o.esSucursal?T.purple:T.blue;
   const grande=typeof window!=="undefined"&&window.innerWidth<=760;
   const pd=o.esSucursal?o.pickupDetails:null, ad=pd?.address||{};
   const pdDir=pd?[ghStripUnidad(ad.address||""),String(ad.number||"").replace(/\D.*/,"")].filter(Boolean).join(" ").trim():"";
@@ -1307,35 +1300,41 @@ function EnvioFilaCard({T,o,sel,exportedOn,ec,canje,cot,nombre,onToggle,onOpen,i
   const pdNom=pd&&ghNrmSuc(pd.name).split(" ").some(w=>w&&!GH_SUC_GEN.has(w))?pd.name:"";
   const pdTxt=[pdNom,pdDir,pdCp?`CP ${pdCp}`:""].filter(Boolean).join(" · ");
   const prods=o.productos||[];
-  const sub={fontSize:DS.font.md,color:T.textSm,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"};
+  const ini=String(o.comprador||"?").trim().split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase()||"?";
+  const sub={fontSize:DS.font.md,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"};
   return (
     <div onClick={onOpen} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-      style={{display:"grid",gridTemplateColumns:GH_ENVIO_GRID,columnGap:18,alignItems:"center",padding:"13px 18px",background:sel?T.accentSolid+"14":h?T.surface:"transparent",boxShadow:sel?`inset 3px 0 0 ${T.accentSolid}`:"none",borderTop:primera?"none":`1px solid ${T.borderL||T.border}`,cursor:"pointer",transition:"background .12s",animation:"growith-fadeIn 0.2s ease both",animationDelay:`${Math.min(idx*30,300)}ms`}}>
+      style={{display:"grid",gridTemplateColumns:GH_ENVIO_GRID,columnGap:18,alignItems:"center",padding:"12px 20px 12px 18px",borderRadius:22,background:sel?T.accentSolid+"1a":h?T.surface:T.card,boxShadow:sel?`inset 0 0 0 1.5px ${T.accentSolid}`:"none",cursor:"pointer",transition:"background .14s, box-shadow .14s",animation:"growith-fadeIn 0.2s ease both",animationDelay:`${Math.min(idx*30,300)}ms`}}>
       {/* En mobile el target es más grande (dedo, no mouse): padding invisible alrededor del check */}
-      <div onClick={e=>{e.stopPropagation();onToggle(e);}} style={{width:32,height:32,margin:-7,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,cursor:"pointer"}}>
-        <div style={{width:grande?22:18,height:grande?22:18,borderRadius:5,border:`1.5px solid ${sel?T.accentSolid:T.textSm}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div onClick={e=>{e.stopPropagation();onToggle(e);}} style={{width:32,height:32,margin:-6,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,cursor:"pointer"}}>
+        <div style={{width:grande?24:20,height:grande?24:20,borderRadius:99,border:`1.5px solid ${sel?T.accentSolid:T.textSm}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .12s"}}>
           {sel&&<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}
         </div>
       </div>
-      <div style={{minWidth:0}}>
-        <div style={{display:"flex",alignItems:"baseline",gap:8,minWidth:0}}>
-          <span style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</span>
-          {exportedOn&&<span title="Ya salió en un Excel" style={{fontSize:DS.font.xs,fontWeight:700,color:T.green,whiteSpace:"nowrap",flexShrink:0}}>✓ {exportedOn}</span>}
+      <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
+        <span style={{width:38,height:38,borderRadius:99,background:T.accentSolid+"22",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:DS.font.md,fontWeight:800,flexShrink:0,letterSpacing:0.2}}>{ini}</span>
+        <div style={{minWidth:0}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:8,minWidth:0}}>
+            <span style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</span>
+            {exportedOn&&<span title="Ya salió en un Excel" style={{fontSize:DS.font.xs,fontWeight:700,color:T.green,whiteSpace:"nowrap",flexShrink:0}}>✓ {exportedOn}</span>}
+          </div>
+          <div style={sub}><span style={{color:T.textMd,fontWeight:600,fontVariantNumeric:"tabular-nums"}}>#{o.numero}</span> · {[o.localidad||o.ciudad,o.provincia].filter(Boolean).join(", ")||"—"}{verEstado&&<span> · <span style={{color:ec.dot,fontWeight:600}}>{o.estadoEnvio}</span></span>}</div>
         </div>
-        <div style={sub}><span style={{color:T.accent,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>#{o.numero}</span>{verEstado&&<span> · <span style={{color:ec.dot,fontWeight:600}}>{o.estadoEnvio}</span></span>}{canje?<span style={{color:T.purple,fontWeight:600}}> · Canje {canje.influencer||canje.usuario||""}</span>:null}</div>
       </div>
-      <div style={{minWidth:0}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
-          <span title={o.medioEnvio||""} style={{display:"inline-flex",alignItems:"center",gap:6,height:22,padding:"0 9px",borderRadius:DS.r.full,background:tc+"1a",color:tc,fontSize:DS.font.sm,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>{GH_TIPO_ENVIO[tipo].l}</span>
-          {pd&&<svg aria-label="Puede requerir confirmar sucursal al exportar" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
-        </div>
-        <div title={pd?[pd.name,pdDir,ad.locality||ad.city,pdCp?`CP ${pdCp}`:""].filter(Boolean).join(" · "):(o.medioEnvio||"")} style={sub}>{pdTxt||[o.localidad||o.ciudad,o.provincia].filter(Boolean).join(", ")||"—"}</div>
-      </div>
-      <div title={prods.map(p=>`${Number(p.cantidad)||1}x ${p.nombre}`).join("\n")} style={{minWidth:0,display:"flex",gap:5,alignItems:"center",overflow:"hidden"}}>
-        {prods.slice(0,4).map((p,pi)=>(<span key={pi} style={{display:"inline-flex",alignItems:"baseline",gap:4,fontSize:DS.font.base,fontWeight:600,color:T.text,whiteSpace:"nowrap",minWidth:0,flexShrink:pi<2?0:1}}><span style={{overflow:"hidden",textOverflow:"ellipsis",maxWidth:170}}>{p.sku||(nombre?nombre(p.nombre):p.nombre)}</span>{(Number(p.cantidad)||1)>1&&<span style={{color:T.textSm,fontWeight:600,fontVariantNumeric:"tabular-nums"}}>×{Number(p.cantidad)}</span>}{pi<Math.min(prods.length,4)-1&&<span style={{color:T.border,margin:"0 4px"}}>·</span>}</span>))}
+      <div title={prods.map(p=>`${Number(p.cantidad)||1}x ${p.nombre}`).join("\n")} style={{minWidth:0,display:"flex",gap:6,alignItems:"center",overflow:"hidden"}}>
+        {prods.slice(0,4).map((p,pi)=>(<span key={pi} style={{display:"inline-flex",alignItems:"center",gap:5,height:26,padding:"0 11px",borderRadius:99,background:T.isDark?"rgba(255,255,255,.06)":"rgba(0,0,0,.05)",fontSize:DS.font.md,fontWeight:600,color:T.text,whiteSpace:"nowrap",minWidth:0,flexShrink:pi<2?0:1}}><span style={{overflow:"hidden",textOverflow:"ellipsis",maxWidth:170}}>{p.sku||(nombre?nombre(p.nombre):p.nombre)}</span>{(Number(p.cantidad)||1)>1&&<span style={{color:T.accent,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>×{Number(p.cantidad)}</span>}</span>))}
         {prods.length>4&&<span style={{fontSize:DS.font.md,color:T.textSm,flexShrink:0}}>+{prods.length-4}</span>}
       </div>
-      <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3,minWidth:0}}>
+      <div style={{minWidth:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:7,fontSize:DS.font.base,fontWeight:600,color:T.text,minWidth:0}}>
+          <span style={{width:8,height:8,borderRadius:99,background:tc,flexShrink:0}}/>
+          <span style={{whiteSpace:"nowrap"}}>{o.esSucursal?(ghEsHop(o)?"Punto HOP":"Sucursal"):"Domicilio"}</span>
+          {pd&&<svg aria-label="Puede requerir confirmar sucursal al exportar" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
+          {canje&&<span title={`Canje de ${canje.influencer||"un influencer"}${canje.usuario?" (@"+canje.usuario+")":""} — la etiqueta y el tracking se le cargan solos al canje`} style={{fontSize:DS.font.sm,fontWeight:700,color:T.purple,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>· Canje {canje.influencer||canje.usuario||""}</span>}
+        </div>
+        <div title={pd?[pd.name,pdDir,ad.locality||ad.city,pdCp?`CP ${pdCp}`:""].filter(Boolean).join(" · "):(o.medioEnvio||"")} style={{...sub,paddingLeft:15}}>{pdTxt||o.medioEnvio||"—"}</div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2,minWidth:0}}>
         <span style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(o.total)}</span>
         {cot}
       </div>
@@ -10527,7 +10526,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const exportables=useMemo(()=>{
     let base=tabOrders;
     if(filterTipoEnvio==="domicilio") base=base.filter(o=>!isSucursalOrder(o));
-    else if(GH_TIPO_ENVIO[filterTipoEnvio]) base=base.filter(o=>ghTipoEnvio(o)===filterTipoEnvio);
+    if(filterTipoEnvio==="sucursal") base=base.filter(o=>isSucursalOrder(o));
     if(filterMedio) base=base.filter(o=>String(o.medioEnvio||"--")===filterMedio);
     if(searchEnvios){
       const s=searchEnvios.toLowerCase();
@@ -13097,15 +13096,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             {(tabEnvio!=="buscar"||tabOrders.length>0)&&(
             <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
             <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-              {/* Filtro por tipo de envío: rápido / domicilio estándar / sucursal / punto HOP, con cuántos hay de cada uno */}
-              {tabEnvio!=="buscar"&&(()=>{ const n={}; for(const o of tabOrders||[]){ const k=ghTipoEnvio(o); n[k]=(n[k]||0)+1; }
-                const ops=[["todos","Todos",(tabOrders||[]).length,null],...Object.keys(GH_TIPO_ENVIO).filter(k=>n[k]||filterTipoEnvio===k).map(k=>[k,GH_TIPO_ENVIO[k].l,n[k]||0,T[GH_TIPO_ENVIO[k].c]])];
-                return (<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {ops.map(([v,l,c,col])=>{ const on=filterTipoEnvio===v||(v==="todos"&&!GH_TIPO_ENVIO[filterTipoEnvio]&&filterTipoEnvio!=="domicilio"); return (
-                    <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Map());}} style={{display:"inline-flex",alignItems:"center",gap:7,height:32,padding:"0 13px",fontSize:13,border:`1px solid ${on?(col||T.textSm):T.border}`,borderRadius:DS.r.full,background:on?(col?col+"1a":T.surface):"transparent",color:on?T.text:T.textMd,cursor:"pointer",fontWeight:on?700:500,transition:"all 0.12s",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      {col&&<span style={{width:8,height:8,borderRadius:99,background:col}}/>}{l}<span style={{color:T.textSm,fontWeight:600,fontVariantNumeric:"tabular-nums"}}>{c}</span>
-                    </button>); })}
-                </div>); })()}
+              {tabEnvio!=="buscar"&&<div style={{display:"flex",gap:2,background:T.surface,borderRadius:DS.r.full,padding:3}}>
+                {[["todos","Todos"],["domicilio","Domicilio"],["sucursal","Sucursal"]].map(([v,l])=>(
+                  <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Map());}} style={{padding:"6px 14px",fontSize:13,border:"none",borderRadius:DS.r.full,background:filterTipoEnvio===v?T.card:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?600:500,transition:"all 0.1s",boxShadow:filterTipoEnvio===v?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
+                ))}
+              </div>}
               {tabEnvio!=="buscar"&&mediosEnvio.length>1&&(
                 <select value={mediosEnvio.some(([k])=>k===filterMedio)?filterMedio:""} onChange={e=>{setFilterMedio(e.target.value);setSelected(new Map());}} title="Filtrar por medio de envío"
                   style={{...iS,marginBottom:0,width:"auto",maxWidth:260,fontSize:12,padding:"6px 10px",color:filterMedio?T.accent:T.textMd,borderColor:filterMedio?T.accent:T.border}}>
@@ -13289,10 +13284,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 )}
                 {/* Scroll horizontal en pantallas chicas — la grilla de 7 columnas
                     fijas antes se aplastaba/desbordaba en mobile */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden"}}><div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><div style={{minWidth:900}}>
-                <div style={{display:"grid",gridTemplateColumns:GH_ENVIO_GRID,columnGap:18,padding:"9px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:DS.font.xs,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:T.textSm}}>
-                  <span/><span>Pedido</span><span>Envío</span><span>Productos</span><span style={{textAlign:"right"}}>Total</span>
-                </div>
+                <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><div style={{minWidth:900,display:"flex",flexDirection:"column",gap:6}}>
                 {pageOrders.map((o,idx)=>{
                   const sel=selected.has(o.numero);
                   const ec=getEstadoEnvioC(T,o.estadoEnvio);
@@ -13307,9 +13299,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     if(typeof c?.precio==="number") return <span title="Emitir la etiqueta de Andreani de este pedido" onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...lk}}><span style={{color:T.textSm,fontWeight:500}}>Etiqueta</span><span style={{color:T.green,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(c.precio)}</span></span>;
                     return <span title="Cotizar el envío por Andreani" onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...lk,color:T.accent}}>Cotizar envío</span>;
                   })():null;
-                  return <EnvioFilaCard key={o.numero} T={T} o={o} idx={idx} primera={idx===0} verEstado={tabEnvio==="buscar"} sel={sel} exportedOn={exportedOn} ec={ec} canje={canjesPedidos[String(o.numero)]} cot={cot} nombre={nombreCorto} onToggle={e=>toggleSelect(o.numero,e,o)} onOpen={()=>setOrderDetail(o)}/>;
+                  return <EnvioFilaCard key={o.numero} T={T} o={o} idx={idx} verEstado={tabEnvio==="buscar"} sel={sel} exportedOn={exportedOn} ec={ec} canje={canjesPedidos[String(o.numero)]} cot={cot} nombre={nombreCorto} onToggle={e=>toggleSelect(o.numero,e,o)} onOpen={()=>setOrderDetail(o)}/>;
                 })}
-                </div></div></div>
+                </div></div>
                 {/* Paginador */}
                 {totalPages>1&&(
                   <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,padding:"14px 14px",borderTop:`1px solid ${T.borderL}`}}>
