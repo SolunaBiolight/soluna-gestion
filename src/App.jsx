@@ -21839,9 +21839,9 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
     const logo=esp?<DepIco d="bag" size={20} color={T.purple}/>:t.canal==="andreani"?<img src="/brand/andreani-iso.png" alt="" style={{width:30,height:"auto",display:"block"}}/>:t.canal==="ml"?<BrandIcon name="ml" size={28}/>:<DepIco d={t.canal==="retiro"?"hand":"truck"} size={20} color={c}/>;
     const chip=(txt,cc,fuerte)=>(<span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:DS.font.base,fontWeight:600,color:fuerte&&cc===T.red?T.red:T.text,whiteSpace:"nowrap"}}><span style={{width:8,height:8,borderRadius:99,background:cc,flexShrink:0}}/>{txt}</span>);
     const items=[...new Set(peds.filter(p=>!p.cancelado).flatMap(p=>p.items||[]))];
-    return (<div key={t.id} style={{background:T.card,border:`1px solid ${open?T.textSm:T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden",opacity:cancelada?0.6:1,transition:"border-color .15s"}}>
+    return (<div key={t.id} style={{backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${c}${pendiente?"1c":"12"} 0%, transparent 42%)`,border:`1px solid ${c}${open?"77":"33"}`,borderRadius:DS.r["2xl"],overflow:"hidden",opacity:cancelada?0.6:1,transition:"border-color .15s"}}>
       <div onClick={()=>setAbierta(open?null:t.id)} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",cursor:"pointer"}}>
-        <span style={{width:44,height:44,borderRadius:DS.r.xl,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
+        <span style={{width:44,height:44,borderRadius:DS.r.xl,background:(typeof cCanal!=="undefined"?cCanal:c)+"1a",border:`1px solid ${(typeof cCanal!=="undefined"?cCanal:c)}3d`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
         <div style={{flex:"1 1 200px",minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{esp?(t.especial?.titulo||"Envío especial"):(GH_DEP_CANAL[t.canal]||t.canal)}</span>
@@ -21909,12 +21909,18 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
           </div>
         </div>
       </div>
-      <DepStrip T={T} items={(()=>{ const mesAct=hoy.slice(0,7); const delMes=st.tandas.filter(t=>t.estado!=="pendiente"&&t.estado!=="cancelada"&&(t.fechaDespacho||"").startsWith(mesAct)); const nMes=delMes.reduce((a,t)=>a+(t.n||0),0); const nDesp=nVivos-nHoy;
+      <DepStrip T={T} items={(()=>{ const mesAct=hoy.slice(0,7); const noCanc=st.tandas.filter(t=>t.estado!=="cancelada");
+        // Hoy = todo lo que tiene despacho hoy (pendiente o ya impreso), con cuántos son de cada correo.
+        const delDia=noCanc.filter(t=>t.fechaDespacho===hoy); const nDia=delDia.reduce((a,t)=>a+(t.n||0),0); const impDia=delDia.filter(t=>t.estado!=="pendiente").reduce((a,t)=>a+(t.n||0),0);
+        const canales=Object.entries(delDia.reduce((m,t)=>{ m[t.canal]=(m[t.canal]||0)+(t.n||0); return m; },{})).sort((x,y)=>y[1]-x[1]);
+        const nAtras=vivas.filter(t=>t.fechaDespacho<hoy).reduce((a,t)=>a+(t.n||0),0), nProx=vivas.filter(t=>t.fechaDespacho>hoy).reduce((a,t)=>a+(t.n||0),0);
+        const delMes=noCanc.filter(t=>(t.fechaDespacho||"").startsWith(mesAct)); const nMes=delMes.reduce((a,t)=>a+(t.n||0),0); const factMes=(st.cuenta?.meses||[]).find(m=>m.mes===mesAct)?.cargos??delMes.reduce((a,t)=>a+(Number(t.total)||0),0);
+        const colC=c=>({andreani:T.red,ml:T.yellow,retiro:T.blue}[c]||T.textMd);
         return [
-          {l:"En el depósito",v:nVivos,c:nVivos?T.accent:null,s:nVivos?`${vivas.length} tanda${vivas.length!==1?"s":""} sin imprimir`:"nada pendiente"},
-          {l:"Salen hoy",v:nHoy,c:nHoy?T.blue:null,s:nDesp>0?`${nDesp} en los próximos días`:`corte a las ${corte}:00`},
-          {l:"Impresos este mes",v:nMes,c:nMes?T.green:null,s:`${delMes.length} tanda${delMes.length!==1?"s":""}`},
-          {l:saldo.n<0?"A favor":"Tu cuenta",v:saldo.n>0?fmtMoney(saldo.n):saldo.n<0?fmtMoney(-saldo.n):"Al día",c:saldo.n>0?T.yellow:saldo.n<0?T.green:null,s:porVerificar>0?`${fmtMoney(porVerificar)} en verificación`:saldo.n>0?"para pagar":"sin deuda"},
+          {l:"Pedidos de hoy",v:nDia,c:nDia?T.accent:null,s:nDia?<span style={{display:"flex",columnGap:10,rowGap:2,flexWrap:"wrap",alignItems:"center",color:T.textMd,fontWeight:600}}>{canales.map(([c,n])=>(<span key={c} style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:99,background:colC(c)}}/>{GH_DEP_CANAL[c]||c} {n}</span>))}</span>:`corte a las ${corte}:00`},
+          {l:"Falta imprimir",v:nVivos,c:nAtras?T.red:nVivos?T.yellow:null,s:nAtras?`${nAtras} de días anteriores`:nVivos?(nProx?`${nProx} salen más adelante`:impDia?`${impDia} ya impresos hoy`:"salen hoy"):impDia?`los ${impDia} de hoy ya están impresos`:"nada pendiente"},
+          {l:"Este mes",v:nMes,c:nMes?T.green:null,s:`pedidos · ${fmtMoney(factMes)} facturado`,onClick:()=>{ setTab("envios"); setMes(mesAct); },accion:nMes?"Ver los del mes":null},
+          {l:saldo.n<0?"A favor":saldo.n>0?"Para pagar":"Tu cuenta",v:saldo.n>0?fmtMoney(saldo.n):saldo.n<0?fmtMoney(-saldo.n):"Al día",c:saldo.n>0?T.yellow:saldo.n<0?T.green:null,s:porVerificar>0?`${fmtMoney(porVerificar)} en verificación`:saldo.n>0?"transferí e informá el pago":"sin deuda",onClick:()=>setTab("cuenta"),accion:saldo.n>0?"Informar un pago":"Ver la cuenta"},
         ]; })()}/>
       {avisos.length>0&&(<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>
         {avisos.slice(0,6).map((a,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"10px 14px",background:a.c+"12",border:`1px solid ${a.c}44`,borderRadius:DS.r.xl}}>
@@ -22176,10 +22182,11 @@ function DepLabel({T,color,children,style}){ return <div style={{display:"flex",
 // items: [{l, v, s, c}]
 function DepStrip({T,items}){
   return (<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10,marginBottom:14}}>
-    {items.map((it,i)=>{ const c=it.c||T.textSm; return (<div key={i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],padding:"14px 16px 13px",minWidth:0,overflow:"hidden"}}>
+    {items.map((it,i)=>{ const c=it.c||T.textSm; return (<div key={i} onClick={it.onClick} title={it.accion||undefined} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],padding:"14px 16px 13px",minWidth:0,overflow:"hidden",cursor:it.onClick?"pointer":"default"}}>
       <div style={{display:"flex",alignItems:"center",gap:7,fontSize:DS.font.md,fontWeight:600,color:T.textMd}}><span style={{width:8,height:8,borderRadius:99,background:c,flexShrink:0}}/>{it.l}</div>
       <div style={{fontSize:DS.font["4xl"]-4,fontWeight:800,color:it.c?c:T.text,letterSpacing:-1,lineHeight:1.1,fontVariantNumeric:"tabular-nums",marginTop:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.v}</div>
       {it.s?<div style={typeof it.s==="string"?{fontSize:DS.font.sm,color:T.textSm,marginTop:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}:{fontSize:DS.font.sm,color:T.textSm,marginTop:4}}>{it.s}</div>:null}
+      {it.accion?<div style={{fontSize:DS.font.sm,fontWeight:700,color:T.accent,marginTop:6}}>{it.accion} →</div>:null}
     </div>); })}
   </div>);
 }
@@ -22504,9 +22511,9 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
     const logo=esp?<DepIco d="bag" size={20} color={T.purple}/>:t.canal==="andreani"?<img src="/brand/andreani-iso.png" alt="" style={{width:30,height:"auto",display:"block"}}/>:t.canal==="ml"?<BrandIcon name="ml" size={28}/>:<DepIco d={t.canal==="retiro"?"hand":"truck"} size={20} color={cCanal}/>;
     const chip=(txt,cc,fuerte)=>(<span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:DS.font.base,fontWeight:600,color:fuerte&&cc===T.red?T.red:T.text,whiteSpace:"nowrap"}}><span style={{width:8,height:8,borderRadius:99,background:cc,flexShrink:0}}/>{txt}</span>);
     return (
-    <div style={{background:T.card,border:`1px solid ${urg(t)||atras?T.red+"66":open?T.textSm:T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden",transition:"border-color .15s"}}>
+    <div style={{backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${cCanal}${entregada?"12":"1c"} 0%, transparent 42%)`,border:`1px solid ${urg(t)||atras?T.red+"66":cCanal+(open?"77":"33")}`,borderRadius:DS.r["2xl"],overflow:"hidden",transition:"border-color .15s"}}>
       <div onClick={toggle} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",cursor:"pointer"}}>
-        <span style={{width:44,height:44,borderRadius:DS.r.xl,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
+        <span style={{width:44,height:44,borderRadius:DS.r.xl,background:(typeof cCanal!=="undefined"?cCanal:c)+"1a",border:`1px solid ${(typeof cCanal!=="undefined"?cCanal:c)}3d`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
         <div style={{flex:"1 1 220px",minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{t.clienteNombre}</span>
