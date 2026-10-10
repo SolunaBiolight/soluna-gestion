@@ -21402,10 +21402,33 @@ const ghDepFechaLinda=f=>{ if(!f) return "—"; const [y,m,d]=f.split("-"); retu
 // prefill: {pdfBytes, pedidos:[{numero,comprador,items,pags}], origen, canal}
 // Texto de cada página de un PDF (pdf.js desde CDN, mismo que usa Envíos). Sirve para
 // saber qué página es de qué envío en el PDF de etiquetas de Mercado Libre.
-async function ghDepTextoPaginas(bytes){
+// Etiquetas de Mercado Libre: cada rótulo trae impreso "SKU: AN + RN" y las unidades ("2" / "Unidades").
+// Recibe el texto de cada página con un renglón por texto del PDF (ghDepTextoPaginas(bytes,"\n")) y
+// devuelve un pedido por página {numero, comprador, items:["2x AN + RN"], pags:[n]}; [] si el PDF no
+// es de Mercado Libre (menos de la mitad de las páginas trae "SKU:"). Pura — tests en deposito_test.cjs.
+function ghDepMlPedidos(textos){
+  const out=[]; let conSku=0;
+  (textos||[]).forEach((tx,i)=>{
+    const L=String(tx||"").split(/\n+/).map(l=>l.trim()).filter(Boolean);
+    const skuIdx=L.map((l,k)=>/^SKU\s*:/i.test(l)?k:-1).filter(k=>k>=0);
+    // unidades del paquete: el número pegado al renglón "Unidad(es)" (antes, después o en el mismo)
+    let total=0; const u=L.findIndex(l=>/^(\d{1,3}\s+)?Unidad(es)?(\s+\d{1,3})?$/i.test(l));
+    if(u>=0){ const m=L[u].match(/\d{1,3}/); total=m?Number(m[0]):(/^\d{1,3}$/.test(L[u-1]||"")?Number(L[u-1]):/^\d{1,3}$/.test(L[u+1]||"")?Number(L[u+1]):0); }
+    const items=skuIdx.map((k,j)=>{ const sku=L[k].replace(/^SKU\s*:\s*/i,"").trim(); if(!sku) return null;
+      let q=0; if(skuIdx.length===1) q=total; // varios productos: las unidades de cada uno vienen como "| 2 u." cerca de su SKU
+      if(!q){ const hasta=skuIdx[j+1]??L.length, desde=j?skuIdx[j-1]+1:0; const cerca=[...L.slice(k+1,hasta),...L.slice(desde,k)].join(" "); const m=cerca.match(/\|\s*(\d{1,3})\s*u\b/i); q=m?Number(m[1]):1; }
+      return `${Math.max(1,q||1)}x ${sku}`; }).filter(Boolean);
+    if(items.length) conSku++;
+    const id=(String(tx||"").match(/(?:Venta|Pack)\s*ID\s*:\s*(\d{6,})/i)||[])[1]||"";
+    const nom=(L.find(l=>/^[^()]{2,60}\s\([A-Z0-9_.\-]{3,}\)$/.test(l))||"").replace(/\s*\([^()]*\)$/,"");
+    out.push({numero:id||`etiqueta ${i+1}`,comprador:nom,items,pags:[i+1]});
+  });
+  return out.length&&conSku>=out.length/2?out:[];
+}
+async function ghDepTextoPaginas(bytes,sep=" "){
   if(!window.pdfjsLib){ await new Promise((ok,ko)=>{ const s=document.createElement("script"); s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"; s.onload=ok; s.onerror=ko; document.head.appendChild(s); }); window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }
   const pdf=await window.pdfjsLib.getDocument({data:bytes.slice(0)}).promise; const out=[];
-  for(let i=1;i<=pdf.numPages;i++){ const c=await (await pdf.getPage(i)).getTextContent(); out.push(c.items.map(x=>x.str||"").join(" ")); }
+  for(let i=1;i<=pdf.numPages;i++){ const c=await (await pdf.getPage(i)).getTextContent(); out.push(c.items.map(x=>x.str||"").join(sep)); }
   return out;
 }
 // Hojas que NO son etiquetas dentro de un PDF subido a mano (la página de resumen
@@ -21479,7 +21502,8 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   const etiquetasPdf=tipo==="tanda"?(verCant||!pdf?.pages?Number(n)||0:pdf.pages):0;
   const listaInfo=React.useMemo(()=>ghDepListaAPedidos(lista,etiquetasPdf),[lista,etiquetasPdf]);
   const pedidosLista=listaInfo.pedidos;
-  const pedidos=prefill?.pedidos?.length?prefill.pedidos:pedidosLista;
+  const mlLeidos=esML&&pdf?.mlPeds?.length>0&&pdf.mlPeds.length===etiquetasPdf&&!verCant;
+  const pedidos=prefill?.pedidos?.length?prefill.pedidos:mlLeidos?pdf.mlPeds:pedidosLista;
   const cant=tipo==="especial"?Math.max(1,Number(n)||1):(prefill?.pedidos?.length||etiquetasPdf||pedidos.length||0);
   const notaFinal=listaInfo.modo==="nota"&&!prefill?.pedidos?.length?[nota.trim(),"Productos:\n"+lista.trim()].filter(Boolean).join("\n").slice(0,600):nota;
   const extra=ghDepExtra(pedidos,extraCfg);
@@ -21494,7 +21518,9 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
     if(!f) return; if(f.type&&f.type!=="application/pdf"&&!/\.pdf$/i.test(f.name||"")){ toast("Ese archivo no es un PDF","warning"); return; }
     if(f.size>22*1024*1024){ toast("El PDF supera los 22 MB. Dividilo en dos tandas.","warning"); return; }
     try{ const bytes=await leer(f); let pages=0, resumen=0; let resumenIdx=[]; try{ const c=await ghDepContarEtiquetas(bytes); pages=c.pages; resumen=c.resumen; resumenIdx=c.resumenIdx; }catch(_){}
-      setPdf({bytes,nombre:f.name,pages,resumen,resumenIdx}); if(tipo==="tanda"){ setN(pages||0); setVerCant(false); } }catch(e){ toast(e.message,"error"); }
+      // Mercado Libre: los productos de cada paquete vienen impresos en la etiqueta → se leen para el picking del depósito.
+      let mlPeds=[]; if(!resumen){ try{ mlPeds=ghDepMlPedidos(await ghDepTextoPaginas(bytes,"\n")); }catch(_){ } }
+      setPdf({bytes,nombre:f.name,pages,resumen,resumenIdx,mlPeds}); if(tipo==="tanda"){ setN(pages||0); setVerCant(false); } }catch(e){ toast(e.message,"error"); }
   }
   async function elegirOtro(f,setter,max){ if(!f) return; if(f.size>max){ toast(`El archivo supera los ${Math.round(max/1024/1024)} MB`,"warning"); return; } try{ setter({bytes:await leer(f),nombre:f.name,mime:f.type||"application/octet-stream"}); }catch(e){ toast(e.message,"error"); } }
   async function enviar(){
@@ -21598,6 +21624,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
             <input style={{...iS,width:110,marginBottom:0}} type="number" min="1" value={n||""} onChange={e=>setN(e.target.value)}/>
             {pdf.pages>0&&<span style={{fontSize:DS.font.sm,color:T.textSm}}>El PDF tiene {pdf.pages+(pdf.resumen||0)} página{pdf.pages+(pdf.resumen||0)!==1?"s":""}{pdf.resumen?` (${pdf.resumen} de resumen)`:""}.</span>}
           </div>)}
+          {mlLeidos&&!prefill?.pedidos?.length&&<div style={{fontSize:DS.font.sm,color:T.green}}>Leímos los productos de las {pdf.mlPeds.length} etiquetas (el SKU que trae cada rótulo): el depósito los ve en la tanda.</div>}
           {verLista&&!esML&&(<div>{lbl("Qué va en cada paquete · se imprime en la etiqueta")}
             <textarea style={{...iS,minHeight:74,resize:"vertical",fontFamily:"monospace",fontSize:DS.font.md}} placeholder={cant===1?"Qué lleva el paquete, un producto por renglón:\n1x ROJ-NN\n1x LIQ":"Un renglón por etiqueta, en el orden del PDF:\n2x ROJ-NN, 1x LIQ\n1x NARAN-TT"} value={listaTxt} onChange={e=>setLista(e.target.value)}/>
             {listaInfo.modo==="un_pedido"&&<div style={{fontSize:DS.font.sm,color:T.green,marginTop:-6}}>Es 1 etiqueta: todo esto se imprime en esa etiqueta.</div>}
@@ -22487,11 +22514,8 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
           ]}/>
         </div>
       </div>
-      {!open&&!entregada&&(conItems||notaCli||t.notaDeposito)&&(<div onClick={toggle} style={{borderTop:`1px solid ${T.borderL||T.border}`,padding:"10px 18px",display:"flex",flexDirection:"column",gap:8,cursor:"pointer"}}>
-        {conItems&&<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-          {pick.slice(0,10).map(x=>(<span key={x.sku} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"4px 10px",borderRadius:DS.r.md,background:T.card,border:`1px solid ${T.border}`,fontSize:DS.font.md,color:T.text,fontWeight:600,whiteSpace:"nowrap",maxWidth:240}}><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{x.sku}</span><strong style={{color:T.textMd,fontVariantNumeric:"tabular-nums"}}>×{x.cant}</strong></span>))}
-          {pick.length>10&&<span style={{fontSize:DS.font.md,color:T.textSm}}>+{pick.length-10} más</span>}
-        </div>}
+      {/* Cerrada, la tarjeta no lista los productos (pedido de Lautaro 10/oct): se ven al desplegarla, en "Qué bajar". Las notas sí quedan a la vista. */}
+      {!open&&!entregada&&(notaCli||t.notaDeposito)&&(<div onClick={toggle} style={{borderTop:`1px solid ${T.borderL||T.border}`,padding:"10px 18px",display:"flex",flexDirection:"column",gap:8,cursor:"pointer"}}>
         {notas}
       </div>)}
       {open&&(<div style={{borderTop:`1px solid ${T.borderL||T.border}`,padding:"14px 18px 16px",background:T.surface}}>

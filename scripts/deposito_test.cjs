@@ -63,4 +63,18 @@ eq("vacío",M.ledgerDe([],[]),{saldo:0,cargos:0,creditos:0,porVerificar:0,movs:[
   eq("nota sin marca no se imprime",N.ghNotaDepo("mandar rápido, es regalo"),[]);
   eq("se suma a los productos del pedido",N.ghSkuLinesDe({productos:[{sku:"ROJ-NN",cantidad:"2"}],notaDepo:["1x LIQ"]}),["2x ROJ-NN","1x LIQ"]);
 }
+// Etiquetas de Mercado Libre: SKU y unidades leídos del rótulo
+{ const app=fs.readFileSync("src/App.jsx","utf8"); const i=app.indexOf("function ghDepMlPedidos(textos){"); const j=app.indexOf("\n}\n",i);
+  const ml=new Function(app.slice(i,j+3)+"\nreturn ghDepMlPedidos;")();
+  const p1="Pack ID: 2000001234567 Recortá esta parte de la etiqueta para\nque tu paquete viaje seguro.\n2\nUnidades\nSKU: AN + RN\nKit X2 Anteojos\nAmarillo Rojo | 2 u.\nRemitente #123456789\nJuan Perez (JUANPE12)\nDomicilio: Calle 1";
+  const p2="Venta ID: 2000007654321\n1\nUnidad\nSKU: R-N\nAnteojo rojo\nAna Gomez (ANAG_99)";
+  const p3="Venta ID: 2000001111111\nSKU: A-T\nAnteojo amarillo | 3 u.\nSKU: LIQ\nLiquido | 1 u.\n4\nUnidades";
+  const r=ml([p1,p2,p3]);
+  eq("ML: kit de 2 unidades",r[0].items,["2x AN + RN"]);
+  eq("ML: número de venta y comprador",[r[0].numero,r[0].comprador,r[1].numero,r[1].comprador],["2000001234567","Juan Perez","2000007654321","Ana Gomez"]);
+  eq("ML: una unidad",r[1].items,["1x R-N"]);
+  eq("ML: dos productos en una etiqueta, cada uno con sus unidades",r[2].items,["3x A-T","1x LIQ"]);
+  eq("ML: página de cada pedido",r.map(x=>x.pags[0]),[1,2,3]);
+  eq("ML: un PDF que no es de Mercado Libre no devuelve nada",ml(["Orden de Ruteo 36000123","Destinatario Juan"]),[]);
+}
 console.log(`${n-fails}/${n} ok${fails?" — "+fails+" FALLAS":""}`); if(fails) process.exit(1);
