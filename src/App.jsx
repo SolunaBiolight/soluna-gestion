@@ -21812,9 +21812,9 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
           {/* Un botón por canal (con su color): Andreani abre la carga del PDF; Mercado Libre trae las
               etiquetas solo si la tienda está conectada, y si no abre la misma carga ya puesta en ML. */}
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-            {[["andreani","Enviar etiquetas de Andreani",T.red,()=>setNuevo({tipo:"tanda",prefill:{canal:"andreani"}})],
-              ["ml","Enviar etiquetas de Mercado Libre",T.yellow,()=>tiendaUid?setMl(true):setNuevo({tipo:"tanda",prefill:{canal:"ml"}})]].map(([k,l,c,fn])=>(
-              <DepBtn key={k} T={T} size="lg" onClick={fn} style={{padding:"0 20px",borderColor:c+"88"}}><span style={{width:10,height:10,borderRadius:99,background:c,flexShrink:0}}/>{l}</DepBtn>
+            {[["andreani","Andreani",T.red,()=>setNuevo({tipo:"tanda",prefill:{canal:"andreani"}})],
+              ["ml","Mercado Libre",T.yellow,()=>tiendaUid?setMl(true):setNuevo({tipo:"tanda",prefill:{canal:"ml"}})]].map(([k,l,c,fn])=>(
+              <DepCanalBtn key={k} T={T} color={c} ico={k==="ml"?"tag":"truck"} canal={l} onClick={fn}/>
             ))}
           </div>
           <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
@@ -21961,10 +21961,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
   useEffect(()=>{ if(!owner) return; apiDep("clientes").then(d=>{ const n=(d.clientes||[]).length; setSinClientes(n===0); if(n===0) setTab("clientes"); }).catch(()=>{}); },[owner]);
   // "Para empezar" desaparece apenas se crea el primer cliente (antes quedaba hasta recargar).
   const onClientes=n=>setSinClientes(n===0);
-  const HEAD={cola:["Cola de armado","Lo que hay que armar, agrupado por urgencia y día de despacho. Al imprimir, la tanda queda lista: no hay más pasos."],
-    historial:["Movimientos","Todo lo que pasó por el depósito: las tandas de cada mes y la mercadería que entró de cada cliente."],
-    clientes:["Clientes y pagos","Tus clientes, su precio por pedido y su saldo. Más abajo, las transferencias por verificar y la facturación del mes."],
-    accesos:["Configuración","Links de acceso al panel, datos bancarios que ve el cliente para transferir y hora de corte del despacho."]};
+  const [mov,setMov]=useState("tandas"); // Movimientos: tandas del mes | mercadería recibida
   // Contadores de las pestañas: tandas para hoy y transferencias por verificar.
   const [badges,setBadges]=useState({});
   // Tiempo real: cada 6 s se consulta el contador de cambios del depósito (una lectura);
@@ -21988,14 +21985,13 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
       {(()=>{ const TABS=[["cola","Cola","box"],...(owner?[["clientes","Clientes y pagos","users"]]:[]),["historial","Movimientos","clock"],...(owner?[["accesos","Configuración","key"]]:[]),...(info?.cliente?[["mio","Mis envíos","truck"]]:[])];
         const tabs=esDep&&<div className="no-scrollbar" style={{display:"flex",gap:2,background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:4,overflowX:"auto",maxWidth:"100%",WebkitOverflowScrolling:"touch"}}>
-          {TABS.map(([k,l,ic])=>(<button key={k} onClick={()=>setTab(k)} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"8px 16px",fontSize:DS.font.base,border:"none",borderRadius:DS.r.full,background:tab===k?T.card:"transparent",color:tab===k?T.text:T.textMd,fontWeight:tab===k?700:500,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:tab===k?DS.shadow.sm:"none",transition:"all .15s"}}>{panel&&<DepIco d={ic} size={13} color={tab===k?T.accent:T.textSm}/>}{l}{badges[k]>0&&<span style={{minWidth:18,height:18,padding:"0 5px",borderRadius:99,background:k==="clientes"?T.yellow:T.accentSolid,color:k==="clientes"?"#1c1400":"#fff",fontSize:DS.font.xs,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{badges[k]}</span>}</button>))}
+          {TABS.map(([k,l,ic])=>(<button key={k} onClick={()=>setTab(k)} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"8px 16px",fontSize:DS.font.base,border:"none",borderRadius:DS.r.full,background:tab===k?T.card:"transparent",color:tab===k?T.text:T.textMd,fontWeight:tab===k?700:500,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:tab===k?DS.shadow.sm:"none",transition:"all .15s"}}>{l}{badges[k]>0&&<span style={{minWidth:18,height:18,padding:"0 5px",borderRadius:99,background:k==="clientes"?T.yellow:T.accentSolid,color:k==="clientes"?"#1c1400":"#fff",fontSize:DS.font.xs,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{badges[k]}</span>}</button>))}
         </div>;
         if(!panel) return <AppTopbar T={T} section="Depósito" sectionId="deposito" onHome={onHome} onHelp={()=>setGuia(g=>!g)}>{tabs}</AppTopbar>;
         return (<div style={{position:"sticky",top:0,zIndex:30,background:T.bg+"e6",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",borderBottom:`1px solid ${T.border}`}}>
           <div style={{maxWidth:1080,margin:"0 auto",padding:"12px 20px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
             <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-              <div style={{width:34,height:34,borderRadius:DS.r.lg,background:`linear-gradient(135deg, ${T.accentSolid}, ${T.purple})`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 4px 14px ${T.accentSolid}55`}}><DepIco d="box" size={18} color="#fff" sw={2.2}/></div>
-              <div><div style={{fontSize:DS.font.lg,fontWeight:800,color:T.text,letterSpacing:-0.3,lineHeight:1.1}}>Depósito</div><div style={{fontSize:DS.font.xs,color:T.textSm,letterSpacing:0.4,textTransform:"uppercase",fontWeight:600}}>{owner?"Panel de administración":"Estación de armado"}</div></div>
+              <div><div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.3,lineHeight:1.1}}>Depósito</div><div style={{fontSize:DS.font.sm,color:T.textSm}}>{owner?"Administración":"Armado"}</div></div>
             </div>
             <div style={{flex:1,display:"flex",justifyContent:"center",minWidth:0}}>{tabs}</div>
             <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
@@ -22028,7 +22024,6 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
             </>)}
           </div>
         </Card>)}
-        {esDep&&HEAD[tab]&&<DepPageHead T={T} title={HEAD[tab][0]} desc={HEAD[tab][1]}/>}
         {esDep&&owner&&sinClientes&&tab==="clientes"&&(<Card T={T} padding="lg" style={{marginBottom:18}}>
           <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,marginBottom:6}}>Para empezar</div>
           <ol style={{margin:0,paddingLeft:20,fontSize:DS.font.base,color:T.textMd,lineHeight:1.8}}>
@@ -22039,7 +22034,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
         </Card>)}
         {!esDep? <DepositoClienteView T={T} api={apiCli} tiendaUid={tiendaUid}/>
           : tab==="cola"? <DepositoCola T={T} api={apiDep} owner={owner} ver={ver} enVivo={enVivo}/>
-          : tab==="historial"? <><DepositoIngresos T={T} api={apiDep} owner={owner}/>{owner&&<DepositoHistorial T={T} api={apiDep}/>}</>
+          : tab==="historial"? (owner? <><div style={{marginBottom:14}}><DepSeg T={T} size="md" value={mov} onChange={setMov} items={[["tandas","Tandas del mes"],["ingresos","Mercadería recibida"]]}/></div>{mov==="tandas"?<DepositoHistorial T={T} api={apiDep}/>:<DepositoIngresos T={T} api={apiDep} owner={owner}/>}</> : <DepositoIngresos T={T} api={apiDep} owner={owner}/>)
           : tab==="clientes"? <DepositoCuentas T={T} api={apiDep} onClientes={onClientes}/>
           : tab==="accesos"? <DepositoAccesos T={T} api={apiDep} panel={!!panel}/>
           : <DepositoClienteView T={T} api={apiCli} tiendaUid={tiendaUid}/>}
@@ -22085,19 +22080,6 @@ function DepIco({d,size=16,color,sw=2}){ return <svg width={size} height={size} 
 function DepTile({T,color,ico,size=34}){ const c=color||T.accent; return <div style={{width:size,height:size,borderRadius:DS.r.lg,background:c+"1a",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:c}}><DepIco d={ico} size={Math.round(size*0.5)} color={c}/></div>; }
 function DepDot({T,color,children,strong}){ return <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:DS.font.md,color:strong?T.text:T.textMd,whiteSpace:"nowrap",fontWeight:strong?600:400}}><span style={{width:6,height:6,borderRadius:99,background:color,flexShrink:0}}/>{children}</span>; }
 function DepLabel({T,color,children,style}){ return <div style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.sm,fontWeight:700,letterSpacing:0.6,textTransform:"uppercase",color:color||T.textSm,margin:"0 0 10px",...style}}>{children}</div>; }
-// items: [{l, v, s, c, ico}]
-function DepStats({T,items}){
-  return (<div style={{display:"grid",gridTemplateColumns:`repeat(auto-fit,minmax(${items.length>4?150:170}px,1fr))`,gap:12,marginBottom:20}}>
-    {items.map((it,i)=>{ const c=it.c&&it.c!==T.textSm?it.c:null; return (<div key={i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:18,padding:"16px 18px",boxShadow:DS.shadow.sm,display:"flex",gap:12,alignItems:"flex-start",minWidth:0}}>
-      {it.ico&&<DepTile T={T} color={c||T.accent} ico={it.ico} size={34}/>}
-      <div style={{minWidth:0,flex:1}}>
-        <div style={{fontSize:DS.font.xs,fontWeight:600,letterSpacing:0.5,textTransform:"uppercase",color:T.textSm,marginBottom:5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.l}</div>
-        <div style={{fontSize:DS.font["3xl"],fontWeight:800,color:c||T.text,letterSpacing:-0.8,lineHeight:1,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.v}</div>
-        {it.s?<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.s}</div>:null}
-      </div>
-    </div>); })}
-  </div>);
-}
 // cols: [{h, w:"1fr"|"120px", align:"right", render:(row)=>node}]
 function DepTable({T,cols,rows,empty,minWidth=0,title,extra}){
   const grid=cols.map(c=>c.w||"1fr").join(" ");
@@ -22119,35 +22101,12 @@ const depSub=(T,txt)=><div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:
 // Saldo de un cliente (cuenta corriente = ledger): cargos − pagos verificados. Positivo = debe, negativo = a favor.
 const ghDepSaldo=(T,saldo)=>{ const s=Number(saldo)||0; return s>0.5?{txt:`Debe ${fmtMoney(s)}`,col:T.yellow,n:s}:s<-0.5?{txt:`${fmtMoney(-s)} a favor`,col:T.green,n:s}:{txt:"Al día",col:T.textSm,n:0}; };
 const ghDepFechaHora=ms=>new Date(ms).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
-// Botón chico de ícono (abrir/cerrar detalle).
-function DepChevron({T,open,onClick,title}){ return <button onClick={onClick} title={title} style={{width:40,height:40,boxSizing:"border-box",border:`1px solid ${T.border}`,borderRadius:DS.r.full,background:T.surface,color:T.text,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{transform:open?"rotate(180deg)":"none",transition:"transform .15s"}}><path d="M6 9l6 6 6-6"/></svg></button>; }
 
 // Estado de cuenta de un cliente (solo dueño): saldo, tandas sin pagar y transferencias.
 // Pasos de una tanda (pendiente → impresa → armada → entregada) como stepper compacto.
 // Dos pasos (8/oct/2026): al imprimir la tanda queda LISTA (estado "entregada" en los datos, que
 // se muestra como "Impresa"). "impresa"/"armada" quedan solo para tandas viejas en curso.
 const GH_DEP_PASOS=[["pendiente","Pendiente"],["entregada","Impresa"]];
-function DepSteps({T,estado,compact=false}){
-  if(estado==="cancelada") return <DepDot T={T} color={T.red} strong>Cancelada</DepDot>;
-  const idx=estado==="pendiente"?0:estado==="entregada"?2:1; // 2 = los dos pasos cumplidos
-  return (<div style={{display:"flex",alignItems:"center",gap:0,flexShrink:0}}>
-    {GH_DEP_PASOS.map(([k,l],i)=>{ const done=i<idx, cur=i===idx;
-      return (<React.Fragment key={k}>
-        {i>0&&<div style={{width:compact?14:22,height:2,margin:"0 4px",borderRadius:99,background:i<=idx?T.green:T.border,opacity:i<=idx?(i===idx?0.55:1):1,flexShrink:0}}/>}
-        <div style={{display:"flex",alignItems:"center",gap:6}} title={l}>
-          <span style={{width:18,height:18,borderRadius:99,display:"flex",alignItems:"center",justifyContent:"center",background:done?T.green:cur?T.accentSolid:"transparent",border:`2px solid ${done?T.green:cur?T.accentSolid:T.border}`,boxShadow:cur?`0 0 0 4px ${T.accentSolid}2e`:"none",flexShrink:0,transition:"all .2s"}}>
-            {done&&<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.isDark?"#052e16":"#fff"} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}
-            {cur&&<span style={{width:6,height:6,borderRadius:99,background:"#fff"}}/>}
-          </span>
-          {(!compact||cur||done)&&<span style={{fontSize:DS.font.sm,fontWeight:cur?700:500,color:cur?T.text:done?T.textMd:T.textSm,whiteSpace:"nowrap"}}>{l}</span>}
-        </div>
-      </React.Fragment>); })}
-  </div>);
-}
-// Dato con ícono ("Andreani", "despacho hoy").
-function DepFact({T,ico,color,children,strong}){ const c=color||T.textMd; return <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:DS.font.md,color:color||(strong?T.text:T.textMd),fontWeight:strong||color?600:500,whiteSpace:"nowrap"}}><DepIco d={ico} size={13} color={c} sw={2.2}/>{children}</span>; }
-// Chip de producto: "ROJ-NN ×35".
-function DepChip({T,sku,cant,color,muted}){ return <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px 4px 9px",borderRadius:99,background:muted?"transparent":T.surface,border:`1px solid ${T.border}`,fontSize:DS.font.md,color:muted?T.textSm:T.text,fontWeight:600,whiteSpace:"nowrap",maxWidth:220}}><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{sku}</span>{cant!=null&&<span style={{color:color||T.accent,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>×{cant}</span>}</span>; }
 // Inicial en círculo (quién hizo qué).
 function DepAvatar({T,name,size=22,color}){ const c=color||T.accent; const ini=String(name||"?").trim().split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase()||"?"; return <span style={{width:size,height:size,borderRadius:99,background:c+"22",color:c,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:Math.round(size*0.42),fontWeight:800,flexShrink:0,letterSpacing:0}}>{ini}</span>; }
 // Control segmentado (Picking | Pedidos | Historial).
@@ -22156,11 +22115,6 @@ function DepSeg({T,value,items,onChange,size="sm"}){ return (<div style={{displa
 </div>); }
 // Píldora contadora (al lado de un título).
 function DepCount({T,children,color}){ return <span style={{fontSize:DS.font.xs,fontWeight:700,color:color||T.textMd,background:color?color+"1a":T.surface,border:`1px solid ${color?color+"44":T.border}`,borderRadius:99,padding:"2px 9px",letterSpacing:0,textTransform:"none",whiteSpace:"nowrap",lineHeight:1.5}}>{children}</span>; }
-// Encabezado de página (título grande + descripción + acciones a la derecha).
-function DepPageHead({T,title,desc,extra}){ return (<div style={{display:"flex",alignItems:"flex-end",gap:14,flexWrap:"wrap",marginBottom:20}}>
-  <div style={{flex:1,minWidth:240}}><h1 style={{margin:0,fontSize:DS.font["3xl"],fontWeight:800,color:T.text,letterSpacing:-0.8,lineHeight:1.1}}>{title}</h1>{desc&&<div style={{fontSize:DS.font.base,color:T.textSm,marginTop:6,maxWidth:720,lineHeight:1.5}}>{desc}</div>}</div>
-  {extra&&<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>{extra}</div>}
-</div>); }
 // Sección con título, descripción y acciones (mes, exportar, nuevo…).
 function DepSection({T,title,desc,extra,count,children,style}){ return (<section style={{marginBottom:30,...style}}>
   <div style={{display:"flex",alignItems:"flex-end",gap:12,flexWrap:"wrap",marginBottom:12}}>
@@ -22186,6 +22140,12 @@ function DepBtn({T,variant="secondary",size="md",ico,icon,children,onClick,disab
   const S=size==="sm"?{height:32,padding:"0 14px",fontSize:DS.font.md,gap:6}:size==="lg"?{height:46,padding:"0 26px",fontSize:DS.font.lg,gap:8}:{height:40,padding:"0 18px",fontSize:DS.font.base,gap:7};
   return <button onClick={onClick} disabled={disabled} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} {...rest} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",boxSizing:"border-box",border:`1px solid ${V.bd}`,borderRadius:DS.r.full,background:V.bg,color:V.fg,fontWeight:DS.w.semibold,fontFamily:"'Inter',system-ui,sans-serif",cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.45:1,boxShadow:disabled?"none":V.sh,transition:`all .15s ${DS.ease}`,whiteSpace:"nowrap",flexShrink:0,...S,...style}}>{ico&&<DepIco d={ico} size={size==="sm"?13:15} sw={2.2}/>}{icon&&<span style={{display:"inline-flex",alignItems:"center"}}>{icon}</span>}{children}</button>;
 }
+// Botón grande por canal de la vista del cliente: teñido del color del correo, ícono y dos renglones ("Enviar etiquetas" / canal).
+function DepCanalBtn({T,color,ico,canal,onClick}){ const [h,setH]=useState(false);
+  return <button onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"inline-flex",alignItems:"center",gap:12,height:60,boxSizing:"border-box",padding:"0 22px 0 12px",border:`1px solid ${color}${h?"cc":"77"}`,borderRadius:DS.r["2xl"],background:color+(h?"2e":"1c"),color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left",transition:`all .15s ${DS.ease}`,transform:h?"translateY(-1px)":"none",flexShrink:0}}>
+    <span style={{width:38,height:38,borderRadius:DS.r.xl,background:color,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><DepIco d={ico} size={19} color={T.isDark?"#111":"#fff"} sw={2.3}/></span>
+    <span style={{display:"flex",flexDirection:"column",lineHeight:1.2}}><span style={{fontSize:DS.font.md,fontWeight:DS.w.medium,color:T.textMd}}>Enviar etiquetas</span><span style={{fontSize:DS.font.xl,fontWeight:DS.w.black,letterSpacing:-0.2,whiteSpace:"nowrap"}}>{canal}</span></span>
+  </button>; }
 // Acción principal de una tanda: el botón sólido (con color propio para "Entregada").
 function DepMainBtn({T,color,ico,children,onClick,disabled}){ const c=color||T.accentSolid; const [h,setH]=useState(false); return <button onClick={onClick} disabled={disabled} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8,height:40,boxSizing:"border-box",padding:"0 20px",border:`1px solid ${c}`,borderRadius:DS.r.full,background:c,color:"#fff",fontSize:DS.font.base,fontWeight:700,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"'Inter',system-ui,sans-serif",boxShadow:h&&!disabled?`0 6px 20px ${c}59`:`0 2px 10px ${c}38`,transition:`all .15s ${DS.ease}`,whiteSpace:"nowrap",flexShrink:0}}>{ico&&<DepIco d={ico} size={15} color="#fff" sw={2.4}/>}{children}</button>; }
 // Menú de acciones secundarias ("Más"). Se dibuja en un portal a body para que
@@ -22210,11 +22170,6 @@ function DepMenuItem({T,it,onPick}){ const [h,setH]=useState(false); const c=it.
   return (<>{it.sep&&<div style={{height:1,background:T.border,margin:"4px 6px"}}/>}
     <button role="menuitem" onClick={onPick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",height:38,boxSizing:"border-box",padding:"0 12px",border:"none",borderRadius:12,background:h?(it.danger?T.red+"1a":T.surface):"transparent",color:c,fontSize:DS.font.base,fontWeight:DS.w.semibold,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",textAlign:"left",whiteSpace:"nowrap"}}>{it.ico&&<DepIco d={it.ico} size={15} color={it.danger?T.red:T.textMd} sw={2.1}/>}{it.label}</button></>);
 }
-// Barra de progreso chica con etiqueta.
-function DepProgress({T,value,total,label,done}){ const pct=total>0?Math.round(value/total*100):0; const c=done?T.green:T.accentSolid; return (<div style={{width:150,flexShrink:0}}>
-  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",fontSize:DS.font.sm,color:T.textSm,fontVariantNumeric:"tabular-nums"}}><span>{label}</span><strong style={{color:done?T.green:T.text,fontSize:DS.font.md}}>{value}/{total}</strong></div>
-  <div style={{height:6,background:T.borderL,borderRadius:99,marginTop:5,overflow:"hidden"}}><div style={{height:6,width:`${pct}%`,background:c,borderRadius:99,transition:"width .3s"}}/></div>
-</div>); }
 
 // Ficha del cliente (25/sep): una sola ventana con dos pestañas — Cuenta (saldo,
 // pagos y cargos, acumulado por mes, tandas sin pagar, movimientos) y Datos
@@ -22224,16 +22179,15 @@ function DepositoCuentaModal({T,api,cliente,onClose,onAjustar,datos,reloadKey=0,
   const [d,setD]=useState(null); const [tab,setTab]=useState(tabInicial);
   useEffect(()=>{ api("cuenta_cliente",{clienteId:cliente.id}).then(setD).catch(e=>{ toast(e.message,"error"); setD({error:true}); }); },[cliente.id,reloadKey]);
   return (<Modal T={T} open onClose={onClose} title={cliente.nombre} width={680}>
-    {datos&&<div style={{marginBottom:16}}><DepSeg T={T} value={tab} onChange={setTab} items={[["cuenta","Cuenta","wallet"],["datos","Datos y acceso","settings"]]}/></div>}
+    {datos&&<div style={{marginBottom:16}}><DepSeg T={T} value={tab} onChange={setTab} items={[["cuenta","Cuenta"],["datos","Datos y acceso"]]}/></div>}
     {tab==="datos"&&datos?datos
     :!d?<div style={{display:"flex",justifyContent:"center",padding:30}}><Spinner size={24} color={T.accent}/></div>
     :d.error?<div style={{fontSize:DS.font.base,color:T.textSm}}>No se pudo cargar.</div>
     :(()=>{ const s=ghDepSaldo(T,d.saldo); return (<div>
       <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"16px 18px",marginBottom:12,boxShadow:DS.shadow.sm}}>
-        <DepTile T={T} color={s.col===T.textSm?T.accent:s.col} ico={s.n<0?"hand":"wallet"} size={44}/>
         <div style={{flex:1,minWidth:180}}>
-          <div style={{fontSize:DS.font.xs,fontWeight:600,letterSpacing:0.5,textTransform:"uppercase",color:T.textSm,marginBottom:4}}>Saldo</div>
-          <div style={{fontSize:DS.font["3xl"],fontWeight:800,color:s.col,letterSpacing:-0.8,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{s.n>0?`Debe ${fmtMoney(s.n)}`:s.n<0?`${fmtMoney(-s.n)} a favor`:"Al día"}</div>
+          <div style={{fontSize:DS.font.md,fontWeight:600,color:T.textSm}}>{s.n>0?"Debe":s.n<0?"Tiene a favor":"Su cuenta"}</div>
+          <div style={{fontSize:DS.font["4xl"],fontWeight:800,color:s.n<0?T.green:T.text,letterSpacing:-1,lineHeight:1.15,fontVariantNumeric:"tabular-nums"}}>{s.n>0?fmtMoney(s.n):s.n<0?fmtMoney(-s.n):"Al día"}</div>
           <div style={{fontSize:DS.font.md,color:T.textMd,marginTop:8,lineHeight:1.6}}>
             Cargos: <strong style={{color:T.text}}>{fmtMoney(d.cargos||0)}</strong> · Pagos: <strong style={{color:T.green}}>{fmtMoney(d.creditos||0)}</strong>
             {d.porVerificar>0&&<> · por verificar: <strong style={{color:T.yellow}}>{fmtMoney(d.porVerificar)}</strong></>}
@@ -22413,91 +22367,80 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   const hechas=st.tandas.filter(t=>["entregada","impresa","armada"].includes(t.estado));
   const urg=t=>t.tipo==="especial"&&t.especial?.urgente;
   const atencion=vivas.filter(t=>urg(t)||t.fechaDespacho<st.hoy);
-  const grupos=[["Atención",atencion,T.red,"urgentes y atrasadas"],["Hoy",vivas.filter(t=>!urg(t)&&t.fechaDespacho===st.hoy),T.accent,""],["Próximos días",vivas.filter(t=>!urg(t)&&t.fechaDespacho>st.hoy),T.blue,""]].filter(g=>g[1].length);
+  const grupos=[["Atención",atencion,T.red],["Hoy",vivas.filter(t=>!urg(t)&&t.fechaDespacho===st.hoy),T.text],["Próximos días",vivas.filter(t=>!urg(t)&&t.fechaDespacho>st.hoy),T.text]].filter(g=>g[1].length);
   const paraHoy=vivas.filter(t=>t.fechaDespacho<=st.hoy);
   const atrasadas=vivas.filter(t=>!urg(t)&&t.fechaDespacho<st.hoy);
   const nPed=l=>l.reduce((a,t)=>a+t.n,0);
+  const pl=(n,s,p)=>`${n} ${n!==1?(p||s+"s"):s}`;
   const mananaStr=new Date(Date.parse(`${st.hoy}T12:00:00Z`)+86400000).toISOString().slice(0,10);
   // Dos opciones (25/sep, pedido de Soluna): "Imprimir lo de hoy" (tandas con despacho
   // hasta hoy) y "Todo lo pendiente" (también las de los próximos días).
   const pendTodoConPdf=vivas.filter(t=>t.estado==="pendiente"&&t.pdf&&!t.pdf.purgado).sort((a,b)=>(urg(b)?1:0)-(urg(a)?1:0)||(a.fechaDespacho||"").localeCompare(b.fechaDespacho||""));
   const pendHoyConPdf=paraHoy.filter(t=>t.estado==="pendiente"&&t.pdf&&!t.pdf.purgado).sort((a,b)=>(urg(b)?1:0)-(urg(a)?1:0)||(a.fechaDespacho||"").localeCompare(b.fechaDespacho||""));
   const apartados=st.apartados||[];
-  const Tanda=({t})=>{ const open=abierta===t.id; const v=vista[t.id]||"picking"; const pick=ghDepPicking(t.pedidos.filter(p=>!p.cancelado)); const ap=t.pedidos.filter(p=>p.apartado&&!p.cancelado).length; const canc=t.pedidos.filter(p=>p.cancelado).length; const conItems=t.pedidos.some(p=>p.items.length); const arm=t.pedidos.filter(p=>p.armado&&!p.cancelado).length; const nP=t.pedidos.filter(p=>!p.cancelado).length; const done=nP>0&&arm>=nP;
+  const colCanal=c=>({andreani:T.red,ml:T.yellow,retiro:T.blue}[c]||T.textMd);
+  const caja={background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden"};
+  const h2=(t,color,sub)=>(<div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",margin:"24px 0 10px"}}><span style={{fontSize:DS.font.xl,fontWeight:800,color:color||T.text,letterSpacing:-0.3}}>{t}</span>{sub&&<span style={{fontSize:DS.font.md,color:T.textSm}}>{sub}</span>}</div>);
+  // Una tanda = una línea (franja del color del canal); el detalle se abre al tocarla.
+  const Tanda=({t,primera})=>{ const open=abierta===t.id; const v=vista[t.id]||"picking"; const pick=ghDepPicking(t.pedidos.filter(p=>!p.cancelado)); const ap=t.pedidos.filter(p=>p.apartado&&!p.cancelado).length; const canc=t.pedidos.filter(p=>p.cancelado).length; const conItems=t.pedidos.some(p=>p.items.length); const arm=t.pedidos.filter(p=>p.armado&&!p.cancelado).length; const nP=t.pedidos.filter(p=>!p.cancelado).length;
     // Color por CANAL (quién retira): Andreani rojo, Mercado Libre amarillo, retiro azul, otro gris; especial violeta.
-    const esp=t.tipo==="especial"; const cCanal=esp?T.purple:({andreani:T.red,ml:T.yellow,retiro:T.blue}[t.canal]||T.textMd); const ico=esp?"bag":t.canal==="ml"?"tag":"truck";
+    const esp=t.tipo==="especial"; const cCanal=esp?T.purple:colCanal(t.canal);
     const entregada=t.estado!=="pendiente"; const atras=!entregada&&t.fechaDespacho<st.hoy; const esHoy=t.fechaDespacho===st.hoy;
-    const unidades=pick.reduce((a,x)=>a+x.cant,0); const maxCant=pick.reduce((a,x)=>Math.max(a,x.cant),0);
     const ult=t.hist?.length?t.hist[t.hist.length-1]:null;
     const toggle=()=>setAbierta(open?null:t.id);
     const vistaAct=(v==="picking"&&!conItems)?(t.pedidos.length>0?"pedidos":"hist"):v;
-    const segItems=[...(conItems?[["picking","Picking","box"]]:[]),...(t.pedidos.length>0?[["pedidos",`Pedidos (${t.pedidos.length})`,"tag"]]:[]),["hist","Historial","clock"]];
-    const accion=t.pdf&&!t.pdf.purgado&&t.estado==="pendiente"?<DepMainBtn T={T} ico="print" disabled={busy===t.id} onClick={()=>imprimir(t)}>Imprimir etiquetas</DepMainBtn>
-      // Sin PDF no hay nada que imprimir (envío especial solo con instrucciones): se cierra a mano.
-      :t.estado==="pendiente"?<DepMainBtn T={T} ico="check" color={T.isDark?"#16a34a":"#15803d"} disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Ya está hecho</DepMainBtn>:null;
-    const bi=(d,txt)=><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d={d} size={13}/>{txt}</span>;
+    const segItems=[...(conItems?[["picking","Qué bajar"]]:[]),...(t.pedidos.length>0?[["pedidos",`Pedidos (${t.pedidos.length})`]]:[]),["hist","Historial"]];
+    const conPdf=t.pdf&&!t.pdf.purgado;
+    const cuando=entregada?(ult?`${GH_DEP_ESTADO[ult.a]||ult.a} · ${ult.porNombre} · ${ghDepFechaHora(ult.at)}`:ghDepFechaLinda(t.fechaDespacho)):atras?`atrasada · era el ${ghDepFechaLinda(t.fechaDespacho)}`:esHoy?"sale hoy":`sale el ${ghDepFechaLinda(t.fechaDespacho)}`;
+    const notaCli=[t.especial?.instrucciones,t.nota].filter(Boolean).join("\n");
+    const fondo=open?T.surface:"transparent";
     return (
-    <div style={{position:"relative",background:`linear-gradient(90deg, ${cCanal}14 0%, ${T.card} 38%)`,backgroundColor:T.card,border:`1px solid ${urg(t)?T.red+"88":open?cCanal+"88":cCanal+"40"}`,borderRadius:20,boxShadow:open?DS.shadow.md:DS.shadow.sm,overflow:"hidden",transition:"box-shadow .15s, border-color .15s",opacity:entregada&&!open?0.85:1}}>
-      <div style={{position:"absolute",left:0,top:0,bottom:0,width:6,background:cCanal}}/>
-      <div style={{padding:"18px 20px 16px 24px"}}>
-        <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
-          <DepTile T={T} color={cCanal} ico={ico} size={46}/>
-          <div style={{flex:"1 1 260px",minWidth:0,cursor:"pointer"}} onClick={toggle}>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",minHeight:24}}>
-              <span style={{fontSize:DS.font["2xl"],fontWeight:800,color:T.text,letterSpacing:-0.4,lineHeight:1.15}}>{t.clienteNombre}</span>
-              <DepCount T={T}>{esp?(t.especial?.titulo||"Envío especial"):`${t.n} pedido${t.n!==1?"s":""}`}</DepCount>
-              {urg(t)&&<DSBadge T={T} color={T.red} size="sm">Urgente</DSBadge>}
-              {t.fueraDeCorte&&!entregada&&<DSBadge T={T} color={T.yellow} size="sm">Fuera de corte</DSBadge>}
-              {t.revisarCantidad&&!entregada&&<span title={`El cliente declaró ${t.revisarCantidad.n} pedidos y el PDF tiene ${t.revisarCantidad.pages} páginas`}><DSBadge T={T} color={T.orange} size="sm">Revisar cantidad: {t.revisarCantidad.n} pedidos, PDF de {t.revisarCantidad.pages} pág.</DSBadge></span>}
-              {ap>0&&<DSBadge T={T} color={T.red} size="sm">{ap} apartado{ap!==1?"s":""}</DSBadge>}
-              {canc>0&&<DSBadge T={T} color={T.textSm} size="sm">{canc} cancelado{canc!==1?"s":""}</DSBadge>}
-            </div>
-            <div style={{display:"flex",gap:16,flexWrap:"wrap",marginTop:7,alignItems:"center"}}>
-              <span style={{display:"inline-flex",alignItems:"center",gap:6,height:24,padding:"0 10px",borderRadius:DS.r.full,background:cCanal+"26",border:`1px solid ${cCanal}66`,color:T.text,fontSize:DS.font.md,fontWeight:700,whiteSpace:"nowrap"}}><span style={{width:8,height:8,borderRadius:99,background:cCanal}}/>{GH_DEP_CANAL[t.canal]||t.canal}{esp?" · especial":""}</span>
-              <DepFact T={T} ico="calendar" color={atras?T.red:esHoy&&!entregada?T.accent:undefined}>{atras?`atrasada · era el ${ghDepFechaLinda(t.fechaDespacho)}`:esHoy?"despacho hoy":`despacho ${ghDepFechaLinda(t.fechaDespacho)}`}</DepFact>
-              {conItems&&<DepFact T={T} ico="box">{pick.length} producto{pick.length!==1?"s":""} · {unidades} unidad{unidades!==1?"es":""}</DepFact>}
-              {esp&&t.especial?.bultos>0&&<DepFact T={T} ico="inbox">{t.especial.bultos} bulto{t.especial.bultos!==1?"s":""}</DepFact>}
-            </div>
+    <div style={{borderTop:primera?"none":`1px solid ${T.borderL||T.border}`,opacity:entregada&&!open?0.8:1}}>
+      <div onClick={toggle} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"13px 16px",cursor:"pointer",background:fondo,borderLeft:`4px solid ${cCanal}`}}>
+        <div style={{flex:"1 1 280px",minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{t.clienteNombre}</span>
+            <span style={{fontSize:DS.font.base,color:T.textMd}}>{esp?(t.especial?.titulo||"Envío especial"):pl(t.n,"pedido")} · {esp?`Envío especial${t.especial?.bultos>0?` · ${pl(t.especial.bultos,"bulto")}`:""}`:(GH_DEP_CANAL[t.canal]||t.canal)}</span>
+            {urg(t)&&<DSBadge T={T} color={T.red} size="sm">Urgente</DSBadge>}
+            {t.fueraDeCorte&&!entregada&&<DSBadge T={T} color={T.yellow} size="sm">Fuera de corte</DSBadge>}
+            {t.revisarCantidad&&!entregada&&<span title={`El cliente declaró ${t.revisarCantidad.n} pedidos y el PDF tiene ${t.revisarCantidad.pages} páginas`}><DSBadge T={T} color={T.orange} size="sm">Revisar cantidad: {t.revisarCantidad.n} pedidos, PDF de {t.revisarCantidad.pages} pág.</DSBadge></span>}
+            {ap>0&&<DSBadge T={T} color={T.red} size="sm">{ap} apartado{ap!==1?"s":""}</DSBadge>}
+            {canc>0&&<DSBadge T={T} color={T.textSm} size="sm">{canc} cancelado{canc!==1?"s":""}</DSBadge>}
           </div>
-          <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
-            {t.pdf&&!t.pdf.purgado&&t.estado==="pendiente"&&<DepBtn T={T} variant="secondary" ico="eye" disabled={busy===t.id} onClick={()=>verPrevia(t)}>Vista previa</DepBtn>}
-            {accion}
-            <DepMenu T={T} disabled={busy===t.id} items={[
-              t.pdf&&!t.pdf.purgado&&t.estado!=="pendiente"&&{ico:"eye",label:"Ver el PDF",onClick:()=>verPrevia(t)},
-              t.pdf&&!t.pdf.purgado&&t.estado!=="pendiente"&&{ico:"print",label:"Reimprimir etiquetas",onClick:()=>imprimir(t)},
-              !entregada&&{ico:"calendar",label:"Posponer",onClick:()=>setPosponer(t)},
-              {ico:"note",label:t.notaDeposito?"Editar nota al cliente":"Nota al cliente",onClick:()=>notaDep(t)},
-              t.estado!=="pendiente"&&{ico:"undo",label:"Volver a pendiente",onClick:()=>estado(t,"pendiente")},
-              owner&&{ico:"alert",label:"Cancelar tanda",danger:true,sep:true,onClick:()=>cancelarTanda(t)},
-              owner&&{ico:"trash",label:"Eliminar tanda",danger:true,onClick:()=>eliminarTanda(t)},
-            ]}/>
-            <DepChevron T={T} open={open} onClick={toggle} title={open?"Cerrar":"Ver detalle"}/>
-          </div>
+          {conItems&&<div style={{fontSize:DS.font.md,color:T.textSm,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pick.slice(0,6).map(x=>`${x.sku} ×${x.cant}`).join(" · ")}{pick.length>6?` · +${pick.length-6} más`:""}</div>}
         </div>
-        <div style={{display:"flex",gap:18,alignItems:"center",marginTop:14,flexWrap:"wrap"}}>
-          <DepSteps T={T} estado={t.estado}/>
-          <span style={{flex:1}}/>
-          {nP>0&&arm>0&&<DepProgress T={T} value={arm} total={nP} label="armados" done={done}/>}
-          {!open&&ult&&<span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:DS.font.sm,color:T.textSm,whiteSpace:"nowrap"}}><DepAvatar T={T} name={ult.porNombre} size={20}/><span><strong style={{color:T.textMd,fontWeight:600}}>{GH_DEP_ESTADO[ult.a]||ult.a}</strong> · {ult.porNombre} · {ghDepFechaHora(ult.at)}</span></span>}
+        {arm>0&&<span style={{fontSize:DS.font.md,fontWeight:600,color:arm>=nP?T.green:T.textMd,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{arm}/{nP} armados</span>}
+        <span style={{fontSize:DS.font.md,color:atras?T.red:T.textMd,fontWeight:!entregada&&(atras||esHoy)?700:500,minWidth:96}}>{cuando}</span>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}} onClick={e=>e.stopPropagation()}>
+          {conPdf&&!entregada&&<DepBtn T={T} ico="eye" disabled={busy===t.id} onClick={()=>verPrevia(t)}>Vista previa</DepBtn>}
+          {conPdf&&!entregada?<DepBtn T={T} variant="primary" ico="print" disabled={busy===t.id} onClick={()=>imprimir(t)}>Imprimir</DepBtn>
+            // Sin PDF no hay nada que imprimir (envío especial solo con instrucciones): se cierra a mano.
+            :!entregada?<DepBtn T={T} variant="success" ico="check" disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Ya está hecho</DepBtn>:null}
+          <DepMenu T={T} disabled={busy===t.id} items={[
+            conPdf&&entregada&&{ico:"eye",label:"Ver el PDF",onClick:()=>verPrevia(t)},
+            conPdf&&entregada&&{ico:"print",label:"Reimprimir etiquetas",onClick:()=>imprimir(t)},
+            !entregada&&{ico:"calendar",label:"Posponer",onClick:()=>setPosponer(t)},
+            {ico:"note",label:t.notaDeposito?"Editar nota al cliente":"Nota al cliente",onClick:()=>notaDep(t)},
+            entregada&&{ico:"undo",label:"Volver a pendiente",onClick:()=>estado(t,"pendiente")},
+            owner&&{ico:"alert",label:"Cancelar tanda",danger:true,sep:true,onClick:()=>cancelarTanda(t)},
+            owner&&{ico:"trash",label:"Eliminar tanda",danger:true,onClick:()=>eliminarTanda(t)},
+          ]}/>
         </div>
-        {conItems&&!open&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:12,cursor:"pointer"}} onClick={toggle}>
-          {pick.slice(0,8).map(x=><DepChip key={x.sku} T={T} sku={x.sku} cant={x.cant}/>)}
-          {pick.length>8&&<DepChip T={T} sku={`+${pick.length-8} más`} muted/>}
-        </div>}
-        {(t.nota||t.especial?.instrucciones)&&<DepNota T={T} titulo={esp?"Instrucciones del cliente":"Nota del cliente"} color={esp?cCanal:T.yellow} style={{marginTop:12}}>{t.especial?.instrucciones}{t.especial?.instrucciones&&t.nota?"\n":""}{t.nota}</DepNota>}
-        {t.notaDeposito&&!open&&<DepNota T={T} titulo="Nota al cliente" color={T.blue} ico="hand" style={{marginTop:8}}>{t.notaDeposito}</DepNota>}
       </div>
-      {open&&(<div style={{borderTop:`1px solid ${T.borderL}`,background:T.isDark?T.surface+"66":T.surface,padding:"16px 20px 18px 24px"}}>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
+      {(notaCli||t.notaDeposito)&&(!entregada||open)&&(<div style={{padding:"0 16px 12px",background:fondo,borderLeft:`4px solid ${cCanal}`,display:"flex",flexDirection:"column",gap:4}}>
+        {notaCli&&<div style={{fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.5}}><span style={{color:T.yellow,fontWeight:700}}>{esp?"Instrucciones":"Nota del cliente"}: </span>{notaCli}</div>}
+        {t.notaDeposito&&<div style={{fontSize:DS.font.md,color:T.textMd,whiteSpace:"pre-wrap",lineHeight:1.5}}><span style={{color:T.textSm}}>Tu nota al cliente: </span>{t.notaDeposito}</div>}
+      </div>)}
+      {open&&(<div style={{padding:"4px 16px 16px",background:T.surface,borderLeft:`4px solid ${cCanal}`}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
           <DepSeg T={T} value={vistaAct} items={segItems} onChange={k=>setVista(x=>({...x,[t.id]:k}))}/>
           <span style={{flex:1}}/>
-          {!t.adjPurgados&&(t.especial?.adj||[]).map(a=><DepBtn key={a.kind} T={T} variant="secondary" size="sm" onClick={()=>abrirArchivo(t,a.kind,a)}>{bi("file",a.nombre||"Adjunto")}</DepBtn>)}
+          {!t.adjPurgados&&(t.especial?.adj||[]).map(a=><DepBtn key={a.kind} T={T} size="sm" ico="file" onClick={()=>abrirArchivo(t,a.kind,a)}>{a.nombre||"Adjunto"}</DepBtn>)}
         </div>
-        {t.notaDeposito&&<DepNota T={T} titulo="Nota al cliente" color={T.blue} ico="hand" style={{marginBottom:12}}>{t.notaDeposito}</DepNota>}
-        {vistaAct==="picking"&&conItems&&(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:8}}>
-          {pick.map(x=>(<div key={x.sku} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"12px 14px 11px",boxShadow:DS.shadow.sm}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10}}><span style={{fontSize:DS.font.base,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.sku}</span><strong style={{fontSize:DS.font["2xl"],color:T.accent,fontVariantNumeric:"tabular-nums",letterSpacing:-0.6,lineHeight:1}}>{x.cant}</strong></div>
-            <div style={{height:4,background:T.borderL,borderRadius:99,marginTop:9,overflow:"hidden"}}><div style={{height:4,width:`${maxCant?Math.max(6,Math.round(x.cant/maxCant*100)):0}%`,background:T.accentSolid,borderRadius:99,opacity:0.8}}/></div>
+        {vistaAct==="picking"&&conItems&&(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",columnGap:24,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,background:T.card,padding:"4px 16px"}}>
+          {pick.map(x=>(<div key={x.sku} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderL||T.border}`}}>
+            <span style={{fontSize:DS.font.base,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.sku}</span>
+            <strong style={{fontSize:DS.font.xl,color:T.text,fontVariantNumeric:"tabular-nums"}}>{x.cant}</strong>
           </div>))}
         </div>)}
         {vistaAct==="pedidos"&&t.pedidos.length>0&&(<div style={{display:"flex",flexDirection:"column",maxHeight:420,overflow:"auto",border:`1px solid ${T.border}`,borderRadius:DS.r.xl,background:T.card}}>
@@ -22506,17 +22449,16 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
             <span style={{fontSize:DS.font.base,fontWeight:700,color:T.text,minWidth:76,fontVariantNumeric:"tabular-nums",textDecoration:p.cancelado?"line-through":"none"}}>#{p.numero}</span>
             <span style={{fontSize:DS.font.base,color:T.text,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.comprador}{p.items.length?<span style={{color:T.textSm,fontSize:DS.font.md}}> · {p.items.join(", ")}</span>:null}</span>
             {p.cancelado?<span style={{fontSize:DS.font.sm,color:T.textSm,whiteSpace:"nowrap"}}>cancelado{p.cancelado.nota?` · ${p.cancelado.nota}`:""}</span>
-            :<>{p.apartado&&<span style={{fontSize:DS.font.sm,color:T.red,background:T.red+"14",border:`1px solid ${T.red}33`,borderRadius:99,padding:"2px 9px",whiteSpace:"nowrap",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis"}}>apartado · {p.apartado.nota}</span>}
+            :<>{p.apartado&&<span style={{fontSize:DS.font.sm,color:T.red,fontWeight:600,whiteSpace:"nowrap",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis"}}>apartado · {p.apartado.nota}</span>}
             {p.armado&&!p.apartado&&<span style={{fontSize:DS.font.sm,color:T.textSm,whiteSpace:"nowrap"}}>{p.armado.porNombre}</span>}
-            <DepBtn T={T} variant="ghost" size="sm" onClick={()=>apartar(t,i,p)}>{p.apartado?"Reincorporar":"Apartar"}</DepBtn></>}
+            <DepBtn T={T} size="sm" onClick={()=>apartar(t,i,p)}>{p.apartado?"Reincorporar":"Apartar"}</DepBtn></>}
           </div>))}
         </div>)}
-        {vistaAct==="hist"&&(<div style={{display:"flex",flexDirection:"column",gap:0,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,background:T.card,padding:"6px 14px"}}>
+        {vistaAct==="hist"&&(<div style={{border:`1px solid ${T.border}`,borderRadius:DS.r.xl,background:T.card,padding:"4px 14px"}}>
           {(t.hist||[]).length===0&&<div style={{fontSize:DS.font.base,color:T.textSm,padding:"10px 0"}}>Todavía no pasó nada con esta tanda.</div>}
-          {[...(t.hist||[])].reverse().map((h,i,arr)=>(<div key={i} style={{display:"flex",gap:12,alignItems:"center",padding:"9px 0",borderBottom:i<arr.length-1?`1px solid ${T.borderL}`:"none"}}>
-            <DepAvatar T={T} name={h.porNombre} size={26} color={ghDepCol(T)[h.a]||(h.a==="pospuesta"?T.orange:T.accent)}/>
+          {[...(t.hist||[])].reverse().map((h,i,arr)=>(<div key={i} style={{display:"flex",gap:12,alignItems:"baseline",padding:"8px 0",borderBottom:i<arr.length-1?`1px solid ${T.borderL}`:"none"}}>
+            <span style={{fontSize:DS.font.sm,color:T.textSm,fontVariantNumeric:"tabular-nums",minWidth:92}}>{ghDepFechaHora(h.at)}</span>
             <div style={{flex:1,minWidth:0}}><span style={{fontSize:DS.font.base,fontWeight:700,color:T.text}}>{h.a==="pospuesta"?`Pospuesta al ${ghDepFechaLinda(h.fecha)}`:(GH_DEP_ESTADO[h.a]||h.a)}</span><span style={{fontSize:DS.font.md,color:T.textMd}}> · {h.porNombre}{h.nota?` · ${h.nota}`:""}</span></div>
-            <span style={{fontSize:DS.font.sm,color:T.textSm,fontVariantNumeric:"tabular-nums"}}>{ghDepFechaHora(h.at)}</span>
           </div>))}
         </div>)}
       </div>)}
@@ -22524,25 +22466,31 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   return (
     <div>
       {(()=>{ const manana=vivas.filter(t=>t.fechaDespacho===mananaStr), despues=vivas.filter(t=>t.fechaDespacho>mananaStr); const nAtr=nPed(atrasadas), nUrg=vivas.filter(urg).length; const dsp=st.despachados||{hoy:0,hoyTandas:0,mes:0,mesTandas:0};
-        const subHoy=[nAtr?`${nAtr} atrasado${nAtr!==1?"s":""} de otros días`:"",nUrg?`${nUrg} urgente${nUrg!==1?"s":""}`:""].filter(Boolean).join(" · ")||`${new Set(paraHoy.map(t=>t.clienteId)).size} cliente${new Set(paraHoy.map(t=>t.clienteId)).size!==1?"s":""}`;
-        return <DepStats T={T} items={[
-        {l:"Pedidos para hoy",v:nPed(paraHoy),ico:"box",c:nAtr||nUrg?T.red:undefined,s:subHoy},
-        {l:"Para mañana",v:nPed(manana),ico:"calendar",c:T.blue,s:despues.length?`+ ${nPed(despues)} más adelante`:"ya cargados"},
-        {l:"Impresos hoy",v:dsp.hoy,ico:"print",c:dsp.hoy?T.green:T.textSm,s:`${dsp.hoyTandas} tanda${dsp.hoyTandas!==1?"s":""} lista${dsp.hoyTandas!==1?"s":""}`},
-        ...(owner?[{l:"Impresos este mes",v:dsp.mes,ico:"check",c:T.green,s:`${dsp.mesTandas} tanda${dsp.mesTandas!==1?"s":""}`}]:[]),
-      ]}/>; })()}
-      {(pendHoyConPdf.length>0||pendTodoConPdf.length>0)&&(()=>{ const hayHoy=pendHoyConPdf.length>0; const lista=hayHoy?pendHoyConPdf:pendTodoConPdf; const nT=lista.length, nE=nPed(lista); const masAdelante=hayHoy&&pendTodoConPdf.length>pendHoyConPdf.length;
-        return (<div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",padding:"18px 20px",marginBottom:14,borderRadius:20,border:`1px solid ${T.accentSolid}88`,background:`linear-gradient(90deg, ${T.accentSolid}33 0%, ${T.accentSolid}12 100%)`,backgroundColor:T.card,boxShadow:`0 6px 26px ${T.accentSolid}26`}}>
-          <DepTile T={T} color={T.accent} ico="print" size={52}/>
-          <div style={{flex:"1 1 240px",minWidth:0}}>
-            <div style={{fontSize:DS.font["2xl"],fontWeight:DS.w.black,color:T.text,letterSpacing:-0.5,lineHeight:1.15}}>{nE} etiqueta{nE!==1?"s":""} para imprimir{hayHoy?" hoy":""}</div>
-            <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:4,lineHeight:1.45}}>{nT} tanda{nT!==1?"s":""} sin imprimir{hayHoy?"":" de los próximos días"}. {nT===1?"Se descarga su PDF y queda marcada como impresa.":"Se descarga un PDF por cada tanda (en un .zip, con una carpeta por correo) y quedan marcadas como impresas."}</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>{Object.entries(lista.reduce((m,t)=>{ m[t.canal]=(m[t.canal]||0)+t.n; return m; },{})).map(([c,n])=>{ const col=({andreani:T.red,ml:T.yellow,retiro:T.blue}[c]||T.textMd); return <span key={c} style={{display:"inline-flex",alignItems:"center",gap:6,height:24,padding:"0 10px",borderRadius:DS.r.full,background:col+"26",border:`1px solid ${col}66`,color:T.text,fontSize:DS.font.md,fontWeight:DS.w.bold,whiteSpace:"nowrap"}}><span style={{width:8,height:8,borderRadius:99,background:col}}/>{GH_DEP_CANAL[c]||c} · {n}</span>; })}</div>
+        const nHoy=nPed(paraHoy), nMan=nPed(manana), nDesp=nPed(despues);
+        const hayHoy=pendHoyConPdf.length>0; const lista=hayHoy?pendHoyConPdf:pendTodoConPdf; const nT=lista.length, nE=nPed(lista); const masAdelante=hayHoy&&pendTodoConPdf.length>pendHoyConPdf.length;
+        const alerta=[nAtr?`${nAtr} de días anteriores`:"",nUrg?pl(nUrg,"urgente"):""].filter(Boolean).join(" · ");
+        const resto=[nMan?`${nMan} para mañana`:"",nDesp?`${nDesp} más adelante`:""].filter(Boolean).join(" · ");
+        const nCli=new Set(paraHoy.map(t=>t.clienteId)).size;
+        return (<div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap",marginBottom:18}}>
+          <div style={{flex:"1 1 300px",minWidth:0}}>
+            <div style={{fontSize:DS.font["3xl"],fontWeight:800,color:T.text,letterSpacing:-0.8,lineHeight:1.15}}>{nHoy>0?`${pl(nHoy,"pedido")} para hoy`:vivas.length?"Hoy no queda nada por imprimir":"No hay nada para imprimir"}</div>
+            <div style={{fontSize:DS.font.lg,color:T.textMd,marginTop:6,lineHeight:1.45}}>
+              {alerta&&<strong style={{color:T.red}}>{alerta}. </strong>}
+              {nHoy>0&&!alerta?`De ${pl(nCli,"cliente")}. `:""}
+              {resto?`${resto.charAt(0).toUpperCase()+resto.slice(1)}.`:(!nHoy?"Cuando un cliente mande etiquetas aparecen acá solas.":"")}
+            </div>
+            <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:6}}>Impresos hoy: {pl(dsp.hoy,"pedido")} en {pl(dsp.hoyTandas,"tanda")}{owner?` · este mes: ${pl(dsp.mes,"pedido")}`:""}</div>
           </div>
-          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-            {masAdelante&&<DepBtn T={T} variant="secondary" size="lg" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendTodoConPdf)}>Incluir próximos días ({nPed(pendTodoConPdf)})</DepBtn>}
-            <button onClick={()=>imprimirTodoHoy(lista)} disabled={!!todoHoy} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:10,height:56,boxSizing:"border-box",padding:"0 30px",border:"none",borderRadius:DS.r.full,background:T.accentSolid,color:"#fff",fontSize:DS.font.xl,fontWeight:DS.w.black,fontFamily:"'Inter',system-ui,sans-serif",cursor:todoHoy?"wait":"pointer",opacity:todoHoy?0.75:1,boxShadow:`0 8px 26px ${T.accentSolid}77`,whiteSpace:"nowrap",letterSpacing:-0.2}}><DepIco d="print" size={20} color="#fff" sw={2.4}/>{todoHoy?`Descargando ${todoHoy.done}/${todoHoy.total}…`:hayHoy?"Imprimir todo lo de hoy":"Imprimir todo"}</button>
-          </div>
+          {nT>0&&(<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+              {masAdelante&&<DepBtn T={T} size="lg" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(pendTodoConPdf)} style={{height:52}}>Incluir próximos días ({nPed(pendTodoConPdf)})</DepBtn>}
+              <DepBtn T={T} variant="primary" size="lg" ico="print" disabled={!!todoHoy} onClick={()=>imprimirTodoHoy(lista)} style={{height:52,padding:"0 28px",fontSize:DS.font.xl,fontWeight:DS.w.black,opacity:todoHoy?0.75:1,cursor:todoHoy?"wait":"pointer"}}>{todoHoy?`Descargando ${todoHoy.done}/${todoHoy.total}…`:`${hayHoy?"Imprimir todo lo de hoy":"Imprimir todo"} · ${pl(nE,"etiqueta")}`}</DepBtn>
+            </div>
+            <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end",fontSize:DS.font.md,color:T.textSm}}>
+              {Object.entries(lista.reduce((m,t)=>{ m[t.canal]=(m[t.canal]||0)+t.n; return m; },{})).map(([c,n])=>(<span key={c} style={{display:"inline-flex",alignItems:"center",gap:6,color:T.textMd,fontWeight:600}}><span style={{width:8,height:8,borderRadius:99,background:colCanal(c)}}/>{GH_DEP_CANAL[c]||c} {n}</span>))}
+              <span>{nT===1?"Baja su PDF y queda impresa.":"Un PDF por tanda, en un .zip con una carpeta por correo."}</span>
+            </div>
+          </div>)}
         </div>); })()}
       <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:8,alignItems:"stretch"}}>
         <div style={{flex:"1.5 1 320px",height:52,boxSizing:"border-box",display:"flex",alignItems:"center",gap:10,border:`1px solid ${flash==="ok"?T.green:flash==="warn"?T.yellow:flash==="error"?T.red:T.border}`,borderRadius:DS.r.full,background:flash==="ok"?T.green+"14":flash==="warn"?T.yellow+"14":flash==="error"?T.red+"14":T.card,padding:"0 8px 0 16px",boxShadow:DS.shadow.sm,minWidth:0,transition:"background .2s, border-color .2s"}}>
@@ -22603,38 +22551,27 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
               {r.pdfOk&&<DepBtn T={T} variant="secondary" size="sm" onClick={()=>reimprimir(r)}>Reimprimir etiqueta</DepBtn>}
             </div>))}
       </div>)}
-      {apartados.length>0&&(<div style={{marginBottom:24}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,margin:"6px 0 10px"}}>
-          <span style={{width:8,height:8,borderRadius:99,background:T.red,boxShadow:`0 0 0 3px ${T.red}22`}}/>
-          <span style={{fontSize:DS.font.lg,fontWeight:800,color:T.text,letterSpacing:-0.2}}>Pedidos apartados</span>
-          <DepCount T={T} color={T.red}>{apartados.length}</DepCount>
-          <span style={{fontSize:DS.font.sm,color:T.textSm}}>de cualquier tanda, hasta que los reincorpores o los canceles</span>
-        </div>
-        <div style={{border:`1px solid ${T.red}44`,borderRadius:DS.r.xl,background:T.card,overflow:"hidden",boxShadow:DS.shadow.sm}}>
-          {apartados.map((a,i)=>(<div key={a.tandaId+"_"+a.idx} style={{display:"flex",gap:12,alignItems:"center",padding:"9px 14px",borderBottom:i<apartados.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
-            <DepAvatar T={T} name={a.clienteNombre} size={26} color={T.red}/>
-            <div style={{flex:1,minWidth:220}}><div style={{fontSize:DS.font.base,color:T.text}}><strong>#{a.numero}</strong> · {a.comprador} <span style={{color:T.textSm}}>· {a.clienteNombre} · tanda del {ghDepFechaLinda(a.fechaDespacho)}{a.tandaEstado==="entregada"?" (ya entregada)":""}</span></div><div style={{fontSize:DS.font.md,color:T.red,marginTop:2}}>{a.nota} <span style={{color:T.textSm}}>· {a.porNombre} · {ghDepFechaHora(a.at)}</span>{a.items.length?<span style={{color:T.textSm}}> · {a.items.join(", ")}</span>:null}</div></div>
-            <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-              {a.pdfChunks&&a.pags?.length>0&&<DepBtn T={T} variant="ghost" size="sm" onClick={()=>reimprimir(a)}>Reimprimir etiqueta</DepBtn>}
+      {apartados.length>0&&(<div>
+        {h2("Pedidos apartados",T.red,`${apartados.length} · quedan acá hasta que los reincorpores o los canceles`)}
+        <div style={caja}>
+          {apartados.map((a,i)=>(<div key={a.tandaId+"_"+a.idx} style={{display:"flex",gap:12,alignItems:"center",padding:"10px 16px",borderTop:i?`1px solid ${T.borderL||T.border}`:"none",borderLeft:`4px solid ${T.red}`,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:220}}><div style={{fontSize:DS.font.base,color:T.text}}><strong>#{a.numero}</strong> · {a.comprador} <span style={{color:T.textSm}}>· {a.clienteNombre} · tanda del {ghDepFechaLinda(a.fechaDespacho)}{a.tandaEstado==="entregada"?" (ya impresa)":""}</span></div><div style={{fontSize:DS.font.md,color:T.red,marginTop:2}}>{a.nota} <span style={{color:T.textSm}}>· {a.porNombre} · {ghDepFechaHora(a.at)}</span>{a.items.length?<span style={{color:T.textSm}}> · {a.items.join(", ")}</span>:null}</div></div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {a.pdfChunks&&a.pags?.length>0&&<DepBtn T={T} size="sm" ico="print" onClick={()=>reimprimir(a)}>Reimprimir etiqueta</DepBtn>}
               <DepBtn T={T} variant="success" size="sm" disabled={busy===a.tandaId} onClick={()=>resolver(a,"reincorporar")}>Reincorporar</DepBtn>
               <DepBtn T={T} variant="danger" size="sm" disabled={busy===a.tandaId} onClick={()=>resolver(a,"cancelar")}>Cancelar pedido</DepBtn>
             </div>
           </div>))}
         </div>
       </div>)}
-      {grupos.length===0&&<DSEmpty T={T} title="No hay nada para armar" subtitle={st.clientes.length?"Cuando un cliente mande etiquetas aparecen acá, agrupadas por día de despacho. Para probar, cargá una tanda con \"Cargar en nombre de…\"." :"Primero cargá tus clientes en la pestaña Clientes."}/>}
-      {grupos.map(([titulo,lista,color,sub])=>(<div key={titulo} style={{marginBottom:24}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,margin:"6px 0 10px"}}>
-          <span style={{width:8,height:8,borderRadius:99,background:color,boxShadow:`0 0 0 3px ${color}22`}}/>
-          <span style={{fontSize:DS.font.lg,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{titulo}</span>
-          <DepCount T={T}>{lista.length} tanda{lista.length!==1?"s":""} · {nPed(lista)} pedido{nPed(lista)!==1?"s":""}</DepCount>
-          {sub&&<span style={{fontSize:DS.font.sm,color:T.textSm}}>{sub}</span>}
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>{lista.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>
+      {grupos.length===0&&<div style={{...caja,borderStyle:"dashed",padding:"18px",marginTop:18,fontSize:DS.font.base,color:T.textSm}}>{st.clientes.length?<>No hay tandas esperando. Cuando un cliente mande etiquetas aparecen acá, agrupadas por día de despacho.{owner?" Para probar, usá \"Cargar tanda\".":""}</>:"Primero cargá tus clientes en la pestaña Clientes y pagos."}</div>}
+      {grupos.map(([titulo,lista,color])=>(<div key={titulo}>
+        {h2(titulo,color,`${pl(lista.length,"tanda")} · ${pl(nPed(lista),"pedido")}`)}
+        <div style={caja}>{lista.map((t,i)=><React.Fragment key={t.id}>{Tanda({t,primera:i===0})}</React.Fragment>)}</div>
       </div>))}
-      {hechas.length>0&&(<div>
-        <DepBtn T={T} variant="ghost" size="sm" onClick={()=>setVerHechas(v=>!v)}>{verHechas?"Ocultar impresas":`Ver impresas recientes (${hechas.length})`}</DepBtn>
-        {verHechas&&<div style={{display:"flex",flexDirection:"column",gap:10,marginTop:10}}>{hechas.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>}
+      {hechas.length>0&&(<div style={{marginTop:22}}>
+        <DepBtn T={T} size="sm" onClick={()=>setVerHechas(v=>!v)}>{verHechas?"Ocultar impresas":`Ver impresas recientes (${hechas.length})`}</DepBtn>
+        {verHechas&&<div style={{...caja,marginTop:10}}>{hechas.map((t,i)=><React.Fragment key={t.id}>{Tanda({t,primera:i===0})}</React.Fragment>)}</div>}
       </div>)}
       {nuevoPara&&<DepositoEnvioModal T={T} api={(a,b)=>api(a,{...b,clienteId:nuevoPara.cliente.id})} cliente={nuevoPara.cliente} especial={nuevoPara.especial} corte={st.corteHora??15} extraCfg={{extraItemsIncluidos:st.extraItemsIncluidos,extraItemPrecio:st.extraItemPrecio}} onClose={()=>setNuevoPara(null)} onDone={cargar}/>}
       {previa&&(<Modal T={T} open onClose={cerrarPrevia} title={`Vista previa · ${previa.t.clienteNombre} · ${previa.t.n} etiqueta${previa.t.n!==1?"s":""}`} width={920} zIndex={1700}>
@@ -22655,25 +22592,37 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
 }
 function DepositoHistorial({T,api}){
   const iS=InputStyle(T);
-  const [mes,setMes]=useState(hoyAR().slice(0,7)); const [d,setD]=useState(null); const [rk,setRk]=useState(0);
+  const [mes,setMes]=useState(hoyAR().slice(0,7)); const [d,setD]=useState(null); const [rk,setRk]=useState(0); const [q,setQ]=useState("");
   useEffect(()=>{ setD(null); api("historial",{mes}).then(setD).catch(e=>{ toast(e.message,"error"); setD({tandas:[]}); }); },[mes,rk]);
   async function eliminar(t){
     if(!(await appConfirm(`¿Eliminar la tanda de ${t.clienteNombre} del ${ghDepFechaLinda(t.fechaDespacho)} (${t.n} pedido${t.n!==1?"s":""})? Deja de contar en la cuenta del cliente. No se puede deshacer.`,{danger:true,okLabel:"Eliminar tanda"}))) return;
     try{ await api("tanda_eliminar",{id:t.id}); toast("Tanda eliminada","success"); setRk(k=>k+1); }catch(x){ toast(x.message,"error"); }
   }
-  const COL=ghDepCol(T);
+  const colCanal=t=>t.tipo==="especial"?T.purple:({andreani:T.red,ml:T.yellow,retiro:T.blue}[t.canal]||T.textMd);
+  const estadoDe=t=>t.estado==="cancelada"?["Cancelada",T.textSm]:t.estado==="pendiente"?["Pendiente",T.yellow]:["Impresa",T.green];
+  const qq=q.trim().toLowerCase();
   const ok=d?d.tandas.filter(t=>t.estado!=="cancelada"):[];
-  return (<DepSection T={T} title="Tandas por mes" desc={d?<span><strong style={{color:T.text}}>{ok.reduce((a,t)=>a+t.n,0)}</strong> pedidos en <strong style={{color:T.text}}>{ok.length}</strong> tandas ese mes.</span>:"Cargando…"} extra={<input type="month" style={{...iS,marginBottom:0,width:170}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>}>
+  const vis=d?d.tandas.filter(t=>!qq||String(t.clienteNombre||"").toLowerCase().includes(qq)):[];
+  const pildora={...iS,marginBottom:0,height:36,boxSizing:"border-box",borderRadius:DS.r.full,fontSize:DS.font.md};
+  return (<div>
+    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:12}}>
+      <div style={{flex:"1 1 220px",fontSize:DS.font.lg,color:T.textMd}}>{d?<><strong style={{color:T.text}}>{ok.reduce((a,t)=>a+t.n,0)}</strong> pedidos en <strong style={{color:T.text}}>{ok.length}</strong> tandas ese mes.</>:"Cargando…"}</div>
+      <div style={{position:"relative"}}>
+        <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",display:"flex",pointerEvents:"none"}}><DepIco d="search" size={14} color={T.textSm}/></span>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar cliente" style={{...pildora,padding:"0 14px 0 34px",width:200}}/>
+      </div>
+      <input type="month" style={{...pildora,padding:"0 12px",width:170}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>
+    </div>
     {!d? <div style={{display:"flex",justifyContent:"center",padding:40}}><Spinner size={24} color={T.accent}/></div>
-      : <DepTable T={T} minWidth={620} empty="Sin movimientos ese mes" rows={d.tandas.map(t=>({...t,_dim:t.estado==="cancelada"}))} cols={[
+      : <DepTable T={T} minWidth={640} empty={qq?"Ninguna tanda de ese cliente en el mes":"Sin movimientos ese mes"} rows={vis.map(t=>({...t,_dim:t.estado==="cancelada"}))} cols={[
           {h:"Despacho",w:"90px",render:t=>ghDepFechaLinda(t.fechaDespacho)},
           {h:"Cliente",w:"1.2fr",render:t=><strong>{t.clienteNombre}</strong>},
-          {h:"Tanda",w:"1.4fr",render:t=><span style={{color:T.textMd}}>{t.tipo==="especial"?(t.especial?.titulo||"Especial"):`${t.n} pedidos`} · {GH_DEP_CANAL[t.canal]||t.canal}</span>},
-          {h:"Estado",w:"150px",render:t=><DepDot T={T} color={COL[t.estado]||T.textSm}>{GH_DEP_ESTADO[t.estado]||t.estado}</DepDot>},
+          {h:"Tanda",w:"1.4fr",render:t=><span style={{display:"inline-flex",alignItems:"center",gap:8,color:T.textMd}}><span style={{width:8,height:8,borderRadius:99,background:colCanal(t),flexShrink:0}}/>{t.tipo==="especial"?(t.especial?.titulo||"Envío especial"):`${t.n} pedido${t.n!==1?"s":""} · ${GH_DEP_CANAL[t.canal]||t.canal}`}</span>},
+          {h:"Estado",w:"120px",render:t=>{ const [e,c]=estadoDe(t); return <DepDot T={T} color={c}>{e}</DepDot>; }},
           ...(d.tandas.some(t=>t.total!=null)?[{h:"Total",w:"110px",align:"right",render:t=>t.total!=null?fmtMoney(t.total):""}]:[]),
           {h:"",w:"110px",align:"right",render:t=><DepBtn T={T} variant="danger" size="sm" ico="trash" onClick={()=>eliminar(t)}>Eliminar</DepBtn>},
         ]}/>}
-  </DepSection>);
+  </div>);
 }
 // Detalle y estado de un movimiento de cuenta corriente (transferencia o ajuste).
 const ghDepMovDetalle=p=>{ if(p.tipo==="reverso") return "Devolución al saldo (modelo viejo)"+(p.nota?`: ${p.nota}`:""); if(p.tipo==="saldo") return "Saldo a favor aplicado (modelo viejo)"; if(p.fijado) return `Saldo corregido a ${p.fijado.a<-0.5?`${fmtMoney(-p.fijado.a)} a favor`:fmtMoney(Math.max(0,p.fijado.a))}`+(p.nota?`: ${p.nota}`:""); if(p.tipo==="ajuste") return (p.monto<0?"Cargo":"Pago registrado a mano")+(p.nota?`: ${p.nota}`:""); if(p.estado==="verificado") return `Transferencia${p.notaCliente?` · ${p.notaCliente}`:""}`; if(p.estado==="rechazado") return `Transferencia rechazada: ${p.nota}`; return `Transferencia informada${p.notaCliente?` · ${p.notaCliente}`:""}`; };
@@ -22701,7 +22650,7 @@ function DepositoCuentas({T,api,onClientes}){
   const [mes,setMes]=useState(hoyAR().slice(0,7)); const [res,setRes]=useState(null); const [hist,setHist]=useState(null); const [verTandas,setVerTandas]=useState(false);
   const [form,setForm]=useState(null); const [busy,setBusy]=useState(false);
   const [cuenta,setCuenta]=useState(null); const [aj,setAj]=useState(null); // aj: {cliente, tipo, monto, motivo}
-  const [filtro,setFiltro]=useState("");
+  const [filtro,setFiltro]=useState(""); const [sub,setSub]=useState("clientes"); const [cq,setCq]=useState("");
   const [bq,setBq]=useState(""); const [bres,setBres]=useState(null);
   // Vínculo con Growith del cliente que se está editando: se comprueba solo al abrir
   // (undefined = sin vínculo guardado / nada que comprobar, null = comprobando).
@@ -22795,75 +22744,71 @@ function DepositoCuentas({T,api,onClientes}){
         </div>
       </div>
   );
+  const clientesVis=d.clientes.filter(c=>!cq.trim()||String(c.nombre||"").toLowerCase().includes(cq.trim().toLowerCase())||String(c.growithEmail||"").toLowerCase().includes(cq.trim().toLowerCase()));
+  const pildora={...iS,marginBottom:0,height:36,boxSizing:"border-box",borderRadius:DS.r.full,fontSize:DS.font.md};
   return (<div>
-    <DepStats T={T} items={[
-      {l:"Te deben",v:fmtMoney(deudaTotal),ico:"wallet",c:deudaTotal>0?T.yellow:T.textSm,s:favorTotal>0?`${fmtMoney(favorTotal)} a favor de clientes`:"cargos menos pagos verificados"},
-      {l:"Por verificar",v:pendientes.length,ico:"inbox",c:pendientes.length?T.orange:T.textSm,s:pendientes.length?`${fmtMoney(pendTotal)} en transferencias`:"ninguna transferencia pendiente"},
-      {l:"Facturado este mes",v:fmtMoney(factMes),ico:"box",s:`${pedMes} pedido${pedMes!==1?"s":""} · ${activos.length} cliente${activos.length!==1?"s":""} activo${activos.length!==1?"s":""}`},
-      {l:"Cobrado este mes",v:fmtMoney(cobMes),ico:"check",c:cobMes>0?T.green:T.textSm,s:"transferencias verificadas y pagos a mano"},
-    ]}/>
-    {pendientes.length>0&&(<DepSection T={T} title="Transferencias por verificar" count={pendientes.length} desc="Lo que informaron los clientes y todavía no revisaste. Verificar la descuenta de la cuenta del cliente; rechazar la deja afuera.">
-      <DepTable T={T} minWidth={700} empty="" rows={pendientes} cols={[
-        {h:"Fecha",w:"70px",render:p=>ghDepFechaCorta(p.informadoAt)},
-        {h:"Cliente",w:"1fr",render:p=><div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}><DepAvatar T={T} name={p.clienteNombre} size={28}/><div style={{minWidth:0}}><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.clienteNombre}</strong>{p.notaCliente?depSub(T,p.notaCliente):null}</div></div>},
-        {h:"Monto",w:"120px",align:"right",render:p=><strong style={{fontSize:DS.font.lg}}>{fmtMoney(p.monto)}</strong>},
-        {h:"",w:"290px",align:"right",render:p=><div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-          {p.comp?<DepBtn T={T} variant="secondary" size="sm" onClick={()=>compCc(p)}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><DepIco d="file" size={13}/>Comprobante</span></DepBtn>:<span style={{fontSize:DS.font.sm,color:T.textSm,alignSelf:"center"}}>sin comprobante</span>}
-          <DepBtn T={T} variant="success" size="sm" disabled={busy} onClick={()=>verificarCc(p,true)}>Verificar</DepBtn>
-          <DepBtn T={T} variant="ghost" size="sm" disabled={busy} onClick={()=>verificarCc(p,false)}>Rechazar</DepBtn>
-        </div>},
-      ]}/>
-    </DepSection>)}
-    <DepSection T={T} title="Clientes" count={d.clientes.length} desc="Precio por pedido, lo que acumuló cada uno este mes y su saldo. Ver cliente abre su ficha: cuenta, pagos y cargos, datos y link del portal." extra={<DepBtn T={T} variant="primary" size="sm" onClick={()=>setForm({nombre:"",precio:"",growithEmail:"",contacto:"",nota:"",activo:true})}>Nuevo cliente</DepBtn>}>
-    <DepTable T={T} minWidth={860} empty="Todavía no hay clientes. Cargá el primero con su precio por pedido." rows={d.clientes.map(c=>({...c,_dim:!c.activo}))} cols={[
-      {h:"Cliente",w:"1.5fr",render:c=><div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}><DepAvatar T={T} name={c.nombre} size={30} color={c.activo?T.accent:T.textSm}/><div style={{minWidth:0}}><div style={{fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}{!c.activo&&<span style={{fontWeight:500,color:T.textSm}}> · inactivo</span>}</div>{depSub(T,c.growithUid?`Growith · ${c.growithEmail||"vinculado"}`:"Sin Growith · usa el link")}</div></div>},
+    <div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap",marginBottom:18}}>
+      <div style={{flex:"1 1 300px",minWidth:0}}>
+        <div style={{fontSize:DS.font["3xl"],fontWeight:800,color:T.text,letterSpacing:-0.8,lineHeight:1.15,fontVariantNumeric:"tabular-nums"}}>{deudaTotal>0?`Te deben ${fmtMoney(deudaTotal)}`:"Nadie te debe nada"}</div>
+        <div style={{fontSize:DS.font.lg,color:T.textMd,marginTop:6,lineHeight:1.45}}>Este mes facturaste <strong style={{color:T.text}}>{fmtMoney(factMes)}</strong> en {pedMes} pedido{pedMes!==1?"s":""} y cobraste <strong style={{color:cobMes>0?T.green:T.text}}>{fmtMoney(cobMes)}</strong>.{favorTotal>0?` Hay ${fmtMoney(favorTotal)} a favor de clientes.`:""}</div>
+      </div>
+      <DepBtn T={T} variant="primary" size="lg" ico="plus" onClick={()=>setForm({nombre:"",precio:"",growithEmail:"",contacto:"",nota:"",activo:true})}>Nuevo cliente</DepBtn>
+    </div>
+    {pendientes.length>0&&(<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>
+      <div style={{fontSize:DS.font.base,fontWeight:700,color:T.text}}>{pendientes.length} transferencia{pendientes.length!==1?"s":""} por verificar · {fmtMoney(pendTotal)}</div>
+      {pendientes.map(p=>(<div key={p.id} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 14px",background:T.yellow+"12",border:`1px solid ${T.yellow}44`,borderRadius:DS.r.xl}}>
+        <div style={{flex:"1 1 240px",minWidth:0,fontSize:DS.font.base,color:T.text,lineHeight:1.45}}><strong>{p.clienteNombre}</strong> avisó que transfirió <strong style={{fontVariantNumeric:"tabular-nums"}}>{fmtMoney(p.monto)}</strong><span style={{color:T.textMd}}> · {ghDepFechaCorta(p.informadoAt)}{p.notaCliente?` · ${p.notaCliente}`:""}</span></div>
+        {p.comp?<DepBtn T={T} size="sm" ico="file" onClick={()=>compCc(p)}>Comprobante</DepBtn>:<span style={{fontSize:DS.font.sm,color:T.textSm}}>sin comprobante</span>}
+        <DepBtn T={T} variant="success" size="sm" disabled={busy} onClick={()=>verificarCc(p,true)}>Verificar</DepBtn>
+        <DepBtn T={T} size="sm" disabled={busy} onClick={()=>verificarCc(p,false)}>Rechazar</DepBtn>
+      </div>))}
+    </div>)}
+    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:12}}>
+      <DepSeg T={T} size="md" value={sub} onChange={setSub} items={[["clientes",`Clientes · ${d.clientes.length}`],["pagos","Pagos y ajustes"],["mes","Por mes"]]}/>
+      <span style={{flex:1}}/>
+      {sub==="clientes"&&d.clientes.length>6&&(<div style={{position:"relative"}}>
+        <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",display:"flex",pointerEvents:"none"}}><DepIco d="search" size={14} color={T.textSm}/></span>
+        <input value={cq} onChange={e=>setCq(e.target.value)} placeholder="Buscar cliente" style={{...pildora,padding:"0 14px 0 34px",width:220}}/>
+      </div>)}
+      {sub==="pagos"&&<select style={{...pildora,padding:"0 12px",width:"auto"}} value={filtro} onChange={e=>setFiltro(e.target.value)}><option value="">Todos los clientes</option>{d.clientes.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}</select>}
+      {sub==="mes"&&<><input type="month" style={{...pildora,padding:"0 12px",width:170}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>{res&&res.clientes.length>0&&<DepBtn T={T} size="sm" ico="file" onClick={exportar}>Descargar resumen</DepBtn>}{hist&&hist.length>0&&<DepBtn T={T} size="sm" ico="file" onClick={exportarPedidos}>Descargar pedidos</DepBtn>}</>}
+    </div>
+    {sub==="clientes"&&(<DepTable T={T} minWidth={820} empty={d.clientes.length?"Ningún cliente coincide.":"Todavía no hay clientes. Cargá el primero con su precio por pedido."} rows={clientesVis.map(c=>({...c,_dim:!c.activo}))} cols={[
+      {h:"Cliente",w:"1.5fr",render:c=><div style={{minWidth:0}}><div style={{fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}{!c.activo&&<span style={{fontWeight:500,color:T.textSm}}> · inactivo</span>}</div>{depSub(T,c.growithUid?`Usa Growith · ${c.growithEmail||"vinculado"}`:"Sin Growith · entra por su link")}</div>},
       {h:"Precio",w:"80px",align:"right",render:c=><span style={{color:T.textMd}}>{fmtMoney(c.precio)}</span>},
       {h:"Este mes",w:"130px",align:"right",render:c=><div style={{textAlign:"right"}}><div style={{fontWeight:700}}>{fmtMoney(c.stats.mesTotal)}</div>{depSub(T,`${c.stats.mesPedidos} pedido${c.stats.mesPedidos!==1?"s":""}`)}</div>},
       {h:"Cobrado",w:"110px",align:"right",render:c=><span style={{color:c.stats.mesCobrado>0?T.green:T.textSm}}>{fmtMoney(c.stats.mesCobrado||0)}</span>},
-      {h:"Saldo",w:"150px",align:"right",render:c=>{ const s=saldoDe(c); return <div style={{textAlign:"right"}}><strong style={{color:s.col}}>{s.txt}</strong>{c.stats.porVerificar>0?depSub(T,`${fmtMoney(c.stats.porVerificar)} por verificar`):null}</div>; }},
-      {h:"",w:"120px",align:"right",render:c=><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
-        <DepBtn T={T} variant="secondary" size="sm" onClick={()=>abrir(c)}>Ver cliente</DepBtn>
-      </div>},
-    ]}/>
-    </DepSection>
-    <DepSection T={T} title="Historial de pagos y ajustes" desc="Transferencias verificadas o rechazadas y los pagos y cargos que registraste a mano." extra={<select style={{...iS,marginBottom:0,width:"auto"}} value={filtro} onChange={e=>setFiltro(e.target.value)}><option value="">Todos los clientes</option>{d.clientes.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}</select>}>
-      <DepTable T={T} minWidth={720} empty="Todavía no hay pagos ni ajustes" rows={movimientos} cols={[
-        {h:"Fecha",w:"70px",render:p=>ghDepFechaCorta(p.verificadoAt||p.informadoAt)},
-        {h:"Cliente",w:"1fr",render:p=><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.clienteNombre}</strong>},
-        {h:"Detalle",w:"1.6fr",render:p=><span style={{color:T.textMd,display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ghDepMovDetalle(p)}</span>},
-        {h:"Estado",w:"120px",render:p=>{ const e=ghDepMovEstado(T,p); return <DepDot T={T} color={e.c}>{e.t}</DepDot>; }},
-        {h:"Monto",w:"120px",align:"right",render:p=>ghDepMonto(T,p)},
-        {h:"",w:"120px",align:"right",render:p=>p.comp?<DepBtn T={T} variant="ghost" size="sm" onClick={()=>compCc(p)}>Comprobante</DepBtn>:null},
-      ]}/>
-    </DepSection>
-    <DepSection T={T} title="Facturación por mes" desc="Lo que se facturó a cada cliente en el mes elegido, lo que pagó en ese mes y su saldo de hoy." extra={<><input type="month" style={{...iS,marginBottom:0,width:170}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>{res&&res.clientes.length>0&&<DepBtn T={T} variant="secondary" size="sm" onClick={exportar}>Exportar resumen</DepBtn>}{hist&&hist.length>0&&<DepBtn T={T} variant="secondary" size="sm" onClick={exportarPedidos}>Exportar pedidos</DepBtn>}</>}>
-    {!res||!hist? <div style={{display:"flex",justifyContent:"center",padding:40}}><Spinner size={24} color={T.accent}/></div> : (<>
-      <div style={{display:"flex",gap:18,flexWrap:"wrap",alignItems:"baseline",marginBottom:12,fontSize:DS.font.base,color:T.textMd}}>
-        <span><strong style={{color:T.text,fontSize:DS.font.xl}}>{fmtMoney(tot("total"))}</strong> facturados</span>
-        <span><strong style={{color:T.green}}>{fmtMoney(tot("cobrado"))}</strong> cobrados en el mes</span>
-        <span style={{color:T.textSm}}>{tot("pedidos")} pedidos · {tot("tandas")} tandas{esteMes?" · mes en curso":""}</span>
-      </div>
+      {h:"Saldo",w:"150px",align:"right",render:c=>{ const s=saldoDe(c); return <div style={{textAlign:"right"}}><strong style={{color:s.n>0?T.text:s.col}}>{s.txt}</strong>{c.stats.porVerificar>0?depSub(T,`${fmtMoney(c.stats.porVerificar)} por verificar`):null}</div>; }},
+      {h:"",w:"120px",align:"right",render:c=><DepBtn T={T} size="sm" onClick={()=>abrir(c)}>Ver cliente</DepBtn>},
+    ]}/>)}
+    {sub==="pagos"&&(<DepTable T={T} minWidth={720} empty="Todavía no hay pagos ni ajustes" rows={movimientos} cols={[
+      {h:"Fecha",w:"70px",render:p=>ghDepFechaCorta(p.verificadoAt||p.informadoAt)},
+      {h:"Cliente",w:"1fr",render:p=><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.clienteNombre}</strong>},
+      {h:"Detalle",w:"1.6fr",render:p=><span style={{color:T.textMd,display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ghDepMovDetalle(p)}</span>},
+      {h:"Estado",w:"120px",render:p=>{ const e=ghDepMovEstado(T,p); return <DepDot T={T} color={e.c}>{e.t}</DepDot>; }},
+      {h:"Monto",w:"120px",align:"right",render:p=>ghDepMonto(T,p)},
+      {h:"",w:"130px",align:"right",render:p=>p.comp?<DepBtn T={T} size="sm" ico="file" onClick={()=>compCc(p)}>Comprobante</DepBtn>:null},
+    ]}/>)}
+    {sub==="mes"&&(!res||!hist? <div style={{display:"flex",justifyContent:"center",padding:40}}><Spinner size={24} color={T.accent}/></div> : (<>
+      <div style={{fontSize:DS.font.lg,color:T.textMd,marginBottom:12,lineHeight:1.45}}><strong style={{color:T.text,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(tot("total"))}</strong> facturados en {tot("pedidos")} pedidos ({tot("tandas")} tandas) y <strong style={{color:tot("cobrado")>0?T.green:T.text,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(tot("cobrado"))}</strong> cobrados{esteMes?". El mes sigue en curso.":"."}</div>
       <DepTable T={T} minWidth={640} empty="Sin tandas ese mes" rows={res.clientes.map(c=>({...c,id:c.clienteId}))} cols={[
         {h:"Cliente",w:"1.4fr",render:c=><strong>{c.nombre}</strong>},
         {h:"Pedidos",w:"90px",align:"right",render:c=>c.pedidos},
         {h:"Tandas",w:"80px",align:"right",render:c=>c.tandas},
         {h:"Facturado",w:"120px",align:"right",render:c=><strong>{fmtMoney(c.total)}</strong>},
         {h:"Cobrado en el mes",w:"130px",align:"right",render:c=><span style={{color:c.cobrado>0?T.green:T.textSm}}>{fmtMoney(c.cobrado)}</span>},
-        {h:"Saldo hoy",w:"130px",align:"right",render:c=>{ const s=ghDepSaldo(T,c.saldo); return <strong style={{color:s.col}}>{s.txt}</strong>; }},
+        {h:"Saldo hoy",w:"130px",align:"right",render:c=>{ const s=ghDepSaldo(T,c.saldo); return <strong style={{color:s.n>0?T.text:s.col}}>{s.txt}</strong>; }},
       ]}/>
       {hist.length>0&&(<div style={{marginTop:12}}>
-        <DepBtn T={T} variant="ghost" size="sm" onClick={()=>setVerTandas(v=>!v)}>{verTandas?"Ocultar las tandas del mes":`Ver las ${hist.length} tandas del mes`}</DepBtn>
+        <DepBtn T={T} size="sm" onClick={()=>setVerTandas(v=>!v)}>{verTandas?"Ocultar las tandas del mes":`Ver las ${hist.length} tandas del mes`}</DepBtn>
         {verTandas&&<div style={{marginTop:10}}><DepTable T={T} minWidth={760} empty="" rows={[...hist].sort((a,b)=>(b.fechaDespacho||"").localeCompare(a.fechaDespacho||""))} cols={[
           {h:"Despacho",w:"80px",render:t=>ghDepFechaLinda(t.fechaDespacho)},
           {h:"Cliente",w:"1.2fr",render:t=><div style={{minWidth:0}}><strong style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.clienteNombre}</strong>{depSub(T,`${t.tipo==="especial"?(t.especial?.titulo||"Especial"):`${t.n} pedidos`}${t.ajuste?` · ajuste ${fmtMoney(t.ajuste)}`:""}`)}</div>},
           {h:"Total",w:"110px",align:"right",render:t=><strong>{fmtMoney(t.total)}</strong>},
-          {h:"",w:"120px",align:"right",render:t=><div style={{display:"flex",gap:4,justifyContent:"flex-end",flexWrap:"wrap"}}>
-            <DepBtn T={T} variant="ghost" size="sm" onClick={()=>ajuste(t)}>Ajuste</DepBtn>
-          </div>},
+          {h:"",w:"120px",align:"right",render:t=><DepBtn T={T} size="sm" onClick={()=>ajuste(t)}>Ajuste</DepBtn>},
         ]}/></div>}
       </div>)}
-    </>)}
-    </DepSection>
+    </>))}
     {cuenta&&<DepositoCuentaModal T={T} api={api} cliente={cuenta} tabInicial={cuenta._tab||"cuenta"} reloadKey={reload} datos={formUI} onClose={()=>{ setCuenta(null); setForm(null); }} onAjustar={tipo=>{ setAj({cliente:cuenta,tipo,monto:"",motivo:""}); }}/>}
     {aj&&(<Modal T={T} open onClose={()=>setAj(null)} title={`${aj.tipo==="cobrar"?"Agregar un cargo":aj.tipo==="fijar"?"Corregir el saldo":"Registrar un pago"} · ${aj.cliente.nombre}`} width={440} zIndex={1650}>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -22893,7 +22838,7 @@ function DepositoIngresos({T,api,owner}){
   async function eliminar(g){ if(!(await appConfirm(`¿Borrar el ingreso de ${g.clienteNombre} del ${ghDepFechaLinda(g.fecha)}?`,{danger:true,okLabel:"Borrar"}))) return; try{ await api("ingreso_eliminar",{id:g.id}); cargar(); }catch(e){ toast(e.message,"error"); } }
   const lbl=t=><div style={{fontSize:DS.font.sm,fontWeight:600,color:T.textMd,marginBottom:5}}>{t}</div>;
   if(!d) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
-  return (<DepSection T={T} title="Mercadería recibida" desc="Últimos 90 días. Cada ingreso queda con quién lo recibió." extra={<DepBtn T={T} variant="primary" size="sm" onClick={()=>setForm({clienteId:clientes[0]?.id||"",fecha:hoyAR(),bultos:"",items:"",nota:""})}>Registrar ingreso</DepBtn>}>
+  return (<DepSection T={T} title="Mercadería recibida" desc="Últimos 90 días. Cada ingreso queda con quién lo recibió." extra={<DepBtn T={T} variant="primary" ico="plus" onClick={()=>setForm({clienteId:clientes[0]?.id||"",fecha:hoyAR(),bultos:"",items:"",nota:""})}>Registrar ingreso</DepBtn>}>
     <DepTable T={T} minWidth={640} empty="Todavía no registraste mercadería. Cuando llegue una caja de un cliente, anotá cuántos bultos y qué trae." rows={d} cols={[
       {h:"Fecha",w:"80px",render:g=>ghDepFechaLinda(g.fecha)},
       {h:"Cliente",w:"1fr",render:g=><strong>{g.clienteNombre}</strong>},
@@ -22931,7 +22876,7 @@ function DepositoAccesos({T,api,panel}){
   }
   if(!d) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
   const fila=(titulo,desc,tok,cual,at)=>(<Card T={T} padding="lg" style={{marginBottom:14}}>
-    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}><DepTile T={T} color={cual==="pc"?T.blue:T.accent} ico={cual==="pc"?"scan":"key"} size={30}/><div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>{titulo}</div></div>
+    <div style={{marginBottom:4}}><div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>{titulo}</div></div>
     <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:12,lineHeight:1.6}}>{desc}</div>
     {tok?(<>
       <input readOnly value={link(tok)} onFocus={e=>e.target.select()} style={{...iS,marginBottom:10,fontFamily:"monospace",fontSize:DS.font.md}}/>
@@ -22946,13 +22891,13 @@ function DepositoAccesos({T,api,panel}){
   </Card>);
   return (<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(340px,1fr))",gap:14,alignItems:"start"}}>
     {cfg&&(<Card T={T} padding="lg">
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}><DepTile T={T} color={T.green} ico="bank" size={30}/><div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>Datos para transferir</div></div>
+      <div style={{marginBottom:4}}><div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>Datos para transferir</div></div>
       <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:10,lineHeight:1.6}}>Lo ve el cliente al informar un pago. CBU o alias, titular y CUIT.</div>
       <textarea style={{...iS,minHeight:70,resize:"vertical"}} placeholder={"Alias: deposito.soluna\nTitular: …\nCUIT: …"} value={cfg.datosPago} onChange={e=>setCfg(c=>({...c,datosPago:e.target.value}))}/>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6,marginTop:8}}><DepTile T={T} color={T.orange} ico="clock" size={30}/><div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>Hora de corte</div></div>
+      <div style={{marginBottom:4,marginTop:18,paddingTop:16,borderTop:`1px solid ${T.borderL||T.border}`}}><div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>Hora de corte</div></div>
       <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:10,lineHeight:1.6}}>Las tandas que llegan antes de esta hora salen el mismo día; después, al día siguiente. El cliente lo ve al enviar.</div>
       <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:12}}><input style={{...iS,width:90,marginBottom:0}} type="number" min="0" max="23" value={cfg.corteHora} onChange={e=>setCfg(c=>({...c,corteHora:e.target.value}))}/><span style={{fontSize:DS.font.md,color:T.textMd}}>:00 hs</span></div>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6,marginTop:12}}><DepTile T={T} color={T.purple} ico="box" size={30}/><div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>Cobro por unidad</div></div>
+      <div style={{marginBottom:4,marginTop:18,paddingTop:16,borderTop:`1px solid ${T.borderL||T.border}`}}><div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>Cobro por unidad</div></div>
       <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:10,lineHeight:1.6}}>Un pedido con hasta estas unidades paga el precio por paquete. Con más unidades, paga el precio por unidad por TODAS sus unidades y NO paga el precio por paquete: es uno u otro. Con 5 incluidas y $500 por unidad, un pedido de 6 unidades paga $3.000 y uno de 8 paga $4.000. Se calcula con los productos de cada pedido.</div>
       <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
         <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textMd}}>Incluidas<input style={{...iS,width:70,marginBottom:0}} type="number" min="0" max="999" value={cfg.extraItemsIncluidos} onChange={e=>setCfg(c=>({...c,extraItemsIncluidos:e.target.value}))}/></label>
