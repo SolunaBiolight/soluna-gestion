@@ -10193,6 +10193,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const [esquinaModal,setEsquinaModal]=useState(null); // {orders:[...]} pedidos con esquina excluidos del export
   const [orderDetail,setOrderDetail]=useState(null);
   const [skuBlob,setSkuBlob]=useState(null);
+  // "Todo de una" en rótulos con SKU: el botón principal (Enviar al depósito / Descargar) también manda los seguimientos a la tienda.
+  const [skuSegAuto,setSkuSegAuto]=useState(()=>{ try{ return localStorage.getItem("growith_sku_segauto")!=="0"; }catch(_){ return true; } });
+  const toggleSkuSegAuto=()=>setSkuSegAuto(v=>{ try{ localStorage.setItem("growith_sku_segauto",v?"0":"1"); }catch(_){ } return !v; });
   const [skuGenerating,setSkuGenerating]=useState(false);
   const [skuProgress,setSkuProgress]=useState(0);
   const [tabCounts,setTabCounts]=useState({empaquetar:null,enviar:null});
@@ -13441,30 +13444,35 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 {/* PASO 1 — Generar / Descargar el PDF con SKUs. UNA sola card en un
                     lugar FIJO: cambia el botón según el estado, así la acción
                     principal nunca salta de posición al terminar de procesar. */}
-                {found.length>0&&!skuGenerating&&(
+                {found.length>0&&!skuGenerating&&(()=>{ const segPendN=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]).length; return (
                   <div style={{background:skuBlob?`linear-gradient(135deg,${T.green}14,${T.green}06)`:`linear-gradient(135deg,${T.accentSolid}14,${T.accentSolid}06)`,border:`1.5px solid ${(skuBlob?T.green:T.accentSolid)}55`,borderRadius:14,padding:"16px 20px",marginBottom:12,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",animation:"growith-fadeIn 0.3s ease"}}>
                     <div style={{flex:1,minWidth:220}}>
                       <div style={{fontSize:10,fontWeight:800,letterSpacing:0.8,textTransform:"uppercase",color:skuBlob?T.green:T.accent,marginBottom:4}}>Paso 1 · PDF con SKUs</div>
                       <div style={{fontSize:14,fontWeight:800,color:T.text,marginBottom:2}}>{skuBlob?(depositoCliente?"PDF listo para mandar al depósito":"PDF listo para descargar"):"Resultados listos"}</div>
-                      <div style={{fontSize:12,color:T.textSm}}>{found.length} rótulos {skuBlob?"con SKUs escritos":"encontrados"}{notFound.length>0?` · ${notFound.length} sin match`:""}{skuBlob&&depositoCliente?" · al enviarlo también se mandan los seguimientos a tu tienda":""}</div>
+                      <div style={{fontSize:12,color:T.textSm}}>{found.length} rótulos {skuBlob?"con SKUs escritos":"encontrados"}{notFound.length>0?` · ${notFound.length} sin match`:""}</div>
+                      {skuBlob&&segPendN>0&&(<label onClick={toggleSkuSegAuto} style={{display:"inline-flex",alignItems:"center",gap:8,marginTop:10,fontSize:12,color:T.textMd,cursor:"pointer",userSelect:"none"}}>
+                        <DSToggle T={T} active={skuSegAuto} onToggle={()=>{}}/>
+                        <span>{skuSegAuto?`Todo de una: también se envían los ${segPendN} seguimientos a tu tienda`:"Enviar los seguimientos a la tienda en el mismo paso"}</span>
+                      </label>)}
                     </div>
-                    {skuBlob&&depositoCliente&&<AsyncButton onClick={enviarDepositoSku} title="Manda este PDF con los SKU a la cola del depósito y envía los seguimientos a tu tienda" style={{...BtnPrimary(T),background:T.isDark?"#16a34a":"#15803d",borderColor:T.isDark?"#16a34a":"#15803d",color:"#fff",boxShadow:`0 6px 22px ${T.green}44`,fontSize:15,fontWeight:800,padding:"14px 26px",display:"flex",alignItems:"center",gap:9,flexShrink:0,order:2}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Enviar al depósito</AsyncButton>}
+                    {skuBlob&&depositoCliente&&<AsyncButton onClick={enviarDepositoSku} title="Manda este PDF con los SKU a la cola del depósito y envía los seguimientos a tu tienda" style={{...BtnPrimary(T),background:T.isDark?"#16a34a":"#15803d",borderColor:T.isDark?"#16a34a":"#15803d",color:"#fff",boxShadow:`0 6px 22px ${T.green}44`,fontSize:15,fontWeight:800,padding:"14px 26px",display:"flex",alignItems:"center",gap:9,flexShrink:0,order:2}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>{skuSegAuto&&segPendN>0?"Enviar al depósito y avisar":"Enviar al depósito"}</AsyncButton>}
                     {skuBlob
                       ? <button onClick={()=>{
                           const url=URL.createObjectURL(skuBlob);
                           const a=document.createElement("a");
                           a.href=url;a.download=`rotulos-con-sku-${hoyAR()}.pdf`;a.click();
                           URL.revokeObjectURL(url);
+                          if(!depositoCliente&&skuSegAuto&&segPendN>0) sendAllTracking();
                         }} style={depositoCliente?{...BtnSecondary(T),fontSize:14,padding:"12px 20px",display:"flex",alignItems:"center",gap:8,flexShrink:0,order:1}:{...BtnPrimary(T),background:`${T.green}1f`,borderColor:`${T.green}88`,color:T.green,boxShadow:`0 0 0 1px ${T.green}15, 0 4px 16px ${T.green}22`,fontSize:14,padding:"12px 24px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                          Descargar PDF
+                          {!depositoCliente&&skuSegAuto&&segPendN>0?"Descargar y enviar seguimientos":"Descargar PDF"}
                         </button>
                       : <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}}
                           style={{...BtnPrimary(T),fontSize:14,padding:"12px 24px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                           Generar PDF con SKUs
                         </AsyncButton>}
                   </div>
-                )}
+                ); })()}
                 {/* PASO 2 — Enviar seguimientos desde el MISMO PDF. Siempre debajo
                     del Paso 1, siempre en el mismo lugar. */}
                 {(()=>{
@@ -14314,7 +14322,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
       {depEnvio&&depositoCliente&&<DepositoEnvioModal T={T} api={depApi} cliente={depositoCliente} prefill={depEnvio} corte={depositoCfg?.corteHora??15} extraCfg={depositoCfg} onClose={()=>setDepEnvio(null)} onDone={()=>{ const seg=depEnvio?.seg||[];
         // Flujo Excel (rótulos con SKU): al quedar la tanda en el depósito se suben solos los seguimientos del mismo PDF.
-        if(depEnvio?.segPdf){ const pend=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]).length; if(pend){ toast(`Tanda enviada al depósito. Enviando ${pend} seguimiento${pend!==1?"s":""} a tu tienda…`,"success"); sendAllTracking(); } return; }
+        if(depEnvio?.segPdf){ if(!skuSegAuto){ toast("Tanda enviada al depósito","success"); return; } const pend=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]).length; if(pend){ toast(`Tanda enviada al depósito. Enviando ${pend} seguimiento${pend!==1?"s":""} a tu tienda…`,"success"); sendAllTracking(); } return; }
         if(seg.length){ toast(`Tanda enviada al depósito. Avisando a ${seg.length} comprador${seg.length!==1?"es":""}…`,"success"); enviarSeguimientosApi(seg); } }}/>}
 
       {/* Modal: pedidos con esquina excluidos del export */}

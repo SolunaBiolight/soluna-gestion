@@ -256,6 +256,7 @@ growith_tt_acc_{uid}       → id de la cuenta publicitaria de TikTok elegida (A
 growith_tt_be_{uid}        → número, ROAS break-even de referencia de la sección TikTok Ads (2)
 growith_tt_pub_{uid}       → JSON borrador del publicador "Publicar en TikTok" (objetivo, nombre, URL, presupuesto, píxel, identidad, texto base; sin videos). Se limpia al publicar
 growith_reclamos_vista     → "prioridad" | "etapa": vista del tablero de Reclamos (Qué hacer / Por etapa)
+growith_sku_segauto        → "1" | "0" (por defecto prendido): en rótulos con SKU del flujo Excel, el botón principal ("Enviar al depósito y avisar" para clientes del depósito, "Descargar y enviar seguimientos" para el resto) manda también los seguimientos del mismo PDF a la tienda; apagado, cada cosa va por su botón
 growith_depo_operario      → nombre de quien opera en la PC del depósito (panel por token #/deposito/panel/<pcToken>); viaja en cada acción y queda en el historial de la tanda
 ```
 Patrón SWR: helpers globales `ghSwrGet(key,maxAge)` / `ghSwrSet(key,data)` — pintar cache al instante, refrescar de fondo, y si el refresco falla con cache pintada no romper la vista.
