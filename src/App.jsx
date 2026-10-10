@@ -1285,8 +1285,8 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
   );
 }
 
-// Fila del panel de Envíos: fila redondeada y sin bordes (cuarta versión, 10/oct/2026 noche). Inicial del
-// cliente en un círculo, nombre + pedido y localidad, productos en píldoras, tipo de envío (domicilio /
+// Fila del panel de Envíos: fila redondeada y sin bordes (cuarta versión, 10/oct/2026 noche). El número de
+// pedido es lo principal (grande, en violeta), después cliente y localidad, productos en píldoras, tipo de envío (domicilio /
 // sucursal) con su punto de color y, a la derecha, total y costo de la etiqueta. El estado solo se muestra
 // en la búsqueda. Pura: todo llega por props (se puede ver sin sesión con el arnés /?env=1).
 const GH_ENVIO_GRID="24px minmax(230px,1.15fr) minmax(220px,1.35fr) minmax(190px,1fr) 150px";
@@ -1300,7 +1300,6 @@ function EnvioFilaCard({T,o,sel,exportedOn,ec,canje,cot,nombre,onToggle,onOpen,i
   const pdNom=pd&&ghNrmSuc(pd.name).split(" ").some(w=>w&&!GH_SUC_GEN.has(w))?pd.name:"";
   const pdTxt=[pdNom,pdDir,pdCp?`CP ${pdCp}`:""].filter(Boolean).join(" · ");
   const prods=o.productos||[];
-  const ini=String(o.comprador||"?").trim().split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase()||"?";
   const sub={fontSize:DS.font.md,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"};
   return (
     <div onClick={onOpen} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
@@ -1312,13 +1311,13 @@ function EnvioFilaCard({T,o,sel,exportedOn,ec,canje,cot,nombre,onToggle,onOpen,i
         </div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
-        <span style={{width:38,height:38,borderRadius:99,background:T.accentSolid+"22",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:DS.font.md,fontWeight:800,flexShrink:0,letterSpacing:0.2}}>{ini}</span>
+        <span style={{minWidth:76,fontSize:DS.font.xl+1,fontWeight:800,color:T.accent,letterSpacing:-0.3,fontVariantNumeric:"tabular-nums",flexShrink:0}}>#{o.numero}</span>
         <div style={{minWidth:0}}>
           <div style={{display:"flex",alignItems:"baseline",gap:8,minWidth:0}}>
-            <span style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</span>
+            <span style={{fontSize:DS.font.lg,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</span>
             {exportedOn&&<span title="Ya salió en un Excel" style={{fontSize:DS.font.xs,fontWeight:700,color:T.green,whiteSpace:"nowrap",flexShrink:0}}>✓ {exportedOn}</span>}
           </div>
-          <div style={sub}><span style={{color:T.textMd,fontWeight:600,fontVariantNumeric:"tabular-nums"}}>#{o.numero}</span> · {[o.localidad||o.ciudad,o.provincia].filter(Boolean).join(", ")||"—"}{verEstado&&<span> · <span style={{color:ec.dot,fontWeight:600}}>{o.estadoEnvio}</span></span>}</div>
+          <div style={sub}>{[o.localidad||o.ciudad,o.provincia].filter(Boolean).join(", ")||"—"}{verEstado&&<span> · <span style={{color:ec.dot,fontWeight:600}}>{o.estadoEnvio}</span></span>}</div>
         </div>
       </div>
       <div title={prods.map(p=>`${Number(p.cantidad)||1}x ${p.nombre}`).join("\n")} style={{minWidth:0,display:"flex",gap:6,alignItems:"center",overflow:"hidden"}}>
@@ -10527,6 +10526,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     let base=tabOrders;
     if(filterTipoEnvio==="domicilio") base=base.filter(o=>!isSucursalOrder(o));
     if(filterTipoEnvio==="sucursal") base=base.filter(o=>isSucursalOrder(o));
+    // (el desplegable "Medio de envío" se quitó de la pantalla el 10/oct/2026; filterMedio queda siempre vacío)
     if(filterMedio) base=base.filter(o=>String(o.medioEnvio||"--")===filterMedio);
     if(searchEnvios){
       const s=searchEnvios.toLowerCase();
@@ -13010,10 +13010,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 </div>
               )}
             </div>
-            {/* Tabs */}
-            <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
-              {/* Segmented control */}
-              <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:0}}>
+            {/* Arriba: las dos pestañas del flujo (grandes, la activa en violeta sólido) y el buscador siempre a la vista */}
+            {(()=>{
+              const buscar=async()=>{ const qv=buscarQuery.trim(); if(qv.length<2) return;
+                if(tabEnvio!=="buscar"){ setTabEnvio("buscar"); setSelected(new Map()); setSearchEnvios(""); setTabOrders([]); }
+                setBuscarLoading(true);
+                try{ const r=await authFetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(qv)}`); const data=await r.json().catch(()=>null);
+                  if(r.ok&&Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data)); else toast(typeof data?.error==="string"?data.error:"La búsqueda falló — probá de nuevo","error",5000);
+                }catch(ex){ toast("La búsqueda falló (red) — probá de nuevo","error",5000); }
+                setBuscarLoading(false); };
+              const salirBusqueda=()=>{ setBuscarQuery(""); if(tabEnvio==="buscar"){ setTabEnvio("empaquetar"); setSelected(new Map()); fetchTabOrders("empaquetar"); } };
+              return (
+            <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+              <div style={{display:"flex",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:4,gap:2}}>
                 {[
                   {id:"empaquetar",label:"Por empaquetar"},
                   {id:"enviar",    label:"Por enviar"},
@@ -13021,73 +13030,32 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   const isActive=tabEnvio===t.id;
                   return (
                     <button key={t.id} onClick={()=>{
-                      setTabEnvio(t.id);setSelected(new Map());setSearchEnvios("");
+                      setTabEnvio(t.id);setSelected(new Map());setSearchEnvios("");setBuscarQuery("");
                       fetchTabOrders(t.id);if(!tabCounts[t.id])fetchTabCounts(user?.uid);
-                    }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,fontSize:13,fontWeight:isActive?600:400,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",boxShadow:isActive?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>
+                    }} style={{display:"inline-flex",alignItems:"center",gap:9,height:42,padding:"0 20px",borderRadius:DS.r.full,fontSize:15,fontWeight:isActive?700:500,border:"none",background:isActive?T.accentSolid:"transparent",color:isActive?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.14s",whiteSpace:"nowrap"}}>
                       {t.label}
-                      <span style={{background:isActive?T.accent+"15":T.border+"66",color:isActive?T.accent:T.textMd,fontSize:10,fontWeight:800,borderRadius:DS.r.full,padding:"0 7px",minWidth:20,height:18,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>
+                      <span style={{background:isActive?"rgba(255,255,255,.22)":T.surface,color:isActive?"#fff":T.textMd,fontSize:12,fontWeight:800,borderRadius:DS.r.full,padding:"0 8px",minWidth:24,height:22,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>
                         {counts[t.id]===null?"·":counts[t.id]}
                       </span>
                     </button>
                   );
                 })}
               </div>
-              {/* Lupa: la búsqueda no es un estado del flujo, va aparte */}
-              <button onClick={()=>{
-                if(tabEnvio==="buscar"){setTabEnvio("empaquetar");setSelected(new Map());fetchTabOrders("empaquetar");}
-                else{setTabEnvio("buscar");setSelected(new Map());setSearchEnvios("");setBuscarQuery("");setTabOrders([]);}
-              }} title={tabEnvio==="buscar"?"Cerrar búsqueda":"Buscar pedidos"}
-                style={{width:34,height:34,display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:9,border:`1px solid ${tabEnvio==="buscar"?T.accentSolid:T.border}`,background:tabEnvio==="buscar"?T.accentSolid+"18":"transparent",color:tabEnvio==="buscar"?T.accent:T.textMd,cursor:"pointer",flexShrink:0}}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              </button>
+              <div style={{flex:"1 1 280px",maxWidth:460,height:50,boxSizing:"border-box",display:"flex",alignItems:"center",gap:10,padding:"0 8px 0 18px",background:T.card,border:`1px solid ${tabEnvio==="buscar"?T.accentSolid:T.border}`,borderRadius:DS.r.full,minWidth:0}}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={tabEnvio==="buscar"?T.accent:T.textSm} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input value={buscarQuery} onChange={e=>setBuscarQuery(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); buscar(); } if(e.key==="Escape"){ e.stopPropagation(); salirBusqueda(); } }} placeholder="Buscar pedido, nombre o email" style={{flex:1,minWidth:0,border:"none",outline:"none",background:"transparent",color:T.text,fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                {(buscarQuery||tabEnvio==="buscar")&&<button onClick={salirBusqueda} title="Cerrar la búsqueda" style={{width:30,height:30,borderRadius:99,border:"none",background:"transparent",color:T.textSm,cursor:"pointer",fontSize:15,fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>✕</button>}
+                {buscarQuery.trim().length>=2&&<button onClick={buscar} style={{height:36,padding:"0 16px",borderRadius:DS.r.full,border:"none",background:T.accentSolid,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>Buscar</button>}
+              </div>
               {tabRefreshing&&(
                 <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,fontWeight:500,color:T.textSm}}>
-                  <span style={{width:10,height:10,border:`2px solid ${T.accent}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite",display:"inline-block",flexShrink:0}}/>
+                  <span style={{width:10,height:10,border:`2px solid ${T.accent}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>
                   Actualizando pedidos…
                 </span>
               )}
-            </div>
+            </div>); })()}
 
             {/* El aviso de saldo bajo vive en el chip del topbar (monto en color): sin banner ni "te alcanza para N". */}
-
-            {/* Panel buscar */}
-            {tabEnvio==="buscar"&&(
-              <div style={{marginBottom:16}}>
-                <div style={{display:"flex",gap:8,marginBottom:12}}>
-                  <div style={{position:"relative",flex:1}}>
-                    <svg style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,pointerEvents:"none"}} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    <input
-                      autoFocus
-                      placeholder="Número de pedido, nombre o email..."
-                      value={buscarQuery}
-                      onChange={e=>setBuscarQuery(e.target.value)}
-                      onKeyDown={async e=>{
-                        if(e.key==="Enter"&&buscarQuery.trim().length>=2){
-                          setBuscarLoading(true);
-                          try{
-                            const r=await authFetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(buscarQuery.trim())}`);
-                            const data=await r.json().catch(()=>null);
-                            if(r.ok&&Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data));
-                            else toast(typeof data?.error==="string"?data.error:"La búsqueda falló — probá de nuevo","error",5000);
-                          }catch(ex){ toast("La búsqueda falló (red) — probá de nuevo","error",5000); }
-                          setBuscarLoading(false);
-                        }
-                      }}
-                      style={{...iS,paddingLeft:40,fontSize:14}}
-                    />
-                  </div>
-                  <AsyncButton onClick={async()=>{
-                    if(!buscarQuery.trim()) return;
-                    const r=await authFetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(buscarQuery.trim())}`);
-                    const data=await r.json().catch(()=>null);
-                    if(r.ok&&Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data));
-                    else throw new Error(typeof data?.error==="string"?data.error:"La búsqueda falló — probá de nuevo");
-                  }} style={{...BtnPrimary(T),fontSize:13}}>
-                    Buscar
-                  </AsyncButton>
-                </div>
-              </div>
-            )}
 
             {/* Acciones (solo cuando no es buscar o hay resultados) */}
             {/* Dos filas fijas (pedido 23/9): arriba filtros + contador; abajo selección
@@ -13096,18 +13064,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             {(tabEnvio!=="buscar"||tabOrders.length>0)&&(
             <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
             <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-              {tabEnvio!=="buscar"&&<div style={{display:"flex",gap:2,background:T.surface,borderRadius:DS.r.full,padding:3}}>
+              {tabEnvio!=="buscar"&&<div style={{display:"flex",gap:2,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:3}}>
                 {[["todos","Todos"],["domicilio","Domicilio"],["sucursal","Sucursal"]].map(([v,l])=>(
-                  <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Map());}} style={{padding:"6px 14px",fontSize:13,border:"none",borderRadius:DS.r.full,background:filterTipoEnvio===v?T.card:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?600:500,transition:"all 0.1s",boxShadow:filterTipoEnvio===v?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
+                  <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Map());}} style={{padding:"7px 16px",fontSize:13,border:"none",borderRadius:DS.r.full,background:filterTipoEnvio===v?T.surface:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?700:500,transition:"all 0.1s",boxShadow:"none",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
                 ))}
               </div>}
-              {tabEnvio!=="buscar"&&mediosEnvio.length>1&&(
-                <select value={mediosEnvio.some(([k])=>k===filterMedio)?filterMedio:""} onChange={e=>{setFilterMedio(e.target.value);setSelected(new Map());}} title="Filtrar por medio de envío"
-                  style={{...iS,marginBottom:0,width:"auto",maxWidth:260,fontSize:12,padding:"6px 10px",color:filterMedio?T.accent:T.textMd,borderColor:filterMedio?T.accent:T.border}}>
-                  <option value="">Medio de envío: todos</option>
-                  {mediosEnvio.map(([k,n])=><option key={k} value={k}>{k} ({n})</option>)}
-                </select>
-              )}
               <span title="Atajos: Ctrl+A selecciona todos · Shift+click selecciona un rango · Esc limpia la selección · Enter exporta"
                 style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"flex",gap:10,alignItems:"center",cursor:"help"}}>
                 <span>{exportables.length} {exportables.length===1?"pedido":"pedidos"}{totalPages>1?` · pág. ${orderPage+1}/${totalPages}`:""}</span>
