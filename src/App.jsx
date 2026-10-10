@@ -1285,6 +1285,63 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
   );
 }
 
+// Fila del panel de Envíos como tarjeta, con el mismo lenguaje de las tandas del depósito: recuadro del
+// tipo de envío, pedido y cliente, a dónde va, productos como SKU ×cantidad, estado con punto de color y
+// a la derecha el total con el costo de la etiqueta. Pura: todo llega por props (se puede ver sin sesión).
+function EnvioFilaCard({T,o,sel,exportedOn,ec,canje,cot,nombre,onToggle,onOpen,idx=0}){
+  const [h,setH]=useState(false);
+  const cTipo=o.esSucursal?T.purple:T.blue;
+  const grande=typeof window!=="undefined"&&window.innerWidth<=760;
+  const pd=o.esSucursal?o.pickupDetails:null, ad=pd?.address||{};
+  const pdDir=pd?[ghStripUnidad(ad.address||""),String(ad.number||"").replace(/\D.*/,"")].filter(Boolean).join(" ").trim():"";
+  const pdCp=pd?(ad.zipcode||ad.zip_code||""):"";
+  const pdNom=pd&&ghNrmSuc(pd.name).split(" ").some(w=>w&&!GH_SUC_GEN.has(w))?pd.name:"";
+  const pdTxt=[pdNom,pdDir,pdCp?`CP ${pdCp}`:""].filter(Boolean).join(" · ");
+  const prods=o.productos||[];
+  return (
+    <div onClick={onOpen} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+      style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"12px 16px",background:sel?T.accentSolid+"12":h?T.surface:T.card,border:`1px solid ${sel?T.accentSolid+"99":h?T.textSm:T.border}`,borderRadius:DS.r["2xl"],cursor:"pointer",transition:"background .12s, border-color .12s",animation:"growith-fadeIn 0.2s ease both",animationDelay:`${Math.min(idx*30,300)}ms`}}>
+      {/* En mobile el target es más grande (dedo, no mouse): padding invisible alrededor del check */}
+      <div onClick={e=>{e.stopPropagation();onToggle(e);}} style={{width:32,height:32,margin:-7,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1,cursor:"pointer"}}>
+        <div style={{width:grande?22:18,height:grande?22:18,borderRadius:5,border:`1.5px solid ${sel?T.accentSolid:T.textSm}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          {sel&&<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}
+        </div>
+      </div>
+      <span title={o.esSucursal?"Retira en sucursal o punto":"Entrega a domicilio"} style={{width:40,height:40,borderRadius:DS.r.xl,background:cTipo+"1a",border:`1px solid ${cTipo}3d`,color:cTipo,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+        {o.esSucursal
+          ?<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9h18l-1.5-5h-15L3 9z"/><path d="M4 9v11h16V9"/><path d="M9 20v-6h6v6"/></svg>
+          :<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>}
+      </span>
+      <div style={{flex:"1 1 210px",minWidth:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+          <span style={{fontSize:DS.font.lg,fontWeight:800,color:T.accent,fontVariantNumeric:"tabular-nums",flexShrink:0}}>#{o.numero}</span>
+          <span style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</span>
+          {exportedOn&&<span title="Ya salió en un Excel" style={{fontSize:DS.font.xs,fontWeight:700,color:T.green,whiteSpace:"nowrap",flexShrink:0}}>✓ {exportedOn}</span>}
+        </div>
+        <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[o.localidad||o.ciudad,o.provincia].filter(Boolean).join(", ")||"—"}</div>
+      </div>
+      <div style={{flex:"1 1 190px",minWidth:0}}>
+        <div title={o.medioEnvio||""} style={{display:"flex",alignItems:"center",gap:6,fontSize:DS.font.md,color:T.textMd,minWidth:0}}>
+          <strong style={{color:T.text,fontWeight:600,flexShrink:0}}>{o.esSucursal?"Sucursal":"Domicilio"}</strong>
+          <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.medioEnvio||""}</span>
+          {pd&&<svg aria-label="Puede requerir confirmar sucursal al exportar" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
+        </div>
+        {pdTxt&&<div title={[pd.name,pdDir,ad.locality||ad.city,pdCp?`CP ${pdCp}`:""].filter(Boolean).join(" · ")} style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pdTxt}</div>}
+        {canje&&<span title={`Este pedido es el canje de ${canje.influencer||"un influencer"}${canje.usuario?" (@"+canje.usuario+")":""} — la etiqueta y el tracking se le cargan solos al canje`} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:DS.font.sm,fontWeight:700,color:T.purple,marginTop:2,maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{width:6,height:6,borderRadius:99,background:T.purple,flexShrink:0}}/>Canje · {canje.influencer||canje.usuario||""}</span>}
+      </div>
+      <div title={prods.map(p=>`${Number(p.cantidad)||1}x ${p.nombre}`).join("\n")} style={{flex:"1.2 1 220px",minWidth:0,display:"flex",gap:5,alignItems:"center",flexWrap:"wrap",maxHeight:54,overflow:"hidden"}}>
+        {prods.slice(0,4).map((p,pi)=>(<span key={pi} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px",borderRadius:DS.r.md,background:T.surface,border:`1px solid ${T.border}`,fontSize:DS.font.md,fontWeight:600,color:T.text,whiteSpace:"nowrap",maxWidth:190,minWidth:0}}><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{p.sku||(nombre?nombre(p.nombre):p.nombre)}</span>{(Number(p.cantidad)||1)>1&&<strong style={{color:T.accent,fontVariantNumeric:"tabular-nums"}}>×{Number(p.cantidad)}</strong>}</span>))}
+        {prods.length>4&&<span style={{fontSize:DS.font.md,color:T.textSm}}>+{prods.length-4}</span>}
+      </div>
+      <span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:DS.font.base,fontWeight:600,color:T.text,whiteSpace:"nowrap",minWidth:128,flexShrink:0}}><span style={{width:8,height:8,borderRadius:99,background:ec.dot,flexShrink:0}}/>{o.estadoEnvio}</span>
+      <div style={{minWidth:112,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2,flexShrink:0,marginLeft:"auto"}}>
+        <span style={{fontSize:DS.font.lg,fontWeight:800,color:T.text,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(o.total)}</span>
+        {cot}
+      </div>
+    </div>
+  );
+}
+
 // ─── Command Palette (Ctrl+K) ───
 // ── Logos de marcas (SVG inline, sin assets externos) ──
 // Para integraciones y cabeceras: Tienda Nube, Shopify, Mercado Libre, Meta,
@@ -13227,88 +13284,24 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 )}
                 {/* Scroll horizontal en pantallas chicas — la grilla de 7 columnas
                     fijas antes se aplastaba/desbordaba en mobile */}
-                <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><div style={{minWidth:720}}>
-                <div style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
-                  <span/><span>Pedido</span><span>Cliente</span><span>Productos</span>
-                  <span>Estado</span>
-                  <span>Envío</span>
-                  <span style={{textAlign:"right"}}>Total</span>
-                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {pageOrders.map((o,idx)=>{
                   const sel=selected.has(o.numero);
                   const ec=getEstadoEnvioC(T,o.estadoEnvio);
                   const exportedOn=exportadoMap[o.numero]?new Date(exportadoMap[o.numero]).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
-                  return (
-                    <div key={o.numero} onClick={()=>setOrderDetail(o)}
-                      style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 110px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
-                      onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
-                      onMouseLeave={e=>{if(!sel)e.currentTarget.style.background=sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent";}}>
-                      {/* En mobile el target es más grande (dedo, no mouse): padding invisible alrededor del check */}
-                      <div onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e,o);}} style={{width:32,height:32,margin:-7,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1,cursor:"pointer"}}>
-                        <div style={{width:typeof window!=="undefined"&&window.innerWidth<=760?22:18,height:typeof window!=="undefined"&&window.innerWidth<=760?22:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                          {sel&&<span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
-                        </div>
-                      </div>
-                      <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                        <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{o.numero}</span>
-                        {exportedOn&&<span style={{fontSize:9,fontWeight:600,color:T.green,background:T.green+"18",borderRadius:3,padding:"1px 4px"}}>✓ {exportedOn}</span>}
-                      </div>
-                      <div>
-                        <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</div>
-                        {<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{o.localidad||o.ciudad}{o.provincia?`, ${o.provincia}`:""}</div>}
-                      </div>
-                      <div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                        <LensDots productos={o.productos}/>
-                        {<span style={{marginLeft:6}}>{o.productos.map(p=>nombreCorto(p.nombre)).join(', ')}</span>}
-                      </div>
-                      <Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>
-                      <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:0}}>
-                        <div style={{fontSize:11,color:o.esSucursal?T.purple:T.blue,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
-                          {o.esSucursal
-                            ?<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9h18l-1.5-5h-15L3 9z"/><path d="M4 9v11h16V9"/><path d="M9 20v-6h6v6"/></svg>
-                            :<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>}
-                          <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{o.medioEnvio||"--"}</span>
-                          {o.esSucursal&&o.pickupDetails&&<svg aria-label="Puede requerir confirmar sucursal al exportar" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
-                        </div>
-                        {o.esSucursal&&o.pickupDetails&&(()=>{
-                          const pd=o.pickupDetails, ad=pd.address||{};
-                          const dir=[ghStripUnidad(ad.address||""),String(ad.number||"").replace(/\D.*/,"")].filter(Boolean).join(" ").trim();
-                          const cp=ad.zipcode||ad.zip_code||"";
-                          const nom=ghNrmSuc(pd.name).split(" ").some(w=>w&&!GH_SUC_GEN.has(w))?pd.name:"";
-                          const txt=[nom,dir,cp?`CP ${cp}`:""].filter(Boolean).join(" · ");
-                          if(!txt) return null;
-                          return <div title={[pd.name,dir,ad.locality||ad.city,cp?`CP ${cp}`:""].filter(Boolean).join(" · ")} style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txt}</div>;
-                        })()}
-                        {(()=>{
-                          const cj=canjesPedidos[String(o.numero)];
-                          if(!cj) return null;
-                          return <span title={`Este pedido es el canje de ${cj.influencer||"un influencer"}${cj.usuario?" (@"+cj.usuario+")":""} — la etiqueta y el tracking se le cargan solos al canje`}
-                            style={{fontSize:10,fontWeight:700,borderRadius:5,padding:"2px 7px",display:"inline-flex",alignItems:"center",gap:4,width:"fit-content",lineHeight:1.4,color:T.purple,border:`1px solid ${T.purple}55`,background:T.purple+"14",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                            Canje · {cj.influencer||cj.usuario||""}
-                          </span>;
-                        })()}
-                        {/* Chip Cotizar/precio Andreani (cuentas con prepago): cotiza la
-                            fila, muestra el precio, y con precio abre el modal de emisión */}
-                        {andreani.enabled&&filaEsAndreani(o)&&(()=>{
-                          const c=cotRow[o.numero];
-                          const yaNum=andreaniNumeroDe(o);
-                          const chip={fontSize:10,fontWeight:700,borderRadius:5,padding:"2px 7px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,width:"fit-content",fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1.4};
-                          if(yaNum) return <span style={{display:"inline-flex",alignItems:"center",gap:4}}><span title={`Etiqueta emitida — envío ${yaNum}`} onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...chip,color:T.green,border:`1px solid ${T.green}55`,background:T.green+"12"}}>✓ Emitida</span><button title="Descargar el PDF de la etiqueta" onClick={e=>{e.stopPropagation();descargarEtiquetaBulk(String(yaNum),ghSkuLinesDe(o));}} style={{...chip,color:T.textMd,border:`1px solid ${T.border}`,background:"transparent",padding:"2px 6px"}}>PDF</button></span>;
-                          if(c?.loading) return <span style={{...chip,cursor:"default",color:T.textSm,border:`1px solid ${T.border}`}}><Spinner size={9} color={T.textSm}/> Cotizando…</span>;
-                          if(c?.error) return <span title={`${c.error} — click para reintentar`} onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...chip,color:T.red,border:`1px solid ${T.red}55`,background:T.red+"12"}}>Error al cotizar</span>;
-                          if(typeof c?.precio==="number") return <span title="Emitir etiqueta Andreani con este pedido" onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...chip,color:T.green,border:`1px solid ${T.green}55`,background:T.green+"12"}}>{fmtMoney(c.precio)}</span>;
-                          return <span title="Cotizar envío por Andreani" onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...chip,color:T.textMd,border:`1px dashed ${T.border}`}}>Cotizar</span>;
-                        })()}
-                      </div>
-                      {/* El ✓ por fila se sacó: ensuciaba la tabla y empujaba a
-                          marcar de a uno. Se marca en lote con los tildados. */}
-                      <span style={{fontSize:13,fontWeight:700,color:T.text,display:"flex",alignItems:"center",justifyContent:"flex-end"}}>
-                        {fmtMoney(o.total)}
-                      </span>
-                    </div>
-                  );
+                  // Costo de la etiqueta de Andreani (cuentas con prepago): cotiza la fila, muestra el precio y con precio abre la emisión.
+                  const cot=andreani.enabled&&filaEsAndreani(o)?(()=>{
+                    const c=cotRow[o.numero]; const yaNum=andreaniNumeroDe(o);
+                    const lk={fontSize:12,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5,fontFamily:"'Inter',system-ui,sans-serif",background:"none",border:"none",padding:0,whiteSpace:"nowrap"};
+                    if(yaNum) return <span style={{display:"inline-flex",alignItems:"center",gap:10}}><span title={`Etiqueta emitida — envío ${yaNum}`} onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...lk,color:T.green}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Etiqueta emitida</span><button title="Descargar el PDF de la etiqueta" onClick={e=>{e.stopPropagation();descargarEtiquetaBulk(String(yaNum),ghSkuLinesDe(o));}} style={{...lk,color:T.accent}}>PDF</button></span>;
+                    if(c?.loading) return <span style={{...lk,cursor:"default",color:T.textSm,fontWeight:500}}><Spinner size={10} color={T.textSm}/> Cotizando…</span>;
+                    if(c?.error) return <span title={`${c.error} — click para reintentar`} onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...lk,color:T.red}}>No cotizó · reintentar</span>;
+                    if(typeof c?.precio==="number") return <span title="Emitir la etiqueta de Andreani de este pedido" onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...lk}}><span style={{color:T.textSm,fontWeight:500}}>Etiqueta</span><span style={{color:T.green,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(c.precio)}</span></span>;
+                    return <span title="Cotizar el envío por Andreani" onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...lk,color:T.accent}}>Cotizar envío</span>;
+                  })():null;
+                  return <EnvioFilaCard key={o.numero} T={T} o={o} idx={idx} sel={sel} exportedOn={exportedOn} ec={ec} canje={canjesPedidos[String(o.numero)]} cot={cot} nombre={nombreCorto} onToggle={e=>toggleSelect(o.numero,e,o)} onOpen={()=>setOrderDetail(o)}/>;
                 })}
-                </div></div>
+                </div>
                 {/* Paginador */}
                 {totalPages>1&&(
                   <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,padding:"14px 14px",borderTop:`1px solid ${T.borderL}`}}>
@@ -13350,16 +13343,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em"}}>Últimas exportaciones</div>
                 <button onClick={()=>{localStorage.removeItem(ghKey("growith_exportHistory"));setTabCounts(c=>({...c}));/* fuerza re-render: antes el bloque quedaba visible */}} style={{fontSize:11,color:T.textSm,background:"none",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar</button>
               </div>
-              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden"}}>
                 {hist.map((h,i)=>{
                   const d=new Date(h.fecha);
                   const f=d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})+" "+d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
                   const nums=h.pedidos.slice(0,3).join(", ")+(h.pedidos.length>3?` y ${h.pedidos.length-3} más`:"");
                   return (
-                    <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 12px",background:T.surface,borderRadius:8,fontSize:12}}>
-                      <span style={{color:T.textSm,minWidth:100}}>{f}</span>
-                      <span style={{color:T.accent,fontWeight:600}}>{h.cantidad} etiqueta{h.cantidad!==1?"s":""}</span>
-                      <span style={{color:T.textSm,flex:1}}>#{nums}</span>
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:14,padding:"10px 16px",borderTop:i?`1px solid ${T.borderL||T.border}`:"none",fontSize:13}}>
+                      <span style={{color:T.textSm,minWidth:110,fontVariantNumeric:"tabular-nums"}}>{f}</span>
+                      <span style={{color:T.text,fontWeight:700,minWidth:96}}>{h.cantidad} etiqueta{h.cantidad!==1?"s":""}</span>
+                      <span style={{color:T.textSm,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>#{nums}</span>
                     </div>
                   );
                 })}
