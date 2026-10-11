@@ -271,6 +271,10 @@ function processTN(orders) {
     for(const item of o.products||[]){
       const vid=String(item.variant_id||item.product_id);
       const qty=parseInt(item.quantity)||0;
+      // Líneas a $0 (regalos, ebooks de bundle, bonus): no son unidades vendidas
+      // ni productos por venta. Pedido de Lautaro 11/oct/2026 (MO&MU: 25 mallas
+      // y el Resumen decía 32 por los ebooks de regalo).
+      if(!(parseFloat(item.price||0)>0)) continue;
       const rev=parseFloat(item.price||0)*qty*discountRatio;
       if(!map[vid]) map[vid]={units:0,revenue:0};
       map[vid].units+=qty; { const _d=String(o.created_at||o.date_created||"").slice(0,10); if(_d&&(!map[vid].last||_d>map[vid].last)) map[vid].last=_d; }
@@ -361,6 +365,8 @@ function processSH(orders) {
     for(const item of o.line_items||[]){
       const vid=String(item.variant_id||item.product_id);
       const qty=parseInt(item.quantity)||0;
+      // Líneas a $0 (regalos, ebooks de bundle, bonus): no cuentan como unidades.
+      if(!(parseFloat(item.price)>0)) continue;
       const rev=parseFloat(item.price)*qty;
       if(!map[vid]) map[vid]={units:0,revenue:0};
       map[vid].units+=qty; { const _d=String(o.created_at||o.date_created||"").slice(0,10); if(_d&&(!map[vid].last||_d>map[vid].last)) map[vid].last=_d; }
@@ -515,6 +521,7 @@ function processML(orders, couponMap = {}, provMap = {}) {
     for(const item of o.order_items||[]){
       const vid=String(item.item?.id||"ml");
       const qty=parseInt(item.quantity)||0;
+      if(!(parseFloat(item.unit_price)>0)) continue; // líneas a $0 (regalos) no cuentan
       const rev=parseFloat(item.unit_price)*qty; // per-variant a precio de lista
       // Variante = "<título de la publicación> - <variante>" (sin la variante, el título).
       const _va=(item.item?.variation_attributes||[]).map(a=>a?.value_name).filter(Boolean).join(" / ");
