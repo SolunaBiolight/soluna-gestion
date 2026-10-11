@@ -40883,6 +40883,9 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         image: editingItem.image,
         stock_total: total,
         stock_by_warehouse: sbw,
+        // Solo si se editó la pestaña Stock el servidor toma este stock; si no,
+        // conserva el de la base (una venta que entró mientras editabas no se pierde).
+        stock_touched: itemEditTab==="stock",
         product_links: editingItem.product_links || [],
         costo_unitario: editingItem.costo_unitario||0,
       };

@@ -52,6 +52,17 @@ function prefijoComun(arr) {
   for (const t of arr.slice(1)) { let i = 0; while (i < pre.length && i < t.length && pre[i] === t[i]) i++; pre = pre.slice(0, i); }
   return pre;
 }
+// Depósito que absorbe un cambio de stock que no viene con depósito (ventas,
+// devoluciones, ajustes rápidos): el que más stock tiene; si no hay mapa, "main".
+// stock_by_warehouse TIENE que seguir siempre a stock_total: si quedaba viejo, al
+// guardar el item desde Editar el servidor recalculaba el total desde el mapa y el
+// stock "volvía" solo (Lumina 11/oct/2026: +44 fantasma al sacar un vínculo).
+function depositoPrincipal(sbw) {
+  const e = Object.entries(sbw || {}).filter(([k]) => k);
+  if (!e.length) return "main";
+  e.sort((a, b) => (parseInt(b[1]) || 0) - (parseInt(a[1]) || 0));
+  return e[0][0];
+}
 // Variaciones de una publicación de ML → [{id, title, sku}] para el mapeo por talle.
 function mlVariantes(variations) {
   if (!Array.isArray(variations) || !variations.length) return [];
@@ -616,6 +627,7 @@ async function syncVentasCuerpo(db, uid) {
         // dos corridas descuenten la misma orden).
         await item.ref.update({
           stock_total: FieldValue.increment(stockChange),
+          [`stock_by_warehouse.${depositoPrincipal(item.stock_by_warehouse)}`]: FieldValue.increment(stockChange),
           ...(newProcessed.length ? { processed_orders: FieldValue.arrayUnion(...newProcessed) } : {}),
           ...(revertidosCambio ? { revertidos } : {}),
           last_sync_at: new Date().toISOString(),
@@ -1464,6 +1476,12 @@ export default async function handler(req, res) {
       // Sin clamp a 0: el dueño puede dejar (o poner) un stock negativo cuando
       // debe mercadería. Si acá se clampeaba, editar cualquier campo del item
       // —hasta el nombre— borraba la deuda sin que nadie lo pidiera.
+      // Si el usuario NO editó el stock (pestaña Mapeo, nombre, SKU…), el stock
+      // del cuerpo es la copia que cargó el navegador y puede estar vieja: una
+      // venta que entró mientras editaba se perdía al guardar. Se conserva el
+      // stock que está en la base.
+      const stockTocado = body.stock_touched === true || !existing;
+      if (!stockTocado) { body.stock_by_warehouse = existing.stock_by_warehouse || {}; body.stock_total = existing.stock_total || 0; }
       const sbw = body.stock_by_warehouse && typeof body.stock_by_warehouse === "object"
         ? Object.fromEntries(Object.entries(body.stock_by_warehouse).map(([k,v]) => [String(k), parseInt(v) || 0]))
         : null;
@@ -1562,7 +1580,10 @@ export default async function handler(req, res) {
           const nue = new_stock !== undefined && new_stock !== null
             ? parseInt(new_stock)
             : old + (parseInt(change) || 0);
-          tx.update(ref, { stock_total: nue, updated_at: new Date().toISOString() });
+          const sbw = { ...(cur.stock_by_warehouse || {}) };
+          const dep = depositoPrincipal(sbw);
+          sbw[dep] = (parseInt(sbw[dep]) || 0) + (nue - old);
+          tx.update(ref, { stock_total: nue, stock_by_warehouse: sbw, updated_at: new Date().toISOString() });
           return { current: cur, oldStock: old, newStock: nue };
         }));
       } catch (e) {
