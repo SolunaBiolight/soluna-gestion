@@ -952,17 +952,50 @@ export default async function handler(req, res) {
       // estado: para entender por qué una venta "no aparece" (pendiente de pago,
       // cancelada, sin producto vinculado…).
       if (req.query.diag === "1") {
+        // Conciliación: órdenes de Shopify y ML desde `desde` (ISO; default 24 h),
+        // de CUALQUIER estado, con sus unidades y cuánto descontó cada una en el
+        // inventario (por el historial de movimientos). Para responder "vendí X y
+        // el stock bajó Y" sin adivinar.
         try {
+          const desde = req.query.desde ? new Date(req.query.desde).toISOString() : new Date(Date.now() - 86400000).toISOString();
+          const n = Math.min(parseInt(req.query.n) || 100, 250);
           const stores = (await db.collection("users").doc(uid).get()).data()?.stores || [];
+          const ordenes = [];
           const sh = stores.find(s => s.type === "shopify");
           if (sh) await ensureShopifyToken(db, uid, sh);
           if (sh?.accessToken && sh?.shop) {
-            const r = await fetch(`https://${sh.shop}/admin/api/2024-10/orders.json?status=any&limit=8&order=created_at+desc&fields=id,name,created_at,processed_at,financial_status,fulfillment_status,cancelled_at,line_items`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+            const r = await fetch(`https://${sh.shop}/admin/api/2024-10/orders.json?status=any&limit=${n}&order=created_at+desc&created_at_min=${desde}&fields=id,name,created_at,financial_status,cancelled_at,line_items`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
             const j = r.ok ? await r.json() : { error: `HTTP ${r.status}` };
-            out.diag_shopify = (j.orders || []).map(o => ({ name: o.name, id: o.id, created_at: o.created_at, processed_at: o.processed_at, financial_status: o.financial_status, cancelled: !!o.cancelled_at, items: (o.line_items || []).map(li => `${li.sku || li.product_id}${li.variant_id ? "/v" + li.variant_id : ""} x${li.quantity}`) }));
+            for (const o of (j.orders || [])) ordenes.push({ plataforma: "shopify", order_id: `SH-ORD-${o.id}`, nombre: o.name, fecha: o.created_at, estado: o.financial_status, cancelada: !!o.cancelled_at, unidades: (o.line_items || []).reduce((a, li) => a + (parseInt(li.quantity) || 0), 0), items: (o.line_items || []).map(li => `${li.sku || li.product_id} x${li.quantity}`) });
             if (j.error) out.diag_shopify_error = j.error;
           }
-        } catch (e) { out.diag_shopify_error = e.message; }
+          const ml = stores.find(s => s.type === "mercadolibre");
+          if (ml?.userId) {
+            try {
+              const tokenInfo = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
+              if (tokenInfo?.accessToken) {
+                const r = await fetch(`https://api.mercadolibre.com/orders/search?seller=${tokenInfo.userId}&order.date_created.from=${desde}&order.date_created.to=${new Date().toISOString()}&sort=date_desc&limit=50`, { headers: { Authorization: `Bearer ${tokenInfo.accessToken}` } });
+                const j = r.ok ? await r.json() : {};
+                for (const o of (j.results || [])) ordenes.push({ plataforma: "mercadolibre", order_id: `ML-ORD-${o.id}`, nombre: String(o.id), fecha: o.date_created, estado: o.status, cancelada: o.status === "cancelled", unidades: (o.order_items || []).reduce((a, it) => a + (parseInt(it.quantity) || 0), 0), items: (o.order_items || []).map(it => `${it.item?.id} x${it.quantity}`) });
+              }
+            } catch (e) { out.diag_ml_error = e.message; }
+          }
+          // Cuánto descontó cada orden en el inventario (movimientos "venta <id>").
+          const movs = await db.collection("users").doc(uid).collection("inventory_movements").where("ts", ">=", desde).get().catch(() => ({ docs: [] }));
+          const porOrden = {};
+          for (const d of movs.docs) { const m = d.data(); const mm = /^(venta|cancelacion|devolucion) (.+)$/.exec(m.event || ""); if (mm) porOrden[mm[2]] = (porOrden[mm[2]] || 0) + (parseInt(m.change) || 0); }
+          for (const o of ordenes) o.descontado_en_stock = -(porOrden[o.order_id] || 0);
+          out.diag_desde = desde;
+          out.diag_ordenes = ordenes;
+          out.diag_resumen = {
+            ordenes: ordenes.length,
+            unidades_vendidas_pagas: ordenes.filter(o => !o.cancelada && /paid|approved/.test(o.estado || "")).reduce((a, o) => a + o.unidades, 0),
+            unidades_pendientes_de_pago: ordenes.filter(o => !o.cancelada && !/paid|approved|refunded|voided|cancel/.test(o.estado || "")).reduce((a, o) => a + o.unidades, 0),
+            unidades_canceladas: ordenes.filter(o => o.cancelada).reduce((a, o) => a + o.unidades, 0),
+            descontado_en_stock: ordenes.reduce((a, o) => a + (o.descontado_en_stock || 0), 0),
+            sin_descontar: ordenes.filter(o => !o.cancelada && /paid|approved/.test(o.estado || "") && !o.descontado_en_stock).map(o => `${o.nombre} (${o.unidades} u.)`),
+          };
+        } catch (e) { out.diag_error = e.message; }
       }
       return res.json(out);
     }
