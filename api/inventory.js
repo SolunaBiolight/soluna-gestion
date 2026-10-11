@@ -315,8 +315,14 @@ async function syncVentas(db, uid) {
 
     // Acumular órdenes recientes de las plataformas
     const recentOrders = [];
+    // Órdenes canceladas / reembolsadas de los últimos 30 días: si ya habían
+    // descontado stock, se devuelve (completo o, en Shopify, solo las líneas
+    // reembolsadas). {order_id, platform, ts, motivo, full:true | products:[…]}
+    const reversas = [];
     const sinceISO = new Date(Date.now() - 30 * 86400000).toISOString();
     const sinceDate = sinceISO.slice(0, 10);
+    const lineaTN = (p) => ({ id: `TN-${p.product_id || p.id}`, variant_id: p.variant_id != null ? String(p.variant_id) : null, sku: p.sku || "", quantity: parseInt(p.quantity) || 1 });
+    const lineaSH = (li) => ({ id: `SH-${li.product_id}`, variant_id: li.variant_id != null ? String(li.variant_id) : null, sku: li.sku || "", quantity: parseInt(li.quantity) || 1 });
 
     // TN
     const tn = stores.find(s => s.type === "tiendanube");
@@ -332,7 +338,7 @@ async function syncVentas(db, uid) {
           const batch = await r.json();
           if (!Array.isArray(batch) || batch.length === 0) break;
           for (const o of batch) {
-            if ((o.status || "").toLowerCase() === "cancelled") continue;
+            if ((o.status || "").toLowerCase() === "cancelled") { reversas.push({ order_id: `TN-ORD-${o.id}`, platform: "tiendanube", ts: o.cancelled_at || o.updated_at, motivo: "cancelacion", full: true }); continue; }
             recentOrders.push({
               order_id: `TN-ORD-${o.id}`,
               platform: "tiendanube",
@@ -342,6 +348,21 @@ async function syncVentas(db, uid) {
           }
           if (batch.length < 200) break;
         } catch (e) { break; }
+      }
+      // Canceladas y reembolsadas (el listado de arriba solo trae pagas).
+      for (const q of ["status=cancelled", "payment_status=refunded"]) {
+        for (let page = 1; page <= 5; page++) {
+          try {
+            const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/orders?per_page=200&page=${page}&${q}&created_at_min=${sinceDate}`, {
+              headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp" },
+            });
+            if (!r.ok) break;
+            const batch = await r.json();
+            if (!Array.isArray(batch) || batch.length === 0) break;
+            for (const o of batch) reversas.push({ order_id: `TN-ORD-${o.id}`, platform: "tiendanube", ts: o.cancelled_at || o.updated_at, motivo: q.startsWith("status") ? "cancelacion" : "devolucion", full: true });
+            if (batch.length < 200) break;
+          } catch (e) { break; }
+        }
       }
     }
 
@@ -356,7 +377,7 @@ async function syncVentas(db, uid) {
           if (!r.ok) break;
           const data = await r.json();
           for (const o of (data.orders || [])) {
-            if (o.cancelled_at) continue;
+            if (o.cancelled_at) { reversas.push({ order_id: `SH-ORD-${o.id}`, platform: "shopify", ts: o.cancelled_at, motivo: "cancelacion", full: true }); continue; }
             if ((o.financial_status || "").toLowerCase() !== "paid") continue;
             recentOrders.push({
               order_id: `SH-ORD-${o.id}`,
@@ -369,6 +390,29 @@ async function syncVentas(db, uid) {
           const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
           pageInfoUrl = nextMatch ? nextMatch[1] : null;
         } catch (e) { break; }
+      }
+      // Canceladas y reembolsadas (totales o parciales). Un reembolso parcial
+      // devuelve solo las líneas reembolsadas (refund_line_items).
+      const extras = [
+        `status=cancelled&limit=250&order=created_at+desc&created_at_min=${sinceISO}&fields=id,cancelled_at,updated_at`,
+        `status=any&financial_status=refunded&limit=250&order=created_at+desc&created_at_min=${sinceISO}&fields=id,cancelled_at,updated_at,refunds`,
+        `status=any&financial_status=partially_refunded&limit=250&order=created_at+desc&created_at_min=${sinceISO}&fields=id,cancelled_at,updated_at,line_items,refunds`,
+      ];
+      for (let k = 0; k < extras.length; k++) {
+        try {
+          const r = await fetch(`https://${sh.shop}/admin/api/2024-10/orders.json?${extras[k]}`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+          if (!r.ok) continue;
+          const data = await r.json();
+          for (const o of (data.orders || [])) {
+            const oid = `SH-ORD-${o.id}`;
+            if (k < 2 || o.cancelled_at) { if (!reversas.some(x => x.order_id === oid)) reversas.push({ order_id: oid, platform: "shopify", ts: o.cancelled_at || o.updated_at, motivo: k === 0 || o.cancelled_at ? "cancelacion" : "devolucion", full: true }); continue; }
+            // parcial: líneas reembolsadas
+            const porLinea = {};
+            for (const rf of (o.refunds || [])) for (const rli of (rf.refund_line_items || [])) porLinea[rli.line_item_id] = (porLinea[rli.line_item_id] || 0) + (parseInt(rli.quantity) || 0);
+            const products = (o.line_items || []).filter(li => porLinea[li.id] > 0).map(li => ({ ...lineaSH(li), quantity: porLinea[li.id] }));
+            if (products.length) reversas.push({ order_id: oid, platform: "shopify", ts: o.updated_at, motivo: "devolucion", full: false, products });
+          }
+        } catch (e) { /* ignorar */ }
       }
     }
 
@@ -388,7 +432,7 @@ async function syncVentas(db, uid) {
             const data = await r.json();
             const orders = data.results || [];
             for (const o of orders) {
-              if (["cancelled", "invalid"].includes((o.status || "").toLowerCase())) continue;
+              if (["cancelled", "invalid"].includes((o.status || "").toLowerCase())) { reversas.push({ order_id: `ML-ORD-${o.id}`, platform: "mercadolibre", ts: o.last_updated || o.date_closed, motivo: "cancelacion", full: true }); continue; }
               recentOrders.push({
                 order_id: `ML-ORD-${o.id}`,
                 platform: "mercadolibre",
@@ -396,6 +440,16 @@ async function syncVentas(db, uid) {
                 products: (o.order_items || []).map(it => ({ id: `ML-${it.item?.id}`, variant_id: it.item?.variation_id != null ? String(it.item.variation_id) : null, sku: it.item?.seller_sku || it.item?.seller_custom_field || "", quantity: parseInt(it.quantity) || 1 })),
               });
             }
+            if (orders.length < 50) break;
+          }
+          // Canceladas (el listado de arriba es solo order.status=paid).
+          for (let offset = 0; offset < 200; offset += 50) {
+            const r = await fetch(`https://api.mercadolibre.com/orders/search?seller=${tokenInfo.userId}&order.status=cancelled&order.date_created.from=${sinceISO}&order.date_created.to=${untilISO}&limit=50&offset=${offset}`, {
+              headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
+            });
+            if (!r.ok) break;
+            const orders = (await r.json()).results || [];
+            for (const o of orders) if (!reversas.some(x => x.order_id === `ML-ORD-${o.id}`)) reversas.push({ order_id: `ML-ORD-${o.id}`, platform: "mercadolibre", ts: o.last_updated || o.date_closed || o.date_created, motivo: "cancelacion", full: true });
             if (orders.length < 50) break;
           }
         }
@@ -423,6 +477,58 @@ async function syncVentas(db, uid) {
       const baselineMs = item.stock_baseline_at ? Date.parse(item.stock_baseline_at) : 0;
       let stockChange = 0;
       const newProcessed = [];
+      const unidadesParaItem = (ord) => {
+        let unitsForItem = 0;
+        for (const prod of ord.products) {
+          let matched = false;
+          for (const l of links) {
+            if (l.product_id !== prod.id || !l.variant_id) continue;
+            if (prod.variant_id != null && String(l.variant_id) === String(prod.variant_id)) {
+              unitsForItem += prod.quantity * (parseInt(l.quantity) || 1); matched = true; break;
+            }
+          }
+          if (matched) continue;
+          if (itemSku && String(prod.sku || "").trim().toUpperCase() === itemSku) { unitsForItem += prod.quantity; continue; }
+          const linkAmplio = links.find(l => l.product_id === prod.id && !l.variant_id);
+          if (linkAmplio) {
+            const ventaTraeVariante = prod.variant_id != null;
+            const itemTieneSku = !!itemSku;
+            const lineaTraeSku = !!String(prod.sku || "").trim();
+            if (ventaTraeVariante && itemTieneSku && lineaTraeSku && (compartido[prod.id] || 0) > 1) continue;
+            unitsForItem += prod.quantity * (parseInt(linkAmplio.quantity) || 1);
+          }
+        }
+        return unitsForItem;
+      };
+
+      // ── Devoluciones: una orden que YA descontó y después se canceló o se
+      // reembolsó vuelve a sumar lo que descontó (tope: lo descontado menos lo ya
+      // devuelto, así un reembolso parcial y después uno total no duplican).
+      const revertidos = { ...(item.revertidos || {}) };
+      let revertidosCambio = false;
+      for (const rv of reversas) {
+        if (!processed.has(rv.order_id)) continue;
+        let descontado = 0;
+        try {
+          const ms = await db.collection("users").doc(uid).collection("inventory_movements").where("item_id", "==", item.id).where("event", "==", `venta ${rv.order_id}`).get();
+          for (const d of ms.docs) descontado += Math.max(0, -(parseInt(d.data().change) || 0));
+        } catch (_) {}
+        const yaDevuelto = parseInt(revertidos[rv.order_id]) || 0;
+        const tope = Math.max(0, descontado - yaDevuelto);
+        if (tope <= 0) continue;
+        const pedido = rv.full ? tope : Math.min(tope, unidadesParaItem(rv));
+        if (pedido <= 0) continue;
+        const oldStock = (item.stock_total || 0) + stockChange;
+        stockChange += pedido;
+        await logMovement(db, uid, {
+          item_id: item.id, item_name: item.nombre,
+          change: pedido, old_stock: oldStock, new_stock: oldStock + pedido,
+          source: rv.platform, event: `${rv.motivo} ${rv.order_id}`,
+          ts: rv.ts || new Date().toISOString(),
+        });
+        revertidos[rv.order_id] = yaDevuelto + pedido; revertidosCambio = true;
+        salesLogged++;
+      }
 
       for (const ord of recentOrders) {
         if (processed.has(ord.order_id)) continue;
@@ -437,52 +543,7 @@ async function syncVentas(db, uid) {
         // item quedó en -198 cuando se habían vendido 7 u 8 unidades.
         // El negativo sale solo de las ventas POSTERIORES al baseline.
         if (baselineMs && ord.ts) { const t = Date.parse(ord.ts); if (isFinite(t) && t <= baselineMs) continue; }
-        let unitsForItem = 0;
-        for (const prod of ord.products) {
-          // Orden de matcheo, del más preciso al más laxo:
-          //  1) link con variant_id → SOLO esa variante (mapeo por talle).
-          //  2) SKU del item = SKU de la línea vendida → es esa variante.
-          //  3) link SIN variant_id → producto entero (todas las variantes).
-          //
-          // El 3 era el primero y causaba el desastre: un item que representa
-          // UN talle, vinculado al producto sin variant_id, se comía las ventas
-          // de TODOS los talles. Con 5 talles vendiendo, el XL llegaba a -200
-          // sin haber vendido 200. Peor: si M/L/XL/2XL están todos vinculados
-          // al mismo producto, UNA venta descontaba de los cuatro.
-          //
-          // Ahora el producto entero solo aplica si la venta NO trae variante o
-          // el item no puede identificarse por SKU — es decir, cuando de verdad
-          // no hay forma de saber qué talle se vendió.
-          let matched = false;
-          // 1) variante exacta
-          for (const l of links) {
-            if (l.product_id !== prod.id || !l.variant_id) continue;
-            if (prod.variant_id != null && String(l.variant_id) === String(prod.variant_id)) {
-              unitsForItem += prod.quantity * (parseInt(l.quantity) || 1); matched = true; break;
-            }
-          }
-          if (matched) continue;
-          // 2) SKU exacto de la línea vendida
-          if (itemSku && String(prod.sku || "").trim().toUpperCase() === itemSku) {
-            unitsForItem += prod.quantity; continue;
-          }
-          // 3) producto entero — solo si no hay forma de distinguir la variante
-          const linkAmplio = links.find(l => l.product_id === prod.id && !l.variant_id);
-          if (linkAmplio) {
-            const ventaTraeVariante = prod.variant_id != null;
-            const itemTieneSku = !!itemSku;
-            const lineaTraeSku = !!String(prod.sku || "").trim();
-            // Si la venta identifica la variante Y el item tiene SKU propio,
-            // este item NO es el de esa variante (si lo fuera habría entrado
-            // por 1 o por 2): no se le descuenta nada… SALVO que sea el único
-            // item vinculado a ese producto. Caso real (Lumina, 10/oct/2026):
-            // un solo item con vínculo al producto entero, le cambiaron el SKU
-            // a "… (Seny)" y la venta dejó de descontar porque el SKU de la
-            // línea ya no coincidía — el item igual era el dueño del producto.
-            if (ventaTraeVariante && itemTieneSku && lineaTraeSku && (compartido[prod.id] || 0) > 1) continue;
-            unitsForItem += prod.quantity * (parseInt(linkAmplio.quantity) || 1);
-          }
-        }
+        const unitsForItem = unidadesParaItem(ord);
         if (unitsForItem > 0) {
           const oldStock = (item.stock_total || 0) + stockChange;
           stockChange -= unitsForItem;
@@ -530,6 +591,7 @@ async function syncVentas(db, uid) {
         await item.ref.update({
           stock_total: finalStock,
           processed_orders: allProcessed,
+          ...(revertidosCambio ? { revertidos } : {}),
           last_sync_at: new Date().toISOString(),
         });
         itemsUpdated++;

@@ -42300,7 +42300,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             {/* ── TAB MOVIMIENTOS ── */}
             {tab==="movimientos"&&(()=>{
               // Traducción de eventos
-              const evtLabel=(ev,src)=>{if(!ev)return"—";const e=ev.toLowerCase();if(/sale|venta|orden|order/i.test(e))return"Venta";if(/manual|ajuste/i.test(e)||src==="manual")return"Ajuste manual";if(/creat|creac/i.test(e))return"Creación";if(/transfer/i.test(e))return"Transferencia";if(/import/i.test(e))return"Importación";if(/sync/i.test(e))return"Sincronización";return ev;};
+              const evtLabel=(ev,src)=>{if(!ev)return"—";const e=ev.toLowerCase();if(/^cancelacion/i.test(e))return"Cancelación";if(/^devolucion/i.test(e))return"Devolución";if(/sale|venta|orden|order/i.test(e))return"Venta";if(/manual|ajuste/i.test(e)||src==="manual")return"Ajuste manual";if(/creat|creac/i.test(e))return"Creación";if(/transfer/i.test(e))return"Transferencia";if(/import/i.test(e))return"Importación";if(/sync/i.test(e))return"Sincronización";return ev;};
               // Filtros locales sobre los movements ya cargados
               const filteredMov = movements.filter(m => {
                 if (movFilterSearch && !(m.item_name||"").toLowerCase().includes(movFilterSearch.toLowerCase()) && !(m.event||"").toLowerCase().includes(movFilterSearch.toLowerCase()) && !(m.order_id||"").toLowerCase().includes(movFilterSearch.toLowerCase())) return false;
@@ -42308,7 +42308,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 if (movFilterDeposito !== "all" && m.warehouse_id !== movFilterDeposito) return false;
                 if (movFilterEvento !== "all") {
                   const ev = (m.event||"").toLowerCase();
-                  if (movFilterEvento === "venta" && !/orden|venta|order|sale/i.test(ev)) return false;
+                  if (movFilterEvento === "venta" && (!/orden|venta|order|sale/i.test(ev) || /^(cancelacion|devolucion)/i.test(ev))) return false;
+                  if (movFilterEvento === "devolucion" && !/^(cancelacion|devolucion)/i.test(ev)) return false;
                   if (movFilterEvento === "manual" && !/manual|ajuste/i.test(ev) && (m.source||"") !== "manual") return false;
                   if (movFilterEvento === "creacion" && !/creacion|create/i.test(ev)) return false;
                 }
@@ -42319,7 +42320,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>
                     <div style={{fontSize:15,fontWeight:700,color:T.text}}>Historial de movimientos</div>
-                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Mostrando los últimos <strong>200 movimientos</strong>. Las ventas descuentan, los ajustes manuales se ven con el origen "manual".</div>
+                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Mostrando los últimos <strong>200 movimientos</strong>. Las ventas descuentan, las cancelaciones y devoluciones vuelven a sumar lo que esa venta descontó, y los ajustes manuales se ven con el origen "manual".</div>
                   </div>
                   <div style={{display:"flex",gap:6}}>
                     <button onClick={()=>loadMovements(true)} disabled={movementsLoading} style={{padding:"6px 12px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{movementsLoading?<Spinner size={11} color={T.textMd}/>:"↻"} Refrescar</button>
@@ -42356,6 +42357,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   <select value={movFilterEvento} onChange={e=>setMovFilterEvento(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
                     <option value="all">Todos los eventos</option>
                     <option value="venta">Ventas / Órdenes</option>
+                    <option value="devolucion">Cancelaciones / Devoluciones</option>
                     <option value="manual">Ajustes manuales</option>
                     <option value="creacion">Creación</option>
                   </select>
