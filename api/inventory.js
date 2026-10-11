@@ -625,9 +625,16 @@ async function syncVentasCuerpo(db, uid) {
         // órdenes procesadas, así aunque otra corrida haya tocado el item entre
         // la lectura y acá no se pisa nada (y el candado de arriba evita que
         // dos corridas descuenten la misma orden).
+        // Si el mapa por depósito venía desfasado del total (items de antes del
+        // arreglo del 11/oct/2026), se repara acá: el depósito principal absorbe
+        // la diferencia, así sum(mapa) vuelve a ser igual al total.
+        const sbwAct = { ...(item.stock_by_warehouse || {}) };
+        const depP = depositoPrincipal(sbwAct);
+        const sumaSbw = Object.values(sbwAct).reduce((a, v) => a + (parseInt(v) || 0), 0);
+        const desfase = (item.stock_total || 0) - sumaSbw;
         await item.ref.update({
           stock_total: FieldValue.increment(stockChange),
-          [`stock_by_warehouse.${depositoPrincipal(item.stock_by_warehouse)}`]: FieldValue.increment(stockChange),
+          [`stock_by_warehouse.${depP}`]: FieldValue.increment(stockChange + desfase),
           ...(newProcessed.length ? { processed_orders: FieldValue.arrayUnion(...newProcessed) } : {}),
           ...(revertidosCambio ? { revertidos } : {}),
           last_sync_at: new Date().toISOString(),
@@ -1485,7 +1492,9 @@ export default async function handler(req, res) {
       const sbw = body.stock_by_warehouse && typeof body.stock_by_warehouse === "object"
         ? Object.fromEntries(Object.entries(body.stock_by_warehouse).map(([k,v]) => [String(k), parseInt(v) || 0]))
         : null;
-      const stockTotalFromSbw = sbw ? Object.values(sbw).reduce((s,v)=>s+v,0) : (parseInt(body.stock_total) || 0);
+      // Sin tocar el stock, el total es EL DE LA BASE (no la suma del mapa, que
+      // puede venir desfasada de antes del arreglo del 11/oct/2026).
+      const stockTotalFromSbw = !stockTocado ? (existing.stock_total || 0) : (sbw ? Object.values(sbw).reduce((s,v)=>s+v,0) : (parseInt(body.stock_total) || 0));
       const finalSbw = sbw || (body.stock_total != null ? { main: parseInt(body.stock_total) || 0 } : (existing?.stock_by_warehouse || {}));
       const data = {
         id,
