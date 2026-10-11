@@ -154,7 +154,7 @@
     },
     {
       "path": "/api/inventory?action=cron_sync_ventas",
-      "schedule": "*/10 * * * *"
+      "schedule": "*/5 * * * *"
     }
   ]
 }

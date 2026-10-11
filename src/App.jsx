@@ -20190,7 +20190,7 @@ const ADM_CRONS = [
   { key:"arca_cron_autopilot",        label:"Piloto automático de facturación", cada:"Cada hora",               maxH:2 },
   { key:"pagos-cal_cron_avisos",      label:"Avisos del Calendario de Pagos",  cada:"Todos los días 12:00 UTC", maxH:26 },
   { key:"deposito_cron_diario",       label:"Resumen diario del depósito",     cada:"Todos los días 11:00 UTC", maxH:26 },
-  { key:"inventory_cron_sync_ventas", label:"Descuento de ventas del Stock",   cada:"Cada 10 minutos",          maxH:1 },
+  { key:"inventory_cron_sync_ventas", label:"Descuento de ventas del Stock",   cada:"Cada 5 minutos",           maxH:1 },
 ];
 const ADM_LOG_LABEL = {
   activar_plan:"Activó plan", dar_prueba:"Dio prueba", desactivar_plan:"Desactivó plan", extender_plan:"Extendió plan", ajustar_dias:"Ajustó vencimiento",
@@ -23890,6 +23890,16 @@ function matDetectTipo(url) {
 // Plan pago cargado a mano (USDT / transferencia / activación por admin) sin
 // suscripción en Stripe. Las pruebas otorgadas (isTrial) y las cuentas
 // solo-miembro no cuentan. Mismo criterio que manualVigente en api/stripe.js.
+// Sincroniza las ventas del Stock (descuentos y devoluciones) en segundo plano,
+// con el mismo throttle desde Stock y desde el Dashboard: son hermanos — si el
+// Dashboard ya está mostrando la venta, el Stock tiene que estar descontándola.
+// `forzar` (botón Actualizar) saltea el throttle. Devuelve la respuesta o null.
+async function ghStockAutosync(uid, forzar=false){
+  if(!uid) return null;
+  const key=`growith_stock_autosync_${uid}`;
+  try{ const last=parseInt(localStorage.getItem(key)||"0"); if(!forzar && Date.now()-last<60000) return null; localStorage.setItem(key,String(Date.now())); }catch(_){}
+  try{ const r=await fetch(`/api/inventory?action=sync_sales&uid=${uid}`,{method:"POST"}); return await r.json(); }catch(_){ return null; }
+}
 function ghPagoManual(d){
   if(!d||!d.plan||d.plan==="free") return false;
   if(d.isTrial===true||d.soloMiembro===true) return false;
@@ -41057,14 +41067,10 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // Throttle: máximo 1 vez por minuto. Si el user navega entre tabs, no spammeamos.
   useEffect(()=>{
     if (!uid) return;
-    const lastSync = parseInt(localStorage.getItem(`growith_stock_autosync_${uid}`) || "0");
-    const now = Date.now();
-    if (now - lastSync < 60000) return; // 60s throttle
-    localStorage.setItem(`growith_stock_autosync_${uid}`, String(now));
     // Disparamos en background — no bloqueamos la UI
-    fetch(`/api/inventory?action=sync_sales&uid=${uid}`, { method: "POST" })
-      .then(r => r.json())
+    ghStockAutosync(uid)
       .then(j => {
+        if (!j) return;
         // Si descontó algo, recargar los items — actualiza tanto la lista de
         // Inventario como el número "Inventario Growith" del panel de Stock.
         if (j.items_updated > 0 || j.sales_logged > 0) { loadInvItems(); if (tab === "movimientos") loadMovements(); }
@@ -43233,6 +43239,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     // ventas del día en el backend para ver la última venta al segundo. Las
     // lecturas cache=only y las cargas automáticas siguen usando la caché (perf).
     const urlLive = url + (fresh ? "&fresh=1" : "");
+    // Stock hermano del Dashboard: la misma carga que trae las ventas en vivo
+    // dispara el descuento (y las devoluciones) del inventario, de fondo.
+    if(!silent||fresh) ghStockAutosync(uid, !!fresh).then(j=>{ if(j&&(j.items_updated>0||j.sales_logged>0)) { try{ window.dispatchEvent(new CustomEvent("gh-stock-sync")); }catch(_){} } });
     // 0) Pintado en 0ms desde el snapshot local de la última visita, mientras
     //    llegan la caché del servidor y los datos en vivo.
     const periodSig = from&&to?`${from}_${to}`:`d${d}`;
