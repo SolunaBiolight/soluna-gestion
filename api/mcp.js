@@ -433,7 +433,7 @@ const INSTRUCCIONES = `Growith es la app de gestión del e-commerce del usuario 
 - Los montos están en pesos argentinos (ARS) salvo que el campo diga USD. "datos_al" indica cuándo se calcularon las cifras: aclaralo si te preguntan por lo más reciente.
 - Respondé en el idioma del usuario (por defecto, español rioplatense con voseo).
 - El acceso es de solo lectura: para pausar campañas, ajustar stock o cualquier cambio, el usuario lo hace desde Growith.
-- La conexión es por USUARIO y cubre todos sus clientes (tiendas). Cada chat tiene UN cliente activo: si el usuario tiene varios y todavía no eligió, llamá a listar_clientes y preguntale cuál (o elegilo vos si lo nombra), y fijalo con seleccionar_cliente. Si tiene uno solo, se usa ese automáticamente. NO llames a seleccionar_cliente y a una consulta en la misma tanda (en paralelo): primero seleccioná, esperá la respuesta y recién después consultá; o mandá cliente_id directamente en la consulta. Cada respuesta trae el campo "cliente" (id y nombre): verificá que sea el que el usuario pidió. Cuando respondas, aclará de qué cliente son los números.`;
+- La conexión es por USUARIO y cubre todos sus clientes (tiendas). Cada chat tiene UN cliente activo: si el usuario tiene varios y todavía no eligió, llamá a listar_clientes y preguntale cuál (o elegilo vos si lo nombra), y fijalo con seleccionar_cliente. Si tiene uno solo, se usa ese automáticamente; si tiene varios y no eligió, se responde sobre la tienda que tiene abierta en Growith (cada respuesta lo aclara en "cliente"). seleccionar_cliente y cliente_id aceptan el NOMBRE de la tienda (sin distinguir mayúsculas) o el cliente_id. Los números de ventas y rentabilidad se recalculan en vivo si la caché tiene más de 5 minutos: son los mismos que ve el usuario en su Dashboard en ese momento. NO llames a seleccionar_cliente y a una consulta en la misma tanda (en paralelo): primero seleccioná, esperá la respuesta y recién después consultá; o mandá cliente_id directamente en la consulta. Cada respuesta trae el campo "cliente" (id y nombre): verificá que sea el que el usuario pidió. Cuando respondas, aclará de qué cliente son los números.`;
 
 // ─── Rentabilidad de cualquier período y campañas en vivo ────────────────
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -468,6 +468,40 @@ export function rangoDe(args = {}, porDefecto = "ultimos_30_dias") {
   }
 }
 
+// Frescura de los datos que ve la IA: igual que el Dashboard. Una caché más
+// vieja que esto se recalcula en vivo antes de responder (30-50 s una vez), y
+// cada uso desde la IA cuenta como "acceso" para el warmer de 5 minutos, así
+// las próximas consultas salen frescas al instante.
+const FRESCURA_MIN = 5;
+function warmDocId(uid, key) { return `${uid}__${String(key || "").replace(/[^\w.-]/g, "_")}`.slice(0, 400); }
+async function tocarWarmer(db, uid, key, days, since, until, forzar) {
+  try {
+    await db.collection("system_warm_margenes").doc(warmDocId(uid, key)).set({
+      uid, key, days: days || null, date_from: since || null, date_to: until || null,
+      lastAccess: new Date().toISOString(), ...(forzar ? { lastWarm: new Date(0).toISOString() } : {}),
+    }, { merge: true });
+  } catch (_) {}
+}
+// Últimos 30 días (lo que usan resumen_negocio y rentabilidad_productos): si la
+// caché d30 tiene más de FRESCURA_MIN, se recalcula en vivo (fresh=1 saltea
+// también la caché de ventas del día) y recién después se lee el snapshot.
+async function margenesD30Frescas(db, uid, origin) {
+  let edadMin = Infinity;
+  try {
+    const s = await db.collection("users").doc(uid).collection("margenes_cache").doc("d30").get();
+    if (s.exists && s.data()?.cachedAt) edadMin = (Date.now() - Date.parse(s.data().cachedAt)) / 60000;
+  } catch (_) {}
+  await tocarWarmer(db, uid, "d30", 30, null, null, edadMin > FRESCURA_MIN);
+  if (edadMin > FRESCURA_MIN && process.env.CRON_SECRET) {
+    try {
+      const u = new URL(`${origin}/api/orders`);
+      u.searchParams.set("action", "daily_metrics"); u.searchParams.set("uid", uid); u.searchParams.set("days", "30");
+      u.searchParams.set("warm", "1"); u.searchParams.set("fresh", "1");
+      await fetch(u.toString(), { headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` }, signal: AbortSignal.timeout(70000) });
+    } catch (e) { console.warn("[mcp] recálculo d30:", e.message); }
+  }
+}
+
 // Márgenes del período: caché del Dashboard (fresca o de rango cerrado); si no hay,
 // lo calcula el motor de Growith por el mismo camino que el warmer (CRON_SECRET).
 async function margenesDe(db, uid, origin, since, until) {
@@ -481,12 +515,13 @@ async function margenesDe(db, uid, origin, since, until) {
     let b; try { b = JSON.parse(d.body || "{}"); } catch { continue; }
     if (b.since !== since || b.until !== until || !b.totals) continue;
     const edadMin = d.cachedAt ? (Date.now() - Date.parse(d.cachedAt)) / 60000 : Infinity;
-    if (until < hoy || edadMin <= 20) return { ...b, cachedAt: d.cachedAt || null };
+    if (until < hoy || edadMin <= FRESCURA_MIN) { await tocarWarmer(db, uid, k, k.startsWith("d") ? parseInt(k.slice(1)) : null, k.startsWith("d") ? null : since, k.startsWith("d") ? null : until, false); return { ...b, cachedAt: d.cachedAt || null }; }
   }
   if (!process.env.CRON_SECRET) throw new Error("el servidor no puede calcular ese período ahora (falta CRON_SECRET).");
   const u = new URL(`${origin}/api/orders`);
   u.searchParams.set("action", "daily_metrics"); u.searchParams.set("uid", uid); u.searchParams.set("warm", "1");
-  u.searchParams.set("date_from", since); u.searchParams.set("date_to", until);
+  u.searchParams.set("date_from", since); u.searchParams.set("date_to", until); u.searchParams.set("fresh", "1");
+  await tocarWarmer(db, uid, `${since}_${until}`, null, since, until, true);
   const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` }, signal: AbortSignal.timeout(75000) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.error) throw new Error(j.error || `el cálculo de rentabilidad falló (HTTP ${r.status}).`);
@@ -724,6 +759,26 @@ async function tiendasDePerfil(db, perfil) {
   return out;
 }
 
+// Busca un cliente por cliente_id o por nombre (exacto, o único que lo contenga),
+// sin distinguir mayúsculas ni acentos: "lumina" alcanza, no hace falta el id.
+function resolverCliente(clientes, texto) {
+  const t = String(texto || "").trim();
+  if (!t) return null;
+  const n = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  return clientes.find(c => c.cliente_id === t)
+    || clientes.find(c => n(c.nombre) === n(t))
+    || (() => { const m = clientes.filter(c => n(c.nombre).includes(n(t))); return m.length === 1 ? m[0] : null; })();
+}
+// Tienda en la que el usuario está parado en Growith (perfil.active_tienda_uid):
+// con varias tiendas y sin elección en el chat, se usa esa por defecto.
+async function tiendaActivaDe(db, perfil, clientes) {
+  try {
+    const d = (await db.collection("users").doc(perfil).get()).data() || {};
+    const id = String(d.active_tienda_uid || perfil);
+    return clientes.find(c => c.cliente_id === id) || null;
+  } catch (_) { return null; }
+}
+
 async function esAdminPerfil(db, perfil) {
   if (isFounder(perfil)) return true;
   const s = await db.collection("users").doc(perfil).get();
@@ -763,6 +818,7 @@ async function runTool(db, uid, name, args, origin) {
   const sinMargenes = "SIN DATOS — los márgenes todavía no se calcularon. Pedile al usuario que abra el Dashboard de Growith (sección Márgenes) para que se generen.";
 
   if (name === "resumen_negocio") {
+    await margenesD30Frescas(db, uid, origin);
     const [margenes, cuentas, stock] = await Promise.all([snapshotMargenes(db, uid, 5), snapshotCuentas(db, uid), snapshotStock(db, uid)]);
     const out = { fecha_hora_actual: fecha, moneda: "ARS", estado_configuracion: estadoConfiguracion(margenes, cuentas, stock), tiendas: cuentas?.tiendas || [] };
     if (margenes) {
@@ -773,6 +829,7 @@ async function runTool(db, uid, name, args, origin) {
   }
   if (name === "rentabilidad_productos") {
     const lim = Math.min(50, Math.max(1, parseInt(args?.limite, 10) || 15));
+    await margenesD30Frescas(db, uid, origin);
     const m = await snapshotMargenes(db, uid, lim);
     if (!m) return { fecha_hora_actual: fecha, productos: sinMargenes };
     return { fecha_hora_actual: fecha, moneda: "ARS", datos_al: m.datos_al, periodo: m.periodo, productos: m.top_productos };
@@ -847,24 +904,25 @@ async function handleRpc(db, ctx, msg) {
       try {
         if (name === "listar_clientes") {
           const [clientes, cuenta] = await Promise.all([tiendasDePerfil(db, ctx.perfil), cuentaDe(db, ctx.perfil)]);
-          return okTool({ cuenta_conectada: cuenta, cliente_activo: ctx.sesion.clienteUid, clientes: clientes.map(c => ({ ...c, activo: c.cliente_id === ctx.sesion.clienteUid })) });
+          const enGrowith = await tiendaActivaDe(db, ctx.perfil, clientes);
+          return okTool({ cuenta_conectada: cuenta, cliente_activo: ctx.sesion.clienteUid, tienda_abierta_en_growith: enGrowith?.cliente_id || null, clientes: clientes.map(c => ({ ...c, activo: c.cliente_id === ctx.sesion.clienteUid, abierta_en_growith: c.cliente_id === enGrowith?.cliente_id })) });
         }
         if (name === "seleccionar_cliente") {
           const id = String(args.cliente_id || "").trim();
           const clientes = await tiendasDePerfil(db, ctx.perfil);
-          const c = clientes.find(x => x.cliente_id === id);
-          if (!c) return errTool(`No existe un cliente con id "${id}" entre los de este usuario. Llamá a listar_clientes para ver los disponibles.`);
-          await guardarSesion(db, ctx, ctx.sesion.id, id);
-          ctx.sesion.clienteUid = id;
+          const c = resolverCliente(clientes, id);
+          if (!c) return errTool(`No existe un cliente "${id}" entre los de este usuario. Disponibles: ${clientes.map(x => `${x.nombre} (${x.cliente_id})`).join(", ")}.`);
+          await guardarSesion(db, ctx, ctx.sesion.id, c.cliente_id);
+          ctx.sesion.clienteUid = c.cliente_id;
           return okTool({ ok: true, cliente_activo: c, mensaje: `Listo: este chat ahora responde sobre ${c.nombre}.` });
         }
         if (name === "obtener_token_ml") {
           if (!(await esAdminPerfil(db, ctx.perfil))) return errTool("Esta herramienta es solo para administradores de Growith.");
           const id = String(args.cliente_id || "").trim();
           const clientes = await tiendasDePerfil(db, ctx.perfil);
-          const c = clientes.find(x => x.cliente_id === id);
-          if (!c) return errTool(`No existe un cliente con id "${id}" entre los de este usuario.`);
-          const tk = await getValidMLToken(db, id); // renueva solo si venció
+          const c = resolverCliente(clientes, id);
+          if (!c) return errTool(`No existe un cliente "${id}" entre los de este usuario.`);
+          const tk = await getValidMLToken(db, c.cliente_id); // renueva solo si venció
           if (!tk?.accessToken) return errTool(`${c.nombre} no tiene una cuenta de Mercado Libre conectada en Growith.`);
           // Queda registrado: un token de ML da acceso a la cuenta del cliente.
           db.collection("admin_log").add({ adminUid: ctx.perfil, action: "mcp_token_ml", targetUid: id, targetEmail: null, detalle: `Token de ML de ${c.nombre} entregado por MCP (grant ${ctx.grantId})`, data: null, at: FieldValue.serverTimestamp() }).catch(() => {});
@@ -878,8 +936,8 @@ async function handleRpc(db, ctx, msg) {
         const pedido = String(args.cliente_id || "").trim();
         if (pedido) {
           const clientes = await tiendasDePerfil(db, ctx.perfil);
-          const c = clientes.find(x => x.cliente_id === pedido);
-          if (!c) return errTool(`No existe un cliente con cliente_id "${pedido}" para este usuario. Disponibles: ${clientes.map(x => `${x.nombre} (${x.cliente_id})`).join(", ")}.`);
+          const c = resolverCliente(clientes, pedido);
+          if (!c) return errTool(`No existe un cliente "${pedido}" para este usuario. Disponibles: ${clientes.map(x => `${x.nombre} (${x.cliente_id})`).join(", ")}.`);
           clienteUid = c.cliente_id; clienteNombre = c.nombre;
         }
         if (!clienteUid) {
@@ -892,7 +950,13 @@ async function handleRpc(db, ctx, msg) {
             const c = await cuentaDe(db, ctx.perfil);
             return errTool(`La cuenta de Growith conectada (${c.email || c.uid}) no tiene ninguna tienda. Si el usuario esperaba ver sus tiendas, el conector quedó autorizado con otra cuenta: hay que desconectarlo en la app de IA y volver a conectarlo con el login correcto de Growith.`);
           } else {
-            return errTool(`Falta elegir sobre qué cliente responder. Preguntale al usuario y llamá a seleccionar_cliente con el cliente_id. Disponibles: ${clientes.map(c => `${c.nombre} (${c.cliente_id})`).join(", ")}.`);
+            // Varias tiendas y ninguna elegida en este chat: la tienda en la que
+            // el usuario está parado en Growith, para responder sin preguntar.
+            const act = await tiendaActivaDe(db, ctx.perfil, clientes);
+            if (!act) return errTool(`Falta elegir sobre qué cliente responder. Preguntale al usuario y llamá a seleccionar_cliente con el nombre o el cliente_id. Disponibles: ${clientes.map(c => `${c.nombre} (${c.cliente_id})`).join(", ")}.`);
+            clienteUid = act.cliente_id; clienteNombre = act.nombre;
+            await guardarSesion(db, ctx, ctx.sesion.id, clienteUid);
+            ctx.sesion.clienteUid = clienteUid;
           }
         }
         if (!(await usoDelDia(db, clienteUid))) {
