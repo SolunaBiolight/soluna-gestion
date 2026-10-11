@@ -4,7 +4,7 @@
 // Campos en user doc: inventory_settings { multiplier, low_days, empty_days, alert_email }
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getValidMLToken } from "./integrations.js";
 import { guardUid, guardCron } from "./_auth.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
@@ -301,6 +301,29 @@ async function pushItemStock(db, uid, item, stores, settings) {
 // UNA cuenta. La usan la acción sync_sales (al entrar a Stock) y el cron
 // cron_sync_ventas (cada 10 min, para que el stock no dependa de abrir la app).
 async function syncVentas(db, uid) {
+    // CANDADO por cuenta: el sync lo disparan el cron, la pantalla de Stock, el
+    // Dashboard y Movimientos, y dos corridas a la vez leían el mismo stock,
+    // descontaban cada una lo suyo y la última pisaba a la otra (Lumina
+    // 10/oct/2026: una venta quedó en el historial pero no en el stock). Si hay
+    // una corrida en curso (menos de 2 min), esta no hace nada.
+    const lockRef = db.collection("users").doc(uid).collection("inventory_meta").doc("sync_lock");
+    const lockId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const tomado = await db.runTransaction(async tx => {
+      const s = await tx.get(lockRef);
+      const d = s.exists ? (s.data() || {}) : {};
+      if (d.at && Date.now() - Date.parse(d.at) < 120000) return false;
+      tx.set(lockRef, { at: new Date().toISOString(), id: lockId });
+      return true;
+    }).catch(() => true);
+    if (!tomado) return { ok: true, processed_orders: 0, items_updated: 0, sales_logged: 0, omitidos: [], en_curso: true };
+    try {
+      return await syncVentasCuerpo(db, uid);
+    } finally {
+      // Liberar solo si sigue siendo nuestro candado.
+      await db.runTransaction(async tx => { const s = await tx.get(lockRef); if ((s.data() || {}).id === lockId) tx.delete(lockRef); }).catch(() => {});
+    }
+}
+async function syncVentasCuerpo(db, uid) {
     const itemsSnap = await db.collection("users").doc(uid).collection("inventory_items").get();
     const items = itemsSnap.docs.map(d => ({ ref: d.ref, ...d.data() }));
     // Un item se descuenta si tiene product_links (vínculo explícito por producto)
@@ -587,13 +610,22 @@ async function syncVentas(db, uid) {
         // viejo las más antiguas salían de la lista y volvían a descontar.
         // Se guardan solo ids (strings cortos), así que 8000 entra cómodo en
         // el límite de 1 MB por documento de Firestore.
-        const allProcessed = Array.from(new Set([...(item.processed_orders || []), ...newProcessed])).slice(-8000);
+        // Escritura ATÓMICA: increment sobre el stock y arrayUnion sobre las
+        // órdenes procesadas, así aunque otra corrida haya tocado el item entre
+        // la lectura y acá no se pisa nada (y el candado de arriba evita que
+        // dos corridas descuenten la misma orden).
         await item.ref.update({
-          stock_total: finalStock,
-          processed_orders: allProcessed,
+          stock_total: FieldValue.increment(stockChange),
+          ...(newProcessed.length ? { processed_orders: FieldValue.arrayUnion(...newProcessed) } : {}),
           ...(revertidosCambio ? { revertidos } : {}),
           last_sync_at: new Date().toISOString(),
         });
+        // Poda ocasional de processed_orders (tope 8000, la ÚNICA defensa contra
+        // descontar dos veces): solo cuando se pasa de largo.
+        if ((item.processed_orders || []).length + newProcessed.length > 9000) {
+          const allProcessed = Array.from(new Set([...(item.processed_orders || []), ...newProcessed])).slice(-8000);
+          await item.ref.update({ processed_orders: allProcessed }).catch(() => {});
+        }
         itemsUpdated++;
         // Stock cruzado: propagar el nuevo stock a las plataformas (best-effort)
         try { await pushItemStock(db, uid, { ...item, stock_total: finalStock }, stores, settings); } catch (_) {}
