@@ -40562,6 +40562,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [movFilterOrigen, setMovFilterOrigen] = useState("all");
   const [movFilterDeposito, setMovFilterDeposito] = useState("all");
   const [movFilterEvento, setMovFilterEvento] = useState("all");
+  const [invSyncing, setInvSyncing] = useState(false); // Actualizar: sync de ventas en curso
   // Sync sales (descontar stock por órdenes recientes)
   const [syncingSales, setSyncingSales] = useState(false);
   // Historial sorting
@@ -41072,11 +41073,14 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     if (!uid) return;
     // Disparamos en background — no bloqueamos la UI
     ghStockAutosync(uid)
-      .then(j => {
-        if (!j) return;
-        // Si descontó algo, recargar los items — actualiza tanto la lista de
-        // Inventario como el número "Inventario Growith" del panel de Stock.
-        if (j.items_updated > 0 || j.sales_logged > 0) { loadInvItems(); if (tab === "movimientos") loadMovements(); }
+      .then(() => {
+        // SIEMPRE recargar los items después del sync (haya descontado o no, y
+        // aunque el throttle lo haya salteado): el cron pudo descontar entre
+        // medio y la lista pintada al entrar era la copia vieja. Antes solo se
+        // recargaba si ESTE sync descontó algo, y en Inventario quedaba el
+        // número viejo hasta pasar por Movimientos.
+        loadInvItems();
+        if (tab === "movimientos") loadMovements();
       })
       .catch(()=>{});
     /* eslint-disable-next-line */
@@ -41599,9 +41603,17 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             {label:"Exportar CSV",disabled:!data,onClick:exportCSV},
             {label:syncingSales?"Reprocesando…":"Reprocesar 30 días",disabled:syncingSales,onClick:syncSales},
           ]}/>
-          <button onClick={()=>loadStock(days, useCustomDate?dateFrom:"", useCustomDate?dateTo:"")} disabled={loading}
+          <button onClick={async()=>{
+              // Actualizar = sincronizar ventas (forzado, sin throttle) y recién
+              // después recargar inventario, analytics y movimientos.
+              setInvSyncing(true);
+              try { await ghStockAutosync(uid, true); } catch(_) {}
+              setInvSyncing(false);
+              loadInvItems(); if (tab === "movimientos") loadMovements();
+              loadStock(days, useCustomDate?dateFrom:"", useCustomDate?dateTo:"");
+            }} disabled={loading||invSyncing}
             style={{...BtnPrimary(T),fontSize:12,padding:"7px 12px",display:"flex",alignItems:"center",gap:4}}>
-            {loading?<Spinner size={11} color="#fff"/>:"↻"} Actualizar
+            {(loading||invSyncing)?<Spinner size={11} color="#fff"/>:"↻"} {invSyncing?"Sincronizando…":"Actualizar"}
           </button>
         </div>
       </AppTopbar>
