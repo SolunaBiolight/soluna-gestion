@@ -21504,7 +21504,7 @@ function ghDepListaAPedidos(texto,etiquetas){
   if(n===1) return {pedidos:[{numero:filas.find(f=>f.numero)?.numero||"",comprador:filas.find(f=>f.comprador)?.comprador||"",items:filas.flatMap(f=>f.items),pags:[],tracking:""}],modo:"un_pedido",filas:filas.length};
   return {pedidos:[],modo:"nota",filas:filas.length};
 }
-function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extraCfg=null,onClose,onDone}){
+function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extraCfg=null,catalogo=null,onClose,onDone}){
   const iS=InputStyle(T);
   const [tipo]=useState(especial?"especial":"tanda");
   const [canal,setCanal]=useState(prefill?.canal||"andreani");
@@ -21518,6 +21518,11 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   // `prefill.canalFijo` (botones por canal del cliente) quita además el selector "Lo retira".
   const esML=canal==="ml"&&!especial; const canalFijo=!!prefill?.canalFijo&&!especial; const lista=esML?"":listaTxt;
   const [esp,setEsp]=useState({titulo:"",instrucciones:"",urgente:false,bultos:1});
+  // Envío especial: productos elegidos de un desplegable (catálogo de la tienda, o lo que el cliente ya mandó antes).
+  // Viajan dentro de las instrucciones ("Productos: 2x ROJ-NN …"), así el depósito los ve y no cambia lo que se cobra.
+  const [espItems,setEspItems]=useState([]); const [espSel,setEspSel]=useState(""); const [espOtro,setEspOtro]=useState(""); const [espCant,setEspCant]=useState(1);
+  const agregarEspItem=()=>{ const sku=(espSel==="__otro"?espOtro:espSel).trim(); const c=Math.max(1,Math.round(Number(espCant)||1)); if(!sku) return; setEspItems(l=>{ const i=l.findIndex(x=>x.sku===sku); return i>=0?l.map((x,k)=>k===i?{...x,cant:x.cant+c}:x):[...l,{sku,cant:c}]; }); setEspSel(""); setEspOtro(""); setEspCant(1); };
+  const espInstr=[esp.instrucciones.trim(),espItems.length?"Productos:\n"+espItems.map(x=>`${x.cant}x ${x.sku}`).join("\n"):""].filter(Boolean).join("\n\n");
   const [adj,setAdj]=useState([]);
   const [prog,setProg]=useState(null);
   const [drag,setDrag]=useState(false); const [verCant,setVerCant]=useState(false); const [verLista,setVerLista]=useState(!prefill?.pedidos?.length&&!especial);
@@ -21550,7 +21555,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
     if(prog) return;
     if(tipo==="tanda"&&!pdf){ toast("Subí el PDF con las etiquetas","warning"); return; }
     if(tipo==="tanda"&&!cant){ toast("No pudimos contar las etiquetas del PDF: indicá cuántos pedidos tiene la tanda","warning"); return; }
-    if(tipo==="especial"&&!esp.instrucciones.trim()&&!esp.titulo.trim()){ toast("Contale al depósito qué hay que armar","warning"); return; }
+    if(tipo==="especial"&&!espInstr&&!esp.titulo.trim()){ toast("Contale al depósito qué hay que armar","warning"); return; }
     if(!borrRef.current&&fueraDeCorte&&!(await appConfirm(`Ya pasó el corte de las ${corte}:00. El depósito la va a ver como "fuera de corte" y puede salir recién el próximo día hábil. ¿La mandás igual con fecha de hoy?`,{okLabel:"Mandar igual"}))) return;
     // PDF subido a mano: lo que se escribió en "Qué va en cada paquete" se IMPRIME en
     // cada etiqueta (pedido k = etiqueta k, salteando hojas de resumen), así no se
@@ -21577,7 +21582,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
     try{
       const pdf=pdfEnv;
       if(pdf&&pdf.bytes.length>22*1024*1024){ toast("El PDF de etiquetas supera los 22 MB: mandá la tanda en dos partes.","warning",7000); setProg(null); return; }
-      if(!borrRef.current){ const c=await api("c_tanda_crear",{tipo,canal,fechaDespacho:fecha,nota:notaFinal,pedidos,n:cant,nManual:tipo==="tanda"&&verCant&&!prefill?.pedidos?.length,pages:pdf?.pages||0,origen:prefill?.origen||"manual",especial:tipo==="especial"?esp:undefined}); borrRef.current={id:c.id,hechos:{}}; }
+      if(!borrRef.current){ const c=await api("c_tanda_crear",{tipo,canal,fechaDespacho:fecha,nota:notaFinal,pedidos,n:cant,nManual:tipo==="tanda"&&verCant&&!prefill?.pedidos?.length,pages:pdf?.pages||0,origen:prefill?.origen||"manual",especial:tipo==="especial"?{...esp,instrucciones:espInstr}:undefined}); borrRef.current={id:c.id,hechos:{}}; }
       const b=borrRef.current;
       const subir=async(kind,bytes,label)=>{ const total=Math.max(1,Math.ceil(ghBytesToB64(bytes).length/GH_DEP_CHUNK)); const faltan=Array.from({length:total},(_,i)=>i).filter(i=>!b.hechos[`${kind}:${i}`]);
         await ghDepSubir(api,b.id,kind,bytes,(a,c2,t)=>setProg(`Subiendo ${label} ${a}/${c2}${c2!==t?` (de ${t})`:""}…`),faltan); for(const i of faltan) b.hechos[`${kind}:${i}`]=true; return total; };
@@ -21605,7 +21610,23 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         {tipo==="especial"&&(<>
           <div>{lbl("Qué es")}<input style={iS} placeholder="Ej.: Pedido mayorista Óptica Sur" value={esp.titulo} onChange={e=>setEsp(s=>({...s,titulo:e.target.value}))}/></div>
-          <div>{lbl("Instrucciones para el depósito")}<textarea style={{...iS,minHeight:90,resize:"vertical"}} placeholder="Qué productos y cantidades, cómo embalar, qué documentación va adentro…" value={esp.instrucciones} onChange={e=>setEsp(s=>({...s,instrucciones:e.target.value}))}/></div>
+          <div>{lbl("Productos")}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+              <select style={{...iS,marginBottom:0,flex:"1 1 220px",minWidth:0}} value={espSel} onChange={e=>setEspSel(e.target.value)}>
+                <option value="">Elegí un producto…</option>
+                {(catalogo||[]).map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+                <option value="__otro">Otro (escribirlo)…</option>
+              </select>
+              {espSel==="__otro"&&<input style={{...iS,marginBottom:0,flex:"1 1 160px",minWidth:0}} autoFocus placeholder="Nombre o SKU" value={espOtro} onChange={e=>setEspOtro(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); agregarEspItem(); } }}/>}
+              <input style={{...iS,marginBottom:0,width:76}} type="number" min="1" title="Cantidad" value={espCant} onChange={e=>setEspCant(e.target.value)}/>
+              <DepBtn T={T} ico="plus" onClick={agregarEspItem} disabled={!(espSel==="__otro"?espOtro.trim():espSel)}>Agregar</DepBtn>
+            </div>
+            {espItems.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
+              {espItems.map((x,i)=>(<span key={x.sku} style={{display:"inline-flex",alignItems:"center",gap:7,height:30,padding:"0 6px 0 12px",borderRadius:DS.r.full,background:T.surface,border:`1px solid ${T.border}`,fontSize:DS.font.md,fontWeight:600,color:T.text,maxWidth:"100%"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.sku}</span><strong style={{color:T.accent}}>×{x.cant}</strong><button onClick={()=>setEspItems(l=>l.filter((_,k)=>k!==i))} title="Quitar" style={{width:22,height:22,borderRadius:99,border:"none",background:"transparent",color:T.textSm,cursor:"pointer",fontSize:13,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button></span>))}
+            </div>}
+            {!(catalogo||[]).length&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:6}}>Todavía no hay una lista de productos para elegir: usá "Otro" y escribilo.</div>}
+          </div>
+          <div>{lbl("Instrucciones para el depósito")}<textarea style={{...iS,minHeight:90,resize:"vertical"}} placeholder="Cómo embalar, qué documentación va adentro, a quién se entrega…" value={esp.instrucciones} onChange={e=>setEsp(s=>({...s,instrucciones:e.target.value}))}/></div>
           <div style={{display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap"}}>
             <div style={{width:110}}>{lbl("Bultos")}<input style={iS} type="number" min="1" value={esp.bultos} onChange={e=>setEsp(s=>({...s,bultos:e.target.value}))}/></div>
             <div style={{width:130}}>{lbl("Pedidos a cobrar")}<input style={iS} type="number" min="1" value={n||1} onChange={e=>setN(e.target.value)}/></div>
@@ -21774,6 +21795,9 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
   const [pago,setPago]=useState(false);
   const [tab,setTab]=useState("envios"); const [abierta,setAbierta]=useState(null);
   const [q,setQ]=useState(""); const [mes,setMes]=useState("");
+  // Productos de la tienda conectada (solo dentro de Growith), para el desplegable del envío especial.
+  const [prodsTienda,setProdsTienda]=useState([]);
+  useEffect(()=>{ if(!tiendaUid) return; let vivo=true; (async()=>{ for(const extra of ["&cache=only",""]){ try{ const r=await authFetch(`/api/stock?action=products&uid=${tiendaUid}&days=7${extra}`); const j=await r.json(); if(vivo&&Array.isArray(j?.products)&&j.products.length){ setProdsTienda(j.products); return; } }catch(_){ } } })(); return ()=>{ vivo=false; }; },[tiendaUid]);
   const cargar=()=>api("c_tandas").then(d=>{ setSt(d); setErr(""); }).catch(e=>setErr(e.message));
   // Refresco liviano cada 60 s con la pestaña visible: el cliente ve avanzar su tanda sin recargar.
   useEffect(()=>{ cargar(); const iv=setInterval(()=>{ if(document.visibilityState==="visible") cargar(); },60000); return ()=>clearInterval(iv); },[]);
@@ -21785,6 +21809,11 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
   const porVerificar=Number(st.cuenta?.porVerificar)||0;
   const extraCfg={extraItemsIncluidos:st.extraItemsIncluidos,extraItemPrecio:st.extraItemPrecio};
   const hoy=hoyAR(); const corte=st.corteHora??15;
+  // Opciones del desplegable: variantes de la tienda (SKU — nombre) y, además, lo que ya vino en tandas anteriores.
+  const catalogo=(()=>{ const m=new Map();
+    for(const p of prodsTienda) for(const v of (p.variants||[])){ const val=String(v.sku||[p.nombre,v.nombre&&v.nombre!=="Default"?v.nombre:""].filter(Boolean).join(" ")).trim(); if(val&&!m.has(val)) m.set(val,v.sku?`${v.sku} — ${[p.nombre,v.nombre&&v.nombre!=="Default"?v.nombre:""].filter(Boolean).join(" ")}`.slice(0,90):val.slice(0,90)); }
+    for(const t of st.tandas||[]) for(const pd of t.pedidos||[]) for(const it of pd.items||[]){ const val=String(it).replace(/^\d+\s*x\s+/i,"").replace(/\s*\(x\s*\d+\)\s*$/i,"").trim(); if(val&&!m.has(val)) m.set(val,val); }
+    return [...m.entries()].map(([v,l])=>({v,l})).sort((a,b)=>a.l.localeCompare(b.l)).slice(0,400); })();
   // Dos pasos: pendiente → impresa. Todo lo que no está pendiente ni cancelado ya salió impreso.
   const colorCanal=t=>t.tipo==="especial"?T.purple:t.canal==="andreani"?T.red:t.canal==="ml"?T.yellow:t.canal==="retiro"?T.blue:T.textMd;
   const estadoDe=t=>t.estado==="cancelada"?["Cancelada",T.textSm]:t.estado==="pendiente"?["Pendiente",T.yellow]:["Impresa",T.green];
@@ -21979,7 +22008,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
         ]}/>
         <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:8}}>Cada tanda suma su importe y cada pago verificado lo descuenta. Las transferencias "en verificación" todavía no bajan el saldo.</div>
       </div>)}
-      {nuevo&&<DepositoEnvioModal T={T} api={api} cliente={st.cliente} especial={nuevo.tipo==="especial"} prefill={nuevo.prefill} corte={corte} extraCfg={extraCfg} onClose={()=>setNuevo(null)} onDone={cargar}/>}
+      {nuevo&&<DepositoEnvioModal T={T} api={api} cliente={st.cliente} especial={nuevo.tipo==="especial"} prefill={nuevo.prefill} corte={corte} extraCfg={extraCfg} catalogo={catalogo} onClose={()=>setNuevo(null)} onDone={cargar}/>}
       {pago&&<DepositoPagoModal T={T} api={api} cuenta={st.cuenta} datosPago={st.datosPago} onClose={()=>setPago(false)} onDone={cargar}/>}
     </div>
   );
