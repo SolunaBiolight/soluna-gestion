@@ -21633,7 +21633,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
                   {!hayCat
                     ?<input style={{...iS,marginBottom:0,flex:1,minWidth:0}} placeholder="Producto o SKU" value={x.sku} onChange={e=>espSet(x.k,{sku:e.target.value})}/>
                     :x.sku
-                      ?<div onClick={()=>{ espSet(x.k,{sku:"",q:""}); setEspAct(x.k); }} title="Cambiar producto" style={{flex:1,minWidth:0,height:38,boxSizing:"border-box",display:"flex",alignItems:"center",gap:8,padding:"0 14px",borderRadius:DS.r.lg,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:DS.font.base,fontWeight:600,cursor:"pointer"}}><span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{elegido?.l||x.sku}</span><span style={{fontSize:DS.font.sm,color:T.textSm,fontWeight:500}}>Cambiar</span></div>
+                      ?<div onClick={()=>{ espSet(x.k,{sku:"",q:""}); setEspAct(x.k); }} title="Cambiar producto" style={{flex:1,minWidth:0,height:38,boxSizing:"border-box",display:"flex",alignItems:"center",gap:8,padding:"0 14px",borderRadius:DS.r.lg,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:DS.font.base,fontWeight:600,cursor:"pointer"}}><span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{elegido?.sku?<>{elegido.sku}{elegido.vr&&<span style={{color:T.textMd,fontWeight:500}}> · {elegido.vr}</span>}</>:(elegido?.l||x.sku)}</span><span style={{fontSize:DS.font.sm,color:T.textSm,fontWeight:500}}>Cambiar</span></div>
                       :<div style={{position:"relative",flex:1,minWidth:0}}>
                         <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",display:"flex",pointerEvents:"none"}}><DepIco d="search" size={14} color={T.textSm}/></span>
                         <input style={{...iS,marginBottom:0,paddingLeft:34}} placeholder="Elegí el producto (buscá por SKU o nombre)" value={x.q} onFocus={()=>setEspAct(x.k)} onChange={e=>{ espSet(x.k,{q:e.target.value}); setEspAct(x.k); }} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); const h=espHitsDe(x.q)[0]; if(h) espSet(x.k,{sku:h.v,q:""}); } }}/>
@@ -21641,7 +21641,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
                   <button onClick={()=>setEspItems(l=>l.length>1?l.filter(y=>y.k!==x.k):[{k:Date.now(),sku:"",cant:1,q:""}])} title="Quitar" style={{width:32,height:32,flexShrink:0,borderRadius:99,border:"none",background:"transparent",color:T.textSm,cursor:"pointer",fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
                 </div>
                 {hayCat&&!x.sku&&espAct===x.k&&(<div style={{margin:"6px 40px 0 76px",border:`1px solid ${T.border}`,borderRadius:DS.r.lg,background:T.card,overflow:"hidden"}}>
-                  {hits.map((o,i)=>(<div key={o.v} onClick={()=>espSet(x.k,{sku:o.v,q:""})} style={{padding:"9px 12px",cursor:"pointer",fontSize:DS.font.base,color:T.text,borderTop:i?`1px solid ${T.borderL||T.border}`:"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.l}</div>))}
+                  {hits.map((o,i)=>(<div key={o.v} onClick={()=>espSet(x.k,{sku:o.v,q:""})} style={{padding:"9px 12px",cursor:"pointer",fontSize:DS.font.base,color:T.text,borderTop:i?`1px solid ${T.borderL||T.border}`:"none"}}>{o.sku?<><div style={{display:"flex",gap:8,alignItems:"baseline",flexWrap:"wrap"}}><strong style={{fontWeight:700}}>{o.sku}</strong>{o.vr&&<span style={{color:T.textMd}}>{o.vr}</span>}</div><div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.prod}</div></>:o.l}</div>))}
                   {!hits.length&&<div style={{padding:"9px 12px",fontSize:DS.font.md,color:T.textSm}}>Ningún producto de tu tienda coincide con eso.</div>}
                 </div>)}
               </div>); })}
@@ -21823,9 +21823,9 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
   // Opciones del envío especial: SOLO las variantes de la tienda (Tienda Nube / Shopify), nunca Mercado Libre.
   // Sin tienda conectada (portal por link): lo que ese cliente ya mandó por Andreani.
   const catalogo=(()=>{ const m=new Map();
-    for(const p of prodsTienda) for(const v of (p.variants||[])){ const val=String(v.sku||[p.nombre,v.nombre&&v.nombre!=="Default"?v.nombre:""].filter(Boolean).join(" ")).trim(); if(val&&!m.has(val)) m.set(val,v.sku?`${v.sku} — ${[p.nombre,v.nombre&&v.nombre!=="Default"?v.nombre:""].filter(Boolean).join(" ")}`.slice(0,90):val.slice(0,90)); }
-    if(!m.size) for(const t of (st.tandas||[]).filter(t=>t.canal!=="ml")) for(const pd of t.pedidos||[]) for(const it of pd.items||[]){ const val=String(it).replace(/^\d+\s*x\s+/i,"").replace(/\s*\(x\s*\d+\)\s*$/i,"").trim(); if(val&&!m.has(val)) m.set(val,val); }
-    return [...m.entries()].map(([v,l])=>({v,l})).sort((a,b)=>a.l.localeCompare(b.l)).slice(0,400); })();
+    for(const p of prodsTienda) for(const v of (p.variants||[])){ const val=String(v.sku||[p.nombre,v.nombre&&v.nombre!=="Default"?v.nombre:""].filter(Boolean).join(" ")).trim(); const vr=v.nombre&&v.nombre!=="Default"?String(v.nombre):""; if(val&&!m.has(val)) m.set(val,{l:v.sku?`${v.sku} — ${[p.nombre,vr].filter(Boolean).join(" ")}`:val,sku:v.sku?String(v.sku):"",vr,prod:String(p.nombre||"")}); }
+    if(!m.size) for(const t of (st.tandas||[]).filter(t=>t.canal!=="ml")) for(const pd of t.pedidos||[]) for(const it of pd.items||[]){ const val=String(it).replace(/^\d+\s*x\s+/i,"").replace(/\s*\(x\s*\d+\)\s*$/i,"").trim(); if(val&&!m.has(val)) m.set(val,{l:val}); }
+    return [...m.entries()].map(([v,o])=>({v,...o})).sort((a,b)=>a.l.localeCompare(b.l)).slice(0,400); })();
   // Dos pasos: pendiente → impresa. Todo lo que no está pendiente ni cancelado ya salió impreso.
   const colorCanal=t=>t.tipo==="especial"?T.purple:t.canal==="andreani"?T.red:t.canal==="ml"?T.yellow:t.canal==="retiro"?T.blue:T.textMd;
   const estadoDe=t=>t.estado==="cancelada"?["Cancelada",T.textSm]:t.estado==="pendiente"?["Pendiente",T.yellow]:["Impresa",T.green];
